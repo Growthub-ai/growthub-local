@@ -1,49 +1,58 @@
 # Growthub Local
 
-Dedicated repository boundary for the local Growthub product.
+Local Growthub runtime for DX and Go-to-Market.
 
-This repo is intended to own only the local machine runtime:
+`Growthub Local` is the installable local product that runs on a user's machine and connects back to the hosted Growthub app.
 
-- DX surface
-- GTM surface
-- local CLI/runtime packaging
-- local server routes
-- local UI
-- local config schema
-- local installer packages
-- the hosted Growthub bridge contract
+It owns:
 
-This repo must not absorb private hosted control-plane code.
+- the DX local surface
+- the GTM local surface
+- the local CLI
+- the local server
+- the local UI
+- the local installer packages
 
-## Source Boundary
+## Install
 
-Initial extraction source from the monorepo:
+For Go-to-Market:
 
-- `cli/`
-- `server/`
-- `ui/`
-- `packages/shared/`
-- `packages/create-growthub-local/`
+```bash
+npm create growthub-local@latest -- --profile gtm
+```
 
-## Private Exclusions
+For DX:
 
-Do not extract or publish:
+```bash
+npm create growthub-local@latest -- --profile dx
+```
 
-- hosted `gh-app`
-- private Growthub account logic
-- token minting internals
-- Supabase/RLS implementation details
-- super-admin and internal-only hosted routes
-- internal deployment automation
+## What Happens Next
 
-## Freeze Rules
+1. Install the local app from npm.
+2. Launch the local app.
+3. Open the `Growthub Connection` card.
+4. Click `Open Configuration`.
+5. Complete authentication in hosted Growthub.
+6. Return to the local app callback.
+7. Use `Pulse` to verify the hosted bridge is live.
 
-1. Validate local behavior from this repo only.
-2. Validate DX and GTM against explicit temp config/data dirs.
-3. Publish `@growthub/cli` and `create-growthub-local` only from this repo.
-4. Keep the hosted integration contract documented and versioned.
+## Profiles
 
-## Current Extraction Status
+- `dx`: local DX tool surface
+- `gtm`: local Go-to-Market surface
 
-This skeleton is the freeze point for separating Growthub Local from the monorepo.
-Use `scripts/sync-from-monorepo.sh` to copy the allowed source tree into this repo boundary.
+## Packages
+
+This repo is the source of truth for:
+
+- `@growthub/cli`
+- `create-growthub-local`
+
+## Development
+
+This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.
+
+## Status
+
+The repository was extracted to stop local-runtime work from getting lost inside a larger monorepo workflow. The goal is to keep DX, GTM, installer, and package publishing aligned in one place.
