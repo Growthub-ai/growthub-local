@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+.env
+.env.*
+coverage
+server/ui-dist
+growthub-local/instances
+tmp

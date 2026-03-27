@@ -1,0 +1,30 @@
+{
+  "name": "create-growthub-local",
+  "version": "0.1.17",
+  "description": "Growthub local installer for DX and GTM profiles",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/antonioromero1220/growthub-core"
+  },
+  "homepage": "https://github.com/antonioromero1220/growthub-core#readme",
+  "bugs": {
+    "url": "https://github.com/antonioromero1220/growthub-core/issues"
+  },
+  "bin": {
+    "create-growthub-local": "./bin/create-growthub-local.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@growthub/cli": "0.3.15"
+  },
+  "files": [
+    "bin"
+  ]
+}

@@ -1,0 +1,27 @@
+import type { TicketStatus } from "../constants.js";
+
+export interface TicketStageSummary {
+  stage: string;
+  issueCount: number;
+  doneCount: number;
+}
+
+export interface Ticket {
+  id: string;
+  companyId: string;
+  title: string;
+  description: string | null;
+  identifier: string | null;
+  status: TicketStatus;
+  currentStage: string;
+  stageOrder: string[];
+  stageSummaries?: TicketStageSummary[];
+  createdByUserId: string | null;
+  createdByAgentId: string | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  metadata: Record<string, unknown> | null;
+  instructions: string | null;
+  leadAgentId: string | null;
+}
