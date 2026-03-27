@@ -17,18 +17,21 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/antonioromero1220/growthub-core",
+    "url": "https://github.com/antonioromero1220/growthub-local",
     "directory": "cli"
   },
-  "homepage": "https://github.com/antonioromero1220/growthub-core#readme",
+  "homepage": "https://github.com/antonioromero1220/growthub-local#readme",
   "bugs": {
-    "url": "https://github.com/antonioromero1220/growthub-core/issues"
+    "url": "https://github.com/antonioromero1220/growthub-local/issues"
   },
   "files": [
     "dist"
   ],
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "pack:dry-run": "npm pack --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.888.0",

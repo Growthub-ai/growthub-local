@@ -12,11 +12,27 @@ Growthub Local package publishing must happen from this repo boundary only.
 ## Required Validation Before Publish
 
 1. `pnpm build`
-2. `npm pack --dry-run` in `cli/`
-3. `npm pack --dry-run` in `packages/create-growthub-local/`
-4. fresh DX install validation
-5. fresh GTM install validation
-6. hosted Growthub connection validation
+2. `pnpm release:check`
+3. `npm pack --dry-run` in `cli/`
+4. `npm pack --dry-run` in `packages/create-growthub-local/`
+5. fresh DX install validation
+6. fresh GTM install validation
+7. hosted Growthub connection validation
+
+## Release Gate
+
+`pnpm release:check` must fail if any of these drift:
+
+- package version alignment between `@growthub/cli` and `create-growthub-local`
+- package metadata still points at the monorepo instead of `growthub-local`
+- the local source no longer contains:
+  - `Growthub Connection`
+  - `Open Configuration`
+  - `Pulse`
+  - `Disconnect`
+  - hosted `/integrations` launch
+  - local `/auth/callback`
+- the CLI tarball no longer contains the bundled runtime payload
 
 ## Validation Isolation
 

@@ -6,11 +6,12 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/antonioromero1220/growthub-core"
+    "url": "https://github.com/antonioromero1220/growthub-local",
+    "directory": "packages/create-growthub-local"
   },
-  "homepage": "https://github.com/antonioromero1220/growthub-core#readme",
+  "homepage": "https://github.com/antonioromero1220/growthub-local#readme",
   "bugs": {
-    "url": "https://github.com/antonioromero1220/growthub-core/issues"
+    "url": "https://github.com/antonioromero1220/growthub-local/issues"
   },
   "bin": {
     "create-growthub-local": "./bin/create-growthub-local.mjs"
@@ -26,5 +27,8 @@
   },
   "files": [
     "bin"
-  ]
+  ],
+  "scripts": {
+    "pack:dry-run": "npm pack --dry-run"
+  }
 }
