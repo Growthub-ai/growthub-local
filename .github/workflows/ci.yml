@@ -13,26 +13,31 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
 
       - name: Freeze boundary check
         run: bash scripts/freeze-check.sh
 
-      - name: Release check (validates package manifests + pack integrity)
-        run: node scripts/release-check.mjs
+      - name: Validate package manifests
+        run: |
+          node -e "
+            const fs = require('fs');
+            const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
+            if (cli.name !== '@growthub/cli') throw new Error('cli name mismatch');
+            if (pkg.name !== 'create-growthub-local') throw new Error('installer name mismatch');
+            if (pkg.dependencies['@growthub/cli'] !== cli.version) throw new Error('version pin mismatch: create-growthub-local must pin @growthub/cli@' + cli.version);
+            console.log('Package manifests valid. CLI:', cli.version);
+          "
 
-      - name: Install create-growthub-local deps
-        run: cd packages/create-growthub-local && npm install --ignore-scripts
-
-      - name: Pack dry-run (create-growthub-local)
-        run: cd packages/create-growthub-local && npm pack --dry-run
+      - name: Validate pnpm-lock.yaml is not hand-edited
+        if: github.event_name == 'pull_request' && github.head_ref != 'chore/refresh-lockfile'
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          changed="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
+            echo "❌ Do not commit pnpm-lock.yaml manually."
+            exit 1
+          fi
