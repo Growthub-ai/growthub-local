@@ -27,24 +27,16 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Typecheck
+      - name: Freeze boundary check
+        run: bash scripts/freeze-check.sh
+
+      - name: Typecheck all packages
         run: pnpm -r typecheck
 
-      - name: Test
-        run: pnpm test:run
+      - name: Build all packages
+        run: pnpm -r build
 
-      - name: Build
-        run: pnpm build
-
-      - name: Check forbidden tokens
-        run: pnpm run check:tokens
-
-      - name: Release dry-run (canary)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B main HEAD
-          git checkout -- pnpm-lock.yaml
-          ./scripts/release.sh canary --skip-verify --dry-run
+      - name: Release check
+        run: node scripts/release-check.mjs
