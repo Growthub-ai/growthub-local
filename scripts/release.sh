@@ -98,12 +98,18 @@ fi
 echo ""
 echo "=== Publishing to npm ==="
 
+# Build publish args (include provenance in GitHub Actions)
+PUBLISH_ARGS="--access public"
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  PUBLISH_ARGS="$PUBLISH_ARGS --provenance"
+fi
+
 # Publish CLI
 echo "Publishing @growthub/cli@${CLI_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
-  echo "[DRY RUN] npm publish cli/ --access public --provenance"
+  echo "[DRY RUN] npm publish cli/ $PUBLISH_ARGS"
 else
-  npm publish cli/ --access public --provenance
+  npm publish cli/ $PUBLISH_ARGS
   echo "✓ @growthub/cli@${CLI_VERSION} published"
 fi
 
@@ -112,9 +118,9 @@ echo ""
 # Publish create-growthub-local
 echo "Publishing create-growthub-local@${CREATE_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
-  echo "[DRY RUN] npm publish packages/create-growthub-local/ --access public --provenance"
+  echo "[DRY RUN] npm publish packages/create-growthub-local/ $PUBLISH_ARGS"
 else
-  npm publish packages/create-growthub-local/ --access public --provenance
+  npm publish packages/create-growthub-local/ $PUBLISH_ARGS
   echo "✓ create-growthub-local@${CREATE_VERSION} published"
 fi
 
