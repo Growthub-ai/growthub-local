@@ -1,0 +1,50 @@
+name: Sync OSS → Monorepo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview sync without creating PR
+        type: boolean
+        default: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run on the main OSS repo, not forks
+    if: github.repository == 'antonioromero1220/growthub-local'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify monorepo of OSS merge
+        uses: actions/github-script@v7
+        with:
+          # PAT with access to the private monorepo
+          github-token: ${{ secrets.MONOREPO_SYNC_TOKEN }}
+          script: |
+            const dryRun = '${{ inputs.dry_run }}' === 'true';
+            const sha = context.sha;
+            const branch = `sync/oss-${sha.slice(0, 8)}`;
+            if (dryRun) {
+              console.log(`Dry run: would trigger sync for commit ${sha} on branch ${branch}`);
+              return;
+            }
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'antonioromero1220',
+              repo: 'growthub-core',
+              workflow_id: 'sync-from-oss.yml',
+              ref: 'master',
+              inputs: {
+                oss_sha: sha,
+                branch_name: branch
+              }
+            });
+            console.log(`Triggered monorepo sync for OSS commit ${sha}`);

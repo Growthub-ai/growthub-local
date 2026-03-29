@@ -1,0 +1,11 @@
+# Super admin owns everything — all PRs require review
+* @antonioromero1220
+
+# Core surface packages — extra protection
+/server/          @antonioromero1220
+/ui/              @antonioromero1220
+/packages/db/     @antonioromero1220
+/packages/shared/ @antonioromero1220
+/cli/             @antonioromero1220
+/.github/         @antonioromero1220
+/scripts/         @antonioromero1220

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Freeze boundary check
+        run: bash scripts/freeze-check.sh
+
+      - name: Validate package manifests
+        run: |
+          node -e "
+            const fs = require('fs');
+            const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
+            if (cli.name !== '@growthub/cli') throw new Error('cli name mismatch: ' + cli.name);
+            if (pkg.name !== 'create-growthub-local') throw new Error('installer name mismatch: ' + pkg.name);
+            if (pkg.dependencies['@growthub/cli'] !== cli.version) {
+              throw new Error('Version pin mismatch: create-growthub-local pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli.version is ' + cli.version);
+            }
+            console.log('Package manifests valid. CLI:', cli.version);
+          "

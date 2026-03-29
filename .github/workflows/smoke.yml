@@ -1,0 +1,50 @@
+name: Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Freeze boundary check
+        run: bash scripts/freeze-check.sh
+
+      - name: Validate source file contracts
+        run: |
+          node -e "
+            const fs = require('fs');
+            const checks = [
+              ['ui/src/lib/growthub-connection.ts', 'GrowthubConnectionSurface'],
+              ['ui/src/components/GrowthubConnectionCard.tsx', 'GrowthubConnectionCard'],
+              ['packages/shared/src/config-schema.ts', 'surfaceConfigSchema'],
+              ['server/src/app.ts', 'express'],
+              ['cli/src/commands/worktree-lib.ts', 'DEFAULT_WORKTREE_HOME'],
+            ];
+            for (const [file, token] of checks) {
+              const content = fs.readFileSync(file, 'utf8');
+              if (!content.includes(token)) throw new Error(file + ' missing expected token: ' + token);
+            }
+            console.log('All source contracts verified.');
+          "
+
+      - name: Validate package version consistency
+        run: |
+          node -e "
+            const fs = require('fs');
+            const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
+            if (pkg.dependencies['@growthub/cli'] !== cli.version) {
+              throw new Error('Version mismatch: installer pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli is ' + cli.version);
+            }
+            console.log('CLI:', cli.version, '— versions consistent');
+          "
