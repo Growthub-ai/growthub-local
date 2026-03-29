@@ -1,6 +1,6 @@
 {
   "name": "create-growthub-local",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Growthub local installer for DX and GTM profiles",
   "license": "MIT",
   "type": "module",
@@ -23,7 +23,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@growthub/cli": "0.3.16"
+    "@growthub/cli": "0.3.17"
   },
   "keywords": [
     "growthub",
