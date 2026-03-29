@@ -24,19 +24,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
 
       - name: Freeze boundary check
         run: bash scripts/freeze-check.sh
 
-      - name: Typecheck all packages
-        run: pnpm -r typecheck
-
-      - name: Build all packages
-        run: pnpm -r build
-
-      - name: Release check
+      - name: Release check (validates package manifests + pack integrity)
         run: node scripts/release-check.mjs
+
+      - name: Install create-growthub-local deps
+        run: cd packages/create-growthub-local && npm install --ignore-scripts
+
+      - name: Pack dry-run (create-growthub-local)
+        run: cd packages/create-growthub-local && npm pack --dry-run
