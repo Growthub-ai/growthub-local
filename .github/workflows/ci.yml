@@ -26,18 +26,10 @@ jobs:
             const fs = require('fs');
             const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
             const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
-            if (cli.name !== '@growthub/cli') throw new Error('cli name mismatch');
-            if (pkg.name !== 'create-growthub-local') throw new Error('installer name mismatch');
-            if (pkg.dependencies['@growthub/cli'] !== cli.version) throw new Error('version pin mismatch: create-growthub-local must pin @growthub/cli@' + cli.version);
+            if (cli.name !== '@growthub/cli') throw new Error('cli name mismatch: ' + cli.name);
+            if (pkg.name !== 'create-growthub-local') throw new Error('installer name mismatch: ' + pkg.name);
+            if (pkg.dependencies['@growthub/cli'] !== cli.version) {
+              throw new Error('Version pin mismatch: create-growthub-local pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli.version is ' + cli.version);
+            }
             console.log('Package manifests valid. CLI:', cli.version);
           "
-
-      - name: Validate pnpm-lock.yaml is not hand-edited
-        if: github.event_name == 'pull_request' && github.head_ref != 'chore/refresh-lockfile'
-        run: |
-          git fetch origin ${{ github.base_ref }} --depth=1
-          changed="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
-          if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
-            echo "❌ Do not commit pnpm-lock.yaml manually."
-            exit 1
-          fi

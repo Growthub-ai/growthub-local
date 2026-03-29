@@ -24,11 +24,11 @@ jobs:
           node -e "
             const fs = require('fs');
             const checks = [
+              ['ui/src/lib/growthub-connection.ts', 'GrowthubConnectionSurface'],
               ['ui/src/components/GrowthubConnectionCard.tsx', 'GrowthubConnectionCard'],
-              ['ui/src/lib/growthub-connection.ts', 'growthub'],
               ['packages/shared/src/config-schema.ts', 'surfaceProfile'],
-              ['server/src/app.ts', 'paperclip'],
-              ['cli/src/commands/worktree-lib.ts', 'worktree'],
+              ['server/src/app.ts', 'express'],
+              ['cli/src/commands/worktree-lib.ts', 'DEFAULT_GROWTHUB_BASE_URL'],
             ];
             for (const [file, token] of checks) {
               const content = fs.readFileSync(file, 'utf8');
@@ -43,9 +43,8 @@ jobs:
             const fs = require('fs');
             const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
             const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
-            const shared = JSON.parse(fs.readFileSync('packages/shared/package.json','utf8'));
             if (pkg.dependencies['@growthub/cli'] !== cli.version) {
-              throw new Error('Version mismatch: create-growthub-local pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli is ' + cli.version);
+              throw new Error('Version mismatch: installer pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli is ' + cli.version);
             }
-            console.log('CLI:', cli.version, '| shared:', shared.version, '— consistent');
+            console.log('CLI:', cli.version, '— versions consistent');
           "
