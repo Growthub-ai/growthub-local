@@ -50,13 +50,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r typecheck
-      - run: pnpm test:run
-      - run: pnpm build
-      - run: pnpm run check:tokens
+      - name: Freeze check
+        run: bash ./scripts/freeze-check.sh
+
+      - name: Release check
+        run: node ./scripts/release-check.mjs
 
   publish:
     needs: verify
@@ -72,19 +71,9 @@ jobs:
           ref: ${{ inputs.source_ref }}
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.1
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Restore lockfile
-        run: git checkout -- pnpm-lock.yaml
 
       - name: Configure git
         run: |
@@ -93,6 +82,8 @@ jobs:
 
       - name: Publish (dry run)
         if: inputs.dry_run
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           args=(stable --skip-verify --dry-run)
           [ -n "${{ inputs.stable_date }}" ] && args+=(--date "${{ inputs.stable_date }}")
@@ -101,6 +92,7 @@ jobs:
       - name: Publish (stable)
         if: "!inputs.dry_run"
         env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_ACTIONS: "true"
         run: |
           args=(stable --skip-verify)
@@ -118,7 +110,6 @@ jobs:
         if: "!inputs.dry_run"
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH_REMOTE: origin
         run: |
           version="$(git tag --points-at HEAD | grep '^v' | head -1 | sed 's/^v//')"
-          ./scripts/create-github-release.sh "$version"
+          gh release create "$version" --generate-notes
