@@ -58,28 +58,33 @@ fi
 echo "✓ Build artifacts verified"
 echo ""
 
-# Prepare npm authentication
-if [ -z "${NPM_TOKEN:-}" ]; then
-  echo "❌ NPM_TOKEN environment variable not set"
-  exit 1
-fi
+# Prepare npm authentication (skip in dry-run mode)
+if [ "$DRY_RUN" = false ]; then
+  if [ -z "${NPM_TOKEN:-}" ]; then
+    echo "❌ NPM_TOKEN environment variable not set"
+    exit 1
+  fi
 
-# Create .npmrc with token
-cat > ~/.npmrc <<EOF
+  # Create .npmrc with token
+  cat > ~/.npmrc <<EOF
 //registry.npmjs.org/:_authToken=${NPM_TOKEN}
 EOF
-chmod 600 ~/.npmrc
+  chmod 600 ~/.npmrc
 
-# Test authentication
-if ! npm whoami >/dev/null 2>&1; then
-  echo "❌ npm authentication failed (npm whoami returned non-zero)"
-  rm -f ~/.npmrc
-  exit 1
+  # Test authentication
+  echo "Testing npm authentication..."
+  WHOAMI_OUTPUT=$(npm whoami 2>&1)
+  WHOAMI_EXIT=$?
+  if [ $WHOAMI_EXIT -ne 0 ]; then
+    echo "❌ npm authentication failed"
+    echo "Error output: $WHOAMI_OUTPUT"
+    rm -f ~/.npmrc
+    exit 1
+  fi
+
+  echo "✓ Authenticated as npm user: $WHOAMI_OUTPUT"
+  echo ""
 fi
-
-NPM_USER=$(npm whoami)
-echo "✓ Authenticated as npm user: $NPM_USER"
-echo ""
 
 # Tag the release
 GIT_TAG="v${CLI_VERSION}"
