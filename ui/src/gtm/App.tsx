@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { GTM_DEFAULT_STAGE_ORDER } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -50,10 +51,12 @@ import { timeAgo } from "@/lib/timeAgo";
 import { relativeTime } from "@/lib/utils";
 import { buildGrowthubConfigurationUrl, getGrowthubAuthUserId } from "@/lib/growthub-connection";
 import {
+  ArrowRight,
   BriefcaseBusiness,
   Building2,
   CheckCircle2,
   ChevronDown,
+  Circle,
   ExternalLink,
   Inbox as InboxIcon,
   Link2,
@@ -64,9 +67,11 @@ import {
   Settings,
   Sun,
   Ticket,
+  UserPlus,
   Users,
   Workflow,
   Wrench,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -90,7 +95,8 @@ const AGENT_ADAPTER_OPTIONS = [
 ] as const;
 
 const ISSUE_PRIORITY_OPTIONS = ["critical", "high", "medium", "low"] as const;
-const TICKET_STAGE_ORDER = ["planning", "execution", "qa", "human"] as const;
+// Canonical GTM stage order — imported from @paperclipai/shared, never redefined here.
+const TICKET_STAGE_ORDER = GTM_DEFAULT_STAGE_ORDER;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -252,15 +258,29 @@ function UnprefixedBoardRedirect() {
 }
 
 function NoCompaniesStartPage() {
-  const { openOnboarding } = useDialog();
+  const [useGtmFlow, setUseGtmFlow] = useState(true);
 
+  if (useGtmFlow) {
+    // GtmCeoStartFlow handles navigation internally on complete — the company
+    // context refresh will pick up the new company and redirect automatically.
+    return (
+      <GtmCeoStartFlow
+        onComplete={() => {
+          // Navigation happens via the company context refresh / CompanyRootRedirect.
+          // No explicit navigate needed; fallback button shown if user wants DX wizard.
+        }}
+      />
+    );
+  }
+
+  // Fallback: generic DX wizard (kept for backwards compat)
   return (
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">Create your first company</h1>
         <p className="mt-2 text-sm text-muted-foreground">Get started by creating a company.</p>
-        <div className="mt-4">
-          <Button onClick={() => openOnboarding()}>New Company</Button>
+        <div className="mt-4 flex gap-2">
+          <Button onClick={() => setUseGtmFlow(true)}>GTM Setup</Button>
         </div>
       </div>
     </div>
@@ -1113,35 +1133,464 @@ function GtmAgentsPage() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3: CampaignStageBar — pure display, zero state, GTM-scoped
+// ---------------------------------------------------------------------------
+function CampaignStageBar({ stageOrder, currentStage }: { stageOrder: string[]; currentStage: string | null | undefined }) {
+  const stages = stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER];
+  const currentIdx = currentStage ? stages.indexOf(currentStage) : -1;
+  return (
+    <div className="flex items-center gap-1">
+      {stages.map((stage, idx) => {
+        const isCurrent = idx === currentIdx;
+        const isDone = idx < currentIdx;
+        return (
+          <div key={stage} className="flex items-center gap-1">
+            {idx > 0 && <div className="h-px w-3 bg-border" />}
+            <div
+              title={stage}
+              className={cn(
+                "flex h-5 min-w-[3.5rem] items-center justify-center rounded-full px-2 text-[10px] font-medium capitalize",
+                isCurrent && "bg-primary text-primary-foreground",
+                isDone && "bg-muted text-muted-foreground line-through",
+                !isCurrent && !isDone && "border border-border text-muted-foreground",
+              )}
+            >
+              {stage}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: CampaignDetailPanel — issues by status, agent gates, pulse, advance
+// ---------------------------------------------------------------------------
+type CampaignDetailPanelProps = {
+  ticket: { id: string; title: string; currentStage: string | null | undefined; status: string; stageOrder?: string[] | null; instructions?: string | null };
+  issues: Array<{ id: string; title: string; status: string; priority: string; ticketId?: string | null; assigneeAgentId?: string | null; identifier?: string | null }>;
+  agents: Array<{ id: string; name: string }>;
+  runs: Array<{ id: string; agentId: string; status: string; startedAt?: string | null }>;
+  companyId: string;
+  companyIssuePrefix: string | null | undefined;
+  onAdvance: () => void;
+  onHireAgent: () => void;
+  isAdvancing: boolean;
+};
+
+function CampaignDetailPanel({ ticket, issues, agents, runs, companyId, companyIssuePrefix, onAdvance, onHireAgent, isAdvancing }: CampaignDetailPanelProps) {
+  const boardPath = (path: string) => buildGtmBoardPath(companyIssuePrefix, path);
+  const stageOrder: string[] = Array.isArray(ticket.stageOrder) && ticket.stageOrder.length > 0
+    ? ticket.stageOrder
+    : [...GTM_DEFAULT_STAGE_ORDER];
+
+  const campaignIssues = issues.filter((i) => i.ticketId === ticket.id);
+
+  // Group issues by status bucket
+  const backlog = campaignIssues.filter((i) => i.status === "backlog" || i.status === "todo");
+  const active = campaignIssues.filter((i) => i.status === "in_progress" || i.status === "in_review" || i.status === "blocked");
+  const done = campaignIssues.filter((i) => i.status === "done" || i.status === "cancelled");
+
+  // Agent gate: for each stage, find any agent assigned to issues nominally "in" that stage
+  // We approximate by matching stageOrder index to issue status buckets
+  const agentById = (id: string | null | undefined) => agents.find((a) => a.id === id) ?? null;
+
+  // Pulse: most recent run touching any agent assigned to a campaign issue
+  const campaignAgentIds = new Set(campaignIssues.map((i) => i.assigneeAgentId).filter(Boolean));
+  const pulseRun = runs.find((r) => campaignAgentIds.has(r.agentId)) ?? null;
+
+  const isAtLastStage = stageOrder.length > 0 && ticket.currentStage === stageOrder[stageOrder.length - 1];
+
+  function IssueItem({ issue }: { issue: typeof campaignIssues[number] }) {
+    const agent = agentById(issue.assigneeAgentId);
+    return (
+      <div className="flex items-center justify-between gap-3 py-1.5">
+        <div className="min-w-0">
+          <Link to={boardPath(`/issues/${issue.id}`)} className="text-sm font-medium hover:underline truncate block">{issue.title}</Link>
+          {agent && <span className="text-xs text-muted-foreground">{agent.name}</span>}
+        </div>
+        <Badge variant="outline" className="shrink-0 text-xs">{issue.priority}</Badge>
+      </div>
+    );
+  }
+
+  return (
+    <Card className="border-primary/20 bg-muted/30">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base">{ticket.title}</CardTitle>
+            <CampaignStageBar stageOrder={stageOrder} currentStage={ticket.currentStage} />
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onHireAgent}>
+              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+              Hire Agent
+            </Button>
+            <Button size="sm" onClick={onAdvance} disabled={isAdvancing || isAtLastStage || ticket.status !== "active"}>
+              {isAdvancing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="mr-1.5 h-3.5 w-3.5" />}
+              Advance
+            </Button>
+          </div>
+        </div>
+        {/* Pulse */}
+        {pulseRun && (
+          <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+            <Zap className="h-3 w-3 text-yellow-500" />
+            <span>Last run {pulseRun.startedAt ? timeAgo(pulseRun.startedAt) : "recently"}</span>
+            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{pulseRun.status}</Badge>
+          </div>
+        )}
+      </CardHeader>
+
+      <CardContent className="space-y-4 pt-0">
+        {/* Agent Gate per stage */}
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Stage Gates</p>
+          <div className="space-y-1">
+            {stageOrder.map((stage) => {
+              const stageIssues = campaignIssues.filter((i) => i.assigneeAgentId);
+              // Heuristic: take the first agent assigned to any issue in this campaign for the stage label
+              const gatedAgent = stage === ticket.currentStage
+                ? agentById(campaignIssues.find((i) => i.assigneeAgentId)?.assigneeAgentId)
+                : null;
+              return (
+                <div key={stage} className="flex items-center gap-2 text-xs">
+                  <span className={cn(
+                    "w-20 shrink-0 capitalize font-medium",
+                    stage === ticket.currentStage ? "text-foreground" : "text-muted-foreground",
+                  )}>{stage}</span>
+                  <span className="text-muted-foreground">{gatedAgent ? gatedAgent.name : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Issues grouped by status bucket */}
+        {campaignIssues.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No issues yet. Use Queue → New Issue to add work to this campaign.</p>
+        ) : (
+          <div className="space-y-3">
+            {active.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">In Progress ({active.length})</p>
+                {active.map((i) => <IssueItem key={i.id} issue={i} />)}
+              </div>
+            )}
+            {backlog.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Backlog ({backlog.length})</p>
+                {backlog.map((i) => <IssueItem key={i.id} issue={i} />)}
+              </div>
+            )}
+            {done.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-medium text-green-600 dark:text-green-400">Done ({done.length})</p>
+                {done.map((i) => <IssueItem key={i.id} issue={i} />)}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: GtmCeoStartFlow — 4-step CEO self-onboarding, GTM-native, zero DX deps
+// ---------------------------------------------------------------------------
+function GtmCeoStartFlow({ onComplete }: { onComplete: () => void }) {
+  const { pushToast } = useToast();
+  const queryClient = useQueryClient();
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // State threaded across steps
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [ticketId, setTicketId] = useState<string | null>(null);
+  const [agentId, setAgentId] = useState<string | null>(null);
+
+  // Step 1 state
+  const [companyName, setCompanyName] = useState("");
+  const createCompany = useMutation({
+    mutationFn: () => companiesApi.create({ name: companyName.trim() }),
+    onSuccess: async (company) => {
+      await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setCompanyId(company.id);
+      setStep(2);
+    },
+    onError: (error) => pushToast({ title: "Company creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+  });
+
+  // Step 2 state
+  const [campaignTitle, setCampaignTitle] = useState("");
+  const [campaignDescription, setCampaignDescription] = useState("");
+  const [stageOrderInput, setStageOrderInput] = useState([...GTM_DEFAULT_STAGE_ORDER].join(", "));
+  const createCampaign = useMutation({
+    mutationFn: () => {
+      const stageOrder = stageOrderInput.split(",").map((s) => s.trim()).filter(Boolean);
+      return gtmApi.createTicket(companyId!, {
+        title: campaignTitle.trim(),
+        description: campaignDescription.trim() || undefined,
+        stageOrder: stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER],
+      });
+    },
+    onSuccess: async (ticket) => {
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(companyId!) });
+      setTicketId(ticket.id);
+      setStep(3);
+    },
+    onError: (error) => pushToast({ title: "Campaign creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+  });
+
+  // Step 3 state
+  const [agentName, setAgentName] = useState("");
+  const [agentAdapterType, setAgentAdapterType] = useState("claude_local");
+  const createAgent = useMutation({
+    mutationFn: () =>
+      gtmApi.createAgent(companyId!, {
+        name: agentName.trim(),
+        adapterType: agentAdapterType,
+        metadata: { surfaceProfile: "gtm" },
+      }),
+    onSuccess: async (agent) => {
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(companyId!) });
+      setAgentId(agent.id);
+      setStep(4);
+    },
+    onError: (error) => pushToast({ title: "Agent creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+  });
+
+  // Step 4 state
+  const [issueTitle, setIssueTitle] = useState("First outreach task");
+  const [issuePriority, setIssuePriority] = useState("medium");
+  const createIssue = useMutation({
+    mutationFn: () =>
+      gtmApi.createIssue(companyId!, {
+        title: issueTitle.trim(),
+        priority: issuePriority,
+        ticketId: ticketId!,
+        assigneeAgentId: agentId ?? null,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.issues(companyId!) }),
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(companyId!) }),
+      ]);
+      pushToast({ title: "Ready to launch", body: "Company, campaign, agent, and seed issue created.", tone: "success" });
+      onComplete();
+    },
+    onError: (error) => pushToast({ title: "Issue creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+  });
+
+  const stepLabel = ["Create Company", "Create Campaign", "Hire Agent", "Seed Issue"];
+
+  return (
+    <div className="mx-auto max-w-xl py-10">
+      <div className="rounded-lg border border-border bg-card p-6 space-y-6">
+        {/* Step indicator */}
+        <div className="flex items-center gap-2">
+          {stepLabel.map((label, idx) => {
+            const n = (idx + 1) as 1 | 2 | 3 | 4;
+            const active = n === step;
+            const done = n < step;
+            return (
+              <div key={label} className="flex items-center gap-1.5">
+                {idx > 0 && <div className="h-px w-5 bg-border" />}
+                <div className={cn(
+                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                  done && "bg-primary text-primary-foreground",
+                  active && "border-2 border-primary text-primary",
+                  !done && !active && "border border-muted-foreground text-muted-foreground",
+                )}>
+                  {done ? "✓" : n}
+                </div>
+                <span className={cn("hidden text-xs sm:block", active ? "font-medium" : "text-muted-foreground")}>{label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Step 1 */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold">Create your GTM company</h1>
+              <p className="mt-1 text-sm text-muted-foreground">This is the workspace that holds your campaigns and agents.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Company name</label>
+              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Sales Team" autoFocus />
+            </div>
+            <Button onClick={() => createCompany.mutate()} disabled={!companyName.trim() || createCompany.isPending} className="w-full">
+              {createCompany.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Continue
+            </Button>
+          </div>
+        )}
+
+        {/* Step 2 */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold">Create your first campaign</h1>
+              <p className="mt-1 text-sm text-muted-foreground">A campaign is the GTM container for your issues and agents.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Campaign title</label>
+              <Input value={campaignTitle} onChange={(e) => setCampaignTitle(e.target.value)} placeholder="Launch outbound sequence for ICP A" autoFocus />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <Textarea value={campaignDescription} onChange={(e) => setCampaignDescription(e.target.value)} placeholder="Goal, audience, timing, constraints." rows={2} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Stages <span className="text-muted-foreground font-normal">(comma-separated)</span></label>
+              <Input value={stageOrderInput} onChange={(e) => setStageOrderInput(e.target.value)} placeholder="planning, execution, qa, human" />
+            </div>
+            <Button onClick={() => createCampaign.mutate()} disabled={!campaignTitle.trim() || createCampaign.isPending} className="w-full">
+              {createCampaign.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Continue
+            </Button>
+          </div>
+        )}
+
+        {/* Step 3 — skippable */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold">Hire your first agent</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Create a GTM agent to execute work on campaign issues. You can skip this and add agents later.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Agent name</label>
+              <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="SDR Browser Agent" autoFocus />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Adapter</label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value={agentAdapterType}
+                onChange={(e) => setAgentAdapterType(e.target.value)}
+              >
+                {AGENT_ADAPTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => { setAgentId(null); setStep(4); }} className="flex-1">Skip for now</Button>
+              <Button onClick={() => createAgent.mutate()} disabled={!agentName.trim() || createAgent.isPending} className="flex-1">
+                {createAgent.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Create Agent
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4 */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold">Seed the first issue</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Add a starter issue to your campaign so agents have something to execute.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Issue title</label>
+              <Input value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Priority</label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value={issuePriority}
+                onChange={(e) => setIssuePriority(e.target.value)}
+              >
+                {ISSUE_PRIORITY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+            <Button onClick={() => createIssue.mutate()} disabled={!issueTitle.trim() || createIssue.isPending} className="w-full">
+              {createIssue.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Launch GTM workspace
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GtmCampaignsPage — Phases 2, 3, 4, 6
+// ---------------------------------------------------------------------------
 function GtmCampaignsPage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { ticketId } = useParams<{ ticketId?: string }>();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
+
+  // Create dialog state
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [stageOrderInput, setStageOrderInput] = useState([...GTM_DEFAULT_STAGE_ORDER].join(", "));
+  const [leadAgentId, setLeadAgentId] = useState("");
 
+  // Phase 6: hire-agent dialog state
+  const [hireOpen, setHireOpen] = useState(false);
+  const [hireMode, setHireMode] = useState<"new" | "existing">("new");
+  const [hireName, setHireName] = useState("");
+  const [hireAdapterType, setHireAdapterType] = useState("claude_local");
+  const [hireExistingAgentId, setHireExistingAgentId] = useState("");
+  const [hireIssueTitle, setHireIssueTitle] = useState("Campaign kickoff task");
+  const [hireIssuePriority, setHireIssuePriority] = useState("medium");
+  const [hireStep, setHireStep] = useState<"agent" | "issue">("agent");
+  const [hiredAgentId, setHiredAgentId] = useState<string | null>(null);
+
+  // Data queries
   const ticketsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.tickets(selectedCompanyId) : ["gtm", "tickets", "none"],
     queryFn: () => gtmApi.listTickets(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const agentsQuery = useQuery({
+    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
+    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const issuesQuery = useQuery({
+    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.issues(selectedCompanyId) : ["gtm", "issues", "none"],
+    queryFn: () => gtmApi.listIssues(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const runsQuery = useQuery({
+    queryKey: selectedCompanyId ? ["gtm", "campaigns-runs", selectedCompanyId] : ["gtm", "campaigns-runs", "none"],
+    queryFn: () => gtmApi.listRuns(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
+  // Create campaign mutation
   const createTicket = useMutation({
-    mutationFn: () =>
-      gtmApi.createTicket(selectedCompanyId!, {
+    mutationFn: () => {
+      const stageOrder = stageOrderInput.split(",").map((s) => s.trim()).filter(Boolean);
+      return gtmApi.createTicket(selectedCompanyId!, {
         title,
         description,
         instructions,
-        stageOrder: [...TICKET_STAGE_ORDER],
-      }),
+        stageOrder: stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER],
+        leadAgentId: leadAgentId || null,
+      });
+    },
     onSuccess: async () => {
       setOpen(false);
       setTitle("");
       setDescription("");
       setInstructions("");
+      setStageOrderInput([...GTM_DEFAULT_STAGE_ORDER].join(", "));
+      setLeadAgentId("");
       await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) });
       await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId!) });
       pushToast({ title: "Campaign created", body: "The GTM campaign is ready for queue work.", tone: "success" });
@@ -1155,6 +1604,46 @@ function GtmCampaignsPage() {
     },
   });
 
+  // Phase 6: hire agent mutations
+  const createHireAgent = useMutation({
+    mutationFn: () =>
+      gtmApi.createAgent(selectedCompanyId!, {
+        name: hireName.trim(),
+        adapterType: hireAdapterType,
+        metadata: { surfaceProfile: "gtm" },
+      }),
+    onSuccess: async (agent) => {
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId!) });
+      setHiredAgentId(agent.id);
+      setHireStep("issue");
+    },
+    onError: (error) => pushToast({ title: "Agent creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+  });
+
+  const createHireIssue = useMutation({
+    mutationFn: () =>
+      gtmApi.createIssue(selectedCompanyId!, {
+        title: hireIssueTitle.trim(),
+        priority: hireIssuePriority,
+        ticketId: selectedTicketId!,
+        assigneeAgentId: hiredAgentId ?? (hireMode === "existing" ? hireExistingAgentId : null),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.issues(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId!) }),
+      ]);
+      setHireOpen(false);
+      setHireName("");
+      setHireExistingAgentId("");
+      setHireIssueTitle("Campaign kickoff task");
+      setHireStep("agent");
+      setHiredAgentId(null);
+      pushToast({ title: "Agent hired", body: "Agent created and seed issue added to this campaign.", tone: "success" });
+    },
+    onError: (error) => pushToast({ title: "Issue creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+  });
+
   if (!selectedCompanyId) {
     return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Select a company to manage GTM campaigns.</div>;
   }
@@ -1166,8 +1655,14 @@ function GtmCampaignsPage() {
   }
 
   const tickets = ticketsQuery.data ?? [];
-  const selectedTicketId = tickets.some((ticket) => ticket.id === ticketId) ? ticketId ?? null : null;
+  const agents = agentsQuery.data ?? [];
+  const issues = issuesQuery.data ?? [];
+  const runs = runsQuery.data ?? [];
+
+  const selectedTicketId = tickets.some((t) => t.id === ticketId) ? ticketId ?? null : null;
   const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
+
+  // Phase 4: ticket detail
   const ticketDetailQuery = useQuery({
     queryKey: selectedTicketId ? ["gtm", "ticket-detail", selectedTicketId] : ["gtm", "ticket-detail", "none"],
     queryFn: () => ticketsApi.get(selectedCompanyId!, selectedTicketId!),
@@ -1211,62 +1706,214 @@ function GtmCampaignsPage() {
     },
   });
 
+  const selectedTicket = ticketDetailQuery.data ?? tickets.find((t) => t.id === selectedTicketId) ?? null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Campaigns</h1>
-          <p className="text-sm text-muted-foreground">GTM workflow tickets only.</p>
+          <p className="text-sm text-muted-foreground">GTM workflow campaigns — customizable stages, agent gating, live pulse.</p>
         </div>
         <Button onClick={() => setOpen(true)}>New Campaign</Button>
       </div>
+
+      {/* Phase 3: enriched campaign list */}
       <Card>
         <CardContent className="p-0">
           {tickets.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No GTM campaigns yet.</div>
+            <div className="p-6 text-sm text-muted-foreground">No GTM campaigns yet. Create one to start organising queue work.</div>
           ) : (
             <div className="divide-y divide-border">
-              {tickets.map((ticket) => (
-                <div key={ticket.id} className="flex items-center justify-between gap-4 px-6 py-4">
-                  <div className="min-w-0">
-                    <Link to={boardPath(`/tickets/${ticket.id}`)} className="truncate font-medium hover:underline">{ticket.title}</Link>
-                    <p className="truncate text-sm text-muted-foreground">{ticket.identifier}</p>
+              {tickets.map((ticket) => {
+                const ticketIssues = issues.filter((i) => i.ticketId === ticket.id);
+                const leadAgent = agents.find((a) => a.id === (ticket as any).leadAgentId) ?? null;
+                const campaignAgentIds = new Set(ticketIssues.map((i) => (i as any).assigneeAgentId).filter(Boolean));
+                const hasActiveRun = runs.some((r) => campaignAgentIds.has(r.agentId) && r.status === "running");
+                const stageOrder: string[] = Array.isArray((ticket as any).stageOrder) && (ticket as any).stageOrder.length > 0
+                  ? (ticket as any).stageOrder
+                  : [...GTM_DEFAULT_STAGE_ORDER];
+                const isSelected = ticket.id === selectedTicketId;
+
+                return (
+                  <div key={ticket.id} className={cn("px-6 py-4 transition-colors", isSelected && "bg-muted/40")}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <Link to={boardPath(`/tickets/${ticket.id}`)} className="font-medium hover:underline truncate">{ticket.title}</Link>
+                          {hasActiveRun && (
+                            <span title="Agent running" className="flex h-2 w-2 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <CampaignStageBar stageOrder={stageOrder} currentStage={ticket.currentStage} />
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>{ticket.identifier}</span>
+                          {ticketIssues.length > 0 && <span>{ticketIssues.length} issue{ticketIssues.length !== 1 ? "s" : ""}</span>}
+                          {leadAgent && <span>Lead: {leadAgent.name}</span>}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant="outline">{ticket.status}</Badge>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Badge variant="outline">{ticket.currentStage}</Badge>
-                    <Badge variant="outline">{ticket.status}</Badge>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Phase 4: inline campaign detail panel */}
+      {selectedTicketId && selectedTicket && (
+        <CampaignDetailPanel
+          ticket={selectedTicket as any}
+          issues={issues as any}
+          agents={agents}
+          runs={runs as any}
+          companyId={selectedCompanyId}
+          companyIssuePrefix={selectedCompany?.issuePrefix}
+          onAdvance={() => advanceTicketMutation.mutate()}
+          onHireAgent={() => { setHireStep("agent"); setHiredAgentId(null); setHireOpen(true); }}
+          isAdvancing={advanceTicketMutation.isPending}
+        />
+      )}
+
+      {/* Create campaign dialog — Phase 2: stage customization + lead agent */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create campaign</DialogTitle>
-            <DialogDescription>Create a GTM workflow ticket without repo, PR, or board planning bindings.</DialogDescription>
+            <DialogDescription>Create a GTM workflow campaign with custom stages and optional lead agent.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Campaign title</label>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Launch outbound sequence for ICP A" />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Launch outbound sequence for ICP A" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Description</label>
-              <Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Goal, audience, timing, constraints." />
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Goal, audience, timing, constraints." rows={2} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Instructions</label>
-              <Textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Execution instructions for GTM agents." />
+              <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Execution instructions for GTM agents." rows={2} />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Stages <span className="text-xs text-muted-foreground font-normal">(comma-separated, in order)</span></label>
+              <Input value={stageOrderInput} onChange={(e) => setStageOrderInput(e.target.value)} placeholder="planning, execution, qa, human" />
+            </div>
+            {agents.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Lead agent <span className="text-xs text-muted-foreground font-normal">(optional)</span></label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                  value={leadAgentId}
+                  onChange={(e) => setLeadAgentId(e.target.value)}
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => createTicket.mutate()} disabled={!title.trim() || createTicket.isPending}>Create Campaign</Button>
+            <Button onClick={() => createTicket.mutate()} disabled={!title.trim() || createTicket.isPending}>
+              {createTicket.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Create Campaign
+            </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Phase 6: Hire agent dialog (2-step) */}
+      <Dialog open={hireOpen} onOpenChange={(o) => { setHireOpen(o); if (!o) { setHireStep("agent"); setHiredAgentId(null); } }}>
+        <DialogContent>
+          {hireStep === "agent" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Hire agent for this campaign</DialogTitle>
+                <DialogDescription>Create a new GTM agent or pick an existing one, then seed it with a campaign issue.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex rounded-md border border-input overflow-hidden">
+                  <button type="button" onClick={() => setHireMode("new")} className={cn("flex-1 px-3 py-1.5 text-sm", hireMode === "new" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>New Agent</button>
+                  <button type="button" onClick={() => setHireMode("existing")} className={cn("flex-1 px-3 py-1.5 text-sm border-l border-input", hireMode === "existing" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>Existing Agent</button>
+                </div>
+                {hireMode === "new" ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Agent name</label>
+                      <Input value={hireName} onChange={(e) => setHireName(e.target.value)} placeholder="SDR Browser Agent" autoFocus />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Adapter</label>
+                      <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireAdapterType} onChange={(e) => setHireAdapterType(e.target.value)}>
+                        {AGENT_ADAPTER_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Agent</label>
+                    <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireExistingAgentId} onChange={(e) => setHireExistingAgentId(e.target.value)}>
+                      <option value="">Select agent</option>
+                      {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setHireOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={() => {
+                    if (hireMode === "new") {
+                      createHireAgent.mutate();
+                    } else {
+                      setHiredAgentId(hireExistingAgentId || null);
+                      setHireStep("issue");
+                    }
+                  }}
+                  disabled={hireMode === "new" ? (!hireName.trim() || createHireAgent.isPending) : !hireExistingAgentId}
+                >
+                  {createHireAgent.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Next
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Seed a campaign issue</DialogTitle>
+                <DialogDescription>Create a starter issue assigned to this agent in the current campaign.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Issue title</label>
+                  <Input value={hireIssueTitle} onChange={(e) => setHireIssueTitle(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Priority</label>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireIssuePriority} onChange={(e) => setHireIssuePriority(e.target.value)}>
+                    {ISSUE_PRIORITY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setHireStep("agent")}>Back</Button>
+                <Button onClick={() => createHireIssue.mutate()} disabled={!hireIssueTitle.trim() || createHireIssue.isPending}>
+                  {createHireIssue.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Hire &amp; Seed Issue
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

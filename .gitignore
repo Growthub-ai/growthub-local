@@ -7,3 +7,5 @@ coverage
 server/ui-dist
 growthub-local/instances
 tmp
+.npm-cache/
+SKILL.md
