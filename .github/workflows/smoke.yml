@@ -1,0 +1,55 @@
+name: Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Surface profile to test
+        required: true
+        default: dx
+        type: choice
+        options: [dx, gtm]
+
+concurrency:
+  group: smoke-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run release smoke tests
+        run: pnpm test:release-smoke
+        env:
+          SURFACE_PROFILE: ${{ inputs.profile || 'dx' }}
+
+      - name: Upload smoke test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results-${{ github.run_id }}
+          path: tests/release-smoke/test-results/
+          retention-days: 7

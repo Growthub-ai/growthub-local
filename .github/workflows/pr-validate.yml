@@ -1,0 +1,88 @@
+name: PR Validate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate branch name
+        run: |
+          branch="${{ github.head_ref }}"
+          pattern='^(feat|fix|docs|chore|refactor|test|perf|adapter)/.+'
+          if ! echo "$branch" | grep -Eq "$pattern"; then
+            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|refactor|test|perf|adapter/<name>"
+            exit 1
+          fi
+
+      - name: Validate PR title (conventional commits)
+        run: |
+          title="${{ github.event.pull_request.title }}"
+          pattern='^(feat|fix|docs|chore|refactor|test|perf|adapter|sync)(\(.+\))?: .{10,}'
+          if ! echo "$title" | grep -Eq "$pattern"; then
+            echo "❌ PR title must follow conventional commits: type(scope): description"
+            echo "   Examples: feat(server): add health endpoint"
+            echo "             fix(ui): correct gtm surface routing"
+            echo "             adapter(claude): update token handling"
+            exit 1
+          fi
+
+      - name: Block pnpm-lock.yaml edits
+        if: github.head_ref != 'chore/refresh-lockfile'
+        run: |
+          changed="$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})"
+          if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
+            echo "❌ Do not commit pnpm-lock.yaml. CI owns lockfile updates."
+            exit 1
+          fi
+
+      - name: Check PR has description
+        run: |
+          body="${{ github.event.pull_request.body }}"
+          if [ -z "$body" ] || [ "${#body}" -lt 20 ]; then
+            echo "❌ PR description is required (min 20 chars). Describe what changed and why."
+            exit 1
+          fi
+
+      - name: Label PR by type
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.pull_request.head.ref;
+            const labels = [];
+            if (branch.startsWith('feat/'))     labels.push('feature');
+            if (branch.startsWith('fix/'))      labels.push('bug');
+            if (branch.startsWith('docs/'))     labels.push('documentation');
+            if (branch.startsWith('adapter/'))  labels.push('adapter');
+            if (branch.startsWith('chore/'))    labels.push('chore');
+            if (branch.startsWith('refactor/')) labels.push('refactor');
+            // Detect agent PRs
+            const actor = context.payload.pull_request.user.login;
+            const agentActors = ['github-actions[bot]', 'copilot[bot]', 'codex-bot'];
+            if (agentActors.some(a => actor.includes('bot')) || actor.includes('[bot]')) {
+              labels.push('agent-pr');
+            }
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels
+              });
+            }
