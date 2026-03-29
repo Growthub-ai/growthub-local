@@ -335,17 +335,17 @@ function useGtmWorkspaceData(companyId: string | null) {
   const workflowQuery = useQuery({ queryKey: ["gtm", "workflow"], queryFn: () => gtmApi.getWorkflow() });
   const agentsQuery = useQuery({
     queryKey: companyId ? GTM_QUERY_KEYS.agents(companyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(companyId!),
+    queryFn: () => agentsApi.list(companyId!),
     enabled: !!companyId,
   });
   const ticketsQuery = useQuery({
     queryKey: companyId ? GTM_QUERY_KEYS.tickets(companyId) : ["gtm", "tickets", "none"],
-    queryFn: () => gtmApi.listTickets(companyId!),
+    queryFn: () => ticketsApi.list(companyId!),
     enabled: !!companyId,
   });
   const issuesQuery = useQuery({
     queryKey: companyId ? GTM_QUERY_KEYS.issues(companyId) : ["gtm", "issues", "none"],
-    queryFn: () => gtmApi.listIssues(companyId!),
+    queryFn: () => issuesApi.list(companyId!),
     enabled: !!companyId,
   });
 
@@ -877,13 +877,13 @@ function GtmAgentsPage() {
 
   const agentsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
   const createAgent = useMutation({
     mutationFn: () =>
-      gtmApi.createAgent(selectedCompanyId!, {
+      agentsApi.create(selectedCompanyId!, {
         name,
         title,
         role: "general",
@@ -1134,8 +1134,12 @@ function GtmAgentsPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: CampaignStageBar — pure display, zero state, GTM-scoped
+// GTM Campaign System — CampaignStageBar, CampaignIssueRow, CampaignDetailPanel,
+// CampaignCard, GtmCeoStartFlow, GtmCampaignsPage
+// All data via canonical REST APIs (ticketsApi, issuesApi, agentsApi, heartbeatsApi).
+// Zero DX deps. Self-contained, modular, reusable.
 // ---------------------------------------------------------------------------
+
 function CampaignStageBar({ stageOrder, currentStage }: { stageOrder: string[]; currentStage: string | null | undefined }) {
   const stages = stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER];
   const currentIdx = currentStage ? stages.indexOf(currentStage) : -1;
@@ -1331,7 +1335,7 @@ function GtmCeoStartFlow({ onComplete }: { onComplete: () => void }) {
   const createCampaign = useMutation({
     mutationFn: () => {
       const stageOrder = stageOrderInput.split(",").map((s) => s.trim()).filter(Boolean);
-      return gtmApi.createTicket(companyId!, {
+      return ticketsApi.create(companyId!, {
         title: campaignTitle.trim(),
         description: campaignDescription.trim() || undefined,
         stageOrder: stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER],
@@ -1350,7 +1354,7 @@ function GtmCeoStartFlow({ onComplete }: { onComplete: () => void }) {
   const [agentAdapterType, setAgentAdapterType] = useState("claude_local");
   const createAgent = useMutation({
     mutationFn: () =>
-      gtmApi.createAgent(companyId!, {
+      agentsApi.create(companyId!, {
         name: agentName.trim(),
         adapterType: agentAdapterType,
         metadata: { surfaceProfile: "gtm" },
@@ -1368,7 +1372,7 @@ function GtmCeoStartFlow({ onComplete }: { onComplete: () => void }) {
   const [issuePriority, setIssuePriority] = useState("medium");
   const createIssue = useMutation({
     mutationFn: () =>
-      gtmApi.createIssue(companyId!, {
+      issuesApi.create(companyId!, {
         title: issueTitle.trim(),
         priority: issuePriority,
         ticketId: ticketId!,
@@ -1523,7 +1527,8 @@ function GtmCeoStartFlow({ onComplete }: { onComplete: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// GtmCampaignsPage — Phases 2, 3, 4, 6
+// GtmCampaignsPage — canonical GTM campaign management
+// Uses ticketsApi / issuesApi / agentsApi / heartbeatsApi (correct endpoints).
 // ---------------------------------------------------------------------------
 function GtmCampaignsPage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
@@ -1531,85 +1536,177 @@ function GtmCampaignsPage() {
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
 
-  // Create dialog state
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [stageOrderInput, setStageOrderInput] = useState([...GTM_DEFAULT_STAGE_ORDER].join(", "));
-  const [leadAgentId, setLeadAgentId] = useState("");
+  // ── create-campaign dialog ────────────────────────────────────────────────
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTitle, setCreateTitle] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createInstructions, setCreateInstructions] = useState("");
+  const [createStageInput, setCreateStageInput] = useState([...GTM_DEFAULT_STAGE_ORDER].join(", "));
+  const [createLeadAgentId, setCreateLeadAgentId] = useState("");
 
-  // Phase 6: hire-agent dialog state
+  // ── add-issue dialog ──────────────────────────────────────────────────────
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDesc, setIssueDesc] = useState("");
+  const [issuePriority, setIssuePriority] = useState("medium");
+  const [issueAgentId, setIssueAgentId] = useState("");
+  const [issueForTicketId, setIssueForTicketId] = useState<string | null>(null);
+
+  // ── hire-agent dialog (2-step) ────────────────────────────────────────────
   const [hireOpen, setHireOpen] = useState(false);
   const [hireMode, setHireMode] = useState<"new" | "existing">("new");
   const [hireName, setHireName] = useState("");
-  const [hireAdapterType, setHireAdapterType] = useState("claude_local");
-  const [hireExistingAgentId, setHireExistingAgentId] = useState("");
-  const [hireIssueTitle, setHireIssueTitle] = useState("Campaign kickoff task");
-  const [hireIssuePriority, setHireIssuePriority] = useState("medium");
+  const [hireAdapter, setHireAdapter] = useState("claude_local");
+  const [hireExistingId, setHireExistingId] = useState("");
+  const [hireSeedTitle, setHireSeedTitle] = useState("Campaign kickoff task");
+  const [hireSeedPriority, setHireSeedPriority] = useState("medium");
   const [hireStep, setHireStep] = useState<"agent" | "issue">("agent");
   const [hiredAgentId, setHiredAgentId] = useState<string | null>(null);
+  const [hireForTicketId, setHireForTicketId] = useState<string | null>(null);
 
-  // Data queries
+  // ── edit-campaign dialog ──────────────────────────────────────────────────
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTicketId, setEditTicketId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editInstructions, setEditInstructions] = useState("");
+  const [editStageInput, setEditStageInput] = useState("");
+  const [editLeadAgentId, setEditLeadAgentId] = useState("");
+
+  // ── data queries (correct endpoints) ─────────────────────────────────────
   const ticketsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.tickets(selectedCompanyId) : ["gtm", "tickets", "none"],
-    queryFn: () => gtmApi.listTickets(selectedCompanyId!),
+    queryFn: () => ticketsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+    refetchInterval: 15000,
   });
   const agentsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const issuesQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.issues(selectedCompanyId) : ["gtm", "issues", "none"],
-    queryFn: () => gtmApi.listIssues(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+    refetchInterval: 15000,
   });
   const runsQuery = useQuery({
-    queryKey: selectedCompanyId ? ["gtm", "campaigns-runs", selectedCompanyId] : ["gtm", "campaigns-runs", "none"],
-    queryFn: () => gtmApi.listRuns(selectedCompanyId!),
+    queryKey: selectedCompanyId ? ["gtm", "runs", selectedCompanyId] : ["gtm", "runs", "none"],
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!, undefined, 50),
     enabled: !!selectedCompanyId,
+    refetchInterval: 10000,
   });
 
-  // Create campaign mutation
-  const createTicket = useMutation({
+  // ── derived state (before any conditional return) ─────────────────────────
+  const tickets = ticketsQuery.data ?? [];
+  const agents = agentsQuery.data ?? [];
+  const issues = issuesQuery.data ?? [];
+  const runs = runsQuery.data ?? [];
+  const selectedTicketId = tickets.some((t) => t.id === ticketId) ? (ticketId ?? null) : null;
+
+  // ── ticket-detail query ───────────────────────────────────────────────────
+  const ticketDetailQuery = useQuery({
+    queryKey: selectedTicketId ? ["gtm", "ticket-detail", selectedTicketId] : ["gtm", "ticket-detail", "none"],
+    queryFn: () => ticketsApi.get(selectedCompanyId!, selectedTicketId!),
+    enabled: !!selectedCompanyId && !!selectedTicketId,
+  });
+
+  useEffect(() => {
+    const t = ticketDetailQuery.data;
+    if (!t) return;
+    setEditTitle(t.title);
+    setEditDesc(t.description ?? "");
+    setEditInstructions((t as any).instructions ?? "");
+    const so: string[] = Array.isArray((t as any).stageOrder) ? (t as any).stageOrder : [...GTM_DEFAULT_STAGE_ORDER];
+    setEditStageInput(so.join(", "));
+    setEditLeadAgentId((t as any).leadAgentId ?? "");
+  }, [ticketDetailQuery.data]);
+
+  // ── mutations ─────────────────────────────────────────────────────────────
+  const createTicketMutation = useMutation({
     mutationFn: () => {
-      const stageOrder = stageOrderInput.split(",").map((s) => s.trim()).filter(Boolean);
-      return gtmApi.createTicket(selectedCompanyId!, {
-        title,
-        description,
-        instructions,
+      const stageOrder = createStageInput.split(",").map((s) => s.trim()).filter(Boolean);
+      return ticketsApi.create(selectedCompanyId!, {
+        title: createTitle.trim(),
+        description: createDesc.trim() || undefined,
+        instructions: createInstructions.trim() || undefined,
         stageOrder: stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER],
-        leadAgentId: leadAgentId || null,
+        leadAgentId: createLeadAgentId || null,
       });
     },
     onSuccess: async () => {
-      setOpen(false);
-      setTitle("");
-      setDescription("");
-      setInstructions("");
-      setStageOrderInput([...GTM_DEFAULT_STAGE_ORDER].join(", "));
-      setLeadAgentId("");
+      setCreateOpen(false);
+      setCreateTitle(""); setCreateDesc(""); setCreateInstructions("");
+      setCreateStageInput([...GTM_DEFAULT_STAGE_ORDER].join(", "));
+      setCreateLeadAgentId("");
       await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) });
-      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId!) });
-      pushToast({ title: "Campaign created", body: "The GTM campaign is ready for queue work.", tone: "success" });
+      pushToast({ title: "Campaign created", body: "GTM campaign ready for queue work.", tone: "success" });
     },
-    onError: (error) => {
-      pushToast({
-        title: "Campaign creation failed",
-        body: error instanceof Error ? error.message : "Failed to create campaign",
-        tone: "error",
-      });
-    },
+    onError: (e) => pushToast({ title: "Failed to create campaign", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
   });
 
-  // Phase 6: hire agent mutations
-  const createHireAgent = useMutation({
+  const updateTicketMutation = useMutation({
+    mutationFn: () => {
+      const stageOrder = editStageInput.split(",").map((s) => s.trim()).filter(Boolean);
+      return ticketsApi.update(selectedCompanyId!, editTicketId!, {
+        title: editTitle.trim(),
+        description: editDesc.trim() || null,
+        stageOrder: stageOrder.length > 0 ? stageOrder : [...GTM_DEFAULT_STAGE_ORDER],
+      });
+    },
+    onSuccess: async () => {
+      setEditOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", editTicketId!] }),
+      ]);
+      pushToast({ title: "Campaign updated", tone: "success" });
+    },
+    onError: (e) => pushToast({ title: "Failed to update campaign", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
+  });
+
+  const advanceTicketMutation = useMutation({
+    mutationFn: (tid: string) => ticketsApi.advanceStage(selectedCompanyId!, tid),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) });
+      pushToast({ title: "Campaign advanced to next stage.", tone: "success" });
+    },
+    onError: (e) => pushToast({ title: "Could not advance stage", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
+  });
+
+  const deleteTicketMutation = useMutation({
+    mutationFn: (tid: string) => ticketsApi.remove(selectedCompanyId!, tid),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) });
+      pushToast({ title: "Campaign removed.", tone: "success" });
+    },
+    onError: (e) => pushToast({ title: "Failed to remove campaign", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
+  });
+
+  const createIssueMutation = useMutation({
     mutationFn: () =>
-      gtmApi.createAgent(selectedCompanyId!, {
+      issuesApi.create(selectedCompanyId!, {
+        title: issueTitle.trim(),
+        description: issueDesc.trim() || undefined,
+        priority: issuePriority,
+        ticketId: issueForTicketId,
+        assigneeAgentId: issueAgentId || null,
+      }),
+    onSuccess: async () => {
+      setIssueOpen(false);
+      setIssueTitle(""); setIssueDesc(""); setIssuePriority("medium"); setIssueAgentId("");
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.issues(selectedCompanyId!) });
+      pushToast({ title: "Issue added to campaign.", tone: "success" });
+    },
+    onError: (e) => pushToast({ title: "Failed to create issue", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
+  });
+
+  const createHireAgentMutation = useMutation({
+    mutationFn: () =>
+      agentsApi.create(selectedCompanyId!, {
         name: hireName.trim(),
-        adapterType: hireAdapterType,
+        adapterType: hireAdapter,
         metadata: { surfaceProfile: "gtm" },
       }),
     onSuccess: async (agent) => {
@@ -1617,252 +1714,416 @@ function GtmCampaignsPage() {
       setHiredAgentId(agent.id);
       setHireStep("issue");
     },
-    onError: (error) => pushToast({ title: "Agent creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+    onError: (e) => pushToast({ title: "Agent creation failed", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
   });
 
-  const createHireIssue = useMutation({
+  const createHireIssueMutation = useMutation({
     mutationFn: () =>
-      gtmApi.createIssue(selectedCompanyId!, {
-        title: hireIssueTitle.trim(),
-        priority: hireIssuePriority,
-        ticketId: selectedTicketId!,
-        assigneeAgentId: hiredAgentId ?? (hireMode === "existing" ? hireExistingAgentId : null),
+      issuesApi.create(selectedCompanyId!, {
+        title: hireSeedTitle.trim(),
+        priority: hireSeedPriority,
+        ticketId: hireForTicketId,
+        assigneeAgentId: hiredAgentId ?? (hireMode === "existing" ? hireExistingId : null),
       }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.issues(selectedCompanyId!) }),
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId!) }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.issues(selectedCompanyId!) });
       setHireOpen(false);
-      setHireName("");
-      setHireExistingAgentId("");
-      setHireIssueTitle("Campaign kickoff task");
-      setHireStep("agent");
-      setHiredAgentId(null);
-      pushToast({ title: "Agent hired", body: "Agent created and seed issue added to this campaign.", tone: "success" });
+      setHireName(""); setHireExistingId(""); setHireSeedTitle("Campaign kickoff task");
+      setHireStep("agent"); setHiredAgentId(null);
+      pushToast({ title: "Agent hired", body: "Seed issue created and assigned.", tone: "success" });
     },
-    onError: (error) => pushToast({ title: "Issue creation failed", body: error instanceof Error ? error.message : "Try again.", tone: "error" }),
+    onError: (e) => pushToast({ title: "Seed issue failed", body: e instanceof Error ? e.message : "Try again.", tone: "error" }),
   });
 
+  // ── guards ────────────────────────────────────────────────────────────────
   if (!selectedCompanyId) {
     return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Select a company to manage GTM campaigns.</div>;
   }
   if (ticketsQuery.isLoading) {
-    return <div className="py-8 text-sm text-muted-foreground">Loading campaigns…</div>;
+    return <div className="py-12 text-center text-sm text-muted-foreground">Loading campaigns…</div>;
   }
   if (ticketsQuery.error) {
     return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{ticketsQuery.error instanceof Error ? ticketsQuery.error.message : "Failed to load campaigns"}</div>;
   }
 
-  const tickets = ticketsQuery.data ?? [];
-  const agents = agentsQuery.data ?? [];
-  const issues = issuesQuery.data ?? [];
-  const runs = runsQuery.data ?? [];
-
-  const selectedTicketId = tickets.some((t) => t.id === ticketId) ? ticketId ?? null : null;
   const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
-
-  // Phase 4: ticket detail
-  const ticketDetailQuery = useQuery({
-    queryKey: selectedTicketId ? ["gtm", "ticket-detail", selectedTicketId] : ["gtm", "ticket-detail", "none"],
-    queryFn: () => ticketsApi.get(selectedCompanyId!, selectedTicketId!),
-    enabled: !!selectedCompanyId && !!selectedTicketId,
-  });
-  const [detailTitle, setDetailTitle] = useState("");
-  const [detailDescription, setDetailDescription] = useState("");
-  const [detailInstructions, setDetailInstructions] = useState("");
-
-  useEffect(() => {
-    const detail = ticketDetailQuery.data;
-    if (!detail) return;
-    setDetailTitle(detail.title);
-    setDetailDescription(detail.description ?? "");
-    setDetailInstructions(detail.instructions ?? "");
-  }, [ticketDetailQuery.data]);
-
-  const updateTicketMutation = useMutation({
-    mutationFn: () =>
-      ticketsApi.update(selectedCompanyId!, selectedTicketId!, {
-        title: detailTitle,
-        description: detailDescription,
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", selectedTicketId!] }),
-      ]);
-      pushToast({ title: "Campaign updated", body: "Campaign controls saved.", tone: "success" });
-    },
-  });
-
-  const advanceTicketMutation = useMutation({
-    mutationFn: () => ticketsApi.advanceStage(selectedCompanyId!, selectedTicketId!),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId!) }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", selectedTicketId!] }),
-      ]);
-      pushToast({ title: "Campaign advanced", body: "Moved campaign to the next stage.", tone: "success" });
-    },
-  });
-
   const selectedTicket = ticketDetailQuery.data ?? tickets.find((t) => t.id === selectedTicketId) ?? null;
 
+  // ── helpers ───────────────────────────────────────────────────────────────
+  function openHireDialog(tid: string) {
+    setHireForTicketId(tid);
+    setHireStep("agent");
+    setHiredAgentId(null);
+    setHireName("");
+    setHireExistingId("");
+    setHireOpen(true);
+  }
+
+  function openAddIssueDialog(tid: string) {
+    setIssueForTicketId(tid);
+    setIssueTitle("");
+    setIssueDesc("");
+    setIssuePriority("medium");
+    setIssueAgentId("");
+    setIssueOpen(true);
+  }
+
+  function openEditDialog(ticket: typeof tickets[number]) {
+    setEditTicketId(ticket.id);
+    setEditTitle(ticket.title);
+    setEditDesc(ticket.description ?? "");
+    setEditInstructions((ticket as any).instructions ?? "");
+    const so: string[] = Array.isArray((ticket as any).stageOrder) ? (ticket as any).stageOrder : [...GTM_DEFAULT_STAGE_ORDER];
+    setEditStageInput(so.join(", "));
+    setEditLeadAgentId((ticket as any).leadAgentId ?? "");
+    setEditOpen(true);
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* ── Header ── */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Campaigns</h1>
-          <p className="text-sm text-muted-foreground">GTM workflow campaigns — customizable stages, agent gating, live pulse.</p>
+          <p className="text-sm text-muted-foreground">
+            GTM workflow campaigns — customizable stages, agent gating, live pulse.
+          </p>
         </div>
-        <Button onClick={() => setOpen(true)}>New Campaign</Button>
+        <Button onClick={() => setCreateOpen(true)}>New Campaign</Button>
       </div>
 
-      {/* Phase 3: enriched campaign list */}
-      <Card>
-        <CardContent className="p-0">
-          {tickets.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No GTM campaigns yet. Create one to start organising queue work.</div>
-          ) : (
-            <div className="divide-y divide-border">
-              {tickets.map((ticket) => {
-                const ticketIssues = issues.filter((i) => i.ticketId === ticket.id);
-                const leadAgent = agents.find((a) => a.id === (ticket as any).leadAgentId) ?? null;
-                const campaignAgentIds = new Set(ticketIssues.map((i) => (i as any).assigneeAgentId).filter(Boolean));
-                const hasActiveRun = runs.some((r) => campaignAgentIds.has(r.agentId) && r.status === "running");
-                const stageOrder: string[] = Array.isArray((ticket as any).stageOrder) && (ticket as any).stageOrder.length > 0
-                  ? (ticket as any).stageOrder
-                  : [...GTM_DEFAULT_STAGE_ORDER];
-                const isSelected = ticket.id === selectedTicketId;
+      {/* ── Campaign list ── */}
+      {tickets.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-12">
+            <Ticket className="h-8 w-8 text-muted-foreground/50" />
+            <div className="text-center">
+              <p className="font-medium">No GTM campaigns yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">Create a campaign to organise GTM queue work across stages.</p>
+            </div>
+            <Button onClick={() => setCreateOpen(true)}>Create first campaign</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {tickets.map((ticket) => {
+            const ticketIssues = issues.filter((i) => (i as any).ticketId === ticket.id);
+            const todoIssues = ticketIssues.filter((i) => ["todo", "backlog"].includes(i.status));
+            const activeIssues = ticketIssues.filter((i) => i.status === "in_progress");
+            const doneIssues = ticketIssues.filter((i) => ["done", "cancelled"].includes(i.status));
+            const leadAgent = agents.find((a) => a.id === (ticket as any).leadAgentId) ?? null;
+            const assignedAgentIds = new Set(ticketIssues.map((i) => (i as any).assigneeAgentId).filter(Boolean));
+            const assignedAgents = agents.filter((a) => assignedAgentIds.has(a.id));
+            const hasActiveRun = runs.some((r) => assignedAgentIds.has(r.agentId) && r.status === "running");
+            const lastRun = runs.filter((r) => assignedAgentIds.has(r.agentId)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
+            const stageOrder: string[] = Array.isArray((ticket as any).stageOrder) && (ticket as any).stageOrder.length > 0
+              ? (ticket as any).stageOrder
+              : [...GTM_DEFAULT_STAGE_ORDER];
+            const isSelected = ticket.id === selectedTicketId;
+            const stagesTotal = stageOrder.length;
+            const currentStageIdx = ticket.currentStage ? stageOrder.indexOf(ticket.currentStage) : -1;
+            const stageProgress = stagesTotal > 0 ? Math.max(0, (currentStageIdx + 1) / stagesTotal) : 0;
 
-                return (
-                  <div key={ticket.id} className={cn("px-6 py-4 transition-colors", isSelected && "bg-muted/40")}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <Link to={boardPath(`/tickets/${ticket.id}`)} className="font-medium hover:underline truncate">{ticket.title}</Link>
-                          {hasActiveRun && (
-                            <span title="Agent running" className="flex h-2 w-2 shrink-0">
-                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75" />
-                              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <CampaignStageBar stageOrder={stageOrder} currentStage={ticket.currentStage} />
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>{ticket.identifier}</span>
-                          {ticketIssues.length > 0 && <span>{ticketIssues.length} issue{ticketIssues.length !== 1 ? "s" : ""}</span>}
-                          {leadAgent && <span>Lead: {leadAgent.name}</span>}
-                        </div>
+            return (
+              <Card key={ticket.id} className={cn("transition-colors", isSelected && "ring-1 ring-primary/40 bg-muted/20")}>
+                <CardContent className="p-0">
+                  {/* ── Card header row ── */}
+                  <div className="flex items-start gap-4 p-4">
+                    <div className="min-w-0 flex-1 space-y-2">
+                      {/* title + pulse indicator */}
+                      <div className="flex items-center gap-2">
+                        <Link to={boardPath(`/tickets/${ticket.id}`)} className="font-semibold hover:underline truncate text-sm">
+                          {ticket.title}
+                        </Link>
+                        {hasActiveRun && (
+                          <span className="relative flex h-2 w-2 shrink-0" title="Agent running">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                          </span>
+                        )}
+                        <Badge variant="outline" className="ml-auto shrink-0 text-xs">{ticket.status}</Badge>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant="outline">{ticket.status}</Badge>
+
+                      {/* stage bar */}
+                      <CampaignStageBar stageOrder={stageOrder} currentStage={ticket.currentStage} />
+
+                      {/* meta row */}
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="font-mono">{ticket.identifier}</span>
+                        {ticketIssues.length > 0 && (
+                          <span>
+                            {activeIssues.length > 0 && <span className="text-blue-400 mr-1">{activeIssues.length} active</span>}
+                            {todoIssues.length > 0 && <span className="mr-1">{todoIssues.length} todo</span>}
+                            {doneIssues.length > 0 && <span className="text-green-400">{doneIssues.length} done</span>}
+                          </span>
+                        )}
+                        {leadAgent && <span>Lead: <span className="text-foreground">{leadAgent.name}</span></span>}
+                        {assignedAgents.length > 0 && !leadAgent && (
+                          <span>{assignedAgents.length} agent{assignedAgents.length !== 1 ? "s" : ""}</span>
+                        )}
+                        {lastRun && !hasActiveRun && (
+                          <span>Last run {timeAgo(lastRun.createdAt)}</span>
+                        )}
+                        {stageProgress > 0 && (
+                          <span>{Math.round(stageProgress * 100)}% through stages</span>
+                        )}
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Phase 4: inline campaign detail panel */}
-      {selectedTicketId && selectedTicket && (
-        <CampaignDetailPanel
-          ticket={selectedTicket as any}
-          issues={issues as any}
-          agents={agents}
-          runs={runs as any}
-          companyId={selectedCompanyId}
-          companyIssuePrefix={selectedCompany?.issuePrefix}
-          onAdvance={() => advanceTicketMutation.mutate()}
-          onHireAgent={() => { setHireStep("agent"); setHiredAgentId(null); setHireOpen(true); }}
-          isAdvancing={advanceTicketMutation.isPending}
-        />
+                  {/* ── Inline detail panel when selected ── */}
+                  {isSelected && selectedTicket && (
+                    <div className="border-t border-border px-4 pb-4 pt-3 space-y-4">
+                      {/* issue breakdown by status */}
+                      <div className="grid grid-cols-3 gap-3">
+                        {[
+                          { label: "Backlog / Todo", items: todoIssues, color: "text-muted-foreground" },
+                          { label: "In Progress", items: activeIssues, color: "text-blue-400" },
+                          { label: "Done", items: doneIssues, color: "text-green-400" },
+                        ].map(({ label, items, color }) => (
+                          <div key={label} className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+                            <p className={cn("text-xs font-medium uppercase tracking-wide", color)}>{label} <span className="ml-1 font-mono">{items.length}</span></p>
+                            {items.slice(0, 5).map((issue) => {
+                              const assignee = agents.find((a) => a.id === (issue as any).assigneeAgentId);
+                              return (
+                                <div key={issue.id} className="text-xs truncate">
+                                  <Link to={boardPath(`/issues/${issue.id}`)} className="hover:underline text-foreground/80">{issue.title}</Link>
+                                  {assignee && <span className="text-muted-foreground ml-1">· {assignee.name}</span>}
+                                </div>
+                              );
+                            })}
+                            {items.length > 5 && <p className="text-xs text-muted-foreground">+{items.length - 5} more</p>}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* per-stage agent gates */}
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Stage gates</p>
+                        <div className="flex flex-wrap gap-2">
+                          {stageOrder.map((stage) => {
+                            const stageIssues = ticketIssues.filter((i) => {
+                              const meta = (i as any).metadata ?? {};
+                              return meta.stage === stage || i.status === "in_progress";
+                            });
+                            const hasAgent = stageIssues.some((i) => (i as any).assigneeAgentId);
+                            const isCurrent = stage === selectedTicket.currentStage;
+                            return (
+                              <div key={stage} className={cn(
+                                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
+                                isCurrent ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                              )}>
+                                {hasAgent ? <CheckCircle2 className="h-3 w-3 text-green-400" /> : <Circle className="h-3 w-3" />}
+                                <span className="capitalize">{stage}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* recent run pulse */}
+                      {lastRun && (
+                        <div className="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-1">
+                          <p className="font-medium text-muted-foreground uppercase tracking-wide">Last agent run</p>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={cn("text-xs", lastRun.status === "running" ? "border-green-500/50 text-green-400" : lastRun.status === "failed" ? "border-destructive/50 text-destructive" : "")}>
+                              {lastRun.status}
+                            </Badge>
+                            <span className="text-muted-foreground">{timeAgo(lastRun.createdAt)}</span>
+                            {lastRun.agentId && (
+                              <span className="text-muted-foreground">· {agents.find((a) => a.id === lastRun.agentId)?.name ?? "Unknown agent"}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* action row */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button size="sm" variant="outline" onClick={() => openAddIssueDialog(ticket.id)}>
+                          <Zap className="mr-1.5 h-3.5 w-3.5" />Add Issue
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => openHireDialog(ticket.id)}>
+                          <UserPlus className="mr-1.5 h-3.5 w-3.5" />Hire Agent
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => advanceTicketMutation.mutate(ticket.id)}
+                          disabled={advanceTicketMutation.isPending || ticket.status === "done"}
+                        >
+                          {advanceTicketMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="mr-1.5 h-3.5 w-3.5" />}
+                          Advance Stage
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => openEditDialog(ticket)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => { if (confirm(`Delete "${ticket.title}"?`)) deleteTicketMutation.mutate(ticket.id); }}
+                          disabled={deleteTicketMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
-      {/* Create campaign dialog — Phase 2: stage customization + lead agent */}
-      <Dialog open={open} onOpenChange={setOpen}>
+      {/* ── Create Campaign dialog ── */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create campaign</DialogTitle>
-            <DialogDescription>Create a GTM workflow campaign with custom stages and optional lead agent.</DialogDescription>
+            <DialogTitle>New GTM Campaign</DialogTitle>
+            <DialogDescription>Customise stages, set a lead agent, and add execution instructions.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Campaign title</label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Launch outbound sequence for ICP A" />
+              <label className="text-sm font-medium">Title <span className="text-destructive">*</span></label>
+              <Input value={createTitle} onChange={(e) => setCreateTitle(e.target.value)} placeholder="Launch outbound sequence for ICP A" autoFocus />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Description</label>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Goal, audience, timing, constraints." rows={2} />
+              <Textarea value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} placeholder="Goal, audience, timing, constraints." rows={2} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Instructions</label>
-              <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Execution instructions for GTM agents." rows={2} />
+              <label className="text-sm font-medium">Agent instructions</label>
+              <Textarea value={createInstructions} onChange={(e) => setCreateInstructions(e.target.value)} placeholder="What should agents know about this campaign?" rows={2} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Stages <span className="text-xs text-muted-foreground font-normal">(comma-separated, in order)</span></label>
-              <Input value={stageOrderInput} onChange={(e) => setStageOrderInput(e.target.value)} placeholder="planning, execution, qa, human" />
+              <label className="text-sm font-medium">Stages <span className="text-xs font-normal text-muted-foreground">(comma-separated, in order)</span></label>
+              <Input value={createStageInput} onChange={(e) => setCreateStageInput(e.target.value)} placeholder="planning, execution, qa, human" />
             </div>
             {agents.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Lead agent <span className="text-xs text-muted-foreground font-normal">(optional)</span></label>
-                <select
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={leadAgentId}
-                  onChange={(e) => setLeadAgentId(e.target.value)}
-                >
-                  <option value="">Unassigned</option>
+                <label className="text-sm font-medium">Lead agent <span className="text-xs font-normal text-muted-foreground">(optional)</span></label>
+                <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={createLeadAgentId} onChange={(e) => setCreateLeadAgentId(e.target.value)}>
+                  <option value="">None</option>
                   {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => createTicket.mutate()} disabled={!title.trim() || createTicket.isPending}>
-              {createTicket.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={() => createTicketMutation.mutate()} disabled={!createTitle.trim() || createTicketMutation.isPending}>
+              {createTicketMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Campaign
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Phase 6: Hire agent dialog (2-step) */}
+      {/* ── Edit Campaign dialog ── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Campaign</DialogTitle>
+            <DialogDescription>Update title, stages, and agent assignment.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Title</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} rows={2} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Stages <span className="text-xs font-normal text-muted-foreground">(comma-separated)</span></label>
+              <Input value={editStageInput} onChange={(e) => setEditStageInput(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={() => updateTicketMutation.mutate()} disabled={!editTitle.trim() || updateTicketMutation.isPending}>
+              {updateTicketMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Issue dialog ── */}
+      <Dialog open={issueOpen} onOpenChange={setIssueOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Issue to Campaign</DialogTitle>
+            <DialogDescription>Queue a work item for this GTM campaign and optionally assign an agent.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Title <span className="text-destructive">*</span></label>
+              <Input value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} placeholder="Write follow-up email sequence" autoFocus />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Textarea value={issueDesc} onChange={(e) => setIssueDesc(e.target.value)} rows={2} placeholder="Details, acceptance criteria, context…" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Priority</label>
+                <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={issuePriority} onChange={(e) => setIssuePriority(e.target.value)}>
+                  {ISSUE_PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Assign agent <span className="text-xs font-normal text-muted-foreground">(optional)</span></label>
+                <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={issueAgentId} onChange={(e) => setIssueAgentId(e.target.value)}>
+                  <option value="">Unassigned</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIssueOpen(false)}>Cancel</Button>
+            <Button onClick={() => createIssueMutation.mutate()} disabled={!issueTitle.trim() || createIssueMutation.isPending}>
+              {createIssueMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Add Issue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Hire Agent dialog (2-step) ── */}
       <Dialog open={hireOpen} onOpenChange={(o) => { setHireOpen(o); if (!o) { setHireStep("agent"); setHiredAgentId(null); } }}>
         <DialogContent>
           {hireStep === "agent" ? (
             <>
               <DialogHeader>
-                <DialogTitle>Hire agent for this campaign</DialogTitle>
-                <DialogDescription>Create a new GTM agent or pick an existing one, then seed it with a campaign issue.</DialogDescription>
+                <DialogTitle>Hire agent for campaign</DialogTitle>
+                <DialogDescription>Create a new GTM agent or pick an existing one, then seed it with a starting issue.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="flex rounded-md border border-input overflow-hidden">
-                  <button type="button" onClick={() => setHireMode("new")} className={cn("flex-1 px-3 py-1.5 text-sm", hireMode === "new" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>New Agent</button>
-                  <button type="button" onClick={() => setHireMode("existing")} className={cn("flex-1 px-3 py-1.5 text-sm border-l border-input", hireMode === "existing" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>Existing Agent</button>
+                  <button type="button" onClick={() => setHireMode("new")} className={cn("flex-1 px-3 py-2 text-sm", hireMode === "new" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>New agent</button>
+                  <button type="button" onClick={() => setHireMode("existing")} className={cn("flex-1 px-3 py-2 text-sm border-l border-input", hireMode === "existing" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>Existing agent</button>
                 </div>
                 {hireMode === "new" ? (
-                  <>
+                  <div className="space-y-3">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Agent name</label>
                       <Input value={hireName} onChange={(e) => setHireName(e.target.value)} placeholder="SDR Browser Agent" autoFocus />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Adapter</label>
-                      <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireAdapterType} onChange={(e) => setHireAdapterType(e.target.value)}>
-                        {AGENT_ADAPTER_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireAdapter} onChange={(e) => setHireAdapter(e.target.value)}>
+                        {AGENT_ADAPTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Agent</label>
-                    <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireExistingAgentId} onChange={(e) => setHireExistingAgentId(e.target.value)}>
+                    <label className="text-sm font-medium">Select agent</label>
+                    <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireExistingId} onChange={(e) => setHireExistingId(e.target.value)}>
                       <option value="">Select agent</option>
                       {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
@@ -1874,15 +2135,15 @@ function GtmCampaignsPage() {
                 <Button
                   onClick={() => {
                     if (hireMode === "new") {
-                      createHireAgent.mutate();
+                      createHireAgentMutation.mutate();
                     } else {
-                      setHiredAgentId(hireExistingAgentId || null);
+                      setHiredAgentId(hireExistingId || null);
                       setHireStep("issue");
                     }
                   }}
-                  disabled={hireMode === "new" ? (!hireName.trim() || createHireAgent.isPending) : !hireExistingAgentId}
+                  disabled={hireMode === "new" ? (!hireName.trim() || createHireAgentMutation.isPending) : !hireExistingId}
                 >
-                  {createHireAgent.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {createHireAgentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Next
                 </Button>
               </DialogFooter>
@@ -1891,24 +2152,24 @@ function GtmCampaignsPage() {
             <>
               <DialogHeader>
                 <DialogTitle>Seed a campaign issue</DialogTitle>
-                <DialogDescription>Create a starter issue assigned to this agent in the current campaign.</DialogDescription>
+                <DialogDescription>Create a starter issue assigned to this agent.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Issue title</label>
-                  <Input value={hireIssueTitle} onChange={(e) => setHireIssueTitle(e.target.value)} />
+                  <Input value={hireSeedTitle} onChange={(e) => setHireSeedTitle(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Priority</label>
-                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireIssuePriority} onChange={(e) => setHireIssuePriority(e.target.value)}>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={hireSeedPriority} onChange={(e) => setHireSeedPriority(e.target.value)}>
                     {ISSUE_PRIORITY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setHireStep("agent")}>Back</Button>
-                <Button onClick={() => createHireIssue.mutate()} disabled={!hireIssueTitle.trim() || createHireIssue.isPending}>
-                  {createHireIssue.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                <Button onClick={() => createHireIssueMutation.mutate()} disabled={!hireSeedTitle.trim() || createHireIssueMutation.isPending}>
+                  {createHireIssueMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Hire &amp; Seed Issue
                 </Button>
               </DialogFooter>
@@ -1933,23 +2194,23 @@ function GtmQueuePage() {
 
   const ticketsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.tickets(selectedCompanyId) : ["gtm", "tickets", "none"],
-    queryFn: () => gtmApi.listTickets(selectedCompanyId!),
+    queryFn: () => ticketsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const agentsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const issuesQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.issues(selectedCompanyId) : ["gtm", "issues", "none"],
-    queryFn: () => gtmApi.listIssues(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
   const createIssue = useMutation({
     mutationFn: () =>
-      gtmApi.createIssue(selectedCompanyId!, {
+      issuesApi.create(selectedCompanyId!, {
         title,
         description,
         priority,
@@ -2084,17 +2345,17 @@ function GtmInboxPage() {
   const [liveRunsOpen, setLiveRunsOpen] = useState(false);
   const agentsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const issuesQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.issues(selectedCompanyId) : ["gtm", "issues", "none"],
-    queryFn: () => gtmApi.listIssues(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const runsQuery = useQuery({
     queryKey: selectedCompanyId ? ["gtm", "inbox-runs", selectedCompanyId] : ["gtm", "inbox-runs", "none"],
-    queryFn: () => gtmApi.listRuns(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const cancelRun = useMutation({
@@ -2346,7 +2607,7 @@ function GtmSettingsPage() {
   const workflowQuery = useQuery({ queryKey: ["gtm", "workflow"], queryFn: () => gtmApi.getWorkflow() });
   const runsQuery = useQuery({
     queryKey: selectedCompanyId ? ["gtm", "runs", selectedCompanyId] : ["gtm", "runs", "none"],
-    queryFn: () => gtmApi.listRuns(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId),
   });
   const sessionQuery = useQuery({
