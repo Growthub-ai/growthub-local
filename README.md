@@ -53,6 +53,24 @@ This repo is the source of truth for:
 
 This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.
 
-## Status
+## Contributing
 
-The repository was extracted to stop local-runtime work from getting lost inside a larger monorepo workflow. The goal is to keep DX, GTM, installer, and package publishing aligned in one place.
+Growthub Local is open source and built to be extended — by humans and AI agents alike.
+
+**Quick start:**
+
+```bash
+# Fork this repo, then:
+git checkout -b feat/your-feature
+git commit -m "feat(server): your change"
+git push origin feat/your-feature
+# open a PR — CI runs automatically
+```
+
+**Branch prefixes:** `feat/` `fix/` `docs/` `chore/` `ci/` `refactor/` `adapter/` `sync/`
+
+**PR titles:** must follow [Conventional Commits](https://www.conventionalcommits.org/) — `type(scope): description`
+
+**All PRs require** passing CI (`verify` + `validate` + `smoke`) and maintainer review before merge. Agent-submitted PRs are fully supported — the pipeline auto-detects bot actors and labels them `agent-pr` for batch review.
+
+For the full guide — local dev setup, feature workflow, worktree conventions, npm package map, release process, and CI/CD architecture — see [**CONTRIBUTING.md**](./CONTRIBUTING.md).
