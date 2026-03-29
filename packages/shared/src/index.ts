@@ -483,12 +483,14 @@ export {
 } from "./surface-runtime.js";
 
 export {
+  GTM_DEFAULT_STAGE_ORDER,
   createDefaultGtmState,
   coerceGtmState,
   formatConnectorLabel,
   formatKnowledgeGroupLabel,
   mapGtmKnowledgeKind,
   toGtmViewModel,
+  type GtmCampaignConfig,
   type GtmConnectorRecord,
   type GtmKnowledgeCollaborator,
   type GtmKnowledgeItemRecord,

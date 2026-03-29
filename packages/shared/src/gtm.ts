@@ -1,3 +1,10 @@
+export const GTM_DEFAULT_STAGE_ORDER = ["planning", "execution", "qa", "human"] as const;
+
+export type GtmCampaignConfig = {
+  stageOrder: string[];
+  leadAgentId: string | null;
+};
+
 export type GtmKnowledgeCollaborator = {
   email?: string;
   user_id?: string;
