@@ -28,7 +28,7 @@ jobs:
               ['ui/src/components/GrowthubConnectionCard.tsx', 'GrowthubConnectionCard'],
               ['packages/shared/src/config-schema.ts', 'surfaceConfigSchema'],
               ['server/src/app.ts', 'express'],
-              ['cli/src/commands/worktree-lib.ts', 'DEFAULT_GROWTHUB_BASE_URL'],
+              ['cli/src/commands/worktree-lib.ts', 'DEFAULT_WORKTREE_HOME'],
             ];
             for (const [file, token] of checks) {
               const content = fs.readFileSync(file, 'utf8');
