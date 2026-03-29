@@ -25,8 +25,19 @@
   "dependencies": {
     "@growthub/cli": "0.3.15"
   },
+  "keywords": [
+    "growthub",
+    "paperclip",
+    "local",
+    "gtm",
+    "dx",
+    "ai-agents",
+    "agent-orchestration",
+    "local-dev"
+  ],
   "files": [
-    "bin"
+    "bin",
+    "README.md"
   ],
   "scripts": {
     "pack:dry-run": "npm pack --dry-run"
