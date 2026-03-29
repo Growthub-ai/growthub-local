@@ -1,0 +1,1 @@
+{"version":3,"file":"migration-runtime.d.ts","sourceRoot":"","sources":["../src/migration-runtime.ts"],"names":[],"mappings":"AAuBA,MAAM,MAAM,mBAAmB,GAAG;IAChC,gBAAgB,EAAE,MAAM,CAAC;IACzB,MAAM,EAAE,MAAM,CAAC;IACf,IAAI,EAAE,MAAM,OAAO,CAAC,IAAI,CAAC,CAAC;CAC3B,CAAC;AAiKF,wBAAsB,0BAA0B,IAAI,OAAO,CAAC,mBAAmB,CAAC,CAW/E"}

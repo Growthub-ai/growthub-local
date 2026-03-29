@@ -1,0 +1,1 @@
+{"version":3,"file":"trust.js","sourceRoot":"","sources":["../../src/shared/trust.ts"],"names":[],"mappings":"AAAA,MAAM,UAAU,uBAAuB,CAAC,IAAuB;IAC7D,OAAO,IAAI,CAAC,IAAI,CACd,CAAC,GAAG,EAAE,EAAE,CACN,GAAG,KAAK,SAAS;QACjB,GAAG,KAAK,QAAQ;QAChB,GAAG,KAAK,IAAI;QACZ,GAAG,CAAC,UAAU,CAAC,UAAU,CAAC,CAC7B,CAAC;AACJ,CAAC"}

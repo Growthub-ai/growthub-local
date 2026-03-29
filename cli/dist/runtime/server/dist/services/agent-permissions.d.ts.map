@@ -1,0 +1,1 @@
+{"version":3,"file":"agent-permissions.d.ts","sourceRoot":"","sources":["../../src/services/agent-permissions.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,0BAA0B,GAAG,MAAM,CAAC,MAAM,EAAE,OAAO,CAAC,GAAG;IACjE,eAAe,EAAE,OAAO,CAAC;CAC1B,CAAC;AAEF,wBAAgB,yBAAyB,CAAC,IAAI,EAAE,MAAM,GAAG,0BAA0B,CAIlF;AAED,wBAAgB,yBAAyB,CACvC,WAAW,EAAE,OAAO,EACpB,IAAI,EAAE,MAAM,GACX,0BAA0B,CAa5B"}
