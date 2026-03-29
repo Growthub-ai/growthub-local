@@ -26,7 +26,7 @@ jobs:
             const checks = [
               ['ui/src/lib/growthub-connection.ts', 'GrowthubConnectionSurface'],
               ['ui/src/components/GrowthubConnectionCard.tsx', 'GrowthubConnectionCard'],
-              ['packages/shared/src/config-schema.ts', 'surfaceProfile'],
+              ['packages/shared/src/config-schema.ts', 'surfaceConfigSchema'],
               ['server/src/app.ts', 'express'],
               ['cli/src/commands/worktree-lib.ts', 'DEFAULT_GROWTHUB_BASE_URL'],
             ];
