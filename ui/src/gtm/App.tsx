@@ -20,9 +20,12 @@ import { gtmApi } from "@/api/gtm";
 import { companiesApi } from "@/api/companies";
 import { assetsApi } from "@/api/assets";
 import { agentsApi } from "@/api/agents";
+import { accessApi } from "@/api/access";
+import { ApiError } from "@/api/client";
 import { ticketsApi } from "@/api/tickets";
 import { issuesApi } from "@/api/issues";
 import { heartbeatsApi } from "@/api/heartbeats";
+import type { JoinRequest } from "@paperclipai/shared";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompany } from "@/context/CompanyContext";
 import { useDialog } from "@/context/DialogContext";
@@ -1074,6 +1077,33 @@ function GtmInboxPage() {
     queryFn: () => gtmApi.listRuns(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const joinRequestsQuery = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.access.joinRequests(selectedCompanyId, "pending_approval") : ["access", "join-requests", "none"],
+    queryFn: async () => {
+      try {
+        return await accessApi.listJoinRequests(selectedCompanyId!, "pending_approval");
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 403 || err.status === 401)) return [];
+        throw err;
+      }
+    },
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+  const approveJoinMutation = useMutation({
+    mutationFn: (joinRequest: JoinRequest) => accessApi.approveJoinRequest(selectedCompanyId!, joinRequest.id),
+    onSuccess: () => {
+      if (!selectedCompanyId) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId, "pending_approval") });
+    },
+  });
+  const rejectJoinMutation = useMutation({
+    mutationFn: (joinRequest: JoinRequest) => accessApi.rejectJoinRequest(selectedCompanyId!, joinRequest.id),
+    onSuccess: () => {
+      if (!selectedCompanyId) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId, "pending_approval") });
+    },
+  });
   const cancelRun = useMutation({
     mutationFn: (runId: string) => heartbeatsApi.cancel(runId),
     onSuccess: async () => {
@@ -1139,6 +1169,7 @@ function GtmInboxPage() {
   const activeRuns = runs.filter((run) => run.status === "running" || run.status === "queued");
   const recentRuns = runs.filter((run) => !activeRuns.includes(run)).slice(0, 10);
   const visibleIssues = issues.slice(0, 5);
+  const joinRequests = joinRequestsQuery.data ?? [];
 
   return (
     <div className="space-y-4">
@@ -1146,6 +1177,53 @@ function GtmInboxPage() {
         <h1 className="text-lg font-semibold">Inbox</h1>
         <p className="text-sm text-muted-foreground">Live runs, assigned work, and issue activity for GTM agents.</p>
       </div>
+
+      {joinRequests.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent Hire Requests</CardTitle>
+            <CardDescription>New agents requesting to join this workspace.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {joinRequests.map((joinRequest) => (
+                <div key={joinRequest.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {joinRequest.requestType === "human"
+                        ? "Human join request"
+                        : `Agent hire request${joinRequest.agentName ? `: ${joinRequest.agentName}` : ""}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}
+                    </p>
+                    {joinRequest.adapterType && (
+                      <p className="text-xs text-muted-foreground">adapter: {joinRequest.adapterType}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={approveJoinMutation.isPending || rejectJoinMutation.isPending}
+                      onClick={() => rejectJoinMutation.mutate(joinRequest)}
+                    >
+                      Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={approveJoinMutation.isPending || rejectJoinMutation.isPending}
+                      onClick={() => approveJoinMutation.mutate(joinRequest)}
+                    >
+                      Approve
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div>
