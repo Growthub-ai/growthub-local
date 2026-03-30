@@ -16,11 +16,9 @@ export function readConfigFile(): PaperclipConfig | null {
   }
 }
 
-export function writeConfigFile(config: PaperclipConfig): void {
+export function writeConfigFile(nextConfig: PaperclipConfig): void {
+  const parsed = paperclipConfigSchema.parse(nextConfig);
   const configPath = resolvePaperclipConfigPath();
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, `${JSON.stringify(paperclipConfigSchema.parse(config), null, 2)}\n`, {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
+  fs.writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
 }

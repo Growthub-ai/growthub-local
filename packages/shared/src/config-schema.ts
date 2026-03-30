@@ -57,11 +57,11 @@ export const authConfigSchema = z.object({
   baseUrlMode: z.enum(AUTH_BASE_URL_MODES).default("auto"),
   publicBaseUrl: z.string().url().optional(),
   disableSignUp: z.boolean().default(false),
-  token: z.string().min(1).optional(),
+  token: z.string().optional(),
   growthubBaseUrl: z.string().url().optional(),
   growthubPortalBaseUrl: z.string().url().optional(),
-  growthubMachineLabel: z.string().min(1).optional(),
-  growthubWorkspaceLabel: z.string().min(1).optional(),
+  growthubMachineLabel: z.string().optional(),
+  growthubWorkspaceLabel: z.string().optional(),
 });
 
 export const surfaceConfigSchema = z.object({

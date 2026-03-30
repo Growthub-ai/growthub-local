@@ -27,11 +27,31 @@ import {
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { NewTicketModal } from "../components/NewTicketModal";
-import type { Agent, Issue, Ticket as TicketType } from "@paperclipai/shared";
+import {
+  formatTicketStageLabel,
+  getTicketStageDefinition,
+  normalizeTicketStageDefinitions,
+  type Agent,
+  type Issue,
+  type Ticket as TicketType,
+} from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
 // ─── Ticket Command Center helpers ────────────────────────────────────────────
-function tcL(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function tcL(s: string) { return formatTicketStageLabel(s); }
+
+function ticketStageLabel(ticket: TicketType, stage: string) {
+  const stageDefinitions = normalizeTicketStageDefinitions({
+    stageDefinitions: ticket.stageDefinitions,
+    stageOrder: ticket.stageOrder,
+  });
+  return getTicketStageDefinition(stageDefinitions, stage)?.label ?? tcL(stage);
+}
+
+function collectiveStageLabel(tickets: TicketType[], stage: string) {
+  const owner = tickets.find((ticket) => ticket.stageOrder.includes(stage) || ticket.currentStage === stage);
+  return owner ? ticketStageLabel(owner, stage) : tcL(stage);
+}
 
 // Build canonical stage ordering from union of all tickets' stageOrder arrays
 function uniqStages(tickets: TicketType[]): string[] {
@@ -71,7 +91,7 @@ function TicketKanbanCard({ ticket }: { ticket: TicketType; stageOrder: string[]
       <div className="flex items-center justify-between gap-2 mb-2">
         <span className="text-xs font-mono text-muted-foreground">{ticket.identifier}</span>
         <span className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">
-          {tcL(ticket.currentStage)}
+          {ticketStageLabel(ticket, ticket.currentStage)}
         </span>
       </div>
 
@@ -134,7 +154,7 @@ function KanbanView({ tickets, stageOrder }: { tickets: TicketType[]; stageOrder
           return (
             <div key={stage} className="w-64 shrink-0">
               <div className="flex items-center gap-2 mb-2 px-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tcL(stage)}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{collectiveStageLabel(tickets, stage)}</span>
                 <span className="text-xs text-muted-foreground ml-auto">{cols.length}</span>
               </div>
               <div className="space-y-2">
@@ -196,7 +216,7 @@ function ListView({ tickets, stageOrder }: { tickets: TicketType[]; stageOrder: 
             </span>
 
             <span className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">
-              {tcL(t.currentStage)}
+              {ticketStageLabel(t, t.currentStage)}
             </span>
 
             <span className="text-xs text-muted-foreground shrink-0">{timeAgo(t.updatedAt)}</span>
@@ -256,7 +276,7 @@ function RoadmapView({ tickets, stageOrder }: { tickets: TicketType[]; stageOrde
                     className="block rounded border border-border bg-card px-2 py-1.5 hover:border-primary/30 transition-colors no-underline text-inherit"
                   >
                     <p className="text-[11px] font-medium truncate leading-snug">{t.title}</p>
-                    <span className="text-[10px] text-muted-foreground truncate">{tcL(t.currentStage)}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{ticketStageLabel(t, t.currentStage)}</span>
                   </Link>
                 ))}
               </div>
@@ -602,7 +622,7 @@ export function Dashboard() {
       return (
         <EmptyState
           icon={LayoutDashboard}
-          message="Welcome to Growthub. Set up your first company and agent to get started."
+          message="Welcome to Paperclip. Set up your first company and agent to get started."
           action="Get Started"
           onAction={openOnboarding}
         />

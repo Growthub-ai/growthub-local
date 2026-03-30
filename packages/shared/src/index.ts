@@ -9,8 +9,12 @@ export {
   AGENT_ROLE_LABELS,
   AGENT_ICON_NAMES,
   TICKET_STAGES,
+  TICKET_STAGE_KINDS,
+  TICKET_STAGE_HANDOFF_MODES,
   TICKET_STATUSES,
   type TicketStage,
+  type TicketStageKind,
+  type TicketStageHandoffMode,
   type TicketStatus,
   ISSUE_STATUSES,
   ISSUE_PRIORITIES,
@@ -63,7 +67,6 @@ export {
   PLUGIN_WEBHOOK_DELIVERY_STATUSES,
   PLUGIN_EVENT_TYPES,
   PLUGIN_BRIDGE_ERROR_CODES,
-  SURFACE_PROFILES,
   type CompanyStatus,
   type DeploymentMode,
   type DeploymentExposure,
@@ -121,7 +124,6 @@ export {
   type PluginWebhookDeliveryStatus,
   type PluginEventType,
   type PluginBridgeErrorCode,
-  type SurfaceProfile,
 } from "./constants.js";
 
 export type {
@@ -164,6 +166,7 @@ export type {
   IssueWorkProductStatus,
   IssueWorkProductReviewState,
   Ticket,
+  TicketStageDefinition,
   TicketStageSummary,
   Issue,
   IssueAssigneeAdapterOverrides,
@@ -206,6 +209,9 @@ export type {
   DashboardSummary,
   ActivityEvent,
   SidebarBadges,
+  SurfaceProfile,
+  SurfaceRuntimeCapabilities,
+  SurfaceRuntimeContract,
   CompanyMembership,
   PrincipalPermissionGrant,
   Invite,
@@ -256,12 +262,24 @@ export type {
 } from "./types/index.js";
 
 export {
+  buildTicketStageOrder,
+  createGtmStagePreset,
+  formatTicketStageLabel,
+  getTicketStageDefinition,
+  normalizeTicketStageDefinitions,
+  normalizeTicketStageKey,
+  resolveTicketCurrentStage,
+} from "./ticket-stages.js";
+
+export {
   instanceExperimentalSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   type PatchInstanceExperimentalSettings,
   createTicketSchema,
   updateTicketSchema,
   advanceTicketStageSchema,
+  ticketStageDefinitionSchema,
+  ticketStageDefinitionsSchema,
   type CreateTicket,
   type UpdateTicket,
   type AdvanceTicketStage,
@@ -454,7 +472,6 @@ export {
   loggingConfigSchema,
   serverConfigSchema,
   authConfigSchema,
-  surfaceConfigSchema,
   secretsConfigSchema,
   storageConfigSchema,
   storageLocalDiskConfigSchema,
@@ -467,7 +484,6 @@ export {
   type LoggingConfig,
   type ServerConfig,
   type AuthConfig,
-  type SurfaceConfig,
   type StorageConfig,
   type StorageLocalDiskConfig,
   type StorageS3Config,
@@ -477,20 +493,21 @@ export {
 } from "./config-schema.js";
 
 export {
-  initializeSurfaceRuntimeContract,
-  getSurfaceRuntimeContract,
-  type SurfaceRuntimeContract,
-} from "./surface-runtime.js";
-
-export {
-  GTM_DEFAULT_STAGE_ORDER,
+  buildGtmCampaignMetadata,
   createDefaultGtmState,
   coerceGtmState,
   formatConnectorLabel,
   formatKnowledgeGroupLabel,
   mapGtmKnowledgeKind,
+  normalizeGtmCampaignSettings,
+  normalizeGtmCampaignStageMetadata,
+  readGtmCampaignMetadata,
   toGtmViewModel,
-  type GtmCampaignConfig,
+  type GtmCampaignKnowledgePolicy,
+  type GtmCampaignMetadata,
+  type GtmCampaignPolicy,
+  type GtmCampaignSettings,
+  type GtmCampaignStageMetadata,
   type GtmConnectorRecord,
   type GtmKnowledgeCollaborator,
   type GtmKnowledgeItemRecord,
