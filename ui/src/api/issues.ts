@@ -53,6 +53,8 @@ export const issuesApi = {
       expectedStatuses: ["todo", "backlog", "blocked"],
     }),
   release: (id: string) => api.post<Issue>(`/issues/${id}/release`, {}),
+  openLocal: (id: string) =>
+    api.post<{ ok: true }>(`/issues/${id}/open-local`, {}),
   listComments: (id: string) => api.get<IssueComment[]>(`/issues/${id}/comments`),
   addComment: (id: string, body: string, reopen?: boolean, interrupt?: boolean) =>
     api.post<IssueComment>(
