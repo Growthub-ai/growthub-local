@@ -882,115 +882,7 @@ function GtmAgentsPage() {
   }
 
   const agents = agentsQuery.data ?? [];
-  const selectedAgentId = agents.some((agent) => agent.id === agentId) ? agentId ?? null : null;
   const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
-  const agentDetailQuery = useQuery({
-    queryKey: selectedAgentId ? ["gtm", "agent-detail", selectedAgentId] : ["gtm", "agent-detail", "none"],
-    queryFn: () => agentsApi.get(selectedAgentId!, selectedCompanyId!),
-    enabled: !!selectedCompanyId && !!selectedAgentId,
-  });
-  const runtimeStateQuery = useQuery({
-    queryKey: selectedAgentId ? ["gtm", "agent-runtime", selectedAgentId] : ["gtm", "agent-runtime", "none"],
-    queryFn: () => agentsApi.runtimeState(selectedAgentId!, selectedCompanyId!),
-    enabled: !!selectedCompanyId && !!selectedAgentId,
-  });
-  const taskSessionsQuery = useQuery({
-    queryKey: selectedAgentId ? ["gtm", "agent-sessions", selectedAgentId] : ["gtm", "agent-sessions", "none"],
-    queryFn: () => agentsApi.taskSessions(selectedAgentId!, selectedCompanyId!),
-    enabled: !!selectedCompanyId && !!selectedAgentId,
-  });
-  const runsQuery = useQuery({
-    queryKey: selectedAgentId ? ["gtm", "agent-runs", selectedAgentId] : ["gtm", "agent-runs", "none"],
-    queryFn: () => heartbeatsApi.list(selectedCompanyId!, selectedAgentId!, 8),
-    enabled: !!selectedCompanyId && !!selectedAgentId,
-  });
-
-  const [editingName, setEditingName] = useState("");
-  const [editingTitle, setEditingTitle] = useState("");
-  const [editingCommand, setEditingCommand] = useState("");
-  const [editingCwd, setEditingCwd] = useState("");
-  const [editingModel, setEditingModel] = useState("");
-  const [editingChrome, setEditingChrome] = useState(false);
-
-  const saveAgentMutation = useMutation({
-    mutationFn: () =>
-      agentsApi.update(selectedAgentId!, {
-        name: editingName,
-        title: editingTitle,
-        adapterConfig: {
-          ...((agentDetailQuery.data?.adapterConfig ?? {}) as Record<string, unknown>),
-          command: editingCommand,
-          cwd: editingCwd,
-          model: editingModel,
-          chrome: editingChrome,
-        },
-      }, selectedCompanyId!),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId!) }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "agent-detail", selectedAgentId!] }),
-      ]);
-      pushToast({ title: "Agent updated", body: "Agent configuration saved.", tone: "success" });
-    },
-    onError: (error) => {
-      pushToast({ title: "Agent update failed", body: error instanceof Error ? error.message : "Failed to update agent", tone: "error" });
-    },
-  });
-
-  const testBindingMutation = useMutation({
-    mutationFn: () =>
-      agentsApi.testEnvironment(selectedCompanyId!, "claude_local", {
-        adapterConfig: {
-          ...((agentDetailQuery.data?.adapterConfig ?? {}) as Record<string, unknown>),
-          command: editingCommand,
-          cwd: editingCwd,
-          model: editingModel,
-          chrome: editingChrome,
-        },
-      }),
-    onSuccess: (result) => {
-      const top = result.checks[0]?.message ?? "Adapter test complete";
-      pushToast({ title: `Binding ${result.status}`, body: top, tone: result.status === "fail" ? "error" : result.status === "warn" ? "warn" : "success" });
-    },
-    onError: (error) => {
-      pushToast({ title: "Binding test failed", body: error instanceof Error ? error.message : "Failed to test binding", tone: "error" });
-    },
-  });
-
-  const claudeLoginMutation = useMutation({
-    mutationFn: () => agentsApi.loginWithClaude(selectedAgentId!, selectedCompanyId!),
-    onSuccess: (result) => {
-      pushToast({
-        title: "Claude login probe complete",
-        body: result.loginUrl ?? result.stderr ?? result.stdout ?? "Claude login checked.",
-        tone: result.loginUrl ? "warn" : "success",
-      });
-    },
-    onError: (error) => {
-      pushToast({ title: "Claude login failed", body: error instanceof Error ? error.message : "Failed to run Claude login", tone: "error" });
-    },
-  });
-
-  const resetSessionMutation = useMutation({
-    mutationFn: () => agentsApi.resetSession(selectedAgentId!, null, selectedCompanyId!),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["gtm", "agent-sessions", selectedAgentId!] });
-      pushToast({ title: "Session reset", body: "Agent task session reset.", tone: "success" });
-    },
-  });
-
-  const detail = agentDetailQuery.data;
-  const detailAdapterConfig = (detail?.adapterConfig ?? {}) as Record<string, unknown>;
-
-  useEffect(() => {
-    if (!detail) return;
-    setEditingName(detail.name);
-    setEditingTitle(detail.title ?? "");
-    setEditingCommand(String(detailAdapterConfig.command ?? "claude"));
-    setEditingCwd(String(detailAdapterConfig.cwd ?? ""));
-    setEditingModel(String(detailAdapterConfig.model ?? "claude-sonnet-4-6"));
-    setEditingChrome(Boolean(detailAdapterConfig.chrome ?? false));
-  }, [detail, detailAdapterConfig.command, detailAdapterConfig.cwd, detailAdapterConfig.model, detailAdapterConfig.chrome]);
 
   return (
     <div className="space-y-4">
@@ -1101,9 +993,9 @@ function GtmCampaignsPage() {
               {tickets.map((ticket) => (
                 <div key={ticket.id} className="flex items-center justify-between gap-4 px-6 py-4">
                   <div className="min-w-0">
-                    <a href={boardPath(`/tickets/${ticket.id}`)} className="truncate font-medium hover:underline">
+                    <Link to={boardPath(`/tickets/${ticket.id}`)} className="truncate font-medium hover:underline">
                       {ticket.title}
-                    </a>
+                    </Link>
                     <p className="truncate text-sm text-muted-foreground">{ticket.identifier}</p>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
@@ -1151,7 +1043,7 @@ function GtmCampaignPage() {
           <p className="text-sm text-muted-foreground">Focused GTM campaign launcher and stage configuration.</p>
         </div>
         <Button variant="outline" asChild>
-          <a href={boardPath("/tickets")}>Back to Campaigns</a>
+          <Link to={boardPath("/tickets")}>Back to Campaigns</Link>
         </Button>
       </div>
 
@@ -1256,9 +1148,9 @@ function GtmQueuePage() {
               {issues.map((issue) => (
                 <div key={issue.id} className="flex items-center justify-between gap-4 px-6 py-4">
                   <div className="min-w-0">
-                    <a href={boardPath(`/issues/${issue.identifier ?? issue.id}`)} className="truncate font-medium hover:underline">
+                    <Link to={boardPath(`/issues/${issue.id}`)} className="truncate font-medium hover:underline">
                       {issue.title}
-                    </a>
+                    </Link>
                     <p className="truncate text-sm text-muted-foreground">{issue.identifier ?? issue.id}</p>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
@@ -1422,7 +1314,7 @@ function GtmInboxPage() {
             <CardDescription>Issue activity for GTM campaigns and GTM-assigned agents.</CardDescription>
           </div>
           <Button asChild variant="outline" size="sm" className="shrink-0">
-            <a href={boardPath("/issues")}>View more</a>
+            <Link to={boardPath("/issues")}>View more</Link>
           </Button>
         </CardHeader>
         <CardContent className="p-0">
@@ -1501,19 +1393,19 @@ function GtmInboxPage() {
                             {run.triggerDetail ? <> · trigger {run.triggerDetail}</> : null}
                           </div>
                           {issue ? (
-                            <a href={boardPath(`/issues/${issue.identifier ?? issue.id}`)} className="block text-sm font-medium hover:underline">
+                            <Link to={boardPath(`/issues/${issue.id}`)} className="block text-sm font-medium hover:underline">
                               {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
-                            </a>
+                            </Link>
                           ) : (
                             <div className="text-sm text-muted-foreground">No assigned GTM issue linked to this run yet.</div>
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button asChild variant="outline" size="sm">
-                            <a href={boardPath(`/agents/${run.agentId}/runs/${run.id}`)}>
+                            <Link to={boardPath(`/agents/${run.agentId}/runs/${run.id}`)}>
                               <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                               View run
-                            </a>
+                            </Link>
                           </Button>
                           <Button
                             variant="outline"
@@ -1985,7 +1877,12 @@ function GtmShell() {
           <div className="flex flex-col gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = location.pathname.includes(item.to);
+              // Strip the surface prefix and company prefix to get the board-relative path,
+              // then check if the current board path starts with the item's root segment.
+              const pathAfterSurface = location.pathname.replace(SURFACE_ROUTE_PREFIX_PATTERN, "");
+              const boardRelative = `/${pathAfterSurface.split("/").filter(Boolean).slice(1).join("/")}`;
+              const itemRoot = `/${item.to.split("/").filter(Boolean)[0] ?? ""}`;
+              const active = boardRelative === item.to || boardRelative.startsWith(`${itemRoot}/`);
               return (
                 <Button
                   key={item.to}
@@ -2054,7 +1951,7 @@ function gtmBoardRoutes() {
       <Route path="inbox/recent" element={<GtmInboxPage />} />
       <Route path="inbox/unread" element={<GtmInboxPage />} />
       <Route path="inbox/all" element={<GtmInboxPage />} />
-      <Route path="inbox/new" element={<GtmInboxPage />} />
+      <Route path="inbox/new" element={<Navigate to="../inbox/recent" replace />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
     </>
   );
@@ -2076,8 +1973,10 @@ export function GtmApp() {
         <Route path={`${SURFACE_ROUTE_PATH}/tickets/:ticketId`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/issues`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/issues/:issueId`} element={<UnprefixedBoardRedirect />} />
+        <Route path={`${SURFACE_ROUTE_PATH}/workspace`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/activity`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/inbox`} element={<UnprefixedBoardRedirect />} />
+        <Route path={`${SURFACE_ROUTE_PATH}/inbox/:tab`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/new`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/org-chart`} element={<UnprefixedBoardRedirect />} />
