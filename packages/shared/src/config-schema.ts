@@ -5,6 +5,7 @@ import {
   DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
+  SURFACE_PROFILES,
 } from "./constants.js";
 
 export const configMetaSchema = z.object({
@@ -63,6 +64,10 @@ export const authConfigSchema = z.object({
   growthubWorkspaceLabel: z.string().optional(),
 });
 
+export const surfaceConfigSchema = z.object({
+  profile: z.enum(SURFACE_PROFILES).default("dx"),
+});
+
 export const storageLocalDiskConfigSchema = z.object({
   baseDir: z.string().default("~/.paperclip/instances/default/data/storage"),
 });
@@ -110,6 +115,9 @@ export const paperclipConfigSchema = z
     auth: authConfigSchema.default({
       baseUrlMode: "auto",
       disableSignUp: false,
+    }),
+    surface: surfaceConfigSchema.default({
+      profile: "dx",
     }),
     storage: storageConfigSchema.default({
       provider: "local_disk",
@@ -179,5 +187,6 @@ export type StorageS3Config = z.infer<typeof storageS3ConfigSchema>;
 export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
 export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;
+export type SurfaceConfig = z.infer<typeof surfaceConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;
 export type DatabaseBackupConfig = z.infer<typeof databaseBackupConfigSchema>;
