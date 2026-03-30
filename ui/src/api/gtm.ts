@@ -1,4 +1,4 @@
-import type { Agent, HeartbeatRun, Issue, Ticket, GtmViewModel } from "@paperclipai/shared";
+import type { Agent, HeartbeatRun, Issue, Ticket, TicketStageDefinition, GtmViewModel } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type GtmInboxEntry = {
@@ -42,6 +42,17 @@ export type GtmConnectionStatus = {
   workspaceLabel: string;
 };
 
+export type GtmCampaignDraft = {
+  title: string;
+  description: string;
+  instructions: string;
+  targetAudience: string;
+  offer: string;
+  successDefinition: string;
+  leadAgentId: string | null;
+  stageDefinitions: TicketStageDefinition[];
+};
+
 export const gtmApi = {
   getProfile: () => api.get<GtmViewModel["profile"]>("/gtm/profile"),
   getKnowledge: () => api.get<GtmViewModel["knowledge"]>("/gtm/knowledge"),
@@ -67,6 +78,14 @@ export const gtmApi = {
   listTickets: (companyId: string) => api.get<Ticket[]>(`/gtm/companies/${companyId}/tickets`),
   createTicket: (companyId: string, body: Record<string, unknown>) =>
     api.post<Ticket>(`/gtm/companies/${companyId}/tickets`, body),
+  createCampaignDraft: (
+    companyId: string,
+    body: {
+      draftProfile: string;
+      prompt: string;
+      extendExisting: boolean;
+    },
+  ) => api.post<GtmCampaignDraft>(`/gtm/companies/${companyId}/campaign-drafts`, body),
   listIssues: (companyId: string) => api.get<Issue[]>(`/gtm/companies/${companyId}/issues`),
   createIssue: (companyId: string, body: Record<string, unknown>) =>
     api.post<Issue>(`/gtm/companies/${companyId}/issues`, body),

@@ -1,10 +1,3 @@
-export const GTM_DEFAULT_STAGE_ORDER = ["planning", "execution", "qa", "human"] as const;
-
-export type GtmCampaignConfig = {
-  stageOrder: string[];
-  leadAgentId: string | null;
-};
-
 export type GtmKnowledgeCollaborator = {
   email?: string;
   user_id?: string;
@@ -121,6 +114,144 @@ export type GtmViewModel = {
     status: string;
   };
 };
+
+export type GtmCampaignKnowledgePolicy = {
+  saveRunOutputs: boolean;
+  freezeWhenConnected: boolean;
+};
+
+export type GtmCampaignPolicy = {
+  heartbeatCadence: string | null;
+  performanceReviewCadence: string | null;
+  escalationPolicy: string | null;
+};
+
+export type GtmCampaignStageMetadata = {
+  kpis?: string | null;
+  sop?: string | null;
+  outputExpectations?: string | null;
+  policy?: string | null;
+  knowledgeItems?: string | null;
+};
+
+export type GtmCampaignSettings = {
+  policy: GtmCampaignPolicy;
+  knowledge: GtmCampaignKnowledgePolicy;
+  defaultIssueConfig: {
+    outputExpectations: string | null;
+    successMetric: string | null;
+    knowledgeCaptureNotes: string | null;
+  };
+};
+
+export type GtmCampaignMetadata = {
+  product: "gtm";
+  surfaceProfile: "gtm";
+  entity: "campaign";
+  targetAudience?: string | null;
+  offer?: string | null;
+  successDefinition?: string | null;
+  settings?: GtmCampaignSettings | null;
+};
+
+const DEFAULT_GTM_CAMPAIGN_SETTINGS: GtmCampaignSettings = {
+  policy: {
+    heartbeatCadence: null,
+    performanceReviewCadence: null,
+    escalationPolicy: null,
+  },
+  knowledge: {
+    saveRunOutputs: true,
+    freezeWhenConnected: true,
+  },
+  defaultIssueConfig: {
+    outputExpectations: null,
+    successMetric: null,
+    knowledgeCaptureNotes: null,
+  },
+};
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+export function normalizeGtmCampaignStageMetadata(value: unknown): GtmCampaignStageMetadata | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  return {
+    kpis: readString(record.kpis),
+    sop: readString(record.sop),
+    outputExpectations: readString(record.outputExpectations),
+    policy: readString(record.policy),
+    knowledgeItems: readString(record.knowledgeItems),
+  };
+}
+
+export function normalizeGtmCampaignSettings(value: unknown): GtmCampaignSettings {
+  const record = readRecord(value);
+  const policy = readRecord(record?.policy);
+  const knowledge = readRecord(record?.knowledge);
+  const defaultIssueConfig = readRecord(record?.defaultIssueConfig);
+
+  return {
+    policy: {
+      heartbeatCadence: readString(policy?.heartbeatCadence),
+      performanceReviewCadence: readString(policy?.performanceReviewCadence),
+      escalationPolicy: readString(policy?.escalationPolicy),
+    },
+    knowledge: {
+      saveRunOutputs: readBoolean(knowledge?.saveRunOutputs, DEFAULT_GTM_CAMPAIGN_SETTINGS.knowledge.saveRunOutputs),
+      freezeWhenConnected: readBoolean(knowledge?.freezeWhenConnected, DEFAULT_GTM_CAMPAIGN_SETTINGS.knowledge.freezeWhenConnected),
+    },
+    defaultIssueConfig: {
+      outputExpectations: readString(defaultIssueConfig?.outputExpectations),
+      successMetric: readString(defaultIssueConfig?.successMetric),
+      knowledgeCaptureNotes: readString(defaultIssueConfig?.knowledgeCaptureNotes),
+    },
+  };
+}
+
+export function readGtmCampaignMetadata(value: unknown): GtmCampaignMetadata | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  if (record.product !== "gtm" && record.surfaceProfile !== "gtm") return null;
+  return {
+    product: "gtm",
+    surfaceProfile: "gtm",
+    entity: "campaign",
+    targetAudience: readString(record.targetAudience),
+    offer: readString(record.offer),
+    successDefinition: readString(record.successDefinition),
+    settings: normalizeGtmCampaignSettings(record.settings),
+  };
+}
+
+export function buildGtmCampaignMetadata(input: {
+  targetAudience?: string | null;
+  offer?: string | null;
+  successDefinition?: string | null;
+  settings?: GtmCampaignSettings | null;
+}): GtmCampaignMetadata {
+  return {
+    product: "gtm",
+    surfaceProfile: "gtm",
+    entity: "campaign",
+    targetAudience: readString(input.targetAudience),
+    offer: readString(input.offer),
+    successDefinition: readString(input.successDefinition),
+    settings: normalizeGtmCampaignSettings(input.settings),
+  };
+}
 
 function humanizeToken(value: string): string {
   return value

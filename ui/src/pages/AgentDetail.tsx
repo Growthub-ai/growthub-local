@@ -19,6 +19,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { normalizeCompanyPrefix } from "../lib/company-routes";
 import { queryKeys } from "../lib/queryKeys";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
@@ -80,6 +81,7 @@ import {
 } from "@paperclipai/shared";
 import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
 import { agentRouteRef } from "../lib/utils";
+import { surfaceProfile, toSurfacePath } from "../lib/surface-profile";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -202,6 +204,29 @@ function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "budget") return value;
   if (value === "runs") return value;
   return "dashboard";
+}
+
+function buildScopedAgentPath(
+  agentRef: string,
+  suffix = "/dashboard",
+  options?: { companyPrefix?: string | null },
+): string {
+  const normalizedSuffix =
+    suffix.length === 0 ? "" : suffix.startsWith("/") ? suffix : `/${suffix}`;
+  const basePath = `/agents/${agentRef}${normalizedSuffix}`;
+  if (surfaceProfile !== "gtm") return basePath;
+
+  const companyPrefix = options?.companyPrefix?.trim();
+  if (!companyPrefix) return toSurfacePath(basePath);
+  return toSurfacePath(`/${normalizeCompanyPrefix(companyPrefix)}${basePath}`);
+}
+
+function buildScopedAgentsIndexPath(options?: { companyPrefix?: string | null }): string {
+  if (surfaceProfile !== "gtm") return "/agents/all";
+
+  const companyPrefix = options?.companyPrefix?.trim();
+  if (!companyPrefix) return toSurfacePath("/agents/all");
+  return toSurfacePath(`/${normalizeCompanyPrefix(companyPrefix)}/agents/all`);
 }
 
 function usageNumber(usage: Record<string, unknown> | null, ...keys: string[]) {
@@ -502,6 +527,14 @@ export function AgentDetail() {
   const canonicalAgentRef = agent ? agentRouteRef(agent) : routeAgentRef;
   const agentLookupRef = agent?.id ?? routeAgentRef;
   const resolvedAgentId = agent?.id ?? null;
+  const agentPath = useCallback(
+    (suffix = "/dashboard") => buildScopedAgentPath(canonicalAgentRef, suffix, { companyPrefix }),
+    [canonicalAgentRef, companyPrefix],
+  );
+  const agentsIndexPath = useMemo(
+    () => buildScopedAgentsIndexPath({ companyPrefix }),
+    [companyPrefix],
+  );
 
   const { data: runtimeState } = useQuery({
     queryKey: queryKeys.agents.runtimeState(resolvedAgentId ?? routeAgentRef),
@@ -580,7 +613,7 @@ export function AgentDetail() {
     if (!agent) return;
     if (urlRunId) {
       if (routeAgentRef !== canonicalAgentRef) {
-        navigate(`/agents/${canonicalAgentRef}/runs/${urlRunId}`, { replace: true });
+        navigate(agentPath(`/runs/${urlRunId}`), { replace: true });
       }
       return;
     }
@@ -595,10 +628,10 @@ export function AgentDetail() {
               ? "budget"
             : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
-      navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
+      navigate(agentPath(`/${canonicalTab}`), { replace: true });
       return;
     }
-  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, navigate]);
+  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, navigate, agentPath]);
 
   useEffect(() => {
     if (!agent?.companyId || agent.companyId === selectedCompanyId) return;
@@ -628,7 +661,7 @@ export function AgentDetail() {
         }
       }
       if (action === "invoke" && data && typeof data === "object" && "id" in data) {
-        navigate(`/agents/${canonicalAgentRef}/runs/${(data as HeartbeatRun).id}`);
+        navigate(agentPath(`/runs/${(data as HeartbeatRun).id}`));
       }
     },
     onError: (err) => {
@@ -696,15 +729,15 @@ export function AgentDetail() {
 
   useEffect(() => {
     const crumbs: { label: string; href?: string }[] = [
-      { label: "Agents", href: "/agents" },
+      { label: "Agents", href: agentsIndexPath },
     ];
     const agentName = agent?.name ?? routeAgentRef ?? "Agent";
     if (activeView === "dashboard" && !urlRunId) {
       crumbs.push({ label: agentName });
     } else {
-      crumbs.push({ label: agentName, href: `/agents/${canonicalAgentRef}/dashboard` });
+      crumbs.push({ label: agentName, href: agentPath("/dashboard") });
       if (urlRunId) {
-        crumbs.push({ label: "Runs", href: `/agents/${canonicalAgentRef}/runs` });
+        crumbs.push({ label: "Runs", href: agentPath("/runs") });
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
       } else if (activeView === "configuration") {
         crumbs.push({ label: "Configuration" });
@@ -719,7 +752,7 @@ export function AgentDetail() {
       }
     }
     setBreadcrumbs(crumbs);
-  }, [setBreadcrumbs, agent, routeAgentRef, canonicalAgentRef, activeView, urlRunId]);
+  }, [setBreadcrumbs, agent, routeAgentRef, activeView, urlRunId, agentsIndexPath, agentPath]);
 
   useEffect(() => {
     closePanel();
@@ -738,7 +771,7 @@ export function AgentDetail() {
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
   if (!urlRunId && !urlTab) {
-    return <Navigate to={`/agents/${canonicalAgentRef}/dashboard`} replace />;
+    return <Navigate to={agentPath("/dashboard")} replace />;
   }
   const isPendingApproval = agent.status === "pending_approval";
   const showConfigActionBar = activeView === "configuration" && (configDirty || configSaving);
@@ -806,7 +839,7 @@ export function AgentDetail() {
           <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
           {mobileLiveRun && (
             <Link
-              to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
+              to={agentPath(`/runs/${mobileLiveRun.id}`)}
               className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
             >
               <span className="relative flex h-2 w-2">
@@ -863,7 +896,7 @@ export function AgentDetail() {
       {!urlRunId && (
         <Tabs
           value={activeView}
-          onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
+          onValueChange={(value) => navigate(agentPath(`/${value}`))}
         >
           <PageTabBar
             items={[
@@ -874,7 +907,7 @@ export function AgentDetail() {
               { value: "budget", label: "Budget" },
             ]}
             value={activeView}
-            onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
+            onValueChange={(value) => navigate(agentPath(`/${value}`))}
           />
         </Tabs>
       )}
@@ -946,6 +979,7 @@ export function AgentDetail() {
           runtimeState={runtimeState}
           agentId={agent.id}
           agentRouteId={canonicalAgentRef}
+          companyPrefix={companyPrefix ?? null}
         />
       )}
 
@@ -974,6 +1008,7 @@ export function AgentDetail() {
           companyId={resolvedCompanyId!}
           agentId={agent.id}
           agentRouteId={canonicalAgentRef}
+          companyPrefix={companyPrefix ?? null}
           selectedRunId={urlRunId ?? null}
           adapterType={agent.adapterType}
         />
@@ -1004,7 +1039,15 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: string }) {
+function LatestRunCard({
+  runs,
+  agentId,
+  companyPrefix = null,
+}: {
+  runs: HeartbeatRun[];
+  agentId: string;
+  companyPrefix?: string | null;
+}) {
   if (runs.length === 0) return null;
 
   const sorted = [...runs].sort(
@@ -1033,7 +1076,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
           {isLive ? "Live Run" : "Latest Run"}
         </h3>
         <Link
-          to={`/agents/${agentId}/runs/${run.id}`}
+          to={buildScopedAgentPath(agentId, `/runs/${run.id}`, { companyPrefix })}
           className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors no-underline"
         >
           View details &rarr;
@@ -1041,7 +1084,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
       </div>
 
       <Link
-        to={`/agents/${agentId}/runs/${run.id}`}
+        to={buildScopedAgentPath(agentId, `/runs/${run.id}`, { companyPrefix })}
         className={cn(
           "block border rounded-lg p-4 space-y-2 w-full no-underline transition-colors hover:bg-muted/50 cursor-pointer",
           isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
@@ -1082,6 +1125,7 @@ function AgentOverview({
   runtimeState,
   agentId,
   agentRouteId,
+  companyPrefix = null,
 }: {
   agent: AgentDetailRecord;
   runs: HeartbeatRun[];
@@ -1089,11 +1133,12 @@ function AgentOverview({
   runtimeState?: AgentRuntimeState;
   agentId: string;
   agentRouteId: string;
+  companyPrefix?: string | null;
 }) {
   return (
     <div className="space-y-8">
       {/* Latest Run */}
-      <LatestRunCard runs={runs} agentId={agentRouteId} />
+      <LatestRunCard runs={runs} agentId={agentRouteId} companyPrefix={companyPrefix} />
 
       {/* Charts */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1550,7 +1595,7 @@ function SkillRow({ skill }: { skill: AvailableSkill }) {
       <div className="flex items-center gap-2">
         <span className="font-mono text-sm">{skill.name}</span>
         <Badge variant={skill.isPaperclipManaged ? "secondary" : "outline"}>
-          {skill.isPaperclipManaged ? "Growthub" : "Local"}
+          {skill.isPaperclipManaged ? "Paperclip" : "Local"}
         </Badge>
       </div>
       <p className="text-sm text-muted-foreground">
@@ -1562,7 +1607,17 @@ function SkillRow({ skill }: { skill: AvailableSkill }) {
 
 /* ---- Runs Tab ---- */
 
-function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelected: boolean; agentId: string }) {
+function RunListItem({
+  run,
+  isSelected,
+  agentId,
+  companyPrefix = null,
+}: {
+  run: HeartbeatRun;
+  isSelected: boolean;
+  agentId: string;
+  companyPrefix?: string | null;
+}) {
   const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
   const StatusIcon = statusInfo.icon;
   const metrics = runMetrics(run);
@@ -1572,7 +1627,11 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
 
   return (
     <Link
-      to={isSelected ? `/agents/${agentId}/runs` : `/agents/${agentId}/runs/${run.id}`}
+      to={
+        isSelected
+          ? buildScopedAgentPath(agentId, "/runs", { companyPrefix })
+          : buildScopedAgentPath(agentId, `/runs/${run.id}`, { companyPrefix })
+      }
       className={cn(
         "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors no-underline text-inherit",
         isSelected ? "bg-accent/40" : "hover:bg-accent/20",
@@ -1616,6 +1675,7 @@ function RunsTab({
   companyId,
   agentId,
   agentRouteId,
+  companyPrefix = null,
   selectedRunId,
   adapterType,
 }: {
@@ -1623,6 +1683,7 @@ function RunsTab({
   companyId: string;
   agentId: string;
   agentRouteId: string;
+  companyPrefix?: string | null;
   selectedRunId: string | null;
   adapterType: string;
 }) {
@@ -1647,20 +1708,32 @@ function RunsTab({
       return (
         <div className="space-y-3 min-w-0 overflow-x-hidden">
           <Link
-            to={`/agents/${agentRouteId}/runs`}
+            to={buildScopedAgentPath(agentRouteId, "/runs", { companyPrefix })}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors no-underline"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to runs
           </Link>
-          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
+          <RunDetail
+            key={selectedRun.id}
+            run={selectedRun}
+            agentRouteId={agentRouteId}
+            adapterType={adapterType}
+            companyPrefix={companyPrefix}
+          />
         </div>
       );
     }
     return (
       <div className="border border-border rounded-lg overflow-x-hidden">
         {sorted.map((run) => (
-          <RunListItem key={run.id} run={run} isSelected={false} agentId={agentRouteId} />
+          <RunListItem
+            key={run.id}
+            run={run}
+            isSelected={false}
+            agentId={agentRouteId}
+            companyPrefix={companyPrefix}
+          />
         ))}
       </div>
     );
@@ -1676,7 +1749,13 @@ function RunsTab({
       )}>
         <div className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
         {sorted.map((run) => (
-          <RunListItem key={run.id} run={run} isSelected={run.id === effectiveRunId} agentId={agentRouteId} />
+          <RunListItem
+            key={run.id}
+            run={run}
+            isSelected={run.id === effectiveRunId}
+            agentId={agentRouteId}
+            companyPrefix={companyPrefix}
+          />
         ))}
         </div>
       </div>
@@ -1684,7 +1763,13 @@ function RunsTab({
       {/* Right: run detail — natural height, page scrolls */}
       {selectedRun && (
         <div className="flex-1 min-w-0 pl-4">
-          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
+          <RunDetail
+            key={selectedRun.id}
+            run={selectedRun}
+            agentRouteId={agentRouteId}
+            adapterType={adapterType}
+            companyPrefix={companyPrefix}
+          />
         </div>
       )}
     </div>
@@ -1693,7 +1778,17 @@ function RunsTab({
 
 /* ---- Run Detail (expanded) ---- */
 
-function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: HeartbeatRun; agentRouteId: string; adapterType: string }) {
+function RunDetail({
+  run: initialRun,
+  agentRouteId,
+  adapterType,
+  companyPrefix = null,
+}: {
+  run: HeartbeatRun;
+  agentRouteId: string;
+  adapterType: string;
+  companyPrefix?: string | null;
+}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: hydratedRun } = useQuery({
@@ -1748,7 +1843,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
     },
     onSuccess: (resumedRun) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
-      navigate(`/agents/${agentRouteId}/runs/${resumedRun.id}`);
+      navigate(buildScopedAgentPath(agentRouteId, `/runs/${resumedRun.id}`, { companyPrefix }));
     },
   });
 
@@ -1780,7 +1875,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
     },
     onSuccess: (newRun) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
-      navigate(`/agents/${agentRouteId}/runs/${newRun.id}`);
+      navigate(buildScopedAgentPath(agentRouteId, `/runs/${newRun.id}`, { companyPrefix }));
     },
   });
 
@@ -2788,7 +2883,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
           Create API Key
         </h3>
         <p className="text-xs text-muted-foreground">
-          API keys allow this agent to authenticate calls to the Growthub server.
+          API keys allow this agent to authenticate calls to the Paperclip server.
         </p>
         <div className="flex items-center gap-2">
           <Input

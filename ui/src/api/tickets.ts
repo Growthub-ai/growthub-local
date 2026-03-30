@@ -1,4 +1,4 @@
-import type { Ticket } from "@paperclipai/shared";
+import type { Ticket, TicketStageDefinition } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type GhPr = {
@@ -31,13 +31,21 @@ export const ticketsApi = {
     title: string;
     description?: string;
     stageOrder?: string[];
+    stageDefinitions?: TicketStageDefinition[];
     instructions?: string;
     leadAgentId?: string | null;
     metadata?: Record<string, unknown>;
   }) =>
     api.post<Ticket>(`/companies/${companyId}/tickets`, data),
 
-  update: (companyId: string, ticketId: string, data: Partial<{ title: string; description: string | null; status: string; currentStage: string; stageOrder: string[] }>) =>
+  update: (companyId: string, ticketId: string, data: Partial<{
+    title: string;
+    description: string | null;
+    status: string;
+    currentStage: string;
+    stageOrder: string[];
+    stageDefinitions: TicketStageDefinition[];
+  }>) =>
     api.patch<Ticket>(`/companies/${companyId}/tickets/${ticketId}`, data),
 
   advanceStage: (companyId: string, ticketId: string) =>

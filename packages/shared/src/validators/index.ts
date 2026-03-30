@@ -119,6 +119,8 @@ export {
   createTicketSchema,
   updateTicketSchema,
   advanceTicketStageSchema,
+  ticketStageDefinitionSchema,
+  ticketStageDefinitionsSchema,
   type CreateTicket,
   type UpdateTicket,
   type AdvanceTicketStage,

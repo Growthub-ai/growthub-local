@@ -7,13 +7,19 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
+import { ticketsApi } from "../api/tickets";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useToast } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { assigneeValueFromSelection, suggestedCommentAssigneeValue } from "../lib/assignees";
+import { normalizeCompanyPrefix } from "../lib/company-routes";
 import { queryKeys } from "../lib/queryKeys";
-import { readIssueDetailBreadcrumb } from "../lib/issueDetailBreadcrumb";
+import {
+  createIssueDetailLocationState,
+  readIssueDetailBreadcrumb,
+  readIssueDetailBreadcrumbs,
+} from "../lib/issueDetailBreadcrumb";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { relativeTime, cn, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { InlineEditor } from "../components/InlineEditor";
@@ -33,27 +39,42 @@ import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Activity as ActivityIcon,
+  ArrowUpRight,
   Check,
+  ChevronLeft,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Copy,
   EyeOff,
   Hexagon,
+  Link2,
   ListTree,
   MessageSquare,
   MoreHorizontal,
   Paperclip,
+  RefreshCw,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
-import type { ActivityEvent } from "@paperclipai/shared";
-import type { Agent, IssueAttachment } from "@paperclipai/shared";
+import {
+  formatTicketStageLabel,
+  getTicketStageDefinition,
+  normalizeTicketStageDefinitions,
+  type ActivityEvent,
+  type Agent,
+  type Issue,
+  type IssueAttachment,
+  type Ticket,
+} from "@paperclipai/shared";
+import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
+import { surfaceProfile, toSurfacePath } from "../lib/surface-profile";
 
 type CommentReassignment = {
   assigneeAgentId: string | null;
@@ -106,6 +127,52 @@ function usageNumber(usage: Record<string, unknown> | null, ...keys: string[]) {
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 1) + "\u2026";
+}
+
+function parseIdentifierNumber(identifier: string | null | undefined): number {
+  if (!identifier) return Number.MAX_SAFE_INTEGER;
+  const match = identifier.match(/(\d+)$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function redactLogText(value: string): string {
+  return redactHomePathUserSegments(value);
+}
+
+function redactJsonValue(value: unknown): string {
+  return JSON.stringify(redactHomePathUserSegmentsInValue(value), null, 2);
+}
+
+function formatRunPulseLabel(status: string) {
+  return status === "running" || status === "queued" ? "Live pulse" : "Last run pulse";
+}
+
+type TicketIssueSummary = Pick<Issue, "id" | "identifier" | "title" | "status" | "ticketStage" | "assigneeAgentId">;
+type TicketBranchIssueSummary = TicketIssueSummary & {
+  executionWorkspaceId?: string | null;
+  currentBranchName?: string | null;
+  currentWorkspacePath?: string | null;
+};
+type TicketDetailWithIssues = Ticket & { issues?: TicketBranchIssueSummary[] };
+
+function buildScopedIssuePath(
+  issueRef: string,
+  options?: { companyPrefix?: string | null },
+): string {
+  const basePath = `/issues/${issueRef}`;
+  if (surfaceProfile !== "gtm") return basePath;
+
+  const companyPrefix = options?.companyPrefix?.trim();
+  if (!companyPrefix) return toSurfacePath(basePath);
+  return toSurfacePath(`/${normalizeCompanyPrefix(companyPrefix)}${basePath}`);
+}
+
+function buildScopedIssuesIndexPath(options?: { companyPrefix?: string | null }): string {
+  if (surfaceProfile !== "gtm") return "/issues/all";
+
+  const companyPrefix = options?.companyPrefix?.trim();
+  if (!companyPrefix) return toSurfacePath("/issues/all");
+  return toSurfacePath(`/${normalizeCompanyPrefix(companyPrefix)}/issues/all`);
 }
 
 function isMarkdownFile(file: File) {
@@ -193,19 +260,282 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
   return <Identity name={id || "Unknown"} size="sm" />;
 }
 
+function TicketIssueNavigator({
+  ticket,
+  issue,
+  companyPrefix = null,
+}: {
+  ticket: TicketDetailWithIssues;
+  issue: Issue;
+  companyPrefix?: string | null;
+}) {
+  const stageOrder = ticket.stageOrder ?? [];
+  const stageDefinitions = normalizeTicketStageDefinitions({
+    stageDefinitions: ticket.stageDefinitions,
+    stageOrder,
+  });
+  const ticketIssues = (ticket.issues ?? []).slice().sort((a, b) => {
+    const aStageIndex = stageOrder.indexOf(a.ticketStage ?? "");
+    const bStageIndex = stageOrder.indexOf(b.ticketStage ?? "");
+    const stageDelta =
+      (aStageIndex === -1 ? Number.MAX_SAFE_INTEGER : aStageIndex) -
+      (bStageIndex === -1 ? Number.MAX_SAFE_INTEGER : bStageIndex);
+    if (stageDelta !== 0) return stageDelta;
+    return parseIdentifierNumber(a.identifier) - parseIdentifierNumber(b.identifier);
+  });
+  const currentIndex = ticketIssues.findIndex((candidate) => candidate.id === issue.id);
+  const previousIssue = currentIndex > 0 ? ticketIssues[currentIndex - 1] : null;
+  const nextIssue = currentIndex >= 0 && currentIndex < ticketIssues.length - 1 ? ticketIssues[currentIndex + 1] : null;
+  const issueLinkState = createIssueDetailLocationState([
+    { label: "Tickets", href: "/tickets" },
+    { label: ticket.identifier ?? ticket.id.slice(0, 8), href: `/tickets/${ticket.id}` },
+  ]);
+
+  return (
+    <div className="rounded-xl border border-border bg-card/70 px-4 py-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            <Link2 className="h-3.5 w-3.5" />
+            Ticket Flow
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+            <Link to={`/tickets/${ticket.id}`} className="font-medium hover:underline">
+              {ticket.identifier ?? ticket.id.slice(0, 8)}
+            </Link>
+            <span className="text-muted-foreground">{ticket.title}</span>
+            {issue.ticketStage ? (
+              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                {getTicketStageDefinition(stageDefinitions, issue.ticketStage)?.label ?? formatTicketStageLabel(issue.ticketStage)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {previousIssue ? (
+            <Link
+              to={buildScopedIssuePath(previousIssue.identifier ?? previousIssue.id, { companyPrefix })}
+              state={issueLinkState}
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium hover:bg-accent/40"
+            >
+              <ChevronLeft className="h-3 w-3" />
+              {previousIssue.identifier ?? previousIssue.id.slice(0, 8)}
+            </Link>
+          ) : null}
+          {nextIssue ? (
+            <Link
+              to={buildScopedIssuePath(nextIssue.identifier ?? nextIssue.id, { companyPrefix })}
+              state={issueLinkState}
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium hover:bg-accent/40"
+            >
+              {nextIssue.identifier ?? nextIssue.id.slice(0, 8)}
+              <ChevronRight className="h-3 w-3" />
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {ticketIssues.map((ticketIssue) => {
+          const selected = ticketIssue.id === issue.id;
+          return (
+            <Link
+              key={ticketIssue.id}
+              to={buildScopedIssuePath(ticketIssue.identifier ?? ticketIssue.id, { companyPrefix })}
+              state={issueLinkState}
+              className={cn(
+                "rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+                selected
+                  ? "border-foreground/20 bg-accent text-foreground"
+                  : "border-border text-muted-foreground hover:bg-accent/30 hover:text-foreground",
+              )}
+            >
+              <div className="font-mono">{ticketIssue.identifier ?? ticketIssue.id.slice(0, 8)}</div>
+              <div className="mt-0.5 max-w-[180px] truncate">{ticketIssue.title}</div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function IssuePulsePanel({
+  pulseRuns,
+}: {
+  pulseRuns: Array<{
+    id: string;
+    status: string;
+    agentId: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    createdAt: string;
+    invocationSource: string;
+    resultJson: Record<string, unknown> | null;
+  }>;
+}) {
+  const [logsByRun, setLogsByRun] = useState<Map<string, string>>(new Map());
+  const [offsetsByRun, setOffsetsByRun] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const knownRunIds = new Set(pulseRuns.map((run) => run.id));
+    setLogsByRun((prev) => {
+      const next = new Map<string, string>();
+      for (const [runId, value] of prev) {
+        if (knownRunIds.has(runId)) next.set(runId, value);
+      }
+      return next;
+    });
+    setOffsetsByRun((prev) => {
+      const next = new Map<string, number>();
+      for (const [runId, value] of prev) {
+        if (knownRunIds.has(runId)) next.set(runId, value);
+      }
+      return next;
+    });
+  }, [pulseRuns]);
+
+  useEffect(() => {
+    if (pulseRuns.length === 0) return;
+    let cancelled = false;
+
+    const loadLogs = async () => {
+      await Promise.all(
+        pulseRuns.map(async (run) => {
+          const offset = offsetsByRun.get(run.id) ?? 0;
+          try {
+            const result = await heartbeatsApi.log(run.id, offset, 128_000);
+            if (cancelled || !result.content) return;
+            setLogsByRun((prev) => {
+              const next = new Map(prev);
+              const prior = next.get(run.id) ?? "";
+              next.set(run.id, `${prior}${result.content}`.slice(-48_000));
+              return next;
+            });
+            setOffsetsByRun((prev) => {
+              const next = new Map(prev);
+              next.set(run.id, result.nextOffset ?? offset + result.content.length);
+              return next;
+            });
+          } catch {
+            // Ignore unavailable logs while runs initialize or expire.
+          }
+        }),
+      );
+    };
+
+    void loadLogs();
+    const interval = window.setInterval(() => {
+      void loadLogs();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [offsetsByRun, pulseRuns]);
+
+  if (pulseRuns.length === 0) {
+    return <p className="text-xs text-muted-foreground">No live or historical heartbeat runs are linked to this issue yet.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {pulseRuns.map((run) => {
+        const logBody = logsByRun.get(run.id) ?? "";
+        return (
+          <section key={run.id} className="overflow-hidden rounded-xl border border-border bg-card/70">
+            <div className="flex flex-col gap-2 border-b border-border/60 px-4 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-mono text-foreground">{run.id.slice(0, 8)}</span>
+                  <StatusBadge status={run.status} />
+                  <span className="text-muted-foreground">{formatRunPulseLabel(run.status)}</span>
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {run.invocationSource} · {relativeTime(run.startedAt ?? run.createdAt)}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/agents/${run.agentId}/runs/${run.id}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium hover:bg-accent/40"
+                >
+                  Open run
+                  <ChevronRight className="h-3 w-3" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogsByRun((prev) => {
+                      const next = new Map(prev);
+                      next.delete(run.id);
+                      return next;
+                    });
+                    setOffsetsByRun((prev) => {
+                      const next = new Map(prev);
+                      next.set(run.id, 0);
+                      return next;
+                    });
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Reload
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-0 lg:grid-cols-2">
+              <div className="border-b border-border/60 lg:border-b-0 lg:border-r">
+                <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Node Log
+                </div>
+                <pre className="max-h-[360px] overflow-auto px-4 pb-4 text-[11px] leading-5 text-foreground whitespace-pre-wrap break-all">
+                  {logBody ? redactLogText(logBody) : "No persisted log output yet."}
+                </pre>
+              </div>
+
+              <div>
+                <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Result JSON
+                </div>
+                <pre className="max-h-[360px] overflow-auto px-4 pb-4 text-[11px] leading-5 text-foreground whitespace-pre-wrap break-all">
+                  {run.resultJson ? redactJsonValue(run.resultJson) : "No structured result yet."}
+                </pre>
+              </div>
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export function IssueDetail() {
-  const { issueId } = useParams<{ issueId: string }>();
+  const { companyPrefix, issueId } = useParams<{ companyPrefix?: string; issueId: string }>();
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const issuePath = useMemo(
+    () => (issueRef: string) => buildScopedIssuePath(issueRef, { companyPrefix }),
+    [companyPrefix],
+  );
+  const issuesIndexPath = useMemo(
+    () => buildScopedIssuesIndexPath({ companyPrefix }),
+    [companyPrefix],
+  );
   const { pushToast } = useToast();
   const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("comments");
+  const [cursorPickerOpen, setCursorPickerOpen] = useState(false);
+  const [selectedCursorIssueId, setSelectedCursorIssueId] = useState<string | null>(null);
   const [secondaryOpen, setSecondaryOpen] = useState({
     approvals: false,
   });
@@ -268,8 +598,8 @@ export function IssueDetail() {
   });
 
   const hasLiveRuns = (liveRuns ?? []).length > 0 || !!activeRun;
-  const sourceBreadcrumb = useMemo(
-    () => readIssueDetailBreadcrumb(location.state) ?? { label: "Issues", href: "/issues" },
+  const sourceBreadcrumbs = useMemo(
+    () => readIssueDetailBreadcrumbs(location.state) ?? [readIssueDetailBreadcrumb(location.state) ?? { label: "Issues", href: "/issues" }],
     [location.state],
   );
 
@@ -304,6 +634,24 @@ export function IssueDetail() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: ticketDetail } = useQuery({
+    queryKey: queryKeys.tickets.detail(issue?.ticketId ?? "__no-ticket__"),
+    queryFn: () => ticketsApi.get(issue!.companyId, issue!.ticketId!),
+    enabled: !!issue?.ticketId,
+  });
+  const ticketBranchIssues = useMemo(() => {
+    const ticket = ticketDetail as TicketDetailWithIssues | undefined;
+    if (!ticket?.issues) return [];
+    return ticket.issues.slice().sort((a, b) => {
+      const aStage = ticket.stageOrder.indexOf(a.ticketStage ?? "");
+      const bStage = ticket.stageOrder.indexOf(b.ticketStage ?? "");
+      const stageDelta =
+        (aStage === -1 ? Number.MAX_SAFE_INTEGER : aStage) -
+        (bStage === -1 ? Number.MAX_SAFE_INTEGER : bStage);
+      if (stageDelta !== 0) return stageDelta;
+      return parseIdentifierNumber(a.identifier) - parseIdentifierNumber(b.identifier);
+    });
+  }, [ticketDetail]);
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   const { orderedProjects } = useProjectOrder({
     projects: projects ?? [],
@@ -447,6 +795,60 @@ export function IssueDetail() {
       hasTokens,
     };
   }, [linkedRuns]);
+  const pulseRuns = useMemo(() => {
+    const runs = new Map<string, {
+      id: string;
+      status: string;
+      agentId: string;
+      startedAt: string | null;
+      finishedAt: string | null;
+      createdAt: string;
+      invocationSource: string;
+      resultJson: Record<string, unknown> | null;
+    }>();
+
+    for (const run of liveRuns ?? []) {
+      runs.set(run.id, {
+        id: run.id,
+        status: run.status,
+        agentId: run.agentId,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        createdAt: run.createdAt,
+        invocationSource: run.invocationSource,
+        resultJson: null,
+      });
+    }
+    if (activeRun) {
+      runs.set(activeRun.id, {
+        id: activeRun.id,
+        status: activeRun.status,
+        agentId: activeRun.agentId,
+        startedAt: activeRun.startedAt ? new Date(activeRun.startedAt).toISOString() : null,
+        finishedAt: activeRun.finishedAt ? new Date(activeRun.finishedAt).toISOString() : null,
+        createdAt: new Date(activeRun.createdAt).toISOString(),
+        invocationSource: activeRun.invocationSource,
+        resultJson: null,
+      });
+    }
+    for (const run of linkedRuns ?? []) {
+      if (runs.has(run.runId)) continue;
+      runs.set(run.runId, {
+        id: run.runId,
+        status: run.status,
+        agentId: run.agentId,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        createdAt: run.createdAt,
+        invocationSource: run.invocationSource,
+        resultJson: run.resultJson,
+      });
+      if (runs.size >= 4) break;
+    }
+    return [...runs.values()]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 4);
+  }, [activeRun, linkedRuns, liveRuns]);
 
   const invalidateIssue = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
@@ -564,21 +966,38 @@ export function IssueDetail() {
       setAttachmentError(err instanceof Error ? err.message : "Delete failed");
     },
   });
+  const openIssueInCursor = useMutation({
+    mutationFn: (targetIssueId: string) => issuesApi.openLocal(targetIssueId),
+    onSuccess: () => {
+      setCursorPickerOpen(false);
+      invalidateIssue();
+      if (issue?.ticketId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.tickets.detail(issue.ticketId) });
+      }
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Failed to open Cursor",
+        body: err instanceof Error ? err.message : "Issue branch open failed",
+        tone: "error",
+      });
+    },
+  });
 
   useEffect(() => {
     const titleLabel = issue?.title ?? issueId ?? "Issue";
     setBreadcrumbs([
-      sourceBreadcrumb,
+      ...sourceBreadcrumbs,
       { label: hasLiveRuns ? `🔵 ${titleLabel}` : titleLabel },
     ]);
-  }, [setBreadcrumbs, sourceBreadcrumb, issue, issueId, hasLiveRuns]);
+  }, [setBreadcrumbs, sourceBreadcrumbs, issue, issueId, hasLiveRuns]);
 
   // Redirect to identifier-based URL if navigated via UUID
   useEffect(() => {
     if (issue?.identifier && issueId !== issue.identifier) {
-      navigate(`/issues/${issue.identifier}`, { replace: true, state: location.state });
+      navigate(issuePath(issue.identifier), { replace: true, state: location.state });
     }
-  }, [issue, issueId, navigate, location.state]);
+  }, [issue, issueId, navigate, location.state, issuePath]);
 
   useEffect(() => {
     if (!issue?.id) return;
@@ -586,6 +1005,15 @@ export function IssueDetail() {
     lastMarkedReadIssueIdRef.current = issue.id;
     markIssueRead.mutate(issue.id);
   }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!cursorPickerOpen) return;
+    const defaultIssue =
+      ticketBranchIssues.find((candidate) => candidate.id === issue?.id) ??
+      ticketBranchIssues[0] ??
+      null;
+    setSelectedCursorIssueId(defaultIssue?.id ?? null);
+  }, [cursorPickerOpen, issue?.id, ticketBranchIssues]);
 
   // Reset description expansion when navigating to a different issue
   useEffect(() => {
@@ -620,6 +1048,7 @@ export function IssueDetail() {
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!issue) return null;
+  const selectedCursorIssue = ticketBranchIssues.find((candidate) => candidate.id === selectedCursorIssueId) ?? null;
 
   // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
   const ancestors = issue.ancestors ?? [];
@@ -690,7 +1119,7 @@ export function IssueDetail() {
             <span key={ancestor.id} className="flex items-center gap-1">
               {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
               <Link
-                to={`/issues/${ancestor.identifier ?? ancestor.id}`}
+                to={issuePath(ancestor.identifier ?? ancestor.id)}
                 state={location.state}
                 className="hover:text-foreground transition-colors truncate max-w-[200px]"
                 title={ancestor.title}
@@ -703,6 +1132,14 @@ export function IssueDetail() {
           <span className="text-foreground/60 truncate max-w-[200px]">{issue.title}</span>
         </nav>
       )}
+
+      {issue.ticketId && ticketDetail ? (
+        <TicketIssueNavigator
+          ticket={ticketDetail as TicketDetailWithIssues}
+          issue={issue}
+          companyPrefix={companyPrefix ?? null}
+        />
+      ) : null}
 
       {issue.hiddenAt && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -771,6 +1208,16 @@ export function IssueDetail() {
 
           <div className="ml-auto flex items-center gap-0.5 md:hidden shrink-0">
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCursorPickerOpen(true)}
+              title="Pick a ticket branch to open in Cursor"
+              className="mr-1 h-7 gap-1 px-2 text-[11px]"
+            >
+              <ArrowUpRight className="h-3 w-3" />
+              Cursor
+            </Button>
+            <Button
               variant="ghost"
               size="icon-xs"
               onClick={copyIssueToClipboard}
@@ -789,6 +1236,16 @@ export function IssueDetail() {
           </div>
 
           <div className="hidden md:flex items-center md:ml-auto shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCursorPickerOpen(true)}
+              title="Pick a ticket branch to open in Cursor"
+              className="mr-2 h-8 gap-1.5"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" />
+              Open in Cursor
+            </Button>
             <Button
               variant="ghost"
               size="icon-xs"
@@ -822,7 +1279,7 @@ export function IssueDetail() {
                 onClick={() => {
                   updateIssue.mutate(
                     { hiddenAt: new Date().toISOString() },
-                    { onSuccess: () => navigate("/issues/all") },
+                    { onSuccess: () => navigate(issuesIndexPath) },
                   );
                   setMoreOpen(false);
                 }}
@@ -1017,6 +1474,10 @@ export function IssueDetail() {
             <ActivityIcon className="h-3.5 w-3.5" />
             Activity
           </TabsTrigger>
+          <TabsTrigger value="pulse" className="gap-1.5">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Pulse
+          </TabsTrigger>
           {issuePluginTabItems.map((item) => (
             <TabsTrigger key={item.value} value={item.value}>
               {item.label}
@@ -1064,7 +1525,7 @@ export function IssueDetail() {
               {childIssues.map((child) => (
                 <Link
                   key={child.id}
-                  to={`/issues/${child.identifier ?? child.id}`}
+                  to={issuePath(child.identifier ?? child.id)}
                   state={location.state}
                   className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
                 >
@@ -1128,6 +1589,10 @@ export function IssueDetail() {
           )}
         </TabsContent>
 
+        <TabsContent value="pulse">
+          <IssuePulsePanel pulseRuns={pulseRuns} />
+        </TabsContent>
+
         {activePluginTab && (
           <TabsContent value={activePluginTab.value}>
             <PluginSlotMount
@@ -1180,6 +1645,86 @@ export function IssueDetail() {
           </CollapsibleContent>
         </Collapsible>
       )}
+
+      <Dialog open={cursorPickerOpen} onOpenChange={setCursorPickerOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Open Ticket Branch In Cursor</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Pick the exact ticket issue branch/worktree to open. The second step is explicit confirmation before Cursor launches.
+            </p>
+
+            <div className="rounded-lg border border-border overflow-hidden">
+              <div className="border-b border-border bg-accent/30 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Ticket Branches
+              </div>
+              <div className="max-h-[320px] overflow-y-auto divide-y divide-border">
+                {ticketBranchIssues.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-muted-foreground">
+                    This issue is not inside a ticket with any linked issues to open.
+                  </div>
+                ) : (
+                  ticketBranchIssues.map((ticketIssue) => {
+                    const selected = ticketIssue.id === selectedCursorIssueId;
+                    return (
+                      <button
+                        key={ticketIssue.id}
+                        type="button"
+                        onClick={() => setSelectedCursorIssueId(ticketIssue.id)}
+                        className={cn(
+                          "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
+                          "hover:bg-accent/40",
+                          selected && "bg-accent",
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-mono text-foreground">{ticketIssue.identifier ?? ticketIssue.id.slice(0, 8)}</span>
+                            {ticketIssue.ticketStage ? (
+                              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                                {ticketIssue.ticketStage.replace(/_/g, " ")}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 text-sm font-medium">{ticketIssue.title}</div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            {ticketIssue.currentBranchName
+                              ? `Branch: ${ticketIssue.currentBranchName}`
+                              : "Will realize the deterministic issue branch/worktree when opened"}
+                          </div>
+                        </div>
+                        {selected ? <Check className="mt-0.5 h-4 w-4 text-foreground" /> : null}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCursorPickerOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!selectedCursorIssueId) return;
+                openIssueInCursor.mutate(selectedCursorIssueId);
+              }}
+              disabled={!selectedCursorIssueId || openIssueInCursor.isPending}
+              className="gap-1.5"
+            >
+              {openIssueInCursor.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+              {selectedCursorIssue?.currentBranchName
+                ? `Open ${selectedCursorIssue.currentBranchName}`
+                : "Confirm Branch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
 
       {/* Mobile properties drawer */}

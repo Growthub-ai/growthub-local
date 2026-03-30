@@ -54,7 +54,7 @@ export type {
   IssueAttachment,
   IssueLabel,
 } from "./issue.js";
-export type { Ticket, TicketStageSummary } from "./ticket.js";
+export type { Ticket, TicketStageDefinition, TicketStageSummary } from "./ticket.js";
 export type { Goal } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
@@ -89,6 +89,7 @@ export type { LiveEvent } from "./live.js";
 export type { DashboardSummary } from "./dashboard.js";
 export type { ActivityEvent } from "./activity.js";
 export type { SidebarBadges } from "./sidebar-badges.js";
+export type { SurfaceProfile, SurfaceRuntimeCapabilities, SurfaceRuntimeContract } from "./surface-runtime.js";
 export type {
   CompanyMembership,
   PrincipalPermissionGrant,

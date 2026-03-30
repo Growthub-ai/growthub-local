@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AdapterEnvironmentTestResult } from "@paperclipai/shared";
+import { createGtmStagePreset, type AdapterEnvironmentTestResult } from "@paperclipai/shared";
 import { useLocation, useNavigate, useParams } from "@/lib/router";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -370,7 +370,7 @@ export function OnboardingWizard() {
         ticketInstructions.trim() ||
         "Keep initial GTM onboarding work tracked under this campaign until the CEO repackages the real GTM plan.",
       leadAgentId,
-      stageOrder: ["planning", "execution", "qa", "human"],
+      stageDefinitions: createGtmStagePreset(),
       metadata: {
         ...GTM_METADATA,
         entity: "campaign",
@@ -959,7 +959,7 @@ export function OnboardingWizard() {
                           <label className="text-xs text-muted-foreground">
                             Working directory
                           </label>
-                          <HintIcon text="Growthub works best if you create a new folder for your agents to keep their memories and stay organized. Create a new folder and put the path here." />
+                          <HintIcon text="Paperclip works best if you create a new folder for your agents to keep their memories and stay organized. Create a new folder and put the path here." />
                         </div>
                         <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
                           <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
