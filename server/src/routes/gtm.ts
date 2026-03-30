@@ -9,6 +9,11 @@ import { heartbeatService } from "../services/heartbeat.js";
 import { issueService } from "../services/issues.js";
 import { ticketService } from "../services/tickets.js";
 import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.js";
+import {
+  clearGrowthubConnectionAuth,
+  readGrowthubConnectionState,
+  resolveGrowthubBridgeBaseUrls,
+} from "../services/growthub-connection.js";
 import { resolvePaperclipHomeDir } from "../home-paths.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -74,18 +79,7 @@ function isManagedClaudeBrowserAgent(agent: { metadata: unknown }): boolean {
 
 function getGrowthubConnectionState() {
   const config = readConfigFile();
-  const baseUrl =
-    config?.auth.growthubBaseUrl?.trim() ||
-    process.env.GROWTHUB_BASE_URL?.trim() ||
-    "";
-  return {
-    baseUrl,
-    connected: Boolean(config?.auth.token?.trim()),
-    portalBaseUrl: config?.auth.growthubPortalBaseUrl?.trim() || "",
-    machineLabel: config?.auth.growthubMachineLabel?.trim() || "",
-    workspaceLabel: config?.auth.growthubWorkspaceLabel?.trim() || "",
-    token: config?.auth.token?.trim() || "",
-  };
+  return readGrowthubConnectionState(config, process.env.GROWTHUB_BASE_URL);
 }
 
 function saveGrowthubBaseUrl(baseUrl: string) {
@@ -170,29 +164,49 @@ export function gtmRoutes(db: Db) {
     }
 
     try {
-      const response = await fetch(new URL("/api/providers/growthub-local/probe", connection.baseUrl), {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${connection.token}`,
-        },
+      const targets = resolveGrowthubBridgeBaseUrls({
+        baseUrl: connection.baseUrl,
+        portalBaseUrl: connection.portalBaseUrl,
       });
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!response.ok) {
-        res.status(response.status).json({
-          error:
-            (typeof data.error === "string" && data.error) ||
-            "Growthub local probe failed.",
-        });
-        return;
+      let lastFailure: { status: number; data: Record<string, unknown> } | null = null;
+      let lastError: unknown = null;
+
+      for (const target of targets) {
+        try {
+          const response = await fetch(new URL("/api/providers/growthub-local/probe", target), {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${connection.token}`,
+            },
+          });
+          const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+          if (!response.ok) {
+            lastFailure = { status: response.status, data };
+            continue;
+          }
+
+          res.json({
+            success: true,
+            message:
+              (typeof data.message === "string" && data.message) ||
+              "Growthub local probe succeeded.",
+            knowledgeItemId:
+              typeof data.knowledgeItemId === "string" ? data.knowledgeItemId : null,
+          });
+          return;
+        } catch (error) {
+          lastError = error;
+        }
       }
 
-      res.json({
-        success: true,
-        message:
-          (typeof data.message === "string" && data.message) ||
-          "Growthub local probe succeeded.",
-        knowledgeItemId:
-          typeof data.knowledgeItemId === "string" ? data.knowledgeItemId : null,
+      if (lastError && !lastFailure) {
+        throw lastError;
+      }
+
+      res.status(lastFailure?.status ?? 502).json({
+        error:
+          (typeof lastFailure?.data.error === "string" && lastFailure.data.error) ||
+          "Growthub local probe failed.",
       });
     } catch (error) {
       res.status(502).json({
@@ -208,29 +222,16 @@ export function gtmRoutes(db: Db) {
       return;
     }
 
-    writeConfigFile({
-      ...config,
-      $meta: {
-        ...config.$meta,
-        updatedAt: new Date().toISOString(),
-        source: "configure",
-      },
-      auth: {
-        ...config.auth,
-        token: undefined,
-        growthubPortalBaseUrl: undefined,
-        growthubMachineLabel: undefined,
-        growthubWorkspaceLabel: undefined,
-      },
-    });
+    writeConfigFile(clearGrowthubConnectionAuth(config));
+    const nextState = getGrowthubConnectionState();
 
     res.json({
-      baseUrl: config.auth.growthubBaseUrl?.trim() || "",
+      baseUrl: nextState.baseUrl,
       callbackUrl: "/auth/callback",
       connected: false,
-      portalBaseUrl: "",
-      machineLabel: "",
-      workspaceLabel: "",
+      portalBaseUrl: nextState.portalBaseUrl,
+      machineLabel: nextState.machineLabel,
+      workspaceLabel: nextState.workspaceLabel,
     });
   });
 
@@ -250,6 +251,7 @@ export function gtmRoutes(db: Db) {
     }
 
     saveGrowthubBaseUrl(normalizedBaseUrl);
+    const nextState = getGrowthubConnectionState();
 
     const host = req.get("host");
     const forwardedProto = req.get("x-forwarded-proto");
@@ -259,7 +261,10 @@ export function gtmRoutes(db: Db) {
     res.json({
       baseUrl: normalizedBaseUrl,
       callbackUrl,
-      connected: getGrowthubConnectionState().connected,
+      connected: nextState.connected,
+      portalBaseUrl: nextState.portalBaseUrl,
+      machineLabel: nextState.machineLabel,
+      workspaceLabel: nextState.workspaceLabel,
     });
   });
 

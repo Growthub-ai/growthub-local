@@ -64,6 +64,7 @@ function getGrowthubConnectionState() {
     const config = readConfigFile();
     const baseUrl = config?.auth.growthubBaseUrl?.trim() ||
         process.env.GROWTHUB_BASE_URL?.trim() ||
+        config?.auth.growthubPortalBaseUrl?.trim() ||
         "";
     return {
         baseUrl,
@@ -147,26 +148,45 @@ export function gtmRoutes(db) {
             return;
         }
         try {
-            const response = await fetch(new URL("/api/providers/growthub-local/probe", connection.baseUrl), {
-                method: "POST",
-                headers: {
-                    authorization: `Bearer ${connection.token}`,
-                },
-            });
-            const data = (await response.json().catch(() => ({})));
-            if (!response.ok) {
-                res.status(response.status).json({
-                    error: (typeof data.error === "string" && data.error) ||
-                        "Growthub local probe failed.",
-                });
-                return;
+            const targets = [connection.baseUrl];
+            if (connection.portalBaseUrl && connection.portalBaseUrl !== connection.baseUrl) {
+                targets.push(connection.portalBaseUrl);
             }
-            res.json({
-                success: true,
-                message: (typeof data.message === "string" && data.message) ||
-                    "Growthub local probe succeeded.",
-                knowledgeItemId: typeof data.knowledgeItemId === "string" ? data.knowledgeItemId : null,
+            let lastFailure = null;
+            let lastError = null;
+            for (const target of targets) {
+                try {
+                    const response = await fetch(new URL("/api/providers/growthub-local/probe", target), {
+                        method: "POST",
+                        headers: {
+                            authorization: `Bearer ${connection.token}`,
+                        },
+                    });
+                    const data = (await response.json().catch(() => ({})));
+                    if (!response.ok) {
+                        lastFailure = { status: response.status, data };
+                        continue;
+                    }
+                    res.json({
+                        success: true,
+                        message: (typeof data.message === "string" && data.message) ||
+                            "Growthub local probe succeeded.",
+                        knowledgeItemId: typeof data.knowledgeItemId === "string" ? data.knowledgeItemId : null,
+                    });
+                    return;
+                }
+                catch (error) {
+                    lastError = error;
+                }
+            }
+            if (lastError && !lastFailure) {
+                throw lastError;
+            }
+            res.status((lastFailure?.status) ?? 502).json({
+                error: (typeof lastFailure?.data?.error === "string" && lastFailure.data.error) ||
+                    "Growthub local probe failed.",
             });
+            return;
         }
         catch (error) {
             res.status(502).json({
@@ -196,7 +216,7 @@ export function gtmRoutes(db) {
             },
         });
         res.json({
-            baseUrl: config.auth.growthubBaseUrl?.trim() || "",
+            baseUrl: getGrowthubConnectionState().baseUrl,
             callbackUrl: "/auth/callback",
             connected: false,
             portalBaseUrl: "",

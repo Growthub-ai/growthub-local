@@ -45,6 +45,7 @@ import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
+import { applyGrowthubCallbackAuth } from "./services/growthub-connection.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { readConfigFile, writeConfigFile } from "./config-file.js";
@@ -148,22 +149,14 @@ export async function createApp(
       return;
     }
 
-    writeConfigFile({
-      ...config,
-      $meta: {
-        ...config.$meta,
-        updatedAt: new Date().toISOString(),
-        source: "configure",
-      },
-      auth: {
-        ...config.auth,
-        token,
-        growthubBaseUrl: normalizedPortalBaseUrl ?? config.auth.growthubBaseUrl,
-        growthubPortalBaseUrl: normalizedPortalBaseUrl ?? config.auth.growthubPortalBaseUrl,
-        growthubMachineLabel: machineLabel || config.auth.growthubMachineLabel,
-        growthubWorkspaceLabel: workspaceLabel || config.auth.growthubWorkspaceLabel,
-      },
-    });
+    // Preserve the configured base URL while still persisting callback metadata
+    // such as growthubPortalBaseUrl, growthubMachineLabel, and growthubWorkspaceLabel.
+    writeConfigFile(applyGrowthubCallbackAuth(config, {
+      token,
+      portalBaseUrl: normalizedPortalBaseUrl,
+      machineLabel,
+      workspaceLabel,
+    }));
 
     const host = req.get("host");
     const forwardedProto = req.get("x-forwarded-proto");
