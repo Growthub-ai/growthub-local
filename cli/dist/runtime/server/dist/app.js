@@ -123,7 +123,7 @@ export async function createApp(db, opts) {
             auth: {
                 ...config.auth,
                 token,
-                growthubBaseUrl: normalizedPortalBaseUrl ?? config.auth.growthubBaseUrl,
+                growthubBaseUrl: config.auth.growthubBaseUrl,
                 growthubPortalBaseUrl: normalizedPortalBaseUrl ?? config.auth.growthubPortalBaseUrl,
                 growthubMachineLabel: machineLabel || config.auth.growthubMachineLabel,
                 growthubWorkspaceLabel: workspaceLabel || config.auth.growthubWorkspaceLabel,
