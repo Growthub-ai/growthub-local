@@ -9,3 +9,10 @@ growthub-local/instances
 tmp
 .npm-cache/
 SKILL.md
+
+# Agent worktrees and local settings (super admin only)
+.claude/worktrees/
+.claude/settings.json
+.claude/settings.local.json
+.claude/projects/
+.claude/todos/

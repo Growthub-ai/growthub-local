@@ -1,0 +1,28 @@
+# growthub-local — Agent Workflow
+
+## Before any work
+- Work in a worktree or feature branch, never directly on main.
+- Branch must follow: fix/, feat/, chore/, refactor/, docs/, ci/, test/, perf/, adapter/, sync/
+- Read source files before editing.
+
+## Before pushing
+Run `bash scripts/pr-ready.sh` — validates all pre-push contracts in one shot.
+
+## Command guardrails
+Run `bash scripts/guard.sh check-command "<command>"` before destructive git operations.
+
+## Two-repo reality
+- growthub-local = source of truth, PR branch, CI/CD, npm packages
+- growthub-core = browser testing only (HMR at localhost:3100)
+- To test UI: cp worktree file → growthub-core/growthub-core/ui/src/
+- Always sync back after browser validation
+
+## Version bumps (only when source changes ship to npm)
+- cli/package.json version +1
+- packages/create-growthub-local/package.json version +1
+- dep pin in create-growthub-local must match cli version exactly
+
+## CI gates
+- smoke, validate, verify — all 3 must pass
+- node scripts/release-check.mjs must pass locally before merge
+- After merge: run release.yml, confirm npm versions updated
