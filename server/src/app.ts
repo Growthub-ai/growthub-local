@@ -149,6 +149,8 @@ export async function createApp(
       return;
     }
 
+    // Preserve the configured base URL while still persisting callback metadata
+    // such as growthubPortalBaseUrl, growthubMachineLabel, and growthubWorkspaceLabel.
     writeConfigFile(applyGrowthubCallbackAuth(config, {
       token,
       portalBaseUrl: normalizedPortalBaseUrl,
