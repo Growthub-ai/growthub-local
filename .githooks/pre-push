@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Universal pre-push hook — fires for any agent or human.
+# Install: git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/guard.sh" pre-push
