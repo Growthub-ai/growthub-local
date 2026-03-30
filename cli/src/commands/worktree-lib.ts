@@ -224,9 +224,6 @@ export function buildWorktreeConfig(input: {
       ...(authPublicBaseUrl ? { publicBaseUrl: authPublicBaseUrl } : {}),
       disableSignUp: source?.auth.disableSignUp ?? false,
     },
-    surface: {
-      profile: source?.surface.profile ?? "dx",
-    },
     storage: {
       provider: source?.storage.provider ?? "local_disk",
       localDisk: {

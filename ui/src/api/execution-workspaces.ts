@@ -22,5 +22,7 @@ export const executionWorkspacesApi = {
     return api.get<ExecutionWorkspace[]>(`/companies/${companyId}/execution-workspaces${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => api.get<ExecutionWorkspace>(`/execution-workspaces/${id}`),
+  openLocal: (id: string) =>
+    api.post<{ ok: true; app: string; path: string; branchName: string | null }>(`/execution-workspaces/${id}/open-local`, {}),
   update: (id: string, data: Record<string, unknown>) => api.patch<ExecutionWorkspace>(`/execution-workspaces/${id}`, data),
 };

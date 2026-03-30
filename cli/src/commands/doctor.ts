@@ -29,7 +29,7 @@ export async function doctor(opts: {
   yes?: boolean;
 }): Promise<{ passed: number; warned: number; failed: number }> {
   printPaperclipCliBanner();
-  p.intro(pc.bgCyan(pc.black(" growthub doctor ")));
+  p.intro(pc.bgCyan(pc.black(" paperclip doctor ")));
 
   const configPath = resolveConfigPath(opts.config);
   loadPaperclipEnvFile(configPath);
@@ -53,7 +53,7 @@ export async function doctor(opts: {
       status: "fail",
       message: `Could not read config: ${err instanceof Error ? err.message : String(err)}`,
       canRepair: false,
-      repairHint: "Run `growthub configure --section database` or `growthub onboard`",
+      repairHint: "Run `paperclipai configure --section database` or `paperclipai onboard`",
     };
     results.push(readResult);
     printResult(readResult);

@@ -46,9 +46,6 @@ function createTempConfig(): string {
       baseUrlMode: "auto",
       disableSignUp: false,
     },
-    surface: {
-      profile: "dx",
-    },
     storage: {
       provider: "local_disk",
       localDisk: {

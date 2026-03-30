@@ -1,8 +1,10 @@
 import { Link, useParams } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+import { Button } from "@/components/ui/button";
 
 function isSafeExternalUrl(value: string | null | undefined) {
   if (!value) return false;
@@ -25,11 +27,36 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 export function ExecutionWorkspaceDetail() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
 
   const { data: workspace, isLoading, error } = useQuery({
     queryKey: queryKeys.executionWorkspaces.detail(workspaceId!),
     queryFn: () => executionWorkspacesApi.get(workspaceId!),
     enabled: Boolean(workspaceId),
+  });
+
+  const openLocal = useMutation({
+    mutationFn: () => executionWorkspacesApi.openLocal(workspaceId!),
+    onSuccess: (result) => {
+      pushToast({
+        title: `Opened in ${result.app}`,
+        body: result.path,
+        tone: "success",
+      });
+    },
+  });
+
+  const archiveWorkspace = useMutation({
+    mutationFn: () => executionWorkspacesApi.update(workspaceId!, { status: "archived" }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.detail(workspaceId!) });
+      pushToast({
+        title: "Workspace archived",
+        body: "Cleanup was triggered for the worktree and any runtime services.",
+        tone: "success",
+      });
+    },
   });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
@@ -38,11 +65,35 @@ export function ExecutionWorkspaceDetail() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="space-y-1">
-        <div className="text-xs text-muted-foreground">Execution workspace</div>
-        <h1 className="text-2xl font-semibold">{workspace.name}</h1>
-        <div className="text-sm text-muted-foreground">
-          {workspace.status} · {workspace.mode} · {workspace.providerType}
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">Execution workspace</div>
+          <h1 className="text-2xl font-semibold">{workspace.name}</h1>
+          <div className="text-sm text-muted-foreground">
+            {workspace.status} · {workspace.mode} · {workspace.providerType}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openLocal.mutate()}
+            disabled={openLocal.isPending}
+          >
+            {openLocal.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            Open in Cursor
+          </Button>
+          {workspace.status !== "archived" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => archiveWorkspace.mutate()}
+              disabled={archiveWorkspace.isPending}
+            >
+              {archiveWorkspace.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Archive & clean up
+            </Button>
+          )}
         </div>
       </div>
 

@@ -9,12 +9,10 @@ import {
   DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
-  initializeSurfaceRuntimeContract,
   type AuthBaseUrlMode,
   type DeploymentExposure,
   type DeploymentMode,
   type SecretProvider,
-  type SurfaceRuntimeContract,
   type StorageProvider,
 } from "@paperclipai/shared";
 import {
@@ -41,7 +39,6 @@ if (!isSameFile && existsSync(CWD_ENV_PATH)) {
 type DatabaseMode = "embedded-postgres" | "postgres";
 
 export interface Config {
-  surfaceRuntime: SurfaceRuntimeContract;
   deploymentMode: DeploymentMode;
   deploymentExposure: DeploymentExposure;
   host: string;
@@ -77,7 +74,6 @@ export interface Config {
 
 export function loadConfig(): Config {
   const fileConfig = readConfigFile();
-  const surfaceRuntime = initializeSurfaceRuntimeContract(fileConfig?.surface.profile);
   const fileDatabaseMode =
     (fileConfig?.database.mode === "postgres" ? "postgres" : "embedded-postgres") as DatabaseMode;
 
@@ -215,7 +211,6 @@ export function loadConfig(): Config {
   );
 
   return {
-    surfaceRuntime,
     deploymentMode,
     deploymentExposure,
     host: process.env.HOST ?? fileConfig?.server.host ?? "127.0.0.1",

@@ -129,20 +129,20 @@ export declare function listWorkspaceRuntimeServicesForProjectWorkspaces(db: Db,
     ownerAgentId: string | null;
     projectId: string | null;
     cwd: string | null;
+    url: string | null;
     projectWorkspaceId: string | null;
     executionWorkspaceId: string | null;
+    healthStatus: string;
+    issueId: string | null;
+    port: number | null;
     providerRef: string | null;
     command: string | null;
-    issueId: string | null;
     serviceName: string;
     lifecycle: string;
     reuseKey: string | null;
-    port: number | null;
-    url: string | null;
     startedByRunId: string | null;
     stoppedAt: Date | null;
     stopPolicy: Record<string, unknown> | null;
-    healthStatus: string;
 }[]>>;
 export declare function reconcilePersistedRuntimeServicesOnStartup(db: Db): Promise<{
     reconciled: number;

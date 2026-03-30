@@ -8,13 +8,12 @@ import { serverVersion } from "../version.js";
 export function healthRoutes(
   db?: Db,
   opts: {
-    surfaceProfile: SurfaceProfile;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
     companyDeletionEnabled: boolean;
+    surfaceProfile?: SurfaceProfile;
   } = {
-    surfaceProfile: "dx",
     deploymentMode: "local_trusted",
     deploymentExposure: "private",
     authReady: true,
@@ -60,9 +59,9 @@ export function healthRoutes(
     res.json({
       status: "ok",
       version: serverVersion,
-      surfaceProfile: opts.surfaceProfile,
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
+      surfaceProfile: opts.surfaceProfile ?? "dx",
       authReady: opts.authReady,
       bootstrapStatus,
       bootstrapInviteActive,

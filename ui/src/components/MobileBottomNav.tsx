@@ -11,7 +11,6 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
-import { surfaceProfile } from "@/lib/surface-profile";
 
 interface MobileBottomNavProps {
   visible: boolean;
@@ -41,34 +40,19 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const inboxBadge = useInboxBadge(selectedCompanyId);
 
   const items = useMemo<MobileNavItem[]>(
-    () =>
-      surfaceProfile === "gtm"
-        ? [
-            { type: "link", to: "/workspace", label: "Workspace", icon: House },
-            { type: "link", to: "/tickets", label: "Campaigns", icon: CircleDot },
-            { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
-            { type: "link", to: "/agents/all", label: "Agents", icon: Users },
-            {
-              type: "link",
-              to: "/inbox",
-              label: "Inbox",
-              icon: Inbox,
-              badge: inboxBadge.inbox,
-            },
-          ]
-        : [
-            { type: "link", to: "/dashboard", label: "Home", icon: House },
-            { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
-            { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
-            { type: "link", to: "/agents/all", label: "Agents", icon: Users },
-            {
-              type: "link",
-              to: "/inbox",
-              label: "Inbox",
-              icon: Inbox,
-              badge: inboxBadge.inbox,
-            },
-          ],
+    () => [
+      { type: "link", to: "/dashboard", label: "Home", icon: House },
+      { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
+      { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
+      { type: "link", to: "/agents/all", label: "Agents", icon: Users },
+      {
+        type: "link",
+        to: "/inbox",
+        label: "Inbox",
+        icon: Inbox,
+        badge: inboxBadge.inbox,
+      },
+    ],
     [openNewIssue, inboxBadge.inbox],
   );
 

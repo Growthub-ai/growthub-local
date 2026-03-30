@@ -11,7 +11,7 @@ import { queryKeys } from "../lib/queryKeys";
 import {
   ArrowRight, Check, ChevronLeft, ChevronRight, Plus, Zap, X,
   Pencil, Trash2, CheckCircle2, MoreHorizontal, Square,
-  Play, Loader2, ChevronsRight, ChevronDown, ChevronUp, Settings,
+  Play, Loader2, ChevronsRight, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, relativeTime } from "../lib/utils";
@@ -20,8 +20,20 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { Link } from "@/lib/router";
 import { RunTranscriptView } from "../components/transcript/RunTranscriptView";
 import { useLiveRunTranscripts } from "../components/transcript/useLiveRunTranscripts";
+import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import type { LiveRunForIssue } from "../api/heartbeats";
-import type { Ticket as TicketType } from "@paperclipai/shared";
+import {
+  AGENT_ROLES,
+  TICKET_STAGE_HANDOFF_MODES,
+  TICKET_STAGE_KINDS,
+  buildTicketStageOrder,
+  formatTicketStageLabel,
+  getTicketStageDefinition,
+  normalizeTicketStageDefinitions,
+  normalizeTicketStageKey,
+  type Ticket as TicketType,
+  type TicketStageDefinition,
+} from "@paperclipai/shared";
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const PALETTE = [
@@ -37,7 +49,7 @@ function pal(stage: string, order: string[]) {
   const i = order.indexOf(stage);
   return PALETTE[(i >= 0 ? i : 0) % PALETTE.length];
 }
-function sl(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function sl(s: string) { return formatTicketStageLabel(s); }
 
 // ─── InlineEdit ───────────────────────────────────────────────────────────────
 function InlineEdit({
@@ -116,7 +128,7 @@ function TaskRow({
   issue, agents, activeRun, isDispatching,
   transcript, hasOutput,
   onDispatch, onStop, onUpdateIssue, onDeleteIssue,
-  stages, currentStage,
+  stages, currentStage, issueLinkState,
 }: {
   issue: IssueRow;
   agents: { id: string; name: string }[];
@@ -130,10 +142,14 @@ function TaskRow({
   onDeleteIssue: () => void;
   stages: string[];
   currentStage: string;
+  issueLinkState: ReturnType<typeof createIssueDetailLocationState>;
 }) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const isLive = !!activeRun;
   const canRun = !isLive && !isDispatching;
+  const issueHref = `/issues/${issue.identifier ?? issue.id}`;
+  const openIssue = () => navigate(issueHref, { state: issueLinkState });
 
   // Auto-expand when agent goes live
   useEffect(() => {
@@ -148,10 +164,16 @@ function TaskRow({
       isLive ? "bg-cyan-500/[0.03] border-l-2 border-l-cyan-500/40" : "hover:bg-accent/20",
     )}>
       {/* Main row */}
-      <div className="flex items-center gap-3 px-4 py-3">
+      <div
+        className="flex cursor-pointer items-center gap-3 px-4 py-3"
+        onClick={openIssue}
+      >
         {/* Status cycle */}
         <button
-          onClick={() => onUpdateIssue({ status: STATUS_CYCLE[issue.status] ?? "todo" })}
+          onClick={(e) => {
+            e.stopPropagation();
+            onUpdateIssue({ status: STATUS_CYCLE[issue.status] ?? "todo" });
+          }}
           title={`${issue.status} — click to cycle`}
           className="shrink-0 hover:scale-110 transition-transform"
         >
@@ -159,7 +181,7 @@ function TaskRow({
         </button>
 
         {/* Title */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
           <InlineEdit
             value={issue.title}
             onSave={(v) => onUpdateIssue({ title: v })}
@@ -171,7 +193,10 @@ function TaskRow({
         {isLive && activeRun && (
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => setExpanded((e) => !e)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((prev) => !prev);
+              }}
               className="flex items-center gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 font-medium hover:underline"
             >
               <span className="relative flex h-1.5 w-1.5">
@@ -182,7 +207,10 @@ function TaskRow({
               {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             <button
-              onClick={() => onStop(activeRun.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStop(activeRun.id);
+              }}
               className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground border border-border rounded px-1.5 py-0.5 transition-colors"
             >
               <Square className="h-2.5 w-2.5 fill-current" /> Stop
@@ -193,7 +221,10 @@ function TaskRow({
         {/* Run button */}
         {canRun && issue.assigneeAgentId && (
           <button
-            onClick={() => onDispatch(issue.assigneeAgentId!)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDispatch(issue.assigneeAgentId!);
+            }}
             disabled={isDispatching}
             className="flex items-center gap-1 text-[11px] font-medium text-foreground border border-border hover:bg-accent rounded-md px-2 py-1 transition-colors shrink-0"
             title={`Run with ${assignedAgent?.name ?? "agent"}`}
@@ -207,7 +238,9 @@ function TaskRow({
 
         {/* Link */}
         <Link
-          to={`/issues/${issue.identifier ?? issue.id}`}
+          to={issueHref}
+          state={issueLinkState}
+          onClick={(e) => e.stopPropagation()}
           className="text-xs font-mono text-muted-foreground/40 shrink-0 hover:text-foreground transition-colors"
         >
           {issue.identifier ?? issue.id.slice(0, 8)}
@@ -224,11 +257,18 @@ function TaskRow({
       </div>
 
       {/* Agent selector row */}
-      <div className="flex items-center gap-2 px-4 pb-2.5 pl-11">
+      <div
+        className="flex cursor-pointer items-center gap-2 px-4 pb-2.5 pl-11"
+        onClick={openIssue}
+      >
         <span className="text-[11px] text-muted-foreground/50 shrink-0">Agent</span>
         <select
           value={issue.assigneeAgentId ?? ""}
-          onChange={(e) => onUpdateIssue({ assigneeAgentId: e.target.value || null })}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation();
+            onUpdateIssue({ assigneeAgentId: e.target.value || null });
+          }}
           className="text-xs bg-background border border-border rounded px-2 py-0.5 outline-none text-foreground cursor-pointer max-w-[240px]"
         >
           <option value="">— Unassigned —</option>
@@ -239,7 +279,10 @@ function TaskRow({
         )}
         {issue.assigneeAgentId && canRun && (
           <button
-            onClick={() => onDispatch(issue.assigneeAgentId!)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDispatch(issue.assigneeAgentId!);
+            }}
             className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border border-border hover:bg-accent transition-colors"
           >
             <Play className="h-2.5 w-2.5 fill-current" /> Run
@@ -271,139 +314,6 @@ function TaskRow({
               }
             />
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── StageSettingsMenu ───────────────────────────────────────────────────────
-function StageSettingsMenu({
-  stage, stages, currentIdx, isLast,
-  dispatchableCount, liveCount, advancing, runningAll,
-  onRename, onGoBack, onAdvance, onRunAll, onStopAll, onDelete,
-}: {
-  stage: string; stages: string[]; currentIdx: number; isLast: boolean;
-  dispatchableCount: number; liveCount: number; advancing: boolean; runningAll: boolean;
-  onRename: (newName: string) => void;
-  onGoBack: () => void; onAdvance: () => void;
-  onRunAll: () => void; onStopAll: () => void;
-  onDelete: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState("");
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (
-        !btnRef.current?.contains(e.target as Node) &&
-        !menuRef.current?.contains(e.target as Node)
-      ) { setOpen(false); setRenaming(false); }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  function close() { setOpen(false); setRenaming(false); }
-
-  return (
-    <div className="relative">
-      <button
-        ref={btnRef}
-        onClick={() => { setOpen((o) => !o); setRenaming(false); }}
-        className="flex items-center justify-center h-7 w-7 rounded-md border border-border hover:bg-accent transition-colors"
-        title="Stage settings"
-      >
-        <Settings className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
-
-      {open && (
-        <div
-          ref={menuRef}
-          className="absolute right-0 bottom-full mb-1 z-50 w-56 rounded-lg border border-border bg-popover shadow-xl py-1 text-sm"
-        >
-          {renaming ? (
-            <div className="px-3 py-2 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Rename stage</p>
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && draft.trim()) { onRename(draft.trim()); close(); }
-                  if (e.key === "Escape") setRenaming(false);
-                }}
-                className="w-full text-xs bg-background border border-border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring"
-              />
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => { if (draft.trim()) { onRename(draft.trim()); close(); } }}
-                  className="text-xs px-2.5 py-1 rounded border border-border hover:bg-accent font-medium"
-                >Save</button>
-                <button onClick={() => setRenaming(false)} className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-1">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => { setDraft(sl(stage)); setRenaming(true); }}
-              className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-accent text-left"
-            >
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Rename stage
-            </button>
-          )}
-
-          {!renaming && currentIdx > 0 && (
-            <button
-              onClick={() => { onGoBack(); close(); }}
-              className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-accent text-left"
-            >
-              <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Go back a stage
-            </button>
-          )}
-
-          {!renaming && !isLast && (
-            <button
-              onClick={() => { onAdvance(); close(); }}
-              disabled={advancing}
-              className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-accent text-left disabled:opacity-50"
-            >
-              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Advance to {sl(stages[currentIdx + 1])}
-            </button>
-          )}
-
-          {!renaming && dispatchableCount > 0 && (
-            <button
-              onClick={() => { onRunAll(); close(); }}
-              disabled={runningAll}
-              className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-accent text-left disabled:opacity-50"
-            >
-              <ChevronsRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Run all tasks ({dispatchableCount})
-            </button>
-          )}
-
-          {!renaming && liveCount > 0 && (
-            <button
-              onClick={() => { onStopAll(); close(); }}
-              className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-accent text-left"
-            >
-              <Square className="h-3.5 w-3.5 fill-current text-muted-foreground shrink-0" /> Stop all agents
-            </button>
-          )}
-
-          {!renaming && stages.length > 1 && <div className="border-t border-border my-1" />}
-
-          {!renaming && stages.length > 1 && (
-            <div className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-red-500/10 text-red-500 cursor-pointer">
-              <Trash2 className="h-3.5 w-3.5 shrink-0" />
-              <ConfirmButton onConfirm={() => { onDelete(); close(); }} confirmLabel="Delete" danger className="text-red-500 text-sm">
-                Delete stage…
-              </ConfirmButton>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -506,6 +416,12 @@ export function TicketDetail() {
   });
 
   const ticket = data as (typeof data & { issues?: IssueRow[] }) | undefined;
+  const issueLinkState = ticket
+    ? createIssueDetailLocationState([
+        { label: "Tickets", href: "/tickets" },
+        { label: ticket.identifier ?? ticket.id.slice(0, 8), href: `/tickets/${ticket.id}` },
+      ])
+    : createIssueDetailLocationState("Tickets", "/tickets");
 
   // ── Live transcripts for ALL runs touching this ticket ──
   const ticketRunIds = new Set(
@@ -532,6 +448,28 @@ export function TicketDetail() {
       queryKeys.tickets.list(selectedCompanyId!),
       (old) => updater(old ?? []),
     );
+  }
+
+  const stageDefinitions = normalizeTicketStageDefinitions({
+    stageDefinitions: ticket?.stageDefinitions,
+    stageOrder: ticket?.stageOrder,
+  });
+
+  function stageLabel(stage: string) {
+    return getTicketStageDefinition(stageDefinitions, stage)?.label ?? sl(stage);
+  }
+
+  function updateStageDefinitions(nextDefinitions: TicketStageDefinition[], nextCurrentStage = ticket?.currentStage ?? null) {
+    const nextStages = buildTicketStageOrder(nextDefinitions);
+    const safeCurrentStage =
+      nextCurrentStage && nextStages.includes(nextCurrentStage)
+        ? nextCurrentStage
+        : nextStages[0];
+    if (!safeCurrentStage) return;
+    updateTicket({
+      stageDefinitions: nextDefinitions,
+      currentStage: safeCurrentStage,
+    });
   }
 
   // ── Mutations ──
@@ -638,7 +576,7 @@ export function TicketDetail() {
 
   if (isLoading || !ticket) return <PageSkeleton variant="detail" />;
 
-  const stages = ticket.stageOrder as string[];
+  const stages = buildTicketStageOrder(stageDefinitions);
   const currentIdx = stages.indexOf(ticket.currentStage);
   const isLast = currentIdx === stages.length - 1;
   const isClosed = ticket.status === "done" || ticket.status === "cancelled";
@@ -695,28 +633,57 @@ export function TicketDetail() {
   }
 
   function addStage() {
-    const name = newStageName.trim().toLowerCase().replace(/\s+/g, "_");
-    if (!name || stages.includes(name)) return;
-    updateTicket({ stageOrder: [...stages, name] });
+    const key = normalizeTicketStageKey(newStageName);
+    if (!key || stages.includes(key)) return;
+    updateStageDefinitions([
+      ...stageDefinitions,
+      {
+        key,
+        label: formatTicketStageLabel(newStageName),
+        kind: "custom",
+        handoffMode: "manual",
+      },
+    ]);
     setNewStageName(""); setAddingStage(false);
   }
 
   function removeStage(stage: string) {
     if (stages.length <= 1) return;
-    const next = stages.filter((s) => s !== stage);
-    updateTicket({
-      stageOrder: next,
-      currentStage: stage === ticket!.currentStage ? next[0] : ticket!.currentStage,
-    });
+    const nextDefinitions = stageDefinitions.filter((definition) => definition.key !== stage);
+    updateStageDefinitions(
+      nextDefinitions,
+      stage === (ticket?.currentStage ?? null) ? nextDefinitions[0]?.key ?? null : (ticket?.currentStage ?? null),
+    );
   }
 
   function renameStage(oldName: string, newName: string) {
-    const cleaned = newName.trim().toLowerCase().replace(/\s+/g, "_");
-    if (!cleaned || cleaned === oldName || stages.includes(cleaned)) return;
-    updateTicket({
-      stageOrder: stages.map((s) => (s === oldName ? cleaned : s)),
-      currentStage: ticket!.currentStage === oldName ? cleaned : ticket!.currentStage,
-    });
+    const cleaned = newName.trim();
+    if (!cleaned) return;
+    updateStageDefinitions(
+      stageDefinitions.map((definition) =>
+        definition.key === oldName ? { ...definition, label: cleaned } : definition,
+      ),
+      ticket?.currentStage ?? null,
+    );
+  }
+
+  function moveStage(stage: string, direction: -1 | 1) {
+    const currentIndex = stageDefinitions.findIndex((definition) => definition.key === stage);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex === -1 || nextIndex < 0 || nextIndex >= stageDefinitions.length) return;
+    const nextDefinitions = [...stageDefinitions];
+    const [definition] = nextDefinitions.splice(currentIndex, 1);
+    nextDefinitions.splice(nextIndex, 0, definition);
+    updateStageDefinitions(nextDefinitions, ticket?.currentStage ?? null);
+  }
+
+  function updateStageDefinition(stage: string, patch: Partial<TicketStageDefinition>) {
+    updateStageDefinitions(
+      stageDefinitions.map((definition) =>
+        definition.key === stage ? { ...definition, ...patch } : definition,
+      ),
+      ticket?.currentStage ?? null,
+    );
   }
 
   const currentP = pal(ticket.currentStage, stages);
@@ -739,7 +706,7 @@ export function TicketDetail() {
             <Button size="sm" onClick={() => advance()} disabled={advancing}
               className={cn(allCurrentDone && "ring-2 ring-offset-2 ring-foreground/20")}>
               <ArrowRight className="h-4 w-4 mr-1.5" />
-              {sl(stages[currentIdx + 1])}
+              {stageLabel(stages[currentIdx + 1])}
             </Button>
           )}
           <div className="relative">
@@ -829,7 +796,7 @@ export function TicketDetail() {
                   : <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", isCurrent ? p.dot : "bg-border/50")} />
                 }
                 <span onClick={(e) => e.stopPropagation()}>
-                  <InlineEdit value={sl(stage)} onSave={(v) => renameStage(stage, v)} className="text-xs font-medium" />
+                  <InlineEdit value={stageLabel(stage)} onSave={(v) => renameStage(stage, v)} className="text-xs font-medium" />
                 </span>
                 {stages.length > 1 && (
                   <button
@@ -865,18 +832,139 @@ export function TicketDetail() {
         )}
       </div>
 
+      <div className="rounded-xl border border-border bg-card/70 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">Stage Contract</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              User-facing labels, owner roles, handoff mode, and per-stage instructions stay attached to the ticket.
+            </p>
+          </div>
+          <span className="text-[11px] font-mono text-muted-foreground">{stageDefinitions.length} stages</span>
+        </div>
+
+        <div className="space-y-3">
+          {stageDefinitions.map((definition, index) => {
+            const isCurrent = definition.key === ticket.currentStage;
+            return (
+              <div key={definition.key} className="rounded-lg border border-border bg-background/60 p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className={cn("h-2 w-2 rounded-full", pal(definition.key, stages).dot)} />
+                  <div className="min-w-0 flex-1">
+                    <InlineEdit
+                      value={definition.label}
+                      onSave={(value) => renameStage(definition.key, value)}
+                      className="text-sm font-medium"
+                    />
+                    <p className="text-[11px] font-mono text-muted-foreground mt-1">{definition.key}</p>
+                  </div>
+                  {isCurrent && (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      current
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => moveStage(definition.key, -1)}
+                    disabled={index === 0}
+                    className="rounded border border-border p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveStage(definition.key, 1)}
+                    disabled={index === stageDefinitions.length - 1}
+                    className="rounded border border-border p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Kind</span>
+                    <select
+                      value={definition.kind ?? "custom"}
+                      onChange={(e) => updateStageDefinition(definition.key, { kind: e.target.value as TicketStageDefinition["kind"] })}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                    >
+                      {TICKET_STAGE_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>{sl(kind)}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Owner role</span>
+                    <select
+                      value={definition.ownerRole ?? ""}
+                      onChange={(e) => updateStageDefinition(definition.key, { ownerRole: (e.target.value || null) as TicketStageDefinition["ownerRole"] })}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                    >
+                      <option value="">Ticket lead fallback</option>
+                      {AGENT_ROLES.map((role) => (
+                        <option key={role} value={role}>{sl(role)}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Handoff mode</span>
+                    <select
+                      value={definition.handoffMode ?? ""}
+                      onChange={(e) => updateStageDefinition(definition.key, { handoffMode: (e.target.value || null) as TicketStageDefinition["handoffMode"] })}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                    >
+                      <option value="">Default</option>
+                      {TICKET_STAGE_HANDOFF_MODES.map((mode) => (
+                        <option key={mode} value={mode}>{sl(mode)}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Stage instructions</span>
+                    <textarea
+                      defaultValue={definition.instructions ?? ""}
+                      onBlur={(e) => updateStageDefinition(definition.key, { instructions: e.target.value.trim() || null })}
+                      placeholder="Instructions for the stage issue bootstrap."
+                      rows={3}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none resize-y"
+                    />
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Exit criteria</span>
+                    <textarea
+                      defaultValue={definition.exitCriteria ?? ""}
+                      onBlur={(e) => updateStageDefinition(definition.key, { exitCriteria: e.target.value.trim() || null })}
+                      placeholder="What must be true before this stage is advanced?"
+                      rows={3}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none resize-y"
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ── Active stage panel ── */}
       {(() => {
         const stage = ticket.currentStage;
         const stageIssues = issuesByStage[stage] ?? [];
 
         return (
-          <div className="rounded-xl border border-border bg-card">
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
             {/* Stage header / controls */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className={cn("h-2 w-2 rounded-full", currentP.dot)} />
-                <span className="text-sm font-semibold">{sl(stage)}</span>
+                <span className="text-sm font-semibold">{stageLabel(stage)}</span>
                 <span className="text-xs text-muted-foreground">— active</span>
                 {liveCountCurrent > 0 && (
                   <span className="flex items-center gap-1 text-xs text-cyan-600 dark:text-cyan-400 font-medium">
@@ -932,24 +1020,6 @@ export function TicketDetail() {
                 >
                   <Zap className="h-3.5 w-3.5" /> New Task
                 </button>
-
-                {/* Stage Settings */}
-                <StageSettingsMenu
-                  stage={stage}
-                  stages={stages}
-                  currentIdx={currentIdx}
-                  isLast={isLast}
-                  dispatchableCount={dispatchableIssues.length}
-                  liveCount={liveCountCurrent}
-                  advancing={advancing}
-                  runningAll={runningAll}
-                  onRename={(name) => renameStage(stage, name)}
-                  onGoBack={() => updateTicket({ currentStage: stages[currentIdx - 1] })}
-                  onAdvance={() => advance()}
-                  onRunAll={runAll}
-                  onStopAll={stopAll}
-                  onDelete={() => removeStage(stage)}
-                />
               </div>
             </div>
 
@@ -997,6 +1067,7 @@ export function TicketDetail() {
                       onDeleteIssue={() => deleteIssue(issue.id)}
                       stages={stages}
                       currentStage={stage}
+                      issueLinkState={issueLinkState}
                     />
                   );
                 })}
@@ -1010,7 +1081,7 @@ export function TicketDetail() {
                 <span className="text-sm text-muted-foreground font-medium flex-1">All tasks done — ready to advance</span>
                 <Button size="sm" onClick={() => advance()} disabled={advancing}>
                   <ArrowRight className="h-3.5 w-3.5 mr-1.5" />
-                  Advance to {sl(stages[currentIdx + 1])}
+                  Advance to {stageLabel(stages[currentIdx + 1])}
                 </Button>
               </div>
             )}
@@ -1042,7 +1113,7 @@ export function TicketDetail() {
               >
                 <Check className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                 <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", p.dot)} />
-                <span className="font-medium text-muted-foreground">{sl(stage)}</span>
+                <span className="font-medium text-muted-foreground">{stageLabel(stage)}</span>
                 <span className="text-xs text-muted-foreground/50">
                   {doneCount}/{stageIssues.length} tasks done
                 </span>
@@ -1066,7 +1137,7 @@ export function TicketDetail() {
                 className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border/30 text-sm opacity-40 hover:opacity-70 transition-opacity w-full text-left"
               >
                 <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", p.dot)} />
-                <span className="font-medium">{sl(stage)}</span>
+                <span className="font-medium">{stageLabel(stage)}</span>
                 {stageIssues.length > 0 && (
                   <span className="text-xs text-muted-foreground/50">{stageIssues.length} task{stageIssues.length !== 1 ? "s" : ""}</span>
                 )}

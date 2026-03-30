@@ -1,24 +1,19 @@
 import { ChangeEvent, useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
-import { authApi } from "../api/auth";
-import { gtmApi } from "../api/gtm";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings, Check } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
-import { GrowthubConnectionCard } from "../components/GrowthubConnectionCard";
 import {
   Field,
   ToggleField,
   HintIcon
 } from "../components/agent-config-primitives";
-import { useToast } from "../context/ToastContext";
-import { buildGrowthubConfigurationUrl, getGrowthubAuthUserId } from "../lib/growthub-connection";
 
 type AgentSnippetInput = {
   onboardingTextUrl: string;
@@ -35,7 +30,6 @@ export function CompanySettings() {
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
-  const { pushToast } = useToast();
 
   // General settings local state
   const [companyName, setCompanyName] = useState("");
@@ -207,62 +201,6 @@ export function CompanySettings() {
       { label: "Settings" }
     ]);
   }, [setBreadcrumbs, selectedCompany?.name]);
-
-  const connectionQuery = useQuery({
-    queryKey: ["gtm", "connection"],
-    queryFn: () => gtmApi.getConnection()
-  });
-  const connectorsQuery = useQuery({
-    queryKey: ["gtm", "connectors"],
-    queryFn: () => gtmApi.getConnectors()
-  });
-  const sessionQuery = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
-    retry: false
-  });
-  const testConnectionMutation = useMutation({
-    mutationFn: () => gtmApi.testConnection(),
-    onSuccess: async (result) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connection"] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connectors"] }),
-      ]);
-      pushToast({
-        title: "Growthub pulse succeeded",
-        body: result.message,
-        tone: "success"
-      });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Growthub pulse failed",
-        body: error instanceof Error ? error.message : "Failed to verify the Growthub local route handler",
-        tone: "error"
-      });
-    }
-  });
-  const disconnectConnectionMutation = useMutation({
-    mutationFn: () => gtmApi.disconnectConnection(),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connection"] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connectors"] }),
-      ]);
-      pushToast({
-        title: "Growthub disconnected",
-        body: "Local connection state was cleared for this installer.",
-        tone: "success"
-      });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Disconnect failed",
-        body: error instanceof Error ? error.message : "Failed to disconnect Growthub locally",
-        tone: "error"
-      });
-    }
-  });
 
   if (!selectedCompany) {
     return (
@@ -523,74 +461,6 @@ export function CompanySettings() {
         </div>
       </div>
 
-      {/* Growthub connection */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Growthub Connection
-        </div>
-        {connectionQuery.isLoading ? (
-          <div className="rounded-md border border-border px-4 py-4 text-sm text-muted-foreground">
-            Loading connection…
-          </div>
-        ) : connectionQuery.error ? (
-          <div className="rounded-md border border-destructive/40 px-4 py-4 text-sm text-destructive">
-            {connectionQuery.error instanceof Error
-              ? connectionQuery.error.message
-              : "Failed to load Growthub connection"}
-          </div>
-        ) : (
-          <GrowthubConnectionCard
-            description="Connect this local DX install to the hosted Growthub workspace."
-            connected={connectionQuery.data?.connected ?? false}
-            baseUrl={connectionQuery.data?.baseUrl ?? ""}
-            callbackUrl={connectionQuery.data?.callbackUrl ?? ""}
-            portalBaseUrl={connectionQuery.data?.portalBaseUrl ?? ""}
-            machineLabel={connectionQuery.data?.machineLabel ?? ""}
-            workspaceLabel={connectionQuery.data?.workspaceLabel ?? ""}
-            openDisabled={!(connectionQuery.data?.baseUrl ?? "").trim()}
-            onOpenConfiguration={() => {
-              const connection = connectionQuery.data;
-              if (!connection?.baseUrl?.trim()) {
-                pushToast({
-                  title: "Growthub base URL missing",
-                  body: "Configure the hosted Growthub URL before opening the connection flow.",
-                  tone: "error"
-                });
-                return;
-              }
-              const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
-              if (!userId) {
-                pushToast({
-                  title: "Sign in required",
-                  body: "Sign in locally before opening the hosted Growthub configuration flow.",
-                  tone: "error"
-                });
-                return;
-              }
-              window.open(
-                buildGrowthubConfigurationUrl({
-                  baseUrl: connection.baseUrl,
-                  callbackUrl: connection.callbackUrl,
-                  userId,
-                  surface: "dx",
-                  workspaceLabel: selectedCompany.name,
-                }),
-                "_blank",
-                "noopener,noreferrer"
-              );
-            }}
-            onRefresh={() => {
-              void connectionQuery.refetch();
-              void connectorsQuery.refetch();
-            }}
-            onPulseConnection={connectionQuery.data?.connected ? () => testConnectionMutation.mutate() : undefined}
-            onDisconnect={connectionQuery.data?.connected ? () => disconnectConnectionMutation.mutate() : undefined}
-            pulsePending={testConnectionMutation.isPending}
-            disconnectPending={disconnectConnectionMutation.isPending}
-          />
-        )}
-      </div>
-
       {/* Danger Zone */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-destructive uppercase tracking-wide">
@@ -658,35 +528,35 @@ function buildAgentSnippet(input: AgentSnippetInput) {
 
   const connectivityBlock =
     candidateUrls.length === 0
-      ? `No candidate URLs are available. Ask your user to configure a reachable hostname in Growthub, then retry.
+      ? `No candidate URLs are available. Ask your user to configure a reachable hostname in Paperclip, then retry.
 Suggested steps:
-- choose a hostname that resolves to the Growthub host from your runtime
-- run: pnpm growthub allowed-hostname <host>
-- restart Growthub
+- choose a hostname that resolves to the Paperclip host from your runtime
+- run: pnpm paperclipai allowed-hostname <host>
+- restart Paperclip
 - verify with: curl -fsS http://<host>:3100/api/health
 - regenerate this invite snippet`
-      : `If none are reachable, ask your user to add a reachable hostname in Growthub, restart, and retry.
+      : `If none are reachable, ask your user to add a reachable hostname in Paperclip, restart, and retry.
 Suggested command:
-- pnpm growthub allowed-hostname <host>
+- pnpm paperclipai allowed-hostname <host>
 Then verify with: curl -fsS <base-url>/api/health`;
 
   const resolutionLine = resolutionTestUrl
-    ? `\nYou MUST test Growthub-to-gateway reachability, call: ${resolutionTestUrl}?url=<urlencoded-gateway-url> (using the hostname that worked above). Do not assume your 172.x is necessarily reachable from Growthub. Test it. `
+    ? `\nYou MUST test Paperclip-to-gateway reachability, call: ${resolutionTestUrl}?url=<urlencoded-gateway-url> (using the hostname that worked above). Do not assume your 172.x is necessarily reachable from Paperclip. Test it. `
     : "";
 
-  return `You're invited to join a Growthub organization.
+  return `You're invited to join a Paperclip organization.
 
 The URLs you should try are:
 ${candidateList}
 
 Connectivity guidance:
-If you are running on a different machine than Growthub, Growthub must be reachable at one of the hostnames used above.
+If you are running on a different machine than Paperclip, Paperclip must be reachable at one of the hostnames used above.
 Verify the hostname works from your runtime with: GET <base-url>/api/health
 
 ${connectivityBlock}
 
 For your "agentName", just use your own agent name (OpenClaw or whatever your name is) and send it directly.
-You also need to send a gateway URL that Growthub can access. Check your config and include that URL.${resolutionLine}
+You also need to send a gateway URL that Paperclip can access. Check your config and include that URL.${resolutionLine}
 
 ---
 
@@ -696,14 +566,14 @@ When you submit the join request, use:
 - \`agentDefaultsPayload.url\` as your \`ws://\` or \`wss://\` gateway URL
 - \`agentDefaultsPayload.headers["x-openclaw-token"]\` with your gateway token
 - (legacy accepted) \`agentDefaultsPayload.headers["x-openclaw-auth"]\`
-- Keep device auth enabled (recommended). If \`devicePrivateKeyPem\` is omitted, Growthub will generate and persist one during join so pairing approvals remain stable.
+- Keep device auth enabled (recommended). If \`devicePrivateKeyPem\` is omitted, Paperclip will generate and persist one during join so pairing approvals remain stable.
 - Only use \`disableDeviceAuth=true\` for special environments where pairing cannot be completed.
 
 Do NOT use \`/v1/responses\` or \`/hooks/*\` in this join flow.
 
-Before you do anything, please respond to your user that you understand the instructions and you're going to work on them. Then do the step above in another session called "growthub-onboarding" and then tell your user when you're done. Update your user in intermediate steps along the way so they know what's going on.
+Before you do anything, please respond to your user that you understand the instructions and you're going to work on them. Then do the step above in another session called "paperclip-onboarding" and then tell your user when you're done. Update your user in intermediate steps along the way so they know what's going on.
 
-Then after you've connected to Growthub (exchanged keys etc.) you MUST review and follow the onboarding instructions in onboarding.txt they give you.
+Then after you've connected to Paperclip (exchanged keys etc.) you MUST review and follow the onboarding instructions in onboarding.txt they give you.
 
 `;
 }

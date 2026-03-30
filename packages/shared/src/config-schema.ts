@@ -5,7 +5,6 @@ import {
   DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
-  SURFACE_PROFILES,
 } from "./constants.js";
 
 export const configMetaSchema = z.object({
@@ -57,15 +56,11 @@ export const authConfigSchema = z.object({
   baseUrlMode: z.enum(AUTH_BASE_URL_MODES).default("auto"),
   publicBaseUrl: z.string().url().optional(),
   disableSignUp: z.boolean().default(false),
-  token: z.string().min(1).optional(),
+  token: z.string().optional(),
   growthubBaseUrl: z.string().url().optional(),
   growthubPortalBaseUrl: z.string().url().optional(),
-  growthubMachineLabel: z.string().min(1).optional(),
-  growthubWorkspaceLabel: z.string().min(1).optional(),
-});
-
-export const surfaceConfigSchema = z.object({
-  profile: z.enum(SURFACE_PROFILES).default("dx"),
+  growthubMachineLabel: z.string().optional(),
+  growthubWorkspaceLabel: z.string().optional(),
 });
 
 export const storageLocalDiskConfigSchema = z.object({
@@ -115,9 +110,6 @@ export const paperclipConfigSchema = z
     auth: authConfigSchema.default({
       baseUrlMode: "auto",
       disableSignUp: false,
-    }),
-    surface: surfaceConfigSchema.default({
-      profile: "dx",
     }),
     storage: storageConfigSchema.default({
       provider: "local_disk",
@@ -187,6 +179,5 @@ export type StorageS3Config = z.infer<typeof storageS3ConfigSchema>;
 export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
 export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;
-export type SurfaceConfig = z.infer<typeof surfaceConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;
 export type DatabaseBackupConfig = z.infer<typeof databaseBackupConfigSchema>;

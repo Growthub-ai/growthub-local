@@ -308,7 +308,6 @@ export async function createApp(
         { workerManager },
       ),
     );
-    api.use("/gtm", gtmRoutes(db));
   }
   if (opts.surfaceRuntime.capabilities.gtmEnabled) {
     api.use("/companies", companyRoutes(db));

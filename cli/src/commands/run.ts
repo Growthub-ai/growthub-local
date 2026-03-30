@@ -44,7 +44,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   process.env.PAPERCLIP_CONFIG = configPath;
   loadPaperclipEnvFile(configPath);
 
-  p.intro(pc.bgCyan(pc.black(" growthub run ")));
+  p.intro(pc.bgCyan(pc.black(" paperclipai run ")));
   p.log.message(pc.dim(`Home: ${paths.homeDir}`));
   p.log.message(pc.dim(`Instance: ${paths.instanceId}`));
   p.log.message(pc.dim(`Config: ${configPath}`));
@@ -52,7 +52,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   if (!configExists(configPath)) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       p.log.error("No config found and terminal is non-interactive.");
-      p.log.message(`Run ${pc.cyan("growthub onboard")} once, then retry ${pc.cyan("growthub run")}.`);
+      p.log.message(`Run ${pc.cyan("paperclipai onboard")} once, then retry ${pc.cyan("paperclipai run")}.`);
       process.exit(1);
     }
 
@@ -78,7 +78,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     process.exit(1);
   }
 
-  p.log.step("Starting Growthub server...");
+  p.log.step("Starting Paperclip server...");
   const startedServer = await importServerEntry();
 
   if (shouldGenerateBootstrapInviteAfterStart(config)) {
@@ -156,15 +156,6 @@ async function importServerEntry(): Promise<StartedServer> {
     return await startServerFromModule(mod, devEntry);
   }
 
-  const bundledEntry = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "./runtime/server/dist/index.js",
-  );
-  if (fs.existsSync(bundledEntry)) {
-    const mod = await import(pathToFileURL(bundledEntry).href);
-    return await startServerFromModule(mod, bundledEntry);
-  }
-
   // Production mode: import the published @paperclipai/server package
   try {
     const mod = await import("@paperclipai/server");
@@ -174,13 +165,13 @@ async function importServerEntry(): Promise<StartedServer> {
     const missingServerEntrypoint = !missingSpecifier || missingSpecifier === "@paperclipai/server";
     if (isModuleNotFoundError(err) && missingServerEntrypoint) {
       throw new Error(
-        `Could not locate a Growthub server entrypoint.\n` +
-          `Tried: ${devEntry}, ${bundledEntry}, @paperclipai/server\n` +
+        `Could not locate a Paperclip server entrypoint.\n` +
+          `Tried: ${devEntry}, @paperclipai/server\n` +
           `${formatError(err)}`,
       );
     }
     throw new Error(
-      `Growthub server failed to start.\n` +
+      `Paperclip server failed to start.\n` +
         `${formatError(err)}`,
     );
   }
@@ -193,7 +184,7 @@ function shouldGenerateBootstrapInviteAfterStart(config: PaperclipConfig): boole
 async function startServerFromModule(mod: unknown, label: string): Promise<StartedServer> {
   const startServer = (mod as { startServer?: () => Promise<StartedServer> }).startServer;
   if (typeof startServer !== "function") {
-    throw new Error(`Growthub server entrypoint did not export startServer(): ${label}`);
+    throw new Error(`Paperclip server entrypoint did not export startServer(): ${label}`);
   }
   return await startServer();
 }

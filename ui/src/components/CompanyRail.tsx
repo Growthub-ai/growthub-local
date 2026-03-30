@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BriefcaseBusiness, Plus } from "lucide-react";
+import { Paperclip, Plus } from "lucide-react";
 import { useQueries } from "@tanstack/react-query";
 import {
   DndContext,
@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/tooltip";
 import type { Company } from "@paperclipai/shared";
 import { CompanyPatternIcon } from "./CompanyPatternIcon";
-import { surfaceProfile, toSurfacePath } from "@/lib/surface-profile";
 
 const ORDER_STORAGE_KEY = "paperclip.companyOrder";
 
@@ -269,9 +268,9 @@ export function CompanyRail() {
 
   return (
     <div className="flex flex-col items-center w-[72px] shrink-0 h-full bg-background border-r border-border">
-      {/* Workspace icon - aligned with top sections (implied line, no visible border) */}
+      {/* Paperclip icon - aligned with top sections (implied line, no visible border) */}
       <div className="flex items-center justify-center h-12 w-full shrink-0">
-        <BriefcaseBusiness className="h-5 w-5 text-foreground" />
+        <Paperclip className="h-5 w-5 text-foreground" />
       </div>
 
       {/* Company list */}
@@ -295,7 +294,7 @@ export function CompanyRail() {
                 onSelect={() => {
                   setSelectedCompanyId(company.id);
                   if (isInstanceRoute) {
-                    navigate(toSurfacePath(`${company.issuePrefix}/${surfaceProfile === "gtm" ? "workspace" : "dashboard"}`));
+                    navigate(`/${company.issuePrefix}/dashboard`);
                   }
                 }}
               />

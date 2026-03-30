@@ -196,6 +196,73 @@ describe("realizeExecutionWorkspace", () => {
     expect(second.branchName).toBe(first.branchName);
   });
 
+  it("switches a reused worktree back to the expected branch if it drifted", async () => {
+    const repoRoot = await createTempRepo();
+
+    const workspace = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      config: {
+        workspaceStrategy: {
+          type: "git_worktree",
+          branchTemplate: "{{issue.identifier}}-{{slug}}",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-448",
+        title: "Keep agent worktree on the issue branch",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+    });
+
+    await runGit(repoRoot, ["checkout", "-b", "manual-switch"]);
+    await runGit(repoRoot, ["checkout", "main"]);
+    await runGit(workspace.cwd, ["checkout", "manual-switch"]);
+
+    const reused = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      config: {
+        workspaceStrategy: {
+          type: "git_worktree",
+          branchTemplate: "{{issue.identifier}}-{{slug}}",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-448",
+        title: "Keep agent worktree on the issue branch",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+    });
+
+    expect(reused.created).toBe(false);
+    const currentBranch = (await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: reused.cwd })).stdout.trim();
+    expect(currentBranch).toBe(reused.branchName);
+    expect(currentBranch).toBe("PAP-448-keep-agent-worktree-on-the-issue-branch");
+  });
+
   it("runs a configured provision command inside the derived worktree", async () => {
     const repoRoot = await createTempRepo();
     await fs.mkdir(path.join(repoRoot, "scripts"), { recursive: true });

@@ -48,7 +48,7 @@ function resolveAgentJwtSecretStatus(envFilePath) {
     }
     return {
         status: "warn",
-        message: "missing (run `pnpm growthub onboard`)",
+        message: "missing (run `pnpm paperclipai onboard`)",
     };
 }
 export function printStartupBanner(opts) {

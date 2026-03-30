@@ -382,10 +382,10 @@ export declare function heartbeatService(db: Db): {
         runId: string;
         level: string | null;
         color: string | null;
+        message: string | null;
         seq: number;
         eventType: string;
         stream: string | null;
-        message: string | null;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";

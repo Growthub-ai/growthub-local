@@ -12,7 +12,12 @@ import { cn } from "../lib/utils";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { NewTicketModal } from "../components/NewTicketModal";
-import type { Ticket as TicketType } from "@paperclipai/shared";
+import {
+  formatTicketStageLabel,
+  getTicketStageDefinition,
+  normalizeTicketStageDefinitions,
+  type Ticket as TicketType,
+} from "@paperclipai/shared";
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const PALETTE = [
@@ -24,10 +29,18 @@ const PALETTE = [
   { dot: "bg-pink-500",   badge: "text-pink-500 bg-pink-500/10 border-pink-500/20"       },
   { dot: "bg-cyan-500",   badge: "text-cyan-500 bg-cyan-500/10 border-cyan-500/20"       },
 ];
-function sl(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function sl(s: string) { return formatTicketStageLabel(s); }
 function sp(s: string, order: string[]) {
   const i = order.indexOf(s);
   return PALETTE[(i >= 0 ? i : 0) % PALETTE.length];
+}
+
+function stageLabel(ticket: TicketType, stage: string) {
+  const stageDefinitions = normalizeTicketStageDefinitions({
+    stageDefinitions: ticket.stageDefinitions,
+    stageOrder: ticket.stageOrder,
+  });
+  return getTicketStageDefinition(stageDefinitions, stage)?.label ?? sl(stage);
 }
 
 // ─── Stage pipeline dots ──────────────────────────────────────────────────────
@@ -93,7 +106,7 @@ function TicketRow({
 
       {/* Stage badge */}
       <span className={cn("text-xs border rounded px-1.5 py-0.5 shrink-0", p.badge)}>
-        {sl(ticket.currentStage)}
+        {stageLabel(ticket, ticket.currentStage)}
       </span>
 
       <span className="text-xs font-mono text-muted-foreground/50 shrink-0">{ticket.identifier}</span>

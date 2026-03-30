@@ -1811,8 +1811,8 @@ export declare function pluginRegistryService(db: Db): {
         title: string | null;
         scopeId: string | null;
         externalId: string | null;
-        entityType: string;
         scopeKind: "company" | "agent" | "project" | "issue" | "goal" | "run" | "instance" | "project_workspace";
+        entityType: string;
         pluginId: string;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
@@ -2024,8 +2024,8 @@ export declare function pluginRegistryService(db: Db): {
         title: string | null;
         scopeId: string | null;
         externalId: string | null;
-        entityType: string;
         scopeKind: "company" | "agent" | "project" | "issue" | "goal" | "run" | "instance" | "project_workspace";
+        entityType: string;
         pluginId: string;
     }>;
     /**
@@ -2045,8 +2045,8 @@ export declare function pluginRegistryService(db: Db): {
         title: string | null;
         scopeId: string | null;
         externalId: string | null;
-        entityType: string;
         scopeKind: "company" | "agent" | "project" | "issue" | "goal" | "run" | "instance" | "project_workspace";
+        entityType: string;
         pluginId: string;
     }>;
     /**
@@ -2064,8 +2064,8 @@ export declare function pluginRegistryService(db: Db): {
         title: string | null;
         scopeId: string | null;
         externalId: string | null;
-        entityType: string;
         scopeKind: "company" | "agent" | "project" | "issue" | "goal" | "run" | "instance" | "project_workspace";
+        entityType: string;
         pluginId: string;
     }>;
     /**

@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
 import { Router } from "express";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
-import { promisify } from "node:util";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { createAgentKeySchema, createAgentHireSchema, createAgentSchema, deriveAgentUrlKey, isUuidLike, resetAgentSessionSchema, testAdapterEnvironmentSchema, updateAgentPermissionsSchema, updateAgentInstructionsPathSchema, wakeAgentSchema, updateAgentSchema, } from "@paperclipai/shared";
@@ -19,7 +17,6 @@ import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "@paperclipai/adapter-opencode-local/server";
 export function agentRoutes(db) {
-    const execFileAsync = promisify(execFile);
     const DEFAULT_INSTRUCTIONS_PATH_KEYS = {
         claude_local: "instructionsFilePath",
         codex_local: "instructionsFilePath",
@@ -199,9 +196,6 @@ export function agentRoutes(db) {
         if (typeof value !== "object" || value === null || Array.isArray(value))
             return null;
         return value;
-    }
-    function escapeAppleScriptString(value) {
-        return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     }
     function asNonEmptyString(value) {
         if (typeof value !== "string")
@@ -1225,45 +1219,6 @@ export function agentRoutes(db) {
         }
         const config = asRecord(agent.adapterConfig) ?? {};
         const { config: runtimeConfig } = await secretsSvc.resolveAdapterConfigForRuntime(agent.companyId, config);
-        const command = typeof runtimeConfig.command === "string" && runtimeConfig.command.trim().length > 0
-            ? runtimeConfig.command.trim()
-            : "claude";
-        const cwd = typeof runtimeConfig.cwd === "string" && runtimeConfig.cwd.trim().length > 0
-            ? runtimeConfig.cwd.trim()
-            : process.cwd();
-        if (process.platform === "darwin") {
-            const terminalCommand = `cd "${escapeAppleScriptString(cwd)}" && ${escapeAppleScriptString(command)} login`;
-            try {
-                await execFileAsync("osascript", [
-                    "-e",
-                    'tell application "Terminal" to activate',
-                    "-e",
-                    `tell application "Terminal" to do script "${terminalCommand}"`,
-                ]);
-                res.json({
-                    exitCode: 0,
-                    signal: null,
-                    timedOut: false,
-                    loginUrl: null,
-                    stdout: "Opened Terminal for Claude login.",
-                    stderr: "",
-                });
-                return;
-            }
-            catch (error) {
-                const message = error instanceof Error ? error.message : "Failed to open Terminal for Claude login";
-                res.status(500).json({
-                    error: message,
-                    exitCode: 1,
-                    signal: null,
-                    timedOut: false,
-                    loginUrl: null,
-                    stdout: "",
-                    stderr: message,
-                });
-                return;
-            }
-        }
         const result = await runClaudeLogin({
             runId: `claude-login-${randomUUID()}`,
             agent: {

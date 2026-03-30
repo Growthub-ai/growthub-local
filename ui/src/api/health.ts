@@ -1,7 +1,6 @@
 export type HealthStatus = {
   status: "ok";
   version?: string;
-  surfaceProfile?: "dx" | "gtm";
   deploymentMode?: "local_trusted" | "authenticated";
   deploymentExposure?: "private" | "public";
   authReady?: boolean;

@@ -255,7 +255,6 @@ export async function createApp(db, opts) {
         api.use(sidebarBadgeRoutes(db));
         api.use(instanceSettingsRoutes(db));
         api.use(pluginRoutes(db, loader, { scheduler, jobStore }, { workerManager }, { toolDispatcher }, { workerManager }));
-        api.use("/gtm", gtmRoutes(db));
     }
     if (opts.surfaceRuntime.capabilities.gtmEnabled) {
         api.use("/companies", companyRoutes(db));

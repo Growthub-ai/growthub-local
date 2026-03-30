@@ -9,6 +9,7 @@ import { instanceSettingsApi } from "../api/instanceSettings";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
@@ -20,7 +21,7 @@ import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Copy, Check } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Copy, Check, Loader2 } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 const EXECUTION_WORKSPACE_OPTIONS = [
@@ -175,6 +176,7 @@ function CopyableValue({ value, label, mono, className }: { value: string; label
 
 export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
+  const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const companyId = issue.companyId ?? selectedCompanyId;
   const [assigneeOpen, setAssigneeOpen] = useState(false);
@@ -189,6 +191,16 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
+  });
+  const openCurrentWorkspace = useMutation({
+    mutationFn: (workspaceId: string) => executionWorkspacesApi.openLocal(workspaceId),
+    onSuccess: (result) => {
+      pushToast({
+        title: `Opened in ${result.app}`,
+        body: result.path,
+        tone: "success",
+      });
+    },
   });
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -734,6 +746,17 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
                   {issue.currentExecutionWorkspace.repoUrl && (
                     <CopyableValue value={issue.currentExecutionWorkspace.repoUrl} label="Repo:" mono className="text-[11px]" />
                   )}
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => openCurrentWorkspace.mutate(issue.currentExecutionWorkspace!.id)}
+                      disabled={openCurrentWorkspace.isPending}
+                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent/50 disabled:opacity-50"
+                    >
+                      {openCurrentWorkspace.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowUpRight className="h-3 w-3" />}
+                      Open in Cursor
+                    </button>
+                  </div>
                 </div>
               )}
               {!issue.currentExecutionWorkspace && currentProject?.primaryWorkspace?.cwd && (

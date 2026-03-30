@@ -7,9 +7,6 @@ export type DeploymentMode = (typeof DEPLOYMENT_MODES)[number];
 export const DEPLOYMENT_EXPOSURES = ["private", "public"] as const;
 export type DeploymentExposure = (typeof DEPLOYMENT_EXPOSURES)[number];
 
-export const SURFACE_PROFILES = ["dx", "gtm"] as const;
-export type SurfaceProfile = (typeof SURFACE_PROFILES)[number];
-
 export const AUTH_BASE_URL_MODES = ["auto", "explicit"] as const;
 export type AuthBaseUrlMode = (typeof AUTH_BASE_URL_MODES)[number];
 
@@ -119,6 +116,23 @@ export const TICKET_STAGES = [
   "human",
 ] as const;
 export type TicketStage = (typeof TICKET_STAGES)[number];
+
+export const TICKET_STAGE_KINDS = [
+  "planning",
+  "execution",
+  "review",
+  "qa",
+  "human",
+  "custom",
+] as const;
+export type TicketStageKind = (typeof TICKET_STAGE_KINDS)[number];
+
+export const TICKET_STAGE_HANDOFF_MODES = [
+  "manual",
+  "context_only",
+  "seamless",
+] as const;
+export type TicketStageHandoffMode = (typeof TICKET_STAGE_HANDOFF_MODES)[number];
 
 export const TICKET_STATUSES = [
   "active",

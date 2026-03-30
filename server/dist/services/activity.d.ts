@@ -13,9 +13,9 @@ export declare function activityService(db: Db): {
         companyId: string;
         agentId: string | null;
         runId: string | null;
+        action: string;
         actorType: string;
         actorId: string;
-        action: string;
         entityType: string;
         entityId: string;
         details: Record<string, unknown> | null;
@@ -216,9 +216,9 @@ export declare function activityService(db: Db): {
         companyId: string;
         agentId: string | null;
         runId: string | null;
+        action: string;
         actorType: string;
         actorId: string;
-        action: string;
         entityType: string;
         entityId: string;
         details: Record<string, unknown> | null;
@@ -753,9 +753,9 @@ export declare function activityService(db: Db): {
         companyId: string;
         agentId: string | null;
         runId: string | null;
+        action: string;
         actorType: string;
         actorId: string;
-        action: string;
         entityType: string;
         entityId: string;
         details: Record<string, unknown> | null;

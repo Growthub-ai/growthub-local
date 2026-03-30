@@ -63,9 +63,6 @@ function defaultConfig(): PaperclipConfig {
       baseUrlMode: "auto",
       disableSignUp: false,
     },
-    surface: {
-      profile: "dx",
-    },
     storage: defaultStorageConfig(),
     secrets: defaultSecretsConfig(),
   };

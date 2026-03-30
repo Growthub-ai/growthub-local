@@ -525,9 +525,9 @@ export declare function approvalService(db: Db): {
         updatedAt: Date;
         companyId: string;
         approvalId: string;
+        body: string;
         authorAgentId: string | null;
         authorUserId: string | null;
-        body: string;
     }[]>;
     addComment: (approvalId: string, body: string, actor: {
         agentId?: string;
@@ -538,9 +538,9 @@ export declare function approvalService(db: Db): {
         updatedAt: Date;
         companyId: string;
         approvalId: string;
+        body: string;
         authorAgentId: string | null;
         authorUserId: string | null;
-        body: string;
     }>;
 };
 //# sourceMappingURL=approvals.d.ts.map

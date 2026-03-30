@@ -15,8 +15,8 @@ export declare function costService(db: Db, budgetHooks?: BudgetServiceHooks): {
         goalId: string | null;
         projectId: string | null;
         billingCode: string | null;
-        heartbeatRunId: string | null;
         issueId: string | null;
+        heartbeatRunId: string | null;
         biller: string;
         billingType: string;
         model: string;

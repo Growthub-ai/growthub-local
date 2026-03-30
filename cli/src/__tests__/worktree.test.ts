@@ -74,9 +74,6 @@ function buildSourceConfig(): PaperclipConfig {
       publicBaseUrl: "http://127.0.0.1:3100",
       disableSignUp: false,
     },
-    surface: {
-      profile: "dx",
-    },
     storage: {
       provider: "local_disk",
       localDisk: {

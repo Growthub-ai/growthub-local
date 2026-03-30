@@ -42,6 +42,15 @@ export const issuesApi = {
     api.post<IssueLabel>(`/companies/${companyId}/labels`, data),
   deleteLabel: (id: string) => api.delete<IssueLabel>(`/labels/${id}`),
   get: (id: string) => api.get<Issue>(`/issues/${id}`),
+  openLocal: (id: string) =>
+    api.post<{
+      ok: true;
+      app: string;
+      path: string;
+      executionWorkspaceId: string | null;
+      branchName: string | null;
+      createdWorkspace: boolean;
+    }>(`/issues/${id}/open-local`, {}),
   markRead: (id: string) => api.post<{ id: string; lastReadAt: Date }>(`/issues/${id}/read`, {}),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),

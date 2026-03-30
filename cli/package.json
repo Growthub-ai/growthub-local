@@ -27,15 +27,21 @@
   "files": [
     "dist"
   ],
+  "scripts": {
+    "build": "bash ../scripts/prepare-server-ui-dist.sh && pnpm --dir ../server build && node --input-type=module -e \"import esbuild from 'esbuild'; import config from './esbuild.config.mjs'; await esbuild.build(config);\" && node ./scripts/prepare-bundled-runtime.mjs && chmod +x dist/index.js",
+    "clean": "rm -rf dist",
+    "prepack": "pnpm run build"
+  },
   "engines": {
     "node": ">=20"
   },
-  "scripts": {
-    "pack:dry-run": "npm pack --dry-run"
+  "devDependencies": {
+    "esbuild": "^0.27.3"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.888.0",
     "@clack/prompts": "^0.10.0",
+    "@paperclipai/plugin-sdk": "2026.325.0",
     "@paperclipai/server": "0.3.1",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",

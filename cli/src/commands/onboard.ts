@@ -7,12 +7,10 @@ import {
   DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
-  SURFACE_PROFILES,
   type AuthBaseUrlMode,
   type DeploymentExposure,
   type DeploymentMode,
   type SecretProvider,
-  type SurfaceProfile,
   type StorageProvider,
 } from "@paperclipai/shared";
 import { configExists, readConfig, resolveConfigPath, writeConfig } from "../config/store.js";
@@ -45,7 +43,7 @@ type OnboardOptions = {
   invokedByRun?: boolean;
 };
 
-type OnboardDefaults = Pick<PaperclipConfig, "database" | "logging" | "server" | "auth" | "surface" | "storage" | "secrets">;
+type OnboardDefaults = Pick<PaperclipConfig, "database" | "logging" | "server" | "auth" | "storage" | "secrets">;
 
 const ONBOARD_ENV_KEYS = [
   "PAPERCLIP_PUBLIC_URL",
@@ -64,7 +62,6 @@ const ONBOARD_ENV_KEYS = [
   "PAPERCLIP_AUTH_PUBLIC_BASE_URL",
   "BETTER_AUTH_URL",
   "BETTER_AUTH_BASE_URL",
-  "PAPERCLIP_SURFACE_PROFILE",
   "PAPERCLIP_STORAGE_PROVIDER",
   "PAPERCLIP_STORAGE_LOCAL_DIR",
   "PAPERCLIP_STORAGE_S3_BUCKET",
@@ -119,8 +116,6 @@ function quickstartDefaultsFromEnv(): {
     undefined;
   const deploymentMode =
     parseEnumFromEnv<DeploymentMode>(process.env.PAPERCLIP_DEPLOYMENT_MODE, DEPLOYMENT_MODES) ?? "local_trusted";
-  const surfaceProfile =
-    parseEnumFromEnv<SurfaceProfile>(process.env.PAPERCLIP_SURFACE_PROFILE, SURFACE_PROFILES) ?? "dx";
   const deploymentExposureFromEnv = parseEnumFromEnv<DeploymentExposure>(
     process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE,
     DEPLOYMENT_EXPOSURES,
@@ -193,9 +188,6 @@ function quickstartDefaultsFromEnv(): {
       disableSignUp: false,
       ...(authPublicBaseUrl ? { publicBaseUrl: authPublicBaseUrl } : {}),
     },
-    surface: {
-      profile: surfaceProfile,
-    },
     storage: {
       provider: storageProvider,
       localDisk: {
@@ -243,7 +235,7 @@ function canCreateBootstrapInviteImmediately(config: Pick<PaperclipConfig, "data
 
 export async function onboard(opts: OnboardOptions): Promise<void> {
   printPaperclipCliBanner();
-  p.intro(pc.bgCyan(pc.black(" growthub onboard ")));
+  p.intro(pc.bgCyan(pc.black(" paperclipai onboard ")));
   const configPath = resolveConfigPath(opts.config);
   const instance = describeLocalInstancePaths(resolvePaperclipInstanceId());
   p.log.message(
@@ -300,7 +292,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     logging,
     server,
     auth,
-    surface,
     storage,
     secrets,
   } = derivedDefaults;
@@ -318,7 +309,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
         await db.execute("SELECT 1");
         s.stop("Database connection successful");
       } catch {
-        s.stop(pc.yellow("Could not connect to database — you can fix this later with `growthub doctor`"));
+        s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclipai doctor`"));
       }
     }
 
@@ -373,28 +364,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     p.log.step(pc.bold("Server"));
     ({ server, auth } = await promptServer({ currentServer: server, currentAuth: auth }));
 
-    const surfaceChoice = await p.select({
-      message: "Choose Growthub profile",
-      options: [
-        {
-          value: "dx" as const,
-          label: "DX",
-          hint: "Local-first builder and developer tooling",
-        },
-        {
-          value: "gtm" as const,
-          label: "GTM",
-          hint: "Focused GTM product surface",
-        },
-      ],
-      initialValue: surface.profile,
-    });
-    if (p.isCancel(surfaceChoice)) {
-      p.cancel("Setup cancelled.");
-      return;
-    }
-    surface = { profile: surfaceChoice };
-
     p.log.step(pc.bold("Storage"));
     storage = await promptStorage(storage);
 
@@ -448,7 +417,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     logging,
     server,
     auth,
-    surface,
     storage,
     secrets,
   };
@@ -470,7 +438,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       `Server: ${server.deploymentMode}/${server.exposure} @ ${server.host}:${server.port}`,
       `Allowed hosts: ${server.allowedHostnames.length > 0 ? server.allowedHostnames.join(", ") : "(loopback only)"}`,
       `Auth URL mode: ${auth.baseUrlMode}${auth.publicBaseUrl ? ` (${auth.publicBaseUrl})` : ""}`,
-      `Surface: ${surface.profile}`,
       `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
       "Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured",
@@ -480,9 +447,9 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
   p.note(
     [
-      `Run: ${pc.cyan("growthub run")}`,
-      `Reconfigure later: ${pc.cyan("growthub configure")}`,
-      `Diagnose setup: ${pc.cyan("growthub doctor")}`,
+      `Run: ${pc.cyan("paperclipai run")}`,
+      `Reconfigure later: ${pc.cyan("paperclipai configure")}`,
+      `Diagnose setup: ${pc.cyan("paperclipai doctor")}`,
     ].join("\n"),
     "Next commands",
   );
@@ -495,7 +462,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   let shouldRunNow = opts.run === true || opts.yes === true;
   if (!shouldRunNow && !opts.invokedByRun && process.stdin.isTTY && process.stdout.isTTY) {
     const answer = await p.confirm({
-      message: "Start Growthub now?",
+      message: "Start Paperclip now?",
       initialValue: true,
     });
     if (!p.isCancel(answer)) {
@@ -514,8 +481,8 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     p.log.info(
       [
         "Bootstrap CEO invite will be created after the server starts.",
-        `Next: ${pc.cyan("growthub run")}`,
-        `Then: ${pc.cyan("growthub auth bootstrap-ceo")}`,
+        `Next: ${pc.cyan("paperclipai run")}`,
+        `Then: ${pc.cyan("paperclipai auth bootstrap-ceo")}`,
       ].join("\n"),
     );
   }

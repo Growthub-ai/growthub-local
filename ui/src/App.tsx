@@ -42,10 +42,6 @@ import { useCompany } from "./context/CompanyContext";
 import { useDialog } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
 import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
-import { surfaceRouteMount, toSurfacePath } from "./lib/surface-profile";
-
-const SURFACE_ROUTE_PATH = surfaceRouteMount.slice(1);
-const SURFACE_ROUTE_PREFIX_PATTERN = new RegExp(`^${surfaceRouteMount}(?=/|$)`);
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -54,11 +50,11 @@ function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: b
         <h1 className="text-xl font-semibold">Instance setup required</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {hasActiveInvite
-            ? "No instance admin exists yet. A bootstrap invite is already active. Check your Growthub startup logs for the first admin invite URL, or run this command to rotate it:"
-            : "No instance admin exists yet. Run this command in your Growthub environment to generate the first admin invite URL:"}
+            ? "No instance admin exists yet. A bootstrap invite is already active. Check your Paperclip startup logs for the first admin invite URL, or run this command to rotate it:"
+            : "No instance admin exists yet. Run this command in your Paperclip environment to generate the first admin invite URL:"}
         </p>
         <pre className="mt-4 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs">
-{`pnpm growthub auth bootstrap-ceo`}
+{`pnpm paperclipai auth bootstrap-ceo`}
         </pre>
       </div>
     </div>
@@ -238,12 +234,12 @@ function CompanyRootRedirect() {
         hasCompanies: false,
       })
     ) {
-      return <Navigate to={toSurfacePath("onboarding")} replace />;
+      return <Navigate to="/onboarding" replace />;
     }
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={toSurfacePath(`${targetCompany.issuePrefix}/dashboard`)} replace />;
+  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
 }
 
 function UnprefixedBoardRedirect() {
@@ -262,14 +258,14 @@ function UnprefixedBoardRedirect() {
         hasCompanies: false,
       })
     ) {
-      return <Navigate to={toSurfacePath("onboarding")} replace />;
+      return <Navigate to="/onboarding" replace />;
     }
     return <NoCompaniesStartPage />;
   }
 
   return (
     <Navigate
-      to={toSurfacePath(`${targetCompany.issuePrefix}${location.pathname.replace(SURFACE_ROUTE_PREFIX_PATTERN, "")}${location.search}${location.hash}`)}
+      to={`/${targetCompany.issuePrefix}${location.pathname}${location.search}${location.hash}`}
       replace
     />
   );
@@ -297,45 +293,43 @@ export function App() {
   return (
     <>
       <Routes>
-        <Route path="/" element={<Navigate to={toSurfacePath()} replace />} />
         <Route path="auth" element={<AuthPage />} />
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
 
         <Route element={<CloudAccessGate />}>
-          <Route path={SURFACE_ROUTE_PATH} element={<CompanyRootRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/onboarding`} element={<OnboardingRoutePage />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/instance`} element={<Navigate to={toSurfacePath("instance/settings/heartbeats")} replace />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/instance/settings`} element={<Layout />}>
+          <Route index element={<CompanyRootRedirect />} />
+          <Route path="onboarding" element={<OnboardingRoutePage />} />
+          <Route path="instance" element={<Navigate to="/instance/settings/heartbeats" replace />} />
+          <Route path="instance/settings" element={<Layout />}>
             <Route index element={<Navigate to="heartbeats" replace />} />
             <Route path="heartbeats" element={<InstanceSettings />} />
             <Route path="experimental" element={<InstanceExperimentalSettings />} />
             <Route path="plugins" element={<PluginManager />} />
             <Route path="plugins/:pluginId" element={<PluginSettings />} />
           </Route>
-          <Route path={`${SURFACE_ROUTE_PATH}/companies`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/tickets`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/tickets/:ticketId`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/issues`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/issues/:issueId`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/settings`} element={<LegacySettingsRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/settings/*`} element={<LegacySettingsRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/agents`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/agents/new`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/agents/:agentId`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/agents/:agentId/:tab`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/agents/:agentId/runs/:runId`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/projects`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/projects/:projectId`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/projects/:projectId/overview`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/projects/:projectId/issues`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/projects/:projectId/issues/:filter`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/projects/:projectId/configuration`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/tests/ux/runs`} element={<UnprefixedBoardRedirect />} />
-          <Route path={`${SURFACE_ROUTE_PATH}/:companyPrefix`} element={<Layout />}>
+          <Route path="companies" element={<UnprefixedBoardRedirect />} />
+          <Route path="tickets" element={<UnprefixedBoardRedirect />} />
+          <Route path="tickets/:ticketId" element={<UnprefixedBoardRedirect />} />
+          <Route path="issues" element={<UnprefixedBoardRedirect />} />
+          <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
+          <Route path="settings" element={<LegacySettingsRedirect />} />
+          <Route path="settings/*" element={<LegacySettingsRedirect />} />
+          <Route path="agents" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/new" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/:agentId" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/:agentId/:tab" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/configuration" element={<UnprefixedBoardRedirect />} />
+          <Route path="tests/ux/runs" element={<UnprefixedBoardRedirect />} />
+          <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
-          <Route path="gtm/*" element={<NotFoundPage scope="global" />} />
           <Route path="*" element={<NotFoundPage scope="global" />} />
         </Route>
       </Routes>

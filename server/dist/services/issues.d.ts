@@ -364,10 +364,10 @@ export declare function issueService(db: Db): {
         createdAt: Date;
         updatedAt: Date;
         companyId: string;
+        body: string;
         issueId: string;
         authorAgentId: string | null;
         authorUserId: string | null;
-        body: string;
     }[]>;
     getCommentCursor: (issueId: string) => Promise<{
         totalComments: number;
@@ -379,10 +379,10 @@ export declare function issueService(db: Db): {
         createdAt: Date;
         updatedAt: Date;
         companyId: string;
+        body: string;
         issueId: string;
         authorAgentId: string | null;
         authorUserId: string | null;
-        body: string;
     } | null>;
     addComment: (issueId: string, body: string, actor: {
         agentId?: string;
@@ -392,10 +392,10 @@ export declare function issueService(db: Db): {
         createdAt: Date;
         updatedAt: Date;
         companyId: string;
+        body: string;
         issueId: string;
         authorAgentId: string | null;
         authorUserId: string | null;
-        body: string;
     }>;
     createAttachment: (input: {
         issueId: string;

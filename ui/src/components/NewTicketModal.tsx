@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
-import { surfaceProfile } from "@/lib/surface-profile";
 import {
   GitPullRequest, GitBranch, Plus, X, ChevronDown, Search,
   Bot, Zap, ArrowRight, Check, Loader2, ExternalLink,
@@ -50,7 +49,7 @@ function GithubPrPicker({
   selectedPr: GhPr | null;
   onSelect: (pr: GhPr | null) => void;
 }) {
-  const [repo, setRepo] = useState("");
+  const [repo, setRepo] = useState("antonioromero1220/gh-app");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 
@@ -64,14 +63,8 @@ function GithubPrPicker({
     queryKey: ["github-prs", companyId, repo],
     queryFn: () => ticketsApi.githubPrs(companyId, repo),
     staleTime: 30_000,
-    enabled: open && !!repo,
+    enabled: !!repo,
   });
-
-  useEffect(() => {
-    if (!repo && repos.length > 0) {
-      setRepo(repos[0]!.fullName);
-    }
-  }, [repo, repos]);
 
   const filtered = prs.filter((p) =>
     !search || p.title.toLowerCase().includes(search.toLowerCase()) || String(p.number).includes(search)
@@ -86,18 +79,18 @@ function GithubPrPicker({
           onChange={(e) => { setRepo(e.target.value); setSearch(""); setOpen(true); }}
           className="flex-1 text-xs bg-background border border-border rounded-md px-2 py-1.5 outline-none text-foreground"
         >
-          <option value="" disabled>{repos.length > 0 ? "Select repository" : "No repositories available"}</option>
-          {(repos as GhRepo[]).slice(0, 25).map((r) => (
-            <option key={r.fullName} value={r.fullName}>{r.fullName}</option>
-          ))}
+          <option value="antonioromero1220/gh-app">antonioromero1220/gh-app</option>
+          <option value="antonioromero1220/growthub-core">antonioromero1220/growthub-core</option>
+          {(repos as GhRepo[])
+            .filter((r) => r.fullName !== "antonioromero1220/gh-app" && r.fullName !== "antonioromero1220/growthub-core")
+            .slice(0, 15)
+            .map((r) => (
+              <option key={r.fullName} value={r.fullName}>{r.fullName}</option>
+            ))}
         </select>
         <button
           type="button"
-          onClick={() => {
-            if (!repo) return;
-            setOpen((o) => !o);
-          }}
-          disabled={!repo}
+          onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-accent transition-colors"
         >
           <GitPullRequest className="h-3.5 w-3.5" />
@@ -219,7 +212,6 @@ export function NewTicketModal({ open, onClose, companyId, onSuccess }: NewTicke
   const [addingStage, setAddingStage] = useState(false);
   const [leadAgentId, setLeadAgentId] = useState<string>("");
   const [linkedPr, setLinkedPr] = useState<GhPr | null>(null);
-  const isGtmSurface = surfaceProfile === "gtm";
 
   // Reset on open
   useEffect(() => {
@@ -292,12 +284,10 @@ export function NewTicketModal({ open, onClose, companyId, onSuccess }: NewTicke
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle className="text-lg font-semibold flex items-center gap-2">
             <Zap className="h-4 w-4 text-primary" />
-            {isGtmSurface ? "New Workflow Ticket" : "New Ticket"}
+            New Ticket
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            {isGtmSurface
-              ? "Define scope, assign agents, and configure the workflow."
-              : "Define scope, bind a PR, assign agents, and configure the pipeline."}
+            Define scope, bind a PR, assign agents, and configure the pipeline.
           </p>
         </DialogHeader>
 
@@ -328,20 +318,18 @@ export function NewTicketModal({ open, onClose, companyId, onSuccess }: NewTicke
           </Section>
 
           {/* GitHub PR */}
-          {!isGtmSurface ? (
-            <Section label="Linked GitHub PR">
-              <GithubPrPicker
-                companyId={companyId}
-                selectedPr={linkedPr}
-                onSelect={setLinkedPr}
-              />
-              {!linkedPr && (
-                <p className="text-[11px] text-muted-foreground/60">
-                  Bind an open PR from your repos to give agents direct context on the active branch.
-                </p>
-              )}
-            </Section>
-          ) : null}
+          <Section label="Linked GitHub PR">
+            <GithubPrPicker
+              companyId={companyId}
+              selectedPr={linkedPr}
+              onSelect={setLinkedPr}
+            />
+            {!linkedPr && (
+              <p className="text-[11px] text-muted-foreground/60">
+                Bind an open PR from your repos to give agents direct context on the active branch.
+              </p>
+            )}
+          </Section>
 
           {/* Pipeline Stages */}
           <Section label="Pipeline Stages">

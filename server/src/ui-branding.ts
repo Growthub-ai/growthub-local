@@ -1,5 +1,3 @@
-import type { SurfaceProfile } from "@paperclipai/shared";
-
 const FAVICON_BLOCK_START = "<!-- PAPERCLIP_FAVICON_START -->";
 const FAVICON_BLOCK_END = "<!-- PAPERCLIP_FAVICON_END -->";
 const RUNTIME_BRANDING_BLOCK_START = "<!-- PAPERCLIP_RUNTIME_BRANDING_START -->";
@@ -226,3 +224,4 @@ export function applyUiBranding(
     renderRuntimeBrandingMeta(branding, surfaceProfile),
   );
 }
+import type { SurfaceProfile } from "@paperclipai/shared";

@@ -1,22 +1,75 @@
 import { Router } from "express";
 import multer from "multer";
+import { execFile } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
 import { addIssueCommentSchema, createIssueAttachmentMetadataSchema, createIssueWorkProductSchema, createIssueLabelSchema, checkoutIssueSchema, createIssueSchema, linkIssueApprovalSchema, issueDocumentKeySchema, updateIssueWorkProductSchema, upsertIssueDocumentSchema, updateIssueSchema, } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { accessService, agentService, executionWorkspaceService, goalService, heartbeatService, issueApprovalService, issueService, documentService, logActivity, projectService, workProductService, } from "../services/index.js";
+import { accessService, agentService, executionWorkspaceService, goalService, heartbeatService, instanceSettingsService, issueApprovalService, issueService, documentService, logActivity, projectService, ticketService, workProductService, } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
+import { buildExecutionWorkspaceAdapterConfig, gateProjectExecutionWorkspacePolicy, parseIssueExecutionWorkspaceSettings, resolveExecutionWorkspaceMode, } from "../services/execution-workspace-policy.js";
+import { realizeExecutionWorkspace } from "../services/workspace-runtime.js";
 const MAX_ISSUE_COMMENT_LIMIT = 500;
+const execFileAsync = promisify(execFile);
+function resolveLocalDirectoryPath(rawPath, missingMessage) {
+    if (!rawPath) {
+        return { error: missingMessage };
+    }
+    const resolvedPath = path.resolve(rawPath);
+    if (!existsSync(resolvedPath)) {
+        return { error: `Local folder "${resolvedPath}" does not exist on this machine.` };
+    }
+    if (!statSync(resolvedPath).isDirectory()) {
+        return { error: `Local folder "${resolvedPath}" is not a directory.` };
+    }
+    return { path: resolvedPath };
+}
+function resolveIssueBranchPath(workspace) {
+    return resolveLocalDirectoryPath(workspace?.providerRef ?? workspace?.cwd ?? null, "This issue does not have a bound local branch/worktree yet.");
+}
+function extractLinkedPrMetadata(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return { repo: null, branch: null };
+    }
+    const metadata = raw;
+    const linkedPr = metadata.linkedPr && typeof metadata.linkedPr === "object" && !Array.isArray(metadata.linkedPr)
+        ? metadata.linkedPr
+        : null;
+    return {
+        repo: typeof linkedPr?.repo === "string" && linkedPr.repo.trim().length > 0 ? linkedPr.repo.trim() : null,
+        branch: typeof linkedPr?.branch === "string" && linkedPr.branch.trim().length > 0 ? linkedPr.branch.trim() : null,
+    };
+}
+function repoMatchesLinkedPr(project, repo) {
+    if (!repo)
+        return false;
+    const needle = repo.trim().toLowerCase();
+    if (!needle)
+        return false;
+    const candidates = [
+        project.name,
+        project.codebase.repoName,
+        project.codebase.repoUrl,
+    ]
+        .filter((value) => Boolean(value))
+        .map((value) => value.toLowerCase());
+    return candidates.some((candidate) => candidate === needle || candidate.endsWith(`/${needle}`) || candidate.includes(needle));
+}
 export function issueRoutes(db, storage) {
     const router = Router();
     const svc = issueService(db);
     const access = accessService(db);
     const heartbeat = heartbeatService(db);
+    const instanceSettings = instanceSettingsService(db);
     const agentsSvc = agentService(db);
     const projectsSvc = projectService(db);
     const goalsSvc = goalService(db);
+    const ticketsSvc = ticketService(db);
     const issueApprovalsSvc = issueApprovalService(db);
     const executionWorkspacesSvc = executionWorkspaceService(db);
     const workProductsSvc = workProductService(db);
@@ -323,6 +376,249 @@ export function issueRoutes(db, storage) {
             mentionedProjects,
             currentExecutionWorkspace,
             workProducts,
+        });
+    });
+    router.post("/issues/:id/open-local", async (req, res) => {
+        const id = req.params.id;
+        const issue = await svc.getById(id);
+        if (!issue) {
+            res.status(404).json({ error: "Issue not found" });
+            return;
+        }
+        assertCompanyAccess(req, issue.companyId);
+        assertBoard(req);
+        if (req.actor.source !== "local_implicit") {
+            res.status(403).json({ error: "Open in Cursor is only available from the local board context." });
+            return;
+        }
+        const existingExecutionWorkspace = issue.executionWorkspaceId
+            ? await executionWorkspacesSvc.getById(issue.executionWorkspaceId)
+            : null;
+        let currentExecutionWorkspace = existingExecutionWorkspace;
+        let openedPathResult = currentExecutionWorkspace
+            ? resolveIssueBranchPath(currentExecutionWorkspace)
+            : { error: "missing execution workspace" };
+        let createdWorkspace = false;
+        let cursorOpenPath = null;
+        if ("error" in openedPathResult) {
+            let resolvedProjectId = issue.projectId;
+            let preferredBranchName = null;
+            let preferredProjectWorkspaceId = issue.projectWorkspaceId ?? null;
+            if (!resolvedProjectId && issue.ticketId) {
+                const [ticket, ticketIssues] = await Promise.all([
+                    ticketsSvc.getById(issue.ticketId),
+                    ticketsSvc.getIssues(issue.ticketId),
+                ]);
+                const siblingProjectIssue = ticketIssues.find((candidate) => candidate.id !== issue.id && candidate.projectId);
+                if (siblingProjectIssue?.projectId) {
+                    resolvedProjectId = siblingProjectIssue.projectId;
+                }
+                const linkedPr = extractLinkedPrMetadata(ticket?.metadata ?? null);
+                preferredBranchName = linkedPr.branch;
+                if (!resolvedProjectId && linkedPr.repo) {
+                    const projects = await projectsSvc.list(issue.companyId);
+                    resolvedProjectId = projects.find((project) => repoMatchesLinkedPr(project, linkedPr.repo))?.id ?? null;
+                }
+            }
+            if (!resolvedProjectId) {
+                res.status(409).json({
+                    error: "Paperclip could not determine which local repo this ticket issue belongs to. Attach the issue to a project or include linked PR repo metadata on the ticket.",
+                });
+                return;
+            }
+            const project = await projectsSvc.getById(resolvedProjectId);
+            if (!project) {
+                res.status(404).json({ error: "Project not found for this issue." });
+                return;
+            }
+            const targetProjectWorkspace = (preferredProjectWorkspaceId
+                ? project.workspaces.find((workspace) => workspace.id === preferredProjectWorkspaceId) ?? null
+                : null) ??
+                project.primaryWorkspace;
+            const baseCwd = targetProjectWorkspace?.cwd ?? project.codebase.effectiveLocalFolder ?? null;
+            cursorOpenPath = project.primaryWorkspace?.cwd ?? project.codebase.effectiveLocalFolder ?? baseCwd;
+            if (!baseCwd) {
+                res.status(409).json({ error: "This project does not have a local codebase folder configured on this machine." });
+                return;
+            }
+            const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
+            const projectPolicy = gateProjectExecutionWorkspacePolicy(project.executionWorkspacePolicy, isolatedWorkspacesEnabled);
+            const issueExecutionWorkspaceSettings = isolatedWorkspacesEnabled
+                ? parseIssueExecutionWorkspaceSettings(issue.executionWorkspaceSettings)
+                : null;
+            const executionWorkspaceMode = resolveExecutionWorkspaceMode({
+                projectPolicy,
+                issueSettings: issueExecutionWorkspaceSettings,
+                legacyUseProjectWorkspace: null,
+            });
+            const config = buildExecutionWorkspaceAdapterConfig({
+                agentConfig: {},
+                projectPolicy,
+                issueSettings: issueExecutionWorkspaceSettings,
+                mode: executionWorkspaceMode,
+                legacyUseProjectWorkspace: null,
+            });
+            if (preferredBranchName) {
+                const existingStrategy = config.workspaceStrategy && typeof config.workspaceStrategy === "object" && !Array.isArray(config.workspaceStrategy)
+                    ? config.workspaceStrategy
+                    : {};
+                config.workspaceStrategy = {
+                    ...existingStrategy,
+                    type: "git_worktree",
+                    branchTemplate: preferredBranchName,
+                };
+            }
+            const assigneeAgent = issue.assigneeAgentId
+                ? await agentsSvc.getById(issue.assigneeAgentId)
+                : null;
+            const realizedWorkspace = await realizeExecutionWorkspace({
+                base: {
+                    baseCwd,
+                    source: "project_primary",
+                    projectId: project.id,
+                    workspaceId: targetProjectWorkspace?.id ?? null,
+                    repoUrl: targetProjectWorkspace?.repoUrl ?? project.codebase.repoUrl ?? null,
+                    repoRef: targetProjectWorkspace?.repoRef ?? project.codebase.repoRef ?? project.codebase.defaultRef ?? "HEAD",
+                },
+                config,
+                issue: {
+                    id: issue.id,
+                    identifier: issue.identifier,
+                    title: issue.title,
+                },
+                agent: {
+                    id: assigneeAgent?.id ?? "paperclip-board",
+                    name: assigneeAgent?.name ?? "Paperclip Board",
+                    companyId: issue.companyId,
+                },
+            });
+            currentExecutionWorkspace =
+                existingExecutionWorkspace && existingExecutionWorkspace.status !== "archived"
+                    ? await executionWorkspacesSvc.update(existingExecutionWorkspace.id, {
+                        projectWorkspaceId: targetProjectWorkspace?.id ?? existingExecutionWorkspace.projectWorkspaceId,
+                        cwd: realizedWorkspace.cwd,
+                        repoUrl: realizedWorkspace.repoUrl,
+                        baseRef: realizedWorkspace.repoRef,
+                        branchName: realizedWorkspace.branchName,
+                        providerType: realizedWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
+                        providerRef: realizedWorkspace.worktreePath,
+                        status: "active",
+                        lastUsedAt: new Date(),
+                        openedAt: new Date(),
+                        cleanupReason: null,
+                        metadata: {
+                            ...(existingExecutionWorkspace.metadata ?? {}),
+                            source: realizedWorkspace.source,
+                            createdByRuntime: realizedWorkspace.created,
+                        },
+                    })
+                    : await executionWorkspacesSvc.create({
+                        companyId: issue.companyId,
+                        projectId: project.id,
+                        projectWorkspaceId: targetProjectWorkspace?.id ?? null,
+                        sourceIssueId: issue.id,
+                        mode: executionWorkspaceMode === "isolated_workspace"
+                            ? "isolated_workspace"
+                            : executionWorkspaceMode === "operator_branch"
+                                ? "operator_branch"
+                                : executionWorkspaceMode === "agent_default"
+                                    ? "adapter_managed"
+                                    : "shared_workspace",
+                        strategyType: realizedWorkspace.strategy === "git_worktree" ? "git_worktree" : "project_primary",
+                        name: realizedWorkspace.branchName ?? issue.identifier ?? issue.title,
+                        status: "active",
+                        cwd: realizedWorkspace.cwd,
+                        repoUrl: realizedWorkspace.repoUrl,
+                        baseRef: realizedWorkspace.repoRef,
+                        branchName: realizedWorkspace.branchName,
+                        providerType: realizedWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
+                        providerRef: realizedWorkspace.worktreePath,
+                        lastUsedAt: new Date(),
+                        openedAt: new Date(),
+                        metadata: {
+                            source: realizedWorkspace.source,
+                            createdByRuntime: realizedWorkspace.created,
+                        },
+                    });
+            if (!currentExecutionWorkspace) {
+                res.status(500).json({ error: "Paperclip could not persist the resolved local branch for this issue." });
+                return;
+            }
+            if (issue.executionWorkspaceId !== currentExecutionWorkspace.id ||
+                (targetProjectWorkspace?.id ?? null) !== (issue.projectWorkspaceId ?? null) ||
+                project.id !== (issue.projectId ?? null)) {
+                await svc.update(issue.id, {
+                    projectId: project.id,
+                    executionWorkspaceId: currentExecutionWorkspace.id,
+                    ...(targetProjectWorkspace?.id ? { projectWorkspaceId: targetProjectWorkspace.id } : {}),
+                });
+            }
+            createdWorkspace = realizedWorkspace.created;
+            openedPathResult = resolveIssueBranchPath(currentExecutionWorkspace);
+            if ("error" in openedPathResult) {
+                res.status(409).json({ error: openedPathResult.error });
+                return;
+            }
+        }
+        if (!cursorOpenPath) {
+            const openProjectId = issue.projectId ?? currentExecutionWorkspace?.projectId ?? null;
+            if (openProjectId) {
+                const project = await projectsSvc.getById(openProjectId);
+                cursorOpenPath = project?.primaryWorkspace?.cwd ?? project?.codebase.effectiveLocalFolder ?? null;
+            }
+        }
+        const cursorTarget = resolveLocalDirectoryPath(cursorOpenPath ?? openedPathResult.path, "Paperclip could not determine the local project folder to open in Cursor.");
+        if ("error" in cursorTarget) {
+            res.status(409).json({ error: cursorTarget.error });
+            return;
+        }
+        if (currentExecutionWorkspace?.branchName) {
+            try {
+                await execFileAsync("git", ["checkout", "--ignore-other-worktrees", currentExecutionWorkspace.branchName], {
+                    cwd: cursorTarget.path,
+                });
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                res.status(409).json({
+                    error: `Failed to switch the main project folder to branch "${currentExecutionWorkspace.branchName}": ${message}`,
+                });
+                return;
+            }
+        }
+        try {
+            await execFileAsync("open", ["-a", "Cursor", cursorTarget.path]);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            res.status(500).json({ error: `Failed to open Cursor: ${message}` });
+            return;
+        }
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            action: "issue.opened_in_cursor",
+            entityType: "issue",
+            entityId: issue.id,
+            details: {
+                app: "Cursor",
+                path: cursorTarget.path,
+                executionWorkspaceId: currentExecutionWorkspace?.id ?? null,
+                branchName: currentExecutionWorkspace?.branchName ?? null,
+                createdWorkspace,
+            },
+        });
+        res.json({
+            ok: true,
+            app: "Cursor",
+            path: cursorTarget.path,
+            executionWorkspaceId: currentExecutionWorkspace?.id ?? null,
+            branchName: currentExecutionWorkspace?.branchName ?? null,
+            createdWorkspace,
         });
     });
     router.get("/issues/:id/heartbeat-context", async (req, res) => {

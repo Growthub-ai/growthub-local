@@ -190,7 +190,7 @@ export function InviteLandingPage() {
           )}
           {(onboardingSkillUrl || onboardingSkillPath || onboardingInstallPath) && (
             <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Growthub skill bootstrap</p>
+              <p className="font-medium text-foreground">Paperclip skill bootstrap</p>
               {onboardingSkillUrl && <p className="font-mono break-all">GET {onboardingSkillUrl}</p>}
               {!onboardingSkillUrl && onboardingSkillPath && <p className="font-mono break-all">GET {onboardingSkillPath}</p>}
               {onboardingInstallPath && <p className="font-mono break-all">Install to {onboardingInstallPath}</p>}
@@ -225,7 +225,7 @@ export function InviteLandingPage() {
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">
-          {invite.inviteType === "bootstrap_ceo" ? "Bootstrap your Growthub instance" : "Join this Growthub company"}
+          {invite.inviteType === "bootstrap_ceo" ? "Bootstrap your Paperclip instance" : "Join this Paperclip company"}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">Invite expires {dateTime(invite.expiresAt)}.</p>
 

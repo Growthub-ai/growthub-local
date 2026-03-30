@@ -15,8 +15,8 @@ export declare function financeService(db: Db): {
         goalId: string | null;
         projectId: string | null;
         billingCode: string | null;
-        heartbeatRunId: string | null;
         issueId: string | null;
+        heartbeatRunId: string | null;
         biller: string;
         model: string | null;
         occurredAt: Date;
@@ -70,8 +70,8 @@ export declare function financeService(db: Db): {
         goalId: string | null;
         projectId: string | null;
         billingCode: string | null;
-        heartbeatRunId: string | null;
         issueId: string | null;
+        heartbeatRunId: string | null;
         biller: string;
         model: string | null;
         occurredAt: Date;

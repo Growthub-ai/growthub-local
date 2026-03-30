@@ -1,7 +1,6 @@
-import { type AuthBaseUrlMode, type DeploymentExposure, type DeploymentMode, type SecretProvider, type SurfaceRuntimeContract, type StorageProvider } from "@paperclipai/shared";
+import { type AuthBaseUrlMode, type DeploymentExposure, type DeploymentMode, type SecretProvider, type StorageProvider } from "@paperclipai/shared";
 type DatabaseMode = "embedded-postgres" | "postgres";
 export interface Config {
-    surfaceRuntime: SurfaceRuntimeContract;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     host: string;

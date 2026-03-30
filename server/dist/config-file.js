@@ -14,12 +14,10 @@ export function readConfigFile() {
         return null;
     }
 }
-export function writeConfigFile(config) {
+export function writeConfigFile(nextConfig) {
+    const parsed = paperclipConfigSchema.parse(nextConfig);
     const configPath = resolvePaperclipConfigPath();
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, `${JSON.stringify(paperclipConfigSchema.parse(config), null, 2)}\n`, {
-        encoding: "utf-8",
-        mode: 0o600,
-    });
+    fs.writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
 }
 //# sourceMappingURL=config-file.js.map

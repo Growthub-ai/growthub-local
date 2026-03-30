@@ -491,6 +491,31 @@ async function provisionExecutionWorktree(input: {
   });
 }
 
+async function ensureWorktreeBranch(input: {
+  repoRoot: string;
+  worktreePath: string;
+  branchName: string;
+  recorder?: WorkspaceOperationRecorder | null;
+}) {
+  const currentBranch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], input.worktreePath);
+  if (currentBranch === input.branchName) return;
+
+  await recordGitOperation(input.recorder, {
+    phase: "worktree_prepare",
+    args: ["checkout", input.branchName],
+    cwd: input.worktreePath,
+    metadata: {
+      repoRoot: input.repoRoot,
+      worktreePath: input.worktreePath,
+      branchName: input.branchName,
+      previousBranchName: currentBranch,
+      correctedBranchDrift: true,
+    },
+    successMessage: `Checked out ${input.branchName} in existing worktree at ${input.worktreePath}\n`,
+    failureLabel: `git checkout ${input.branchName}`,
+  });
+}
+
 function buildExecutionWorkspaceCleanupEnv(input: {
   workspace: {
     cwd: string | null;
@@ -602,6 +627,12 @@ export async function realizeExecutionWorkspace(input: {
           }),
         });
       }
+      await ensureWorktreeBranch({
+        repoRoot,
+        worktreePath,
+        branchName,
+        recorder: input.recorder ?? null,
+      });
       await provisionExecutionWorktree({
         strategy: rawStrategy,
         base: input.base,

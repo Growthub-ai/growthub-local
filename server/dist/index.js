@@ -356,10 +356,18 @@ export async function startServer() {
     const listenPort = await detectPort(config.port);
     const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
     const storageService = createStorageServiceFromConfig(config);
+    const requestedSurfaceProfile = (process.env.PAPERCLIP_SURFACE_PROFILE ?? "dx").trim().toLowerCase();
+    const surfaceProfile = requestedSurfaceProfile === "gtm" ? "gtm" : "dx";
     const app = await createApp(db, {
         uiMode,
         serverPort: listenPort,
-        surfaceRuntime: config.surfaceRuntime,
+        surfaceRuntime: {
+            profile: surfaceProfile,
+            capabilities: {
+                dxEnabled: surfaceProfile !== "gtm",
+                gtmEnabled: surfaceProfile === "gtm",
+            },
+        },
         storageService,
         deploymentMode: config.deploymentMode,
         deploymentExposure: config.deploymentExposure,

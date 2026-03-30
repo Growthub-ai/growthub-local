@@ -44,9 +44,6 @@ function writeBaseConfig(configPath: string) {
       baseUrlMode: "auto",
       disableSignUp: false,
     },
-    surface: {
-      profile: "dx",
-    },
     storage: {
       provider: "local_disk",
       localDisk: { baseDir: "/tmp/paperclip-storage" },

@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
-import { AUTH_BASE_URL_MODES, DEPLOYMENT_EXPOSURES, DEPLOYMENT_MODES, SECRET_PROVIDERS, STORAGE_PROVIDERS, initializeSurfaceRuntimeContract, } from "@paperclipai/shared";
+import { AUTH_BASE_URL_MODES, DEPLOYMENT_EXPOSURES, DEPLOYMENT_MODES, SECRET_PROVIDERS, STORAGE_PROVIDERS, } from "@paperclipai/shared";
 import { resolveDefaultBackupDir, resolveDefaultEmbeddedPostgresDir, resolveDefaultSecretsKeyFilePath, resolveDefaultStorageDir, resolveHomeAwarePath, } from "./home-paths.js";
 const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
 if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
@@ -18,7 +18,6 @@ if (!isSameFile && existsSync(CWD_ENV_PATH)) {
 }
 export function loadConfig() {
     const fileConfig = readConfigFile();
-    const surfaceRuntime = initializeSurfaceRuntimeContract(fileConfig?.surface.profile);
     const fileDatabaseMode = (fileConfig?.database.mode === "postgres" ? "postgres" : "embedded-postgres");
     const fileDbUrl = fileDatabaseMode === "postgres"
         ? fileConfig?.database.connectionString
@@ -123,7 +122,6 @@ export function loadConfig() {
         fileDatabaseBackup?.dir ??
         resolveDefaultBackupDir());
     return {
-        surfaceRuntime,
         deploymentMode,
         deploymentExposure,
         host: process.env.HOST ?? fileConfig?.server.host ?? "127.0.0.1",

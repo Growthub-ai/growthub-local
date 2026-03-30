@@ -22,7 +22,11 @@ copy_file() {
 copy_dir "cli" "cli"
 copy_dir "server" "server"
 copy_dir "ui" "ui"
+copy_dir "packages/db" "packages/db"
 copy_dir "packages/shared" "packages/shared"
+copy_dir "packages/adapter-utils" "packages/adapter-utils"
+copy_dir "packages/adapters" "packages/adapters"
+copy_dir "packages/plugins/sdk" "packages/plugins/sdk"
 copy_dir "packages/create-growthub-local" "packages/create-growthub-local"
 
 copy_file "pnpm-lock.yaml" "pnpm-lock.yaml"

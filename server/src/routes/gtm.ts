@@ -1,7 +1,8 @@
 import { Router } from "express";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import type { AdapterEnvironmentTestResult, Issue, Ticket } from "@paperclipai/shared";
+import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
+import { normalizeTicketStageDefinitions } from "@paperclipai/shared";
 import { getServerAdapter } from "../adapters/registry.js";
 import { readConfigFile, writeConfigFile } from "../config-file.js";
 import { agentService } from "../services/agents.js";
@@ -16,6 +17,14 @@ const GTM_METADATA = {
   product: "gtm",
   surfaceProfile: "gtm",
 } as const;
+
+const GTM_DRAFT_PROFILE_FALLBACKS: Record<string, string[]> = {
+  custom: ["Campaign brief", "Audience build", "Launch motion"],
+  outbound: ["Audience targeting", "Message design", "Outbound launch", "Readout"],
+  launch: ["Positioning", "Asset prep", "Launch distribution", "Readout"],
+  nurture: ["Audience split", "Sequence design", "Automation launch", "Performance review"],
+  partnership: ["Partner targeting", "Outreach", "Joint offer", "Rollout"],
+};
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -47,6 +56,65 @@ function gtmAgentMetadata(metadata: Record<string, unknown> | null | undefined) 
     ...GTM_METADATA,
     entity: "agent",
   };
+}
+
+function compactSentence(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function toTitleCase(value: string): string {
+  return compactSentence(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildDraftTitle(prompt: string, draftProfile: string) {
+  const sentence = compactSentence(prompt);
+  if (!sentence) {
+    return `${toTitleCase(draftProfile || "custom")} GTM Campaign`;
+  }
+
+  const trimmed = sentence.replace(/[.?!]+$/, "");
+  if (trimmed.length <= 72) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  }
+
+  return `${trimmed.slice(0, 69).trimEnd()}...`;
+}
+
+function extractPromptStageLabels(prompt: string): string[] {
+  return prompt
+    .split(/\n|,|;|->|>/)
+    .map((part) => part.replace(/^[\s\d\-*.]+/, "").trim())
+    .filter((part) => part.length >= 3)
+    .slice(0, 5)
+    .map((part) => {
+      const cleaned = compactSentence(part).replace(/[.?!]+$/, "");
+      return cleaned.length > 48 ? `${cleaned.slice(0, 45).trimEnd()}...` : cleaned;
+    });
+}
+
+function buildCampaignDraftStageDefinitions(prompt: string, draftProfile: string): TicketStageDefinition[] {
+  const promptLabels = extractPromptStageLabels(prompt);
+  const sourceLabels =
+    promptLabels.length >= 2 ? promptLabels : (GTM_DRAFT_PROFILE_FALLBACKS[draftProfile] ?? GTM_DRAFT_PROFILE_FALLBACKS.custom);
+
+  return normalizeTicketStageDefinitions({
+    stageDefinitions: sourceLabels.map((label, index) => ({
+      key: `stage_${index + 1}`,
+      label: toTitleCase(label),
+      kind: null,
+      ownerRole: null,
+      handoffMode: null,
+      instructions: `Advance the ${label.toLowerCase()} work and leave the next stage with the context and assets needed to continue.`,
+      exitCriteria: `The ${label.toLowerCase()} stage has a clear outcome, updated context, and a clean handoff note.`,
+      metadata: {
+        source: "gtm_ceo_draft",
+      },
+    })),
+  });
 }
 
 function sortByUpdatedAtDesc<T extends { updatedAt: Date | string }>(rows: T[]): T[] {
@@ -458,17 +526,64 @@ export function gtmRoutes(db: Db) {
     res.json(rows.filter(isGtmTicket));
   });
 
+  router.post("/companies/:companyId/campaign-drafts", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+    const draftProfile = typeof req.body?.draftProfile === "string" ? req.body.draftProfile.trim().toLowerCase() : "custom";
+    const extendExisting = Boolean(req.body?.extendExisting);
+
+    if (!prompt) {
+      res.status(422).json({ error: "A prompt is required to generate a campaign draft." });
+      return;
+    }
+
+    const [companyAgents, companyTickets] = await Promise.all([
+      agents.list(companyId),
+      tickets.list(companyId),
+    ]);
+    const ceoAgent = companyAgents.find((agent) => agent.role === "ceo" && agent.status !== "terminated") ?? null;
+    const existingCampaignCount = companyTickets.filter(isGtmTicket).length;
+    const stageDefinitions = buildCampaignDraftStageDefinitions(prompt, draftProfile);
+
+    res.json({
+      title: buildDraftTitle(prompt, draftProfile),
+      description: `CEO-generated GTM draft for ${compactSentence(prompt)}.`,
+      instructions: extendExisting
+        ? "Extend the current GTM operating pattern where it helps, but keep every stage editable before launch."
+        : "Treat this as a net-new GTM campaign draft. Refine the stages, owners, handoffs, and instructions before launch.",
+      targetAudience: "",
+      offer: "",
+      successDefinition:
+        existingCampaignCount > 0
+          ? "Operators can compare this campaign against the existing GTM pipeline and decide whether to launch, iterate, or merge it."
+          : "Operators can approve the campaign, assign the right owners, and advance it stage by stage without hidden workflow constraints.",
+      leadAgentId: ceoAgent?.id ?? null,
+      stageDefinitions,
+    });
+  });
+
   router.post("/companies/:companyId/tickets", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const actor = getActorInfo(req);
+    const stageDefinitions =
+      Array.isArray(req.body?.stageDefinitions) && req.body.stageDefinitions.length > 0
+        ? (req.body.stageDefinitions as TicketStageDefinition[])
+        : undefined;
+    const stageOrder =
+      Array.isArray(req.body?.stageOrder) && req.body.stageOrder.length > 0
+        ? req.body.stageOrder.map((value: unknown) => String(value))
+        : stageDefinitions
+          ? undefined
+          : ["stage_1"];
     const created = await tickets.create(companyId, {
       title: String(req.body?.title ?? "").trim(),
       description: req.body?.description ? String(req.body.description) : undefined,
       instructions: req.body?.instructions ? String(req.body.instructions) : undefined,
-      stageOrder: Array.isArray(req.body?.stageOrder)
-        ? req.body.stageOrder.map((value: unknown) => String(value))
-        : ["planning", "execution", "qa", "human"],
+      stageOrder,
+      stageDefinitions,
       metadata: gtmTicketMetadata(readRecord(req.body?.metadata)),
       leadAgentId: req.body?.leadAgentId ? String(req.body.leadAgentId) : null,
     }, actor.actorId ?? undefined);
