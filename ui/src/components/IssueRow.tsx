@@ -9,6 +9,7 @@ type UnreadState = "hidden" | "visible" | "fading";
 
 interface IssueRowProps {
   issue: Issue;
+  to?: string;
   issueLinkState?: unknown;
   mobileLeading?: ReactNode;
   desktopMetaLeading?: ReactNode;
@@ -23,6 +24,7 @@ interface IssueRowProps {
 
 export function IssueRow({
   issue,
+  to: toProp,
   issueLinkState,
   mobileLeading,
   desktopMetaLeading,
@@ -35,13 +37,14 @@ export function IssueRow({
   className,
 }: IssueRowProps) {
   const issuePathId = issue.identifier ?? issue.id;
+  const resolvedTo = toProp ?? `/issues/${issuePathId}`;
   const identifier = issue.identifier ?? issue.id.slice(0, 8);
   const showUnreadSlot = unreadState !== null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
   return (
     <Link
-      to={`/issues/${issuePathId}`}
+      to={resolvedTo}
       state={issueLinkState}
       className={cn(
         "flex items-start gap-2 border-b border-border py-2.5 pl-2 pr-3 text-sm no-underline text-inherit transition-colors hover:bg-accent/50 last:border-b-0 sm:items-center sm:py-2 sm:pl-1",

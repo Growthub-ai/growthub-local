@@ -634,7 +634,6 @@ function GtmWorkspacePage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <GtmMetricCard title="Agents" value={String(agents.length)} detail="GTM-configured agents" icon={Users} />
         <GtmMetricCard title="Campaigns" value={String(tickets.length)} detail="Workflow tickets" icon={Ticket} />
-        <GtmMetricCard title="Queue" value={String(issues.length)} detail="Active GTM issues" icon={Workflow} />
         <GtmMetricCard title="Knowledge" value={String(knowledge.items.length)} detail={knowledge.group.label} icon={BriefcaseBusiness} />
       </div>
 
@@ -1056,166 +1055,6 @@ function GtmCampaignPage() {
   );
 }
 
-function GtmQueuePage() {
-  const { selectedCompanyId, selectedCompany } = useCompany();
-  const { pushToast } = useToast();
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<string>("medium");
-  const [ticketId, setTicketId] = useState("");
-  const [assigneeAgentId, setAssigneeAgentId] = useState("");
-
-  const ticketsQuery = useQuery({
-    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.tickets(selectedCompanyId) : ["gtm", "tickets", "none"],
-    queryFn: () => gtmApi.listTickets(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
-  const agentsQuery = useQuery({
-    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
-  const issuesQuery = useQuery({
-    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.issues(selectedCompanyId) : ["gtm", "issues", "none"],
-    queryFn: () => gtmApi.listIssues(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
-
-  const createIssue = useMutation({
-    mutationFn: () =>
-      gtmApi.createIssue(selectedCompanyId!, {
-        title,
-        description,
-        priority,
-        ticketId,
-        assigneeAgentId: assigneeAgentId || null,
-      }),
-    onSuccess: async () => {
-      setOpen(false);
-      setTitle("");
-      setDescription("");
-      setPriority("medium");
-      setTicketId("");
-      setAssigneeAgentId("");
-      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.issues(selectedCompanyId!) });
-      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId!) });
-      pushToast({ title: "Issue created", body: "The GTM queue item is ready for execution.", tone: "success" });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Issue creation failed",
-        body: error instanceof Error ? error.message : "Failed to create issue",
-        tone: "error",
-      });
-    },
-  });
-
-  if (!selectedCompanyId) {
-    return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Select a company to manage the GTM queue.</div>;
-  }
-  if (issuesQuery.isLoading || ticketsQuery.isLoading || agentsQuery.isLoading) {
-    return <div className="py-8 text-sm text-muted-foreground">Loading queue…</div>;
-  }
-  if (issuesQuery.error || ticketsQuery.error || agentsQuery.error) {
-    const error = issuesQuery.error ?? ticketsQuery.error ?? agentsQuery.error;
-    return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{error instanceof Error ? error.message : "Failed to load queue"}</div>;
-  }
-
-  const issues = issuesQuery.data ?? [];
-  const tickets = ticketsQuery.data ?? [];
-  const agents = agentsQuery.data ?? [];
-  const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Queue</h1>
-          <p className="text-sm text-muted-foreground">Queue work scoped to GTM campaigns only.</p>
-        </div>
-        <Button onClick={() => setOpen(true)} disabled={tickets.length === 0}>New Issue</Button>
-      </div>
-      <Card>
-        <CardContent className="p-0">
-          {issues.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">
-              {tickets.length === 0 ? "Create a campaign first, then add queue work." : "No GTM issues in queue."}
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {issues.map((issue) => (
-                <div key={issue.id} className="flex items-center justify-between gap-4 px-6 py-4">
-                  <div className="min-w-0">
-                    <Link to={boardPath(`/issues/${issue.id}`)} className="truncate font-medium hover:underline">
-                      {issue.title}
-                    </Link>
-                    <p className="truncate text-sm text-muted-foreground">{issue.identifier ?? issue.id}</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Badge variant="outline">{issue.priority}</Badge>
-                    <Badge variant="outline">{issue.status}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create queue issue</DialogTitle>
-            <DialogDescription>Assign GTM work to a campaign and optionally bind it to a GTM agent.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Issue title</label>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Draft 50 outbound messages" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Campaign</label>
-              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={ticketId} onChange={(event) => setTicketId(event.target.value)}>
-                <option value="">Select campaign</option>
-                {tickets.map((ticket) => (
-                  <option key={ticket.id} value={ticket.id}>{ticket.title}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Assign agent</label>
-              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={assigneeAgentId} onChange={(event) => setAssigneeAgentId(event.target.value)}>
-                <option value="">Unassigned</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Priority</label>
-              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={priority} onChange={(event) => setPriority(event.target.value)}>
-                {ISSUE_PRIORITY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Description</label>
-              <Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Context, acceptance criteria, and execution notes." />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => createIssue.mutate()} disabled={!title.trim() || !ticketId || createIssue.isPending}>Create Issue</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
 function GtmInboxPage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
@@ -1314,7 +1153,7 @@ function GtmInboxPage() {
             <CardDescription>Issue activity for GTM campaigns and GTM-assigned agents.</CardDescription>
           </div>
           <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link to={boardPath("/issues")}>View more</Link>
+            <Link to={boardPath("/inbox")}>View more</Link>
           </Button>
         </CardHeader>
         <CardContent className="p-0">
@@ -1326,6 +1165,7 @@ function GtmInboxPage() {
                 <IssueRow
                   key={issue.id}
                   issue={issue}
+                  to={boardPath(`/issues/${issue.id}`)}
                   desktopMetaLeading={(
                     <>
                       <span className="hidden sm:inline-flex">
@@ -1827,7 +1667,6 @@ function GtmShell() {
       { to: "/workspace", label: "Workspace", icon: BriefcaseBusiness },
       { to: "/tickets", label: "Campaigns", icon: Ticket },
       { to: "/agents/all", label: "Agents", icon: Users },
-      { to: "/issues", label: "Queue", icon: Workflow },
       { to: "/inbox", label: "Inbox", icon: InboxIcon },
       { to: "/companies", label: "Companies", icon: Building2 },
       { to: "/company/settings", label: "Settings", icon: Settings },
@@ -1877,8 +1716,6 @@ function GtmShell() {
           <div className="flex flex-col gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              // Strip the surface prefix and company prefix to get the board-relative path,
-              // then check if the current board path starts with the item's root segment.
               const pathAfterSurface = location.pathname.replace(SURFACE_ROUTE_PREFIX_PATTERN, "");
               const boardRelative = `/${pathAfterSurface.split("/").filter(Boolean).slice(1).join("/")}`;
               const itemRoot = `/${item.to.split("/").filter(Boolean)[0] ?? ""}`;
@@ -1939,12 +1776,6 @@ function gtmBoardRoutes() {
       <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
       <Route path="tickets" element={<GtmCampaignsPage />} />
       <Route path="tickets/:ticketId" element={<GtmCampaignPage />} />
-      <Route path="issues" element={<GtmQueuePage />} />
-      <Route path="issues/all" element={<GtmQueuePage />} />
-      <Route path="issues/active" element={<GtmQueuePage />} />
-      <Route path="issues/backlog" element={<GtmQueuePage />} />
-      <Route path="issues/done" element={<GtmQueuePage />} />
-      <Route path="issues/recent" element={<GtmQueuePage />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       <Route path="activity" element={<GtmInboxPage />} />
       <Route path="inbox" element={<GtmInboxPage />} />
@@ -1968,15 +1799,14 @@ export function GtmApp() {
       <Route element={<CloudAccessGate />}>
         <Route path={SURFACE_ROUTE_PATH} element={<CompanyRootRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/onboarding`} element={<OnboardingRoutePage />} />
+        <Route path={`${SURFACE_ROUTE_PATH}/workspace`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/companies`} element={<UnprefixedBoardRedirect />} />
+        <Route path={`${SURFACE_ROUTE_PATH}/inbox/:tab`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/tickets`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/tickets/:ticketId`} element={<UnprefixedBoardRedirect />} />
-        <Route path={`${SURFACE_ROUTE_PATH}/issues`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/issues/:issueId`} element={<UnprefixedBoardRedirect />} />
-        <Route path={`${SURFACE_ROUTE_PATH}/workspace`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/activity`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/inbox`} element={<UnprefixedBoardRedirect />} />
-        <Route path={`${SURFACE_ROUTE_PATH}/inbox/:tab`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/new`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/org-chart`} element={<UnprefixedBoardRedirect />} />
