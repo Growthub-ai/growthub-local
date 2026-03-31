@@ -30,3 +30,21 @@ Blocked patterns: git reset --hard, git push --force, git clean -f, push to main
 - Local gate: node scripts/release-check.mjs
 - After merge: gh workflow run release.yml --field dry_run=false
 - Confirm npm versions updated before considering work complete
+
+## Release Orchestrator (run after 3 greens)
+```
+node scripts/release-orchestrator.mjs [--pr <number>] [--skip-build] [--dry-run]
+```
+Runs 10 strict steps:
+1. Re-verify CI state
+2. Lockfile integrity
+3. Version sync
+4. Clean rebuild of dist
+5. Dist checksum verification
+6. Contract sync check
+7. Golden check (release-check.mjs)
+8. Dry-run npm pack
+9. Tag release commit
+10. Super Admin confirmation gate
+
+All steps must pass. On confirmation the operator receives exact merge + publish commands to run manually.

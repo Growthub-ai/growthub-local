@@ -27,3 +27,21 @@ Run `bash scripts/guard.sh check-command "<command>"` before any git operation t
 - smoke, validate, verify — all 3 green
 - Then: `node scripts/release-check.mjs` locally
 - Then: merge, run release.yml, confirm npm
+
+## Release Orchestrator (run after 3 greens)
+```
+node scripts/release-orchestrator.mjs [--pr <number>] [--skip-build] [--dry-run]
+```
+Runs 10 deterministic steps in strict order:
+1. Re-verify CI state (no stale merges)
+2. Lockfile integrity (pnpm frozen-lockfile)
+3. Version sync (cli ↔ create pin match)
+4. Clean rebuild of dist (vite build + copy)
+5. Dist checksum verification (server/ui-dist ↔ cli runtime)
+6. Contract sync check (required source patterns)
+7. Golden check (`node scripts/release-check.mjs`)
+8. Dry-run npm pack (tarball content)
+9. Tag release commit (`vX.Y.Z`)
+10. Super Admin confirmation gate
+
+If all steps pass, the operator is given the exact merge + publish commands to run.

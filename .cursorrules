@@ -26,3 +26,10 @@ Run `bash scripts/guard.sh check-command "<command>"` before destructive git ope
 - smoke, validate, verify — all 3 must pass
 - node scripts/release-check.mjs must pass locally before merge
 - After merge: run release.yml, confirm npm versions updated
+
+## Release Orchestrator (run after 3 greens)
+```
+node scripts/release-orchestrator.mjs [--pr <number>] [--skip-build] [--dry-run]
+```
+Runs 10 strict steps: CI re-verify → lockfile → version sync → clean rebuild → dist checksums → contract check → golden check → npm pack → tag → confirmation gate.
+All steps must pass before operator receives merge + publish commands.
