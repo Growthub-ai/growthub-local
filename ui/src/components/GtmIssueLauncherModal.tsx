@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Agent, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
-import { normalizeGtmCampaignStageMetadata, readGtmCampaignMetadata, type GtmCampaignSettings } from "@paperclipai/shared";
+import type { Agent, Issue, Ticket } from "@paperclipai/shared";
+import { readGtmCampaignMetadata, type GtmCampaignSettings } from "@paperclipai/shared";
 import { issuesApi } from "@/api/issues";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +23,6 @@ type GtmIssueLauncherModalProps = {
   companyId: string;
   ticket: Ticket;
   agents: Agent[];
-  stageDefinitions: TicketStageDefinition[];
-  defaultStage: string;
   settings: GtmCampaignSettings;
   onSuccess?: (issue: Issue) => void;
 };
@@ -35,7 +33,6 @@ function buildIssueDescription(input: {
   description: string;
   outputExpectations: string;
   successMetric: string;
-  stageDefinition: TicketStageDefinition | null;
   saveRunOutputs: boolean;
 }) {
   const sections: string[] = [];
@@ -47,13 +44,6 @@ function buildIssueDescription(input: {
   }
   if (input.successMetric.trim()) {
     sections.push(`## KPI / Success Metric\n${input.successMetric.trim()}`);
-  }
-  const stageMetadata = normalizeGtmCampaignStageMetadata(input.stageDefinition?.metadata);
-  if (stageMetadata?.sop?.trim()) {
-    sections.push(`## SOP / Operator Notes\n${stageMetadata.sop.trim()}`);
-  }
-  if (stageMetadata?.knowledgeItems?.trim()) {
-    sections.push(`## Knowledge Bindings\n${stageMetadata.knowledgeItems.trim()}`);
   }
   if (input.saveRunOutputs) {
     sections.push("## Knowledge Capture\nSave useful outputs back to workspace knowledge when the Growthub connection is available.");
@@ -67,8 +57,6 @@ export function GtmIssueLauncherModal({
   companyId,
   ticket,
   agents,
-  stageDefinitions,
-  defaultStage,
   settings,
   onSuccess,
 }: GtmIssueLauncherModalProps) {
@@ -77,22 +65,11 @@ export function GtmIssueLauncherModal({
   const ticketMetadata = readGtmCampaignMetadata(ticket.metadata);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [ticketStage, setTicketStage] = useState(defaultStage);
   const [priority, setPriority] = useState<string>("medium");
   const [assigneeAgentId, setAssigneeAgentId] = useState(ticket.leadAgentId ?? "");
   const [outputExpectations, setOutputExpectations] = useState(settings.defaultIssueConfig.outputExpectations ?? "");
   const [successMetric, setSuccessMetric] = useState(settings.defaultIssueConfig.successMetric ?? "");
   const [saveRunOutputs, setSaveRunOutputs] = useState(settings.knowledge.saveRunOutputs);
-
-  useEffect(() => {
-    if (!open) return;
-    setTicketStage(defaultStage);
-  }, [defaultStage, open]);
-
-  const stageDefinition = useMemo(
-    () => stageDefinitions.find((stage) => stage.key === ticketStage) ?? null,
-    [stageDefinitions, ticketStage],
-  );
 
   const createIssue = useMutation({
     mutationFn: async () => {
@@ -100,13 +77,12 @@ export function GtmIssueLauncherModal({
         description,
         outputExpectations,
         successMetric,
-        stageDefinition,
         saveRunOutputs,
       });
 
       return issuesApi.create(companyId, {
         ticketId: ticket.id,
-        ticketStage,
+        ticketStage: null,
         title: title.trim(),
         description: body || null,
         priority,
@@ -124,7 +100,7 @@ export function GtmIssueLauncherModal({
       onSuccess?.(issue);
       pushToast({
         title: "Campaign task created",
-        body: "The GTM issue launcher created a new campaign task with the selected stage contract context.",
+        body: "The GTM issue launcher created a new campaign task.",
         tone: "success",
       });
       onClose();
@@ -144,7 +120,7 @@ export function GtmIssueLauncherModal({
         <DialogHeader>
           <DialogTitle>Launch GTM task</DialogTitle>
           <DialogDescription>
-            Create a GTM issue inside this campaign with stage-bound execution context and workspace agent controls.
+            Create a GTM issue inside this campaign with execution context and workspace agent controls.
           </DialogDescription>
         </DialogHeader>
 
@@ -152,7 +128,7 @@ export function GtmIssueLauncherModal({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Issue title</Label>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Build the first outbound asset set for this stage" />
+              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Build the first outbound asset set for this campaign" />
             </div>
 
             <div className="space-y-2">
@@ -172,7 +148,7 @@ export function GtmIssueLauncherModal({
                   value={outputExpectations}
                   onChange={(event) => setOutputExpectations(event.target.value)}
                   rows={3}
-                  placeholder="What the task must leave behind for operators or the next stage."
+                  placeholder="What the task must leave behind for operators."
                 />
               </div>
               <div className="space-y-2">
@@ -192,19 +168,6 @@ export function GtmIssueLauncherModal({
               <div>
                 <p className="text-sm font-semibold">Issue configuration</p>
                 <p className="text-xs text-muted-foreground">Thin GTM launcher settings layered on top of the shared issue API.</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Campaign stage</Label>
-                <select
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={ticketStage}
-                  onChange={(event) => setTicketStage(event.target.value)}
-                >
-                  {stageDefinitions.map((stage) => (
-                    <option key={stage.key} value={stage.key}>{stage.label}</option>
-                  ))}
-                </select>
               </div>
 
               <div className="space-y-2">
@@ -250,21 +213,6 @@ export function GtmIssueLauncherModal({
                   </span>
                 </span>
               </label>
-            </div>
-
-            <div className="space-y-2 rounded-xl border border-border bg-card p-4">
-              <p className="text-sm font-semibold">Stage contract binding</p>
-              <p className="text-xs text-muted-foreground">
-                This task will inherit campaign-stage expectations so agents can execute inside the GTM workflow without losing context.
-              </p>
-              <div className="space-y-2 text-sm">
-                <div><span className="text-muted-foreground">Stage:</span> {stageDefinition?.label ?? ticketStage}</div>
-                {stageDefinition?.instructions ? <div><span className="text-muted-foreground">Instructions:</span> {stageDefinition.instructions}</div> : null}
-                {stageDefinition?.exitCriteria ? <div><span className="text-muted-foreground">Exit criteria:</span> {stageDefinition.exitCriteria}</div> : null}
-                {normalizeGtmCampaignStageMetadata(stageDefinition?.metadata)?.outputExpectations ? (
-                  <div><span className="text-muted-foreground">Stage outputs:</span> {normalizeGtmCampaignStageMetadata(stageDefinition?.metadata)?.outputExpectations}</div>
-                ) : null}
-              </div>
             </div>
           </div>
         </div>

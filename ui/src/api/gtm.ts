@@ -1,4 +1,4 @@
-import type { Agent, HeartbeatRun, Issue, Ticket, TicketStageDefinition, GtmViewModel } from "@paperclipai/shared";
+import type { Agent, HeartbeatRun, Issue, Ticket, GtmViewModel } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type GtmInboxEntry = {
@@ -50,7 +50,6 @@ export type GtmCampaignDraft = {
   offer: string;
   successDefinition: string;
   leadAgentId: string | null;
-  stageDefinitions: TicketStageDefinition[];
 };
 
 export const gtmApi = {
