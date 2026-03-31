@@ -16,7 +16,7 @@
  */
 
 import type { Db } from "@paperclipai/db";
-import { readGtmCampaignMetadata, type GtmCampaignSettings } from "@paperclipai/shared";
+import { readGtmCampaignMetadata, type GtmCampaignSettings, parseBrowserSessionConfig } from "@paperclipai/shared";
 import { issueService } from "./issues.js";
 import { ticketService } from "./tickets.js";
 import { agentService } from "./agents.js";
@@ -47,6 +47,7 @@ export async function enforceHeartbeatPolicy(
 ): Promise<HeartbeatEnforcementResult> {
   const issues = issueService(db);
   const tickets = ticketService(db);
+  const agents = agentService(db);
 
   const ticket = await tickets.get(ticketId);
   if (!ticket) {
@@ -64,11 +65,26 @@ export async function enforceHeartbeatPolicy(
     (issue) => issue.assigneeAgentId && ["todo", "in_progress", "backlog"].includes(issue.status),
   );
 
+  // Pre-fetch agents so we can read their runtimeConfig.browserSession
+  const companyAgents = await agents.list(companyId);
+  const agentById = new Map(companyAgents.map((a) => [a.id, a]));
+
   const errors: string[] = [];
   let created = 0;
 
   for (const issue of activeIssues) {
     try {
+      const assignedAgent = issue.assigneeAgentId ? agentById.get(issue.assigneeAgentId) : null;
+      const agentRuntimeConfig = assignedAgent
+        ? (typeof assignedAgent.runtimeConfig === "object" && assignedAgent.runtimeConfig !== null
+            ? assignedAgent.runtimeConfig as Record<string, unknown>
+            : {})
+        : {};
+      const browserSession = parseBrowserSessionConfig(agentRuntimeConfig.browserSession);
+      const browserNote = browserSession?.freshBrowserPerIssue
+        ? "\n### Browser Isolation\nThis agent has `freshBrowserPerIssue` enabled. A fresh, isolated Chrome profile will be automatically provisioned for this sub-issue — no shared state with other issues or agents."
+        : "";
+
       const subTitle = `[Heartbeat] ${issue.title}`;
       const subDescription = [
         `## Heartbeat Pulse — ${metadata.settings.policy.heartbeatCadence}`,
@@ -79,6 +95,7 @@ export async function enforceHeartbeatPolicy(
         `1. Review the current state of parent issue "${issue.title}"`,
         "2. Continue execution from where the parent issue left off",
         "3. Report progress and blockers back to the parent issue",
+        browserNote,
         "",
         metadata.settings.policy.escalationPolicy
           ? `### Escalation Policy\n${metadata.settings.policy.escalationPolicy}`

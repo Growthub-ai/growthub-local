@@ -55,6 +55,11 @@ import {
   resolveSessionCompactionPolicy,
   type SessionCompactionPolicy,
 } from "@paperclipai/adapter-utils";
+import {
+  parseBrowserSessionConfig,
+  resolveFreshBrowserSession,
+  buildFreshChromeArgs,
+} from "@paperclipai/shared";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -2373,11 +2378,48 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+
+      // --- Browser session isolation ---
+      // When the agent has browserSession config and the adapter is claude_local
+      // (the only adapter with `--chrome` support), inject an isolated Chrome
+      // profile dir via extraArgs so no two agents/issues share browser state.
+      const runtimeConfigRaw = parseObject(agent.runtimeConfig);
+      const browserSessionConfig = parseBrowserSessionConfig(runtimeConfigRaw.browserSession);
+      const freshBrowser =
+        agent.adapterType === "claude_local" && resolvedConfig.chrome === true
+          ? resolveFreshBrowserSession({
+              agentId: agent.id,
+              issueId: issueId ?? null,
+              config: browserSessionConfig,
+            })
+          : null;
+      const configForAdapter: Record<string, unknown> = freshBrowser
+        ? {
+            ...resolvedConfig,
+            extraArgs: [
+              ...buildFreshChromeArgs(freshBrowser.profileDir),
+              ...((Array.isArray(resolvedConfig.extraArgs) ? resolvedConfig.extraArgs : []) as string[]),
+            ],
+          }
+        : resolvedConfig;
+
+      if (freshBrowser) {
+        logger.info(
+          {
+            agentId: agent.id,
+            issueId: issueId ?? null,
+            profileDir: freshBrowser.profileDir,
+          },
+          "browser session isolation: fresh Chrome profile dir injected",
+        );
+      }
+      // --- End browser session isolation ---
+
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
         runtime: runtimeForAdapter,
-        config: resolvedConfig,
+        config: configForAdapter,
         context,
         onLog,
         onMeta: onAdapterMeta,
