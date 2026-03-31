@@ -95,6 +95,13 @@ export async function applyPendingMigrations(connectionString: string): Promise<
       CREATE TABLE IF NOT EXISTS companies (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        issue_prefix TEXT,
+        issue_counter INTEGER NOT NULL DEFAULT 0,
+        budget_monthly_cents INTEGER NOT NULL DEFAULT 0,
+        spent_monthly_cents INTEGER NOT NULL DEFAULT 0,
+        require_board_approval_for_new_agents BOOLEAN DEFAULT false,
         brand_color TEXT,
         created_at TIMESTAMPTZ DEFAULT now(),
         updated_at TIMESTAMPTZ DEFAULT now()
@@ -220,20 +227,54 @@ export async function applyPendingMigrations(connectionString: string): Promise<
         created_at TIMESTAMPTZ DEFAULT now(),
         updated_at TIMESTAMPTZ DEFAULT now()
       );
-      CREATE TABLE IF NOT EXISTS activity_log (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL,
+        actor_type TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        agent_id UUID,
+        run_id UUID,
+        details JSONB,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
       CREATE TABLE IF NOT EXISTS agent_api_keys (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS agent_config_revisions (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS agent_runtime_state (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS agent_task_sessions (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS agent_wakeup_requests (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS approval_comments (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
-      CREATE TABLE IF NOT EXISTS assets (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+      CREATE TABLE IF NOT EXISTS assets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID,
+        filename TEXT,
+        content_type TEXT,
+        size_bytes INTEGER DEFAULT 0,
+        storage_key TEXT,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
       CREATE TABLE IF NOT EXISTS budget_incidents (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS budget_policies (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
-      CREATE TABLE IF NOT EXISTS company_logos (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+      CREATE TABLE IF NOT EXISTS company_logos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL,
+        asset_id UUID,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
       CREATE TABLE IF NOT EXISTS company_secrets (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS company_secret_versions (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
-      CREATE TABLE IF NOT EXISTS cost_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+      CREATE TABLE IF NOT EXISTS cost_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL,
+        agent_id UUID,
+        cost_cents INTEGER NOT NULL DEFAULT 0,
+        provider TEXT,
+        model TEXT,
+        occurred_at TIMESTAMPTZ DEFAULT now(),
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
       CREATE TABLE IF NOT EXISTS document_revisions (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS documents (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
       CREATE TABLE IF NOT EXISTS execution_workspaces (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
@@ -367,7 +408,19 @@ export const agents = pgTable("agents", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
-export const activityLog: any = pgTable("activity_log", { id: uuid("id").primaryKey().defaultRandom() });
+export const activityLog: any = pgTable("activity_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").notNull(),
+  actorType: text("actor_type").notNull(),
+  actorId: text("actor_id").notNull(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  agentId: uuid("agent_id"),
+  runId: uuid("run_id"),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
 export const agentApiKeys: any = pgTable("agent_api_keys", { id: uuid("id").primaryKey().defaultRandom() });
 export const agentConfigRevisions: any = pgTable("agent_config_revisions", { id: uuid("id").primaryKey().defaultRandom() });
 export const agentRuntimeState: any = pgTable("agent_runtime_state", { id: uuid("id").primaryKey().defaultRandom() });
@@ -378,10 +431,24 @@ export const approvals: any = pgTable("approvals", { id: uuid("id").primaryKey()
 export const assets: any = pgTable("assets", { id: uuid("id").primaryKey().defaultRandom() });
 export const budgetIncidents: any = pgTable("budget_incidents", { id: uuid("id").primaryKey().defaultRandom() });
 export const budgetPolicies: any = pgTable("budget_policies", { id: uuid("id").primaryKey().defaultRandom() });
-export const companyLogos: any = pgTable("company_logos", { id: uuid("id").primaryKey().defaultRandom() });
+export const companyLogos: any = pgTable("company_logos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").notNull(),
+  assetId: uuid("asset_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
 export const companySecrets: any = pgTable("company_secrets", { id: uuid("id").primaryKey().defaultRandom() });
 export const companySecretVersions: any = pgTable("company_secret_versions", { id: uuid("id").primaryKey().defaultRandom() });
-export const costEvents: any = pgTable("cost_events", { id: uuid("id").primaryKey().defaultRandom() });
+export const costEvents: any = pgTable("cost_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").notNull(),
+  agentId: uuid("agent_id"),
+  costCents: integer("cost_cents").notNull().default(0),
+  provider: text("provider"),
+  model: text("model"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
 export const documentRevisions: any = pgTable("document_revisions", { id: uuid("id").primaryKey().defaultRandom() });
 export const documents: any = pgTable("documents", { id: uuid("id").primaryKey().defaultRandom() });
 export const executionWorkspaces: any = pgTable("execution_workspaces", { id: uuid("id").primaryKey().defaultRandom() });
