@@ -6,6 +6,10 @@
   "scripts": {
     "sync:monorepo": "bash ./scripts/sync-from-monorepo.sh",
     "freeze:check": "bash ./scripts/freeze-check.sh",
-    "release:check": "node ./scripts/release-check.mjs"
+    "release:check": "node ./scripts/release-check.mjs",
+    "release:orchestrate": "node ./scripts/release-orchestrator.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.4"
   }
 }

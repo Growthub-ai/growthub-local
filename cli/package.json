@@ -31,7 +31,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "pack:dry-run": "npm pack --dry-run"
+    "pack:dry-run": "npm pack --dry-run",
+    "build:bundle": "node ./scripts/build-cli.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.888.0",
