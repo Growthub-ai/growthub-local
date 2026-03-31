@@ -90,6 +90,16 @@ export const gtmApi = {
     api.post<Issue>(`/gtm/companies/${companyId}/issues`, body),
   listInbox: (companyId: string) => api.get<GtmInboxEntry[]>(`/gtm/companies/${companyId}/inbox`),
   listRuns: (companyId: string) => api.get<HeartbeatRun[]>(`/gtm/companies/${companyId}/runs`),
+  enforceHeartbeat: (companyId: string, ticketId: string) =>
+    api.post<{ campaignId: string; issuesCreated: number; errors: string[] }>(
+      `/gtm/companies/${companyId}/campaigns/${ticketId}/heartbeat`,
+      {},
+    ),
+  triggerPerformanceReview: (companyId: string, ticketId: string) =>
+    api.post<{ campaignId: string; reviewIssueId: string | null; agentsReviewed: number; error: string | null }>(
+      `/gtm/companies/${companyId}/campaigns/${ticketId}/performance-review`,
+      {},
+    ),
   getWorkspaceConfig: (companyId: string) =>
     api.get<GtmWorkspaceConfig>(`/gtm/companies/${companyId}/workspace-config`),
   upsertWorkspaceClaudeBrowser: (companyId: string, body: Record<string, unknown>) =>

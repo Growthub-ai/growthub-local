@@ -6,6 +6,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+const HEARTBEAT_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "Daily operator review + on-demand agent wakeups", label: "Daily review + on-demand" },
+  { value: "Twice-daily check-in with operator sign-off", label: "Twice-daily check-in" },
+  { value: "Weekly batch review", label: "Weekly batch review" },
+  { value: "On-demand only", label: "On-demand only" },
+] as const;
+
+const REVIEW_CADENCE_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "Review KPI deltas every Friday", label: "Weekly (Friday)" },
+  { value: "Review KPI deltas every Monday", label: "Weekly (Monday)" },
+  { value: "Review KPI deltas bi-weekly", label: "Bi-weekly" },
+  { value: "Review KPI deltas monthly", label: "Monthly" },
+] as const;
+
 type GtmCampaignSettingsCardProps = {
   settings: GtmCampaignSettings;
   onChange: (next: GtmCampaignSettings) => void;
@@ -17,39 +33,47 @@ export function GtmCampaignSettingsCard({ settings, onChange }: GtmCampaignSetti
       <div>
         <h3 className="text-sm font-semibold">Campaign settings</h3>
         <p className="text-xs text-muted-foreground">
-          Thin GTM campaign policy and knowledge controls layered on top of the canonical Paperclip ticket.
+          Campaign policy and knowledge controls for this GTM workflow.
         </p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-2">
-          <Label className="text-xs font-medium text-muted-foreground">Heartbeat pulse policy</Label>
-          <Input
+          <Label className="text-xs font-medium text-muted-foreground">Heartbeat policy</Label>
+          <select
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
             value={settings.policy.heartbeatCadence ?? ""}
             onChange={(event) =>
               onChange({
                 ...settings,
                 policy: { ...settings.policy, heartbeatCadence: event.target.value || null },
               })}
-            placeholder="Daily operator review + on-demand agent wakeups"
-          />
+          >
+            {HEARTBEAT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
         <div className="space-y-2">
           <Label className="text-xs font-medium text-muted-foreground">Performance review cadence</Label>
-          <Input
+          <select
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
             value={settings.policy.performanceReviewCadence ?? ""}
             onChange={(event) =>
               onChange({
                 ...settings,
                 policy: { ...settings.policy, performanceReviewCadence: event.target.value || null },
               })}
-            placeholder="Review KPI deltas every Friday"
-          />
+          >
+            {REVIEW_CADENCE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">Campaign escalation policy</Label>
+        <Label className="text-xs font-medium text-muted-foreground">Escalation policy</Label>
         <Textarea
           value={settings.policy.escalationPolicy ?? ""}
           onChange={(event) =>
@@ -76,7 +100,7 @@ export function GtmCampaignSettingsCard({ settings, onChange }: GtmCampaignSetti
                 },
               })}
             rows={3}
-            placeholder="What every GTM issue should produce before completion."
+            placeholder="What every issue should produce before completion."
           />
         </div>
         <div className="space-y-2">
@@ -92,7 +116,7 @@ export function GtmCampaignSettingsCard({ settings, onChange }: GtmCampaignSetti
                 },
               })}
             rows={3}
-            placeholder="Response rate, meetings booked, content shipped, approvals passed, etc."
+            placeholder="Response rate, meetings booked, content shipped, etc."
           />
         </div>
       </div>
@@ -110,7 +134,7 @@ export function GtmCampaignSettingsCard({ settings, onChange }: GtmCampaignSetti
               },
             })}
           rows={2}
-          placeholder="What the campaign should preserve to workspace knowledge when available."
+          placeholder="What the campaign should preserve to workspace knowledge."
         />
       </div>
 
@@ -126,7 +150,7 @@ export function GtmCampaignSettingsCard({ settings, onChange }: GtmCampaignSetti
           />
           <span>
             <span className="block text-sm font-medium">Save run outputs to knowledge</span>
-            <span className="block text-xs text-muted-foreground">Default GTM campaign policy when knowledge capture is available.</span>
+            <span className="block text-xs text-muted-foreground">Capture useful outputs when knowledge is available.</span>
           </span>
         </label>
 
@@ -140,8 +164,8 @@ export function GtmCampaignSettingsCard({ settings, onChange }: GtmCampaignSetti
               })}
           />
           <span>
-            <span className="block text-sm font-medium">Freeze captured knowledge when connected</span>
-            <span className="block text-xs text-muted-foreground">Keep captured GTM knowledge stable once the Growthub connection is available.</span>
+            <span className="block text-sm font-medium">Freeze knowledge when connected</span>
+            <span className="block text-xs text-muted-foreground">Keep knowledge stable once the Growthub connection is available.</span>
           </span>
         </label>
       </div>

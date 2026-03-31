@@ -9,6 +9,7 @@ import { heartbeatService } from "../services/heartbeat.js";
 import { issueService } from "../services/issues.js";
 import { ticketService } from "../services/tickets.js";
 import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.js";
+import { enforceHeartbeatPolicy, enforcePerformanceReview } from "../services/gtm-campaign-policy.js";
 import { resolvePaperclipHomeDir } from "../home-paths.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -682,6 +683,24 @@ export function gtmRoutes(db: Db) {
       return issueId != null && gtmIssueIds.has(issueId);
     });
     res.json(filteredRuns);
+  });
+
+  // ---- Campaign policy enforcement ---- //
+
+  router.post("/companies/:companyId/campaigns/:ticketId/heartbeat", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const ticketId = req.params.ticketId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await enforceHeartbeatPolicy(db, companyId, ticketId);
+    res.json(result);
+  });
+
+  router.post("/companies/:companyId/campaigns/:ticketId/performance-review", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const ticketId = req.params.ticketId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await enforcePerformanceReview(db, companyId, ticketId);
+    res.json(result);
   });
 
   return router;
