@@ -1,4 +1,4 @@
-import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import type { CreateConfigValues } from "./AgentConfigForm";
 
 export const defaultCreateValues: CreateConfigValues = {
   adapterType: "claude_local",
@@ -27,4 +27,6 @@ export const defaultCreateValues: CreateConfigValues = {
   maxTurnsPerRun: 300,
   heartbeatEnabled: false,
   intervalSec: 300,
+  freshBrowserPerIssue: true,
+  freshBrowserPerSession: true,
 };

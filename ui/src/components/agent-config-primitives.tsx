@@ -55,6 +55,7 @@ export const help: Record<string, string> = {
   cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
   maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",
   budgetMonthlyCents: "Monthly spending limit in cents. 0 means no limit.",
+  freshBrowserPerIssue: "Spin a fresh isolated Chrome profile for every issue this agent works on. Prevents cookie and session state from leaking between issues. Requires Chrome to be enabled for the agent.",
 };
 
 export const adapterLabels: Record<string, string> = {

@@ -49,8 +49,14 @@ import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
 
 // Canonical type lives in @paperclipai/adapter-utils; re-exported here
 // so existing imports from this file keep working.
-export type { CreateConfigValues } from "@paperclipai/adapter-utils";
-import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import type { CreateConfigValues as BaseCreateConfigValues } from "@paperclipai/adapter-utils";
+
+// Extended to carry browser session prefs in create mode.
+// These are stored in runtimeConfig (not adapterConfig) at agent creation time.
+export type CreateConfigValues = BaseCreateConfigValues & {
+  freshBrowserPerIssue?: boolean;
+  freshBrowserPerSession?: boolean;
+};
 
 /* ---- Props ---- */
 
@@ -83,6 +89,7 @@ interface Overlay {
   adapterType?: string;
   adapterConfig: Record<string, unknown>;
   heartbeat: Record<string, unknown>;
+  browserSession: Record<string, unknown>;
   runtime: Record<string, unknown>;
 }
 
@@ -90,6 +97,7 @@ const emptyOverlay: Overlay = {
   identity: {},
   adapterConfig: {},
   heartbeat: {},
+  browserSession: {},
   runtime: {},
 };
 
@@ -102,6 +110,7 @@ function isOverlayDirty(o: Overlay): boolean {
     o.adapterType !== undefined ||
     Object.keys(o.adapterConfig).length > 0 ||
     Object.keys(o.heartbeat).length > 0 ||
+    Object.keys(o.browserSession).length > 0 ||
     Object.keys(o.runtime).length > 0
   );
 }
@@ -248,6 +257,11 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       const existingHb = (existingRc.heartbeat ?? {}) as Record<string, unknown>;
       patch.runtimeConfig = { ...existingRc, heartbeat: { ...existingHb, ...overlay.heartbeat } };
     }
+    if (Object.keys(overlay.browserSession).length > 0) {
+      const existingRc = (patch.runtimeConfig ?? agent.runtimeConfig ?? {}) as Record<string, unknown>;
+      const existingBs = (existingRc.browserSession ?? {}) as Record<string, unknown>;
+      patch.runtimeConfig = { ...existingRc, browserSession: { ...existingBs, ...overlay.browserSession } };
+    }
     if (Object.keys(overlay.runtime).length > 0) {
       Object.assign(patch, overlay.runtime);
     }
@@ -276,6 +290,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const config = !isCreate ? ((props.agent.adapterConfig ?? {}) as Record<string, unknown>) : {};
   const runtimeConfig = !isCreate ? ((props.agent.runtimeConfig ?? {}) as Record<string, unknown>) : {};
   const heartbeat = !isCreate ? ((runtimeConfig.heartbeat ?? {}) as Record<string, unknown>) : {};
+  const browserSession = !isCreate ? ((runtimeConfig.browserSession ?? {}) as Record<string, unknown>) : {};
 
   const adapterType = isCreate
     ? props.values.adapterType
@@ -390,6 +405,11 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           enabled: val!.heartbeatEnabled,
           intervalSec: val!.intervalSec,
         },
+        browserSession: {
+          freshBrowserPerIssue: val!.freshBrowserPerIssue ?? true,
+          freshBrowserPerSession: val!.freshBrowserPerSession ?? true,
+          headless: true,
+        },
       };
     }
     const mergedHeartbeat = {
@@ -398,11 +418,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         : {}),
       ...overlay.heartbeat,
     };
+    const mergedBrowserSession = {
+      ...(runtimeConfig.browserSession && typeof runtimeConfig.browserSession === "object"
+        ? runtimeConfig.browserSession as Record<string, unknown>
+        : {}),
+      ...overlay.browserSession,
+    };
     return {
       ...runtimeConfig,
       heartbeat: mergedHeartbeat,
+      browserSession: mergedBrowserSession,
     };
-  }, [isCreate, overlay.heartbeat, runtimeConfig, val]);
+  }, [isCreate, overlay.heartbeat, overlay.browserSession, runtimeConfig, val]);
   return (
     <div className={cn("relative", cards && "space-y-6")}>
       {/* ---- Floating Save button (edit mode, when dirty) ---- */}
@@ -828,6 +855,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               numberHint={help.intervalSec}
               showNumber={val!.heartbeatEnabled}
             />
+            {adapterType === "claude_local" && (
+              <ToggleField
+                label="Fresh Chrome browser per issue"
+                hint={help.freshBrowserPerIssue}
+                checked={val!.freshBrowserPerIssue ?? true}
+                onChange={(v) => set!({ freshBrowserPerIssue: v })}
+              />
+            )}
           </div>
         </div>
       ) : (
@@ -850,6 +885,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 numberHint={help.intervalSec}
                 showNumber={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
               />
+              {adapterType === "claude_local" && (
+                <ToggleField
+                  label="Fresh Chrome browser per issue"
+                  hint={help.freshBrowserPerIssue}
+                  checked={eff("browserSession", "freshBrowserPerIssue", browserSession.freshBrowserPerIssue !== false)}
+                  onChange={(v) => mark("browserSession", "freshBrowserPerIssue", v)}
+                />
+              )}
             </div>
             <CollapsibleSection
               title="Advanced Run Policy"

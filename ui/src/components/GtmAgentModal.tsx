@@ -219,6 +219,15 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
             cooldownSec: 10,
             maxConcurrentRuns: 1,
           },
+          ...(configValues.adapterType === "claude_local"
+            ? {
+                browserSession: {
+                  freshBrowserPerIssue: configValues.freshBrowserPerIssue ?? true,
+                  freshBrowserPerSession: true,
+                  headless: true,
+                },
+              }
+            : {}),
         },
       });
     },
