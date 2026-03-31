@@ -8,6 +8,27 @@ import type {
   CompanyMembership,
   PrincipalPermissionGrant,
 } from "./access.js";
+import type { BrowserSessionConfig } from "../agent-browser-session.js";
+
+export type { BrowserSessionConfig } from "../agent-browser-session.js";
+
+/**
+ * Typed shape for agent.runtimeConfig.
+ *
+ * The DB column is `Record<string, unknown>` for forward-compatibility, but
+ * consumers should read through this interface for known fields.
+ */
+export interface AgentRuntimeConfig {
+  heartbeat?: {
+    enabled?: boolean;
+    intervalSec?: number;
+    wakeOnDemand?: boolean;
+    cooldownSec?: number;
+    maxConcurrentRuns?: number;
+  };
+  /** Per-agent Chrome browser isolation settings. */
+  browserSession?: BrowserSessionConfig;
+}
 
 export interface AgentPermissions {
   canCreateAgents: boolean;

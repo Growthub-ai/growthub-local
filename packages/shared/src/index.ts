@@ -135,8 +135,10 @@ export type {
   AgentChainOfCommandEntry,
   AgentDetail,
   AgentPermissions,
+  AgentRuntimeConfig,
   AgentKeyCreated,
   AgentConfigRevision,
+  BrowserSessionConfig,
   AdapterEnvironmentCheckLevel,
   AdapterEnvironmentTestStatus,
   AdapterEnvironmentCheck,
@@ -517,3 +519,11 @@ export {
   type GtmViewModel,
   type GtmWorkflowRun,
 } from "./gtm.js";
+
+export {
+  DEFAULT_BROWSER_SESSION_CONFIG,
+  resolveChromProfileDir,
+  buildFreshChromeArgs,
+  resolveFreshBrowserSession,
+  parseBrowserSessionConfig,
+} from "./agent-browser-session.js";
