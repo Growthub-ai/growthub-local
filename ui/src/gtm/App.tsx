@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,15 +58,18 @@ import { timeAgo } from "@/lib/timeAgo";
 import { agentRouteRef, relativeTime } from "@/lib/utils";
 import { buildGrowthubConfigurationUrl, getGrowthubAuthUserId } from "@/lib/growthub-connection";
 import {
+  Archive,
   BriefcaseBusiness,
   Building2,
   CheckCircle2,
   ChevronDown,
+  Copy,
   ExternalLink,
   Inbox as InboxIcon,
   Link2,
   Loader2,
   Moon,
+  Pause,
   Play,
   RefreshCcw,
   Settings,
@@ -956,12 +960,45 @@ function GtmCampaignsPage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [detailTicketId, setDetailTicketId] = useState<string | null>(null);
 
   const ticketsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.tickets(selectedCompanyId) : ["gtm", "tickets", "none"],
     queryFn: () => gtmApi.listTickets(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+  });
+
+  const campaignAction = useMutation({
+    mutationFn: async ({ action, ticketId }: { action: "pause" | "resume" | "duplicate" | "archive"; ticketId: string }) => {
+      if (!selectedCompanyId) throw new Error("No company");
+      if (action === "pause") {
+        return ticketsApi.update(selectedCompanyId, ticketId, { status: "paused" } as Record<string, unknown>);
+      }
+      if (action === "resume") {
+        return ticketsApi.update(selectedCompanyId, ticketId, { status: "active" } as Record<string, unknown>);
+      }
+      if (action === "archive") {
+        return ticketsApi.update(selectedCompanyId, ticketId, { status: "archived" } as Record<string, unknown>);
+      }
+      // duplicate
+      const source = ticketsQuery.data?.find((t) => t.id === ticketId);
+      if (!source) throw new Error("Ticket not found");
+      return ticketsApi.create(selectedCompanyId, {
+        title: `${source.title} (copy)`,
+        description: source.description ?? undefined,
+        instructions: source.instructions ?? undefined,
+        leadAgentId: source.leadAgentId,
+        metadata: source.metadata as Record<string, unknown> | undefined,
+      });
+    },
+    onSuccess: async (_, { action }) => {
+      if (!selectedCompanyId) return;
+      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId) });
+      const labels: Record<string, string> = { pause: "Campaign paused", resume: "Campaign resumed", duplicate: "Campaign duplicated", archive: "Campaign archived" };
+      pushToast({ title: labels[action] ?? "Done", tone: "success" });
+    },
   });
 
   if (!selectedCompanyId) {
@@ -975,7 +1012,6 @@ function GtmCampaignsPage() {
   }
 
   const tickets = ticketsQuery.data ?? [];
-  const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
 
   return (
     <div className="space-y-4">
@@ -992,20 +1028,52 @@ function GtmCampaignsPage() {
             <div className="p-6 text-sm text-muted-foreground">No GTM campaigns yet.</div>
           ) : (
             <div className="divide-y divide-border">
-              {tickets.map((ticket) => (
-                <div key={ticket.id} className="flex items-center justify-between gap-4 px-6 py-4">
-                  <div className="min-w-0">
-                    <Link to={boardPath(`/tickets/${ticket.id}`)} className="truncate font-medium hover:underline">
-                      {ticket.title}
-                    </Link>
-                    <p className="truncate text-sm text-muted-foreground">{ticket.identifier}</p>
+              {tickets.map((ticket) => {
+                const statusColor =
+                  ticket.status === "active" ? "bg-green-500" :
+                  ticket.status === "paused" ? "bg-yellow-500" :
+                  ticket.status === "completed" ? "bg-blue-500" :
+                  ticket.status === "archived" ? "bg-gray-400" :
+                  "bg-gray-400";
+                return (
+                  <div key={ticket.id} className="flex items-center gap-4 px-6 py-3.5">
+                    <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setDetailTicketId(ticket.id)}>
+                      <p className="truncate text-sm font-medium hover:underline">{ticket.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">{ticket.identifier}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 mr-1">
+                        <span className={cn("h-2 w-2 rounded-full", statusColor)} />
+                        <span className="text-xs text-muted-foreground">{ticket.status}</span>
+                      </div>
+                      {ticket.status === "paused" ? (
+                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); campaignAction.mutate({ action: "resume", ticketId: ticket.id }); }}>
+                          <Play className="h-3.5 w-3.5" /> Resume
+                        </Button>
+                      ) : ticket.status !== "archived" ? (
+                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); campaignAction.mutate({ action: "pause", ticketId: ticket.id }); }}>
+                          <Pause className="h-3.5 w-3.5" /> Pause
+                        </Button>
+                      ) : null}
+                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); campaignAction.mutate({ action: "duplicate", ticketId: ticket.id }); }}>
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      {ticket.status !== "archived" ? (
+                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); campaignAction.mutate({ action: "archive", ticketId: ticket.id }); }}>
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={(e) => { e.stopPropagation(); setDetailTicketId(ticket.id); }}
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Badge variant="outline">{ticket.currentStage}</Badge>
-                    <Badge variant="outline">{ticket.status}</Badge>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -1022,6 +1090,38 @@ function GtmCampaignsPage() {
             pushToast({ title: "Campaign created", body: "The GTM campaign workflow is ready.", tone: "success" });
           }}
         />
+      ) : null}
+
+      {selectedCompanyId && detailTicketId ? createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[max(1rem,env(safe-area-inset-top))] md:items-center md:pt-0"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setDetailTicketId(null); }}
+        >
+          <div
+            className="relative bg-background shadow-lg"
+            style={{
+              width: "min(1288px, 94vw)",
+              maxWidth: "94vw",
+              maxHeight: "92vh",
+              borderRadius: "5px",
+              border: "1px solid #d4d4d4",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <GtmCampaignDetail
+              companyId={selectedCompanyId}
+              ticketId={detailTicketId}
+              companyPrefix={selectedCompany?.issuePrefix}
+              onNavigate={(path) => {
+                setDetailTicketId(null);
+                navigate(path);
+              }}
+              onRequestClose={() => setDetailTicketId(null)}
+            />
+          </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
