@@ -47,6 +47,7 @@ import { GtmAgentModal } from "@/components/GtmAgentModal";
 import { GtmCampaignDetail } from "@/components/GtmCampaignDetail";
 import { GtmCampaignModal } from "@/components/GtmCampaignModal";
 import { IssueRow } from "@/components/IssueRow";
+import { KnowledgeBase } from "@/components/KnowledgeBase";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { StatusIcon } from "@/components/StatusIcon";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -64,6 +65,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Copy,
+  Database,
   ExternalLink,
   Inbox as InboxIcon,
   Link2,
@@ -1846,6 +1848,7 @@ function GtmShell() {
       { to: "/tickets", label: "Campaigns", icon: Ticket },
       { to: "/agents/all", label: "Agents", icon: Users },
       { to: "/inbox", label: "Inbox", icon: InboxIcon },
+      { to: "/knowledge-base", label: "Knowledge Base", icon: Database },
       { to: "/companies", label: "Companies", icon: Building2 },
       { to: "/company/settings", label: "Settings", icon: Settings },
     ],
@@ -1955,6 +1958,7 @@ function gtmBoardRoutes() {
       <Route path="tickets" element={<GtmCampaignsPage />} />
       <Route path="tickets/:ticketId" element={<GtmCampaignPage />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
+      <Route path="knowledge-base" element={<KnowledgeBase />} />
       <Route path="activity" element={<GtmInboxPage />} />
       <Route path="inbox" element={<GtmInboxPage />} />
       <Route path="inbox/recent" element={<GtmInboxPage />} />
