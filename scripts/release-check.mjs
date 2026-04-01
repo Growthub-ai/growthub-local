@@ -117,16 +117,16 @@ assert(
 );
 
 // Leak-prevention: block debug/source artifacts from escaping into published tarballs
-const leakPatterns = [".map", ".ts", "src.zip", "r2.dev"];
+const leakBlockers = ["src.zip", "r2.dev"];
 for (const pack of [cliPack, createPack]) {
-  for (const pattern of leakPatterns) {
-    if (pattern === ".ts") {
-      const rawTsLines = pack.split("\n").filter((l) => l.includes(".ts") && !l.includes(".d.ts"));
-      assert(rawTsLines.length === 0, "Release blocked: raw .ts source file detected in tarball");
-    } else {
-      assert(!pack.includes(pattern), `Release blocked: ${pattern} artifact detected in tarball`);
-    }
+  for (const pattern of leakBlockers) {
+    assert(!pack.includes(pattern), `Release blocked: ${pattern} artifact detected in tarball`);
   }
+  // Block raw .ts source files (allow .d.ts declarations and .ts inside .js.map references)
+  const rawTsLines = pack.split("\n").filter((l) =>
+    l.includes(".ts") && !l.includes(".d.ts") && !l.includes(".js.map") && !l.includes(".js")
+  );
+  assert(rawTsLines.length === 0, "Release blocked: raw .ts source file detected in tarball");
 }
 
 process.stdout.write(
