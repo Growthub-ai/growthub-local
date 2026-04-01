@@ -98,4 +98,43 @@ export const gtmApi = {
       `/gtm/companies/${companyId}/workspace-config/claude-browser`,
       body,
     ),
+
+  // Knowledge Base — database explorer
+  listKnowledgeTables: () =>
+    api.get<{ tables: Array<{ name: string; columnCount: number }> }>("/gtm/knowledge-base/tables"),
+  getKnowledgeTable: (name: string, opts?: { limit?: number; offset?: number }) =>
+    api.get<KnowledgeTableResult>(
+      `/gtm/knowledge-base/tables/${encodeURIComponent(name)}${
+        opts ? `?limit=${opts.limit ?? 50}&offset=${opts.offset ?? 0}` : ""
+      }`,
+    ),
+  executeKnowledgeQuery: (query: string) =>
+    api.post<KnowledgeQueryResult>("/gtm/knowledge-base/query", { query }),
+};
+
+// Knowledge Base types
+export type KnowledgeTableColumn = {
+  name: string;
+  type: string;
+  nullable: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+};
+
+export type KnowledgeTableResult = {
+  table: string;
+  columns: KnowledgeTableColumn[];
+  rows: Record<string, unknown>[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+};
+
+export type KnowledgeQueryResult = {
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  durationMs: number;
 };
