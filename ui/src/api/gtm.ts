@@ -1,4 +1,4 @@
-import type { Agent, HeartbeatRun, Issue, Ticket, GtmViewModel } from "@paperclipai/shared";
+import type { Agent, HeartbeatRun, Issue, Ticket, TicketStageDefinition, GtmViewModel } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type GtmInboxEntry = {
@@ -50,6 +50,7 @@ export type GtmCampaignDraft = {
   offer: string;
   successDefinition: string;
   leadAgentId: string | null;
+  stageDefinitions: TicketStageDefinition[];
 };
 
 export const gtmApi = {
@@ -90,16 +91,6 @@ export const gtmApi = {
     api.post<Issue>(`/gtm/companies/${companyId}/issues`, body),
   listInbox: (companyId: string) => api.get<GtmInboxEntry[]>(`/gtm/companies/${companyId}/inbox`),
   listRuns: (companyId: string) => api.get<HeartbeatRun[]>(`/gtm/companies/${companyId}/runs`),
-  enforceHeartbeat: (companyId: string, ticketId: string) =>
-    api.post<{ campaignId: string; issuesCreated: number; errors: string[] }>(
-      `/gtm/companies/${companyId}/campaigns/${ticketId}/heartbeat`,
-      {},
-    ),
-  triggerPerformanceReview: (companyId: string, ticketId: string) =>
-    api.post<{ campaignId: string; reviewIssueId: string | null; agentsReviewed: number; error: string | null }>(
-      `/gtm/companies/${companyId}/campaigns/${ticketId}/performance-review`,
-      {},
-    ),
   getWorkspaceConfig: (companyId: string) =>
     api.get<GtmWorkspaceConfig>(`/gtm/companies/${companyId}/workspace-config`),
   upsertWorkspaceClaudeBrowser: (companyId: string, body: Record<string, unknown>) =>
@@ -107,4 +98,43 @@ export const gtmApi = {
       `/gtm/companies/${companyId}/workspace-config/claude-browser`,
       body,
     ),
+
+  // Knowledge Base — database explorer
+  listKnowledgeTables: () =>
+    api.get<{ tables: Array<{ name: string; columnCount: number }> }>("/gtm/knowledge-base/tables"),
+  getKnowledgeTable: (name: string, opts?: { limit?: number; offset?: number }) =>
+    api.get<KnowledgeTableResult>(
+      `/gtm/knowledge-base/tables/${encodeURIComponent(name)}${
+        opts ? `?limit=${opts.limit ?? 50}&offset=${opts.offset ?? 0}` : ""
+      }`,
+    ),
+  executeKnowledgeQuery: (query: string) =>
+    api.post<KnowledgeQueryResult>("/gtm/knowledge-base/query", { query }),
+};
+
+// Knowledge Base types
+export type KnowledgeTableColumn = {
+  name: string;
+  type: string;
+  nullable: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+};
+
+export type KnowledgeTableResult = {
+  table: string;
+  columns: KnowledgeTableColumn[];
+  rows: Record<string, unknown>[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+};
+
+export type KnowledgeQueryResult = {
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  durationMs: number;
 };

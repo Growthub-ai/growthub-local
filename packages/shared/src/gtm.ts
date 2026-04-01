@@ -144,6 +144,12 @@ export type GtmCampaignSettings = {
   };
 };
 
+export type GtmCampaignWorkspaceBinding = {
+  repoUrl: string | null;
+  baseRef: string | null;
+  branchTemplate: string | null;
+};
+
 export type GtmCampaignMetadata = {
   product: "gtm";
   surfaceProfile: "gtm";
@@ -152,6 +158,7 @@ export type GtmCampaignMetadata = {
   offer?: string | null;
   successDefinition?: string | null;
   settings?: GtmCampaignSettings | null;
+  workspaceBinding?: GtmCampaignWorkspaceBinding | null;
 };
 
 const DEFAULT_GTM_CAMPAIGN_SETTINGS: GtmCampaignSettings = {
@@ -221,6 +228,18 @@ export function normalizeGtmCampaignSettings(value: unknown): GtmCampaignSetting
   };
 }
 
+export function normalizeGtmCampaignWorkspaceBinding(
+  value: unknown,
+): GtmCampaignWorkspaceBinding | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const repoUrl = readString(record.repoUrl);
+  const baseRef = readString(record.baseRef);
+  const branchTemplate = readString(record.branchTemplate);
+  if (!repoUrl && !baseRef && !branchTemplate) return null;
+  return { repoUrl, baseRef, branchTemplate };
+}
+
 export function readGtmCampaignMetadata(value: unknown): GtmCampaignMetadata | null {
   const record = readRecord(value);
   if (!record) return null;
@@ -233,6 +252,7 @@ export function readGtmCampaignMetadata(value: unknown): GtmCampaignMetadata | n
     offer: readString(record.offer),
     successDefinition: readString(record.successDefinition),
     settings: normalizeGtmCampaignSettings(record.settings),
+    workspaceBinding: normalizeGtmCampaignWorkspaceBinding(record.workspaceBinding),
   };
 }
 
@@ -241,6 +261,7 @@ export function buildGtmCampaignMetadata(input: {
   offer?: string | null;
   successDefinition?: string | null;
   settings?: GtmCampaignSettings | null;
+  workspaceBinding?: GtmCampaignWorkspaceBinding | null;
 }): GtmCampaignMetadata {
   return {
     product: "gtm",
@@ -250,6 +271,7 @@ export function buildGtmCampaignMetadata(input: {
     offer: readString(input.offer),
     successDefinition: readString(input.successDefinition),
     settings: normalizeGtmCampaignSettings(input.settings),
+    workspaceBinding: normalizeGtmCampaignWorkspaceBinding(input.workspaceBinding),
   };
 }
 
