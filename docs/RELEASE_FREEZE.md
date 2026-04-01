@@ -47,3 +47,41 @@ Do not validate using:
 ## Single Source Of Truth
 
 If a change is validated but not reproducible from this repo boundary, it is not frozen.
+
+## GTM Knowledge Base Freeze
+
+The current GTM Knowledge Base runtime fix is frozen as a source change first, not as a
+`gtm-fresh` runtime patch.
+
+Canonical source files:
+
+- `server/src/app.ts`
+- `server/src/routes/knowledge-base.ts`
+
+What changed:
+
+- mount the GTM knowledge-base route under `/api/gtm/knowledge-base`
+- normalize `db.execute(...)` result handling so the live embedded Postgres runtime works
+
+Do not treat these as source of truth:
+
+- `gtm-fresh/growthub-local/server/dist/**`
+- `gtm-fresh/growthub-local/server/ui-dist/**`
+- `gtm-fresh/growthub-local/cli/dist/runtime/**`
+
+Those files may be patched or rebuilt for validation, but they are derived artifacts only.
+
+## Promotion Rule For This Fix
+
+1. Preserve the source fix in `growthub-local`.
+2. Mirror the same source fix into the full monorepo build environment when needed.
+3. Rebuild `server/ui-dist` and `cli/dist/runtime/server/ui-dist` from the full build environment.
+4. Rebuild the bundled server runtime used by `@growthub/cli`.
+5. Run `node scripts/release-check.mjs`.
+6. If the behavior ships to npm users, bump `@growthub/cli` and `create-growthub-local` patch versions together.
+
+## PR Size Rule
+
+If a source fix is correct but the rebuilt dist payload is too large or noisy for the feature PR,
+keep the feature PR focused on source and package metadata first, then generate the bundled dist in
+the release step or dedicated release commit required by the publish flow.

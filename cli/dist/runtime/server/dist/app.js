@@ -25,6 +25,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { gtmRoutes } from "./routes/gtm.js";
+import { knowledgeBaseRoutes } from "./routes/knowledge-base.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -256,6 +257,7 @@ export async function createApp(db, opts) {
         api.use(instanceSettingsRoutes(db));
         api.use(pluginRoutes(db, loader, { scheduler, jobStore }, { workerManager }, { toolDispatcher }, { workerManager }));
         api.use("/gtm", gtmRoutes(db));
+        api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
     }
     if (opts.surfaceRuntime.capabilities.gtmEnabled) {
         api.use("/companies", companyRoutes(db));
@@ -275,6 +277,7 @@ export async function createApp(db, opts) {
         api.use(instanceSettingsRoutes(db));
         api.use(pluginRoutes(db, loader, { scheduler, jobStore }, { workerManager }, { toolDispatcher }, { workerManager }));
         api.use("/gtm", gtmRoutes(db));
+        api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
     }
     api.use(accessRoutes(db, {
         deploymentMode: opts.deploymentMode,
