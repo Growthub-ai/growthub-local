@@ -1,8 +1,7 @@
 import { Router } from "express";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
-import { normalizeTicketStageDefinitions } from "@paperclipai/shared";
+import type { AdapterEnvironmentTestResult, Issue, Ticket } from "@paperclipai/shared";
 import { getServerAdapter } from "../adapters/registry.js";
 import { readConfigFile, writeConfigFile } from "../config-file.js";
 import { agentService } from "../services/agents.js";
@@ -10,6 +9,7 @@ import { heartbeatService } from "../services/heartbeat.js";
 import { issueService } from "../services/issues.js";
 import { ticketService } from "../services/tickets.js";
 import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.js";
+import { enforceHeartbeatPolicy, enforcePerformanceReview } from "../services/gtm-campaign-policy.js";
 import { resolvePaperclipHomeDir } from "../home-paths.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -18,13 +18,6 @@ const GTM_METADATA = {
   surfaceProfile: "gtm",
 } as const;
 
-const GTM_DRAFT_PROFILE_FALLBACKS: Record<string, string[]> = {
-  custom: ["Campaign brief", "Audience build", "Launch motion"],
-  outbound: ["Audience targeting", "Message design", "Outbound launch", "Readout"],
-  launch: ["Positioning", "Asset prep", "Launch distribution", "Readout"],
-  nurture: ["Audience split", "Sequence design", "Automation launch", "Performance review"],
-  partnership: ["Partner targeting", "Outreach", "Joint offer", "Rollout"],
-};
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -84,38 +77,6 @@ function buildDraftTitle(prompt: string, draftProfile: string) {
   return `${trimmed.slice(0, 69).trimEnd()}...`;
 }
 
-function extractPromptStageLabels(prompt: string): string[] {
-  return prompt
-    .split(/\n|,|;|->|>/)
-    .map((part) => part.replace(/^[\s\d\-*.]+/, "").trim())
-    .filter((part) => part.length >= 3)
-    .slice(0, 5)
-    .map((part) => {
-      const cleaned = compactSentence(part).replace(/[.?!]+$/, "");
-      return cleaned.length > 48 ? `${cleaned.slice(0, 45).trimEnd()}...` : cleaned;
-    });
-}
-
-function buildCampaignDraftStageDefinitions(prompt: string, draftProfile: string): TicketStageDefinition[] {
-  const promptLabels = extractPromptStageLabels(prompt);
-  const sourceLabels =
-    promptLabels.length >= 2 ? promptLabels : (GTM_DRAFT_PROFILE_FALLBACKS[draftProfile] ?? GTM_DRAFT_PROFILE_FALLBACKS.custom);
-
-  return normalizeTicketStageDefinitions({
-    stageDefinitions: sourceLabels.map((label, index) => ({
-      key: `stage_${index + 1}`,
-      label: toTitleCase(label),
-      kind: null,
-      ownerRole: null,
-      handoffMode: null,
-      instructions: `Advance the ${label.toLowerCase()} work and leave the next stage with the context and assets needed to continue.`,
-      exitCriteria: `The ${label.toLowerCase()} stage has a clear outcome, updated context, and a clean handoff note.`,
-      metadata: {
-        source: "gtm_ceo_draft",
-      },
-    })),
-  });
-}
 
 function sortByUpdatedAtDesc<T extends { updatedAt: Date | string }>(rows: T[]): T[] {
   return [...rows].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
@@ -545,22 +506,20 @@ export function gtmRoutes(db: Db) {
     ]);
     const ceoAgent = companyAgents.find((agent) => agent.role === "ceo" && agent.status !== "terminated") ?? null;
     const existingCampaignCount = companyTickets.filter(isGtmTicket).length;
-    const stageDefinitions = buildCampaignDraftStageDefinitions(prompt, draftProfile);
 
     res.json({
       title: buildDraftTitle(prompt, draftProfile),
       description: `CEO-generated GTM draft for ${compactSentence(prompt)}.`,
       instructions: extendExisting
-        ? "Extend the current GTM operating pattern where it helps, but keep every stage editable before launch."
-        : "Treat this as a net-new GTM campaign draft. Refine the stages, owners, handoffs, and instructions before launch.",
+        ? "Extend the current GTM operating pattern where it helps, but keep every campaign field editable before launch."
+        : "Treat this as a net-new GTM campaign draft. Refine the instructions, settings, and agent alignment before launch.",
       targetAudience: "",
       offer: "",
       successDefinition:
         existingCampaignCount > 0
           ? "Operators can compare this campaign against the existing GTM pipeline and decide whether to launch, iterate, or merge it."
-          : "Operators can approve the campaign, assign the right owners, and advance it stage by stage without hidden workflow constraints.",
+          : "Operators can approve the campaign, assign the right agents, and run issues directly without hidden workflow constraints.",
       leadAgentId: ceoAgent?.id ?? null,
-      stageDefinitions,
     });
   });
 
@@ -622,7 +581,7 @@ export function gtmRoutes(db: Db) {
     const actor = getActorInfo(req);
     const created = await issues.create(companyId, {
       ticketId: ticket.id,
-      ticketStage: req.body?.ticketStage ? String(req.body.ticketStage) : ticket.currentStage,
+      ticketStage: req.body?.ticketStage ? String(req.body.ticketStage) : null,
       title: String(req.body?.title ?? "").trim(),
       description: req.body?.description ? String(req.body.description) : null,
       status: req.body?.status ? String(req.body.status) : "backlog",
@@ -724,6 +683,24 @@ export function gtmRoutes(db: Db) {
       return issueId != null && gtmIssueIds.has(issueId);
     });
     res.json(filteredRuns);
+  });
+
+  // ---- Campaign policy enforcement ---- //
+
+  router.post("/companies/:companyId/campaigns/:ticketId/heartbeat", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const ticketId = req.params.ticketId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await enforceHeartbeatPolicy(db, companyId, ticketId);
+    res.json(result);
+  });
+
+  router.post("/companies/:companyId/campaigns/:ticketId/performance-review", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const ticketId = req.params.ticketId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await enforcePerformanceReview(db, companyId, ticketId);
+    res.json(result);
   });
 
   return router;

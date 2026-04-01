@@ -2,47 +2,89 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   buildGtmCampaignMetadata,
-  buildTicketStageOrder,
   normalizeGtmCampaignSettings,
-  normalizeTicketStageDefinitions,
-  normalizeTicketStageKey,
   readGtmCampaignMetadata,
   type Agent,
   type Issue,
   type Ticket,
-  type TicketStageDefinition,
 } from "@paperclipai/shared";
 import { agentsApi } from "@/api/agents";
+import { gtmApi } from "@/api/gtm";
 import { issuesApi } from "@/api/issues";
 import { ticketsApi } from "@/api/tickets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { GtmCampaignSettingsCard, GtmStageContractEditor, type GtmStageDraft } from "@/components/GtmCampaignContracts";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { GtmCampaignSettingsCard } from "@/components/GtmCampaignContracts";
 import { GtmIssueLauncherModal } from "@/components/GtmIssueLauncherModal";
+import { IssueRow } from "@/components/IssueRow";
 import { useToast } from "@/context/ToastContext";
 import { normalizeCompanyPrefix } from "@/lib/company-routes";
 import { queryKeys } from "@/lib/queryKeys";
-import { Link } from "@/lib/router";
 import { toSurfacePath } from "@/lib/surface-profile";
-import { ChevronRight, ExternalLink, Plus, Sparkles, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Archive,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardCheck,
+  Copy,
+  FileText,
+  Heart,
+  Loader2,
+  Pause,
+  Play,
+  Plus,
+  Save,
+  Settings2,
+  Trash2,
+  X,
+} from "lucide-react";
 
 type GtmTicketDetail = Ticket & { issues?: Issue[] };
+
+type ActiveTab = "issues" | "policy" | "settings";
+
+const ISSUES_PAGE_SIZE = 10;
 
 type GtmCampaignDetailProps = {
   companyId: string;
   ticketId: string;
   companyPrefix?: string | null;
+  onNavigate?: (path: string) => void;
+  onRequestClose?: () => void;
 };
 
-function createStageDrafts(stageDefinitions: TicketStageDefinition[]): GtmStageDraft[] {
-  return stageDefinitions.map((stage, index) => ({ ...stage, expanded: index === 0 }));
+function serializeSettings(settings: ReturnType<typeof normalizeGtmCampaignSettings>): string {
+  return JSON.stringify(settings);
 }
 
-export function GtmCampaignDetail({ companyId, ticketId, companyPrefix }: GtmCampaignDetailProps) {
+export function GtmCampaignDetail({
+  companyId,
+  ticketId,
+  companyPrefix,
+  onNavigate,
+  onRequestClose,
+}: GtmCampaignDetailProps) {
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const [launcherOpen, setLauncherOpen] = useState(false);
-  const [launcherStage, setLauncherStage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("issues");
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [issuesPage, setIssuesPage] = useState(0);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [descEditing, setDescEditing] = useState(false);
 
   const ticketQuery = useQuery({
     queryKey: ["gtm", "ticket-detail", ticketId],
@@ -56,107 +98,118 @@ export function GtmCampaignDetail({ companyId, ticketId, companyPrefix }: GtmCam
   const ticket = ticketQuery.data;
   const agents = agentsQuery.data ?? [];
   const campaignMetadata = readGtmCampaignMetadata(ticket?.metadata);
-  const stageDefinitions = useMemo(
-    () => normalizeTicketStageDefinitions({ stageDefinitions: ticket?.stageDefinitions, stageOrder: ticket?.stageOrder }),
-    [ticket?.stageDefinitions, ticket?.stageOrder],
-  );
-  const [stageDrafts, setStageDrafts] = useState<GtmStageDraft[]>([]);
   const [settingsDraft, setSettingsDraft] = useState(() => normalizeGtmCampaignSettings(null));
+  const [settingsSnapshot, setSettingsSnapshot] = useState("");
 
-  const stages = buildTicketStageOrder(stageDefinitions);
-  const currentStage = ticket?.currentStage ?? stages[0] ?? null;
-  const issuesByStage = useMemo(() => {
-    const grouped = new Map<string, Issue[]>();
-    for (const stage of stages) grouped.set(stage, []);
-    for (const issue of ticket?.issues ?? []) {
-      const stageKey = issue.ticketStage ?? currentStage ?? stages[0] ?? "unscoped";
-      const bucket = grouped.get(stageKey) ?? [];
-      bucket.push(issue);
-      grouped.set(stageKey, bucket);
-    }
-    for (const bucket of grouped.values()) {
-      bucket.sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
-    }
-    return grouped;
-  }, [currentStage, stages, ticket?.issues]);
-
+  const metadataKey = ticket?.metadata ? JSON.stringify(ticket.metadata) : "";
   useEffect(() => {
     if (!ticket) return;
-    setStageDrafts(createStageDrafts(stageDefinitions));
-    setSettingsDraft(normalizeGtmCampaignSettings(campaignMetadata?.settings));
-  }, [campaignMetadata?.settings, stageDefinitions, ticket]); // eslint-disable-line react-hooks/exhaustive-deps
+    const normalized = normalizeGtmCampaignSettings(campaignMetadata?.settings);
+    setSettingsDraft(normalized);
+    setSettingsSnapshot(serializeSettings(normalized));
+    setTitleDraft(ticket.title);
+    setDescriptionDraft(ticket.description ?? "");
+  }, [metadataKey, ticket?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const saveCampaignContracts = useMutation({
-    mutationFn: async () => {
-      if (!ticket) throw new Error("Ticket not loaded");
-      const normalizedDefinitions = normalizeTicketStageDefinitions({ stageDefinitions: stageDrafts });
-      return ticketsApi.update(companyId, ticket.id, {
-        currentStage: normalizedDefinitions.some((stage) => stage.key === ticket.currentStage)
-          ? ticket.currentStage
-          : normalizedDefinitions[0]?.key,
-        stageDefinitions: normalizedDefinitions,
-        stageOrder: buildTicketStageOrder(normalizedDefinitions),
-      } as Record<string, unknown>);
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "tickets", companyId] }),
-      ]);
-      pushToast({
-        title: "Stage contract saved",
-        body: "The GTM campaign stage bindings were updated without changing the DX ticket contract.",
-        tone: "success",
-      });
-    },
-  });
+  const hasSettingsChanges = useMemo(
+    () => settingsSnapshot !== "" && serializeSettings(settingsDraft) !== settingsSnapshot,
+    [settingsDraft, settingsSnapshot],
+  );
+  const hasTitleDescChanges = ticket
+    ? (titleDraft !== ticket.title || descriptionDraft !== (ticket.description ?? ""))
+    : false;
+  const hasUnsavedChanges = hasSettingsChanges || hasTitleDescChanges;
 
   const saveCampaignSettings = useMutation({
     mutationFn: async () => {
       if (!ticket) throw new Error("Ticket not loaded");
-      return ticketsApi.update(companyId, ticket.id, {
+      const patch: Record<string, unknown> = {
         metadata: buildGtmCampaignMetadata({
           targetAudience: campaignMetadata?.targetAudience ?? null,
           offer: campaignMetadata?.offer ?? null,
           successDefinition: campaignMetadata?.successDefinition ?? null,
           settings: settingsDraft,
         }),
-      } as Record<string, unknown>);
+      };
+      if (titleDraft.trim() && titleDraft !== ticket.title) {
+        patch.title = titleDraft.trim();
+      }
+      if (descriptionDraft !== (ticket.description ?? "")) {
+        patch.description = descriptionDraft.trim() || null;
+      }
+      return ticketsApi.update(companyId, ticket.id, patch as Record<string, unknown>);
+    },
+    onSuccess: async () => {
+      setSettingsSnapshot(serializeSettings(settingsDraft));
+      setTitleEditing(false);
+      setDescEditing(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "tickets", companyId] }),
+      ]);
+      pushToast({ title: "Campaign saved", tone: "success" });
+    },
+  });
+
+  // Archive campaign — sets ticket status to "archived" and archives all issues
+  const archiveCampaign = useMutation({
+    mutationFn: async () => {
+      if (!ticket) throw new Error("Ticket not loaded");
+      const issueIds = (ticket.issues ?? []).map((i) => i.id);
+      await ticketsApi.update(companyId, ticket.id, { status: "archived" } as Record<string, unknown>);
+      if (issueIds.length > 0) {
+        await issuesApi.bulkArchive(companyId, issueIds);
+      }
     },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
         queryClient.invalidateQueries({ queryKey: ["gtm", "tickets", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "issues", companyId] }),
       ]);
-      pushToast({
-        title: "Campaign settings saved",
-        body: "The GTM campaign orchestrator settings were saved on the wrapped campaign metadata layer.",
-        tone: "success",
-      });
+      pushToast({ title: "Campaign archived", body: "Campaign and all issues moved to archive.", tone: "success" });
+      onRequestClose?.();
     },
   });
 
-  const assignIssue = useMutation({
-    mutationFn: ({ issueId, assigneeAgentId }: { issueId: string; assigneeAgentId: string | null }) =>
-      issuesApi.update(issueId, { assigneeAgentId }),
+  // Pause/resume campaign — sets ticket status and pauses/resumes all issues
+  const togglePause = useMutation({
+    mutationFn: async () => {
+      if (!ticket) throw new Error("Ticket not loaded");
+      const isPaused = ticket.status === "paused";
+      const nextStatus = isPaused ? "active" : "paused";
+      const issueStatus = isPaused ? "todo" : "backlog";
+      await ticketsApi.update(companyId, ticket.id, { status: nextStatus } as Record<string, unknown>);
+      const issues = ticket.issues ?? [];
+      await Promise.all(
+        issues.map((issue) => issuesApi.update(issue.id, { status: issueStatus })),
+      );
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "tickets", companyId] }),
         queryClient.invalidateQueries({ queryKey: ["gtm", "issues", companyId] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "inbox", companyId] }),
       ]);
-      pushToast({
-        title: "Issue updated",
-        body: "The GTM issue assignment was updated.",
-        tone: "success",
+      pushToast({ title: ticket?.status === "paused" ? "Campaign resumed" : "Campaign paused", tone: "success" });
+    },
+  });
+
+  // Duplicate campaign
+  const duplicateCampaign = useMutation({
+    mutationFn: async () => {
+      if (!ticket) throw new Error("Ticket not loaded");
+      return ticketsApi.create(companyId, {
+        title: `${ticket.title} (copy)`,
+        description: ticket.description ?? undefined,
+        instructions: ticket.instructions ?? undefined,
+        leadAgentId: ticket.leadAgentId,
+        metadata: ticket.metadata as Record<string, unknown> | undefined,
       });
     },
-    onError: (error) => {
-      pushToast({
-        title: "Assignment failed",
-        body: error instanceof Error ? error.message : "Failed to update issue assignment.",
-        tone: "error",
-      });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["gtm", "tickets", companyId] });
+      pushToast({ title: "Campaign duplicated", tone: "success" });
     },
   });
 
@@ -165,62 +218,76 @@ export function GtmCampaignDetail({ companyId, ticketId, companyPrefix }: GtmCam
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "tickets", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "issues", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "inbox", companyId] }),
+      ]);
+      pushToast({ title: "Issue removed", tone: "success" });
+    },
+  });
+
+  const triggerHeartbeat = useMutation({
+    mutationFn: () => gtmApi.enforceHeartbeat(companyId, ticketId),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
         queryClient.invalidateQueries({ queryKey: ["gtm", "issues", companyId] }),
         queryClient.invalidateQueries({ queryKey: ["gtm", "inbox", companyId] }),
       ]);
       pushToast({
-        title: "Issue removed",
-        body: "The campaign issue was removed from this GTM workflow.",
+        title: "Heartbeat enforced",
+        body: `Created ${result.issuesCreated} sub-issue(s) for active agents.`,
         tone: "success",
-      });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Remove failed",
-        body: error instanceof Error ? error.message : "Failed to remove issue.",
-        tone: "error",
       });
     },
   });
 
+  const triggerPerformanceReview = useMutation({
+    mutationFn: () => gtmApi.triggerPerformanceReview(companyId, ticketId),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gtm", "ticket-detail", ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "issues", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "inbox", companyId] }),
+      ]);
+      pushToast({
+        title: "Performance review dispatched",
+        body: result.reviewIssueId
+          ? `CEO agent reviewing ${result.agentsReviewed} agent(s).`
+          : (result.error ?? "Failed"),
+        tone: result.reviewIssueId ? "success" : "error",
+      });
+    },
+  });
+
+  function handleClose() {
+    if (hasUnsavedChanges) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    onRequestClose?.();
+  }
+
+  function handleForceClose() {
+    setDiscardConfirmOpen(false);
+    onRequestClose?.();
+  }
+
   if (ticketQuery.isLoading) {
-    return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Loading GTM campaign…</div>;
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Loading campaign...</div>
+      </div>
+    );
   }
   if (ticketQuery.error || !ticket) {
     const error = ticketQuery.error;
-    return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{error instanceof Error ? error.message : "Failed to load campaign"}</div>;
-  }
-
-  function addStage() {
-    setStageDrafts((current) => [
-      ...current.map((stage) => ({ ...stage, expanded: false })),
-      {
-        key: `stage_${current.length + 1}`,
-        label: "",
-        kind: null,
-        ownerRole: null,
-        handoffMode: null,
-        instructions: null,
-        exitCriteria: null,
-        metadata: null,
-        expanded: true,
-      },
-    ]);
-  }
-
-  function removeStage(index: number) {
-    if (stageDrafts.length <= 1) return;
-    setStageDrafts(stageDrafts.filter((_stage, stageIndex) => stageIndex !== index));
-  }
-
-  function moveStage(index: number, direction: -1 | 1) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= stageDrafts.length) return;
-    const next = [...stageDrafts];
-    const [stage] = next.splice(index, 1);
-    next.splice(nextIndex, 0, stage);
-    setStageDrafts(next);
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">
+          {error instanceof Error ? error.message : "Failed to load campaign"}
+        </div>
+      </div>
+    );
   }
 
   const boardPath = (path: string) => {
@@ -229,201 +296,433 @@ export function GtmCampaignDetail({ companyId, ticketId, companyPrefix }: GtmCam
     return toSurfacePath(`/${normalizeCompanyPrefix(companyPrefix)}${normalizedPath}`);
   };
 
+  const allIssues = [...(ticket.issues ?? [])].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+  const totalPages = Math.max(1, Math.ceil(allIssues.length / ISSUES_PAGE_SIZE));
+  const pagedIssues = allIssues.slice(issuesPage * ISSUES_PAGE_SIZE, (issuesPage + 1) * ISSUES_PAGE_SIZE);
+  const isPaused = ticket.status === "paused";
+
+  // Agents involved in this campaign (assigned to its issues)
+  const campaignAgentIds = new Set(allIssues.map((i) => i.assigneeAgentId).filter(Boolean));
+  if (ticket.leadAgentId) campaignAgentIds.add(ticket.leadAgentId);
+  const campaignAgents = agents.filter((a) => campaignAgentIds.has(a.id));
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <h2 className="truncate text-base font-semibold">{ticket.title}</h2>
-              <Badge variant="outline">{ticket.status}</Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              GTM campaign launcher layered on the canonical ticket pipeline.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link to={boardPath(`/tickets/${ticket.id}`)}>
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open raw ticket
-              </Link>
-            </Button>
-            <Button onClick={() => setLauncherOpen(true)}>
-              <Plus className="h-3.5 w-3.5" />
-              New task
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-          {stages.map((stage, index) => (
-            <div key={stage} className="flex items-center gap-2">
-              <Badge variant={stage === currentStage ? "default" : "outline"}>
-                {stageDefinitions.find((definition) => definition.key === stage)?.label ?? stage}
-              </Badge>
-              {index < stages.length - 1 ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : null}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="space-y-4">
-          <GtmCampaignSettingsCard settings={settingsDraft} onChange={setSettingsDraft} />
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => saveCampaignSettings.mutate()} disabled={saveCampaignSettings.isPending}>
-              {saveCampaignSettings.isPending ? "Saving..." : "Save campaign settings"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <GtmStageContractEditor
-            stages={stageDrafts}
-            currentStage={currentStage}
-            onChange={(next) =>
-              setStageDrafts(
-                next.map((stage, index) => ({
-                  ...stage,
-                  key: normalizeTicketStageKey(stage.key || stage.label || `stage_${index + 1}`),
-                })),
-              )
-            }
-            onAddStage={addStage}
-            onRemoveStage={removeStage}
-            onMoveStage={moveStage}
-          />
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => saveCampaignContracts.mutate()} disabled={saveCampaignContracts.isPending}>
-              {saveCampaignContracts.isPending ? "Saving..." : "Save stage contract"}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Stage issues</h3>
-            <p className="text-xs text-muted-foreground">
-              Stage-scoped GTM issues with explicit open, assign, add, and remove controls.
-            </p>
-          </div>
-          <Button onClick={() => setLauncherOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            New issue
-          </Button>
-        </div>
-        <div className="space-y-4 px-4 py-4">
-          {stageDefinitions.map((stage) => {
-            const stageIssues = issuesByStage.get(stage.key) ?? [];
-            return (
-              <div key={stage.key} className="rounded-xl border border-border">
-                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={stage.key === currentStage ? "default" : "outline"}>
-                        {stage.label || stage.key}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{stageIssues.length} issue{stageIssues.length === 1 ? "" : "s"}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {stage.instructions?.trim() || "No stage instructions yet."}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setLauncherStage(stage.key);
-                      setLauncherOpen(true);
-                    }}
+    <>
+      <div className="flex flex-col" style={{ maxHeight: "calc(92vh - 2px)" }}>
+        {/* Header */}
+        <div className="shrink-0 px-6 pt-5 pb-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                {titleEditing ? (
+                  <input
+                    className="flex-1 truncate text-base font-semibold bg-transparent border-b border-border outline-none focus:border-primary"
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={() => { if (!titleDraft.trim()) { setTitleDraft(ticket.title); } setTitleEditing(false); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") setTitleEditing(false); }}
+                    autoFocus
+                  />
+                ) : (
+                  <h2
+                    className="truncate text-base font-semibold cursor-text hover:bg-accent/30 rounded px-1 -mx-1 transition-colors"
+                    onClick={() => setTitleEditing(true)}
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add issue
-                  </Button>
-                </div>
+                    {titleDraft || ticket.title}
+                  </h2>
+                )}
+                <Badge variant="outline" className="shrink-0">{ticket.status}</Badge>
+              </div>
+              <div className="mt-1.5">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setDescriptionExpanded((v) => !v)}
+                >
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", descriptionExpanded && "rotate-180")} />
+                  {descriptionExpanded ? "Hide description" : "Show description"}
+                </button>
+                {descriptionExpanded ? (
+                  descEditing ? (
+                    <textarea
+                      className="mt-1.5 w-full text-sm text-muted-foreground leading-relaxed bg-transparent border border-border rounded-md p-2 outline-none focus:border-primary resize-y min-h-[60px]"
+                      value={descriptionDraft}
+                      onChange={(e) => setDescriptionDraft(e.target.value)}
+                      onBlur={() => setDescEditing(false)}
+                      rows={3}
+                      autoFocus
+                    />
+                  ) : (
+                    <p
+                      className="mt-1.5 text-sm text-muted-foreground leading-relaxed cursor-text hover:bg-accent/30 rounded px-1 -mx-1 transition-colors"
+                      onClick={() => setDescEditing(true)}
+                    >
+                      {descriptionDraft || "Click to add description..."}
+                    </p>
+                  )
+                ) : null}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {hasUnsavedChanges ? (
+                <Button
+                  size="sm"
+                  onClick={() => saveCampaignSettings.mutate()}
+                  disabled={saveCampaignSettings.isPending}
+                  className="gap-1.5"
+                >
+                  {saveCampaignSettings.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  {saveCampaignSettings.isPending ? "Saving..." : "Save"}
+                </Button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleClose}
+                className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-muted-foreground shadow-sm transition-colors hover:bg-gray-50 hover:text-foreground dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
 
-                {stageIssues.length === 0 ? (
-                  <div className="px-4 py-5 text-sm text-muted-foreground">
-                    No active issues in this stage yet.
+          {/* Tabs */}
+          <div className="mt-4 flex border-b border-border">
+            <button
+              type="button"
+              className={cn(
+                "relative flex items-center gap-1.5 px-4 pb-2.5 text-sm font-medium transition-colors",
+                activeTab === "issues"
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setActiveTab("issues")}
+            >
+              {allIssues.length > 0 ? (
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-xs font-medium text-muted-foreground">
+                  {allIssues.length}
+                </span>
+              ) : null}
+              Campaign Issues
+              {activeTab === "issues" ? (
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full" />
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "relative flex items-center gap-1.5 px-4 pb-2.5 text-sm font-medium transition-colors",
+                activeTab === "policy"
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setActiveTab("policy")}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Campaign Policy
+              {activeTab === "policy" ? (
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full" />
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "relative flex items-center gap-1.5 px-4 pb-2.5 text-sm font-medium transition-colors",
+                activeTab === "settings"
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setActiveTab("settings")}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              Settings
+              {activeTab === "settings" ? (
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full" />
+              ) : null}
+            </button>
+          </div>
+        </div>
+
+        {/* Tab content — fixed height with scroll */}
+        <div className="overflow-y-auto px-6 py-5" style={{ height: "528px" }}>
+          {activeTab === "issues" ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">Campaign issues</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Issues running inside this GTM campaign.
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => setLauncherOpen(true)} className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  New issue
+                </Button>
+              </div>
+
+              <div
+                className="rounded-lg border border-border bg-card"
+                style={{ minHeight: "320px" }}
+              >
+                {allIssues.length === 0 ? (
+                  <div className="flex items-center justify-center text-sm text-muted-foreground" style={{ minHeight: "320px" }}>
+                    No issues yet. Launch the first issue to start executing this campaign.
                   </div>
                 ) : (
-                  <div className="divide-y divide-border">
-                    {stageIssues.map((issue) => (
-                      <div key={issue.id} className="flex flex-col gap-3 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate font-medium">{issue.title}</span>
-                            <Badge variant="outline">{issue.priority}</Badge>
-                            <Badge variant="outline">{issue.status}</Badge>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <span>{issue.identifier ?? issue.id.slice(0, 8)}</span>
-                            <span>{stage.label || stage.key}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            className="flex h-9 min-w-[220px] rounded-md border border-input bg-transparent px-3 text-sm"
-                            value={issue.assigneeAgentId ?? ""}
-                            onChange={(event) =>
-                              assignIssue.mutate({
-                                issueId: issue.id,
-                                assigneeAgentId: event.target.value || null,
-                              })
-                            }
+                  <div className="divide-y divide-border overflow-y-auto" style={{ maxHeight: "400px" }}>
+                    {pagedIssues.map((issue) => {
+                      const issuePath = boardPath(`/issues/${issue.identifier ?? issue.id}`);
+                      return (
+                        <div key={issue.id} className="flex items-center gap-2">
+                          <div
+                            className="min-w-0 flex-1 cursor-pointer"
+                            onClick={(e) => {
+                              if (onNavigate) {
+                                e.preventDefault();
+                                onNavigate(issuePath);
+                              }
+                            }}
                           >
-                            <option value="">Unassigned</option>
-                            {agents.map((agent) => (
-                              <option key={agent.id} value={agent.id}>
-                                {agent.name} ({agent.role})
-                              </option>
-                            ))}
-                          </select>
+                            <IssueRow
+                              issue={issue}
+                              to={onNavigate ? "#" : issuePath}
+                              desktopTrailing={
+                                <Badge variant="outline">{issue.status}</Badge>
+                              }
+                            />
+                          </div>
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            onClick={() => window.location.assign(boardPath(`/issues/${issue.identifier ?? issue.id}`))}
-                          >
-                            Open issue
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
+                            className="shrink-0 mr-2"
                             onClick={() => removeIssue.mutate(issue.id)}
                             disabled={removeIssue.isPending}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            Remove
                           </Button>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
-            );
-          })}
+
+              {totalPages > 1 ? (
+                <div className="flex items-center justify-between pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    {issuesPage * ISSUES_PAGE_SIZE + 1}–{Math.min((issuesPage + 1) * ISSUES_PAGE_SIZE, allIssues.length)} of {allIssues.length}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" disabled={issuesPage === 0} onClick={() => setIssuesPage((p) => p - 1)} className="h-7 w-7 p-0">
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="px-2 text-xs text-muted-foreground">{issuesPage + 1} / {totalPages}</span>
+                    <Button variant="outline" size="sm" disabled={issuesPage >= totalPages - 1} onClick={() => setIssuesPage((p) => p + 1)} className="h-7 w-7 p-0">
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : activeTab === "policy" ? (
+            <div className="space-y-4">
+              <GtmCampaignSettingsCard settings={settingsDraft} onChange={setSettingsDraft} />
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveCampaignSettings.mutate()}
+                  disabled={saveCampaignSettings.isPending || !hasUnsavedChanges}
+                  className="gap-1.5"
+                >
+                  {saveCampaignSettings.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {saveCampaignSettings.isPending ? "Saving..." : "Save policy"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Settings tab */
+            <div className="space-y-6">
+              {/* Campaign actions */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold">Campaign actions</h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent/50 disabled:opacity-50"
+                    onClick={() => togglePause.mutate()}
+                    disabled={togglePause.isPending}
+                  >
+                    {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                    <div>
+                      <p className="text-sm font-medium">{isPaused ? "Resume campaign" : "Pause campaign"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isPaused ? "Resume all issues." : "Pause all issues."}
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent/50 disabled:opacity-50"
+                    onClick={() => triggerHeartbeat.mutate()}
+                    disabled={triggerHeartbeat.isPending}
+                  >
+                    <Heart className="h-4 w-4" />
+                    <div>
+                      <p className="text-sm font-medium">Enforce heartbeat</p>
+                      <p className="text-xs text-muted-foreground">Dispatch sub-issues to all active agents.</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent/50 disabled:opacity-50"
+                    onClick={() => triggerPerformanceReview.mutate()}
+                    disabled={triggerPerformanceReview.isPending}
+                  >
+                    <ClipboardCheck className="h-4 w-4" />
+                    <div>
+                      <p className="text-sm font-medium">Performance review</p>
+                      <p className="text-xs text-muted-foreground">CEO reviews all agent performance.</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent/50 disabled:opacity-50"
+                    onClick={() => duplicateCampaign.mutate()}
+                    disabled={duplicateCampaign.isPending}
+                  >
+                    <Copy className="h-4 w-4" />
+                    <div>
+                      <p className="text-sm font-medium">Duplicate campaign</p>
+                      <p className="text-xs text-muted-foreground">Clone with all settings.</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent/50 disabled:opacity-50"
+                    onClick={() => archiveCampaign.mutate()}
+                    disabled={archiveCampaign.isPending}
+                  >
+                    <Archive className="h-4 w-4" />
+                    <div>
+                      <p className="text-sm font-medium">Archive campaign</p>
+                      <p className="text-xs text-muted-foreground">Archive campaign and all issues.</p>
+                    </div>
+                  </button>
+                </div>
+              </section>
+
+              {/* Campaign agents */}
+              <section className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Campaign agents</h3>
+                  <p className="text-xs text-muted-foreground">Agents assigned to issues in this campaign.</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card">
+                  {campaignAgents.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      No agents assigned yet.
+                    </div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                          <th className="px-4 py-2 font-medium">Name</th>
+                          <th className="px-4 py-2 font-medium">Role</th>
+                          <th className="px-4 py-2 font-medium">Status</th>
+                          <th className="px-4 py-2 font-medium text-right">Issues</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {campaignAgents.map((agent) => {
+                          const agentIssueCount = allIssues.filter((i) => i.assigneeAgentId === agent.id).length;
+                          const isLead = agent.id === ticket.leadAgentId;
+                          return (
+                            <tr key={agent.id}>
+                              <td className="px-4 py-2.5 font-medium">
+                                {agent.name}
+                                {isLead ? <span className="ml-1.5 text-xs text-muted-foreground">(lead)</span> : null}
+                              </td>
+                              <td className="px-4 py-2.5 text-muted-foreground">{agent.role}</td>
+                              <td className="px-4 py-2.5">
+                                <span className={cn(
+                                  "inline-flex items-center gap-1.5 text-xs",
+                                  agent.status === "active" ? "text-green-600" :
+                                  agent.status === "paused" ? "text-yellow-600" :
+                                  "text-muted-foreground",
+                                )}>
+                                  <span className={cn(
+                                    "h-1.5 w-1.5 rounded-full",
+                                    agent.status === "active" ? "bg-green-500" :
+                                    agent.status === "paused" ? "bg-yellow-500" :
+                                    "bg-gray-400",
+                                  )} />
+                                  {agent.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-muted-foreground">{agentIssueCount}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </section>
+            </div>
+          )}
         </div>
       </div>
 
       <GtmIssueLauncherModal
         open={launcherOpen}
-        onClose={() => {
-          setLauncherOpen(false);
-          setLauncherStage(null);
-        }}
+        onClose={() => setLauncherOpen(false)}
         companyId={companyId}
         ticket={ticket}
         agents={agents}
-        stageDefinitions={stageDefinitions}
-        defaultStage={launcherStage ?? currentStage ?? stages[0] ?? "stage_1"}
         settings={settingsDraft}
       />
-    </div>
+
+      {/* Discard confirm */}
+      <Dialog open={discardConfirmOpen} onOpenChange={setDiscardConfirmOpen}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Discard unsaved changes?</DialogTitle>
+            <DialogDescription>
+              You have unsaved campaign policy changes. Save them first, or discard and close.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscardConfirmOpen(false)}>
+              Go back
+            </Button>
+            <Button
+              onClick={() => {
+                saveCampaignSettings.mutate(undefined, {
+                  onSuccess: () => handleForceClose(),
+                });
+              }}
+              disabled={saveCampaignSettings.isPending}
+              className="gap-1.5"
+            >
+              {saveCampaignSettings.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Save and close
+            </Button>
+            <Button variant="destructive" onClick={handleForceClose}>
+              Discard
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

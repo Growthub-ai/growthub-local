@@ -2,19 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   buildGtmCampaignMetadata,
-  buildTicketStageOrder,
   normalizeGtmCampaignSettings,
-  normalizeTicketStageDefinitions,
   type GtmCampaignSettings,
   type Agent,
   type Ticket,
-  type TicketStageDefinition,
 } from "@paperclipai/shared";
 import { agentsApi } from "@/api/agents";
 import { gtmApi, type GtmCampaignDraft } from "@/api/gtm";
 import { ticketsApi } from "@/api/tickets";
-import { GtmCampaignSettingsCard, GtmStageContractEditor, type GtmStageDraft } from "@/components/GtmCampaignContracts";
-import { Badge } from "@/components/ui/badge";
+import { GtmCampaignSettingsCard } from "@/components/GtmCampaignContracts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -72,35 +68,9 @@ type EditorState = {
   successDefinition: string;
   leadAgentId: string;
   settings: GtmCampaignSettings;
-  stageDrafts: GtmStageDraft[];
 };
 
 type BuilderStep = "chooser" | "editor";
-
-function createBlankStage(index: number): GtmStageDraft {
-  return {
-    key: `stage_${index}`,
-    label: "",
-    kind: null,
-    ownerRole: null,
-    handoffMode: null,
-    instructions: null,
-    exitCriteria: null,
-    metadata: null,
-    expanded: true,
-  };
-}
-
-function createStageDrafts(stageDefinitions?: TicketStageDefinition[] | null): GtmStageDraft[] {
-  if (!stageDefinitions || stageDefinitions.length === 0) {
-    return [createBlankStage(1)];
-  }
-
-  return normalizeTicketStageDefinitions({ stageDefinitions }).map((stage, index) => ({
-    ...stage,
-    expanded: index === 0,
-  }));
-}
 
 function createEditorState(leadAgentId = ""): EditorState {
   return {
@@ -112,24 +82,10 @@ function createEditorState(leadAgentId = ""): EditorState {
     successDefinition: "",
     leadAgentId,
     settings: normalizeGtmCampaignSettings(null),
-    stageDrafts: createStageDrafts(),
   };
 }
 
 function serializeEditorState(state: EditorState): string {
-  const normalizedStageDefinitions = normalizeTicketStageDefinitions({
-    stageDefinitions: state.stageDrafts.map((stage, index) => ({
-      key: stage.key?.trim() || `stage_${index + 1}`,
-      label: stage.label?.trim() || `Stage ${index + 1}`,
-      kind: stage.kind ?? null,
-      ownerRole: stage.ownerRole ?? null,
-      handoffMode: stage.handoffMode ?? null,
-      instructions: stage.instructions ?? null,
-      exitCriteria: stage.exitCriteria ?? null,
-      metadata: stage.metadata ?? null,
-    })),
-  });
-
   return JSON.stringify({
     title: state.title.trim(),
     description: state.description.trim(),
@@ -139,12 +95,7 @@ function serializeEditorState(state: EditorState): string {
     successDefinition: state.successDefinition.trim(),
     leadAgentId: state.leadAgentId || "",
     settings: state.settings,
-    stageDefinitions: normalizedStageDefinitions,
   });
-}
-
-function stageCountLabel(count: number) {
-  return `${count} ${count === 1 ? "stage" : "stages"}`;
 }
 
 function mapDraftToEditorState(draft: GtmCampaignDraft, fallbackLeadAgentId: string): EditorState {
@@ -157,7 +108,6 @@ function mapDraftToEditorState(draft: GtmCampaignDraft, fallbackLeadAgentId: str
     successDefinition: draft.successDefinition ?? "",
     leadAgentId: draft.leadAgentId ?? fallbackLeadAgentId,
     settings: normalizeGtmCampaignSettings(null),
-    stageDrafts: createStageDrafts(draft.stageDefinitions),
   };
 }
 
@@ -206,14 +156,6 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
     window.setTimeout(() => titleRef.current?.focus(), 80);
   }, [builderStep, open]);
 
-  const normalizedStageDefinitions = useMemo(
-    () => normalizeTicketStageDefinitions({ stageDefinitions: editorState.stageDrafts }),
-    [editorState.stageDrafts],
-  );
-  const stageOrder = useMemo(
-    () => buildTicketStageOrder(normalizedStageDefinitions),
-    [normalizedStageDefinitions],
-  );
   const hasChooserChanges = aiProfile !== "custom" || aiExtendExisting || aiPrompt.trim().length > 0;
   const hasUnsavedChanges = builderStep === "editor" && serializeEditorState(editorState) !== initialSnapshotRef.current;
 
@@ -232,7 +174,7 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
       setAiConfirmOpen(false);
       pushToast({
         title: "CEO draft ready",
-        body: "Review the generated campaign workflow, then save when the stages look right.",
+        body: "Review the generated campaign, then save when it looks right.",
         tone: "success",
       });
     },
@@ -252,7 +194,6 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
         description: editorState.description.trim() || undefined,
         instructions: editorState.instructions.trim() || undefined,
         leadAgentId: editorState.leadAgentId || undefined,
-        stageDefinitions: normalizedStageDefinitions,
         metadata: {
           ...GTM_METADATA,
           ...buildGtmCampaignMetadata({
@@ -295,38 +236,6 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
 
   function updateEditor(patch: Partial<EditorState>) {
     setEditorState((current) => ({ ...current, ...patch }));
-  }
-
-  function addStage() {
-    setEditorState((current) => ({
-      ...current,
-      stageDrafts: [
-        ...current.stageDrafts.map((stage) => ({ ...stage, expanded: false })),
-        createBlankStage(current.stageDrafts.length + 1),
-      ],
-    }));
-  }
-
-  function removeStage(index: number) {
-    if (editorState.stageDrafts.length <= 1) return;
-    setEditorState((current) => ({
-      ...current,
-      stageDrafts: current.stageDrafts.filter((_stage, stageIndex) => stageIndex !== index),
-    }));
-  }
-
-  function moveStage(index: number, direction: -1 | 1) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= editorState.stageDrafts.length) return;
-    setEditorState((current) => {
-      const next = [...current.stageDrafts];
-      const [stage] = next.splice(index, 1);
-      next.splice(nextIndex, 0, stage);
-      return {
-        ...current,
-        stageDrafts: next,
-      };
-    });
   }
 
   function requestClose() {
@@ -376,8 +285,8 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
             </DialogTitle>
             <DialogDescription>
               {builderStep === "chooser"
-                ? "Choose how you want to initialize the campaign workflow. Scratch stays blank. AI drafts through the CEO path and then hands you a fully editable campaign."
-                : "Build a reusable GTM campaign workflow on top of the canonical ticket pipeline, with user-defined stage contracts and agent handoffs."}
+                ? "Choose how you want to initialize the campaign. Scratch stays blank. AI drafts through the CEO path and then hands you a fully editable campaign."
+                : "Build a reusable GTM campaign on top of the canonical ticket pipeline with agent controls and campaign settings."}
             </DialogDescription>
           </DialogHeader>
 
@@ -397,7 +306,7 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
                   <div className="space-y-2">
                     <h3 className="text-lg font-semibold">Build From Scratch</h3>
                     <p className="text-sm text-muted-foreground">
-                      Start with a blank GTM workflow and define the campaign stages, owners, and handoffs yourself.
+                      Start with a blank GTM campaign and define the metadata, settings, and agent alignment yourself.
                     </p>
                   </div>
                   <div className="mt-6 flex items-center text-sm font-medium text-primary">
@@ -481,8 +390,7 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
             <>
               <div className="flex items-center justify-between border-b border-border px-6 py-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Badge variant="outline">{stageCountLabel(stageOrder.length)}</Badge>
-                  {hasUnsavedChanges ? <Badge variant="outline">Unsaved changes</Badge> : <Badge variant="outline">Ready to save</Badge>}
+                  {hasUnsavedChanges ? <span className="text-xs text-muted-foreground">Unsaved changes</span> : <span className="text-xs text-muted-foreground">Ready to save</span>}
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setBuilderStep("chooser")} disabled={isBusy}>
                   Back
@@ -539,7 +447,7 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
                       <Textarea
                         value={editorState.instructions}
                         onChange={(event) => updateEditor({ instructions: event.target.value })}
-                        placeholder="Canonical CEO brief, guardrails, approvals, and issue creation expectations for every handoff."
+                        placeholder="Canonical CEO brief, guardrails, approvals, and issue creation expectations."
                         rows={5}
                       />
                     </div>
@@ -548,7 +456,7 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
                       <Textarea
                         value={editorState.successDefinition}
                         onChange={(event) => updateEditor({ successDefinition: event.target.value })}
-                        placeholder="How operators should decide that this campaign flow is complete or needs iteration."
+                        placeholder="How operators should decide that this campaign is complete or needs iteration."
                         rows={3}
                       />
                     </div>
@@ -561,22 +469,13 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
                 </div>
 
                 <div className="space-y-6">
-                  <GtmStageContractEditor
-                    stages={editorState.stageDrafts}
-                    currentStage={null}
-                    onChange={(stageDrafts) => updateEditor({ stageDrafts })}
-                    onAddStage={addStage}
-                    onRemoveStage={removeStage}
-                    onMoveStage={moveStage}
-                  />
-
                   <section className="space-y-3 rounded-xl border border-border bg-card p-4">
                     <div className="flex items-center gap-2">
                       <Settings2 className="h-4 w-4 text-muted-foreground" />
                       <h3 className="text-sm font-semibold">Lead agent alignment</h3>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      The lead agent remains the canonical fallback for stage issue ownership when a stage does not specify an owner role.
+                      The lead agent is the canonical fallback for issue ownership when an issue does not specify an assignee.
                     </p>
                     <select
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
@@ -590,10 +489,6 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
                         </option>
                       ))}
                     </select>
-
-                    <div className="rounded-md border border-border bg-background/40 px-3 py-2 text-xs text-muted-foreground">
-                      This campaign will create a canonical ticket with {stageCountLabel(stageOrder.length)} and preserve backward-compatible `stageOrder` alongside structured `stageDefinitions`.
-                    </div>
                   </section>
                 </div>
               </div>
@@ -604,7 +499,7 @@ export function GtmCampaignModal({ open, onClose, companyId, onSuccess }: GtmCam
                 </Button>
                 <Button
                   onClick={() => createCampaign.mutate()}
-                  disabled={!editorState.title.trim() || normalizedStageDefinitions.length === 0 || createCampaign.isPending}
+                  disabled={!editorState.title.trim() || createCampaign.isPending}
                   className={cn("gap-2", createCampaign.isPending && "opacity-80")}
                 >
                   {createCampaign.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
