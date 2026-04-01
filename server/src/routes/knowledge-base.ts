@@ -21,6 +21,16 @@ import { logger } from "../middleware/logger.js";
 
 const BLOCKED_KEYWORDS = /\b(DROP|DELETE|TRUNCATE|ALTER|INSERT|UPDATE|CREATE|GRANT|REVOKE)\b/i;
 
+function getRows(result: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(result)) {
+    return result as Array<Record<string, unknown>>;
+  }
+  if (result && typeof result === "object" && Array.isArray((result as { rows?: unknown[] }).rows)) {
+    return (result as { rows: Array<Record<string, unknown>> }).rows;
+  }
+  return [];
+}
+
 function isReadOnlyQuery(query: string): boolean {
   // Strip comments and string literals for safety check
   const stripped = query
@@ -55,8 +65,9 @@ export function knowledgeBaseRoutes(db: Db) {
         ORDER BY t.table_name ASC
       `);
 
+      const tableRows = getRows(tables);
       res.json({
-        tables: tables.rows.map((row: Record<string, unknown>) => ({
+        tables: tableRows.map((row) => ({
           name: row.name,
           columnCount: row.column_count,
         })),
@@ -94,7 +105,8 @@ export function knowledgeBaseRoutes(db: Db) {
         ORDER BY ordinal_position ASC
       `);
 
-      if (columns.rows.length === 0) {
+      const columnRows = getRows(columns);
+      if (columnRows.length === 0) {
         res.status(404).json({ error: `Table '${tableName}' not found` });
         return;
       }
@@ -110,15 +122,17 @@ export function knowledgeBaseRoutes(db: Db) {
           AND tc.table_name = ${tableName}
           AND tc.constraint_type = 'PRIMARY KEY'
       `);
+      const pkRows = getRows(pkResult);
       const pkColumns = new Set(
-        pkResult.rows.map((r: Record<string, unknown>) => r.column_name),
+        pkRows.map((r) => r.column_name),
       );
 
       // Get row count
       const countResult = await db.execute(
         sql.raw(`SELECT count(*)::int AS total FROM "public"."${tableName}"`),
       );
-      const total = (countResult.rows[0] as Record<string, unknown>)?.total ?? 0;
+      const countRows = getRows(countResult);
+      const total = countRows[0]?.total ?? 0;
 
       // Get rows
       const rows = await db.execute(
@@ -126,17 +140,18 @@ export function knowledgeBaseRoutes(db: Db) {
           `SELECT * FROM "public"."${tableName}" ORDER BY 1 LIMIT ${limit} OFFSET ${offset}`,
         ),
       );
+      const dataRows = getRows(rows);
 
       res.json({
         table: tableName,
-        columns: columns.rows.map((col: Record<string, unknown>) => ({
+        columns: columnRows.map((col) => ({
           name: col.name,
           type: col.type,
           nullable: col.nullable === "YES",
           defaultValue: col.defaultValue,
           isPrimaryKey: pkColumns.has(col.name),
         })),
-        rows: rows.rows,
+        rows: dataRows,
         pagination: {
           total,
           limit,
@@ -174,11 +189,12 @@ export function knowledgeBaseRoutes(db: Db) {
 
     try {
       const result = await db.execute(sql.raw(query));
+      const resultRows = getRows(result);
       const durationMs = Date.now() - startTime;
 
       res.json({
-        rows: result.rows,
-        rowCount: result.rows.length,
+        rows: resultRows,
+        rowCount: resultRows.length,
         durationMs,
       });
     } catch (err) {
