@@ -163,6 +163,14 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
   const [aiProfile, setAiProfile] = useState<(typeof AI_DRAFT_PROFILES)[number]["value"]>("custom");
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiExtendExisting, setAiExtendExisting] = useState(false);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
+
+  const { data: skillsData } = useQuery({
+    queryKey: queryKeys.skills.list,
+    queryFn: () => agentsApi.listSkills(),
+    enabled: open,
+  });
+  const workspaceSkills = skillsData?.skills ?? [];
 
   const { data: agents = [] } = useQuery({
     queryKey: queryKeys.agents.list(companyId),
@@ -186,6 +194,7 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
     setAiProfile("custom");
     setAiPrompt("");
     setAiExtendExisting(false);
+    setSelectedSkillIds(new Set());
     window.setTimeout(() => scratchCardRef.current?.focus(), 80);
   }, [open]);
 
@@ -223,6 +232,12 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
       });
     },
     onSuccess: async (agent) => {
+      // Assign selected skills to the newly created agent
+      for (const skillId of selectedSkillIds) {
+        try {
+          await agentsApi.addAgentSkill(agent.id, skillId);
+        } catch { /* best-effort — agent is already created */ }
+      }
       await queryClient.invalidateQueries({ queryKey: ["gtm", "agents", companyId] });
       onSuccess?.(agent);
       pushToast({
@@ -499,6 +514,42 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
                   }}
                   sectionLayout="cards"
                 />
+
+                {/* Skills selection */}
+                {workspaceSkills.length > 0 && (
+                  <div className="rounded-lg border border-border p-4 space-y-2">
+                    <h3 className="text-sm font-medium">Skills</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Assign reusable instruction bundles to this agent.
+                    </p>
+                    <div className="space-y-1.5">
+                      {workspaceSkills.map((skill) => (
+                        <label
+                          key={skill.id}
+                          className="flex items-center gap-2 rounded-md border border-border bg-muted/10 px-3 py-2 cursor-pointer hover:bg-muted/20"
+                        >
+                          <Checkbox
+                            checked={selectedSkillIds.has(skill.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedSkillIds((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(skill.id);
+                                else next.delete(skill.id);
+                                return next;
+                              });
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="font-mono text-sm">{skill.name}</span>
+                            {skill.description && (
+                              <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {formError ? (
                   <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

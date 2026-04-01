@@ -1,0 +1,56 @@
+{
+  "$meta": {
+    "version": 1,
+    "updatedAt": "2026-04-01T18:00:14.874Z",
+    "source": "configure"
+  },
+  "database": {
+    "mode": "embedded-postgres",
+    "embeddedPostgresDataDir": "/Users/antonio/.paperclip-worktrees/instances/feat-skills/db",
+    "embeddedPostgresPort": 54332,
+    "backup": {
+      "enabled": true,
+      "intervalMinutes": 60,
+      "retentionDays": 30,
+      "dir": "/Users/antonio/.paperclip-worktrees/instances/feat-skills/data/backups"
+    }
+  },
+  "logging": {
+    "mode": "file",
+    "logDir": "/Users/antonio/.paperclip-worktrees/instances/feat-skills/logs"
+  },
+  "server": {
+    "deploymentMode": "local_trusted",
+    "exposure": "private",
+    "host": "127.0.0.1",
+    "port": 3101,
+    "allowedHostnames": [],
+    "serveUi": true
+  },
+  "auth": {
+    "baseUrlMode": "auto",
+    "disableSignUp": false
+  },
+  "surface": {
+    "profile": "gtm"
+  },
+  "storage": {
+    "provider": "local_disk",
+    "localDisk": {
+      "baseDir": "/Users/antonio/.paperclip-worktrees/instances/feat-skills/data/storage"
+    },
+    "s3": {
+      "bucket": "paperclip",
+      "region": "us-east-1",
+      "prefix": "",
+      "forcePathStyle": false
+    }
+  },
+  "secrets": {
+    "provider": "local_encrypted",
+    "strictMode": false,
+    "localEncrypted": {
+      "keyFilePath": "/Users/antonio/.paperclip-worktrees/instances/feat-skills/secrets/master.key"
+    }
+  }
+}

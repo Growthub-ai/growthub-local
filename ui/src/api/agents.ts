@@ -152,10 +152,41 @@ export const agentsApi = {
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
+
+  // Skill knowledge items — workspace-level
+  listSkills: () =>
+    api.get<{ skills: SkillItem[] }>("/skills"),
+  createSkill: (data: { name: string; description: string; body: string }) =>
+    api.post<SkillItem>("/skills", data),
+  updateSkill: (itemId: string, data: { name?: string; description?: string; body?: string }) =>
+    api.patch<SkillItem>(`/skills/${itemId}`, data),
+  deleteSkill: (itemId: string) =>
+    api.delete<{ ok: true }>(`/skills/${itemId}`),
+
+  // Agent-skill assignments
+  listAgentSkills: (agentId: string) =>
+    api.get<{ skills: SkillItem[] }>(`/agents/${agentId}/skills`),
+  addAgentSkill: (agentId: string, itemId: string) =>
+    api.post<{ ok: true }>(`/agents/${agentId}/skills/${itemId}`, {}),
+  removeAgentSkill: (agentId: string, itemId: string) =>
+    api.delete<{ ok: true }>(`/agents/${agentId}/skills/${itemId}`),
 };
+
+export interface SkillItem {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  source: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface AvailableSkill {
   name: string;
   description: string;
   isPaperclipManaged: boolean;
+  id?: string | null;
+  source?: string;
 }

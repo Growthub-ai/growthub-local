@@ -28,6 +28,7 @@ import {
   PERMISSION_KEYS
 } from "@paperclipai/shared";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import { listSkillKnowledgeItems } from "../services/gtm-knowledge-capture.js";
 import {
   forbidden,
   conflict,
@@ -161,9 +162,11 @@ interface AvailableSkill {
   name: string;
   description: string;
   isPaperclipManaged: boolean;
+  id?: string | null;
+  source?: string;
 }
 
-/** Discover all available Claude Code skills from ~/.claude/skills/. */
+/** Discover all available Claude Code skills from ~/.claude/skills/ + knowledge items. */
 function listAvailableSkills(): AvailableSkill[] {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const claudeSkillsDir = path.join(homeDir, ".claude", "skills");
@@ -199,6 +202,34 @@ function listAvailableSkills(): AvailableSkill[] {
       });
     }
   } catch { /* ~/.claude/skills/ doesn't exist */ }
+
+  // Merge knowledge-item-backed skills (from GTM state)
+  try {
+    const kbSkills = listSkillKnowledgeItems();
+    const existingNames = new Set(skills.map((s) => s.name));
+    for (const kbSkill of kbSkills) {
+      if (existingNames.has(kbSkill.name)) {
+        // Knowledge item wins — update the existing entry with id
+        const idx = skills.findIndex((s) => s.name === kbSkill.name);
+        if (idx >= 0) {
+          skills[idx] = {
+            ...skills[idx]!,
+            id: kbSkill.id,
+            source: kbSkill.source,
+            description: kbSkill.description || skills[idx]!.description,
+          };
+        }
+      } else {
+        skills.push({
+          name: kbSkill.name,
+          description: kbSkill.description,
+          isPaperclipManaged: kbSkill.source === "paperclip",
+          id: kbSkill.id,
+          source: kbSkill.source,
+        });
+      }
+    }
+  } catch { /* knowledge items unavailable — continue with filesystem-only */ }
 
   skills.sort((a, b) => a.name.localeCompare(b.name));
   return skills;

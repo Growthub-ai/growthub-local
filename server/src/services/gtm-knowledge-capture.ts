@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import type {
   GtmCampaignMetadata,
   GtmCampaignKnowledgePolicy,
@@ -218,4 +219,181 @@ export function readGtmCampaignRunContext(
       ? (rawPolicy as GtmCampaignKnowledgePolicy)
       : null;
   return { ticketId, phaseTag, knowledgePolicy };
+}
+
+// ---------------------------------------------------------------------------
+// Skill knowledge items — skills stored as GtmKnowledgeItemRecord entries
+// ---------------------------------------------------------------------------
+
+export interface SkillItemInput {
+  name: string;
+  description: string;
+  body: string;
+  source?: "paperclip" | "filesystem" | "custom";
+}
+
+export interface SkillItemView {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  source: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function isSkillItem(item: GtmKnowledgeItemRecord): boolean {
+  return item.sourceType === "skill" || item.metadata.origin === "skill";
+}
+
+function toSkillView(item: GtmKnowledgeItemRecord): SkillItemView {
+  return {
+    id: item.id,
+    name: item.fileName,
+    description: item.metadata.notes ?? "",
+    body: item.storagePath, // body stored inline in storagePath for skills
+    source: item.metadata.connector_type ?? "custom",
+    isActive: item.isActive,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+export function listSkillKnowledgeItems(): SkillItemView[] {
+  const state = readGtmState();
+  return state.knowledge.items
+    .filter((item) => isSkillItem(item) && item.isActive)
+    .map(toSkillView);
+}
+
+export function getSkillKnowledgeItem(itemId: string): SkillItemView | null {
+  const state = readGtmState();
+  const item = state.knowledge.items.find((i) => i.id === itemId && isSkillItem(i));
+  return item ? toSkillView(item) : null;
+}
+
+export function createSkillKnowledgeItem(input: SkillItemInput): SkillItemView {
+  const now = new Date().toISOString();
+  const itemId = randomUUID();
+  const source = input.source ?? "custom";
+
+  const item: GtmKnowledgeItemRecord = {
+    id: itemId,
+    agentSlug: "workspace",
+    compressed: false,
+    createdAt: now,
+    fileName: input.name,
+    isActive: true,
+    itemCount: 1,
+    metadata: {
+      origin: "skill",
+      connector_type: source,
+      notes: truncateSummary(input.description, 500),
+    },
+    sourceType: "skill",
+    storagePath: input.body, // store body inline
+    updatedAt: now,
+    userId: "system",
+  };
+
+  const state = readGtmState();
+  state.knowledge.items.push(item);
+  writeGtmState(state);
+
+  logger.info({ itemId, name: input.name, source }, "Skill knowledge item created");
+  return toSkillView(item);
+}
+
+export function updateSkillKnowledgeItem(
+  itemId: string,
+  patch: Partial<SkillItemInput>,
+): SkillItemView | null {
+  const state = readGtmState();
+  const idx = state.knowledge.items.findIndex((i) => i.id === itemId && isSkillItem(i));
+  if (idx < 0) return null;
+
+  const now = new Date().toISOString();
+  const existing = state.knowledge.items[idx]!;
+  const updated: GtmKnowledgeItemRecord = {
+    ...existing,
+    updatedAt: now,
+    ...(patch.name !== undefined ? { fileName: patch.name } : {}),
+    ...(patch.body !== undefined ? { storagePath: patch.body } : {}),
+    metadata: {
+      ...existing.metadata,
+      ...(patch.description !== undefined ? { notes: truncateSummary(patch.description, 500) } : {}),
+      ...(patch.source !== undefined ? { connector_type: patch.source } : {}),
+    },
+  };
+  state.knowledge.items[idx] = updated;
+  writeGtmState(state);
+
+  logger.info({ itemId }, "Skill knowledge item updated");
+  return toSkillView(updated);
+}
+
+export function deleteSkillKnowledgeItem(itemId: string): boolean {
+  const state = readGtmState();
+  const idx = state.knowledge.items.findIndex((i) => i.id === itemId && isSkillItem(i));
+  if (idx < 0) return false;
+
+  state.knowledge.items[idx] = {
+    ...state.knowledge.items[idx]!,
+    isActive: false,
+    updatedAt: new Date().toISOString(),
+  };
+  writeGtmState(state);
+
+  logger.info({ itemId }, "Skill knowledge item deactivated");
+  return true;
+}
+
+export function seedSkillsFromFilesystem(): { seeded: number } {
+  const state = readGtmState();
+  const existingNames = new Set(
+    state.knowledge.items
+      .filter((i) => isSkillItem(i))
+      .map((i) => i.fileName),
+  );
+
+  let seeded = 0;
+
+  // Import from ~/.claude/skills/
+  const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+  const claudeSkillsDir = `${homeDir}/.claude/skills`;
+  try {
+    const entries = fs.readdirSync(claudeSkillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      if (entry.name.startsWith(".")) continue;
+      if (existingNames.has(entry.name)) continue;
+
+      const skillMdPath = `${claudeSkillsDir}/${entry.name}/SKILL.md`;
+      let body = "";
+      let description = "";
+      try {
+        body = fs.readFileSync(skillMdPath, "utf8");
+        const fmMatch = body.match(/^---\n([\s\S]*?)\n---/);
+        if (fmMatch) {
+          const descMatch = fmMatch[1]?.match(/^description:\s*["']?(.*?)["']?\s*$/m);
+          description = descMatch?.[1]?.trim() ?? "";
+        }
+      } catch { /* skip unreadable */ }
+
+      createSkillKnowledgeItem({
+        name: entry.name,
+        description,
+        body,
+        source: "filesystem",
+      });
+      existingNames.add(entry.name);
+      seeded++;
+    }
+  } catch { /* ~/.claude/skills/ doesn't exist — fine */ }
+
+  if (seeded > 0) {
+    logger.info({ seeded }, "Skills seeded from filesystem into knowledge items");
+  }
+  return { seeded };
 }

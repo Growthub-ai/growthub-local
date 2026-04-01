@@ -111,6 +111,8 @@ export const queryKeys = {
   org: (companyId: string) => ["org", companyId] as const,
   skills: {
     available: ["skills", "available"] as const,
+    list: ["skills", "list"] as const,
+    agent: (agentId: string) => ["skills", "agent", agentId] as const,
   },
   plugins: {
     all: ["plugins"] as const,
