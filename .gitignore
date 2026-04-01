@@ -16,3 +16,6 @@ SKILL.md
 .claude/settings.local.json
 .claude/projects/
 .claude/todos/
+
+# Internal architecture snapshot (super admin only — not for public repo)
+ARCHITECTURE.md

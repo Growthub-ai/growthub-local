@@ -53,6 +53,31 @@ This repo is the source of truth for:
 
 This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.
 
+### Worktree workflow
+
+Isolated development environments with their own database, ports, and session state:
+
+```bash
+growthub worktree:make my-feature
+# Creates git worktree → installs deps → seeds DB → bootstraps runtime → opens browser
+```
+
+Each worktree gets its own server port (3101+), embedded Postgres instance, and `.paperclip/config.json`. Your main instance stays untouched.
+
+### Testing PR changes
+
+To see a PR's UI/server changes live in the browser:
+
+```bash
+# Set the path to your local build environment (one-time)
+export GROWTHUB_CORE_PATH=/path/to/your/build/environment
+
+# Bootstrap syncs source, rebuilds UI, starts server, opens browser
+cd your-worktree && node scripts/worktree-bootstrap.mjs
+```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full testing and validation workflow.
+
 ## Contributing
 
 Growthub Local is open source and built to be extended — by humans and AI agents alike.

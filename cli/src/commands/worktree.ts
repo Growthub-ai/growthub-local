@@ -823,6 +823,17 @@ export async function worktreeMakeCommand(nameArg: string, opts: WorktreeMakeOpt
   } finally {
     process.chdir(originalCwd);
   }
+
+  // Run bootstrap to build linked packages and validate runtime readiness
+  const bootstrapScript = path.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
+  if (existsSync(bootstrapScript)) {
+    p.log.message(pc.dim(`Running worktree bootstrap in ${targetPath}...`));
+    try {
+      execFileSync("node", [bootstrapScript], { cwd: targetPath, stdio: "inherit" });
+    } catch (error) {
+      p.log.warning(`Bootstrap failed: ${extractExecSyncErrorMessage(error) ?? String(error)}`);
+    }
+  }
 }
 
 type WorktreeCleanupOptions = {

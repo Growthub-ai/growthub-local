@@ -88,6 +88,58 @@ When a PR merges to `main`, the pipeline automatically notifies the private mono
 
 ---
 
+## Worktree development
+
+For isolated testing with its own database, ports, and runtime:
+
+```bash
+# Create an isolated worktree from current branch
+growthub worktree:make my-feature
+
+# Or from a specific start point
+growthub worktree:make my-feature --start-point origin/feat/some-branch
+```
+
+This creates a git worktree, installs dependencies, seeds an isolated database, and runs the bootstrap pipeline. Each worktree gets its own server port (3101+) so it doesn't interfere with your main instance.
+
+### Testing PR changes in browser
+
+The bootstrap script automates the full PR → browser pipeline:
+
+```bash
+cd your-worktree
+node scripts/worktree-bootstrap.mjs
+```
+
+**What it does:**
+
+1. Validates worktree identity (`.paperclip/config.json`, `.git`, `cli/dist`)
+2. Detects changed files vs `origin/main`
+3. If `GROWTHUB_CORE_PATH` is set: syncs `ui/src/` and `server/src/` changes to the build environment, rebuilds the UI via vite, and swaps the built assets into `cli/dist/runtime/server/ui-dist/`
+4. Clears stale session state
+5. Starts the server on the worktree's configured port
+6. Opens the browser to the GTM/DX surface
+
+**Environment variables:**
+
+| Variable | Purpose |
+|---|---|
+| `GROWTHUB_CORE_PATH` | Path to a local build environment with vite/esbuild toolchain. Required for UI rebuilds from source. |
+
+Without `GROWTHUB_CORE_PATH`, the bootstrap uses the existing pre-built `cli/dist` — useful for testing server-only changes or validating the current shipped UI.
+
+### Pre-push validation
+
+Before pushing any branch:
+
+```bash
+bash scripts/pr-ready.sh
+```
+
+This validates worktree location, branch naming, remote origin, version sync, dist artifacts, and release contracts in one shot.
+
+---
+
 ## Release
 
 Releases are triggered manually by the maintainer only. Contributing a feature does not automatically publish it — the maintainer controls when stable versions ship to npm.
