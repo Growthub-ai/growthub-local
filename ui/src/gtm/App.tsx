@@ -1492,6 +1492,7 @@ function GtmSettingsPage() {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
+  const [connectorsModalOpen, setConnectorsModalOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceDescription, setWorkspaceDescription] = useState("");
   const [workspaceBrandColor, setWorkspaceBrandColor] = useState("");
@@ -1830,6 +1831,22 @@ function GtmSettingsPage() {
               </div>
             ))
           )}
+          <Button variant="outline" size="sm" onClick={() => setConnectorsModalOpen(true)}>
+            Manage Connectors
+          </Button>
+          <Dialog open={connectorsModalOpen} onOpenChange={setConnectorsModalOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Connectors</DialogTitle>
+                <DialogDescription>Connect external services to your Growthub workspace.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <p className="text-sm text-muted-foreground">
+                  Connector integrations will appear here. Configure GitHub Apps, CRMs, and other data sources.
+                </p>
+              </div>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
     </div>
