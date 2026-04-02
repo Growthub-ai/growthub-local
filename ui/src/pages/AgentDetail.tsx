@@ -66,9 +66,13 @@ import {
   ChevronDown,
   ArrowLeft,
   X,
+  FileUp,
+  Sparkles,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
+import { KnowledgeImportModal, type ImportedItem } from "../components/KnowledgeImportModal";
+import { SkillsShSkillPickerModal } from "../components/SkillsShSkillPickerModal";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
   isUuidLike,
@@ -1529,6 +1533,8 @@ function ConfigurationTab({
 
 function AgentSkillsSection({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
+  const [importOpen, setImportOpen] = useState(false);
+  const [skillsShOpen, setSkillsShOpen] = useState(false);
 
   const { data: allSkillsData, isLoading: loadingAll } = useQuery({
     queryKey: queryKeys.skills.list,
@@ -1559,11 +1565,36 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
     },
   });
 
+  const handleSkillImport = useCallback(async (items: ImportedItem[]) => {
+    for (const item of items) {
+      const skill = await agentsApi.createSkill({
+        name: item.name,
+        description: item.description,
+        body: item.body,
+      });
+      await agentsApi.addAgentSkill(agentId, skill.id);
+    }
+    queryClient.invalidateQueries({ queryKey: queryKeys.skills.list });
+    queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+  }, [agentId, queryClient]);
+
   const loading = loadingAll || loadingAgent;
 
   return (
     <div>
-      <h3 className="text-sm font-medium mb-3">Skills</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium">Skills</h3>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSkillsShOpen(true)} className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            Add from skills.sh
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} className="gap-1.5">
+            <FileUp className="h-3.5 w-3.5" />
+            Import Skill
+          </Button>
+        </div>
+      </div>
       <div className="border border-border rounded-lg p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
           Reusable instruction bundles assigned to this agent. Skills are shared across the workspace.
@@ -1644,6 +1675,23 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
           </>
         )}
       </div>
+
+      <KnowledgeImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        mode="skill"
+        onImport={handleSkillImport}
+      />
+
+      <SkillsShSkillPickerModal
+        open={skillsShOpen}
+        onOpenChange={setSkillsShOpen}
+        agentId={agentId}
+        onComplete={() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.skills.list });
+          queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+        }}
+      />
     </div>
   );
 }

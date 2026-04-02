@@ -170,6 +170,17 @@ export const agentsApi = {
     api.post<{ ok: true }>(`/agents/${agentId}/skills/${itemId}`, {}),
   removeAgentSkill: (agentId: string, itemId: string) =>
     api.delete<{ ok: true }>(`/agents/${agentId}/skills/${itemId}`),
+
+  // Skills.sh integration
+  searchSkillsSh: (query: string, owner?: string) => {
+    const params = new URLSearchParams({ query });
+    if (owner) params.set("owner", owner);
+    return api.get<{ success: boolean; items: SkillsShSearchResult[] }>(`/skills-sh/search?${params}`);
+  },
+  resolveSkillSh: (skill: SkillsShSearchResult) =>
+    api.post<{ success: boolean; snapshot: SkillsShSkillSnapshot }>("/skills-sh/resolve", { skill }),
+  createSkillSh: (agentId: string, skill: SkillsShSearchResult, label?: string) =>
+    api.post<{ success: boolean; item: Record<string, unknown>; snapshot: SkillsShSkillSnapshot }>("/skills-sh/create", { agent_slug: agentId, skill, label }),
 };
 
 export interface SkillItem {
@@ -189,4 +200,27 @@ export interface AvailableSkill {
   isPaperclipManaged: boolean;
   id?: string | null;
   source?: string;
+}
+
+export interface SkillsShSearchResult {
+  id: string;
+  owner: string;
+  repo: string;
+  skillName: string;
+  summary: string;
+  tags: string[];
+  installCommand: string;
+  skillUrl: string;
+  repoUrl?: string;
+  metrics?: { installs?: number; lastUpdated?: string };
+}
+
+export interface SkillsShSkillSnapshot {
+  meta: SkillsShSearchResult;
+  whenToUse: string;
+  instructions: string;
+  examples?: string[];
+  rawDocsExcerpt?: string;
+  fetchedAt: string;
+  directoryVersion: string;
 }

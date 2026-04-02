@@ -30,6 +30,8 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { gtmRoutes } from "./routes/gtm.js";
 import { skillRoutes } from "./routes/skills.js";
+import { knowledgeImportRoutes } from "./routes/knowledge-import.js";
+import { skillsShRoutes } from "./routes/skills-sh.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -306,6 +308,8 @@ export async function createApp(
     api.use("/gtm", gtmRoutes(db));
     api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
     api.use(skillRoutes(db));
+    api.use(knowledgeImportRoutes());
+    api.use("/skills-sh", skillsShRoutes());
   }
   if (opts.surfaceRuntime.capabilities.gtmEnabled) {
     api.use("/companies", companyRoutes(db));
@@ -336,6 +340,8 @@ export async function createApp(
     api.use("/gtm", gtmRoutes(db));
     api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
     api.use(skillRoutes(db));
+    api.use(knowledgeImportRoutes());
+    api.use("/skills-sh", skillsShRoutes());
   }
   api.use(
     accessRoutes(db, {
