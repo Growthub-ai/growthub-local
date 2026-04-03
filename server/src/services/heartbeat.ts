@@ -1956,15 +1956,6 @@ export function heartbeatService(db: Db) {
           executionWorkspacePreference: issueContext.executionWorkspacePreference,
         }
       : null;
-    // Guard: reject dispatch into un-bootstrapped worktrees
-    const workspaceCwd = resolvedWorkspace?.cwd;
-    if (workspaceCwd) {
-      const bootstrapMarker = path.join(workspaceCwd, ".paperclip", "config.json");
-      const markerExists = await fs.stat(bootstrapMarker).then(() => true, () => false);
-      if (!markerExists) {
-        throw new Error(`Workspace not bootstrapped at ${workspaceCwd} — run worktree:make first`);
-      }
-    }
 
     const existingExecutionWorkspace =
       issueRef?.executionWorkspaceId ? await executionWorkspacesSvc.getById(issueRef.executionWorkspaceId) : null;
