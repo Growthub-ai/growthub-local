@@ -152,6 +152,8 @@ export const agentsApi = {
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
   claudeLogout: (id: string, companyId?: string) =>
     api.post<{ ok: boolean; stdout: string; stderr: string }>(agentPath(id, companyId, "/claude-logout"), {}),
+  chromeReconnect: (id: string, companyId?: string) =>
+    api.post<{ ok: boolean; message: string }>(agentPath(id, companyId, "/chrome-reconnect"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 
