@@ -1564,6 +1564,25 @@ export function agentRoutes(db: Db) {
     }
   });
 
+  router.post("/agents/:id/chrome-reconnect", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+    assertCompanyAccess(req, agent.companyId);
+    try {
+      await execFileAsync("open", ["-a", "Google Chrome"]);
+      res.json({ ok: true, message: "Chrome opened. Click the Claude extension icon in the toolbar to reconnect." });
+    } catch {
+      try {
+        await execFileAsync("open", ["-a", "Chromium"]);
+        res.json({ ok: true, message: "Browser opened. Click the Claude extension icon in the toolbar to reconnect." });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : "Failed to open Chrome" });
+      }
+    }
+  });
+
   router.get("/companies/:companyId/heartbeat-runs", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

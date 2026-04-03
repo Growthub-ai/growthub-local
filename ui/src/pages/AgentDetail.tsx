@@ -1292,6 +1292,10 @@ function AgentConfigurePage({
 }) {
   const queryClient = useQueryClient();
   const [revisionsOpen, setRevisionsOpen] = useState(false);
+  const hasChromeEnabled = (agent.adapterConfig as Record<string, unknown> | null)?.chrome === true;
+  const chromeReconnectFromConfig = useMutation({
+    mutationFn: () => agentsApi.chromeReconnect(agent.id, companyId),
+  });
 
   const { data: configRevisions } = useQuery({
     queryKey: queryKeys.agents.configRevisions(agent.id),
@@ -1324,6 +1328,14 @@ function AgentConfigurePage({
         <h3 className="text-sm font-medium mb-3">API Keys</h3>
         <KeysTab agentId={agentId} companyId={companyId} />
       </div>
+
+      {hasChromeEnabled && (
+        <ChromeExtensionPanel
+          onReconnect={() => chromeReconnectFromConfig.mutate()}
+          isPending={chromeReconnectFromConfig.isPending}
+          isSuccess={chromeReconnectFromConfig.isSuccess}
+        />
+      )}
 
       {/* Configuration Revisions — collapsible at the bottom */}
       <div>
@@ -1527,6 +1539,67 @@ function ConfigurationTab({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChromeExtensionPanel({
+  onReconnect,
+  isPending,
+  isSuccess,
+}: {
+  onReconnect: () => void;
+  isPending: boolean;
+  isSuccess: boolean;
+}) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-border">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium">Chrome Extension</p>
+          <p className="text-xs text-muted-foreground">
+            {isSuccess ? "Chrome opened — click the Claude extension icon in the toolbar." : "Reconnect the Claude Chrome extension if it's disconnected."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onReconnect} disabled={isPending}>
+            {isPending ? "Opening Chrome..." : "Reconnect Chrome"}
+          </Button>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setHelpOpen((v) => !v)}
+          >
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", helpOpen && "rotate-180")} />
+            Help
+          </button>
+        </div>
+      </div>
+      {helpOpen && (
+        <div className="border-t border-border px-4 pb-4 pt-3 space-y-3 text-xs text-muted-foreground">
+          <div className="space-y-1">
+            <p className="font-medium text-foreground">If Chrome extension shows disconnected:</p>
+            <ol className="list-decimal list-inside space-y-1 pl-1">
+              <li>Click <strong className="text-foreground">Reconnect Chrome</strong> (top right)</li>
+              <li>Make sure you're on the correct Chrome profile — the one with the Claude extension installed</li>
+              <li>If prompted in Chrome, click <strong className="text-foreground">Connect</strong> in the extension popup</li>
+            </ol>
+          </div>
+          <div className="space-y-1">
+            <p className="font-medium text-foreground">If it still won't connect:</p>
+            <ol className="list-decimal list-inside space-y-1 pl-1">
+              <li>Open the <strong className="text-foreground">Claude desktop app</strong> first (just once, to complete auth)</li>
+              <li>Come back to this page and click <strong className="text-foreground">Reconnect Chrome</strong> again</li>
+              <li>Verify you're in the right Chrome profile — check the profile icon in Chrome's top-right corner</li>
+            </ol>
+          </div>
+          <div className="rounded-md bg-muted/40 border border-border px-3 py-2 space-y-1">
+            <p className="font-medium text-foreground">Order matters:</p>
+            <p>1. Right Chrome profile → 2. Claude app opened at least once → 3. Click Reconnect Chrome</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2023,6 +2096,9 @@ function RunDetail({
     mutationFn: () => agentsApi.claudeLogout(run.agentId, run.companyId ?? undefined),
     onSuccess: () => { setClaudeLoginResult(null); },
   });
+  const chromeReconnect = useMutation({
+    mutationFn: () => agentsApi.chromeReconnect(run.agentId, run.companyId ?? undefined),
+  });
 
   const isRunning = run.status === "running" && !!run.startedAt && !run.finishedAt;
   const [elapsedSec, setElapsedSec] = useState<number>(() => {
@@ -2203,6 +2279,27 @@ function RunDetail({
                       </pre>
                     )}
                   </>
+                )}
+              </div>
+            )}
+            {run.status === "failed" && (run.error ?? "").toLowerCase().includes("no chrome extension") && (
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => chromeReconnect.mutate()}
+                  disabled={chromeReconnect.isPending}
+                >
+                  {chromeReconnect.isPending ? "Opening Chrome..." : "Reconnect Chrome Extension"}
+                </Button>
+                {chromeReconnect.isSuccess && (
+                  <p className="text-xs text-muted-foreground rounded-md border border-border bg-muted/40 px-3 py-2">
+                    Chrome opened. Click the <strong>Claude extension icon</strong> in the toolbar to reconnect, then retry.
+                  </p>
+                )}
+                {chromeReconnect.isError && (
+                  <p className="text-xs text-destructive">{chromeReconnect.error instanceof Error ? chromeReconnect.error.message : "Failed to open Chrome"}</p>
                 )}
               </div>
             )}
