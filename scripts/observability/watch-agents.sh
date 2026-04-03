@@ -1,212 +1,198 @@
 #!/usr/bin/env bash
 # =============================================================================
-# watch-agents.sh — Live observability snapshot for all running Growthub agents
-# Usage: bash scripts/observability/watch-agents.sh [COMPANY_ID]
+# watch-agents.sh — Full live observability for all Growthub agents
+# Usage: bash scripts/observability/watch-agents.sh [COMPANY_ID] [--today]
 # =============================================================================
 
 COMPANY_ID="${1:-97a3a131-1041-4c9d-abd8-8c63c67e066a}"
-LOG_DIR="$HOME/.paperclip/instances/default/data/run-logs/$COMPANY_ID"
-SERVER_LOG="$HOME/.paperclip/instances/default/logs/server.log"
+FILTER="${2:-}"
+LOG_DIR="$HOME/.paperclip/instances/default/data/run-logs"
 SNAPSHOT_DIR="$HOME/.paperclip/instances/default/observability-snapshots"
-
 mkdir -p "$SNAPSHOT_DIR"
 
 echo ""
 echo "============================================================"
 echo "  GROWTHUB AGENT OBSERVABILITY"
-echo "  Company: $COMPANY_ID"
-echo "  Time:    $(date)"
+echo "  Time: $(date)"
+echo "  Filter: ${FILTER:-all-time}"
 echo "============================================================"
 echo ""
 
-# ── 1. Runtime processes ──────────────────────────────────────────────────────
-echo "## RUNTIME PROCESSES"
+# ── 1. System processes ───────────────────────────────────────────────────────
+echo "## SYSTEM"
 node_pid=$(pgrep -f 'cli/dist/index.js run' | head -1)
-if [ -n "$node_pid" ]; then
-  echo "  ✓ Paperclip: PID $node_pid"
-else
-  echo "  ✗ Paperclip: NOT RUNNING"
-fi
-
-# Chrome renderer processes — agents live here
+[ -n "$node_pid" ] && echo "  ✓ Paperclip runtime: PID $node_pid" || echo "  ✗ Paperclip runtime: NOT RUNNING"
 chrome_count=$(ps aux | grep 'Chrome Helper (Renderer)' | grep -v grep | wc -l | tr -d ' ')
-echo "  Chrome renderers: $chrome_count"
-ps aux | grep 'Chrome Helper (Renderer)' | grep -v grep | awk '$3 > 40 {printf "    PID %-6s CPU: %-6s MEM: %s%%\n", $2, $3"%", $4}' | sort -t: -k2 -rn | head -5
-
-# Other agent-relevant apps (from osascript if available)
+echo "  Chrome renderers: $chrome_count active"
+ps aux | grep 'Chrome Helper (Renderer)' | grep -v grep | awk '$3 > 40 {printf "  HIGH CPU → PID %-6s  CPU:%-5s  MEM:%s%%\n",$2,$3"%",$4}' | sort -t: -k2 -rn | head -4
 running_apps=$(osascript -e 'tell application "System Events" to get name of every process whose background only is false' 2>/dev/null | tr ',' '\n' | tr -d ' ' | sort | tr '\n' ' ')
-echo "  Active apps: $running_apps"
+echo "  Apps: $running_apps"
 echo ""
 
-# ── 2. Active run logs ────────────────────────────────────────────────────────
-echo "## ACTIVE RUNS"
-if [ -d "$LOG_DIR" ]; then
-  find "$LOG_DIR" -name "*.ndjson" -newer /tmp/.agent-obs-mark 2>/dev/null | head -1 > /dev/null
-  find "$LOG_DIR" -name "*.ndjson" | while read f; do
-    agent_id=$(echo "$f" | awk -F'/' '{print $(NF-1)}')
-    run_id=$(basename "$f" .ndjson)
-    lines=$(wc -l < "$f" | tr -d ' ')
-    size=$(du -sh "$f" 2>/dev/null | cut -f1)
-    modified=$(stat -f "%Sm" -t "%H:%M:%S" "$f" 2>/dev/null || stat -c "%y" "$f" 2>/dev/null | cut -d'.' -f1 | cut -d' ' -f2)
-    # Determine agent name from known IDs
-    case "$agent_id" in
-      d898be8d*) aname="LeadHunter" ;;
-      4b993ee8*) aname="LinkedInSDR" ;;
-      f9af5a73*) aname="CEO" ;;
-      deb4a632*) aname="SocialReply" ;;
-      *) aname="${agent_id:0:8}" ;;
-    esac
-    echo "  [$aname] run=${run_id:0:8}  events=$lines  size=$size  last=$modified"
-  done
-else
-  echo "  No run logs at $LOG_DIR"
-fi
-echo ""
+# ── 2. Full agent deep-dive (Python) ─────────────────────────────────────────
+python3 - "$LOG_DIR" "$COMPANY_ID" "$FILTER" << 'PYEOF'
+import json, re, os, sys
+from datetime import datetime
+from collections import Counter
 
-# ── 3. Behavioral trace — last 10 actions per active run ──────────────────────
-echo "## BEHAVIORAL TRACE (last 10 actions per run)"
-echo ""
-if [ -d "$LOG_DIR" ]; then
-  # Only show runs modified in last 2 hours
-  find "$LOG_DIR" -name "*.ndjson" -newer /tmp/.obs-2h 2>/dev/null | head -1 > /dev/null
-  find "$LOG_DIR" -name "*.ndjson" | while read f; do
-    agent_id=$(echo "$f" | awk -F'/' '{print $(NF-1)}')
-    run_id=$(basename "$f" .ndjson)
-    case "$agent_id" in
-      d898be8d*) aname="LeadHunter" ;;
-      4b993ee8*) aname="LinkedInSDR" ;;
-      f9af5a73*) aname="CEO" ;;
-      deb4a632*) aname="SocialReply" ;;
-      *) aname="${agent_id:0:8}" ;;
-    esac
-    echo "  [$aname / ${run_id:0:8}]"
-    python3 - "$f" "$aname" << 'PYEOF'
-import sys, json, re
+LOG_DIR, COMPANY_ID, FILTER = sys.argv[1], sys.argv[2], sys.argv[3]
 
-path, agent = sys.argv[1], sys.argv[2]
-lines = open(path).readlines()
-# Reconstruct stdout stream from chunk format
-full_text = ''.join(json.loads(l.strip()).get('chunk','') for l in lines)
-
-actions = []
-# Extract embedded JSON events from stdout
-for raw in re.split(r'\n(?=\{"type")', full_text):
-    raw = raw.strip()
-    if not raw.startswith('{"type"'):
-        continue
-    try:
-        obj = json.loads(raw)
-        etype = obj.get('type','')
-        ts = obj.get('timestamp','')
-        t = ts[11:19] if len(ts) > 18 else ''
-
-        if etype == 'assistant':
-            for c in obj.get('message',{}).get('content',[]):
-                if c.get('type') == 'tool_use':
-                    name = c.get('name','')
-                    inp = c.get('input',{})
-                    tab = f"tab={inp.get('tabId','')} " if isinstance(inp,dict) and inp.get('tabId') else ''
-                    if isinstance(inp, dict):
-                        detail = (inp.get('url') or inp.get('command','')[:60] or
-                                  inp.get('text','')[:60] or inp.get('action','') or str(inp)[:60])
-                    else:
-                        detail = str(inp)[:60]
-                    # Categorize by application context
-                    if 'linkedin.com' in str(detail):
-                        app = 'LinkedIn'
-                    elif 'chrome' in name.lower() or 'navigate' in name.lower():
-                        app = 'Chrome'
-                    elif 'bash' in name.lower():
-                        app = 'Shell'
-                    else:
-                        app = 'MCP'
-                    actions.append(f"    {t} [{app}] {name}: {str(detail)[:70]}")
-                elif c.get('type') == 'text':
-                    txt = c.get('text','').strip()
-                    if txt and not txt.startswith('Tab Context'):
-                        actions.append(f"    {t} [TEXT] {txt[:80]}")
-
-        elif etype == 'user':
-            ts = obj.get('timestamp','')
-            t = ts[11:19] if len(ts) > 18 else ''
-            for c in obj.get('message',{}).get('content',[]):
-                if isinstance(c,dict) and c.get('type')=='tool_result':
-                    content = c.get('content','')
-                    if isinstance(content, list):
-                        for r in content:
-                            if isinstance(r,dict):
-                                txt = r.get('text','')
-                                if txt and 'linkedin.com/in/' in txt:
-                                    profile = txt.split('linkedin.com/in/')[1].split('/')[0].split('"')[0]
-                                    actions.append(f"    {t}   ↳ profile: /in/{profile}")
-                                    break
-    except:
-        pass
-
-for a in actions[-10:]:
-    print(a)
-PYEOF
-    echo ""
-  done
-fi
-
-# ── 4. Cross-agent correlation ────────────────────────────────────────────────
-echo "## CROSS-AGENT SUMMARY"
-python3 - "$LOG_DIR" << 'PYEOF'
-import sys, json, re, os
-from collections import defaultdict, Counter
-
-log_dir = sys.argv[1]
-if not os.path.isdir(log_dir):
-    print("  No log directory found")
-    sys.exit(0)
-
-agent_names = {
-    'd898be8d': 'LeadHunter',
-    '4b993ee8': 'LinkedInSDR',
+KNOWN = {
+    'd898be8d': 'Lead Hunter',
+    '4b993ee8': 'LinkedIn SDR',
     'f9af5a73': 'CEO',
-    'deb4a632': 'SocialReply',
+    'deb4a632': 'Social Reply',
+    'a9de31a0': 'Founding Engineer',
+    '204dbfac': 'Founding Engineer',
+    'b0172290': 'Agent/b017',
+    '1c39a075': 'Agent/1c39',
 }
 
-summary = {}
-for agent_id in os.listdir(log_dir):
-    adir = os.path.join(log_dir, agent_id)
-    if not os.path.isdir(adir):
-        continue
-    aname = agent_names.get(agent_id[:8], agent_id[:8])
-    for run_file in sorted(os.listdir(adir))[-1:]:  # most recent run only
-        path = os.path.join(adir, run_file)
-        lines = open(path).readlines()
-        full_text = ''.join(json.loads(l.strip()).get('chunk','') for l in lines)
-        
-        tools = re.findall(r'"name":"([^"]+)"', full_text)
-        profiles = list(dict.fromkeys(re.findall(r'linkedin\.com/in/([a-z0-9\-]+)', full_text)))
-        timestamps = re.findall(r'"timestamp":"(2026-[^"]+)"', full_text)
-        
-        duration = ''
-        if len(timestamps) >= 2:
-            from datetime import datetime
+def detect_app(tool_name, detail):
+    d = str(detail).lower()
+    if 'linkedin' in d: return 'LinkedIn'
+    if 'leadshark' in d or 'apex.lead' in d: return 'LeadShark'
+    if 'chrome' in tool_name.lower() or 'navigate' in tool_name.lower() or 'javascript' in tool_name.lower() or 'screenshot' in tool_name.lower(): return 'Chrome'
+    if 'supabase' in tool_name.lower(): return 'Supabase'
+    if 'gmail' in tool_name.lower(): return 'Gmail'
+    if 'calendar' in tool_name.lower(): return 'Calendar'
+    if 'slack' in tool_name.lower(): return 'Slack'
+    if 'bash' in tool_name.lower(): return 'Shell'
+    return 'MCP'
+
+today_prefix = '2026-04-03T'
+all_runs = []
+
+for company_id in os.listdir(LOG_DIR):
+    if COMPANY_ID != 'all' and company_id != COMPANY_ID: continue
+    cdir = os.path.join(LOG_DIR, company_id)
+    if not os.path.isdir(cdir): continue
+    for agent_id in os.listdir(cdir):
+        adir = os.path.join(cdir, agent_id)
+        if not os.path.isdir(adir): continue
+        aname = KNOWN.get(agent_id[:8], agent_id[:8])
+        for run_file in sorted(os.listdir(adir)):
+            path = os.path.join(adir, run_file)
+            lines = open(path).readlines()
+            full_text = ''.join(json.loads(l.strip()).get('chunk','') for l in lines)
+
+            ts_pattern = today_prefix if FILTER == '--today' else '2026-'
+            timestamps = re.findall(f'"timestamp":"({ts_pattern}[^"]+)"', full_text)
+            if not timestamps: continue
+
+            t0, t1 = timestamps[0], timestamps[-1]
             try:
-                t0 = datetime.fromisoformat(timestamps[0].replace('Z','+00:00'))
-                t1 = datetime.fromisoformat(timestamps[-1].replace('Z','+00:00'))
-                mins = round((t1-t0).seconds/60, 1)
-                duration = f"{mins}min"
+                dt0 = datetime.fromisoformat(t0.replace('Z','+00:00'))
+                dt1 = datetime.fromisoformat(t1.replace('Z','+00:00'))
+                duration_min = round((dt1-dt0).seconds/60, 1)
             except:
-                pass
-        
-        tool_counts = Counter(tools)
-        top_tools = ', '.join(f"{v}x {k.split('__')[-1]}" for k,v in tool_counts.most_common(3))
-        
-        print(f"  {aname:14} run={run_file[:8]}  duration={duration:8}  tools={len(tools):3}  profiles={len(profiles):3}")
-        print(f"    top tools: {top_tools}")
-        if profiles:
-            print(f"    profiles: {', '.join(profiles[:5])}{'...' if len(profiles)>5 else ''}")
-        print()
+                duration_min = 0
+
+            # Tool calls with app context
+            tool_events = []
+            for raw in re.split(r'\n(?=\{"type")', full_text):
+                if not raw.strip().startswith('{"type"'): continue
+                try:
+                    obj = json.loads(raw.strip())
+                    if obj.get('type') == 'assistant':
+                        for c in obj.get('message',{}).get('content',[]):
+                            if c.get('type') == 'tool_use':
+                                name = c.get('name','')
+                                inp = c.get('input',{})
+                                tab = inp.get('tabId','') if isinstance(inp,dict) else ''
+                                detail = ''
+                                if isinstance(inp, dict):
+                                    detail = (inp.get('url') or inp.get('command','')[:80] or
+                                              inp.get('text','')[:80] or inp.get('action','') or str(inp)[:80])
+                                app = detect_app(name, detail)
+                                short = name.split('__')[-1] if '__' in name else name
+                                tool_events.append((app, short, str(detail)[:100], tab))
+                except: pass
+
+            # Agent spoken text (deduplicated)
+            spoken = []
+            seen_keys = set()
+            for raw in re.split(r'\n(?=\{"type")', full_text):
+                if not raw.strip().startswith('{"type"'): continue
+                try:
+                    obj = json.loads(raw.strip())
+                    if obj.get('type') == 'assistant':
+                        for c in obj.get('message',{}).get('content',[]):
+                            if c.get('type') == 'text':
+                                t = c.get('text','').strip()
+                                t = t.replace('\\n',' ').replace('\\t',' ')
+                                key = t[:50]
+                                if len(t) > 50 and 'Tab Context' not in t and key not in seen_keys:
+                                    seen_keys.add(key)
+                                    spoken.append(t[:180])
+                except: pass
+
+            # Profiles
+            profiles = list(dict.fromkeys(re.findall(r'linkedin\.com/in/([a-z0-9\-]+)', full_text)))
+            size_kb = round(os.path.getsize(path)/1024)
+            active = t1 > '2026-04-03T05:10:00'
+
+            all_runs.append({
+                'agent': aname, 'run': run_file[:8],
+                't0': t0[11:19], 't1': t1[11:19], 'date': t0[:10],
+                'duration': duration_min, 'tools': tool_events,
+                'profiles': profiles, 'spoken': spoken,
+                'events': len(lines), 'size_kb': size_kb, 'active': active,
+            })
+
+all_runs.sort(key=lambda x: x['t0'])
+
+# Print each meaningful run
+print("## AGENT RUN DETAILS")
+print()
+for r in all_runs:
+    if len(r['tools']) < 8 and len(r['profiles']) == 0: continue
+    status = '🟢 ACTIVE NOW' if r['active'] else '✅ DONE'
+    tool_counts = Counter(app for app,_,_,_ in r['tools'])
+    top_apps = ' | '.join(f"{app}:{n}" for app,n in tool_counts.most_common(5))
+    print(f"  {'─'*61}")
+    print(f"  {r['agent']}  [{r['date']} {r['t0']}→{r['t1']} EDT]  {r['duration']}min  {status}")
+    print(f"  {len(r['tools'])} tool calls  {len(r['profiles'])} profiles  {r['events']} events  {r['size_kb']}KB")
+    print(f"  Apps: {top_apps}")
+    if r['profiles']:
+        shown = r['profiles'][:12]
+        extra = len(r['profiles'])-12
+        more = f' +{extra} more' if extra > 0 else ''
+        print(f"  Profiles: {', '.join(shown)}{more}")
+    if r['spoken']:
+        print(f"  What they said:")
+        for s in r['spoken'][:6]:
+            print(f"    › {s[:150]}")
+    print()
+
+# Cross-agent summary
+print()
+print("## CROSS-AGENT SUMMARY")
+print()
+from collections import defaultdict
+by_agent = defaultdict(lambda: {'runs':0,'tools':0,'profiles':set(),'spoken':[],'size_kb':0})
+for r in all_runs:
+    a = by_agent[r['agent']]
+    a['runs'] += 1
+    a['tools'] += len(r['tools'])
+    a['profiles'].update(r['profiles'])
+    a['spoken'].extend(r['spoken'])
+    a['size_kb'] += r['size_kb']
+
+all_profiles_today = set()
+total_tools = 0
+for agent, d in sorted(by_agent.items(), key=lambda x: -x[1]['tools']):
+    all_profiles_today.update(d['profiles'])
+    total_tools += d['tools']
+    print(f"  {agent:22}  runs={d['runs']}  tools={d['tools']:4}  profiles={len(d['profiles']):3}  data={d['size_kb']}KB")
+
+print()
+print(f"  TOTAL TOOL CALLS:      {total_tools}")
+print(f"  TOTAL UNIQUE PROFILES: {len(all_profiles_today)}")
+print(f"  TOTAL RUNS:            {len(all_runs)}")
 PYEOF
 
-# ── 5. Save snapshot ──────────────────────────────────────────────────────────
 SNAP="$SNAPSHOT_DIR/snapshot-$(date +%Y%m%d-%H%M%S).txt"
-echo "============================================================"
-echo "Snapshot → $SNAP"
-bash "$0" "$COMPANY_ID" > "$SNAP" 2>&1 &
-echo "============================================================"
+bash "$0" "$COMPANY_ID" "$FILTER" > "$SNAP" 2>&1 &
+echo ""
+echo "  Snapshot → $SNAP"

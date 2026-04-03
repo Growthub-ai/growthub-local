@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
 # =============================================================================
-# tail-run.sh — Live-stream a specific agent run with behavioral correlation
+# tail-run.sh — Live-stream a specific agent run with full behavioral detail
 # Usage:
-#   bash scripts/observability/tail-run.sh                     # list all runs
-#   bash scripts/observability/tail-run.sh d898be8d f8a2f45f  # stream specific
-#   bash scripts/observability/tail-run.sh d898be8d            # stream latest
+#   bash scripts/observability/tail-run.sh                      # list all runs
+#   bash scripts/observability/tail-run.sh d898be8d             # stream latest for agent
+#   bash scripts/observability/tail-run.sh d898be8d f8a2f45f   # stream specific run
 # =============================================================================
 
-COMPANY_ID="${3:-97a3a131-1041-4c9d-abd8-8c63c67e066a}"
-LOG_DIR="$HOME/.paperclip/instances/default/data/run-logs/$COMPANY_ID"
-
+LOG_DIR="$HOME/.paperclip/instances/default/data/run-logs"
+COMPANY_ID="97a3a131-1041-4c9d-abd8-8c63c67e066a"
 AGENT_PARTIAL="$1"
 RUN_PARTIAL="$2"
 
-agent_names() {
-  case "$1" in
-    d898be8d*) echo "LeadHunter" ;;
-    4b993ee8*) echo "LinkedInSDR" ;;
-    f9af5a73*) echo "CEO" ;;
-    deb4a632*) echo "SocialReply" ;;
+KNOWN_d898be8d="Lead Hunter"
+KNOWN_4b993ee8="LinkedIn SDR"
+KNOWN_f9af5a73="CEO"
+KNOWN_deb4a632="Social Reply"
+
+agent_name() {
+  case "${1:0:8}" in
+    d898be8d) echo "Lead Hunter" ;;
+    4b993ee8) echo "LinkedIn SDR" ;;
+    f9af5a73) echo "CEO" ;;
+    deb4a632) echo "Social Reply" ;;
     *) echo "${1:0:8}" ;;
   esac
 }
@@ -26,28 +30,51 @@ agent_names() {
 # No args — list all runs
 if [ -z "$AGENT_PARTIAL" ]; then
   echo ""
-  echo "Available runs (most recent last):"
+  echo "All runs (sorted by first activity):"
   echo ""
-  find "$LOG_DIR" -name "*.ndjson" | sort | while read f; do
-    agent=$(echo "$f" | awk -F'/' '{print $(NF-1)}')
-    run=$(basename "$f" .ndjson)
-    lines=$(wc -l < "$f" | tr -d ' ')
-    size=$(du -sh "$f" 2>/dev/null | cut -f1)
-    modified=$(stat -f "%Sm" -t "%H:%M:%S" "$f" 2>/dev/null || stat -c "%y" "$f" 2>/dev/null | cut -d'.' -f1 | cut -d' ' -f2)
-    aname=$(agent_names "$agent")
-    echo "  $aname   agent=${agent:0:8}  run=${run:0:8}  events=$lines  size=$size  last=$modified"
-  done
+  python3 - "$LOG_DIR" "$COMPANY_ID" << 'PYEOF'
+import json, re, os, sys
+from collections import Counter
+
+LOG_DIR, COMPANY_ID = sys.argv[1], sys.argv[2]
+KNOWN = {'d898be8d':'Lead Hunter','4b993ee8':'LinkedIn SDR','f9af5a73':'CEO','deb4a632':'Social Reply'}
+
+runs = []
+cdir = os.path.join(LOG_DIR, COMPANY_ID)
+for agent_id in os.listdir(cdir):
+    adir = os.path.join(cdir, agent_id)
+    if not os.path.isdir(adir): continue
+    aname = KNOWN.get(agent_id[:8], agent_id[:8])
+    for run_file in os.listdir(adir):
+        path = os.path.join(adir, run_file)
+        lines = open(path).readlines()
+        full_text = ''.join(json.loads(l.strip()).get('chunk','') for l in lines)
+        timestamps = re.findall(r'"timestamp":"(2026-[^"]+)"', full_text)
+        t0 = timestamps[0][11:19] if timestamps else '?'
+        t1 = timestamps[-1][11:19] if timestamps else '?'
+        date = timestamps[0][:10] if timestamps else '?'
+        tools = re.findall(r'"name":"([^"]+)"', full_text)
+        profiles = list(dict.fromkeys(re.findall(r'linkedin\.com/in/([a-z0-9\-]+)', full_text)))
+        size = round(os.path.getsize(path)/1024)
+        active = timestamps[-1] > '2026-04-03T05:10:00' if timestamps else False
+        runs.append((timestamps[0] if timestamps else '', aname, run_file[:8], date, t0, t1, len(lines), len(tools), len(profiles), size, active))
+
+runs.sort()
+for ts, aname, run, date, t0, t1, events, tools, profiles, size, active in runs:
+    if events < 5: continue
+    flag = ' 🟢' if active else ''
+    print(f"  {aname:14} run={run}  {date} {t0}-{t1}  events={events:4}  tools={tools:4}  profiles={profiles:3}  {size}KB{flag}")
+PYEOF
   echo ""
   echo "Usage: bash scripts/observability/tail-run.sh <agent_prefix> [run_prefix]"
   exit 0
 fi
 
-# Find log file
+# Find file
 if [ -n "$RUN_PARTIAL" ]; then
-  LOG_FILE=$(find "$LOG_DIR" -name "*.ndjson" | grep "$AGENT_PARTIAL" | grep "$RUN_PARTIAL" | head -1)
+  LOG_FILE=$(find "$LOG_DIR/$COMPANY_ID" -name "*.ndjson" | grep "$AGENT_PARTIAL" | grep "$RUN_PARTIAL" | head -1)
 else
-  # Latest run for this agent
-  LOG_FILE=$(find "$LOG_DIR" -name "*.ndjson" | grep "$AGENT_PARTIAL" | sort | tail -1)
+  LOG_FILE=$(find "$LOG_DIR/$COMPANY_ID" -name "*.ndjson" | grep "$AGENT_PARTIAL" | sort | tail -1)
 fi
 
 if [ -z "$LOG_FILE" ]; then
@@ -57,53 +84,39 @@ fi
 
 agent_id=$(echo "$LOG_FILE" | awk -F'/' '{print $(NF-1)}')
 run_id=$(basename "$LOG_FILE" .ndjson)
-aname=$(agent_names "$agent_id")
+aname=$(agent_name "$agent_id")
 
 echo ""
 echo "============================================================"
-echo "  STREAMING: $aname"
-echo "  Agent: $agent_id"
-echo "  Run:   $run_id"
-echo "  File:  $LOG_FILE"
+echo "  $aname  |  run: $run_id"
+echo "  $LOG_FILE"
 echo "============================================================"
 echo ""
 
-# First print historical content, then follow
-python3 - "$LOG_FILE" << 'PYEOF'
-import sys, json, re, os, time
+python3 - "$LOG_FILE" "$aname" << 'PYEOF'
+import sys, json, re, time, os
 
-path = sys.argv[1]
+path, agent = sys.argv[1], sys.argv[2]
 
-# App context detector
 def detect_app(tool_name, detail):
-    detail_lower = str(detail).lower()
-    if 'linkedin' in detail_lower:
-        return 'LinkedIn'
-    if 'chrome' in tool_name.lower() or 'navigate' in tool_name.lower() or 'javascript' in tool_name.lower():
-        return 'Chrome'
-    if 'bash' in tool_name.lower():
-        return 'Shell/API'
-    if 'supabase' in tool_name.lower():
-        return 'Supabase'
-    if 'gmail' in tool_name.lower():
-        return 'Gmail'
-    if 'calendar' in tool_name.lower():
-        return 'Calendar'
-    if 'slack' in tool_name.lower():
-        return 'Slack'
+    d = str(detail).lower()
+    if 'linkedin' in d: return 'LinkedIn'
+    if 'leadshark' in d or 'apex.lead' in d: return 'LeadShark'
+    if 'chrome' in tool_name.lower() or 'navigate' in tool_name.lower() or 'javascript' in tool_name.lower(): return 'Chrome'
+    if 'screenshot' in tool_name.lower() or 'computer' in tool_name.lower(): return 'Screen'
+    if 'supabase' in tool_name.lower(): return 'Supabase'
+    if 'gmail' in tool_name.lower(): return 'Gmail'
+    if 'bash' in tool_name.lower(): return 'Shell'
     return 'MCP'
 
-def parse_and_print(lines, seen_count=0):
+def parse_events(lines, start_from=0):
     full_text = ''.join(json.loads(l.strip()).get('chunk','') for l in lines)
     events = list(re.split(r'\n(?=\{"type")', full_text))
-    
-    printed = 0
+    out = []
     for i, raw in enumerate(events):
+        if i < start_from: continue
         raw = raw.strip()
-        if not raw.startswith('{"type"'):
-            continue
-        if i < seen_count:
-            continue
+        if not raw.startswith('{"type"'): continue
         try:
             obj = json.loads(raw)
             etype = obj.get('type','')
@@ -117,24 +130,21 @@ def parse_and_print(lines, seen_count=0):
                         name = c.get('name','')
                         inp = c.get('input',{})
                         tab = f" tab={inp.get('tabId','')}" if isinstance(inp,dict) and inp.get('tabId') else ''
+                        detail = ''
                         if isinstance(inp, dict):
                             detail = (inp.get('url') or inp.get('command','')[:80] or
                                       inp.get('text','')[:80] or inp.get('action','') or str(inp)[:80])
-                        else:
-                            detail = str(inp)[:80]
                         app = detect_app(name, detail)
-                        short_name = name.split('__')[-1] if '__' in name else name
-                        print(f"  {t} [{app:10}]{tab} → {short_name}: {detail}")
-                        printed += 1
+                        short = name.split('__')[-1] if '__' in name else name
+                        out.append(f"  {t} [{app:10}]{tab} → {short}: {str(detail)[:90]}")
                     elif ctype == 'thinking':
-                        think = c.get('thinking','')[:120]
-                        print(f"  {t} [THINKING  ] {think}...")
-                        printed += 1
+                        think = c.get('thinking','')
+                        if think:
+                            out.append(f"  {t} [THINKING  ] {think[:130]}...")
                     elif ctype == 'text':
-                        txt = c.get('text','').strip()
-                        if txt and not txt.startswith(('Tab Context', '\n\nTab')):
-                            print(f"  {t} [AGENT TEXT] {txt[:120]}")
-                            printed += 1
+                        txt = c.get('text','').strip().replace('\\n',' ')
+                        if txt and len(txt) > 30 and 'Tab Context' not in txt:
+                            out.append(f"  {t} [AGENT     ] {txt[:150]}")
 
             elif etype == 'user':
                 ts = obj.get('timestamp','')
@@ -146,30 +156,32 @@ def parse_and_print(lines, seen_count=0):
                         if isinstance(content, list):
                             for r in content:
                                 if isinstance(r,dict):
-                                    txt = r.get('text','')
-                                    if txt and len(txt) > 5 and not txt.startswith('Tab Context'):
+                                    txt = r.get('text','').replace('\\n',' ')
+                                    if txt and len(txt) > 10 and 'Tab Context' not in txt:
                                         results.append(txt[:120])
-                        elif content and len(str(content)) > 5:
+                        elif content and len(str(content)) > 10:
                             results.append(str(content)[:120])
                         for res in results[:2]:
-                            print(f"  {t}   ↳ {res}")
-                        printed += 1
+                            out.append(f"  {t}   ↳ {res}")
+        except: pass
+    return len(events), out
 
-        except:
-            pass
-    return len(events)
-
-# Print all historical content first
+# Print history first
 lines = open(path).readlines()
-seen = parse_and_print(lines)
-print(f"\n  [live-following {path}...]\n")
+seen_count, history = parse_events(lines)
+for line in history:
+    print(line)
 
-# Follow mode
+print(f"\n  [live — following {path}...]\n")
+
+# Follow
 while True:
     time.sleep(2)
     new_lines = open(path).readlines()
     if len(new_lines) > len(lines):
-        new_seen = parse_and_print(new_lines, seen)
+        new_seen, new_out = parse_events(new_lines, seen_count)
+        for line in new_out:
+            print(line, flush=True)
         lines = new_lines
-        seen = new_seen
+        seen_count = new_seen
 PYEOF
