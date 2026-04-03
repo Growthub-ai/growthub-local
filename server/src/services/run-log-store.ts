@@ -1,6 +1,8 @@
+import { createGzip, createGunzip } from "node:zlib";
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 import { notFound } from "../errors.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 
@@ -126,11 +128,18 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
       if (!stat) throw notFound("Run log not found");
 
       const hash = await sha256File(absPath);
-      return {
-        bytes: stat.size,
-        sha256: hash,
-        compressed: false,
-      };
+      const gzPath = `${absPath}.gz`;
+      try {
+        await pipeline(
+          createReadStream(absPath),
+          createGzip({ level: 6 }),
+          (await import("node:fs")).createWriteStream(gzPath),
+        );
+        await fs.unlink(absPath);
+        return { bytes: stat.size, sha256: hash, compressed: true };
+      } catch {
+        return { bytes: stat.size, sha256: hash, compressed: false };
+      }
     },
 
     async read(handle, opts) {
@@ -138,9 +147,31 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
         throw notFound("Run log not found");
       }
       const absPath = resolveWithin(basePath, handle.logRef);
+      const gzPath = `${absPath}.gz`;
       const offset = opts?.offset ?? 0;
       const limitBytes = opts?.limitBytes ?? 256_000;
-      return readFileRange(absPath, offset, limitBytes);
+
+      const plainExists = await fs.stat(absPath).then(() => true).catch(() => false);
+      if (plainExists) return readFileRange(absPath, offset, limitBytes);
+
+      const gzExists = await fs.stat(gzPath).then(() => true).catch(() => false);
+      if (!gzExists) throw notFound("Run log not found");
+
+      const chunks: Buffer[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const src = createReadStream(gzPath);
+        const gunzip = createGunzip();
+        src.pipe(gunzip);
+        gunzip.on("data", (chunk: Buffer) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        gunzip.on("error", reject);
+        gunzip.on("end", resolve);
+        src.on("error", reject);
+      });
+      const full = Buffer.concat(chunks);
+      const start = Math.min(offset, full.length);
+      const slice = full.subarray(start, start + limitBytes);
+      const nextOffset = start + slice.length < full.length ? start + slice.length : undefined;
+      return { content: slice.toString("utf8"), nextOffset };
     },
   };
 }

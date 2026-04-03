@@ -1,7 +1,7 @@
 import { Router } from "express";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import type { AdapterEnvironmentTestResult, Issue, Ticket } from "@paperclipai/shared";
+import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
 import { getServerAdapter } from "../adapters/registry.js";
 import { readConfigFile, writeConfigFile } from "../config-file.js";
 import { agentService } from "../services/agents.js";

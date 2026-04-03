@@ -22,11 +22,13 @@ import { companiesApi } from "@/api/companies";
 import { assetsApi } from "@/api/assets";
 import { agentsApi } from "@/api/agents";
 import { accessApi } from "@/api/access";
+import { approvalsApi } from "@/api/approvals";
 import { ApiError } from "@/api/client";
 import { ticketsApi } from "@/api/tickets";
 import { issuesApi } from "@/api/issues";
 import { heartbeatsApi } from "@/api/heartbeats";
-import type { JoinRequest } from "@paperclipai/shared";
+import type { Approval, JoinRequest } from "@paperclipai/shared";
+import { approvalLabel, defaultTypeIcon, typeIcon } from "@/components/ApprovalPayload";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompany } from "@/context/CompanyContext";
 import { useDialog } from "@/context/DialogContext";
@@ -1206,6 +1208,42 @@ function GtmInboxPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId, "pending_approval") });
     },
   });
+  const hireApprovalsQuery = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.approvals.list(selectedCompanyId) : ["approvals", "hire-none"],
+    queryFn: async () => {
+      try {
+        return await approvalsApi.list(selectedCompanyId!);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 403 || err.status === 401)) return [];
+        throw err;
+      }
+    },
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+  const approveHireMutation = useMutation({
+    mutationFn: async (approval: Approval) => {
+      await approvalsApi.approve(approval.id);
+      const agentId = (approval.payload as Record<string, unknown> | null)?.agentId;
+      if (typeof agentId === "string") {
+        try {
+          await agentsApi.update(agentId, { metadata: { product: "gtm", surfaceProfile: "gtm" } }, selectedCompanyId!);
+        } catch { /* best-effort */ }
+      }
+    },
+    onSuccess: () => {
+      if (!selectedCompanyId) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId) });
+      queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId) });
+    },
+  });
+  const rejectHireMutation = useMutation({
+    mutationFn: (id: string) => approvalsApi.reject(id),
+    onSuccess: () => {
+      if (!selectedCompanyId) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId) });
+    },
+  });
   const cancelRun = useMutation({
     mutationFn: (runId: string) => heartbeatsApi.cancel(runId),
     onSuccess: async () => {
@@ -1272,6 +1310,9 @@ function GtmInboxPage() {
   const recentRuns = runs.filter((run) => !activeRuns.includes(run)).slice(0, 10);
   const visibleIssues = issues.slice(0, 5);
   const joinRequests = joinRequestsQuery.data ?? [];
+  const hireApprovals = (hireApprovalsQuery.data ?? []).filter(
+    (a: Approval) => a.type === "hire_agent" && (a.status === "pending" || a.status === "revision_requested"),
+  );
 
   return (
     <div className="space-y-4">
@@ -1279,6 +1320,45 @@ function GtmInboxPage() {
         <h1 className="text-lg font-semibold">Inbox</h1>
         <p className="text-sm text-muted-foreground">Live runs, assigned work, and issue activity for GTM agents.</p>
       </div>
+
+      {hireApprovals.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent Hire Approvals</CardTitle>
+            <CardDescription>Agents hired by the CEO waiting for board approval.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {hireApprovals.map((approval) => {
+                const Icon = typeIcon[approval.type] ?? defaultTypeIcon;
+                const label = approvalLabel(approval.type, approval.payload as Record<string, unknown> | null);
+                const isPending = approveHireMutation.isPending || rejectHireMutation.isPending;
+                return (
+                  <div key={approval.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-3">
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{label}</p>
+                        <p className="text-xs text-muted-foreground">
+                          requested {timeAgo(approval.createdAt)} · status: {approval.status}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" disabled={isPending} onClick={() => rejectHireMutation.mutate(approval.id)}>
+                        Reject
+                      </Button>
+                      <Button size="sm" disabled={isPending} onClick={() => approveHireMutation.mutate(approval)}>
+                        Approve
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {joinRequests.length > 0 && (
         <Card>
@@ -1399,6 +1479,7 @@ function GtmInboxPage() {
                   const issue = issueId ? issueMap.get(issueId) ?? null : null;
                   const canCancel = run.status === "running" || run.status === "queued";
                   const canRetry = run.status === "failed" || run.status === "timed_out";
+                  const isRateLimit = run.status === "failed" && run.error?.toLowerCase().includes("hit your limit") === true;
                   return (
                     <div key={run.id} className="rounded-md border border-border p-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1436,6 +1517,16 @@ function GtmInboxPage() {
                             <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
                             Retry
                           </Button>
+                          {isRateLimit && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => { void navigator.clipboard.writeText("claude auth login"); }}
+                              title="Claude rate limit hit — copy re-auth command"
+                            >
+                              Re-auth Claude
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
