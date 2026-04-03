@@ -6,6 +6,7 @@ import {
   type AgentKey,
   type ClaudeLoginResult,
   type AvailableSkill,
+  type SkillItem,
   type AgentPermissionUpdate,
 } from "../api/agents";
 import { budgetsApi } from "../api/budgets";
@@ -64,9 +65,14 @@ import {
   ChevronRight,
   ChevronDown,
   ArrowLeft,
+  X,
+  FileUp,
+  Sparkles,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
+import { KnowledgeImportModal, type ImportedItem } from "../components/KnowledgeImportModal";
+import { SkillsShSkillPickerModal } from "../components/SkillsShSkillPickerModal";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
   isUuidLike,
@@ -196,11 +202,11 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "configuration" | "skills" | "runs" | "budget";
+type AgentDetailView = "dashboard" | "configuration" | "runs" | "budget";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "configure" || value === "configuration") return "configuration";
-  if (value === "skills") return value;
+  if (value === "skills") return "configuration"; // skills now live inside configuration
   if (value === "budget") return value;
   if (value === "runs") return value;
   return "dashboard";
@@ -620,12 +626,10 @@ export function AgentDetail() {
     const canonicalTab =
       activeView === "configuration"
         ? "configuration"
-        : activeView === "skills"
-          ? "skills"
-          : activeView === "runs"
-            ? "runs"
-            : activeView === "budget"
-              ? "budget"
+        : activeView === "runs"
+          ? "runs"
+          : activeView === "budget"
+            ? "budget"
             : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(agentPath(`/${canonicalTab}`), { replace: true });
@@ -741,8 +745,6 @@ export function AgentDetail() {
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
       } else if (activeView === "configuration") {
         crumbs.push({ label: "Configuration" });
-      // } else if (activeView === "skills") { // TODO: bring back later
-      //   crumbs.push({ label: "Skills" });
       } else if (activeView === "runs") {
         crumbs.push({ label: "Runs" });
       } else if (activeView === "budget") {
@@ -902,7 +904,6 @@ export function AgentDetail() {
             items={[
               { value: "dashboard", label: "Dashboard" },
               { value: "configuration", label: "Configuration" },
-              // { value: "skills", label: "Skills" }, // TODO: bring back later
               { value: "runs", label: "Runs" },
               { value: "budget", label: "Budget" },
             ]}
@@ -996,11 +997,6 @@ export function AgentDetail() {
         />
       )}
 
-      {/* {activeView === "skills" && (
-        <SkillsTab
-          agent={agent}
-        />
-      )} */}{/* TODO: bring back later */}
 
       {activeView === "runs" && (
         <RunsTab
@@ -1322,6 +1318,8 @@ function AgentConfigurePage({
         updatePermissions={updatePermissions}
         companyId={companyId}
       />
+      <AgentSkillsSection agentId={agentId} />
+
       <div>
         <h3 className="text-sm font-medium mb-3">API Keys</h3>
         <KeysTab agentId={agentId} companyId={companyId} />
@@ -1533,74 +1531,167 @@ function ConfigurationTab({
   );
 }
 
-function SkillsTab({ agent }: { agent: Agent }) {
-  const instructionsPath =
-    typeof agent.adapterConfig?.instructionsFilePath === "string" && agent.adapterConfig.instructionsFilePath.trim().length > 0
-      ? agent.adapterConfig.instructionsFilePath
-      : null;
-  const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.skills.available,
-    queryFn: () => agentsApi.availableSkills(),
+function AgentSkillsSection({ agentId }: { agentId: string }) {
+  const queryClient = useQueryClient();
+  const [importOpen, setImportOpen] = useState(false);
+  const [skillsShOpen, setSkillsShOpen] = useState(false);
+
+  const { data: allSkillsData, isLoading: loadingAll } = useQuery({
+    queryKey: queryKeys.skills.list,
+    queryFn: () => agentsApi.listSkills(),
   });
-  const skills = data?.skills ?? [];
+
+  const { data: agentSkillsData, isLoading: loadingAgent } = useQuery({
+    queryKey: queryKeys.skills.agent(agentId),
+    queryFn: () => agentsApi.listAgentSkills(agentId),
+  });
+
+  const allSkills = allSkillsData?.skills ?? [];
+  const assignedSkills = agentSkillsData?.skills ?? [];
+  const assignedIds = new Set(assignedSkills.map((s) => s.id));
+  const unassigned = allSkills.filter((s) => !assignedIds.has(s.id));
+
+  const assign = useMutation({
+    mutationFn: (itemId: string) => agentsApi.addAgentSkill(agentId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+    },
+  });
+
+  const unassign = useMutation({
+    mutationFn: (itemId: string) => agentsApi.removeAgentSkill(agentId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+    },
+  });
+
+  const handleSkillImport = useCallback(async (items: ImportedItem[]) => {
+    for (const item of items) {
+      const skill = await agentsApi.createSkill({
+        name: item.name,
+        description: item.description,
+        body: item.body,
+      });
+      await agentsApi.addAgentSkill(agentId, skill.id);
+    }
+    queryClient.invalidateQueries({ queryKey: queryKeys.skills.list });
+    queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+  }, [agentId, queryClient]);
+
+  const loading = loadingAll || loadingAgent;
 
   return (
-    <div className="space-y-4">
-      <div className="border border-border rounded-lg p-4 space-y-2">
+    <div>
+      <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">Skills</h3>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSkillsShOpen(true)} className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            Add from skills.sh
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} className="gap-1.5">
+            <FileUp className="h-3.5 w-3.5" />
+            Import Skill
+          </Button>
+        </div>
+      </div>
+      <div className="border border-border rounded-lg p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
-          Skills are reusable instruction bundles the agent can invoke from its local tool environment.
-          This view shows the current instructions file and the skills currently visible to the local agent runtime.
+          Reusable instruction bundles assigned to this agent. Skills are shared across the workspace.
         </p>
-        <p className="text-xs text-muted-foreground">
-          Agent: <span className="font-mono">{agent.name}</span>
-        </p>
-        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
-            Instructions file
-          </div>
-          <div className="font-mono break-all">
-            {instructionsPath ?? "No instructions file configured for this agent."}
-          </div>
-        </div>
 
-        <div className="space-y-2">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">
-            Available skills
-          </div>
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading available skills…</p>
-          ) : error ? (
-            <p className="text-sm text-destructive">
-              {error instanceof Error ? error.message : "Failed to load available skills."}
-            </p>
-          ) : skills.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No local skills were found.</p>
-          ) : (
-            <div className="space-y-2">
-              {skills.map((skill) => (
-                <SkillRow key={skill.name} skill={skill} />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading skills…</p>
+        ) : (
+          <>
+            {/* Assigned skills */}
+            {assignedSkills.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Assigned skills
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {assignedSkills.map((skill) => (
+                    <div
+                      key={skill.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 py-1"
+                    >
+                      <span className="font-mono text-sm">{skill.name}</span>
+                      <Badge variant={skill.source === "paperclip" ? "secondary" : "outline"} className="text-[10px] px-1 py-0">
+                        {skill.source === "paperclip" ? "Paperclip" : skill.source === "filesystem" ? "Local" : "Custom"}
+                      </Badge>
+                      <button
+                        className="ml-1 text-muted-foreground hover:text-foreground"
+                        onClick={() => unassign.mutate(skill.id)}
+                        disabled={unassign.isPending}
+                        aria-label={`Remove ${skill.name}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No skills assigned.</p>
+            )}
 
-function SkillRow({ skill }: { skill: AvailableSkill }) {
-  return (
-    <div className="rounded-md border border-border bg-muted/20 px-3 py-2 space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-sm">{skill.name}</span>
-        <Badge variant={skill.isPaperclipManaged ? "secondary" : "outline"}>
-          {skill.isPaperclipManaged ? "Paperclip" : "Local"}
-        </Badge>
+            {/* Add skill dropdown */}
+            {unassigned.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Available skills
+                </div>
+                <div className="space-y-1.5">
+                  {unassigned.map((skill) => (
+                    <div
+                      key={skill.id}
+                      className="flex items-center justify-between rounded-md border border-border bg-muted/10 px-3 py-2"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm">{skill.name}</span>
+                          <Badge variant={skill.source === "paperclip" ? "secondary" : "outline"} className="text-[10px] px-1 py-0">
+                            {skill.source === "paperclip" ? "Paperclip" : skill.source === "filesystem" ? "Local" : "Custom"}
+                          </Badge>
+                        </div>
+                        {skill.description && (
+                          <p className="text-xs text-muted-foreground">{skill.description}</p>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => assign.mutate(skill.id)}
+                        disabled={assign.isPending}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
-      <p className="text-sm text-muted-foreground">
-        {skill.description || "No description available."}
-      </p>
+
+      <KnowledgeImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        mode="skill"
+        onImport={handleSkillImport}
+      />
+
+      <SkillsShSkillPickerModal
+        open={skillsShOpen}
+        onOpenChange={setSkillsShOpen}
+        agentId={agentId}
+        onComplete={() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.skills.list });
+          queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+        }}
+      />
     </div>
   );
 }

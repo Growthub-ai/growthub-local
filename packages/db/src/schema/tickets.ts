@@ -1,6 +1,5 @@
 import { pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
-import type { TicketStageDefinition } from "@paperclipai/shared";
 
 export const tickets = pgTable(
   "tickets",
@@ -13,7 +12,6 @@ export const tickets = pgTable(
     status: text("status").notNull().default("active"),
     currentStage: text("current_stage").notNull().default("planning"),
     stageOrder: jsonb("stage_order").$type<string[]>().notNull().default(["planning", "execution", "review", "qa", "human"]),
-    stageDefinitions: jsonb("stage_definitions").$type<TicketStageDefinition[]>().notNull().default([]),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id"),
     completedAt: timestamp("completed_at", { withTimezone: true }),

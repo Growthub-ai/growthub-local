@@ -3,7 +3,10 @@ export type SurfaceProfile = "dx" | "gtm";
 function readSurfaceProfile(): SurfaceProfile {
   const meta = document.querySelector('meta[name="paperclip-surface-profile"]');
   const content = meta?.getAttribute("content")?.trim().toLowerCase();
-  return content === "gtm" ? "gtm" : "dx";
+  if (content === "gtm" || content === "dx") return content;
+  if (window.location.pathname.startsWith("/gtm")) return "gtm";
+  if (window.location.pathname.startsWith("/dx")) return "dx";
+  return "dx";
 }
 
 export const surfaceProfile = readSurfaceProfile();

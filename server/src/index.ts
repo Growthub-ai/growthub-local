@@ -94,8 +94,8 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
-    if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
     if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
+    if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
     if (!stdin.isTTY || !stdout.isTTY) return true;
   
     const prompt = createInterface({ input: stdin, output: stdout });
@@ -478,7 +478,12 @@ export async function startServer(): Promise<StartedServer> {
   const listenPort = await detectPort(config.port);
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
-  const requestedSurfaceProfile = (process.env.PAPERCLIP_SURFACE_PROFILE ?? "dx").trim().toLowerCase();
+  const requestedSurfaceProfile = (
+    process.env.PAPERCLIP_SURFACE_PROFILE ??
+    config.surfaceRuntime.profile
+  )
+    .trim()
+    .toLowerCase();
   const surfaceProfile = requestedSurfaceProfile === "gtm" ? "gtm" : "dx";
   const app = await createApp(db as any, {
     uiMode,

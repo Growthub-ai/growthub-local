@@ -3,12 +3,15 @@ export {
   DEPLOYMENT_MODES,
   DEPLOYMENT_EXPOSURES,
   AUTH_BASE_URL_MODES,
+  SURFACE_PROFILES,
   AGENT_STATUSES,
   AGENT_ADAPTER_TYPES,
   AGENT_ROLES,
   AGENT_ROLE_LABELS,
   AGENT_ICON_NAMES,
   TICKET_STAGES,
+  TICKET_STAGE_KINDS,
+  TICKET_STAGE_HANDOFF_MODES,
   TICKET_STATUSES,
   type TicketStage,
   type TicketStatus,
@@ -67,11 +70,14 @@ export {
   type DeploymentMode,
   type DeploymentExposure,
   type AuthBaseUrlMode,
+  type SurfaceProfile,
   type AgentStatus,
   type AgentAdapterType,
   type AgentRole,
   type AgentIconName,
   type IssueStatus,
+  type TicketStageKind,
+  type TicketStageHandoffMode,
   type IssuePriority,
   type GoalLevel,
   type GoalStatus,
@@ -162,6 +168,7 @@ export type {
   IssueWorkProductStatus,
   IssueWorkProductReviewState,
   Ticket,
+  TicketStageDefinition,
   TicketStageSummary,
   Issue,
   IssueAssigneeAdapterOverrides,
@@ -471,6 +478,27 @@ export {
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
 } from "./config-schema.js";
+
+export {
+  initializeSurfaceRuntimeContract,
+  getSurfaceRuntimeContract,
+} from "./surface-runtime.js";
+
+export type {
+  SurfaceRuntimeCapabilities,
+  SurfaceRuntimeContract,
+} from "./types/surface-runtime.js";
+
+export {
+  normalizeTicketStageKey,
+  formatTicketStageLabel,
+  normalizeTicketStageDefinitions,
+  buildTicketStageOrder,
+  getTicketStageDefinition,
+  resolveTicketCurrentStage,
+  createGtmStagePreset,
+  type NormalizeTicketStagesInput,
+} from "./ticket-stages.js";
 
 export * from "./gtm.js";
 

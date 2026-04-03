@@ -21,7 +21,7 @@ export const ticketStageDefinitionSchema = z.object({
 export const ticketStageDefinitionsSchema = z.array(ticketStageDefinitionSchema).min(1).superRefine((value, ctx) => {
   const seen = new Set<string>();
   value.forEach((definition, index) => {
-    const normalizedKey = normalizeTicketStageKey(definition.key);
+    const normalizedKey = normalizeTicketStageKey(String(definition.key));
     if (!normalizedKey) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

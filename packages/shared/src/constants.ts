@@ -10,6 +10,9 @@ export type DeploymentExposure = (typeof DEPLOYMENT_EXPOSURES)[number];
 export const AUTH_BASE_URL_MODES = ["auto", "explicit"] as const;
 export type AuthBaseUrlMode = (typeof AUTH_BASE_URL_MODES)[number];
 
+export const SURFACE_PROFILES = ["dx", "gtm"] as const;
+export type SurfaceProfile = (typeof SURFACE_PROFILES)[number];
+
 export const AGENT_STATUSES = [
   "active",
   "paused",
@@ -117,9 +120,28 @@ export const TICKET_STAGES = [
 ] as const;
 export type TicketStage = (typeof TICKET_STAGES)[number];
 
+export const TICKET_STAGE_KINDS = [
+  "planning",
+  "execution",
+  "review",
+  "qa",
+  "human",
+  "custom",
+] as const;
+export type TicketStageKind = (typeof TICKET_STAGE_KINDS)[number];
+
+export const TICKET_STAGE_HANDOFF_MODES = [
+  "seamless",
+  "context_only",
+  "manual",
+] as const;
+export type TicketStageHandoffMode = (typeof TICKET_STAGE_HANDOFF_MODES)[number];
+
 export const TICKET_STATUSES = [
   "active",
   "paused",
+  "completed",
+  "archived",
   "done",
   "cancelled",
 ] as const;
