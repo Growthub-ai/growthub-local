@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { Router, type Request } from "express";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -1522,52 +1522,46 @@ export function agentRoutes(db: Db) {
       ? runtimeConfig.cwd.trim()
       : process.cwd();
 
-    if (process.platform === "darwin") {
-      const terminalCommand = `cd "${escapeAppleScriptString(cwd)}" && ${escapeAppleScriptString(command)} login`;
-      try {
-        await execFileAsync("osascript", [
-          "-e",
-          'tell application "Terminal" to activate',
-          "-e",
-          `tell application "Terminal" to do script "${terminalCommand}"`,
-        ]);
-        res.json({
-          exitCode: 0,
-          signal: null,
-          timedOut: false,
-          loginUrl: null,
-          stdout: "Opened Terminal for Claude login.",
-          stderr: "",
-        });
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to open Terminal for Claude login";
-        res.status(500).json({
-          error: message,
-          exitCode: 1,
-          signal: null,
-          timedOut: false,
-          loginUrl: null,
-          stdout: "",
-          stderr: message,
-        });
-        return;
-      }
-    }
-
-    const result = await runClaudeLogin({
-      runId: `claude-login-${randomUUID()}`,
-      agent: {
-        id: agent.id,
-        companyId: agent.companyId,
-        name: agent.name,
-        adapterType: agent.adapterType,
-        adapterConfig: agent.adapterConfig,
-      },
-      config: runtimeConfig,
+    const result = await new Promise<{ stdout: string; stderr: string; loginUrl: string | null; exitCode: number | null }>((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      const proc = spawn(command, ["auth", "login"], {
+        cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env },
+      });
+      proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+      proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+      const timer = setTimeout(() => { proc.kill(); reject(new Error("Auth login timed out")); }, 300_000);
+      proc.on("exit", (code) => {
+        clearTimeout(timer);
+        const urlMatch = (stdout + stderr).match(/https?:\/\/[^\s]+auth[^\s]*/);
+        resolve({ stdout, stderr, loginUrl: urlMatch ? urlMatch[0] : null, exitCode: code });
+      });
+      proc.on("error", (err) => { clearTimeout(timer); reject(err); });
     });
 
-    res.json(result);
+    res.json({ ...result, signal: null, timedOut: false });
+  });
+
+  router.post("/agents/:id/claude-logout", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+    assertCompanyAccess(req, agent.companyId);
+    const config = asRecord(agent.adapterConfig) ?? {};
+    const { config: runtimeConfig } = await secretsSvc.resolveAdapterConfigForRuntime(agent.companyId, config);
+    const command = typeof runtimeConfig.command === "string" && runtimeConfig.command.trim().length > 0
+      ? runtimeConfig.command.trim() : "claude";
+    const cwd = typeof runtimeConfig.cwd === "string" && runtimeConfig.cwd.trim().length > 0
+      ? runtimeConfig.cwd.trim() : process.cwd();
+    try {
+      const { stdout, stderr } = await execFileAsync(command, ["auth", "logout"], { cwd, timeout: 10_000 });
+      res.json({ ok: true, stdout, stderr });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : "Failed to logout" });
+    }
   });
 
   router.get("/companies/:companyId/heartbeat-runs", async (req, res) => {

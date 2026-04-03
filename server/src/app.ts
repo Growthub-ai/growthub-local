@@ -321,6 +321,12 @@ export async function createApp(
   }
   if (opts.surfaceRuntime.capabilities.gtmEnabled) {
     api.use("/companies", companyRoutes(db));
+    api.use((req, _res, next) => {
+      if (req.method === "POST" && /^\/companies\/[^/]+\/agents(-hires)?$/.test(req.path)) {
+        req.body = { ...req.body, metadata: { product: "gtm", surfaceProfile: "gtm", ...(req.body?.metadata ?? {}) } };
+      }
+      next();
+    });
     api.use(agentRoutes(db));
     api.use(assetRoutes(db, opts.storageService));
     api.use(projectRoutes(db));

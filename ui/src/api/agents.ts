@@ -150,6 +150,8 @@ export const agentsApi = {
   ) => api.post<HeartbeatRun | { status: "skipped" }>(agentPath(id, companyId, "/wakeup"), data),
   loginWithClaude: (id: string, companyId?: string) =>
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
+  claudeLogout: (id: string, companyId?: string) =>
+    api.post<{ ok: boolean; stdout: string; stderr: string }>(agentPath(id, companyId, "/claude-logout"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 

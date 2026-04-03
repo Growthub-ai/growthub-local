@@ -1996,7 +1996,32 @@ function RunDetail({
     mutationFn: () => agentsApi.loginWithClaude(run.agentId, run.companyId),
     onSuccess: (data) => {
       setClaudeLoginResult(data);
+      retryFreshSession.mutate();
     },
+  });
+  const retryFreshSession = useMutation({
+    mutationFn: async () => {
+      const context = (run.contextSnapshot as Record<string, unknown> | null) ?? {};
+      const result = await agentsApi.wakeup(run.agentId, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "retry_failed_run",
+        payload: {
+          ...(typeof context.issueId === "string" ? { issueId: context.issueId } : {}),
+          forceFreshSession: true,
+        },
+      }, run.companyId);
+      if (!("id" in result)) throw new Error("Agent not invokable");
+      return result as { id: string };
+    },
+    onSuccess: (newRun) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
+      navigate(buildScopedAgentPath(agentRouteId, `/runs/${newRun.id}`, { companyPrefix }));
+    },
+  });
+  const claudeLogout = useMutation({
+    mutationFn: () => agentsApi.claudeLogout(run.agentId, run.companyId ?? undefined),
+    onSuccess: () => { setClaudeLoginResult(null); },
   });
 
   const isRunning = run.status === "running" && !!run.startedAt && !run.finishedAt;
@@ -2105,6 +2130,33 @@ function RunDetail({
               <div className="text-xs">
                 <span className="text-red-600 dark:text-red-400">{run.error}</span>
                 {run.errorCode && <span className="text-muted-foreground ml-1">({run.errorCode})</span>}
+              </div>
+            )}
+            {run.error?.toLowerCase().includes("hit your limit") && adapterType === "claude_local" && (
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => claudeLogout.mutate()}
+                  disabled={claudeLogout.isPending}
+                >
+                  {claudeLogout.isPending ? "Signing out..." : "Sign Out Claude"}
+                </Button>
+                {claudeLogout.isSuccess && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => runClaudeLogin.mutate()}
+                    disabled={runClaudeLogin.isPending}
+                  >
+                    {runClaudeLogin.isPending ? "Opening login..." : "Login with New Account"}
+                  </Button>
+                )}
+                {claudeLogout.isError && (
+                  <p className="text-xs text-destructive">{claudeLogout.error instanceof Error ? claudeLogout.error.message : "Sign out failed"}</p>
+                )}
               </div>
             )}
             {run.errorCode === "claude_auth_required" && adapterType === "claude_local" && (
