@@ -19,3 +19,9 @@ SKILL.md
 
 # Internal architecture snapshot (super admin only — not for public repo)
 ARCHITECTURE.md
+
+# Local-only workspace artifacts
+.worktrees/
+.paperclip/config.json
+.paperclip/config.json.backup
+*.tsbuildinfo
