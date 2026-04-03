@@ -44,12 +44,49 @@ It does **not** contain adapter packages, the DB package, or plugin infrastructu
 
 | What you want to change | File location |
 |---|---|
-| Server behavior, API routes, migrations | `server/src/` |
+| Server behavior, API routes, agent execution | `server/src/` |
 | GTM UI | `ui/src/gtm/` |
 | DX UI | `ui/src/` (root App) |
 | CLI commands | `cli/src/commands/` |
 | Installer logic | `packages/create-growthub-local/bin/` |
 | Shared types | `packages/shared/src/` |
+
+---
+
+## Canonical dev loop
+
+Start backend and UI from source — this is the only default for feature development:
+
+```bash
+# Terminal 1
+pnpm --dir server run dev:watch
+
+# Terminal 2
+pnpm --dir ui run dev
+```
+
+Open the surface you are testing:
+
+```bash
+# GTM
+http://127.0.0.1:5173/gtm/<COMPANY_PREFIX>/workspace
+
+# DX
+http://127.0.0.1:5173/dx/...
+```
+
+Verify both are healthy before validating:
+
+```bash
+curl http://127.0.0.1:3101/api/health
+curl http://127.0.0.1:5173/api/health
+```
+
+Run the pre-push gate before any push:
+
+```bash
+bash scripts/pr-ready.sh
+```
 
 ---
 
@@ -65,10 +102,11 @@ git checkout -b feat/your-feature
 
 # 3. Make your changes
 
-# 4. Commit with conventional format
-git commit -m "feat(server): add your change"
+# 4. Run pre-push gate
+bash scripts/pr-ready.sh
 
-# 5. Push and open PR
+# 5. Commit and push
+git commit -m "feat(server): add your change"
 git push origin feat/your-feature
 ```
 
@@ -78,7 +116,7 @@ CI runs automatically. All 3 checks must pass. Once green, the maintainer review
 
 ## Agent-submitted PRs
 
-AI agents (Claude, Codex, Cursor, etc.) can submit PRs directly. The pipeline auto-detects `[bot]` actors and applies the `agent-pr` label. No special setup needed — structure your commits and branch names the same way a human would.
+AI agents (Claude, Codex, Cursor, etc.) can submit PRs directly. The pipeline auto-detects `[bot]` actors and applies the `agent-pr` label. Structure your commits and branch names the same way a human would — no special setup needed.
 
 ---
 
@@ -88,55 +126,31 @@ When a PR merges to `main`, the pipeline automatically notifies the private mono
 
 ---
 
-## Worktree development
+## Isolated worktrees
 
-For isolated testing with its own database, ports, and runtime:
+For a fully isolated environment with its own database, port, and session state:
 
 ```bash
-# Create an isolated worktree from current branch
+# Create from current branch
 growthub worktree:make my-feature
 
 # Or from a specific start point
 growthub worktree:make my-feature --start-point origin/feat/some-branch
 ```
 
-This creates a git worktree, installs dependencies, seeds an isolated database, and runs the bootstrap pipeline. Each worktree gets its own server port (3101+) so it doesn't interfere with your main instance.
+Each worktree gets its own server port (3101+) and embedded Postgres instance. Your main instance stays untouched.
 
-### Testing PR changes in browser
+---
 
-The bootstrap script automates the full PR → browser pipeline:
+## Version bumps
 
-```bash
-cd your-worktree
-node scripts/worktree-bootstrap.mjs
-```
+Version bumps are only required when source behavior ships to npm:
 
-**What it does:**
+- bump `cli/package.json`
+- bump `packages/create-growthub-local/package.json`
+- the dep pin in `create-growthub-local` must match the cli version exactly
 
-1. Validates worktree identity (`.paperclip/config.json`, `.git`, `cli/dist`)
-2. Detects changed files vs `origin/main`
-3. If `GROWTHUB_CORE_PATH` is set: syncs `ui/src/` and `server/src/` changes to the build environment, rebuilds the UI via vite, and swaps the built assets into `cli/dist/runtime/server/ui-dist/`
-4. Clears stale session state
-5. Starts the server on the worktree's configured port
-6. Opens the browser to the GTM/DX surface
-
-**Environment variables:**
-
-| Variable | Purpose |
-|---|---|
-| `GROWTHUB_CORE_PATH` | Path to a local build environment with vite/esbuild toolchain. Required for UI rebuilds from source. |
-
-Without `GROWTHUB_CORE_PATH`, the bootstrap uses the existing pre-built `cli/dist` — useful for testing server-only changes or validating the current shipped UI.
-
-### Pre-push validation
-
-Before pushing any branch:
-
-```bash
-bash scripts/pr-ready.sh
-```
-
-This validates worktree location, branch naming, remote origin, version sync, dist artifacts, and release contracts in one shot.
+Docs-only, config-only, or script-only changes do not require a bump.
 
 ---
 

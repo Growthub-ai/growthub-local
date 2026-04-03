@@ -6,8 +6,8 @@ Local Growthub runtime for DX and Go-to-Market.
 
 It owns:
 
-- the DX local surface
 - the GTM local surface
+- the DX local surface
 - the local CLI
 - the local server
 - the local UI
@@ -39,8 +39,8 @@ npm create growthub-local@latest -- --profile dx
 
 ## Profiles
 
-- `dx`: local DX tool surface
 - `gtm`: local Go-to-Market surface
+- `dx`: local DX tool surface
 
 ## Packages
 
@@ -53,40 +53,65 @@ This repo is the source of truth for:
 
 This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.
 
-### Worktree workflow
+### Canonical dev loop
 
-Isolated development environments with their own database, ports, and session state:
+Start backend and UI from source in two terminals:
+
+```bash
+# Terminal 1 — backend watch
+pnpm --dir server run dev:watch
+
+# Terminal 2 — UI dev server (HMR)
+pnpm --dir ui run dev
+```
+
+Then open the surface you are working on:
+
+```bash
+# GTM
+http://127.0.0.1:5173/gtm/<COMPANY_PREFIX>/workspace
+
+# DX
+http://127.0.0.1:5173/dx/...
+```
+
+Verify both are healthy before validating any feature:
+
+```bash
+curl http://127.0.0.1:3101/api/health
+curl http://127.0.0.1:5173/api/health
+```
+
+### Pre-push gate
+
+Before pushing any branch:
+
+```bash
+bash scripts/pr-ready.sh
+```
+
+Validates branch naming, remote origin, version consistency, dist artifacts, and release contracts in one shot.
+
+### Isolated worktrees
+
+For isolated development environments with their own database, port, and session state:
 
 ```bash
 growthub worktree:make my-feature
-# Creates git worktree → installs deps → seeds DB → bootstraps runtime → opens browser
 ```
 
-Each worktree gets its own server port (3101+), embedded Postgres instance, and `.paperclip/config.json`. Your main instance stays untouched.
+Each worktree gets its own server port (3101+) and embedded Postgres instance. Your main instance stays untouched.
 
-### Testing PR changes
-
-To see a PR's UI/server changes live in the browser:
-
-```bash
-# Set the path to your local build environment (one-time)
-export GROWTHUB_CORE_PATH=/path/to/your/build/environment
-
-# Bootstrap syncs source, rebuilds UI, starts server, opens browser
-cd your-worktree && node scripts/worktree-bootstrap.mjs
-```
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full testing and validation workflow.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 
 ## Contributing
 
 Growthub Local is open source and built to be extended — by humans and AI agents alike.
 
-**Quick start:**
-
 ```bash
 # Fork this repo, then:
 git checkout -b feat/your-feature
+# make changes
 git commit -m "feat(server): your change"
 git push origin feat/your-feature
 # open a PR — CI runs automatically
@@ -96,6 +121,6 @@ git push origin feat/your-feature
 
 **PR titles:** must follow [Conventional Commits](https://www.conventionalcommits.org/) — `type(scope): description`
 
-**All PRs require** passing CI (`verify` + `validate` + `smoke`) and maintainer review before merge. Agent-submitted PRs are fully supported — the pipeline auto-detects bot actors and labels them `agent-pr` for batch review.
+**All PRs require** passing CI (`verify` + `validate` + `smoke`) and maintainer review before merge. Agent-submitted PRs are fully supported — the pipeline auto-detects bot actors and labels them `agent-pr`.
 
-For the full guide — local dev setup, feature workflow, worktree conventions, npm package map, release process, and CI/CD architecture — see [**CONTRIBUTING.md**](./CONTRIBUTING.md).
+See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the full workflow.

@@ -20,6 +20,9 @@ SKILL.md
 # Internal architecture snapshot (super admin only — not for public repo)
 ARCHITECTURE.md
 
+# Internal frozen knowledge snapshots (super admin only — not for public repo)
+docs/FROZEN_*.md
+
 # Observability snapshots (runtime data, not source)
 .paperclip/instances/default/observability-snapshots/
 
