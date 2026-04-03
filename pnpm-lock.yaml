@@ -8,42 +8,63 @@ importers:
 
   .:
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.58.2
+        version: 1.58.2
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
+      esbuild:
+        specifier: ^0.27.3
+        version: 0.27.3
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
       vitest:
         specifier: ^3.0.5
         version: 3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0)
 
   cli:
     dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.888.0
-        version: 3.994.0
       '@clack/prompts':
         specifier: ^0.10.0
         version: 0.10.1
+      '@paperclipai/adapter-claude-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/claude-local
+      '@paperclipai/adapter-codex-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/codex-local
+      '@paperclipai/adapter-cursor-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/cursor-local
+      '@paperclipai/adapter-gemini-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/gemini-local
+      '@paperclipai/adapter-openclaw-gateway':
+        specifier: workspace:*
+        version: link:../packages/adapters/openclaw-gateway
+      '@paperclipai/adapter-opencode-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/opencode-local
+      '@paperclipai/adapter-pi-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/pi-local
+      '@paperclipai/adapter-utils':
+        specifier: workspace:*
+        version: link:../packages/adapter-utils
+      '@paperclipai/db':
+        specifier: workspace:*
+        version: link:../packages/db
       '@paperclipai/server':
-        specifier: 0.3.1
-        version: 0.3.1(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(drizzle-kit@0.31.9)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))
-      ajv:
-        specifier: ^8.18.0
-        version: 8.18.0
-      ajv-formats:
-        specifier: ^3.0.1
-        version: 3.0.1(ajv@8.18.0)
-      better-auth:
-        specifier: 1.4.18
-        version: 1.4.18(drizzle-kit@0.31.9)(drizzle-orm@0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4))(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))
-      chokidar:
-        specifier: ^4.0.3
-        version: 4.0.3
+        specifier: workspace:*
+        version: link:../server
+      '@paperclipai/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
       commander:
         specifier: ^13.1.0
         version: 13.1.0
-      detect-port:
-        specifier: ^2.1.0
-        version: 2.1.0
-      dompurify:
-        specifier: ^3.3.2
-        version: 3.3.2
       dotenv:
         specifier: ^17.0.1
         version: 17.3.1
@@ -53,42 +74,19 @@ importers:
       embedded-postgres:
         specifier: ^18.1.0-beta.16
         version: 18.1.0-beta.16
-      express:
-        specifier: ^5.1.0
-        version: 5.2.1
-      hermes-paperclip-adapter:
-        specifier: 0.1.1
-        version: 0.1.1
-      jsdom:
-        specifier: ^28.1.0
-        version: 28.1.0(@noble/hashes@2.0.1)
-      multer:
-        specifier: ^2.0.2
-        version: 2.0.2
-      open:
-        specifier: ^11.0.0
-        version: 11.0.0
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
-      pino:
-        specifier: ^9.6.0
-        version: 9.14.0
-      pino-http:
-        specifier: ^10.4.0
-        version: 10.5.0
-      pino-pretty:
-        specifier: ^13.1.3
-        version: 13.1.3
-      postgres:
-        specifier: ^3.4.5
-        version: 3.4.8
-      ws:
-        specifier: ^8.19.0
-        version: 8.19.0
-      zod:
-        specifier: ^3.24.2
-        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.12.0
+        version: 22.19.11
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
 
   packages/adapter-utils:
     devDependencies:
@@ -217,11 +215,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  packages/create-growthub-local:
-    dependencies:
-      '@growthub/cli':
-        specifier: 0.3.25
-        version: 0.3.25(@electric-sql/pglite@0.3.15)(@noble/hashes@2.0.1)(@types/react@19.2.14)(drizzle-kit@0.31.9)(kysely@0.28.11)(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))
+  packages/create-growthub-local: {}
 
   packages/db:
     dependencies:
@@ -1712,11 +1706,6 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@growthub/cli@0.3.25':
-    resolution: {integrity: sha512-JFjDn8aIPrDNAGCBVi1yu6ia68mFXAEHnPCTUAKveDcvqurof8vtYvvj9Cg6MqNYrzpMEX1srsktRxgeMlCUxg==}
-    engines: {node: '>=20'}
-    hasBin: true
-
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
 
@@ -1896,44 +1885,19 @@ packages:
   '@open-draft/deferred-promise@2.2.0':
     resolution: {integrity: sha512-CecwLWx3rhxVQF6V4bAgPS5t+So2sTbPgAzafKkVizyi7tlwpcFpdFqq+wqF2OwNBmqFuu6tOyouTuxgpMfzmA==}
 
-  '@paperclipai/adapter-claude-local@0.3.1':
-    resolution: {integrity: sha512-GEXmVG1t+P+PH+DQX2fZtatd/+yy5ymw/CDRsZE4z7gXKlpujVCdTCsk5T0eygwU/fMhKYJz+4rZ3OTL1L+XIw==}
-
-  '@paperclipai/adapter-codex-local@0.3.1':
-    resolution: {integrity: sha512-t8ZqnnXSrRfzYrjDS1WzBtrXFpVQ8o7WSEnj5Wj2YPgsWieriRFw3/JJ97S6IhUv9raLaxcB9JCxcLs064LZPw==}
-
-  '@paperclipai/adapter-cursor-local@0.3.1':
-    resolution: {integrity: sha512-ei6fW01XFp6rY5zD7MfTuoyDYQAGgfAWphbbK+gQegCBZineGLVMqXOJeRoNygdjUMcVpDptF87Q8P2W61t16Q==}
-
-  '@paperclipai/adapter-gemini-local@0.3.1':
-    resolution: {integrity: sha512-EG0mB836gPqHDxbiHzZJJrywL8L3DG1e2A4tyZAOGREKXJ9U0stsQXD2okpEgcVSdAjuhUFhblWEVzx6vLhyow==}
-
-  '@paperclipai/adapter-openclaw-gateway@0.3.1':
-    resolution: {integrity: sha512-K3z6JgeuRDTstmNkPlYCnM/R6SIKCaJNkOkTjuGWcDbskkAPJdlb3Dj7ChTjEHjDum5mZ+GJvlLuTICP88BMCQ==}
-
-  '@paperclipai/adapter-opencode-local@0.3.1':
-    resolution: {integrity: sha512-wKxm5xS8grWGAOGoZ66OfOt6vKvrVEmoJV0V+kyIoNNfTlswPBj8riYsAR9krMv1Bw9VE73/r09LcnzoNoE8fw==}
-
-  '@paperclipai/adapter-pi-local@0.3.1':
-    resolution: {integrity: sha512-el+VIoUdz4f2pC1T4Cm9WchuNJfyAy4q9qH5jZpMR3hbTfFuupVfQBp20osXVMQuAtr3wJYvaWCGciKJWMXCAg==}
-
   '@paperclipai/adapter-utils@0.3.1':
     resolution: {integrity: sha512-W66k+hJkQE8ma0asM/Sd90AC8HHy/BLG/sd0aOC+rDWw+gOasQyUkTnDoPv1zhQuTyKEEvLFV6ByOOKqEiAz/A==}
-
-  '@paperclipai/db@0.3.1':
-    resolution: {integrity: sha512-9RjzmHVZQx6Ol2qN4d/WFnvolSFBFtxFmwByB6ELWFKKW5a+Y56+QIp9ksLVcK8wGSYwafLDoztFJ/uFoHkIfw==}
-
-  '@paperclipai/server@0.3.1':
-    resolution: {integrity: sha512-nqK/fyUJmAdz1XnxEPg1ui0/MB2yPNzOHYNNtSXqpZwZ2cK2opsXIKO3D6MDX+Db/0Grn/iZ0b5tDcyVmd7wjQ==}
-
-  '@paperclipai/shared@0.3.1':
-    resolution: {integrity: sha512-ezo1DTqH2OeW4w1BvDKhtMAep7ZxO25ITD62lCw24ez7diy2sPXSHwiNDovG6OsDFqgjMXsxK63r4GndWVjhDA==}
 
   '@paralleldrive/cuid2@2.3.1':
     resolution: {integrity: sha512-XO7cAxhnTZl0Yggq6jOgjiOHhbgcO4NqFqwSmQpjK3b6TEE6Uj/jfSk6wzYyemh3+I0sHirKSetjQwn5cZktFw==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
+
+  '@playwright/test@1.58.2':
+    resolution: {integrity: sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@radix-ui/colors@3.0.0':
     resolution: {integrity: sha512-FUOsGBkHrYJwCSEtWRCIfQbZG7q1e6DgxCIOe1SUQzDe/7rXXeA47s8yCn6fuTNQAj1Zq4oTFi9Yjp3wzElcxg==}
@@ -3295,6 +3259,9 @@ packages:
   '@types/multer@2.0.0':
     resolution: {integrity: sha512-C3Z9v9Evij2yST3RSBktxP9STm6OdMc5uR1xF1SGr98uv8dUlAL2hqwrZ3GVB3uyMyiegnscEK6PGtYvNrjTjw==}
 
+  '@types/node@22.19.11':
+    resolution: {integrity: sha512-BH7YwL6rA93ReqeQS1c4bsPpcfOmJasG+Fkr6Y59q83f9M1WcBRHR2vM+P9eOisYRcN3ujQoiZY8uk5W+1WL8w==}
+
   '@types/node@24.12.0':
     resolution: {integrity: sha512-GYDxsZi3ChgmckRT9HPU0WEhKLP08ev/Yfcq2AstjrDASOYCSXeyjDsHg4v5t4jOj7cyDX3vmprafKlWIG9MXQ==}
 
@@ -4275,6 +4242,11 @@ packages:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
 
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
+
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -5015,6 +4987,16 @@ packages:
   pkg-types@1.3.1:
     resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
 
+  playwright-core@1.58.2:
+    resolution: {integrity: sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.58.2:
+    resolution: {integrity: sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   points-on-curve@0.2.0:
     resolution: {integrity: sha512-0mYKnYYe9ZcqMCWhUjItv/oHjvgEsfKvnUTg8sAtnHr3GVy7rGkXCb6d5cSyqrWqL4k81b9CPg3urd+T7aop3A==}
 
@@ -5509,6 +5491,9 @@ packages:
 
   ufo@1.6.3:
     resolution: {integrity: sha512-yDJTmhydvl5lJzBmy/hyOAA0d+aqCBuwl818haVdYCRrWV84o7YyeVm4QlVHStqNrrJSTb6jKuFAVqAFsr+K3Q==}
+
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
@@ -6448,17 +6433,6 @@ snapshots:
       '@better-auth/utils': 0.3.0
       '@better-fetch/fetch': 1.1.21
       '@standard-schema/spec': 1.1.0
-      better-call: 1.1.8(zod@3.25.76)
-      jose: 6.1.3
-      kysely: 0.28.11
-      nanostores: 1.1.0
-      zod: 4.3.6
-
-  '@better-auth/core@1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@4.3.6))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0)':
-    dependencies:
-      '@better-auth/utils': 0.3.0
-      '@better-fetch/fetch': 1.1.21
-      '@standard-schema/spec': 1.1.0
       better-call: 1.1.8(zod@4.3.6)
       jose: 6.1.3
       kysely: 0.28.11
@@ -6468,12 +6442,6 @@ snapshots:
   '@better-auth/telemetry@1.4.18(@better-auth/core@1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@3.25.76))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0))':
     dependencies:
       '@better-auth/core': 1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@3.25.76))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0)
-      '@better-auth/utils': 0.3.0
-      '@better-fetch/fetch': 1.1.21
-
-  '@better-auth/telemetry@1.4.18(@better-auth/core@1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@4.3.6))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0))':
-    dependencies:
-      '@better-auth/core': 1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@4.3.6))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0)
       '@better-auth/utils': 0.3.0
       '@better-fetch/fetch': 1.1.21
 
@@ -7150,82 +7118,6 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@growthub/cli@0.3.25(@electric-sql/pglite@0.3.15)(@noble/hashes@2.0.1)(@types/react@19.2.14)(drizzle-kit@0.31.9)(kysely@0.28.11)(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))':
-    dependencies:
-      '@aws-sdk/client-s3': 3.994.0
-      '@clack/prompts': 0.10.1
-      '@paperclipai/server': 0.3.1(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(drizzle-kit@0.31.9)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))
-      ajv: 8.18.0
-      ajv-formats: 3.0.1(ajv@8.18.0)
-      better-auth: 1.4.18(drizzle-kit@0.31.9)(drizzle-orm@0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4))(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))
-      chokidar: 4.0.3
-      commander: 13.1.0
-      detect-port: 2.1.0
-      dompurify: 3.3.2
-      dotenv: 17.3.1
-      drizzle-orm: 0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4)
-      embedded-postgres: 18.1.0-beta.16
-      express: 5.2.1
-      hermes-paperclip-adapter: 0.1.1
-      jsdom: 28.1.0(@noble/hashes@2.0.1)
-      multer: 2.0.2
-      open: 11.0.0
-      picocolors: 1.1.1
-      pino: 9.14.0
-      pino-http: 10.5.0
-      pino-pretty: 13.1.3
-      postgres: 3.4.8
-      ws: 8.19.0
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@lynx-js/react'
-      - '@neondatabase/serverless'
-      - '@noble/hashes'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@sveltejs/kit'
-      - '@tanstack/react-start'
-      - '@tanstack/solid-start'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - aws-crt
-      - better-sqlite3
-      - bufferutil
-      - bun-types
-      - canvas
-      - drizzle-kit
-      - expo-sqlite
-      - knex
-      - kysely
-      - mongodb
-      - mysql2
-      - next
-      - pg
-      - pg-native
-      - prisma
-      - react
-      - react-dom
-      - solid-js
-      - sql.js
-      - sqlite3
-      - supports-color
-      - svelte
-      - utf-8-validate
-      - vitest
-      - vue
-
   '@iconify/types@2.0.0': {}
 
   '@iconify/utils@3.1.0':
@@ -7579,165 +7471,17 @@ snapshots:
 
   '@open-draft/deferred-promise@2.2.0': {}
 
-  '@paperclipai/adapter-claude-local@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-
-  '@paperclipai/adapter-codex-local@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-
-  '@paperclipai/adapter-cursor-local@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-
-  '@paperclipai/adapter-gemini-local@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-
-  '@paperclipai/adapter-openclaw-gateway@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-      ws: 8.19.0
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
-  '@paperclipai/adapter-opencode-local@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-
-  '@paperclipai/adapter-pi-local@0.3.1':
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
-
   '@paperclipai/adapter-utils@0.3.1': {}
-
-  '@paperclipai/db@0.3.1(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(react@19.2.4)':
-    dependencies:
-      '@paperclipai/shared': 0.3.1
-      drizzle-orm: 0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4)
-      postgres: 3.4.8
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - expo-sqlite
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - prisma
-      - react
-      - sql.js
-      - sqlite3
-
-  '@paperclipai/server@0.3.1(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(drizzle-kit@0.31.9)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))':
-    dependencies:
-      '@aws-sdk/client-s3': 3.994.0
-      '@paperclipai/adapter-claude-local': 0.3.1
-      '@paperclipai/adapter-codex-local': 0.3.1
-      '@paperclipai/adapter-cursor-local': 0.3.1
-      '@paperclipai/adapter-gemini-local': 0.3.1
-      '@paperclipai/adapter-openclaw-gateway': 0.3.1
-      '@paperclipai/adapter-opencode-local': 0.3.1
-      '@paperclipai/adapter-pi-local': 0.3.1
-      '@paperclipai/adapter-utils': 0.3.1
-      '@paperclipai/db': 0.3.1(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(react@19.2.4)
-      '@paperclipai/shared': 0.3.1
-      better-auth: 1.4.18(drizzle-kit@0.31.9)(drizzle-orm@0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4))(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0))
-      detect-port: 2.1.0
-      dotenv: 17.3.1
-      drizzle-orm: 0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4)
-      embedded-postgres: 18.1.0-beta.16
-      express: 5.2.1
-      multer: 2.0.2
-      open: 11.0.0
-      pino: 9.14.0
-      pino-http: 10.5.0
-      pino-pretty: 13.1.3
-      ws: 8.19.0
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@lynx-js/react'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@sveltejs/kit'
-      - '@tanstack/react-start'
-      - '@tanstack/solid-start'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - aws-crt
-      - better-sqlite3
-      - bufferutil
-      - bun-types
-      - drizzle-kit
-      - expo-sqlite
-      - knex
-      - kysely
-      - mongodb
-      - mysql2
-      - next
-      - pg
-      - pg-native
-      - postgres
-      - prisma
-      - react
-      - react-dom
-      - solid-js
-      - sql.js
-      - sqlite3
-      - supports-color
-      - svelte
-      - utf-8-validate
-      - vitest
-      - vue
-
-  '@paperclipai/shared@0.3.1':
-    dependencies:
-      zod: 3.25.76
 
   '@paralleldrive/cuid2@2.3.1':
     dependencies:
       '@noble/hashes': 1.8.0
 
   '@pinojs/redact@0.4.0': {}
+
+  '@playwright/test@1.58.2':
+    dependencies:
+      playwright: 1.58.2
 
   '@radix-ui/colors@3.0.0': {}
 
@@ -9241,6 +8985,10 @@ snapshots:
     dependencies:
       '@types/express': 5.0.6
 
+  '@types/node@22.19.11':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/node@24.12.0':
     dependencies:
       undici-types: 7.16.0
@@ -9415,28 +9163,6 @@ snapshots:
 
   better-auth@1.4.18(drizzle-kit@0.31.9)(drizzle-orm@0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4))(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@24.12.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0)):
     dependencies:
-      '@better-auth/core': 1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@4.3.6))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0)
-      '@better-auth/telemetry': 1.4.18(@better-auth/core@1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@4.3.6))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0))
-      '@better-auth/utils': 0.3.0
-      '@better-fetch/fetch': 1.1.21
-      '@noble/ciphers': 2.1.1
-      '@noble/hashes': 2.0.1
-      better-call: 1.1.8(zod@4.3.6)
-      defu: 6.1.4
-      jose: 6.1.3
-      kysely: 0.28.11
-      nanostores: 1.1.0
-      zod: 4.3.6
-    optionalDependencies:
-      drizzle-kit: 0.31.9
-      drizzle-orm: 0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4)
-      pg: 8.18.0
-      react: 19.2.4
-      react-dom: 19.2.4(react@19.2.4)
-      vitest: 3.2.4(@types/debug@4.1.12)(@types/node@24.12.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0)
-
-  better-auth@1.4.18(drizzle-kit@0.31.9)(drizzle-orm@0.38.4(@electric-sql/pglite@0.3.15)(@types/react@19.2.14)(kysely@0.28.11)(pg@8.18.0)(postgres@3.4.8)(react@19.2.4))(pg@8.18.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0)):
-    dependencies:
       '@better-auth/core': 1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@3.25.76))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0)
       '@better-auth/telemetry': 1.4.18(@better-auth/core@1.4.18(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.8(zod@3.25.76))(jose@6.1.3)(kysely@0.28.11)(nanostores@1.1.0))
       '@better-auth/utils': 0.3.0
@@ -9455,16 +9181,7 @@ snapshots:
       pg: 8.18.0
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      vitest: 3.2.4(@types/debug@4.1.12)(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0)
-
-  better-call@1.1.8(zod@3.25.76):
-    dependencies:
-      '@better-auth/utils': 0.3.0
-      '@better-fetch/fetch': 1.1.21
-      rou3: 0.7.12
-      set-cookie-parser: 2.7.2
-    optionalDependencies:
-      zod: 3.25.76
+      vitest: 3.2.4(@types/debug@4.1.12)(@types/node@24.12.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.30.2)(tsx@4.21.0)
 
   better-call@1.1.8(zod@4.3.6):
     dependencies:
@@ -10268,6 +9985,9 @@ snapshots:
   forwarded@0.2.0: {}
 
   fresh@2.0.0: {}
+
+  fsevents@2.3.2:
+    optional: true
 
   fsevents@2.3.3:
     optional: true
@@ -11313,6 +11033,14 @@ snapshots:
       mlly: 1.8.1
       pathe: 2.0.3
 
+  playwright-core@1.58.2: {}
+
+  playwright@1.58.2:
+    dependencies:
+      playwright-core: 1.58.2
+    optionalDependencies:
+      fsevents: 2.3.2
+
   points-on-curve@0.2.0: {}
 
   points-on-path@0.2.1:
@@ -11896,6 +11624,8 @@ snapshots:
   typescript@5.9.3: {}
 
   ufo@1.6.3: {}
+
+  undici-types@6.21.0: {}
 
   undici-types@7.16.0: {}
 
