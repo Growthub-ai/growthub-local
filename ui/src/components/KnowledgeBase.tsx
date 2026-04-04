@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Database,
   Loader2,
+  Plus,
   Play,
   RefreshCcw,
   Table2,
@@ -431,6 +432,8 @@ export function KnowledgeBase() {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [activeTab, setActiveTab] = useState<"table" | "query">("table");
+  const [newHostedTableName, setNewHostedTableName] = useState("");
+  const [selectedHostedTableId, setSelectedHostedTableId] = useState("");
 
   const tablesQuery = useQuery({
     queryKey: ["knowledge-base", "tables"],
@@ -446,6 +449,36 @@ export function KnowledgeBase() {
     enabled: !!selectedTable,
   });
 
+  const hostedTablesQuery = useQuery({
+    queryKey: ["knowledge-sync", "tables"],
+    queryFn: () => gtmApi.listHostedKnowledgeTables(),
+  });
+
+  const bindingQuery = useQuery({
+    queryKey: ["knowledge-sync", "binding"],
+    queryFn: () => gtmApi.getKnowledgeBinding(),
+  });
+
+  const bindMutation = useMutation({
+    mutationFn: (input: { tableId: string; tableName: string; workspaceId?: string; adminId?: string }) =>
+      gtmApi.bindKnowledgeTable(input),
+  });
+
+  const createHostedTableMutation = useMutation({
+    mutationFn: (name: string) => gtmApi.createHostedKnowledgeTable({ name }),
+    onSuccess: async (result) => {
+      setNewHostedTableName("");
+      await hostedTablesQuery.refetch();
+      await bindMutation.mutateAsync({
+        tableId: result.table.id,
+        tableName: result.table.name,
+        workspaceId: result.table.workspaceId,
+        adminId: result.table.adminId,
+      });
+      await bindingQuery.refetch();
+    },
+  });
+
   const handleSelectTable = useCallback((name: string) => {
     setSelectedTable(name);
     setOffset(0);
@@ -453,6 +486,14 @@ export function KnowledgeBase() {
   }, []);
 
   const tables = tablesQuery.data?.tables ?? [];
+  const hostedTables = hostedTablesQuery.data?.tables ?? [];
+  const selectedBinding = bindingQuery.data?.binding;
+
+  useEffect(() => {
+    if (selectedBinding?.tableId) {
+      setSelectedHostedTableId(selectedBinding.tableId);
+    }
+  }, [selectedBinding?.tableId]);
 
   // Auto-select first table
   useEffect(() => {
@@ -465,6 +506,59 @@ export function KnowledgeBase() {
     <div className="flex h-[calc(100vh-8rem)] rounded-lg border border-border bg-background overflow-hidden">
       {/* Sidebar — table list */}
       <div className="w-56 shrink-0">
+        <div className="border-r border-b border-border px-3 py-2">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Hosted Knowledge Table</p>
+          <select
+            className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+            value={selectedHostedTableId}
+            onChange={(event) => {
+              const tableId = event.target.value;
+              setSelectedHostedTableId(tableId);
+              const table = hostedTables.find((row) => row.id === tableId);
+              if (!table) return;
+              bindMutation.mutate({
+                tableId: table.id,
+                tableName: table.name,
+                workspaceId: table.workspaceId,
+                adminId: table.adminId,
+              }, {
+                onSuccess: () => {
+                  void bindingQuery.refetch();
+                },
+              });
+            }}
+            disabled={hostedTablesQuery.isLoading || bindMutation.isPending}
+          >
+            <option value="">Select hosted table</option>
+            {hostedTables.map((table) => (
+              <option key={table.id} value={table.id}>
+                {table.name}
+              </option>
+            ))}
+          </select>
+          <div className="mt-2 flex gap-1">
+            <input
+              value={newHostedTableName}
+              onChange={(event) => setNewHostedTableName(event.target.value)}
+              placeholder="New table"
+              className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+            />
+            <Button
+              size="icon-sm"
+              variant="outline"
+              disabled={!newHostedTableName.trim() || createHostedTableMutation.isPending}
+              onClick={() => createHostedTableMutation.mutate(newHostedTableName.trim())}
+              aria-label="Create hosted table"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          {selectedBinding?.tableName ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Bound: {selectedBinding.tableName}
+            </p>
+          ) : null}
+        </div>
         <TableList
           tables={tables}
           selected={selectedTable}

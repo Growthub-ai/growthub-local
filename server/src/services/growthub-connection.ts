@@ -111,6 +111,10 @@ export function clearGrowthubConnectionAuth(config: PaperclipConfig): PaperclipC
       growthubPortalBaseUrl: undefined,
       growthubMachineLabel: undefined,
       growthubWorkspaceLabel: undefined,
+      growthubKnowledgeTableId: undefined,
+      growthubKnowledgeTableName: undefined,
+      growthubKnowledgeWorkspaceId: undefined,
+      growthubKnowledgeAdminId: undefined,
     },
   };
 }

@@ -1725,31 +1725,43 @@ function GtmSettingsPage() {
     });
   };
   const openConnectionConfiguration = () => {
-    if (!connection.baseUrl?.trim()) {
-      pushToast({
-        title: "Growthub base URL missing",
-        body: "Configure the hosted Growthub URL before opening the local callback flow.",
-        tone: "error",
-      });
-      return;
-    }
-    const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
-    if (!userId) {
-      pushToast({
-        title: "Sign in required",
-        body: "Sign in locally before opening the hosted Growthub configuration flow.",
-        tone: "error",
-      });
-      return;
-    }
-    const url = buildGrowthubConfigurationUrl({
-      baseUrl: connection.baseUrl,
-      callbackUrl: connection.callbackUrl,
-      userId,
-      surface: "gtm",
-      workspaceLabel: selectedCompany?.name ?? profile.workspace ?? "GTM Workspace",
-    });
-    window.open(url, "_blank", "noopener,noreferrer");
+    void (async () => {
+      if (!connection.baseUrl?.trim()) {
+        pushToast({
+          title: "Growthub base URL missing",
+          body: "Configure the hosted Growthub URL before opening the local callback flow.",
+          tone: "error",
+        });
+        return;
+      }
+      const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
+      if (!userId) {
+        pushToast({
+          title: "Sign in required",
+          body: "Sign in locally before opening the hosted Growthub configuration flow.",
+          tone: "error",
+        });
+        return;
+      }
+      try {
+        const session = await gtmApi.startConnectionSession({ userId });
+        const fallbackUrl = buildGrowthubConfigurationUrl({
+          baseUrl: connection.baseUrl,
+          callbackUrl: session.callbackUrl || connection.callbackUrl,
+          userId,
+          surface: "gtm",
+          workspaceLabel: selectedCompany?.name ?? profile.workspace ?? "GTM Workspace",
+          state: session.state,
+        });
+        window.open(session.launchUrl || fallbackUrl, "_blank", "noopener,noreferrer");
+      } catch (error) {
+        pushToast({
+          title: "Could not start connection",
+          body: error instanceof Error ? error.message : "Failed to initialize hosted Growthub connection flow.",
+          tone: "error",
+        });
+      }
+    })();
   };
 
   return (

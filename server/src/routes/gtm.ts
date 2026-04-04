@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
@@ -12,6 +13,7 @@ import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.
 import { enforceHeartbeatPolicy, enforcePerformanceReview } from "../services/gtm-campaign-policy.js";
 import { resolvePaperclipHomeDir } from "../home-paths.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { issueGrowthubConnectionSession } from "../services/growthub-connection-session.js";
 
 const GTM_METADATA = {
   product: "gtm",
@@ -113,6 +115,12 @@ function getGrowthubConnectionState() {
     portalBaseUrl: config?.auth.growthubPortalBaseUrl?.trim() || "",
     machineLabel: config?.auth.growthubMachineLabel?.trim() || "",
     workspaceLabel: config?.auth.growthubWorkspaceLabel?.trim() || "",
+    knowledgeBinding: {
+      tableId: config?.auth.growthubKnowledgeTableId?.trim() || "",
+      tableName: config?.auth.growthubKnowledgeTableName?.trim() || "",
+      workspaceId: config?.auth.growthubKnowledgeWorkspaceId?.trim() || "",
+      adminId: config?.auth.growthubKnowledgeAdminId?.trim() || "",
+    },
     token: config?.auth.token?.trim() || "",
   };
 }
@@ -184,7 +192,180 @@ export function gtmRoutes(db: Db) {
       portalBaseUrl: connection.portalBaseUrl,
       machineLabel: connection.machineLabel,
       workspaceLabel: connection.workspaceLabel,
+      knowledgeBinding: connection.knowledgeBinding,
     });
+  });
+
+  router.post("/connection/session", (req, res) => {
+    const connection = getGrowthubConnectionState();
+    if (!connection.baseUrl) {
+      res.status(422).json({ error: "Growthub base URL is not configured." });
+      return;
+    }
+
+    const rawUserId = typeof req.body?.userId === "string" ? req.body.userId.trim() : "";
+    if (!rawUserId) {
+      res.status(422).json({ error: "Local userId is required before opening configuration." });
+      return;
+    }
+
+    const host = req.get("host");
+    const forwardedProto = req.get("x-forwarded-proto");
+    const protocol = forwardedProto?.split(",")[0]?.trim() || req.protocol;
+    const callbackUrl = host ? `${protocol}://${host}/auth/callback` : "/auth/callback";
+    const session = issueGrowthubConnectionSession(rawUserId);
+
+    const launchUrl = new URL(connection.baseUrl);
+    launchUrl.pathname = "/integrations";
+    launchUrl.search = "";
+    launchUrl.searchParams.set("return_url", callbackUrl);
+    launchUrl.searchParams.set("state", session.state);
+
+    res.json({
+      callbackUrl,
+      launchUrl: launchUrl.toString(),
+      state: session.state,
+      expiresAt: new Date(session.expiresAtMs).toISOString(),
+    });
+  });
+
+  router.get("/knowledge-sync/binding", (_req, res) => {
+    const connection = getGrowthubConnectionState();
+    res.json({
+      binding: connection.knowledgeBinding,
+    });
+  });
+
+  router.post("/knowledge-sync/binding", (req, res) => {
+    const tableId = typeof req.body?.tableId === "string" ? req.body.tableId.trim() : "";
+    const tableName = typeof req.body?.tableName === "string" ? req.body.tableName.trim() : "";
+    const workspaceId = typeof req.body?.workspaceId === "string" ? req.body.workspaceId.trim() : "";
+    const adminId = typeof req.body?.adminId === "string" ? req.body.adminId.trim() : "";
+
+    if (!tableId || !tableName) {
+      res.status(422).json({ error: "tableId and tableName are required." });
+      return;
+    }
+
+    const config = readConfigFile();
+    if (!config) {
+      res.status(500).json({ error: "Growthub config not found." });
+      return;
+    }
+
+    writeConfigFile({
+      ...config,
+      $meta: {
+        ...config.$meta,
+        updatedAt: new Date().toISOString(),
+        source: "configure",
+      },
+      auth: {
+        ...config.auth,
+        growthubKnowledgeTableId: tableId,
+        growthubKnowledgeTableName: tableName,
+        growthubKnowledgeWorkspaceId: workspaceId || undefined,
+        growthubKnowledgeAdminId: adminId || undefined,
+      },
+    });
+
+    res.json({
+      binding: {
+        tableId,
+        tableName,
+        workspaceId,
+        adminId,
+      },
+    });
+  });
+
+  router.get("/knowledge-sync/tables", async (_req, res) => {
+    const connection = getGrowthubConnectionState();
+    if (!connection.baseUrl || !connection.token) {
+      res.status(422).json({ error: "Growthub connection is not configured." });
+      return;
+    }
+
+    try {
+      const url = new URL("/api/providers/growthub-local/knowledge/tables", connection.baseUrl);
+      const response = await fetch(url, {
+        headers: {
+          authorization: `Bearer ${connection.token}`,
+        },
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        tables?: Array<Record<string, unknown>>;
+        error?: string;
+      };
+      if (!response.ok) {
+        res.status(response.status).json({
+          error: data.error || "Failed to list hosted knowledge tables.",
+        });
+        return;
+      }
+
+      const tables = Array.isArray(data.tables) ? data.tables : [];
+      res.json({
+        tables: tables.map((table) => ({
+          id: typeof table.id === "string" ? table.id : "",
+          name: typeof table.name === "string" ? table.name : "",
+          workspaceId: typeof table.workspaceId === "string" ? table.workspaceId : "",
+          adminId: typeof table.adminId === "string" ? table.adminId : "",
+        })).filter((table) => table.id && table.name),
+      });
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : "Failed to reach hosted Growthub.",
+      });
+    }
+  });
+
+  router.post("/knowledge-sync/tables", async (req, res) => {
+    const connection = getGrowthubConnectionState();
+    if (!connection.baseUrl || !connection.token) {
+      res.status(422).json({ error: "Growthub connection is not configured." });
+      return;
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      res.status(422).json({ error: "name is required." });
+      return;
+    }
+
+    try {
+      const response = await fetch(new URL("/api/providers/growthub-local/knowledge/tables", connection.baseUrl), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${connection.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          id: `local-${randomUUID()}`,
+          name,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok) {
+        res.status(response.status).json({
+          error:
+            (typeof data.error === "string" && data.error) ||
+            "Failed to create hosted knowledge table.",
+        });
+        return;
+      }
+      res.status(201).json({
+        table: {
+          id: typeof data.id === "string" ? data.id : `local-${randomUUID()}`,
+          name: typeof data.name === "string" ? data.name : name,
+          workspaceId: typeof data.workspaceId === "string" ? data.workspaceId : "",
+          adminId: typeof data.adminId === "string" ? data.adminId : "",
+        },
+      });
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : "Failed to reach hosted Growthub.",
+      });
+    }
   });
 
   router.post("/connection/test", async (_req, res) => {
@@ -250,6 +431,10 @@ export function gtmRoutes(db: Db) {
         growthubPortalBaseUrl: undefined,
         growthubMachineLabel: undefined,
         growthubWorkspaceLabel: undefined,
+        growthubKnowledgeTableId: undefined,
+        growthubKnowledgeTableName: undefined,
+        growthubKnowledgeWorkspaceId: undefined,
+        growthubKnowledgeAdminId: undefined,
       },
     });
 

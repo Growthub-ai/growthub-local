@@ -51,6 +51,7 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { applyGrowthubCallbackAuth } from "./services/growthub-connection.js";
+import { consumeGrowthubConnectionSession } from "./services/growthub-connection-session.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { readConfigFile, writeConfigFile } from "./config-file.js";
@@ -133,8 +134,23 @@ export async function createApp(
     const portalBaseUrl = typeof req.query.portalBaseUrl === "string" ? req.query.portalBaseUrl.trim() : "";
     const machineLabel = typeof req.query.machineLabel === "string" ? req.query.machineLabel.trim() : "";
     const workspaceLabel = typeof req.query.workspaceLabel === "string" ? req.query.workspaceLabel.trim() : "";
+    const state = typeof req.query.state === "string" ? req.query.state.trim() : "";
     if (!token) {
       res.status(400).send("Missing token");
+      return;
+    }
+    if (!state) {
+      res.status(400).send("Missing callback state");
+      return;
+    }
+
+    const callbackSession = consumeGrowthubConnectionSession(state);
+    if (!callbackSession) {
+      res.status(400).send("Invalid or expired callback state");
+      return;
+    }
+    if (req.actor.type !== "board" || !req.actor.userId || req.actor.userId !== callbackSession.userId) {
+      res.status(403).send("Callback state user mismatch");
       return;
     }
 

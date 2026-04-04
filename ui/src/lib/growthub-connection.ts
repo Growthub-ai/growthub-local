@@ -15,6 +15,7 @@ export function buildGrowthubConfigurationUrl(input: {
   surface: GrowthubConnectionSurface;
   workspaceLabel: string;
   machineLabel?: string | null;
+  state?: string;
 }) {
   const url = new URL(input.baseUrl);
 
@@ -23,6 +24,9 @@ export function buildGrowthubConfigurationUrl(input: {
   url.pathname = "/integrations";
   url.search = "";
   url.searchParams.set("return_url", input.callbackUrl);
+  if (input.state?.trim()) {
+    url.searchParams.set("state", input.state.trim());
+  }
 
   return url.toString();
 }

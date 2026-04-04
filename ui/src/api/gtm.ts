@@ -40,6 +40,26 @@ export type GtmConnectionStatus = {
   portalBaseUrl: string;
   machineLabel: string;
   workspaceLabel: string;
+  knowledgeBinding: {
+    tableId: string;
+    tableName: string;
+    workspaceId: string;
+    adminId: string;
+  };
+};
+
+export type GtmConnectionLaunchSession = {
+  callbackUrl: string;
+  launchUrl: string;
+  state: string;
+  expiresAt: string;
+};
+
+export type HostedKnowledgeTable = {
+  id: string;
+  name: string;
+  workspaceId: string;
+  adminId: string;
 };
 
 export type GtmCampaignDraft = {
@@ -59,6 +79,8 @@ export const gtmApi = {
   getConnection: () => api.get<GtmConnectionStatus>("/gtm/connection"),
   saveConnectionConfig: (body: { baseUrl: string }) =>
     api.post<GtmConnectionStatus>("/gtm/connection/config", body),
+  startConnectionSession: (body: { userId: string }) =>
+    api.post<GtmConnectionLaunchSession>("/gtm/connection/session", body),
   testConnection: () =>
     api.post<{ success: true; message: string; knowledgeItemId: string | null }>("/gtm/connection/test", {}),
   disconnectConnection: () =>
@@ -119,6 +141,19 @@ export const gtmApi = {
     ),
   executeKnowledgeQuery: (query: string) =>
     api.post<KnowledgeQueryResult>("/gtm/knowledge-base/query", { query }),
+
+  listHostedKnowledgeTables: () =>
+    api.get<{ tables: HostedKnowledgeTable[] }>("/gtm/knowledge-sync/tables"),
+  createHostedKnowledgeTable: (body: { name: string }) =>
+    api.post<{ table: HostedKnowledgeTable }>("/gtm/knowledge-sync/tables", body),
+  getKnowledgeBinding: () =>
+    api.get<{ binding: GtmConnectionStatus["knowledgeBinding"] }>("/gtm/knowledge-sync/binding"),
+  bindKnowledgeTable: (body: {
+    tableId: string;
+    tableName: string;
+    workspaceId?: string;
+    adminId?: string;
+  }) => api.post<{ binding: GtmConnectionStatus["knowledgeBinding"] }>("/gtm/knowledge-sync/binding", body),
 };
 
 // Knowledge Base types

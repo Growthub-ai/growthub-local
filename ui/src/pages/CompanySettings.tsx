@@ -549,35 +549,44 @@ export function CompanySettings() {
             workspaceLabel={connectionQuery.data?.workspaceLabel ?? ""}
             openDisabled={!(connectionQuery.data?.baseUrl ?? "").trim()}
             onOpenConfiguration={() => {
-              const connection = connectionQuery.data;
-              if (!connection?.baseUrl?.trim()) {
-                pushToast({
-                  title: "Growthub base URL missing",
-                  body: "Configure the hosted Growthub URL before opening the connection flow.",
-                  tone: "error"
-                });
-                return;
-              }
-              const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
-              if (!userId) {
-                pushToast({
-                  title: "Sign in required",
-                  body: "Sign in locally before opening the hosted Growthub configuration flow.",
-                  tone: "error"
-                });
-                return;
-              }
-              window.open(
-                buildGrowthubConfigurationUrl({
-                  baseUrl: connection.baseUrl,
-                  callbackUrl: connection.callbackUrl,
-                  userId,
-                  surface: "dx",
-                  workspaceLabel: selectedCompany.name,
-                }),
-                "_blank",
-                "noopener,noreferrer"
-              );
+              void (async () => {
+                const connection = connectionQuery.data;
+                if (!connection?.baseUrl?.trim()) {
+                  pushToast({
+                    title: "Growthub base URL missing",
+                    body: "Configure the hosted Growthub URL before opening the connection flow.",
+                    tone: "error"
+                  });
+                  return;
+                }
+                const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
+                if (!userId) {
+                  pushToast({
+                    title: "Sign in required",
+                    body: "Sign in locally before opening the hosted Growthub configuration flow.",
+                    tone: "error"
+                  });
+                  return;
+                }
+                try {
+                  const session = await gtmApi.startConnectionSession({ userId });
+                  const fallbackUrl = buildGrowthubConfigurationUrl({
+                    baseUrl: connection.baseUrl,
+                    callbackUrl: session.callbackUrl || connection.callbackUrl,
+                    userId,
+                    surface: "dx",
+                    workspaceLabel: selectedCompany.name,
+                    state: session.state,
+                  });
+                  window.open(session.launchUrl || fallbackUrl, "_blank", "noopener,noreferrer");
+                } catch (error) {
+                  pushToast({
+                    title: "Could not start connection",
+                    body: error instanceof Error ? error.message : "Failed to initialize hosted Growthub connection flow.",
+                    tone: "error",
+                  });
+                }
+              })();
             }}
             onRefresh={() => {
               void connectionQuery.refetch();

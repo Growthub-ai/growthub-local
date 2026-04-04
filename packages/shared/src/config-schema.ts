@@ -62,6 +62,10 @@ export const authConfigSchema = z.object({
   growthubPortalBaseUrl: z.string().url().optional(),
   growthubMachineLabel: z.string().optional(),
   growthubWorkspaceLabel: z.string().optional(),
+  growthubKnowledgeTableId: z.string().optional(),
+  growthubKnowledgeTableName: z.string().optional(),
+  growthubKnowledgeWorkspaceId: z.string().optional(),
+  growthubKnowledgeAdminId: z.string().optional(),
 });
 
 export const surfaceConfigSchema = z.object({
