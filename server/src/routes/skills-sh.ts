@@ -1,15 +1,14 @@
 /**
- * Skills.sh Integration Routes — search, resolve, create knowledge items.
- *
- * Ported from gh-app src/lib/skills-sh/skillsShModule.ts + API routes.
- * Self-contained: no db dependency, talks to skills.sh API + GitHub,
- * persists via GTM state (GtmKnowledgeItemRecord).
+ * Skills.sh Integration Routes — search, resolve, create KB skill docs (`kb_skill_docs`).
  */
 
 import { Router } from "express";
-import { randomUUID } from "node:crypto";
-import { readGtmState, writeGtmState } from "../services/gtm-state.js";
+import { and, eq, sql } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { kbSkillDocs } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { agentService } from "../services/agents.js";
+import { createKbSkillDoc, toSkillItemApi, updateKbSkillDoc } from "../services/kb-skill-docs.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -290,7 +289,7 @@ async function resolveSkillSnapshot(skill: SkillsShSearchResult): Promise<Skills
 }
 
 // ---------------------------------------------------------------------------
-// Knowledge item creation (writes to GTM state)
+// KB skill doc creation (Postgres)
 // ---------------------------------------------------------------------------
 
 function buildSkillMarkdown(snapshot: SkillsShSkillSnapshot): string {
@@ -332,86 +331,69 @@ function sanitizeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
 }
 
-function createKnowledgeItem(params: {
-  agentSlug: string;
-  snapshot: SkillsShSkillSnapshot;
-  label?: string;
-}) {
-  const { agentSlug, snapshot, label } = params;
-  const now = new Date().toISOString();
-  const itemId = randomUUID();
+async function upsertKbSkillFromSkillsSh(
+  db: Db,
+  companyId: string,
+  snapshot: SkillsShSkillSnapshot,
+  label?: string,
+) {
+  const markdown = buildSkillMarkdown(snapshot);
   const baseName = label || `${snapshot.meta.owner}-${snapshot.meta.repo}-${snapshot.meta.skillName}`;
   const fileName = sanitizeFileName(baseName);
-  const storagePath = `knowledge/skills-sh/${fileName}.md`;
+  const skillId = snapshot.meta.id;
 
-  const item = {
-    id: itemId,
-    agentSlug,
-    compressed: false,
-    createdAt: now,
-    fileName,
-    isActive: true,
-    itemCount: 1,
-    metadata: {
-      origin: "skills_sh",
-      connector_type: "skills_sh_directory",
-      notes: snapshot.meta.summary || snapshot.whenToUse.slice(0, 500),
-      visibility: "private",
-      // skills.sh-specific context
-      skill_id: snapshot.meta.id,
-      skill_name: snapshot.meta.skillName,
-      skill_owner: snapshot.meta.owner,
-      skill_repo: snapshot.meta.repo,
-      skill_url: snapshot.meta.skillUrl,
-      install_command: snapshot.meta.installCommand,
-      fetched_at: snapshot.fetchedAt,
-      directory_version: snapshot.directoryVersion,
-    },
-    sourceType: "markdown",
-    storagePath,
-    updatedAt: now,
-    userId: agentSlug,
+  const metadata: Record<string, unknown> = {
+    origin: "skills_sh",
+    skill_id: skillId,
+    skill_name: snapshot.meta.skillName,
+    skill_owner: snapshot.meta.owner,
+    skill_repo: snapshot.meta.repo,
+    skill_url: snapshot.meta.skillUrl,
+    install_command: snapshot.meta.installCommand,
+    fetched_at: snapshot.fetchedAt,
+    directory_version: snapshot.directoryVersion,
   };
 
-  // Persist to GTM state
-  const state = readGtmState();
+  const [existing] = await db
+    .select()
+    .from(kbSkillDocs)
+    .where(
+      and(eq(kbSkillDocs.companyId, companyId), sql`${kbSkillDocs.metadata}->>'skill_id' = ${skillId}`),
+    )
+    .limit(1);
 
-  // Check for duplicate (same skill_id + agentSlug)
-  const existingIndex = state.knowledge.items.findIndex(
-    (existing) =>
-      existing.metadata.origin === "skills_sh" &&
-      (existing.metadata as Record<string, unknown>).skill_id === snapshot.meta.id &&
-      existing.agentSlug === agentSlug,
-  );
-
-  if (existingIndex >= 0) {
-    // Update existing — fresher snapshot
-    state.knowledge.items[existingIndex] = {
-      ...state.knowledge.items[existingIndex]!,
-      updatedAt: now,
-      metadata: {
-        ...state.knowledge.items[existingIndex]!.metadata,
-        ...item.metadata,
-      },
-    };
-    logger.info({ itemId: state.knowledge.items[existingIndex]!.id, agentSlug }, "[skills-sh] Updated existing knowledge item");
-  } else {
-    state.knowledge.items.push(item);
-    logger.info({ itemId, agentSlug }, "[skills-sh] Created new knowledge item");
+  if (existing) {
+    const updated = await updateKbSkillDoc(db, companyId, existing.id, {
+      name: fileName,
+      description: snapshot.meta.summary || snapshot.whenToUse.slice(0, 500),
+      body: markdown,
+      source: "skills_sh",
+      metadata: { ...(existing.metadata as Record<string, unknown>), ...metadata },
+      isActive: true,
+    });
+    if (!updated) throw new Error("Failed to update kb_skill_docs");
+    logger.info({ id: updated.id, companyId }, "[skills-sh] Updated kb_skill_docs");
+    return { item: toSkillItemApi(updated), markdown };
   }
 
-  writeGtmState(state);
-
-  const savedItem = existingIndex >= 0 ? state.knowledge.items[existingIndex]! : item;
-  return { item: savedItem, markdown: buildSkillMarkdown(snapshot) };
+  const created = await createKbSkillDoc(db, companyId, {
+    name: fileName,
+    description: snapshot.meta.summary || snapshot.whenToUse.slice(0, 500),
+    body: markdown,
+    source: "skills_sh",
+    metadata,
+  });
+  logger.info({ id: created.id, companyId }, "[skills-sh] Created kb_skill_docs");
+  return { item: toSkillItemApi(created), markdown };
 }
 
 // ---------------------------------------------------------------------------
 // Express routes
 // ---------------------------------------------------------------------------
 
-export function skillsShRoutes() {
+export function skillsShRoutes(db: Db) {
   const router = Router();
+  const agents = agentService(db);
 
   // GET /skills-sh/search?query=X&owner=Y
   router.get("/search", async (req, res) => {
@@ -466,12 +448,14 @@ export function skillsShRoutes() {
         return;
       }
 
+      const agent = await agents.getById(body.agent_slug.trim());
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+
       const snapshot = await resolveSkillSnapshot(body.skill);
-      const { item, markdown } = createKnowledgeItem({
-        agentSlug: body.agent_slug,
-        snapshot,
-        label: body.label,
-      });
+      const { item, markdown } = await upsertKbSkillFromSkillsSh(db, agent.companyId, snapshot, body.label);
 
       res.json({
         success: true,

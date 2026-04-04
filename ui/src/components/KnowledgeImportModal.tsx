@@ -100,6 +100,13 @@ function titleize(input: string): string {
     .join(" ");
 }
 
+/** Single-line preview for UI; avoids long tokens blowing modal width */
+function previewOneLine(fileName: string, preview: string, maxLen = 140): string {
+  const raw = `${fileName} — ${preview.replace(/\s+/g, " ").trim()}`;
+  if (raw.length <= maxLen) return raw;
+  return `${raw.slice(0, maxLen)}…`;
+}
+
 // ---------------------------------------------------------------------------
 // Staged file type
 // ---------------------------------------------------------------------------
@@ -180,11 +187,11 @@ function FileUploadTab({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full min-w-0 max-w-full overflow-hidden">
       {/* Drop zone */}
       <div
         className={cn(
-          "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer",
+          "flex w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 sm:p-8 transition-colors cursor-pointer",
           dragOver
             ? "border-primary bg-primary/5"
             : "border-border hover:border-primary/50",
@@ -197,8 +204,8 @@ function FileUploadTab({
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
       >
-        <FileUp className="h-8 w-8 text-muted-foreground mb-2" />
-        <p className="text-sm text-muted-foreground">
+        <FileUp className="h-8 w-8 text-muted-foreground mb-2 shrink-0" />
+        <p className="text-center text-sm text-muted-foreground px-2 break-words max-w-full">
           {mode === "skill"
             ? "Drop SKILL.md files here, or click to browse"
             : "Drop .md, .txt, or .json files here, or click to browse"}
@@ -218,17 +225,17 @@ function FileUploadTab({
 
       {/* Staged files */}
       {stagedFiles.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2 w-full min-w-0 max-w-full">
           <div className="text-xs uppercase tracking-wide text-muted-foreground">
             {stagedFiles.length} file{stagedFiles.length > 1 ? "s" : ""} staged
           </div>
           {stagedFiles.map((staged, idx) => (
             <div
               key={idx}
-              className="flex items-start justify-between rounded-md border border-border bg-muted/10 px-3 py-2"
+              className="flex min-w-0 max-w-full gap-2 rounded-md border border-border bg-muted/10 px-3 py-2"
             >
-              <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 space-y-2 overflow-hidden">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Input
                     value={staged.name}
                     onChange={(e) =>
@@ -238,7 +245,7 @@ function FileUploadTab({
                         ),
                       )
                     }
-                    className="h-7 text-sm font-mono"
+                    className="h-7 min-w-0 flex-1 basis-[8rem] text-sm font-mono"
                     placeholder="Name"
                   />
                   {staged.parsed && (
@@ -256,16 +263,21 @@ function FileUploadTab({
                       ),
                     )
                   }
-                  className="h-7 text-xs"
+                  className="h-7 w-full min-w-0 text-xs"
                   placeholder="Description (optional)"
                 />
-                <p className="text-xs text-muted-foreground truncate">
-                  {staged.file.name} — {staged.preview}…
+                <p
+                  className="text-xs leading-snug text-muted-foreground line-clamp-2 break-words"
+                  title={previewOneLine(staged.file.name, staged.preview, 2000)}
+                >
+                  {previewOneLine(staged.file.name, staged.preview)}
                 </p>
               </div>
               <button
-                className="ml-2 mt-1 text-muted-foreground hover:text-foreground shrink-0"
+                type="button"
+                className="mt-0.5 text-muted-foreground hover:text-foreground shrink-0"
                 onClick={() => removeStaged(idx)}
+                aria-label="Remove staged file"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -332,13 +344,13 @@ function SkillsApiTab({
   const selectedNames = new Set(selectedApiItems.map((i) => i.name));
 
   return (
-    <div className="space-y-4">
-      <div className="relative">
+    <div className="w-full min-w-0 max-w-full space-y-4">
+      <div className="relative min-w-0">
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search skills.sh (e.g., ai-elements, github)"
-          className="pl-3"
+          className="min-w-0 pl-3"
         />
         {loading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
       </div>
@@ -357,27 +369,29 @@ function SkillsApiTab({
       )}
 
       {!loading && skills.length > 0 && (
-        <div className="space-y-1.5 max-h-60 overflow-y-auto">
+        <div className="max-h-60 min-w-0 space-y-1.5 overflow-y-auto overflow-x-hidden">
           {skills.map((skill, idx) => (
             <div
               key={`${skill.id}-${idx}`}
               className={cn(
-                "flex items-center justify-between rounded-md border px-3 py-2 cursor-pointer transition-colors",
+                "flex min-w-0 max-w-full cursor-pointer items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors",
                 selectedNames.has(skill.skillName)
                   ? "border-primary bg-primary/5"
                   : "border-border bg-muted/10 hover:border-primary/50",
               )}
               onClick={() => toggleItem(skill)}
             >
-              <div className="space-y-0.5 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">{skill.skillName}</span>
+              <div className="min-w-0 flex-1 space-y-0.5 overflow-hidden">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate font-mono text-sm">{skill.skillName}</span>
                   <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">skills.sh</Badge>
                 </div>
                 {skill.summary && (
-                  <p className="text-xs text-muted-foreground truncate">{skill.summary}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-2 break-words">{skill.summary}</p>
                 )}
-                <p className="text-xs text-muted-foreground">{skill.owner}/{skill.repo}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {skill.owner}/{skill.repo}
+                </p>
               </div>
               {selectedNames.has(skill.skillName) && (
                 <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
@@ -416,8 +430,8 @@ function PasteContentTab({
   >;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="space-y-1.5">
+    <div className="w-full min-w-0 max-w-full space-y-3">
+      <div className="min-w-0 space-y-1.5">
         <Label htmlFor="paste-name" className="text-xs">
           Name
         </Label>
@@ -426,10 +440,10 @@ function PasteContentTab({
           value={pasteData.name}
           onChange={(e) => setPasteData((prev) => ({ ...prev, name: e.target.value }))}
           placeholder="e.g. outbound-playbook"
-          className="font-mono"
+          className="min-w-0 font-mono"
         />
       </div>
-      <div className="space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         <Label htmlFor="paste-desc" className="text-xs">
           Description (optional)
         </Label>
@@ -440,9 +454,10 @@ function PasteContentTab({
             setPasteData((prev) => ({ ...prev, description: e.target.value }))
           }
           placeholder="Short description of this knowledge item"
+          className="min-w-0"
         />
       </div>
-      <div className="space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         <Label htmlFor="paste-body" className="text-xs">
           Content (Markdown or plain text)
         </Label>
@@ -452,7 +467,7 @@ function PasteContentTab({
           onChange={(e) => setPasteData((prev) => ({ ...prev, body: e.target.value }))}
           placeholder="Paste your content here..."
           rows={8}
-          className="font-mono text-sm"
+          className="min-h-[10rem] max-h-[min(40vh,20rem)] w-full min-w-0 resize-y overflow-x-hidden overflow-y-auto font-mono text-sm break-words"
         />
       </div>
     </div>
@@ -551,33 +566,34 @@ export function KnowledgeImportModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="min-w-0 max-h-[min(90dvh,42rem)] overflow-x-hidden overflow-y-auto sm:max-w-lg">
+        <DialogHeader className="min-w-0 shrink-0">
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription className="break-words">{description}</DialogDescription>
         </DialogHeader>
 
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as "file" | "api" | "paste")}
+          className="min-w-0"
         >
-          <TabsList className="w-full">
-            <TabsTrigger value="file" className="flex-1 gap-1.5">
-              <FileUp className="h-3.5 w-3.5" />
-              Upload
+          <TabsList className="flex h-auto w-full min-w-0 max-w-full flex-wrap gap-1 p-1 sm:flex-nowrap sm:gap-0">
+            <TabsTrigger value="file" className="min-w-0 flex-1 gap-1.5 sm:basis-0">
+              <FileUp className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-left">Upload</span>
             </TabsTrigger>
-            <TabsTrigger value="api" className="flex-1 gap-1.5">
-              <Globe className="h-3.5 w-3.5" />
-              Skills.sh
-              </TabsTrigger>
-            <TabsTrigger value="paste" className="flex-1 gap-1.5">
-              <Type className="h-3.5 w-3.5" />
-              Paste
+            <TabsTrigger value="api" className="min-w-0 flex-1 gap-1.5 sm:basis-0">
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-left">Skills.sh</span>
+            </TabsTrigger>
+            <TabsTrigger value="paste" className="min-w-0 flex-1 gap-1.5 sm:basis-0">
+              <Type className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-left">Paste</span>
             </TabsTrigger>
           </TabsList>
 
-          <div className="mt-4 min-h-[200px]">
-            <TabsContent value="file" className="mt-0">
+          <div className="mt-4 min-h-[200px] min-w-0 overflow-x-hidden">
+            <TabsContent value="file" className="mt-0 min-w-0">
               <FileUploadTab
                 mode={mode}
                 stagedFiles={stagedFiles}
@@ -585,23 +601,23 @@ export function KnowledgeImportModal({
               />
             </TabsContent>
 
-            <TabsContent value="api" className="mt-0">
+            <TabsContent value="api" className="mt-0 min-w-0">
               <SkillsApiTab
                 selectedApiItems={selectedApiItems}
                 setSelectedApiItems={setSelectedApiItems}
               />
             </TabsContent>
 
-            <TabsContent value="paste" className="mt-0">
+            <TabsContent value="paste" className="mt-0 min-w-0">
               <PasteContentTab pasteData={pasteData} setPasteData={setPasteData} />
             </TabsContent>
           </div>
         </Tabs>
 
         {importError && (
-          <div className="flex items-center gap-2 text-sm text-destructive px-1">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {importError}
+          <div className="flex min-w-0 items-start gap-2 px-1 text-sm text-destructive">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 break-words">{importError}</span>
           </div>
         )}
 

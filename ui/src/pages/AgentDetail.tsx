@@ -39,6 +39,16 @@ import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd 
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs } from "@/components/ui/tabs";
 import {
   Popover,
@@ -66,13 +76,11 @@ import {
   ChevronDown,
   ArrowLeft,
   X,
-  FileUp,
-  Sparkles,
+  Brain,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import { KnowledgeImportModal, type ImportedItem } from "../components/KnowledgeImportModal";
-import { SkillsShSkillPickerModal } from "../components/SkillsShSkillPickerModal";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
   isUuidLike,
@@ -1322,7 +1330,7 @@ function AgentConfigurePage({
         updatePermissions={updatePermissions}
         companyId={companyId}
       />
-      <AgentSkillsSection agentId={agentId} />
+      <AgentSkillsSection agentId={agentId} companyId={companyId} />
 
       <div>
         <h3 className="text-sm font-medium mb-3">API Keys</h3>
@@ -1604,14 +1612,21 @@ function ChromeExtensionPanel({
   );
 }
 
-function AgentSkillsSection({ agentId }: { agentId: string }) {
+type SkillConfirmFlow =
+  | null
+  | { kind: "add"; skill: SkillItem }
+  | { kind: "remove"; skill: SkillItem }
+  | { kind: "reset" };
+
+function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId?: string }) {
   const queryClient = useQueryClient();
   const [importOpen, setImportOpen] = useState(false);
-  const [skillsShOpen, setSkillsShOpen] = useState(false);
+  const [confirmFlow, setConfirmFlow] = useState<SkillConfirmFlow>(null);
 
   const { data: allSkillsData, isLoading: loadingAll } = useQuery({
-    queryKey: queryKeys.skills.list,
-    queryFn: () => agentsApi.listSkills(),
+    queryKey: companyId ? queryKeys.skills.list(companyId) : ["skills", "list", "none"],
+    queryFn: () => agentsApi.listSkills(companyId!),
+    enabled: Boolean(companyId),
   });
 
   const { data: agentSkillsData, isLoading: loadingAgent } = useQuery({
@@ -1619,97 +1634,163 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
     queryFn: () => agentsApi.listAgentSkills(agentId),
   });
 
+  const assignmentMode = agentSkillsData?.assignmentMode ?? "implicit_all";
+
   const allSkills = allSkillsData?.skills ?? [];
   const assignedSkills = agentSkillsData?.skills ?? [];
   const assignedIds = new Set(assignedSkills.map((s) => s.id));
   const unassigned = allSkills.filter((s) => !assignedIds.has(s.id));
 
+  const invalidateSkills = useCallback(() => {
+    if (companyId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills.list(companyId) });
+    }
+    queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
+  }, [agentId, companyId, queryClient]);
+
   const assign = useMutation({
     mutationFn: (itemId: string) => agentsApi.addAgentSkill(agentId, itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
-    },
+    onSuccess: invalidateSkills,
   });
 
   const unassign = useMutation({
     mutationFn: (itemId: string) => agentsApi.removeAgentSkill(agentId, itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
-    },
+    onSuccess: invalidateSkills,
   });
 
-  const handleSkillImport = useCallback(async (items: ImportedItem[]) => {
-    for (const item of items) {
-      const skill = await agentsApi.createSkill({
-        name: item.name,
-        description: item.description,
-        body: item.body,
-      });
-      await agentsApi.addAgentSkill(agentId, skill.id);
-    }
-    queryClient.invalidateQueries({ queryKey: queryKeys.skills.list });
-    queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
-  }, [agentId, queryClient]);
+  const resetImplicitAll = useMutation({
+    mutationFn: () => agentsApi.resetAgentSkillsImplicitAll(agentId),
+    onSuccess: invalidateSkills,
+  });
+
+  const closeConfirm = useCallback(() => setConfirmFlow(null), []);
+
+  const handleSkillImport = useCallback(
+    async (items: ImportedItem[]) => {
+      if (!companyId) return;
+      for (const item of items) {
+        const skill = await agentsApi.createSkill(companyId, {
+          name: item.name,
+          description: item.description,
+          body: item.body,
+        });
+        await agentsApi.addAgentSkill(agentId, skill.id);
+      }
+      invalidateSkills();
+    },
+    [agentId, companyId, invalidateSkills],
+  );
 
   const loading = loadingAll || loadingAgent;
+
+  const confirmBusy = assign.isPending || unassign.isPending || resetImplicitAll.isPending;
+
+  if (!companyId) {
+    return (
+      <div className="border border-border rounded-lg p-4 text-sm text-muted-foreground">
+        Company context is required to load KB skill docs.
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">Skills</h3>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSkillsShOpen(true)} className="gap-1.5">
-            <Sparkles className="h-3.5 w-3.5" />
-            Add from skills.sh
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} className="gap-1.5">
-            <FileUp className="h-3.5 w-3.5" />
-            Import Skill
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setImportOpen(true)}
+          className="gap-1.5"
+        >
+          <Brain className="h-3.5 w-3.5 shrink-0" />
+          Add skills
+        </Button>
       </div>
       <div className="border border-border rounded-lg p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
           Reusable instruction bundles assigned to this agent. Skills are shared across the workspace.
         </p>
+        {!loading && assignmentMode === "explicit" && (
+          <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0">
+              <span className="font-medium text-foreground">Custom set:</span> only assigned skills are injected. New
+              workspace skills are not added automatically.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={confirmBusy}
+              onClick={() => setConfirmFlow({ kind: "reset" })}
+            >
+              Use all workspace skills
+            </Button>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading skills…</p>
         ) : (
           <>
-            {/* Assigned skills */}
             {assignedSkills.length > 0 ? (
               <div className="space-y-2">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
                   Assigned skills
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   {assignedSkills.map((skill) => (
-                    <div
-                      key={skill.id}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 py-1"
-                    >
-                      <span className="font-mono text-sm">{skill.name}</span>
-                      <Badge variant={skill.source === "paperclip" ? "secondary" : "outline"} className="text-[10px] px-1 py-0">
-                        {skill.source === "paperclip" ? "Paperclip" : skill.source === "filesystem" ? "Local" : "Custom"}
-                      </Badge>
-                      <button
-                        className="ml-1 text-muted-foreground hover:text-foreground"
-                        onClick={() => unassign.mutate(skill.id)}
-                        disabled={unassign.isPending}
-                        aria-label={`Remove ${skill.name}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
+                    <Collapsible key={skill.id} className="rounded-md border border-border bg-muted/20">
+                      <div className="flex items-center gap-2 px-2.5 py-1.5">
+                        <CollapsibleTrigger
+                          type="button"
+                          className="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                        >
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                          <span className="truncate font-mono text-sm">{skill.name}</span>
+                          <Badge
+                            variant={skill.source === "paperclip" ? "secondary" : "outline"}
+                            className="shrink-0 px-1 py-0 text-[10px]"
+                          >
+                            {skill.source === "paperclip" ? "Paperclip" : skill.source === "filesystem" ? "Local" : skill.source === "skills_sh" ? "skills.sh" : "Custom"}
+                          </Badge>
+                        </CollapsibleTrigger>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon-xs"
+                              className="shrink-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => setConfirmFlow({ kind: "remove", skill })}
+                              disabled={confirmBusy}
+                              aria-label={`Remove ${skill.name}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" sideOffset={6} className="max-w-xs text-balance">
+                            {assignmentMode === "implicit_all"
+                              ? "All active workspace skills run with this agent by default. Removing one switches to a custom set for future runs."
+                              : "Stop including this skill on future runs until you add it again."}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <CollapsibleContent className="px-3 pb-3 pt-0">
+                        <div className="max-h-64 overflow-auto rounded-md border border-border bg-background/80 p-3">
+                          <pre className="whitespace-pre-wrap font-mono text-xs text-muted-foreground">{skill.body}</pre>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
                   ))}
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No skills assigned.</p>
+              <p className="text-sm text-muted-foreground">
+                No skills assigned for this agent. Add workspace skills below, or import new ones.
+              </p>
             )}
 
-            {/* Add skill dropdown */}
             {unassigned.length > 0 && (
               <div className="space-y-2">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -1721,11 +1802,14 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
                       key={skill.id}
                       className="flex items-center justify-between rounded-md border border-border bg-muted/10 px-3 py-2"
                     >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-mono text-sm">{skill.name}</span>
-                          <Badge variant={skill.source === "paperclip" ? "secondary" : "outline"} className="text-[10px] px-1 py-0">
-                            {skill.source === "paperclip" ? "Paperclip" : skill.source === "filesystem" ? "Local" : "Custom"}
+                          <Badge
+                            variant={skill.source === "paperclip" ? "secondary" : "outline"}
+                            className="px-1 py-0 text-[10px]"
+                          >
+                            {skill.source === "paperclip" ? "Paperclip" : skill.source === "filesystem" ? "Local" : skill.source === "skills_sh" ? "skills.sh" : "Custom"}
                           </Badge>
                         </div>
                         {skill.description && (
@@ -1735,8 +1819,9 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => assign.mutate(skill.id)}
-                        disabled={assign.isPending}
+                        className="shrink-0"
+                        onClick={() => setConfirmFlow({ kind: "add", skill })}
+                        disabled={confirmBusy}
                       >
                         Add
                       </Button>
@@ -1749,6 +1834,113 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
         )}
       </div>
 
+      <Dialog open={confirmFlow !== null} onOpenChange={(o) => !o && closeConfirm()}>
+        <DialogContent showCloseButton className="max-w-md">
+          {confirmFlow?.kind === "add" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Add skill</DialogTitle>
+                <DialogDescription>
+                  Add <span className="font-mono text-foreground">{confirmFlow.skill.name}</span> to this agent? It will
+                  be included in the skill bundle on the next run and updates Paperclip agent metadata.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={closeConfirm}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    assign.mutate(confirmFlow.skill.id, { onSettled: closeConfirm });
+                  }}
+                  disabled={assign.isPending}
+                >
+                  {assign.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Adding…
+                    </>
+                  ) : (
+                    "Add skill"
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {confirmFlow?.kind === "remove" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Remove skill</DialogTitle>
+                <DialogDescription>
+                  Remove <span className="font-mono text-foreground">{confirmFlow.skill.name}</span> from this agent’s
+                  active skills? It will not be injected on future runs until you add it again.
+                  {assignmentMode === "implicit_all" && (
+                    <span className="mt-2 block">
+                      With the workspace default, this switches the agent to a{" "}
+                      <strong className="text-foreground">custom</strong> skill list in metadata; other skills stay
+                      assigned.
+                    </span>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={closeConfirm}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    unassign.mutate(confirmFlow.skill.id, { onSettled: closeConfirm });
+                  }}
+                  disabled={unassign.isPending}
+                >
+                  {unassign.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Removing…
+                    </>
+                  ) : (
+                    "Remove skill"
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {confirmFlow?.kind === "reset" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Use all workspace skills</DialogTitle>
+                <DialogDescription>
+                  Switch this agent back to the <strong className="text-foreground">default</strong>: every active
+                  workspace skill will be included on runs. The explicit skill list in metadata will be cleared. New
+                  workspace skills will be included automatically until you remove one again.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={closeConfirm}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    resetImplicitAll.mutate(undefined, { onSettled: closeConfirm });
+                  }}
+                  disabled={resetImplicitAll.isPending}
+                >
+                  {resetImplicitAll.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Applying…
+                    </>
+                  ) : (
+                    "Use all workspace skills"
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <KnowledgeImportModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
@@ -1756,15 +1948,6 @@ function AgentSkillsSection({ agentId }: { agentId: string }) {
         onImport={handleSkillImport}
       />
 
-      <SkillsShSkillPickerModal
-        open={skillsShOpen}
-        onOpenChange={setSkillsShOpen}
-        agentId={agentId}
-        onComplete={() => {
-          queryClient.invalidateQueries({ queryKey: queryKeys.skills.list });
-          queryClient.invalidateQueries({ queryKey: queryKeys.skills.agent(agentId) });
-        }}
-      />
     </div>
   );
 }

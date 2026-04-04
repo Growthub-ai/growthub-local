@@ -515,3 +515,5 @@ export {
   evaluateGrowthubSessionRotation,
   getCompactSignal,
 } from "./growthub-query-engine.js";
+
+export * from "./kb-skill-bundle/index.js";

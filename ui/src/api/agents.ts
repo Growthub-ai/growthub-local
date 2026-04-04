@@ -157,23 +157,33 @@ export const agentsApi = {
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 
-  // Skill knowledge items — workspace-level
-  listSkills: () =>
-    api.get<{ skills: SkillItem[] }>("/skills"),
-  createSkill: (data: { name: string; description: string; body: string }) =>
-    api.post<SkillItem>("/skills", data),
-  updateSkill: (itemId: string, data: { name?: string; description?: string; body?: string }) =>
-    api.patch<SkillItem>(`/skills/${itemId}`, data),
-  deleteSkill: (itemId: string) =>
-    api.delete<{ ok: true }>(`/skills/${itemId}`),
+  // Skill knowledge items — workspace-level (`kb_skill_docs`, company-scoped)
+  listSkills: (companyId: string) =>
+    api.get<{ skills: SkillItem[] }>(withCompanyScope("/skills", companyId)),
+  createSkill: (companyId: string, data: { name: string; description: string; body: string }) =>
+    api.post<SkillItem>(withCompanyScope("/skills", companyId), data),
+  updateSkill: (companyId: string, itemId: string, data: { name?: string; description?: string; body?: string }) =>
+    api.patch<SkillItem>(withCompanyScope(`/skills/${encodeURIComponent(itemId)}`, companyId), data),
+  deleteSkill: (companyId: string, itemId: string) =>
+    api.delete<{ ok: true }>(withCompanyScope(`/skills/${encodeURIComponent(itemId)}`, companyId)),
 
-  // Agent-skill assignments
+  // Agent-skill assignments (`assignmentMode`: omitted = implicit_all for older servers)
   listAgentSkills: (agentId: string) =>
-    api.get<{ skills: SkillItem[] }>(`/agents/${agentId}/skills`),
+    api.get<{ skills: SkillItem[]; assignmentMode?: "implicit_all" | "explicit" }>(
+      `/agents/${encodeURIComponent(agentId)}/skills`,
+    ),
   addAgentSkill: (agentId: string, itemId: string) =>
-    api.post<{ ok: true }>(`/agents/${agentId}/skills/${itemId}`, {}),
+    api.post<{ ok: true }>(
+      `/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(itemId)}`,
+      {},
+    ),
   removeAgentSkill: (agentId: string, itemId: string) =>
-    api.delete<{ ok: true }>(`/agents/${agentId}/skills/${itemId}`),
+    api.delete<{ ok: true }>(
+      `/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(itemId)}`,
+    ),
+  /** Default: all active workspace KB skill docs (clears explicit `metadata.skills`). */
+  resetAgentSkillsImplicitAll: (agentId: string) =>
+    api.delete<{ ok: true }>(`/agents/${encodeURIComponent(agentId)}/skills`),
 
   // Skills.sh integration
   searchSkillsSh: (query: string, owner?: string) => {

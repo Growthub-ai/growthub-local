@@ -32,6 +32,7 @@ import { gtmRoutes } from "./routes/gtm.js";
 import { skillRoutes } from "./routes/skills.js";
 import { knowledgeImportRoutes } from "./routes/knowledge-import.js";
 import { skillsShRoutes } from "./routes/skills-sh.js";
+import { kbSkillDocRoutes } from "./routes/kb-skill-docs.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -308,7 +309,8 @@ export async function createApp(
     api.use("/gtm", gtmRoutes(db));
     api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
     api.use(knowledgeImportRoutes());
-    api.use("/skills-sh", skillsShRoutes());
+    api.use("/skills-sh", skillsShRoutes(db));
+    api.use(kbSkillDocRoutes(db));
     api.use(
       accessRoutes(db, {
         deploymentMode: opts.deploymentMode,
@@ -354,7 +356,8 @@ export async function createApp(
     api.use("/gtm", gtmRoutes(db));
     api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
     api.use(knowledgeImportRoutes());
-    api.use("/skills-sh", skillsShRoutes());
+    api.use("/skills-sh", skillsShRoutes(db));
+    api.use(kbSkillDocRoutes(db));
     api.use(
       accessRoutes(db, {
         deploymentMode: opts.deploymentMode,
