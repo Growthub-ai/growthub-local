@@ -13,10 +13,15 @@ export type GtmKnowledgeMetadata = {
   origin?: string;
   connector_type?: string;
   table_id?: string;
+  table_name?: string;
   visibility?: string;
   workspace_id?: string | null;
   admin_id?: string | null;
   notes?: string | null;
+  remote_item_id?: string | null;
+  sync_status?: "pending" | "synced" | "failed" | "conflict";
+  last_synced_at?: string | null;
+  sync_error?: string | null;
   share_config?: GtmKnowledgeShareConfig;
 };
 

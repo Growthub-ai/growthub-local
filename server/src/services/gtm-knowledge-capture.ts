@@ -232,6 +232,20 @@ export interface SkillItemInput {
   source?: "paperclip" | "filesystem" | "custom";
 }
 
+export interface KnowledgeItemImportInput {
+  name: string;
+  description?: string;
+  body: string;
+  source?: "file" | "skills-api" | "paste" | "custom";
+  fileName?: string;
+  binding?: {
+    tableId?: string | null;
+    tableName?: string | null;
+    workspaceId?: string | null;
+    adminId?: string | null;
+  };
+}
+
 export interface SkillItemView {
   id: string;
   name: string;
@@ -396,4 +410,83 @@ export function seedSkillsFromFilesystem(): { seeded: number } {
     logger.info({ seeded }, "Skills seeded from filesystem into knowledge items");
   }
   return { seeded };
+}
+
+export function createKnowledgeItemFromImport(input: KnowledgeItemImportInput): GtmKnowledgeItemRecord {
+  const now = new Date().toISOString();
+  const itemId = randomUUID();
+  const source = input.source ?? "custom";
+  const normalizedName = input.name.trim();
+  const safeFileName = (input.fileName?.trim() || normalizedName || "knowledge-item")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  const item: GtmKnowledgeItemRecord = {
+    id: itemId,
+    agentSlug: "workspace",
+    compressed: false,
+    createdAt: now,
+    fileName: safeFileName || "knowledge-item",
+    isActive: true,
+    itemCount: 1,
+    metadata: {
+      origin: "import",
+      connector_type: source,
+      table_id: input.binding?.tableId ?? undefined,
+      table_name: input.binding?.tableName ?? undefined,
+      workspace_id: input.binding?.workspaceId ?? null,
+      admin_id: input.binding?.adminId ?? null,
+      notes: truncateSummary(input.description ?? "", 500) || null,
+      sync_status: input.binding?.tableId ? "pending" : undefined,
+      last_synced_at: null,
+      remote_item_id: null,
+    },
+    sourceType: "item",
+    storagePath: input.body,
+    updatedAt: now,
+    userId: "system",
+  };
+
+  const state = readGtmState();
+  state.knowledge.items.unshift(item);
+  writeGtmState(state);
+
+  logger.info(
+    {
+      itemId,
+      source,
+      tableId: input.binding?.tableId ?? null,
+    },
+    "Knowledge item imported",
+  );
+  return item;
+}
+
+export function bindKnowledgeTable(input: {
+  tableId: string;
+  tableName: string;
+  workspaceId?: string | null;
+  adminId?: string | null;
+  connectorType?: string;
+}) {
+  const state = readGtmState();
+  const now = new Date().toISOString();
+  state.knowledge.table = {
+    ...state.knowledge.table,
+    updatedAt: now,
+    metadata: {
+      ...state.knowledge.table.metadata,
+      table_id: input.tableId,
+      table_name: input.tableName,
+      workspace_id: input.workspaceId ?? null,
+      admin_id: input.adminId ?? null,
+      connector_type: input.connectorType ?? state.knowledge.table.metadata.connector_type ?? "growthub",
+      sync_status: "synced",
+      last_synced_at: now,
+      sync_error: null,
+    },
+  };
+  writeGtmState(state);
+  return state.knowledge.table;
 }

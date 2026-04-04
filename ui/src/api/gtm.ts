@@ -52,6 +52,13 @@ export type GtmCampaignDraft = {
   leadAgentId: string | null;
 };
 
+export type RemoteKnowledgeTable = {
+  id: string;
+  name: string;
+  workspaceId?: string | null;
+  adminId?: string | null;
+};
+
 export const gtmApi = {
   getProfile: () => api.get<GtmViewModel["profile"]>("/gtm/profile"),
   getKnowledge: () => api.get<GtmViewModel["knowledge"]>("/gtm/knowledge"),
@@ -119,6 +126,26 @@ export const gtmApi = {
     ),
   executeKnowledgeQuery: (query: string) =>
     api.post<KnowledgeQueryResult>("/gtm/knowledge-base/query", { query }),
+  listRemoteKnowledgeTables: () =>
+    api.get<{ tables: RemoteKnowledgeTable[] }>("/gtm/knowledge-sync/tables"),
+  createRemoteKnowledgeTable: (body: { name: string; workspaceId?: string }) =>
+    api.post<{ table: RemoteKnowledgeTable }>("/gtm/knowledge-sync/tables", body),
+  bindRemoteKnowledgeTable: (body: {
+    tableId: string;
+    tableName: string;
+    workspaceId?: string | null;
+    adminId?: string | null;
+  }) =>
+    api.post<{
+      binding: {
+        tableId: string | null;
+        tableName: string | null;
+        workspaceId: string | null;
+        adminId: string | null;
+        syncStatus: string | null;
+        lastSyncedAt: string | null;
+      };
+    }>("/gtm/knowledge-sync/bind", body),
 };
 
 // Knowledge Base types

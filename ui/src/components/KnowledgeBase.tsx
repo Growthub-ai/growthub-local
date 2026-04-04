@@ -12,6 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ChevronLeft,
   ChevronRight,
@@ -431,6 +439,8 @@ export function KnowledgeBase() {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [activeTab, setActiveTab] = useState<"table" | "query">("table");
+  const [selectedRemoteTableId, setSelectedRemoteTableId] = useState<string>("");
+  const [newRemoteTableName, setNewRemoteTableName] = useState("");
 
   const tablesQuery = useQuery({
     queryKey: ["knowledge-base", "tables"],
@@ -444,6 +454,38 @@ export function KnowledgeBase() {
         ? gtmApi.getKnowledgeTable(selectedTable, { limit: 50, offset })
         : Promise.resolve(null),
     enabled: !!selectedTable,
+  });
+
+  const remoteTablesQuery = useQuery({
+    queryKey: ["knowledge-sync", "tables"],
+    queryFn: () => gtmApi.listRemoteKnowledgeTables(),
+  });
+
+  const createRemoteTableMutation = useMutation({
+    mutationFn: (name: string) => gtmApi.createRemoteKnowledgeTable({ name }),
+    onSuccess: async (payload) => {
+      await remoteTablesQuery.refetch();
+      const created = payload.table;
+      if (created?.id) {
+        setSelectedRemoteTableId(created.id);
+      }
+      setNewRemoteTableName("");
+    },
+  });
+
+  const bindRemoteTableMutation = useMutation({
+    mutationFn: (tableId: string) => {
+      const table = (remoteTablesQuery.data?.tables ?? []).find((entry) => entry.id === tableId);
+      if (!table) {
+        throw new Error("Choose a remote table before binding.");
+      }
+      return gtmApi.bindRemoteKnowledgeTable({
+        tableId: table.id,
+        tableName: table.name,
+        workspaceId: table.workspaceId ?? null,
+        adminId: table.adminId ?? null,
+      });
+    },
   });
 
   const handleSelectTable = useCallback((name: string) => {
@@ -497,9 +539,41 @@ export function KnowledgeBase() {
               </TabsTrigger>
             </TabsList>
             {activeTab === "table" && selectedTable && (
-              <span className="text-xs text-muted-foreground">
-                Query Table
-              </span>
+              <div className="flex items-center gap-2 py-2">
+                <Select value={selectedRemoteTableId} onValueChange={setSelectedRemoteTableId}>
+                  <SelectTrigger className="h-8 w-[220px]">
+                    <SelectValue placeholder="Select remote knowledge table" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(remoteTablesQuery.data?.tables ?? []).map((table) => (
+                      <SelectItem key={table.id} value={table.id}>
+                        {table.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={newRemoteTableName}
+                  onChange={(event) => setNewRemoteTableName(event.target.value)}
+                  placeholder="New remote table"
+                  className="h-8 w-[180px]"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!newRemoteTableName.trim() || createRemoteTableMutation.isPending}
+                  onClick={() => createRemoteTableMutation.mutate(newRemoteTableName.trim())}
+                >
+                  Create
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!selectedRemoteTableId || bindRemoteTableMutation.isPending}
+                  onClick={() => bindRemoteTableMutation.mutate(selectedRemoteTableId)}
+                >
+                  Bind
+                </Button>
+              </div>
             )}
           </div>
 

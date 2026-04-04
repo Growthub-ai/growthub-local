@@ -11,6 +11,7 @@
 import { Router } from "express";
 import multer from "multer";
 import {
+  createKnowledgeItemFromImport,
   createSkillKnowledgeItem,
 } from "../services/gtm-knowledge-capture.js";
 import { logger } from "../middleware/logger.js";
@@ -51,8 +52,20 @@ export function knowledgeImportRoutes() {
           });
           results.push(skill);
         } else {
-          res.status(501).json({ error: "Knowledge import is not implemented in this branch state" });
-          return;
+          const imported = createKnowledgeItemFromImport({
+            name: item.name.trim(),
+            description: item.description ?? "",
+            body: item.body,
+            source: (item.source as "file" | "skills-api" | "paste" | "custom" | undefined) ?? "custom",
+            fileName: item.fileName,
+            binding: {
+              tableId: typeof req.body?.tableId === "string" ? req.body.tableId : undefined,
+              tableName: typeof req.body?.tableName === "string" ? req.body.tableName : undefined,
+              workspaceId: typeof req.body?.workspaceId === "string" ? req.body.workspaceId : undefined,
+              adminId: typeof req.body?.adminId === "string" ? req.body.adminId : undefined,
+            },
+          });
+          results.push(imported);
         }
       }
 
@@ -105,8 +118,20 @@ export function knowledgeImportRoutes() {
           });
           results.push(skill);
         } else {
-          res.status(501).json({ error: "Knowledge import is not implemented in this branch state" });
-          return;
+          const imported = createKnowledgeItemFromImport({
+            name,
+            description,
+            body,
+            source: "file",
+            fileName: file.originalname,
+            binding: {
+              tableId: typeof req.body?.tableId === "string" ? req.body.tableId : undefined,
+              tableName: typeof req.body?.tableName === "string" ? req.body.tableName : undefined,
+              workspaceId: typeof req.body?.workspaceId === "string" ? req.body.workspaceId : undefined,
+              adminId: typeof req.body?.adminId === "string" ? req.body.adminId : undefined,
+            },
+          });
+          results.push(imported);
         }
       }
 

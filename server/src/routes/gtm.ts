@@ -10,6 +10,7 @@ import { issueService } from "../services/issues.js";
 import { ticketService } from "../services/tickets.js";
 import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.js";
 import { enforceHeartbeatPolicy, enforcePerformanceReview } from "../services/gtm-campaign-policy.js";
+import { bindKnowledgeTable } from "../services/gtm-knowledge-capture.js";
 import { resolvePaperclipHomeDir } from "../home-paths.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -135,6 +136,39 @@ function saveGrowthubBaseUrl(baseUrl: string) {
       growthubBaseUrl: baseUrl,
     },
   });
+}
+
+async function callGrowthubKnowledgeBridge(
+  path: string,
+  input: {
+    method?: "GET" | "POST";
+    body?: Record<string, unknown>;
+  } = {},
+) {
+  const connection = getGrowthubConnectionState();
+  if (!connection.baseUrl) {
+    throw new Error("Growthub base URL is not configured.");
+  }
+  if (!connection.token) {
+    throw new Error("Growthub local-machine token is not configured.");
+  }
+
+  const response = await fetch(new URL(path, connection.baseUrl), {
+    method: input.method ?? "GET",
+    headers: {
+      authorization: `Bearer ${connection.token}`,
+      "content-type": "application/json",
+    },
+    ...(input.body ? { body: JSON.stringify(input.body) } : {}),
+  });
+  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(
+      (typeof data.error === "string" && data.error) ||
+      "Growthub knowledge bridge request failed.",
+    );
+  }
+  return data;
 }
 
 export function gtmRoutes(db: Db) {
@@ -289,6 +323,67 @@ export function gtmRoutes(db: Db) {
       baseUrl: normalizedBaseUrl,
       callbackUrl,
       connected: getGrowthubConnectionState().connected,
+    });
+  });
+
+  router.get("/knowledge-sync/tables", async (_req, res) => {
+    try {
+      const data = await callGrowthubKnowledgeBridge("/api/providers/growthub-local/knowledge/tables");
+      res.json({
+        tables: Array.isArray(data.tables) ? data.tables : [],
+      });
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : "Failed to list hosted knowledge tables.",
+      });
+    }
+  });
+
+  router.post("/knowledge-sync/tables", async (req, res) => {
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      res.status(422).json({ error: "Table name is required." });
+      return;
+    }
+    try {
+      const data = await callGrowthubKnowledgeBridge("/api/providers/growthub-local/knowledge/tables", {
+        method: "POST",
+        body: {
+          name,
+          workspaceId: typeof req.body?.workspaceId === "string" ? req.body.workspaceId : undefined,
+        },
+      });
+      res.status(201).json(data);
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : "Failed to create hosted knowledge table.",
+      });
+    }
+  });
+
+  router.post("/knowledge-sync/bind", (req, res) => {
+    const tableId = typeof req.body?.tableId === "string" ? req.body.tableId.trim() : "";
+    const tableName = typeof req.body?.tableName === "string" ? req.body.tableName.trim() : "";
+    if (!tableId || !tableName) {
+      res.status(422).json({ error: "tableId and tableName are required." });
+      return;
+    }
+    const table = bindKnowledgeTable({
+      tableId,
+      tableName,
+      workspaceId: typeof req.body?.workspaceId === "string" ? req.body.workspaceId : null,
+      adminId: typeof req.body?.adminId === "string" ? req.body.adminId : null,
+      connectorType: "growthub",
+    });
+    res.json({
+      binding: {
+        tableId: table.metadata.table_id ?? null,
+        tableName: table.metadata.table_name ?? null,
+        workspaceId: table.metadata.workspace_id ?? null,
+        adminId: table.metadata.admin_id ?? null,
+        syncStatus: table.metadata.sync_status ?? null,
+        lastSyncedAt: table.metadata.last_synced_at ?? null,
+      },
     });
   });
 
