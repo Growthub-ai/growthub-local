@@ -10,6 +10,9 @@ tmp
 .npm-cache/
 SKILL.md
 
+# Per-clone agent / operator runbook (copy from docs/LOCAL_AGENTS.template.md)
+LOCAL_AGENTS.md
+
 # Agent worktrees and local settings (super admin only)
 .claude/worktrees/
 .claude/settings.json

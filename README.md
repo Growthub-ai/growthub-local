@@ -55,32 +55,23 @@ This repository is the dedicated home for the local runtime product boundary. Ho
 
 ### Canonical dev loop
 
-Start backend and UI from source in two terminals:
+Use **`scripts/runtime-control.sh`** from the repo root — one deterministic path for humans and agents (stops stale processes, optionally syncs the target git branch, starts **server `dev:watch` + Vite** with your Paperclip config):
 
 ```bash
-# Terminal 1 — backend watch
-pnpm --dir server run dev:watch
-
-# Terminal 2 — UI dev server (HMR)
-pnpm --dir ui run dev
+scripts/runtime-control.sh up-main
+# or: scripts/runtime-control.sh up-branch <branch>
+# or: scripts/runtime-control.sh up-pr <pr-number>
+scripts/runtime-control.sh status
+scripts/runtime-control.sh stop
 ```
 
-Then open the surface you are working on:
+Set **`GH_SERVER_PORT`** to match the port your API actually listens on if it differs from the script default (see `CONTRIBUTING.md`). Then open the surface you are testing, for example GTM:
 
-```bash
-# GTM
+```text
 http://127.0.0.1:5173/gtm/<COMPANY_PREFIX>/workspace
-
-# DX
-http://127.0.0.1:5173/dx/...
 ```
 
-Verify both are healthy before validating any feature:
-
-```bash
-curl http://127.0.0.1:3101/api/health
-curl http://127.0.0.1:5173/api/health
-```
+Published semver for `@growthub/cli` and the installer is defined only in **`cli/package.json`** and **`packages/create-growthub-local/package.json`** — see **`docs/ARTIFACT_VERSIONS.md`**.
 
 ### Pre-push gate
 
