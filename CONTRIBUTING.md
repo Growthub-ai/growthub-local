@@ -55,32 +55,35 @@ It does **not** contain adapter packages, the DB package, or plugin infrastructu
 
 ## Canonical dev loop
 
-Start backend and UI from source — this is the only default for feature development:
+**Default:** from the repo root, use **`scripts/runtime-control.sh`** so cleanup, env (`PAPERCLIP_CONFIG`, `PAPERCLIP_SURFACE_PROFILE=gtm`, `VITE_API_ORIGIN`), and branch checkout stay consistent:
 
 ```bash
-# Terminal 1
-pnpm --dir server run dev:watch
-
-# Terminal 2
-pnpm --dir ui run dev
+scripts/runtime-control.sh up-main
+scripts/runtime-control.sh up-branch <branch>
+scripts/runtime-control.sh up-pr <pr-number>
+scripts/runtime-control.sh stop
+scripts/runtime-control.sh status
+scripts/runtime-control.sh url
 ```
 
-Open the surface you are testing:
+**Ports:** The script defaults `GH_SERVER_PORT=3100` and sets `VITE_API_ORIGIN` from it. The Vite dev proxy in `ui/vite.config.ts` otherwise defaults to **3101**. If your `pnpm --dir server run dev:watch` process listens on **3101**, run with `GH_SERVER_PORT=3101` so the UI hits the correct API.
 
-```bash
-# GTM
+**Anti-patterns for agents:** Do not run **`node scripts/worktree-bootstrap.mjs`**. Do not improvise raw `pnpm --dir server` + `pnpm --dir ui` as a substitute for **`scripts/runtime-control.sh`** unless a maintainer explicitly instructs you. Do not manually copy sources into **growthub-core** for validation.
+
+Open the surface you are testing — for example GTM:
+
+```text
 http://127.0.0.1:5173/gtm/<COMPANY_PREFIX>/workspace
-
-# DX
-http://127.0.0.1:5173/dx/...
 ```
 
-Verify both are healthy before validating:
+Verify health against the **same API port** you configured (`GH_SERVER_PORT` / your server config), for example:
 
 ```bash
-curl http://127.0.0.1:3101/api/health
+curl "http://127.0.0.1:${GH_SERVER_PORT:-3100}/api/health"
 curl http://127.0.0.1:5173/api/health
 ```
+
+**Grounding:** Never treat prose or old PRs as semver truth — read **`docs/ARTIFACT_VERSIONS.md`** and the `package.json` files on your branch.
 
 Run the pre-push gate before any push:
 
@@ -144,13 +147,13 @@ Each worktree gets its own server port (3101+) and embedded Postgres instance. Y
 
 ## Version bumps
 
-Version bumps are only required when source behavior ships to npm:
+When **`@growthub/cli`** or **`create-growthub-local`** behavior that consumers rely on changes, bump and align in **one PR**:
 
-- bump `cli/package.json`
-- bump `packages/create-growthub-local/package.json`
-- the dep pin in `create-growthub-local` must match the cli version exactly
+- bump `cli/package.json` `version`
+- bump `packages/create-growthub-local/package.json` `version`
+- set `packages/create-growthub-local/package.json` `dependencies["@growthub/cli"]` to the **same** semver as the CLI
 
-Docs-only, config-only, or script-only changes do not require a bump.
+Pure documentation or repo-only hygiene that does **not** change published package behavior does not require a version bump — but the PR description should still say what stayed **out of scope** for npm so reviewers do not assume a release. See **`docs/ARTIFACT_VERSIONS.md`**.
 
 ---
 

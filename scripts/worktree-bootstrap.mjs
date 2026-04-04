@@ -2,6 +2,9 @@
 /**
  * worktree-bootstrap.mjs — PR → browser in one shot.
  *
+ * AGENTS: Do not run this file directly. It is maintainer / automation plumbing only.
+ * Canonical agent + human source dev control is scripts/runtime-control.sh (see AGENTS.md).
+ *
  * Given a worktree with a branch's source changes, this script:
  *   1. Syncs changed ui/src + server/src files into growthub-core
  *   2. Rebuilds the UI via vite in growthub-core
