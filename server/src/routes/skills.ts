@@ -6,11 +6,7 @@
 import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import { companies } from "@paperclipai/db";
-import {
-  metadataWithImplicitAllSkills,
-  parseAgentSkillAssignment,
-  patchMetadataSkills,
-} from "@paperclipai/shared";
+import { parseAgentSkillAssignment, patchMetadataSkills } from "@paperclipai/shared";
 import { agentService } from "../services/agents.js";
 import {
   createKbSkillDoc,
@@ -182,14 +178,9 @@ export function skillRoutes(db: Db) {
       await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
       const assignment = parseAgentSkillAssignment(agent.metadata as Record<string, unknown> | null);
       const rows: ReturnType<typeof toSkillItemApi>[] = [];
-      if (assignment.mode === "implicit_all") {
-        const list = await listKbSkillDocsForCompany(db, agent.companyId);
-        rows.push(...list.map(toSkillItemApi));
-      } else {
-        for (const id of assignment.ids) {
-          const row = await getKbSkillDoc(db, agent.companyId, id);
-          if (row && row.isActive) rows.push(toSkillItemApi(row));
-        }
+      for (const id of assignment.ids) {
+        const row = await getKbSkillDoc(db, agent.companyId, id);
+        if (row && row.isActive) rows.push(toSkillItemApi(row));
       }
       res.json({ skills: rows, assignmentMode: assignment.mode });
     } catch (err) {
@@ -197,7 +188,7 @@ export function skillRoutes(db: Db) {
     }
   });
 
-  /** Restore default: all active workspace KB skill docs (omit `metadata.skills`). */
+  /** Clear skill assignments (opt-in model: no skills until explicitly assigned). */
   router.delete("/agents/:agentId/skills", async (req, res, next) => {
     try {
       const agentId = req.params.agentId as string;
@@ -209,7 +200,30 @@ export function skillRoutes(db: Db) {
       assertCompanyAccess(req, agent.companyId);
 
       await agents.update(agentId, {
-        metadata: metadataWithImplicitAllSkills(agent.metadata as Record<string, unknown> | null),
+        metadata: patchMetadataSkills(agent.metadata as Record<string, unknown> | null, []),
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** Assign every active workspace KB skill doc explicitly in metadata (opt-in “use all”). */
+  router.post("/agents/:agentId/skills/assign-all-workspace", async (req, res, next) => {
+    try {
+      const agentId = req.params.agentId as string;
+      const agent = await agents.getById(agentId);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      assertCompanyAccess(req, agent.companyId);
+
+      await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
+      const allActive = await listKbSkillDocsForCompany(db, agent.companyId);
+      const allIds = allActive.map((r) => r.id);
+      await agents.update(agentId, {
+        metadata: patchMetadataSkills(agent.metadata as Record<string, unknown> | null, allIds),
       });
       res.json({ ok: true });
     } catch (err) {
@@ -237,11 +251,7 @@ export function skillRoutes(db: Db) {
 
       await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
       const assignment = parseAgentSkillAssignment(agent.metadata as Record<string, unknown> | null);
-      const allActive = await listKbSkillDocsForCompany(db, agent.companyId);
-      const allIds = allActive.map((r) => r.id);
-
-      const current =
-        assignment.mode === "implicit_all" ? allIds : [...assignment.ids];
+      const current = [...assignment.ids];
 
       if (current.includes(itemId)) {
         res.json({ ok: true });
@@ -271,21 +281,9 @@ export function skillRoutes(db: Db) {
 
       await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
       const assignment = parseAgentSkillAssignment(agent.metadata as Record<string, unknown> | null);
-      const allActive = await listKbSkillDocsForCompany(db, agent.companyId);
-      const allIds = allActive.map((r) => r.id);
+      const next = assignment.ids.filter((id) => id !== itemId);
 
-      let next: string[];
-      if (assignment.mode === "implicit_all") {
-        next = allIds.filter((id) => id !== itemId);
-      } else {
-        next = assignment.ids.filter((id) => id !== itemId);
-      }
-
-      if (assignment.mode === "implicit_all" && next.length === allIds.length) {
-        res.json({ ok: true });
-        return;
-      }
-      if (assignment.mode === "explicit" && next.length === assignment.ids.length) {
+      if (next.length === assignment.ids.length) {
         res.json({ ok: true });
         return;
       }

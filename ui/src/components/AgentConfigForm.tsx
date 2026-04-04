@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { FolderOpen, Heart, ChevronDown, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractModelName, extractProviderId } from "../lib/model-utils";
+import { adapterBrandLogoSrc } from "../lib/adapter-brand-logo";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
 import {
@@ -490,12 +491,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         </div>
       )}
 
-      {/* ---- Adapter ---- */}
+      {/* ---- Model (runtime) ---- */}
       <div className={cn(!cards && (isCreate ? "border-t border-border" : "border-b border-border"))}>
         <div className={cn(cards ? "flex items-center justify-between mb-3" : "px-4 py-2 flex items-center justify-between gap-2")}>
           {cards
-            ? <h3 className="text-sm font-medium">Adapter</h3>
-            : <span className="text-xs font-medium text-muted-foreground">Adapter</span>
+            ? <h3 className="text-sm font-medium">Model</h3>
+            : <span className="text-xs font-medium text-muted-foreground">Model</span>
           }
           <Button
             type="button"
@@ -509,7 +510,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           </Button>
         </div>
         <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
-          <Field label="Adapter type" hint={help.adapterType}>
+          <Field label="Model type" hint={help.adapterType}>
             <AdapterTypeDropdown
               value={adapterType}
               onChange={(t) => {
@@ -950,6 +951,17 @@ const ADAPTER_DISPLAY_LIST: { value: string; label: string; comingSoon: boolean 
   })),
 ];
 
+function AdapterTypeGlyph({ adapterType }: { adapterType: string }) {
+  if (adapterType === "opencode_local") {
+    return <OpenCodeLogoIcon className="h-4 w-4 shrink-0" />;
+  }
+  const brand = adapterBrandLogoSrc(adapterType);
+  if (brand) {
+    return <img src={brand} alt="" className="h-4 w-4 shrink-0 object-contain" />;
+  }
+  return null;
+}
+
 function AdapterTypeDropdown({
   value,
   onChange,
@@ -961,11 +973,11 @@ function AdapterTypeDropdown({
     <Popover>
       <PopoverTrigger asChild>
         <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
-          <span className="inline-flex items-center gap-1.5">
-            {value === "opencode_local" ? <OpenCodeLogoIcon className="h-3.5 w-3.5" /> : null}
-            <span>{adapterLabels[value] ?? value}</span>
+          <span className="inline-flex items-center gap-1.5 min-w-0">
+            <AdapterTypeGlyph adapterType={value} />
+            <span className="truncate">{adapterLabels[value] ?? value}</span>
           </span>
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+          <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
@@ -974,7 +986,7 @@ function AdapterTypeDropdown({
             key={item.value}
             disabled={item.comingSoon}
             className={cn(
-              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded",
+              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded gap-2",
               item.comingSoon
                 ? "opacity-40 cursor-not-allowed"
                 : "hover:bg-accent/50",
@@ -984,12 +996,12 @@ function AdapterTypeDropdown({
               if (!item.comingSoon) onChange(item.value);
             }}
           >
-            <span className="inline-flex items-center gap-1.5">
-              {item.value === "opencode_local" ? <OpenCodeLogoIcon className="h-3.5 w-3.5" /> : null}
-              <span>{item.label}</span>
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <AdapterTypeGlyph adapterType={item.value} />
+              <span className="truncate">{item.label}</span>
             </span>
             {item.comingSoon && (
-              <span className="text-[10px] text-muted-foreground">Coming soon</span>
+              <span className="text-[10px] text-muted-foreground shrink-0">Coming soon</span>
             )}
           </button>
         ))}

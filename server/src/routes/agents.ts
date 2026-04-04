@@ -19,6 +19,7 @@ import {
   updateAgentInstructionsPathSchema,
   wakeAgentSchema,
   updateAgentSchema,
+  shouldIncludeAgentInDxAgentList,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import {
@@ -547,7 +548,7 @@ export function agentRoutes(db: Db) {
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const result = await svc.list(companyId);
+    const result = (await svc.list(companyId)).filter(shouldIncludeAgentInDxAgentList);
     const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
     if (canReadConfigs || req.actor.type === "board") {
       res.json(result);
@@ -642,7 +643,7 @@ export function agentRoutes(db: Db) {
   router.get("/companies/:companyId/agent-configurations", async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCanReadConfigurations(req, companyId);
-    const rows = await svc.list(companyId);
+    const rows = (await svc.list(companyId)).filter(shouldIncludeAgentInDxAgentList);
     res.json(rows.map((row) => redactAgentConfiguration(row)));
   });
 

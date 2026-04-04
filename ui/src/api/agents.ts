@@ -167,9 +167,9 @@ export const agentsApi = {
   deleteSkill: (companyId: string, itemId: string) =>
     api.delete<{ ok: true }>(withCompanyScope(`/skills/${encodeURIComponent(itemId)}`, companyId)),
 
-  // Agent-skill assignments (`assignmentMode`: omitted = implicit_all for older servers)
+  // Agent-skill assignments (opt-in: only listed skills are injected unless user assigns all explicitly)
   listAgentSkills: (agentId: string) =>
-    api.get<{ skills: SkillItem[]; assignmentMode?: "implicit_all" | "explicit" }>(
+    api.get<{ skills: SkillItem[]; assignmentMode: "explicit" }>(
       `/agents/${encodeURIComponent(agentId)}/skills`,
     ),
   addAgentSkill: (agentId: string, itemId: string) =>
@@ -181,9 +181,15 @@ export const agentsApi = {
     api.delete<{ ok: true }>(
       `/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(itemId)}`,
     ),
-  /** Default: all active workspace KB skill docs (clears explicit `metadata.skills`). */
-  resetAgentSkillsImplicitAll: (agentId: string) =>
+  /** Clear all skill assignments (metadata `skills: []`). */
+  clearAgentSkills: (agentId: string) =>
     api.delete<{ ok: true }>(`/agents/${encodeURIComponent(agentId)}/skills`),
+  /** Persist every active workspace skill ID in metadata (explicit “use all”). */
+  assignAllWorkspaceSkills: (agentId: string) =>
+    api.post<{ ok: true }>(
+      `/agents/${encodeURIComponent(agentId)}/skills/assign-all-workspace`,
+      {},
+    ),
 
   // Skills.sh integration
   searchSkillsSh: (query: string, owner?: string) => {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
+import { shouldIncludeAgentInGtmDirectoryList } from "@paperclipai/shared";
 import { getServerAdapter } from "../adapters/registry.js";
 import { readConfigFile, writeConfigFile } from "../config-file.js";
 import { agentService } from "../services/agents.js";
@@ -35,6 +36,10 @@ function isGtmAgent(agent: { metadata: unknown }): boolean {
   return metadata?.surfaceProfile === GTM_METADATA.surfaceProfile || metadata?.product === GTM_METADATA.product;
 }
 
+function gtmDirectoryAgents<T extends { metadata: unknown }>(rows: T[]): T[] {
+  return rows.filter((row) => shouldIncludeAgentInGtmDirectoryList(row));
+}
+
 function gtmTicketMetadata(metadata: Record<string, unknown> | null | undefined) {
   return {
     ...(metadata ?? {}),
@@ -44,11 +49,21 @@ function gtmTicketMetadata(metadata: Record<string, unknown> | null | undefined)
 }
 
 function gtmAgentMetadata(metadata: Record<string, unknown> | null | undefined) {
-  return {
+  const merged: Record<string, unknown> = {
     ...(metadata ?? {}),
     ...GTM_METADATA,
     entity: "agent",
   };
+  if (!Object.prototype.hasOwnProperty.call(merged, "skills")) {
+    merged.skills = [];
+  } else if (!Array.isArray(merged.skills)) {
+    merged.skills = [];
+  } else {
+    merged.skills = (merged.skills as unknown[]).filter(
+      (s): s is string => typeof s === "string" && s.length > 0,
+    );
+  }
+  return merged;
 }
 
 function compactSentence(value: string): string {
@@ -309,15 +324,23 @@ export function gtmRoutes(db: Db) {
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const rows = await agents.list(companyId);
-    res.json(rows.filter(isGtmAgent));
+    const scope = typeof req.query.scope === "string" ? req.query.scope : "";
+    const includeTerminated = scope === "trash";
+    // Always runs GTM directory filter (dxKind / DX surface / eligibility) before splitting by status,
+    // so terminated trash and main inventory never include DX-only agents.
+    const rows = gtmDirectoryAgents(await agents.list(companyId, { includeTerminated }));
+    if (scope === "trash") {
+      res.json(rows.filter((a) => a.status === "terminated"));
+      return;
+    }
+    res.json(rows.filter((a) => a.status !== "terminated"));
   });
 
   router.get("/companies/:companyId/workspace-config", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     try {
-      const rows = await agents.list(companyId);
+      const rows = gtmDirectoryAgents(await agents.list(companyId));
       const existingAgent = rows.find(isManagedClaudeBrowserAgent) ?? null;
       const defaults = buildClaudeBindingDefaults();
       let environmentTest: AdapterEnvironmentTestResult | null = null;
@@ -358,7 +381,7 @@ export function gtmRoutes(db: Db) {
       gtmKind: "claude_browser_sdr",
       defaultWorkspaceBinding: true,
     };
-    const rows = await agents.list(companyId);
+    const rows = gtmDirectoryAgents(await agents.list(companyId));
     const existingAgent = rows.find(isManagedClaudeBrowserAgent) ?? null;
     const agent = existingAgent
       ? await agents.update(existingAgent.id, {
@@ -418,7 +441,12 @@ export function gtmRoutes(db: Db) {
       budgetMonthlyCents: 0,
       capabilities: req.body?.capabilities ? String(req.body.capabilities) : null,
       icon: null,
-      metadata: gtmAgentMetadata(readRecord(req.body?.metadata)),
+      metadata: (() => {
+        const reqMeta = readRecord(req.body?.metadata) ?? {};
+        const kind =
+          typeof reqMeta.gtmKind === "string" && reqMeta.gtmKind.trim() ? reqMeta.gtmKind.trim() : "gtm_user_created";
+        return gtmAgentMetadata({ ...reqMeta, gtmKind: kind });
+      })(),
       permissions: {
         canCreateAgents: false,
       },
@@ -437,7 +465,7 @@ export function gtmRoutes(db: Db) {
     const companyId = typeof req.query.companyId === "string" ? req.query.companyId : "";
     assertCompanyAccess(req, companyId);
     const agent = await agents.getById(agentId);
-    if (!agent || agent.companyId !== companyId || !isGtmAgent(agent)) {
+    if (!agent || agent.companyId !== companyId || !shouldIncludeAgentInGtmDirectoryList(agent)) {
       res.status(404).json({ error: "Agent not found" });
       return;
     }
@@ -459,7 +487,7 @@ export function gtmRoutes(db: Db) {
     const companyId = typeof req.query.companyId === "string" ? req.query.companyId : "";
     assertCompanyAccess(req, companyId);
     const existing = await agents.getById(agentId);
-    if (!existing || existing.companyId !== companyId || !isGtmAgent(existing)) {
+    if (!existing || existing.companyId !== companyId || !shouldIncludeAgentInGtmDirectoryList(existing)) {
       res.status(404).json({ error: "Agent not found" });
       return;
     }
@@ -472,7 +500,7 @@ export function gtmRoutes(db: Db) {
     const companyId = typeof req.query.companyId === "string" ? req.query.companyId : "";
     assertCompanyAccess(req, companyId);
     const existing = await agents.getById(agentId);
-    if (!existing || existing.companyId !== companyId || !isGtmAgent(existing)) {
+    if (!existing || existing.companyId !== companyId || !shouldIncludeAgentInGtmDirectoryList(existing)) {
       res.status(404).json({ error: "Agent not found" });
       return;
     }
@@ -557,8 +585,28 @@ export function gtmRoutes(db: Db) {
       agents.list(companyId),
     ]);
     const gtmTicketIds = new Set(gtmTickets.filter(isGtmTicket).map((ticket) => ticket.id));
-    const gtmAgentIds = new Set(companyAgents.filter(isGtmAgent).map((agent) => agent.id));
+    const gtmAgentIds = new Set(gtmDirectoryAgents(companyAgents).map((agent) => agent.id));
     const rows = await issues.list(companyId);
+    res.json(
+      rows.filter(
+        (issue) =>
+          (issue.ticketId != null && gtmTicketIds.has(issue.ticketId)) ||
+          (issue.assigneeAgentId != null && gtmAgentIds.has(issue.assigneeAgentId)),
+      ),
+    );
+  });
+
+  /** Hidden (archived) GTM issues — same scope as list issues, for inbox recovery. */
+  router.get("/companies/:companyId/issues/hidden", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const [gtmTickets, companyAgents] = await Promise.all([
+      tickets.list(companyId),
+      agents.list(companyId),
+    ]);
+    const gtmTicketIds = new Set(gtmTickets.filter(isGtmTicket).map((ticket) => ticket.id));
+    const gtmAgentIds = new Set(gtmDirectoryAgents(companyAgents).map((agent) => agent.id));
+    const rows = await issues.listArchived(companyId);
     res.json(
       rows.filter(
         (issue) =>
@@ -606,7 +654,7 @@ export function gtmRoutes(db: Db) {
     ]);
     const filteredTickets = gtmTickets.filter(isGtmTicket);
     const gtmTicketIds = new Set(filteredTickets.map((ticket) => ticket.id));
-    const filteredAgents = companyAgents.filter(isGtmAgent);
+    const filteredAgents = gtmDirectoryAgents(companyAgents);
     const gtmAgentIds = new Set(filteredAgents.map((agent) => agent.id));
     const gtmAgentNames = new Map(filteredAgents.map((agent) => [agent.id, agent.name]));
     const filteredIssues = (await issues.list(companyId)).filter(
@@ -668,7 +716,7 @@ export function gtmRoutes(db: Db) {
       heartbeats.list(companyId, undefined, 50),
       issues.list(companyId),
     ]);
-    const gtmAgentIds = new Set(companyAgents.filter(isGtmAgent).map((agent) => agent.id));
+    const gtmAgentIds = new Set(gtmDirectoryAgents(companyAgents).map((agent) => agent.id));
     const gtmIssueIds = new Set(
       gtmIssues
         .filter((issue) => issue.assigneeAgentId != null && gtmAgentIds.has(issue.assigneeAgentId))

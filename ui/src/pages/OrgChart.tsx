@@ -9,6 +9,7 @@ import { agentUrl } from "../lib/utils";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
+import { AdapterBrandMark } from "../components/AdapterBrandMark";
 import { Network } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
@@ -114,17 +115,6 @@ function collectEdges(nodes: LayoutNode[]): Array<{ parent: LayoutNode; child: L
 }
 
 // ── Status dot colors (raw hex for SVG) ─────────────────────────────────
-
-const adapterLabels: Record<string, string> = {
-  claude_local: "Claude",
-  codex_local: "Codex",
-  gemini_local: "Gemini",
-  opencode_local: "OpenCode",
-  cursor: "Cursor",
-  openclaw_gateway: "OpenClaw Gateway",
-  process: "Process",
-  http: "HTTP",
-};
 
 const statusDotColor: Record<string, string> = {
   running: "#22d3ee",
@@ -407,11 +397,11 @@ export function OrgChart() {
                   <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">
                     {agent?.title ?? roleLabel(node.role)}
                   </span>
-                  {agent && (
-                    <span className="text-[10px] text-muted-foreground/60 font-mono leading-tight mt-1">
-                      {adapterLabels[agent.adapterType] ?? agent.adapterType}
+                  {agent ? (
+                    <span className="mt-1 inline-flex leading-none">
+                      <AdapterBrandMark adapterType={agent.adapterType} size="icon-sm" />
                     </span>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>

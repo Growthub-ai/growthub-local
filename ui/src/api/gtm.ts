@@ -65,7 +65,10 @@ export const gtmApi = {
     api.post<GtmConnectionStatus>("/gtm/connection/disconnect", {}),
   getWorkflow: () => api.get<GtmViewModel["workflow"]>("/gtm/workflow"),
   launchWorkflow: () => api.post<GtmViewModel["workflow"]>("/gtm/workflow/run", {}),
-  listAgents: (companyId: string) => api.get<Agent[]>(`/gtm/companies/${companyId}/agents`),
+  listAgents: (companyId: string, scope: "default" | "trash" = "default") =>
+    api.get<Agent[]>(
+      `/gtm/companies/${companyId}/agents${scope === "trash" ? "?scope=trash" : ""}`,
+    ),
   createAgent: (companyId: string, body: Record<string, unknown>) =>
     api.post<Agent>(`/gtm/companies/${companyId}/agents`, body),
   invokeAgent: (agentId: string, companyId: string) =>
@@ -86,6 +89,8 @@ export const gtmApi = {
     },
   ) => api.post<GtmCampaignDraft>(`/gtm/companies/${companyId}/campaign-drafts`, body),
   listIssues: (companyId: string) => api.get<Issue[]>(`/gtm/companies/${companyId}/issues`),
+  listHiddenIssues: (companyId: string) =>
+    api.get<Issue[]>(`/gtm/companies/${companyId}/issues/hidden`),
   createIssue: (companyId: string, body: Record<string, unknown>) =>
     api.post<Issue>(`/gtm/companies/${companyId}/issues`, body),
   listInbox: (companyId: string) => api.get<GtmInboxEntry[]>(`/gtm/companies/${companyId}/inbox`),

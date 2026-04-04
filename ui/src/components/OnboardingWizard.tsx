@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
+import { AdapterCardGlyph } from "./AdapterBrandMark";
 import {
   extractModelName,
   extractProviderIdWithFallback
@@ -409,7 +410,7 @@ export function OnboardingWizard() {
       return result;
     } catch (err) {
       setAdapterEnvError(
-        err instanceof Error ? err.message : "Adapter environment test failed"
+        err instanceof Error ? err.message : "Model environment test failed"
       );
       return null;
     } finally {
@@ -793,7 +794,7 @@ export function OnboardingWizard() {
                   {/* Adapter type radio cards */}
                   <div>
                     <label className="text-xs text-muted-foreground mb-2 block">
-                      Adapter type
+                      Model type
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -815,7 +816,7 @@ export function OnboardingWizard() {
                         <button
                           key={opt.value}
                           className={cn(
-                            "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
+                            "flex flex-col items-center gap-2 rounded-md border p-3 text-xs transition-colors relative",
                             adapterType === opt.value
                               ? "border-foreground bg-accent"
                               : "border-border hover:bg-accent/50"
@@ -836,7 +837,7 @@ export function OnboardingWizard() {
                               Recommended
                             </span>
                           )}
-                          <opt.icon className="h-4 w-4" />
+                          <AdapterCardGlyph adapterType={opt.value} Icon={opt.icon} />
                           <span className="font-medium">{opt.label}</span>
                           <span className="text-muted-foreground text-[10px]">
                             {opt.desc}
@@ -855,7 +856,7 @@ export function OnboardingWizard() {
                           showMoreAdapters ? "rotate-0" : "-rotate-90"
                         )}
                       />
-                      More Agent Adapter Types
+                      More model types
                     </button>
 
                     {showMoreAdapters && (
@@ -904,7 +905,7 @@ export function OnboardingWizard() {
                             key={opt.value}
                             disabled={!!opt.comingSoon}
                             className={cn(
-                              "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
+                              "flex flex-col items-center gap-2 rounded-md border p-3 text-xs transition-colors relative",
                               opt.comingSoon
                                 ? "border-border opacity-40 cursor-not-allowed"
                                 : adapterType === opt.value
@@ -932,7 +933,7 @@ export function OnboardingWizard() {
                               setModel("");
                             }}
                           >
-                            <opt.icon className="h-4 w-4" />
+                            <AdapterCardGlyph adapterType={opt.value} Icon={opt.icon} />
                             <span className="font-medium">{opt.label}</span>
                             <span className="text-muted-foreground text-[10px]">
                               {opt.comingSoon
@@ -1077,7 +1078,7 @@ export function OnboardingWizard() {
                       <div className="flex items-center justify-between gap-2">
                         <div>
                           <p className="text-xs font-medium">
-                            Adapter environment check
+                            Model environment check
                           </p>
                           <p className="text-[11px] text-muted-foreground">
                             Runs a live probe that asks the adapter CLI to

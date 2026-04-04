@@ -158,7 +158,7 @@ export function NewAgentDialog() {
                 <p className="text-sm text-muted-foreground">
                   We recommend letting your CEO handle agent setup — they know the
                   org structure and can configure reporting, permissions, and
-                  adapters.
+                  model setup.
                 </p>
               </div>
 
@@ -188,7 +188,7 @@ export function NewAgentDialog() {
                   Back
                 </button>
                 <p className="text-sm text-muted-foreground">
-                  Choose your adapter type for advanced setup.
+                  Choose your model type for advanced setup.
                 </p>
               </div>
 

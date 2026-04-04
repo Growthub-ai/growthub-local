@@ -9,27 +9,33 @@ export function readMetadataSkillIds(metadata: Record<string, unknown> | null | 
   return skills.filter((s): s is string => typeof s === "string" && s.length > 0);
 }
 
-/** Explicit list in metadata (including empty = none assigned). */
+/** Explicit list in metadata (`skills` key must be present for stored assignments). */
 export type AgentSkillAssignmentExplicit = { mode: "explicit"; ids: string[] };
 
-/** No `skills` key (or invalid) — all active workspace KB docs are assigned. */
-export type AgentSkillAssignmentImplicitAll = { mode: "implicit_all" };
-
-export type AgentSkillAssignment = AgentSkillAssignmentExplicit | AgentSkillAssignmentImplicitAll;
+export type AgentSkillAssignment = AgentSkillAssignmentExplicit;
 
 /**
- * - Missing `skills` key → implicit all active workspace KB skill docs.
- * - `skills: []` → explicitly none assigned.
+ * Effective KB skill assignments for an agent (opt-in only).
+ *
+ * - Missing `skills` key or null metadata → explicitly **no** skills (nothing injected until assigned).
+ * - `skills: []` → none assigned.
  * - `skills: ["uuid", …]` → explicit subset.
+ * - Invalid `skills` type → treated as none.
  */
 export function parseAgentSkillAssignment(
   metadata: Record<string, unknown> | null | undefined,
 ): AgentSkillAssignment {
-  if (!metadata || typeof metadata !== "object") return { mode: "implicit_all" };
-  if (!Object.prototype.hasOwnProperty.call(metadata, "skills")) return { mode: "implicit_all" };
+  if (!metadata || typeof metadata !== "object") {
+    return { mode: "explicit", ids: [] };
+  }
+  if (!Object.prototype.hasOwnProperty.call(metadata, "skills")) {
+    return { mode: "explicit", ids: [] };
+  }
 
   const skills = metadata.skills;
-  if (!Array.isArray(skills)) return { mode: "implicit_all" };
+  if (!Array.isArray(skills)) {
+    return { mode: "explicit", ids: [] };
+  }
 
   return {
     mode: "explicit",
@@ -42,13 +48,4 @@ export function patchMetadataSkills(
   skills: string[],
 ): Record<string, unknown> {
   return { ...(metadata ?? {}), skills };
-}
-
-/** Persist “assign all active workspace skills” by omitting `metadata.skills`. */
-export function metadataWithImplicitAllSkills(
-  metadata: Record<string, unknown> | null | undefined,
-): Record<string, unknown> {
-  const next = { ...(metadata ?? {}) };
-  delete next.skills;
-  return next;
 }

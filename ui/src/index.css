@@ -196,6 +196,25 @@
   background: oklch(0.5 0 0) !important;
 }
 
+/** GTM issues Kanban columns: thin, neutral scrollbar (Firefox + WebKit). */
+.scrollbar-kanban-column {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.scrollbar-kanban-column::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-kanban-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-kanban-column::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.scrollbar-kanban-column::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--muted-foreground) 40%, var(--border));
+}
+
 /* Expandable dialog transition for max-width changes */
 [data-slot="dialog-content"] {
   transition: max-width 200ms cubic-bezier(0.16, 1, 0.3, 1);

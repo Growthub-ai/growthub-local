@@ -42,6 +42,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AdapterCardGlyph } from "@/components/AdapterBrandMark";
 
 type GtmAgentModalProps = {
   open: boolean;
@@ -220,6 +221,9 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
         title: title.trim() || null,
         adapterType: configValues.adapterType,
         adapterConfig: currentAdapter.buildAdapterConfig(configValues),
+        metadata: {
+          gtmKind: "gtm_modal_agent",
+        },
         runtimeConfig: {
           heartbeat: {
             enabled: configValues.heartbeatEnabled,
@@ -303,13 +307,12 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
     icon: ComponentType<{ className?: string }>;
     recommended?: boolean;
   }) {
-    const Icon = option.icon;
     return (
       <button
         key={option.value}
         type="button"
         className={cn(
-          "relative flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
+          "relative flex flex-col items-center gap-2 rounded-md border p-3 text-xs transition-colors",
           configValues.adapterType === option.value
             ? "border-foreground bg-accent"
             : "border-border hover:bg-accent/50",
@@ -324,7 +327,7 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
             Recommended
           </span>
         ) : null}
-        <Icon className="h-4 w-4" />
+        <AdapterCardGlyph adapterType={option.value} Icon={option.icon} />
         <span className="font-medium">{option.label}</span>
         <span className="text-[10px] text-muted-foreground">{option.desc}</span>
       </button>
@@ -344,8 +347,8 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
           </DialogTitle>
           <DialogDescription>
             {builderStep === "chooser"
-              ? "Choose how you want to create the agent. Build from scratch configures adapter and runtime directly. AI delegates to the CEO path to draft the agent for you."
-              : "Configure the GTM agent adapter and runtime settings, then create."}
+              ? "Choose how you want to create the agent. Build from scratch configures model and runtime directly. AI delegates to the CEO path to draft the agent for you."
+              : "Configure the GTM agent model and runtime settings, then create."}
           </DialogDescription>
         </DialogHeader>
 
@@ -364,7 +367,7 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
                 <div className="space-y-2">
                   <h3 className="text-lg font-semibold">Build From Scratch</h3>
                   <p className="text-sm text-muted-foreground">
-                    Start with a blank agent configuration and choose the adapter type, runtime settings, and identity yourself.
+                    Start with a blank agent configuration and choose the model type, runtime settings, and identity yourself.
                   </p>
                 </div>
                 <div className="mt-6 flex items-center text-sm font-medium text-primary">
@@ -474,9 +477,9 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
 
                 <div className="space-y-3 rounded-xl border border-border bg-card p-4">
                   <div>
-                    <h3 className="text-sm font-semibold">Choose how this agent runs</h3>
+                    <h3 className="text-sm font-semibold">Choose your model</h3>
                     <p className="text-xs text-muted-foreground">
-                      Use the same adapter-selection pattern as onboarding, then tune the full config below.
+                      Use the same model-selection pattern as onboarding, then tune the full config below.
                     </p>
                   </div>
 
@@ -495,7 +498,7 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
                         showMoreAdapters ? "rotate-0" : "-rotate-90",
                       )}
                     />
-                    More Agent Adapter Types
+                    More model types
                   </button>
 
                   {showMoreAdapters ? (
