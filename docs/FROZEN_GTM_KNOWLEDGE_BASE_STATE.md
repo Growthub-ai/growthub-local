@@ -3,6 +3,17 @@
 This document freezes the exact state that produced the working GTM Knowledge Base screen
 validated against live `gtm-fresh` instance data on April 1, 2026.
 
+---
+
+## Agent / operator control plane (mandatory context)
+
+- **Canonical source dev:** `scripts/runtime-control.sh` — `up-main`, `up-branch <name>`, `up-pr <n>`, `stop`, `status`, `url`. Set **`GH_SERVER_PORT`** to match the live API listener; **`GH_CONFIG`** / **`GH_LOCAL_ROOT`** when not using script defaults.
+- **Anti-patterns:** Do **not** run `node scripts/worktree-bootstrap.mjs` directly (maintainer/automation only). Do **not** substitute ad-hoc `pnpm --dir server` + `pnpm --dir ui` as the default instead of **`scripts/runtime-control.sh`**. Do **not** manually copy sources into **`growthub-core`** for routine validation.
+- **Semver:** Treat any version numbers in *this* freeze as **point-in-time**; current published truth is **`cli/package.json`**, **`packages/create-growthub-local/package.json`**, and the installer pin — **`docs/ARTIFACT_VERSIONS.md`** on `main`.
+- **Internal contract:** **`ARCHITECTURE.md`** (local-only; not in public git).
+
+---
+
 ## Validated Runtime
 
 - runtime host: `http://127.0.0.1:3100`
