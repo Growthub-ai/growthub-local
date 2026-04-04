@@ -9,10 +9,8 @@ export {
   readMetadataSkillIds,
   patchMetadataSkills,
   parseAgentSkillAssignment,
-  metadataWithImplicitAllSkills,
   type AgentSkillAssignment,
   type AgentSkillAssignmentExplicit,
-  type AgentSkillAssignmentImplicitAll,
 } from "./metadata.js";
 export {
   buildPaperclipSkillBundleV1,

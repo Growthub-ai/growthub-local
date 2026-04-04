@@ -1164,7 +1164,14 @@ function AgentOverview({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Recent Issues</h3>
-          <Link to={`/issues?assignee=${agentId}`} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <Link
+            to={
+              companyPrefix
+                ? `/inbox/all?assignee=${encodeURIComponent(`agent:${agentId}`)}`
+                : `/issues?assignee=${encodeURIComponent(agentId)}`
+            }
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
             See All &rarr;
           </Link>
         </div>
@@ -1634,7 +1641,7 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
     queryFn: () => agentsApi.listAgentSkills(agentId),
   });
 
-  const assignmentMode = agentSkillsData?.assignmentMode ?? "implicit_all";
+  const assignmentMode = agentSkillsData?.assignmentMode ?? "explicit";
 
   const allSkills = allSkillsData?.skills ?? [];
   const assignedSkills = agentSkillsData?.skills ?? [];
@@ -1658,8 +1665,8 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
     onSuccess: invalidateSkills,
   });
 
-  const resetImplicitAll = useMutation({
-    mutationFn: () => agentsApi.resetAgentSkillsImplicitAll(agentId),
+  const assignAllWorkspaceSkills = useMutation({
+    mutationFn: () => agentsApi.assignAllWorkspaceSkills(agentId),
     onSuccess: invalidateSkills,
   });
 
@@ -1683,7 +1690,7 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
 
   const loading = loadingAll || loadingAgent;
 
-  const confirmBusy = assign.isPending || unassign.isPending || resetImplicitAll.isPending;
+  const confirmBusy = assign.isPending || unassign.isPending || assignAllWorkspaceSkills.isPending;
 
   if (!companyId) {
     return (
@@ -1709,13 +1716,14 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
       </div>
       <div className="border border-border rounded-lg p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
-          Reusable instruction bundles assigned to this agent. Skills are shared across the workspace.
+          Reusable instruction bundles shared across the workspace. Only skills you add here are injected on runs —
+          nothing is attached by default.
         </p>
-        {!loading && assignmentMode === "explicit" && (
+        {!loading && assignmentMode === "explicit" && unassigned.length > 0 && (
           <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <p className="min-w-0">
-              <span className="font-medium text-foreground">Custom set:</span> only assigned skills are injected. New
-              workspace skills are not added automatically.
+              <span className="font-medium text-foreground">Selected skills:</span> only assigned skills are injected.
+              Add new workspace skills here if you want them on this agent.
             </p>
             <Button
               variant="outline"
@@ -1770,9 +1778,7 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="left" sideOffset={6} className="max-w-xs text-balance">
-                            {assignmentMode === "implicit_all"
-                              ? "All active workspace skills run with this agent by default. Removing one switches to a custom set for future runs."
-                              : "Stop including this skill on future runs until you add it again."}
+                            Stop including this skill on future runs until you add it again.
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -1874,13 +1880,6 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
                 <DialogDescription>
                   Remove <span className="font-mono text-foreground">{confirmFlow.skill.name}</span> from this agent’s
                   active skills? It will not be injected on future runs until you add it again.
-                  {assignmentMode === "implicit_all" && (
-                    <span className="mt-2 block">
-                      With the workspace default, this switches the agent to a{" "}
-                      <strong className="text-foreground">custom</strong> skill list in metadata; other skills stay
-                      assigned.
-                    </span>
-                  )}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="gap-2 sm:gap-0">
@@ -1911,9 +1910,9 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
               <DialogHeader>
                 <DialogTitle>Use all workspace skills</DialogTitle>
                 <DialogDescription>
-                  Switch this agent back to the <strong className="text-foreground">default</strong>: every active
-                  workspace skill will be included on runs. The explicit skill list in metadata will be cleared. New
-                  workspace skills will be included automatically until you remove one again.
+                  Store <strong className="text-foreground">every active workspace skill</strong> on this agent in
+                  metadata. New skills added to the workspace later are not included until you run this again or add
+                  them individually.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="gap-2 sm:gap-0">
@@ -1922,11 +1921,11 @@ function AgentSkillsSection({ agentId, companyId }: { agentId: string; companyId
                 </Button>
                 <Button
                   onClick={() => {
-                    resetImplicitAll.mutate(undefined, { onSettled: closeConfirm });
+                    assignAllWorkspaceSkills.mutate(undefined, { onSettled: closeConfirm });
                   }}
-                  disabled={resetImplicitAll.isPending}
+                  disabled={assignAllWorkspaceSkills.isPending}
                 >
-                  {resetImplicitAll.isPending ? (
+                  {assignAllWorkspaceSkills.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Applying…
@@ -3022,7 +3021,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         <div className="rounded-lg border border-border bg-background/60 p-3 space-y-2">
           <div className="text-xs font-medium text-muted-foreground">Invocation</div>
           {typeof adapterInvokePayload.adapterType === "string" && (
-            <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
+            <div className="text-xs"><span className="text-muted-foreground">Model: </span>{adapterInvokePayload.adapterType}</div>
           )}
           {typeof adapterInvokePayload.cwd === "string" && (
             <div className="text-xs break-all"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{adapterInvokePayload.cwd}</span></div>

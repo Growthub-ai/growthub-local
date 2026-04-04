@@ -27,13 +27,7 @@ export async function attachKbSkillDocsToAdapterContext(
 ): Promise<void> {
   const meta = parseObject(agent.metadata as Record<string, unknown> | null);
   const assignment = parseAgentSkillAssignment(meta);
-  let orderedIds: string[];
-  if (assignment.mode === "implicit_all") {
-    const rows = await listKbSkillDocsForCompany(db, agent.companyId);
-    orderedIds = rows.map((r) => r.id);
-  } else {
-    orderedIds = assignment.ids;
-  }
+  const orderedIds = assignment.ids;
   if (orderedIds.length === 0) return;
 
   const views = await getKbSkillDocsByIds(db, agent.companyId, orderedIds);

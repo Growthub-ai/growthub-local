@@ -24,15 +24,43 @@ function shortId(value: string) {
   return value.slice(0, 8);
 }
 
+const GTM_AGENT_LIST_CACHE_PREFIX = "gtm" as const;
+
+function findAgentInQueryCaches(
+  queryClient: QueryClient,
+  companyId: string,
+  agentId: string,
+): Agent | null {
+  const boardList = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
+  const fromBoard = boardList?.find((a) => a.id === agentId);
+  if (fromBoard) return fromBoard;
+
+  const fromDetail = queryClient.getQueryData<Agent>(queryKeys.agents.detail(agentId));
+  if (fromDetail?.id === agentId) return fromDetail;
+
+  for (const scope of ["default", "trash"] as const) {
+    const gtmList = queryClient.getQueryData<Agent[]>([GTM_AGENT_LIST_CACHE_PREFIX, "agents", companyId, scope]);
+    const fromGtm = gtmList?.find((a) => a.id === agentId);
+    if (fromGtm) return fromGtm;
+  }
+
+  return null;
+}
+
+function agentToastDisplayName(agent: Agent | null): string | null {
+  if (!agent) return null;
+  const name = agent.name?.trim();
+  if (name) return name;
+  const title = agent.title?.trim();
+  return title || null;
+}
+
 function resolveAgentName(
   queryClient: QueryClient,
   companyId: string,
   agentId: string,
 ): string | null {
-  const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
-  if (!agents) return null;
-  const agent = agents.find((a) => a.id === agentId);
-  return agent?.name ?? null;
+  return agentToastDisplayName(findAgentInQueryCaches(queryClient, companyId, agentId));
 }
 
 function truncate(text: string, max: number): string {
@@ -263,7 +291,6 @@ function buildJoinRequestToast(
 
 function buildAgentStatusToast(
   payload: Record<string, unknown>,
-  nameOf: (id: string) => string | null,
   queryClient: QueryClient,
   companyId: string,
 ): ToastInput | null {
@@ -272,15 +299,16 @@ function buildAgentStatusToast(
   if (!agentId || !status || !AGENT_TOAST_STATUSES.has(status)) return null;
 
   const tone = status === "error" ? "error" : "info";
-  const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
+  const agent = findAgentInQueryCaches(queryClient, companyId, agentId);
+  const displayName = agentToastDisplayName(agent);
+  const name = displayName ?? `Agent ${shortId(agentId)}`;
   const title =
     status === "running"
       ? `${name} started`
       : `${name} errored`;
 
-  const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
-  const agent = agents?.find((a) => a.id === agentId);
-  const body = agent?.title ?? undefined;
+  const body =
+    agent?.title?.trim() && agent.title.trim() !== displayName ? agent.title.trim() : undefined;
 
   return {
     title,
@@ -495,7 +523,7 @@ function handleLiveEvent(
     queryClient.invalidateQueries({ queryKey: queryKeys.org(expectedCompanyId) });
     const agentId = readString(payload.agentId);
     if (agentId) queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
-    const toast = buildAgentStatusToast(payload, nameOf, queryClient, expectedCompanyId);
+    const toast = buildAgentStatusToast(payload, queryClient, expectedCompanyId);
     if (toast) gatedPushToast(gate, pushToast, "agent-status", toast);
     return;
   }

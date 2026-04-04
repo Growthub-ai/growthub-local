@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "@/lib/router";
-import { Button } from "@/components/ui/button";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -31,6 +31,7 @@ import type { Approval, JoinRequest } from "@paperclipai/shared";
 import { approvalLabel, defaultTypeIcon, typeIcon } from "@/components/ApprovalPayload";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompany } from "@/context/CompanyContext";
+import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useDialog } from "@/context/DialogContext";
 import { shouldRedirectCompanylessRouteToOnboarding } from "@/lib/onboarding-route";
 import { surfaceRouteMount, toSurfacePath } from "@/lib/surface-profile";
@@ -48,24 +49,18 @@ import { PropertiesPanel } from "@/components/PropertiesPanel";
 import { GtmAgentModal } from "@/components/GtmAgentModal";
 import { GtmCampaignDetail } from "@/components/GtmCampaignDetail";
 import { GtmCampaignModal } from "@/components/GtmCampaignModal";
-import { IssueRow } from "@/components/IssueRow";
 import { KnowledgeBase } from "@/components/KnowledgeBase";
-import { PriorityIcon } from "@/components/PriorityIcon";
-import { StatusIcon } from "@/components/StatusIcon";
-import { StatusBadge } from "@/components/StatusBadge";
 import { ToastViewport } from "@/components/ToastViewport";
 import { useSidebar } from "@/context/SidebarContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
 import { timeAgo } from "@/lib/timeAgo";
-import { agentRouteRef, relativeTime } from "@/lib/utils";
 import { buildGrowthubConfigurationUrl, getGrowthubAuthUserId } from "@/lib/growthub-connection";
 import {
   Archive,
   BriefcaseBusiness,
   Building2,
   CheckCircle2,
-  ChevronDown,
   Copy,
   Database,
   ExternalLink,
@@ -75,7 +70,6 @@ import {
   Moon,
   Pause,
   Play,
-  RefreshCcw,
   Settings,
   Sun,
   Ticket,
@@ -84,15 +78,77 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageTabBar } from "@/components/PageTabBar";
+import { Tabs } from "@/components/ui/tabs";
+import { getRecentTouchedIssues, getUnreadTouchedIssues, sortIssuesByMostRecentActivity } from "@/lib/inbox";
+import {
+  buildGtmLiveAgentIdSet,
+  filterAgentsForGtmDirectoryUi,
+  parseGtmAgentsListSegment,
+} from "@/gtm/lib/gtm-agent-filters";
+import {
+  loadGtmLastInboxTab,
+  parseGtmInboxTabFromPath,
+  saveGtmLastInboxTab,
+  type GtmInboxTab,
+} from "@/gtm/lib/gtm-inbox-tab";
+import {
+  isGtmAgentsLayout,
+  loadGtmAgentsLayoutFavorite,
+  normalizeGtmAgentsLayoutParam,
+  resolveGtmAgentsLayoutWithoutUrlParam,
+  saveGtmAgentsLayout,
+  toggleGtmAgentsLayoutFavorite,
+  type GtmAgentsLayout,
+} from "@/gtm/lib/gtm-agents-layout";
+import { PaperclipViewLayoutToggle, PAPERCLIP_VIEW_LAYOUT_ICONS } from "@/components/PaperclipViewLayoutToggle";
+import { GtmAgentsViewToggle } from "@/gtm/components/GtmAgentsViewToggle";
+import { GtmAgentsListView } from "@/gtm/components/GtmAgentsListView";
+import { GtmAgentsKanbanView } from "@/gtm/components/GtmAgentsKanbanView";
+import { GtmAgentsTableView } from "@/gtm/components/GtmAgentsTableView";
+import { GtmIssuesKanbanView } from "@/gtm/components/GtmIssuesKanbanView";
+import { GtmIssuesTableView } from "@/gtm/components/GtmIssuesTableView";
+import { GtmIssuesCalendarView } from "@/gtm/components/GtmIssuesCalendarView";
+import { GtmIssuesListView } from "@/gtm/components/GtmIssuesListView";
+import { GtmInboxIssuesToolbar } from "@/gtm/components/GtmInboxIssuesToolbar";
+import { GtmInboxHiddenIssuesSheet } from "@/gtm/components/GtmInboxHiddenIssuesSheet";
+import {
+  filterIssuesByAssignee,
+  filterIssuesBySearch,
+  filterIssuesByStatus,
+  filterIssuesByUpdatedRange,
+  inboxIssueDateBounds,
+  parseGtmInboxAssigneeSearchParam,
+  type GtmInboxIssueAssigneeFilter,
+  type GtmInboxIssueDatePreset,
+  type GtmInboxIssueStatusFilter,
+} from "@/gtm/lib/gtm-inbox-issue-filters";
+import {
+  isGtmInboxIssuesViewLayout,
+  loadGtmInboxIssuesLayoutFavorite,
+  normalizeGtmInboxIssuesLayoutParam,
+  resolveGtmInboxIssuesLayoutWithoutUrlParam,
+  saveGtmInboxIssuesLayout,
+  toggleGtmInboxIssuesLayoutFavorite,
+  type GtmInboxIssuesViewLayout,
+} from "@/gtm/lib/gtm-inbox-issues-layout";
 
 const SURFACE_ROUTE_PATH = surfaceRouteMount.slice(1);
 const SURFACE_ROUTE_PREFIX_PATTERN = new RegExp(`^${surfaceRouteMount}(?=/|$)`);
 const GTM_QUERY_KEYS = {
-  agents: (companyId: string) => ["gtm", "agents", companyId] as const,
+  agents: (companyId: string, scope: "default" | "trash" = "default") =>
+    ["gtm", "agents", companyId, scope] as const,
   tickets: (companyId: string) => ["gtm", "tickets", companyId] as const,
   issues: (companyId: string) => ["gtm", "issues", companyId] as const,
-  inbox: (companyId: string) => ["gtm", "inbox", companyId] as const,
+  hiddenIssues: (companyId: string) => ["gtm", "issues-hidden", companyId] as const,
 };
+
+const GTM_INBOX_ISSUE_VIEW_TABS = [
+  { id: "list" as const, label: "List", icon: PAPERCLIP_VIEW_LAYOUT_ICONS.list },
+  { id: "kanban" as const, label: "Kanban", icon: PAPERCLIP_VIEW_LAYOUT_ICONS.kanban },
+  { id: "table" as const, label: "Table", icon: PAPERCLIP_VIEW_LAYOUT_ICONS.table },
+  { id: "calendar" as const, label: "Calendar", icon: PAPERCLIP_VIEW_LAYOUT_ICONS.calendar },
+];
 
 const ISSUE_PRIORITY_OPTIONS = ["critical", "high", "medium", "low"] as const;
 
@@ -108,19 +164,6 @@ function getRunIssueId(run: { contextSnapshot?: Record<string, unknown> | null }
   const context = asRecord(run.contextSnapshot);
   if (!context) return null;
   return asNonEmptyString(context.issueId) ?? asNonEmptyString(context.taskId);
-}
-
-function buildRunRetryPayload(run: { id: string; contextSnapshot?: Record<string, unknown> | null }) {
-  const payload: Record<string, unknown> = {};
-  const context = asRecord(run.contextSnapshot);
-  if (!context) return payload;
-  const issueId = asNonEmptyString(context.issueId);
-  const taskId = asNonEmptyString(context.taskId);
-  const taskKey = asNonEmptyString(context.taskKey);
-  if (issueId) payload.issueId = issueId;
-  if (taskId) payload.taskId = taskId;
-  if (taskKey) payload.taskKey = taskKey;
-  return payload;
 }
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
@@ -201,6 +244,57 @@ function buildGtmBoardPath(companyPrefix: string | null | undefined, boardPath: 
   const normalizedBoardPath = boardPath.startsWith("/") ? boardPath : `/${boardPath}`;
   const scopedPrefix = companyPrefix ? `/${companyPrefix}` : "";
   return toSurfacePath(`${scopedPrefix}${normalizedBoardPath}`);
+}
+
+/** Path after /gtm/:companyPrefix (leading slash, e.g. /agents/foo, /inbox/recent). */
+function gtmBoardRelativePathname(pathname: string): string {
+  const pathAfterSurface = pathname.replace(SURFACE_ROUTE_PREFIX_PATTERN, "");
+  const segments = pathAfterSurface.split("/").filter(Boolean);
+  const rest = segments.slice(1).join("/");
+  return rest ? `/${rest}` : "/";
+}
+
+function isGtmShellNavItemActive(boardRelative: string, itemTo: string): boolean {
+  const to = itemTo.startsWith("/") ? itemTo : `/${itemTo}`;
+
+  if (to === "/inbox") {
+    return (
+      boardRelative === "/inbox" ||
+      boardRelative.startsWith("/inbox/") ||
+      boardRelative === "/activity" ||
+      boardRelative.startsWith("/activity/") ||
+      boardRelative.startsWith("/issues/")
+    );
+  }
+
+  if (to === "/agents/all") {
+    return boardRelative === "/agents" || boardRelative.startsWith("/agents/");
+  }
+
+  if (to === "/workspace") {
+    return boardRelative === "/workspace" || boardRelative.startsWith("/workspace/");
+  }
+
+  if (to === "/tickets") {
+    return boardRelative === "/tickets" || boardRelative.startsWith("/tickets/");
+  }
+
+  if (to === "/knowledge-base") {
+    return boardRelative === "/knowledge-base" || boardRelative.startsWith("/knowledge-base/");
+  }
+
+  if (to === "/companies") {
+    return boardRelative === "/companies" || boardRelative.startsWith("/companies/");
+  }
+
+  if (to === "/company/settings") {
+    return boardRelative === "/company/settings" || boardRelative.startsWith("/company/settings/");
+  }
+
+  const head = to.split("/").filter(Boolean)[0];
+  if (!head) return boardRelative === to;
+  const root = `/${head}`;
+  return boardRelative === to || boardRelative.startsWith(`${root}/`);
 }
 
 function CompanyRootRedirect() {
@@ -312,211 +406,30 @@ function OnboardingRoutePage() {
   );
 }
 
-function useGtmWorkspaceData(companyId: string | null) {
-  const profileQuery = useQuery({ queryKey: ["gtm", "profile"], queryFn: () => gtmApi.getProfile() });
-  const knowledgeQuery = useQuery({ queryKey: ["gtm", "knowledge"], queryFn: () => gtmApi.getKnowledge() });
-  const connectorsQuery = useQuery({ queryKey: ["gtm", "connectors"], queryFn: () => gtmApi.getConnectors() });
-  const connectionQuery = useQuery({ queryKey: ["gtm", "connection"], queryFn: () => gtmApi.getConnection() });
-  const workflowQuery = useQuery({ queryKey: ["gtm", "workflow"], queryFn: () => gtmApi.getWorkflow() });
-  const agentsQuery = useQuery({
-    queryKey: companyId ? GTM_QUERY_KEYS.agents(companyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(companyId!),
-    enabled: !!companyId,
-  });
-  const ticketsQuery = useQuery({
-    queryKey: companyId ? GTM_QUERY_KEYS.tickets(companyId) : ["gtm", "tickets", "none"],
-    queryFn: () => gtmApi.listTickets(companyId!),
-    enabled: !!companyId,
-  });
-  const issuesQuery = useQuery({
-    queryKey: companyId ? GTM_QUERY_KEYS.issues(companyId) : ["gtm", "issues", "none"],
-    queryFn: () => gtmApi.listIssues(companyId!),
-    enabled: !!companyId,
-  });
-
-  return {
-    profileQuery,
-    knowledgeQuery,
-    connectorsQuery,
-    connectionQuery,
-    workflowQuery,
-    agentsQuery,
-    ticketsQuery,
-    issuesQuery,
-  };
-}
-
 function GtmWorkspacePage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const { pushToast } = useToast();
-  const queryClient = useQueryClient();
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [connectionOpen, setConnectionOpen] = useState(false);
-  const [agentName, setAgentName] = useState("");
-  const [agentTitle, setAgentTitle] = useState("");
-  const [claudeCommand, setClaudeCommand] = useState("claude");
-  const [claudeCwd, setClaudeCwd] = useState("");
-  const [claudeModel, setClaudeModel] = useState("claude-sonnet-4-6");
-  const [claudeChrome, setClaudeChrome] = useState(true);
-  const [growthubBaseUrl, setGrowthubBaseUrl] = useState("");
-  const {
-    profileQuery,
-    knowledgeQuery,
-    connectorsQuery,
-    connectionQuery,
-    workflowQuery,
-    agentsQuery,
-    ticketsQuery,
-    issuesQuery,
-  } = useGtmWorkspaceData(selectedCompanyId);
-  const workspaceConfigQuery = useQuery({
-    queryKey: selectedCompanyId ? ["gtm", "workspace-config", selectedCompanyId] : ["gtm", "workspace-config", "none"],
-    queryFn: () => gtmApi.getWorkspaceConfig(selectedCompanyId!),
+  const { companyPrefix: routeCompanyPrefix } = useParams<{ companyPrefix?: string }>();
+  const boardCompanyPrefix = selectedCompany?.issuePrefix ?? routeCompanyPrefix ?? null;
+
+  const agentsQuery = useQuery({
+    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
+    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const runsQuery = useQuery({
-    queryKey: selectedCompanyId ? ["gtm", "runs", selectedCompanyId] : ["gtm", "runs", "none"],
-    queryFn: () => heartbeatsApi.list(selectedCompanyId!, undefined, 8),
+  const ticketsQuery = useQuery({
+    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.tickets(selectedCompanyId) : ["gtm", "tickets", "none"],
+    queryFn: () => gtmApi.listTickets(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const sessionQuery = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
-    retry: false,
+  const knowledgeQuery = useQuery({
+    queryKey: ["gtm", "knowledge"],
+    queryFn: () => gtmApi.getKnowledge(),
   });
-
-  const setupMutation = useMutation({
-    mutationFn: () =>
-      gtmApi.upsertWorkspaceClaudeBrowser(selectedCompanyId!, {
-        name: agentName,
-        title: agentTitle,
-        adapterConfig: {
-          command: claudeCommand,
-          cwd: claudeCwd,
-          model: claudeModel,
-          chrome: claudeChrome,
-        },
-      }),
-    onSuccess: async () => {
-      setSetupOpen(false);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "workspace-config", selectedCompanyId!] }),
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId!) }),
-      ]);
-      pushToast({ title: "Workspace configured", body: "Claude browser agent is configured for this workspace.", tone: "success" });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Workspace setup failed",
-        body: error instanceof Error ? error.message : "Failed to configure workspace agent",
-        tone: "error",
-      });
-    },
+  const issuesQuery = useQuery({
+    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.issues(selectedCompanyId) : ["gtm", "issues", "none"],
+    queryFn: () => gtmApi.listIssues(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
   });
-
-  const launchWorkflow = useMutation({
-    mutationFn: () => gtmApi.launchWorkflow(),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["gtm", "workflow"] });
-      pushToast({ title: "Workflow started", body: "Local SDR execution launched.", tone: "success" });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Workflow failed",
-        body: error instanceof Error ? error.message : "Failed to launch workflow",
-        tone: "error",
-      });
-    },
-  });
-  const saveConnectionConfig = useMutation({
-    mutationFn: async () => {
-      return await gtmApi.saveConnectionConfig({ baseUrl: growthubBaseUrl.trim() });
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connection"] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connectors"] }),
-      ]);
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Configuration failed",
-        body: error instanceof Error ? error.message : "Failed to save Growthub configuration",
-        tone: "error",
-      });
-    },
-  });
-  const testConnectionMutation = useMutation({
-    mutationFn: () => gtmApi.testConnection(),
-    onSuccess: async (result) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connection"] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connectors"] }),
-      ]);
-      pushToast({
-        title: "Growthub pulse succeeded",
-        body: result.message,
-        tone: "success",
-      });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Growthub pulse failed",
-        body: error instanceof Error ? error.message : "Failed to verify the Growthub local route handler",
-        tone: "error",
-      });
-    },
-  });
-  const disconnectConnectionMutation = useMutation({
-    mutationFn: () => gtmApi.disconnectConnection(),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connection"] }),
-        queryClient.invalidateQueries({ queryKey: ["gtm", "connectors"] }),
-      ]);
-      pushToast({
-        title: "Growthub disconnected",
-        body: "Local connection state was cleared for this installer.",
-        tone: "success",
-      });
-    },
-    onError: (error) => {
-      pushToast({
-        title: "Disconnect failed",
-        body: error instanceof Error ? error.message : "Failed to disconnect Growthub locally",
-        tone: "error",
-      });
-    },
-  });
-
-  useEffect(() => {
-    if (connectionQuery.data?.baseUrl) {
-      setGrowthubBaseUrl(connectionQuery.data.baseUrl);
-    }
-  }, [connectionQuery.data?.baseUrl]);
-
-  const openHostedGrowthubConfiguration = (baseUrl: string, callbackUrl: string) => {
-    const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
-    if (!userId) {
-      pushToast({
-        title: "Sign in required",
-        body: "Sign in locally before opening the hosted Growthub configuration flow.",
-        tone: "error",
-      });
-      return;
-    }
-    window.open(
-      buildGrowthubConfigurationUrl({
-        baseUrl,
-        callbackUrl,
-        userId,
-        surface: "gtm",
-        workspaceLabel: selectedCompany?.name ?? profileQuery.data?.workspace ?? "GTM Workspace",
-      }),
-      "_blank",
-      "noopener,noreferrer",
-    );
-  };
 
   if (!selectedCompanyId) {
     return (
@@ -526,298 +439,56 @@ function GtmWorkspacePage() {
     );
   }
 
-  const isLoading = [
-    profileQuery,
-    knowledgeQuery,
-    connectorsQuery,
-    connectionQuery,
-    workflowQuery,
-    agentsQuery,
-    ticketsQuery,
-    issuesQuery,
-    workspaceConfigQuery,
-    runsQuery,
-  ].some((query) => query.isLoading);
-
-  const error = [
-    profileQuery.error,
-    knowledgeQuery.error,
-    connectorsQuery.error,
-    connectionQuery.error,
-    workflowQuery.error,
-    agentsQuery.error,
-    ticketsQuery.error,
-    issuesQuery.error,
-    workspaceConfigQuery.error,
-    runsQuery.error,
-  ].find(Boolean);
-
-  if (isLoading) {
-    return <div className="py-8 text-sm text-muted-foreground">Loading GTM workspace…</div>;
+  const loading = agentsQuery.isLoading || ticketsQuery.isLoading || knowledgeQuery.isLoading || issuesQuery.isLoading;
+  if (loading) {
+    return <div className="py-8 text-sm text-muted-foreground">Loading workspace…</div>;
   }
 
-  if (error) {
+  const err = agentsQuery.error ?? ticketsQuery.error ?? knowledgeQuery.error ?? issuesQuery.error;
+  if (err) {
     return (
       <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">
-        {error instanceof Error ? error.message : "Failed to load GTM workspace"}
+        {err instanceof Error ? err.message : "Failed to load workspace"}
       </div>
     );
   }
 
-  const profile = profileQuery.data!;
-  const knowledge = knowledgeQuery.data!;
-  const connectors = connectorsQuery.data!;
-  const connection = connectionQuery.data!;
-  const workflow = workflowQuery.data!;
-  const agents = agentsQuery.data ?? [];
+  const agents = filterAgentsForGtmDirectoryUi(agentsQuery.data ?? []);
   const tickets = ticketsQuery.data ?? [];
+  const knowledge = knowledgeQuery.data!;
   const issues = issuesQuery.data ?? [];
-  const workspaceConfig = workspaceConfigQuery.data!;
-  const recentRuns = runsQuery.data ?? [];
-  const managedAgent = workspaceConfig.existingAgent;
-  const bindingCheck = workspaceConfig.environmentTest;
-  const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
-
-  const openSetup = () => {
-    const source = managedAgent ?? workspaceConfig.defaults;
-    const adapterConfig = (managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>;
-    setAgentName(source.name ?? "SDR Browser Agent");
-    setAgentTitle((managedAgent?.title ?? workspaceConfig.defaults.title) || "");
-    setClaudeCommand(String(adapterConfig.command ?? "claude"));
-    setClaudeCwd(String(adapterConfig.cwd ?? ""));
-    setClaudeModel(String(adapterConfig.model ?? "claude-sonnet-4-6"));
-    setClaudeChrome(Boolean(adapterConfig.chrome ?? true));
-    setSetupOpen(true);
-  };
-
-  const openConnectionConfiguration = () => {
-    if (connection.baseUrl?.trim()) {
-      openHostedGrowthubConfiguration(connection.baseUrl, connection.callbackUrl);
-      return;
-    }
-    setGrowthubBaseUrl(connection.baseUrl);
-    setConnectionOpen(true);
-  };
-
-  const launchGrowthubConfiguration = async () => {
-    const saved = await saveConnectionConfig.mutateAsync();
-    openHostedGrowthubConfiguration(saved.baseUrl, saved.callbackUrl);
-  };
+  const boardPath = (path: string) => buildGtmBoardPath(boardCompanyPrefix, path);
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">GTM Workspace</Badge>
-              <Badge variant="outline">{workflow.status}</Badge>
-              <Badge variant={managedAgent ? "secondary" : "outline"}>
-                {managedAgent ? "Agent ready" : "Needs setup"}
-              </Badge>
-            </div>
-            <div>
-              <CardTitle>{selectedCompany?.name ?? profile.workspace}</CardTitle>
-              <CardDescription>
-                Build campaigns, queue work, configure the local Claude browser agent, and launch GTM workflows without exposing board planning surfaces.
-              </CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={openSetup}>
-              <Wrench className="mr-2 h-4 w-4" />
-              {managedAgent ? "Update agent setup" : "Configure browser agent"}
-            </Button>
-            <Button asChild variant="outline">
-              <Link to={boardPath("/agents/all")}>Open agents</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to={boardPath("/tickets")}>Open campaigns</Link>
-            </Button>
-            <Button onClick={() => launchWorkflow.mutate()} disabled={launchWorkflow.isPending}>
-              <Play className="mr-2 h-4 w-4" />
-              {workflow.actionLabel}
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <GtmMetricCard title="Agents" value={String(agents.length)} detail="GTM-configured agents" icon={Users} />
-        <GtmMetricCard title="Campaigns" value={String(tickets.length)} detail="Workflow tickets" icon={Ticket} />
-        <GtmMetricCard title="Knowledge" value={String(knowledge.items.length)} detail={knowledge.group.label} icon={BriefcaseBusiness} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Workspace Agent Setup</CardTitle>
-            <CardDescription>Default done-for-you Claude browser agent binding for this workspace.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Agent</p>
-              <p className="mt-1">{managedAgent?.name ?? "Not configured"}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Binding Status</p>
-              <p className="mt-1">{bindingCheck ? bindingCheck.status : "Not tested"}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Claude Command</p>
-              <p className="mt-1 break-all">{String(((managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>).command ?? "claude")}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Working Directory</p>
-              <p className="mt-1 break-all">{String(((managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>).cwd ?? "Not configured")}</p>
-            </div>
-            {bindingCheck?.checks?.length ? (
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Latest Binding Check</p>
-                {bindingCheck.checks.slice(0, 3).map((check) => (
-                  <div key={check.code} className="rounded-md border border-border p-3">
-                    <p className="font-medium">{check.message}</p>
-                    {check.hint ? <p className="mt-1 text-muted-foreground">{check.hint}</p> : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <div className="flex gap-2 pt-1">
-              <Button size="sm" variant="outline" onClick={openSetup}>Configure</Button>
-              {managedAgent ? (
-                <Button size="sm" asChild variant="outline">
-                  <Link to={boardPath(`/agents/${managedAgent.id}`)}>Open detail</Link>
-                </Button>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <GrowthubConnectionCard
-          description="Connect this local installer to the hosted Growthub workspace."
-          connected={connection.connected}
-          baseUrl={connection.baseUrl}
-          callbackUrl={connection.callbackUrl}
-          portalBaseUrl={connection.portalBaseUrl}
-          machineLabel={connection.machineLabel}
-          workspaceLabel={connection.workspaceLabel}
-          onOpenConfiguration={openConnectionConfiguration}
-          onRefresh={() => {
-            void connectionQuery.refetch();
-            void connectorsQuery.refetch();
-          }}
-          onPulseConnection={connection.connected ? () => testConnectionMutation.mutate() : undefined}
-          onDisconnect={connection.connected ? () => disconnectConnectionMutation.mutate() : undefined}
-          pulsePending={testConnectionMutation.isPending}
-          disconnectPending={disconnectConnectionMutation.isPending}
-        />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Runtime</CardTitle>
-            <CardDescription>Workflow, connections, and recent runs.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Account</p>
-              <p className="mt-1">{profile.account}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">App Connection</p>
-              <p className="mt-1 break-all">{profile.appConnection}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Runner</p>
-              <p className="mt-1 break-all">{workflow.runner}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Recent Runs</p>
-              {recentRuns.length === 0 ? (
-                <p className="mt-1 text-muted-foreground">No runs yet.</p>
-              ) : (
-                <div className="mt-1 space-y-2">
-                  {recentRuns.slice(0, 4).map((run) => (
-                    <div key={run.id} className="rounded-md border border-border p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium">{run.status}</p>
-                        <span className="text-xs text-muted-foreground">{formatRelativeDate(run.createdAt)}</span>
-                      </div>
-                      <p className="mt-1 text-muted-foreground">{run.triggerDetail ?? run.invocationSource}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Workspace browser agent</DialogTitle>
-            <DialogDescription>Bind the workspace to the local Claude app and make the default SDR browser agent runnable out of the box.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Agent name</label>
-              <Input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Title</label>
-              <Input value={agentTitle} onChange={(event) => setAgentTitle(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Claude command</label>
-              <Input value={claudeCommand} onChange={(event) => setClaudeCommand(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Working directory</label>
-              <Input value={claudeCwd} onChange={(event) => setClaudeCwd(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Model</label>
-              <Input value={claudeModel} onChange={(event) => setClaudeModel(event.target.value)} />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={claudeChrome} onChange={(event) => setClaudeChrome(event.target.checked)} />
-              Enable Claude browser mode
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSetupOpen(false)}>Cancel</Button>
-            <Button onClick={() => setupMutation.mutate()} disabled={!agentName.trim() || !claudeCommand.trim() || !claudeCwd.trim() || setupMutation.isPending}>
-              {setupMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Save and test
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={connectionOpen} onOpenChange={setConnectionOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Growthub Configuration</DialogTitle>
-            <DialogDescription>Set the hosted Growthub URL for this installer, then open the auth flow.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Growthub base URL</label>
-              <Input value={growthubBaseUrl} onChange={(event) => setGrowthubBaseUrl(event.target.value)} />
-            </div>
-            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
-              Callback: {connection.callbackUrl}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConnectionOpen(false)}>Cancel</Button>
-            <Button onClick={() => void launchGrowthubConfiguration()} disabled={!growthubBaseUrl.trim() || saveConnectionConfig.isPending}>
-              {saveConnectionConfig.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
-              Open Configuration
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <GtmMetricCard
+        title="Agents"
+        value={String(agents.length)}
+        detail="GTM-configured agents"
+        icon={Users}
+        to={boardPath("/agents/all")}
+      />
+      <GtmMetricCard
+        title="Campaigns"
+        value={String(tickets.length)}
+        detail="Workflow tickets"
+        icon={Ticket}
+        to={boardPath("/tickets")}
+      />
+      <GtmMetricCard
+        title="Inbox"
+        value={String(issues.length)}
+        detail="Open issues"
+        icon={InboxIcon}
+        to={boardPath("/inbox/all")}
+      />
+      <GtmMetricCard
+        title="Knowledge"
+        value={String(knowledge.items.length)}
+        detail="Workspace Knowledge"
+        icon={Database}
+        to={boardPath("/knowledge-base")}
+      />
     </div>
   );
 }
@@ -827,39 +498,131 @@ function GtmMetricCard({
   value,
   detail,
   icon: Icon,
+  to,
 }: {
   title: string;
   value: string;
   detail: string;
   icon: typeof Users;
+  to: string;
 }) {
   return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-4 pt-6">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
-          <p className="mt-2 text-2xl font-semibold">{value}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
-        </div>
-        <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-          <Icon className="h-4 w-4" />
-        </div>
-      </CardContent>
+    <Card className="h-full transition-colors hover:bg-muted/30">
+      <Link to={to} className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <CardContent className="flex items-start justify-between gap-4 pt-6">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+          </div>
+          <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+            <Icon className="h-4 w-4" />
+          </div>
+        </CardContent>
+      </Link>
     </Card>
   );
 }
 
 function GtmAgentsPage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const { agentId } = useParams<{ agentId?: string }>();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const listSegment = parseGtmAgentsListSegment(location.pathname);
+  const isTrash = listSegment === "trash";
+  const viewParam = searchParams.get("view");
+  const layout: GtmAgentsLayout = normalizeGtmAgentsLayoutParam(viewParam);
+  const [favoriteAgentView, setFavoriteAgentView] = useState<GtmAgentsLayout | null>(() => loadGtmAgentsLayoutFavorite());
+
+  useEffect(() => {
+    if (!isGtmAgentsLayout(viewParam)) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("view", resolveGtmAgentsLayoutWithoutUrlParam());
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }, [viewParam, setSearchParams]);
+
+  const setAgentsLayout = useCallback(
+    (next: GtmAgentsLayout) => {
+      saveGtmAgentsLayout(next);
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          n.set("view", next);
+          return n;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  /** Legacy status routes: status is per-agent; inventory always shows everyone. */
+  useEffect(() => {
+    const seg = listSegment;
+    if (seg === "active" || seg === "paused" || seg === "error") {
+      navigate(
+        {
+          pathname: buildGtmBoardPath(selectedCompany?.issuePrefix, "/agents/all"),
+          search: location.search,
+        },
+        { replace: true },
+      );
+    }
+  }, [listSegment, selectedCompany?.issuePrefix, location.search, navigate]);
+
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    if (listSegment === "new") {
+      setOpen(true);
+    }
+  }, [listSegment]);
+
+  useEffect(() => {
+    if (!selectedCompany) {
+      setBreadcrumbs([]);
+      return;
+    }
+    const agentsListHref = buildGtmBoardPath(selectedCompany.issuePrefix, "/agents/all");
+    if (listSegment === "trash") {
+      setBreadcrumbs([
+        { label: "Agents", href: agentsListHref },
+        { label: "Removed agents" },
+      ]);
+      return;
+    }
+    if (listSegment === "new") {
+      setBreadcrumbs([
+        { label: "Agents", href: agentsListHref },
+        { label: "New agent" },
+      ]);
+      return;
+    }
+    setBreadcrumbs([{ label: "Agents" }]);
+  }, [setBreadcrumbs, selectedCompany, listSegment]);
+
   const agentsQuery = useQuery({
-    queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
-    queryFn: () => gtmApi.listAgents(selectedCompanyId!),
+    queryKey: selectedCompanyId
+      ? GTM_QUERY_KEYS.agents(selectedCompanyId, isTrash ? "trash" : "default")
+      : ["gtm", "agents", "none"],
+    queryFn: () => gtmApi.listAgents(selectedCompanyId!, isTrash ? "trash" : "default"),
     enabled: !!selectedCompanyId,
+  });
+
+  const activityRunsQuery = useQuery({
+    queryKey: selectedCompanyId ? ["gtm", "agents-tab-runs", selectedCompanyId] : ["gtm", "agents-tab-runs", "none"],
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!, undefined, 80),
+    enabled: !!selectedCompanyId && !isTrash,
   });
 
   const actionMutation = useMutation({
@@ -870,7 +633,10 @@ function GtmAgentsPage() {
       return gtmApi.resumeAgent(agentId, selectedCompanyId);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId!) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gtm", "agents", selectedCompanyId!] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "agents-tab-runs", selectedCompanyId!] }),
+      ]);
     },
     onError: (error) => {
       pushToast({
@@ -884,76 +650,116 @@ function GtmAgentsPage() {
   if (!selectedCompanyId) {
     return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Select a company to manage GTM agents.</div>;
   }
-  if (agentsQuery.isLoading) {
+
+  const awaitingRuns = !isTrash && activityRunsQuery.isLoading;
+  if (agentsQuery.isLoading || awaitingRuns) {
     return <div className="py-8 text-sm text-muted-foreground">Loading agents…</div>;
   }
   if (agentsQuery.error) {
     return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{agentsQuery.error instanceof Error ? agentsQuery.error.message : "Failed to load agents"}</div>;
   }
+  if (!isTrash && activityRunsQuery.error) {
+    const err = activityRunsQuery.error;
+    return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{err instanceof Error ? err.message : "Failed to load agent activity"}</div>;
+  }
 
-  const agents = agentsQuery.data ?? [];
+  const liveAgentIds = buildGtmLiveAgentIdSet(activityRunsQuery.data ?? []);
+  const rawAgents = agentsQuery.data ?? [];
+  const agents = filterAgentsForGtmDirectoryUi(rawAgents);
   const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Agents</h1>
-          <p className="text-sm text-muted-foreground">GTM-only agent inventory and controls.</p>
+          <h1 className="text-lg font-semibold">{isTrash ? "Removed agents" : "Agents"}</h1>
+          <p className="text-sm text-muted-foreground">
+            {isTrash
+              ? "Terminated agents for this workspace (read-only)."
+              : "GTM-only agent inventory and controls."}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link to={boardPath("/agents/org-chart")}>Org Chart</Link>
-          </Button>
-          <Button onClick={() => setOpen(true)}>New Agent</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {!isTrash ? (
+            <>
+              <Button variant="outline" asChild>
+                <Link to={boardPath("/agents/org-chart")}>Org Chart</Link>
+              </Button>
+              <Button onClick={() => navigate({ pathname: boardPath("/agents/new"), search: location.search })}>New Agent</Button>
+            </>
+          ) : (
+            <Button variant="outline" asChild>
+              <Link to={{ pathname: boardPath("/agents/all"), search: location.search }}>Back to agents</Link>
+            </Button>
+          )}
         </div>
       </div>
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <GtmAgentsViewToggle
+            value={layout}
+            onValueChange={setAgentsLayout}
+            favoriteLayout={favoriteAgentView}
+            onFavoriteToggle={(id) => setFavoriteAgentView(toggleGtmAgentsLayoutFavorite(id))}
+          />
+          {!isTrash ? (
+            <Button variant="outline" size="icon" className="shrink-0" asChild title="Removed agents">
+              <Link to={{ pathname: boardPath("/agents/trash"), search: location.search }} aria-label="View removed agents">
+                <Archive className="h-4 w-4" aria-hidden />
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {agents.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No GTM agents configured yet.</div>
-          ) : (
-            <div className="divide-y divide-border">
-              {agents.map((agent) => (
-                <div key={agent.id} className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <Link to={boardPath(`/agents/${agentRouteRef(agent)}/dashboard`)} className="truncate font-medium hover:underline">{agent.name}</Link>
-                    <p className="truncate text-sm text-muted-foreground">{agent.title ?? agent.role}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">{agent.adapterType}</Badge>
-                    <Badge variant="outline">{agent.status}</Badge>
-                    <Button size="icon-sm" variant="outline" asChild aria-label={`Open settings for ${agent.name}`}>
-                      <Link to={boardPath(`/agents/${agentRouteRef(agent)}/configuration`)}>
-                        <Settings className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => actionMutation.mutate({ action: "invoke", agentId: agent.id })}>
-                      Run
-                    </Button>
-                    {agent.status === "paused" ? (
-                      <Button size="sm" variant="outline" onClick={() => actionMutation.mutate({ action: "resume", agentId: agent.id })}>
-                        Resume
-                      </Button>
-                    ) : (
-                      <Button size="sm" variant="outline" onClick={() => actionMutation.mutate({ action: "pause", agentId: agent.id })}>
-                        Pause
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="p-6 text-sm text-muted-foreground">
+              {isTrash
+                ? "No terminated agents in this workspace."
+                : "No GTM agents configured yet."}
             </div>
+          ) : layout === "kanban" ? (
+            <GtmAgentsKanbanView
+              agents={agents}
+              isTrash={isTrash}
+              liveAgentIds={liveAgentIds}
+              boardPath={boardPath}
+              onAgentAction={(payload) => actionMutation.mutate(payload)}
+            />
+          ) : layout === "table" ? (
+            <GtmAgentsTableView
+              agents={agents}
+              isTrash={isTrash}
+              liveAgentIds={liveAgentIds}
+              boardPath={boardPath}
+              onAgentAction={(payload) => actionMutation.mutate(payload)}
+            />
+          ) : (
+            <GtmAgentsListView
+              agents={agents}
+              isTrash={isTrash}
+              liveAgentIds={liveAgentIds}
+              boardPath={boardPath}
+              onAgentAction={(payload) => actionMutation.mutate(payload)}
+            />
           )}
         </CardContent>
       </Card>
 
       <GtmAgentModal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+          if (listSegment === "new") {
+            navigate({ pathname: boardPath("/agents/all"), search: location.search }, { replace: true });
+          }
+        }}
         companyId={selectedCompanyId}
         onSuccess={() => {
-          void queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId) });
+          void queryClient.invalidateQueries({ queryKey: ["gtm", "agents", selectedCompanyId] });
         }}
       />
     </div>
@@ -1090,7 +896,6 @@ function GtmCampaignsPage() {
           companyId={selectedCompanyId}
           onSuccess={() => {
             void queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.tickets(selectedCompanyId) });
-            void queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId) });
             pushToast({ title: "Campaign created", body: "The GTM campaign workflow is ready.", tone: "success" });
           }}
         />
@@ -1162,10 +967,64 @@ function GtmCampaignPage() {
   );
 }
 
+function GtmInboxIndexRedirect() {
+  const { selectedCompany } = useCompany();
+  const tab = loadGtmLastInboxTab();
+  return <Navigate to={buildGtmBoardPath(selectedCompany?.issuePrefix, `/inbox/${tab}`)} replace />;
+}
+
 function GtmInboxPage() {
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [liveRunsOpen, setLiveRunsOpen] = useState(false);
+  const inboxIssuesViewParam = searchParams.get("view");
+  const issuesViewLayout: GtmInboxIssuesViewLayout = normalizeGtmInboxIssuesLayoutParam(inboxIssuesViewParam);
+  const [favoriteInboxIssuesView, setFavoriteInboxIssuesView] = useState<GtmInboxIssuesViewLayout | null>(() =>
+    loadGtmInboxIssuesLayoutFavorite(),
+  );
+
+  useEffect(() => {
+    if (!isGtmInboxIssuesViewLayout(inboxIssuesViewParam)) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("view", resolveGtmInboxIssuesLayoutWithoutUrlParam());
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }, [inboxIssuesViewParam, setSearchParams]);
+
+  const setInboxIssuesViewLayout = useCallback(
+    (next: GtmInboxIssuesViewLayout) => {
+      saveGtmInboxIssuesLayout(next);
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          n.set("view", next);
+          return n;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  const [issueSearch, setIssueSearch] = useState("");
+  const [issueDatePreset, setIssueDatePreset] = useState<GtmInboxIssueDatePreset>("all");
+  const [issueCustomFrom, setIssueCustomFrom] = useState("");
+  const [issueCustomTo, setIssueCustomTo] = useState("");
+  const assigneeSearchParam = searchParams.get("assignee");
+  const [issueAssigneeFilter, setIssueAssigneeFilter] = useState<GtmInboxIssueAssigneeFilter>(() =>
+    parseGtmInboxAssigneeSearchParam(assigneeSearchParam) ?? "all",
+  );
+  const [issueStatusFilter, setIssueStatusFilter] = useState<GtmInboxIssueStatusFilter>("all");
+
+  useEffect(() => {
+    setIssueAssigneeFilter(parseGtmInboxAssigneeSearchParam(assigneeSearchParam) ?? "all");
+  }, [assigneeSearchParam]);
   const agentsQuery = useQuery({
     queryKey: selectedCompanyId ? GTM_QUERY_KEYS.agents(selectedCompanyId) : ["gtm", "agents", "none"],
     queryFn: () => gtmApi.listAgents(selectedCompanyId!),
@@ -1176,6 +1035,7 @@ function GtmInboxPage() {
     queryFn: () => gtmApi.listIssues(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  /** Inbox no longer renders a separate Live runs card; data is still used for issue "live" badges. */
   const runsQuery = useQuery({
     queryKey: selectedCompanyId ? ["gtm", "inbox-runs", selectedCompanyId] : ["gtm", "inbox-runs", "none"],
     queryFn: () => gtmApi.listRuns(selectedCompanyId!),
@@ -1227,14 +1087,18 @@ function GtmInboxPage() {
       const agentId = (approval.payload as Record<string, unknown> | null)?.agentId;
       if (typeof agentId === "string") {
         try {
-          await agentsApi.update(agentId, { metadata: { product: "gtm", surfaceProfile: "gtm" } }, selectedCompanyId!);
+          await agentsApi.update(
+            agentId,
+            { metadata: { product: "gtm", surfaceProfile: "gtm", gtmKind: "gtm_hire_approved" } },
+            selectedCompanyId!,
+          );
         } catch { /* best-effort */ }
       }
     },
     onSuccess: () => {
       if (!selectedCompanyId) return;
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId) });
-      queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId) });
+      queryClient.invalidateQueries({ queryKey: ["gtm", "agents", selectedCompanyId] });
     },
   });
   const rejectHireMutation = useMutation({
@@ -1244,41 +1108,36 @@ function GtmInboxPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId) });
     },
   });
-  const cancelRun = useMutation({
-    mutationFn: (runId: string) => heartbeatsApi.cancel(runId),
-    onSuccess: async () => {
-      if (!selectedCompanyId) return;
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "inbox-runs", selectedCompanyId] }),
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId) }),
-      ]);
-    },
-  });
-  const retryRun = useMutation({
-    mutationFn: async (run: Awaited<ReturnType<typeof heartbeatsApi.list>>[number]) => {
-      const result = await agentsApi.wakeup(
-        run.agentId,
-        {
-          source: "on_demand",
-          triggerDetail: "manual",
-          reason: "retry_failed_gtm_run",
-          payload: buildRunRetryPayload(run),
-        },
-        selectedCompanyId!,
-      );
-      if (!("id" in result)) {
-        throw new Error("Retry was skipped because the agent is not currently invokable.");
-      }
-      return result;
-    },
-    onSuccess: async () => {
-      if (!selectedCompanyId) return;
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gtm", "inbox-runs", selectedCompanyId] }),
-        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.inbox(selectedCompanyId) }),
-      ]);
-    },
-  });
+
+  const isActivityRoute = /\/activity(?:\/|$|\?|#)/.test(location.pathname);
+  const inboxTab: GtmInboxTab = isActivityRoute
+    ? "recent"
+    : (parseGtmInboxTabFromPath(location.pathname) ?? "recent");
+
+  const displayIssues = useMemo(() => {
+    const all = issuesQuery.data ?? [];
+    if (inboxTab === "unread") {
+      return getUnreadTouchedIssues(all).sort(sortIssuesByMostRecentActivity);
+    }
+    if (inboxTab === "all") {
+      return [...all].sort(sortIssuesByMostRecentActivity);
+    }
+    return getRecentTouchedIssues(all).slice(0, 5);
+  }, [inboxTab, issuesQuery.data]);
+
+  const issueUpdatedBounds = useMemo(
+    () => inboxIssueDateBounds(issueDatePreset, issueCustomFrom, issueCustomTo),
+    [issueDatePreset, issueCustomFrom, issueCustomTo],
+  );
+
+  const filteredInboxIssues = useMemo(() => {
+    let list = displayIssues;
+    list = filterIssuesBySearch(list, issueSearch);
+    list = filterIssuesByUpdatedRange(list, issueUpdatedBounds.fromMs, issueUpdatedBounds.toMs);
+    list = filterIssuesByAssignee(list, issueAssigneeFilter);
+    list = filterIssuesByStatus(list, issueStatusFilter);
+    return list;
+  }, [displayIssues, issueSearch, issueUpdatedBounds.fromMs, issueUpdatedBounds.toMs, issueAssigneeFilter, issueStatusFilter]);
 
   if (!selectedCompanyId) {
     return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Select a company to open the GTM inbox.</div>;
@@ -1291,34 +1150,61 @@ function GtmInboxPage() {
     return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{error instanceof Error ? error.message : "Failed to load inbox"}</div>;
   }
 
-  const issues = [...(issuesQuery.data ?? [])].sort(
-    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-  );
-  const agentNameById = new Map((agentsQuery.data ?? []).map((agent) => [agent.id, agent.name]));
+  const allIssues = issuesQuery.data ?? [];
+
   const runs = [...(runsQuery.data ?? [])].sort(
     (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
   );
   const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
-  const issueMap = new Map(issues.map((issue) => [issue.id, issue]));
   const liveIssueIds = new Set(
     runs
       .filter((run) => run.status === "running" || run.status === "queued")
       .map((run) => getRunIssueId(run))
       .filter((issueId): issueId is string => Boolean(issueId)),
   );
-  const activeRuns = runs.filter((run) => run.status === "running" || run.status === "queued");
-  const recentRuns = runs.filter((run) => !activeRuns.includes(run)).slice(0, 10);
-  const visibleIssues = issues.slice(0, 5);
   const joinRequests = joinRequestsQuery.data ?? [];
   const hireApprovals = (hireApprovalsQuery.data ?? []).filter(
     (a: Approval) => a.type === "hire_agent" && (a.status === "pending" || a.status === "revision_requested"),
   );
 
+  const agentsForIssueFilter = filterAgentsForGtmDirectoryUi(agentsQuery.data ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+  }));
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold">Inbox</h1>
-        <p className="text-sm text-muted-foreground">Live runs, assigned work, and issue activity for GTM agents.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">Inbox</h1>
+          <p className="text-sm text-muted-foreground">Assigned work and issue activity for GTM agents.</p>
+        </div>
+        {!isActivityRoute ? (
+          <Tabs
+            value={inboxTab}
+            onValueChange={(v) => {
+              const next = v as GtmInboxTab;
+              saveGtmLastInboxTab(next);
+              navigate({ pathname: boardPath(`/inbox/${next}`), search: location.search });
+            }}
+            className="w-full sm:w-auto"
+          >
+            <PageTabBar
+              items={[
+                { value: "recent", label: "Recent" },
+                { value: "unread", label: "Unread" },
+                { value: "all", label: "All" },
+              ]}
+              value={inboxTab}
+              onValueChange={(v) => {
+                const next = v as GtmInboxTab;
+                saveGtmLastInboxTab(next);
+                navigate({ pathname: boardPath(`/inbox/${next}`), search: location.search });
+              }}
+              align="start"
+            />
+          </Tabs>
+        ) : null}
       </div>
 
       {hireApprovals.length > 0 && (
@@ -1380,7 +1266,7 @@ function GtmInboxPage() {
                       requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}
                     </p>
                     {joinRequest.adapterType && (
-                      <p className="text-xs text-muted-foreground">adapter: {joinRequest.adapterType}</p>
+                      <p className="text-xs text-muted-foreground">model: {joinRequest.adapterType}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -1406,145 +1292,87 @@ function GtmInboxPage() {
           </CardContent>
         </Card>
       )}
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle>Assigned issues</CardTitle>
-            <CardDescription>Issue activity for GTM campaigns and GTM-assigned agents.</CardDescription>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PaperclipViewLayoutToggle
+            views={GTM_INBOX_ISSUE_VIEW_TABS}
+            value={issuesViewLayout}
+            onValueChange={setInboxIssuesViewLayout}
+            favoriteLayout={favoriteInboxIssuesView}
+            onFavoriteToggle={(id) => setFavoriteInboxIssuesView(toggleGtmInboxIssuesLayoutFavorite(id))}
+          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {inboxTab !== "all" ? (
+              <Button asChild variant="outline" size="sm" className="shrink-0">
+                <Link to={{ pathname: boardPath("/inbox/all"), search: location.search }}>View more</Link>
+              </Button>
+            ) : null}
+            <GtmInboxHiddenIssuesSheet
+              companyId={selectedCompanyId}
+              boardPath={boardPath}
+              queryKeyHidden={GTM_QUERY_KEYS.hiddenIssues(selectedCompanyId)}
+              queryKeyIssues={GTM_QUERY_KEYS.issues(selectedCompanyId)}
+            />
           </div>
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link to={boardPath("/inbox")}>View more</Link>
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0">
-          {issues.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No GTM issues yet. Runs without issue assignments still appear above.</div>
-          ) : (
-            <div className="divide-y divide-border">
-              {visibleIssues.map((issue) => (
-                <IssueRow
-                  key={issue.id}
-                  issue={issue}
-                  to={boardPath(`/issues/${issue.id}`)}
-                  desktopMetaLeading={(
-                    <>
-                      <span className="hidden sm:inline-flex">
-                        <PriorityIcon priority={issue.priority} />
-                      </span>
-                      <span className="hidden shrink-0 sm:inline-flex">
-                        <StatusIcon status={issue.status} />
-                      </span>
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                        {issue.identifier ?? issue.id.slice(0, 8)}
-                      </span>
-                      {liveIssueIds.has(issue.id) ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-1.5 py-0.5 sm:gap-1.5 sm:px-2">
-                          <span className="relative flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
-                          </span>
-                          <span className="hidden text-[11px] font-medium text-blue-600 dark:text-blue-400 sm:inline">
-                            Live
-                          </span>
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                  mobileMeta={`updated ${timeAgo(issue.updatedAt)}`}
-                  trailingMeta={`updated ${timeAgo(issue.updatedAt)}`}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle>Live runs</CardTitle>
-            <CardDescription>Manage active and recent GTM agent execution directly from the inbox.</CardDescription>
-          </div>
-          <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setLiveRunsOpen((current) => !current)}>
-            <ChevronDown className={cn("h-4 w-4 transition-transform", liveRunsOpen ? "rotate-180" : "")} />
-          </Button>
-        </CardHeader>
-        {liveRunsOpen ? (
-          <CardContent className="space-y-3">
-            {runs.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No GTM runs yet.</div>
+        </div>
+
+        <Card>
+          {allIssues.length > 0 ? (
+            <CardHeader className="space-y-0 pb-4 pt-6">
+              <GtmInboxIssuesToolbar
+                search={issueSearch}
+                onSearchChange={setIssueSearch}
+                datePreset={issueDatePreset}
+                onDatePresetChange={setIssueDatePreset}
+                customFrom={issueCustomFrom}
+                customTo={issueCustomTo}
+                onCustomFromChange={setIssueCustomFrom}
+                onCustomToChange={setIssueCustomTo}
+                assigneeFilter={issueAssigneeFilter}
+                onAssigneeFilterChange={setIssueAssigneeFilter}
+                statusFilter={issueStatusFilter}
+                onStatusFilterChange={setIssueStatusFilter}
+                agentsForFilter={agentsForIssueFilter}
+              />
+            </CardHeader>
+          ) : null}
+          <CardContent className="p-0">
+            {allIssues.length === 0 ? (
+              <div className="p-6 text-sm text-muted-foreground">No GTM issues yet.</div>
+            ) : displayIssues.length === 0 ? (
+              <div className="p-6 text-sm text-muted-foreground">
+                {inboxTab === "unread" ? "No unread issues right now." : "Nothing to show in this view."}
+              </div>
+            ) : filteredInboxIssues.length === 0 ? (
+              <div className="p-6 text-sm text-muted-foreground">No issues match your search or filters.</div>
+            ) : issuesViewLayout === "kanban" ? (
+              <GtmIssuesKanbanView
+                issues={filteredInboxIssues}
+                issueHref={(issue) => boardPath(`/issues/${issue.id}`)}
+                liveIssueIds={liveIssueIds}
+              />
+            ) : issuesViewLayout === "table" ? (
+              <GtmIssuesTableView
+                issues={filteredInboxIssues}
+                issueHref={(issue) => boardPath(`/issues/${issue.id}`)}
+                liveIssueIds={liveIssueIds}
+              />
+            ) : issuesViewLayout === "calendar" ? (
+              <GtmIssuesCalendarView
+                issues={filteredInboxIssues}
+                issueHref={(issue) => boardPath(`/issues/${issue.id}`)}
+                liveIssueIds={liveIssueIds}
+              />
             ) : (
-              <>
-                {(activeRuns.length > 0 ? activeRuns : recentRuns).map((run) => {
-                  const issueId = getRunIssueId(run);
-                  const issue = issueId ? issueMap.get(issueId) ?? null : null;
-                  const canCancel = run.status === "running" || run.status === "queued";
-                  const canRetry = run.status === "failed" || run.status === "timed_out";
-                  const isRateLimit = run.status === "failed" && run.error?.toLowerCase().includes("hit your limit") === true;
-                  return (
-                    <div key={run.id} className="rounded-md border border-border p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <StatusBadge status={run.status} />
-                            <span className="text-sm font-medium">{run.invocationSource.replaceAll("_", " ")}</span>
-                            <span className="text-xs text-muted-foreground">{relativeTime(run.updatedAt)}</span>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            Agent <span className="font-medium text-foreground">{agentNameById.get(run.agentId) ?? run.agentId}</span>
-                            {run.triggerDetail ? <> · trigger {run.triggerDetail}</> : null}
-                          </div>
-                          {issue ? (
-                            <Link to={boardPath(`/issues/${issue.id}`)} className="block text-sm font-medium hover:underline">
-                              {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
-                            </Link>
-                          ) : (
-                            <div className="text-sm text-muted-foreground">No assigned GTM issue linked to this run yet.</div>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button asChild variant="outline" size="sm">
-                            <Link to={boardPath(`/agents/${run.agentId}/runs/${run.id}`)}>
-                              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                              View run
-                            </Link>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => retryRun.mutate(run)}
-                            disabled={!canRetry || retryRun.isPending}
-                          >
-                            <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-                            Retry
-                          </Button>
-                          {isRateLimit && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => { void navigator.clipboard.writeText("claude auth login"); }}
-                              title="Claude rate limit hit — copy re-auth command"
-                            >
-                              Re-auth Claude
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => cancelRun.mutate(run.id)}
-                            disabled={!canCancel || cancelRun.isPending}
-                          >
-                            Pause
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
+              <GtmIssuesListView
+                issues={filteredInboxIssues}
+                issueHref={(issue) => boardPath(`/issues/${issue.id}`)}
+                liveIssueIds={liveIssueIds}
+              />
             )}
           </CardContent>
-        ) : null}
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1581,6 +1409,7 @@ function GtmCompaniesPage() {
 
 function GtmSettingsPage() {
   const { selectedCompany, selectedCompanyId } = useCompany();
+  const { companyPrefix: routeCompanyPrefix } = useParams<{ companyPrefix?: string }>();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [workspaceName, setWorkspaceName] = useState("");
@@ -1588,6 +1417,15 @@ function GtmSettingsPage() {
   const [workspaceBrandColor, setWorkspaceBrandColor] = useState("");
   const [workspaceLogoUrl, setWorkspaceLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [agentName, setAgentName] = useState("");
+  const [agentTitle, setAgentTitle] = useState("");
+  const [claudeCommand, setClaudeCommand] = useState("claude");
+  const [claudeCwd, setClaudeCwd] = useState("");
+  const [claudeModel, setClaudeModel] = useState("claude-sonnet-4-6");
+  const [claudeChrome, setClaudeChrome] = useState(true);
+  const [growthubBaseUrl, setGrowthubBaseUrl] = useState("");
   const profileQuery = useQuery({ queryKey: ["gtm", "profile"], queryFn: () => gtmApi.getProfile() });
   const knowledgeQuery = useQuery({ queryKey: ["gtm", "knowledge"], queryFn: () => gtmApi.getKnowledge() });
   const connectorsQuery = useQuery({ queryKey: ["gtm", "connectors"], queryFn: () => gtmApi.getConnectors() });
@@ -1596,6 +1434,11 @@ function GtmSettingsPage() {
   const runsQuery = useQuery({
     queryKey: selectedCompanyId ? ["gtm", "runs", selectedCompanyId] : ["gtm", "runs", "none"],
     queryFn: () => gtmApi.listRuns(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId),
+  });
+  const workspaceConfigQuery = useQuery({
+    queryKey: selectedCompanyId ? ["gtm", "workspace-config", selectedCompanyId] : ["gtm", "workspace-config", "none"],
+    queryFn: () => gtmApi.getWorkspaceConfig(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId),
   });
   const sessionQuery = useQuery({
@@ -1633,6 +1476,64 @@ function GtmSettingsPage() {
       pushToast({
         title: "Disconnect failed",
         body: error instanceof Error ? error.message : "Failed to disconnect Growthub locally",
+        tone: "error",
+      });
+    },
+  });
+  const setupMutation = useMutation({
+    mutationFn: () =>
+      gtmApi.upsertWorkspaceClaudeBrowser(selectedCompanyId!, {
+        name: agentName,
+        title: agentTitle,
+        adapterConfig: {
+          command: claudeCommand,
+          cwd: claudeCwd,
+          model: claudeModel,
+          chrome: claudeChrome,
+        },
+      }),
+    onSuccess: async () => {
+      setSetupOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gtm", "workspace-config", selectedCompanyId!] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "agents", selectedCompanyId!] }),
+      ]);
+      pushToast({ title: "Workspace configured", body: "Claude browser agent is configured for this workspace.", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Workspace setup failed",
+        body: error instanceof Error ? error.message : "Failed to configure workspace agent",
+        tone: "error",
+      });
+    },
+  });
+  const saveConnectionConfig = useMutation({
+    mutationFn: async () => gtmApi.saveConnectionConfig({ baseUrl: growthubBaseUrl.trim() }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gtm", "connection"] }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "connectors"] }),
+      ]);
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Configuration failed",
+        body: error instanceof Error ? error.message : "Failed to save Growthub configuration",
+        tone: "error",
+      });
+    },
+  });
+  const launchWorkflow = useMutation({
+    mutationFn: () => gtmApi.launchWorkflow(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["gtm", "workflow"] });
+      pushToast({ title: "Workflow started", body: "Local SDR execution launched.", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Workflow failed",
+        body: error instanceof Error ? error.message : "Failed to launch workflow",
         tone: "error",
       });
     },
@@ -1693,12 +1594,33 @@ function GtmSettingsPage() {
     setWorkspaceLogoUrl(selectedCompany.logoUrl ?? "");
     setLogoUploadError(null);
   }, [selectedCompany]);
+  useEffect(() => {
+    if (connectionQuery.data?.baseUrl) {
+      setGrowthubBaseUrl(connectionQuery.data.baseUrl);
+    }
+  }, [connectionQuery.data?.baseUrl]);
 
-  if (profileQuery.isLoading || knowledgeQuery.isLoading || connectorsQuery.isLoading || connectionQuery.isLoading || workflowQuery.isLoading || runsQuery.isLoading) {
+  const workspaceConfigLoading = Boolean(selectedCompanyId) && workspaceConfigQuery.isLoading;
+  if (
+    profileQuery.isLoading
+    || knowledgeQuery.isLoading
+    || connectorsQuery.isLoading
+    || connectionQuery.isLoading
+    || workflowQuery.isLoading
+    || runsQuery.isLoading
+    || workspaceConfigLoading
+  ) {
     return <div className="py-8 text-sm text-muted-foreground">Loading settings…</div>;
   }
 
-  const error = profileQuery.error ?? knowledgeQuery.error ?? connectorsQuery.error ?? connectionQuery.error ?? workflowQuery.error ?? runsQuery.error;
+  const error =
+    profileQuery.error
+    ?? knowledgeQuery.error
+    ?? connectorsQuery.error
+    ?? connectionQuery.error
+    ?? workflowQuery.error
+    ?? runsQuery.error
+    ?? (selectedCompanyId ? workspaceConfigQuery.error : null);
   if (error) {
     return <div className="rounded-lg border border-destructive/30 bg-card p-6 text-sm text-destructive">{error instanceof Error ? error.message : "Failed to load settings"}</div>;
   }
@@ -1724,15 +1646,10 @@ function GtmSettingsPage() {
       brandColor: workspaceBrandColor || null,
     });
   };
-  const openConnectionConfiguration = () => {
-    if (!connection.baseUrl?.trim()) {
-      pushToast({
-        title: "Growthub base URL missing",
-        body: "Configure the hosted Growthub URL before opening the local callback flow.",
-        tone: "error",
-      });
-      return;
-    }
+
+  const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix ?? routeCompanyPrefix ?? null, path);
+
+  const openHostedGrowthubConfiguration = (baseUrl: string, callbackUrl: string) => {
     const userId = getGrowthubAuthUserId(sessionQuery.data ?? null);
     if (!userId) {
       pushToast({
@@ -1742,14 +1659,49 @@ function GtmSettingsPage() {
       });
       return;
     }
-    const url = buildGrowthubConfigurationUrl({
-      baseUrl: connection.baseUrl,
-      callbackUrl: connection.callbackUrl,
-      userId,
-      surface: "gtm",
-      workspaceLabel: selectedCompany?.name ?? profile.workspace ?? "GTM Workspace",
-    });
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.open(
+      buildGrowthubConfigurationUrl({
+        baseUrl,
+        callbackUrl,
+        userId,
+        surface: "gtm",
+        workspaceLabel: selectedCompany?.name ?? profile.workspace ?? "GTM Workspace",
+      }),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+  const openConnectionConfiguration = () => {
+    if (connection.baseUrl?.trim()) {
+      openHostedGrowthubConfiguration(connection.baseUrl, connection.callbackUrl);
+      return;
+    }
+    setGrowthubBaseUrl(connection.baseUrl ?? "");
+    setConnectionOpen(true);
+  };
+
+  const launchGrowthubConfiguration = async () => {
+    const saved = await saveConnectionConfig.mutateAsync();
+    setConnectionOpen(false);
+    openHostedGrowthubConfiguration(saved.baseUrl, saved.callbackUrl);
+  };
+
+  const workspaceConfig = workspaceConfigQuery.data ?? null;
+  const managedAgent = workspaceConfig?.existingAgent ?? null;
+  const bindingCheck = workspaceConfig?.environmentTest ?? null;
+
+  const openSetup = () => {
+    if (!workspaceConfig) return;
+    const source = managedAgent ?? workspaceConfig.defaults;
+    const adapterConfig = (managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>;
+    setAgentName(source.name ?? "SDR Browser Agent");
+    setAgentTitle((managedAgent?.title ?? workspaceConfig.defaults.title) || "");
+    setClaudeCommand(String(adapterConfig.command ?? "claude"));
+    setClaudeCwd(String(adapterConfig.cwd ?? ""));
+    setClaudeModel(String(adapterConfig.model ?? "claude-sonnet-4-6"));
+    setClaudeChrome(Boolean(adapterConfig.chrome ?? true));
+    setSetupOpen(true);
   };
 
   return (
@@ -1835,6 +1787,101 @@ function GtmSettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {workspaceConfig ? (
+        <>
+          <Card className="xl:col-span-2">
+            <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">GTM Workspace</Badge>
+                  <Badge variant="outline">{workflow.status}</Badge>
+                  <Badge variant={managedAgent ? "secondary" : "outline"}>
+                    {managedAgent ? "Agent ready" : "Needs setup"}
+                  </Badge>
+                </div>
+                <div>
+                  <CardTitle>{selectedCompany?.name ?? profile.workspace}</CardTitle>
+                  <CardDescription>
+                    Build campaigns, queue work, configure the local Claude browser agent, and launch GTM workflows without exposing board planning surfaces.
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={openSetup}>
+                  <Wrench className="mr-2 h-4 w-4" />
+                  {managedAgent ? "Update agent setup" : "Configure browser agent"}
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to={boardPath("/agents/all")}>Open agents</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to={boardPath("/tickets")}>Open campaigns</Link>
+                </Button>
+                <Button onClick={() => launchWorkflow.mutate()} disabled={launchWorkflow.isPending}>
+                  <Play className="mr-2 h-4 w-4" />
+                  {workflow.actionLabel}
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card className="xl:col-span-2">
+            <CardHeader>
+              <CardTitle>Workspace Agent Setup</CardTitle>
+              <CardDescription>Default done-for-you Claude browser agent binding for this workspace.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Agent</p>
+                <p className="mt-1">{managedAgent?.name ?? "Not configured"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Binding Status</p>
+                <p className="mt-1">{bindingCheck ? bindingCheck.status : "Not tested"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Claude Command</p>
+                <p className="mt-1 break-all">
+                  {String(
+                    ((managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>).command ?? "claude",
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Working Directory</p>
+                <p className="mt-1 break-all">
+                  {String(
+                    ((managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>).cwd ?? "Not configured",
+                  )}
+                </p>
+              </div>
+              {bindingCheck?.checks?.length ? (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Latest Binding Check</p>
+                  {bindingCheck.checks.slice(0, 3).map((check) => (
+                    <div key={check.code} className="rounded-md border border-border p-3">
+                      <p className="font-medium">{check.message}</p>
+                      {check.hint ? <p className="mt-1 text-muted-foreground">{check.hint}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" variant="outline" onClick={openSetup}>
+                  Configure
+                </Button>
+                {managedAgent ? (
+                  <Button size="sm" asChild variant="outline">
+                    <Link to={boardPath(`/agents/${managedAgent.id}`)}>Open detail</Link>
+                  </Button>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>
@@ -1863,7 +1910,6 @@ function GtmSettingsPage() {
         onDisconnect={connection.connected ? () => disconnectConnectionMutation.mutate() : undefined}
         pulsePending={testConnectionMutation.isPending}
         disconnectPending={disconnectConnectionMutation.isPending}
-        openDisabled={!connection.baseUrl?.trim()}
       />
       <Card>
         <CardHeader>
@@ -1923,15 +1969,92 @@ function GtmSettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Workspace browser agent</DialogTitle>
+            <DialogDescription>
+              Bind the workspace to the local Claude app and make the default SDR browser agent runnable out of the box.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Agent name</label>
+              <Input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Title</label>
+              <Input value={agentTitle} onChange={(event) => setAgentTitle(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Claude command</label>
+              <Input value={claudeCommand} onChange={(event) => setClaudeCommand(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Working directory</label>
+              <Input value={claudeCwd} onChange={(event) => setClaudeCwd(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Model</label>
+              <Input value={claudeModel} onChange={(event) => setClaudeModel(event.target.value)} />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={claudeChrome} onChange={(event) => setClaudeChrome(event.target.checked)} />
+              Enable Claude browser mode
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSetupOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => setupMutation.mutate()}
+              disabled={!selectedCompanyId || !agentName.trim() || !claudeCommand.trim() || !claudeCwd.trim() || setupMutation.isPending}
+            >
+              {setupMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              Save and test
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={connectionOpen} onOpenChange={setConnectionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Growthub Configuration</DialogTitle>
+            <DialogDescription>Set the hosted Growthub URL for this installer, then open the auth flow.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Growthub base URL</label>
+              <Input value={growthubBaseUrl} onChange={(event) => setGrowthubBaseUrl(event.target.value)} />
+            </div>
+            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">Callback: {connection.callbackUrl}</div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConnectionOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void launchGrowthubConfiguration()} disabled={!growthubBaseUrl.trim() || saveConnectionConfig.isPending}>
+              {saveConnectionConfig.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+              Open Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function GtmShell() {
   const { selectedCompany } = useCompany();
+  const { companyPrefix: routeCompanyPrefix } = useParams<{ companyPrefix?: string }>();
   const { theme, toggleTheme } = useTheme();
   const { sidebarOpen, setSidebarOpen } = useSidebar();
   const location = useLocation();
+
+  const boardCompanyPrefix = selectedCompany?.issuePrefix ?? routeCompanyPrefix ?? null;
 
   const navItems = useMemo(
     () => [
@@ -1945,7 +2068,8 @@ function GtmShell() {
     ],
     [],
   );
-  const boardPath = (path: string) => buildGtmBoardPath(selectedCompany?.issuePrefix, path);
+  const boardPath = (path: string) => buildGtmBoardPath(boardCompanyPrefix, path);
+  const boardRelative = gtmBoardRelativePathname(location.pathname);
 
   return (
     <div className="bg-background text-foreground pt-[env(safe-area-inset-top)] md:flex md:h-dvh md:overflow-hidden">
@@ -1988,23 +2112,17 @@ function GtmShell() {
           <div className="flex flex-col gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const pathAfterSurface = location.pathname.replace(SURFACE_ROUTE_PREFIX_PATTERN, "");
-              const boardRelative = `/${pathAfterSurface.split("/").filter(Boolean).slice(1).join("/")}`;
-              const itemRoot = `/${item.to.split("/").filter(Boolean)[0] ?? ""}`;
-              const active = boardRelative === item.to || boardRelative.startsWith(`${itemRoot}/`);
+              const active = isGtmShellNavItemActive(boardRelative, item.to);
               return (
-                <Button
+                <Link
                   key={item.to}
-                  asChild
-                  variant={active ? "secondary" : "ghost"}
-                  className="justify-start"
+                  to={boardPath(item.to)}
+                  className={cn(buttonVariants({ variant: active ? "secondary" : "ghost" }), "justify-start gap-2")}
                   onClick={() => setSidebarOpen(false)}
                 >
-                  <Link to={boardPath(item.to)}>
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                </Button>
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </Link>
               );
             })}
           </div>
@@ -2042,6 +2160,7 @@ function gtmBoardRoutes() {
       <Route path="agents/paused" element={<GtmAgentsPage />} />
       <Route path="agents/error" element={<GtmAgentsPage />} />
       <Route path="agents/new" element={<GtmAgentsPage />} />
+      <Route path="agents/trash" element={<GtmAgentsPage />} />
       <Route path="agents/org-chart" element={<OrgChart />} />
       <Route path="agents/:agentId" element={<AgentDetail />} />
       <Route path="agents/:agentId/:tab" element={<AgentDetail />} />
@@ -2051,7 +2170,7 @@ function gtmBoardRoutes() {
       <Route path="issues/:issueId" element={<IssueDetail />} />
       <Route path="knowledge-base" element={<KnowledgeBase />} />
       <Route path="activity" element={<GtmInboxPage />} />
-      <Route path="inbox" element={<GtmInboxPage />} />
+      <Route path="inbox" element={<GtmInboxIndexRedirect />} />
       <Route path="inbox/recent" element={<GtmInboxPage />} />
       <Route path="inbox/unread" element={<GtmInboxPage />} />
       <Route path="inbox/all" element={<GtmInboxPage />} />
@@ -2082,6 +2201,7 @@ export function GtmApp() {
         <Route path={`${SURFACE_ROUTE_PATH}/inbox`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/new`} element={<UnprefixedBoardRedirect />} />
+        <Route path={`${SURFACE_ROUTE_PATH}/agents/trash`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/org-chart`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/:agentId`} element={<UnprefixedBoardRedirect />} />
         <Route path={`${SURFACE_ROUTE_PATH}/agents/:agentId/:tab`} element={<UnprefixedBoardRedirect />} />

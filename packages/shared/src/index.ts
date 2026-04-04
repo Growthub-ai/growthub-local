@@ -500,6 +500,8 @@ export {
   type NormalizeTicketStagesInput,
 } from "./ticket-stages.js";
 
+export * from "./agent-surface-metadata.js";
+
 export * from "./gtm.js";
 
 export {

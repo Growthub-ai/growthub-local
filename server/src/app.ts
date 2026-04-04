@@ -282,6 +282,41 @@ export async function createApp(
   );
   if (opts.surfaceRuntime.capabilities.dxEnabled) {
     api.use("/companies", companyRoutes(db));
+    api.use((req, _res, next) => {
+      if (req.method === "POST" && /^\/companies\/[^/]+\/agents(-hires)?$/.test(req.path)) {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const existingMeta =
+          body.metadata && typeof body.metadata === "object" && body.metadata !== null && !Array.isArray(body.metadata)
+            ? (body.metadata as Record<string, unknown>)
+            : {};
+        const adapterType = String(body.adapterType ?? "codex_local");
+        const dxKind =
+          typeof existingMeta.dxKind === "string" && existingMeta.dxKind.trim()
+            ? existingMeta.dxKind.trim()
+            : `dx_adapter:${adapterType}`;
+        const dxMetadata: Record<string, unknown> = {
+          entity: "agent",
+          product: "dx",
+          surfaceProfile: "dx",
+          dxKind,
+          ...existingMeta,
+        };
+        if (!Object.prototype.hasOwnProperty.call(dxMetadata, "skills")) {
+          dxMetadata.skills = [];
+        } else if (!Array.isArray(dxMetadata.skills)) {
+          dxMetadata.skills = [];
+        } else {
+          dxMetadata.skills = dxMetadata.skills.filter(
+            (s): s is string => typeof s === "string" && s.length > 0,
+          );
+        }
+        req.body = {
+          ...body,
+          metadata: dxMetadata,
+        };
+      }
+      next();
+    });
     api.use(agentRoutes(db));
     api.use(assetRoutes(db, opts.storageService));
     api.use(projectRoutes(db));
@@ -325,7 +360,19 @@ export async function createApp(
     api.use("/companies", companyRoutes(db));
     api.use((req, _res, next) => {
       if (req.method === "POST" && /^\/companies\/[^/]+\/agents(-hires)?$/.test(req.path)) {
-        req.body = { ...req.body, metadata: { product: "gtm", surfaceProfile: "gtm", ...(req.body?.metadata ?? {}) } };
+        const prior = req.body?.metadata;
+        const meta =
+          prior && typeof prior === "object" && prior !== null && !Array.isArray(prior)
+            ? ({ ...prior } as Record<string, unknown>)
+            : {};
+        if (!Object.prototype.hasOwnProperty.call(meta, "skills")) {
+          meta.skills = [];
+        } else if (!Array.isArray(meta.skills)) {
+          meta.skills = [];
+        } else {
+          meta.skills = meta.skills.filter((s): s is string => typeof s === "string" && s.length > 0);
+        }
+        req.body = { ...req.body, metadata: { product: "gtm", surfaceProfile: "gtm", ...meta } };
       }
       next();
     });
