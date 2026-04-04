@@ -14,6 +14,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./kb-skill-bundle": "./src/kb-skill-bundle/index.ts",
     "./*": "./src/*.ts"
   },
   "publishConfig": {
@@ -22,6 +23,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./kb-skill-bundle": {
+        "types": "./dist/kb-skill-bundle/index.d.ts",
+        "import": "./dist/kb-skill-bundle/index.js"
       },
       "./*": {
         "types": "./dist/*.d.ts",

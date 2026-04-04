@@ -166,9 +166,9 @@ export function GtmAgentModal({ open, onClose, companyId, onSuccess }: GtmAgentM
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
 
   const { data: skillsData } = useQuery({
-    queryKey: queryKeys.skills.list,
-    queryFn: () => agentsApi.listSkills(),
-    enabled: open,
+    queryKey: queryKeys.skills.list(companyId),
+    queryFn: () => agentsApi.listSkills(companyId),
+    enabled: open && Boolean(companyId),
   });
   const workspaceSkills = skillsData?.skills ?? [];
 

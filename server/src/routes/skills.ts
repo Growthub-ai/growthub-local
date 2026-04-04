@@ -1,75 +1,85 @@
 /**
- * Skills routes — CRUD for skill knowledge items + agent-skill assignment.
- *
- * Skills are stored as GtmKnowledgeItemRecord entries with sourceType "skill".
- * Agent-skill assignment lives in agent.metadata.skills (array of item IDs).
- * No new DB tables — uses existing knowledge item + agent metadata patterns.
+ * Skills routes — CRUD for KB skill docs (`kb_skill_docs`) + agent-skill assignment
+ * (`agent.metadata.skills`).
  */
 
-import { Router } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
+import { companies } from "@paperclipai/db";
 import {
-  listSkillKnowledgeItems,
-  getSkillKnowledgeItem,
-  createSkillKnowledgeItem,
-  updateSkillKnowledgeItem,
-  deleteSkillKnowledgeItem,
-  seedSkillsFromFilesystem,
-} from "../services/gtm-knowledge-capture.js";
+  metadataWithImplicitAllSkills,
+  parseAgentSkillAssignment,
+  patchMetadataSkills,
+} from "@paperclipai/shared";
 import { agentService } from "../services/agents.js";
-import { logger } from "../middleware/logger.js";
+import {
+  createKbSkillDoc,
+  ensureKbSkillWorkspaceHydrated,
+  getKbSkillDoc,
+  listKbSkillDocsForCompany,
+  softDeleteKbSkillDoc,
+  toSkillItemApi,
+  updateKbSkillDoc,
+} from "../services/kb-skill-docs.js";
+import { assertCompanyAccess } from "./authz.js";
+import { forbidden } from "../errors.js";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function readMetadataSkills(metadata: Record<string, unknown> | null): string[] {
-  if (!metadata) return [];
-  const skills = metadata.skills;
-  if (!Array.isArray(skills)) return [];
-  return skills.filter((s): s is string => typeof s === "string");
+function assertNotAgentActor(req: Request) {
+  if (req.actor.type === "agent") {
+    throw forbidden("Use POST /api/agent/kb-skill-docs with agent authentication");
+  }
 }
 
-function patchMetadataSkills(
-  metadata: Record<string, unknown> | null,
-  skills: string[],
-): Record<string, unknown> {
-  return { ...(metadata ?? {}), skills };
-}
+async function resolveCompanyId(db: Db, req: Request): Promise<string | null> {
+  if (req.actor.type === "agent" && req.actor.companyId) {
+    return req.actor.companyId;
+  }
 
-// ---------------------------------------------------------------------------
-// Route factory
-// ---------------------------------------------------------------------------
+  const q = typeof req.query.companyId === "string" ? req.query.companyId.trim() : "";
+  if (q) {
+    assertCompanyAccess(req, q);
+    return q;
+  }
+
+  if (req.actor.type === "board" && req.actor.source === "local_implicit") {
+    const row = await db.select({ id: companies.id }).from(companies).limit(1).then((r) => r[0] ?? null);
+    return row?.id ?? null;
+  }
+
+  return null;
+}
 
 export function skillRoutes(db: Db) {
   const router = Router();
   const agents = agentService(db);
-  let seeded = false;
 
-  function ensureSeeded() {
-    if (seeded) return;
-    seeded = true;
+  router.get("/skills", async (req, res, next) => {
     try {
-      seedSkillsFromFilesystem();
-    } catch (err) {
-      logger.warn({ error: err }, "Skills: filesystem seed failed");
-    }
-  }
-
-  // List all workspace skills
-  router.get("/skills", (_req, res, next) => {
-    try {
-      ensureSeeded();
-      const skills = listSkillKnowledgeItems();
-      res.json({ skills });
+      const companyId = await resolveCompanyId(db, req);
+      if (!companyId) {
+        res.status(400).json({ error: "companyId query parameter is required" });
+        return;
+      }
+      assertCompanyAccess(req, companyId);
+      assertNotAgentActor(req);
+      await ensureKbSkillWorkspaceHydrated(db, companyId);
+      const rows = await listKbSkillDocsForCompany(db, companyId);
+      res.json({ skills: rows.map(toSkillItemApi) });
     } catch (err) {
       next(err);
     }
   });
 
-  // Create a custom skill
-  router.post("/skills", (req, res, next) => {
+  router.post("/skills", async (req, res, next) => {
     try {
+      const companyId = await resolveCompanyId(db, req);
+      if (!companyId) {
+        res.status(400).json({ error: "companyId query parameter is required" });
+        return;
+      }
+      assertCompanyAccess(req, companyId);
+      assertNotAgentActor(req);
+
       const { name, description, body } = req.body as {
         name?: string;
         description?: string;
@@ -79,59 +89,76 @@ export function skillRoutes(db: Db) {
         res.status(400).json({ error: "name is required" });
         return;
       }
-      const skill = createSkillKnowledgeItem({
+      const row = await createKbSkillDoc(db, companyId, {
         name: name.trim(),
         description: typeof description === "string" ? description : "",
         body: typeof body === "string" ? body : "",
         source: "custom",
       });
-      res.status(201).json(skill);
+      res.status(201).json(toSkillItemApi(row));
     } catch (err) {
       next(err);
     }
   });
 
-  // Get a single skill
-  router.get("/skills/:itemId", (req, res, next) => {
+  router.get("/skills/:itemId", async (req, res, next) => {
     try {
-      const skill = getSkillKnowledgeItem(req.params.itemId as string);
-      if (!skill) {
+      const companyId = await resolveCompanyId(db, req);
+      if (!companyId) {
+        res.status(400).json({ error: "companyId query parameter is required" });
+        return;
+      }
+      assertCompanyAccess(req, companyId);
+      const row = await getKbSkillDoc(db, companyId, req.params.itemId as string);
+      if (!row || !row.isActive) {
         res.status(404).json({ error: "Skill not found" });
         return;
       }
-      res.json(skill);
+      res.json(toSkillItemApi(row));
     } catch (err) {
       next(err);
     }
   });
 
-  // Update a skill
-  router.patch("/skills/:itemId", (req, res, next) => {
+  router.patch("/skills/:itemId", async (req, res, next) => {
     try {
+      const companyId = await resolveCompanyId(db, req);
+      if (!companyId) {
+        res.status(400).json({ error: "companyId query parameter is required" });
+        return;
+      }
+      assertCompanyAccess(req, companyId);
+      assertNotAgentActor(req);
       const { name, description, body } = req.body as {
         name?: string;
         description?: string;
         body?: string;
       };
-      const updated = updateSkillKnowledgeItem(req.params.itemId as string, {
-        ...(name !== undefined ? { name } : {}),
-        ...(description !== undefined ? { description } : {}),
-        ...(body !== undefined ? { body } : {}),
+      const updated = await updateKbSkillDoc(db, companyId, req.params.itemId as string, {
+        ...(name !== undefined ? { name: String(name) } : {}),
+        ...(description !== undefined ? { description: String(description) } : {}),
+        ...(body !== undefined ? { body: String(body) } : {}),
       });
       if (!updated) {
         res.status(404).json({ error: "Skill not found" });
         return;
       }
-      res.json(updated);
+      res.json(toSkillItemApi(updated));
     } catch (err) {
       next(err);
     }
   });
 
-  // Soft-delete a skill
-  router.delete("/skills/:itemId", (req, res, next) => {
+  router.delete("/skills/:itemId", async (req, res, next) => {
     try {
-      const deleted = deleteSkillKnowledgeItem(req.params.itemId as string);
+      const companyId = await resolveCompanyId(db, req);
+      if (!companyId) {
+        res.status(400).json({ error: "companyId query parameter is required" });
+        return;
+      }
+      assertCompanyAccess(req, companyId);
+      assertNotAgentActor(req);
+      const deleted = await softDeleteKbSkillDoc(db, companyId, req.params.itemId as string);
       if (!deleted) {
         res.status(404).json({ error: "Skill not found" });
         return;
@@ -142,26 +169,54 @@ export function skillRoutes(db: Db) {
     }
   });
 
-  // List skills assigned to an agent
   router.get("/agents/:agentId/skills", async (req, res, next) => {
     try {
-      ensureSeeded();
-      const agent = await agents.getById(req.params.agentId as string);
+      const agentId = req.params.agentId as string;
+      const agent = await agents.getById(agentId);
       if (!agent) {
         res.status(404).json({ error: "Agent not found" });
         return;
       }
-      const skillIds = readMetadataSkills(agent.metadata as Record<string, unknown> | null);
-      const skills = skillIds
-        .map((id) => getSkillKnowledgeItem(id))
-        .filter((s): s is NonNullable<typeof s> => s !== null);
-      res.json({ skills });
+      assertCompanyAccess(req, agent.companyId);
+
+      await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
+      const assignment = parseAgentSkillAssignment(agent.metadata as Record<string, unknown> | null);
+      const rows: ReturnType<typeof toSkillItemApi>[] = [];
+      if (assignment.mode === "implicit_all") {
+        const list = await listKbSkillDocsForCompany(db, agent.companyId);
+        rows.push(...list.map(toSkillItemApi));
+      } else {
+        for (const id of assignment.ids) {
+          const row = await getKbSkillDoc(db, agent.companyId, id);
+          if (row && row.isActive) rows.push(toSkillItemApi(row));
+        }
+      }
+      res.json({ skills: rows, assignmentMode: assignment.mode });
     } catch (err) {
       next(err);
     }
   });
 
-  // Assign a skill to an agent
+  /** Restore default: all active workspace KB skill docs (omit `metadata.skills`). */
+  router.delete("/agents/:agentId/skills", async (req, res, next) => {
+    try {
+      const agentId = req.params.agentId as string;
+      const agent = await agents.getById(agentId);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      assertCompanyAccess(req, agent.companyId);
+
+      await agents.update(agentId, {
+        metadata: metadataWithImplicitAllSkills(agent.metadata as Record<string, unknown> | null),
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post("/agents/:agentId/skills/:itemId", async (req, res, next) => {
     try {
       const agentId = req.params.agentId as string;
@@ -172,24 +227,29 @@ export function skillRoutes(db: Db) {
         res.status(404).json({ error: "Agent not found" });
         return;
       }
+      assertCompanyAccess(req, agent.companyId);
 
-      const skill = getSkillKnowledgeItem(itemId);
-      if (!skill) {
+      const skill = await getKbSkillDoc(db, agent.companyId, itemId);
+      if (!skill || !skill.isActive) {
         res.status(404).json({ error: "Skill not found" });
         return;
       }
 
-      const existing = readMetadataSkills(agent.metadata as Record<string, unknown> | null);
-      if (existing.includes(itemId)) {
+      await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
+      const assignment = parseAgentSkillAssignment(agent.metadata as Record<string, unknown> | null);
+      const allActive = await listKbSkillDocsForCompany(db, agent.companyId);
+      const allIds = allActive.map((r) => r.id);
+
+      const current =
+        assignment.mode === "implicit_all" ? allIds : [...assignment.ids];
+
+      if (current.includes(itemId)) {
         res.json({ ok: true });
         return;
       }
 
       await agents.update(agentId, {
-        metadata: patchMetadataSkills(
-          agent.metadata as Record<string, unknown> | null,
-          [...existing, itemId],
-        ),
+        metadata: patchMetadataSkills(agent.metadata as Record<string, unknown> | null, [...current, itemId]),
       });
       res.json({ ok: true });
     } catch (err) {
@@ -197,7 +257,6 @@ export function skillRoutes(db: Db) {
     }
   });
 
-  // Unassign a skill from an agent
   router.delete("/agents/:agentId/skills/:itemId", async (req, res, next) => {
     try {
       const agentId = req.params.agentId as string;
@@ -208,20 +267,31 @@ export function skillRoutes(db: Db) {
         res.status(404).json({ error: "Agent not found" });
         return;
       }
+      assertCompanyAccess(req, agent.companyId);
 
-      const existing = readMetadataSkills(agent.metadata as Record<string, unknown> | null);
-      const filtered = existing.filter((id) => id !== itemId);
+      await ensureKbSkillWorkspaceHydrated(db, agent.companyId);
+      const assignment = parseAgentSkillAssignment(agent.metadata as Record<string, unknown> | null);
+      const allActive = await listKbSkillDocsForCompany(db, agent.companyId);
+      const allIds = allActive.map((r) => r.id);
 
-      if (filtered.length === existing.length) {
+      let next: string[];
+      if (assignment.mode === "implicit_all") {
+        next = allIds.filter((id) => id !== itemId);
+      } else {
+        next = assignment.ids.filter((id) => id !== itemId);
+      }
+
+      if (assignment.mode === "implicit_all" && next.length === allIds.length) {
+        res.json({ ok: true });
+        return;
+      }
+      if (assignment.mode === "explicit" && next.length === assignment.ids.length) {
         res.json({ ok: true });
         return;
       }
 
       await agents.update(agentId, {
-        metadata: patchMetadataSkills(
-          agent.metadata as Record<string, unknown> | null,
-          filtered,
-        ),
+        metadata: patchMetadataSkills(agent.metadata as Record<string, unknown> | null, next),
       });
       res.json({ ok: true });
     } catch (err) {

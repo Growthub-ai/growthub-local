@@ -55,6 +55,7 @@ import {
   resolveSessionCompactionPolicy,
   type SessionCompactionPolicy,
 } from "@paperclipai/adapter-utils";
+import { attachKbSkillDocsToAdapterContext } from "./kb-skill-docs-context.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -2350,12 +2351,17 @@ export function heartbeatService(db: Db) {
             if (key in meta.env) meta.env[key] = "***REDACTED***";
           }
         }
+        const bundle = context.paperclipSkillBundleV1;
+        const payload =
+          bundle && typeof bundle === "object"
+            ? ({ ...meta, paperclipSkillBundleV1: bundle } as unknown as Record<string, unknown>)
+            : (meta as unknown as Record<string, unknown>);
         await appendRunEvent(currentRun, seq++, {
           eventType: "adapter.invoke",
           stream: "system",
           level: "info",
           message: "adapter invocation",
-          payload: meta as unknown as Record<string, unknown>,
+          payload,
         });
       };
 
@@ -2374,6 +2380,8 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      await attachKbSkillDocsToAdapterContext(db, agent, context);
+
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,

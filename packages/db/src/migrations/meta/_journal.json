@@ -288,6 +288,20 @@
       "when": 1742688000000,
       "tag": "0040_ticket_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1742774400000,
+      "tag": "0041_ticket_stage_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1742860800000,
+      "tag": "0042_kb_skill_docs",
+      "breakpoints": true
     }
   ]
 }
