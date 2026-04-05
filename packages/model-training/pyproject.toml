@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "growthub-model-training"
+version = "0.1.0"
+description = "OSS orchestration primitives for Growthub custom model training (Unsloth, verl, vLLM integration points)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+hf = ["huggingface_hub>=0.25.0"]
+# Keep in sync with requirements-train-core.txt
+train = [
+  "huggingface_hub>=0.25.0",
+  "transformers>=4.46.0",
+  "accelerate>=1.0.0",
+  "datasets>=3.0.0",
+  "peft>=0.13.0",
+  "trl>=0.11.0",
+  "numpy>=1.26.0",
+  "safetensors>=0.4.0",
+  "pyyaml>=6.0.1",
+]
+
+[project.scripts]
+growthub-model-training = "growthub_model_training.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

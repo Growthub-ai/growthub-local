@@ -34,3 +34,6 @@ docs/FROZEN_*.md
 .paperclip/config.json
 .paperclip/config.json.backup
 *.tsbuildinfo
+
+# Local model weights & training artifacts (never commit)
+.growthub/

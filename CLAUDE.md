@@ -12,6 +12,9 @@ Before starting ANY work, read `CONTRIBUTING.md`, `AGENTS.md`, and `docs/ARTIFAC
 ## Canonical runtime
 Use **`scripts/runtime-control.sh`** from the repo root — same commands as `AGENTS.md` (`up-main`, `up-branch`, `up-pr`, `stop`, `status`, `url`). Align **`GH_SERVER_PORT`** with the API process you are actually running.
 
+## Custom model training
+Install deps with **`bash scripts/setup-model-training-venv.sh`**; set **`GROWTHUB_PYTHON`** to that venv’s `python3`. CLI verbs: **`growthub model:*`**, **`growthub rl:*`**, **`growthub agent:reason`**. Orchestration lives in **`packages/model-training`**; verl is an editable install (see `packages/model-training/requirements-train-verl.md`).
+
 ## Anti-patterns
 - **Never** run **`node scripts/worktree-bootstrap.mjs`** yourself — that file is **maintainer/automation only**, not an agent entrypoint.
 - **Never** manually copy `ui/src` or `server/src` into **growthub-core** to “test”; that is not the agent workflow.

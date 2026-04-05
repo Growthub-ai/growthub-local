@@ -95,6 +95,7 @@ Usage:
   scripts/runtime-control.sh stop
   scripts/runtime-control.sh status
   scripts/runtime-control.sh url
+  scripts/runtime-control.sh growthub -- <growthub-args>
 
 Commands:
   up-main            Stop stale processes, checkout/pull main, start server+ui
@@ -103,6 +104,7 @@ Commands:
   stop               Stop runtime processes managed by this repo
   status             Show health, company payload, and listeners
   url                Print canonical GTM URL
+  growthub           Forward to local CLI (sets GH_LOCAL_ROOT to this repo); requires built cli/dist
 EOF
 }
 
@@ -134,6 +136,13 @@ main() {
       ;;
     url)
       echo "http://localhost:${UI_PORT}/gtm/GHA/workspace"
+      ;;
+    growthub)
+      shift
+      require_cmd pnpm
+      export GH_LOCAL_ROOT="${ROOT}"
+      cd "${ROOT}"
+      exec pnpm --dir cli exec -- growthub "$@"
       ;;
     *)
       usage

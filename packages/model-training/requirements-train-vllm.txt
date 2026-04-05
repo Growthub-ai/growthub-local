@@ -1,0 +1,5 @@
+# vLLM serving (typically Linux + NVIDIA GPU). Install PyTorch for CUDA first, then:
+#   pip install -r requirements-train-vllm.txt
+# See: https://docs.vllm.ai/en/latest/getting_started/installation.html
+-r requirements-train-core.txt
+vllm>=0.6.0

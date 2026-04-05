@@ -9,6 +9,7 @@ for path in \
   "ui" \
   "packages/shared" \
   "packages/create-growthub-local" \
+  "packages/model-training" \
   "docs/LOCAL_HOSTED_CONTRACT.md" \
   "docs/RELEASE_FREEZE.md"
 do

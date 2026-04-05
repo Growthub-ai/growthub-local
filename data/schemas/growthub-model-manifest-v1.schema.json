@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://growthub.local/schema/model-manifest-v1.json",
+  "title": "GrowthubModelManifestV1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "created", "artifact_root", "stages"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "created": { "type": "string", "format": "date-time" },
+    "repo_git_sha": { "type": ["string", "null"] },
+    "base_model_id": { "type": "string" },
+    "hf_revision": { "type": ["string", "null"] },
+    "artifact_root": { "type": "string" },
+    "stages": { "type": "object" },
+    "notes": { "type": ["string", "null"] }
+  }
+}

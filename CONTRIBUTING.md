@@ -35,6 +35,7 @@ This repo is a **published slice** of the private monorepo. It contains:
 - `packages/shared/` — `@paperclipai/shared` types
 - `server/` — `@paperclipai/server` core HTTP server
 - `ui/` — Vite/React UI (GTM + DX surfaces)
+- `packages/model-training/` — Python orchestration for custom model training (Unsloth / verl / vLLM integration points)
 
 It does **not** contain adapter packages, the DB package, or plugin infrastructure — those live in the private monorepo.
 
@@ -50,6 +51,10 @@ It does **not** contain adapter packages, the DB package, or plugin infrastructu
 | CLI commands | `cli/src/commands/` |
 | Installer logic | `packages/create-growthub-local/bin/` |
 | Shared types | `packages/shared/src/` |
+| Custom model training (venv, manifests, RL/SFT hooks) | `packages/model-training/` + `bash scripts/setup-model-training-venv.sh` |
+| SFT / manifest JSON contracts (no real data) | `data/schemas/` |
+
+**Model-training install:** run **`bash scripts/setup-model-training-venv.sh`** from repo root; set **`GROWTHUB_PYTHON`** to the venv interpreter so **`growthub model:*`** / **`rl:*`** spawn the right Python. See **`packages/model-training/README.md`** for optional **`--with-unsloth`**, distilabel, and vLLM bundles.
 
 ---
 

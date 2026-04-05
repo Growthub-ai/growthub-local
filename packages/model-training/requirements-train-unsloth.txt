@@ -1,0 +1,6 @@
+# Unsloth (LoRA/QLoRA). Install PyTorch *first* for your CUDA/CPU combo:
+#   https://pytorch.org/get-started/locally/
+# Then:
+#   pip install -r requirements-train-unsloth.txt
+-r requirements-train-core.txt
+unsloth

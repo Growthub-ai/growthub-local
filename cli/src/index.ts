@@ -22,6 +22,7 @@ import { readConfig, resolveConfigPath } from "./config/store.js";
 import { registerGtmCommands } from "./commands/gtm.js";
 import { registerWorktreeCommands } from "./commands/worktree.js";
 import { registerPluginCommands } from "./commands/client/plugin.js";
+import { registerModelTrainingCommands } from "./commands/model-training.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
@@ -172,7 +173,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(bootstrapConfig?.surface
 program
   .name("growthub")
   .description("Growthub CLI — setup, diagnose, and configure your instance")
-  .version("0.2.7");
+  .version("0.3.32");
 
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;
@@ -185,6 +186,7 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
 });
 
 registerSharedCommands(program);
+registerModelTrainingCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

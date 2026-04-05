@@ -43,6 +43,14 @@ growthub worktree:make my-feature
 
 Use the maintainer’s instructions for that worktree; still **do not** run bootstrap scripts yourself.
 
+## Custom model training (optional capability)
+
+Training weights and private datasets **never** go in git (`.growthub/` is ignored). OSS boundary:
+
+- **Install Python stack:** `bash scripts/setup-model-training-venv.sh` (see `packages/model-training/README.md` for `--with-unsloth`, distilabel, vLLM).
+- **CLI contract:** `growthub model:bootstrap`, `growthub model:train`, … `growthub rl:grpo`, `growthub agent:reason`. Resolve repo root with `GH_LOCAL_ROOT` or `git`.
+- **Forward via runtime script:** `scripts/runtime-control.sh growthub -- model:bootstrap --dry-run` (sets `GH_LOCAL_ROOT`).
+
 ## Before pushing
 Run `bash scripts/pr-ready.sh` — validates pre-push contracts in one shot.
 

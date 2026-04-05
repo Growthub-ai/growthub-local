@@ -1,0 +1,3 @@
+# Synthetic data & distillation pipelines (Argilla distilabel).
+-r requirements-train-core.txt
+distilabel>=1.4.0

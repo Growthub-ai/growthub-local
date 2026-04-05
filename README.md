@@ -95,6 +95,10 @@ Each worktree gets its own server port (3101+) and embedded Postgres instance. Y
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 
+### Custom model training (local)
+
+Optional **Python** stack for Gemma/Unsloth/verl/vLLM-style workflows: install with **`bash scripts/setup-model-training-venv.sh`**, then **`export GROWTHUB_PYTHON`** to the venv’s `python3`. CLI: **`growthub model:bootstrap`**, **`growthub model:train`**, **`growthub rl:grpo`**, **`growthub agent:reason`** (OpenAI-compatible HTTP). Details and requirement bundles: **`packages/model-training/README.md`**.
+
 ## Contributing
 
 Growthub Local is open source and built to be extended — by humans and AI agents alike.

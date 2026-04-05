@@ -29,6 +29,8 @@ jobs:
               ['packages/shared/src/config-schema.ts', 'surfaceConfigSchema'],
               ['server/src/app.ts', 'express'],
               ['cli/src/commands/worktree-lib.ts', 'DEFAULT_WORKTREE_HOME'],
+              ['cli/src/commands/model-training.ts', 'model:bootstrap'],
+              ['packages/model-training/src/growthub_model_training/__main__.py', 'growthub_model_training'],
             ];
             for (const [file, token] of checks) {
               const content = fs.readFileSync(file, 'utf8');

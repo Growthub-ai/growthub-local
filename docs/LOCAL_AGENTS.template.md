@@ -61,6 +61,8 @@ If something on **`main`** does not show in the browser, first ask which **mode*
   node cli/scripts/prepare-bundled-runtime.mjs
   ```
 
+- **Custom model training venv:** `bash scripts/setup-model-training-venv.sh` → set `GROWTHUB_PYTHON` to `packages/model-training/.venv/bin/python3` (or your path). Optional: `--with-unsloth`, `--with-distilabel`, `--with-vllm`.
+
 ---
 
 ## Semver grounding (mirror public rule)
