@@ -3,17 +3,23 @@ set -euo pipefail
 
 # Canonical runtime control for agents and humans.
 # Keeps growthub-local main/branch loading deterministic.
+#
+# Default matches published create-growthub-local behavior: UI + API on
+# GH_SERVER_PORT (default 3100) via PAPERCLIP_UI_DEV_MIDDLEWARE — same contract
+# as `growthub run` when loading server/src/index.ts from this repo.
+#
+# Optional split dev (legacy): GH_STANDALONE_VITE=true → server + Vite on GH_UI_PORT.
 
 ROOT="${GH_LOCAL_ROOT:-/Users/antonio/growthub-local}"
 CONFIG="${GH_CONFIG:-/Users/antonio/.paperclip/instances/default/config.json}"
 SERVER_PORT="${GH_SERVER_PORT:-3100}"
 UI_PORT="${GH_UI_PORT:-5173}"
+STANDALONE_VITE="${GH_STANDALONE_VITE:-false}"
 LOG_DIR="${GH_LOG_DIR:-/tmp/growthub-local}"
 SERVER_LOG="${LOG_DIR}/server.log"
 UI_LOG="${LOG_DIR}/ui.log"
 
 SERVER_PATTERN='tsx watch --ignore ../ui/node_modules --ignore ../ui/.vite --ignore ../ui/dist src/index.ts'
-UI_PATTERN='vite -- --port 5173'
 CLI_PATTERN='cli/dist/index.js run'
 
 mkdir -p "${LOG_DIR}"
@@ -54,19 +60,35 @@ start_runtime() {
     git pull --ff-only || true
   fi
 
-  nohup env PAPERCLIP_CONFIG="${CONFIG}" PAPERCLIP_SURFACE_PROFILE=gtm \
-    pnpm --dir server run dev:watch >"${SERVER_LOG}" 2>&1 &
-
-  nohup env VITE_API_ORIGIN="http://127.0.0.1:${SERVER_PORT}" \
-    pnpm --dir ui run dev -- --port "${UI_PORT}" >"${UI_LOG}" 2>&1 &
-
-  sleep 2
-  echo "Started runtime:"
-  echo "  repo: ${ROOT}"
-  echo "  config: ${CONFIG}"
-  echo "  branch: $(git branch --show-current)"
-  echo "  ui: http://localhost:${UI_PORT}/gtm/GHA/workspace"
-  echo "  logs: ${SERVER_LOG} | ${UI_LOG}"
+  if [[ "${STANDALONE_VITE}" == "true" ]]; then
+    nohup env PAPERCLIP_CONFIG="${CONFIG}" PAPERCLIP_SURFACE_PROFILE=gtm \
+      "PORT=${SERVER_PORT}" \
+      pnpm --dir server run dev:watch >"${SERVER_LOG}" 2>&1 &
+    nohup env VITE_API_ORIGIN="http://127.0.0.1:${SERVER_PORT}" \
+      pnpm --dir ui run dev -- --port "${UI_PORT}" >"${UI_LOG}" 2>&1 &
+    sleep 2
+    echo "Started runtime (GH_STANDALONE_VITE=true):"
+    echo "  repo: ${ROOT}"
+    echo "  config: ${CONFIG}"
+    echo "  branch: $(git branch --show-current)"
+    echo "  vite ui: http://localhost:${UI_PORT}/gtm/GHA/workspace"
+    echo "  api:     http://127.0.0.1:${SERVER_PORT}/api/health"
+    echo "  logs: ${SERVER_LOG} | ${UI_LOG}"
+  else
+    nohup env \
+      PAPERCLIP_CONFIG="${CONFIG}" \
+      PAPERCLIP_SURFACE_PROFILE=gtm \
+      PAPERCLIP_UI_DEV_MIDDLEWARE=true \
+      "PORT=${SERVER_PORT}" \
+      pnpm --dir server run dev:watch >"${SERVER_LOG}" 2>&1 &
+    sleep 2
+    echo "Started runtime (UI + API on server port, matches create-growthub-local):"
+    echo "  repo: ${ROOT}"
+    echo "  config: ${CONFIG}"
+    echo "  branch: $(git branch --show-current)"
+    echo "  gtm: http://localhost:${SERVER_PORT}/gtm/GHA/workspace"
+    echo "  logs: ${SERVER_LOG}"
+  fi
 }
 
 show_status() {
@@ -82,8 +104,10 @@ show_status() {
   echo ""
   echo ""
   echo "Listeners:"
-  lsof -nP -iTCP:${SERVER_PORT} -sTCP:LISTEN || true
-  lsof -nP -iTCP:${UI_PORT} -sTCP:LISTEN || true
+  lsof -nP -iTCP:"${SERVER_PORT}" -sTCP:LISTEN || true
+  if [[ "${STANDALONE_VITE}" == "true" ]]; then
+    lsof -nP -iTCP:"${UI_PORT}" -sTCP:LISTEN || true
+  fi
 }
 
 usage() {
@@ -96,13 +120,8 @@ Usage:
   scripts/runtime-control.sh status
   scripts/runtime-control.sh url
 
-Commands:
-  up-main            Stop stale processes, checkout/pull main, start server+ui
-  up-branch <name>   Stop stale processes, checkout/pull branch, start server+ui
-  up-pr <number>     Checkout PR branch with gh, then start server+ui
-  stop               Stop runtime processes managed by this repo
-  status             Show health, company payload, and listeners
-  url                Print canonical GTM URL
+Default: GTM UI + API on GH_SERVER_PORT (3100) — same as create-growthub-local / growthub run.
+Set GH_STANDALONE_VITE=true for legacy split: API on GH_SERVER_PORT + Vite on GH_UI_PORT.
 EOF
 }
 
@@ -133,7 +152,11 @@ main() {
       show_status
       ;;
     url)
-      echo "http://localhost:${UI_PORT}/gtm/GHA/workspace"
+      if [[ "${STANDALONE_VITE}" == "true" ]]; then
+        echo "http://localhost:${UI_PORT}/gtm/GHA/workspace"
+      else
+        echo "http://localhost:${SERVER_PORT}/gtm/GHA/workspace"
+      fi
       ;;
     *)
       usage
