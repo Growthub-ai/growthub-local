@@ -27,7 +27,12 @@ import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } fr
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
-import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
+import {
+  normalizePerAgentWorkspacesCwdToShared,
+  resolveDefaultAgentWorkspaceDir,
+  resolveHomeAwarePath,
+  resolveManagedProjectWorkspaceDir,
+} from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
 import {
   buildWorkspaceReadyComment,
@@ -1148,6 +1153,46 @@ export function heartbeatService(db: Db) {
       }
     }
 
+    // Prefer the adapter's configured cwd (e.g. shared GTM workspaces) before per-agent-id home.
+    const adapterCfg = parseObject(agent.adapterConfig);
+    const configuredCwdRaw = readNonEmptyString(adapterCfg.cwd);
+    if (configuredCwdRaw) {
+      let adapterPreferredCwd = normalizePerAgentWorkspacesCwdToShared(
+        resolveHomeAwarePath(configuredCwdRaw),
+      );
+      await fs.mkdir(adapterPreferredCwd, { recursive: true });
+      const adapterCwdUsable = await fs
+        .stat(adapterPreferredCwd)
+        .then((stats) => stats.isDirectory())
+        .catch(() => false);
+      if (adapterCwdUsable) {
+        const warnings: string[] = [];
+        if (sessionCwd) {
+          warnings.push(
+            `Saved session workspace "${sessionCwd}" is not available. Using adapter-config cwd "${adapterPreferredCwd}" for this run.`,
+          );
+        } else if (resolvedProjectId) {
+          warnings.push(
+            `No project workspace directory is currently available for this issue. Using adapter-config cwd "${adapterPreferredCwd}" for this run.`,
+          );
+        } else {
+          warnings.push(
+            `No project or prior session workspace was available. Using adapter-config cwd "${adapterPreferredCwd}" for this run.`,
+          );
+        }
+        return {
+          cwd: adapterPreferredCwd,
+          source: "agent_home" as const,
+          projectId: resolvedProjectId,
+          workspaceId: null,
+          repoUrl: null,
+          repoRef: null,
+          workspaceHints,
+          warnings,
+        };
+      }
+    }
+
     const cwd = resolveDefaultAgentWorkspaceDir(agent.id);
     await fs.mkdir(cwd, { recursive: true });
     const warnings: string[] = [];
@@ -1876,6 +1921,7 @@ export function heartbeatService(db: Db) {
             id: issues.id,
             identifier: issues.identifier,
             title: issues.title,
+            description: issues.description,
             projectId: issues.projectId,
             projectWorkspaceId: issues.projectWorkspaceId,
             executionWorkspaceId: issues.executionWorkspaceId,
@@ -1888,6 +1934,64 @@ export function heartbeatService(db: Db) {
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
           .then((rows) => rows[0] ?? null)
       : null;
+
+    delete context.paperclipIssue;
+    delete context.paperclipAssignedIssues;
+    let shouldPersistIssuePromptContext = false;
+    if (issueContext) {
+      context.paperclipIssue = {
+        id: issueContext.id,
+        identifier: issueContext.identifier ?? "",
+        title: issueContext.title ?? "",
+        description: issueContext.description ?? "",
+      };
+      shouldPersistIssuePromptContext = true;
+    } else if (!issueId) {
+      const wakeReason = readNonEmptyString(context.wakeReason);
+      const ctxSource = readNonEmptyString(context.source);
+      const wakeSource = readNonEmptyString(context.wakeSource);
+      const isTimerLike =
+        wakeReason === "heartbeat_timer" || ctxSource === "scheduler" || wakeSource === "timer";
+      if (isTimerLike) {
+        const openIssueStatuses = ["backlog", "todo", "in_progress", "in_review", "blocked"];
+        const assignedRows = await db
+          .select({
+            id: issues.id,
+            identifier: issues.identifier,
+            title: issues.title,
+            status: issues.status,
+            updatedAt: issues.updatedAt,
+          })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.companyId, agent.companyId),
+              eq(issues.assigneeAgentId, agent.id),
+              inArray(issues.status, openIssueStatuses),
+            ),
+          )
+          .orderBy(desc(issues.updatedAt))
+          .limit(15);
+        if (assignedRows.length > 0) {
+          context.paperclipAssignedIssues = assignedRows.map((row) => ({
+            id: row.id,
+            identifier: row.identifier ?? "",
+            title: row.title ?? "",
+            status: row.status ?? "",
+          }));
+          shouldPersistIssuePromptContext = true;
+        }
+      }
+    }
+    if (shouldPersistIssuePromptContext) {
+      await db
+        .update(heartbeatRuns)
+        .set({
+          contextSnapshot: context,
+          updatedAt: new Date(),
+        })
+        .where(eq(heartbeatRuns.id, run.id));
+    }
     const issueAssigneeOverrides =
       issueContext && issueContext.assigneeAgentId === agent.id
         ? parseIssueAssigneeAdapterOverrides(
