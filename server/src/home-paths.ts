@@ -62,6 +62,26 @@ export function resolveDefaultAgentWorkspaceDir(agentId: string): string {
   return path.resolve(resolvePaperclipInstanceRoot(), "workspaces", trimmed);
 }
 
+/** Shared `instances/<id>/workspaces` root — where local agents should run by default (not per-agent subfolders). */
+export function resolveSharedInstanceWorkspacesDir(): string {
+  return path.resolve(resolvePaperclipInstanceRoot(), "workspaces");
+}
+
+const WORKSPACES_UUID_LEAF_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * If `cwd` points at `.../workspaces/<uuid>/...`, rewrite to the parent `.../workspaces`.
+ * Fixes bad configs that bound every agent to its own UUID directory under the shared pool.
+ */
+export function normalizePerAgentWorkspacesCwdToShared(cwd: string): string {
+  const resolved = resolveHomeAwarePath(cwd.trim());
+  const leaf = path.basename(resolved);
+  const parent = path.dirname(resolved);
+  if (!WORKSPACES_UUID_LEAF_RE.test(leaf)) return resolved;
+  if (path.basename(parent) !== "workspaces") return resolved;
+  return path.resolve(parent);
+}
+
 function sanitizeFriendlyPathSegment(value: string | null | undefined, fallback = "_default"): string {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) return fallback;

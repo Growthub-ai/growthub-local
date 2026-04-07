@@ -94,6 +94,7 @@ import {
   type WorkspaceOperation,
 } from "@paperclipai/shared";
 import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
+import { truncateAgentContextForDisplay, truncatePromptForDisplay } from "../lib/agent-context-display";
 import { agentRouteRef } from "../lib/utils";
 import { surfaceProfile, toSurfacePath } from "../lib/surface-profile";
 
@@ -2984,7 +2985,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
   const adapterInvokePayload = useMemo(() => {
     const evt = events.find((e) => e.eventType === "adapter.invoke");
-    return redactHomePathUserSegmentsInValue(asRecord(evt?.payload ?? null));
+    const raw = redactHomePathUserSegmentsInValue(asRecord(evt?.payload ?? null));
+    return truncateAgentContextForDisplay(raw) as Record<string, unknown> | null;
   }, [events]);
 
   const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
@@ -3058,8 +3060,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               <div className="text-xs text-muted-foreground mb-1">Prompt</div>
               <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
                 {typeof adapterInvokePayload.prompt === "string"
-                  ? redactHomePathUserSegments(adapterInvokePayload.prompt)
-                  : JSON.stringify(redactHomePathUserSegmentsInValue(adapterInvokePayload.prompt), null, 2)}
+                  ? redactHomePathUserSegments(truncatePromptForDisplay(adapterInvokePayload.prompt))
+                  : truncatePromptForDisplay(redactHomePathUserSegmentsInValue(adapterInvokePayload.prompt))}
               </pre>
             </div>
           )}
@@ -3067,7 +3069,11 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div>
               <div className="text-xs text-muted-foreground mb-1">Context</div>
               <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
-                {JSON.stringify(redactHomePathUserSegmentsInValue(adapterInvokePayload.context), null, 2)}
+                {JSON.stringify(
+                  truncateAgentContextForDisplay(redactHomePathUserSegmentsInValue(adapterInvokePayload.context)),
+                  null,
+                  2,
+                )}
               </pre>
             </div>
           )}
@@ -3203,7 +3209,11 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                     {evt.message
                       ? redactHomePathUserSegments(evt.message)
                       : evt.payload
-                        ? JSON.stringify(redactHomePathUserSegmentsInValue(evt.payload))
+                        ? JSON.stringify(
+                            truncateAgentContextForDisplay(redactHomePathUserSegmentsInValue(evt.payload)),
+                            null,
+                            2,
+                          )
                         : ""}
                   </span>
                 </div>

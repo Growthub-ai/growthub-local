@@ -7,6 +7,7 @@ import { issuesApi } from "../api/issues";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
+import { gtmApi } from "../api/gtm";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
@@ -47,6 +48,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { surfaceProfile } from "../lib/surface-profile";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
@@ -314,8 +316,14 @@ export function NewIssueDialog() {
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(effectiveCompanyId!),
-    queryFn: () => agentsApi.list(effectiveCompanyId!),
+    queryKey:
+      surfaceProfile === "gtm" && effectiveCompanyId
+        ? queryKeys.gtm.workspaceAgents(effectiveCompanyId)
+        : queryKeys.agents.list(effectiveCompanyId!),
+    queryFn: () =>
+      surfaceProfile === "gtm" && effectiveCompanyId
+        ? gtmApi.listAgents(effectiveCompanyId)
+        : agentsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
 
@@ -378,17 +386,19 @@ export function NewIssueDialog() {
         kind: "agent",
       });
     }
-    for (const project of orderedProjects) {
-      options.push({
-        id: `project:${project.id}`,
-        name: project.name,
-        kind: "project",
-        projectId: project.id,
-        projectColor: project.color,
-      });
+    if (surfaceProfile !== "gtm") {
+      for (const project of orderedProjects) {
+        options.push({
+          id: `project:${project.id}`,
+          name: project.name,
+          kind: "project",
+          projectId: project.id,
+          projectColor: project.color,
+        });
+      }
     }
     return options;
-  }, [agents, orderedProjects]);
+  }, [agents, orderedProjects, surfaceProfile]);
 
   const { data: assigneeAdapterModels } = useQuery({
     queryKey:

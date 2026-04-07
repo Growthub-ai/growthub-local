@@ -1,5 +1,4 @@
 import { Router } from "express";
-import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
 import { shouldIncludeAgentInGtmDirectoryList } from "@paperclipai/shared";
@@ -11,7 +10,7 @@ import { issueService } from "../services/issues.js";
 import { ticketService } from "../services/tickets.js";
 import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.js";
 import { enforceHeartbeatPolicy, enforcePerformanceReview } from "../services/gtm-campaign-policy.js";
-import { resolvePaperclipHomeDir } from "../home-paths.js";
+import { resolveSharedInstanceWorkspacesDir } from "../home-paths.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const GTM_METADATA = {
@@ -104,11 +103,30 @@ function buildClaudeBindingDefaults() {
     adapterType: "claude_local",
     adapterConfig: {
       command: "claude",
-      cwd: path.resolve(resolvePaperclipHomeDir(), "instances", "default", "workspaces"),
+      cwd: resolveSharedInstanceWorkspacesDir(),
       chrome: true,
       model: "claude-sonnet-4-6",
     },
   };
+}
+
+/** Process-based local adapters: same shared instance `workspaces` cwd unless the client sets one explicitly. */
+const GTM_LOCAL_ADAPTER_TYPES = new Set([
+  "claude_local",
+  "codex_local",
+  "cursor",
+  "gemini_local",
+  "opencode_local",
+  "pi_local",
+]);
+
+function mergeGtmAgentAdapterConfig(adapterType: string, config: Record<string, unknown>): Record<string, unknown> {
+  const merged = { ...config };
+  if (!GTM_LOCAL_ADAPTER_TYPES.has(adapterType)) return merged;
+  const cwd = merged.cwd;
+  if (typeof cwd === "string" && cwd.trim().length > 0) return merged;
+  merged.cwd = resolveSharedInstanceWorkspacesDir();
+  return merged;
 }
 
 function isManagedClaudeBrowserAgent(agent: { metadata: unknown }): boolean {
@@ -428,15 +446,17 @@ export function gtmRoutes(db: Db) {
   router.post("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    const adapterType = String(req.body?.adapterType ?? "codex_local");
+    const rawAdapterConfig =
+      typeof req.body?.adapterConfig === "object" && req.body?.adapterConfig !== null
+        ? (req.body.adapterConfig as Record<string, unknown>)
+        : {};
     const created = await agents.create(companyId, {
       name: String(req.body?.name ?? "").trim(),
       role: String(req.body?.role ?? "general"),
       title: req.body?.title ? String(req.body.title) : null,
-      adapterType: String(req.body?.adapterType ?? "codex_local"),
-      adapterConfig:
-        typeof req.body?.adapterConfig === "object" && req.body?.adapterConfig !== null
-          ? (req.body.adapterConfig as Record<string, unknown>)
-          : {},
+      adapterType,
+      adapterConfig: mergeGtmAgentAdapterConfig(adapterType, rawAdapterConfig),
       runtimeConfig: {},
       budgetMonthlyCents: 0,
       capabilities: req.body?.capabilities ? String(req.body.capabilities) : null,

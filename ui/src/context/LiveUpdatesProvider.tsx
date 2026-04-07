@@ -38,6 +38,10 @@ function findAgentInQueryCaches(
   const fromDetail = queryClient.getQueryData<Agent>(queryKeys.agents.detail(agentId));
   if (fromDetail?.id === agentId) return fromDetail;
 
+  const workspaceAgents = queryClient.getQueryData<Agent[]>(queryKeys.gtm.workspaceAgents(companyId));
+  const fromWorkspaceAgents = workspaceAgents?.find((a) => a.id === agentId);
+  if (fromWorkspaceAgents) return fromWorkspaceAgents;
+
   for (const scope of ["default", "trash"] as const) {
     const gtmList = queryClient.getQueryData<Agent[]>([GTM_AGENT_LIST_CACHE_PREFIX, "agents", companyId, scope]);
     const fromGtm = gtmList?.find((a) => a.id === agentId);
@@ -301,7 +305,8 @@ function buildAgentStatusToast(
   const tone = status === "error" ? "error" : "info";
   const agent = findAgentInQueryCaches(queryClient, companyId, agentId);
   const displayName = agentToastDisplayName(agent);
-  const name = displayName ?? `Agent ${shortId(agentId)}`;
+  const fromPayload = readString(payload.agentName)?.trim();
+  const name = fromPayload || displayName || `Agent ${shortId(agentId)}`;
   const title =
     status === "running"
       ? `${name} started`
@@ -330,7 +335,8 @@ function buildRunStatusToast(
 
   const error = readString(payload.error);
   const triggerDetail = readString(payload.triggerDetail);
-  const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
+  const fromPayload = readString(payload.agentName)?.trim();
+  const name = fromPayload || nameOf(agentId) || `Agent ${shortId(agentId)}`;
   const tone = status === "succeeded" ? "success" : status === "cancelled" ? "warn" : "error";
   const statusLabel =
     status === "succeeded" ? "succeeded"
