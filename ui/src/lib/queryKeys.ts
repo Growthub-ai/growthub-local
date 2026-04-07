@@ -114,6 +114,10 @@ export const queryKeys = {
     list: (companyId: string) => ["skills", "list", companyId] as const,
     agent: (agentId: string) => ["skills", "agent", agentId] as const,
   },
+  gtm: {
+    /** Company-scoped agent inventory for GTM workspace (assignees, mentions) — matches `/gtm/companies/:id/agents`. */
+    workspaceAgents: (companyId: string) => ["gtm", "workspace-agents", companyId] as const,
+  },
   plugins: {
     all: ["plugins"] as const,
     examples: ["plugins", "examples"] as const,

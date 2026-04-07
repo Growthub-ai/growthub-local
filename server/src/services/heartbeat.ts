@@ -32,6 +32,7 @@ import {
   resolveDefaultAgentWorkspaceDir,
   resolveHomeAwarePath,
   resolveManagedProjectWorkspaceDir,
+  resolveSharedInstanceWorkspacesDir,
 } from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
 import {
@@ -424,8 +425,15 @@ export function resolveRuntimeSessionParamsForWorkspace(input: {
       warning: null as string | null,
     };
   }
-  const fallbackAgentHomeCwd = resolveDefaultAgentWorkspaceDir(agentId);
-  if (path.resolve(previousCwd) !== path.resolve(fallbackAgentHomeCwd)) {
+  const legacyPerAgentFallbackCwd = resolveDefaultAgentWorkspaceDir(agentId);
+  const sharedInstanceWorkspacesCwd = resolveSharedInstanceWorkspacesDir();
+  const isAgentPoolFallbackCwd = (cwd: string) => {
+    const r = path.resolve(cwd);
+    return (
+      r === path.resolve(legacyPerAgentFallbackCwd) || r === path.resolve(sharedInstanceWorkspacesCwd)
+    );
+  };
+  if (!isAgentPoolFallbackCwd(previousCwd)) {
     return {
       sessionParams: previousSessionParams,
       warning: null as string | null,
@@ -1084,7 +1092,7 @@ export function heartbeatService(db: Db) {
         missingProjectCwds.push(projectCwd);
       }
 
-      const fallbackCwd = resolveDefaultAgentWorkspaceDir(agent.id);
+      const fallbackCwd = resolveSharedInstanceWorkspacesDir();
       await fs.mkdir(fallbackCwd, { recursive: true });
       const warnings: string[] = [];
       if (preferredWorkspaceWarning) {
@@ -1193,7 +1201,7 @@ export function heartbeatService(db: Db) {
       }
     }
 
-    const cwd = resolveDefaultAgentWorkspaceDir(agent.id);
+    const cwd = resolveSharedInstanceWorkspacesDir();
     await fs.mkdir(cwd, { recursive: true });
     const warnings: string[] = [];
     if (sessionCwd) {
@@ -1320,12 +1328,14 @@ export function heartbeatService(db: Db) {
       .then((rows) => rows[0] ?? null);
 
     if (updated) {
+      const agentMeta = await getAgent(updated.agentId);
       publishLiveEvent({
         companyId: updated.companyId,
         type: "heartbeat.run.status",
         payload: {
           runId: updated.id,
           agentId: updated.agentId,
+          agentName: agentMeta?.name ?? null,
           status: updated.status,
           invocationSource: updated.invocationSource,
           triggerDetail: updated.triggerDetail,
@@ -1614,6 +1624,7 @@ export function heartbeatService(db: Db) {
       payload: {
         runId: claimed.id,
         agentId: claimed.agentId,
+        agentName: agent.name,
         status: claimed.status,
         invocationSource: claimed.invocationSource,
         triggerDetail: claimed.triggerDetail,
@@ -1664,6 +1675,7 @@ export function heartbeatService(db: Db) {
         type: "agent.status",
         payload: {
           agentId: updated.id,
+          agentName: updated.name,
           status: updated.status,
           lastHeartbeatAt: updated.lastHeartbeatAt
             ? new Date(updated.lastHeartbeatAt).toISOString()
@@ -1927,6 +1939,7 @@ export function heartbeatService(db: Db) {
             executionWorkspaceId: issues.executionWorkspaceId,
             executionWorkspacePreference: issues.executionWorkspacePreference,
             assigneeAgentId: issues.assigneeAgentId,
+            createdByAgentId: issues.createdByAgentId,
             assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
             executionWorkspaceSettings: issues.executionWorkspaceSettings,
           })
@@ -1935,53 +1948,70 @@ export function heartbeatService(db: Db) {
           .then((rows) => rows[0] ?? null)
       : null;
 
+    /** Cap issue description on the run snapshot / stdin path (smaller than legacy issue body max). */
+    const MAX_PAPERCLIP_ISSUE_DESCRIPTION_SNAPSHOT = 4096;
+
+    function isTimerLikeHeartbeatWake(ctx: Record<string, unknown>): boolean {
+      const wr = readNonEmptyString(ctx.wakeReason);
+      if (wr === "heartbeat_timer") return true;
+      if (readNonEmptyString(ctx.source) === "scheduler") return true;
+      if (readNonEmptyString(ctx.wakeSource) === "timer") return true;
+      return false;
+    }
+
+    /**
+     * Full issue text in stdin is sensitive: timer wakes only get it when this agent is clearly tied to
+     * the issue (assignee, @mention, or creator of an unassigned row). All other wakes with an issueId
+     * are treated as intentionally issue-scoped (comment, assign, checkout, …) so we still inject when
+     * the issue has no agent assignee (human assignee / execution-only) or assignee matches.
+     */
+    function agentMayReceiveFullIssuePrompt(
+      runningAgentId: string,
+      issue: {
+        assigneeAgentId: string | null;
+        createdByAgentId: string | null;
+      },
+      ctx: Record<string, unknown>,
+    ): boolean {
+      const wakeReason = readNonEmptyString(ctx.wakeReason);
+      if (wakeReason === "issue_comment_mentioned") return true;
+      if (issue.assigneeAgentId === runningAgentId) return true;
+
+      if (isTimerLikeHeartbeatWake(ctx)) {
+        return issue.createdByAgentId === runningAgentId && issue.assigneeAgentId == null;
+      }
+
+      if (issue.assigneeAgentId == null) return true;
+      if (issue.createdByAgentId === runningAgentId) return true;
+      return false;
+    }
+
     delete context.paperclipIssue;
     delete context.paperclipAssignedIssues;
+    delete context.paperclipPromptGrounding;
+
     let shouldPersistIssuePromptContext = false;
+    let issuePromptWithheld = false;
     if (issueContext) {
-      context.paperclipIssue = {
-        id: issueContext.id,
-        identifier: issueContext.identifier ?? "",
-        title: issueContext.title ?? "",
-        description: issueContext.description ?? "",
-      };
-      shouldPersistIssuePromptContext = true;
-    } else if (!issueId) {
-      const wakeReason = readNonEmptyString(context.wakeReason);
-      const ctxSource = readNonEmptyString(context.source);
-      const wakeSource = readNonEmptyString(context.wakeSource);
-      const isTimerLike =
-        wakeReason === "heartbeat_timer" || ctxSource === "scheduler" || wakeSource === "timer";
-      if (isTimerLike) {
-        const openIssueStatuses = ["backlog", "todo", "in_progress", "in_review", "blocked"];
-        const assignedRows = await db
-          .select({
-            id: issues.id,
-            identifier: issues.identifier,
-            title: issues.title,
-            status: issues.status,
-            updatedAt: issues.updatedAt,
-          })
-          .from(issues)
-          .where(
-            and(
-              eq(issues.companyId, agent.companyId),
-              eq(issues.assigneeAgentId, agent.id),
-              inArray(issues.status, openIssueStatuses),
-            ),
-          )
-          .orderBy(desc(issues.updatedAt))
-          .limit(15);
-        if (assignedRows.length > 0) {
-          context.paperclipAssignedIssues = assignedRows.map((row) => ({
-            id: row.id,
-            identifier: row.identifier ?? "",
-            title: row.title ?? "",
-            status: row.status ?? "",
-          }));
-          shouldPersistIssuePromptContext = true;
-        }
+      if (agentMayReceiveFullIssuePrompt(agent.id, issueContext, context)) {
+        const rawDesc = issueContext.description ?? "";
+        const description =
+          typeof rawDesc === "string" && rawDesc.length > MAX_PAPERCLIP_ISSUE_DESCRIPTION_SNAPSHOT
+            ? `${rawDesc.slice(0, MAX_PAPERCLIP_ISSUE_DESCRIPTION_SNAPSHOT)}\n\n… (truncated)`
+            : rawDesc ?? "";
+        context.paperclipIssue = {
+          id: issueContext.id,
+          identifier: issueContext.identifier ?? "",
+          title: issueContext.title ?? "",
+          description,
+        };
+        shouldPersistIssuePromptContext = true;
+      } else {
+        issuePromptWithheld = true;
       }
+    }
+    if (issuePromptWithheld) {
+      shouldPersistIssuePromptContext = true;
     }
     if (shouldPersistIssuePromptContext) {
       await db
@@ -2243,7 +2273,7 @@ export function heartbeatService(db: Db) {
       repoRef: executionWorkspace.repoRef,
       branchName: executionWorkspace.branchName,
       worktreePath: executionWorkspace.worktreePath,
-      agentHome: resolveDefaultAgentWorkspaceDir(agent.id),
+      agentHome: resolveSharedInstanceWorkspacesDir(),
     };
     context.paperclipWorkspaces = resolvedWorkspace.workspaceHints;
     const runtimeServiceIntents = (() => {
@@ -2335,6 +2365,7 @@ export function heartbeatService(db: Db) {
           type: "agent.status",
           payload: {
             agentId: runningAgent.id,
+            agentName: runningAgent.name,
             status: runningAgent.status,
             outcome: "running",
           },

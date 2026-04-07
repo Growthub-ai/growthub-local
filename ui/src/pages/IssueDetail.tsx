@@ -5,6 +5,7 @@ import { issuesApi } from "../api/issues";
 import { activityApi } from "../api/activity";
 import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
+import { gtmApi } from "../api/gtm";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { ticketsApi } from "../api/tickets";
@@ -619,8 +620,14 @@ export function IssueDetail() {
   });
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
+    queryKey:
+      surfaceProfile === "gtm" && selectedCompanyId
+        ? queryKeys.gtm.workspaceAgents(selectedCompanyId)
+        : queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () =>
+      surfaceProfile === "gtm" && selectedCompanyId
+        ? gtmApi.listAgents(selectedCompanyId)
+        : agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -692,17 +699,19 @@ export function IssueDetail() {
         kind: "agent",
       });
     }
-    for (const project of orderedProjects) {
-      options.push({
-        id: `project:${project.id}`,
-        name: project.name,
-        kind: "project",
-        projectId: project.id,
-        projectColor: project.color,
-      });
+    if (surfaceProfile !== "gtm") {
+      for (const project of orderedProjects) {
+        options.push({
+          id: `project:${project.id}`,
+          name: project.name,
+          kind: "project",
+          projectId: project.id,
+          projectColor: project.color,
+        });
+      }
     }
     return options;
-  }, [agents, orderedProjects]);
+  }, [agents, orderedProjects, surfaceProfile]);
 
   const childIssues = useMemo(() => {
     if (!allIssues || !issue) return [];

@@ -3,6 +3,7 @@ import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
+import { gtmApi } from "../api/gtm";
 import { authApi } from "../api/auth";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { instanceSettingsApi } from "../api/instanceSettings";
@@ -17,6 +18,7 @@ import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
 import { formatDate, cn, projectUrl } from "../lib/utils";
+import { surfaceProfile } from "../lib/surface-profile";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -197,8 +199,14 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const currentUserId = session?.user?.id ?? session?.session?.userId;
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(companyId!),
-    queryFn: () => agentsApi.list(companyId!),
+    queryKey:
+      surfaceProfile === "gtm" && companyId
+        ? queryKeys.gtm.workspaceAgents(companyId)
+        : queryKeys.agents.list(companyId!),
+    queryFn: () =>
+      surfaceProfile === "gtm" && companyId
+        ? gtmApi.listAgents(companyId)
+        : agentsApi.list(companyId!),
     enabled: !!companyId,
   });
 

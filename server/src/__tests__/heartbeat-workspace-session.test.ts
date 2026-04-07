@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { agents } from "@paperclipai/db";
-import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
+import {
+  resolveDefaultAgentWorkspaceDir,
+  resolveSharedInstanceWorkspacesDir,
+} from "../home-paths.js";
 import {
   formatRuntimeWorkspaceWarningLog,
   prioritizeProjectWorkspaceCandidatesForRun,
@@ -60,6 +63,28 @@ describe("resolveRuntimeSessionParamsForWorkspace", () => {
       previousSessionParams: {
         sessionId: "session-1",
         cwd: fallbackCwd,
+        workspaceId: "workspace-1",
+      },
+      resolvedWorkspace: buildResolvedWorkspace({ cwd: "/tmp/new-project-cwd" }),
+    });
+
+    expect(result.sessionParams).toMatchObject({
+      sessionId: "session-1",
+      cwd: "/tmp/new-project-cwd",
+      workspaceId: "workspace-1",
+    });
+    expect(result.warning).toContain("Attempting to resume session");
+  });
+
+  it("migrates when previous session cwd is the shared instance workspaces root", () => {
+    const agentId = "agent-123";
+    const sharedCwd = resolveSharedInstanceWorkspacesDir();
+
+    const result = resolveRuntimeSessionParamsForWorkspace({
+      agentId,
+      previousSessionParams: {
+        sessionId: "session-1",
+        cwd: sharedCwd,
         workspaceId: "workspace-1",
       },
       resolvedWorkspace: buildResolvedWorkspace({ cwd: "/tmp/new-project-cwd" }),

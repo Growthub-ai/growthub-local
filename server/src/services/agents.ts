@@ -22,6 +22,7 @@ import {
 } from "@paperclipai/db";
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { normalizePerAgentWorkspacesCwdToShared } from "../home-paths.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 
@@ -207,9 +208,20 @@ export function agentService(db: Db) {
     };
   }
 
+  function normalizeAgentAdapterConfigField(adapterConfig: unknown): unknown {
+    if (!isPlainRecord(adapterConfig)) return adapterConfig;
+    const cwd = adapterConfig.cwd;
+    if (typeof cwd !== "string" || !cwd.trim()) return adapterConfig;
+    return {
+      ...adapterConfig,
+      cwd: normalizePerAgentWorkspacesCwdToShared(cwd),
+    };
+  }
+
   function normalizeAgentRow(row: typeof agents.$inferSelect) {
     return withUrlKey({
       ...row,
+      adapterConfig: normalizeAgentAdapterConfigField(row.adapterConfig) as typeof row.adapterConfig,
       permissions: normalizeAgentPermissions(row.permissions, row.role),
     });
   }
@@ -343,6 +355,11 @@ export function agentService(db: Db) {
       const role = (data.role ?? existing.role) as string;
       normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
     }
+    if (normalizedPatch.adapterConfig !== undefined) {
+      normalizedPatch.adapterConfig = normalizeAgentAdapterConfigField(normalizedPatch.adapterConfig) as
+        | typeof agents.$inferInsert.adapterConfig
+        | undefined;
+    }
 
     const shouldRecordRevision = Boolean(options?.recordRevision) && hasConfigPatchFields(normalizedPatch);
     const beforeConfig = shouldRecordRevision ? buildConfigSnapshot(existing) : null;
@@ -402,9 +419,10 @@ export function agentService(db: Db) {
 
       const role = data.role ?? "general";
       const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
+      const adapterConfig = normalizeAgentAdapterConfigField(data.adapterConfig) as typeof data.adapterConfig;
       const created = await db
         .insert(agents)
-        .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions })
+        .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions, adapterConfig })
         .returning()
         .then((rows) => rows[0]);
 
