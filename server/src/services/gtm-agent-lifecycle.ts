@@ -21,6 +21,7 @@ import {
   type GtmCampaignKnowledgePolicy,
   type GrowthubPhaseTag,
 } from "@paperclipai/shared";
+import { parseObject } from "../adapters/utils.js";
 import { logger } from "../middleware/logger.js";
 import { acquireChromeLease, releaseChromeLease } from "./chrome-lease.js";
 import { canScheduleRun } from "./compute-scheduler.js";
@@ -127,7 +128,7 @@ export function prepareCampaignAgentDispatch(
   ctx: GtmCampaignRunContext,
   agentId: string,
   phase: GtmAgentPhase,
-  opts?: { requireChrome?: boolean },
+  opts?: { requireChrome?: boolean; adapterConfig?: Record<string, unknown> | null },
 ): SpinUpResult {
   const requireChrome = opts?.requireChrome ?? false;
 
@@ -141,17 +142,22 @@ export function prepareCampaignAgentDispatch(
 
   // Chrome pre-check (advisory — heartbeat also checks via chrome-lease)
   if (requireChrome) {
+    const adapterConfig = parseObject(opts?.adapterConfig);
+    const browserSlot =
+      typeof adapterConfig.browserSlot === "string" && adapterConfig.browserSlot.trim().length > 0
+        ? adapterConfig.browserSlot.trim()
+        : null;
     const preCheckRunId = `pre-check-${agentId}`;
-    const lease = acquireChromeLease(agentId, preCheckRunId);
+    const lease = acquireChromeLease(agentId, preCheckRunId, { slotId: browserSlot });
     if (!lease.acquired) {
       return {
         success: false,
-        reason: `Chrome browser held by agent ${lease.heldBy.agentId}`,
+        reason: `Chrome browser slot "${lease.slotId}" held by agent ${lease.heldBy.agentId}`,
         chromeAcquired: false,
       };
     }
     // Release immediately — heartbeat will re-acquire during executeRun
-    releaseChromeLease(preCheckRunId);
+    releaseChromeLease(preCheckRunId, browserSlot);
   }
 
   // Track in context

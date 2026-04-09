@@ -62,6 +62,7 @@ import {
   type SessionCompactionPolicy,
 } from "@paperclipai/adapter-utils";
 import { attachKbSkillDocsToAdapterContext } from "./kb-skill-docs-context.js";
+import { acquireChromeLease, releaseChromeLease } from "./chrome-lease.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -268,6 +269,47 @@ export function prioritizeProjectWorkspaceCandidatesForRun<T extends ProjectWork
 
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+type BrowserIsolationContext = {
+  enabled: boolean;
+  browserSlot: string | null;
+  tabGroupKey: string | null;
+  tabGroupLabel: string | null;
+  crossAgentTabPolicy: string | null;
+  leaseSlotId: string | null;
+};
+
+function buildBrowserIsolationContext(
+  agent: Pick<typeof agents.$inferSelect, "id" | "name">,
+  config: Record<string, unknown>,
+): BrowserIsolationContext {
+  const enabled = asBoolean(config.chrome, false);
+  if (!enabled) {
+    return {
+      enabled: false,
+      browserSlot: null,
+      tabGroupKey: null,
+      tabGroupLabel: null,
+      crossAgentTabPolicy: null,
+      leaseSlotId: null,
+    };
+  }
+
+  const browserSlot = readNonEmptyString(config.browserSlot) ?? `${agent.id}-browser-slot`;
+  const tabGroupKey = readNonEmptyString(config.tabGroupKey) ?? `gtm-${agent.id}`;
+  const tabGroupLabel = readNonEmptyString(config.tabGroupLabel) ?? `GTM ${agent.name}`;
+  const crossAgentTabPolicy =
+    readNonEmptyString(config.crossAgentTabPolicy) ?? "claim-or-create";
+
+  return {
+    enabled: true,
+    browserSlot,
+    tabGroupKey,
+    tabGroupLabel,
+    crossAgentTabPolicy,
+    leaseSlotId: browserSlot,
+  };
 }
 
 function normalizeLedgerBillingType(value: unknown): BillingType {
@@ -1904,6 +1946,15 @@ export function heartbeatService(db: Db) {
     }
 
     activeRunExecutions.add(run.id);
+    let chromeLeaseHeld = false;
+    let browserIsolationForLease: BrowserIsolationContext = {
+      enabled: false,
+      browserSlot: null,
+      tabGroupKey: null,
+      tabGroupLabel: null,
+      crossAgentTabPolicy: null,
+      leaseSlotId: null,
+    };
 
     try {
     const agent = await getAgent(run.agentId);
@@ -2080,6 +2131,8 @@ export function heartbeatService(db: Db) {
       agent.companyId,
       mergedConfig,
     );
+    const browserIsolation = buildBrowserIsolationContext(agent, resolvedConfig);
+    browserIsolationForLease = browserIsolation;
     const issueRef = issueContext
       ? {
           id: issueContext.id,
@@ -2275,6 +2328,22 @@ export function heartbeatService(db: Db) {
       worktreePath: executionWorkspace.worktreePath,
       agentHome: resolveSharedInstanceWorkspacesDir(),
     };
+    if (browserIsolation.enabled) {
+      context.paperclipBrowserIsolation = {
+        browserSlot: browserIsolation.browserSlot,
+        tabGroupKey: browserIsolation.tabGroupKey,
+        tabGroupLabel: browserIsolation.tabGroupLabel,
+        crossAgentTabPolicy: browserIsolation.crossAgentTabPolicy,
+        ownershipRules: [
+          "Start browser work in your own separate browser context by default.",
+          "Operate only inside your assigned browser slot and tab group.",
+          "If another agent's tab group is visible, do not reuse or modify it.",
+          "If the assigned tab group does not exist or ownership is ambiguous, create a fresh tab group using your assigned label.",
+        ],
+      };
+    } else {
+      delete context.paperclipBrowserIsolation;
+    }
     context.paperclipWorkspaces = resolvedWorkspace.workspaceHints;
     const runtimeServiceIntents = (() => {
       const runtimeConfig = parseObject(resolvedConfig.workspaceRuntime);
@@ -2516,6 +2585,45 @@ export function heartbeatService(db: Db) {
         );
       }
       await attachKbSkillDocsToAdapterContext(db, agent, context);
+
+      if (browserIsolation.enabled) {
+        const lease = acquireChromeLease(agent.id, run.id, {
+          slotId: browserIsolation.leaseSlotId,
+        });
+        if (!lease.acquired) {
+          const message = `Chrome browser is currently held by agent ${lease.heldBy.agentId}. Retry after that run releases the browser.`;
+          await onLog("stderr", `[paperclip] ${message}\n`);
+          await setRunStatus(run.id, "failed", {
+            finishedAt: new Date(),
+            error: message,
+            errorCode: "chrome_slot_unavailable",
+            stdoutExcerpt,
+            stderrExcerpt: appendExcerpt(stderrExcerpt, `[paperclip] ${message}\n`),
+          });
+          await setWakeupStatus(run.wakeupRequestId, "failed", {
+            finishedAt: new Date(),
+            error: message,
+          });
+          const failedRun = await getRun(run.id);
+          if (failedRun) {
+            await appendRunEvent(failedRun, seq++, {
+              eventType: "error",
+              stream: "system",
+              level: "error",
+              message,
+              payload: {
+                browserSlot: browserIsolation.browserSlot,
+                leaseSlotId: lease.slotId,
+                heldByAgentId: lease.heldBy.agentId,
+              },
+            });
+            await releaseIssueExecutionAndPromote(failedRun);
+          }
+          await finalizeAgentStatus(agent.id, "failed");
+          return;
+        }
+        chromeLeaseHeld = true;
+      }
 
       const adapterResult = await adapter.execute({
         runId: run.id,
@@ -2811,6 +2919,9 @@ export function heartbeatService(db: Db) {
           // DB calls threw (e.g. a transient DB error in finalizeAgentStatus).
           await finalizeAgentStatus(run.agentId, "failed").catch(() => undefined);
         } finally {
+          if (chromeLeaseHeld) {
+            releaseChromeLease(run.id, browserIsolationForLease.leaseSlotId);
+          }
           await releaseRuntimeServicesForRun(run.id).catch(() => undefined);
           activeRunExecutions.delete(run.id);
           await startNextQueuedRunForAgent(run.agentId);
@@ -3506,7 +3617,10 @@ export function heartbeatService(db: Db) {
     return rows.map((row) => row.id);
   }
 
-  async function cancelPendingWakeupsForBudgetScope(scope: BudgetEnforcementScope) {
+  async function cancelPendingWakeupsForBudgetScope(
+    scope: BudgetEnforcementScope,
+    errorMessage = "Cancelled due to budget pause",
+  ) {
     const now = new Date();
     let wakeupIds: string[] = [];
 
@@ -3546,7 +3660,7 @@ export function heartbeatService(db: Db) {
       .set({
         status: "cancelled",
         finishedAt: now,
-        error: "Cancelled due to budget pause",
+        error: errorMessage,
         updatedAt: now,
       })
       .where(inArray(agentWakeupRequests.id, wakeupIds));
@@ -3598,38 +3712,60 @@ export function heartbeatService(db: Db) {
   }
 
   async function cancelActiveForAgentInternal(agentId: string, reason = "Cancelled due to agent pause") {
-    const runs = await db
-      .select()
+    const agent = await getAgent(agentId);
+    if (!agent) return 0;
+
+    const runIds = await db
+      .select({ id: heartbeatRuns.id })
       .from(heartbeatRuns)
-      .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"])));
+      .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"])))
+      .then((rows) => rows.map((row) => row.id));
 
-    for (const run of runs) {
-      await setRunStatus(run.id, "cancelled", {
-        finishedAt: new Date(),
-        error: reason,
-        errorCode: "cancelled",
-      });
-
-      await setWakeupStatus(run.wakeupRequestId, "cancelled", {
-        finishedAt: new Date(),
-        error: reason,
-      });
-
-      const running = runningProcesses.get(run.id);
-      if (running) {
-        running.child.kill("SIGTERM");
-        runningProcesses.delete(run.id);
-      }
-      await releaseIssueExecutionAndPromote(run);
+    for (const runId of runIds) {
+      await cancelRunInternal(runId, reason);
     }
 
-    return runs.length;
+    await cancelPendingWakeupsForBudgetScope(
+      { companyId: agent.companyId, scopeType: "agent", scopeId: agentId },
+      reason,
+    );
+
+    return runIds.length;
+  }
+
+  async function sweepCompanyAgentWork(companyId: string) {
+    const runIds = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(eq(heartbeatRuns.companyId, companyId), inArray(heartbeatRuns.status, ["queued", "running"])),
+      )
+      .then((rows) => rows.map((row) => row.id));
+
+    for (const runId of runIds) {
+      await cancelRunInternal(runId, "Emergency sweep — all runs for this company were stopped");
+    }
+
+    const wakeups = await cancelPendingWakeupsForBudgetScope(
+      { companyId, scopeType: "company", scopeId: companyId },
+      "Emergency sweep — pending invocations for this company were cancelled",
+    );
+
+    const { forceReleaseChromeLease } = await import("./chrome-lease.js");
+    forceReleaseChromeLease(`emergency_sweep:${companyId}`);
+
+    const examined = runIds.length + wakeups;
+    return {
+      cancelledRuns: runIds.length,
+      cancelledPendingWakeups: wakeups,
+      examined,
+      processesSignalled: runIds.length,
+    };
   }
 
   async function cancelBudgetScopeWork(scope: BudgetEnforcementScope) {
     if (scope.scopeType === "agent") {
       await cancelActiveForAgentInternal(scope.scopeId, "Cancelled due to budget pause");
-      await cancelPendingWakeupsForBudgetScope(scope);
       return;
     }
 
@@ -3830,7 +3966,11 @@ export function heartbeatService(db: Db) {
 
     cancelRun: (runId: string) => cancelRunInternal(runId),
 
-    cancelActiveForAgent: (agentId: string) => cancelActiveForAgentInternal(agentId),
+    cancelActiveForAgent: (agentId: string, reason?: string) =>
+      cancelActiveForAgentInternal(agentId, reason ?? "Cancelled due to agent pause"),
+
+    /** Cancel every queued/running heartbeat + pending wakeup for the company; release Chrome lease. */
+    sweepCompanyAgentWork,
 
     cancelBudgetScopeWork,
 

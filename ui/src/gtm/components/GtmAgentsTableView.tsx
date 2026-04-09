@@ -47,7 +47,9 @@ export function GtmAgentsTableView({
               <th className="h-11 px-4 align-middle font-medium">Title / role</th>
               <th className="h-11 px-4 align-middle font-medium">Model</th>
               <th className="h-11 px-4 align-middle font-medium">Status</th>
-              {!isTrash ? <th className="h-11 px-4 align-middle font-medium text-right">Actions</th> : null}
+              {!isTrash || agents.some((a) => a.status === "terminated") ? (
+                <th className="h-11 px-4 align-middle font-medium text-right">Actions</th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -63,7 +65,14 @@ export function GtmAgentsTableView({
                       {agent.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 align-middle text-muted-foreground">{agent.title ?? agent.role}</td>
+                  <td className="px-4 py-3 align-middle text-muted-foreground">
+                    <div>{agent.title ?? agent.role}</div>
+                    {typeof (agent.adapterConfig as Record<string, unknown> | null)?.browserSlot === "string" ? (
+                      <div className="text-xs text-muted-foreground">
+                        Slot {String((agent.adapterConfig as Record<string, unknown>).browserSlot)}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3 align-middle">
                     <AdapterBrandMark adapterType={agent.adapterType} />
                   </td>
@@ -109,7 +118,15 @@ export function GtmAgentsTableView({
                         )}
                       </div>
                     </td>
-                  ) : null}
+                  ) : agent.status === "terminated" ? (
+                    <td className="px-4 py-3 align-middle text-right">
+                      <Button size="sm" variant="default" onClick={() => onAgentAction({ action: "restore", agentId: agent.id })}>
+                        Restore
+                      </Button>
+                    </td>
+                  ) : (
+                    <td className="px-4 py-3 align-middle text-right" />
+                  )}
                 </tr>
               );
             })}

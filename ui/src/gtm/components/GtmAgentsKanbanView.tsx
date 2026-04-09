@@ -97,6 +97,11 @@ export function GtmAgentsKanbanView({
                         {agent.name}
                       </Link>
                       <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{agent.title ?? agent.role}</p>
+                      {typeof (agent.adapterConfig as Record<string, unknown> | null)?.browserSlot === "string" ? (
+                        <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+                          Slot {String((agent.adapterConfig as Record<string, unknown>).browserSlot)}
+                        </p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap items-center gap-1">
                         <AdapterBrandMark adapterType={agent.adapterType} size="icon-sm" />
                         <Badge variant={meta.variant} className={cn("text-[10px]", meta.runningNow ? "gap-1" : undefined)}>
@@ -133,6 +138,12 @@ export function GtmAgentsKanbanView({
                               Pause
                             </Button>
                           )}
+                        </div>
+                      ) : agent.status === "terminated" ? (
+                        <div className="mt-2">
+                          <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => onAgentAction({ action: "restore", agentId: agent.id })}>
+                            Restore
+                          </Button>
                         </div>
                       ) : null}
                     </div>

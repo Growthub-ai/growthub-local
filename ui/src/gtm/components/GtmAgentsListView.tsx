@@ -10,7 +10,7 @@ import { Settings } from "lucide-react";
 import { gtmAgentLifecycleMeta, sortGtmAgentsForListTable } from "@/gtm/lib/gtm-agent-lifecycle-ui";
 import { useMemo } from "react";
 
-export type GtmAgentAction = { action: "invoke" | "pause" | "resume"; agentId: string };
+export type GtmAgentAction = { action: "invoke" | "pause" | "resume" | "restore"; agentId: string };
 
 export function GtmAgentsListView({
   agents,
@@ -58,6 +58,11 @@ export function GtmAgentsListView({
                       {agent.name}
                     </Link>
                     <p className="truncate text-sm text-muted-foreground">{agent.title ?? agent.role}</p>
+                    {typeof (agent.adapterConfig as Record<string, unknown> | null)?.browserSlot === "string" ? (
+                      <p className="truncate text-xs text-muted-foreground">
+                        Slot {String((agent.adapterConfig as Record<string, unknown>).browserSlot)}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <AdapterBrandMark adapterType={agent.adapterType} />
@@ -99,6 +104,10 @@ export function GtmAgentsListView({
                           </Button>
                         )}
                       </>
+                    ) : agent.status === "terminated" ? (
+                      <Button size="sm" variant="default" onClick={() => onAgentAction({ action: "restore", agentId: agent.id })}>
+                        Restore
+                      </Button>
                     ) : null}
                   </div>
                 </div>

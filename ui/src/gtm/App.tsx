@@ -626,22 +626,53 @@ function GtmAgentsPage() {
   });
 
   const actionMutation = useMutation({
-    mutationFn: async ({ action, agentId }: { action: "invoke" | "pause" | "resume"; agentId: string }) => {
+    mutationFn: async ({ action, agentId }: { action: "invoke" | "pause" | "resume" | "restore"; agentId: string }) => {
       if (!selectedCompanyId) throw new Error("No company selected");
       if (action === "invoke") return gtmApi.invokeAgent(agentId, selectedCompanyId);
       if (action === "pause") return gtmApi.pauseAgent(agentId, selectedCompanyId);
+      if (action === "restore") return gtmApi.restoreTerminatedAgent(agentId, selectedCompanyId);
       return gtmApi.resumeAgent(agentId, selectedCompanyId);
     },
-    onSuccess: async () => {
+    onSuccess: async (_, { action }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["gtm", "agents", selectedCompanyId!] }),
         queryClient.invalidateQueries({ queryKey: ["gtm", "agents-tab-runs", selectedCompanyId!] }),
       ]);
+      if (action === "restore") {
+        pushToast({
+          title: "Agent restored",
+          body: "Agent is idle again. Create new API keys if the old ones were revoked at termination.",
+          tone: "success",
+        });
+      }
     },
     onError: (error) => {
       pushToast({
         title: "Agent action failed",
         body: error instanceof Error ? error.message : "Failed to control agent",
+        tone: "error",
+      });
+    },
+  });
+
+  const sweepMutation = useMutation({
+    mutationFn: () => gtmApi.sweepStrayProcesses(selectedCompanyId!),
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId!, "default") }),
+        queryClient.invalidateQueries({ queryKey: GTM_QUERY_KEYS.agents(selectedCompanyId!, "trash") }),
+        queryClient.invalidateQueries({ queryKey: ["gtm", "agents-tab-runs", selectedCompanyId!] }),
+      ]);
+      pushToast({
+        title: "Runs stopped",
+        body: `Cancelled ${data.cancelledRuns} run(s); cleared ${data.examined} queued item(s). External CLIs (not started by this server) must be closed manually.`,
+        tone: "success",
+      });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Could not stop runs",
+        body: error instanceof Error ? error.message : "Sweep failed",
         tone: "error",
       });
     },
@@ -675,7 +706,7 @@ function GtmAgentsPage() {
           <h1 className="text-lg font-semibold">{isTrash ? "Removed agents" : "Agents"}</h1>
           <p className="text-sm text-muted-foreground">
             {isTrash
-              ? "Terminated agents for this workspace (read-only)."
+              ? "Terminated agents — use Restore to return them to the main list (issue new API keys if needed)."
               : "GTM-only agent inventory and controls."}
           </p>
         </div>
@@ -684,6 +715,23 @@ function GtmAgentsPage() {
             <>
               <Button variant="outline" asChild>
                 <Link to={boardPath("/agents/org-chart")}>Org Chart</Link>
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={sweepMutation.isPending}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      "Stop all queued and running Paperclip heartbeats for this company, cancel pending invocations, and release the shared Chrome lease? This does not delete agents.",
+                    )
+                  ) {
+                    return;
+                  }
+                  sweepMutation.mutate();
+                }}
+              >
+                {sweepMutation.isPending ? "Stopping…" : "Stop all runs"}
               </Button>
               <Button onClick={() => navigate({ pathname: boardPath("/agents/new"), search: location.search })}>New Agent</Button>
             </>
@@ -1425,6 +1473,9 @@ function GtmSettingsPage() {
   const [claudeCwd, setClaudeCwd] = useState("");
   const [claudeModel, setClaudeModel] = useState("claude-sonnet-4-6");
   const [claudeChrome, setClaudeChrome] = useState(true);
+  const [claudeBrowserSlot, setClaudeBrowserSlot] = useState("");
+  const [claudeTabGroupLabel, setClaudeTabGroupLabel] = useState("");
+  const [claudeTabGroupKey, setClaudeTabGroupKey] = useState("");
   const [growthubBaseUrl, setGrowthubBaseUrl] = useState("");
   const profileQuery = useQuery({ queryKey: ["gtm", "profile"], queryFn: () => gtmApi.getProfile() });
   const knowledgeQuery = useQuery({ queryKey: ["gtm", "knowledge"], queryFn: () => gtmApi.getKnowledge() });
@@ -1490,6 +1541,10 @@ function GtmSettingsPage() {
           cwd: claudeCwd,
           model: claudeModel,
           chrome: claudeChrome,
+          browserSlot: claudeBrowserSlot,
+          tabGroupLabel: claudeTabGroupLabel,
+          tabGroupKey: claudeTabGroupKey,
+          crossAgentTabPolicy: "claim-or-create",
         },
       }),
     onSuccess: async () => {
@@ -1690,6 +1745,7 @@ function GtmSettingsPage() {
   const workspaceConfig = workspaceConfigQuery.data ?? null;
   const managedAgent = workspaceConfig?.existingAgent ?? null;
   const bindingCheck = workspaceConfig?.environmentTest ?? null;
+  const activeChromeLeases = workspaceConfig?.activeChromeLeases ?? [];
 
   const openSetup = () => {
     if (!workspaceConfig) return;
@@ -1701,6 +1757,9 @@ function GtmSettingsPage() {
     setClaudeCwd(String(adapterConfig.cwd ?? ""));
     setClaudeModel(String(adapterConfig.model ?? "claude-sonnet-4-6"));
     setClaudeChrome(Boolean(adapterConfig.chrome ?? true));
+    setClaudeBrowserSlot(String(adapterConfig.browserSlot ?? ""));
+    setClaudeTabGroupLabel(String(adapterConfig.tabGroupLabel ?? ""));
+    setClaudeTabGroupKey(String(adapterConfig.tabGroupKey ?? ""));
     setSetupOpen(true);
   };
 
@@ -1856,6 +1915,33 @@ function GtmSettingsPage() {
                   )}
                 </p>
               </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Browser Slot</p>
+                <p className="mt-1 break-all">
+                  {String(
+                    ((managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>).browserSlot ?? "default",
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Tab Group</p>
+                <p className="mt-1 break-all">
+                  {String(
+                    ((managedAgent?.adapterConfig ?? workspaceConfig.defaults.adapterConfig) as Record<string, unknown>).tabGroupLabel ?? "Not configured",
+                  )}
+                </p>
+              </div>
+              {activeChromeLeases.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Active Browser Slots</p>
+                  {activeChromeLeases.map((lease) => (
+                    <div key={`${lease.slotId}:${lease.runId}`} className="rounded-md border border-border p-3">
+                      <p className="font-medium">{lease.slotId}</p>
+                      <p className="mt-1 text-muted-foreground">Agent {lease.agentId}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {bindingCheck?.checks?.length ? (
                 <div className="space-y-2">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Latest Binding Check</p>
@@ -1999,6 +2085,18 @@ function GtmSettingsPage() {
               <label className="text-sm font-medium">Model</label>
               <Input value={claudeModel} onChange={(event) => setClaudeModel(event.target.value)} />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Browser slot</label>
+              <Input value={claudeBrowserSlot} onChange={(event) => setClaudeBrowserSlot(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tab group label</label>
+              <Input value={claudeTabGroupLabel} onChange={(event) => setClaudeTabGroupLabel(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tab group key</label>
+              <Input value={claudeTabGroupKey} onChange={(event) => setClaudeTabGroupKey(event.target.value)} />
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={claudeChrome} onChange={(event) => setClaudeChrome(event.target.checked)} />
               Enable Claude browser mode
@@ -2010,7 +2108,16 @@ function GtmSettingsPage() {
             </Button>
             <Button
               onClick={() => setupMutation.mutate()}
-              disabled={!selectedCompanyId || !agentName.trim() || !claudeCommand.trim() || !claudeCwd.trim() || setupMutation.isPending}
+              disabled={
+                !selectedCompanyId
+                || !agentName.trim()
+                || !claudeCommand.trim()
+                || !claudeCwd.trim()
+                || !claudeBrowserSlot.trim()
+                || !claudeTabGroupLabel.trim()
+                || !claudeTabGroupKey.trim()
+                || setupMutation.isPending
+              }
             >
               {setupMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
               Save and test

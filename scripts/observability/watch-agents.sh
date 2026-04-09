@@ -31,8 +31,8 @@ echo ""
 
 # ── 2. Full agent deep-dive (Python) ─────────────────────────────────────────
 python3 - "$LOG_DIR" "$COMPANY_ID" "$FILTER" << 'PYEOF'
-import json, re, os, sys
-from datetime import datetime
+import gzip, json, re, os, sys
+from datetime import datetime, timezone
 from collections import Counter
 
 LOG_DIR, COMPANY_ID, FILTER = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -60,8 +60,29 @@ def detect_app(tool_name, detail):
     if 'bash' in tool_name.lower(): return 'Shell'
     return 'MCP'
 
-today_prefix = '2026-04-03T'
+today_prefixes = {
+    datetime.now().strftime('%Y-%m-%dT'),
+    datetime.now(timezone.utc).strftime('%Y-%m-%dT'),
+}
 all_runs = []
+
+def read_log_lines(path):
+    with open(path, 'rb') as f:
+        raw = f.read()
+    if raw[:2] == b'\x1f\x8b':
+        raw = gzip.decompress(raw)
+    text = raw.decode('utf-8', errors='replace')
+    return text.splitlines()
+
+def iter_chunks(lines):
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            yield json.loads(stripped).get('chunk', '')
+        except Exception:
+            continue
 
 for company_id in os.listdir(LOG_DIR):
     if COMPANY_ID != 'all' and company_id != COMPANY_ID: continue
@@ -73,11 +94,16 @@ for company_id in os.listdir(LOG_DIR):
         aname = KNOWN.get(agent_id[:8], agent_id[:8])
         for run_file in sorted(os.listdir(adir)):
             path = os.path.join(adir, run_file)
-            lines = open(path).readlines()
-            full_text = ''.join(json.loads(l.strip()).get('chunk','') for l in lines)
+            lines = read_log_lines(path)
+            full_text = ''.join(iter_chunks(lines))
 
-            ts_pattern = today_prefix if FILTER == '--today' else '2026-'
-            timestamps = re.findall(f'"timestamp":"({ts_pattern}[^"]+)"', full_text)
+            if FILTER == '--today':
+                timestamps = []
+                for prefix in today_prefixes:
+                    timestamps.extend(re.findall(f'"timestamp":"({prefix}[^"]+)"', full_text))
+                timestamps = sorted(set(timestamps))
+            else:
+                timestamps = re.findall('"timestamp":"(2026-[^"]+)"', full_text)
             if not timestamps: continue
 
             t0, t1 = timestamps[0], timestamps[-1]

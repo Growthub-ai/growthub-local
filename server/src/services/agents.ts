@@ -75,6 +75,10 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -210,12 +214,30 @@ export function agentService(db: Db) {
 
   function normalizeAgentAdapterConfigField(adapterConfig: unknown): unknown {
     if (!isPlainRecord(adapterConfig)) return adapterConfig;
-    const cwd = adapterConfig.cwd;
-    if (typeof cwd !== "string" || !cwd.trim()) return adapterConfig;
-    return {
+    const normalized: Record<string, unknown> = {
       ...adapterConfig,
-      cwd: normalizePerAgentWorkspacesCwdToShared(cwd),
     };
+    const cwd = readNonEmptyString(adapterConfig.cwd);
+    if (cwd) {
+      normalized.cwd = normalizePerAgentWorkspacesCwdToShared(cwd);
+    }
+    const browserSlot = readNonEmptyString(adapterConfig.browserSlot);
+    if (browserSlot) {
+      normalized.browserSlot = browserSlot;
+    }
+    const tabGroupKey = readNonEmptyString(adapterConfig.tabGroupKey);
+    if (tabGroupKey) {
+      normalized.tabGroupKey = tabGroupKey;
+    }
+    const tabGroupLabel = readNonEmptyString(adapterConfig.tabGroupLabel);
+    if (tabGroupLabel) {
+      normalized.tabGroupLabel = tabGroupLabel;
+    }
+    const crossAgentTabPolicy = readNonEmptyString(adapterConfig.crossAgentTabPolicy);
+    if (crossAgentTabPolicy) {
+      normalized.crossAgentTabPolicy = crossAgentTabPolicy;
+    }
+    return normalized;
   }
 
   function normalizeAgentRow(row: typeof agents.$inferSelect) {
@@ -492,6 +514,29 @@ export function agentService(db: Db) {
         .where(eq(agentApiKeys.agentId, id));
 
       return getById(id);
+    },
+
+    /** Returns agent to idle. API keys stay revoked — create new keys after restore. */
+    restoreTerminated: async (id: string) => {
+      const existing = await getById(id);
+      if (!existing) return null;
+      if (existing.status !== "terminated") {
+        throw conflict("Only terminated agents can be restored");
+      }
+
+      const updated = await db
+        .update(agents)
+        .set({
+          status: "idle",
+          pauseReason: null,
+          pausedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(agents.id, id))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+
+      return updated ? normalizeAgentRow(updated) : null;
     },
 
     remove: async (id: string) => {

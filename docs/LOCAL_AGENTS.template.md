@@ -75,6 +75,7 @@ Do **not** hardcode `@growthub/cli` versions in this file as â€œforever truth.â€
 - **Branches:** Prefer feature branches or worktrees; avoid rewriting **`main`** without maintainer intent.
 - **Anti-patterns:** No **`node scripts/worktree-bootstrap.mjs`**; no manual **growthub-core** copies; no improvised dev servers replacing **`scripts/runtime-control.sh`** unless you explicitly override that in this file.
 - **`scripts/guard.sh`:** Destructive git is blocked by design for agents.
+- **Browser agents:** Validate through real issue assignment + heartbeat wakeup, not free-run invoke. Use `scripts/observability/tail-run.sh` on the exact run ids when checking separation behavior.
 
 ---
 

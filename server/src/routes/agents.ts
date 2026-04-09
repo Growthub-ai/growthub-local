@@ -34,7 +34,7 @@ import {
   secretService,
   workspaceOperationService,
 } from "../services/index.js";
-import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
@@ -1339,6 +1339,63 @@ export function agentRoutes(db: Db) {
     });
 
     res.json(agent);
+  });
+
+  router.post("/agents/:id/restore-terminated", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    try {
+      const agent = await svc.restoreTerminated(id);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: "user",
+        actorId: req.actor.userId ?? "board",
+        action: "agent.restored_from_termination",
+        entityType: "agent",
+        entityId: agent.id,
+      });
+
+      res.json(agent);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 409) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  });
+
+  router.post("/chrome-lease/force-release", async (req, res) => {
+    assertBoard(req);
+    const { forceReleaseChromeLeases } = await import("../services/chrome-lease.js");
+    const reason =
+      typeof req.body?.reason === "string" && req.body.reason.trim().length > 0
+        ? req.body.reason.trim()
+        : "board_force_release";
+    const slotId =
+      typeof req.body?.slotId === "string" && req.body.slotId.trim().length > 0
+        ? req.body.slotId.trim()
+        : null;
+    const released = forceReleaseChromeLeases(reason, slotId);
+    const previous = released[0] ?? null;
+    res.json({
+      ok: true as const,
+      hadLease: released.length > 0,
+      releasedCount: released.length,
+      previous: previous
+        ? {
+            slotId: previous.slotId,
+            agentId: previous.agentId,
+            runId: previous.runId,
+            expiresAt: previous.expiresAt,
+          }
+        : null,
+    });
   });
 
   router.delete("/agents/:id", async (req, res) => {
