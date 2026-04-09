@@ -1,6 +1,6 @@
 {
   "name": "@growthub/cli",
-  "version": "0.3.34",
+  "version": "0.3.35",
   "description": "Growthub CLI — orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {
@@ -25,7 +25,8 @@
     "url": "https://github.com/antonioromero1220/growthub-local/issues"
   },
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "engines": {
     "node": ">=20"

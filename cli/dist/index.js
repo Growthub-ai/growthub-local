@@ -12489,6 +12489,211 @@ ${result.lastError}`);
   );
 }
 
+function resolveKitAssetRootDist(kitId) {
+  const moduleDir = path17.dirname(fileURLToPath2(import.meta.url));
+  const assetRoot = path17.resolve(moduleDir, "../assets/worker-kits", kitId);
+  if (!existsSync2(assetRoot)) {
+    throw new Error(`Bundled worker kit assets not found for ${kitId}: ${assetRoot}`);
+  }
+  return assetRoot;
+}
+function resolveKitOutputRootDist(outDir) {
+  if (typeof outDir === "string" && outDir.trim().length > 0) {
+    return path17.resolve(expandHomePrefix(outDir.trim()));
+  }
+  return path17.resolve(resolvePaperclipHomeDir(), "kits", "exports");
+}
+function readJsonDist(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+function listFilesRecursiveDist(rootDir, currentDir = rootDir) {
+  const entries = [];
+  for (const entry of readdirSync2(currentDir, { withFileTypes: true })) {
+    const fullPath = path17.join(currentDir, entry.name);
+    if (entry.isDirectory()) {
+      entries.push(...listFilesRecursiveDist(rootDir, fullPath));
+      continue;
+    }
+    entries.push(path17.relative(rootDir, fullPath).split(path17.sep).join("/"));
+  }
+  return entries.sort();
+}
+function copyDirRecursiveDist(sourceDir, targetDir) {
+  mkdirSync2(targetDir, { recursive: true });
+  for (const entry of readdirSync2(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path17.join(sourceDir, entry.name);
+    const targetPath = path17.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursiveDist(sourcePath, targetPath);
+      continue;
+    }
+    copyFileSync(sourcePath, targetPath);
+  }
+}
+function crc32Dist(buffer) {
+  let crc = 4294967295;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc >>> 1 ^ 3988292384 & -(crc & 1);
+    }
+  }
+  return (crc ^ 4294967295) >>> 0;
+}
+function toDosDateTimeDist(date) {
+  const year = Math.max(date.getUTCFullYear(), 1980);
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const hours = date.getUTCHours();
+  const minutes = date.getUTCMinutes();
+  const seconds = Math.floor(date.getUTCSeconds() / 2);
+  return {
+    dosTime: hours << 11 | minutes << 5 | seconds,
+    dosDate: year - 1980 << 9 | month << 5 | day
+  };
+}
+function buildStoredZipDist(entries) {
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  const { dosTime, dosDate } = toDosDateTimeDist(new Date("2026-04-09T00:00:00.000Z"));
+  for (const entry of entries) {
+    const nameBuffer = Buffer.from(entry.name, "utf8");
+    const data = entry.data;
+    const checksum = crc32Dist(data);
+    const localHeader = Buffer.alloc(30 + nameBuffer.length);
+    localHeader.writeUInt32LE(67324752, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(dosTime, 10);
+    localHeader.writeUInt16LE(dosDate, 12);
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(data.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(nameBuffer.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    nameBuffer.copy(localHeader, 30);
+    parts.push(localHeader, data);
+    const centralHeader = Buffer.alloc(46 + nameBuffer.length);
+    centralHeader.writeUInt32LE(33639248, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(dosTime, 12);
+    centralHeader.writeUInt16LE(dosDate, 14);
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(nameBuffer.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    nameBuffer.copy(centralHeader, 46);
+    central.push(centralHeader);
+    offset += localHeader.length + data.length;
+  }
+  const centralDirectory = Buffer.concat(central);
+  const endRecord = Buffer.alloc(22);
+  endRecord.writeUInt32LE(101010256, 0);
+  endRecord.writeUInt16LE(0, 4);
+  endRecord.writeUInt16LE(0, 6);
+  endRecord.writeUInt16LE(entries.length, 8);
+  endRecord.writeUInt16LE(entries.length, 10);
+  endRecord.writeUInt32LE(centralDirectory.length, 12);
+  endRecord.writeUInt32LE(offset, 16);
+  endRecord.writeUInt16LE(0, 20);
+  return Buffer.concat([...parts, centralDirectory, endRecord]);
+}
+function validateKitAssetRootDist(assetRoot, manifest, bundleManifest) {
+  const requiredPaths = [
+    "kit.json",
+    ...manifest.frozenAssetPaths,
+    ...manifest.outputStandard.requiredPaths,
+    ...bundleManifest.requiredFrozenAssets
+  ];
+  for (const relativePath of requiredPaths) {
+    const fullPath = path17.resolve(assetRoot, relativePath);
+    if (!existsSync2(fullPath)) {
+      throw new Error(`Bundled worker kit validation failed. Missing required path: ${relativePath}`);
+    }
+  }
+}
+function inspectKitDist(kitId, outDir) {
+  const assetRoot = resolveKitAssetRootDist(kitId);
+  const manifest = readJsonDist(path17.resolve(assetRoot, "kit.json"));
+  const bundleRef = manifest.bundles.find((bundle) => bundle.id === kitId) ?? manifest.bundles[0];
+  const bundleManifest = readJsonDist(path17.resolve(assetRoot, bundleRef.path));
+  validateKitAssetRootDist(assetRoot, manifest, bundleManifest);
+  const outputRoot = resolveKitOutputRootDist(outDir);
+  return {
+    assetRoot,
+    manifest,
+    bundleManifest,
+    outputRoot,
+    folderPath: path17.resolve(outputRoot, bundleManifest.export.folderName),
+    zipPath: path17.resolve(outputRoot, bundleManifest.export.zipFileName)
+  };
+}
+function listBundledKitsDist() {
+  const assetBase = path17.resolve(path17.dirname(fileURLToPath2(import.meta.url)), "../assets/worker-kits");
+  if (!existsSync2(assetBase)) return [];
+  return readdirSync2(assetBase, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => inspectKitDist(entry.name)).sort((a, b) => a.manifest.kit.id.localeCompare(b.manifest.kit.id));
+}
+function downloadKitDist(kitId, outDir) {
+  const info = inspectKitDist(kitId, outDir);
+  mkdirSync2(info.outputRoot, { recursive: true });
+  rmSync(info.folderPath, { recursive: true, force: true });
+  copyDirRecursiveDist(info.assetRoot, info.folderPath);
+  const zipEntries = listFilesRecursiveDist(info.folderPath).map((relativePath) => ({
+    name: path17.posix.join(info.bundleManifest.export.folderName, relativePath),
+    data: readFileSync(path17.resolve(info.folderPath, relativePath))
+  }));
+  writeFileSync(info.zipPath, buildStoredZipDist(zipEntries));
+  return info;
+}
+function registerKitCommandsDist(target) {
+  const kit = target.command("kit").description("Bundled Growthub Agent Worker Kit export utilities");
+  kit.command("list").description("List the bundled worker kits available in this CLI build").action(() => {
+    const kits = listBundledKitsDist();
+    if (kits.length === 0) {
+      console.log(pc21.dim("No bundled worker kits are available in this CLI build."));
+      return;
+    }
+    for (const item of kits) {
+      console.log([
+        pc21.bold(item.manifest.kit.id),
+        `version=${item.manifest.kit.version}`,
+        `bundle=${item.bundleManifest.bundle.id}@${item.bundleManifest.bundle.version}`,
+        `briefType=${item.bundleManifest.briefType}`,
+        `name=${item.manifest.kit.name}`
+      ].join("  "));
+    }
+  });
+  kit.command("inspect").description("Inspect a bundled worker kit manifest and export metadata").argument("<kit-id>", "Bundled worker kit id").option("--out <path>", "Override the export root used for resolved output paths").action((kitId, opts) => {
+    const info = inspectKitDist(kitId, opts.out);
+    console.log(`Kit: ${info.manifest.kit.id} @ ${info.manifest.kit.version}`);
+    console.log(`Name: ${info.manifest.kit.name}`);
+    console.log(`Bundle: ${info.bundleManifest.bundle.id} @ ${info.bundleManifest.bundle.version}`);
+    console.log(`Entrypoint: ${info.manifest.entrypoint.path}`);
+    console.log(`Export Folder: ${info.folderPath}`);
+    console.log(`Export Zip: ${info.zipPath}`);
+  });
+  kit.command("download").description("Export a bundled worker kit as both a zip file and expanded folder").argument("<kit-id>", "Bundled worker kit id").option("--out <path>", "Output directory for the generated artifacts").action((kitId, opts) => {
+    const info = downloadKitDist(kitId, opts.out);
+    console.log(`Expanded Folder: ${info.folderPath}`);
+    console.log(`Zip File: ${info.zipPath}`);
+  });
+  kit.command("path").description("Resolve the expected expanded export folder path without exporting").argument("<kit-id>", "Bundled worker kit id").option("--out <path>", "Output directory for the generated artifacts").action((kitId, opts) => {
+    const info = inspectKitDist(kitId, opts.out);
+    console.log(info.folderPath);
+  });
+}
+
 // src/index.ts
 var program = new Command();
 var DATA_DIR_OPTION_HELP = "Growthub data directory root (isolates local instance state)";
@@ -12520,6 +12725,7 @@ function registerSharedCommands(target) {
   });
   target.command("allowed-hostname").description("Allow a hostname for authenticated/private mode access").argument("<host>", "Hostname to allow (for example dotta-macbook-pro)").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).action(addAllowedHostname);
   target.command("run").description("Bootstrap local setup (onboard + doctor) and run Growthub").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("-i, --instance <id>", "Local instance id (default: default)").option("--repair", "Attempt automatic repairs during doctor", true).option("--no-repair", "Disable automatic repairs during doctor").action(runCommand);
+  registerKitCommandsDist(target);
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
   auth.command("bootstrap-ceo").description("Create a one-time bootstrap invite URL for first instance admin").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--force", "Create new invite even if admin already exists", false).option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value)).option("--base-url <url>", "Public base URL used to print invite link").action(bootstrapCeoInvite);
 }

@@ -22,6 +22,7 @@ import { readConfig, resolveConfigPath } from "./config/store.js";
 import { registerGtmCommands } from "./commands/gtm.js";
 import { registerWorktreeCommands } from "./commands/worktree.js";
 import { registerPluginCommands } from "./commands/client/plugin.js";
+import { registerKitCommands } from "./commands/kit.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
@@ -111,6 +112,8 @@ function registerSharedCommands(target: Command) {
     .option("--repair", "Attempt automatic repairs during doctor", true)
     .option("--no-repair", "Disable automatic repairs during doctor")
     .action(runCommand);
+
+  registerKitCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 

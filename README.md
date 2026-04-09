@@ -49,6 +49,19 @@ This repo is the source of truth for:
 - `@growthub/cli`
 - `create-growthub-local`
 
+## Worker Kits
+
+Growthub CLI V1 now includes a local-only Worker Kit export surface for bundled agent working directories.
+
+- `growthub kit list`
+- `growthub kit inspect <kit-id>`
+- `growthub kit download <kit-id> [--out <path>]`
+- `growthub kit path <kit-id> [--out <path>]`
+
+The first bundled kit is the frozen Creative Strategist worker kit. V1 exports a deterministic zip file and expanded folder onto the local machine. It does not add runtime orchestration changes, server install routes, heartbeat wiring, plugin lifecycle behavior, or database state for kits.
+
+See [docs/WORKER_KITS.md](./docs/WORKER_KITS.md).
+
 ## Development
 
 This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.

@@ -16,6 +16,27 @@ Later:
 npx create-growthub-local --profile gtm
 ```
 
+## Worker Kits V1
+
+The CLI also ships a bundled Worker Kit export surface for local working-directory artifacts:
+
+```bash
+growthub kit list
+growthub kit inspect creative-strategist-v1
+growthub kit download creative-strategist-v1
+growthub kit path creative-strategist-v1
+```
+
+V1 is intentionally narrow:
+
+- bundled catalog plus local export only
+- one downloadable Creative Strategist kit
+- deterministic zip plus expanded export folder
+- public `solawave` example brand included
+- no heartbeat wiring, app install flow, server registry, plugin lifecycle, or database kit records
+
+The exported folder is a machine artifact produced by the CLI for existing Working Directory path support.
+
 ## What this is
 
 **growthub-core** is an opinionated, self-hosted developer experience platform that treats every unit of work as a **Ticket** — a sequential pipeline of stages (planning → execution → review → qa → human) — where each stage is owned by a specific AI agent. Designed for **parallel multi-ticket execution** with real-time agent status, live heartbeat tracking, and full pipeline control from a single command center dashboard.
