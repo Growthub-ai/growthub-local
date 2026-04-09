@@ -696,6 +696,10 @@ export function gtmRoutes(db: Db) {
       return;
     }
     const updated = await agents.pause(agentId);
+    await heartbeats.cancelActiveForAgent(
+      agentId,
+      "GTM: agent paused from workspace (active invocations cancelled)",
+    );
     res.json(updated);
   });
 
