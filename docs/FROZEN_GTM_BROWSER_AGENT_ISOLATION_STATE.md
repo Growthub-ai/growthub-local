@@ -4,8 +4,8 @@
 > Frozen at: 2026-04-08
 > Validation state: locally validated end to end on the GTM runtime at `http://127.0.0.1:5173/gtm/GHA/...`
 > Published next:
-> `@growthub/cli@0.3.33`
-> `create-growthub-local@0.1.35`
+> `@growthub/cli@0.3.34`
+> `create-growthub-local@0.1.36`
 
 ---
 
@@ -190,6 +190,6 @@ This change affects published local runtime behavior and installer expectations.
 
 Version alignment for release:
 
-- `@growthub/cli` → `0.3.33`
-- `create-growthub-local` → `0.1.35`
-- installer pin `@growthub/cli` → `0.3.33`
+- `@growthub/cli` → `0.3.34`
+- `create-growthub-local` → `0.1.36`
+- installer pin `@growthub/cli` → `0.3.34`
