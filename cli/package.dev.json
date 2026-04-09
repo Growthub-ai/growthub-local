@@ -25,7 +25,8 @@
     "url": "https://github.com/antonioromero1220/growthub-core/issues"
   },
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "engines": {
     "node": ">=20"

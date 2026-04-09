@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "kit": {
+    "id": "creative-strategist-v1",
+    "version": "1.0.0",
+    "name": "Growthub Agent Worker Kit — Creative Strategist",
+    "description": "Frozen Creative Strategist worker kit for exporting a working-directory-ready video creative brief worker.",
+    "visibility": "public-open-source",
+    "sourceRepo": "claude-workers"
+  },
+  "entrypoint": {
+    "workerId": "creative-strategist",
+    "path": "workers/creative-strategist/CLAUDE.md"
+  },
+  "workerIds": [
+    "creative-strategist"
+  ],
+  "agentContractPath": "workers/creative-strategist/CLAUDE.md",
+  "brandTemplatePath": "brands/_template/brand-kit.md",
+  "publicExampleBrandPaths": [
+    "brands/solawave/brand-kit.md"
+  ],
+  "frozenAssetPaths": [
+    "skills.md",
+    "workers/creative-strategist/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/solawave/brand-kit.md",
+    "templates/brief-template.js",
+    "templates/hooks-library/500-winning-hooks.csv",
+    "templates/ad-formats/INDEX.md",
+    "templates/ad-formats/bedroom-minimic-talk.md",
+    "templates/ad-formats/frame-analysis.md",
+    "templates/ad-formats/process-specialist-medical.md",
+    "templates/ad-formats/villain-animation.md",
+    "templates/scene-modules/INDEX.md",
+    "templates/scene-modules/body/before-after-flatlay.md",
+    "templates/scene-modules/body/minimic-problem.md",
+    "templates/scene-modules/body/product-demo-glow.md",
+    "templates/scene-modules/body/tiktok-skeptic-pivot.md",
+    "templates/scene-modules/body/villain-agitation.md",
+    "templates/scene-modules/cta/bogo-meme-bookend.md",
+    "templates/scene-modules/cta/guarantee-close.md",
+    "templates/scene-modules/hooks/dollar-amount.md",
+    "templates/scene-modules/hooks/meme-overlay.md",
+    "templates/scene-modules/hooks/pov-confession.md",
+    "templates/scene-modules/hooks/tiktok-comment.md",
+    "templates/scene-modules/hooks/villain-hook.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "outputStandard": {
+    "type": "working-directory",
+    "description": "Exported folder is intended to be pointed at directly by existing Working Directory path support.",
+    "requiredPaths": [
+      "kit.json",
+      "bundles/creative-strategist-v1.json",
+      "skills.md",
+      "workers/creative-strategist/CLAUDE.md",
+      "brands/_template/brand-kit.md",
+      "brands/solawave/brand-kit.md",
+      "templates",
+      "growthub-meta"
+    ]
+  },
+  "bundles": [
+    {
+      "id": "creative-strategist-v1",
+      "version": "1.0.0",
+      "path": "bundles/creative-strategist-v1.json"
+    }
+  ]
+}
