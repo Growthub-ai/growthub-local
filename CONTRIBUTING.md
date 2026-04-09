@@ -91,6 +91,32 @@ Run the pre-push gate before any push:
 bash scripts/pr-ready.sh
 ```
 
+## Browser agent validation
+
+Browser-agent behavior must be validated through the same runtime path that ships:
+
+1. create a real issue
+2. assign it to the target browser agent
+3. let heartbeat dispatch the run on `issue_assigned`
+4. validate the exact run with observability
+
+Do **not** treat a bare GTM browser invoke as the source of truth for isolation behavior.
+
+Use:
+
+```bash
+bash scripts/observability/watch-agents.sh <company-id> --today
+bash scripts/observability/tail-run.sh <agent-prefix> <run-prefix>
+```
+
+Validation should confirm:
+
+- the run is issue-bound (`invocationSource=assignment`)
+- the correct `issueId` is present in heartbeat context
+- `paperclipBrowserIsolation` is present on the run
+- concurrent browser agents hold distinct active Chrome lease slots
+- live run traces show distinct workstreams, not drift into the other agent's task
+
 ---
 
 ## Submitting a PR
@@ -154,6 +180,8 @@ When **`@growthub/cli`** or **`create-growthub-local`** behavior that consumers 
 - set `packages/create-growthub-local/package.json` `dependencies["@growthub/cli"]` to the **same** semver as the CLI
 
 Pure documentation or repo-only hygiene that does **not** change published package behavior does not require a version bump — but the PR description should still say what stayed **out of scope** for npm so reviewers do not assume a release. See **`docs/ARTIFACT_VERSIONS.md`**.
+
+The browser-agent isolation work is npm-facing runtime behavior and requires the coordinated bump.
 
 ---
 

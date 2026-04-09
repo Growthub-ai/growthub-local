@@ -11,6 +11,7 @@ import { ticketService } from "../services/tickets.js";
 import { launchLocalGtmWorkflow, readGtmViewModel } from "../services/gtm-state.js";
 import { enforceHeartbeatPolicy, enforcePerformanceReview } from "../services/gtm-campaign-policy.js";
 import { resolveSharedInstanceWorkspacesDir } from "../home-paths.js";
+import { logActivity } from "../services/activity-log.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const GTM_METADATA = {
@@ -23,6 +24,36 @@ function readRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function hasChromeEnabledAdapter(agent: { adapterConfig: unknown }): boolean {
+  return readRecord(agent.adapterConfig)?.chrome === true;
+}
+
+async function resolveIssueBoundInvokeTarget(
+  issues: ReturnType<typeof issueService>,
+  companyId: string,
+  agentId: string,
+  requestedIssueId?: string | null,
+) {
+  if (requestedIssueId) {
+    const issue = await issues.getById(requestedIssueId);
+    if (!issue || issue.companyId !== companyId) return null;
+    if (issue.assigneeAgentId !== agentId) return null;
+    if (issue.status === "backlog" || issue.status === "done" || issue.status === "cancelled") return null;
+    if (issue.executionRunId) return null;
+    return issue;
+  }
+
+  const candidates = await issues.list(companyId, {
+    assigneeAgentId: agentId,
+    status: "todo,in_progress",
+  });
+  return candidates.find((issue) => !issue.activeRun) ?? null;
 }
 
 function isGtmTicket(ticket: Pick<Ticket, "metadata">): boolean {
@@ -69,6 +100,71 @@ function compactSentence(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function sanitizeBrowserIdentitySegment(value: string | null | undefined, fallback: string): string {
+  const trimmed = compactSentence(value ?? "");
+  if (!trimmed) return fallback;
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
+function buildBrowserIsolationDefaults(input: { name?: string | null; companyId?: string | null }) {
+  const base = sanitizeBrowserIdentitySegment(input.name, "browser-agent");
+  return {
+    browserSlot: `${base}-slot`,
+    tabGroupKey: `gtm-${sanitizeBrowserIdentitySegment(input.companyId, "workspace")}-${base}`,
+    tabGroupLabel: `GTM ${compactSentence(input.name ?? "Browser Agent") || "Browser Agent"}`,
+    crossAgentTabPolicy: "claim-or-create",
+  } as const;
+}
+
+function mergeBrowserIsolationConfig(input: {
+  adapterConfig: Record<string, unknown>;
+  companyId: string;
+  agentName?: string | null;
+  existingAdapterConfig?: Record<string, unknown> | null;
+}): Record<string, unknown> {
+  const defaults = buildBrowserIsolationDefaults({
+    name: input.agentName,
+    companyId: input.companyId,
+  });
+  const existing = input.existingAdapterConfig ?? {};
+  const merged = { ...input.adapterConfig };
+  const browserSlot =
+    typeof merged.browserSlot === "string" && merged.browserSlot.trim().length > 0
+      ? merged.browserSlot.trim()
+      : typeof existing.browserSlot === "string" && existing.browserSlot.trim().length > 0
+        ? existing.browserSlot.trim()
+        : defaults.browserSlot;
+  const tabGroupKey =
+    typeof merged.tabGroupKey === "string" && merged.tabGroupKey.trim().length > 0
+      ? merged.tabGroupKey.trim()
+      : typeof existing.tabGroupKey === "string" && existing.tabGroupKey.trim().length > 0
+        ? existing.tabGroupKey.trim()
+        : defaults.tabGroupKey;
+  const tabGroupLabel =
+    typeof merged.tabGroupLabel === "string" && merged.tabGroupLabel.trim().length > 0
+      ? merged.tabGroupLabel.trim()
+      : typeof existing.tabGroupLabel === "string" && existing.tabGroupLabel.trim().length > 0
+        ? existing.tabGroupLabel.trim()
+        : defaults.tabGroupLabel;
+  const crossAgentTabPolicy =
+    typeof merged.crossAgentTabPolicy === "string" && merged.crossAgentTabPolicy.trim().length > 0
+      ? merged.crossAgentTabPolicy.trim()
+      : typeof existing.crossAgentTabPolicy === "string" && existing.crossAgentTabPolicy.trim().length > 0
+        ? existing.crossAgentTabPolicy.trim()
+        : defaults.crossAgentTabPolicy;
+  return {
+    ...merged,
+    browserSlot,
+    tabGroupKey,
+    tabGroupLabel,
+    crossAgentTabPolicy,
+  };
+}
+
 function toTitleCase(value: string): string {
   return compactSentence(value)
     .split(/\s+/)
@@ -97,6 +193,7 @@ function sortByUpdatedAtDesc<T extends { updatedAt: Date | string }>(rows: T[]):
 }
 
 function buildClaudeBindingDefaults() {
+  const browserIsolation = buildBrowserIsolationDefaults({ name: "SDR Browser Agent", companyId: "workspace" });
   return {
     name: "SDR Browser Agent",
     title: "Outbound browser SDR",
@@ -106,6 +203,10 @@ function buildClaudeBindingDefaults() {
       cwd: resolveSharedInstanceWorkspacesDir(),
       chrome: true,
       model: "claude-sonnet-4-6",
+      browserSlot: browserIsolation.browserSlot,
+      tabGroupKey: browserIsolation.tabGroupKey,
+      tabGroupLabel: browserIsolation.tabGroupLabel,
+      crossAgentTabPolicy: browserIsolation.crossAgentTabPolicy,
     },
   };
 }
@@ -120,12 +221,30 @@ const GTM_LOCAL_ADAPTER_TYPES = new Set([
   "pi_local",
 ]);
 
-function mergeGtmAgentAdapterConfig(adapterType: string, config: Record<string, unknown>): Record<string, unknown> {
+function mergeGtmAgentAdapterConfig(
+  adapterType: string,
+  config: Record<string, unknown>,
+  options?: {
+    companyId?: string;
+    agentName?: string | null;
+    existingAdapterConfig?: Record<string, unknown> | null;
+  },
+): Record<string, unknown> {
   const merged = { ...config };
-  if (!GTM_LOCAL_ADAPTER_TYPES.has(adapterType)) return merged;
-  const cwd = merged.cwd;
-  if (typeof cwd === "string" && cwd.trim().length > 0) return merged;
-  merged.cwd = resolveSharedInstanceWorkspacesDir();
+  if (GTM_LOCAL_ADAPTER_TYPES.has(adapterType)) {
+    const cwd = merged.cwd;
+    if (!(typeof cwd === "string" && cwd.trim().length > 0)) {
+      merged.cwd = resolveSharedInstanceWorkspacesDir();
+    }
+  }
+  if (adapterType === "claude_local" && merged.chrome === true && options?.companyId) {
+    return mergeBrowserIsolationConfig({
+      adapterConfig: merged,
+      companyId: options.companyId,
+      agentName: options.agentName,
+      existingAdapterConfig: options.existingAdapterConfig,
+    });
+  }
   return merged;
 }
 
@@ -360,7 +479,14 @@ export function gtmRoutes(db: Db) {
     try {
       const rows = gtmDirectoryAgents(await agents.list(companyId));
       const existingAgent = rows.find(isManagedClaudeBrowserAgent) ?? null;
-      const defaults = buildClaudeBindingDefaults();
+      const baseDefaults = buildClaudeBindingDefaults();
+      const defaults = {
+        ...baseDefaults,
+        adapterConfig: mergeGtmAgentAdapterConfig("claude_local", baseDefaults.adapterConfig, {
+          companyId,
+          agentName: baseDefaults.name,
+        }),
+      };
       let environmentTest: AdapterEnvironmentTestResult | null = null;
       if (existingAgent) {
         try {
@@ -377,6 +503,7 @@ export function gtmRoutes(db: Db) {
         defaults,
         existingAgent,
         environmentTest,
+        activeChromeLeases: await import("../services/chrome-lease.js").then((mod) => mod.listActiveChromeLeases()),
       });
     } catch (error) {
       res.status(500).json({
@@ -389,11 +516,7 @@ export function gtmRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const defaults = buildClaudeBindingDefaults();
-    const adapterConfig = {
-      ...defaults.adapterConfig,
-      ...(readRecord(req.body?.adapterConfig) ?? {}),
-      chrome: true,
-    };
+    const requestedName = req.body?.name ? String(req.body.name) : defaults.name;
     const metadata = {
       ...gtmAgentMetadata(readRecord(req.body?.metadata)),
       gtmKind: "claude_browser_sdr",
@@ -401,9 +524,22 @@ export function gtmRoutes(db: Db) {
     };
     const rows = gtmDirectoryAgents(await agents.list(companyId));
     const existingAgent = rows.find(isManagedClaudeBrowserAgent) ?? null;
+    const adapterConfig = mergeGtmAgentAdapterConfig(
+      "claude_local",
+      {
+        ...defaults.adapterConfig,
+        ...(readRecord(req.body?.adapterConfig) ?? {}),
+        chrome: true,
+      },
+      {
+        companyId,
+        agentName: requestedName,
+        existingAdapterConfig: readRecord(existingAgent?.adapterConfig),
+      },
+    );
     const agent = existingAgent
       ? await agents.update(existingAgent.id, {
-          name: req.body?.name ? String(req.body.name) : defaults.name,
+          name: requestedName,
           title: req.body?.title ? String(req.body.title) : defaults.title,
           adapterType: "claude_local",
           adapterConfig,
@@ -456,7 +592,10 @@ export function gtmRoutes(db: Db) {
       role: String(req.body?.role ?? "general"),
       title: req.body?.title ? String(req.body.title) : null,
       adapterType,
-      adapterConfig: mergeGtmAgentAdapterConfig(adapterType, rawAdapterConfig),
+      adapterConfig: mergeGtmAgentAdapterConfig(adapterType, rawAdapterConfig, {
+        companyId,
+        agentName: String(req.body?.name ?? "").trim(),
+      }),
       runtimeConfig: {},
       budgetMonthlyCents: 0,
       capabilities: req.body?.capabilities ? String(req.body.capabilities) : null,
@@ -490,14 +629,59 @@ export function gtmRoutes(db: Db) {
       return;
     }
     const actor = getActorInfo(req);
-    const heartbeat = await import("../services/heartbeat.js").then((mod) => mod.heartbeatService(db));
-    const run = await heartbeat.wakeup(agent.id, {
-      source: "on_demand",
+    const body = readRecord(req.body) ?? {};
+    const requestedIssueId = readNonEmptyString(body.issueId);
+    const requestedTaskId = readNonEmptyString(body.taskId);
+    const requestedCommentId = readNonEmptyString(body.commentId);
+    const chromeAgent = hasChromeEnabledAdapter(agent);
+
+    let payload: Record<string, unknown> | null = null;
+    let contextSnapshot: Record<string, unknown> = { source: "gtm.agent.invoke" };
+    let wakeReason = "gtm_manual_invoke";
+    let wakeSource: "timer" | "assignment" | "on_demand" | "automation" = "on_demand";
+
+    if (chromeAgent) {
+      const targetIssue = await resolveIssueBoundInvokeTarget(issues, companyId, agent.id, requestedIssueId);
+      if (!targetIssue) {
+        res.status(409).json({
+          error:
+            "Chrome agents must be launched on an assigned runnable issue. Assign or reopen a GTM issue for this agent, then dispatch that issue instead of using a free-run invoke.",
+        });
+        return;
+      }
+      payload = {
+        issueId: targetIssue.id,
+        taskId: targetIssue.id,
+        ...(requestedCommentId ? { commentId: requestedCommentId } : {}),
+      };
+      contextSnapshot = {
+        issueId: targetIssue.id,
+        taskId: targetIssue.id,
+        source: "gtm.agent.invoke.issue",
+      };
+      wakeReason = "gtm_issue_invoke";
+      wakeSource = "assignment";
+    } else if (requestedIssueId || requestedTaskId || requestedCommentId) {
+      payload = {
+        ...(requestedIssueId ? { issueId: requestedIssueId } : {}),
+        ...(requestedTaskId ? { taskId: requestedTaskId } : {}),
+        ...(requestedCommentId ? { commentId: requestedCommentId } : {}),
+      };
+      contextSnapshot = {
+        ...contextSnapshot,
+        ...(requestedIssueId ? { issueId: requestedIssueId } : {}),
+        ...(requestedTaskId ? { taskId: requestedTaskId } : {}),
+      };
+    }
+
+    const run = await heartbeats.wakeup(agent.id, {
+      source: wakeSource,
       triggerDetail: "manual",
-      reason: "gtm_manual_invoke",
+      reason: wakeReason,
+      payload,
       requestedByActorType: actor.actorType,
       requestedByActorId: actor.actorId,
-      contextSnapshot: { source: "gtm.agent.invoke" },
+      contextSnapshot,
     });
     res.json(run);
   });
@@ -526,6 +710,113 @@ export function gtmRoutes(db: Db) {
     }
     const updated = await agents.resume(agentId);
     res.json(updated);
+  });
+
+  /** Stop queued + running heartbeat work for one agent (does not pause the agent). */
+  router.post("/agents/:agentId/stop-runs", async (req, res) => {
+    const agentId = req.params.agentId as string;
+    const companyId = typeof req.query.companyId === "string" ? req.query.companyId : "";
+    assertCompanyAccess(req, companyId);
+    const existing = await agents.getById(agentId);
+    if (!existing || existing.companyId !== companyId || !shouldIncludeAgentInGtmDirectoryList(existing)) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    const cancelledCount = await heartbeats.cancelActiveForAgent(
+      agentId,
+      "GTM: stopped runs from workspace (invocations cancelled)",
+    );
+    res.json({ ok: true as const, cancelledCount });
+  });
+
+  router.post("/agents/:agentId/restore-terminated", async (req, res) => {
+    const agentId = req.params.agentId as string;
+    const companyId = typeof req.query.companyId === "string" ? req.query.companyId : "";
+    assertCompanyAccess(req, companyId);
+    const existing = await agents.getById(agentId);
+    if (!existing || existing.companyId !== companyId || !shouldIncludeAgentInGtmDirectoryList(existing)) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    try {
+      const updated = await agents.restoreTerminated(agentId);
+      if (!updated) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        action: "agent.restored_from_termination",
+        entityType: "agent",
+        entityId: updated.id,
+      });
+      res.json(updated);
+    } catch (err) {
+      const { HttpError } = await import("../errors.js");
+      if (err instanceof HttpError && err.status === 409) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  });
+
+  router.post("/companies/:companyId/chrome-lease/force-release", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { forceReleaseChromeLeases } = await import("../services/chrome-lease.js");
+    const reason =
+      typeof req.body?.reason === "string" && req.body.reason.trim().length > 0
+        ? req.body.reason.trim()
+        : "gtm_force_release";
+    const slotId =
+      typeof req.body?.slotId === "string" && req.body.slotId.trim().length > 0
+        ? req.body.slotId.trim()
+        : null;
+    const released = forceReleaseChromeLeases(reason, slotId);
+    const previous = released[0] ?? null;
+    res.json({
+      ok: true as const,
+      hadLease: released.length > 0,
+      releasedCount: released.length,
+      previous: previous
+        ? {
+            slotId: previous.slotId,
+            agentId: previous.agentId,
+            runId: previous.runId,
+            expiresAt: previous.expiresAt,
+          }
+        : null,
+    });
+  });
+
+  /**
+   * Emergency: cancel all queued/running heartbeats + pending wakeups for this company,
+   * SIGTERM adapter children the server still tracks, and clear the in-process Chrome lease.
+   */
+  router.post("/companies/:companyId/sweep-stray-processes", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const sweep = await heartbeats.sweepCompanyAgentWork(companyId);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      action: "gtm.emergency_sweep_agent_work",
+      entityType: "company",
+      entityId: companyId,
+      details: sweep,
+    });
+    res.json({
+      ok: true as const,
+      cancelledRuns: sweep.cancelledRuns,
+      examined: sweep.examined,
+      processesSignalled: sweep.processesSignalled,
+    });
   });
 
   router.get("/companies/:companyId/tickets", async (req, res) => {

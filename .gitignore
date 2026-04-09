@@ -25,6 +25,7 @@ ARCHITECTURE.md
 
 # Internal frozen knowledge snapshots (super admin only — not for public repo)
 docs/FROZEN_*.md
+!docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md
 
 # Observability snapshots (runtime data, not source)
 .paperclip/instances/default/observability-snapshots/

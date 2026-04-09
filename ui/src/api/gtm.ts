@@ -19,6 +19,13 @@ export type GtmWorkspaceConfig = {
     adapterConfig: Record<string, unknown>;
   };
   existingAgent: Agent | null;
+  activeChromeLeases: Array<{
+    slotId: string;
+    agentId: string;
+    runId: string;
+    acquiredAt: string;
+    expiresAt: string;
+  }>;
   environmentTest: {
     adapterType: string;
     status: "pass" | "warn" | "fail";
@@ -69,14 +76,43 @@ export const gtmApi = {
     api.get<Agent[]>(
       `/gtm/companies/${companyId}/agents${scope === "trash" ? "?scope=trash" : ""}`,
     ),
+  /** Cancel leftover runs + SIGTERM OS processes that still carry Paperclip agent env for this company. */
+  sweepStrayProcesses: (companyId: string) =>
+    api.post<{
+      ok: true;
+      cancelledRuns: number;
+      examined: number;
+      processesSignalled: number;
+    }>(`/gtm/companies/${companyId}/sweep-stray-processes`, {}),
   createAgent: (companyId: string, body: Record<string, unknown>) =>
     api.post<Agent>(`/gtm/companies/${companyId}/agents`, body),
-  invokeAgent: (agentId: string, companyId: string) =>
-    api.post(`/gtm/agents/${agentId}/invoke?companyId=${encodeURIComponent(companyId)}`, {}),
+  invokeAgent: (
+    agentId: string,
+    companyId: string,
+    body?: { issueId?: string; taskId?: string; commentId?: string },
+  ) => api.post(`/gtm/agents/${agentId}/invoke?companyId=${encodeURIComponent(companyId)}`, body ?? {}),
   pauseAgent: (agentId: string, companyId: string) =>
     api.post<Agent>(`/gtm/agents/${agentId}/pause?companyId=${encodeURIComponent(companyId)}`, {}),
+  /** Cancels queued + running heartbeat work for the agent; does not change agent pause state. */
+  stopAgentRuns: (agentId: string, companyId: string) =>
+    api.post<{ ok: true; cancelledCount: number }>(
+      `/gtm/agents/${agentId}/stop-runs?companyId=${encodeURIComponent(companyId)}`,
+      {},
+    ),
   resumeAgent: (agentId: string, companyId: string) =>
     api.post<Agent>(`/gtm/agents/${agentId}/resume?companyId=${encodeURIComponent(companyId)}`, {}),
+  restoreTerminatedAgent: (agentId: string, companyId: string) =>
+    api.post<Agent>(
+      `/gtm/agents/${agentId}/restore-terminated?companyId=${encodeURIComponent(companyId)}`,
+      {},
+    ),
+  forceReleaseChromeLease: (companyId: string, body?: { reason?: string }) =>
+    api.post<{
+      ok: true;
+      hadLease: boolean;
+      releasedCount: number;
+      previous: { slotId: string; agentId: string; runId: string; expiresAt: string } | null;
+    }>(`/gtm/companies/${companyId}/chrome-lease/force-release`, body ?? {}),
   listTickets: (companyId: string) => api.get<Ticket[]>(`/gtm/companies/${companyId}/tickets`),
   createTicket: (companyId: string, body: Record<string, unknown>) =>
     api.post<Ticket>(`/gtm/companies/${companyId}/tickets`, body),

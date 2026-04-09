@@ -34,6 +34,8 @@ Both commands install the local runtime into a `growthub-local/` folder in your 
 3. Serves the local UI at `http://localhost:3100` (GTM) or `http://localhost:3101` (DX)
 4. Opens the Growthub Connection card — complete auth to bridge to hosted Growthub
 
+For GTM installs, browser-agent execution is issue-bound through heartbeat. Concurrent browser agents can run on distinct runtime browser slots when launched from real assigned issues.
+
 ## Starting again after install
 
 ```bash
@@ -73,4 +75,5 @@ Each instance gets an isolated database and port. They share no state.
 
 - [GitHub](https://github.com/antonioromero1220/growthub-local)
 - [Contributing](https://github.com/antonioromero1220/growthub-local/blob/main/CONTRIBUTING.md)
+- [Frozen browser isolation snapshot](https://github.com/antonioromero1220/growthub-local/blob/main/docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md)
 - [Issues](https://github.com/antonioromero1220/growthub-local/issues)

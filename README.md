@@ -53,6 +53,19 @@ This repo is the source of truth for:
 
 This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.
 
+### Browser agents
+
+GTM browser agents are validated through the issue-assignment heartbeat path, not through a free-run browser invoke.
+
+The shipped runtime contract is:
+
+- create a real issue
+- assign it to the browser agent
+- let heartbeat wake the assignee with issue context
+- validate with `scripts/observability/tail-run.sh` and GTM `workspace-config`
+
+Browser separation is injected at runtime through `paperclipBrowserIsolation`, including the default rule that browser work starts in the agent's own separate browser context.
+
 ### Canonical dev loop
 
 Use **`scripts/runtime-control.sh`** from the repo root — one deterministic path for humans and agents (stops stale processes, optionally syncs the target git branch, starts **server `dev:watch` + Vite** with your Paperclip config):
@@ -82,6 +95,18 @@ bash scripts/pr-ready.sh
 ```
 
 Validates branch naming, remote origin, version consistency, dist artifacts, and release contracts in one shot.
+
+### Observability
+
+Use the built-in observability scripts when validating browser-agent behavior:
+
+```bash
+bash scripts/observability/watch-agents.sh <company-id> --today
+bash scripts/observability/tail-run.sh <agent-prefix>
+bash scripts/observability/tail-run.sh <agent-prefix> <run-prefix>
+```
+
+For the frozen validated browser-agent isolation state, see [docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md](./docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md).
 
 ### Isolated worktrees
 
