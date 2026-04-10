@@ -1,4 +1,4 @@
-import type { KitCapabilityType, KitExecutionMode, KitActivationMode } from "./contract.js";
+import type { KitCapabilityType, KitExecutionMode, KitActivationMode, KitFamily } from "./contract.js";
 
 export interface BundledKitCatalogEntry {
   id: string;
@@ -7,6 +7,7 @@ export interface BundledKitCatalogEntry {
   type: KitCapabilityType;
   executionMode: KitExecutionMode;
   activationModes: KitActivationMode[];
+  family: KitFamily;
 }
 
 export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
@@ -17,6 +18,7 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     type: "worker",
     executionMode: "export",
     activationModes: ["export"],
+    family: "workflow",
   },
   {
     id: "growthub-email-marketing-v1",
@@ -25,6 +27,7 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     type: "worker",
     executionMode: "export",
     activationModes: ["export"],
+    family: "operator",
   },
   {
     id: "growthub-open-higgsfield-studio-v1",
@@ -33,5 +36,6 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     type: "worker",
     executionMode: "export",
     activationModes: ["export"],
+    family: "studio",
   },
 ];

@@ -16,67 +16,127 @@ Later:
 npx create-growthub-local --profile gtm
 ```
 
-## Worker Kits V1
+## Worker Kits
 
-The CLI ships a bundled Worker Kit export surface for local adapter environments.
-These kits are not server installs or database records. They are frozen, working-directory-ready
-artifacts that local adapters can run inside directly.
+Worker kits are frozen, working-directory-ready execution environments for local AI agents.
+Each kit bundles prompts, templates, output standards, brand guides, setup scripts, and a
+`CLAUDE.md` operator contract — everything an agent needs to run a vertical workflow immediately.
 
-They should be understood as packaged execution environments. A kit can carry prompts, templates, examples, output standards, and local runtime assumptions together as one reusable environment.
+### Discovery
 
 ```bash
+# Interactive browser — family filter → searchable selector → preview → download
+growthub kit
+
+# All kits grouped by family with descriptions and inline download commands
 growthub kit list
-growthub kit inspect creative-strategist-v1
-growthub kit inspect growthub-open-higgsfield-studio-v1
-growthub kit download creative-strategist-v1
-growthub kit download growthub-open-higgsfield-studio-v1
-growthub kit path creative-strategist-v1
-growthub kit validate /absolute/path/to/kit
+
+# Filter by family (studio · workflow · operator · ops)
+growthub kit list --family studio
+growthub kit list --family studio,operator
+
+# Machine-readable output for scripting / agent use
+growthub kit list --json
+
+# Official family taxonomy — taglines, surfaces, and examples
+growthub kit families
 ```
 
-V1 is intentionally narrow:
+### Download
 
-- bundled catalog plus local export only
-- downloadable worker kits for creative strategy, email strategy, and Open Higgsfield AI visual production
-- deterministic zip plus expanded export folder
-- public example brand kits only
-- no heartbeat wiring, app install flow, server registry, plugin lifecycle, or database kit records
+```bash
+# Interactive (picker if no kit-id given)
+growthub kit download
+
+# Fuzzy slug — partial IDs resolve automatically
+growthub kit download higgsfield           # → growthub-open-higgsfield-studio-v1
+growthub kit download email                # → growthub-email-marketing-v1
+growthub kit download studio-v1            # → growthub-open-higgsfield-studio-v1
+
+# Full ID
+growthub kit download growthub-open-higgsfield-studio-v1
+
+# Custom output directory
+growthub kit download higgsfield --out ~/my-kits
+
+# Skip confirmation prompt (scripting / agent use)
+growthub kit download higgsfield --yes
+```
+
+### Inspect & validate
+
+```bash
+# Pretty manifest output with family badge and required paths
+growthub kit inspect higgsfield-studio-v1
+growthub kit inspect creative-strategist-v1
+growthub kit inspect growthub-open-higgsfield-studio-v1
+
+# Raw JSON for scripting
+growthub kit inspect growthub-email-marketing-v1 --json
+
+# Resolve export folder path without exporting
+growthub kit path creative-strategist-v1
+
+# Validate a kit directory against the schema
+growthub kit validate /absolute/path/to/kit
+growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
+```
+
+```bash
+# Full ID download examples
+growthub kit download creative-strategist-v1
+growthub kit download growthub-open-higgsfield-studio-v1
+```
+
+### After download
+
+```
+1. Point Growthub local Working Directory at the exported folder
+   (or Claude Code Working Directory as an alternative)
+2. cp .env.example .env  →  add your API key
+3. bash setup/clone-fork.sh  →  boot local fork (studio kits only)
+4. Open a new session — the operator agent loads automatically from CLAUDE.md
+```
+
+### Kit families
+
+| Family | Description | Default surface |
+|---|---|---|
+| 🎬 **studio** | AI generation studio backed by a local fork | local-fork |
+| 🔄 **workflow** | Multi-step pipeline operator across tools or APIs | browser-hosted |
+| 🤖 **operator** | Domain vertical specialist — structured deliverables | browser-hosted |
+| ⚙️ **ops** | Infrastructure / toolchain operator | local-fork |
+
+### Available kits
+
+| Kit | Family | Description |
+|---|---|---|
+| `growthub-open-higgsfield-studio-v1` | studio | Open Higgsfield AI visual production (image, video, lip sync, cinema) |
+| `growthub-email-marketing-v1` | operator | Brand-aware email campaigns, nurture sequences, and content pillar plans |
+| `creative-strategist-v1` | workflow | Video creative briefs and campaign strategy |
 
 ### How local adapters use worker kits
 
-Local adapters such as Claude, Codex, Cursor, Gemini, and OpenCode execute inside the agent
-`Working directory` path.
+Local adapters (Claude Code, Codex, Cursor, Gemini, OpenCode) execute inside the agent
+`Working directory` path. Worker kits are designed to plug into that path directly:
 
-Growthub worker kits are designed to plug into that path directly:
+1. `growthub kit download <id>` — exports the kit as a folder + zip
+2. Point the agent `Working directory` at the exported folder path
+3. The agent reads `CLAUDE.md` on session start and runs the operator workflow automatically
 
-1. Export a kit with `growthub kit download <kit-id>` or resolve its folder with `growthub kit path <kit-id>`.
-2. Take the expanded folder on disk.
-3. Put that absolute path into the agent's `Working directory` field.
-4. Run the local adapter against that exported environment.
+### Adding new kits
 
-This is the current integration surface for worker kits in Growthub. In other words, the worker kit
-becomes a specialized local execution environment that an agent can access and work within through
-its configured working directory.
+Each new kit should be:
 
-### Environment expansion model
+1. A self-contained kit folder in `cli/assets/worker-kits/`
+2. A `kit.json` manifest (schema v2) with `family`, `frozenAssetPaths`, and `outputStandard`
+3. A bundle manifest in `bundles/`
+4. A catalog entry in `cli/src/kits/catalog.ts`
+5. Validated with `growthub kit validate ./path/to/kit`
 
-The packaging model supports more than a single strategy kit.
-
-The same packaging model can support:
-
-- strategy environments
-- email marketing environments
-- browser-heavy GTM environments
-- local production environments such as motion or Remotion-based workflows
-
-That means a new environment should usually be added as:
-
-1. a self-contained kit folder
-2. a manifest and bundle contract
-3. registered catalog metadata
-4. a real local adapter validation pass through `Working directory`
-
-not as a new one-off CLI code path.
+The kit family factory layer (`cli/src/kits/core/factory/`) provides typed `createStudioKitConfig()`,
+`createWorkflowKitConfig()`, `createOperatorKitConfig()`, and `createOpsKitConfig()` builders that
+assemble a fully validated `ForkAdapterCoreConfig` from a small set of options.
 
 ## What this is
 

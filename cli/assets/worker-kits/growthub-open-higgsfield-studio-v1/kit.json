@@ -7,7 +7,8 @@
     "description": "Self-contained local execution environment for Open Higgsfield AI visual production. Produces implementation-ready visual briefs, prompt systems, shot plans, generation batches, model selections, and execution handoff artifacts for browser, desktop, and local fork workflows.",
     "type": "worker",
     "visibility": "public-open-source",
-    "sourceRepo": "growthub-local"
+    "sourceRepo": "growthub-local",
+    "family": "studio"
   },
   "entrypoint": {
     "workerId": "open-higgsfield-studio-operator",
@@ -97,7 +98,9 @@
     }
   ],
   "executionMode": "export",
-  "activationModes": ["export"],
+  "activationModes": [
+    "export"
+  ],
   "compatibility": {
     "cliMinVersion": "0.3.37"
   },
