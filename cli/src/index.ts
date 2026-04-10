@@ -174,8 +174,39 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(bootstrapConfig?.surface
 
 program
   .name("growthub")
-  .description("Growthub CLI — setup, diagnose, and configure your instance")
-  .version("0.2.7");
+  .description("Growthub CLI — setup, configure, and run your local Growthub instance")
+  .version("0.2.7")
+  .addHelpText("after", `
+Worker Kits (agent execution environments):
+
+  Discovery:
+    $ growthub kit                              Interactive browser — pick, preview, download
+    $ growthub kit list                         All kits grouped by family (studio · workflow · operator · ops)
+    $ growthub kit list --family studio         Filter by family
+    $ growthub kit families                     Show family taxonomy with descriptions
+
+  Download:
+    $ growthub kit download                     Interactive (no arg = picker)
+    $ growthub kit download higgsfield          Fuzzy slug — resolves automatically
+    $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
+    $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
+
+  Inspect & validate:
+    $ growthub kit inspect higgsfield-studio-v1
+    $ growthub kit inspect growthub-email-marketing-v1 --json
+    $ growthub kit validate ./path/to/kit
+
+  After download:
+    1. Point Growthub local (or Claude Code) Working Directory at the exported folder
+    2. cp .env.example .env  →  add your API key
+    3. Open a new session — the operator agent loads automatically
+
+Instance setup:
+    $ growthub onboard                          First-run interactive wizard
+    $ growthub run                              Onboard + doctor + start server
+    $ growthub doctor                           Diagnose and optionally repair
+    $ growthub configure                        Update config sections
+`);
 
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;
