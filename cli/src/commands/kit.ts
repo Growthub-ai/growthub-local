@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
 import {
@@ -5,6 +6,7 @@ import {
   inspectBundledKit,
   listBundledKits,
   resolveKitPath,
+  validateKitDirectory,
 } from "../kits/service.js";
 
 function printKeyValue(label: string, value: string | number): void {
@@ -12,7 +14,7 @@ function printKeyValue(label: string, value: string | number): void {
 }
 
 export function registerKitCommands(program: Command): void {
-  const kit = program.command("kit").description("Bundled Growthub Agent Worker Kit export utilities");
+  const kit = program.command("kit").description("Growthub Agent Worker Kit capability packaging utilities");
 
   kit
     .command("list")
@@ -28,9 +30,11 @@ export function registerKitCommands(program: Command): void {
         console.log(
           [
             pc.bold(item.id),
+            `type=${item.type}`,
             `version=${item.version}`,
             `bundle=${item.bundleId}@${item.bundleVersion}`,
             `briefType=${item.briefType}`,
+            `mode=${item.executionMode}`,
             `name=${item.name}`,
           ].join("  "),
         );
@@ -46,6 +50,10 @@ export function registerKitCommands(program: Command): void {
       const info = inspectBundledKit(kitId, opts.out);
       printKeyValue("Kit:", `${info.id} @ ${info.version}`);
       printKeyValue("Name:", info.name);
+      printKeyValue("Type:", info.type);
+      printKeyValue("Execution Mode:", info.executionMode);
+      printKeyValue("Activation Modes:", info.activationModes.join(", "));
+      printKeyValue("Schema Version:", info.schemaVersion);
       printKeyValue("Bundle:", `${info.bundleId} @ ${info.bundleVersion}`);
       printKeyValue("Brief Type:", info.briefType);
       printKeyValue("Entrypoint:", info.entrypointPath);
@@ -56,6 +64,15 @@ export function registerKitCommands(program: Command): void {
       printKeyValue("Export Root:", info.outputRoot);
       printKeyValue("Export Folder:", info.exportFolderPath);
       printKeyValue("Export Zip:", info.exportZipPath);
+
+      if (Object.keys(info.compatibility).length > 0) {
+        console.log(pc.bold("Compatibility:"));
+        for (const [key, value] of Object.entries(info.compatibility)) {
+          if (value !== undefined) {
+            console.log(`  ${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`);
+          }
+        }
+      }
 
       console.log(pc.bold("Public Example Brands:"));
       for (const brandPath of info.publicExampleBrandPaths) {
@@ -87,5 +104,34 @@ export function registerKitCommands(program: Command): void {
     .action((kitId: string, opts: { out?: string }) => {
       console.log(resolveKitPath(kitId, opts.out));
     });
-}
 
+  kit
+    .command("validate")
+    .description("Validate a kit directory against the kit contract schema")
+    .argument("<path>", "Path to the kit directory to validate")
+    .action((kitPath: string) => {
+      const resolvedPath = path.resolve(kitPath);
+      const result = validateKitDirectory(resolvedPath);
+
+      printKeyValue("Kit:", result.kitId);
+      printKeyValue("Schema Version:", result.schemaVersion);
+
+      if (result.warnings.length > 0) {
+        console.log(pc.yellow(pc.bold(`Warnings (${result.warnings.length}):`)));
+        for (const warning of result.warnings) {
+          console.log(pc.yellow(`  ${warning.field}: ${warning.message}`));
+        }
+      }
+
+      if (result.errors.length > 0) {
+        console.log(pc.red(pc.bold(`Errors (${result.errors.length}):`)));
+        for (const error of result.errors) {
+          console.log(pc.red(`  ${error.field}: ${error.message}`));
+        }
+        printKeyValue("Result:", pc.red("INVALID"));
+        process.exitCode = 1;
+      } else {
+        printKeyValue("Result:", pc.green("VALID"));
+      }
+    });
+}

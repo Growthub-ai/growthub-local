@@ -3,77 +3,53 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHomePrefix, resolvePaperclipHomeDir } from "../config/home.js";
 import { BUNDLED_KIT_CATALOG, type BundledKitCatalogEntry } from "./catalog.js";
+import {
+  type KitManifest,
+  type KitManifestV2,
+  type BundleManifest,
+  type BundleManifestV2,
+  type KitValidationResult,
+  type KitValidationError,
+  type KitCapabilityType,
+  type KitActivationMode,
+  SUPPORTED_SCHEMA_VERSIONS,
+  KIT_CAPABILITY_TYPES,
+  KIT_ACTIVATION_MODES,
+  normalizeManifest,
+  normalizeBundleManifest,
+  isManifestV2,
+} from "./contract.js";
 
-const KIT_SCHEMA_VERSION = 1;
+const LATEST_SCHEMA_VERSION = 2;
 const ZIP_TIMESTAMP = new Date("2026-04-09T00:00:00.000Z");
 const ALLOWED_PUBLIC_BRAND_PATHS = new Set([
   "brands/_template/brand-kit.md",
   "brands/solawave/brand-kit.md",
 ]);
 
-interface KitBundleRef {
-  id: string;
-  version: string;
-  path: string;
-}
-
-interface KitManifest {
-  schemaVersion: number;
-  kit: {
-    id: string;
-    version: string;
-    name: string;
-    description: string;
-    visibility?: string;
-    sourceRepo?: string;
-  };
-  entrypoint: {
-    workerId: string;
-    path: string;
-  };
-  workerIds: string[];
-  agentContractPath: string;
-  brandTemplatePath: string;
-  publicExampleBrandPaths?: string[];
-  frozenAssetPaths: string[];
-  outputStandard: {
-    type: string;
-    description?: string;
-    requiredPaths: string[];
-  };
-  bundles: KitBundleRef[];
-}
-
-interface BundleManifest {
-  schemaVersion: number;
-  bundle: {
-    id: string;
-    version: string;
-    kitId: string;
-    workerId: string;
-  };
-  briefType: string;
-  publicExampleBrandPaths?: string[];
-  requiredFrozenAssets: string[];
-  optionalPresets: string[];
-  export: {
-    folderName: string;
-    zipFileName: string;
-  };
-}
+// ---------------------------------------------------------------------------
+// Resolved types (internal)
+// ---------------------------------------------------------------------------
 
 interface ResolvedBundledKit {
   catalogEntry: BundledKitCatalogEntry;
   assetRoot: string;
-  manifest: KitManifest;
-  bundleManifest: BundleManifest;
+  manifest: KitManifestV2;
+  bundleManifest: BundleManifestV2;
 }
+
+// ---------------------------------------------------------------------------
+// Public result types
+// ---------------------------------------------------------------------------
 
 export interface KitListItem {
   id: string;
   version: string;
   name: string;
   description: string;
+  type: KitCapabilityType;
+  executionMode: string;
+  activationModes: KitActivationMode[];
   bundleId: string;
   bundleVersion: string;
   briefType: string;
@@ -92,12 +68,18 @@ export interface KitInspectResult extends KitListItem {
   exportZipName: string;
   exportZipPath: string;
   requiredPaths: string[];
+  compatibility: Record<string, unknown>;
+  schemaVersion: number;
 }
 
 export interface KitDownloadResult {
   folderPath: string;
   zipPath: string;
 }
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
 function resolveBundledKitAssetsRoot(): string {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -149,27 +131,35 @@ function listRelativeFiles(rootDir: string): string[] {
   return files.sort();
 }
 
-function parseManifest(assetRoot: string): KitManifest {
-  const manifest = readJsonFile<KitManifest>(path.resolve(assetRoot, "kit.json"));
-  if (manifest.schemaVersion !== KIT_SCHEMA_VERSION) {
-    throw new Error(`Unsupported kit schema version for ${assetRoot}: ${manifest.schemaVersion}`);
+// ---------------------------------------------------------------------------
+// Manifest parsing — supports v1 and v2, normalizes to v2
+// ---------------------------------------------------------------------------
+
+function parseManifest(assetRoot: string): KitManifestV2 {
+  const raw = readJsonFile<KitManifest>(path.resolve(assetRoot, "kit.json"));
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion as 1 | 2)) {
+    throw new Error(`Unsupported kit schema version for ${assetRoot}: ${raw.schemaVersion}`);
   }
-  return manifest;
+  return normalizeManifest(raw);
 }
 
-function parseBundleManifest(assetRoot: string, manifest: KitManifest, bundleId: string): BundleManifest {
+function parseBundleManifest(assetRoot: string, manifest: KitManifestV2, bundleId: string): BundleManifestV2 {
   const bundleRef = manifest.bundles.find((item) => item.id === bundleId);
   if (!bundleRef) {
     throw new Error(`Kit ${manifest.kit.id} does not declare bundle ${bundleId}.`);
   }
-  const bundleManifest = readJsonFile<BundleManifest>(path.resolve(assetRoot, bundleRef.path));
-  if (bundleManifest.schemaVersion !== KIT_SCHEMA_VERSION) {
+  const raw = readJsonFile<BundleManifest>(path.resolve(assetRoot, bundleRef.path));
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion as 1 | 2)) {
     throw new Error(
-      `Unsupported bundle schema version for ${bundleRef.path}: ${bundleManifest.schemaVersion}`,
+      `Unsupported bundle schema version for ${bundleRef.path}: ${raw.schemaVersion}`,
     );
   }
-  return bundleManifest;
+  return normalizeBundleManifest(raw);
 }
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
 
 function validateBundledKit(resolved: ResolvedBundledKit): void {
   const { assetRoot, manifest, bundleManifest } = resolved;
@@ -230,6 +220,219 @@ function validateBundledKit(resolved: ResolvedBundledKit): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Generic kit directory validation (for `kit validate <path>`)
+// ---------------------------------------------------------------------------
+
+export function validateKitDirectory(kitPath: string): KitValidationResult {
+  const errors: KitValidationError[] = [];
+  const warnings: KitValidationError[] = [];
+  let schemaVersion = 0;
+  let kitId = "<unknown>";
+
+  const kitJsonPath = path.resolve(kitPath, "kit.json");
+  if (!fs.existsSync(kitJsonPath)) {
+    errors.push({ field: "kit.json", message: "kit.json not found in kit directory" });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(fs.readFileSync(kitJsonPath, "utf8")) as Record<string, unknown>;
+  } catch {
+    errors.push({ field: "kit.json", message: "kit.json is not valid JSON" });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+
+  schemaVersion = typeof raw.schemaVersion === "number" ? raw.schemaVersion : 0;
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(schemaVersion as 1 | 2)) {
+    errors.push({
+      field: "schemaVersion",
+      message: `Unsupported schema version ${schemaVersion}. Supported: ${SUPPORTED_SCHEMA_VERSIONS.join(", ")}`,
+    });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+
+  const kitBlock = raw.kit as Record<string, unknown> | undefined;
+  if (!kitBlock || typeof kitBlock !== "object") {
+    errors.push({ field: "kit", message: "Missing required 'kit' block" });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+
+  kitId = typeof kitBlock.id === "string" ? kitBlock.id : "<unknown>";
+
+  // Required string fields in kit block
+  for (const field of ["id", "version", "name", "description"]) {
+    if (typeof kitBlock[field] !== "string" || (kitBlock[field] as string).trim() === "") {
+      errors.push({ field: `kit.${field}`, message: `Missing or empty required field 'kit.${field}'` });
+    }
+  }
+
+  // Schema v2 specific fields
+  if (schemaVersion === 2) {
+    const kitType = kitBlock.type as string | undefined;
+    if (!kitType || !KIT_CAPABILITY_TYPES.includes(kitType as KitCapabilityType)) {
+      errors.push({
+        field: "kit.type",
+        message: `Invalid or missing kit.type. Expected one of: ${KIT_CAPABILITY_TYPES.join(", ")}`,
+      });
+    }
+
+    const execMode = raw.executionMode as string | undefined;
+    if (!execMode) {
+      errors.push({ field: "executionMode", message: "Missing required field 'executionMode'" });
+    } else if (!KIT_ACTIVATION_MODES.includes(execMode as KitActivationMode)) {
+      errors.push({
+        field: "executionMode",
+        message: `Invalid executionMode '${execMode}'. Expected one of: ${KIT_ACTIVATION_MODES.join(", ")}`,
+      });
+    }
+
+    const activationModes = raw.activationModes as string[] | undefined;
+    if (!Array.isArray(activationModes) || activationModes.length === 0) {
+      errors.push({ field: "activationModes", message: "Missing or empty 'activationModes' array" });
+    } else {
+      for (const mode of activationModes) {
+        if (!KIT_ACTIVATION_MODES.includes(mode as KitActivationMode)) {
+          errors.push({
+            field: "activationModes",
+            message: `Invalid activation mode '${mode}'. Expected one of: ${KIT_ACTIVATION_MODES.join(", ")}`,
+          });
+        }
+      }
+    }
+  } else {
+    // v1 — warn about missing v2 fields
+    warnings.push({ field: "schemaVersion", message: "Kit uses schema v1. Consider upgrading to v2 for capability metadata." });
+  }
+
+  // Entrypoint
+  const entrypoint = raw.entrypoint as Record<string, unknown> | undefined;
+  if (!entrypoint || typeof entrypoint !== "object") {
+    errors.push({ field: "entrypoint", message: "Missing required 'entrypoint' block" });
+  } else {
+    if (typeof entrypoint.workerId !== "string") {
+      errors.push({ field: "entrypoint.workerId", message: "Missing required field 'entrypoint.workerId'" });
+    }
+    if (typeof entrypoint.path !== "string") {
+      errors.push({ field: "entrypoint.path", message: "Missing required field 'entrypoint.path'" });
+    } else {
+      const fullPath = path.resolve(kitPath, entrypoint.path as string);
+      if (!fs.existsSync(fullPath)) {
+        errors.push({ field: "entrypoint.path", message: `Entrypoint file not found: ${entrypoint.path}` });
+      }
+    }
+  }
+
+  // Agent contract
+  if (typeof raw.agentContractPath !== "string") {
+    errors.push({ field: "agentContractPath", message: "Missing required field 'agentContractPath'" });
+  } else {
+    const fullPath = path.resolve(kitPath, raw.agentContractPath as string);
+    if (!fs.existsSync(fullPath)) {
+      errors.push({ field: "agentContractPath", message: `Agent contract not found: ${raw.agentContractPath}` });
+    }
+  }
+
+  // Brand template
+  if (typeof raw.brandTemplatePath !== "string") {
+    errors.push({ field: "brandTemplatePath", message: "Missing required field 'brandTemplatePath'" });
+  } else {
+    const fullPath = path.resolve(kitPath, raw.brandTemplatePath as string);
+    if (!fs.existsSync(fullPath)) {
+      errors.push({ field: "brandTemplatePath", message: `Brand template not found: ${raw.brandTemplatePath}` });
+    }
+  }
+
+  // Frozen assets
+  const frozenAssets = raw.frozenAssetPaths;
+  if (!Array.isArray(frozenAssets)) {
+    errors.push({ field: "frozenAssetPaths", message: "Missing required 'frozenAssetPaths' array" });
+  } else {
+    for (const assetPath of frozenAssets) {
+      if (typeof assetPath !== "string") continue;
+      const fullPath = path.resolve(kitPath, assetPath);
+      if (!fs.existsSync(fullPath)) {
+        errors.push({ field: "frozenAssetPaths", message: `Frozen asset not found: ${assetPath}` });
+      }
+    }
+  }
+
+  // Output standard
+  const outputStandard = raw.outputStandard as Record<string, unknown> | undefined;
+  if (!outputStandard || typeof outputStandard !== "object") {
+    errors.push({ field: "outputStandard", message: "Missing required 'outputStandard' block" });
+  } else {
+    if (typeof outputStandard.type !== "string") {
+      errors.push({ field: "outputStandard.type", message: "Missing required field 'outputStandard.type'" });
+    }
+    const requiredPaths = outputStandard.requiredPaths;
+    if (!Array.isArray(requiredPaths)) {
+      errors.push({ field: "outputStandard.requiredPaths", message: "Missing required 'outputStandard.requiredPaths' array" });
+    } else {
+      for (const reqPath of requiredPaths) {
+        if (typeof reqPath !== "string") continue;
+        const fullPath = path.resolve(kitPath, reqPath);
+        if (!fs.existsSync(fullPath)) {
+          errors.push({ field: "outputStandard.requiredPaths", message: `Required output path not found: ${reqPath}` });
+        }
+      }
+    }
+  }
+
+  // Bundles
+  const bundles = raw.bundles;
+  if (!Array.isArray(bundles) || bundles.length === 0) {
+    errors.push({ field: "bundles", message: "Missing or empty 'bundles' array" });
+  } else {
+    for (const bundleRef of bundles) {
+      const ref = bundleRef as Record<string, unknown>;
+      if (typeof ref.path !== "string") {
+        errors.push({ field: "bundles[].path", message: "Bundle ref missing 'path' field" });
+        continue;
+      }
+      const bundlePath = path.resolve(kitPath, ref.path as string);
+      if (!fs.existsSync(bundlePath)) {
+        errors.push({ field: "bundles[].path", message: `Bundle manifest not found: ${ref.path}` });
+        continue;
+      }
+
+      // Validate bundle manifest
+      try {
+        const bundleRaw = JSON.parse(fs.readFileSync(bundlePath, "utf8")) as Record<string, unknown>;
+        const bundleBlock = bundleRaw.bundle as Record<string, unknown> | undefined;
+        if (!bundleBlock || typeof bundleBlock !== "object") {
+          errors.push({ field: `bundle(${ref.id})`, message: "Bundle manifest missing 'bundle' block" });
+        } else {
+          if (bundleBlock.kitId !== kitId) {
+            errors.push({
+              field: `bundle(${ref.id}).kitId`,
+              message: `Bundle kitId '${bundleBlock.kitId}' does not match kit id '${kitId}'`,
+            });
+          }
+        }
+        if (!bundleRaw.export || typeof bundleRaw.export !== "object") {
+          errors.push({ field: `bundle(${ref.id}).export`, message: "Bundle manifest missing 'export' block" });
+        }
+      } catch {
+        errors.push({ field: `bundle(${ref.id})`, message: `Bundle manifest at ${ref.path} is not valid JSON` });
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    schemaVersion,
+    kitId,
+    errors,
+    warnings,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Resolution
+// ---------------------------------------------------------------------------
+
 function loadResolvedBundledKit(
   assetRoot: string,
   catalogEntry: BundledKitCatalogEntry,
@@ -249,6 +452,9 @@ export function validateBundledKitAssetRoot(
     id: input.kitId,
     packageDirName: path.basename(assetRoot),
     defaultBundleId: input.bundleId ?? input.kitId,
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
   };
   loadResolvedBundledKit(assetRoot, catalogEntry);
 }
@@ -265,12 +471,19 @@ function resolveBundledKit(kitId: string): ResolvedBundledKit {
   return loadResolvedBundledKit(assetRoot, catalogEntry);
 }
 
+// ---------------------------------------------------------------------------
+// List / Inspect / Path / Download
+// ---------------------------------------------------------------------------
+
 function toListItem(resolved: ResolvedBundledKit): KitListItem {
   return {
     id: resolved.manifest.kit.id,
     version: resolved.manifest.kit.version,
     name: resolved.manifest.kit.name,
     description: resolved.manifest.kit.description,
+    type: resolved.manifest.kit.type,
+    executionMode: resolved.manifest.executionMode,
+    activationModes: resolved.manifest.activationModes,
     bundleId: resolved.bundleManifest.bundle.id,
     bundleVersion: resolved.bundleManifest.bundle.version,
     briefType: resolved.bundleManifest.briefType,
@@ -283,6 +496,41 @@ function resolveOutputPaths(resolved: ResolvedBundledKit, outDir?: string): KitD
   const zipPath = path.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
   return { outputRoot, folderPath, zipPath };
 }
+
+export function listBundledKits(): KitListItem[] {
+  return BUNDLED_KIT_CATALOG.map((entry) => toListItem(resolveBundledKit(entry.id)));
+}
+
+export function inspectBundledKit(kitId: string, outDir?: string): KitInspectResult {
+  const resolved = resolveBundledKit(kitId);
+  const outputPaths = resolveOutputPaths(resolved, outDir);
+  return {
+    ...toListItem(resolved),
+    entrypointPath: resolved.manifest.entrypoint.path,
+    agentContractPath: resolved.manifest.agentContractPath,
+    brandTemplatePath: resolved.manifest.brandTemplatePath,
+    publicExampleBrandPaths: resolved.manifest.publicExampleBrandPaths ?? [],
+    frozenAssetCount: resolved.manifest.frozenAssetPaths.length,
+    requiredFrozenAssetCount: resolved.bundleManifest.requiredFrozenAssets.length,
+    outputRoot: outputPaths.outputRoot,
+    exportFolderName: resolved.bundleManifest.export.folderName,
+    exportFolderPath: outputPaths.folderPath,
+    exportZipName: resolved.bundleManifest.export.zipFileName,
+    exportZipPath: outputPaths.zipPath,
+    requiredPaths: resolved.manifest.outputStandard.requiredPaths,
+    compatibility: resolved.manifest.compatibility as Record<string, unknown>,
+    schemaVersion: resolved.manifest.schemaVersion,
+  };
+}
+
+export function resolveKitPath(kitId: string, outDir?: string): string {
+  const resolved = resolveBundledKit(kitId);
+  return resolveOutputPaths(resolved, outDir).folderPath;
+}
+
+// ---------------------------------------------------------------------------
+// ZIP builder
+// ---------------------------------------------------------------------------
 
 function crc32(buffer: Buffer): number {
   let crc = 0xffffffff;
@@ -381,34 +629,9 @@ function buildZipEntries(sourceRoot: string, exportFolderName: string): Array<{ 
   }));
 }
 
-export function listBundledKits(): KitListItem[] {
-  return BUNDLED_KIT_CATALOG.map((entry) => toListItem(resolveBundledKit(entry.id)));
-}
-
-export function inspectBundledKit(kitId: string, outDir?: string): KitInspectResult {
-  const resolved = resolveBundledKit(kitId);
-  const outputPaths = resolveOutputPaths(resolved, outDir);
-  return {
-    ...toListItem(resolved),
-    entrypointPath: resolved.manifest.entrypoint.path,
-    agentContractPath: resolved.manifest.agentContractPath,
-    brandTemplatePath: resolved.manifest.brandTemplatePath,
-    publicExampleBrandPaths: resolved.manifest.publicExampleBrandPaths ?? [],
-    frozenAssetCount: resolved.manifest.frozenAssetPaths.length,
-    requiredFrozenAssetCount: resolved.bundleManifest.requiredFrozenAssets.length,
-    outputRoot: outputPaths.outputRoot,
-    exportFolderName: resolved.bundleManifest.export.folderName,
-    exportFolderPath: outputPaths.folderPath,
-    exportZipName: resolved.bundleManifest.export.zipFileName,
-    exportZipPath: outputPaths.zipPath,
-    requiredPaths: resolved.manifest.outputStandard.requiredPaths,
-  };
-}
-
-export function resolveKitPath(kitId: string, outDir?: string): string {
-  const resolved = resolveBundledKit(kitId);
-  return resolveOutputPaths(resolved, outDir).folderPath;
-}
+// ---------------------------------------------------------------------------
+// Download
+// ---------------------------------------------------------------------------
 
 export function downloadBundledKit(kitId: string, outDir?: string): KitDownloadResult {
   const resolved = resolveBundledKit(kitId);

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "bundle": {
     "id": "creative-strategist-v1",
     "version": "1.0.0",
@@ -42,5 +42,6 @@
   "export": {
     "folderName": "growthub-agent-worker-kit-creative-strategist-v1",
     "zipFileName": "growthub-agent-worker-kit-creative-strategist-v1.zip"
-  }
+  },
+  "activationModes": ["export"]
 }
