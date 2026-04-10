@@ -19,17 +19,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.1
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-
-      - name: Install workspace dependencies
-        run: pnpm install --no-frozen-lockfile
 
       - name: Freeze boundary check
         run: bash scripts/freeze-check.sh
@@ -41,7 +33,7 @@ jobs:
         run: node scripts/check-version-sync.mjs --require-bump-if-source-changed --base "$BASE_SHA" --head "$HEAD_SHA"
 
       - name: Run worker kit contract tests
-        run: pnpm check:worker-kits
+        run: node scripts/check-worker-kits.mjs
 
       - name: Validate release packaging
         run: node scripts/release-check.mjs
