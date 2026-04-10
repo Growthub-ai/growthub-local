@@ -48,7 +48,47 @@ If `skills.md` cannot be read, stop and report the error.
 
 ---
 
-## WORKFLOW — 9 STEPS, STRICT ORDER, NO SKIPPING
+## WORKFLOW — 10 STEPS, STRICT ORDER, NO SKIPPING
+
+### STEP 0 — Environment gate (run before everything else)
+
+Before loading any methodology or brand context, verify the environment is ready.
+
+**Check 1 — `.env` file exists:**
+
+If `.env` is missing, stop and tell the user:
+
+> `.env` not found. Run: `cp .env.example .env` then add your `MUAPI_API_KEY`. Get a key at https://muapi.ai/dashboard
+
+**Check 2 — `MUAPI_API_KEY` is set:**
+
+Read `.env` and confirm `MUAPI_API_KEY` is present and is not the placeholder value `your_muapi_key_here`.
+
+If it is missing or is the placeholder, stop and tell the user:
+
+> `MUAPI_API_KEY` is not set. Open `.env` and paste your key from https://muapi.ai/dashboard
+
+**Check 3 — Key verification (recommended):**
+
+Tell the user they can verify the key before proceeding:
+
+```bash
+node setup/verify-env.mjs
+```
+
+**Check 4 — Local fork (local-fork mode only):**
+
+If the session will use `local-fork` execution mode, check whether the fork is accessible at `http://localhost:3001`. If not reachable, tell the user to run:
+
+```bash
+bash setup/clone-fork.sh
+```
+
+Or switch execution mode to `browser-hosted`.
+
+Do not proceed to Step 1 until the env gate passes.
+
+---
 
 ### STEP 1 — Read methodology + load brand context
 
@@ -197,6 +237,7 @@ Append a deliverable line in the active brand kit:
 
 | Rule | Meaning |
 |---|---|
+| Env gate must pass first | No `.env` = no session. Key must be set before Step 1. |
 | Read `skills.md` first | No memory-only operation |
 | Inspect the fork before planning | `models.js` and studio components outrank assumptions |
 | Pick one primary studio | No mixed-mode output without explicit transition notes |

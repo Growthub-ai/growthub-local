@@ -4,6 +4,19 @@ Use this checklist before considering a package complete.
 
 ---
 
+## PRE-SESSION CHECKLIST (operator runs before starting the agent)
+
+- [ ] Growthub local Working Directory is pointed at this folder (or Claude Code as alternative)
+- [ ] `.env` exists (copy from `.env.example` if not)
+- [ ] `MUAPI_API_KEY` is set in `.env` (not placeholder value)
+- [ ] `node setup/verify-env.mjs` exits 0 (key is valid and API is reachable)
+- [ ] `bash setup/check-deps.sh` passes (local-fork mode only)
+- [ ] Local fork is running at `http://localhost:3001` OR execution mode is `browser-hosted` or `desktop-app`
+- [ ] `output/` directory exists (auto-created by agent on first write)
+- [ ] Active brand kit exists: `brands/<client-slug>/brand-kit.md` OR using `brands/growthub/brand-kit.md`
+
+---
+
 ## KIT VALIDATION
 
 - [ ] `kit.json` exists and every `frozenAssetPaths` entry exists
