@@ -51,16 +51,41 @@ This repo is the source of truth for:
 
 ## Worker Kits
 
-Growthub CLI V1 now includes a local-only Worker Kit export surface for bundled agent working directories.
+Growthub Agent Worker Kits package specialized local working environments for agents.
+
+Each kit is a versioned folder-based package that can include:
+
+- instructions and prompts
+- templates and examples
+- output standards
+- required supporting files
+- runtime assumptions for local adapter execution
+
+The CLI currently provides a local export and validation surface for these packages.
 
 - `growthub kit list`
 - `growthub kit inspect <kit-id>`
 - `growthub kit download <kit-id> [--out <path>]`
 - `growthub kit path <kit-id> [--out <path>]`
+- `growthub kit validate <path>`
 
-The first bundled kit is the frozen Creative Strategist worker kit. V1 exports a deterministic zip file and expanded folder onto the local machine. It does not add runtime orchestration changes, server install routes, heartbeat wiring, plugin lifecycle behavior, or database state for kits.
+In the current model, an exported kit is used by pointing an agent `Working directory` at the expanded folder and running a local adapter inside it.
 
-See [docs/WORKER_KITS.md](./docs/WORKER_KITS.md).
+The first bundled kit is `creative-strategist-v1`. The same packaging model can also be used for other environment types such as email marketing, browser-heavy GTM workflows, research/sourcing workflows, and local production environments such as motion or Remotion-based workflows.
+
+### Worker Kits Glossary
+
+- `Worker Kit`: a versioned local environment package for a specialized agent workflow
+- `Kit contract`: the manifest and bundle metadata that define package identity, payload boundary, and export shape
+- `Environment package`: the full working context, including prompts, templates, examples, standards, and runtime assumptions
+- `Activation`: exporting the kit and running a local adapter inside the expanded folder through `Working directory`
+
+### Worker Kits Navigation
+
+- [Overview and source of truth](./docs/WORKER_KITS.md)
+- [Architecture](./docs/WORKER_KIT_ARCHITECTURE.md)
+- [Contributor guide](./docs/WORKER_KIT_CONTRIBUTOR_GUIDE.md)
+- [Environment examples](./docs/WORKER_KIT_ENVIRONMENT_EXAMPLES.md)
 
 ## Development
 

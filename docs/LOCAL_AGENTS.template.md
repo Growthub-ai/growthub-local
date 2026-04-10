@@ -76,10 +76,11 @@ Do **not** hardcode `@growthub/cli` versions in this file as “forever truth.�
 - **Anti-patterns:** No **`node scripts/worktree-bootstrap.mjs`**; no manual **growthub-core** copies; no improvised dev servers replacing **`scripts/runtime-control.sh`** unless you explicitly override that in this file.
 - **`scripts/guard.sh`:** Destructive git is blocked by design for agents.
 - **Browser agents:** Validate through real issue assignment + heartbeat wakeup, not free-run invoke. Use `scripts/observability/tail-run.sh` on the exact run ids when checking separation behavior.
+- **Worker kits:** Treat worker kits as packaged execution environments, not just prompt bundles. If you build a new environment, prefer a self-contained kit folder with manifests, templates, standards, examples, and explicit runtime assumptions. Test it by exporting the kit and pointing the agent `Working directory` at the exported folder.
 
 ---
 
 ## Links / references
 
-- Public: `AGENTS.md`, `CONTRIBUTING.md`, `docs/ARTIFACT_VERSIONS.md`
+- Public: `AGENTS.md`, `CONTRIBUTING.md`, `docs/ARTIFACT_VERSIONS.md`, `docs/WORKER_KITS.md`
 - Internal docs (if any — do not paste secrets):

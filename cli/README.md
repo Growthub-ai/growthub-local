@@ -22,6 +22,8 @@ The CLI ships a bundled Worker Kit export surface for local adapter environments
 These kits are not server installs or database records. They are frozen, working-directory-ready
 artifacts that local adapters can run inside directly.
 
+They should be understood as packaged execution environments. A kit can carry prompts, templates, examples, output standards, and local runtime assumptions together as one reusable environment.
+
 ```bash
 growthub kit list
 growthub kit inspect creative-strategist-v1
@@ -53,6 +55,26 @@ Growthub worker kits are designed to plug into that path directly:
 This is the current integration surface for worker kits in Growthub. In other words, the worker kit
 becomes a specialized local execution environment that an agent can access and work within through
 its configured working directory.
+
+### Environment expansion model
+
+The packaging model supports more than a single strategy kit.
+
+The same packaging model can support:
+
+- strategy environments
+- email marketing environments
+- browser-heavy GTM environments
+- local production environments such as motion or Remotion-based workflows
+
+That means a new environment should usually be added as:
+
+1. a self-contained kit folder
+2. a manifest and bundle contract
+3. registered catalog metadata
+4. a real local adapter validation pass through `Working directory`
+
+not as a new one-off CLI code path.
 
 ## What this is
 
