@@ -1,41 +1,89 @@
 # Growthub Local
 
-Local Growthub runtime for DX and Go-to-Market.
+Local Growthub runtime for agentic DX and Go-to-Market workflows.
 
-`Growthub Local` is the installable local product that runs on a user's machine and connects back to the hosted Growthub app.
+`Growthub Local` is an open-source collection of local runtime tooling & products that can run on your local machine with fully customizability, personalization, & integrations with our main Growthub Application.
 
-It owns:
+This repository includes:
 
-- the GTM local surface
-- the DX local surface
+- the custom interface local surfaces (DX, GTM, More Coming Soon...)
 - the local CLI
 - the local server
 - the local UI
 - the local installer packages
+- bundled Agent Worker Kits for specialized agent environments
+
+It is intended to support a broad local ecosystem of agent tooling, including:
+
+- full local GTM and DX app installs
+- CLI-driven agent worker kit export and validation
+- local adapter execution through `Working directory`
+- browser-heavy workflows
+- research and sourcing workflows
+- structured document, messaging, and production environments
 
 ## Install
 
-For Go-to-Market:
+Choose the install path that matches what you want to use.
+
+### 1. Full local app for Go-to-Market
 
 ```bash
 npm create growthub-local@latest -- --profile gtm
 ```
 
-For DX:
+Use this when you want the full GTM local product surface.
+
+### 2. Full local app for DX
 
 ```bash
 npm create growthub-local@latest -- --profile dx
 ```
 
+Use this when you want the full DX local product surface.
+
+### 3. Worker Kits and CLI workflows
+
+If you mainly want bundled agent environments and local kit workflows, install the CLI package directly:
+
+```bash
+npm install -g @growthub/cli
+```
+
+Then use:
+
+```bash
+growthub kit list
+growthub kit inspect creative-strategist-v1
+growthub kit download creative-strategist-v1
+growthub kit path creative-strategist-v1
+growthub kit validate /absolute/path/to/kit
+```
+
+Use this path when you want to:
+
+- inspect bundled kits
+- export a kit locally
+- validate a kit folder you are building
+- point an agent `Working directory` at an exported environment
+
 ## What Happens Next
 
-1. Install the local app from npm.
-2. Launch the local app.
-3. Open the `Growthub Connection` card.
-4. Click `Open Configuration`.
-5. Complete authentication in hosted Growthub.
-6. Return to the local app callback.
-7. Use `Pulse` to verify the hosted bridge is live.
+If you installed a full local app profile:
+
+1. Launch the local app.
+2. Open the `Growthub Connection` card.
+3. Click `Open Configuration`.
+4. Complete authentication in hosted Growthub.
+5. Return to the local app callback.
+6. Use `Pulse` to verify the hosted bridge is live.
+
+If you installed the CLI for Worker Kits:
+
+1. Inspect or export the kit you want.
+2. Locate the expanded exported folder.
+3. Point your agent `Working directory` at that folder.
+4. Run the local adapter inside the exported environment.
 
 ## Profiles
 
