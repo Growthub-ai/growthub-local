@@ -60,6 +60,13 @@ jobs:
             exit 1
           fi
 
+      - name: Validate version policy for source changes
+        run: |
+          node scripts/check-version-sync.mjs \
+            --require-bump-if-source-changed \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"
+
       - name: Label PR by type
         uses: actions/github-script@v7
         with:

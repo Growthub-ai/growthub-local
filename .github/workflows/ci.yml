@@ -16,20 +16,27 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: Freeze boundary check
         run: bash scripts/freeze-check.sh
 
-      - name: Validate package manifests
-        run: |
-          node -e "
-            const fs = require('fs');
-            const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
-            const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
-            if (cli.name !== '@growthub/cli') throw new Error('cli name mismatch: ' + cli.name);
-            if (pkg.name !== 'create-growthub-local') throw new Error('installer name mismatch: ' + pkg.name);
-            if (pkg.dependencies['@growthub/cli'] !== cli.version) {
-              throw new Error('Version pin mismatch: create-growthub-local pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli.version is ' + cli.version);
-            }
-            console.log('Package manifests valid. CLI:', cli.version);
-          "
+      - name: Validate package version policy
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/check-version-sync.mjs --require-bump-if-source-changed --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - name: Validate shipped CLI package contracts
+        run: node scripts/check-cli-package.mjs
+
+      - name: Validate bundled worker kit contracts
+        run: node scripts/check-worker-kits.mjs
+
+      - name: Validate release packaging
+        run: node scripts/release-check.mjs

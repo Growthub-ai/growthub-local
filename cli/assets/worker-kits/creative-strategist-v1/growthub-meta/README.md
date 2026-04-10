@@ -11,4 +11,8 @@ For V1:
 - confidential brand kits are intentionally excluded from the frozen public payload
 - the exported artifact is a local working-directory-ready bundle, not a server install
 
+Operationally, this means local adapters use the exported kit by setting the agent `Working directory`
+to the expanded folder on disk. The kit acts as a specialized local execution environment that the
+agent can run inside directly.
+
 See `kit-standard.md` for the locked contract.
