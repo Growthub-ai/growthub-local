@@ -18,5 +18,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     executionMode: "export",
     activationModes: ["export"],
   },
+  {
+    id: "growthub-email-marketing-v1",
+    packageDirName: "growthub-email-marketing-v1",
+    defaultBundleId: "growthub-email-marketing-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+  },
 ];
 
