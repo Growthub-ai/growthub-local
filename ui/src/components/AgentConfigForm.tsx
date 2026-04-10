@@ -577,24 +577,31 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           {/* Working directory */}
           {isLocal && (
             <Field label="Working directory" hint={help.cwd}>
-              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
-                <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <DraftInput
-                  value={
-                    isCreate
-                      ? val!.cwd
-                      : eff("adapterConfig", "cwd", String(config.cwd ?? ""))
-                  }
-                  onCommit={(v) =>
-                    isCreate
-                      ? set!({ cwd: v })
-                      : mark("adapterConfig", "cwd", v || undefined)
-                  }
-                  immediate
-                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
-                  placeholder="/path/to/project"
-                />
-                <ChoosePathButton />
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
+                  <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <DraftInput
+                    value={
+                      isCreate
+                        ? val!.cwd
+                        : eff("adapterConfig", "cwd", String(config.cwd ?? ""))
+                    }
+                    onCommit={(v) =>
+                      isCreate
+                        ? set!({ cwd: v })
+                        : mark("adapterConfig", "cwd", v || undefined)
+                    }
+                    immediate
+                    className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
+                    placeholder="/path/to/project"
+                  />
+                  <ChoosePathButton />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Local adapters run inside this directory. Growthub CLI worker kits export specialized
+                  working-directory-ready environments that can be downloaded locally and pointed here
+                  directly.
+                </p>
               </div>
             </Field>
           )}

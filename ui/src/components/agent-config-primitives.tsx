@@ -25,7 +25,7 @@ export const help: Record<string, string> = {
   reportsTo: "The agent this one reports to in the org hierarchy.",
   capabilities: "Describes what this agent can do. Shown in the org chart and used for task routing.",
   adapterType: "Which model runtime this agent uses: local CLI (Claude/Codex/OpenCode), OpenClaw Gateway, spawned process, or generic HTTP webhook.",
-  cwd: "Default working directory fallback for local adapters. Use an absolute path on the machine running Growthub.",
+  cwd: "Absolute working directory used by local adapters such as Claude, Codex, Cursor, Gemini, and OpenCode. Growthub CLI worker kits export working-directory-ready environments that can be pointed here directly. Use an absolute path on the machine running Growthub.",
   promptTemplate: "Sent on every heartbeat. Keep this small and dynamic. Use it for current-task framing, not large static instructions. Supports {{ agent.id }}, {{ agent.name }}, {{ agent.role }} and other template variables.",
   model: "Override the default model used by the adapter.",
   thinkingEffort: "Control model reasoning depth. Supported values vary by adapter/model.",

@@ -18,7 +18,9 @@ npx create-growthub-local --profile gtm
 
 ## Worker Kits V1
 
-The CLI also ships a bundled Worker Kit export surface for local working-directory artifacts:
+The CLI ships a bundled Worker Kit export surface for local adapter environments.
+These kits are not server installs or database records. They are frozen, working-directory-ready
+artifacts that local adapters can run inside directly.
 
 ```bash
 growthub kit list
@@ -35,7 +37,21 @@ V1 is intentionally narrow:
 - public `solawave` example brand included
 - no heartbeat wiring, app install flow, server registry, plugin lifecycle, or database kit records
 
-The exported folder is a machine artifact produced by the CLI for existing Working Directory path support.
+### How local adapters use worker kits
+
+Local adapters such as Claude, Codex, Cursor, Gemini, and OpenCode execute inside the agent
+`Working directory` path.
+
+Growthub worker kits are designed to plug into that path directly:
+
+1. Export a kit with `growthub kit download <kit-id>` or resolve its folder with `growthub kit path <kit-id>`.
+2. Take the expanded folder on disk.
+3. Put that absolute path into the agent's `Working directory` field.
+4. Run the local adapter against that exported environment.
+
+This is the current integration surface for worker kits in Growthub. In other words, the worker kit
+becomes a specialized local execution environment that an agent can access and work within through
+its configured working directory.
 
 ## What this is
 
