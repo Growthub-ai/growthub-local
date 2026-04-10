@@ -68,13 +68,24 @@ growthub kit download higgsfield --yes
 ```bash
 # Pretty manifest output with family badge and required paths
 growthub kit inspect higgsfield-studio-v1
+growthub kit inspect creative-strategist-v1
+growthub kit inspect growthub-open-higgsfield-studio-v1
 
 # Raw JSON for scripting
 growthub kit inspect growthub-email-marketing-v1 --json
 
+# Resolve export folder path without exporting
+growthub kit path creative-strategist-v1
+
 # Validate a kit directory against the schema
-growthub kit validate ./path/to/kit
+growthub kit validate /absolute/path/to/kit
 growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
+```
+
+```bash
+# Full ID download examples
+growthub kit download creative-strategist-v1
+growthub kit download growthub-open-higgsfield-studio-v1
 ```
 
 ### After download
@@ -104,7 +115,7 @@ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
 | `growthub-email-marketing-v1` | operator | Brand-aware email campaigns, nurture sequences, and content pillar plans |
 | `creative-strategist-v1` | workflow | Video creative briefs and campaign strategy |
 
-### How agents use worker kits
+### How local adapters use worker kits
 
 Local adapters (Claude Code, Codex, Cursor, Gemini, OpenCode) execute inside the agent
 `Working directory` path. Worker kits are designed to plug into that path directly:
