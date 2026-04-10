@@ -114,13 +114,20 @@ if $DIST_OK; then
 fi
 
 # ── 8. release-check.mjs ──────────────────────────────────────────────────
+if node scripts/check-cli-package.mjs >/dev/null 2>&1; then
+  ok "check-cli-package.mjs passed"
+else
+  fail "check-cli-package.mjs failed — run it manually for details"
+fi
+
+# ── 9. release-check.mjs ──────────────────────────────────────────────────
 if NPM_CONFIG_CACHE="${NPM_CONFIG_CACHE:-/tmp/growthub-npm-cache}" node scripts/release-check.mjs >/dev/null 2>&1; then
   ok "release-check.mjs passed"
 else
   fail "release-check.mjs failed — run it manually for details"
 fi
 
-# ── 9. PR body safety (no raw backticks that break shell) ──────────────────
+# ── 10. PR body safety (no raw backticks that break shell) ─────────────────
 ok "PR body check is a CI concern — use plain text in descriptions"
 
 # ── Summary ────────────────────────────────────────────────────────────────

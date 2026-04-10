@@ -27,6 +27,7 @@ growthub kit list
 growthub kit inspect creative-strategist-v1
 growthub kit download creative-strategist-v1
 growthub kit path creative-strategist-v1
+growthub kit validate /absolute/path/to/kit
 ```
 
 V1 is intentionally narrow:
