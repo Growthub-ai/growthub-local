@@ -1,10 +1,11 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kit": {
     "id": "creative-strategist-v1",
     "version": "1.0.0",
     "name": "Growthub Agent Worker Kit — Creative Strategist",
     "description": "Frozen Creative Strategist worker kit for exporting a working-directory-ready video creative brief worker.",
+    "type": "worker",
     "visibility": "public-open-source",
     "sourceRepo": "claude-workers"
   },
@@ -68,5 +69,14 @@
       "version": "1.0.0",
       "path": "bundles/creative-strategist-v1.json"
     }
-  ]
+  ],
+  "executionMode": "export",
+  "activationModes": ["export"],
+  "compatibility": {
+    "cliMinVersion": "0.3.35"
+  },
+  "provenance": {
+    "sourceRepo": "claude-workers",
+    "frozenAt": "2026-04-09T00:00:00.000Z"
+  }
 }
