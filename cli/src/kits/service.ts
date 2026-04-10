@@ -22,10 +22,6 @@ import {
 
 const LATEST_SCHEMA_VERSION = 2;
 const ZIP_TIMESTAMP = new Date("2026-04-09T00:00:00.000Z");
-const ALLOWED_PUBLIC_BRAND_PATHS = new Set([
-  "brands/_template/brand-kit.md",
-  "brands/solawave/brand-kit.md",
-]);
 
 // ---------------------------------------------------------------------------
 // Resolved types (internal)
@@ -212,7 +208,11 @@ function validateBundledKit(resolved: ResolvedBundledKit): void {
 
   const bundledFiles = listRelativeFiles(assetRoot);
   const brandKitFiles = bundledFiles.filter((filePath) => filePath.startsWith("brands/") && filePath.endsWith("/brand-kit.md"));
-  const disallowedBrandFiles = brandKitFiles.filter((filePath) => !ALLOWED_PUBLIC_BRAND_PATHS.has(filePath));
+  const allowedBrandPaths = new Set([
+    manifest.brandTemplatePath,
+    ...(manifest.publicExampleBrandPaths ?? []),
+  ]);
+  const disallowedBrandFiles = brandKitFiles.filter((filePath) => !allowedBrandPaths.has(filePath));
   if (disallowedBrandFiles.length > 0) {
     throw new Error(
       `Bundled kit ${manifest.kit.id} includes non-public brand kits: ${disallowedBrandFiles.join(", ")}`,

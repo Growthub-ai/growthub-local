@@ -26,5 +26,12 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     executionMode: "export",
     activationModes: ["export"],
   },
+  {
+    id: "growthub-open-higgsfield-studio-v1",
+    packageDirName: "growthub-open-higgsfield-studio-v1",
+    defaultBundleId: "growthub-open-higgsfield-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+  },
 ];
-

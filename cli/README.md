@@ -27,7 +27,9 @@ They should be understood as packaged execution environments. A kit can carry pr
 ```bash
 growthub kit list
 growthub kit inspect creative-strategist-v1
+growthub kit inspect growthub-open-higgsfield-studio-v1
 growthub kit download creative-strategist-v1
+growthub kit download growthub-open-higgsfield-studio-v1
 growthub kit path creative-strategist-v1
 growthub kit validate /absolute/path/to/kit
 ```
@@ -35,9 +37,9 @@ growthub kit validate /absolute/path/to/kit
 V1 is intentionally narrow:
 
 - bundled catalog plus local export only
-- one downloadable Creative Strategist kit
+- downloadable worker kits for creative strategy, email strategy, and Open Higgsfield AI visual production
 - deterministic zip plus expanded export folder
-- public `solawave` example brand included
+- public example brand kits only
 - no heartbeat wiring, app install flow, server registry, plugin lifecycle, or database kit records
 
 ### How local adapters use worker kits
