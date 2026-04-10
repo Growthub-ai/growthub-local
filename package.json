@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "packageManager": "pnpm@10.4.1",
   "scripts": {
+    "check:version-sync": "node ./scripts/check-version-sync.mjs",
+    "check:worker-kits": "node ./scripts/check-worker-kits.mjs",
     "sync:monorepo": "bash ./scripts/sync-from-monorepo.sh",
     "freeze:check": "bash ./scripts/freeze-check.sh",
     "release:check": "node ./scripts/release-check.mjs"

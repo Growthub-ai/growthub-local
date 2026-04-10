@@ -50,13 +50,4 @@ jobs:
           "
 
       - name: Validate package version consistency
-        run: |
-          node -e "
-            const fs = require('fs');
-            const cli = JSON.parse(fs.readFileSync('cli/package.json','utf8'));
-            const pkg = JSON.parse(fs.readFileSync('packages/create-growthub-local/package.json','utf8'));
-            if (pkg.dependencies['@growthub/cli'] !== cli.version) {
-              throw new Error('Version mismatch: installer pins @growthub/cli@' + pkg.dependencies['@growthub/cli'] + ' but cli is ' + cli.version);
-            }
-            console.log('CLI:', cli.version, '— versions consistent');
-          "
+        run: node scripts/check-version-sync.mjs

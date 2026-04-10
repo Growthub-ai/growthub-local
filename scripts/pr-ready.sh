@@ -76,16 +76,20 @@ fi
 # ── 6. Source changed → version bump check ─────────────────────────────────
 MAIN_SHA="$(git merge-base HEAD origin/main 2>/dev/null || echo '')"
 if [[ -n "$MAIN_SHA" ]]; then
-  SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'ui/src/' 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
-  if [[ -n "$SRC_CHANGED" ]]; then
-    VER_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'cli/package.json' 'packages/create-growthub-local/package.json' 2>/dev/null | head -1)"
-    if [[ -n "$VER_CHANGED" ]]; then
+  if node scripts/check-version-sync.mjs --require-bump-if-source-changed --base "$MAIN_SHA" --head HEAD >/dev/null 2>&1; then
+    SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'ui/src/' 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
+    if [[ -n "$SRC_CHANGED" ]]; then
       ok "Source changed and version bumps detected"
     else
-      warn "Source files changed but no version bumps yet — bump before final push if shipping to npm"
+      ok "No source changes (ci/docs/config only) — no version bump needed"
     fi
   else
-    ok "No source changes (ci/docs/config only) — no version bump needed"
+    SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'ui/src/' 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
+    if [[ -n "$SRC_CHANGED" ]]; then
+      fail "Source files changed but package versions were not bumped"
+    else
+      fail "Version sync check failed"
+    fi
   fi
 fi
 
@@ -110,7 +114,7 @@ if $DIST_OK; then
 fi
 
 # ── 8. release-check.mjs ──────────────────────────────────────────────────
-if node scripts/release-check.mjs >/dev/null 2>&1; then
+if NPM_CONFIG_CACHE="${NPM_CONFIG_CACHE:-/tmp/growthub-npm-cache}" node scripts/release-check.mjs >/dev/null 2>&1; then
   ok "release-check.mjs passed"
 else
   fail "release-check.mjs failed — run it manually for details"
