@@ -1,17 +1,17 @@
 {
-  "name": "create-growthub-local",
-  "version": "0.1.43",
+  "name": "@growthub/create-growthub-local",
+  "version": "0.1.45",
   "description": "Growthub local installer for DX and GTM profiles",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/antonioromero1220/growthub-local",
+    "url": "https://github.com/Growthub-ai/growthub-local",
     "directory": "packages/create-growthub-local"
   },
-  "homepage": "https://github.com/antonioromero1220/growthub-local#readme",
+  "homepage": "https://github.com/Growthub-ai/growthub-local#readme",
   "bugs": {
-    "url": "https://github.com/antonioromero1220/growthub-local/issues"
+    "url": "https://github.com/Growthub-ai/growthub-local/issues"
   },
   "bin": {
     "create-growthub-local": "./bin/create-growthub-local.mjs"
@@ -23,7 +23,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@growthub/cli": "0.3.41"
+    "@growthub/cli": "0.3.42"
   },
   "keywords": [
     "growthub",

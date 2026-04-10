@@ -40,7 +40,7 @@ CREATE_VERSION=$(jq -r '.version' packages/create-growthub-local/package.json)
 echo "=== Growthub Local Release ==="
 echo "Mode: $MODE"
 echo "CLI version: $CLI_VERSION"
-echo "create-growthub-local version: $CREATE_VERSION"
+echo "@growthub/create-growthub-local version: $CREATE_VERSION"
 echo "Dry run: $DRY_RUN"
 echo ""
 
@@ -116,18 +116,18 @@ fi
 echo ""
 
 # Publish create-growthub-local
-echo "Publishing create-growthub-local@${CREATE_VERSION}..."
+echo "Publishing @growthub/create-growthub-local@${CREATE_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
   echo "[DRY RUN] npm publish packages/create-growthub-local/ $PUBLISH_ARGS"
 else
   npm publish packages/create-growthub-local/ $PUBLISH_ARGS
-  echo "✓ create-growthub-local@${CREATE_VERSION} published"
+  echo "✓ @growthub/create-growthub-local@${CREATE_VERSION} published"
 fi
 
 echo ""
 echo "=== Release Complete ==="
 echo "CLI: @growthub/cli@${CLI_VERSION}"
-echo "Installer: create-growthub-local@${CREATE_VERSION}"
+echo "Installer: @growthub/create-growthub-local@${CREATE_VERSION}"
 
 # Cleanup
 rm -f ~/.npmrc

@@ -1,6 +1,6 @@
 {
   "name": "@growthub/cli",
-  "version": "0.3.41",
+  "version": "0.3.42",
   "description": "Growthub CLI — orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {
@@ -17,12 +17,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/antonioromero1220/growthub-local",
+    "url": "https://github.com/Growthub-ai/growthub-local",
     "directory": "cli"
   },
-  "homepage": "https://github.com/antonioromero1220/growthub-local#readme",
+  "homepage": "https://github.com/Growthub-ai/growthub-local#readme",
   "bugs": {
-    "url": "https://github.com/antonioromero1220/growthub-local/issues"
+    "url": "https://github.com/Growthub-ai/growthub-local/issues"
   },
   "files": [
     "dist",
