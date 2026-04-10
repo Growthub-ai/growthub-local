@@ -34,6 +34,43 @@ If the local fork differs, the fork wins.
 
 ---
 
+## KNOWN FORK ISSUE — CORS POLICY (local-fork mode)
+
+**Status:** Fixed. Patch is applied automatically by `setup/clone-fork.sh`.
+
+**Root cause:** The upstream repo hardcodes `const BASE_URL = 'https://api.muapi.ai'` in
+`packages/studio/src/muapi.js`. All browser fetch/XHR calls go directly to the external
+API. `api.muapi.ai` does not return `Access-Control-Allow-Origin` headers, so every call
+from `localhost:3001` is blocked by the browser's CORS policy.
+
+**Errors you will see without the patch:**
+```
+Access to fetch at 'https://api.muapi.ai/api/v1/account/balance'
+from origin 'http://localhost:3001' has been blocked by CORS policy:
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+**The fix:**
+1. `next.config.mjs` — rewrites `/muapi-proxy/:path*` → `https://api.muapi.ai/:path*` server-side
+2. `packages/studio/src/muapi.js` — `BASE_URL` changed to `'/muapi-proxy'`
+
+All browser calls now hit `localhost:3001/muapi-proxy/...` (same origin, no CORS).
+Next.js proxies them to `api.muapi.ai` from the server where CORS does not apply.
+
+**To apply manually if not already patched:**
+```bash
+bash setup/patch-cors-proxy.sh [path-to-fork]
+# defaults to ~/open-higgsfield-ai
+```
+
+**Affected functions in muapi.js:**
+- `getUserBalance` — `/api/v1/account/balance`
+- `submitAndPoll` — `/api/v1/${endpoint}`
+- `pollForResult` — `/api/v1/predictions/${requestId}/result`
+- `uploadFile` (XHR) — `/api/v1/upload_file`
+
+---
+
 ## EXECUTION SURFACES
 
 ### Local fork
