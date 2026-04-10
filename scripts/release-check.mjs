@@ -116,6 +116,10 @@ assert(
   "CLI tarball is missing the bundled creative strategist worker kit manifest",
 );
 assert(
+  cliPack.includes("assets/worker-kits/growthub-open-higgsfield-studio-v1/kit.json"),
+  "CLI tarball is missing the bundled Open Higgsfield studio worker kit manifest",
+);
+assert(
   createPack.includes("bin/create-growthub-local.mjs"),
   "create-growthub-local tarball is missing installer entrypoint",
 );

@@ -94,6 +94,14 @@ export function registerKitCommands(program: Command): void {
       const result = downloadBundledKit(kitId, opts.out);
       printKeyValue("Expanded Folder:", result.folderPath);
       printKeyValue("Zip File:", result.zipPath);
+      console.log("");
+      console.log(pc.bold("Next steps:"));
+      console.log(`  1. Point Growthub local (or Claude Code) Working Directory at: ${pc.cyan(result.folderPath)}`);
+      console.log(`  2. ${pc.cyan("cp .env.example .env")}  →  add your MUAPI_API_KEY`);
+      console.log(`  3. ${pc.cyan("bash setup/clone-fork.sh")}  →  boot the local studio (optional)`);
+      console.log(`  4. Open a new Claude Code session — the agent takes it from there`);
+      console.log("");
+      console.log(`  ${pc.dim("Docs: QUICKSTART.md | validation-checklist.md")}`);
     });
 
   kit

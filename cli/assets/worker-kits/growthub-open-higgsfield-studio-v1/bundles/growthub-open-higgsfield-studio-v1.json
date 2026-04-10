@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-open-higgsfield-studio-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-open-higgsfield-studio-v1",
+    "workerId": "open-higgsfield-studio-operator"
+  },
+  "briefType": "open-higgsfield-visual-production",
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/open-higgsfield-studio-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/clone-fork.sh",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/visual-campaign-brief.md",
+    "templates/studio-selection-brief.md",
+    "templates/model-selection-recommendation.md",
+    "templates/shot-plan.md",
+    "templates/prompt-matrix.md",
+    "templates/generation-batch-plan.md",
+    "templates/asset-tracking.md",
+    "templates/review-qa-checklist.md",
+    "templates/platform-ready-execution-handoff.md",
+    "templates/frame-analysis.md",
+    "templates/prompt-templates/image-generation.md",
+    "templates/prompt-templates/video-generation.md",
+    "templates/prompt-templates/lip-sync-generation.md",
+    "templates/prompt-templates/cinema-generation.md",
+    "examples/visual-campaign-brief-sample.md",
+    "examples/shot-plan-sample.md",
+    "examples/prompt-matrix-sample.md",
+    "examples/platform-ready-handoff-sample.md",
+    "docs/open-higgsfield-fork-integration.md",
+    "docs/provider-adapter-layer.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "optionalPresets": [],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-open-higgsfield-studio-v1",
+    "zipFileName": "growthub-agent-worker-kit-open-higgsfield-studio-v1.zip"
+  },
+  "activationModes": ["export"]
+}

@@ -32,6 +32,8 @@ for (const requiredPath of [
   "cli/dist/runtime/server/ui-dist",
   "cli/assets/worker-kits/creative-strategist-v1/kit.json",
   "cli/assets/worker-kits/creative-strategist-v1/bundles/creative-strategist-v1.json",
+  "cli/assets/worker-kits/growthub-open-higgsfield-studio-v1/kit.json",
+  "cli/assets/worker-kits/growthub-open-higgsfield-studio-v1/bundles/growthub-open-higgsfield-studio-v1.json",
 ]) {
   assert(existsSync(path.join(root, requiredPath)), `Missing shipped CLI artifact: ${requiredPath}`);
 }
@@ -42,6 +44,8 @@ for (const requiredToken of [
   'type: "worker"',
   'executionMode: "export"',
   'activationModes: ["export"]',
+  'id: "growthub-open-higgsfield-studio-v1"',
+  'defaultBundleId: "growthub-open-higgsfield-studio-v1"',
 ]) {
   assert(catalogModule.includes(requiredToken), `Bundled kit catalog missing token: ${requiredToken}`);
 }
@@ -59,7 +63,9 @@ for (const requiredToken of [
 for (const requiredSnippet of [
   "growthub kit list",
   "growthub kit inspect creative-strategist-v1",
+  "growthub kit inspect growthub-open-higgsfield-studio-v1",
   "growthub kit download creative-strategist-v1",
+  "growthub kit download growthub-open-higgsfield-studio-v1",
   "growthub kit path creative-strategist-v1",
   "growthub kit validate /absolute/path/to/kit",
   "How local adapters use worker kits",

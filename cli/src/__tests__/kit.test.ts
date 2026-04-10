@@ -77,10 +77,10 @@ function readZipEntryNames(zipPath: string): string[] {
   return names.sort();
 }
 
-function copyKitAssets(destRoot: string): void {
+function copyKitAssets(destRoot: string, kitId = "creative-strategist-v1"): void {
   const sourceRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../assets/worker-kits/creative-strategist-v1",
+    `../../assets/worker-kits/${kitId}`,
   );
   fs.cpSync(sourceRoot, destRoot, { recursive: true });
 }
@@ -94,13 +94,23 @@ describe("worker kit service", () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it("lists the single bundled v1 creative strategist kit with type metadata", () => {
+  it("lists bundled worker kits with type metadata", () => {
     const kits = listBundledKits();
-    expect(kits).toHaveLength(1);
-    expect(kits[0]).toMatchObject({
-      id: "creative-strategist-v1",
+    expect(kits.map((kit) => kit.id)).toEqual([
+      "creative-strategist-v1",
+      "growthub-email-marketing-v1",
+      "growthub-open-higgsfield-studio-v1",
+    ]);
+    expect(kits.find((kit) => kit.id === "creative-strategist-v1")).toMatchObject({
       bundleId: "creative-strategist-v1",
       briefType: "video-creative-brief",
+      type: "worker",
+      executionMode: "export",
+      activationModes: ["export"],
+    });
+    expect(kits.find((kit) => kit.id === "growthub-open-higgsfield-studio-v1")).toMatchObject({
+      bundleId: "growthub-open-higgsfield-studio-v1",
+      briefType: "open-higgsfield-visual-production",
       type: "worker",
       executionMode: "export",
       activationModes: ["export"],
@@ -140,6 +150,22 @@ describe("worker kit service", () => {
     );
 
     expect(zipEntries).toEqual(expectedZipEntries);
+  });
+
+  it("inspects the Open Higgsfield kit and exposes the new export path", () => {
+    const paperclipHome = makeTempDir("paperclip-home-");
+    process.env.PAPERCLIP_HOME = paperclipHome;
+
+    const info = inspectBundledKit("growthub-open-higgsfield-studio-v1");
+
+    expect(info.type).toBe("worker");
+    expect(info.executionMode).toBe("export");
+    expect(info.activationModes).toEqual(["export"]);
+    expect(info.publicExampleBrandPaths).toEqual(["brands/growthub/brand-kit.md"]);
+    expect(info.exportFolderPath).toBe(
+      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-open-higgsfield-studio-v1"),
+    );
+    expect(info.requiredPaths).toContain("docs");
   });
 
   it("resolves the default materialized path without downloading", () => {
