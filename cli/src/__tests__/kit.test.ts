@@ -327,6 +327,26 @@ describe("kit validate command", () => {
     expect(fieldNames).toContain("activationModes");
   });
 
+  it("reports errors when schema v2 execution modes are invalid", () => {
+    const tempRoot = makeTempDir("worker-kit-v2-bad-modes-");
+    copyKitAssets(tempRoot);
+
+    const manifestPath = path.resolve(tempRoot, "kit.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    manifest.executionMode = "banana";
+    manifest.activationModes = ["export", "banana"];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const result = validateKitDirectory(tempRoot);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "executionMode", message: expect.stringContaining("banana") }),
+        expect.objectContaining({ field: "activationModes", message: expect.stringContaining("banana") }),
+      ]),
+    );
+  });
+
   it("reports error when frozen asset is missing on disk", () => {
     const tempRoot = makeTempDir("worker-kit-missing-asset-");
     copyKitAssets(tempRoot);

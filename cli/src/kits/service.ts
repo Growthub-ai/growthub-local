@@ -281,6 +281,11 @@ export function validateKitDirectory(kitPath: string): KitValidationResult {
     const execMode = raw.executionMode as string | undefined;
     if (!execMode) {
       errors.push({ field: "executionMode", message: "Missing required field 'executionMode'" });
+    } else if (!KIT_ACTIVATION_MODES.includes(execMode as KitActivationMode)) {
+      errors.push({
+        field: "executionMode",
+        message: `Invalid executionMode '${execMode}'. Expected one of: ${KIT_ACTIVATION_MODES.join(", ")}`,
+      });
     }
 
     const activationModes = raw.activationModes as string[] | undefined;
@@ -289,9 +294,9 @@ export function validateKitDirectory(kitPath: string): KitValidationResult {
     } else {
       for (const mode of activationModes) {
         if (!KIT_ACTIVATION_MODES.includes(mode as KitActivationMode)) {
-          warnings.push({
+          errors.push({
             field: "activationModes",
-            message: `Unknown activation mode '${mode}'`,
+            message: `Invalid activation mode '${mode}'. Expected one of: ${KIT_ACTIVATION_MODES.join(", ")}`,
           });
         }
       }
