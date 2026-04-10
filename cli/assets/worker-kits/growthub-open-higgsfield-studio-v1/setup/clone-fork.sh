@@ -21,6 +21,19 @@ echo "Installing dependencies..."
 npm install
 
 echo ""
+echo "Applying CORS proxy patch..."
+# The upstream repo calls api.muapi.ai directly from the browser, which is blocked
+# by CORS policy. This patch routes all API calls through the Next.js server.
+# See setup/patch-cors-proxy.sh for full explanation.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/patch-cors-proxy.sh" ]; then
+  bash "$SCRIPT_DIR/patch-cors-proxy.sh" "$FORK_DIR"
+else
+  echo "WARNING: patch-cors-proxy.sh not found — skipping CORS patch."
+  echo "You may hit CORS errors when the studio calls api.muapi.ai from the browser."
+fi
+
+echo ""
 echo "Starting dev server on http://localhost:$PORT"
 echo "Press Ctrl+C to stop."
 echo ""
