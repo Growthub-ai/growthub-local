@@ -68,12 +68,16 @@ export interface KitProvenance {
 // Kit manifest — schema version 2
 // ---------------------------------------------------------------------------
 
+export type KitFamily = "studio" | "workflow" | "operator" | "ops";
+export const KIT_FAMILIES: KitFamily[] = ["studio", "workflow", "operator", "ops"];
+
 export interface KitIdentity {
   id: string;
   version: string;
   name: string;
   description: string;
   type: KitCapabilityType;
+  family?: KitFamily;
   visibility?: string;
   sourceRepo?: string;
 }

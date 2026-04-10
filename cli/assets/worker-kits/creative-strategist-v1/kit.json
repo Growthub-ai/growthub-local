@@ -7,7 +7,8 @@
     "description": "Frozen Creative Strategist worker kit for exporting a working-directory-ready video creative brief worker.",
     "type": "worker",
     "visibility": "public-open-source",
-    "sourceRepo": "claude-workers"
+    "sourceRepo": "claude-workers",
+    "family": "workflow"
   },
   "entrypoint": {
     "workerId": "creative-strategist",
@@ -71,7 +72,9 @@
     }
   ],
   "executionMode": "export",
-  "activationModes": ["export"],
+  "activationModes": [
+    "export"
+  ],
   "compatibility": {
     "cliMinVersion": "0.3.35"
   },

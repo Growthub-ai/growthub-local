@@ -12,6 +12,7 @@ import {
   type KitValidationError,
   type KitCapabilityType,
   type KitActivationMode,
+  type KitFamily,
   SUPPORTED_SCHEMA_VERSIONS,
   KIT_CAPABILITY_TYPES,
   KIT_ACTIVATION_MODES,
@@ -44,6 +45,7 @@ export interface KitListItem {
   name: string;
   description: string;
   type: KitCapabilityType;
+  family: KitFamily;
   executionMode: string;
   activationModes: KitActivationMode[];
   bundleId: string;
@@ -455,18 +457,46 @@ export function validateBundledKitAssetRoot(
     type: "worker",
     executionMode: "export",
     activationModes: ["export"],
+    family: "studio",
   };
   loadResolvedBundledKit(assetRoot, catalogEntry);
 }
 
+// ---------------------------------------------------------------------------
+// Fuzzy slug resolver — tries exact → suffix → contains → "did you mean"
+// ---------------------------------------------------------------------------
+
+export function fuzzyResolveKitId(input: string): string | null {
+  const needle = input.toLowerCase().trim();
+  // 1. Exact match
+  const exact = BUNDLED_KIT_CATALOG.find((e) => e.id === needle);
+  if (exact) return exact.id;
+  // 2. Suffix match (e.g. "higgsfield-studio-v1" matches "growthub-open-higgsfield-studio-v1")
+  const suffix = BUNDLED_KIT_CATALOG.find((e) => e.id.endsWith(needle));
+  if (suffix) return suffix.id;
+  // 3. Contains match
+  const contains = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(needle));
+  if (contains) return contains.id;
+  // 4. Word-token match (any word in input appears in kit id)
+  const tokens = needle.split(/[-\s]+/).filter((t) => t.length > 2);
+  for (const token of tokens) {
+    const tokenMatch = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(token));
+    if (tokenMatch) return tokenMatch.id;
+  }
+  return null;
+}
+
 function resolveBundledKit(kitId: string): ResolvedBundledKit {
-  const catalogEntry = BUNDLED_KIT_CATALOG.find((entry) => entry.id === kitId);
-  if (!catalogEntry) {
+  // Try exact first, then fuzzy
+  const resolvedId = fuzzyResolveKitId(kitId);
+  if (!resolvedId) {
+    const available = BUNDLED_KIT_CATALOG.map((e) => e.id).join(", ");
     throw new Error(
-      `Unknown worker kit '${kitId}'. Available kits: ${BUNDLED_KIT_CATALOG.map((entry) => entry.id).join(", ")}`,
+      `Unknown kit '${kitId}'. Run 'growthub kit list' to browse available kits.\nAvailable: ${available}`,
     );
   }
 
+  const catalogEntry = BUNDLED_KIT_CATALOG.find((e) => e.id === resolvedId)!;
   const assetRoot = path.resolve(resolveBundledKitAssetsRoot(), catalogEntry.packageDirName);
   return loadResolvedBundledKit(assetRoot, catalogEntry);
 }
@@ -482,6 +512,7 @@ function toListItem(resolved: ResolvedBundledKit): KitListItem {
     name: resolved.manifest.kit.name,
     description: resolved.manifest.kit.description,
     type: resolved.manifest.kit.type,
+    family: resolved.catalogEntry.family,
     executionMode: resolved.manifest.executionMode,
     activationModes: resolved.manifest.activationModes,
     bundleId: resolved.bundleManifest.bundle.id,
