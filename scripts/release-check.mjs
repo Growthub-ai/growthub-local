@@ -40,24 +40,24 @@ const cliPkg = readJson("cli/package.json");
 const createPkg = readJson("packages/create-growthub-local/package.json");
 
 assert(cliPkg.name === "@growthub/cli", "cli/package.json must publish @growthub/cli");
-assert(createPkg.name === "create-growthub-local", "packages/create-growthub-local/package.json must publish create-growthub-local");
+assert(createPkg.name === "@growthub/create-growthub-local", "packages/create-growthub-local/package.json must publish @growthub/create-growthub-local");
 assert(
   createPkg.dependencies?.["@growthub/cli"] === cliPkg.version,
-  `create-growthub-local must depend on @growthub/cli@${cliPkg.version}`,
+  `@growthub/create-growthub-local must depend on @growthub/cli@${cliPkg.version}`,
 );
 
 for (const pkg of [cliPkg, createPkg]) {
   assert(
-    String(pkg.repository?.url || "").includes("antonioromero1220/growthub-local"),
-    `${pkg.name} repository URL must point at antonioromero1220/growthub-local`,
+    String(pkg.repository?.url || "").includes("Growthub-ai/growthub-local"),
+    `${pkg.name} repository URL must point at Growthub-ai/growthub-local`,
   );
   assert(
-    String(pkg.homepage || "").includes("antonioromero1220/growthub-local"),
-    `${pkg.name} homepage must point at antonioromero1220/growthub-local`,
+    String(pkg.homepage || "").includes("Growthub-ai/growthub-local"),
+    `${pkg.name} homepage must point at Growthub-ai/growthub-local`,
   );
   assert(
-    String(pkg.bugs?.url || "").includes("antonioromero1220/growthub-local"),
-    `${pkg.name} bugs URL must point at antonioromero1220/growthub-local`,
+    String(pkg.bugs?.url || "").includes("Growthub-ai/growthub-local"),
+    `${pkg.name} bugs URL must point at Growthub-ai/growthub-local`,
   );
 }
 
@@ -141,6 +141,6 @@ process.stdout.write(
   [
     `release:check passed`,
     `@growthub/cli@${cliPkg.version}`,
-    `create-growthub-local@${createPkg.version}`,
+    `@growthub/create-growthub-local@${createPkg.version}`,
   ].join("\n") + "\n",
 );

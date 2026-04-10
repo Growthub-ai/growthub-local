@@ -63,14 +63,14 @@ function main() {
   if (cliPkg.name !== "@growthub/cli") {
     throw new Error(`cli/package.json must publish @growthub/cli, got ${cliPkg.name}`);
   }
-  if (createPkg.name !== "create-growthub-local") {
+  if (createPkg.name !== "@growthub/create-growthub-local") {
     throw new Error(
-      `packages/create-growthub-local/package.json must publish create-growthub-local, got ${createPkg.name}`,
+      `packages/create-growthub-local/package.json must publish @growthub/create-growthub-local, got ${createPkg.name}`,
     );
   }
   if (createPkg.dependencies?.["@growthub/cli"] !== cliPkg.version) {
     throw new Error(
-      `Version pin mismatch: create-growthub-local pins @growthub/cli@${createPkg.dependencies?.["@growthub/cli"]} but cli.version is ${cliPkg.version}`,
+      `Version pin mismatch: @growthub/create-growthub-local pins @growthub/cli@${createPkg.dependencies?.["@growthub/cli"]} but cli.version is ${cliPkg.version}`,
     );
   }
 
@@ -93,7 +93,7 @@ function main() {
     [
       "version-sync passed",
       `@growthub/cli@${cliPkg.version}`,
-      `create-growthub-local@${createPkg.version}`,
+      `@growthub/create-growthub-local@${createPkg.version}`,
     ].join("\n"),
   );
 }
