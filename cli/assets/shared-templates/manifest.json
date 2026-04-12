@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "frozenAt": "2026-04-12T00:00:00.000Z",
+  "source": "creative-strategist-v1",
+  "templates": [
+    { "id": "ad-formats/bedroom-minimic-talk",     "slug": "bedroom-minimic-talk",     "type": "ad-format",    "family": "video-creative", "path": "ad-formats/bedroom-minimic-talk.md" },
+    { "id": "ad-formats/villain-animation",        "slug": "villain-animation",        "type": "ad-format",    "family": "video-creative", "path": "ad-formats/villain-animation.md" },
+    { "id": "ad-formats/process-specialist-medical","slug": "process-specialist-medical","type": "ad-format",  "family": "video-creative", "path": "ad-formats/process-specialist-medical.md" },
+    { "id": "ad-formats/frame-analysis",           "slug": "frame-analysis",           "type": "ad-format",    "family": "video-creative", "path": "ad-formats/frame-analysis.md" },
+    { "id": "scene-modules/hooks/meme-overlay",    "slug": "meme-overlay",             "type": "scene-module", "subtype": "hook", "family": "video-creative", "path": "scene-modules/hooks/meme-overlay.md" },
+    { "id": "scene-modules/hooks/tiktok-comment",  "slug": "tiktok-comment",           "type": "scene-module", "subtype": "hook", "family": "video-creative", "path": "scene-modules/hooks/tiktok-comment.md" },
+    { "id": "scene-modules/hooks/pov-confession",  "slug": "pov-confession",           "type": "scene-module", "subtype": "hook", "family": "video-creative", "path": "scene-modules/hooks/pov-confession.md" },
+    { "id": "scene-modules/hooks/dollar-amount",   "slug": "dollar-amount",            "type": "scene-module", "subtype": "hook", "family": "video-creative", "path": "scene-modules/hooks/dollar-amount.md" },
+    { "id": "scene-modules/hooks/villain-hook",    "slug": "villain-hook",             "type": "scene-module", "subtype": "hook", "family": "video-creative", "path": "scene-modules/hooks/villain-hook.md" },
+    { "id": "scene-modules/body/minimic-problem",  "slug": "minimic-problem",          "type": "scene-module", "subtype": "body", "family": "video-creative", "path": "scene-modules/body/minimic-problem.md" },
+    { "id": "scene-modules/body/tiktok-skeptic-pivot","slug": "tiktok-skeptic-pivot",  "type": "scene-module", "subtype": "body", "family": "video-creative", "path": "scene-modules/body/tiktok-skeptic-pivot.md" },
+    { "id": "scene-modules/body/product-demo-glow","slug": "product-demo-glow",        "type": "scene-module", "subtype": "body", "family": "video-creative", "path": "scene-modules/body/product-demo-glow.md" },
+    { "id": "scene-modules/body/villain-agitation","slug": "villain-agitation",        "type": "scene-module", "subtype": "body", "family": "video-creative", "path": "scene-modules/body/villain-agitation.md" },
+    { "id": "scene-modules/body/before-after-flatlay","slug": "before-after-flatlay",  "type": "scene-module", "subtype": "body", "family": "video-creative", "path": "scene-modules/body/before-after-flatlay.md" },
+    { "id": "scene-modules/cta/bogo-meme-bookend", "slug": "bogo-meme-bookend",        "type": "scene-module", "subtype": "cta",  "family": "video-creative", "path": "scene-modules/cta/bogo-meme-bookend.md" },
+    { "id": "scene-modules/cta/guarantee-close",   "slug": "guarantee-close",          "type": "scene-module", "subtype": "cta",  "family": "video-creative", "path": "scene-modules/cta/guarantee-close.md" }
+  ]
+}

@@ -23,6 +23,7 @@ import { registerGtmCommands } from "./commands/gtm.js";
 import { registerWorktreeCommands } from "./commands/worktree.js";
 import { registerPluginCommands } from "./commands/client/plugin.js";
 import { registerKitCommands } from "./commands/kit.js";
+import { registerTemplateCommands } from "./commands/template.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
@@ -114,6 +115,7 @@ function registerSharedCommands(target: Command) {
     .action(runCommand);
 
   registerKitCommands(target);
+  registerTemplateCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
