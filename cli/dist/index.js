@@ -6657,9 +6657,9 @@ import pc2 from "picocolors";
 function printPaperclipCliBanner() {
   const lines = [
     "",
-    ...GROWTHUB_ART.map((line) => pc2.cyan(line)),
-    pc2.blue("  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"),
-    pc2.bold(pc2.white(`  ${TAGLINE}`)),
+    ...GROWTHUB_ART,
+    pc2.dim("  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"),
+    pc2.bold(`  ${TAGLINE}`),
     ""
   ];
   console.log(lines.join("\n"));
@@ -14727,7 +14727,7 @@ applyDataDirOverride(bootstrapOptions, {
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
-program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.43").addHelpText("after", `
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.45").addHelpText("after", `
 Worker Kits (agent execution environments):
 
   Discovery:

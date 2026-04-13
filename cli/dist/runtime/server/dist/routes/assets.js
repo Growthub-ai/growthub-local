@@ -1,7 +1,5 @@
 import { Router } from "express";
 import multer from "multer";
-import createDOMPurify from "dompurify";
-import { JSDOM } from "jsdom";
 import { createAssetImageMetadataSchema } from "@paperclipai/shared";
 import { assetService, logActivity } from "../services/index.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
@@ -15,63 +13,38 @@ const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
     "image/gif",
     SVG_CONTENT_TYPE,
 ]);
+const DISALLOWED_SVG_TAGS = /<\/?\s*(script|foreignObject)\b[^>]*>/gi;
+const DISALLOWED_SVG_BLOCKS = /<\s*(script|foreignObject)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi;
+const XML_DECLARATIONS_AND_COMMENTS = /<\?(?:xml|[\s\S]*?)\?>|<!--[\s\S]*?-->|<!DOCTYPE[\s\S]*?>/gi;
+const EVENT_HANDLER_ATTRS = /\s+on[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const STYLE_ATTRS = /\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const HREF_ATTRS = /\s+(href|xlink:href)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+const SVG_ROOT_PATTERN = /^<svg\b[\s\S]*<\/svg>$/i;
 function sanitizeSvgBuffer(input) {
     const raw = input.toString("utf8").trim();
     if (!raw)
         return null;
-    const baseDom = new JSDOM("");
-    const domPurify = createDOMPurify(baseDom.window);
-    domPurify.addHook("uponSanitizeAttribute", (_node, data) => {
-        const attrName = data.attrName.toLowerCase();
-        const attrValue = (data.attrValue ?? "").trim();
-        if (attrName.startsWith("on")) {
-            data.keepAttr = false;
-            return;
-        }
-        if ((attrName === "href" || attrName === "xlink:href") && attrValue && !attrValue.startsWith("#")) {
-            data.keepAttr = false;
-        }
-    });
-    let parsedDom = null;
     try {
-        const sanitized = domPurify.sanitize(raw, {
-            USE_PROFILES: { svg: true, svgFilters: true, html: false },
-            FORBID_TAGS: ["script", "foreignObject"],
-            FORBID_CONTENTS: ["script", "foreignObject"],
-            RETURN_TRUSTED_TYPE: false,
-        });
-        parsedDom = new JSDOM(sanitized, { contentType: SVG_CONTENT_TYPE });
-        const document = parsedDom.window.document;
-        const root = document.documentElement;
-        if (!root || root.tagName.toLowerCase() !== "svg")
+        const normalized = raw.replace(XML_DECLARATIONS_AND_COMMENTS, "").trim();
+        if (!SVG_ROOT_PATTERN.test(normalized))
             return null;
-        for (const el of Array.from(root.querySelectorAll("script, foreignObject"))) {
-            el.remove();
-        }
-        for (const el of Array.from(root.querySelectorAll("*"))) {
-            for (const attr of Array.from(el.attributes)) {
-                const attrName = attr.name.toLowerCase();
-                const attrValue = attr.value.trim();
-                if (attrName.startsWith("on")) {
-                    el.removeAttribute(attr.name);
-                    continue;
-                }
-                if ((attrName === "href" || attrName === "xlink:href") && attrValue && !attrValue.startsWith("#")) {
-                    el.removeAttribute(attr.name);
-                }
-            }
-        }
-        const output = root.outerHTML.trim();
+        const sanitized = normalized
+            .replace(DISALLOWED_SVG_BLOCKS, "")
+            .replace(DISALLOWED_SVG_TAGS, "")
+            .replace(EVENT_HANDLER_ATTRS, "")
+            .replace(STYLE_ATTRS, "")
+            .replace(HREF_ATTRS, (_match, attrName, _fullValue, doubleQuoted, singleQuoted, bare) => {
+            const attrValue = (doubleQuoted ?? singleQuoted ?? bare ?? "").trim();
+            return attrValue.startsWith("#") ? ` ${attrName}="${attrValue}"` : "";
+        })
+            .trim();
+        const output = sanitized.trim();
         if (!output || !/^<svg[\s>]/i.test(output))
             return null;
         return Buffer.from(output, "utf8");
     }
     catch {
         return null;
-    }
-    finally {
-        parsedDom?.window.close();
-        baseDom.window.close();
     }
 }
 export function assetRoutes(db, storage) {

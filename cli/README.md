@@ -146,7 +146,7 @@ For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXT
 
 ## Development Notes
 
-- `@growthub/cli` version: `0.3.44`
+- `@growthub/cli` version: `0.3.45`
 - Node.js: `>=20`
 - Source of truth repo: [Growthub Local](https://github.com/Growthub-ai/growthub-local)
 
