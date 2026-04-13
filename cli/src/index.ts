@@ -174,7 +174,10 @@ function registerSharedCommands(target: Command) {
     .option("--no-browser", "Do not try to launch a browser — print the URL and wait")
     .option("--json", "Output raw JSON")
     .action(async (opts) => {
-      await authLogin(opts);
+      await authLogin({
+        ...opts,
+        noBrowser: opts.browser === false,
+      });
     });
 
   auth
@@ -201,8 +204,19 @@ function registerSharedCommands(target: Command) {
   registerProfileCommands(target);
 }
 
+async function runHostedBridgeEntry(opts?: {
+  config?: string;
+  dataDir?: string;
+}): Promise<void> {
+  await authLogin({
+    config: opts?.config,
+    dataDir: opts?.dataDir,
+  });
+}
+
 async function runDiscoveryHub(opts?: {
   config?: string;
+  dataDir?: string;
   run?: boolean;
 }): Promise<void> {
   printPaperclipCliBanner();
@@ -228,6 +242,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Artifact template library",
         },
         {
+          value: "hosted-auth",
+          label: "🔐 Connect Growthub Account",
+          hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -246,13 +265,13 @@ async function runDiscoveryHub(opts?: {
           "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
+          "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
-          "growthub run",
+          "growthub auth login",
+          "growthub auth whoami",
           "growthub kit",
           "growthub template",
-          "growthub doctor",
-          "growthub configure",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -376,6 +395,11 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
+    if (surfaceChoice === "hosted-auth") {
+      await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
+      continue;
+    }
+
     const result = await runTemplatePicker({ allowBackToHub: true });
     if (result === "back") continue;
     return;
@@ -463,7 +487,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.47")
+  .version("0.3.48")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -496,13 +520,10 @@ Instance setup:
     $ growthub configure                        Update config sections
     $ growthub                                  Interactive discovery hub
 
-Hosted profile bridge (CLI ↔ hosted Growthub):
+Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)
     $ growthub auth whoami                      Show signed-in identity + linked local workspace
     $ growthub auth logout                      Clear the hosted session (local workspace preserved)
-    $ growthub profile status                   Print the merged local + hosted profile
-    $ growthub profile pull                     Pull hosted metadata into the local overlay
-    $ growthub profile push                     Push safe local linkage metadata upward
 `);
 
 program.action(async () => {

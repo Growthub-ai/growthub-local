@@ -2,6 +2,8 @@
 
 This document freezes the supported contract between the local Growthub runtime and the hosted Growthub app.
 
+For the broader public explanation of the CLI-owned hosted authentication bridge, see [Growthub Authentication Bridge](./GROWTHUB_AUTH_BRIDGE.md).
+
 ## Local To Hosted Launch
 
 Local UI launches the hosted configuration flow using:

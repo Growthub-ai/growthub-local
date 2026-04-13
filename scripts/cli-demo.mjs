@@ -37,6 +37,15 @@ function getPreviewVersions() {
   };
 }
 
+function currentBranchName() {
+  const result = spawnSync("git", ["branch", "--show-current"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) return "unknown";
+  return result.stdout.trim() || "unknown";
+}
+
 function getBaseEnv() {
   return {
     ...process.env,
@@ -66,7 +75,7 @@ function printEnv() {
     createEntrypointPath,
     demoHome: resolveDemoHome(),
     previewDataDir: resolvePreviewDataDir(),
-    branch: "feat/cli-banner-multiselect-ux",
+    branch: currentBranchName(),
     ...versions,
   }, null, 2));
 }
@@ -110,6 +119,10 @@ function runInstaller(args) {
 
 function runCli(args) {
   spawnNode([cliDistPath, ...args]);
+}
+
+function runHostedBridgePreview() {
+  spawnNode([cliDistPath, "auth", "--help"]);
 }
 
 function runSourceKitPicker() {
@@ -255,6 +268,11 @@ async function runInteractive() {
         label: "🧰 CLI Discovery Preview",
         hint: "Top-level kits/templates choice from this branch UX",
       },
+      {
+        value: "hosted-auth",
+        label: "🔐 Hosted Auth Bridge Preview",
+        hint: "Validate auth/profile commands in the branch CLI surface",
+      },
     ],
   });
 
@@ -280,32 +298,11 @@ async function runInteractive() {
     runInstaller(["--profile", profile]);
   }
 
-  const discoveryChoice = await p.select({
-    message: "What do you want to browse first?",
-    options: [
-      {
-        value: "kits",
-        label: "🧰 Worker Kits",
-        hint: "Self-contained kits.",
-      },
-      {
-        value: "templates",
-        label: "📚 Templates",
-        hint: "Artifact template library.",
-      },
-    ],
-  });
-
-  if (p.isCancel(discoveryChoice)) {
-    p.cancel("Cancelled.");
-    process.exit(0);
+  if (choice === "hosted-auth") {
+    runHostedBridgePreview();
   }
 
-  if (discoveryChoice === "kits") {
-    runSourceKitPicker();
-  }
-
-  await runTemplatePreview();
+  runCli([]);
 }
 
 const [command, ...rest] = process.argv.slice(2);
@@ -333,32 +330,7 @@ if (command === "cli") {
   if (rest.length > 0) {
     runCli(rest);
   }
-  const discoveryChoice = await p.select({
-    message: "What do you want to browse first?",
-    options: [
-      {
-        value: "kits",
-        label: "🧰 Worker Kits",
-        hint: "Self-contained kits.",
-      },
-      {
-        value: "templates",
-        label: "📚 Templates",
-        hint: "Artifact template library.",
-      },
-    ],
-  });
-
-  if (p.isCancel(discoveryChoice)) {
-    p.cancel("Cancelled.");
-    process.exit(0);
-  }
-
-  if (discoveryChoice === "kits") {
-    runSourceKitPicker();
-  }
-
-  await runTemplatePreview();
+  runCli([]);
   process.exit(0);
 }
 

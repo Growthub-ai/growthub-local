@@ -18,6 +18,9 @@ import {
   writeEffectiveProfileSnapshot,
 } from "../auth/effective-profile.js";
 import { resolvePaperclipInstanceId } from "../config/home.js";
+import { isSessionExpired } from "../auth/session-store.js";
+
+const DEFAULT_HOSTED_BASE_URL = "https://www.growthub.ai";
 
 function trimSlashes(value: string): string {
   return value.replace(/\/+$/, "");
@@ -26,7 +29,7 @@ function trimSlashes(value: string): string {
 function resolveHostedBaseUrl(opts: {
   baseUrl?: string;
   configPath?: string;
-}): string | null {
+}): string {
   const explicit = opts.baseUrl?.trim();
   if (explicit) return trimSlashes(explicit);
 
@@ -43,7 +46,7 @@ function resolveHostedBaseUrl(opts: {
     // fall through
   }
 
-  return null;
+  return DEFAULT_HOSTED_BASE_URL;
 }
 
 export interface AuthLoginOptions {
@@ -62,16 +65,42 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
   loadPaperclipEnvFile(configPath);
 
   const hostedBaseUrl = resolveHostedBaseUrl({ baseUrl: opts.baseUrl, configPath: opts.config });
-  if (!hostedBaseUrl) {
-    p.log.error(
-      "Hosted Growthub base URL is not configured. Pass --base-url, set GROWTHUB_BASE_URL, or configure auth.growthubBaseUrl in your local config.",
-    );
-    process.exit(1);
-  }
-
   const machineLabel = opts.machineLabel?.trim() || os.hostname();
   const workspaceLabel = opts.workspaceLabel?.trim();
   const linkedInstanceId = resolvePaperclipInstanceId();
+  const existingSession = readSession();
+
+  if (
+    !opts.token &&
+    existingSession &&
+    !isSessionExpired(existingSession) &&
+    trimSlashes(existingSession.hostedBaseUrl) === hostedBaseUrl
+  ) {
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          {
+            status: "ok",
+            hostedBaseUrl,
+            userId: existingSession.userId ?? null,
+            email: existingSession.email ?? null,
+            reusedSession: true,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    p.log.success(
+      `Already connected${existingSession.email ? ` as ${existingSession.email}` : ""}.`,
+    );
+    if (existingSession.hostedBaseUrl) {
+      p.log.message(pc.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
+    }
+    return;
+  }
 
   // Scripted / CI path: accept a hosted-minted token directly.
   if (opts.token) {
@@ -122,17 +151,18 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
     timeoutMs: opts.timeoutMs,
   });
 
-  p.log.message(`Opening browser to complete sign-in…`);
-  p.log.message(pc.dim(`Callback: ${flow.callbackUrl}`));
-  p.log.message(pc.dim(`If the browser does not open, paste this URL:`));
-  p.log.message(pc.cyan(flow.loginUrl));
-
   if (!opts.noBrowser) {
     try {
+      p.log.message("Opening browser to complete sign-in…");
       await open(flow.loginUrl);
     } catch (err) {
       p.log.warn(`Could not launch browser automatically: ${err instanceof Error ? err.message : String(err)}`);
+      p.log.message(pc.dim("Paste this URL into a browser:"));
+      p.log.message(pc.cyan(flow.loginUrl));
     }
+  } else {
+    p.log.message(pc.dim("Paste this URL into a browser:"));
+    p.log.message(pc.cyan(flow.loginUrl));
   }
 
   const spinner = p.spinner();
@@ -200,7 +230,6 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
     } else {
       p.log.success(`Signed in${result.email ? ` as ${result.email}` : ""}.`);
       p.log.message(pc.dim(`Session: ${describeSessionPath()}`));
-      p.log.message(pc.dim(`Overlay: ${describeHostedOverlayPath()}`));
     }
 
     p.outro("Done");

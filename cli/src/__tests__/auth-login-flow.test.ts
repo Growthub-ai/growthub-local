@@ -63,8 +63,8 @@ describe("cli login flow", () => {
     callbackUrl.searchParams.set("token", "tok_xyz");
 
     const waitPromise = flow.waitForCallback();
+    const rejection = expect(waitPromise).rejects.toThrow(/state mismatch/);
     await fetch(callbackUrl.toString());
-
-    await expect(waitPromise).rejects.toThrow(/state mismatch/);
+    await rejection;
   });
 });
