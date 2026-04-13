@@ -122,15 +122,19 @@ function printKitCard(item: KitListItem): void {
   ]));
 }
 
+function getActionLabel(action: string): string {
+  if (action === "download") return "download";
+  if (action === "inspect") return "inspect";
+  if (action === "copy-id") return "print id";
+  return action;
+}
+
 async function confirmKitActions(input: {
   kits: KitListItem[];
   actions: string[];
 }): Promise<boolean> {
   const actionLabels = input.actions.map((action) => {
-    if (action === "download") return "download";
-    if (action === "inspect") return "inspect";
-    if (action === "copy-id") return "print id";
-    return action;
+    return getActionLabel(action);
   });
 
   const summaryLines = [
@@ -285,45 +289,29 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
       if (nextStep === "back_to_kits") continue;
 
       while (true) {
-        const actionOptions = [
-          { value: "download", label: "⬇️  Download kit", hint: "growthub kit download <id>" },
-          { value: "inspect", label: "🔍 Inspect manifest", hint: "growthub kit inspect <id>" },
-          { value: "copy-id", label: "📋 Print ID to stdout", hint: "echo <kit-id>" },
-        ];
-
-        const actions = await p.multiselect({
+        const action = await p.select({
           message: "What would you like to do?",
-          options: actionOptions,
-          required: false,
+          options: [
+            { value: "download", label: "⬇️  Download kit", hint: "growthub kit download <id>" },
+            { value: "inspect", label: "🔍 Inspect manifest", hint: "growthub kit inspect <id>" },
+            { value: "copy-id", label: "📋 Print ID to stdout", hint: "echo <kit-id>" },
+            { value: "back_to_kits", label: "← Back to kit list" },
+          ],
         });
 
-        if (p.isCancel(actions)) { p.cancel("Cancelled."); process.exit(0); }
-
-        const selectedActions = actions as string[];
-        if (selectedActions.length === 0) {
-          const emptyActionChoice = await p.select({
-            message: "No actions selected",
-            options: [
-              { value: "retry", label: "Choose action(s)" },
-              { value: "back_to_kits", label: "← Back to kit list" },
-            ],
-          });
-
-          if (p.isCancel(emptyActionChoice)) { p.cancel("Cancelled."); process.exit(0); }
-          if (emptyActionChoice === "back_to_kits") break;
-          continue;
-        }
+        if (p.isCancel(action)) { p.cancel("Cancelled."); process.exit(0); }
+        if (action === "back_to_kits") break;
 
         const confirmed = await confirmKitActions({
           kits: [selected],
-          actions: selectedActions,
+          actions: [action as string],
         });
 
         if (!confirmed) {
           const reviewChoice = await p.select({
             message: "Review selection",
             options: [
-              { value: "actions", label: "Choose action(s) again" },
+              { value: "actions", label: `Choose ${getActionLabel(action as string)} again` },
               { value: "back_to_kits", label: "← Back to kit list" },
             ],
           });
@@ -333,26 +321,20 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
           continue;
         }
 
-        for (const action of selectedActions) {
-          if (action === "copy-id") {
-            console.log(selected.id);
-            continue;
-          }
-          if (action === "inspect") {
-            runInspect(selected.id, opts.out);
-            continue;
-          }
-          if (action === "download") {
-            await runDownload(selected.id, opts);
-          }
-        }
-
-        if (selectedActions.includes("copy-id")) {
+        if (action === "copy-id") {
+          console.log(selected.id);
           p.outro(pc.dim("Kit ID printed above."));
           return "done";
         }
 
-        p.outro(pc.dim("Done."));
+        if (action === "inspect") {
+          runInspect(selected.id, opts.out);
+          p.outro(pc.dim("Done."));
+          return "done";
+        }
+
+        await runDownload(selected.id, opts);
+        p.outro(pc.green("Kit exported successfully."));
         return "done";
       }
     }
@@ -385,6 +367,10 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   const result = downloadBundledKit(resolvedId, opts.out, {
     onProgress: renderProgressBar,
   });
+
+  console.log("");
+  console.log(pc.green(pc.bold("Kit exported successfully.")));
+  console.log("");
 
   const nextSteps = [
     pc.bold("Next steps"),
