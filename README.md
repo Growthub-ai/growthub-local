@@ -9,6 +9,7 @@ This repository ships and documents:
 - the installer package `create-growthub-local`
 - bundled Growthub Agent Worker Kits
 - the shared template library exposed through `growthub template`
+- the hosted Growthub authentication bridge used by the CLI and integrations UI
 
 ## Install Paths
 
@@ -41,10 +42,11 @@ Use this when you want CLI-first access to:
 - local app discovery and onboarding
 - worker kit discovery, inspection, export, and validation
 - shared template browsing and extraction
+- hosted Growthub auth bridge workflows
 
 ## CLI Editions And User Flows
 
-The shipped CLI has three top-level user flows. They are exposed in the interactive discovery hub and through direct commands.
+The shipped CLI has four top-level user flows. They are exposed in the interactive discovery hub and through direct commands.
 
 ### 1. Full Local App
 
@@ -117,6 +119,30 @@ User flow:
 2. Narrow by family, artifact type, and subtype.
 3. Preview the selected artifact.
 4. Print it, copy it into a local workspace, or use the slug in another workflow.
+
+### 4. Hosted Growthub Auth Bridge
+
+This path is for connecting the local CLI to a hosted Growthub user while keeping the hosted app as the identity authority.
+
+Entry points:
+
+```bash
+growthub auth login
+growthub auth whoami
+growthub auth logout
+growthub profile status
+growthub profile pull
+growthub profile push
+```
+
+User flow:
+
+1. Open the CLI discovery hub.
+2. Choose `Connect Growthub Account`.
+3. Let the CLI open hosted `/cli/login`.
+4. Complete hosted authentication in the browser.
+5. Return to the CLI loopback callback.
+6. Verify the same machine connection in `/integrations`.
 
 ## What Happens Next
 
@@ -197,6 +223,7 @@ The rule is simple: shared templates stay generic and reusable; worker kits comp
 - [Worker Kit Contributor Guide](./docs/WORKER_KIT_CONTRIBUTOR_GUIDE.md)
 - [Worker Kit Environment Examples](./docs/WORKER_KIT_ENVIRONMENT_EXAMPLES.md)
 - [CLI Template Contribution Extension Workflows](./docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)
+- [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 
 ## Development
 

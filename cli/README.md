@@ -1,10 +1,11 @@
 # @growthub/cli
 
-`@growthub/cli` is the published CLI for Growthub Local. It covers three shipped workflows:
+`@growthub/cli` is the published CLI for Growthub Local. It covers four shipped workflows:
 
 - full local app discovery and onboarding
 - worker kit discovery, export, inspection, and validation
 - shared template discovery and extraction
+- hosted Growthub auth + machine profile bridge
 
 ## Install
 
@@ -27,7 +28,7 @@ npx create-growthub-local --profile dx
 
 ## CLI Editions
 
-The current CLI exposes three user-facing editions through `growthub discover` and direct subcommands.
+The current CLI exposes four user-facing editions through `growthub discover` and direct subcommands.
 
 ### 1. Full Local App
 
@@ -133,6 +134,26 @@ User flow:
 2. Preview the selected artifact.
 3. Print it, copy it to a local workspace, or use the slug in another workflow.
 
+### 4. Hosted Auth Bridge
+
+Use this when you want the hosted Growthub account to remain the top-level identity while syncing safe local-machine metadata into the CLI runtime.
+
+```bash
+growthub auth login
+growthub auth whoami
+growthub auth logout
+growthub profile status
+growthub profile pull
+growthub profile push
+```
+
+Contract:
+
+1. Hosted Growthub auth remains the source of truth for the user identity.
+2. Local workspace config stays local-first and is not overwritten by hosted state.
+3. Hosted machine linkage is stored separately from `instances/<id>/config.json`.
+4. `growthub` and `paperclipai` remain intentional side-by-side surfaces rather than auto-loading one another.
+
 ## Contribution Model
 
 The CLI has two extension surfaces for content:
@@ -146,7 +167,7 @@ For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXT
 
 ## Development Notes
 
-- `@growthub/cli` version: `0.3.46`
+- `@growthub/cli` version: `0.3.48`
 - Node.js: `>=20`
 - Source of truth repo: [Growthub Local](https://github.com/Growthub-ai/growthub-local)
 
@@ -154,5 +175,6 @@ For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXT
 
 - [GitHub README](https://github.com/Growthub-ai/growthub-local#readme)
 - [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)
+- [Growthub Authentication Bridge](https://github.com/Growthub-ai/growthub-local/blob/main/docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKER_KITS.md)
 - [CLI Template Contribution Extension Workflows](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)

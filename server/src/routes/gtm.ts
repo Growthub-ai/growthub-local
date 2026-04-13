@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import type { AdapterEnvironmentTestResult, Issue, Ticket, TicketStageDefinition } from "@paperclipai/shared";
 import { shouldIncludeAgentInGtmDirectoryList } from "@paperclipai/shared";
@@ -289,6 +289,21 @@ function saveGrowthubBaseUrl(baseUrl: string) {
   });
 }
 
+function applyBrowserBridgeCors(req: Request, res: Response) {
+  const origin = req.get("origin")?.trim() ?? "";
+  const allowedOrigins = new Set([
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "https://www.growthub.ai",
+  ]);
+  if (allowedOrigins.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-user-id");
+}
+
 export function gtmRoutes(db: Db) {
   const router = Router();
   const tickets = ticketService(db);
@@ -296,6 +311,11 @@ export function gtmRoutes(db: Db) {
   const agents = agentService(db);
   const heartbeats = heartbeatService(db);
   const claudeAdapter = getServerAdapter("claude_local");
+
+  router.options("/connection", (req, res) => {
+    applyBrowserBridgeCors(req, res);
+    res.status(204).end();
+  });
 
   router.get("/profile", (_req, res) => {
     res.json(readGtmViewModel().profile);
@@ -323,6 +343,7 @@ export function gtmRoutes(db: Db) {
   });
 
   router.get("/connection", (req, res) => {
+    applyBrowserBridgeCors(req, res);
     const connection = getGrowthubConnectionState();
     const host = req.get("host");
     const forwardedProto = req.get("x-forwarded-proto");
@@ -339,7 +360,13 @@ export function gtmRoutes(db: Db) {
     });
   });
 
+  router.options("/connection/test", (req, res) => {
+    applyBrowserBridgeCors(req, res);
+    res.status(204).end();
+  });
+
   router.post("/connection/test", async (_req, res) => {
+    applyBrowserBridgeCors(_req, res);
     const connection = getGrowthubConnectionState();
     if (!connection.baseUrl) {
       res.status(422).json({ error: "Growthub base URL is not configured." });
