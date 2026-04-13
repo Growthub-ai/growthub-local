@@ -10,15 +10,15 @@ var __export = (target, all) => {
 };
 
 // ../packages/shared/src/constants.ts
-var COMPANY_STATUSES, DEPLOYMENT_MODES, DEPLOYMENT_EXPOSURES, SURFACE_PROFILES, AUTH_BASE_URL_MODES, AGENT_STATUSES, AGENT_ADAPTER_TYPES, AGENT_ROLES, AGENT_ICON_NAMES, TICKET_STATUSES, ISSUE_STATUSES, ISSUE_PRIORITIES, GOAL_LEVELS, GOAL_STATUSES, PROJECT_STATUSES, APPROVAL_TYPES, SECRET_PROVIDERS, STORAGE_PROVIDERS, BILLING_TYPES, FINANCE_EVENT_KINDS, FINANCE_DIRECTIONS, FINANCE_UNITS, BUDGET_SCOPE_TYPES, BUDGET_METRICS, BUDGET_WINDOW_KINDS, BUDGET_INCIDENT_RESOLUTION_ACTIONS, INVITE_JOIN_TYPES, JOIN_REQUEST_TYPES, JOIN_REQUEST_STATUSES, PERMISSION_KEYS, PLUGIN_STATUSES, PLUGIN_CATEGORIES, PLUGIN_CAPABILITIES, PLUGIN_UI_SLOT_TYPES, PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS, PLUGIN_LAUNCHER_PLACEMENT_ZONES, PLUGIN_LAUNCHER_ACTIONS, PLUGIN_LAUNCHER_BOUNDS, PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS, PLUGIN_UI_SLOT_ENTITY_TYPES, PLUGIN_STATE_SCOPE_KINDS;
+var COMPANY_STATUSES, DEPLOYMENT_MODES, DEPLOYMENT_EXPOSURES, AUTH_BASE_URL_MODES, SURFACE_PROFILES, AGENT_STATUSES, AGENT_ADAPTER_TYPES, AGENT_ROLES, AGENT_ICON_NAMES, TICKET_STAGE_KINDS, TICKET_STAGE_HANDOFF_MODES, TICKET_STATUSES, ISSUE_STATUSES, ISSUE_PRIORITIES, GOAL_LEVELS, GOAL_STATUSES, PROJECT_STATUSES, APPROVAL_TYPES, SECRET_PROVIDERS, STORAGE_PROVIDERS, BILLING_TYPES, FINANCE_EVENT_KINDS, FINANCE_DIRECTIONS, FINANCE_UNITS, BUDGET_SCOPE_TYPES, BUDGET_METRICS, BUDGET_WINDOW_KINDS, BUDGET_INCIDENT_RESOLUTION_ACTIONS, INVITE_JOIN_TYPES, JOIN_REQUEST_TYPES, JOIN_REQUEST_STATUSES, PERMISSION_KEYS, PLUGIN_STATUSES, PLUGIN_CATEGORIES, PLUGIN_CAPABILITIES, PLUGIN_UI_SLOT_TYPES, PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS, PLUGIN_LAUNCHER_PLACEMENT_ZONES, PLUGIN_LAUNCHER_ACTIONS, PLUGIN_LAUNCHER_BOUNDS, PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS, PLUGIN_UI_SLOT_ENTITY_TYPES, PLUGIN_STATE_SCOPE_KINDS;
 var init_constants = __esm({
   "../packages/shared/src/constants.ts"() {
     "use strict";
     COMPANY_STATUSES = ["active", "paused", "archived"];
     DEPLOYMENT_MODES = ["local_trusted", "authenticated"];
     DEPLOYMENT_EXPOSURES = ["private", "public"];
-    SURFACE_PROFILES = ["dx", "gtm"];
     AUTH_BASE_URL_MODES = ["auto", "explicit"];
+    SURFACE_PROFILES = ["dx", "gtm"];
     AGENT_STATUSES = [
       "active",
       "paused",
@@ -95,9 +95,24 @@ var init_constants = __esm({
       "pentagon",
       "fingerprint"
     ];
+    TICKET_STAGE_KINDS = [
+      "planning",
+      "execution",
+      "review",
+      "qa",
+      "human",
+      "custom"
+    ];
+    TICKET_STAGE_HANDOFF_MODES = [
+      "seamless",
+      "context_only",
+      "manual"
+    ];
     TICKET_STATUSES = [
       "active",
       "paused",
+      "completed",
+      "archived",
       "done",
       "cancelled"
     ];
@@ -893,17 +908,63 @@ var init_execution_workspace = __esm({
   }
 });
 
+// ../packages/shared/src/ticket-stages.ts
+function normalizeTicketStageKey(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, "_");
+}
+var init_ticket_stages = __esm({
+  "../packages/shared/src/ticket-stages.ts"() {
+    "use strict";
+    init_constants();
+  }
+});
+
 // ../packages/shared/src/validators/ticket.ts
 import { z as z11 } from "zod";
-var createTicketSchema, updateTicketSchema, advanceTicketStageSchema;
+var ticketStageDefinitionSchema, ticketStageDefinitionsSchema, createTicketSchema, updateTicketSchema, advanceTicketStageSchema;
 var init_ticket = __esm({
   "../packages/shared/src/validators/ticket.ts"() {
     "use strict";
     init_constants();
+    init_ticket_stages();
+    ticketStageDefinitionSchema = z11.object({
+      key: z11.string().min(1),
+      label: z11.string().min(1).max(120),
+      kind: z11.enum(TICKET_STAGE_KINDS).nullable().optional(),
+      ownerRole: z11.enum(AGENT_ROLES).nullable().optional(),
+      handoffMode: z11.enum(TICKET_STAGE_HANDOFF_MODES).nullable().optional(),
+      instructions: z11.string().nullable().optional(),
+      exitCriteria: z11.string().nullable().optional(),
+      metadata: z11.record(z11.unknown()).nullable().optional()
+    });
+    ticketStageDefinitionsSchema = z11.array(ticketStageDefinitionSchema).min(1).superRefine((value, ctx) => {
+      const seen = /* @__PURE__ */ new Set();
+      value.forEach((definition, index51) => {
+        const normalizedKey = normalizeTicketStageKey(String(definition.key));
+        if (!normalizedKey) {
+          ctx.addIssue({
+            code: z11.ZodIssueCode.custom,
+            path: [index51, "key"],
+            message: "Stage key must not be empty"
+          });
+          return;
+        }
+        if (seen.has(normalizedKey)) {
+          ctx.addIssue({
+            code: z11.ZodIssueCode.custom,
+            path: [index51, "key"],
+            message: "Stage keys must be unique"
+          });
+          return;
+        }
+        seen.add(normalizedKey);
+      });
+    });
     createTicketSchema = z11.object({
       title: z11.string().min(1).max(500),
       description: z11.string().optional(),
-      stageOrder: z11.array(z11.string().min(1)).optional(),
+      stageOrder: z11.array(z11.string().min(1)).min(1).optional(),
+      stageDefinitions: ticketStageDefinitionsSchema.optional(),
       metadata: z11.record(z11.unknown()).optional(),
       instructions: z11.string().optional(),
       leadAgentId: z11.string().uuid().nullable().optional()
@@ -913,7 +974,8 @@ var init_ticket = __esm({
       description: z11.string().nullable().optional(),
       status: z11.enum(TICKET_STATUSES).optional(),
       currentStage: z11.string().min(1).optional(),
-      stageOrder: z11.array(z11.string().min(1)).optional(),
+      stageOrder: z11.array(z11.string().min(1)).min(1).optional(),
+      stageDefinitions: ticketStageDefinitionsSchema.optional(),
       metadata: z11.record(z11.unknown()).optional(),
       instructions: z11.string().optional(),
       leadAgentId: z11.string().uuid().nullable().optional()
@@ -1619,11 +1681,11 @@ var init_config_schema = __esm({
       baseUrlMode: z19.enum(AUTH_BASE_URL_MODES).default("auto"),
       publicBaseUrl: z19.string().url().optional(),
       disableSignUp: z19.boolean().default(false),
-      token: z19.string().min(1).optional(),
+      token: z19.string().optional(),
       growthubBaseUrl: z19.string().url().optional(),
       growthubPortalBaseUrl: z19.string().url().optional(),
-      growthubMachineLabel: z19.string().min(1).optional(),
-      growthubWorkspaceLabel: z19.string().min(1).optional()
+      growthubMachineLabel: z19.string().optional(),
+      growthubWorkspaceLabel: z19.string().optional()
     });
     surfaceConfigSchema = z19.object({
       profile: z19.enum(SURFACE_PROFILES).default("dx")
@@ -1768,6 +1830,13 @@ var init_surface_runtime = __esm({
   }
 });
 
+// ../packages/shared/src/agent-surface-metadata.ts
+var init_agent_surface_metadata = __esm({
+  "../packages/shared/src/agent-surface-metadata.ts"() {
+    "use strict";
+  }
+});
+
 // ../packages/shared/src/gtm.ts
 function humanizeToken(value) {
   return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (match) => match.toUpperCase());
@@ -1860,7 +1929,7 @@ function coerceGtmState(raw) {
           ...candidate.knowledge?.table?.metadata
         }
       },
-      items: Array.isArray(candidate.knowledge?.items) && candidate.knowledge.items.length > 0 ? candidate.knowledge.items.map((item, index50) => ({
+      items: Array.isArray(candidate.knowledge?.items) && candidate.knowledge.items.length > 0 ? candidate.knowledge.items.map((item, index51) => ({
         ...fallbackItemTemplate,
         ...item,
         metadata: {
@@ -1869,7 +1938,7 @@ function coerceGtmState(raw) {
         }
       })) : fallback.knowledge.items
     },
-    connectors: Array.isArray(candidate.connectors) && candidate.connectors.length > 0 ? candidate.connectors.map((connector, index50) => ({
+    connectors: Array.isArray(candidate.connectors) && candidate.connectors.length > 0 ? candidate.connectors.map((connector, index51) => ({
       ...fallbackConnectorTemplate,
       ...connector,
       config: {
@@ -1937,6 +2006,54 @@ var init_gtm = __esm({
   }
 });
 
+// ../packages/shared/src/growthub-query-engine.ts
+var init_growthub_query_engine = __esm({
+  "../packages/shared/src/growthub-query-engine.ts"() {
+    "use strict";
+  }
+});
+
+// ../packages/shared/src/kb-skill-bundle/types.ts
+var init_types = __esm({
+  "../packages/shared/src/kb-skill-bundle/types.ts"() {
+    "use strict";
+  }
+});
+
+// ../packages/shared/src/kb-skill-bundle/metadata.ts
+var init_metadata = __esm({
+  "../packages/shared/src/kb-skill-bundle/metadata.ts"() {
+    "use strict";
+  }
+});
+
+// ../packages/shared/src/kb-skill-bundle/bundle.ts
+var init_bundle = __esm({
+  "../packages/shared/src/kb-skill-bundle/bundle.ts"() {
+    "use strict";
+    init_types();
+  }
+});
+
+// ../packages/shared/src/kb-skill-bundle/prompt.ts
+var init_prompt = __esm({
+  "../packages/shared/src/kb-skill-bundle/prompt.ts"() {
+    "use strict";
+    init_bundle();
+  }
+});
+
+// ../packages/shared/src/kb-skill-bundle/index.ts
+var init_kb_skill_bundle = __esm({
+  "../packages/shared/src/kb-skill-bundle/index.ts"() {
+    "use strict";
+    init_types();
+    init_metadata();
+    init_bundle();
+    init_prompt();
+  }
+});
+
 // ../packages/shared/src/index.ts
 var init_src = __esm({
   "../packages/shared/src/index.ts"() {
@@ -1950,7 +2067,11 @@ var init_src = __esm({
     init_project_mentions();
     init_config_schema();
     init_surface_runtime();
+    init_ticket_stages();
+    init_agent_surface_metadata();
     init_gtm();
+    init_growthub_query_engine();
+    init_kb_skill_bundle();
   }
 });
 
@@ -4474,8 +4595,38 @@ var init_documents = __esm({
   }
 });
 
+// ../packages/db/src/schema/kb_skill_docs.ts
+import { pgTable as pgTable38, uuid as uuid37, text as text39, boolean as boolean8, timestamp as timestamp38, index as index34, jsonb as jsonb20 } from "drizzle-orm/pg-core";
+var kbSkillDocs;
+var init_kb_skill_docs = __esm({
+  "../packages/db/src/schema/kb_skill_docs.ts"() {
+    "use strict";
+    init_companies();
+    kbSkillDocs = pgTable38(
+      "kb_skill_docs",
+      {
+        id: uuid37("id").primaryKey().defaultRandom(),
+        companyId: uuid37("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+        name: text39("name").notNull(),
+        description: text39("description").notNull().default(""),
+        body: text39("body").notNull().default(""),
+        format: text39("format").notNull().default("markdown"),
+        source: text39("source").notNull().default("custom"),
+        metadata: jsonb20("metadata").$type().notNull().default({}),
+        isActive: boolean8("is_active").notNull().default(true),
+        createdAt: timestamp38("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp38("updated_at", { withTimezone: true }).notNull().defaultNow()
+      },
+      (table) => ({
+        companyActiveIdx: index34("kb_skill_docs_company_active_idx").on(table.companyId, table.isActive),
+        companyUpdatedIdx: index34("kb_skill_docs_company_updated_idx").on(table.companyId, table.updatedAt)
+      })
+    );
+  }
+});
+
 // ../packages/db/src/schema/document_revisions.ts
-import { pgTable as pgTable38, uuid as uuid37, text as text39, integer as integer12, timestamp as timestamp38, index as index34, uniqueIndex as uniqueIndex18 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable39, uuid as uuid38, text as text40, integer as integer12, timestamp as timestamp39, index as index35, uniqueIndex as uniqueIndex18 } from "drizzle-orm/pg-core";
 var documentRevisions;
 var init_document_revisions = __esm({
   "../packages/db/src/schema/document_revisions.ts"() {
@@ -4483,25 +4634,25 @@ var init_document_revisions = __esm({
     init_companies();
     init_agents();
     init_documents();
-    documentRevisions = pgTable38(
+    documentRevisions = pgTable39(
       "document_revisions",
       {
-        id: uuid37("id").primaryKey().defaultRandom(),
-        companyId: uuid37("company_id").notNull().references(() => companies.id),
-        documentId: uuid37("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+        id: uuid38("id").primaryKey().defaultRandom(),
+        companyId: uuid38("company_id").notNull().references(() => companies.id),
+        documentId: uuid38("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
         revisionNumber: integer12("revision_number").notNull(),
-        body: text39("body").notNull(),
-        changeSummary: text39("change_summary"),
-        createdByAgentId: uuid37("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text39("created_by_user_id"),
-        createdAt: timestamp38("created_at", { withTimezone: true }).notNull().defaultNow()
+        body: text40("body").notNull(),
+        changeSummary: text40("change_summary"),
+        createdByAgentId: uuid38("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+        createdByUserId: text40("created_by_user_id"),
+        createdAt: timestamp39("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
         documentRevisionUq: uniqueIndex18("document_revisions_document_revision_uq").on(
           table.documentId,
           table.revisionNumber
         ),
-        companyDocumentCreatedIdx: index34("document_revisions_company_document_created_idx").on(
+        companyDocumentCreatedIdx: index35("document_revisions_company_document_created_idx").on(
           table.companyId,
           table.documentId,
           table.createdAt
@@ -4512,7 +4663,7 @@ var init_document_revisions = __esm({
 });
 
 // ../packages/db/src/schema/issue_documents.ts
-import { pgTable as pgTable39, uuid as uuid38, text as text40, timestamp as timestamp39, index as index35, uniqueIndex as uniqueIndex19 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable40, uuid as uuid39, text as text41, timestamp as timestamp40, index as index36, uniqueIndex as uniqueIndex19 } from "drizzle-orm/pg-core";
 var issueDocuments;
 var init_issue_documents = __esm({
   "../packages/db/src/schema/issue_documents.ts"() {
@@ -4520,16 +4671,16 @@ var init_issue_documents = __esm({
     init_companies();
     init_issues();
     init_documents();
-    issueDocuments = pgTable39(
+    issueDocuments = pgTable40(
       "issue_documents",
       {
-        id: uuid38("id").primaryKey().defaultRandom(),
-        companyId: uuid38("company_id").notNull().references(() => companies.id),
-        issueId: uuid38("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-        documentId: uuid38("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-        key: text40("key").notNull(),
-        createdAt: timestamp39("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp39("updated_at", { withTimezone: true }).notNull().defaultNow()
+        id: uuid39("id").primaryKey().defaultRandom(),
+        companyId: uuid39("company_id").notNull().references(() => companies.id),
+        issueId: uuid39("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
+        documentId: uuid39("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+        key: text41("key").notNull(),
+        createdAt: timestamp40("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp40("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
         companyIssueKeyUq: uniqueIndex19("issue_documents_company_issue_key_uq").on(
@@ -4538,7 +4689,7 @@ var init_issue_documents = __esm({
           table.key
         ),
         documentUq: uniqueIndex19("issue_documents_document_uq").on(table.documentId),
-        companyIssueUpdatedIdx: index35("issue_documents_company_issue_updated_idx").on(
+        companyIssueUpdatedIdx: index36("issue_documents_company_issue_updated_idx").on(
           table.companyId,
           table.issueId,
           table.updatedAt
@@ -4549,7 +4700,7 @@ var init_issue_documents = __esm({
 });
 
 // ../packages/db/src/schema/heartbeat_run_events.ts
-import { pgTable as pgTable40, uuid as uuid39, text as text41, timestamp as timestamp40, integer as integer13, jsonb as jsonb20, index as index36, bigserial } from "drizzle-orm/pg-core";
+import { pgTable as pgTable41, uuid as uuid40, text as text42, timestamp as timestamp41, integer as integer13, jsonb as jsonb21, index as index37, bigserial } from "drizzle-orm/pg-core";
 var heartbeatRunEvents;
 var init_heartbeat_run_events = __esm({
   "../packages/db/src/schema/heartbeat_run_events.ts"() {
@@ -4557,33 +4708,33 @@ var init_heartbeat_run_events = __esm({
     init_companies();
     init_agents();
     init_heartbeat_runs();
-    heartbeatRunEvents = pgTable40(
+    heartbeatRunEvents = pgTable41(
       "heartbeat_run_events",
       {
         id: bigserial("id", { mode: "number" }).primaryKey(),
-        companyId: uuid39("company_id").notNull().references(() => companies.id),
-        runId: uuid39("run_id").notNull().references(() => heartbeatRuns.id),
-        agentId: uuid39("agent_id").notNull().references(() => agents.id),
+        companyId: uuid40("company_id").notNull().references(() => companies.id),
+        runId: uuid40("run_id").notNull().references(() => heartbeatRuns.id),
+        agentId: uuid40("agent_id").notNull().references(() => agents.id),
         seq: integer13("seq").notNull(),
-        eventType: text41("event_type").notNull(),
-        stream: text41("stream"),
-        level: text41("level"),
-        color: text41("color"),
-        message: text41("message"),
-        payload: jsonb20("payload").$type(),
-        createdAt: timestamp40("created_at", { withTimezone: true }).notNull().defaultNow()
+        eventType: text42("event_type").notNull(),
+        stream: text42("stream"),
+        level: text42("level"),
+        color: text42("color"),
+        message: text42("message"),
+        payload: jsonb21("payload").$type(),
+        createdAt: timestamp41("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        runSeqIdx: index36("heartbeat_run_events_run_seq_idx").on(table.runId, table.seq),
-        companyRunIdx: index36("heartbeat_run_events_company_run_idx").on(table.companyId, table.runId),
-        companyCreatedIdx: index36("heartbeat_run_events_company_created_idx").on(table.companyId, table.createdAt)
+        runSeqIdx: index37("heartbeat_run_events_run_seq_idx").on(table.runId, table.seq),
+        companyRunIdx: index37("heartbeat_run_events_company_run_idx").on(table.companyId, table.runId),
+        companyCreatedIdx: index37("heartbeat_run_events_company_created_idx").on(table.companyId, table.createdAt)
       })
     );
   }
 });
 
 // ../packages/db/src/schema/cost_events.ts
-import { pgTable as pgTable41, uuid as uuid40, text as text42, timestamp as timestamp41, integer as integer14, index as index37 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable42, uuid as uuid41, text as text43, timestamp as timestamp42, integer as integer14, index as index38 } from "drizzle-orm/pg-core";
 var costEvents;
 var init_cost_events = __esm({
   "../packages/db/src/schema/cost_events.ts"() {
@@ -4594,46 +4745,46 @@ var init_cost_events = __esm({
     init_projects();
     init_goals();
     init_heartbeat_runs();
-    costEvents = pgTable41(
+    costEvents = pgTable42(
       "cost_events",
       {
-        id: uuid40("id").primaryKey().defaultRandom(),
-        companyId: uuid40("company_id").notNull().references(() => companies.id),
-        agentId: uuid40("agent_id").notNull().references(() => agents.id),
-        issueId: uuid40("issue_id").references(() => issues.id),
-        projectId: uuid40("project_id").references(() => projects.id),
-        goalId: uuid40("goal_id").references(() => goals.id),
-        heartbeatRunId: uuid40("heartbeat_run_id").references(() => heartbeatRuns.id),
-        billingCode: text42("billing_code"),
-        provider: text42("provider").notNull(),
-        biller: text42("biller").notNull().default("unknown"),
-        billingType: text42("billing_type").notNull().default("unknown"),
-        model: text42("model").notNull(),
+        id: uuid41("id").primaryKey().defaultRandom(),
+        companyId: uuid41("company_id").notNull().references(() => companies.id),
+        agentId: uuid41("agent_id").notNull().references(() => agents.id),
+        issueId: uuid41("issue_id").references(() => issues.id),
+        projectId: uuid41("project_id").references(() => projects.id),
+        goalId: uuid41("goal_id").references(() => goals.id),
+        heartbeatRunId: uuid41("heartbeat_run_id").references(() => heartbeatRuns.id),
+        billingCode: text43("billing_code"),
+        provider: text43("provider").notNull(),
+        biller: text43("biller").notNull().default("unknown"),
+        billingType: text43("billing_type").notNull().default("unknown"),
+        model: text43("model").notNull(),
         inputTokens: integer14("input_tokens").notNull().default(0),
         cachedInputTokens: integer14("cached_input_tokens").notNull().default(0),
         outputTokens: integer14("output_tokens").notNull().default(0),
         costCents: integer14("cost_cents").notNull(),
-        occurredAt: timestamp41("occurred_at", { withTimezone: true }).notNull(),
-        createdAt: timestamp41("created_at", { withTimezone: true }).notNull().defaultNow()
+        occurredAt: timestamp42("occurred_at", { withTimezone: true }).notNull(),
+        createdAt: timestamp42("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        companyOccurredIdx: index37("cost_events_company_occurred_idx").on(table.companyId, table.occurredAt),
-        companyAgentOccurredIdx: index37("cost_events_company_agent_occurred_idx").on(
+        companyOccurredIdx: index38("cost_events_company_occurred_idx").on(table.companyId, table.occurredAt),
+        companyAgentOccurredIdx: index38("cost_events_company_agent_occurred_idx").on(
           table.companyId,
           table.agentId,
           table.occurredAt
         ),
-        companyProviderOccurredIdx: index37("cost_events_company_provider_occurred_idx").on(
+        companyProviderOccurredIdx: index38("cost_events_company_provider_occurred_idx").on(
           table.companyId,
           table.provider,
           table.occurredAt
         ),
-        companyBillerOccurredIdx: index37("cost_events_company_biller_occurred_idx").on(
+        companyBillerOccurredIdx: index38("cost_events_company_biller_occurred_idx").on(
           table.companyId,
           table.biller,
           table.occurredAt
         ),
-        companyHeartbeatRunIdx: index37("cost_events_company_heartbeat_run_idx").on(
+        companyHeartbeatRunIdx: index38("cost_events_company_heartbeat_run_idx").on(
           table.companyId,
           table.heartbeatRunId
         )
@@ -4643,7 +4794,7 @@ var init_cost_events = __esm({
 });
 
 // ../packages/db/src/schema/finance_events.ts
-import { pgTable as pgTable42, uuid as uuid41, text as text43, timestamp as timestamp42, integer as integer15, index as index38, boolean as boolean8, jsonb as jsonb21 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable43, uuid as uuid42, text as text44, timestamp as timestamp43, integer as integer15, index as index39, boolean as boolean9, jsonb as jsonb22 } from "drizzle-orm/pg-core";
 var financeEvents;
 var init_finance_events = __esm({
   "../packages/db/src/schema/finance_events.ts"() {
@@ -4655,59 +4806,59 @@ var init_finance_events = __esm({
     init_goals();
     init_heartbeat_runs();
     init_cost_events();
-    financeEvents = pgTable42(
+    financeEvents = pgTable43(
       "finance_events",
       {
-        id: uuid41("id").primaryKey().defaultRandom(),
-        companyId: uuid41("company_id").notNull().references(() => companies.id),
-        agentId: uuid41("agent_id").references(() => agents.id),
-        issueId: uuid41("issue_id").references(() => issues.id),
-        projectId: uuid41("project_id").references(() => projects.id),
-        goalId: uuid41("goal_id").references(() => goals.id),
-        heartbeatRunId: uuid41("heartbeat_run_id").references(() => heartbeatRuns.id),
-        costEventId: uuid41("cost_event_id").references(() => costEvents.id),
-        billingCode: text43("billing_code"),
-        description: text43("description"),
-        eventKind: text43("event_kind").notNull(),
-        direction: text43("direction").notNull().default("debit"),
-        biller: text43("biller").notNull(),
-        provider: text43("provider"),
-        executionAdapterType: text43("execution_adapter_type"),
-        pricingTier: text43("pricing_tier"),
-        region: text43("region"),
-        model: text43("model"),
+        id: uuid42("id").primaryKey().defaultRandom(),
+        companyId: uuid42("company_id").notNull().references(() => companies.id),
+        agentId: uuid42("agent_id").references(() => agents.id),
+        issueId: uuid42("issue_id").references(() => issues.id),
+        projectId: uuid42("project_id").references(() => projects.id),
+        goalId: uuid42("goal_id").references(() => goals.id),
+        heartbeatRunId: uuid42("heartbeat_run_id").references(() => heartbeatRuns.id),
+        costEventId: uuid42("cost_event_id").references(() => costEvents.id),
+        billingCode: text44("billing_code"),
+        description: text44("description"),
+        eventKind: text44("event_kind").notNull(),
+        direction: text44("direction").notNull().default("debit"),
+        biller: text44("biller").notNull(),
+        provider: text44("provider"),
+        executionAdapterType: text44("execution_adapter_type"),
+        pricingTier: text44("pricing_tier"),
+        region: text44("region"),
+        model: text44("model"),
         quantity: integer15("quantity"),
-        unit: text43("unit"),
+        unit: text44("unit"),
         amountCents: integer15("amount_cents").notNull(),
-        currency: text43("currency").notNull().default("USD"),
-        estimated: boolean8("estimated").notNull().default(false),
-        externalInvoiceId: text43("external_invoice_id"),
-        metadataJson: jsonb21("metadata_json").$type(),
-        occurredAt: timestamp42("occurred_at", { withTimezone: true }).notNull(),
-        createdAt: timestamp42("created_at", { withTimezone: true }).notNull().defaultNow()
+        currency: text44("currency").notNull().default("USD"),
+        estimated: boolean9("estimated").notNull().default(false),
+        externalInvoiceId: text44("external_invoice_id"),
+        metadataJson: jsonb22("metadata_json").$type(),
+        occurredAt: timestamp43("occurred_at", { withTimezone: true }).notNull(),
+        createdAt: timestamp43("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        companyOccurredIdx: index38("finance_events_company_occurred_idx").on(table.companyId, table.occurredAt),
-        companyBillerOccurredIdx: index38("finance_events_company_biller_occurred_idx").on(
+        companyOccurredIdx: index39("finance_events_company_occurred_idx").on(table.companyId, table.occurredAt),
+        companyBillerOccurredIdx: index39("finance_events_company_biller_occurred_idx").on(
           table.companyId,
           table.biller,
           table.occurredAt
         ),
-        companyKindOccurredIdx: index38("finance_events_company_kind_occurred_idx").on(
+        companyKindOccurredIdx: index39("finance_events_company_kind_occurred_idx").on(
           table.companyId,
           table.eventKind,
           table.occurredAt
         ),
-        companyDirectionOccurredIdx: index38("finance_events_company_direction_occurred_idx").on(
+        companyDirectionOccurredIdx: index39("finance_events_company_direction_occurred_idx").on(
           table.companyId,
           table.direction,
           table.occurredAt
         ),
-        companyHeartbeatRunIdx: index38("finance_events_company_heartbeat_run_idx").on(
+        companyHeartbeatRunIdx: index39("finance_events_company_heartbeat_run_idx").on(
           table.companyId,
           table.heartbeatRunId
         ),
-        companyCostEventIdx: index38("finance_events_company_cost_event_idx").on(
+        companyCostEventIdx: index39("finance_events_company_cost_event_idx").on(
           table.companyId,
           table.costEventId
         )
@@ -4717,7 +4868,7 @@ var init_finance_events = __esm({
 });
 
 // ../packages/db/src/schema/approval_comments.ts
-import { pgTable as pgTable43, uuid as uuid42, text as text44, timestamp as timestamp43, index as index39 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable44, uuid as uuid43, text as text45, timestamp as timestamp44, index as index40 } from "drizzle-orm/pg-core";
 var approvalComments;
 var init_approval_comments = __esm({
   "../packages/db/src/schema/approval_comments.ts"() {
@@ -4725,22 +4876,22 @@ var init_approval_comments = __esm({
     init_companies();
     init_approvals();
     init_agents();
-    approvalComments = pgTable43(
+    approvalComments = pgTable44(
       "approval_comments",
       {
-        id: uuid42("id").primaryKey().defaultRandom(),
-        companyId: uuid42("company_id").notNull().references(() => companies.id),
-        approvalId: uuid42("approval_id").notNull().references(() => approvals.id),
-        authorAgentId: uuid42("author_agent_id").references(() => agents.id),
-        authorUserId: text44("author_user_id"),
-        body: text44("body").notNull(),
-        createdAt: timestamp43("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp43("updated_at", { withTimezone: true }).notNull().defaultNow()
+        id: uuid43("id").primaryKey().defaultRandom(),
+        companyId: uuid43("company_id").notNull().references(() => companies.id),
+        approvalId: uuid43("approval_id").notNull().references(() => approvals.id),
+        authorAgentId: uuid43("author_agent_id").references(() => agents.id),
+        authorUserId: text45("author_user_id"),
+        body: text45("body").notNull(),
+        createdAt: timestamp44("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp44("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        companyIdx: index39("approval_comments_company_idx").on(table.companyId),
-        approvalIdx: index39("approval_comments_approval_idx").on(table.approvalId),
-        approvalCreatedIdx: index39("approval_comments_approval_created_idx").on(
+        companyIdx: index40("approval_comments_company_idx").on(table.companyId),
+        approvalIdx: index40("approval_comments_approval_idx").on(table.approvalId),
+        approvalCreatedIdx: index40("approval_comments_approval_created_idx").on(
           table.approvalId,
           table.createdAt
         )
@@ -4750,7 +4901,7 @@ var init_approval_comments = __esm({
 });
 
 // ../packages/db/src/schema/activity_log.ts
-import { pgTable as pgTable44, uuid as uuid43, text as text45, timestamp as timestamp44, jsonb as jsonb22, index as index40 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable45, uuid as uuid44, text as text46, timestamp as timestamp45, jsonb as jsonb23, index as index41 } from "drizzle-orm/pg-core";
 var activityLog;
 var init_activity_log = __esm({
   "../packages/db/src/schema/activity_log.ts"() {
@@ -4758,56 +4909,56 @@ var init_activity_log = __esm({
     init_companies();
     init_agents();
     init_heartbeat_runs();
-    activityLog = pgTable44(
+    activityLog = pgTable45(
       "activity_log",
       {
-        id: uuid43("id").primaryKey().defaultRandom(),
-        companyId: uuid43("company_id").notNull().references(() => companies.id),
-        actorType: text45("actor_type").notNull().default("system"),
-        actorId: text45("actor_id").notNull(),
-        action: text45("action").notNull(),
-        entityType: text45("entity_type").notNull(),
-        entityId: text45("entity_id").notNull(),
-        agentId: uuid43("agent_id").references(() => agents.id),
-        runId: uuid43("run_id").references(() => heartbeatRuns.id),
-        details: jsonb22("details").$type(),
-        createdAt: timestamp44("created_at", { withTimezone: true }).notNull().defaultNow()
+        id: uuid44("id").primaryKey().defaultRandom(),
+        companyId: uuid44("company_id").notNull().references(() => companies.id),
+        actorType: text46("actor_type").notNull().default("system"),
+        actorId: text46("actor_id").notNull(),
+        action: text46("action").notNull(),
+        entityType: text46("entity_type").notNull(),
+        entityId: text46("entity_id").notNull(),
+        agentId: uuid44("agent_id").references(() => agents.id),
+        runId: uuid44("run_id").references(() => heartbeatRuns.id),
+        details: jsonb23("details").$type(),
+        createdAt: timestamp45("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        companyCreatedIdx: index40("activity_log_company_created_idx").on(table.companyId, table.createdAt),
-        runIdIdx: index40("activity_log_run_id_idx").on(table.runId),
-        entityIdx: index40("activity_log_entity_type_id_idx").on(table.entityType, table.entityId)
+        companyCreatedIdx: index41("activity_log_company_created_idx").on(table.companyId, table.createdAt),
+        runIdIdx: index41("activity_log_run_id_idx").on(table.runId),
+        entityIdx: index41("activity_log_entity_type_id_idx").on(table.entityType, table.entityId)
       })
     );
   }
 });
 
 // ../packages/db/src/schema/company_secrets.ts
-import { pgTable as pgTable45, uuid as uuid44, text as text46, timestamp as timestamp45, integer as integer16, index as index41, uniqueIndex as uniqueIndex20 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable46, uuid as uuid45, text as text47, timestamp as timestamp46, integer as integer16, index as index42, uniqueIndex as uniqueIndex20 } from "drizzle-orm/pg-core";
 var companySecrets;
 var init_company_secrets = __esm({
   "../packages/db/src/schema/company_secrets.ts"() {
     "use strict";
     init_companies();
     init_agents();
-    companySecrets = pgTable45(
+    companySecrets = pgTable46(
       "company_secrets",
       {
-        id: uuid44("id").primaryKey().defaultRandom(),
-        companyId: uuid44("company_id").notNull().references(() => companies.id),
-        name: text46("name").notNull(),
-        provider: text46("provider").notNull().default("local_encrypted"),
-        externalRef: text46("external_ref"),
+        id: uuid45("id").primaryKey().defaultRandom(),
+        companyId: uuid45("company_id").notNull().references(() => companies.id),
+        name: text47("name").notNull(),
+        provider: text47("provider").notNull().default("local_encrypted"),
+        externalRef: text47("external_ref"),
         latestVersion: integer16("latest_version").notNull().default(1),
-        description: text46("description"),
-        createdByAgentId: uuid44("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text46("created_by_user_id"),
-        createdAt: timestamp45("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp45("updated_at", { withTimezone: true }).notNull().defaultNow()
+        description: text47("description"),
+        createdByAgentId: uuid45("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+        createdByUserId: text47("created_by_user_id"),
+        createdAt: timestamp46("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp46("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        companyIdx: index41("company_secrets_company_idx").on(table.companyId),
-        companyProviderIdx: index41("company_secrets_company_provider_idx").on(table.companyId, table.provider),
+        companyIdx: index42("company_secrets_company_idx").on(table.companyId),
+        companyProviderIdx: index42("company_secrets_company_provider_idx").on(table.companyId, table.provider),
         companyNameUq: uniqueIndex20("company_secrets_company_name_uq").on(table.companyId, table.name)
       })
     );
@@ -4815,29 +4966,29 @@ var init_company_secrets = __esm({
 });
 
 // ../packages/db/src/schema/company_secret_versions.ts
-import { pgTable as pgTable46, uuid as uuid45, text as text47, timestamp as timestamp46, integer as integer17, jsonb as jsonb23, index as index42, uniqueIndex as uniqueIndex21 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable47, uuid as uuid46, text as text48, timestamp as timestamp47, integer as integer17, jsonb as jsonb24, index as index43, uniqueIndex as uniqueIndex21 } from "drizzle-orm/pg-core";
 var companySecretVersions;
 var init_company_secret_versions = __esm({
   "../packages/db/src/schema/company_secret_versions.ts"() {
     "use strict";
     init_agents();
     init_company_secrets();
-    companySecretVersions = pgTable46(
+    companySecretVersions = pgTable47(
       "company_secret_versions",
       {
-        id: uuid45("id").primaryKey().defaultRandom(),
-        secretId: uuid45("secret_id").notNull().references(() => companySecrets.id, { onDelete: "cascade" }),
+        id: uuid46("id").primaryKey().defaultRandom(),
+        secretId: uuid46("secret_id").notNull().references(() => companySecrets.id, { onDelete: "cascade" }),
         version: integer17("version").notNull(),
-        material: jsonb23("material").$type().notNull(),
-        valueSha256: text47("value_sha256").notNull(),
-        createdByAgentId: uuid45("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text47("created_by_user_id"),
-        createdAt: timestamp46("created_at", { withTimezone: true }).notNull().defaultNow(),
-        revokedAt: timestamp46("revoked_at", { withTimezone: true })
+        material: jsonb24("material").$type().notNull(),
+        valueSha256: text48("value_sha256").notNull(),
+        createdByAgentId: uuid46("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+        createdByUserId: text48("created_by_user_id"),
+        createdAt: timestamp47("created_at", { withTimezone: true }).notNull().defaultNow(),
+        revokedAt: timestamp47("revoked_at", { withTimezone: true })
       },
       (table) => ({
-        secretIdx: index42("company_secret_versions_secret_idx").on(table.secretId, table.createdAt),
-        valueHashIdx: index42("company_secret_versions_value_sha256_idx").on(table.valueSha256),
+        secretIdx: index43("company_secret_versions_secret_idx").on(table.secretId, table.createdAt),
+        valueHashIdx: index43("company_secret_versions_value_sha256_idx").on(table.valueSha256),
         secretVersionUq: uniqueIndex21("company_secret_versions_secret_version_uq").on(table.secretId, table.version)
       })
     );
@@ -4846,61 +4997,61 @@ var init_company_secret_versions = __esm({
 
 // ../packages/db/src/schema/plugins.ts
 import {
-  pgTable as pgTable47,
-  uuid as uuid46,
-  text as text48,
+  pgTable as pgTable48,
+  uuid as uuid47,
+  text as text49,
   integer as integer18,
-  timestamp as timestamp47,
-  jsonb as jsonb24,
-  index as index43,
+  timestamp as timestamp48,
+  jsonb as jsonb25,
+  index as index44,
   uniqueIndex as uniqueIndex22
 } from "drizzle-orm/pg-core";
 var plugins;
 var init_plugins = __esm({
   "../packages/db/src/schema/plugins.ts"() {
     "use strict";
-    plugins = pgTable47(
+    plugins = pgTable48(
       "plugins",
       {
-        id: uuid46("id").primaryKey().defaultRandom(),
-        pluginKey: text48("plugin_key").notNull(),
-        packageName: text48("package_name").notNull(),
-        version: text48("version").notNull(),
+        id: uuid47("id").primaryKey().defaultRandom(),
+        pluginKey: text49("plugin_key").notNull(),
+        packageName: text49("package_name").notNull(),
+        version: text49("version").notNull(),
         apiVersion: integer18("api_version").notNull().default(1),
-        categories: jsonb24("categories").$type().notNull().default([]),
-        manifestJson: jsonb24("manifest_json").$type().notNull(),
-        status: text48("status").$type().notNull().default("installed"),
+        categories: jsonb25("categories").$type().notNull().default([]),
+        manifestJson: jsonb25("manifest_json").$type().notNull(),
+        status: text49("status").$type().notNull().default("installed"),
         installOrder: integer18("install_order"),
         /** Resolved package path for local-path installs; used to find worker entrypoint. */
-        packagePath: text48("package_path"),
-        lastError: text48("last_error"),
-        installedAt: timestamp47("installed_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp47("updated_at", { withTimezone: true }).notNull().defaultNow()
+        packagePath: text49("package_path"),
+        lastError: text49("last_error"),
+        installedAt: timestamp48("installed_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp48("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
         pluginKeyIdx: uniqueIndex22("plugins_plugin_key_idx").on(table.pluginKey),
-        statusIdx: index43("plugins_status_idx").on(table.status)
+        statusIdx: index44("plugins_status_idx").on(table.status)
       })
     );
   }
 });
 
 // ../packages/db/src/schema/plugin_config.ts
-import { pgTable as pgTable48, uuid as uuid47, text as text49, timestamp as timestamp48, jsonb as jsonb25, uniqueIndex as uniqueIndex23 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable49, uuid as uuid48, text as text50, timestamp as timestamp49, jsonb as jsonb26, uniqueIndex as uniqueIndex23 } from "drizzle-orm/pg-core";
 var pluginConfig;
 var init_plugin_config = __esm({
   "../packages/db/src/schema/plugin_config.ts"() {
     "use strict";
     init_plugins();
-    pluginConfig = pgTable48(
+    pluginConfig = pgTable49(
       "plugin_config",
       {
-        id: uuid47("id").primaryKey().defaultRandom(),
-        pluginId: uuid47("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        configJson: jsonb25("config_json").$type().notNull().default({}),
-        lastError: text49("last_error"),
-        createdAt: timestamp48("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp48("updated_at", { withTimezone: true }).notNull().defaultNow()
+        id: uuid48("id").primaryKey().defaultRandom(),
+        pluginId: uuid48("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        configJson: jsonb26("config_json").$type().notNull().default({}),
+        lastError: text50("last_error"),
+        createdAt: timestamp49("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp49("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
         pluginIdIdx: uniqueIndex23("plugin_config_plugin_id_idx").on(table.pluginId)
@@ -4910,28 +5061,28 @@ var init_plugin_config = __esm({
 });
 
 // ../packages/db/src/schema/plugin_company_settings.ts
-import { pgTable as pgTable49, uuid as uuid48, text as text50, timestamp as timestamp49, jsonb as jsonb26, index as index44, uniqueIndex as uniqueIndex24, boolean as boolean9 } from "drizzle-orm/pg-core";
+import { pgTable as pgTable50, uuid as uuid49, text as text51, timestamp as timestamp50, jsonb as jsonb27, index as index45, uniqueIndex as uniqueIndex24, boolean as boolean10 } from "drizzle-orm/pg-core";
 var pluginCompanySettings;
 var init_plugin_company_settings = __esm({
   "../packages/db/src/schema/plugin_company_settings.ts"() {
     "use strict";
     init_companies();
     init_plugins();
-    pluginCompanySettings = pgTable49(
+    pluginCompanySettings = pgTable50(
       "plugin_company_settings",
       {
-        id: uuid48("id").primaryKey().defaultRandom(),
-        companyId: uuid48("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-        pluginId: uuid48("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        enabled: boolean9("enabled").notNull().default(true),
-        settingsJson: jsonb26("settings_json").$type().notNull().default({}),
-        lastError: text50("last_error"),
-        createdAt: timestamp49("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp49("updated_at", { withTimezone: true }).notNull().defaultNow()
+        id: uuid49("id").primaryKey().defaultRandom(),
+        companyId: uuid49("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+        pluginId: uuid49("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        enabled: boolean10("enabled").notNull().default(true),
+        settingsJson: jsonb27("settings_json").$type().notNull().default({}),
+        lastError: text51("last_error"),
+        createdAt: timestamp50("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp50("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        companyIdx: index44("plugin_company_settings_company_idx").on(table.companyId),
-        pluginIdx: index44("plugin_company_settings_plugin_idx").on(table.pluginId),
+        companyIdx: index45("plugin_company_settings_company_idx").on(table.companyId),
+        pluginIdx: index45("plugin_company_settings_plugin_idx").on(table.pluginId),
         companyPluginUq: uniqueIndex24("plugin_company_settings_company_plugin_uq").on(
           table.companyId,
           table.pluginId
@@ -4943,12 +5094,12 @@ var init_plugin_company_settings = __esm({
 
 // ../packages/db/src/schema/plugin_state.ts
 import {
-  pgTable as pgTable50,
-  uuid as uuid49,
-  text as text51,
-  timestamp as timestamp50,
-  jsonb as jsonb27,
-  index as index45,
+  pgTable as pgTable51,
+  uuid as uuid50,
+  text as text52,
+  timestamp as timestamp51,
+  jsonb as jsonb28,
+  index as index46,
   unique as unique2
 } from "drizzle-orm/pg-core";
 var pluginState;
@@ -4956,30 +5107,30 @@ var init_plugin_state = __esm({
   "../packages/db/src/schema/plugin_state.ts"() {
     "use strict";
     init_plugins();
-    pluginState = pgTable50(
+    pluginState = pgTable51(
       "plugin_state",
       {
-        id: uuid49("id").primaryKey().defaultRandom(),
+        id: uuid50("id").primaryKey().defaultRandom(),
         /** FK to the owning plugin. Cascades on delete. */
-        pluginId: uuid49("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        pluginId: uuid50("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
         /** Granularity of the scope (e.g. `"instance"`, `"project"`, `"issue"`). */
-        scopeKind: text51("scope_kind").$type().notNull(),
+        scopeKind: text52("scope_kind").$type().notNull(),
         /**
          * UUID or text identifier for the scoped object.
          * Null for `instance` scope (which has no associated entity).
          */
-        scopeId: text51("scope_id"),
+        scopeId: text52("scope_id"),
         /**
          * Sub-namespace to avoid key collisions within a scope.
          * Defaults to `"default"` if the plugin does not specify one.
          */
-        namespace: text51("namespace").notNull().default("default"),
+        namespace: text52("namespace").notNull().default("default"),
         /** The key identifying this state entry within the namespace. */
-        stateKey: text51("state_key").notNull(),
+        stateKey: text52("state_key").notNull(),
         /** JSON-serializable value stored by the plugin. */
-        valueJson: jsonb27("value_json").notNull(),
+        valueJson: jsonb28("value_json").notNull(),
         /** Timestamp of the most recent write. */
-        updatedAt: timestamp50("updated_at", { withTimezone: true }).notNull().defaultNow()
+        updatedAt: timestamp51("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
         /**
@@ -5001,7 +5152,7 @@ var init_plugin_state = __esm({
           table.stateKey
         ).nullsNotDistinct(),
         /** Speed up lookups by plugin + scope kind (most common access pattern). */
-        pluginScopeIdx: index45("plugin_state_plugin_scope_idx").on(
+        pluginScopeIdx: index46("plugin_state_plugin_scope_idx").on(
           table.pluginId,
           table.scopeKind
         )
@@ -5012,12 +5163,12 @@ var init_plugin_state = __esm({
 
 // ../packages/db/src/schema/plugin_entities.ts
 import {
-  pgTable as pgTable51,
-  uuid as uuid50,
-  text as text52,
-  timestamp as timestamp51,
-  jsonb as jsonb28,
-  index as index46,
+  pgTable as pgTable52,
+  uuid as uuid51,
+  text as text53,
+  timestamp as timestamp52,
+  jsonb as jsonb29,
+  index as index47,
   uniqueIndex as uniqueIndex25
 } from "drizzle-orm/pg-core";
 var pluginEntities;
@@ -5025,27 +5176,27 @@ var init_plugin_entities = __esm({
   "../packages/db/src/schema/plugin_entities.ts"() {
     "use strict";
     init_plugins();
-    pluginEntities = pgTable51(
+    pluginEntities = pgTable52(
       "plugin_entities",
       {
-        id: uuid50("id").primaryKey().defaultRandom(),
-        pluginId: uuid50("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        entityType: text52("entity_type").notNull(),
-        scopeKind: text52("scope_kind").$type().notNull(),
-        scopeId: text52("scope_id"),
+        id: uuid51("id").primaryKey().defaultRandom(),
+        pluginId: uuid51("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        entityType: text53("entity_type").notNull(),
+        scopeKind: text53("scope_kind").$type().notNull(),
+        scopeId: text53("scope_id"),
         // NULL for global scope (text to match plugin_state.scope_id)
-        externalId: text52("external_id"),
+        externalId: text53("external_id"),
         // ID in the external system
-        title: text52("title"),
-        status: text52("status"),
-        data: jsonb28("data").$type().notNull().default({}),
-        createdAt: timestamp51("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp51("updated_at", { withTimezone: true }).notNull().defaultNow()
+        title: text53("title"),
+        status: text53("status"),
+        data: jsonb29("data").$type().notNull().default({}),
+        createdAt: timestamp52("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp52("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        pluginIdx: index46("plugin_entities_plugin_idx").on(table.pluginId),
-        typeIdx: index46("plugin_entities_type_idx").on(table.entityType),
-        scopeIdx: index46("plugin_entities_scope_idx").on(table.scopeKind, table.scopeId),
+        pluginIdx: index47("plugin_entities_plugin_idx").on(table.pluginId),
+        typeIdx: index47("plugin_entities_type_idx").on(table.entityType),
+        scopeIdx: index47("plugin_entities_scope_idx").on(table.scopeKind, table.scopeId),
         externalIdx: uniqueIndex25("plugin_entities_external_idx").on(
           table.pluginId,
           table.entityType,
@@ -5058,13 +5209,13 @@ var init_plugin_entities = __esm({
 
 // ../packages/db/src/schema/plugin_jobs.ts
 import {
-  pgTable as pgTable52,
-  uuid as uuid51,
-  text as text53,
+  pgTable as pgTable53,
+  uuid as uuid52,
+  text as text54,
   integer as integer19,
-  timestamp as timestamp52,
-  jsonb as jsonb29,
-  index as index47,
+  timestamp as timestamp53,
+  jsonb as jsonb30,
+  index as index48,
   uniqueIndex as uniqueIndex26
 } from "drizzle-orm/pg-core";
 var pluginJobs, pluginJobRuns;
@@ -5072,57 +5223,57 @@ var init_plugin_jobs = __esm({
   "../packages/db/src/schema/plugin_jobs.ts"() {
     "use strict";
     init_plugins();
-    pluginJobs = pgTable52(
+    pluginJobs = pgTable53(
       "plugin_jobs",
       {
-        id: uuid51("id").primaryKey().defaultRandom(),
+        id: uuid52("id").primaryKey().defaultRandom(),
         /** FK to the owning plugin. Cascades on delete. */
-        pluginId: uuid51("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        pluginId: uuid52("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
         /** Identifier matching the key in the plugin manifest's `jobs` array. */
-        jobKey: text53("job_key").notNull(),
+        jobKey: text54("job_key").notNull(),
         /** Cron expression (e.g. `"0 * * * *"`) or interval string. */
-        schedule: text53("schedule").notNull(),
+        schedule: text54("schedule").notNull(),
         /** Current scheduling state. */
-        status: text53("status").$type().notNull().default("active"),
+        status: text54("status").$type().notNull().default("active"),
         /** Timestamp of the most recent successful execution. */
-        lastRunAt: timestamp52("last_run_at", { withTimezone: true }),
+        lastRunAt: timestamp53("last_run_at", { withTimezone: true }),
         /** Pre-computed timestamp of the next scheduled execution. */
-        nextRunAt: timestamp52("next_run_at", { withTimezone: true }),
-        createdAt: timestamp52("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp52("updated_at", { withTimezone: true }).notNull().defaultNow()
+        nextRunAt: timestamp53("next_run_at", { withTimezone: true }),
+        createdAt: timestamp53("created_at", { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp53("updated_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        pluginIdx: index47("plugin_jobs_plugin_idx").on(table.pluginId),
-        nextRunIdx: index47("plugin_jobs_next_run_idx").on(table.nextRunAt),
+        pluginIdx: index48("plugin_jobs_plugin_idx").on(table.pluginId),
+        nextRunIdx: index48("plugin_jobs_next_run_idx").on(table.nextRunAt),
         uniqueJobIdx: uniqueIndex26("plugin_jobs_unique_idx").on(table.pluginId, table.jobKey)
       })
     );
-    pluginJobRuns = pgTable52(
+    pluginJobRuns = pgTable53(
       "plugin_job_runs",
       {
-        id: uuid51("id").primaryKey().defaultRandom(),
+        id: uuid52("id").primaryKey().defaultRandom(),
         /** FK to the parent job definition. Cascades on delete. */
-        jobId: uuid51("job_id").notNull().references(() => pluginJobs.id, { onDelete: "cascade" }),
+        jobId: uuid52("job_id").notNull().references(() => pluginJobs.id, { onDelete: "cascade" }),
         /** Denormalized FK to the owning plugin for efficient querying. Cascades on delete. */
-        pluginId: uuid51("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        pluginId: uuid52("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
         /** What caused this run to start (`"scheduled"` or `"manual"`). */
-        trigger: text53("trigger").$type().notNull(),
+        trigger: text54("trigger").$type().notNull(),
         /** Current lifecycle state of this run. */
-        status: text53("status").$type().notNull().default("pending"),
+        status: text54("status").$type().notNull().default("pending"),
         /** Wall-clock duration in milliseconds. Null until the run finishes. */
         durationMs: integer19("duration_ms"),
         /** Error message if `status === "failed"`. */
-        error: text53("error"),
+        error: text54("error"),
         /** Ordered list of log lines emitted during this run. */
-        logs: jsonb29("logs").$type().notNull().default([]),
-        startedAt: timestamp52("started_at", { withTimezone: true }),
-        finishedAt: timestamp52("finished_at", { withTimezone: true }),
-        createdAt: timestamp52("created_at", { withTimezone: true }).notNull().defaultNow()
+        logs: jsonb30("logs").$type().notNull().default([]),
+        startedAt: timestamp53("started_at", { withTimezone: true }),
+        finishedAt: timestamp53("finished_at", { withTimezone: true }),
+        createdAt: timestamp53("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        jobIdx: index47("plugin_job_runs_job_idx").on(table.jobId),
-        pluginIdx: index47("plugin_job_runs_plugin_idx").on(table.pluginId),
-        statusIdx: index47("plugin_job_runs_status_idx").on(table.status)
+        jobIdx: index48("plugin_job_runs_job_idx").on(table.jobId),
+        pluginIdx: index48("plugin_job_runs_plugin_idx").on(table.pluginId),
+        statusIdx: index48("plugin_job_runs_status_idx").on(table.status)
       })
     );
   }
@@ -5130,47 +5281,47 @@ var init_plugin_jobs = __esm({
 
 // ../packages/db/src/schema/plugin_webhooks.ts
 import {
-  pgTable as pgTable53,
-  uuid as uuid52,
-  text as text54,
+  pgTable as pgTable54,
+  uuid as uuid53,
+  text as text55,
   integer as integer20,
-  timestamp as timestamp53,
-  jsonb as jsonb30,
-  index as index48
+  timestamp as timestamp54,
+  jsonb as jsonb31,
+  index as index49
 } from "drizzle-orm/pg-core";
 var pluginWebhookDeliveries;
 var init_plugin_webhooks = __esm({
   "../packages/db/src/schema/plugin_webhooks.ts"() {
     "use strict";
     init_plugins();
-    pluginWebhookDeliveries = pgTable53(
+    pluginWebhookDeliveries = pgTable54(
       "plugin_webhook_deliveries",
       {
-        id: uuid52("id").primaryKey().defaultRandom(),
+        id: uuid53("id").primaryKey().defaultRandom(),
         /** FK to the owning plugin. Cascades on delete. */
-        pluginId: uuid52("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        pluginId: uuid53("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
         /** Identifier matching the key in the plugin manifest's `webhooks` array. */
-        webhookKey: text54("webhook_key").notNull(),
+        webhookKey: text55("webhook_key").notNull(),
         /** Optional de-duplication ID provided by the external system. */
-        externalId: text54("external_id"),
+        externalId: text55("external_id"),
         /** Current delivery state. */
-        status: text54("status").$type().notNull().default("pending"),
+        status: text55("status").$type().notNull().default("pending"),
         /** Wall-clock processing duration in milliseconds. Null until delivery finishes. */
         durationMs: integer20("duration_ms"),
         /** Error message if `status === "failed"`. */
-        error: text54("error"),
+        error: text55("error"),
         /** Raw JSON body of the inbound HTTP request. */
-        payload: jsonb30("payload").$type().notNull(),
+        payload: jsonb31("payload").$type().notNull(),
         /** Relevant HTTP headers from the inbound request (e.g. signature headers). */
-        headers: jsonb30("headers").$type().notNull().default({}),
-        startedAt: timestamp53("started_at", { withTimezone: true }),
-        finishedAt: timestamp53("finished_at", { withTimezone: true }),
-        createdAt: timestamp53("created_at", { withTimezone: true }).notNull().defaultNow()
+        headers: jsonb31("headers").$type().notNull().default({}),
+        startedAt: timestamp54("started_at", { withTimezone: true }),
+        finishedAt: timestamp54("finished_at", { withTimezone: true }),
+        createdAt: timestamp54("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        pluginIdx: index48("plugin_webhook_deliveries_plugin_idx").on(table.pluginId),
-        statusIdx: index48("plugin_webhook_deliveries_status_idx").on(table.status),
-        keyIdx: index48("plugin_webhook_deliveries_key_idx").on(table.webhookKey)
+        pluginIdx: index49("plugin_webhook_deliveries_plugin_idx").on(table.pluginId),
+        statusIdx: index49("plugin_webhook_deliveries_status_idx").on(table.status),
+        keyIdx: index49("plugin_webhook_deliveries_key_idx").on(table.webhookKey)
       })
     );
   }
@@ -5178,34 +5329,34 @@ var init_plugin_webhooks = __esm({
 
 // ../packages/db/src/schema/plugin_logs.ts
 import {
-  pgTable as pgTable54,
-  uuid as uuid53,
-  text as text55,
-  timestamp as timestamp54,
-  jsonb as jsonb31,
-  index as index49
+  pgTable as pgTable55,
+  uuid as uuid54,
+  text as text56,
+  timestamp as timestamp55,
+  jsonb as jsonb32,
+  index as index50
 } from "drizzle-orm/pg-core";
 var pluginLogs;
 var init_plugin_logs = __esm({
   "../packages/db/src/schema/plugin_logs.ts"() {
     "use strict";
     init_plugins();
-    pluginLogs = pgTable54(
+    pluginLogs = pgTable55(
       "plugin_logs",
       {
-        id: uuid53("id").primaryKey().defaultRandom(),
-        pluginId: uuid53("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        level: text55("level").notNull().default("info"),
-        message: text55("message").notNull(),
-        meta: jsonb31("meta").$type(),
-        createdAt: timestamp54("created_at", { withTimezone: true }).notNull().defaultNow()
+        id: uuid54("id").primaryKey().defaultRandom(),
+        pluginId: uuid54("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
+        level: text56("level").notNull().default("info"),
+        message: text56("message").notNull(),
+        meta: jsonb32("meta").$type(),
+        createdAt: timestamp55("created_at", { withTimezone: true }).notNull().defaultNow()
       },
       (table) => ({
-        pluginTimeIdx: index49("plugin_logs_plugin_time_idx").on(
+        pluginTimeIdx: index50("plugin_logs_plugin_time_idx").on(
           table.pluginId,
           table.createdAt
         ),
-        levelIdx: index49("plugin_logs_level_idx").on(table.level)
+        levelIdx: index50("plugin_logs_level_idx").on(table.level)
       })
     );
   }
@@ -5255,6 +5406,7 @@ __export(schema_exports, {
   issueWorkProducts: () => issueWorkProducts,
   issues: () => issues,
   joinRequests: () => joinRequests,
+  kbSkillDocs: () => kbSkillDocs,
   labels: () => labels,
   pluginCompanySettings: () => pluginCompanySettings,
   pluginConfig: () => pluginConfig,
@@ -5311,6 +5463,7 @@ var init_schema2 = __esm({
     init_assets();
     init_issue_attachments();
     init_documents();
+    init_kb_skill_docs();
     init_document_revisions();
     init_issue_documents();
     init_heartbeat_runs();
@@ -5912,7 +6065,7 @@ function sanitizeRestoreErrorMessage(error) {
   }
   return error instanceof Error ? error.message : String(error);
 }
-function timestamp55(date2 = /* @__PURE__ */ new Date()) {
+function timestamp56(date2 = /* @__PURE__ */ new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${date2.getFullYear()}${pad(date2.getMonth() + 1)}${pad(date2.getDate())}-${pad(date2.getHours())}${pad(date2.getMinutes())}${pad(date2.getSeconds())}`;
 }
@@ -6115,9 +6268,9 @@ async function runDatabaseBackup(opts) {
         WHERE n.nspname = ${schema_name} AND t.relname = ${tablename} AND c.contype = 'p'
         GROUP BY c.conname
       `;
-      for (const p16 of pk) {
-        const cols = p16.column_names.map((c) => `"${c}"`).join(", ");
-        colDefs.push(`  CONSTRAINT "${p16.constraint_name}" PRIMARY KEY (${cols})`);
+      for (const p19 of pk) {
+        const cols = p19.column_names.map((c) => `"${c}"`).join(", ");
+        colDefs.push(`  CONSTRAINT "${p19.constraint_name}" PRIMARY KEY (${cols})`);
       }
       emit(`CREATE TABLE ${qualifiedTableName} (`);
       emit(colDefs.join(",\n"));
@@ -6236,8 +6389,8 @@ async function runDatabaseBackup(opts) {
       const rows = await sql2.unsafe(`SELECT * FROM ${qualifiedTableName}`).values();
       const nullifiedColumns = nullifiedColumnsByTable.get(tablename) ?? /* @__PURE__ */ new Set();
       for (const row of rows) {
-        const values = row.map((rawValue, index50) => {
-          const columnName = cols[index50]?.column_name;
+        const values = row.map((rawValue, index51) => {
+          const columnName = cols[index51]?.column_name;
           const val = columnName && nullifiedColumns.has(columnName) ? null : rawValue;
           if (val === null || val === void 0) return "NULL";
           if (typeof val === "boolean") return val ? "true" : "false";
@@ -6267,7 +6420,7 @@ async function runDatabaseBackup(opts) {
     emitStatement("COMMIT;");
     emit("");
     mkdirSync(opts.backupDir, { recursive: true });
-    const backupFile = resolve(opts.backupDir, `${filenamePrefix}-${timestamp55()}.sql`);
+    const backupFile = resolve(opts.backupDir, `${filenamePrefix}-${timestamp56()}.sql`);
     await writeFile(backupFile, lines.join("\n"), "utf8");
     const sizeBytes = statSync(backupFile).size;
     const prunedCount = pruneOldBackups(opts.backupDir, retentionDays, filenamePrefix);
@@ -6364,6 +6517,7 @@ __export(src_exports, {
   issueWorkProducts: () => issueWorkProducts,
   issues: () => issues,
   joinRequests: () => joinRequests,
+  kbSkillDocs: () => kbSkillDocs,
   labels: () => labels,
   migratePostgresIfEmpty: () => migratePostgresIfEmpty,
   pluginCompanySettings: () => pluginCompanySettings,
@@ -7862,6 +8016,9 @@ var init_onboard = __esm({
 init_onboard();
 init_doctor();
 import { Command } from "commander";
+import * as p18 from "@clack/prompts";
+import fs16 from "node:fs";
+import path23 from "node:path";
 
 // src/commands/env.ts
 init_store();
@@ -8231,24 +8388,30 @@ ${err instanceof Error ? err.message : String(err)}`
     p12.outro("");
     return;
   }
-  let continueLoop = true;
-  while (continueLoop) {
-    if (!section) {
-      const choice = await p12.select({
-        message: "Which section do you want to configure?",
-        options: Object.entries(SECTION_LABELS).map(([value, label]) => ({
-          value,
-          label
-        }))
-      });
-      if (p12.isCancel(choice)) {
-        p12.cancel("Configuration cancelled.");
-        return;
-      }
-      section = choice;
+  let sectionsToConfigure;
+  if (section) {
+    sectionsToConfigure = [section];
+  } else {
+    const choices = await p12.multiselect({
+      message: "Which sections do you want to configure?",
+      options: Object.entries(SECTION_LABELS).map(([value, label]) => ({
+        value,
+        label
+      }))
+    });
+    if (p12.isCancel(choices)) {
+      p12.cancel("Configuration cancelled.");
+      return;
     }
-    p12.log.step(pc7.bold(SECTION_LABELS[section]));
-    switch (section) {
+    sectionsToConfigure = choices;
+    if (sectionsToConfigure.length === 0) {
+      p12.cancel("No sections selected.");
+      return;
+    }
+  }
+  for (const selectedSection of sectionsToConfigure) {
+    p12.log.step(pc7.bold(SECTION_LABELS[selectedSection]));
+    switch (selectedSection) {
       case "database":
         config.database = await promptDatabase(config.database);
         break;
@@ -8296,20 +8459,7 @@ ${err instanceof Error ? err.message : String(err)}`
     config.$meta.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     config.$meta.source = "configure";
     writeConfig(config, opts.config);
-    p12.log.success(`${SECTION_LABELS[section]} configuration updated.`);
-    if (opts.section) {
-      continueLoop = false;
-    } else {
-      const another = await p12.confirm({
-        message: "Configure another section?",
-        initialValue: false
-      });
-      if (p12.isCancel(another) || !another) {
-        continueLoop = false;
-      } else {
-        section = void 0;
-      }
-    }
+    p12.log.success(`${SECTION_LABELS[selectedSection]} configuration updated.`);
   }
   p12.outro("Configuration saved.");
 }
@@ -8392,8 +8542,8 @@ function printClaudeStreamEvent(raw, debug) {
       const block = blockRaw;
       const blockType = typeof block.type === "string" ? block.type : "";
       if (blockType === "text") {
-        const text56 = typeof block.text === "string" ? block.text : "";
-        if (text56) console.log(pc9.green(`assistant: ${text56}`));
+        const text58 = typeof block.text === "string" ? block.text : "";
+        if (text58) console.log(pc9.green(`assistant: ${text58}`));
       } else if (blockType === "tool_use") {
         const name = typeof block.name === "string" ? block.name : "unknown";
         console.log(pc9.yellow(`tool_call: ${name}`));
@@ -8485,13 +8635,13 @@ function printItemStarted(item) {
 function printItemCompleted(item) {
   const itemType = asString(item.type);
   if (itemType === "agent_message") {
-    const text56 = asString(item.text);
-    if (text56) console.log(pc10.green(`assistant: ${text56}`));
+    const text58 = asString(item.text);
+    if (text58) console.log(pc10.green(`assistant: ${text58}`));
     return true;
   }
   if (itemType === "reasoning") {
-    const text56 = asString(item.text);
-    if (text56) console.log(pc10.gray(`thinking: ${text56}`));
+    const text58 = asString(item.text);
+    if (text58) console.log(pc10.gray(`thinking: ${text58}`));
     return true;
   }
   if (itemType === "tool_use") {
@@ -8526,8 +8676,8 @@ function printItemCompleted(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path19 = asString(change.path, "unknown");
-      return `${kind} ${path19}`;
+      const path24 = asString(change.path, "unknown");
+      return `${kind} ${path24}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -8541,9 +8691,9 @@ function printItemCompleted(item) {
   }
   if (itemType === "tool_result") {
     const isError = item.is_error === true || asString(item.status) === "error";
-    const text56 = asString(item.content) || asString(item.result) || asString(item.output);
+    const text58 = asString(item.content) || asString(item.result) || asString(item.output);
     console.log((isError ? pc10.red : pc10.cyan)(`tool_result${isError ? " (error)" : ""}`));
-    if (text56) console.log((isError ? pc10.red : pc10.gray)(text56));
+    if (text58) console.log((isError ? pc10.red : pc10.gray)(text58));
     return true;
   }
   return false;
@@ -8624,13 +8774,14 @@ function printCodexStreamEvent(raw, _debug) {
   console.log(line);
 }
 
-// ../packages/adapters/cursor-local/src/cli/format-event.ts
+// ../../node_modules/@paperclipai/adapter-cursor-local/dist/cli/format-event.js
 import pc11 from "picocolors";
 
-// ../packages/adapters/cursor-local/src/shared/stream.ts
+// ../../node_modules/@paperclipai/adapter-cursor-local/dist/shared/stream.js
 function normalizeCursorStreamLine(rawLine) {
   const trimmed = rawLine.trim();
-  if (!trimmed) return { stream: null, line: "" };
+  if (!trimmed)
+    return { stream: null, line: "" };
   const prefixed = trimmed.match(/^(stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
   if (!prefixed) {
     return { stream: null, line: trimmed };
@@ -8640,9 +8791,10 @@ function normalizeCursorStreamLine(rawLine) {
   return { stream, line };
 }
 
-// ../packages/adapters/cursor-local/src/cli/format-event.ts
+// ../../node_modules/@paperclipai/adapter-cursor-local/dist/cli/format-event.js
 function asRecord2(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString2(value, fallback = "") {
@@ -8652,8 +8804,10 @@ function asNumber2(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
+  if (typeof value === "string")
+    return value;
+  if (value === null || value === void 0)
+    return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -8662,47 +8816,59 @@ function stringifyUnknown(value) {
 }
 function printUserMessage(messageRaw) {
   if (typeof messageRaw === "string") {
-    const text56 = messageRaw.trim();
-    if (text56) console.log(pc11.gray(`user: ${text56}`));
+    const text58 = messageRaw.trim();
+    if (text58)
+      console.log(pc11.gray(`user: ${text58}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.gray(`user: ${directText}`));
+  if (directText)
+    console.log(pc11.gray(`user: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString2(part.type).trim();
-    if (type !== "output_text" && type !== "text") continue;
-    const text56 = asString2(part.text).trim();
-    if (text56) console.log(pc11.gray(`user: ${text56}`));
+    if (type !== "output_text" && type !== "text")
+      continue;
+    const text58 = asString2(part.text).trim();
+    if (text58)
+      console.log(pc11.gray(`user: ${text58}`));
   }
 }
 function printAssistantMessage(messageRaw) {
   if (typeof messageRaw === "string") {
-    const text56 = messageRaw.trim();
-    if (text56) console.log(pc11.green(`assistant: ${text56}`));
+    const text58 = messageRaw.trim();
+    if (text58)
+      console.log(pc11.green(`assistant: ${text58}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.green(`assistant: ${directText}`));
+  if (directText)
+    console.log(pc11.green(`assistant: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString2(part.type).trim();
     if (type === "output_text" || type === "text") {
-      const text56 = asString2(part.text).trim();
-      if (text56) console.log(pc11.green(`assistant: ${text56}`));
+      const text58 = asString2(part.text).trim();
+      if (text58)
+        console.log(pc11.green(`assistant: ${text58}`));
       continue;
     }
     if (type === "thinking") {
-      const text56 = asString2(part.text).trim();
-      if (text56) console.log(pc11.gray(`thinking: ${text56}`));
+      const text58 = asString2(part.text).trim();
+      if (text58)
+        console.log(pc11.gray(`thinking: ${text58}`));
       continue;
     }
     if (type === "tool_call") {
@@ -8722,7 +8888,8 @@ function printAssistantMessage(messageRaw) {
       const isError = part.is_error === true || asString2(part.status).toLowerCase() === "error";
       const contentText = asString2(part.output) || asString2(part.text) || asString2(part.result) || stringifyUnknown(part.output ?? part.result ?? part.text ?? part);
       console.log((isError ? pc11.red : pc11.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc11.red : pc11.gray)(contentText));
+      if (contentText)
+        console.log((isError ? pc11.red : pc11.gray)(contentText));
     }
   }
 }
@@ -8792,7 +8959,8 @@ function printLegacyToolEvent(part) {
 }
 function printCursorStreamEvent(raw, _debug) {
   const line = normalizeCursorStreamLine(raw).line;
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -8822,8 +8990,9 @@ function printCursorStreamEvent(raw, _debug) {
     return;
   }
   if (type === "thinking") {
-    const text56 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
-    if (text56) console.log(pc11.gray(`thinking: ${text56}`));
+    const text58 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
+    if (text58)
+      console.log(pc11.gray(`thinking: ${text58}`));
     return;
   }
   if (type === "tool_call") {
@@ -8834,19 +9003,18 @@ function printCursorStreamEvent(raw, _debug) {
     const usage = asRecord2(parsed.usage);
     const input = asNumber2(usage?.input_tokens, asNumber2(usage?.inputTokens));
     const output = asNumber2(usage?.output_tokens, asNumber2(usage?.outputTokens));
-    const cached = asNumber2(
-      usage?.cached_input_tokens,
-      asNumber2(usage?.cachedInputTokens, asNumber2(usage?.cache_read_input_tokens))
-    );
+    const cached = asNumber2(usage?.cached_input_tokens, asNumber2(usage?.cachedInputTokens, asNumber2(usage?.cache_read_input_tokens)));
     const cost = asNumber2(parsed.total_cost_usd, asNumber2(parsed.cost_usd, asNumber2(parsed.cost)));
     const subtype = asString2(parsed.subtype, "result");
     const isError = parsed.is_error === true || subtype === "error" || subtype === "failed";
     console.log(pc11.blue(`result: subtype=${subtype}`));
     console.log(pc11.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
     const resultText = asString2(parsed.result).trim();
-    if (resultText) console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
+    if (resultText)
+      console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
     const errors = Array.isArray(parsed.errors) ? parsed.errors.map((value) => stringifyUnknown(value)).filter(Boolean) : [];
-    if (errors.length > 0) console.log(pc11.red(`errors: ${errors.join(" | ")}`));
+    if (errors.length > 0)
+      console.log(pc11.red(`errors: ${errors.join(" | ")}`));
     return;
   }
   if (type === "error") {
@@ -8861,8 +9029,9 @@ function printCursorStreamEvent(raw, _debug) {
   }
   if (type === "text") {
     const part = asRecord2(parsed.part);
-    const text56 = asString2(part?.text);
-    if (text56) console.log(pc11.green(`assistant: ${text56}`));
+    const text58 = asString2(part?.text);
+    if (text58)
+      console.log(pc11.green(`assistant: ${text58}`));
     return;
   }
   if (type === "tool_use") {
@@ -8890,10 +9059,11 @@ function printCursorStreamEvent(raw, _debug) {
   console.log(line);
 }
 
-// ../packages/adapters/gemini-local/src/cli/format-event.ts
+// ../../node_modules/@paperclipai/adapter-gemini-local/dist/cli/format-event.js
 import pc12 from "picocolors";
 function asRecord3(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString3(value, fallback = "") {
@@ -8903,8 +9073,10 @@ function asNumber3(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown2(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
+  if (typeof value === "string")
+    return value;
+  if (value === null || value === void 0)
+    return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -8912,11 +9084,14 @@ function stringifyUnknown2(value) {
   }
 }
 function errorText2(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord3(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
+  if (msg)
+    return msg;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -8925,41 +9100,49 @@ function errorText2(value) {
 }
 function printTextMessage(prefix, colorize, messageRaw) {
   if (typeof messageRaw === "string") {
-    const text56 = messageRaw.trim();
-    if (text56) console.log(colorize(`${prefix}: ${text56}`));
+    const text58 = messageRaw.trim();
+    if (text58)
+      console.log(colorize(`${prefix}: ${text58}`));
     return;
   }
   const message = asRecord3(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString3(message.text).trim();
-  if (directText) console.log(colorize(`${prefix}: ${directText}`));
+  if (directText)
+    console.log(colorize(`${prefix}: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord3(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString3(part.type).trim();
     if (type === "output_text" || type === "text" || type === "content") {
-      const text56 = asString3(part.text).trim() || asString3(part.content).trim();
-      if (text56) console.log(colorize(`${prefix}: ${text56}`));
+      const text58 = asString3(part.text).trim() || asString3(part.content).trim();
+      if (text58)
+        console.log(colorize(`${prefix}: ${text58}`));
       continue;
     }
     if (type === "thinking") {
-      const text56 = asString3(part.text).trim();
-      if (text56) console.log(pc12.gray(`thinking: ${text56}`));
+      const text58 = asString3(part.text).trim();
+      if (text58)
+        console.log(pc12.gray(`thinking: ${text58}`));
       continue;
     }
     if (type === "tool_call") {
       const name = asString3(part.name, asString3(part.tool, "tool"));
       console.log(pc12.yellow(`tool_call: ${name}`));
       const input = part.input ?? part.arguments ?? part.args;
-      if (input !== void 0) console.log(pc12.gray(stringifyUnknown2(input)));
+      if (input !== void 0)
+        console.log(pc12.gray(stringifyUnknown2(input)));
       continue;
     }
     if (type === "tool_result" || type === "tool_response") {
       const isError = part.is_error === true || asString3(part.status).toLowerCase() === "error";
       const contentText = asString3(part.output) || asString3(part.text) || asString3(part.result) || stringifyUnknown2(part.output ?? part.result ?? part.text ?? part.response);
       console.log((isError ? pc12.red : pc12.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc12.red : pc12.gray)(contentText));
+      if (contentText)
+        console.log((isError ? pc12.red : pc12.gray)(contentText));
     }
   }
 }
@@ -8969,16 +9152,14 @@ function printUsage(parsed) {
   const source = usageMetadata ?? usage ?? {};
   const input = asNumber3(source.input_tokens, asNumber3(source.inputTokens, asNumber3(source.promptTokenCount)));
   const output = asNumber3(source.output_tokens, asNumber3(source.outputTokens, asNumber3(source.candidatesTokenCount)));
-  const cached = asNumber3(
-    source.cached_input_tokens,
-    asNumber3(source.cachedInputTokens, asNumber3(source.cachedContentTokenCount))
-  );
+  const cached = asNumber3(source.cached_input_tokens, asNumber3(source.cachedInputTokens, asNumber3(source.cachedContentTokenCount)));
   const cost = asNumber3(parsed.total_cost_usd, asNumber3(parsed.cost_usd, asNumber3(parsed.cost)));
   console.log(pc12.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
 }
 function printGeminiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -8997,8 +9178,9 @@ function printGeminiStreamEvent(raw, _debug) {
       return;
     }
     if (subtype === "error") {
-      const text56 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-      if (text56) console.log(pc12.red(`error: ${text56}`));
+      const text58 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
+      if (text58)
+        console.log(pc12.red(`error: ${text58}`));
       return;
     }
     console.log(pc12.blue(`system: ${subtype || "event"}`));
@@ -9013,8 +9195,9 @@ function printGeminiStreamEvent(raw, _debug) {
     return;
   }
   if (type === "thinking") {
-    const text56 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
-    if (text56) console.log(pc12.gray(`thinking: ${text56}`));
+    const text58 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
+    if (text58)
+      console.log(pc12.gray(`thinking: ${text58}`));
     return;
   }
   if (type === "tool_call") {
@@ -9050,24 +9233,26 @@ function printGeminiStreamEvent(raw, _debug) {
     return;
   }
   if (type === "error") {
-    const text56 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-    if (text56) console.log(pc12.red(`error: ${text56}`));
+    const text58 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
+    if (text58)
+      console.log(pc12.red(`error: ${text58}`));
     return;
   }
   console.log(line);
 }
 
-// ../packages/adapters/opencode-local/src/cli/format-event.ts
+// ../../node_modules/@paperclipai/adapter-opencode-local/dist/cli/format-event.js
 import pc13 from "picocolors";
-function safeJsonParse(text56) {
+function safeJsonParse(text58) {
   try {
-    return JSON.parse(text56);
+    return JSON.parse(text58);
   } catch {
     return null;
   }
 }
 function asRecord4(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString4(value, fallback = "") {
@@ -9077,12 +9262,15 @@ function asNumber4(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function errorText3(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord4(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const data = asRecord4(rec.data);
   const message = asString4(rec.message) || asString4(data?.message) || asString4(rec.name) || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -9091,7 +9279,8 @@ function errorText3(value) {
 }
 function printOpenCodeStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   const parsed = asRecord4(safeJsonParse(line));
   if (!parsed) {
     console.log(line);
@@ -9105,14 +9294,16 @@ function printOpenCodeStreamEvent(raw, _debug) {
   }
   if (type === "text") {
     const part = asRecord4(parsed.part);
-    const text56 = asString4(part?.text).trim();
-    if (text56) console.log(pc13.green(`assistant: ${text56}`));
+    const text58 = asString4(part?.text).trim();
+    if (text58)
+      console.log(pc13.green(`assistant: ${text58}`));
     return;
   }
   if (type === "reasoning") {
     const part = asRecord4(parsed.part);
-    const text56 = asString4(part?.text).trim();
-    if (text56) console.log(pc13.gray(`thinking: ${text56}`));
+    const text58 = asString4(part?.text).trim();
+    if (text58)
+      console.log(pc13.gray(`thinking: ${text58}`));
     return;
   }
   if (type === "tool_use") {
@@ -9128,13 +9319,15 @@ function printOpenCodeStreamEvent(raw, _debug) {
       const metaParts = [`status=${status}`];
       if (metadata) {
         for (const [key, value] of Object.entries(metadata)) {
-          if (value !== void 0 && value !== null) metaParts.push(`${key}=${value}`);
+          if (value !== void 0 && value !== null)
+            metaParts.push(`${key}=${value}`);
         }
       }
       console.log((isError ? pc13.red : pc13.gray)(`tool_result ${metaParts.join(" ")}`));
     }
     const output = (asString4(state?.output) || asString4(state?.error)).trim();
-    if (output) console.log((isError ? pc13.red : pc13.gray)(output));
+    if (output)
+      console.log((isError ? pc13.red : pc13.gray)(output));
     return;
   }
   if (type === "step_finish") {
@@ -9152,36 +9345,41 @@ function printOpenCodeStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const message = errorText3(parsed.error ?? parsed.message);
-    if (message) console.log(pc13.red(`error: ${message}`));
+    if (message)
+      console.log(pc13.red(`error: ${message}`));
     return;
   }
   console.log(line);
 }
 
-// ../packages/adapters/pi-local/src/cli/format-event.ts
+// ../../node_modules/@paperclipai/adapter-pi-local/dist/cli/format-event.js
 import pc14 from "picocolors";
-function safeJsonParse2(text56) {
+function safeJsonParse2(text58) {
   try {
-    return JSON.parse(text56);
+    return JSON.parse(text58);
   } catch {
     return null;
   }
 }
 function asRecord5(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString5(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 function extractTextContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return "";
   return content.filter((c) => c.type === "text" && c.text).map((c) => c.text).join("");
 }
 function printPiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   const parsed = asRecord5(safeJsonParse2(line));
   if (!parsed) {
     console.log(line);
@@ -9204,9 +9402,9 @@ function printPiStreamEvent(raw, _debug) {
     const message = asRecord5(parsed.message);
     if (message) {
       const content = message.content;
-      const text56 = extractTextContent(content);
-      if (text56) {
-        console.log(pc14.green(`assistant: ${text56}`));
+      const text58 = extractTextContent(content);
+      if (text58) {
+        console.log(pc14.green(`assistant: ${text58}`));
       }
     }
     return;
@@ -9497,26 +9695,26 @@ var PaperclipApiClient = class {
     this.apiKey = opts.apiKey?.trim() || void 0;
     this.runId = opts.runId?.trim() || void 0;
   }
-  get(path19, opts) {
-    return this.request(path19, { method: "GET" }, opts);
+  get(path24, opts) {
+    return this.request(path24, { method: "GET" }, opts);
   }
-  post(path19, body, opts) {
-    return this.request(path19, {
+  post(path24, body, opts) {
+    return this.request(path24, {
       method: "POST",
       body: body === void 0 ? void 0 : JSON.stringify(body)
     }, opts);
   }
-  patch(path19, body, opts) {
-    return this.request(path19, {
+  patch(path24, body, opts) {
+    return this.request(path24, {
       method: "PATCH",
       body: body === void 0 ? void 0 : JSON.stringify(body)
     }, opts);
   }
-  delete(path19, opts) {
-    return this.request(path19, { method: "DELETE" }, opts);
+  delete(path24, opts) {
+    return this.request(path24, { method: "DELETE" }, opts);
   }
-  async request(path19, init, opts) {
-    const url = buildUrl(this.apiBase, path19);
+  async request(path24, init, opts) {
+    const url = buildUrl(this.apiBase, path24);
     const headers = {
       accept: "application/json",
       ...toStringRecord(init.headers)
@@ -9543,31 +9741,31 @@ var PaperclipApiClient = class {
     if (response.status === 204) {
       return null;
     }
-    const text56 = await response.text();
-    if (!text56.trim()) {
+    const text58 = await response.text();
+    if (!text58.trim()) {
       return null;
     }
-    return safeParseJson(text56);
+    return safeParseJson(text58);
   }
 };
-function buildUrl(apiBase, path19) {
-  const normalizedPath = path19.startsWith("/") ? path19 : `/${path19}`;
+function buildUrl(apiBase, path24) {
+  const normalizedPath = path24.startsWith("/") ? path24 : `/${path24}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
   if (query) url.search = query;
   return url.toString();
 }
-function safeParseJson(text56) {
+function safeParseJson(text58) {
   try {
-    return JSON.parse(text56);
+    return JSON.parse(text58);
   } catch {
-    return text56;
+    return text58;
   }
 }
 async function toApiError(response) {
-  const text56 = await response.text();
-  const parsed = safeParseJson(text56);
+  const text58 = await response.text();
+  const parsed = safeParseJson(text58);
   if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
     const body = parsed;
     const message = typeof body.error === "string" && body.error.trim() || typeof body.message === "string" && body.message.trim() || `Request failed with status ${response.status}`;
@@ -10459,8 +10657,8 @@ function registerIssueCommands(program2) {
         if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
         if (opts.projectId) params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path19 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path19) ?? [];
+        const path24 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path24) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -10616,8 +10814,8 @@ function filterIssueRows(rows, match) {
   if (!match?.trim()) return rows;
   const needle = match.trim().toLowerCase();
   return rows.filter((row) => {
-    const text56 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
-    return text56.includes(needle);
+    const text58 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
+    return text58.includes(needle);
   });
 }
 
@@ -11066,8 +11264,8 @@ function registerActivityCommands(program2) {
         if (opts.entityType) params.set("entityType", opts.entityType);
         if (opts.entityId) params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path19 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path19) ?? [];
+        const path24 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path24) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -12073,6 +12271,15 @@ async function worktreeMakeCommand(nameArg, opts) {
   } finally {
     process.chdir(originalCwd);
   }
+  const bootstrapScript = path17.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
+  if (existsSync2(bootstrapScript)) {
+    p15.log.message(pc21.dim(`Running worktree bootstrap in ${targetPath}...`));
+    try {
+      execFileSync("node", [bootstrapScript], { cwd: targetPath, stdio: "inherit" });
+    } catch (error) {
+      p15.log.warning(`Bootstrap failed: ${extractExecSyncErrorMessage(error) ?? String(error)}`);
+    }
+  }
 }
 function parseGitWorktreeList(cwd) {
   const raw = execFileSync("git", ["worktree", "list", "--porcelain"], {
@@ -12294,16 +12501,16 @@ function resolvePackageArg(packageArg, isLocal) {
   }
   return path18.resolve(process.cwd(), packageArg);
 }
-function formatPlugin(p16) {
-  const statusColor = p16.status === "ready" ? pc22.green(p16.status) : p16.status === "error" ? pc22.red(p16.status) : p16.status === "disabled" ? pc22.dim(p16.status) : pc22.yellow(p16.status);
+function formatPlugin(p19) {
+  const statusColor = p19.status === "ready" ? pc22.green(p19.status) : p19.status === "error" ? pc22.red(p19.status) : p19.status === "disabled" ? pc22.dim(p19.status) : pc22.yellow(p19.status);
   const parts = [
-    `key=${pc22.bold(p16.pluginKey)}`,
+    `key=${pc22.bold(p19.pluginKey)}`,
     `status=${statusColor}`,
-    `version=${p16.version}`,
-    `id=${pc22.dim(p16.id)}`
+    `version=${p19.version}`,
+    `id=${pc22.dim(p19.id)}`
   ];
-  if (p16.lastError) {
-    parts.push(`error=${pc22.red(p16.lastError.slice(0, 80))}`);
+  if (p19.lastError) {
+    parts.push(`error=${pc22.red(p19.lastError.slice(0, 80))}`);
   }
   return parts.join("  ");
 }
@@ -12324,8 +12531,8 @@ function registerPluginCommands(program2) {
           console.log(pc22.dim("No plugins installed."));
           return;
         }
-        for (const p16 of rows) {
-          console.log(formatPlugin(p16));
+        for (const p19 of rows) {
+          console.log(formatPlugin(p19));
         }
       } catch (err) {
         handleCommandError(err);
@@ -12489,48 +12696,482 @@ ${result.lastError}`);
   );
 }
 
-function resolveKitAssetRootDist(kitId) {
-  const moduleDir = path17.dirname(fileURLToPath2(import.meta.url));
-  const assetRoot = path17.resolve(moduleDir, "../assets/worker-kits", kitId);
-  if (!existsSync2(assetRoot)) {
-    throw new Error(`Bundled worker kit assets not found for ${kitId}: ${assetRoot}`);
+// src/commands/kit.ts
+import path20 from "node:path";
+import { pathToFileURL as pathToFileURL2 } from "node:url";
+import * as p16 from "@clack/prompts";
+import pc23 from "picocolors";
+
+// src/kits/service.ts
+init_home();
+import fs14 from "node:fs";
+import path19 from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
+
+// src/kits/catalog.ts
+var BUNDLED_KIT_CATALOG = [
+  {
+    id: "creative-strategist-v1",
+    packageDirName: "creative-strategist-v1",
+    defaultBundleId: "creative-strategist-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "workflow"
+  },
+  {
+    id: "growthub-email-marketing-v1",
+    packageDirName: "growthub-email-marketing-v1",
+    defaultBundleId: "growthub-email-marketing-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "operator"
+  },
+  {
+    id: "growthub-open-higgsfield-studio-v1",
+    packageDirName: "growthub-open-higgsfield-studio-v1",
+    defaultBundleId: "growthub-open-higgsfield-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
   }
-  return assetRoot;
+];
+
+// src/kits/contract.ts
+function isManifestV2(manifest) {
+  return manifest.schemaVersion === 2;
 }
-function resolveKitOutputRootDist(outDir) {
-  if (typeof outDir === "string" && outDir.trim().length > 0) {
-    return path17.resolve(expandHomePrefix(outDir.trim()));
+function isBundleManifestV2(manifest) {
+  return manifest.schemaVersion === 2;
+}
+function normalizeManifest(manifest) {
+  if (isManifestV2(manifest)) return manifest;
+  return {
+    schemaVersion: 2,
+    kit: {
+      ...manifest.kit,
+      type: "worker"
+    },
+    entrypoint: manifest.entrypoint,
+    workerIds: manifest.workerIds,
+    agentContractPath: manifest.agentContractPath,
+    brandTemplatePath: manifest.brandTemplatePath,
+    publicExampleBrandPaths: manifest.publicExampleBrandPaths,
+    frozenAssetPaths: manifest.frozenAssetPaths,
+    outputStandard: manifest.outputStandard,
+    bundles: manifest.bundles,
+    executionMode: "export",
+    activationModes: ["export"],
+    compatibility: {},
+    provenance: manifest.kit.sourceRepo ? { sourceRepo: manifest.kit.sourceRepo } : void 0
+  };
+}
+function normalizeBundleManifest(manifest) {
+  if (isBundleManifestV2(manifest)) return manifest;
+  return {
+    schemaVersion: 2,
+    bundle: manifest.bundle,
+    briefType: manifest.briefType,
+    publicExampleBrandPaths: manifest.publicExampleBrandPaths,
+    requiredFrozenAssets: manifest.requiredFrozenAssets,
+    optionalPresets: manifest.optionalPresets,
+    export: manifest.export,
+    activationModes: ["export"]
+  };
+}
+var SUPPORTED_SCHEMA_VERSIONS = [1, 2];
+var KIT_CAPABILITY_TYPES = [
+  "worker",
+  "workflow",
+  "output",
+  "ui"
+];
+var KIT_ACTIVATION_MODES = [
+  "export",
+  "install",
+  "mount",
+  "run"
+];
+
+// src/kits/service.ts
+var ZIP_TIMESTAMP = /* @__PURE__ */ new Date("2026-04-09T00:00:00.000Z");
+function resolveBundledKitAssetsRoot() {
+  const moduleDir = path19.dirname(fileURLToPath4(import.meta.url));
+  const candidates = [
+    path19.resolve(moduleDir, "../../assets/worker-kits"),
+    path19.resolve(moduleDir, "../assets/worker-kits")
+  ];
+  for (const candidate of candidates) {
+    if (fs14.existsSync(candidate)) return candidate;
   }
-  return path17.resolve(resolvePaperclipHomeDir(), "kits", "exports");
+  throw new Error("Could not locate bundled worker kit assets.");
 }
-function readJsonDist(filePath) {
-  return JSON.parse(readFileSync(filePath, "utf8"));
+function resolveRequestedOutputRoot(outDir) {
+  if (outDir?.trim()) {
+    return path19.resolve(expandHomePrefix(outDir.trim()));
+  }
+  return path19.resolve(resolvePaperclipHomeDir(), "kits", "exports");
 }
-function listFilesRecursiveDist(rootDir, currentDir = rootDir) {
-  const entries = [];
-  for (const entry of readdirSync2(currentDir, { withFileTypes: true })) {
-    const fullPath = path17.join(currentDir, entry.name);
-    if (entry.isDirectory()) {
-      entries.push(...listFilesRecursiveDist(rootDir, fullPath));
-      continue;
+function readJsonFile(filePath) {
+  return JSON.parse(fs14.readFileSync(filePath, "utf8"));
+}
+function assertRelativePathExists(assetRoot, relativePath, label) {
+  const fullPath = path19.resolve(assetRoot, relativePath);
+  if (!fs14.existsSync(fullPath)) {
+    throw new Error(`${label} is missing required path: ${relativePath}`);
+  }
+}
+function listRelativeFiles(rootDir) {
+  const files = [];
+  const walk = (currentDir) => {
+    for (const entry of fs14.readdirSync(currentDir, { withFileTypes: true })) {
+      const fullPath = path19.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      files.push(path19.relative(rootDir, fullPath).split(path19.sep).join("/"));
     }
-    entries.push(path17.relative(rootDir, fullPath).split(path17.sep).join("/"));
-  }
-  return entries.sort();
+  };
+  walk(rootDir);
+  return files.sort();
 }
-function copyDirRecursiveDist(sourceDir, targetDir) {
-  mkdirSync2(targetDir, { recursive: true });
-  for (const entry of readdirSync2(sourceDir, { withFileTypes: true })) {
-    const sourcePath = path17.join(sourceDir, entry.name);
-    const targetPath = path17.join(targetDir, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursiveDist(sourcePath, targetPath);
-      continue;
+function parseManifest(assetRoot) {
+  const raw = readJsonFile(path19.resolve(assetRoot, "kit.json"));
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
+    throw new Error(`Unsupported kit schema version for ${assetRoot}: ${raw.schemaVersion}`);
+  }
+  return normalizeManifest(raw);
+}
+function parseBundleManifest(assetRoot, manifest, bundleId) {
+  const bundleRef = manifest.bundles.find((item) => item.id === bundleId);
+  if (!bundleRef) {
+    throw new Error(`Kit ${manifest.kit.id} does not declare bundle ${bundleId}.`);
+  }
+  const raw = readJsonFile(path19.resolve(assetRoot, bundleRef.path));
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
+    throw new Error(
+      `Unsupported bundle schema version for ${bundleRef.path}: ${raw.schemaVersion}`
+    );
+  }
+  return normalizeBundleManifest(raw);
+}
+function validateBundledKit(resolved) {
+  const { assetRoot, manifest, bundleManifest } = resolved;
+  if (manifest.kit.id !== resolved.catalogEntry.id) {
+    throw new Error(
+      `Bundled catalog mismatch: expected ${resolved.catalogEntry.id}, got ${manifest.kit.id}.`
+    );
+  }
+  if (bundleManifest.bundle.kitId !== manifest.kit.id) {
+    throw new Error(
+      `Bundle ${bundleManifest.bundle.id} points at ${bundleManifest.bundle.kitId}, expected ${manifest.kit.id}.`
+    );
+  }
+  if (bundleManifest.bundle.workerId !== manifest.entrypoint.workerId) {
+    throw new Error(
+      `Bundle ${bundleManifest.bundle.id} worker mismatch: ${bundleManifest.bundle.workerId} vs ${manifest.entrypoint.workerId}.`
+    );
+  }
+  assertRelativePathExists(assetRoot, manifest.entrypoint.path, "Kit manifest");
+  assertRelativePathExists(assetRoot, manifest.agentContractPath, "Kit manifest");
+  assertRelativePathExists(assetRoot, manifest.brandTemplatePath, "Kit manifest");
+  for (const bundle of manifest.bundles) {
+    assertRelativePathExists(assetRoot, bundle.path, "Kit manifest bundle");
+  }
+  for (const relativePath of manifest.frozenAssetPaths) {
+    assertRelativePathExists(assetRoot, relativePath, "Kit manifest");
+  }
+  for (const requiredPath of manifest.outputStandard.requiredPaths) {
+    assertRelativePathExists(assetRoot, requiredPath, "Output standard");
+  }
+  for (const relativePath of bundleManifest.requiredFrozenAssets) {
+    assertRelativePathExists(assetRoot, relativePath, "Bundle manifest");
+  }
+  const kitPublicBrands = new Set(manifest.publicExampleBrandPaths ?? []);
+  const bundlePublicBrands = new Set(bundleManifest.publicExampleBrandPaths ?? []);
+  for (const brandPath of kitPublicBrands) {
+    if (!bundlePublicBrands.has(brandPath)) {
+      throw new Error(`Bundle ${bundleManifest.bundle.id} is missing declared public brand ${brandPath}.`);
     }
-    copyFileSync(sourcePath, targetPath);
+  }
+  const bundledFiles = listRelativeFiles(assetRoot);
+  const brandKitFiles = bundledFiles.filter((filePath) => filePath.startsWith("brands/") && filePath.endsWith("/brand-kit.md"));
+  const allowedBrandPaths = /* @__PURE__ */ new Set([
+    manifest.brandTemplatePath,
+    ...manifest.publicExampleBrandPaths ?? []
+  ]);
+  const disallowedBrandFiles = brandKitFiles.filter((filePath) => !allowedBrandPaths.has(filePath));
+  if (disallowedBrandFiles.length > 0) {
+    throw new Error(
+      `Bundled kit ${manifest.kit.id} includes non-public brand kits: ${disallowedBrandFiles.join(", ")}`
+    );
   }
 }
-function crc32Dist(buffer) {
+function validateKitDirectory(kitPath) {
+  const errors = [];
+  const warnings = [];
+  let schemaVersion = 0;
+  let kitId = "<unknown>";
+  const kitJsonPath = path19.resolve(kitPath, "kit.json");
+  if (!fs14.existsSync(kitJsonPath)) {
+    errors.push({ field: "kit.json", message: "kit.json not found in kit directory" });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(fs14.readFileSync(kitJsonPath, "utf8"));
+  } catch {
+    errors.push({ field: "kit.json", message: "kit.json is not valid JSON" });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+  schemaVersion = typeof raw.schemaVersion === "number" ? raw.schemaVersion : 0;
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(schemaVersion)) {
+    errors.push({
+      field: "schemaVersion",
+      message: `Unsupported schema version ${schemaVersion}. Supported: ${SUPPORTED_SCHEMA_VERSIONS.join(", ")}`
+    });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+  const kitBlock = raw.kit;
+  if (!kitBlock || typeof kitBlock !== "object") {
+    errors.push({ field: "kit", message: "Missing required 'kit' block" });
+    return { valid: false, schemaVersion, kitId, errors, warnings };
+  }
+  kitId = typeof kitBlock.id === "string" ? kitBlock.id : "<unknown>";
+  for (const field of ["id", "version", "name", "description"]) {
+    if (typeof kitBlock[field] !== "string" || kitBlock[field].trim() === "") {
+      errors.push({ field: `kit.${field}`, message: `Missing or empty required field 'kit.${field}'` });
+    }
+  }
+  if (schemaVersion === 2) {
+    const kitType = kitBlock.type;
+    if (!kitType || !KIT_CAPABILITY_TYPES.includes(kitType)) {
+      errors.push({
+        field: "kit.type",
+        message: `Invalid or missing kit.type. Expected one of: ${KIT_CAPABILITY_TYPES.join(", ")}`
+      });
+    }
+    const execMode = raw.executionMode;
+    if (!execMode) {
+      errors.push({ field: "executionMode", message: "Missing required field 'executionMode'" });
+    } else if (!KIT_ACTIVATION_MODES.includes(execMode)) {
+      errors.push({
+        field: "executionMode",
+        message: `Invalid executionMode '${execMode}'. Expected one of: ${KIT_ACTIVATION_MODES.join(", ")}`
+      });
+    }
+    const activationModes = raw.activationModes;
+    if (!Array.isArray(activationModes) || activationModes.length === 0) {
+      errors.push({ field: "activationModes", message: "Missing or empty 'activationModes' array" });
+    } else {
+      for (const mode of activationModes) {
+        if (!KIT_ACTIVATION_MODES.includes(mode)) {
+          errors.push({
+            field: "activationModes",
+            message: `Invalid activation mode '${mode}'. Expected one of: ${KIT_ACTIVATION_MODES.join(", ")}`
+          });
+        }
+      }
+    }
+  } else {
+    warnings.push({ field: "schemaVersion", message: "Kit uses schema v1. Consider upgrading to v2 for capability metadata." });
+  }
+  const entrypoint = raw.entrypoint;
+  if (!entrypoint || typeof entrypoint !== "object") {
+    errors.push({ field: "entrypoint", message: "Missing required 'entrypoint' block" });
+  } else {
+    if (typeof entrypoint.workerId !== "string") {
+      errors.push({ field: "entrypoint.workerId", message: "Missing required field 'entrypoint.workerId'" });
+    }
+    if (typeof entrypoint.path !== "string") {
+      errors.push({ field: "entrypoint.path", message: "Missing required field 'entrypoint.path'" });
+    } else {
+      const fullPath = path19.resolve(kitPath, entrypoint.path);
+      if (!fs14.existsSync(fullPath)) {
+        errors.push({ field: "entrypoint.path", message: `Entrypoint file not found: ${entrypoint.path}` });
+      }
+    }
+  }
+  if (typeof raw.agentContractPath !== "string") {
+    errors.push({ field: "agentContractPath", message: "Missing required field 'agentContractPath'" });
+  } else {
+    const fullPath = path19.resolve(kitPath, raw.agentContractPath);
+    if (!fs14.existsSync(fullPath)) {
+      errors.push({ field: "agentContractPath", message: `Agent contract not found: ${raw.agentContractPath}` });
+    }
+  }
+  if (typeof raw.brandTemplatePath !== "string") {
+    errors.push({ field: "brandTemplatePath", message: "Missing required field 'brandTemplatePath'" });
+  } else {
+    const fullPath = path19.resolve(kitPath, raw.brandTemplatePath);
+    if (!fs14.existsSync(fullPath)) {
+      errors.push({ field: "brandTemplatePath", message: `Brand template not found: ${raw.brandTemplatePath}` });
+    }
+  }
+  const frozenAssets = raw.frozenAssetPaths;
+  if (!Array.isArray(frozenAssets)) {
+    errors.push({ field: "frozenAssetPaths", message: "Missing required 'frozenAssetPaths' array" });
+  } else {
+    for (const assetPath of frozenAssets) {
+      if (typeof assetPath !== "string") continue;
+      const fullPath = path19.resolve(kitPath, assetPath);
+      if (!fs14.existsSync(fullPath)) {
+        errors.push({ field: "frozenAssetPaths", message: `Frozen asset not found: ${assetPath}` });
+      }
+    }
+  }
+  const outputStandard = raw.outputStandard;
+  if (!outputStandard || typeof outputStandard !== "object") {
+    errors.push({ field: "outputStandard", message: "Missing required 'outputStandard' block" });
+  } else {
+    if (typeof outputStandard.type !== "string") {
+      errors.push({ field: "outputStandard.type", message: "Missing required field 'outputStandard.type'" });
+    }
+    const requiredPaths = outputStandard.requiredPaths;
+    if (!Array.isArray(requiredPaths)) {
+      errors.push({ field: "outputStandard.requiredPaths", message: "Missing required 'outputStandard.requiredPaths' array" });
+    } else {
+      for (const reqPath of requiredPaths) {
+        if (typeof reqPath !== "string") continue;
+        const fullPath = path19.resolve(kitPath, reqPath);
+        if (!fs14.existsSync(fullPath)) {
+          errors.push({ field: "outputStandard.requiredPaths", message: `Required output path not found: ${reqPath}` });
+        }
+      }
+    }
+  }
+  const bundles = raw.bundles;
+  if (!Array.isArray(bundles) || bundles.length === 0) {
+    errors.push({ field: "bundles", message: "Missing or empty 'bundles' array" });
+  } else {
+    for (const bundleRef of bundles) {
+      const ref = bundleRef;
+      if (typeof ref.path !== "string") {
+        errors.push({ field: "bundles[].path", message: "Bundle ref missing 'path' field" });
+        continue;
+      }
+      const bundlePath = path19.resolve(kitPath, ref.path);
+      if (!fs14.existsSync(bundlePath)) {
+        errors.push({ field: "bundles[].path", message: `Bundle manifest not found: ${ref.path}` });
+        continue;
+      }
+      try {
+        const bundleRaw = JSON.parse(fs14.readFileSync(bundlePath, "utf8"));
+        const bundleBlock = bundleRaw.bundle;
+        if (!bundleBlock || typeof bundleBlock !== "object") {
+          errors.push({ field: `bundle(${ref.id})`, message: "Bundle manifest missing 'bundle' block" });
+        } else {
+          if (bundleBlock.kitId !== kitId) {
+            errors.push({
+              field: `bundle(${ref.id}).kitId`,
+              message: `Bundle kitId '${bundleBlock.kitId}' does not match kit id '${kitId}'`
+            });
+          }
+        }
+        if (!bundleRaw.export || typeof bundleRaw.export !== "object") {
+          errors.push({ field: `bundle(${ref.id}).export`, message: "Bundle manifest missing 'export' block" });
+        }
+      } catch {
+        errors.push({ field: `bundle(${ref.id})`, message: `Bundle manifest at ${ref.path} is not valid JSON` });
+      }
+    }
+  }
+  return {
+    valid: errors.length === 0,
+    schemaVersion,
+    kitId,
+    errors,
+    warnings
+  };
+}
+function loadResolvedBundledKit(assetRoot, catalogEntry) {
+  const manifest = parseManifest(assetRoot);
+  const bundleManifest = parseBundleManifest(assetRoot, manifest, catalogEntry.defaultBundleId);
+  const resolved = { catalogEntry, assetRoot, manifest, bundleManifest };
+  validateBundledKit(resolved);
+  return resolved;
+}
+function fuzzyResolveKitId(input) {
+  const needle = input.toLowerCase().trim();
+  const exact = BUNDLED_KIT_CATALOG.find((e) => e.id === needle);
+  if (exact) return exact.id;
+  const suffix = BUNDLED_KIT_CATALOG.find((e) => e.id.endsWith(needle));
+  if (suffix) return suffix.id;
+  const contains = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(needle));
+  if (contains) return contains.id;
+  const tokens = needle.split(/[-\s]+/).filter((t) => t.length > 2);
+  for (const token of tokens) {
+    const tokenMatch = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(token));
+    if (tokenMatch) return tokenMatch.id;
+  }
+  return null;
+}
+function resolveBundledKit(kitId) {
+  const resolvedId = fuzzyResolveKitId(kitId);
+  if (!resolvedId) {
+    const available = BUNDLED_KIT_CATALOG.map((e) => e.id).join(", ");
+    throw new Error(
+      `Unknown kit '${kitId}'. Run 'growthub kit list' to browse available kits.
+Available: ${available}`
+    );
+  }
+  const catalogEntry = BUNDLED_KIT_CATALOG.find((e) => e.id === resolvedId);
+  const assetRoot = path19.resolve(resolveBundledKitAssetsRoot(), catalogEntry.packageDirName);
+  return loadResolvedBundledKit(assetRoot, catalogEntry);
+}
+function toListItem(resolved) {
+  return {
+    id: resolved.manifest.kit.id,
+    version: resolved.manifest.kit.version,
+    name: resolved.manifest.kit.name,
+    description: resolved.manifest.kit.description,
+    type: resolved.manifest.kit.type,
+    family: resolved.catalogEntry.family,
+    executionMode: resolved.manifest.executionMode,
+    activationModes: resolved.manifest.activationModes,
+    bundleId: resolved.bundleManifest.bundle.id,
+    bundleVersion: resolved.bundleManifest.bundle.version,
+    briefType: resolved.bundleManifest.briefType
+  };
+}
+function resolveOutputPaths(resolved, outDir) {
+  const outputRoot = resolveRequestedOutputRoot(outDir);
+  const folderPath = path19.resolve(outputRoot, resolved.bundleManifest.export.folderName);
+  const zipPath = path19.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
+  return { outputRoot, folderPath, zipPath };
+}
+function listBundledKits() {
+  return BUNDLED_KIT_CATALOG.map((entry) => toListItem(resolveBundledKit(entry.id)));
+}
+function inspectBundledKit(kitId, outDir) {
+  const resolved = resolveBundledKit(kitId);
+  const outputPaths = resolveOutputPaths(resolved, outDir);
+  return {
+    ...toListItem(resolved),
+    entrypointPath: resolved.manifest.entrypoint.path,
+    agentContractPath: resolved.manifest.agentContractPath,
+    brandTemplatePath: resolved.manifest.brandTemplatePath,
+    publicExampleBrandPaths: resolved.manifest.publicExampleBrandPaths ?? [],
+    frozenAssetCount: resolved.manifest.frozenAssetPaths.length,
+    requiredFrozenAssetCount: resolved.bundleManifest.requiredFrozenAssets.length,
+    outputRoot: outputPaths.outputRoot,
+    exportFolderName: resolved.bundleManifest.export.folderName,
+    exportFolderPath: outputPaths.folderPath,
+    exportZipName: resolved.bundleManifest.export.zipFileName,
+    exportZipPath: outputPaths.zipPath,
+    requiredPaths: resolved.manifest.outputStandard.requiredPaths,
+    compatibility: resolved.manifest.compatibility,
+    schemaVersion: resolved.manifest.schemaVersion
+  };
+}
+function resolveKitPath(kitId, outDir) {
+  const resolved = resolveBundledKit(kitId);
+  return resolveOutputPaths(resolved, outDir).folderPath;
+}
+function crc32(buffer) {
   let crc = 4294967295;
   for (const byte of buffer) {
     crc ^= byte;
@@ -12540,27 +13181,27 @@ function crc32Dist(buffer) {
   }
   return (crc ^ 4294967295) >>> 0;
 }
-function toDosDateTimeDist(date) {
-  const year = Math.max(date.getUTCFullYear(), 1980);
-  const month = date.getUTCMonth() + 1;
-  const day = date.getUTCDate();
-  const hours = date.getUTCHours();
-  const minutes = date.getUTCMinutes();
-  const seconds = Math.floor(date.getUTCSeconds() / 2);
+function toDosTimeParts(date2) {
+  const year = Math.max(date2.getUTCFullYear(), 1980);
+  const month = date2.getUTCMonth() + 1;
+  const day = date2.getUTCDate();
+  const hours = date2.getUTCHours();
+  const minutes = date2.getUTCMinutes();
+  const seconds = Math.floor(date2.getUTCSeconds() / 2);
   return {
     dosTime: hours << 11 | minutes << 5 | seconds,
     dosDate: year - 1980 << 9 | month << 5 | day
   };
 }
-function buildStoredZipDist(entries) {
+function buildStoredZip(entries) {
   const parts = [];
-  const central = [];
+  const centralDirectoryParts = [];
   let offset = 0;
-  const { dosTime, dosDate } = toDosDateTimeDist(new Date("2026-04-09T00:00:00.000Z"));
+  const { dosTime, dosDate } = toDosTimeParts(ZIP_TIMESTAMP);
   for (const entry of entries) {
     const nameBuffer = Buffer.from(entry.name, "utf8");
     const data = entry.data;
-    const checksum = crc32Dist(data);
+    const checksum = crc32(data);
     const localHeader = Buffer.alloc(30 + nameBuffer.length);
     localHeader.writeUInt32LE(67324752, 0);
     localHeader.writeUInt16LE(20, 4);
@@ -12594,10 +13235,10 @@ function buildStoredZipDist(entries) {
     centralHeader.writeUInt32LE(0, 38);
     centralHeader.writeUInt32LE(offset, 42);
     nameBuffer.copy(centralHeader, 46);
-    central.push(centralHeader);
+    centralDirectoryParts.push(centralHeader);
     offset += localHeader.length + data.length;
   }
-  const centralDirectory = Buffer.concat(central);
+  const centralDirectory = Buffer.concat(centralDirectoryParts);
   const endRecord = Buffer.alloc(22);
   endRecord.writeUInt32LE(101010256, 0);
   endRecord.writeUInt16LE(0, 4);
@@ -12609,106 +13250,1247 @@ function buildStoredZipDist(entries) {
   endRecord.writeUInt16LE(0, 20);
   return Buffer.concat([...parts, centralDirectory, endRecord]);
 }
-function validateKitAssetRootDist(assetRoot, manifest, bundleManifest) {
-  const requiredPaths = [
-    "kit.json",
-    ...manifest.frozenAssetPaths,
-    ...manifest.outputStandard.requiredPaths,
-    ...bundleManifest.requiredFrozenAssets
+function reportProgress(onProgress, progress) {
+  onProgress?.(progress);
+}
+function copyDirectoryWithProgress(sourceRoot, targetRoot, onProgress) {
+  const files = listRelativeFiles(sourceRoot);
+  const total = Math.max(files.length, 1);
+  fs14.mkdirSync(targetRoot, { recursive: true });
+  reportProgress(onProgress, {
+    phase: "copying",
+    completed: 0,
+    total,
+    percent: 10,
+    detail: "Preparing files"
+  });
+  files.forEach((relativePath, index51) => {
+    const sourcePath = path19.resolve(sourceRoot, relativePath);
+    const targetPath = path19.resolve(targetRoot, relativePath);
+    fs14.mkdirSync(path19.dirname(targetPath), { recursive: true });
+    fs14.copyFileSync(sourcePath, targetPath);
+    const completed = index51 + 1;
+    const percent = 10 + Math.round(completed / total * 55);
+    reportProgress(onProgress, {
+      phase: "copying",
+      completed,
+      total,
+      percent,
+      detail: relativePath
+    });
+  });
+}
+function buildZipEntriesWithProgress(sourceRoot, exportFolderName, onProgress) {
+  const files = listRelativeFiles(sourceRoot);
+  const total = Math.max(files.length, 1);
+  return files.map((relativePath, index51) => {
+    const completed = index51 + 1;
+    const percent = 65 + Math.round(completed / total * 30);
+    reportProgress(onProgress, {
+      phase: "zipping",
+      completed,
+      total,
+      percent,
+      detail: relativePath
+    });
+    return {
+      name: path19.posix.join(exportFolderName, relativePath),
+      data: fs14.readFileSync(path19.resolve(sourceRoot, relativePath))
+    };
+  });
+}
+function downloadBundledKit(kitId, outDir, options = {}) {
+  const resolved = resolveBundledKit(kitId);
+  const outputPaths = resolveOutputPaths(resolved, outDir);
+  const onProgress = options.onProgress;
+  reportProgress(onProgress, {
+    phase: "preparing",
+    completed: 0,
+    total: 1,
+    percent: 0,
+    detail: "Resolving export target"
+  });
+  fs14.mkdirSync(outputPaths.outputRoot, { recursive: true });
+  fs14.rmSync(outputPaths.folderPath, { recursive: true, force: true });
+  copyDirectoryWithProgress(resolved.assetRoot, outputPaths.folderPath, onProgress);
+  const zipBuffer = buildStoredZip(
+    buildZipEntriesWithProgress(outputPaths.folderPath, resolved.bundleManifest.export.folderName, onProgress)
+  );
+  reportProgress(onProgress, {
+    phase: "writing_zip",
+    completed: 1,
+    total: 1,
+    percent: 98,
+    detail: path19.basename(outputPaths.zipPath)
+  });
+  fs14.writeFileSync(outputPaths.zipPath, zipBuffer);
+  reportProgress(onProgress, {
+    phase: "done",
+    completed: 1,
+    total: 1,
+    percent: 100,
+    detail: "Export complete"
+  });
+  return {
+    folderPath: outputPaths.folderPath,
+    zipPath: outputPaths.zipPath
+  };
+}
+
+// src/commands/kit.ts
+var TYPE_CONFIG = {
+  studio: { color: pc23.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
+  specialized_agents: { color: pc23.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
+  ops: { color: pc23.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
+};
+function displayTypeForFamily(family) {
+  if (family === "workflow" || family === "operator") return "specialized_agents";
+  if (family === "studio" || family === "ops") return family;
+  return family;
+}
+function typeColor(family, text58) {
+  const type = displayTypeForFamily(family);
+  return TYPE_CONFIG[type]?.color(text58) ?? text58;
+}
+function typeBadge(family) {
+  const type = displayTypeForFamily(family);
+  const cfg = TYPE_CONFIG[type];
+  if (!cfg) return String(type);
+  return cfg.color(`${cfg.emoji} ${cfg.label}`);
+}
+function truncate(str, max) {
+  if (str.length <= max) return str;
+  return str.slice(0, max - 1) + "\u2026";
+}
+function displayKitName(name) {
+  return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
+}
+function hr(width = 72) {
+  return pc23.dim("\u2500".repeat(width));
+}
+function box(lines) {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi(l).length)) + 4;
+  const top = pc23.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc23.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi(l).length;
+    return pc23.dim("\u2502") + l + " ".repeat(pad) + pc23.dim("\u2502");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+function stripAnsi(str) {
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+function terminalLink(label, href) {
+  return `\x1B]8;;${href}\x07${label}\x1B]8;;\x07`;
+}
+function folderOpenLabel(folderPath) {
+  const href = pathToFileURL2(folderPath).href;
+  const label = process.platform === "darwin" ? "Open in Finder" : process.platform === "win32" ? "Open in Explorer" : "Open folder";
+  return terminalLink(label, href);
+}
+function renderProgressBar(progress) {
+  if (!process.stdout.isTTY) return;
+  const width = 24;
+  const filled = Math.max(0, Math.min(width, Math.round(progress.percent / 100 * width)));
+  const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
+  const detail = truncate(progress.detail, 48);
+  const line = `\r${pc23.cyan("Exporting kit")} ${pc23.dim("[")}${pc23.green(bar)}${pc23.dim("]")} ${String(progress.percent).padStart(3)}% ${pc23.dim(detail)}`;
+  process.stdout.write(line);
+  if (progress.phase === "done") {
+    process.stdout.write("\n");
+  }
+}
+function printKitCard(item) {
+  const badge2 = typeBadge(item.family);
+  console.log("");
+  console.log(box([
+    `${pc23.bold(item.name)}  ${pc23.dim("v" + item.version)}`,
+    `${badge2}  ${pc23.dim(item.id)}`,
+    "",
+    truncate(item.description, 62),
+    "",
+    `${pc23.dim("Brief:")} ${pc23.dim(item.briefType)}   ${pc23.dim("Mode:")} ${pc23.dim(item.executionMode)}`
+  ]));
+}
+async function confirmKitActions(input) {
+  const actionLabels = input.actions.map((action) => {
+    if (action === "download") return "download";
+    if (action === "inspect") return "inspect";
+    if (action === "copy-id") return "print id";
+    return action;
+  });
+  const summaryLines = [
+    pc23.bold("Selected kits"),
+    ...input.kits.map((kit) => `${typeBadge(kit.family)}  ${displayKitName(kit.name)}`),
+    "",
+    pc23.bold("Selected actions"),
+    actionLabels.join(", ")
   ];
-  for (const relativePath of requiredPaths) {
-    const fullPath = path17.resolve(assetRoot, relativePath);
-    if (!existsSync2(fullPath)) {
-      throw new Error(`Bundled worker kit validation failed. Missing required path: ${relativePath}`);
+  console.log("");
+  console.log(box(summaryLines));
+  const confirmed = await p16.confirm({
+    message: "Continue with these worker kit actions?",
+    initialValue: false
+  });
+  if (p16.isCancel(confirmed)) {
+    p16.cancel("Cancelled.");
+    process.exit(0);
+  }
+  return Boolean(confirmed);
+}
+function printGroupedList(kits) {
+  const byType = {};
+  for (const kit of kits) {
+    const type = displayTypeForFamily(kit.family);
+    (byType[type] ??= []).push(kit);
+  }
+  const types = Object.keys(byType).sort();
+  const totalTypes = types.length;
+  console.log("");
+  console.log(
+    pc23.bold("Growthub Agent Worker Kits") + pc23.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
+  );
+  console.log(hr());
+  for (const type of types) {
+    const groupKits = byType[type];
+    const header = typeBadge(type);
+    console.log(`
+${header}  ${pc23.dim("(" + groupKits.length + ")")}`);
+    for (const kit of groupKits) {
+      console.log(`  ${typeColor(kit.family, pc23.bold(kit.id))}  ${pc23.dim("v" + kit.version)}`);
+      console.log(`  ${pc23.dim(truncate(kit.description, 62))}`);
+      console.log(`  ${pc23.dim("\u2192")} ${pc23.cyan("growthub kit download " + kit.id)}`);
+      console.log("");
+    }
+  }
+  console.log(hr());
+  console.log(pc23.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
+  console.log("");
+}
+async function runInteractivePicker(opts) {
+  p16.intro(pc23.bold("Growthub Agent Worker Kits"));
+  let kits;
+  try {
+    kits = listBundledKits();
+  } catch (err) {
+    p16.log.error("Failed to load kits: " + err.message);
+    process.exit(1);
+  }
+  const familiesAvailable = [...new Set(kits.map((k) => k.family))].sort();
+  const typeOptions = Array.from(new Set(familiesAvailable.map((family) => displayTypeForFamily(family))));
+  while (true) {
+    const typeChoice = await p16.select({
+      message: "Filter by type",
+      options: [
+        { value: "all", label: "All Types" },
+        ...typeOptions.map((type) => {
+          const cfg = TYPE_CONFIG[type];
+          return {
+            value: type,
+            label: cfg ? cfg.emoji + "  " + cfg.label : String(type)
+          };
+        }),
+        ...opts.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
+      ]
+    });
+    if (p16.isCancel(typeChoice)) {
+      p16.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (typeChoice === "__back_to_hub") return "back";
+    const filtered = typeChoice === "all" ? kits : kits.filter((k) => displayTypeForFamily(k.family) === typeChoice);
+    const showTypeBadgeInKitChoices = typeChoice === "all";
+    if (filtered.length === 0) {
+      p16.note("No kits are available for that type yet.", "Nothing found");
+      continue;
+    }
+    while (true) {
+      const kitChoice = await p16.select({
+        message: "Select kit",
+        options: [
+          ...filtered.map((k) => ({
+            value: k.id,
+            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc23.bold(displayKitName(k.name)) + "  " + pc23.dim("v" + k.version),
+            hint: truncate(k.description, 55)
+          })),
+          { value: "__back_to_type", label: "\u2190 Back to type filter" }
+        ]
+      });
+      if (p16.isCancel(kitChoice)) {
+        p16.cancel("Cancelled.");
+        process.exit(0);
+      }
+      if (kitChoice === "__back_to_type") break;
+      const selected = filtered.find((kit) => kit.id === kitChoice);
+      if (!selected) {
+        p16.cancel("Selected kit was not found.");
+        process.exit(1);
+      }
+      printKitCard(selected);
+      const nextStep = await p16.select({
+        message: "Next step",
+        options: [
+          { value: "actions", label: "Choose action(s)" },
+          { value: "back_to_kits", label: "\u2190 Back to kit list" }
+        ]
+      });
+      if (p16.isCancel(nextStep)) {
+        p16.cancel("Cancelled.");
+        process.exit(0);
+      }
+      if (nextStep === "back_to_kits") continue;
+      while (true) {
+        const actionOptions = [
+          { value: "download", label: "\u2B07\uFE0F  Download kit", hint: "growthub kit download <id>" },
+          { value: "inspect", label: "\u{1F50D} Inspect manifest", hint: "growthub kit inspect <id>" },
+          { value: "copy-id", label: "\u{1F4CB} Print ID to stdout", hint: "echo <kit-id>" }
+        ];
+        const actions = await p16.multiselect({
+          message: "What would you like to do?",
+          options: actionOptions,
+          required: false
+        });
+        if (p16.isCancel(actions)) {
+          p16.cancel("Cancelled.");
+          process.exit(0);
+        }
+        const selectedActions = actions;
+        if (selectedActions.length === 0) {
+          const emptyActionChoice = await p16.select({
+            message: "No actions selected",
+            options: [
+              { value: "retry", label: "Choose action(s)" },
+              { value: "back_to_kits", label: "\u2190 Back to kit list" }
+            ]
+          });
+          if (p16.isCancel(emptyActionChoice)) {
+            p16.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (emptyActionChoice === "back_to_kits") break;
+          continue;
+        }
+        const confirmed = await confirmKitActions({
+          kits: [selected],
+          actions: selectedActions
+        });
+        if (!confirmed) {
+          const reviewChoice = await p16.select({
+            message: "Review selection",
+            options: [
+              { value: "actions", label: "Choose action(s) again" },
+              { value: "back_to_kits", label: "\u2190 Back to kit list" }
+            ]
+          });
+          if (p16.isCancel(reviewChoice)) {
+            p16.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (reviewChoice === "back_to_kits") break;
+          continue;
+        }
+        for (const action of selectedActions) {
+          if (action === "copy-id") {
+            console.log(selected.id);
+            continue;
+          }
+          if (action === "inspect") {
+            runInspect(selected.id, opts.out);
+            continue;
+          }
+          if (action === "download") {
+            await runDownload(selected.id, opts);
+          }
+        }
+        if (selectedActions.includes("copy-id")) {
+          p16.outro(pc23.dim("Kit ID printed above."));
+          return "done";
+        }
+        p16.outro(pc23.dim("Done."));
+        return "done";
+      }
     }
   }
 }
-function inspectKitDist(kitId, outDir) {
-  const assetRoot = resolveKitAssetRootDist(kitId);
-  const manifest = readJsonDist(path17.resolve(assetRoot, "kit.json"));
-  const bundleRef = manifest.bundles.find((bundle) => bundle.id === kitId) ?? manifest.bundles[0];
-  const bundleManifest = readJsonDist(path17.resolve(assetRoot, bundleRef.path));
-  validateKitAssetRootDist(assetRoot, manifest, bundleManifest);
-  const outputRoot = resolveKitOutputRootDist(outDir);
-  return {
-    assetRoot,
-    manifest,
-    bundleManifest,
-    outputRoot,
-    folderPath: path17.resolve(outputRoot, bundleManifest.export.folderName),
-    zipPath: path17.resolve(outputRoot, bundleManifest.export.zipFileName)
-  };
+async function runDownload(kitId, opts) {
+  const resolvedId = fuzzyResolveKitId(kitId);
+  if (!resolvedId) {
+    console.error(pc23.red("Unknown kit '" + kitId + "'.") + pc23.dim(" Run `growthub kit list` to browse."));
+    process.exit(1);
+  }
+  if (resolvedId !== kitId) {
+    console.log(pc23.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
+  }
+  const kits = listBundledKits();
+  const item = kits.find((k) => k.id === resolvedId);
+  printKitCard(item);
+  if (!opts.yes) {
+    const confirmed = await p16.confirm({ message: "Download " + pc23.bold(displayKitName(item.name)) + "?" });
+    if (p16.isCancel(confirmed) || !confirmed) {
+      p16.cancel("Cancelled.");
+      process.exit(0);
+    }
+  }
+  const result = downloadBundledKit(resolvedId, opts.out, {
+    onProgress: renderProgressBar
+  });
+  const nextSteps = [
+    pc23.bold("Next steps"),
+    "",
+    pc23.dim("1.") + " Point Working Directory at:",
+    "   " + pc23.cyan(result.folderPath),
+    "",
+    pc23.dim("2.") + " " + pc23.cyan("cp .env.example .env") + "  \u2192  add your API key",
+    pc23.dim("3.") + " " + pc23.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
+    pc23.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
+    "",
+    pc23.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
+  ];
+  console.log("");
+  console.log(box(nextSteps));
+  console.log("");
+  console.log(pc23.bold("Open folder: ") + folderOpenLabel(result.folderPath));
+  console.log(pc23.dim("Folder: ") + result.folderPath);
+  console.log("");
+  console.log(pc23.dim("Zip: ") + result.zipPath);
+  console.log("");
 }
-function listBundledKitsDist() {
-  const assetBase = path17.resolve(path17.dirname(fileURLToPath2(import.meta.url)), "../assets/worker-kits");
-  if (!existsSync2(assetBase)) return [];
-  return readdirSync2(assetBase, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => inspectKitDist(entry.name)).sort((a, b) => a.manifest.kit.id.localeCompare(b.manifest.kit.id));
+function runInspect(kitId, outDir) {
+  const info = inspectBundledKit(kitId, outDir);
+  const kv = (label, value) => console.log("  " + pc23.bold(label.padEnd(24)) + " " + value);
+  console.log("");
+  console.log(pc23.bold("Kit: " + info.id) + pc23.dim("  v" + info.version));
+  console.log(typeBadge(info.family) + pc23.dim("  schema v" + info.schemaVersion));
+  console.log(hr());
+  kv("Name:", info.name);
+  kv("Description:", truncate(info.description, 55));
+  kv("Entrypoint:", info.entrypointPath);
+  kv("Agent Contract:", info.agentContractPath);
+  kv("Bundle:", info.bundleId + " @ " + info.bundleVersion);
+  kv("Brief Type:", info.briefType);
+  kv("Frozen Assets:", String(info.frozenAssetCount));
+  kv("Required Assets:", String(info.requiredFrozenAssetCount));
+  kv("Export Folder:", info.exportFolderPath);
+  kv("Export Zip:", info.exportZipPath);
+  if (Object.keys(info.compatibility).length > 0) {
+    kv("Compatibility:", JSON.stringify(info.compatibility));
+  }
+  console.log(hr());
+  console.log(pc23.bold("  Required Paths:"));
+  for (const rp of info.requiredPaths) console.log("    " + pc23.dim("\xB7") + " " + rp);
+  console.log("");
 }
-function downloadKitDist(kitId, outDir) {
-  const info = inspectKitDist(kitId, outDir);
-  mkdirSync2(info.outputRoot, { recursive: true });
-  rmSync(info.folderPath, { recursive: true, force: true });
-  copyDirRecursiveDist(info.assetRoot, info.folderPath);
-  const zipEntries = listFilesRecursiveDist(info.folderPath).map((relativePath) => ({
-    name: path17.posix.join(info.bundleManifest.export.folderName, relativePath),
-    data: readFileSync(path17.resolve(info.folderPath, relativePath))
-  }));
-  writeFileSync(info.zipPath, buildStoredZipDist(zipEntries));
-  return info;
-}
-function registerKitCommandsDist(target) {
-  const kit = target.command("kit").description("Bundled Growthub Agent Worker Kit export utilities");
-  kit.command("list").description("List the bundled worker kits available in this CLI build").action(() => {
-    const kits = listBundledKitsDist();
-    if (kits.length === 0) {
-      console.log(pc21.dim("No bundled worker kits are available in this CLI build."));
+function registerKitCommands(program2) {
+  const kit = program2.command("kit").description("Browse, inspect, and download Growthub Agent Worker Kits").addHelpText("after", `
+Examples:
+  $ growthub kit                          # interactive browser
+  $ growthub kit list                     # all kits grouped by type
+  $ growthub kit list --family studio     # filter by family
+  $ growthub kit list --json              # machine-readable output
+  $ growthub kit download higgsfield      # fuzzy slug \u2014 resolves automatically
+  $ growthub kit download growthub-open-higgsfield-studio-v1
+  $ growthub kit inspect higgsfield-studio-v1
+  $ growthub kit families                 # show family taxonomy
+`);
+  kit.action(async () => {
+    await runInteractivePicker({});
+  });
+  kit.command("list").description("List all available kits grouped by type").option("--family <families>", "Filter by family (comma-separated: studio,workflow,operator,ops)").option("--json", "Output raw JSON for scripting").addHelpText("after", `
+Examples:
+  $ growthub kit list
+  $ growthub kit list --family studio
+  $ growthub kit list --family studio,operator
+  $ growthub kit list --json
+`).action((opts) => {
+    let kits = listBundledKits();
+    if (opts.family) {
+      const wanted = opts.family.split(",").map((f) => f.trim().toLowerCase());
+      kits = kits.filter((k) => wanted.includes(k.family));
+      if (kits.length === 0) {
+        console.error(pc23.yellow("No kits found for family: " + opts.family));
+        console.error(pc23.dim("Valid families: studio, workflow, operator, ops"));
+        process.exitCode = 1;
+        return;
+      }
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(kits, null, 2));
       return;
     }
-    for (const item of kits) {
-      console.log([
-        pc21.bold(item.manifest.kit.id),
-        `version=${item.manifest.kit.version}`,
-        `bundle=${item.bundleManifest.bundle.id}@${item.bundleManifest.bundle.version}`,
-        `briefType=${item.bundleManifest.briefType}`,
-        `name=${item.manifest.kit.name}`
-      ].join("  "));
+    printGroupedList(kits);
+  });
+  kit.command("inspect").description("Inspect a kit manifest (supports fuzzy slug)").argument("<kit-id>", "Kit id or slug (e.g. 'higgsfield', 'studio-v1')").option("--out <path>", "Override the export root for resolved paths").option("--json", "Output raw JSON").addHelpText("after", `
+Examples:
+  $ growthub kit inspect higgsfield-studio-v1
+  $ growthub kit inspect growthub-email-marketing-v1 --json
+`).action((kitId, opts) => {
+    const resolvedId = fuzzyResolveKitId(kitId);
+    if (!resolvedId) {
+      console.error(pc23.red("Unknown kit '" + kitId + "'.") + pc23.dim(" Run `growthub kit list` to browse."));
+      process.exitCode = 1;
+      return;
     }
+    if (opts.json) {
+      console.log(JSON.stringify(inspectBundledKit(resolvedId, opts.out), null, 2));
+      return;
+    }
+    runInspect(resolvedId, opts.out);
   });
-  kit.command("inspect").description("Inspect a bundled worker kit manifest and export metadata").argument("<kit-id>", "Bundled worker kit id").option("--out <path>", "Override the export root used for resolved output paths").action((kitId, opts) => {
-    const info = inspectKitDist(kitId, opts.out);
-    console.log(`Kit: ${info.manifest.kit.id} @ ${info.manifest.kit.version}`);
-    console.log(`Name: ${info.manifest.kit.name}`);
-    console.log(`Bundle: ${info.bundleManifest.bundle.id} @ ${info.bundleManifest.bundle.version}`);
-    console.log(`Entrypoint: ${info.manifest.entrypoint.path}`);
-    console.log(`Export Folder: ${info.folderPath}`);
-    console.log(`Export Zip: ${info.zipPath}`);
+  kit.command("download").description("Download a kit \u2014 interactive if no kit-id given").argument("[kit-id]", "Kit id or fuzzy slug (omit for interactive picker)").option("--out <path>", "Output directory for the generated artifacts").option("--yes", "Skip confirmation prompt").addHelpText("after", `
+Examples:
+  $ growthub kit download                           # interactive
+  $ growthub kit download higgsfield                # fuzzy slug
+  $ growthub kit download growthub-open-higgsfield-studio-v1
+  $ growthub kit download studio-v1 --out ~/kits
+  $ growthub kit download studio-v1 --yes
+`).action(async (kitId, opts) => {
+    if (!kitId) {
+      await runInteractivePicker(opts);
+      return;
+    }
+    const resolvedId = fuzzyResolveKitId(kitId);
+    if (!resolvedId) {
+      console.error(pc23.red("Unknown kit '" + kitId + "'.") + pc23.dim(" Run `growthub kit list` to browse."));
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.yes) {
+      const result = downloadBundledKit(resolvedId, opts.out, {
+        onProgress: renderProgressBar
+      });
+      console.log("");
+      console.log(pc23.bold("Exported folder:"), pc23.cyan(result.folderPath));
+      console.log(pc23.bold("Open folder:   "), folderOpenLabel(result.folderPath));
+      console.log(pc23.bold("Zip:           "), pc23.dim(result.zipPath));
+      console.log("");
+      console.log(pc23.bold("Next steps:"));
+      console.log("  1. Point Working Directory at: " + pc23.cyan(result.folderPath));
+      console.log("  2. " + pc23.cyan("cp .env.example .env") + "  \u2192  add your API key");
+      console.log("  3. " + pc23.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
+      console.log("  4. Open Growthub local \u2014 the agent loads automatically");
+      console.log("");
+      return;
+    }
+    await runDownload(resolvedId, opts);
   });
-  kit.command("download").description("Export a bundled worker kit as both a zip file and expanded folder").argument("<kit-id>", "Bundled worker kit id").option("--out <path>", "Output directory for the generated artifacts").action((kitId, opts) => {
-    const info = downloadKitDist(kitId, opts.out);
-    console.log(`Expanded Folder: ${info.folderPath}`);
-    console.log(`Zip File: ${info.zipPath}`);
+  kit.command("path").description("Resolve the expected export folder path without exporting").argument("<kit-id>", "Kit id or fuzzy slug").option("--out <path>", "Override the export root").action((kitId, opts) => {
+    const resolvedId = fuzzyResolveKitId(kitId);
+    if (!resolvedId) {
+      console.error(pc23.red("Unknown kit '" + kitId + "'."));
+      process.exitCode = 1;
+      return;
+    }
+    console.log(resolveKitPath(resolvedId, opts.out));
   });
-  kit.command("path").description("Resolve the expected expanded export folder path without exporting").argument("<kit-id>", "Bundled worker kit id").option("--out <path>", "Output directory for the generated artifacts").action((kitId, opts) => {
-    const info = inspectKitDist(kitId, opts.out);
-    console.log(info.folderPath);
+  kit.command("validate").description("Validate a kit directory against the kit contract schema").argument("<path>", "Path to the kit directory").addHelpText("after", `
+Examples:
+  $ growthub kit validate ./my-kit
+  $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
+`).action((kitPath) => {
+    const resolvedPath = path20.resolve(kitPath);
+    const result = validateKitDirectory(resolvedPath);
+    console.log("");
+    console.log(pc23.bold("Kit: " + result.kitId) + pc23.dim("  schema v" + result.schemaVersion));
+    console.log(hr());
+    for (const w of result.warnings) {
+      console.log(pc23.yellow("  WARN  " + w.field + ": " + w.message));
+    }
+    for (const e of result.errors) {
+      console.log(pc23.red("  ERROR " + e.field + ": " + e.message));
+    }
+    if (result.errors.length > 0) {
+      console.log("");
+      console.log(pc23.red(pc23.bold("  Result: INVALID")) + pc23.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
+      process.exitCode = 1;
+    } else {
+      console.log(pc23.green(pc23.bold("  Result: VALID")));
+    }
+    console.log("");
+  });
+  kit.command("families").description("Show the kit family taxonomy with descriptions and examples").action(() => {
+    const defs = [
+      { family: "studio", tagline: "AI generation studio backed by a local fork", surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1" },
+      { family: "workflow", tagline: "Multi-step pipeline operator across tools or APIs", surfaces: "browser-hosted (primary)", example: "creative-strategist-v1" },
+      { family: "operator", tagline: "Domain vertical specialist \u2014 one provider, structured deliverables", surfaces: "browser-hosted", example: "growthub-email-marketing-v1" },
+      { family: "ops", tagline: "Infrastructure / toolchain operator (provider optional)", surfaces: "local-fork (primary)", example: "(coming soon)" }
+    ];
+    console.log("");
+    console.log(pc23.bold("Kit Family Taxonomy"));
+    console.log(hr());
+    for (const def of defs) {
+      console.log("\n  " + familyBadge(def.family));
+      console.log("  " + pc23.dim(def.tagline));
+      console.log("  " + pc23.dim("Surfaces: ") + pc23.dim(def.surfaces));
+      console.log("  " + pc23.dim("Example:  ") + pc23.cyan(def.example));
+    }
+    console.log("");
+    console.log(hr());
+    console.log(pc23.dim("  growthub kit list --family <family>  to filter by internal family"));
+    console.log("");
+  });
+}
+
+// src/commands/template.ts
+import path22 from "node:path";
+import * as p17 from "@clack/prompts";
+import pc24 from "picocolors";
+
+// src/templates/service.ts
+import fs15 from "node:fs";
+import path21 from "node:path";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
+
+// src/templates/catalog.ts
+var AD_FORMATS = [
+  {
+    type: "ad-format",
+    slug: "bedroom-minimic-talk",
+    id: "ad-formats/bedroom-minimic-talk",
+    name: "Bedroom Mini-Mic Talk",
+    family: "video-creative",
+    category: "Skincare / Beauty Tech / Consumer Product",
+    tags: ["ugc", "skincare", "beauty-tech", "tiktok", "23s", "proven"],
+    scenes: 6,
+    hookVariations: 5,
+    compatibleFormats: [],
+    frozen: true,
+    path: "ad-formats/bedroom-minimic-talk.md"
+  },
+  {
+    type: "ad-format",
+    slug: "villain-animation",
+    id: "ad-formats/villain-animation",
+    name: "Villain Object Animation",
+    family: "video-creative",
+    category: "Pet / Home / Supplement / Displacement products",
+    tags: ["animated", "villain", "long-form", "agitation-stack", "proven"],
+    scenes: 9,
+    hookVariations: 5,
+    compatibleFormats: [],
+    frozen: true,
+    path: "ad-formats/villain-animation.md"
+  },
+  {
+    type: "ad-format",
+    slug: "process-specialist-medical",
+    id: "ad-formats/process-specialist-medical",
+    name: "The Process Specialist",
+    family: "video-creative",
+    category: "Medical / Regenerative Medicine / Healthcare Authority",
+    tags: ["medical", "authority", "doctor", "ugc", "50s", "proven"],
+    scenes: 5,
+    hookVariations: 5,
+    compatibleFormats: [],
+    frozen: true,
+    path: "ad-formats/process-specialist-medical.md"
+  },
+  {
+    type: "ad-format",
+    slug: "frame-analysis",
+    id: "ad-formats/frame-analysis",
+    name: "Frame-by-Frame Analysis Methodology",
+    family: "video-creative",
+    category: "Methodology \u2014 use when no frozen format matches a muse",
+    tags: ["methodology", "muse", "frame-extraction"],
+    scenes: null,
+    hookVariations: null,
+    compatibleFormats: [],
+    frozen: true,
+    path: "ad-formats/frame-analysis.md"
+  }
+];
+var HOOKS = [
+  {
+    type: "scene-module",
+    subtype: "hook",
+    slug: "meme-overlay",
+    id: "scene-modules/hooks/meme-overlay",
+    name: "Meme Overlay Hook",
+    family: "video-creative",
+    category: "Relatable lifestyle pain \u2014 tired, stressed, broke",
+    tags: ["meme", "scene-1", "scroll-stop", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/hooks/meme-overlay.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "hook",
+    slug: "tiktok-comment",
+    id: "scene-modules/hooks/tiktok-comment",
+    name: "TikTok Comment Hook",
+    family: "video-creative",
+    category: "High-skepticism categories \u2014 objection-first open",
+    tags: ["tiktok-comment", "scene-1", "skepticism", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/hooks/tiktok-comment.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "hook",
+    slug: "pov-confession",
+    id: "scene-modules/hooks/pov-confession",
+    name: "POV Mirror Confession Hook",
+    family: "video-creative",
+    category: "Skincare / Beauty \u2014 female 25\u201335 demo",
+    tags: ["pov", "mirror", "scene-1", "tiktok", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/hooks/pov-confession.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "hook",
+    slug: "dollar-amount",
+    id: "scene-modules/hooks/dollar-amount",
+    name: "Dollar Amount Confession Hook",
+    family: "video-creative",
+    category: "Any category where overspending is the shared pain",
+    tags: ["dollar-amount", "scene-1", "cross-format", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk", "villain-animation"],
+    path: "scene-modules/hooks/dollar-amount.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "hook",
+    slug: "villain-hook",
+    id: "scene-modules/hooks/villain-hook",
+    name: "Villain Character Hook",
+    family: "video-creative",
+    category: "Animated \u2014 product displacing an incumbent",
+    tags: ["villain", "animated", "scene-1", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["villain-animation"],
+    path: "scene-modules/hooks/villain-hook.md"
+  }
+];
+var BODY = [
+  {
+    type: "scene-module",
+    subtype: "body",
+    slug: "minimic-problem",
+    id: "scene-modules/body/minimic-problem",
+    name: "Mini-Mic Problem Confession",
+    family: "video-creative",
+    category: "Authority + failed solutions \u2014 Scene 2",
+    tags: ["minimic", "scene-2", "authority", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/body/minimic-problem.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "body",
+    slug: "tiktok-skeptic-pivot",
+    id: "scene-modules/body/tiktok-skeptic-pivot",
+    name: "TikTok Skeptic Pivot",
+    family: "video-creative",
+    category: "Skeptic disarm + product intro \u2014 Scene 3",
+    tags: ["tiktok-comment", "scene-3", "skeptic", "pivot", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/body/tiktok-skeptic-pivot.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "body",
+    slug: "product-demo-glow",
+    id: "scene-modules/body/product-demo-glow",
+    name: "Product Demo \u2014 Glow / Active Effect",
+    family: "video-creative",
+    category: "Products with a visible active state \u2014 Scene 4",
+    tags: ["demo", "scene-4", "glow", "active-state", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/body/product-demo-glow.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "body",
+    slug: "villain-agitation",
+    id: "scene-modules/body/villain-agitation",
+    name: "Villain Agitation Stack",
+    family: "video-creative",
+    category: "4\xD7 stacked failed solutions \u2014 Scenes 2\u20135",
+    tags: ["villain", "agitation", "scenes-2-5", "animated", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["villain-animation"],
+    path: "scene-modules/body/villain-agitation.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "body",
+    slug: "before-after-flatlay",
+    id: "scene-modules/body/before-after-flatlay",
+    name: "Before/After + Product Flat Lay",
+    family: "video-creative",
+    category: "Social proof + product authority \u2014 Scene 5",
+    tags: ["before-after", "flatlay", "scene-5", "social-proof", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/body/before-after-flatlay.md"
+  }
+];
+var CTA = [
+  {
+    type: "scene-module",
+    subtype: "cta",
+    slug: "bogo-meme-bookend",
+    id: "scene-modules/cta/bogo-meme-bookend",
+    name: "BOGO + Meme Bookend Close",
+    family: "video-creative",
+    category: "BOGO / % off / flash offer \u2014 Scene 6",
+    tags: ["bogo", "meme-bookend", "cta", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["bedroom-minimic-talk"],
+    path: "scene-modules/cta/bogo-meme-bookend.md"
+  },
+  {
+    type: "scene-module",
+    subtype: "cta",
+    slug: "guarantee-close",
+    id: "scene-modules/cta/guarantee-close",
+    name: "Guarantee Calendar Close",
+    family: "video-creative",
+    category: "30/60-day satisfaction guarantee \u2014 Scene 9",
+    tags: ["guarantee", "calendar", "cta", "animated", "proven"],
+    scenes: null,
+    frozen: true,
+    compatibleFormats: ["villain-animation"],
+    path: "scene-modules/cta/guarantee-close.md"
+  }
+];
+var TEMPLATE_CATALOG = [
+  ...AD_FORMATS,
+  ...HOOKS,
+  ...BODY,
+  ...CTA
+  // ...EMAIL_TEMPLATES,
+  // ...MOTION_TEMPLATES,
+];
+
+// src/templates/service.ts
+function resolveSharedTemplatesRoot() {
+  const moduleDir = path21.dirname(fileURLToPath5(import.meta.url));
+  for (const candidate of [
+    path21.resolve(moduleDir, "../../assets/shared-templates"),
+    path21.resolve(moduleDir, "../assets/shared-templates")
+  ]) {
+    if (fs15.existsSync(candidate)) return candidate;
+  }
+  throw new Error("Shared template assets not found at cli/assets/shared-templates/");
+}
+function resolveSlug(input) {
+  const needle = input.toLowerCase().trim();
+  return TEMPLATE_CATALOG.find((a) => a.id === needle) ?? TEMPLATE_CATALOG.find((a) => a.slug === needle) ?? TEMPLATE_CATALOG.find((a) => a.id.endsWith("/" + needle)) ?? TEMPLATE_CATALOG.find((a) => a.id.includes(needle) || a.slug.includes(needle)) ?? (() => {
+    const tokens = needle.split(/[-_/\s]+/).filter((t) => t.length > 2);
+    for (const token of tokens) {
+      const match = TEMPLATE_CATALOG.find((a) => a.slug.includes(token) || a.id.includes(token));
+      if (match) return match;
+    }
+    return null;
+  })();
+}
+function listArtifacts(filter = {}) {
+  let results = [...TEMPLATE_CATALOG];
+  if (filter.type) results = results.filter((a) => a.type === filter.type);
+  if (filter.subtype) results = results.filter((a) => a.type === "scene-module" && a.subtype === filter.subtype);
+  if (filter.family) results = results.filter((a) => a.family === filter.family);
+  if (filter.format) {
+    const fmt = filter.format.toLowerCase();
+    results = results.filter(
+      (a) => a.compatibleFormats.length === 0 || a.compatibleFormats.some((f) => f.includes(fmt))
+    );
+  }
+  if (filter.tags?.length) {
+    results = results.filter((a) => filter.tags.some((tag) => a.tags.includes(tag)));
+  }
+  return results;
+}
+function getArtifact(slugOrId) {
+  const artifact = resolveSlug(slugOrId);
+  if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
+  const root = resolveSharedTemplatesRoot();
+  const absolutePath = path21.resolve(root, artifact.path);
+  if (!fs15.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  return { artifact, content: fs15.readFileSync(absolutePath, "utf8"), absolutePath };
+}
+function copyArtifact(slugOrId, destDir) {
+  const resolved = getArtifact(slugOrId);
+  fs15.mkdirSync(destDir, { recursive: true });
+  const destPath = path21.resolve(destDir, path21.basename(resolved.absolutePath));
+  fs15.copyFileSync(resolved.absolutePath, destPath);
+  return destPath;
+}
+var GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta"];
+var GROUP_META = {
+  "ad-formats": { label: "Ad Formats", description: "Complete frozen video ad structures \u2014 scene count, sacred elements, adaptation rules" },
+  "scene-modules/hooks": { label: "Scene Modules \u2014 Hooks", description: "Scene 1 \u2014 pattern interrupt, scroll stop, opening emotional beat" },
+  "scene-modules/body": { label: "Scene Modules \u2014 Body", description: "Scenes 2\u2013N \u2014 problem confession, skeptic pivot, demo, social proof" },
+  "scene-modules/cta": { label: "Scene Modules \u2014 CTA", description: "Final scene \u2014 offer close, guarantee, conversion" }
+};
+function groupKey(a) {
+  if (a.type === "ad-format") return "ad-formats";
+  return `scene-modules/${a.subtype}`;
+}
+function groupArtifacts(artifacts) {
+  const map = /* @__PURE__ */ new Map();
+  for (const a of artifacts) {
+    const key = groupKey(a);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(a);
+  }
+  const ordered = [];
+  for (const key of GROUP_ORDER) {
+    if (!map.has(key)) continue;
+    const items = map.get(key);
+    const meta = GROUP_META[key] ?? { label: key, description: "" };
+    ordered.push({ key, label: meta.label, description: meta.description, count: items.length, artifacts: items });
+  }
+  for (const [key, items] of map) {
+    if (GROUP_ORDER.includes(key)) continue;
+    ordered.push({ key, label: key, description: "", count: items.length, artifacts: items });
+  }
+  return ordered;
+}
+function getCatalogStats() {
+  const all = [...TEMPLATE_CATALOG];
+  const byFamily = {};
+  const byType = {};
+  for (const a of all) {
+    byFamily[a.family] = (byFamily[a.family] ?? 0) + 1;
+    byType[a.type] = (byType[a.type] ?? 0) + 1;
+  }
+  return { total: all.length, byFamily, byType };
+}
+
+// src/commands/template.ts
+function stripAnsi2(s) {
+  return s.replace(/\x1B\[[0-9;]*m/g, "");
+}
+function hr2(w = 72) {
+  return pc24.dim("\u2500".repeat(w));
+}
+function truncate2(s, max) {
+  return s.length <= max ? s : s.slice(0, max - 1) + "\u2026";
+}
+function box2(lines) {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi2(l).length)) + 4;
+  const top = pc24.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc24.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => pc24.dim("\u2502") + l + " ".repeat(width - stripAnsi2(l).length) + pc24.dim("\u2502"));
+  return [top, ...body, bottom].join("\n");
+}
+function badge(a) {
+  if (a.type === "ad-format") return pc24.cyan("\u{1F3AC} Ad Format");
+  if (a.type === "scene-module") {
+    if (a.subtype === "hook") return pc24.yellow("\u{1FA9D} Hook");
+    if (a.subtype === "body") return pc24.blue("\u{1F9E9} Body");
+    if (a.subtype === "cta") return pc24.green("\u{1F3AF} CTA");
+  }
+  return pc24.magenta("\u{1F9E9} Module");
+}
+function printCard(a) {
+  const compat = a.compatibleFormats.length ? pc24.dim("Works with: ") + a.compatibleFormats.map((f) => pc24.cyan(f)).join(", ") : pc24.dim("Works with: any format");
+  const rows = [
+    pc24.bold(a.name),
+    `${badge(a)}  ${pc24.dim(a.id)}`,
+    "",
+    truncate2(a.category, 62),
+    "",
+    compat
+  ];
+  if (a.type === "ad-format" && a.scenes != null) {
+    rows.push(pc24.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc24.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
+  }
+  console.log("");
+  console.log(box2(rows));
+}
+function printSummary2(filter) {
+  const artifacts = listArtifacts(filter);
+  if (!artifacts.length) {
+    console.log(pc24.yellow("No templates matched. Try: growthub template list"));
+    return;
+  }
+  const stats = getCatalogStats();
+  const groups = groupArtifacts(artifacts);
+  console.log("");
+  console.log(pc24.bold("Growthub Shared Template Library") + pc24.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
+  console.log(pc24.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
+  console.log(hr2());
+  for (const g of groups) {
+    console.log(`
+${pc24.bold(g.label)}  ${pc24.dim("(" + g.count + ")")}`);
+    console.log(pc24.dim("  " + g.description));
+    console.log("");
+    for (const a of g.artifacts) {
+      const compat = a.compatibleFormats.length ? pc24.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
+      console.log(`  ${pc24.cyan(pc24.bold(a.name))}${compat}`);
+      console.log(`  ${pc24.dim("growthub template get " + a.slug)}`);
+      console.log("");
+    }
+  }
+  console.log(hr2());
+  console.log(pc24.dim("  growthub template get <slug>"));
+  console.log(pc24.dim("  growthub template list --type ad-formats"));
+  console.log(pc24.dim("  growthub template list --type scene-modules --subtype hooks"));
+  console.log(pc24.dim("  growthub template   (interactive picker)"));
+  console.log("");
+}
+var TEMPLATE_FAMILY_META = {
+  "video-creative": {
+    label: "Video Ads",
+    emoji: "\u{1F3AC}",
+    hint: "Ad formats, hooks, body modules, and CTA modules"
+  },
+  email: {
+    label: "Email",
+    emoji: "\u2709\uFE0F",
+    hint: "Email-native templates"
+  },
+  motion: {
+    label: "Motion",
+    emoji: "\u{1F39E}\uFE0F",
+    hint: "Motion and animation artifacts"
+  },
+  general: {
+    label: "General",
+    emoji: "\u{1F9E9}",
+    hint: "Shared general-purpose templates"
+  }
+};
+async function runTemplatePicker(opts) {
+  p17.intro(pc24.bold("Growthub Shared Template Library"));
+  let artifacts;
+  try {
+    artifacts = listArtifacts();
+  } catch (err) {
+    p17.log.error(err.message);
+    process.exit(1);
+  }
+  const families = [...new Set(artifacts.map((artifact) => artifact.family))];
+  const familyChoice = await p17.select({
+    message: "What template type do you want to browse?",
+    options: [
+      ...families.map((family) => {
+        const meta = TEMPLATE_FAMILY_META[family] ?? {
+          label: family,
+          emoji: "\u{1F9E9}",
+          hint: `${family} templates`
+        };
+        const familyCount = artifacts.filter((artifact) => artifact.family === family).length;
+        return {
+          value: family,
+          label: `${meta.emoji} ${meta.label}`,
+          hint: `${familyCount} available \xB7 ${meta.hint}`
+        };
+      }),
+      ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
+    ]
+  });
+  if (p17.isCancel(familyChoice)) {
+    p17.cancel("Cancelled.");
+    process.exit(0);
+  }
+  if (familyChoice === "__back_to_hub") return "back";
+  const filteredArtifacts = artifacts.filter((artifact) => artifact.family === familyChoice);
+  const groups = groupArtifacts(filteredArtifacts);
+  const groupChoice = await p17.select({
+    message: "What kind of template?",
+    options: groups.map((g) => ({
+      value: g.key,
+      label: g.label,
+      hint: `${g.count} available \xB7 ${g.description}`
+    }))
+  });
+  if (p17.isCancel(groupChoice)) {
+    p17.cancel("Cancelled.");
+    process.exit(0);
+  }
+  const group = groups.find((g) => g.key === groupChoice);
+  const artifactChoice = await p17.select({
+    message: `Select from: ${group.label}`,
+    options: group.artifacts.map((a) => ({
+      value: a.id,
+      label: pc24.bold(a.name),
+      hint: truncate2(a.category, 52)
+    }))
+  });
+  if (p17.isCancel(artifactChoice)) {
+    p17.cancel("Cancelled.");
+    process.exit(0);
+  }
+  const selected = filteredArtifacts.find((a) => a.id === artifactChoice);
+  printCard(selected);
+  const action = await p17.select({
+    message: "What would you like to do?",
+    options: [
+      { value: "print", label: "\u{1F4C4} Print to terminal" },
+      { value: "copy", label: "\u{1F4C1} Copy to directory" },
+      { value: "slug", label: "\u{1F4CB} Print slug" },
+      { value: "cancel", label: "Cancel" }
+    ]
+  });
+  if (p17.isCancel(action) || action === "cancel") {
+    p17.cancel("Cancelled.");
+    process.exit(0);
+  }
+  if (action === "slug") {
+    console.log(selected.slug);
+    p17.outro(pc24.dim("Use with: growthub template get " + selected.slug));
+    return "done";
+  }
+  if (action === "print") {
+    const r = getArtifact(selected.id);
+    console.log("\n" + hr2());
+    console.log(r.content);
+    console.log(hr2());
+    p17.outro(pc24.dim("Source: " + r.absolutePath));
+    return "done";
+  }
+  if (action === "copy") {
+    const destInput = await p17.text({
+      message: "Output directory:",
+      placeholder: "~/Downloads/templates",
+      validate: (v) => !v?.trim() ? "Path is required" : void 0
+    });
+    if (p17.isCancel(destInput)) {
+      p17.cancel("Cancelled.");
+      process.exit(0);
+    }
+    const destDir = path22.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
+    const destPath = copyArtifact(selected.id, destDir);
+    p17.outro(pc24.green("Copied \u2192 ") + destPath);
+    return "done";
+  }
+  return "done";
+}
+function registerTemplateCommands(program2) {
+  const cmd = program2.command("template").description("Browse and pull from the shared creative template library").addHelpText("after", `
+Shared templates are frozen artifact primitives \u2014 distinct from kits.
+Any agent or kit resolves them by slug.
+
+  $ growthub template                                     Interactive picker
+  $ growthub template list                                Grouped summary
+  $ growthub template list --type ad-formats
+  $ growthub template list --type scene-modules --subtype hooks
+  $ growthub template list --format villain-animation
+  $ growthub template get villain-animation               Fuzzy slug
+  $ growthub template get meme-overlay --out ~/kit/hooks/
+  $ growthub template get villain-animation --json
+`);
+  cmd.action(async () => {
+    await runTemplatePicker();
+  });
+  cmd.command("list").description("Grouped template summary \u2014 filter before browsing").option("--type <type>", "ad-formats | scene-modules").option("--subtype <subtype>", "hooks | body | cta  (scene-modules only)").option("--format <format>", "Filter by compatible ad format slug").option("--json", "Raw JSON for scripting").action((opts) => {
+    const filter = {};
+    if (opts.type) {
+      const t = opts.type.replace(/s$/, "");
+      if (t !== "ad-format" && t !== "scene-module") {
+        console.error(pc24.red(`Unknown --type '${opts.type}'.`) + pc24.dim(" Valid: ad-formats, scene-modules"));
+        process.exitCode = 1;
+        return;
+      }
+      filter.type = t;
+    }
+    if (opts.subtype) {
+      const sub = opts.subtype.replace(/s$/, "");
+      if (!["hook", "body", "cta"].includes(sub)) {
+        console.error(pc24.red(`Unknown --subtype '${opts.subtype}'.`) + pc24.dim(" Valid: hooks, body, cta"));
+        process.exitCode = 1;
+        return;
+      }
+      filter.subtype = sub;
+    }
+    if (opts.format) filter.format = opts.format;
+    if (opts.json) {
+      console.log(JSON.stringify(listArtifacts(filter), null, 2));
+      return;
+    }
+    printSummary2(filter);
+  });
+  cmd.command("get").description("Print or copy a template \u2014 fuzzy slug resolution").argument("<slug>", "Artifact slug (e.g. villain-animation, meme-overlay)").option("--out <path>", "Copy to this directory").option("--json", "Artifact metadata + content as JSON").action((slug, opts) => {
+    const artifact = resolveSlug(slug);
+    if (!artifact) {
+      console.error(pc24.red(`Unknown template '${slug}'.`) + pc24.dim(" Run `growthub template list` to browse."));
+      process.exitCode = 1;
+      return;
+    }
+    if (artifact.id !== slug && artifact.slug !== slug) {
+      console.error(pc24.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
+    }
+    let resolved;
+    try {
+      resolved = getArtifact(artifact.id);
+    } catch (err) {
+      console.error(pc24.red(err.message));
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.json) {
+      console.log(JSON.stringify({ artifact: resolved.artifact, content: resolved.content }, null, 2));
+      return;
+    }
+    if (opts.out) {
+      const destDir = path22.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
+      try {
+        const dest = copyArtifact(artifact.id, destDir);
+        console.log(pc24.green("Copied \u2192 ") + dest);
+      } catch (err) {
+        console.error(pc24.red(err.message));
+        process.exitCode = 1;
+      }
+      return;
+    }
+    printCard(resolved.artifact);
+    console.log(hr2());
+    console.log(resolved.content);
+    console.log(hr2());
+    console.log(pc24.dim("Source: " + resolved.absolutePath));
+    console.log("");
   });
 }
 
 // src/index.ts
+init_banner();
+init_home();
 var program = new Command();
 var DATA_DIR_OPTION_HELP = "Growthub data directory root (isolates local instance state)";
+function resolveSurfaceProfile(config) {
+  if (typeof config !== "object" || config === null) return null;
+  const surface = config.surface;
+  if (typeof surface !== "object" || surface === null) return null;
+  const profile = surface.profile;
+  return profile === "dx" || profile === "gtm" ? profile : null;
+}
 function resolveBootstrapOptions(argv) {
   const options = {};
-  for (let index50 = 0; index50 < argv.length; index50 += 1) {
-    const value = argv[index50];
-    if ((value === "-c" || value === "--config") && argv[index50 + 1]) {
-      options.config = argv[index50 + 1];
-      index50 += 1;
+  for (let index51 = 0; index51 < argv.length; index51 += 1) {
+    const value = argv[index51];
+    if ((value === "-c" || value === "--config") && argv[index51 + 1]) {
+      options.config = argv[index51 + 1];
+      index51 += 1;
       continue;
     }
-    if ((value === "-d" || value === "--data-dir") && argv[index50 + 1]) {
-      options.dataDir = argv[index50 + 1];
-      index50 += 1;
+    if ((value === "-d" || value === "--data-dir") && argv[index51 + 1]) {
+      options.dataDir = argv[index51 + 1];
+      index51 += 1;
     }
   }
   return options;
@@ -12725,9 +14507,200 @@ function registerSharedCommands(target) {
   });
   target.command("allowed-hostname").description("Allow a hostname for authenticated/private mode access").argument("<host>", "Hostname to allow (for example dotta-macbook-pro)").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).action(addAllowedHostname);
   target.command("run").description("Bootstrap local setup (onboard + doctor) and run Growthub").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("-i, --instance <id>", "Local instance id (default: default)").option("--repair", "Attempt automatic repairs during doctor", true).option("--no-repair", "Disable automatic repairs during doctor").action(runCommand);
-  registerKitCommandsDist(target);
+  target.command("discover").description("Shared discovery entry for local app install, worker kits, and templates").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--run", "Start Growthub immediately after saving config", false).action(async (opts) => {
+    await runDiscoveryHub(opts);
+  });
+  registerKitCommands(target);
+  registerTemplateCommands(target);
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
   auth.command("bootstrap-ceo").description("Create a one-time bootstrap invite URL for first instance admin").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--force", "Create new invite even if admin already exists", false).option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value)).option("--base-url <url>", "Public base URL used to print invite link").action(bootstrapCeoInvite);
+}
+async function runDiscoveryHub(opts) {
+  printPaperclipCliBanner();
+  p18.intro("Growthub Local");
+  while (true) {
+    const surfaceChoice = await p18.select({
+      message: "What do you want to do first?",
+      options: [
+        {
+          value: "app",
+          label: "\u{1F4E6} Full Local App",
+          hint: "Work from existing app or build from scratch"
+        },
+        {
+          value: "kits",
+          label: "\u{1F9F0} Worker Kits",
+          hint: "Self-contained workspace environments for agents"
+        },
+        {
+          value: "templates",
+          label: "\u{1F4DA} Templates",
+          hint: "Artifact template library"
+        },
+        {
+          value: "help",
+          label: "\u2753 Help CLI",
+          hint: "See the main commands and what each path does"
+        }
+      ]
+    });
+    if (p18.isCancel(surfaceChoice)) {
+      p18.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (surfaceChoice === "help") {
+      p18.note(
+        [
+          "\u{1F4E6} Full Local App: open an existing local surface or create a new GTM/DX profile.",
+          "\u{1F9F0} Worker Kits: browse specialized agents and custom workspaces.",
+          "\u{1F4DA} Templates: browse reusable artifact templates by library type.",
+          "",
+          "Direct commands:",
+          "growthub run",
+          "growthub kit",
+          "growthub template",
+          "growthub doctor",
+          "growthub configure"
+        ].join("\n"),
+        "Growthub CLI Help"
+      );
+      continue;
+    }
+    if (surfaceChoice === "app") {
+      while (true) {
+        const appModeChoice = await p18.select({
+          message: "How do you want to open Growthub Local?",
+          options: [
+            {
+              value: "create",
+              label: "\u{1F195} Create New Profile",
+              hint: "Build a new local app surface."
+            },
+            {
+              value: "load",
+              label: "\u{1F4C2} Load Existing Profile",
+              hint: "Work from a profile already on this machine."
+            },
+            {
+              value: "__back_to_hub",
+              label: "\u2190 Back to main menu"
+            }
+          ]
+        });
+        if (p18.isCancel(appModeChoice)) {
+          p18.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (appModeChoice === "__back_to_hub") break;
+        if (appModeChoice === "load") {
+          const existingSurfaces = listLocalSurfaces();
+          if (existingSurfaces.length === 0) {
+            p18.note("No existing local app profiles were found on this machine.", "Nothing found");
+            continue;
+          }
+          const existingChoice = await p18.select({
+            message: "Select an existing app surface",
+            options: [
+              ...existingSurfaces.map((surface) => ({
+                value: surface.instanceId,
+                label: `${surface.profile === "gtm" ? "\u{1F4C8}" : "\u{1F9E0}"} ${surface.profile.toUpperCase()} \xB7 ${surface.instanceId}`,
+                hint: surface.configPath
+              })),
+              { value: "__back_to_app_mode", label: "\u2190 Back to app options" }
+            ]
+          });
+          if (p18.isCancel(existingChoice)) {
+            p18.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (existingChoice === "__back_to_app_mode") {
+            continue;
+          }
+          const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
+          if (!selectedSurface) {
+            p18.cancel("Selected profile not found.");
+            process.exit(1);
+          }
+          process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
+          await runCommand({
+            config: selectedSurface.configPath,
+            instance: selectedSurface.instanceId,
+            repair: true,
+            yes: true
+          });
+          return;
+        }
+        const profileChoice = await p18.select({
+          message: "Which new app surface do you want to create?",
+          options: [
+            {
+              value: "gtm",
+              label: "\u{1F4C8} GTM",
+              hint: "Go-to-Market surface."
+            },
+            {
+              value: "dx",
+              label: "\u{1F9E0} DX",
+              hint: "Developer Experience surface."
+            },
+            {
+              value: "__back_to_app_mode",
+              label: "\u2190 Back to app options"
+            }
+          ]
+        });
+        if (p18.isCancel(profileChoice)) {
+          p18.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (profileChoice === "__back_to_app_mode") {
+          continue;
+        }
+        process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
+        await onboard({
+          config: opts?.config,
+          run: opts?.run ?? isInstallerMode(),
+          yes: isInstallerMode()
+        });
+        return;
+      }
+      continue;
+    }
+    if (surfaceChoice === "kits") {
+      const result2 = await runInteractivePicker({ allowBackToHub: true });
+      if (result2 === "back") continue;
+      return;
+    }
+    const result = await runTemplatePicker({ allowBackToHub: true });
+    if (result === "back") continue;
+    return;
+  }
+}
+function isInstallerMode() {
+  return process.env.GROWTHUB_INSTALLER_MODE === "true";
+}
+function listLocalSurfaces() {
+  const homeDir = resolvePaperclipHomeDir();
+  const instancesDir = path23.resolve(homeDir, "instances");
+  if (!fs16.existsSync(instancesDir)) return [];
+  return fs16.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+    const instanceId = entry.name;
+    const configPath = path23.resolve(instancesDir, instanceId, "config.json");
+    if (!fs16.existsSync(configPath)) return null;
+    try {
+      const config = readConfig(configPath);
+      if (!config) return null;
+      const profile = resolveSurfaceProfile(config);
+      if (!profile) return null;
+      return {
+        instanceId,
+        profile,
+        configPath
+      };
+    } catch {
+      return null;
+    }
+  }).filter((entry) => entry !== null).sort((left, right) => left.instanceId.localeCompare(right.instanceId));
 }
 function registerDxCommands(target) {
   const heartbeat = target.command("heartbeat").description("Heartbeat utilities");
@@ -12753,8 +14726,42 @@ applyDataDirOverride(bootstrapOptions, {
 });
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
-var surfaceRuntime = initializeSurfaceRuntimeContract(bootstrapConfig?.surface.profile);
-program.name("growthub").description("Growthub CLI \u2014 setup, diagnose, and configure your instance").version("0.2.7");
+var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.43").addHelpText("after", `
+Worker Kits (agent execution environments):
+
+  Discovery:
+    $ growthub kit                              Interactive browser \u2014 pick, preview, download
+    $ growthub kit list                         All kits grouped by family (studio \xB7 workflow \xB7 operator \xB7 ops)
+    $ growthub kit list --family studio         Filter by family
+    $ growthub kit families                     Show family taxonomy with descriptions
+
+  Download:
+    $ growthub kit download                     Interactive (no arg = picker)
+    $ growthub kit download higgsfield          Fuzzy slug \u2014 resolves automatically
+    $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
+    $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
+
+  Inspect & validate:
+    $ growthub kit inspect higgsfield-studio-v1
+    $ growthub kit inspect growthub-email-marketing-v1 --json
+    $ growthub kit validate ./path/to/kit
+
+  After download:
+    1. Point Growthub local (or Claude Code) Working Directory at the exported folder
+    2. cp .env.example .env  \u2192  add your API key
+    3. Open a new session \u2014 the operator agent loads automatically
+
+Instance setup:
+    $ growthub onboard                          First-run interactive wizard
+    $ growthub run                              Onboard + doctor + start server
+    $ growthub doctor                           Diagnose and optionally repair
+    $ growthub configure                        Update config sections
+    $ growthub                                  Interactive discovery hub
+`);
+program.action(async () => {
+  await runDiscoveryHub();
+});
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals();
   const optionNames = new Set(actionCommand.options.map((option) => option.attributeName()));
@@ -12774,4 +14781,3 @@ program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
-//# sourceMappingURL=index.js.map

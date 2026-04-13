@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
 
 function printUsage() {
-  console.log("Usage: create-growthub-local --profile <dx|gtm> [--run] [--data-dir <path>] [--config <path>]");
+  console.log("Usage: create-growthub-local [--profile <dx|gtm>] [--run] [--data-dir <path>] [--config <path>]");
 }
 
 function parseArgs(argv) {
@@ -43,9 +46,9 @@ function parseArgs(argv) {
     }
   }
 
-  if (profile !== "dx" && profile !== "gtm") {
+  if (profile !== null && profile !== "dx" && profile !== "gtm") {
     printUsage();
-    console.error("create-growthub-local requires --profile dx or --profile gtm");
+    console.error("create-growthub-local only accepts --profile dx or --profile gtm");
     process.exit(1);
   }
 
@@ -53,6 +56,16 @@ function parseArgs(argv) {
 }
 
 function resolveGrowthubCliEntrypoint() {
+  const overrideEntrypoint = process.env.GROWTHUB_LOCAL_CLI_ENTRYPOINT?.trim();
+  if (overrideEntrypoint) {
+    return path.resolve(process.cwd(), overrideEntrypoint);
+  }
+
+  const localRepoCliEntrypoint = path.resolve(path.dirname(__filename), "../../../cli/dist/index.js");
+  if (fs.existsSync(localRepoCliEntrypoint)) {
+    return localRepoCliEntrypoint;
+  }
+
   const cliPackageJsonPath = require.resolve("@growthub/cli/package.json");
   const cliPackageDir = path.dirname(cliPackageJsonPath);
   const cliPackage = require(cliPackageJsonPath);
@@ -82,21 +95,31 @@ try {
 
 const result = spawnSync(
   process.execPath,
-  [
-    growthubCli,
-    "onboard",
-    "--yes",
-    ...(run ? ["--run"] : []),
-    "--data-dir",
-    effectiveDataDir,
-    ...(config ? ["--config", config] : []),
-  ],
+  profile
+    ? [
+      growthubCli,
+      "onboard",
+      "--yes",
+      ...(run ? ["--run"] : []),
+      "--data-dir",
+      effectiveDataDir,
+      ...(config ? ["--config", config] : []),
+    ]
+    : [
+      growthubCli,
+      "discover",
+      ...(run ? ["--run"] : []),
+      "--data-dir",
+      effectiveDataDir,
+      ...(config ? ["--config", config] : []),
+    ],
   {
     cwd: process.cwd(),
     stdio: "inherit",
     env: {
       ...process.env,
-      PAPERCLIP_SURFACE_PROFILE: profile,
+      GROWTHUB_INSTALLER_MODE: "true",
+      ...(profile ? { PAPERCLIP_SURFACE_PROFILE: profile } : {}),
     },
   },
 );

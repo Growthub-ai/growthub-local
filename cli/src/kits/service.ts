@@ -75,6 +75,18 @@ export interface KitDownloadResult {
   zipPath: string;
 }
 
+export interface KitDownloadProgress {
+  phase: "preparing" | "copying" | "zipping" | "writing_zip" | "done";
+  completed: number;
+  total: number;
+  percent: number;
+  detail: string;
+}
+
+export interface KitDownloadOptions {
+  onProgress?: (progress: KitDownloadProgress) => void;
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -660,22 +672,110 @@ function buildZipEntries(sourceRoot: string, exportFolderName: string): Array<{ 
   }));
 }
 
+function reportProgress(
+  onProgress: KitDownloadOptions["onProgress"],
+  progress: KitDownloadProgress,
+): void {
+  onProgress?.(progress);
+}
+
+function copyDirectoryWithProgress(
+  sourceRoot: string,
+  targetRoot: string,
+  onProgress?: KitDownloadOptions["onProgress"],
+): void {
+  const files = listRelativeFiles(sourceRoot);
+  const total = Math.max(files.length, 1);
+
+  fs.mkdirSync(targetRoot, { recursive: true });
+  reportProgress(onProgress, {
+    phase: "copying",
+    completed: 0,
+    total,
+    percent: 10,
+    detail: "Preparing files",
+  });
+
+  files.forEach((relativePath, index) => {
+    const sourcePath = path.resolve(sourceRoot, relativePath);
+    const targetPath = path.resolve(targetRoot, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    const completed = index + 1;
+    const percent = 10 + Math.round((completed / total) * 55);
+    reportProgress(onProgress, {
+      phase: "copying",
+      completed,
+      total,
+      percent,
+      detail: relativePath,
+    });
+  });
+}
+
+function buildZipEntriesWithProgress(
+  sourceRoot: string,
+  exportFolderName: string,
+  onProgress?: KitDownloadOptions["onProgress"],
+): Array<{ name: string; data: Buffer }> {
+  const files = listRelativeFiles(sourceRoot);
+  const total = Math.max(files.length, 1);
+
+  return files.map((relativePath, index) => {
+    const completed = index + 1;
+    const percent = 65 + Math.round((completed / total) * 30);
+    reportProgress(onProgress, {
+      phase: "zipping",
+      completed,
+      total,
+      percent,
+      detail: relativePath,
+    });
+    return {
+      name: path.posix.join(exportFolderName, relativePath),
+      data: fs.readFileSync(path.resolve(sourceRoot, relativePath)),
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Download
 // ---------------------------------------------------------------------------
 
-export function downloadBundledKit(kitId: string, outDir?: string): KitDownloadResult {
+export function downloadBundledKit(kitId: string, outDir?: string, options: KitDownloadOptions = {}): KitDownloadResult {
   const resolved = resolveBundledKit(kitId);
   const outputPaths = resolveOutputPaths(resolved, outDir);
+  const onProgress = options.onProgress;
 
+  reportProgress(onProgress, {
+    phase: "preparing",
+    completed: 0,
+    total: 1,
+    percent: 0,
+    detail: "Resolving export target",
+  });
   fs.mkdirSync(outputPaths.outputRoot, { recursive: true });
   fs.rmSync(outputPaths.folderPath, { recursive: true, force: true });
-  fs.cpSync(resolved.assetRoot, outputPaths.folderPath, { recursive: true });
+  copyDirectoryWithProgress(resolved.assetRoot, outputPaths.folderPath, onProgress);
 
   const zipBuffer = buildStoredZip(
-    buildZipEntries(outputPaths.folderPath, resolved.bundleManifest.export.folderName),
+    buildZipEntriesWithProgress(outputPaths.folderPath, resolved.bundleManifest.export.folderName, onProgress),
   );
+  reportProgress(onProgress, {
+    phase: "writing_zip",
+    completed: 1,
+    total: 1,
+    percent: 98,
+    detail: path.basename(outputPaths.zipPath),
+  });
   fs.writeFileSync(outputPaths.zipPath, zipBuffer);
+  reportProgress(onProgress, {
+    phase: "done",
+    completed: 1,
+    total: 1,
+    percent: 100,
+    detail: "Export complete",
+  });
 
   return {
     folderPath: outputPaths.folderPath,

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import * as p from "@clack/prompts";
 import { Command } from "commander";
 import pc from "picocolors";
@@ -10,32 +11,44 @@ import {
   validateKitDirectory,
   fuzzyResolveKitId,
   type KitListItem,
+  type KitDownloadProgress,
 } from "../kits/service.js";
 
 // ---------------------------------------------------------------------------
-// Family display config — color + emoji per family
+// Type display config — user-facing grouping independent from internal families
 // ---------------------------------------------------------------------------
 
-const FAMILY_CONFIG: Record<string, { color: (s: string) => string; emoji: string; label: string }> = {
-  studio:   { color: pc.cyan,    emoji: "🎬", label: "Studio" },
-  workflow: { color: pc.magenta, emoji: "🔄", label: "Workflow" },
-  operator: { color: pc.green,   emoji: "🤖", label: "Operator" },
-  ops:      { color: pc.yellow,  emoji: "⚙️ ", label: "Ops" },
+const TYPE_CONFIG: Record<string, { color: (s: string) => string; emoji: string; label: string }> = {
+  studio: { color: pc.cyan, emoji: "🛠️", label: "Custom Workspaces" },
+  specialized_agents: { color: pc.magenta, emoji: "🧠", label: "Specialized Agents" },
+  ops: { color: pc.yellow, emoji: "⚙️ ", label: "Ops" },
 };
 
-function familyColor(family: string, text: string): string {
-  return FAMILY_CONFIG[family]?.color(text) ?? text;
+function displayTypeForFamily(family: string): keyof typeof TYPE_CONFIG | string {
+  if (family === "workflow" || family === "operator") return "specialized_agents";
+  if (family === "studio" || family === "ops") return family;
+  return family;
 }
 
-function familyBadge(family: string): string {
-  const cfg = FAMILY_CONFIG[family];
-  if (!cfg) return family;
+function typeColor(family: string, text: string): string {
+  const type = displayTypeForFamily(family);
+  return TYPE_CONFIG[type]?.color(text) ?? text;
+}
+
+function typeBadge(family: string): string {
+  const type = displayTypeForFamily(family);
+  const cfg = TYPE_CONFIG[type];
+  if (!cfg) return String(type);
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 
 function truncate(str: string, max: number): string {
   if (str.length <= max) return str;
   return str.slice(0, max - 1) + "…";
+}
+
+function displayKitName(name: string): string {
+  return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -63,12 +76,40 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
 }
 
+function terminalLink(label: string, href: string): string {
+  return `\u001B]8;;${href}\u0007${label}\u001B]8;;\u0007`;
+}
+
+function folderOpenLabel(folderPath: string): string {
+  const href = pathToFileURL(folderPath).href;
+  const label =
+    process.platform === "darwin"
+      ? "Open in Finder"
+      : process.platform === "win32"
+        ? "Open in Explorer"
+        : "Open folder";
+  return terminalLink(label, href);
+}
+
+function renderProgressBar(progress: KitDownloadProgress): void {
+  if (!process.stdout.isTTY) return;
+  const width = 24;
+  const filled = Math.max(0, Math.min(width, Math.round((progress.percent / 100) * width)));
+  const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
+  const detail = truncate(progress.detail, 48);
+  const line = `\r${pc.cyan("Exporting kit")} ${pc.dim("[")}${pc.green(bar)}${pc.dim("]")} ${String(progress.percent).padStart(3)}% ${pc.dim(detail)}`;
+  process.stdout.write(line);
+  if (progress.phase === "done") {
+    process.stdout.write("\n");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Kit preview card
 // ---------------------------------------------------------------------------
 
 function printKitCard(item: KitListItem): void {
-  const badge = familyBadge(item.family);
+  const badge = typeBadge(item.family);
   console.log("");
   console.log(box([
     `${pc.bold(item.name)}  ${pc.dim("v" + item.version)}`,
@@ -80,34 +121,70 @@ function printKitCard(item: KitListItem): void {
   ]));
 }
 
+async function confirmKitActions(input: {
+  kits: KitListItem[];
+  actions: string[];
+}): Promise<boolean> {
+  const actionLabels = input.actions.map((action) => {
+    if (action === "download") return "download";
+    if (action === "inspect") return "inspect";
+    if (action === "copy-id") return "print id";
+    return action;
+  });
+
+  const summaryLines = [
+    pc.bold("Selected kits"),
+    ...input.kits.map((kit) => `${typeBadge(kit.family)}  ${displayKitName(kit.name)}`),
+    "",
+    pc.bold("Selected actions"),
+    actionLabels.join(", "),
+  ];
+
+  console.log("");
+  console.log(box(summaryLines));
+
+  const confirmed = await p.confirm({
+    message: "Continue with these worker kit actions?",
+    initialValue: false,
+  });
+
+  if (p.isCancel(confirmed)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return Boolean(confirmed);
+}
+
 // ---------------------------------------------------------------------------
 // Grouped list renderer
 // ---------------------------------------------------------------------------
 
 function printGroupedList(kits: KitListItem[]): void {
-  const byFamily: Record<string, KitListItem[]> = {};
+  const byType: Record<string, KitListItem[]> = {};
   for (const kit of kits) {
-    (byFamily[kit.family] ??= []).push(kit);
+    const type = displayTypeForFamily(kit.family);
+    (byType[type] ??= []).push(kit);
   }
 
-  const families = Object.keys(byFamily).sort();
-  const totalFamilies = families.length;
+  const types = Object.keys(byType).sort();
+  const totalTypes = types.length;
 
   console.log("");
   console.log(
     pc.bold("Growthub Agent Worker Kits") +
-    pc.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} · ${totalFamilies} famil${totalFamilies !== 1 ? "ies" : "y"}`),
+    pc.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} · ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`),
   );
   console.log(hr());
 
-  for (const family of families) {
-    const groupKits = byFamily[family];
-    const header = familyBadge(family);
+  for (const type of types) {
+    const groupKits = byType[type];
+    const header = typeBadge(type);
 
     console.log(`\n${header}  ${pc.dim("(" + groupKits.length + ")")}`);
 
     for (const kit of groupKits) {
-      console.log(`  ${familyColor(family, pc.bold(kit.id))}  ${pc.dim("v" + kit.version)}`);
+      console.log(`  ${typeColor(kit.family, pc.bold(kit.id))}  ${pc.dim("v" + kit.version)}`);
       console.log(`  ${pc.dim(truncate(kit.description, 62))}`);
       console.log(`  ${pc.dim("→")} ${pc.cyan("growthub kit download " + kit.id)}`);
       console.log("");
@@ -123,7 +200,7 @@ function printGroupedList(kits: KitListItem[]): void {
 // Interactive kit picker
 // ---------------------------------------------------------------------------
 
-async function runInteractivePicker(opts: { out?: string }): Promise<void> {
+export async function runInteractivePicker(opts: { out?: string; allowBackToHub?: boolean }): Promise<"done" | "back"> {
   p.intro(pc.bold("Growthub Agent Worker Kits"));
 
   let kits: KitListItem[];
@@ -135,49 +212,149 @@ async function runInteractivePicker(opts: { out?: string }): Promise<void> {
   }
 
   const familiesAvailable = [...new Set(kits.map((k) => k.family))].sort();
-  const familyChoice = await p.select({
-    message: "Filter by family (or show all)",
-    options: [
-      { value: "all", label: "All families" },
-      ...familiesAvailable.map((f) => {
-        const cfg = FAMILY_CONFIG[f];
-        return { value: f, label: cfg ? cfg.emoji + "  " + cfg.label : f };
-      }),
-    ],
-  });
+  const typeOptions = Array.from(new Set(familiesAvailable.map((family) => displayTypeForFamily(family))));
 
-  if (p.isCancel(familyChoice)) { p.cancel("Cancelled."); process.exit(0); }
+  while (true) {
+    const typeChoice = await p.select({
+      message: "Filter by type",
+      options: [
+        { value: "all", label: "All Types" },
+        ...typeOptions.map((type) => {
+          const cfg = TYPE_CONFIG[type];
+          return {
+            value: type,
+            label: cfg ? cfg.emoji + "  " + cfg.label : String(type),
+          };
+        }),
+        ...(opts.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
+      ],
+    });
 
-  const filtered = familyChoice === "all" ? kits : kits.filter((k) => k.family === familyChoice);
+    if (p.isCancel(typeChoice)) { p.cancel("Cancelled."); process.exit(0); }
+    if (typeChoice === "__back_to_hub") return "back";
 
-  const kitChoice = await p.select({
-    message: "Select a kit",
-    options: filtered.map((k) => ({
-      value: k.id,
-      label: familyBadge(k.family) + "  " + pc.bold(k.name) + "  " + pc.dim("v" + k.version),
-      hint: truncate(k.description, 55),
-    })),
-  });
+    const filtered = typeChoice === "all"
+      ? kits
+      : kits.filter((k) => displayTypeForFamily(k.family) === typeChoice);
+    const showTypeBadgeInKitChoices = typeChoice === "all";
 
-  if (p.isCancel(kitChoice)) { p.cancel("Cancelled."); process.exit(0); }
+    if (filtered.length === 0) {
+      p.note("No kits are available for that type yet.", "Nothing found");
+      continue;
+    }
 
-  const selected = kits.find((k) => k.id === kitChoice)!;
-  printKitCard(selected);
+    while (true) {
+      const kitChoice = await p.select({
+        message: "Select kit",
+        options: [
+          ...filtered.map((k) => ({
+            value: k.id,
+            label:
+              (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") +
+              pc.bold(displayKitName(k.name)) +
+              "  " +
+              pc.dim("v" + k.version),
+            hint: truncate(k.description, 55),
+          })),
+          { value: "__back_to_type", label: "← Back to type filter" },
+        ],
+      });
 
-  const action = await p.select({
-    message: "What would you like to do?",
-    options: [
-      { value: "download", label: "⬇️  Download kit" },
-      { value: "inspect",  label: "🔍 Inspect manifest" },
-      { value: "copy-id",  label: "📋 Print ID to stdout" },
-      { value: "cancel",   label: "Cancel" },
-    ],
-  });
+      if (p.isCancel(kitChoice)) { p.cancel("Cancelled."); process.exit(0); }
+      if (kitChoice === "__back_to_type") break;
 
-  if (p.isCancel(action) || action === "cancel") { p.cancel("Cancelled."); process.exit(0); }
-  if (action === "copy-id") { console.log(selected.id); p.outro(pc.dim("Kit ID printed above.")); return; }
-  if (action === "inspect") { runInspect(selected.id, opts.out); return; }
-  if (action === "download") { await runDownload(selected.id, opts); }
+      const selected = filtered.find((kit) => kit.id === kitChoice);
+      if (!selected) {
+        p.cancel("Selected kit was not found.");
+        process.exit(1);
+      }
+
+      printKitCard(selected);
+
+      const nextStep = await p.select({
+        message: "Next step",
+        options: [
+          { value: "actions", label: "Choose action(s)" },
+          { value: "back_to_kits", label: "← Back to kit list" },
+        ],
+      });
+
+      if (p.isCancel(nextStep)) { p.cancel("Cancelled."); process.exit(0); }
+      if (nextStep === "back_to_kits") continue;
+
+      while (true) {
+        const actionOptions = [
+          { value: "download", label: "⬇️  Download kit", hint: "growthub kit download <id>" },
+          { value: "inspect", label: "🔍 Inspect manifest", hint: "growthub kit inspect <id>" },
+          { value: "copy-id", label: "📋 Print ID to stdout", hint: "echo <kit-id>" },
+        ];
+
+        const actions = await p.multiselect({
+          message: "What would you like to do?",
+          options: actionOptions,
+          required: false,
+        });
+
+        if (p.isCancel(actions)) { p.cancel("Cancelled."); process.exit(0); }
+
+        const selectedActions = actions as string[];
+        if (selectedActions.length === 0) {
+          const emptyActionChoice = await p.select({
+            message: "No actions selected",
+            options: [
+              { value: "retry", label: "Choose action(s)" },
+              { value: "back_to_kits", label: "← Back to kit list" },
+            ],
+          });
+
+          if (p.isCancel(emptyActionChoice)) { p.cancel("Cancelled."); process.exit(0); }
+          if (emptyActionChoice === "back_to_kits") break;
+          continue;
+        }
+
+        const confirmed = await confirmKitActions({
+          kits: [selected],
+          actions: selectedActions,
+        });
+
+        if (!confirmed) {
+          const reviewChoice = await p.select({
+            message: "Review selection",
+            options: [
+              { value: "actions", label: "Choose action(s) again" },
+              { value: "back_to_kits", label: "← Back to kit list" },
+            ],
+          });
+
+          if (p.isCancel(reviewChoice)) { p.cancel("Cancelled."); process.exit(0); }
+          if (reviewChoice === "back_to_kits") break;
+          continue;
+        }
+
+        for (const action of selectedActions) {
+          if (action === "copy-id") {
+            console.log(selected.id);
+            continue;
+          }
+          if (action === "inspect") {
+            runInspect(selected.id, opts.out);
+            continue;
+          }
+          if (action === "download") {
+            await runDownload(selected.id, opts);
+          }
+        }
+
+        if (selectedActions.includes("copy-id")) {
+          p.outro(pc.dim("Kit ID printed above."));
+          return "done";
+        }
+
+        p.outro(pc.dim("Done."));
+        return "done";
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -199,14 +376,13 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   printKitCard(item);
 
   if (!opts.yes) {
-    const confirmed = await p.confirm({ message: "Download " + pc.bold(item.name) + "?" });
+    const confirmed = await p.confirm({ message: "Download " + pc.bold(displayKitName(item.name)) + "?" });
     if (p.isCancel(confirmed) || !confirmed) { p.cancel("Cancelled."); process.exit(0); }
   }
 
-  const s = p.spinner();
-  s.start("Exporting kit…");
-  const result = downloadBundledKit(resolvedId, opts.out);
-  s.stop("Kit exported");
+  const result = downloadBundledKit(resolvedId, opts.out, {
+    onProgress: renderProgressBar,
+  });
 
   const nextSteps = [
     pc.bold("Next steps"),
@@ -223,6 +399,9 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   console.log("");
   console.log(box(nextSteps));
   console.log("");
+  console.log(pc.bold("Open folder: ") + folderOpenLabel(result.folderPath));
+  console.log(pc.dim("Folder: ") + result.folderPath);
+  console.log("");
   console.log(pc.dim("Zip: ") + result.zipPath);
   console.log("");
 }
@@ -238,7 +417,7 @@ function runInspect(kitId: string, outDir?: string): void {
 
   console.log("");
   console.log(pc.bold("Kit: " + info.id) + pc.dim("  v" + info.version));
-  console.log(familyBadge(info.family) + pc.dim("  schema v" + info.schemaVersion));
+  console.log(typeBadge(info.family) + pc.dim("  schema v" + info.schemaVersion));
   console.log(hr());
   kv("Name:", info.name);
   kv("Description:", truncate(info.description, 55));
@@ -270,7 +449,7 @@ export function registerKitCommands(program: Command): void {
     .addHelpText("after", `
 Examples:
   $ growthub kit                          # interactive browser
-  $ growthub kit list                     # all kits grouped by family
+  $ growthub kit list                     # all kits grouped by type
   $ growthub kit list --family studio     # filter by family
   $ growthub kit list --json              # machine-readable output
   $ growthub kit download higgsfield      # fuzzy slug — resolves automatically
@@ -287,7 +466,7 @@ Examples:
   // ── list ────────────────────────────────────────────────────────────────
   kit
     .command("list")
-    .description("List all available kits grouped by family")
+    .description("List all available kits grouped by type")
     .option("--family <families>", "Filter by family (comma-separated: studio,workflow,operator,ops)")
     .option("--json", "Output raw JSON for scripting")
     .addHelpText("after", `
@@ -374,12 +553,12 @@ Examples:
       }
 
       if (opts.yes) {
-        const s = p.spinner();
-        s.start("Exporting " + resolvedId + "…");
-        const result = downloadBundledKit(resolvedId, opts.out);
-        s.stop("Kit exported");
+        const result = downloadBundledKit(resolvedId, opts.out, {
+          onProgress: renderProgressBar,
+        });
         console.log("");
         console.log(pc.bold("Exported folder:"), pc.cyan(result.folderPath));
+        console.log(pc.bold("Open folder:   "), folderOpenLabel(result.folderPath));
         console.log(pc.bold("Zip:           "), pc.dim(result.zipPath));
         console.log("");
         console.log(pc.bold("Next steps:"));
@@ -462,7 +641,7 @@ Examples:
       console.log(hr());
 
       for (const def of defs) {
-        console.log("\n  " + familyBadge(def.family));
+        console.log("\n  " + typeBadge(def.family));
         console.log("  " + pc.dim(def.tagline));
         console.log("  " + pc.dim("Surfaces: ") + pc.dim(def.surfaces));
         console.log("  " + pc.dim("Example:  ") + pc.cyan(def.example));
@@ -470,7 +649,7 @@ Examples:
 
       console.log("");
       console.log(hr());
-      console.log(pc.dim("  growthub kit list --family <family>  to filter kits by family"));
+      console.log(pc.dim("  growthub kit list --family <family>  to filter by internal family"));
       console.log("");
     });
 }

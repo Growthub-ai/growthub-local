@@ -1,79 +1,101 @@
 # create-growthub-local
 
-Install and run a local Growthub instance — GTM or DX surface — in one command.
+`create-growthub-local` is the guided installer for Growthub Local.
+
+It supports two installer paths:
+
+- profile-driven install for `gtm` or `dx`
+- interactive discovery mode when no profile is passed
 
 ## Usage
 
-**Go-to-Market surface:**
+### Install GTM directly
 
 ```bash
 npm create growthub-local@latest -- --profile gtm
 ```
 
-**DX (Developer Experience) surface:**
+### Install DX directly
 
 ```bash
 npm create growthub-local@latest -- --profile dx
 ```
 
-Both commands install the local runtime into a `growthub-local/` folder in your current directory, onboard a fresh instance, and start the server.
+### Open the interactive discovery hub
+
+```bash
+npm create growthub-local@latest
+```
+
+When no `--profile` is passed, the installer launches `growthub discover` so the user can choose between:
+
+- full local app
+- worker kits
+- shared templates
+
+## CLI Edition User Flows
+
+### 1. Full Local App
+
+If `--profile gtm` or `--profile dx` is passed, the installer runs a direct onboarding path for that surface.
+
+Flow:
+
+1. Resolve the bundled or installed `@growthub/cli` entrypoint.
+2. Run `growthub onboard --yes`.
+3. Save the new instance under the selected data directory.
+4. Start the local runtime when `--run` is passed.
+
+### 2. Interactive discovery mode
+
+If no profile is passed, the installer defers to `growthub discover`.
+
+Flow:
+
+1. Launch the CLI discovery hub.
+2. Choose `Full Local App`, `Worker Kits`, or `Templates`.
+3. Continue inside the matching CLI workflow.
+
+This is the correct path when the user does not yet know whether they want a full app install, a worker kit export, or a shared template pull.
 
 ## Options
 
 | Flag | Description |
 |---|---|
-| `--profile gtm\|dx` | Required. Selects the surface to install. |
-| `--run` | Start the server immediately after install. |
-| `--data-dir <path>` | Custom directory for instance data (default: `./growthub-local`). |
-| `--config <path>` | Path to a custom config file. |
+| `--profile gtm\|dx` | Optional. If provided, install that local app surface directly. |
+| `--run` | Start the local runtime immediately after onboarding. |
+| `--data-dir <path>` | Override the install data directory. Default: `./growthub-local`. |
+| `--config <path>` | Use a custom config path. |
 
-## What happens
+## What The Installer Actually Does
 
-1. Installs `@growthub/cli` and provisions a local instance
-2. Starts an embedded PostgreSQL database on an auto-selected port
-3. Serves the local UI at `http://localhost:3100` (GTM) or `http://localhost:3101` (DX)
-4. Opens the Growthub Connection card — complete auth to bridge to hosted Growthub
+1. Resolves the `@growthub/cli` binary, preferring the local repo build when available.
+2. Sets installer mode with `GROWTHUB_INSTALLER_MODE=true`.
+3. If a profile is passed, sets `PAPERCLIP_SURFACE_PROFILE` and runs `growthub onboard --yes`.
+4. If no profile is passed, runs `growthub discover`.
 
-For GTM installs, browser-agent execution is issue-bound through heartbeat. Concurrent browser agents can run on distinct runtime browser slots when launched from real assigned issues.
+## Starting Again After Install
 
-## Starting again after install
-
-```bash
-cd growthub-local
-npx growthub start
-```
-
-## Upgrading
+If you installed a full local app:
 
 ```bash
 cd growthub-local
-npx growthub upgrade
+npx growthub run
 ```
 
-Upgrades the CLI and server in place. Runs any pending migrations. No data loss.
-
-## Running two surfaces
-
-Each surface needs its own directory:
+If you want the interactive CLI again:
 
 ```bash
-mkdir gtm-fresh && cd gtm-fresh
-npm create growthub-local@latest -- --profile gtm --run
-
-mkdir dx-fresh && cd dx-fresh
-npm create growthub-local@latest -- --profile dx --run
+npx growthub
 ```
-
-Each instance gets an isolated database and port. They share no state.
 
 ## Requirements
 
 - Node.js 20 or later
-- npm 7 or later (for `npm create`)
+- npm 7 or later
 
 ## Links
 
-- [GitHub](https://github.com/antonioromero1220/growthub-local)
-- [Contributing](https://github.com/antonioromero1220/growthub-local/blob/main/CONTRIBUTING.md)
-- [Frozen browser isolation snapshot](https://github.com/antonioromero1220/growthub-local/blob/main/docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md)
-- [Issues](https://github.com/antonioromero1220/growthub-local/issues)
+- [GitHub](https://github.com/Growthub-ai/growthub-local)
+- [CLI package](https://github.com/Growthub-ai/growthub-local/tree/main/cli)
+- [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)

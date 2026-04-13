@@ -1,228 +1,252 @@
 # Growthub Local
 
-Local Growthub runtime for agentic DX and Go-to-Market workflows.
+Growthub Local is the source-of-truth repo for the local Growthub runtime, the published CLI packages, the bundled worker kits, and the shared template library used by agent workflows.
 
-`Growthub Local` is an open-source collection of local runtime tooling & products that can run on your local machine with fully customizability, personalization, & integrations with our main Growthub Application.
+This repository ships and documents:
 
-This repository includes:
+- the local app runtime for `gtm` and `dx`
+- the published CLI package `@growthub/cli`
+- the installer package `create-growthub-local`
+- bundled Growthub Agent Worker Kits
+- the shared template library exposed through `growthub template`
 
-- the custom interface local surfaces (DX, GTM, More Coming Soon...)
-- the local CLI
-- the local server
-- the local UI
-- the local installer packages
-- bundled Agent Worker Kits for specialized agent environments
+## Install Paths
 
-It is intended to support a broad local ecosystem of agent tooling, including:
+Choose the install path that matches the job you need to do.
 
-- full local GTM and DX app installs
-- CLI-driven agent worker kit export and validation
-- local adapter execution through `Working directory`
-- browser-heavy workflows
-- research and sourcing workflows
-- structured document, messaging, and production environments
-
-## Install
-
-Choose the install path that matches what you want to use.
-
-### 1. Full local app for Go-to-Market
+### Full local app: GTM
 
 ```bash
 npm create growthub-local@latest -- --profile gtm
 ```
 
-Use this when you want the full GTM local product surface.
+Use this when you want the full Go-to-Market local surface.
 
-### 2. Full local app for DX
+### Full local app: DX
 
 ```bash
 npm create growthub-local@latest -- --profile dx
 ```
 
-Use this when you want the full DX local product surface.
+Use this when you want the full Developer Experience local surface.
 
-### 3. Worker Kits and CLI workflows
-
-If you mainly want bundled agent environments and local kit workflows, install the CLI package directly:
+### CLI-only workflows
 
 ```bash
 npm install -g @growthub/cli
 ```
 
-Then use:
+Use this when you want CLI-first access to:
+
+- local app discovery and onboarding
+- worker kit discovery, inspection, export, and validation
+- shared template browsing and extraction
+
+## CLI Editions And User Flows
+
+The shipped CLI has three top-level user flows. They are exposed in the interactive discovery hub and through direct commands.
+
+### 1. Full Local App
+
+This path is for installing or reopening a full local Growthub surface.
+
+Entry points:
 
 ```bash
+growthub
+growthub discover
+growthub onboard
+growthub run
+```
+
+User flow:
+
+1. Open the discovery hub or call `create-growthub-local`.
+2. Choose `Full Local App`.
+3. Create a new `gtm` or `dx` profile, or load an existing local profile.
+4. Complete onboarding and save config.
+5. Start the local runtime.
+6. Authenticate through the Growthub Connection flow and verify the bridge.
+
+### 2. Worker Kits
+
+This path is for exporting a working-directory-ready agent environment.
+
+Entry points:
+
+```bash
+growthub kit
 growthub kit list
 growthub kit inspect creative-strategist-v1
+growthub kit inspect growthub-open-higgsfield-studio-v1
 growthub kit download creative-strategist-v1
+growthub kit download growthub-open-higgsfield-studio-v1
 growthub kit path creative-strategist-v1
 growthub kit validate /absolute/path/to/kit
 ```
 
-Use this path when you want to:
+User flow:
 
-- inspect bundled kits
-- export a kit locally
-- validate a kit folder you are building
-- point an agent `Working directory` at an exported environment
+1. Browse or filter the bundled kit catalog.
+2. Inspect the kit manifest and required paths.
+3. Export the kit locally.
+4. Point the agent `Working directory` at the exported folder.
+5. Run the local adapter inside that exported environment.
+6. Validate any modified or newly built kit before pushing.
+
+### 3. Shared Templates
+
+This path is for browsing and extracting reusable artifact primitives without exporting a full kit.
+
+Entry points:
+
+```bash
+growthub template
+growthub template list
+growthub template list --type ad-formats
+growthub template list --type scene-modules --subtype hooks
+growthub template get villain-animation
+growthub template get meme-overlay --out ~/kit/hooks
+```
+
+User flow:
+
+1. Open the interactive template browser or use filtered list commands.
+2. Narrow by family, artifact type, and subtype.
+3. Preview the selected artifact.
+4. Print it, copy it into a local workspace, or use the slug in another workflow.
 
 ## What Happens Next
 
-If you installed a full local app profile:
+### After a full local app install
 
-1. Launch the local app.
+1. Start the local app.
 2. Open the `Growthub Connection` card.
-3. Click `Open Configuration`.
-4. Complete authentication in hosted Growthub.
-5. Return to the local app callback.
-6. Use `Pulse` to verify the hosted bridge is live.
+3. Complete authentication in hosted Growthub.
+4. Return to the local callback.
+5. Use `Pulse` to verify the hosted bridge is live.
 
-If you installed the CLI for Worker Kits:
+### After a worker-kit export
 
-1. Inspect or export the kit you want.
-2. Locate the expanded exported folder.
-3. Point your agent `Working directory` at that folder.
-4. Run the local adapter inside the exported environment.
+1. Locate the expanded export folder.
+2. Point the agent `Working directory` at that folder.
+3. Add any runtime-only environment variables the kit expects.
+4. Start a new agent session so the kit entrypoint contract is loaded from `CLAUDE.md`.
 
-## Profiles
+### After pulling a shared template
 
-- `gtm`: local Go-to-Market surface
-- `dx`: local DX tool surface
-
-## Packages
-
-This repo is the source of truth for:
-
-- `@growthub/cli`
-- `create-growthub-local`
+1. Copy the artifact into the target workspace.
+2. Adapt it to the specific kit, client, or output context.
+3. If the artifact becomes a reusable primitive, freeze it back into the correct template library instead of duplicating ad hoc logic.
 
 ## Worker Kits
 
-Growthub Agent Worker Kits package specialized local working environments for agents.
+Growthub Agent Worker Kits are versioned, exportable agent environments.
 
-Each kit is a versioned folder-based package that can include:
+Each kit can package:
 
-- instructions and prompts
-- templates and examples
-- output standards
-- required supporting files
+- operating instructions and prompts
+- templates and reusable working materials
+- examples and calibration references
+- output standards and expected structure
 - runtime assumptions for local adapter execution
 
-The CLI currently provides a local export and validation surface for these packages.
+The current bundled kits are:
 
-- `growthub kit list`
-- `growthub kit inspect <kit-id>`
-- `growthub kit download <kit-id> [--out <path>]`
-- `growthub kit path <kit-id> [--out <path>]`
-- `growthub kit validate <path>`
+- `creative-strategist-v1`
+- `growthub-email-marketing-v1`
+- `growthub-open-higgsfield-studio-v1`
 
-In the current model, an exported kit is used by pointing an agent `Working directory` at the expanded folder and running a local adapter inside it.
+### How local adapters use worker kits
 
-The first bundled kit is `creative-strategist-v1`. The same packaging model can also be used for other environment types such as email marketing, browser-heavy GTM workflows, research/sourcing workflows, and local production environments such as motion or Remotion-based workflows.
+Local adapters such as Codex, Claude Code, Cursor, Gemini, and OpenCode run inside the configured agent `Working directory`.
 
-### Worker Kits Glossary
+That makes the current worker-kit runtime path:
 
-- `Worker Kit`: a versioned local environment package for a specialized agent workflow
-- `Kit contract`: the manifest and bundle metadata that define package identity, payload boundary, and export shape
-- `Environment package`: the full working context, including prompts, templates, examples, standards, and runtime assumptions
-- `Activation`: exporting the kit and running a local adapter inside the expanded folder through `Working directory`
+1. Build or update a self-contained kit folder in `cli/assets/worker-kits/<kit-id>`.
+2. Validate it with `growthub kit validate <path>`.
+3. Export it with `growthub kit download <kit-id>` or resolve the folder with `growthub kit path <kit-id>`.
+4. Point the agent `Working directory` at the expanded exported folder.
+5. Run the local adapter inside that exported environment.
 
-### Worker Kits Navigation
+## Shared Templates
 
-- [Overview and source of truth](./docs/WORKER_KITS.md)
-- [Architecture](./docs/WORKER_KIT_ARCHITECTURE.md)
-- [Contributor guide](./docs/WORKER_KIT_CONTRIBUTOR_GUIDE.md)
-- [Environment examples](./docs/WORKER_KIT_ENVIRONMENT_EXAMPLES.md)
+The shared template library is a separate CLI surface from worker kits.
+
+Use shared templates when you need:
+
+- reusable cross-kit artifact primitives
+- a frozen library of ad formats or scene modules
+- copyable building blocks that should not require a full kit export
+
+The current shared template implementation lives in:
+
+- `cli/assets/shared-templates/`
+- `cli/src/templates/catalog.ts`
+- `cli/src/templates/service.ts`
+- `cli/src/commands/template.ts`
+
+The rule is simple: shared templates stay generic and reusable; worker kits compose them into opinionated, working-directory-ready environments.
+
+## Contributor Docs
+
+- [Worker Kits Overview](./docs/WORKER_KITS.md)
+- [Worker Kit Architecture](./docs/WORKER_KIT_ARCHITECTURE.md)
+- [Worker Kit Contributor Guide](./docs/WORKER_KIT_CONTRIBUTOR_GUIDE.md)
+- [Worker Kit Environment Examples](./docs/WORKER_KIT_ENVIRONMENT_EXAMPLES.md)
+- [CLI Template Contribution Extension Workflows](./docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)
 
 ## Development
 
-This repository is the dedicated home for the local runtime product boundary. Hosted Growthub application code lives separately.
-
-### Browser agents
-
-GTM browser agents are validated through the issue-assignment heartbeat path, not through a free-run browser invoke.
-
-The shipped runtime contract is:
-
-- create a real issue
-- assign it to the browser agent
-- let heartbeat wake the assignee with issue context
-- validate with `scripts/observability/tail-run.sh` and GTM `workspace-config`
-
-Browser separation is injected at runtime through `paperclipBrowserIsolation`, including the default rule that browser work starts in the agent's own separate browser context.
-
-### Canonical dev loop
-
-Use **`scripts/runtime-control.sh`** from the repo root — one deterministic path for humans and agents (stops stale processes, optionally syncs the target git branch, starts **server `dev:watch` + Vite** with your Paperclip config):
+Use the canonical local runtime control path from the repo root:
 
 ```bash
 scripts/runtime-control.sh up-main
-# or: scripts/runtime-control.sh up-branch <branch>
-# or: scripts/runtime-control.sh up-pr <pr-number>
+scripts/runtime-control.sh up-branch <branch>
+scripts/runtime-control.sh up-pr <pr-number>
 scripts/runtime-control.sh status
 scripts/runtime-control.sh stop
 ```
 
-Set **`GH_SERVER_PORT`** to match the port your API actually listens on if it differs from the script default (see `CONTRIBUTING.md`). Then open the surface you are testing, for example GTM:
+If the API is listening on `3101` instead of the script default, set `GH_SERVER_PORT` explicitly:
+
+```bash
+GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
+```
+
+Typical GTM URL:
 
 ```text
 http://127.0.0.1:5173/gtm/<COMPANY_PREFIX>/workspace
 ```
 
-Published semver for `@growthub/cli` and the installer is defined only in **`cli/package.json`** and **`packages/create-growthub-local/package.json`** — see **`docs/ARTIFACT_VERSIONS.md`**.
-
-### Pre-push gate
-
-Before pushing any branch:
+Before pushing:
 
 ```bash
 bash scripts/pr-ready.sh
 ```
 
-Validates branch naming, remote origin, version consistency, dist artifacts, and release contracts in one shot.
-
-### Observability
-
-Use the built-in observability scripts when validating browser-agent behavior:
-
-```bash
-bash scripts/observability/watch-agents.sh <company-id> --today
-bash scripts/observability/tail-run.sh <agent-prefix>
-bash scripts/observability/tail-run.sh <agent-prefix> <run-prefix>
-```
-
-For the frozen validated browser-agent isolation state, see [docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md](./docs/FROZEN_GTM_BROWSER_AGENT_ISOLATION_STATE.md).
-
-### Isolated worktrees
-
-For isolated development environments with their own database, port, and session state:
-
-```bash
-growthub worktree:make my-feature
-```
-
-Each worktree gets its own server port (3101+) and embedded Postgres instance. Your main instance stays untouched.
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
-
 ## Contributing
 
-Growthub Local is open source and built to be extended — by humans and AI agents alike.
+Work from a feature branch or worktree, read source files before editing, and preserve the existing shipped runtime patterns.
 
-```bash
-# Fork this repo, then:
-git checkout -b feat/your-feature
-# make changes
-git commit -m "feat(server): your change"
-git push origin feat/your-feature
-# open a PR — CI runs automatically
-```
+Branch prefixes:
 
-**Branch prefixes:** `feat/` `fix/` `docs/` `chore/` `ci/` `refactor/` `adapter/` `sync/`
+- `fix/`
+- `feat/`
+- `chore/`
+- `refactor/`
+- `docs/`
+- `ci/`
+- `test/`
+- `perf/`
+- `adapter/`
+- `sync/`
 
-**PR titles:** must follow [Conventional Commits](https://www.conventionalcommits.org/) — `type(scope): description`
+PR checks:
 
-**All PRs require** passing CI (`verify` + `validate` + `smoke`) and maintainer review before merge. Agent-submitted PRs are fully supported — the pipeline auto-detects bot actors and labels them `agent-pr`.
+- `smoke`
+- `validate`
+- `verify`
 
-See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the full workflow.
+For the full contribution workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).

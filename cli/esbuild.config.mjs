@@ -24,6 +24,25 @@ const workspacePaths = [
   "packages/adapters/openclaw-gateway",
 ];
 
+const workspaceAliases = {
+  "@paperclipai/db": resolve(repoRoot, "packages/db/src/index.ts"),
+  "@paperclipai/shared": resolve(repoRoot, "packages/shared/src/index.ts"),
+  "@paperclipai/adapter-utils": resolve(repoRoot, "packages/adapter-utils/src/index.ts"),
+  "@paperclipai/adapter-utils/server-utils": resolve(repoRoot, "packages/adapter-utils/src/server-utils.ts"),
+  "@paperclipai/adapter-claude-local": resolve(repoRoot, "packages/adapters/claude-local/src/index.ts"),
+  "@paperclipai/adapter-claude-local/server": resolve(repoRoot, "packages/adapters/claude-local/src/server/index.ts"),
+  "@paperclipai/adapter-claude-local/ui": resolve(repoRoot, "packages/adapters/claude-local/src/ui/index.ts"),
+  "@paperclipai/adapter-claude-local/cli": resolve(repoRoot, "packages/adapters/claude-local/src/cli/index.ts"),
+  "@paperclipai/adapter-codex-local": resolve(repoRoot, "packages/adapters/codex-local/src/index.ts"),
+  "@paperclipai/adapter-codex-local/server": resolve(repoRoot, "packages/adapters/codex-local/src/server/index.ts"),
+  "@paperclipai/adapter-codex-local/ui": resolve(repoRoot, "packages/adapters/codex-local/src/ui/index.ts"),
+  "@paperclipai/adapter-codex-local/cli": resolve(repoRoot, "packages/adapters/codex-local/src/cli/index.ts"),
+  "@paperclipai/adapter-openclaw-gateway": resolve(repoRoot, "packages/adapters/openclaw-gateway/src/index.ts"),
+  "@paperclipai/adapter-openclaw-gateway/server": resolve(repoRoot, "packages/adapters/openclaw-gateway/src/server/index.ts"),
+  "@paperclipai/adapter-openclaw-gateway/ui": resolve(repoRoot, "packages/adapters/openclaw-gateway/src/ui/index.ts"),
+  "@paperclipai/adapter-openclaw-gateway/cli": resolve(repoRoot, "packages/adapters/openclaw-gateway/src/cli/index.ts"),
+};
+
 // Workspace packages that should NOT be bundled — they'll be published
 // to npm and resolved at runtime (e.g. @paperclipai/server uses dynamic import).
 const externalWorkspacePackages = new Set([
@@ -60,6 +79,7 @@ export default {
   outfile: "dist/index.js",
   banner: { js: "#!/usr/bin/env node" },
   external: [...externals].sort(),
+  alias: workspaceAliases,
   treeShaking: true,
-  sourcemap: true,
+  sourcemap: false,
 };
