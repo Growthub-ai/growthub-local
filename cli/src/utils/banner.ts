@@ -14,9 +14,9 @@ const TAGLINE = "Growth infrastructure over a stable agentic substrate";
 export function printPaperclipCliBanner(): void {
   const lines = [
     "",
-    ...GROWTHUB_ART.map((line) => pc.cyan(line)),
-    pc.blue("  ───────────────────────────────────────────────────────"),
-    pc.bold(pc.white(`  ${TAGLINE}`)),
+    ...GROWTHUB_ART,
+    pc.dim("  ───────────────────────────────────────────────────────"),
+    pc.bold(`  ${TAGLINE}`),
     "",
   ];
 
