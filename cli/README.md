@@ -1,287 +1,154 @@
-# growthub-core — Agent Swarm Command Center
+# @growthub/cli
 
-> Growthub is a full-featured DX platform for orchestrating AI agent swarms across sequential ticket pipelines.
+`@growthub/cli` is the published CLI for Growthub Local. It covers three shipped workflows:
 
----
+- full local app discovery and onboarding
+- worker kit discovery, export, inspection, and validation
+- shared template discovery and extraction
 
 ## Install
 
 ```bash
-npx create-growthub-local --profile dx
+npm install -g @growthub/cli
 ```
 
-Later:
+You can also install through the guided installer:
+
+```bash
+npx create-growthub-local
+```
+
+Or jump directly to a profile:
 
 ```bash
 npx create-growthub-local --profile gtm
+npx create-growthub-local --profile dx
 ```
 
-## Worker Kits
+## CLI Editions
 
-Worker kits are frozen, working-directory-ready execution environments for local AI agents.
-Each kit bundles prompts, templates, output standards, brand guides, setup scripts, and a
-`CLAUDE.md` operator contract — everything an agent needs to run a vertical workflow immediately.
+The current CLI exposes three user-facing editions through `growthub discover` and direct subcommands.
+
+### 1. Full Local App
+
+Use this when you want to create or reopen a full Growthub local surface.
+
+```bash
+growthub
+growthub discover
+growthub onboard
+growthub run
+```
+
+User flow:
+
+1. Open the discovery hub.
+2. Choose `Full Local App`.
+3. Create a new `gtm` or `dx` profile, or load an existing local profile.
+4. Complete onboarding.
+5. Start the local server and finish the hosted authentication bridge.
+
+### 2. Worker Kits
+
+Use this when you want a working-directory-ready environment for an agent.
 
 ### Discovery
 
 ```bash
-# Interactive browser — family filter → searchable selector → preview → download
+# Interactive browser — type filter → kit selector → actions
 growthub kit
 
-# All kits grouped by family with descriptions and inline download commands
+# All kits grouped by family with descriptions and inline commands
 growthub kit list
 
-# Filter by family (studio · workflow · operator · ops)
+# Filter by family
 growthub kit list --family studio
 growthub kit list --family studio,operator
 
-# Machine-readable output for scripting / agent use
+# Machine-readable output
 growthub kit list --json
 
-# Official family taxonomy — taglines, surfaces, and examples
+# Family taxonomy
 growthub kit families
 ```
 
-### Download
+### Inspect, download, and validate
 
 ```bash
-# Interactive (picker if no kit-id given)
-growthub kit download
-
-# Fuzzy slug — partial IDs resolve automatically
-growthub kit download higgsfield           # → growthub-open-higgsfield-studio-v1
-growthub kit download email                # → growthub-email-marketing-v1
-growthub kit download studio-v1            # → growthub-open-higgsfield-studio-v1
-
-# Full ID
-growthub kit download growthub-open-higgsfield-studio-v1
-
-# Custom output directory
-growthub kit download higgsfield --out ~/my-kits
-
-# Skip confirmation prompt (scripting / agent use)
-growthub kit download higgsfield --yes
-```
-
-### Inspect & validate
-
-```bash
-# Pretty manifest output with family badge and required paths
-growthub kit inspect higgsfield-studio-v1
 growthub kit inspect creative-strategist-v1
 growthub kit inspect growthub-open-higgsfield-studio-v1
-
-# Raw JSON for scripting
 growthub kit inspect growthub-email-marketing-v1 --json
 
-# Resolve export folder path without exporting
-growthub kit path creative-strategist-v1
-
-# Validate a kit directory against the schema
-growthub kit validate /absolute/path/to/kit
-growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
-```
-
-```bash
-# Full ID download examples
 growthub kit download creative-strategist-v1
 growthub kit download growthub-open-higgsfield-studio-v1
+growthub kit download higgsfield --yes
+
+growthub kit path creative-strategist-v1
+growthub kit validate /absolute/path/to/kit
 ```
 
 ### After download
 
-```
-1. Point Growthub local Working Directory at the exported folder
-   (or Claude Code Working Directory as an alternative)
-2. cp .env.example .env  →  add your API key
-3. bash setup/clone-fork.sh  →  boot local fork (studio kits only)
-4. Open a new session — the operator agent loads automatically from CLAUDE.md
-```
+1. Point Growthub local or your local adapter `Working directory` at the exported folder.
+2. Add runtime-only environment variables required by the kit.
+3. Start a new session so the operator contract loads from `CLAUDE.md`.
 
-### Kit families
-
-| Family | Description | Default surface |
-|---|---|---|
-| 🎬 **studio** | AI generation studio backed by a local fork | local-fork |
-| 🔄 **workflow** | Multi-step pipeline operator across tools or APIs | browser-hosted |
-| 🤖 **operator** | Domain vertical specialist — structured deliverables | browser-hosted |
-| ⚙️ **ops** | Infrastructure / toolchain operator | local-fork |
-
-### Available kits
+### Available bundled kits
 
 | Kit | Family | Description |
 |---|---|---|
-| `growthub-open-higgsfield-studio-v1` | studio | Open Higgsfield AI visual production (image, video, lip sync, cinema) |
-| `growthub-email-marketing-v1` | operator | Brand-aware email campaigns, nurture sequences, and content pillar plans |
 | `creative-strategist-v1` | workflow | Video creative briefs and campaign strategy |
+| `growthub-email-marketing-v1` | operator | Brand-aware email campaigns, sequences, and campaign planning |
+| `growthub-open-higgsfield-studio-v1` | studio | Open Higgsfield visual production workflows |
 
 ### How local adapters use worker kits
 
-Local adapters (Claude Code, Codex, Cursor, Gemini, OpenCode) execute inside the agent
-`Working directory` path. Worker kits are designed to plug into that path directly:
+Local adapters execute inside the agent `Working directory` path. Worker kits are designed to plug into that path directly:
 
-1. `growthub kit download <id>` — exports the kit as a folder + zip
-2. Point the agent `Working directory` at the exported folder path
-3. The agent reads `CLAUDE.md` on session start and runs the operator workflow automatically
+1. `growthub kit download <id>` exports the kit as a folder plus zip.
+2. Point the agent `Working directory` at the exported folder.
+3. Start a new session so the agent reads the kit contract from `CLAUDE.md`.
 
-### Adding new kits
+### 3. Shared Templates
 
-Each new kit should be:
-
-1. A self-contained kit folder in `cli/assets/worker-kits/`
-2. A `kit.json` manifest (schema v2) with `family`, `frozenAssetPaths`, and `outputStandard`
-3. A bundle manifest in `bundles/`
-4. A catalog entry in `cli/src/kits/catalog.ts`
-5. Validated with `growthub kit validate ./path/to/kit`
-
-The kit family factory layer (`cli/src/kits/core/factory/`) provides typed `createStudioKitConfig()`,
-`createWorkflowKitConfig()`, `createOperatorKitConfig()`, and `createOpsKitConfig()` builders that
-assemble a fully validated `ForkAdapterCoreConfig` from a small set of options.
-
-## What this is
-
-**growthub-core** is an opinionated, self-hosted developer experience platform that treats every unit of work as a **Ticket** — a sequential pipeline of stages (planning → execution → review → qa → human) — where each stage is owned by a specific AI agent. Designed for **parallel multi-ticket execution** with real-time agent status, live heartbeat tracking, and full pipeline control from a single command center dashboard.
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                    growthub-core                         │
-│                                                          │
-│  ┌───────────────────────────────────────────────────┐   │
-│  │  Ticket Command Center (Dashboard)                │   │
-│  │  Kanban │ List │ Roadmap (Week / Month)           │   │
-│  └───────────────────────────────────────────────────┘   │
-│                         │                                │
-│               ┌──────────┴─────────┐                     │
-│               │   Ticket TKT-N     │                     │
-│               │  stageOrder[]      │                     │
-│               │  currentStage      │                     │
-│               └──────────┬─────────┘                     │
-│                          │                               │
-│       ┌──────────────────┼──────────────────┐           │
-│       │                  │                  │           │
-│   Planning           Execution         Review / QA       │
-│   Agent              Codex /           Claude /          │
-│   (pm role)          Claude Code       Codex             │
-│                          │                               │
-│             Issues (GRO-NNN) per stage                   │
-│             assigned to specific agents                  │
-│                                                          │
-│  ┌───────────────────────────────────────────────────┐   │
-│  │  Embedded PostgreSQL (port 54329)                 │   │
-│  │  Drizzle ORM — auto-migration on startup          │   │
-│  │  TanStack Query + queryKeys registry              │   │
-│  │  Vite dev middleware + tsx watch hot-reload        │   │
-│  └───────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────┘
-```
-
-### Stack
-
-| Layer | Technology |
-|---|---|
-| Server | Node.js + Fastify, TypeScript, `tsx` watch |
-| Database | Embedded PostgreSQL via `embedded-postgres` (port 54329) |
-| ORM | Drizzle ORM — SQL migrations in `packages/db/src/migrations/` |
-| UI | React 18, Vite, TailwindCSS, shadcn/ui |
-| Data fetching | TanStack Query v5 — single `queryKeys.ts` registry |
-| Agents | Claude Code (local), Codex (local), HTTP adapter |
-| Auth | Local trusted mode (no auth wall in dev) |
-
----
-
-## Ticket Pipeline
-
-Tickets are the primary organizing unit. Each ticket has a fully user-configurable `stageOrder` array:
-
-```
-planning → execution → review → qa → human
-```
-
-- Stage **colors** are assigned by index position in `stageOrder` — never keyed by name
-- **Issues** (tasks) are spawned per stage and assigned to specific agents
-- Pipeline is **sequential** — only the active stage has live work; future stages are "up next"
-- **Advancing** moves `currentStage` forward; completed stages remain as history
-- Stage names, colors, and order are **fully editable inline** from the ticket detail page
-
-| Status | Meaning |
-|---|---|
-| `active` | Work in progress |
-| `paused` | Manually paused |
-| `done` | All stages completed |
-| `cancelled` | Abandoned |
-
----
-
-## Canonical Agents
-
-| Agent | Role | Adapter | Purpose |
-|---|---|---|---|
-| **Planning Agent** | `pm` | `claude_local` | Breaks tickets into issues, writes specs |
-| **Execution — Codex** | `general` | `codex_local` | Implements features from issues |
-| **Execution — Claude Code** | `general` | `claude_local` | Implements features, debugging |
-| **Review — Claude** | `qa` | `claude_local` | Code review, correctness checks |
-| **QA/Debugger — Codex** | `qa` | `codex_local` | Test runs, regression debugging |
-
-All agents have `canCreateAgents: true` and `canAssignTasks: true` for sub-agent spawning.
-
----
-
-## Running locally
+Use this when you need a reusable artifact primitive without exporting a full kit.
 
 ```bash
-pnpm install
-npm run dev
-# Server + UI: http://localhost:3100
+growthub template
+growthub template list
+growthub template list --type ad-formats
+growthub template list --type scene-modules --subtype hooks
+growthub template get villain-animation
+growthub template get meme-overlay --out ~/kit/hooks/
+growthub template get villain-animation --json
 ```
 
-**No manual migrations.** Auto-migrates on every startup. To add a migration: create a `.sql` file in `packages/db/src/migrations/` and update `_journal.json` — never run `drizzle-kit push`.
+User flow:
 
----
+1. Browse by family and artifact group.
+2. Preview the selected artifact.
+3. Print it, copy it to a local workspace, or use the slug in another workflow.
 
-## Key directories
+## Contribution Model
 
-```
-packages/
-  db/src/
-    schema/        Drizzle table definitions
-    migrations/    SQL files (hand-written, never generated)
-  shared/src/
-    types/         TypeScript types (Ticket, Issue, Agent, ...)
-    validators/    Zod schemas
-    constants.ts   TICKET_STAGES, TICKET_STATUSES, ...
+The CLI has two extension surfaces for content:
 
-server/src/
-  routes/          Fastify route handlers
-  services/        Business logic
-  app.ts           Route registration
+- worker kits in `cli/assets/worker-kits/`
+- shared templates in `cli/assets/shared-templates/`
 
-ui/src/
-  pages/           React pages (Dashboard, TicketDetail, Tickets, Archive, ...)
-  components/      Shared UI (NewTicketModal, Sidebar, ...)
-  api/             API client (tickets.ts, issues.ts, agents.ts, ...)
-  lib/
-    queryKeys.ts         Single source of truth for all query keys
-    company-routes.ts    Route prefix logic
+Use shared templates for reusable cross-kit primitives. Use worker kits for full opinionated environments with prompts, standards, examples, and runtime assumptions.
 
-agents/            Agent config markdown files
-```
+For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md](../docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md).
 
----
+## Development Notes
 
-## Archive
+- `@growthub/cli` version: `0.3.43`
+- Node.js: `>=20`
+- Source of truth repo: [Growthub Local](https://github.com/Growthub-ai/growthub-local)
 
-Issues support soft-delete via `hiddenAt`. `/archive` page supports bulk archive and restore.
+## Links
 
-## GitHub PR binding
-
-New Ticket modal fetches open PRs from your GitHub repos and binds them to tickets. PR context is stored in `ticket.metadata.pr` and surfaced to agents as part of ticket instructions.
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+- [GitHub README](https://github.com/Growthub-ai/growthub-local#readme)
+- [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)
+- [Worker Kits](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKER_KITS.md)
+- [CLI Template Contribution Extension Workflows](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)

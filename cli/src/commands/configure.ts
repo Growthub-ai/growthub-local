@@ -30,7 +30,7 @@ const SECTION_LABELS: Record<Section, string> = {
 
 function defaultConfig(): PaperclipConfig {
   const instanceId = resolvePaperclipInstanceId();
-  return {
+  const config = {
     $meta: {
       version: 1,
       updatedAt: new Date().toISOString(),
@@ -69,6 +69,7 @@ function defaultConfig(): PaperclipConfig {
     storage: defaultStorageConfig(),
     secrets: defaultSecretsConfig(),
   };
+  return config as unknown as PaperclipConfig;
 }
 
 export async function configure(opts: {
@@ -105,29 +106,34 @@ export async function configure(opts: {
     return;
   }
 
-  // Section selection loop
-  let continueLoop = true;
-  while (continueLoop) {
-    if (!section) {
-      const choice = await p.select({
-        message: "Which section do you want to configure?",
-        options: Object.entries(SECTION_LABELS).map(([value, label]) => ({
-          value: value as Section,
-          label,
-        })),
-      });
+  let sectionsToConfigure: Section[];
+  if (section) {
+    sectionsToConfigure = [section];
+  } else {
+    const choices = await p.multiselect({
+      message: "Which sections do you want to configure?",
+      options: Object.entries(SECTION_LABELS).map(([value, label]) => ({
+        value: value as Section,
+        label,
+      })),
+    });
 
-      if (p.isCancel(choice)) {
-        p.cancel("Configuration cancelled.");
-        return;
-      }
-
-      section = choice;
+    if (p.isCancel(choices)) {
+      p.cancel("Configuration cancelled.");
+      return;
     }
 
-    p.log.step(pc.bold(SECTION_LABELS[section]));
+    sectionsToConfigure = choices as Section[];
+    if (sectionsToConfigure.length === 0) {
+      p.cancel("No sections selected.");
+      return;
+    }
+  }
 
-    switch (section) {
+  for (const selectedSection of sectionsToConfigure) {
+    p.log.step(pc.bold(SECTION_LABELS[selectedSection]));
+
+    switch (selectedSection) {
       case "database":
         config.database = await promptDatabase(config.database);
         break;
@@ -177,23 +183,7 @@ export async function configure(opts: {
     config.$meta.source = "configure";
 
     writeConfig(config, opts.config);
-    p.log.success(`${SECTION_LABELS[section]} configuration updated.`);
-
-    // If section was provided via CLI flag, don't loop
-    if (opts.section) {
-      continueLoop = false;
-    } else {
-      const another = await p.confirm({
-        message: "Configure another section?",
-        initialValue: false,
-      });
-
-      if (p.isCancel(another) || !another) {
-        continueLoop = false;
-      } else {
-        section = undefined; // Reset to show picker again
-      }
-    }
+    p.log.success(`${SECTION_LABELS[selectedSection]} configuration updated.`);
   }
 
   p.outro("Configuration saved.");

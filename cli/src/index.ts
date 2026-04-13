@@ -1,4 +1,7 @@
 import { Command } from "commander";
+import * as p from "@clack/prompts";
+import fs from "node:fs";
+import path from "node:path";
 import { onboard } from "./commands/onboard.js";
 import { doctor } from "./commands/doctor.js";
 import { envCommand } from "./commands/env.js";
@@ -22,12 +25,29 @@ import { readConfig, resolveConfigPath } from "./config/store.js";
 import { registerGtmCommands } from "./commands/gtm.js";
 import { registerWorktreeCommands } from "./commands/worktree.js";
 import { registerPluginCommands } from "./commands/client/plugin.js";
-import { registerKitCommands } from "./commands/kit.js";
-import { registerTemplateCommands } from "./commands/template.js";
+import { registerKitCommands, runInteractivePicker } from "./commands/kit.js";
+import { registerTemplateCommands, runTemplatePicker } from "./commands/template.js";
+import { printPaperclipCliBanner } from "./utils/banner.js";
+import { resolvePaperclipHomeDir } from "./config/home.js";
+import type { SurfaceProfile } from "./config/schema.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
   "Growthub data directory root (isolates local instance state)";
+
+type LocalSurfaceEntry = {
+  instanceId: string;
+  profile: "dx" | "gtm";
+  configPath: string;
+};
+
+function resolveSurfaceProfile(config: unknown): SurfaceProfile | null {
+  if (typeof config !== "object" || config === null) return null;
+  const surface = (config as { surface?: unknown }).surface;
+  if (typeof surface !== "object" || surface === null) return null;
+  const profile = (surface as { profile?: unknown }).profile;
+  return profile === "dx" || profile === "gtm" ? profile : null;
+}
 
 function resolveBootstrapOptions(argv: string[]): DataDirOptionLike {
   const options: DataDirOptionLike = {};
@@ -114,6 +134,16 @@ function registerSharedCommands(target: Command) {
     .option("--no-repair", "Disable automatic repairs during doctor")
     .action(runCommand);
 
+  target
+    .command("discover")
+    .description("Shared discovery entry for local app install, worker kits, and templates")
+    .option("-c, --config <path>", "Path to config file")
+    .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+    .option("--run", "Start Growthub immediately after saving config", false)
+    .action(async (opts) => {
+      await runDiscoveryHub(opts);
+    });
+
   registerKitCommands(target);
   registerTemplateCommands(target);
 
@@ -128,6 +158,221 @@ function registerSharedCommands(target: Command) {
     .option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value))
     .option("--base-url <url>", "Public base URL used to print invite link")
     .action(bootstrapCeoInvite);
+}
+
+async function runDiscoveryHub(opts?: {
+  config?: string;
+  run?: boolean;
+}): Promise<void> {
+  printPaperclipCliBanner();
+  p.intro("Growthub Local");
+
+  while (true) {
+    const surfaceChoice = await p.select({
+      message: "What do you want to do first?",
+      options: [
+        {
+          value: "app",
+          label: "📦 Full Local App",
+          hint: "Work from existing app or build from scratch",
+        },
+        {
+          value: "kits",
+          label: "🧰 Worker Kits",
+          hint: "Self-contained workspace environments for agents",
+        },
+        {
+          value: "templates",
+          label: "📚 Templates",
+          hint: "Artifact template library",
+        },
+        {
+          value: "help",
+          label: "❓ Help CLI",
+          hint: "See the main commands and what each path does",
+        },
+      ],
+    });
+
+    if (p.isCancel(surfaceChoice)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+
+    if (surfaceChoice === "help") {
+      p.note(
+        [
+          "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
+          "🧰 Worker Kits: browse specialized agents and custom workspaces.",
+          "📚 Templates: browse reusable artifact templates by library type.",
+          "",
+          "Direct commands:",
+          "growthub run",
+          "growthub kit",
+          "growthub template",
+          "growthub doctor",
+          "growthub configure",
+        ].join("\n"),
+        "Growthub CLI Help",
+      );
+      continue;
+    }
+
+    if (surfaceChoice === "app") {
+      while (true) {
+        const appModeChoice = await p.select({
+          message: "How do you want to open Growthub Local?",
+          options: [
+            {
+              value: "create",
+              label: "🆕 Create New Profile",
+              hint: "Build a new local app surface.",
+            },
+            {
+              value: "load",
+              label: "📂 Load Existing Profile",
+              hint: "Work from a profile already on this machine.",
+            },
+            {
+              value: "__back_to_hub",
+              label: "← Back to main menu",
+            },
+          ],
+        });
+
+        if (p.isCancel(appModeChoice)) {
+          p.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (appModeChoice === "__back_to_hub") break;
+
+        if (appModeChoice === "load") {
+          const existingSurfaces = listLocalSurfaces();
+          if (existingSurfaces.length === 0) {
+            p.note("No existing local app profiles were found on this machine.", "Nothing found");
+            continue;
+          }
+
+          const existingChoice = await p.select({
+            message: "Select an existing app surface",
+            options: [
+              ...existingSurfaces.map((surface) => ({
+                value: surface.instanceId,
+                label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
+                hint: surface.configPath,
+              })),
+              { value: "__back_to_app_mode", label: "← Back to app options" },
+            ],
+          });
+
+          if (p.isCancel(existingChoice)) {
+            p.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (existingChoice === "__back_to_app_mode") {
+            continue;
+          }
+
+          const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
+          if (!selectedSurface) {
+            p.cancel("Selected profile not found.");
+            process.exit(1);
+          }
+
+          process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
+          await runCommand({
+            config: selectedSurface.configPath,
+            instance: selectedSurface.instanceId,
+            repair: true,
+            yes: true,
+          });
+          return;
+        }
+
+        const profileChoice = await p.select({
+          message: "Which new app surface do you want to create?",
+          options: [
+            {
+              value: "gtm",
+              label: "📈 GTM",
+              hint: "Go-to-Market surface.",
+            },
+            {
+              value: "dx",
+              label: "🧠 DX",
+              hint: "Developer Experience surface.",
+            },
+            {
+              value: "__back_to_app_mode",
+              label: "← Back to app options",
+            },
+          ],
+        });
+
+        if (p.isCancel(profileChoice)) {
+          p.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (profileChoice === "__back_to_app_mode") {
+          continue;
+        }
+
+        process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
+        await onboard({
+          config: opts?.config,
+          run: opts?.run ?? isInstallerMode(),
+          yes: isInstallerMode(),
+        });
+        return;
+      }
+
+      continue;
+    }
+
+    if (surfaceChoice === "kits") {
+      const result = await runInteractivePicker({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
+    const result = await runTemplatePicker({ allowBackToHub: true });
+    if (result === "back") continue;
+    return;
+  }
+}
+
+function isInstallerMode(): boolean {
+  return process.env.GROWTHUB_INSTALLER_MODE === "true";
+}
+
+function listLocalSurfaces(): LocalSurfaceEntry[] {
+  const homeDir = resolvePaperclipHomeDir();
+  const instancesDir = path.resolve(homeDir, "instances");
+  if (!fs.existsSync(instancesDir)) return [];
+
+  return fs.readdirSync(instancesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const instanceId = entry.name;
+      const configPath = path.resolve(instancesDir, instanceId, "config.json");
+      if (!fs.existsSync(configPath)) return null;
+
+      try {
+        const config = readConfig(configPath);
+        if (!config) return null;
+        const profile = resolveSurfaceProfile(config);
+        if (!profile) return null;
+        return {
+          instanceId,
+          profile,
+          configPath,
+        } satisfies LocalSurfaceEntry;
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is LocalSurfaceEntry => entry !== null)
+    .sort((left, right) => left.instanceId.localeCompare(right.instanceId));
 }
 
 function registerDxCommands(target: Command) {
@@ -172,12 +417,12 @@ applyDataDirOverride(bootstrapOptions, {
 });
 loadPaperclipEnvFile(bootstrapOptions.config);
 const bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
-const surfaceRuntime = initializeSurfaceRuntimeContract(bootstrapConfig?.surface.profile);
+const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? undefined);
 
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.2.7")
+  .version("0.3.43")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -208,7 +453,12 @@ Instance setup:
     $ growthub run                              Onboard + doctor + start server
     $ growthub doctor                           Diagnose and optionally repair
     $ growthub configure                        Update config sections
+    $ growthub                                  Interactive discovery hub
 `);
+
+program.action(async () => {
+  await runDiscoveryHub();
+});
 
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;

@@ -114,16 +114,63 @@ function printSummary(filter: ArtifactFilter): void {
 // Interactive two-step picker
 // ---------------------------------------------------------------------------
 
-async function runPicker(): Promise<void> {
+const TEMPLATE_FAMILY_META: Record<string, { label: string; emoji: string; hint: string }> = {
+  "video-creative": {
+    label: "Video Ads",
+    emoji: "🎬",
+    hint: "Ad formats, hooks, body modules, and CTA modules",
+  },
+  email: {
+    label: "Email",
+    emoji: "✉️",
+    hint: "Email-native templates",
+  },
+  motion: {
+    label: "Motion",
+    emoji: "🎞️",
+    hint: "Motion and animation artifacts",
+  },
+  general: {
+    label: "General",
+    emoji: "🧩",
+    hint: "Shared general-purpose templates",
+  },
+};
+
+export async function runTemplatePicker(opts?: { allowBackToHub?: boolean }): Promise<"done" | "back"> {
   p.intro(pc.bold("Growthub Shared Template Library"));
 
   let artifacts: TemplateArtifact[];
   try { artifacts = listArtifacts(); }
   catch (err) { p.log.error((err as Error).message); process.exit(1); }
 
-  const groups: ArtifactGroup[] = groupArtifacts(artifacts);
+  const families = [...new Set(artifacts.map((artifact) => artifact.family))];
+  const familyChoice = await p.select({
+    message: "What template type do you want to browse?",
+    options: [
+      ...families.map((family) => {
+        const meta = TEMPLATE_FAMILY_META[family] ?? {
+          label: family,
+          emoji: "🧩",
+          hint: `${family} templates`,
+        };
+        const familyCount = artifacts.filter((artifact) => artifact.family === family).length;
+        return {
+          value: family,
+          label: `${meta.emoji} ${meta.label}`,
+          hint: `${familyCount} available · ${meta.hint}`,
+        };
+      }),
+      ...(opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
+    ],
+  });
+  if (p.isCancel(familyChoice)) { p.cancel("Cancelled."); process.exit(0); }
+  if (familyChoice === "__back_to_hub") return "back";
 
-  // Step 1 — pick a group
+  const filteredArtifacts = artifacts.filter((artifact) => artifact.family === familyChoice);
+  const groups: ArtifactGroup[] = groupArtifacts(filteredArtifacts);
+
+  // Step 2 — pick a group
   const groupChoice = await p.select({
     message: "What kind of template?",
     options: groups.map((g) => ({
@@ -136,7 +183,7 @@ async function runPicker(): Promise<void> {
 
   const group = groups.find((g) => g.key === groupChoice)!;
 
-  // Step 2 — pick one artifact in the group
+  // Step 3 — pick one artifact in the group
   const artifactChoice = await p.select({
     message: `Select from: ${group.label}`,
     options: group.artifacts.map((a) => ({
@@ -147,10 +194,10 @@ async function runPicker(): Promise<void> {
   });
   if (p.isCancel(artifactChoice)) { p.cancel("Cancelled."); process.exit(0); }
 
-  const selected = artifacts.find((a) => a.id === artifactChoice)!;
+  const selected = filteredArtifacts.find((a) => a.id === artifactChoice)!;
   printCard(selected);
 
-  // Step 3 — action
+  // Step 4 — action
   const action = await p.select({
     message: "What would you like to do?",
     options: [
@@ -165,14 +212,14 @@ async function runPicker(): Promise<void> {
   if (action === "slug") {
     console.log(selected.slug);
     p.outro(pc.dim("Use with: growthub template get " + selected.slug));
-    return;
+    return "done";
   }
 
   if (action === "print") {
     const r = getArtifact(selected.id);
     console.log("\n" + hr()); console.log(r.content); console.log(hr());
     p.outro(pc.dim("Source: " + r.absolutePath));
-    return;
+    return "done";
   }
 
   if (action === "copy") {
@@ -185,7 +232,10 @@ async function runPicker(): Promise<void> {
     const destDir = path.resolve((destInput as string).replace(/^~/, process.env["HOME"] ?? ""));
     const destPath = copyArtifact(selected.id, destDir);
     p.outro(pc.green("Copied → ") + destPath);
+    return "done";
   }
+
+  return "done";
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +260,7 @@ Any agent or kit resolves them by slug.
   $ growthub template get villain-animation --json
 `);
 
-  cmd.action(async () => { await runPicker(); });
+  cmd.action(async () => { await runTemplatePicker(); });
 
   // ── list ──────────────────────────────────────────────────────────────────
   cmd
