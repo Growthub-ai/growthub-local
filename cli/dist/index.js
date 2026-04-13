@@ -8321,7 +8321,7 @@ var SECTION_LABELS = {
 };
 function defaultConfig() {
   const instanceId = resolvePaperclipInstanceId();
-  return {
+  const config = {
     $meta: {
       version: 1,
       updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -8360,6 +8360,7 @@ function defaultConfig() {
     storage: defaultStorageConfig(),
     secrets: defaultSecretsConfig()
   };
+  return config;
 }
 async function configure(opts) {
   printPaperclipCliBanner();
@@ -13338,6 +13339,7 @@ function downloadBundledKit(kitId, outDir, options = {}) {
 }
 
 // src/commands/kit.ts
+init_banner();
 var TYPE_CONFIG = {
   studio: { color: pc23.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
   specialized_agents: { color: pc23.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
@@ -13414,12 +13416,15 @@ function printKitCard(item) {
     `${pc23.dim("Brief:")} ${pc23.dim(item.briefType)}   ${pc23.dim("Mode:")} ${pc23.dim(item.executionMode)}`
   ]));
 }
+function getActionLabel(action) {
+  if (action === "download") return "download";
+  if (action === "inspect") return "inspect";
+  if (action === "copy-id") return "print id";
+  return action;
+}
 async function confirmKitActions(input) {
   const actionLabels = input.actions.map((action) => {
-    if (action === "download") return "download";
-    if (action === "inspect") return "inspect";
-    if (action === "copy-id") return "print id";
-    return action;
+    return getActionLabel(action);
   });
   const summaryLines = [
     pc23.bold("Selected kits"),
@@ -13470,6 +13475,7 @@ ${header}  ${pc23.dim("(" + groupKits.length + ")")}`);
   console.log("");
 }
 async function runInteractivePicker(opts) {
+  printPaperclipCliBanner();
   p16.intro(pc23.bold("Growthub Agent Worker Kits"));
   let kits;
   try {
@@ -13542,45 +13548,29 @@ async function runInteractivePicker(opts) {
       }
       if (nextStep === "back_to_kits") continue;
       while (true) {
-        const actionOptions = [
-          { value: "download", label: "\u2B07\uFE0F  Download kit", hint: "growthub kit download <id>" },
-          { value: "inspect", label: "\u{1F50D} Inspect manifest", hint: "growthub kit inspect <id>" },
-          { value: "copy-id", label: "\u{1F4CB} Print ID to stdout", hint: "echo <kit-id>" }
-        ];
-        const actions = await p16.multiselect({
+        const action = await p16.select({
           message: "What would you like to do?",
-          options: actionOptions,
-          required: false
+          options: [
+            { value: "download", label: "\u2B07\uFE0F  Download kit", hint: "growthub kit download <id>" },
+            { value: "inspect", label: "\u{1F50D} Inspect manifest", hint: "growthub kit inspect <id>" },
+            { value: "copy-id", label: "\u{1F4CB} Print ID to stdout", hint: "echo <kit-id>" },
+            { value: "back_to_kits", label: "\u2190 Back to kit list" }
+          ]
         });
-        if (p16.isCancel(actions)) {
+        if (p16.isCancel(action)) {
           p16.cancel("Cancelled.");
           process.exit(0);
         }
-        const selectedActions = actions;
-        if (selectedActions.length === 0) {
-          const emptyActionChoice = await p16.select({
-            message: "No actions selected",
-            options: [
-              { value: "retry", label: "Choose action(s)" },
-              { value: "back_to_kits", label: "\u2190 Back to kit list" }
-            ]
-          });
-          if (p16.isCancel(emptyActionChoice)) {
-            p16.cancel("Cancelled.");
-            process.exit(0);
-          }
-          if (emptyActionChoice === "back_to_kits") break;
-          continue;
-        }
+        if (action === "back_to_kits") break;
         const confirmed = await confirmKitActions({
           kits: [selected],
-          actions: selectedActions
+          actions: [action]
         });
         if (!confirmed) {
           const reviewChoice = await p16.select({
             message: "Review selection",
             options: [
-              { value: "actions", label: "Choose action(s) again" },
+              { value: "actions", label: `Choose ${getActionLabel(action)} again` },
               { value: "back_to_kits", label: "\u2190 Back to kit list" }
             ]
           });
@@ -13591,24 +13581,18 @@ async function runInteractivePicker(opts) {
           if (reviewChoice === "back_to_kits") break;
           continue;
         }
-        for (const action of selectedActions) {
-          if (action === "copy-id") {
-            console.log(selected.id);
-            continue;
-          }
-          if (action === "inspect") {
-            runInspect(selected.id, opts.out);
-            continue;
-          }
-          if (action === "download") {
-            await runDownload(selected.id, opts);
-          }
-        }
-        if (selectedActions.includes("copy-id")) {
+        if (action === "copy-id") {
+          console.log(selected.id);
           p16.outro(pc23.dim("Kit ID printed above."));
           return "done";
         }
-        p16.outro(pc23.dim("Done."));
+        if (action === "inspect") {
+          runInspect(selected.id, opts.out);
+          p16.outro(pc23.dim("Done."));
+          return "done";
+        }
+        await runDownload(selected.id, opts);
+        p16.outro(pc23.green("Kit exported successfully."));
         return "done";
       }
     }
@@ -13636,6 +13620,9 @@ async function runDownload(kitId, opts) {
   const result = downloadBundledKit(resolvedId, opts.out, {
     onProgress: renderProgressBar
   });
+  console.log("");
+  console.log(pc23.green(pc23.bold("Kit exported successfully.")));
+  console.log("");
   const nextSteps = [
     pc23.bold("Next steps"),
     "",
@@ -13820,7 +13807,7 @@ Examples:
     console.log(pc23.bold("Kit Family Taxonomy"));
     console.log(hr());
     for (const def of defs) {
-      console.log("\n  " + familyBadge(def.family));
+      console.log("\n  " + typeBadge(def.family));
       console.log("  " + pc23.dim(def.tagline));
       console.log("  " + pc23.dim("Surfaces: ") + pc23.dim(def.surfaces));
       console.log("  " + pc23.dim("Example:  ") + pc23.cyan(def.example));
@@ -14727,7 +14714,7 @@ applyDataDirOverride(bootstrapOptions, {
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
-program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.45").addHelpText("after", `
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.46").addHelpText("after", `
 Worker Kits (agent execution environments):
 
   Discovery:
