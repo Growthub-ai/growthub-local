@@ -10,6 +10,8 @@ import { addAllowedHostname } from "./commands/allowed-hostname.js";
 import { heartbeatRun } from "./commands/heartbeat-run.js";
 import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
+import { authLogin, authLogout, authWhoami } from "./commands/auth-login.js";
+import { registerProfileCommands } from "./commands/profile.js";
 import { dbBackupCommand } from "./commands/db-backup.js";
 import { registerContextCommands } from "./commands/client/context.js";
 import { registerCompanyCommands } from "./commands/client/company.js";
@@ -158,6 +160,45 @@ function registerSharedCommands(target: Command) {
     .option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value))
     .option("--base-url <url>", "Public base URL used to print invite link")
     .action(bootstrapCeoInvite);
+
+  auth
+    .command("login")
+    .description("Sign in to hosted Growthub and save a CLI session (browser flow)")
+    .option("-c, --config <path>", "Path to config file")
+    .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+    .option("--base-url <url>", "Hosted Growthub base URL (defaults to auth.growthubBaseUrl or GROWTHUB_BASE_URL)")
+    .option("--token <token>", "Skip the browser flow by providing a pre-issued hosted token (scripting/CI)")
+    .option("--machine-label <label>", "Label identifying this machine in the hosted app")
+    .option("--workspace-label <label>", "Label identifying this workspace in the hosted app")
+    .option("--timeout-ms <ms>", "How long to wait for the browser callback", (value) => Number(value))
+    .option("--no-browser", "Do not try to launch a browser — print the URL and wait")
+    .option("--json", "Output raw JSON")
+    .action(async (opts) => {
+      await authLogin(opts);
+    });
+
+  auth
+    .command("logout")
+    .description("Clear the hosted CLI session (local workspace profile is preserved)")
+    .option("-c, --config <path>", "Path to config file")
+    .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+    .option("--keep-overlay", "Keep cached hosted overlay metadata; only drop the session token")
+    .option("--json", "Output raw JSON")
+    .action(async (opts) => {
+      await authLogout(opts);
+    });
+
+  auth
+    .command("whoami")
+    .description("Print the authenticated hosted identity and linked local workspace")
+    .option("-c, --config <path>", "Path to config file")
+    .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+    .option("--json", "Output raw JSON")
+    .action(async (opts) => {
+      await authWhoami(opts);
+    });
+
+  registerProfileCommands(target);
 }
 
 async function runDiscoveryHub(opts?: {
@@ -422,7 +463,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.46")
+  .version("0.3.47")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -454,6 +495,14 @@ Instance setup:
     $ growthub doctor                           Diagnose and optionally repair
     $ growthub configure                        Update config sections
     $ growthub                                  Interactive discovery hub
+
+Hosted profile bridge (CLI ↔ hosted Growthub):
+    $ growthub auth login                       Sign in via the hosted app (browser flow)
+    $ growthub auth whoami                      Show signed-in identity + linked local workspace
+    $ growthub auth logout                      Clear the hosted session (local workspace preserved)
+    $ growthub profile status                   Print the merged local + hosted profile
+    $ growthub profile pull                     Pull hosted metadata into the local overlay
+    $ growthub profile push                     Push safe local linkage metadata upward
 `);
 
 program.action(async () => {
