@@ -35,6 +35,7 @@ Use this when you want to create or reopen a full Growthub local surface.
 
 ```bash
 growthub
+growthub list
 growthub discover
 growthub onboard
 growthub run
@@ -55,6 +56,9 @@ Use this when you want a working-directory-ready environment for an agent.
 ### Discovery
 
 ```bash
+# Interactive discovery hub
+growthub list
+
 # Interactive browser — type filter → kit selector → actions
 growthub kit
 
@@ -142,7 +146,7 @@ For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXT
 
 ## Development Notes
 
-- `@growthub/cli` version: `0.3.43`
+- `@growthub/cli` version: `0.3.44`
 - Node.js: `>=20`
 - Source of truth repo: [Growthub Local](https://github.com/Growthub-ai/growthub-local)
 

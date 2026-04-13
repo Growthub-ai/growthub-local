@@ -460,6 +460,13 @@ program.action(async () => {
   await runDiscoveryHub();
 });
 
+program
+  .command("list")
+  .description("Open the interactive Growthub discovery hub")
+  .action(async () => {
+    await runDiscoveryHub();
+  });
+
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;
   const optionNames = new Set(actionCommand.options.map((option) => option.attributeName()));

@@ -13,6 +13,7 @@ import {
   type KitListItem,
   type KitDownloadProgress,
 } from "../kits/service.js";
+import { printPaperclipCliBanner } from "../utils/banner.js";
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -201,6 +202,7 @@ function printGroupedList(kits: KitListItem[]): void {
 // ---------------------------------------------------------------------------
 
 export async function runInteractivePicker(opts: { out?: string; allowBackToHub?: boolean }): Promise<"done" | "back"> {
+  printPaperclipCliBanner();
   p.intro(pc.bold("Growthub Agent Worker Kits"));
 
   let kits: KitListItem[];
