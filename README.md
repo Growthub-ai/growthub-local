@@ -54,6 +54,7 @@ Entry points:
 
 ```bash
 growthub
+growthub list
 growthub discover
 growthub onboard
 growthub run
@@ -75,6 +76,7 @@ This path is for exporting a working-directory-ready agent environment.
 Entry points:
 
 ```bash
+growthub list
 growthub kit
 growthub kit list
 growthub kit inspect creative-strategist-v1
