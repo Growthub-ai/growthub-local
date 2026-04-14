@@ -14,6 +14,7 @@ That discovery hub exposes:
 - `Worker Kits`
 - `Templates`
 - `Workflows`
+- `Local Intelligence`
 - `Connect Growthub Account`
 - `Help CLI`
 
@@ -125,6 +126,32 @@ Read the workflow extension doc here:
 
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 
+### Local Intelligence
+
+Use this path when you want local native-intelligence adapters for human prompt chat and workflow intelligence assistance (planner, normalizer, recommender, summarizer).
+
+Entry points:
+
+```bash
+zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+growthub discover
+```
+
+Current discovery flow:
+
+1. Open discovery.
+2. Choose `🧠 Local Intelligence`.
+3. Choose one of:
+   - `Setup helper` to validate OS/runtime/model status
+   - `Manage local custom models` to set an active favorite model
+   - `Prompt local model (chat flow)` for human-first local chat
+   - `Run native-intelligence with your prompt` for planner/normalizer/recommender/summarizer runs
+
+Read the architecture and adapter model here:
+
+- [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
+- [Gemma Setup and Validation](./docs/native-intelligence-gemma-setup.md)
+
 ### Connect Growthub Account
 
 Use this path when you want to connect the local CLI to a hosted Growthub account.
@@ -177,6 +204,7 @@ http://localhost:5173/gtm/GHA/workspace
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
+- [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
 
 ## Architecture snapshot (validated)
 
