@@ -14,6 +14,10 @@ import type { ExecutionPreferences, HostedProfileOverlay } from "./overlay-store
 const DEFAULT_PULL_PATH = "/api/cli/profile";
 const DEFAULT_PUSH_PATH = "/api/cli/profile";
 const DEFAULT_SESSION_PATH = "/api/cli/session";
+const DEFAULT_WORKFLOWS_PATH = "/api/cli/profile?view=workflows";
+const DEFAULT_WORKFLOW_DETAIL_PATH = "/api/cli/profile?view=workflow";
+const DEFAULT_WORKFLOW_SAVE_PATH = "/api/cli/profile?action=save-workflow";
+const DEFAULT_CREDITS_PATH = "/api/cli/profile?view=credits";
 
 export interface PullProfileResponse {
   userId?: string;
@@ -41,6 +45,68 @@ export interface HostedSessionResponse {
   orgId?: string;
   orgName?: string;
   expiresAt?: string;
+}
+
+export interface HostedWorkflowRecord {
+  workflowId: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  versionCount: number;
+  latestVersion?: {
+    versionId: string;
+    version: number;
+    createdAt: string;
+    nodeCount: number;
+  } | null;
+}
+
+export interface HostedWorkflowListResponse {
+  userId: string;
+  workflows: HostedWorkflowRecord[];
+}
+
+export interface HostedWorkflowDetailResponse {
+  workflowId: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  latestVersion: {
+    versionId: string;
+    version: number;
+    createdAt: string;
+    config: Record<string, unknown>;
+  };
+}
+
+export interface HostedWorkflowSavePayload {
+  workflowId?: string;
+  name: string;
+  description?: string;
+  config: Record<string, unknown>;
+}
+
+export interface HostedWorkflowSaveResponse {
+  workflowId: string;
+  versionId: string;
+  version: number;
+  created: boolean;
+}
+
+export interface HostedCreditsResponse {
+  userId: string;
+  totalAvailable: number;
+  baseCredits: number;
+  purchasedCredits: number;
+  creditsUsedThisPeriod: number;
+  creditsPerMonth: number;
+  planTier: string;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
 }
 
 function toApiClient(session: CliAuthSession): PaperclipApiClient {
@@ -91,6 +157,67 @@ export async function pushHostedProfile(
   const client = toApiClient(session);
   try {
     return await client.post<HostedProfileOverlay>(DEFAULT_PUSH_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function listHostedWorkflows(
+  session: CliAuthSession,
+): Promise<HostedWorkflowListResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.get<HostedWorkflowListResponse>(DEFAULT_WORKFLOWS_PATH, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function fetchHostedWorkflow(
+  session: CliAuthSession,
+  workflowId: string,
+): Promise<HostedWorkflowDetailResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.get<HostedWorkflowDetailResponse>(
+      `${DEFAULT_WORKFLOW_DETAIL_PATH}&workflowId=${encodeURIComponent(workflowId)}`,
+      { ignoreNotFound: true },
+    );
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function saveHostedWorkflow(
+  session: CliAuthSession,
+  payload: HostedWorkflowSavePayload,
+): Promise<HostedWorkflowSaveResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.post<HostedWorkflowSaveResponse>(DEFAULT_WORKFLOW_SAVE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function fetchHostedCredits(
+  session: CliAuthSession,
+): Promise<HostedCreditsResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.get<HostedCreditsResponse>(DEFAULT_CREDITS_PATH, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);

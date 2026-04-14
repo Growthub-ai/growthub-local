@@ -7,6 +7,8 @@
 - shared template discovery and extraction
 - hosted Growthub auth + machine profile bridge
 
+Now supports the hosted for Growthub Auth Users, the `Workflows` discovery surface for saved workflows, templates, and hosted workflow execution.
+
 ## Install
 
 ```bash
@@ -154,6 +156,29 @@ Contract:
 3. Hosted machine linkage is stored separately from `instances/<id>/config.json`.
 4. `growthub` and `paperclipai` remain intentional side-by-side surfaces rather than auto-loading one another.
 
+## Workflows Discovery V1
+
+The public CLI now supports a hosted workflow discovery flow inside the interactive hub for all Growthub Auth Users:
+
+```bash
+growthub discover
+growthub workflow
+growthub workflow templates
+growthub workflow saved
+```
+
+Use this when you want to:
+
+- list hosted saved workflows
+- inspect saved workflow detail
+- save template-backed workflows into hosted Growthub
+- execute a hosted saved workflow from the CLI
+- see loading, progress, summary, artifacts, and credits in the terminal
+
+The full public usage and architecture notes live here:
+
+- [CLI Workflows Discovery V1](../docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
+
 ## Contribution Model
 
 The CLI has two extension surfaces for content:
@@ -176,5 +201,6 @@ For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXT
 - [GitHub README](https://github.com/Growthub-ai/growthub-local#readme)
 - [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)
 - [Growthub Authentication Bridge](https://github.com/Growthub-ai/growthub-local/blob/main/docs/GROWTHUB_AUTH_BRIDGE.md)
+- [CLI Workflows Discovery V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Worker Kits](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKER_KITS.md)
 - [CLI Template Contribution Extension Workflows](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)

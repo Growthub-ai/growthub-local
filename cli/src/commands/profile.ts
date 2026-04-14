@@ -16,6 +16,7 @@ import {
 } from "../auth/effective-profile.js";
 import {
   fetchHostedProfile,
+  fetchHostedCredits,
   pushHostedProfile,
   HostedEndpointUnavailableError,
   type PullProfileResponse,
@@ -269,6 +270,46 @@ async function runProfilePush(opts: BaseProfileOptions): Promise<void> {
   console.log(pc.dim(`Linked instance: ${effective.local.instanceId}`));
 }
 
+async function runProfileCredits(opts: BaseProfileOptions): Promise<void> {
+  const configPath = resolveConfigPath(opts.config);
+  loadPaperclipEnvFile(configPath);
+
+  const session = readSession();
+  if (!session) {
+    console.error(pc.red("No hosted session. Run `growthub auth login` first."));
+    process.exit(1);
+  }
+  if (isSessionExpired(session)) {
+    console.error(pc.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    process.exit(1);
+  }
+
+  try {
+    const credits = await fetchHostedCredits(session);
+    if (!credits || typeof credits.totalAvailable !== "number") {
+      console.error(pc.red("Hosted credits endpoint returned no data."));
+      process.exit(1);
+    }
+
+    if (opts.json) {
+      console.log(JSON.stringify(credits, null, 2));
+      return;
+    }
+
+    console.log(pc.bold("Hosted credits"));
+    console.log(`  Available: $${credits.totalAvailable.toFixed(2)}`);
+    console.log(`  Used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+    console.log(`  Plan: ${credits.planTier}`);
+    console.log(`  Period: ${credits.currentPeriodStart} → ${credits.currentPeriodEnd}`);
+  } catch (err) {
+    if (err instanceof HostedEndpointUnavailableError) {
+      console.error(pc.red("Hosted credits endpoint is not available on this app version."));
+      process.exit(1);
+    }
+    throw err;
+  }
+}
+
 export function registerProfileCommands(program: Command): void {
   const profile = program
     .command("profile")
@@ -302,5 +343,15 @@ export function registerProfileCommands(program: Command): void {
     .option("--json", "Output raw JSON")
     .action(async (opts: BaseProfileOptions) => {
       await runProfilePush(opts);
+    });
+
+  profile
+    .command("credits")
+    .description("Show hosted credit balance for the authenticated Growthub user")
+    .option("-c, --config <path>", "Path to config file")
+    .option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)")
+    .option("--json", "Output raw JSON")
+    .action(async (opts: BaseProfileOptions) => {
+      await runProfileCredits(opts);
     });
 }

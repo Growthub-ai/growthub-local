@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
+import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
 import { onboard } from "./commands/onboard.js";
@@ -29,6 +30,12 @@ import { registerWorktreeCommands } from "./commands/worktree.js";
 import { registerPluginCommands } from "./commands/client/plugin.js";
 import { registerKitCommands, runInteractivePicker } from "./commands/kit.js";
 import { registerTemplateCommands, runTemplatePicker } from "./commands/template.js";
+import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capability.js";
+import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
+import { registerArtifactCommands } from "./commands/artifact.js";
+import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
+import { getWorkflowAccess } from "./auth/workflow-access.js";
+import { readSession, isSessionExpired } from "./auth/session-store.js";
 import { printPaperclipCliBanner } from "./utils/banner.js";
 import { resolvePaperclipHomeDir } from "./config/home.js";
 import type { SurfaceProfile } from "./config/schema.js";
@@ -148,6 +155,10 @@ function registerSharedCommands(target: Command) {
 
   registerKitCommands(target);
   registerTemplateCommands(target);
+  registerCapabilityCommands(target);
+  registerPipelineCommands(target);
+  registerArtifactCommands(target);
+  registerWorkflowCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -214,6 +225,12 @@ async function runHostedBridgeEntry(opts?: {
   });
 }
 
+function isDiscoveryAuthenticated(): boolean {
+  const session = readSession();
+  if (!session) return false;
+  return !isSessionExpired(session);
+}
+
 async function runDiscoveryHub(opts?: {
   config?: string;
   dataDir?: string;
@@ -223,6 +240,7 @@ async function runDiscoveryHub(opts?: {
   p.intro("Growthub Local");
 
   while (true) {
+    const workflowAccess = getWorkflowAccess();
     const surfaceChoice = await p.select({
       message: "What do you want to do first?",
       options: [
@@ -240,6 +258,15 @@ async function runDiscoveryHub(opts?: {
           value: "templates",
           label: "📚 Templates",
           hint: "Artifact template library",
+        },
+        {
+          value: "workflows",
+          label: workflowAccess.state === "ready"
+            ? "🔗 Workflows"
+            : "🔗 Workflows" + pc.dim(" (locked)"),
+          hint: workflowAccess.state === "ready"
+            ? "Saved workflows, CMS templates, capabilities, and dynamic pipelines"
+            : workflowAccess.reason,
         },
         {
           value: "hosted-auth",
@@ -265,6 +292,8 @@ async function runDiscoveryHub(opts?: {
           "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
+          "🔗 Workflows: browse saved workflows, CMS node starter templates, capabilities, and dynamic pipelines.",
+          `   Locked state: ${workflowAccess.reason}.`,
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -272,6 +301,11 @@ async function runDiscoveryHub(opts?: {
           "growthub auth whoami",
           "growthub kit",
           "growthub template",
+          "growthub workflow",
+          "growthub workflow templates",
+          "growthub capability list",
+          "growthub pipeline assemble",
+          "growthub artifact list",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -395,6 +429,12 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
+    if (surfaceChoice === "workflows") {
+      const result = await runWorkflowPicker({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
     if (surfaceChoice === "hosted-auth") {
       await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
       continue;
@@ -487,7 +527,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.48")
+  .version("0.3.49")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -519,6 +559,32 @@ Instance setup:
     $ growthub doctor                           Diagnose and optionally repair
     $ growthub configure                        Update config sections
     $ growthub                                  Interactive discovery hub
+
+Workflows (requires auth):
+    $ growthub workflow                         Interactive workflow browser
+    $ growthub workflow templates               List CMS node starter templates
+    $ growthub workflow templates --json        Machine-readable output
+    $ growthub workflow saved                   List saved workflow pipelines
+
+Dynamic Registry Pipelines:
+
+  Capabilities:
+    $ growthub capability                       Interactive capability browser
+    $ growthub capability list                  All capabilities grouped by family
+    $ growthub capability list --family video   Filter by family
+    $ growthub capability inspect video-gen     Inspect a specific capability
+    $ growthub capability resolve               Resolve machine-scoped bindings
+
+  Pipelines:
+    $ growthub pipeline                         Interactive pipeline assembler
+    $ growthub pipeline assemble                Interactive assembly
+    $ growthub pipeline validate ./pipeline.json
+    $ growthub pipeline execute ./pipeline.json
+
+  Artifacts:
+    $ growthub artifact list                    All pipeline artifacts
+    $ growthub artifact list --type video       Filter by type
+    $ growthub artifact inspect <id>            Inspect a specific artifact
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)
