@@ -26,12 +26,36 @@ Growthub Local is open source and agent-native. Contributions from humans and AI
 
 ---
 
+## Workflow separation (important)
+
+### Open-source contributor workflow (default)
+
+Most contributors and agents should stay in this lane:
+
+1. implement scoped changes
+2. run local validation
+3. open PR
+4. pass `smoke` + `validate` + `verify`
+5. maintainer reviews/merges
+
+### Maintainer/super-admin workflow (release/admin lane)
+
+This lane is maintainer-owned and lower priority for normal contributors:
+
+- release timing and npm publication
+- post-merge private-monorepo sync governance
+- super-admin operational scripts/policies
+
+If your PR is feature/docs/bugfix scope, do not mix in release-admin changes.
+
+---
+
 ## What this repo owns
 
 This repo is a **published slice** of the private monorepo. It contains:
 
 - `cli/` — `@growthub/cli` (the `growthub` command)
-- `packages/create-growthub-local/` — `create-growthub-local` installer
+- `packages/create-growthub-local/` — `@growthub/create-growthub-local` installer
 - `packages/shared/` — `@paperclipai/shared` types
 - `server/` — `@paperclipai/server` core HTTP server
 - `ui/` — Vite/React UI (GTM + DX surfaces)
@@ -91,9 +115,11 @@ Run the pre-push gate before any push:
 bash scripts/pr-ready.sh
 ```
 
-## Browser agent validation
+## Browser agent validation (optional, lower priority)
 
-Browser-agent behavior must be validated through the same runtime path that ships:
+Run this only when your change explicitly touches browser-agent isolation or heartbeat dispatch behavior. Otherwise treat it as out of scope for routine CLI/docs contributions.
+
+When needed, browser-agent behavior must be validated through the same runtime path that ships:
 
 1. create a real issue
 2. assign it to the target browser agent
@@ -173,7 +199,7 @@ Each worktree gets its own server port (3101+) and embedded Postgres instance. Y
 
 ## Version bumps
 
-When **`@growthub/cli`** or **`create-growthub-local`** behavior that consumers rely on changes, bump and align in **one PR**:
+When **`@growthub/cli`** or **`@growthub/create-growthub-local`** behavior that consumers rely on changes, bump and align in **one PR**:
 
 - bump `cli/package.json` `version`
 - bump `packages/create-growthub-local/package.json` `version`

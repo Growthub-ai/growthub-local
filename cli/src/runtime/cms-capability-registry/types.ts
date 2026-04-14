@@ -147,6 +147,6 @@ export interface CapabilityRegistryMeta {
   enabledCount: number;
   /** ISO timestamp of registry data freshness. */
   fetchedAt: string;
-  /** Source of the data: hosted endpoint or local fallback. */
-  source: "hosted" | "local-fallback";
+  /** Source of the data. */
+  source: "hosted";
 }

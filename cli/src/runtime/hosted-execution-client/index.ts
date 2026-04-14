@@ -141,7 +141,7 @@ type HostedExecuteWorkflowRequest = {
   userPrompt?: string;
 };
 
-function isPlaceholderString(value: string): boolean {
+export function isPlaceholderString(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return true;
   return (

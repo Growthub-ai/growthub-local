@@ -30,6 +30,13 @@ import {
   type DynamicRegistryPipeline,
 } from "../runtime/dynamic-registry-pipeline/index.js";
 import {
+  compileToHostedWorkflowConfig,
+  inferWorkflowName,
+  normalizeNodeBindings,
+  buildPreExecutionSummary,
+  renderPreExecutionSummary,
+} from "../runtime/cms-node-contracts/index.js";
+import {
   createHostedExecutionClient,
 } from "../runtime/hosted-execution-client/index.js";
 import {
@@ -72,6 +79,18 @@ export async function runPipelineAssembler(opts: {
 }): Promise<"done" | "back"> {
   printPaperclipCliBanner();
   p.intro(pc.bold("Dynamic Registry Pipeline Assembler"));
+  p.note(
+    [
+      "Dynamic pipeline creation flow:",
+      "  1) Select capability nodes",
+      "  2) Normalize required bindings",
+      "  3) Validate graph",
+      "  4) Pre-execution contract summary",
+      "  5) Save to Saved Workflows",
+      "  6) Execute hosted workflow",
+    ].join("\n"),
+    "Interactive Tree",
+  );
 
   const access = getWorkflowAccess();
   if (access.state !== "ready") {
@@ -85,13 +104,31 @@ export async function runPipelineAssembler(opts: {
     return opts.allowBackToHub ? "back" : "done";
   }
 
+  if (opts.allowBackToHub) {
+    const entryChoice = await p.select({
+      message: "Dynamic Pipelines (hosted-only)",
+      options: [
+        { value: "start", label: "Start interactive assembler" },
+        { value: "__back_to_hub", label: "← Back to workflow menu" },
+      ],
+    });
+    if (p.isCancel(entryChoice)) { p.cancel("Cancelled."); process.exit(0); }
+    if (entryChoice === "__back_to_hub") return "back";
+  } else {
+    p.note("Execution mode is fixed to hosted for Dynamic Pipelines.", "Hosted only");
+  }
+
   const registry = createCmsCapabilityRegistryClient();
   let capabilities: CmsCapabilityNode[];
+  const capabilitiesSpinner = p.spinner();
+  capabilitiesSpinner.start("Loading capability list...");
 
   try {
     const result = await registry.listCapabilities();
     capabilities = result.nodes;
+    capabilitiesSpinner.stop(`Loaded ${capabilities.length} capabilities.`);
   } catch (err) {
+    capabilitiesSpinner.stop(pc.red("Failed to load capabilities."));
     p.log.error("Failed to load capabilities: " + (err as Error).message);
     return "done";
   }
@@ -101,22 +138,8 @@ export async function runPipelineAssembler(opts: {
     return "done";
   }
 
-  // Select execution mode
-  const modeChoice = await p.select({
-    message: "Pipeline execution mode",
-    options: [
-      { value: "hosted", label: "☁️  Hosted", hint: "Execute via hosted runtime" },
-      { value: "local", label: "💻 Local", hint: "Execute locally" },
-      { value: "hybrid", label: "🔄 Hybrid", hint: "Mix of local and hosted" },
-      ...(opts.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
-    ],
-  });
-
-  if (p.isCancel(modeChoice)) { p.cancel("Cancelled."); process.exit(0); }
-  if (modeChoice === "__back_to_hub") return "back";
-
   const builder = createPipelineBuilder({
-    executionMode: modeChoice as "hosted" | "local" | "hybrid",
+    executionMode: "hosted",
   });
 
   // Node assembly loop
@@ -130,16 +153,21 @@ export async function runPipelineAssembler(opts: {
         ...(currentNodes.length > 0 ? [
           { value: "preview", label: "👁️  Preview pipeline" },
           { value: "validate", label: "✅ Validate pipeline" },
-          { value: "save", label: "💾 Save pipeline to file" },
+          { value: "save", label: "💾 Save to Saved Workflows" },
           { value: "execute", label: "🚀 Execute pipeline" },
         ] : []),
-        { value: "cancel", label: "← Cancel" },
+        {
+          value: "cancel",
+          label: opts.allowBackToHub ? "← Back to workflow menu" : "← Cancel",
+        },
       ],
     });
 
     if (p.isCancel(action)) { p.cancel("Cancelled."); process.exit(0); }
 
-    if (action === "cancel") return "done";
+    if (action === "cancel") {
+      return opts.allowBackToHub ? "back" : "done";
+    }
 
     if (action === "add") {
       const capChoice = await p.select({
@@ -193,7 +221,8 @@ export async function runPipelineAssembler(opts: {
         }
       }
 
-      const nodeId = builder.addNode(capChoice as string, bindings, upstreamNodeIds);
+      const normalizedBindings = normalizeNodeBindings(bindings, cap);
+      const nodeId = builder.addNode(capChoice as string, normalizedBindings.bindings, upstreamNodeIds);
       p.log.success(`Added node ${pc.bold(cap.displayName)} (${pc.dim(nodeId)})`);
       continue;
     }
@@ -238,19 +267,54 @@ export async function runPipelineAssembler(opts: {
     }
 
     if (action === "save") {
-      const outPath = await p.text({
-        message: "Output file path",
-        placeholder: "./pipeline.json",
-        defaultValue: "./pipeline.json",
-      });
-
-      if (p.isCancel(outPath)) { p.cancel("Cancelled."); process.exit(0); }
+      const session = readSession();
+      if (!session || isSessionExpired(session)) {
+        p.log.error("Hosted session expired. Run `growthub auth login` again.");
+        continue;
+      }
 
       const pipeline = builder.build();
-      const serialized = serializePipeline(pipeline);
-      const resolvedPath = path.resolve(outPath as string);
-      fs.writeFileSync(resolvedPath, `${JSON.stringify(serialized, null, 2)}\n`);
-      p.log.success(`Pipeline saved to ${pc.cyan(resolvedPath)}`);
+      const defaultName = inferWorkflowName(pipeline);
+      const workflowName = await p.text({
+        message: "Saved workflow name",
+        placeholder: defaultName,
+        defaultValue: defaultName,
+      });
+      if (p.isCancel(workflowName)) { p.cancel("Cancelled."); process.exit(0); }
+
+      const summary = buildPreExecutionSummary({
+        pipeline,
+        registryBySlug: new Map(capabilities.map((node) => [node.slug, node])),
+      });
+      console.log("");
+      console.log(box(renderPreExecutionSummary(summary)));
+      console.log("");
+
+      const confirmed = await p.confirm({
+        message: `Save hosted workflow "${workflowName as string}"?`,
+        initialValue: true,
+      });
+      if (p.isCancel(confirmed) || !confirmed) continue;
+
+      try {
+        const saveResult = await saveHostedWorkflow(session, {
+          name: workflowName as string,
+          description: "Saved from Dynamic Pipelines assembler",
+          config: compileToHostedWorkflowConfig(pipeline, { workflowName: workflowName as string }),
+        });
+        if (!saveResult?.workflowId) {
+          throw new Error("Hosted workflow save returned no workflow id.");
+        }
+        p.log.success(
+          `Saved to workflow registry as ${pc.bold(workflowName as string)} (${pc.dim(saveResult.workflowId)} · v${saveResult.version}).`,
+        );
+      } catch (err) {
+        if (err instanceof HostedEndpointUnavailableError) {
+          p.log.error("Hosted save endpoint is unavailable on this GH app surface.");
+        } else {
+          p.log.error("Save failed: " + (err as Error).message);
+        }
+      }
       continue;
     }
 
@@ -264,6 +328,15 @@ export async function runPipelineAssembler(opts: {
         }
         continue;
       }
+
+      const pipeline = builder.build();
+      const summary = buildPreExecutionSummary({
+        pipeline,
+        registryBySlug: new Map(capabilities.map((node) => [node.slug, node])),
+      });
+      console.log("");
+      console.log(box(renderPreExecutionSummary(summary)));
+      console.log("");
 
       const confirmed = await p.confirm({
         message: "Execute this pipeline through the hosted runtime?",
@@ -342,67 +415,6 @@ function loadPipelineFromFileOrJson(input: string): DynamicRegistryPipeline {
   }
 }
 
-function inferWorkflowName(pipeline: DynamicRegistryPipeline): string {
-  return pipeline.pipelineId?.trim() || `${pipeline.nodes[0]?.slug ?? "workflow"} workflow`;
-}
-
-function toHostedWorkflowConfig(pipeline: DynamicRegistryPipeline): Record<string, unknown> {
-  const cmsNodes = pipeline.nodes.map((node, index) => ({
-    id: node.id,
-    type: "cmsNode",
-    position: { x: (index + 1) * 300, y: 0 },
-    data: {
-      slug: node.slug,
-      inputs: node.bindings,
-    },
-  }));
-
-  const edges: Array<Record<string, unknown>> = [];
-  for (const node of pipeline.nodes) {
-    const upstreamNodeIds = node.upstreamNodeIds ?? [];
-    if (upstreamNodeIds.length === 0) {
-      edges.push({
-        id: `e-start-1-${node.id}`,
-        source: "start-1",
-        target: node.id,
-      });
-      continue;
-    }
-
-    for (const upstreamNodeId of upstreamNodeIds) {
-      edges.push({
-        id: `e-${upstreamNodeId}-${node.id}`,
-        source: upstreamNodeId,
-        target: node.id,
-      });
-    }
-  }
-
-  const upstreamSources = new Set(
-    pipeline.nodes.flatMap((node) => node.upstreamNodeIds ?? []),
-  );
-
-  for (const node of pipeline.nodes) {
-    if (!upstreamSources.has(node.id)) {
-      edges.push({
-        id: `e-${node.id}-end-1`,
-        source: node.id,
-        target: "end-1",
-      });
-    }
-  }
-
-  return {
-    name: inferWorkflowName(pipeline),
-    nodes: [
-      { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
-      ...cmsNodes,
-      { id: "end-1", type: "end", position: { x: (cmsNodes.length + 1) * 300, y: 0 }, data: {} },
-    ],
-    edges,
-  };
-}
-
 function renderExecutionProgress(completed: number, total: number, detail: string): void {
   if (!process.stdout.isTTY) return;
   const width = 24;
@@ -449,7 +461,7 @@ async function executeHostedPipeline(
         typeof pipeline.metadata?.description === "string"
           ? pipeline.metadata.description
           : "",
-      config: toHostedWorkflowConfig(pipeline),
+        config: compileToHostedWorkflowConfig(pipeline),
     });
     hostedWorkflowId = saveResult?.workflowId ?? hostedWorkflowId;
   } catch (err) {
@@ -684,6 +696,17 @@ Examples:
 
       try {
         const pipeline = loadPipelineFromFileOrJson(input);
+        if (!opts.json) {
+          const registry = createCmsCapabilityRegistryClient();
+          const { nodes: capabilities } = await registry.listCapabilities({ enabledOnly: false });
+          const summary = buildPreExecutionSummary({
+            pipeline,
+            registryBySlug: new Map(capabilities.map((node) => [node.slug, node])),
+          });
+          console.log("");
+          console.log(box(renderPreExecutionSummary(summary)));
+          console.log("");
+        }
         const executionClient = createHostedExecutionClient();
         const session = readSession();
         if (!session || isSessionExpired(session)) {
@@ -706,7 +729,7 @@ Examples:
               typeof pipeline.metadata?.description === "string"
                 ? pipeline.metadata.description
                 : "",
-            config: toHostedWorkflowConfig(pipeline),
+            config: compileToHostedWorkflowConfig(pipeline),
           });
           hostedWorkflowId = saveResult?.workflowId ?? hostedWorkflowId;
         } catch (err) {

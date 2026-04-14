@@ -17,6 +17,8 @@ const DEFAULT_SESSION_PATH = "/api/cli/session";
 const DEFAULT_WORKFLOWS_PATH = "/api/cli/profile?view=workflows";
 const DEFAULT_WORKFLOW_DETAIL_PATH = "/api/cli/profile?view=workflow";
 const DEFAULT_WORKFLOW_SAVE_PATH = "/api/cli/profile?action=save-workflow";
+const DEFAULT_WORKFLOW_ARCHIVE_PATH = "/api/cli/profile?action=archive-workflow";
+const DEFAULT_WORKFLOW_DELETE_PATH = "/api/cli/profile?action=delete-workflow";
 const DEFAULT_CREDITS_PATH = "/api/cli/profile?view=credits";
 
 export interface PullProfileResponse {
@@ -95,6 +97,15 @@ export interface HostedWorkflowSaveResponse {
   versionId: string;
   version: number;
   created: boolean;
+}
+
+export interface HostedWorkflowLifecyclePayload {
+  workflowId: string;
+}
+
+export interface HostedWorkflowLifecycleResponse {
+  workflowId: string;
+  ok: boolean;
 }
 
 export interface HostedCreditsResponse {
@@ -204,6 +215,36 @@ export async function saveHostedWorkflow(
   const client = toApiClient(session);
   try {
     return await client.post<HostedWorkflowSaveResponse>(DEFAULT_WORKFLOW_SAVE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function archiveHostedWorkflow(
+  session: CliAuthSession,
+  payload: HostedWorkflowLifecyclePayload,
+): Promise<HostedWorkflowLifecycleResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.post<HostedWorkflowLifecycleResponse>(DEFAULT_WORKFLOW_ARCHIVE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function deleteHostedWorkflow(
+  session: CliAuthSession,
+  payload: HostedWorkflowLifecyclePayload,
+): Promise<HostedWorkflowLifecycleResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.post<HostedWorkflowLifecycleResponse>(DEFAULT_WORKFLOW_DELETE_PATH, payload, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);

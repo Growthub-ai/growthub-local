@@ -265,7 +265,7 @@ async function runDiscoveryHub(opts?: {
             ? "🔗 Workflows"
             : "🔗 Workflows" + pc.dim(" (locked)"),
           hint: workflowAccess.state === "ready"
-            ? "Saved workflows, CMS templates, capabilities, and dynamic pipelines"
+            ? "CMS contracts, dynamic pipelines, and saved workflows"
             : workflowAccess.reason,
         },
         {
@@ -292,7 +292,7 @@ async function runDiscoveryHub(opts?: {
           "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
-          "🔗 Workflows: browse saved workflows, CMS node starter templates, capabilities, and dynamic pipelines.",
+          "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           `   Locked state: ${workflowAccess.reason}.`,
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
@@ -302,7 +302,6 @@ async function runDiscoveryHub(opts?: {
           "growthub kit",
           "growthub template",
           "growthub workflow",
-          "growthub workflow templates",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
@@ -562,9 +561,8 @@ Instance setup:
 
 Workflows (requires auth):
     $ growthub workflow                         Interactive workflow browser
-    $ growthub workflow templates               List CMS node starter templates
-    $ growthub workflow templates --json        Machine-readable output
     $ growthub workflow saved                   List saved workflow pipelines
+    $ growthub pipeline assemble                Build and save hosted dynamic pipelines
 
 Dynamic Registry Pipelines:
 
