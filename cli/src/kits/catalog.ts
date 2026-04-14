@@ -38,4 +38,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-geo-seo-v1",
+    packageDirName: "growthub-geo-seo-v1",
+    defaultBundleId: "growthub-geo-seo-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];
