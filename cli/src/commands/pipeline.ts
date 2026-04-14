@@ -33,6 +33,7 @@ import {
   compileToHostedWorkflowConfig,
   inferWorkflowName,
   normalizeNodeBindings,
+  introspectNodeContract,
   buildPreExecutionSummary,
   renderPreExecutionSummary,
 } from "../runtime/cms-node-contracts/index.js";
@@ -42,6 +43,11 @@ import {
 import {
   createArtifactStore,
 } from "../runtime/artifact-contracts/index.js";
+import {
+  createDeterministicProvider,
+  type ExecutionSummaryInput,
+  type PipelineSummaryForIntelligence,
+} from "../runtime/native-intelligence/index.js";
 import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
@@ -290,6 +296,16 @@ export async function runPipelineAssembler(opts: {
       console.log(box(renderPreExecutionSummary(summary)));
       console.log("");
 
+      const intelligenceSummary = await renderIntelligenceSummary(
+        pipeline,
+        capabilities,
+        "pre-save",
+      );
+      if (intelligenceSummary) {
+        console.log(box(intelligenceSummary));
+        console.log("");
+      }
+
       const confirmed = await p.confirm({
         message: `Save hosted workflow "${workflowName as string}"?`,
         initialValue: true,
@@ -337,6 +353,16 @@ export async function runPipelineAssembler(opts: {
       console.log("");
       console.log(box(renderPreExecutionSummary(summary)));
       console.log("");
+
+      const intelligenceSummary = await renderIntelligenceSummary(
+        pipeline,
+        capabilities,
+        "pre-execution",
+      );
+      if (intelligenceSummary) {
+        console.log(box(intelligenceSummary));
+        console.log("");
+      }
 
       const confirmed = await p.confirm({
         message: "Execute this pipeline through the hosted runtime?",
@@ -599,6 +625,95 @@ async function executeHostedPipeline(
 }
 
 export { executeHostedPipeline };
+
+// ---------------------------------------------------------------------------
+// Native Intelligence summary helper
+// ---------------------------------------------------------------------------
+
+async function renderIntelligenceSummary(
+  pipeline: DynamicRegistryPipeline,
+  capabilities: CmsCapabilityNode[],
+  phase: "pre-save" | "pre-execution" | "post-execution" | "recommendation",
+): Promise<string[] | null> {
+  try {
+    const provider = createDeterministicProvider();
+    const registryContext = capabilities.map((cap) => introspectNodeContract(cap));
+    const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
+
+    const pipelineSummary: PipelineSummaryForIntelligence = {
+      pipelineId: pipeline.pipelineId,
+      executionMode: pipeline.executionMode as "local" | "hosted" | "hybrid",
+      nodes: pipeline.nodes.map((node) => {
+        const cap = capabilityMap.get(node.slug);
+        const contract = cap ? introspectNodeContract(cap) : null;
+        const missingRequired: string[] = [];
+        if (contract) {
+          for (const input of contract.inputs) {
+            if (!input.required) continue;
+            const value = node.bindings[input.key];
+            if (value === undefined || value === null || value === "") {
+              missingRequired.push(input.key);
+            }
+          }
+        }
+        return {
+          slug: node.slug,
+          bindingCount: Object.keys(node.bindings).length,
+          missingRequired,
+          outputTypes: contract?.outputTypes ?? [],
+          assetCount: 0,
+        };
+      }),
+      warnings: [],
+    };
+
+    const input: ExecutionSummaryInput = {
+      pipeline: pipelineSummary,
+      registryContext,
+      phase,
+    };
+
+    const result = await provider.summarizeExecution(input);
+
+    const lines: string[] = [
+      `${pc.bold("Intelligence Summary")} ${pc.dim(result.title)}`,
+      result.explanation,
+    ];
+
+    if (result.runtimeModeNote) {
+      lines.push(`${pc.dim("Runtime:")} ${result.runtimeModeNote}`);
+    }
+
+    if (result.outputExpectation) {
+      lines.push(`${pc.dim("Expected:")} ${result.outputExpectation}`);
+    }
+
+    if (result.missingBindingGuidance.length > 0) {
+      lines.push("", pc.yellow("Missing Binding Guidance"));
+      for (const guidance of result.missingBindingGuidance) {
+        lines.push(`  ${pc.dim("·")} ${guidance}`);
+      }
+    }
+
+    if (result.costLatencyCautions.length > 0) {
+      lines.push("", pc.yellow("Cost/Latency Notes"));
+      for (const caution of result.costLatencyCautions) {
+        lines.push(`  ${pc.dim("·")} ${caution}`);
+      }
+    }
+
+    if (result.warnings.length > 0) {
+      lines.push("", pc.yellow("Warnings"));
+      for (const warning of result.warnings) {
+        lines.push(`  ${pc.dim("·")} ${warning}`);
+      }
+    }
+
+    return lines;
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Command registration

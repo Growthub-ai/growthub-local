@@ -23,7 +23,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@growthub/cli": "0.3.50"
+    "@growthub/cli": "0.3.51"
   },
   "keywords": [
     "growthub",
