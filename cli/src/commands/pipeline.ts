@@ -1,0 +1,474 @@
+/**
+ * CLI Commands — pipeline
+ *
+ * growthub pipeline assemble     — Interactive assembly of a dynamic registry pipeline
+ * growthub pipeline validate     — Validate a pipeline file/JSON
+ * growthub pipeline execute      — Execute a pipeline through hosted runtime
+ *
+ * Interactive assembler is available via `growthub pipeline` (no subcommand).
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import * as p from "@clack/prompts";
+import pc from "picocolors";
+import { Command } from "commander";
+import {
+  createCmsCapabilityRegistryClient,
+  type CmsCapabilityNode,
+} from "../runtime/cms-capability-registry/index.js";
+import {
+  createPipelineBuilder,
+  serializePipeline,
+  deserializePipeline,
+  type DynamicRegistryPipeline,
+} from "../runtime/dynamic-registry-pipeline/index.js";
+import {
+  createHostedExecutionClient,
+} from "../runtime/hosted-execution-client/index.js";
+import {
+  createArtifactStore,
+} from "../runtime/artifact-contracts/index.js";
+import { printPaperclipCliBanner } from "../utils/banner.js";
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+function hr(width = 72): string {
+  return pc.dim("─".repeat(width));
+}
+
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+
+function box(lines: string[]): string {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi(l).length)) + 4;
+  const top    = pc.dim("┌" + "─".repeat(width) + "┐");
+  const bottom = pc.dim("└" + "─".repeat(width) + "┘");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi(l).length;
+    return pc.dim("│") + l + " ".repeat(pad) + pc.dim("│");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Interactive pipeline assembler
+// ---------------------------------------------------------------------------
+
+export async function runPipelineAssembler(opts: {
+  allowBackToHub?: boolean;
+}): Promise<"done" | "back"> {
+  printPaperclipCliBanner();
+  p.intro(pc.bold("Dynamic Registry Pipeline Assembler"));
+
+  const registry = createCmsCapabilityRegistryClient();
+  let capabilities: CmsCapabilityNode[];
+
+  try {
+    const result = await registry.listCapabilities();
+    capabilities = result.nodes;
+  } catch (err) {
+    p.log.error("Failed to load capabilities: " + (err as Error).message);
+    return "done";
+  }
+
+  if (capabilities.length === 0) {
+    p.note("No capabilities available. Ensure you are authenticated.", "Nothing found");
+    return "done";
+  }
+
+  // Select execution mode
+  const modeChoice = await p.select({
+    message: "Pipeline execution mode",
+    options: [
+      { value: "hosted", label: "☁️  Hosted", hint: "Execute via hosted runtime" },
+      { value: "local", label: "💻 Local", hint: "Execute locally" },
+      { value: "hybrid", label: "🔄 Hybrid", hint: "Mix of local and hosted" },
+      ...(opts.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
+    ],
+  });
+
+  if (p.isCancel(modeChoice)) { p.cancel("Cancelled."); process.exit(0); }
+  if (modeChoice === "__back_to_hub") return "back";
+
+  const builder = createPipelineBuilder({
+    executionMode: modeChoice as "hosted" | "local" | "hybrid",
+  });
+
+  // Node assembly loop
+  while (true) {
+    const currentNodes = builder.getNodes();
+
+    const action = await p.select({
+      message: `Pipeline has ${currentNodes.length} node${currentNodes.length !== 1 ? "s" : ""}. What next?`,
+      options: [
+        { value: "add", label: "➕ Add a node", hint: "Select a capability to add" },
+        ...(currentNodes.length > 0 ? [
+          { value: "preview", label: "👁️  Preview pipeline" },
+          { value: "validate", label: "✅ Validate pipeline" },
+          { value: "save", label: "💾 Save pipeline to file" },
+          { value: "execute", label: "🚀 Execute pipeline" },
+        ] : []),
+        { value: "cancel", label: "← Cancel" },
+      ],
+    });
+
+    if (p.isCancel(action)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if (action === "cancel") return "done";
+
+    if (action === "add") {
+      const capChoice = await p.select({
+        message: "Select capability to add as pipeline node",
+        options: [
+          ...capabilities.map((c) => ({
+            value: c.slug,
+            label: `${pc.bold(c.displayName)}  ${pc.dim(c.slug)}`,
+            hint: `${c.family} · ${c.executionKind}`,
+          })),
+          { value: "__back", label: "← Back" },
+        ],
+      });
+
+      if (p.isCancel(capChoice)) { p.cancel("Cancelled."); process.exit(0); }
+      if (capChoice === "__back") continue;
+
+      const cap = capabilities.find((c) => c.slug === capChoice);
+      if (!cap) continue;
+
+      // Collect bindings
+      const bindings: Record<string, unknown> = {};
+      for (const bindingKey of cap.requiredBindings) {
+        const value = await p.text({
+          message: `Binding "${bindingKey}" for ${cap.slug}`,
+          placeholder: `Enter value for ${bindingKey}`,
+        });
+        if (p.isCancel(value)) { p.cancel("Cancelled."); process.exit(0); }
+        bindings[bindingKey] = value;
+      }
+
+      // Upstream node selection (if there are existing nodes)
+      let upstreamNodeIds: string[] | undefined;
+      if (currentNodes.length > 0) {
+        const upstreamChoice = await p.multiselect({
+          message: "Select upstream nodes (outputs feed into this node)",
+          options: [
+            { value: "__none", label: "(no upstream)" },
+            ...currentNodes.map((n) => ({
+              value: n.id,
+              label: `${n.slug} (${n.id})`,
+            })),
+          ],
+          required: false,
+        });
+
+        if (p.isCancel(upstreamChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        const selected = (upstreamChoice as string[]).filter((v) => v !== "__none");
+        if (selected.length > 0) {
+          upstreamNodeIds = selected;
+        }
+      }
+
+      const nodeId = builder.addNode(capChoice as string, bindings, upstreamNodeIds);
+      p.log.success(`Added node ${pc.bold(cap.displayName)} (${pc.dim(nodeId)})`);
+      continue;
+    }
+
+    if (action === "preview") {
+      const pipeline = builder.build();
+      console.log("");
+      console.log(box([
+        `${pc.bold("Pipeline:")} ${pipeline.pipelineId}`,
+        `${pc.dim("Mode:")} ${pipeline.executionMode}  ${pc.dim("Nodes:")} ${pipeline.nodes.length}`,
+        "",
+        ...pipeline.nodes.map((n, i) => {
+          const upstream = n.upstreamNodeIds?.length
+            ? pc.dim(` ← ${n.upstreamNodeIds.join(", ")}`)
+            : "";
+          return `${pc.dim(String(i + 1) + ".")} ${pc.bold(n.slug)} ${pc.dim(n.id)}${upstream}`;
+        }),
+      ]));
+      console.log("");
+      continue;
+    }
+
+    if (action === "validate") {
+      try {
+        const result = await builder.validate();
+
+        if (result.valid) {
+          p.log.success("Pipeline is valid.");
+        } else {
+          p.log.error("Pipeline validation failed.");
+        }
+
+        for (const issue of result.issues) {
+          const prefix = issue.severity === "error" ? pc.red("ERROR") : pc.yellow("WARN");
+          const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
+          console.log(`  ${prefix}${nodeRef}: ${issue.message}`);
+        }
+      } catch (err) {
+        p.log.error("Validation failed: " + (err as Error).message);
+      }
+      continue;
+    }
+
+    if (action === "save") {
+      const outPath = await p.text({
+        message: "Output file path",
+        placeholder: "./pipeline.json",
+        defaultValue: "./pipeline.json",
+      });
+
+      if (p.isCancel(outPath)) { p.cancel("Cancelled."); process.exit(0); }
+
+      const pipeline = builder.build();
+      const serialized = serializePipeline(pipeline);
+      const resolvedPath = path.resolve(outPath as string);
+      fs.writeFileSync(resolvedPath, `${JSON.stringify(serialized, null, 2)}\n`);
+      p.log.success(`Pipeline saved to ${pc.cyan(resolvedPath)}`);
+      continue;
+    }
+
+    if (action === "execute") {
+      // Validate first
+      const validation = await builder.validate();
+      if (!validation.valid) {
+        p.log.error("Pipeline is not valid. Fix errors before executing.");
+        for (const issue of validation.issues.filter((i) => i.severity === "error")) {
+          console.log(`  ${pc.red("ERROR")}: ${issue.message}`);
+        }
+        continue;
+      }
+
+      const confirmed = await p.confirm({
+        message: "Execute this pipeline through the hosted runtime?",
+        initialValue: false,
+      });
+      if (p.isCancel(confirmed) || !confirmed) continue;
+
+      try {
+        const executionClient = createHostedExecutionClient();
+        const pipeline = builder.build();
+        const pkg = await builder.package();
+
+        p.log.info(`Executing pipeline ${pc.bold(pipeline.pipelineId)} (${pkg.executionRoute})...`);
+
+        const result = await executionClient.executeWorkflow({
+          pipelineId: pipeline.pipelineId,
+          threadId: pipeline.threadId,
+          nodes: pipeline.nodes.map((n) => ({
+            nodeId: n.id,
+            slug: n.slug,
+            bindings: n.bindings,
+            upstreamNodeIds: n.upstreamNodeIds,
+          })),
+          executionMode: pipeline.executionMode,
+          metadata: pipeline.metadata,
+        });
+
+        p.log.success(`Execution ${pc.bold(result.executionId)}: ${result.status}`);
+
+        // Create artifact records for each result artifact
+        const artifactStore = createArtifactStore();
+        for (const artRef of result.artifacts) {
+          const nodeResult = result.nodeResults[artRef.nodeId];
+          artifactStore.create({
+            artifactType: artRef.artifactType as "video" | "image" | "slides" | "text" | "report" | "pipeline",
+            sourceNodeSlug: nodeResult?.slug ?? "unknown",
+            executionContext: pipeline.executionMode === "local" ? "local" : "hosted",
+            pipelineId: pipeline.pipelineId,
+            nodeId: artRef.nodeId,
+            threadId: pipeline.threadId,
+            metadata: artRef.metadata ?? {},
+          });
+        }
+
+        if (result.artifacts.length > 0) {
+          p.log.info(`${result.artifacts.length} artifact(s) recorded.`);
+        }
+      } catch (err) {
+        p.log.error("Execution failed: " + (err as Error).message);
+      }
+      continue;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// File-based pipeline loading
+// ---------------------------------------------------------------------------
+
+function loadPipelineFromFileOrJson(input: string): DynamicRegistryPipeline {
+  // Try as file path first
+  const resolvedPath = path.resolve(input);
+  if (fs.existsSync(resolvedPath)) {
+    const content = fs.readFileSync(resolvedPath, "utf-8");
+    return deserializePipeline(JSON.parse(content));
+  }
+
+  // Try as inline JSON
+  try {
+    return deserializePipeline(JSON.parse(input));
+  } catch {
+    throw new Error(
+      `"${input}" is not a valid file path or JSON string. ` +
+      "Provide a path to a pipeline JSON file or inline JSON.",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command registration
+// ---------------------------------------------------------------------------
+
+export function registerPipelineCommands(program: Command): void {
+  const pipe = program
+    .command("pipeline")
+    .description("Assemble, validate, and execute dynamic registry pipelines")
+    .addHelpText("after", `
+Examples:
+  $ growthub pipeline                       # interactive assembler
+  $ growthub pipeline assemble              # interactive assembly
+  $ growthub pipeline validate ./pipeline.json
+  $ growthub pipeline execute ./pipeline.json
+`);
+
+  pipe.action(async () => {
+    await runPipelineAssembler({});
+  });
+
+  // ── assemble ────────────────────────────────────────────────────────────
+  pipe
+    .command("assemble")
+    .description("Interactively assemble a dynamic registry pipeline")
+    .action(async () => {
+      await runPipelineAssembler({});
+    });
+
+  // ── validate ────────────────────────────────────────────────────────────
+  pipe
+    .command("validate")
+    .description("Validate a pipeline from a JSON file or inline JSON")
+    .argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string")
+    .option("--json", "Output raw JSON")
+    .action(async (input: string, opts: { json?: boolean }) => {
+      try {
+        const pipeline = loadPipelineFromFileOrJson(input);
+        const builder = createPipelineBuilder({
+          executionMode: pipeline.executionMode,
+          threadId: pipeline.threadId,
+          metadata: pipeline.metadata,
+        });
+
+        for (const node of pipeline.nodes) {
+          builder.addNode(node.slug, node.bindings, node.upstreamNodeIds);
+        }
+
+        const result = await builder.validate();
+
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        if (result.valid) {
+          console.log(pc.green(pc.bold("Pipeline is valid.")));
+        } else {
+          console.log(pc.red(pc.bold("Pipeline validation failed.")));
+        }
+
+        for (const issue of result.issues) {
+          const prefix = issue.severity === "error" ? pc.red("  ERROR") : pc.yellow("  WARN");
+          const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
+          console.log(`${prefix}${nodeRef}: ${issue.message}`);
+        }
+
+        if (!result.valid) process.exitCode = 1;
+      } catch (err) {
+        console.error(pc.red("Validation failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── execute ─────────────────────────────────────────────────────────────
+  pipe
+    .command("execute")
+    .description("Execute a pipeline from a JSON file or inline JSON")
+    .argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string")
+    .option("--json", "Output raw JSON")
+    .action(async (input: string, opts: { json?: boolean }) => {
+      try {
+        const pipeline = loadPipelineFromFileOrJson(input);
+        const executionClient = createHostedExecutionClient();
+
+        const result = await executionClient.executeWorkflow({
+          pipelineId: pipeline.pipelineId,
+          threadId: pipeline.threadId,
+          nodes: pipeline.nodes.map((n) => ({
+            nodeId: n.id,
+            slug: n.slug,
+            bindings: n.bindings,
+            upstreamNodeIds: n.upstreamNodeIds,
+          })),
+          executionMode: pipeline.executionMode,
+          metadata: pipeline.metadata,
+        });
+
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(pc.bold("Pipeline Execution Result"));
+        console.log(hr());
+        console.log(`  ${pc.dim("Execution ID:")} ${result.executionId}`);
+        console.log(`  ${pc.dim("Status:")}       ${result.status === "succeeded" ? pc.green(result.status) : pc.red(result.status)}`);
+        if (result.startedAt) console.log(`  ${pc.dim("Started:")}      ${result.startedAt}`);
+        if (result.completedAt) console.log(`  ${pc.dim("Completed:")}    ${result.completedAt}`);
+        console.log(hr());
+
+        for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+          const statusColor = nodeResult.status === "succeeded" ? pc.green : pc.red;
+          console.log(`  ${statusColor(nodeResult.status)} ${pc.bold(nodeResult.slug)} (${pc.dim(nodeId)})`);
+          if (nodeResult.error) {
+            console.log(`    ${pc.red(nodeResult.error)}`);
+          }
+        }
+
+        if (result.artifacts.length > 0) {
+          console.log("");
+          console.log(pc.bold("  Artifacts:"));
+          for (const art of result.artifacts) {
+            console.log(`    ${pc.dim("·")} ${art.artifactType} (${art.artifactId})`);
+          }
+        }
+
+        // Record artifacts locally
+        const artifactStore = createArtifactStore();
+        for (const artRef of result.artifacts) {
+          const nodeResult = result.nodeResults[artRef.nodeId];
+          artifactStore.create({
+            artifactType: artRef.artifactType as "video" | "image" | "slides" | "text" | "report" | "pipeline",
+            sourceNodeSlug: nodeResult?.slug ?? "unknown",
+            executionContext: pipeline.executionMode === "local" ? "local" : "hosted",
+            pipelineId: pipeline.pipelineId,
+            nodeId: artRef.nodeId,
+            threadId: pipeline.threadId,
+            metadata: artRef.metadata ?? {},
+          });
+        }
+
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Execution failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+}

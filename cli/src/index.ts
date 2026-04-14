@@ -29,6 +29,9 @@ import { registerWorktreeCommands } from "./commands/worktree.js";
 import { registerPluginCommands } from "./commands/client/plugin.js";
 import { registerKitCommands, runInteractivePicker } from "./commands/kit.js";
 import { registerTemplateCommands, runTemplatePicker } from "./commands/template.js";
+import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capability.js";
+import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
+import { registerArtifactCommands } from "./commands/artifact.js";
 import { printPaperclipCliBanner } from "./utils/banner.js";
 import { resolvePaperclipHomeDir } from "./config/home.js";
 import type { SurfaceProfile } from "./config/schema.js";
@@ -148,6 +151,9 @@ function registerSharedCommands(target: Command) {
 
   registerKitCommands(target);
   registerTemplateCommands(target);
+  registerCapabilityCommands(target);
+  registerPipelineCommands(target);
+  registerArtifactCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -242,6 +248,16 @@ async function runDiscoveryHub(opts?: {
           hint: "Artifact template library",
         },
         {
+          value: "capabilities",
+          label: "🔌 Capabilities",
+          hint: "Browse CMS-backed runtime node primitives",
+        },
+        {
+          value: "pipelines",
+          label: "🔗 Dynamic Pipelines",
+          hint: "Assemble and execute dynamic registry pipelines",
+        },
+        {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
@@ -265,6 +281,8 @@ async function runDiscoveryHub(opts?: {
           "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
+          "🔌 Capabilities: browse CMS-backed runtime node primitives available to your account.",
+          "🔗 Dynamic Pipelines: assemble and execute dynamic registry pipelines.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -272,6 +290,9 @@ async function runDiscoveryHub(opts?: {
           "growthub auth whoami",
           "growthub kit",
           "growthub template",
+          "growthub capability list",
+          "growthub pipeline assemble",
+          "growthub artifact list",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -391,6 +412,18 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "kits") {
       const result = await runInteractivePicker({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
+    if (surfaceChoice === "capabilities") {
+      const result = await runCapabilityPicker({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
+    if (surfaceChoice === "pipelines") {
+      const result = await runPipelineAssembler({ allowBackToHub: true });
       if (result === "back") continue;
       return;
     }
@@ -519,6 +552,26 @@ Instance setup:
     $ growthub doctor                           Diagnose and optionally repair
     $ growthub configure                        Update config sections
     $ growthub                                  Interactive discovery hub
+
+Dynamic Registry Pipelines:
+
+  Capabilities:
+    $ growthub capability                       Interactive capability browser
+    $ growthub capability list                  All capabilities grouped by family
+    $ growthub capability list --family video   Filter by family
+    $ growthub capability inspect video-gen     Inspect a specific capability
+    $ growthub capability resolve               Resolve machine-scoped bindings
+
+  Pipelines:
+    $ growthub pipeline                         Interactive pipeline assembler
+    $ growthub pipeline assemble                Interactive assembly
+    $ growthub pipeline validate ./pipeline.json
+    $ growthub pipeline execute ./pipeline.json
+
+  Artifacts:
+    $ growthub artifact list                    All pipeline artifacts
+    $ growthub artifact list --type video       Filter by type
+    $ growthub artifact inspect <id>            Inspect a specific artifact
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)

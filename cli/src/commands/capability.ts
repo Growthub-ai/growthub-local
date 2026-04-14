@@ -1,0 +1,378 @@
+/**
+ * CLI Commands — capability
+ *
+ * growthub capability list       — List CMS-backed runtime node primitives
+ * growthub capability inspect    — Show capability bindings, family, outputs
+ * growthub capability resolve    — Show machine-scoped resolution for all caps
+ *
+ * Interactive picker is available via `growthub capability` (no subcommand).
+ */
+
+import * as p from "@clack/prompts";
+import pc from "picocolors";
+import { Command } from "commander";
+import {
+  createCmsCapabilityRegistryClient,
+  CAPABILITY_FAMILIES,
+  type CmsCapabilityNode,
+  type CapabilityFamily,
+} from "../runtime/cms-capability-registry/index.js";
+import {
+  createMachineCapabilityResolver,
+} from "../runtime/machine-capability-resolver/index.js";
+import { printPaperclipCliBanner } from "../utils/banner.js";
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+const FAMILY_CONFIG: Record<string, { color: (s: string) => string; emoji: string; label: string }> = {
+  video:  { color: pc.magenta, emoji: "🎬", label: "Video" },
+  image:  { color: pc.cyan,    emoji: "🖼️ ", label: "Image" },
+  slides: { color: pc.yellow,  emoji: "📊", label: "Slides" },
+  text:   { color: pc.green,   emoji: "📝", label: "Text" },
+  data:   { color: pc.blue,    emoji: "📦", label: "Data" },
+  ops:    { color: pc.red,     emoji: "⚙️ ", label: "Ops" },
+};
+
+function familyBadge(family: string): string {
+  const cfg = FAMILY_CONFIG[family];
+  if (!cfg) return family;
+  return cfg.color(`${cfg.emoji} ${cfg.label}`);
+}
+
+function executionKindLabel(kind: string): string {
+  if (kind === "hosted-execute") return pc.cyan("hosted");
+  if (kind === "provider-assembly") return pc.yellow("provider");
+  if (kind === "local-only") return pc.green("local");
+  return kind;
+}
+
+function hr(width = 72): string {
+  return pc.dim("─".repeat(width));
+}
+
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+
+function box(lines: string[]): string {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi(l).length)) + 4;
+  const top    = pc.dim("┌" + "─".repeat(width) + "┐");
+  const bottom = pc.dim("└" + "─".repeat(width) + "┘");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi(l).length;
+    return pc.dim("│") + l + " ".repeat(pad) + pc.dim("│");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Grouped list renderer
+// ---------------------------------------------------------------------------
+
+function printGroupedCapabilities(nodes: CmsCapabilityNode[]): void {
+  const byFamily: Record<string, CmsCapabilityNode[]> = {};
+  for (const node of nodes) {
+    (byFamily[node.family] ??= []).push(node);
+  }
+
+  const families = Object.keys(byFamily).sort();
+  const totalFamilies = families.length;
+
+  console.log("");
+  console.log(
+    pc.bold("CMS Capability Registry") +
+    pc.dim(`  ${nodes.length} capability${nodes.length !== 1 ? "capabilities" : ""}  ·  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`),
+  );
+  console.log(hr());
+
+  for (const family of families) {
+    const groupNodes = byFamily[family];
+    const header = familyBadge(family);
+
+    console.log(`\n${header}  ${pc.dim("(" + groupNodes.length + ")")}`);
+
+    for (const node of groupNodes) {
+      const enabledTag = node.enabled ? pc.green("enabled") : pc.red("disabled");
+      console.log(`  ${pc.bold(node.slug)}  ${pc.dim(node.displayName)}  ${enabledTag}`);
+      console.log(`  ${pc.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc.dim("Outputs:")} ${pc.dim(node.outputTypes.join(", "))}`);
+      if (node.description) {
+        console.log(`  ${pc.dim(node.description)}`);
+      }
+      console.log("");
+    }
+  }
+
+  console.log(hr());
+  console.log(pc.dim("  growthub capability inspect <slug>  ·  growthub capability resolve"));
+  console.log("");
+}
+
+// ---------------------------------------------------------------------------
+// Inspect renderer
+// ---------------------------------------------------------------------------
+
+function printCapabilityCard(node: CmsCapabilityNode): void {
+  const lines = [
+    `${pc.bold(node.displayName)}  ${pc.dim(node.slug)}`,
+    `${familyBadge(node.family)}  ${node.enabled ? pc.green("enabled") : pc.red("disabled")}`,
+    "",
+    `${pc.dim("Execution Kind:")}  ${executionKindLabel(node.executionKind)}`,
+    `${pc.dim("Output Types:")}    ${node.outputTypes.join(", ")}`,
+    `${pc.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc.dim("(none)")}`,
+  ];
+
+  if (node.description) {
+    lines.push("", pc.dim(node.description));
+  }
+
+  if (node.manifestMetadata && Object.keys(node.manifestMetadata).length > 0) {
+    lines.push("", `${pc.dim("Manifest metadata:")} ${JSON.stringify(node.manifestMetadata)}`);
+  }
+
+  console.log("");
+  console.log(box(lines));
+  console.log("");
+}
+
+// ---------------------------------------------------------------------------
+// Interactive picker (accessible from discovery hub)
+// ---------------------------------------------------------------------------
+
+export async function runCapabilityPicker(opts: {
+  allowBackToHub?: boolean;
+}): Promise<"done" | "back"> {
+  printPaperclipCliBanner();
+  p.intro(pc.bold("CMS Capability Registry"));
+
+  const registry = createCmsCapabilityRegistryClient();
+
+  while (true) {
+    const familyChoice = await p.select({
+      message: "Filter by capability family",
+      options: [
+        { value: "all", label: "All Families" },
+        ...CAPABILITY_FAMILIES.map((family) => {
+          const cfg = FAMILY_CONFIG[family];
+          return {
+            value: family,
+            label: cfg ? `${cfg.emoji}  ${cfg.label}` : family,
+          };
+        }),
+        ...(opts.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
+      ],
+    });
+
+    if (p.isCancel(familyChoice)) { p.cancel("Cancelled."); process.exit(0); }
+    if (familyChoice === "__back_to_hub") return "back";
+
+    const query = familyChoice === "all"
+      ? undefined
+      : { family: familyChoice as CapabilityFamily };
+
+    let result: { nodes: CmsCapabilityNode[] };
+    try {
+      result = await registry.listCapabilities(query);
+    } catch (err) {
+      p.log.error("Failed to load capabilities: " + (err as Error).message);
+      continue;
+    }
+
+    if (result.nodes.length === 0) {
+      p.note("No capabilities available for that family.", "Nothing found");
+      continue;
+    }
+
+    while (true) {
+      const capChoice = await p.select({
+        message: "Select capability",
+        options: [
+          ...result.nodes.map((n) => ({
+            value: n.slug,
+            label:
+              `${familyBadge(n.family)}  ` +
+              pc.bold(n.displayName) + "  " +
+              pc.dim(n.slug),
+            hint: n.description ? n.description.slice(0, 55) : undefined,
+          })),
+          { value: "__back_to_family", label: "← Back to family filter" },
+        ],
+      });
+
+      if (p.isCancel(capChoice)) { p.cancel("Cancelled."); process.exit(0); }
+      if (capChoice === "__back_to_family") break;
+
+      const selected = result.nodes.find((n) => n.slug === capChoice);
+      if (!selected) continue;
+
+      printCapabilityCard(selected);
+
+      const nextStep = await p.select({
+        message: "Next step",
+        options: [
+          { value: "resolve", label: "🔍 Check machine binding" },
+          { value: "back_to_caps", label: "← Back to capability list" },
+        ],
+      });
+
+      if (p.isCancel(nextStep)) { p.cancel("Cancelled."); process.exit(0); }
+      if (nextStep === "back_to_caps") continue;
+
+      if (nextStep === "resolve") {
+        try {
+          const resolver = createMachineCapabilityResolver();
+          const binding = await resolver.resolveCapability(selected.slug);
+          if (binding) {
+            const statusColor = binding.allowed ? pc.green : pc.red;
+            console.log("");
+            console.log(box([
+              `${pc.bold("Machine Binding:")} ${selected.slug}`,
+              `${pc.dim("Allowed:")}  ${statusColor(String(binding.allowed))}`,
+              `${pc.dim("Reason:")}   ${binding.reason ?? "—"}`,
+              ...(binding.machineConnectionId ? [`${pc.dim("Connection:")} ${binding.machineConnectionId}`] : []),
+            ]));
+            console.log("");
+          }
+        } catch (err) {
+          p.log.error("Resolution failed: " + (err as Error).message);
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command registration
+// ---------------------------------------------------------------------------
+
+export function registerCapabilityCommands(program: Command): void {
+  const cap = program
+    .command("capability")
+    .description("Discover and inspect CMS-backed runtime node capabilities")
+    .addHelpText("after", `
+Examples:
+  $ growthub capability                     # interactive browser
+  $ growthub capability list                # all capabilities grouped by family
+  $ growthub capability list --family video # filter by family
+  $ growthub capability list --json         # machine-readable output
+  $ growthub capability inspect video-gen   # inspect a specific capability
+  $ growthub capability resolve             # resolve machine bindings for all
+`);
+
+  cap.action(async () => {
+    await runCapabilityPicker({});
+  });
+
+  // ── list ────────────────────────────────────────────────────────────────
+  cap
+    .command("list")
+    .description("List all CMS-backed runtime node capabilities")
+    .option("--family <family>", "Filter by family (video, image, slides, text, data, ops)")
+    .option("--json", "Output raw JSON for scripting")
+    .action(async (opts: { family?: string; json?: boolean }) => {
+      const registry = createCmsCapabilityRegistryClient();
+      const query = opts.family
+        ? { family: opts.family as CapabilityFamily }
+        : undefined;
+
+      try {
+        const { nodes, meta } = await registry.listCapabilities(query);
+
+        if (opts.json) {
+          console.log(JSON.stringify({ nodes, meta }, null, 2));
+          return;
+        }
+
+        if (nodes.length === 0) {
+          console.error(pc.yellow("No capabilities found" + (opts.family ? ` for family: ${opts.family}` : "") + "."));
+          console.error(pc.dim("Valid families: " + CAPABILITY_FAMILIES.join(", ")));
+          process.exitCode = 1;
+          return;
+        }
+
+        printGroupedCapabilities(nodes);
+        console.log(pc.dim(`  Source: ${meta.source}  ·  Fetched: ${meta.fetchedAt}`));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to list capabilities: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── inspect ─────────────────────────────────────────────────────────────
+  cap
+    .command("inspect")
+    .description("Inspect a specific CMS capability node")
+    .argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')")
+    .option("--json", "Output raw JSON")
+    .action(async (slug: string, opts: { json?: boolean }) => {
+      const registry = createCmsCapabilityRegistryClient();
+
+      try {
+        const node = await registry.getCapability(slug);
+        if (!node) {
+          console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
+          process.exitCode = 1;
+          return;
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify(node, null, 2));
+          return;
+        }
+
+        printCapabilityCard(node);
+      } catch (err) {
+        console.error(pc.red("Failed to inspect capability: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── resolve ─────────────────────────────────────────────────────────────
+  cap
+    .command("resolve")
+    .description("Resolve machine-scoped capability bindings for all capabilities")
+    .option("--json", "Output raw JSON")
+    .action(async (opts: { json?: boolean }) => {
+      try {
+        const resolver = createMachineCapabilityResolver();
+        const result = await resolver.resolveAll();
+
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(pc.bold("Machine Capability Resolution"));
+        console.log(hr());
+        console.log(`  ${pc.dim("Hostname:")}  ${result.machineContext.hostname}`);
+        console.log(`  ${pc.dim("Instance:")}  ${result.machineContext.instanceId}`);
+        console.log(`  ${pc.dim("Session:")}   ${result.machineContext.hasActiveSession ? pc.green("active") : pc.red("none")}`);
+        if (result.machineContext.machineLabel) {
+          console.log(`  ${pc.dim("Machine:")}   ${result.machineContext.machineLabel}`);
+        }
+        console.log(`  ${pc.dim("Entitlements:")} ${result.entitlements.length > 0 ? result.entitlements.join(", ") : pc.dim("(none)")}`);
+        console.log(hr());
+
+        for (const binding of result.bindings) {
+          const statusColor = binding.allowed ? pc.green : pc.red;
+          const statusIcon = binding.allowed ? "✓" : "✗";
+          console.log(
+            `  ${statusColor(statusIcon)} ${pc.bold(binding.capabilitySlug)}` +
+            `  ${pc.dim(binding.reason ?? "")}`,
+          );
+        }
+
+        console.log("");
+        console.log(pc.dim(`  Resolved at: ${result.resolvedAt}`));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to resolve capabilities: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+}
