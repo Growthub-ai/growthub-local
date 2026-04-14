@@ -32,10 +32,15 @@ export {
   CAPABILITY_FAMILIES,
   type CmsCapabilityRegistryClient,
   type CmsCapabilityNode,
+  type CmsConnectorNode,
   type CapabilityFamily,
   type CapabilityExecutionKind,
   type CapabilityQuery,
   type CapabilityRegistryMeta,
+  type CmsNodeType,
+  type CmsVisibility,
+  type CmsExecutionBinding,
+  type CmsExecutionTokens,
 } from "./cms-capability-registry/index.js";
 
 export {

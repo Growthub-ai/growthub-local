@@ -85,7 +85,7 @@ function printGroupedCapabilities(nodes: CmsCapabilityNode[]): void {
   console.log("");
   console.log(
     pc.bold("CMS Capability Registry") +
-    pc.dim(`  ${nodes.length} capability${nodes.length !== 1 ? "capabilities" : ""}  ·  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`),
+    pc.dim(`  ${nodes.length} capabilit${nodes.length !== 1 ? "ies" : "y"}  ·  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`),
   );
   console.log(hr());
 
@@ -116,12 +116,17 @@ function printGroupedCapabilities(nodes: CmsCapabilityNode[]): void {
 // ---------------------------------------------------------------------------
 
 function printCapabilityCard(node: CmsCapabilityNode): void {
+  const iconPrefix = node.icon ? `${node.icon}  ` : "";
   const lines = [
-    `${pc.bold(node.displayName)}  ${pc.dim(node.slug)}`,
+    `${iconPrefix}${pc.bold(node.displayName)}  ${pc.dim(node.slug)}`,
     `${familyBadge(node.family)}  ${node.enabled ? pc.green("enabled") : pc.red("disabled")}`,
     "",
-    `${pc.dim("Execution Kind:")}  ${executionKindLabel(node.executionKind)}`,
-    `${pc.dim("Output Types:")}    ${node.outputTypes.join(", ")}`,
+    `${pc.dim("Category:")}          ${node.category}`,
+    `${pc.dim("Node Type:")}         ${node.nodeType}`,
+    `${pc.dim("Execution Kind:")}    ${executionKindLabel(node.executionKind)}`,
+    `${pc.dim("Execution Strategy:")} ${node.executionBinding.strategy}`,
+    `${pc.dim("Tool Name:")}         ${node.executionTokens.tool_name}`,
+    `${pc.dim("Output Types:")}      ${node.outputTypes.join(", ")}`,
     `${pc.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc.dim("(none)")}`,
   ];
 
@@ -129,8 +134,9 @@ function printCapabilityCard(node: CmsCapabilityNode): void {
     lines.push("", pc.dim(node.description));
   }
 
-  if (node.manifestMetadata && Object.keys(node.manifestMetadata).length > 0) {
-    lines.push("", `${pc.dim("Manifest metadata:")} ${JSON.stringify(node.manifestMetadata)}`);
+  const inputKeys = Object.keys(node.executionTokens.input_template);
+  if (inputKeys.length > 0) {
+    lines.push("", `${pc.dim("Input fields:")} ${inputKeys.join(", ")}`);
   }
 
   console.log("");

@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
+import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
 import { onboard } from "./commands/onboard.js";
@@ -32,6 +33,8 @@ import { registerTemplateCommands, runTemplatePicker } from "./commands/template
 import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capability.js";
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
+import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
+import { readSession, isSessionExpired } from "./auth/session-store.js";
 import { printPaperclipCliBanner } from "./utils/banner.js";
 import { resolvePaperclipHomeDir } from "./config/home.js";
 import type { SurfaceProfile } from "./config/schema.js";
@@ -154,6 +157,7 @@ function registerSharedCommands(target: Command) {
   registerCapabilityCommands(target);
   registerPipelineCommands(target);
   registerArtifactCommands(target);
+  registerWorkflowCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -220,6 +224,12 @@ async function runHostedBridgeEntry(opts?: {
   });
 }
 
+function isDiscoveryAuthenticated(): boolean {
+  const session = readSession();
+  if (!session) return false;
+  return !isSessionExpired(session);
+}
+
 async function runDiscoveryHub(opts?: {
   config?: string;
   dataDir?: string;
@@ -246,6 +256,11 @@ async function runDiscoveryHub(opts?: {
           value: "templates",
           label: "📚 Templates",
           hint: "Artifact template library",
+        },
+        {
+          value: "workflows",
+          label: isDiscoveryAuthenticated() ? "🔗 Workflows" : "🔗 Workflows" + pc.dim(" (connect account to unlock)"),
+          hint: isDiscoveryAuthenticated() ? "Saved workflows and CMS node templates" : "Requires growthub auth login",
         },
         {
           value: "capabilities",
@@ -281,8 +296,8 @@ async function runDiscoveryHub(opts?: {
           "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
+          "🔗 Workflows: browse saved workflows and CMS node starter templates (requires auth).",
           "🔌 Capabilities: browse CMS-backed runtime node primitives available to your account.",
-          "🔗 Dynamic Pipelines: assemble and execute dynamic registry pipelines.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -290,6 +305,8 @@ async function runDiscoveryHub(opts?: {
           "growthub auth whoami",
           "growthub kit",
           "growthub template",
+          "growthub workflow",
+          "growthub workflow templates",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
@@ -416,6 +433,12 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
+    if (surfaceChoice === "workflows") {
+      const result = await runWorkflowPicker({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
     if (surfaceChoice === "capabilities") {
       const result = await runCapabilityPicker({ allowBackToHub: true });
       if (result === "back") continue;
@@ -520,7 +543,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.48")
+  .version("0.3.49")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -552,6 +575,12 @@ Instance setup:
     $ growthub doctor                           Diagnose and optionally repair
     $ growthub configure                        Update config sections
     $ growthub                                  Interactive discovery hub
+
+Workflows (requires auth):
+    $ growthub workflow                         Interactive workflow browser
+    $ growthub workflow templates               List CMS node starter templates
+    $ growthub workflow templates --json        Machine-readable output
+    $ growthub workflow saved                   List saved workflow pipelines
 
 Dynamic Registry Pipelines:
 
