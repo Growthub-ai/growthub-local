@@ -38,4 +38,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-open-montage-studio-v1",
+    packageDirName: "growthub-open-montage-studio-v1",
+    defaultBundleId: "growthub-open-montage-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];
