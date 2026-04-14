@@ -13,8 +13,12 @@
 export interface HostedExecuteWorkflowInput {
   /** Pipeline ID from the dynamic registry pipeline builder. */
   pipelineId: string;
+  /** Optional persisted hosted workflow id for workflow_runs/chat_messages linkage. */
+  workflowId?: string;
   /** Thread/conversation ID to scope execution artifacts. */
   threadId?: string;
+  /** User-facing prompt to persist alongside the workflow run when available. */
+  userPrompt?: string;
   /** Ordered node execution payloads. */
   nodes: HostedExecuteNodePayload[];
   /** Execution mode hint for the hosted runtime. */
@@ -37,6 +41,8 @@ export interface HostedExecuteNodePayload {
 export interface HostedExecuteWorkflowResult {
   /** Server-assigned execution ID. */
   executionId: string;
+  /** Hosted thread id used for the run. */
+  threadId?: string;
   /** Overall execution status. */
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   /** Per-node results keyed by nodeId. */
@@ -47,6 +53,17 @@ export interface HostedExecuteWorkflowResult {
   startedAt?: string;
   /** ISO timestamp when execution completed. */
   completedAt?: string;
+  /** Raw execution log returned by the streamed workflow endpoint. */
+  executionLog?: Array<Record<string, unknown>>;
+  /** Condensed metadata for CLI-facing summaries. */
+  summary?: {
+    outputText?: string;
+    imageCount?: number;
+    slideCount?: number;
+    videoCount?: number;
+    workflowRunId?: string;
+    keyboardShortcutHint?: string;
+  };
 }
 
 export interface HostedNodeResult {
@@ -62,6 +79,7 @@ export interface HostedExecutionArtifactRef {
   artifactType: string;
   nodeId: string;
   url?: string;
+  storagePath?: string;
   metadata?: Record<string, unknown>;
 }
 

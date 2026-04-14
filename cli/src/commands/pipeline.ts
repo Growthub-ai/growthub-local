@@ -13,6 +13,12 @@ import path from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Command } from "commander";
+import { readSession, isSessionExpired } from "../auth/session-store.js";
+import {
+  fetchHostedCredits,
+  saveHostedWorkflow,
+  HostedEndpointUnavailableError,
+} from "../auth/hosted-client.js";
 import {
   createCmsCapabilityRegistryClient,
   type CmsCapabilityNode,
@@ -29,6 +35,7 @@ import {
 import {
   createArtifactStore,
 } from "../runtime/artifact-contracts/index.js";
+import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +72,18 @@ export async function runPipelineAssembler(opts: {
 }): Promise<"done" | "back"> {
   printPaperclipCliBanner();
   p.intro(pc.bold("Dynamic Registry Pipeline Assembler"));
+
+  const access = getWorkflowAccess();
+  if (access.state !== "ready") {
+    p.note(
+      [
+        "Dynamic Pipelines are unavailable until the hosted user is linked to this local machine.",
+        access.reason,
+      ].join("\n"),
+      "Growthub Local Machine Required",
+    );
+    return opts.allowBackToHub ? "back" : "done";
+  }
 
   const registry = createCmsCapabilityRegistryClient();
   let capabilities: CmsCapabilityNode[];
@@ -323,6 +342,252 @@ function loadPipelineFromFileOrJson(input: string): DynamicRegistryPipeline {
   }
 }
 
+function inferWorkflowName(pipeline: DynamicRegistryPipeline): string {
+  return pipeline.pipelineId?.trim() || `${pipeline.nodes[0]?.slug ?? "workflow"} workflow`;
+}
+
+function toHostedWorkflowConfig(pipeline: DynamicRegistryPipeline): Record<string, unknown> {
+  const cmsNodes = pipeline.nodes.map((node, index) => ({
+    id: node.id,
+    type: "cmsNode",
+    position: { x: (index + 1) * 300, y: 0 },
+    data: {
+      slug: node.slug,
+      inputs: node.bindings,
+    },
+  }));
+
+  const edges: Array<Record<string, unknown>> = [];
+  for (const node of pipeline.nodes) {
+    const upstreamNodeIds = node.upstreamNodeIds ?? [];
+    if (upstreamNodeIds.length === 0) {
+      edges.push({
+        id: `e-start-1-${node.id}`,
+        source: "start-1",
+        target: node.id,
+      });
+      continue;
+    }
+
+    for (const upstreamNodeId of upstreamNodeIds) {
+      edges.push({
+        id: `e-${upstreamNodeId}-${node.id}`,
+        source: upstreamNodeId,
+        target: node.id,
+      });
+    }
+  }
+
+  const upstreamSources = new Set(
+    pipeline.nodes.flatMap((node) => node.upstreamNodeIds ?? []),
+  );
+
+  for (const node of pipeline.nodes) {
+    if (!upstreamSources.has(node.id)) {
+      edges.push({
+        id: `e-${node.id}-end-1`,
+        source: node.id,
+        target: "end-1",
+      });
+    }
+  }
+
+  return {
+    name: inferWorkflowName(pipeline),
+    nodes: [
+      { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
+      ...cmsNodes,
+      { id: "end-1", type: "end", position: { x: (cmsNodes.length + 1) * 300, y: 0 }, data: {} },
+    ],
+    edges,
+  };
+}
+
+function renderExecutionProgress(completed: number, total: number, detail: string): void {
+  if (!process.stdout.isTTY) return;
+  const width = 24;
+  const safeCompleted = Math.max(0, Math.min(completed, total));
+  const percent = total <= 0 ? 0 : Math.round((safeCompleted / total) * 100);
+  const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)));
+  const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
+  const line = `\r${pc.cyan("Workflow run")} ${pc.dim("[")}${pc.green(bar)}${pc.dim("]")} ${String(percent).padStart(3)}% ${pc.dim(detail)}`;
+  process.stdout.write(line);
+  if (safeCompleted >= total) {
+    process.stdout.write("\n");
+  }
+}
+
+function resolveHostedBindingValue(bindingKey: string): string | null {
+  if (bindingKey !== "provider-api-key") return null;
+
+  return "__hosted_provider__";
+}
+
+async function executeHostedPipeline(
+  pipeline: DynamicRegistryPipeline,
+  opts?: { json?: boolean },
+): Promise<void> {
+  const executionClient = createHostedExecutionClient();
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    throw new Error("Hosted session expired. Run `growthub auth login` again.");
+  }
+
+  let hostedWorkflowId =
+    typeof pipeline.metadata?.hostedWorkflowId === "string"
+      ? pipeline.metadata.hostedWorkflowId
+      : undefined;
+
+  try {
+    const saveResult = await saveHostedWorkflow(session, {
+      workflowId: hostedWorkflowId,
+      name:
+        typeof pipeline.metadata?.workflowName === "string"
+          ? pipeline.metadata.workflowName
+          : inferWorkflowName(pipeline),
+      description:
+        typeof pipeline.metadata?.description === "string"
+          ? pipeline.metadata.description
+          : "",
+      config: toHostedWorkflowConfig(pipeline),
+    });
+    hostedWorkflowId = saveResult?.workflowId ?? hostedWorkflowId;
+  } catch (err) {
+    if (!(err instanceof HostedEndpointUnavailableError)) {
+      throw err;
+    }
+  }
+
+  let completedNodes = 0;
+  const totalNodes = Math.max(1, pipeline.nodes.length);
+  const completed = new Set<string>();
+  const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
+  const startupSpinner = opts?.json ? null : p.spinner();
+  let startupSettled = false;
+
+  startupSpinner?.start("Preparing hosted workflow execution...");
+
+  const settleStartup = (message?: string) => {
+    if (!startupSpinner || startupSettled) return;
+    startupSettled = true;
+    startupSpinner.stop(message ?? "Hosted workflow execution started.");
+  };
+
+  const result = await executionClient.executeWorkflow({
+    pipelineId: pipeline.pipelineId,
+    workflowId: hostedWorkflowId,
+    threadId: hostedWorkflowId ?? pipeline.threadId,
+    nodes: pipeline.nodes.map((n) => ({
+      nodeId: n.id,
+      slug: n.slug,
+      bindings: n.bindings,
+      upstreamNodeIds: n.upstreamNodeIds,
+    })),
+    executionMode: pipeline.executionMode,
+    metadata: pipeline.metadata,
+  }, opts?.json ? undefined : {
+    onEvent: async (event) => {
+      if (event.type === "node_start" || event.type === "node_complete") {
+        settleStartup("Hosted workflow execution started.");
+      }
+      if (
+        event.type === "node_complete" &&
+        event.nodeId &&
+        trackableNodeIds.has(event.nodeId) &&
+        !completed.has(event.nodeId)
+      ) {
+        completed.add(event.nodeId);
+        completedNodes = completed.size;
+        const node = pipeline.nodes.find((candidate) => candidate.id === event.nodeId);
+        renderExecutionProgress(completedNodes, totalNodes, node?.slug ?? event.nodeId);
+      }
+      if (event.type === "error") {
+        settleStartup("Hosted workflow execution started.");
+        renderExecutionProgress(totalNodes, totalNodes, "failed");
+      }
+    },
+  });
+
+  settleStartup("Hosted workflow execution started.");
+
+  if (opts?.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log("");
+  console.log(pc.bold("Pipeline Execution Result"));
+  console.log(hr());
+  console.log(`  ${pc.dim("Execution ID:")} ${result.executionId}`);
+  if (result.threadId) console.log(`  ${pc.dim("Thread ID:")}    ${result.threadId}`);
+  console.log(`  ${pc.dim("Status:")}       ${result.status === "succeeded" ? pc.green(result.status) : pc.red(result.status)}`);
+  if (result.startedAt) console.log(`  ${pc.dim("Started:")}      ${result.startedAt}`);
+  if (result.completedAt) console.log(`  ${pc.dim("Completed:")}    ${result.completedAt}`);
+  console.log(hr());
+
+  for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+    const statusColor = nodeResult.status === "succeeded" ? pc.green : pc.red;
+    console.log(`  ${statusColor(nodeResult.status)} ${pc.bold(nodeResult.slug)} (${pc.dim(nodeId)})`);
+    if (nodeResult.error) {
+      console.log(`    ${pc.red(nodeResult.error)}`);
+    }
+  }
+
+  if (result.artifacts.length > 0) {
+    console.log("");
+    console.log(pc.bold("  Artifacts:"));
+    for (const art of result.artifacts) {
+      console.log(`    ${pc.dim("·")} ${art.artifactType} (${art.artifactId})`);
+    }
+  }
+
+  if (result.summary) {
+    console.log("");
+    console.log(pc.bold("  Summary:"));
+    if (result.summary.outputText) console.log(`    ${pc.dim("·")} ${result.summary.outputText}`);
+    if (typeof result.summary.imageCount === "number") console.log(`    ${pc.dim("·")} images: ${result.summary.imageCount}`);
+    if (typeof result.summary.slideCount === "number") console.log(`    ${pc.dim("·")} slides: ${result.summary.slideCount}`);
+    if (typeof result.summary.videoCount === "number") console.log(`    ${pc.dim("·")} videos: ${result.summary.videoCount}`);
+    if (result.summary.workflowRunId) console.log(`    ${pc.dim("·")} workflow_run_id: ${result.summary.workflowRunId}`);
+    if (result.summary.keyboardShortcutHint) console.log(`    ${pc.dim("·")} ${result.summary.keyboardShortcutHint}`);
+  }
+
+  try {
+    const credits = await fetchHostedCredits(session);
+    if (credits) {
+      console.log("");
+      console.log(pc.bold("  Credits:"));
+      console.log(`    ${pc.dim("·")} available: $${credits.totalAvailable.toFixed(2)}`);
+      console.log(`    ${pc.dim("·")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+    }
+  } catch (err) {
+    if (err instanceof HostedEndpointUnavailableError) {
+      console.log("");
+      console.log(pc.yellow("  Credits unavailable on this hosted surface."));
+    } else {
+      throw err;
+    }
+  }
+
+  const artifactStore = createArtifactStore();
+  for (const artRef of result.artifacts) {
+    const nodeResult = result.nodeResults[artRef.nodeId];
+    artifactStore.create({
+      artifactType: artRef.artifactType as "video" | "image" | "slides" | "text" | "report" | "pipeline",
+      sourceNodeSlug: nodeResult?.slug ?? "unknown",
+      executionContext: pipeline.executionMode === "local" ? "local" : "hosted",
+      pipelineId: pipeline.pipelineId,
+      nodeId: artRef.nodeId,
+      threadId: result.threadId ?? pipeline.threadId,
+      metadata: artRef.metadata ?? {},
+    });
+  }
+
+  console.log("");
+}
+
+export { executeHostedPipeline };
+
 // ---------------------------------------------------------------------------
 // Command registration
 // ---------------------------------------------------------------------------
@@ -358,6 +623,13 @@ Examples:
     .argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string")
     .option("--json", "Output raw JSON")
     .action(async (input: string, opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
       try {
         const pipeline = loadPipelineFromFileOrJson(input);
         const builder = createPipelineBuilder({
@@ -403,13 +675,55 @@ Examples:
     .argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string")
     .option("--json", "Output raw JSON")
     .action(async (input: string, opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
       try {
         const pipeline = loadPipelineFromFileOrJson(input);
         const executionClient = createHostedExecutionClient();
+        const session = readSession();
+        if (!session || isSessionExpired(session)) {
+          throw new Error("Hosted session expired. Run `growthub auth login` again.");
+        }
+
+        let hostedWorkflowId =
+          typeof pipeline.metadata?.hostedWorkflowId === "string"
+            ? pipeline.metadata.hostedWorkflowId
+            : undefined;
+
+        try {
+          const saveResult = await saveHostedWorkflow(session, {
+            workflowId: hostedWorkflowId,
+            name:
+              typeof pipeline.metadata?.workflowName === "string"
+                ? pipeline.metadata.workflowName
+                : inferWorkflowName(pipeline),
+            description:
+              typeof pipeline.metadata?.description === "string"
+                ? pipeline.metadata.description
+                : "",
+            config: toHostedWorkflowConfig(pipeline),
+          });
+          hostedWorkflowId = saveResult?.workflowId ?? hostedWorkflowId;
+        } catch (err) {
+          if (!(err instanceof HostedEndpointUnavailableError)) {
+            throw err;
+          }
+        }
+
+        let completedNodes = 0;
+        const totalNodes = Math.max(1, pipeline.nodes.length);
+        const completed = new Set<string>();
+        const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
 
         const result = await executionClient.executeWorkflow({
           pipelineId: pipeline.pipelineId,
-          threadId: pipeline.threadId,
+          workflowId: hostedWorkflowId,
+          threadId: hostedWorkflowId ?? pipeline.threadId,
           nodes: pipeline.nodes.map((n) => ({
             nodeId: n.id,
             slug: n.slug,
@@ -418,6 +732,23 @@ Examples:
           })),
           executionMode: pipeline.executionMode,
           metadata: pipeline.metadata,
+        }, opts.json ? undefined : {
+          onEvent: async (event) => {
+            if (
+              event.type === "node_complete" &&
+              event.nodeId &&
+              trackableNodeIds.has(event.nodeId) &&
+              !completed.has(event.nodeId)
+            ) {
+              completed.add(event.nodeId);
+              completedNodes = completed.size;
+              const node = pipeline.nodes.find((candidate) => candidate.id === event.nodeId);
+              renderExecutionProgress(completedNodes, totalNodes, node?.slug ?? event.nodeId);
+            }
+            if (event.type === "error") {
+              renderExecutionProgress(totalNodes, totalNodes, "failed");
+            }
+          },
         });
 
         if (opts.json) {
@@ -429,6 +760,7 @@ Examples:
         console.log(pc.bold("Pipeline Execution Result"));
         console.log(hr());
         console.log(`  ${pc.dim("Execution ID:")} ${result.executionId}`);
+        if (result.threadId) console.log(`  ${pc.dim("Thread ID:")}    ${result.threadId}`);
         console.log(`  ${pc.dim("Status:")}       ${result.status === "succeeded" ? pc.green(result.status) : pc.red(result.status)}`);
         if (result.startedAt) console.log(`  ${pc.dim("Started:")}      ${result.startedAt}`);
         if (result.completedAt) console.log(`  ${pc.dim("Completed:")}    ${result.completedAt}`);
@@ -447,6 +779,31 @@ Examples:
           console.log(pc.bold("  Artifacts:"));
           for (const art of result.artifacts) {
             console.log(`    ${pc.dim("·")} ${art.artifactType} (${art.artifactId})`);
+          }
+        }
+
+        if (result.summary) {
+          console.log("");
+          console.log(pc.bold("  Summary:"));
+          if (result.summary.outputText) console.log(`    ${pc.dim("·")} ${result.summary.outputText}`);
+          if (typeof result.summary.imageCount === "number") console.log(`    ${pc.dim("·")} images: ${result.summary.imageCount}`);
+          if (typeof result.summary.slideCount === "number") console.log(`    ${pc.dim("·")} slides: ${result.summary.slideCount}`);
+          if (typeof result.summary.videoCount === "number") console.log(`    ${pc.dim("·")} videos: ${result.summary.videoCount}`);
+          if (result.summary.workflowRunId) console.log(`    ${pc.dim("·")} workflow_run_id: ${result.summary.workflowRunId}`);
+          if (result.summary.keyboardShortcutHint) console.log(`    ${pc.dim("·")} ${result.summary.keyboardShortcutHint}`);
+        }
+
+        try {
+          const credits = await fetchHostedCredits(session);
+          if (credits) {
+            console.log("");
+            console.log(pc.bold("  Credits:"));
+            console.log(`    ${pc.dim("·")} available: $${credits.totalAvailable.toFixed(2)}`);
+            console.log(`    ${pc.dim("·")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+          }
+        } catch (err) {
+          if (!(err instanceof HostedEndpointUnavailableError)) {
+            throw err;
           }
         }
 

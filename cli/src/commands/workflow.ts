@@ -21,7 +21,14 @@ import path from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Command } from "commander";
+import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { readSession, isSessionExpired } from "../auth/session-store.js";
+import {
+  fetchHostedWorkflow,
+  listHostedWorkflows,
+  saveHostedWorkflow,
+  HostedEndpointUnavailableError,
+} from "../auth/hosted-client.js";
 import {
   createCmsCapabilityRegistryClient,
   CAPABILITY_FAMILIES,
@@ -33,8 +40,10 @@ import {
 } from "../runtime/machine-capability-resolver/index.js";
 import {
   createPipelineBuilder,
-  serializePipeline,
+  deserializePipeline,
+  type DynamicRegistryPipeline,
 } from "../runtime/dynamic-registry-pipeline/index.js";
+import { executeHostedPipeline, runPipelineAssembler } from "./pipeline.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { resolvePaperclipHomeDir } from "../config/home.js";
 
@@ -104,18 +113,82 @@ function resolveSavedWorkflowsDir(): string {
 }
 
 interface SavedWorkflowEntry {
-  filename: string;
+  filename?: string;
+  workflowId: string;
   pipelineId: string;
+  name: string;
   nodeCount: number;
   executionMode: string;
   createdAt: string;
+  updatedAt?: string;
+  versionCount?: number;
+  source: "hosted" | "local";
 }
 
-function listSavedWorkflows(): SavedWorkflowEntry[] {
+function buildHostedWorkflowConfig(pipeline: {
+  pipelineId: string;
+  nodes: Array<{ id: string; slug: string; bindings: Record<string, unknown>; upstreamNodeIds?: string[] }>;
+}): Record<string, unknown> {
+  const cmsNodes = pipeline.nodes.map((node, index) => ({
+    id: node.id,
+    type: "cmsNode",
+    position: { x: (index + 1) * 300, y: 0 },
+    data: {
+      slug: node.slug,
+      inputs: node.bindings,
+    },
+  }));
+
+  const edges: Array<Record<string, unknown>> = [];
+  for (const node of pipeline.nodes) {
+    const upstreamNodeIds = node.upstreamNodeIds ?? [];
+    if (upstreamNodeIds.length === 0) {
+      edges.push({
+        id: `e-start-1-${node.id}`,
+        source: "start-1",
+        target: node.id,
+      });
+      continue;
+    }
+    for (const upstreamNodeId of upstreamNodeIds) {
+      edges.push({
+        id: `e-${upstreamNodeId}-${node.id}`,
+        source: upstreamNodeId,
+        target: node.id,
+      });
+    }
+  }
+
+  const upstreamSources = new Set(
+    pipeline.nodes.flatMap((node) => node.upstreamNodeIds ?? []),
+  );
+
+  for (const node of pipeline.nodes) {
+    if (!upstreamSources.has(node.id)) {
+      edges.push({
+        id: `e-${node.id}-end-1`,
+        source: node.id,
+        target: "end-1",
+      });
+    }
+  }
+
+  return {
+    name: pipeline.pipelineId,
+    nodes: [
+      { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
+      ...cmsNodes,
+      { id: "end-1", type: "end", position: { x: (cmsNodes.length + 1) * 300, y: 0 }, data: {} },
+    ],
+    edges,
+  };
+}
+
+function listLocalSavedWorkflows(): SavedWorkflowEntry[] {
   const dir = resolveSavedWorkflowsDir();
   if (!fs.existsSync(dir)) return [];
 
-  return fs.readdirSync(dir, { withFileTypes: true })
+  const entries: Array<SavedWorkflowEntry | null> = fs.readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".json"))
     .map((e) => {
       try {
@@ -123,17 +196,156 @@ function listSavedWorkflows(): SavedWorkflowEntry[] {
         const pipeline = raw.pipeline ?? raw;
         return {
           filename: e.name,
+          workflowId: pipeline.metadata?.hostedWorkflowId ?? pipeline.pipelineId ?? e.name.replace(".json", ""),
           pipelineId: pipeline.pipelineId ?? e.name.replace(".json", ""),
+          name: pipeline.metadata?.workflowName ?? pipeline.pipelineId ?? e.name.replace(".json", ""),
           nodeCount: Array.isArray(pipeline.nodes) ? pipeline.nodes.length : 0,
           executionMode: pipeline.executionMode ?? "hosted",
           createdAt: raw.createdAt ?? "",
+          source: "local",
         } satisfies SavedWorkflowEntry;
       } catch {
         return null;
       }
-    })
-    .filter((e): e is SavedWorkflowEntry => e !== null)
+    });
+
+  return entries
+    .filter((entry): entry is SavedWorkflowEntry => entry !== null)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function listSavedWorkflows(): Promise<SavedWorkflowEntry[]> {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    return listLocalSavedWorkflows();
+  }
+
+  try {
+    const response = await listHostedWorkflows(session);
+    if (!response || !Array.isArray(response.workflows)) return listLocalSavedWorkflows();
+
+    return response.workflows.map((workflow) => ({
+      workflowId: workflow.workflowId,
+      pipelineId: workflow.workflowId,
+      name: workflow.name,
+      nodeCount: workflow.latestVersion?.nodeCount ?? 0,
+      executionMode: "hosted",
+      createdAt: workflow.createdAt,
+      updatedAt: workflow.updatedAt,
+      versionCount: workflow.versionCount,
+      source: "hosted",
+    }));
+  } catch (err) {
+    if (err instanceof HostedEndpointUnavailableError) {
+      return listLocalSavedWorkflows();
+    }
+    throw err;
+  }
+}
+
+async function loadSavedWorkflowDetail(entry: SavedWorkflowEntry): Promise<{
+  pipeline: Record<string, unknown>;
+  createdAt: string;
+}> {
+  if (entry.source === "hosted") {
+    const session = readSession();
+    if (!session || isSessionExpired(session)) {
+      throw new Error("Hosted session expired while loading workflow detail.");
+    }
+    const detail = await fetchHostedWorkflow(session, entry.workflowId);
+    if (!detail) {
+      throw new Error(`Hosted workflow ${entry.workflowId} not found.`);
+    }
+    return {
+      pipeline: (detail.latestVersion.config ?? {}) as Record<string, unknown>,
+      createdAt: detail.latestVersion.createdAt,
+    };
+  }
+
+  const dir = resolveSavedWorkflowsDir();
+  const content = fs.readFileSync(path.resolve(dir, entry.filename!), "utf-8");
+  const raw = JSON.parse(content);
+  return {
+    pipeline: (raw.pipeline ?? raw) as Record<string, unknown>,
+    createdAt: raw.createdAt ?? "",
+  };
+}
+
+function toDynamicPipelineFromHostedWorkflow(
+  entry: SavedWorkflowEntry,
+  pipeline: Record<string, unknown>,
+): DynamicRegistryPipeline {
+  const rawNodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
+  const rawEdges = Array.isArray(pipeline.edges) ? pipeline.edges : [];
+  const cmsNodes = rawNodes.filter((node): node is Record<string, unknown> => {
+    return typeof node === "object" && node !== null && (node as { type?: unknown }).type === "cmsNode";
+  });
+
+  const upstreamNodeIdsByTarget = new Map<string, string[]>();
+  for (const edge of rawEdges) {
+    if (typeof edge !== "object" || edge === null) continue;
+    const source = typeof (edge as { source?: unknown }).source === "string"
+      ? (edge as { source: string }).source
+      : null;
+    const target = typeof (edge as { target?: unknown }).target === "string"
+      ? (edge as { target: string }).target
+      : null;
+    if (!source || !target || source === "start-1" || target === "end-1") continue;
+    const existing = upstreamNodeIdsByTarget.get(target) ?? [];
+    existing.push(source);
+    upstreamNodeIdsByTarget.set(target, existing);
+  }
+
+  return {
+    pipelineId: entry.pipelineId,
+    executionMode: "hosted",
+    nodes: cmsNodes.map((node) => {
+      const id = typeof node.id === "string" ? node.id : `node-${Math.random().toString(36).slice(2, 8)}`;
+      const data = typeof node.data === "object" && node.data !== null
+        ? node.data as { slug?: unknown; inputs?: unknown }
+        : {};
+      return {
+        id,
+        slug: typeof data.slug === "string" ? data.slug : id,
+        bindings:
+          typeof data.inputs === "object" && data.inputs !== null
+            ? data.inputs as Record<string, unknown>
+            : {},
+        upstreamNodeIds: upstreamNodeIdsByTarget.get(id),
+      };
+    }),
+    metadata: {
+      hostedWorkflowId: entry.workflowId,
+      workflowName: entry.name,
+    },
+  };
+}
+
+function toExecutableSavedWorkflowPipeline(
+  entry: SavedWorkflowEntry,
+  pipeline: Record<string, unknown>,
+): DynamicRegistryPipeline {
+  const looksLikeDynamicPipeline =
+    Array.isArray(pipeline.nodes) &&
+    pipeline.nodes.every((node) => {
+      if (typeof node !== "object" || node === null) return false;
+      const record = node as Record<string, unknown>;
+      return typeof record.id === "string" && typeof record.slug === "string";
+    });
+
+  if (looksLikeDynamicPipeline) {
+    const parsed = deserializePipeline(pipeline);
+    return {
+      ...parsed,
+      metadata: {
+        ...(parsed.metadata ?? {}),
+        hostedWorkflowId: entry.workflowId,
+        workflowName: entry.name,
+      },
+    };
+  }
+
+  return toDynamicPipelineFromHostedWorkflow(entry, pipeline);
 }
 
 // ---------------------------------------------------------------------------
@@ -273,9 +485,9 @@ export async function runWorkflowPicker(opts: {
 }): Promise<"done" | "back"> {
   printPaperclipCliBanner();
 
-  const authenticated = isAuthenticated();
+  const access = getWorkflowAccess();
 
-  if (!authenticated) {
+  if (access.state === "unauthenticated") {
     p.intro(pc.bold("Workflows") + pc.dim(" (not connected)"));
     p.note(
       [
@@ -296,6 +508,7 @@ export async function runWorkflowPicker(opts: {
   p.intro(pc.bold("Workflows"));
 
   while (true) {
+    const refreshedAccess = getWorkflowAccess();
     const topChoice = await p.select({
       message: "What would you like to do?",
       options: [
@@ -306,8 +519,21 @@ export async function runWorkflowPicker(opts: {
         },
         {
           value: "templates",
-          label: "Templates",
-          hint: "CMS workflow node starter templates",
+          label: refreshedAccess.state === "ready"
+            ? "Templates"
+            : pc.dim("Templates (locked)"),
+          hint: refreshedAccess.state === "ready"
+            ? "CMS workflow node starter templates"
+            : refreshedAccess.reason,
+        },
+        {
+          value: "pipelines",
+          label: refreshedAccess.state === "ready"
+            ? "🔗 Dynamic Pipelines"
+            : pc.dim("🔗 Dynamic Pipelines (locked)"),
+          hint: refreshedAccess.state === "ready"
+            ? "Assemble and execute dynamic registry pipelines"
+            : refreshedAccess.reason,
         },
         ...(opts.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
       ],
@@ -316,10 +542,49 @@ export async function runWorkflowPicker(opts: {
     if (p.isCancel(topChoice)) { p.cancel("Cancelled."); process.exit(0); }
     if (topChoice === "__back_to_hub") return "back";
 
+    if (topChoice === "templates" && refreshedAccess.state !== "ready") {
+      p.note(
+        [
+          "Templates are only available when the hosted user is linked to this local machine.",
+          refreshedAccess.reason,
+        ].join("\n"),
+        "Growthub Local Machine Required",
+      );
+      continue;
+    }
+
+    if (topChoice === "pipelines") {
+      if (refreshedAccess.state !== "ready") {
+        p.note(
+          [
+            "Dynamic Pipelines are only available when the hosted user is linked to this local machine.",
+            refreshedAccess.reason,
+          ].join("\n"),
+          "Growthub Local Machine Required",
+        );
+        continue;
+      }
+      const result = await runPipelineAssembler({ allowBackToHub: true });
+      if (result === "back") {
+        continue;
+      }
+      return "done";
+    }
+
     // ── Saved Workflows ──────────────────────────────────────────────────
     if (topChoice === "saved") {
       while (true) {
-        const saved = listSavedWorkflows();
+        const savedSpinner = p.spinner();
+        savedSpinner.start("Loading saved workflows...");
+        let saved: SavedWorkflowEntry[];
+
+        try {
+          saved = await listSavedWorkflows();
+          savedSpinner.stop(`Loaded ${saved.length} saved workflow${saved.length === 1 ? "" : "s"}.`);
+        } catch (err) {
+          savedSpinner.stop(pc.red("Failed to load saved workflows."));
+          throw err;
+        }
 
         if (saved.length === 0) {
           p.note(
@@ -334,9 +599,9 @@ export async function runWorkflowPicker(opts: {
         }
 
         const allOptions = saved.map((w) => ({
-          value: w.filename,
-          label: `${w.pipelineId}  ${pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
-          hint: `${w.executionMode} · ${w.createdAt.slice(0, 10)}`,
+          value: w.workflowId,
+          label: `${w.name}  ${pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
+          hint: `${w.executionMode} · ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`,
         }));
 
         const choice = await paginatedSelect("Select a saved workflow", allOptions, {
@@ -348,21 +613,33 @@ export async function runWorkflowPicker(opts: {
         if (choice === "__back") break;
 
         // Show workflow detail
-        const entry = saved.find((w) => w.filename === choice);
+        const entry = saved.find((w) => w.workflowId === choice);
         if (entry) {
-          const dir = resolveSavedWorkflowsDir();
-          const content = fs.readFileSync(path.resolve(dir, entry.filename), "utf-8");
-          const raw = JSON.parse(content);
-          const pipeline = raw.pipeline ?? raw;
+          const detailSpinner = p.spinner();
+          detailSpinner.start(`Loading ${entry.name}...`);
+          let detail: { pipeline: Record<string, unknown>; createdAt: string };
+
+          try {
+            detail = await loadSavedWorkflowDetail(entry);
+            detailSpinner.stop(`Loaded ${entry.name}.`);
+          } catch (err) {
+            detailSpinner.stop(pc.red(`Failed to load ${entry.name}.`));
+            p.log.error((err as Error).message);
+            continue;
+          }
+
+          const pipeline = detail.pipeline;
+          const nodes = Array.isArray((pipeline as any).nodes) ? (pipeline as any).nodes : [];
 
           console.log("");
           console.log(box([
-            `${pc.bold("Pipeline:")} ${pipeline.pipelineId}`,
-            `${pc.dim("Mode:")} ${pipeline.executionMode}  ${pc.dim("Nodes:")} ${pipeline.nodes?.length ?? 0}`,
-            `${pc.dim("Created:")} ${raw.createdAt ?? "—"}`,
+            `${pc.bold("Workflow:")} ${entry.name}`,
+            `${pc.dim("ID:")} ${entry.workflowId}`,
+            `${pc.dim("Mode:")} hosted  ${pc.dim("Nodes:")} ${nodes.length}`,
+            `${pc.dim("Created:")} ${detail.createdAt || "—"}`,
             "",
-            ...(pipeline.nodes ?? []).map((n: { slug: string; id: string }, i: number) =>
-              `${pc.dim(String(i + 1) + ".")} ${pc.bold(n.slug)} ${pc.dim(n.id)}`,
+            ...nodes.map((n: { data?: { slug?: string }; id: string; slug?: string }, i: number) =>
+              `${pc.dim(String(i + 1) + ".")} ${pc.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc.dim(n.id)}`,
             ),
           ]));
           console.log("");
@@ -370,11 +647,37 @@ export async function runWorkflowPicker(opts: {
           const nextAction = await p.select({
             message: "Action",
             options: [
+              { value: "execute", label: "Execute saved workflow" },
               { value: "back_to_saved", label: "← Back to saved workflows" },
             ],
           });
 
           if (p.isCancel(nextAction)) { p.cancel("Cancelled."); process.exit(0); }
+          if (nextAction === "execute") {
+            const confirmed = await p.confirm({
+              message: `Execute ${entry.name} now?`,
+              initialValue: false,
+            });
+            if (p.isCancel(confirmed) || !confirmed) {
+              continue;
+            }
+
+            const finalConfirmed = await p.confirm({
+              message: "This will run the hosted workflow and may spend credits. Continue?",
+              initialValue: false,
+            });
+            if (p.isCancel(finalConfirmed) || !finalConfirmed) {
+              continue;
+            }
+
+            try {
+              const executablePipeline = toExecutableSavedWorkflowPipeline(entry, pipeline);
+              await executeHostedPipeline(executablePipeline);
+              p.log.success(`Saved workflow execution completed for ${pc.bold(entry.name)}.`);
+            } catch (err) {
+              p.log.error("Saved workflow execution failed: " + (err as Error).message);
+            }
+          }
         }
       }
       continue;
@@ -415,7 +718,7 @@ export async function runWorkflowPicker(opts: {
 
         let templates: CmsCapabilityNode[];
         try {
-          const result = await registry.listCapabilities(query);
+          const result = registry.listBuiltinCapabilities(query);
           templates = result.nodes;
         } catch (err) {
           p.log.error("Failed to load templates: " + (err as Error).message);
@@ -532,14 +835,26 @@ export async function runWorkflowPicker(opts: {
 
               if (next === "save") {
                 const pipeline = builder.build();
-                const serialized = serializePipeline(pipeline);
 
-                const dir = resolveSavedWorkflowsDir();
-                fs.mkdirSync(dir, { recursive: true });
-                const filename = `${pipeline.pipelineId}.json`;
-                const filePath = path.resolve(dir, filename);
-                fs.writeFileSync(filePath, `${JSON.stringify(serialized, null, 2)}\n`);
-                p.log.success(`Pipeline saved to ${pc.cyan(filePath)}`);
+                const session = readSession();
+                if (!session || isSessionExpired(session)) {
+                  throw new Error("Hosted session expired. Run `growthub auth login` again.");
+                }
+
+                const workflowName = `${selected.displayName} Workflow`;
+                const saveResult = await saveHostedWorkflow(session, {
+                  name: workflowName,
+                  description: selected.description ?? "",
+                  config: buildHostedWorkflowConfig(pipeline),
+                });
+
+                if (!saveResult || typeof saveResult.workflowId !== "string") {
+                  throw new Error("Hosted workflow save returned no payload.");
+                }
+
+                p.log.success(
+                  `Hosted workflow saved as ${pc.bold(workflowName)} (${pc.dim(saveResult.workflowId)} · v${saveResult.version})`,
+                );
               }
               break;
             }
@@ -579,8 +894,9 @@ Examples:
     .option("--search <term>", "Search templates")
     .option("--json", "Output raw JSON")
     .action(async (opts: { family?: string; search?: string; json?: boolean }) => {
-      if (!isAuthenticated()) {
-        console.error(pc.red("Authentication required. Run `growthub auth login` first."));
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
         process.exitCode = 1;
         return;
       }
@@ -636,8 +952,8 @@ Examples:
     .command("saved")
     .description("List saved workflow pipelines")
     .option("--json", "Output raw JSON")
-    .action((opts: { json?: boolean }) => {
-      const saved = listSavedWorkflows();
+    .action(async (opts: { json?: boolean }) => {
+      const saved = await listSavedWorkflows();
 
       if (opts.json) {
         console.log(JSON.stringify(saved, null, 2));
@@ -658,13 +974,13 @@ Examples:
 
       for (const w of saved) {
         console.log(
-          `  ${pc.bold(w.pipelineId)}  ` +
-          pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  ·  ${w.executionMode}  ·  ${w.createdAt.slice(0, 10)}`),
+          `  ${pc.bold(w.name)}  ` +
+          pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  ·  ${w.executionMode}  ·  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`),
         );
       }
 
       console.log("");
-      console.log(pc.dim(`  Store: ${resolveSavedWorkflowsDir()}`));
+      console.log(pc.dim(`  Source: ${saved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
       console.log("");
     });
 }

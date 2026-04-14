@@ -19,6 +19,7 @@ import {
 } from "../auth/effective-profile.js";
 import { resolvePaperclipInstanceId } from "../config/home.js";
 import { isSessionExpired } from "../auth/session-store.js";
+import { fetchHostedSession } from "../auth/hosted-client.js";
 
 const DEFAULT_HOSTED_BASE_URL = "https://www.growthub.ai";
 
@@ -51,6 +52,7 @@ function resolveHostedBaseUrl(opts: {
 
 export interface AuthLoginOptions {
   config?: string;
+  dataDir?: string;
   baseUrl?: string;
   token?: string;
   machineLabel?: string;
@@ -70,36 +72,39 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
   const linkedInstanceId = resolvePaperclipInstanceId();
   const existingSession = readSession();
 
-  if (
-    !opts.token &&
-    existingSession &&
-    !isSessionExpired(existingSession) &&
-    trimSlashes(existingSession.hostedBaseUrl) === hostedBaseUrl
-  ) {
-    if (opts.json) {
-      console.log(
-        JSON.stringify(
-          {
-            status: "ok",
-            hostedBaseUrl,
-            userId: existingSession.userId ?? null,
-            email: existingSession.email ?? null,
-            reusedSession: true,
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
+  if (!opts.token && existingSession && !isSessionExpired(existingSession)) {
+    const sameBaseUrl = trimSlashes(existingSession.hostedBaseUrl) === hostedBaseUrl;
+    if (sameBaseUrl) {
+      try {
+        await fetchHostedSession(existingSession);
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                status: "ok",
+                hostedBaseUrl,
+                userId: existingSession.userId ?? null,
+                email: existingSession.email ?? null,
+                reusedSession: true,
+              },
+              null,
+              2,
+            ),
+          );
+          return;
+        }
 
-    p.log.success(
-      `Already connected${existingSession.email ? ` as ${existingSession.email}` : ""}.`,
-    );
-    if (existingSession.hostedBaseUrl) {
-      p.log.message(pc.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
+        p.log.success(
+          `Already connected${existingSession.email ? ` as ${existingSession.email}` : ""}.`,
+        );
+        if (existingSession.hostedBaseUrl) {
+          p.log.message(pc.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
+        }
+        return;
+      } catch {
+        clearSession();
+      }
     }
-    return;
   }
 
   // Scripted / CI path: accept a hosted-minted token directly.

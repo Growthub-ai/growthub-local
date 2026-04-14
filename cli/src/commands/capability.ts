@@ -20,6 +20,7 @@ import {
 import {
   createMachineCapabilityResolver,
 } from "../runtime/machine-capability-resolver/index.js";
+import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,18 @@ export async function runCapabilityPicker(opts: {
   printPaperclipCliBanner();
   p.intro(pc.bold("CMS Capability Registry"));
 
+  const access = getWorkflowAccess();
+  if (access.state !== "ready") {
+    p.note(
+      [
+        "Capabilities are unavailable until the hosted user is linked to this local machine.",
+        access.reason,
+      ].join("\n"),
+      "Growthub Local Machine Required",
+    );
+    return opts.allowBackToHub ? "back" : "done";
+  }
+
   const registry = createCmsCapabilityRegistryClient();
 
   while (true) {
@@ -279,6 +292,13 @@ Examples:
     .option("--family <family>", "Filter by family (video, image, slides, text, data, ops)")
     .option("--json", "Output raw JSON for scripting")
     .action(async (opts: { family?: string; json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
       const registry = createCmsCapabilityRegistryClient();
       const query = opts.family
         ? { family: opts.family as CapabilityFamily }
@@ -315,6 +335,13 @@ Examples:
     .argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')")
     .option("--json", "Output raw JSON")
     .action(async (slug: string, opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
       const registry = createCmsCapabilityRegistryClient();
 
       try {
@@ -343,6 +370,13 @@ Examples:
     .description("Resolve machine-scoped capability bindings for all capabilities")
     .option("--json", "Output raw JSON")
     .action(async (opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
       try {
         const resolver = createMachineCapabilityResolver();
         const result = await resolver.resolveAll();

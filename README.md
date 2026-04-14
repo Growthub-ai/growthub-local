@@ -10,6 +10,7 @@ This repository ships and documents:
 - bundled Growthub Agent Worker Kits
 - the shared template library exposed through `growthub template`
 - the hosted Growthub authentication bridge used by the CLI and integrations UI
+- the hosted workflow discovery bridge used by the CLI `Workflows` surface
 
 ## Install Paths
 
@@ -43,6 +44,22 @@ Use this when you want CLI-first access to:
 - worker kit discovery, inspection, export, and validation
 - shared template browsing and extraction
 - hosted Growthub auth bridge workflows
+- hosted saved workflows and template-backed workflow execution
+
+## Workflow Discovery V1
+
+The public CLI now ships a hosted workflow discovery surface under `growthub discover -> Workflows`.
+
+Use it when you want to:
+
+- load hosted saved workflows from the CLI
+- create hosted workflows from built-in templates
+- execute hosted workflows from the terminal
+- see loading, progress, summary, artifacts, and credits without leaving the CLI
+
+Read the full public workflow extension doc here:
+
+- [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 
 ## CLI Editions And User Flows
 
@@ -224,6 +241,7 @@ The rule is simple: shared templates stay generic and reusable; worker kits comp
 - [Worker Kit Environment Examples](./docs/WORKER_KIT_ENVIRONMENT_EXAMPLES.md)
 - [CLI Template Contribution Extension Workflows](./docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
+- [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 
 ## Development
 

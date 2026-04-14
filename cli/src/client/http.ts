@@ -21,17 +21,20 @@ interface ApiClientOptions {
   apiBase: string;
   apiKey?: string;
   runId?: string;
+  userId?: string;
 }
 
 export class PaperclipApiClient {
   readonly apiBase: string;
   readonly apiKey?: string;
   readonly runId?: string;
+  readonly userId?: string;
 
   constructor(opts: ApiClientOptions) {
     this.apiBase = opts.apiBase.replace(/\/+$/, "");
     this.apiKey = opts.apiKey?.trim() || undefined;
     this.runId = opts.runId?.trim() || undefined;
+    this.userId = opts.userId?.trim() || undefined;
   }
 
   get<T>(path: string, opts?: RequestOptions): Promise<T | null> {
@@ -74,6 +77,10 @@ export class PaperclipApiClient {
 
     if (this.runId) {
       headers["x-paperclip-run-id"] = this.runId;
+    }
+
+    if (this.userId) {
+      headers["x-user-id"] = this.userId;
     }
 
     const response = await fetch(url, {

@@ -4,10 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import * as p from "@clack/prompts";
+import * as p from "../cli/node_modules/@clack/prompts/dist/index.mjs";
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const cliDistPath = path.join(repoRoot, "cli", "dist", "index.js");
+const cliSourceEntrypointPath = path.join(repoRoot, "cli", "src", "index.ts");
+const tsxLoaderPath = path.join(repoRoot, "node_modules", ".pnpm", "tsx@4.21.0", "node_modules", "tsx", "dist", "loader.mjs");
 const cliPackageJsonPath = path.join(repoRoot, "cli", "package.json");
 const createPackageJsonPath = path.join(repoRoot, "packages", "create-growthub-local", "package.json");
 const createEntrypointPath = path.join(repoRoot, "packages", "create-growthub-local", "bin", "create-growthub-local.mjs");
@@ -118,7 +120,12 @@ function runInstaller(args) {
 }
 
 function runCli(args) {
-  spawnNode([cliDistPath, ...args]);
+  spawnNode([
+    "--import",
+    tsxLoaderPath,
+    cliSourceEntrypointPath,
+    ...args,
+  ]);
 }
 
 function runHostedBridgePreview() {

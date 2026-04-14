@@ -34,6 +34,7 @@ import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capa
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
+import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import { printPaperclipCliBanner } from "./utils/banner.js";
 import { resolvePaperclipHomeDir } from "./config/home.js";
@@ -239,6 +240,7 @@ async function runDiscoveryHub(opts?: {
   p.intro("Growthub Local");
 
   while (true) {
+    const workflowAccess = getWorkflowAccess();
     const surfaceChoice = await p.select({
       message: "What do you want to do first?",
       options: [
@@ -259,18 +261,12 @@ async function runDiscoveryHub(opts?: {
         },
         {
           value: "workflows",
-          label: isDiscoveryAuthenticated() ? "🔗 Workflows" : "🔗 Workflows" + pc.dim(" (connect account to unlock)"),
-          hint: isDiscoveryAuthenticated() ? "Saved workflows and CMS node templates" : "Requires growthub auth login",
-        },
-        {
-          value: "capabilities",
-          label: "🔌 Capabilities",
-          hint: "Browse CMS-backed runtime node primitives",
-        },
-        {
-          value: "pipelines",
-          label: "🔗 Dynamic Pipelines",
-          hint: "Assemble and execute dynamic registry pipelines",
+          label: workflowAccess.state === "ready"
+            ? "🔗 Workflows"
+            : "🔗 Workflows" + pc.dim(" (locked)"),
+          hint: workflowAccess.state === "ready"
+            ? "Saved workflows, CMS templates, capabilities, and dynamic pipelines"
+            : workflowAccess.reason,
         },
         {
           value: "hosted-auth",
@@ -296,8 +292,8 @@ async function runDiscoveryHub(opts?: {
           "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
-          "🔗 Workflows: browse saved workflows and CMS node starter templates (requires auth).",
-          "🔌 Capabilities: browse CMS-backed runtime node primitives available to your account.",
+          "🔗 Workflows: browse saved workflows, CMS node starter templates, capabilities, and dynamic pipelines.",
+          `   Locked state: ${workflowAccess.reason}.`,
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -435,18 +431,6 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "workflows") {
       const result = await runWorkflowPicker({ allowBackToHub: true });
-      if (result === "back") continue;
-      return;
-    }
-
-    if (surfaceChoice === "capabilities") {
-      const result = await runCapabilityPicker({ allowBackToHub: true });
-      if (result === "back") continue;
-      return;
-    }
-
-    if (surfaceChoice === "pipelines") {
-      const result = await runPipelineAssembler({ allowBackToHub: true });
       if (result === "back") continue;
       return;
     }
