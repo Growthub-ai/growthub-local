@@ -104,6 +104,7 @@ export function readIntelligenceConfig(): NativeIntelligenceConfig {
       modelId: validateModelId(raw.modelId),
       backendType: raw.backendType === "hosted" ? "hosted" : "local",
       endpoint: typeof raw.endpoint === "string" ? raw.endpoint : DEFAULT_INTELLIGENCE_CONFIG.endpoint,
+      localModel: typeof raw.localModel === "string" ? raw.localModel : undefined,
       apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
       defaultTemperature: typeof raw.defaultTemperature === "number" ? raw.defaultTemperature : DEFAULT_INTELLIGENCE_CONFIG.defaultTemperature,
       defaultMaxTokens: typeof raw.defaultMaxTokens === "number" ? raw.defaultMaxTokens : DEFAULT_INTELLIGENCE_CONFIG.defaultMaxTokens,

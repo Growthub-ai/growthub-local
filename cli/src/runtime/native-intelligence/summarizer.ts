@@ -111,7 +111,7 @@ export function buildDeterministicSummary(
       const inputField = contract?.inputs.find((i) => i.key === field);
       const label = inputField?.label ?? field;
       missingGuidance.push(
-        `${node.slug}: "${label}" is required but missing. Provide a value before execution.`,
+        `${node.slug}: "${label}" (${field}) is required but missing. Provide a value before execution.`,
       );
     }
   }

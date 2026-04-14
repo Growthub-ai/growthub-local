@@ -55,17 +55,6 @@ export function createNativeIntelligenceBackend(
         { role: "user" as const, content: input.userPrompt },
       ];
 
-      const body: Record<string, unknown> = {
-        model: config.modelId,
-        messages,
-        temperature: input.temperature ?? config.defaultTemperature ?? 0.3,
-        max_tokens: input.maxTokens ?? config.defaultMaxTokens ?? 4096,
-      };
-
-      if (input.responseFormat === "json") {
-        body.response_format = { type: "json_object" };
-      }
-
       const controller = new AbortController();
       const timeoutId = setTimeout(
         () => controller.abort(),
@@ -82,22 +71,71 @@ export function createNativeIntelligenceBackend(
           headers.authorization = `Bearer ${config.apiKey}`;
         }
 
-        const response = await fetch(config.endpoint, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
+        const modelCandidates = resolveModelCandidates(config);
+        const endpointCandidates = resolveEndpointCandidates(config);
+        let result: OpenAICompatibleResponse | null = null;
+        let lastError: NativeIntelligenceBackendError | null = null;
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "");
-          throw new NativeIntelligenceBackendError(
-            response.status,
-            `Model backend responded with ${response.status}: ${errorText || response.statusText}`,
-          );
+        for (let endpointIndex = 0; endpointIndex < endpointCandidates.length; endpointIndex += 1) {
+          const endpoint = endpointCandidates[endpointIndex];
+          for (let modelIndex = 0; modelIndex < modelCandidates.length; modelIndex += 1) {
+            const model = modelCandidates[modelIndex];
+            const body: Record<string, unknown> = {
+              model,
+              messages,
+              temperature: input.temperature ?? config.defaultTemperature ?? 0.3,
+              max_tokens: input.maxTokens ?? config.defaultMaxTokens ?? 4096,
+            };
+
+            if (input.responseFormat === "json") {
+              body.response_format = { type: "json_object" };
+            }
+
+            try {
+              const response = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(body),
+                signal: controller.signal,
+              });
+
+              if (response.ok) {
+                result = (await response.json()) as OpenAICompatibleResponse;
+                break;
+              }
+
+              const errorText = await response.text().catch(() => "");
+              const backendError = new NativeIntelligenceBackendError(
+                response.status,
+                `Model backend responded with ${response.status}: ${errorText || response.statusText}`,
+              );
+              lastError = backendError;
+
+              if (!shouldTryNextModel(response.status, errorText, model, config, modelCandidates)) {
+                throw backendError;
+              }
+            } catch (err) {
+              if (err instanceof NativeIntelligenceBackendError) {
+                throw err;
+              }
+              lastError = new NativeIntelligenceBackendError(
+                502,
+                err instanceof Error ? err.message : "Unknown backend error",
+              );
+              const hasAnotherEndpoint = endpointIndex < endpointCandidates.length - 1;
+              if (!hasAnotherEndpoint) {
+                throw lastError;
+              }
+              break;
+            }
+          }
+          if (result) break;
         }
 
-        const result = (await response.json()) as OpenAICompatibleResponse;
+        if (!result) {
+          throw lastError ?? new NativeIntelligenceBackendError(502, "Model backend returned no response.");
+        }
+
         const latencyMs = Date.now() - startMs;
 
         const text = extractCompletionText(result);
@@ -119,6 +157,69 @@ export function createNativeIntelligenceBackend(
       }
     },
   };
+}
+
+function resolveModelCandidates(config: NativeIntelligenceConfig): string[] {
+  const primary = config.modelId;
+  const candidates: string[] = [];
+
+  if (typeof config.localModel === "string" && config.localModel.trim().length > 0) {
+    candidates.push(config.localModel.trim());
+  }
+
+  const envLocalModel = process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim()
+    || process.env.OLLAMA_MODEL?.trim();
+  if (envLocalModel && !candidates.includes(envLocalModel)) {
+    candidates.push(envLocalModel);
+  }
+
+  if (!candidates.includes(primary)) {
+    candidates.push(primary);
+  }
+
+  // Ollama commonly registers Gemma with explicit size tags (e.g. gemma3:4b).
+  // Keep canonical model ids in config, but try a practical local fallback.
+  if (
+    config.backendType === "local"
+    && primary === "gemma3"
+    && !candidates.includes("gemma3:4b")
+  ) {
+    candidates.push("gemma3:4b");
+  }
+
+  return candidates;
+}
+
+function resolveEndpointCandidates(config: NativeIntelligenceConfig): string[] {
+  const primary = config.endpoint;
+  const candidates = [primary];
+
+  if (config.backendType !== "local") return candidates;
+
+  const normalized = primary.toLowerCase();
+  if (
+    (normalized.includes("localhost:8080") || normalized.includes("127.0.0.1:8080"))
+    && !candidates.includes("http://127.0.0.1:11434/v1/chat/completions")
+  ) {
+    candidates.push("http://127.0.0.1:11434/v1/chat/completions");
+  }
+
+  return candidates;
+}
+
+function shouldTryNextModel(
+  status: number,
+  errorText: string,
+  attemptedModel: string,
+  config: NativeIntelligenceConfig,
+  candidates: string[],
+): boolean {
+  const hasNextCandidate = candidates[candidates.length - 1] !== attemptedModel;
+  if (!hasNextCandidate) return false;
+  if (config.backendType !== "local") return false;
+
+  const normalizedError = errorText.toLowerCase();
+  return status === 404 || normalizedError.includes("model") && normalizedError.includes("not found");
 }
 
 function extractCompletionText(response: OpenAICompatibleResponse): string {

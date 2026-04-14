@@ -63,7 +63,7 @@ import {
   type WorkflowHygieneStore,
 } from "../runtime/workflow-hygiene/index.js";
 import {
-  createDeterministicProvider,
+  createNativeIntelligenceProvider,
   type WorkflowSummaryForIntelligence,
   type ExecutionSummaryInput,
   type PipelineSummaryForIntelligence,
@@ -1352,7 +1352,7 @@ async function renderWorkflowIntelligenceSummary(
   phase: "pre-save" | "pre-execution" | "post-execution" | "recommendation",
 ): Promise<string[] | null> {
   try {
-    const provider = createDeterministicProvider();
+    const provider = createNativeIntelligenceProvider();
     const registryContext = capabilities.map((cap) => introspectNodeContract(cap));
     const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
 

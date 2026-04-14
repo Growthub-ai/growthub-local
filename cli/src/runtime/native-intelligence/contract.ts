@@ -236,6 +236,7 @@ export interface NativeIntelligenceConfig {
   modelId: NativeIntelligenceModelId;
   backendType: "local" | "hosted";
   endpoint: string;
+  localModel?: string;
   apiKey?: string;
   defaultTemperature?: number;
   defaultMaxTokens?: number;

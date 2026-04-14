@@ -236,6 +236,13 @@ function scoreWorkflowMatch(
     if (slugsLower.includes(token)) score += 1.5;
   }
 
+  // Explicit node slug mention in user intent should strongly favor reuse.
+  for (const slug of workflow.nodeSlugs) {
+    if (intentLower.includes(slug.toLowerCase())) {
+      score += 2;
+    }
+  }
+
   if (workflow.label === "canonical") score += 2;
   if (workflow.label === "experimental") score += 0.5;
   if (workflow.label === "archived") score -= 3;

@@ -44,7 +44,7 @@ import {
   createArtifactStore,
 } from "../runtime/artifact-contracts/index.js";
 import {
-  createDeterministicProvider,
+  createNativeIntelligenceProvider,
   type ExecutionSummaryInput,
   type PipelineSummaryForIntelligence,
 } from "../runtime/native-intelligence/index.js";
@@ -636,7 +636,7 @@ async function renderIntelligenceSummary(
   phase: "pre-save" | "pre-execution" | "post-execution" | "recommendation",
 ): Promise<string[] | null> {
   try {
-    const provider = createDeterministicProvider();
+    const provider = createNativeIntelligenceProvider();
     const registryContext = capabilities.map((cap) => introspectNodeContract(cap));
     const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
 
