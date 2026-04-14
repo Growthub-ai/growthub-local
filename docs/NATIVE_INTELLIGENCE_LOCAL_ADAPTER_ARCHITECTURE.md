@@ -2,6 +2,7 @@
 This document is the detailed technical reference for local native-intelligence in `growthub-local`.
 It describes architecture boundaries, control flow, adapter behavior, CLI surfaces, validation paths, and release implications.
 It is intentionally long-form so super-admin operators can use one document for setup, operations, and extension planning.
+This document is updated for the current feature-branch release candidate.
 
 ## 1. System Intent
 The native-intelligence layer is an assistive layer for workflow reasoning.
