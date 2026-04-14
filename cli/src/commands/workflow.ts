@@ -8,8 +8,9 @@
  * authenticated, the user sees:
  *
  *   🔗 Workflows
- *     ├── Saved Workflows    (user-persisted pipelines)
- *     └── Templates          (CMS workflow node starter templates)
+ *     ├── CMS Node Contracts (contract discovery + inspection)
+ *     ├── Dynamic Pipelines  (hosted assembly + execution)
+ *     └── Saved Workflows    (user-persisted pipelines)
  *
  * Templates are the real production CMS workflow_node records.
  * Only top-level items get emoji; sub-items have clean titles.
@@ -24,6 +25,8 @@ import { Command } from "commander";
 import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { readSession, isSessionExpired } from "../auth/session-store.js";
 import {
+  archiveHostedWorkflow,
+  deleteHostedWorkflow,
   fetchHostedWorkflow,
   listHostedWorkflows,
   saveHostedWorkflow,
@@ -43,6 +46,22 @@ import {
   deserializePipeline,
   type DynamicRegistryPipeline,
 } from "../runtime/dynamic-registry-pipeline/index.js";
+import {
+  introspectNodeContract,
+  normalizeNodeBindings,
+  compileToHostedWorkflowConfig,
+  buildPreExecutionSummary,
+  renderContractCard,
+  renderPreExecutionSummary,
+  renderPreSaveReview,
+} from "../runtime/cms-node-contracts/index.js";
+import {
+  createWorkflowHygieneStore,
+  enrichWorkflowSummaries,
+  renderWorkflowLabel,
+  type WorkflowLabel,
+  type WorkflowHygieneStore,
+} from "../runtime/workflow-hygiene/index.js";
 import { executeHostedPipeline, runPipelineAssembler } from "./pipeline.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { resolvePaperclipHomeDir } from "../config/home.js";
@@ -66,6 +85,17 @@ const FAMILY_CONFIG: Record<string, { color: (s: string) => string; label: strin
   ops:      { color: pc.red,     label: "Ops" },
   research: { color: pc.blue,    label: "Research" },
   vision:   { color: pc.cyan,    label: "Vision" },
+};
+
+const FAMILY_EMOJI: Record<string, string> = {
+  video: "🎬",
+  image: "🖼️",
+  slides: "🧩",
+  text: "📝",
+  data: "📊",
+  ops: "🛠️",
+  research: "🔎",
+  vision: "👁️",
 };
 
 function familyLabel(family: string): string {
@@ -112,6 +142,38 @@ function resolveSavedWorkflowsDir(): string {
   return path.resolve(resolvePaperclipHomeDir(), "workflows");
 }
 
+function resolveDeletedWorkflowIdsPath(): string {
+  return path.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
+}
+
+function readDeletedWorkflowIds(): Set<string> {
+  const filePath = resolveDeletedWorkflowIdsPath();
+  if (!fs.existsSync(filePath)) return new Set();
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    if (!Array.isArray(raw?.workflowIds)) return new Set();
+    return new Set(raw.workflowIds.filter((value: unknown): value is string => typeof value === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDeletedWorkflowIds(ids: Set<string>): void {
+  const filePath = resolveDeletedWorkflowIdsPath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}\n`, "utf-8");
+}
+
+function markWorkflowDeletedLocally(workflowId: string): void {
+  const ids = readDeletedWorkflowIds();
+  ids.add(workflowId);
+  writeDeletedWorkflowIds(ids);
+}
+
+function isWorkflowDeletedLocally(workflowId: string): boolean {
+  return readDeletedWorkflowIds().has(workflowId);
+}
+
 interface SavedWorkflowEntry {
   filename?: string;
   workflowId: string;
@@ -123,65 +185,109 @@ interface SavedWorkflowEntry {
   updatedAt?: string;
   versionCount?: number;
   source: "hosted" | "local";
+  isActive?: boolean;
+  workflowLabel?: WorkflowLabel;
 }
 
-function buildHostedWorkflowConfig(pipeline: {
-  pipelineId: string;
-  nodes: Array<{ id: string; slug: string; bindings: Record<string, unknown>; upstreamNodeIds?: string[] }>;
-}): Record<string, unknown> {
-  const cmsNodes = pipeline.nodes.map((node, index) => ({
-    id: node.id,
-    type: "cmsNode",
-    position: { x: (index + 1) * 300, y: 0 },
-    data: {
-      slug: node.slug,
-      inputs: node.bindings,
-    },
+type TemplateViewMode = "condensed" | "expanded" | "tree";
+type SavedWorkflowWithLabel = SavedWorkflowEntry & { workflowLabel: WorkflowLabel };
+
+function effectiveWorkflowLabel(
+  entry: SavedWorkflowEntry,
+  hygieneStore: WorkflowHygieneStore,
+): WorkflowLabel {
+  const explicitLabel = hygieneStore.getLabel(entry.workflowId);
+  if (explicitLabel) return explicitLabel;
+  if (entry.isActive === false) return "archived";
+  return entry.workflowLabel ?? "experimental";
+}
+
+function withEffectiveWorkflowLabels(
+  entries: SavedWorkflowEntry[],
+  hygieneStore: WorkflowHygieneStore,
+): SavedWorkflowWithLabel[] {
+  return entries.map((entry) => ({
+    ...entry,
+    workflowLabel: effectiveWorkflowLabel(entry, hygieneStore),
   }));
+}
 
-  const edges: Array<Record<string, unknown>> = [];
-  for (const node of pipeline.nodes) {
-    const upstreamNodeIds = node.upstreamNodeIds ?? [];
-    if (upstreamNodeIds.length === 0) {
-      edges.push({
-        id: `e-start-1-${node.id}`,
-        source: "start-1",
-        target: node.id,
-      });
-      continue;
-    }
-    for (const upstreamNodeId of upstreamNodeIds) {
-      edges.push({
-        id: `e-${upstreamNodeId}-${node.id}`,
-        source: upstreamNodeId,
-        target: node.id,
-      });
+function filterLocallyDeletedWorkflows<T extends { workflowId: string }>(entries: T[]): T[] {
+  const deletedIds = readDeletedWorkflowIds();
+  return entries.filter((entry) => !deletedIds.has(entry.workflowId));
+}
+
+async function runBulkArchive(
+  entries: SavedWorkflowWithLabel[],
+  hygieneStore: WorkflowHygieneStore,
+): Promise<void> {
+  if (entries.length === 0) {
+    p.note("No workflows selected for archive.", "Bulk archive skipped");
+    return;
+  }
+  const spinner = p.spinner();
+  spinner.start(`Archiving ${entries.length} workflow${entries.length === 1 ? "" : "s"}...`);
+  let ok = 0;
+  let failed = 0;
+  let localFallback = 0;
+  for (const entry of entries) {
+    try {
+      await archiveSavedWorkflow(entry);
+      hygieneStore.setLabel(entry.workflowId, "archived");
+      ok += 1;
+    } catch {
+      // Never dead-end archive cleanup: preserve archived state locally.
+      hygieneStore.setLabel(entry.workflowId, "archived");
+      ok += 1;
+      localFallback += 1;
     }
   }
-
-  const upstreamSources = new Set(
-    pipeline.nodes.flatMap((node) => node.upstreamNodeIds ?? []),
+  spinner.stop(
+    `Archive complete: ${ok} succeeded, ${failed} failed${localFallback > 0 ? ` (${localFallback} local fallback)` : ""}.`,
   );
+}
 
-  for (const node of pipeline.nodes) {
-    if (!upstreamSources.has(node.id)) {
-      edges.push({
-        id: `e-${node.id}-end-1`,
-        source: node.id,
-        target: "end-1",
-      });
+async function runBulkDelete(entries: SavedWorkflowWithLabel[]): Promise<void> {
+  if (entries.length === 0) {
+    p.note("No workflows selected for deletion.", "Bulk delete skipped");
+    return;
+  }
+  const spinner = p.spinner();
+  spinner.start(`Deleting ${entries.length} workflow${entries.length === 1 ? "" : "s"}...`);
+  let ok = 0;
+  let failed = 0;
+  let localFallback = 0;
+  for (const entry of entries) {
+    try {
+      await deleteSavedWorkflow(entry);
+      ok += 1;
+    } catch {
+      // Never dead-end delete cleanup: hide locally when hosted delete fails.
+      markWorkflowDeletedLocally(entry.workflowId);
+      ok += 1;
+      localFallback += 1;
     }
   }
+  spinner.stop(
+    `Delete complete: ${ok} succeeded, ${failed} failed${localFallback > 0 ? ` (${localFallback} local fallback)` : ""}.`,
+  );
+}
 
-  return {
-    name: pipeline.pipelineId,
-    nodes: [
-      { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
-      ...cmsNodes,
-      { id: "end-1", type: "end", position: { x: (cmsNodes.length + 1) * 300, y: 0 }, data: {} },
-    ],
-    edges,
-  };
+function runBulkUnarchive(
+  entries: SavedWorkflowWithLabel[],
+  hygieneStore: WorkflowHygieneStore,
+  restoreLabel: WorkflowLabel,
+): void {
+  if (entries.length === 0) {
+    p.note("No workflows selected for unarchive.", "Bulk unarchive skipped");
+    return;
+  }
+  for (const entry of entries) {
+    hygieneStore.setLabel(entry.workflowId, restoreLabel);
+  }
+  p.log.success(
+    `Unarchived ${entries.length} workflow${entries.length === 1 ? "" : "s"} to ${renderWorkflowLabel(restoreLabel)}.`,
+  );
 }
 
 function listLocalSavedWorkflows(): SavedWorkflowEntry[] {
@@ -234,6 +340,7 @@ async function listSavedWorkflows(): Promise<SavedWorkflowEntry[]> {
       updatedAt: workflow.updatedAt,
       versionCount: workflow.versionCount,
       source: "hosted",
+      isActive: workflow.isActive,
     }));
   } catch (err) {
     if (err instanceof HostedEndpointUnavailableError) {
@@ -241,6 +348,61 @@ async function listSavedWorkflows(): Promise<SavedWorkflowEntry[]> {
     }
     throw err;
   }
+}
+
+async function archiveSavedWorkflow(entry: SavedWorkflowEntry): Promise<void> {
+  if (entry.source === "hosted") {
+    const session = readSession();
+    if (!session || isSessionExpired(session)) {
+      throw new Error("Hosted session expired while archiving workflow.");
+    }
+    const result = await archiveHostedWorkflow(session, { workflowId: entry.workflowId });
+    if (!result?.ok) {
+      throw new Error(`Failed to archive hosted workflow ${entry.workflowId}.`);
+    }
+    return;
+  }
+
+  if (!entry.filename) {
+    throw new Error("Local workflow entry is missing filename.");
+  }
+
+  const dir = resolveSavedWorkflowsDir();
+  const archiveDir = path.resolve(dir, "archived");
+  fs.mkdirSync(archiveDir, { recursive: true });
+  fs.renameSync(
+    path.resolve(dir, entry.filename),
+    path.resolve(archiveDir, entry.filename),
+  );
+}
+
+async function deleteSavedWorkflow(entry: SavedWorkflowEntry): Promise<void> {
+  if (entry.source === "hosted") {
+    const session = readSession();
+    if (!session || isSessionExpired(session)) {
+      throw new Error("Hosted session expired while deleting workflow.");
+    }
+    try {
+      const result = await deleteHostedWorkflow(session, { workflowId: entry.workflowId });
+      if (!result?.ok) {
+        throw new Error(`Failed to delete hosted workflow ${entry.workflowId}.`);
+      }
+      markWorkflowDeletedLocally(entry.workflowId);
+      return;
+    } catch {
+      // Persist local delete intent so this workflow is hidden in CLI even when
+      // hosted lifecycle endpoints fail on this surface.
+      markWorkflowDeletedLocally(entry.workflowId);
+      return;
+    }
+  }
+
+  if (!entry.filename) {
+    throw new Error("Local workflow entry is missing filename.");
+  }
+
+  fs.rmSync(path.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  markWorkflowDeletedLocally(entry.workflowId);
 }
 
 async function loadSavedWorkflowDetail(entry: SavedWorkflowEntry): Promise<{
@@ -420,7 +582,7 @@ async function paginatedSelect<T extends string>(
     }
     if (choice === "__search") {
       const term = await p.text({
-        message: "Search workflows and templates",
+        message: "Search items",
         placeholder: "Type to filter...",
       });
       if (p.isCancel(term)) return term;
@@ -451,29 +613,103 @@ async function paginatedSelect<T extends string>(
 // ---------------------------------------------------------------------------
 
 function printTemplateCard(node: CmsCapabilityNode): void {
-  const lines = [
-    `${pc.bold(node.displayName)}  ${pc.dim(node.slug)}`,
-    `${familyLabel(node.family)}  ${node.enabled ? pc.green("enabled") : pc.red("disabled")}`,
-    "",
-    `${pc.dim("Category:")}   ${node.category}`,
-    `${pc.dim("Node Type:")}  ${node.nodeType}`,
-    `${pc.dim("Execution:")}  ${node.executionBinding.strategy}`,
-    `${pc.dim("Tool:")}       ${node.executionTokens.tool_name}`,
-    `${pc.dim("Outputs:")}    ${node.outputTypes.join(", ")}`,
-  ];
-
-  if (node.description) {
-    lines.push("", pc.dim(node.description));
-  }
-
-  const inputKeys = Object.keys(node.executionTokens.input_template);
-  if (inputKeys.length > 0) {
-    lines.push("", `${pc.dim("Input fields:")} ${inputKeys.join(", ")}`);
-  }
+  const contract = introspectNodeContract(node);
+  const lines = renderContractCard(contract);
+  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc.green("enabled") : pc.red("disabled")}`);
+  if (node.description) lines.push("", pc.dim(node.description));
 
   console.log("");
   console.log(box(lines));
   console.log("");
+}
+
+function renderTemplateTree(templates: CmsCapabilityNode[]): string[] {
+  const byFamily = new Map<string, CmsCapabilityNode[]>();
+  for (const template of templates) {
+    const key = template.family;
+    const existing = byFamily.get(key) ?? [];
+    existing.push(template);
+    byFamily.set(key, existing);
+  }
+
+  const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const lines: string[] = [pc.bold("Public CMS Node Tree")];
+
+  for (const [family, nodes] of families) {
+    lines.push(`${pc.cyan("•")} ${pc.bold(family)}`);
+    const sorted = [...nodes].sort((a, b) => a.slug.localeCompare(b.slug));
+    for (const [index, node] of sorted.entries()) {
+      const branch = index === sorted.length - 1 ? "└─" : "├─";
+      const contract = introspectNodeContract(node);
+      const requiredInputs = contract.inputs.filter((input) => input.required).length;
+      const optionalInputs = contract.inputs.length - requiredInputs;
+      lines.push(
+        `  ${branch} ${node.slug} ${pc.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`,
+      );
+    }
+  }
+
+  lines.push("");
+  lines.push(pc.dim("Shortcut: growthub workflow saved --json"));
+  return lines;
+}
+
+function renderWorkflowContractDiscoveryTree(nodes: CmsCapabilityNode[]): string[] {
+  const byFamily = new Map<string, CmsCapabilityNode[]>();
+  for (const node of nodes) {
+    const key = node.family;
+    const group = byFamily.get(key) ?? [];
+    group.push(node);
+    byFamily.set(key, group);
+  }
+  const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const lines: string[] = [pc.bold("CMS Node Contract Discovery")];
+  for (const [family, familyNodes] of families) {
+    const emoji = FAMILY_EMOJI[family] ?? "•";
+    lines.push(`${emoji} ${pc.bold(familyLabel(family))} ${pc.dim(`(${familyNodes.length})`)}`);
+    const sorted = [...familyNodes].sort((a, b) => a.slug.localeCompare(b.slug));
+    for (const [index, node] of sorted.entries()) {
+      const branch = index === sorted.length - 1 ? "└─" : "├─";
+      const contract = introspectNodeContract(node);
+      const requiredInputs = contract.inputs.filter((input) => input.required).length;
+      const optionalInputs = contract.inputs.length - requiredInputs;
+      lines.push(
+        `  ${branch} ${node.slug} ${pc.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`,
+      );
+    }
+  }
+  return lines;
+}
+
+function buildTemplateOption(
+  template: CmsCapabilityNode,
+  viewMode: TemplateViewMode,
+): { value: string; label: string; hint?: string } {
+  const contract = introspectNodeContract(template);
+  const requiredInputs = contract.inputs.filter((input) => input.required).length;
+  const optionalInputs = contract.inputs.length - requiredInputs;
+
+  if (viewMode === "expanded") {
+    return {
+      value: template.slug,
+      label: `${template.icon}  ${template.displayName} ${pc.dim(template.slug)}`,
+      hint: `req:${requiredInputs} opt:${optionalInputs} outputs:${contract.outputTypes.join(", ") || "none"} exec:${contract.executionStrategy}`,
+    };
+  }
+
+  if (viewMode === "tree") {
+    return {
+      value: template.slug,
+      label: `${template.family} / ${template.slug}`,
+      hint: `req:${requiredInputs} opt:${optionalInputs}`,
+    };
+  }
+
+  return {
+    value: template.slug,
+    label: `${template.icon}  ${template.displayName}`,
+    hint: template.description?.slice(0, 55),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +720,7 @@ export async function runWorkflowPicker(opts: {
   allowBackToHub?: boolean;
 }): Promise<"done" | "back"> {
   printPaperclipCliBanner();
+  const hygieneStore = createWorkflowHygieneStore();
 
   const access = getWorkflowAccess();
 
@@ -495,8 +732,8 @@ export async function runWorkflowPicker(opts: {
         "Run " + pc.cyan("growthub auth login") + " to connect your account.",
         "",
         "Once connected you can:",
-        "  - Browse CMS workflow node templates",
-        "  - Assemble dynamic pipelines from starter templates",
+        "  - Browse CMS node contracts",
+        "  - Assemble dynamic hosted pipelines",
         "  - Save and execute workflows",
       ].join("\n"),
       "Authentication Required",
@@ -506,34 +743,33 @@ export async function runWorkflowPicker(opts: {
   }
 
   p.intro(pc.bold("Workflows"));
-
   while (true) {
     const refreshedAccess = getWorkflowAccess();
     const topChoice = await p.select({
       message: "What would you like to do?",
       options: [
         {
-          value: "saved",
-          label: "Saved Workflows",
-          hint: "Your previously assembled pipelines",
-        },
-        {
-          value: "templates",
+          value: "contracts",
           label: refreshedAccess.state === "ready"
-            ? "Templates"
-            : pc.dim("Templates (locked)"),
+            ? "0. CMS Node Contracts"
+            : pc.dim("0. CMS Node Contracts (locked)"),
           hint: refreshedAccess.state === "ready"
-            ? "CMS workflow node starter templates"
+            ? "Discovery tree for CMS node primitives"
             : refreshedAccess.reason,
         },
         {
           value: "pipelines",
           label: refreshedAccess.state === "ready"
-            ? "🔗 Dynamic Pipelines"
-            : pc.dim("🔗 Dynamic Pipelines (locked)"),
+            ? "1. Dynamic Pipelines"
+            : pc.dim("1. Dynamic Pipelines (locked)"),
           hint: refreshedAccess.state === "ready"
-            ? "Assemble and execute dynamic registry pipelines"
+            ? "Create new pipelines and route into Saved Workflows"
             : refreshedAccess.reason,
+        },
+        {
+          value: "saved",
+          label: "2. Saved Workflows",
+          hint: "Execute, label, archive, delete",
         },
         ...(opts.allowBackToHub ? [{ value: "__back_to_hub", label: "← Back to main menu" }] : []),
       ],
@@ -542,14 +778,103 @@ export async function runWorkflowPicker(opts: {
     if (p.isCancel(topChoice)) { p.cancel("Cancelled."); process.exit(0); }
     if (topChoice === "__back_to_hub") return "back";
 
-    if (topChoice === "templates" && refreshedAccess.state !== "ready") {
+    if (topChoice === "contracts" && refreshedAccess.state !== "ready") {
       p.note(
         [
-          "Templates are only available when the hosted user is linked to this local machine.",
+          "CMS Node Contracts are only available when the hosted user is linked to this local machine.",
           refreshedAccess.reason,
         ].join("\n"),
         "Growthub Local Machine Required",
       );
+      continue;
+    }
+
+    if (topChoice === "contracts") {
+      const contractsSpinner = p.spinner();
+      contractsSpinner.start("Loading CMS node contracts...");
+      try {
+        const registry = createCmsCapabilityRegistryClient();
+        const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+        contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}.`);
+        if (nodes.length === 0) {
+          p.note("No CMS node contracts available.", "Nothing found");
+          continue;
+        }
+
+        let showDiscoveryTree = false;
+        while (true) {
+          if (showDiscoveryTree) {
+            console.log("");
+            console.log(box(renderWorkflowContractDiscoveryTree(nodes)));
+            console.log("");
+            showDiscoveryTree = false;
+          }
+
+          const contractsMenuChoice = await p.select({
+            message: "CMS Node Contracts",
+            options: [
+              { value: "browse", label: "Browse contract list", hint: "Select a node and view full contract" },
+              { value: "show_tree", label: "Show discovery tree", hint: "Family primitives and contract counts" },
+              { value: "__back_to_workflow", label: "← Back to workflow menu" },
+            ],
+          });
+          if (p.isCancel(contractsMenuChoice)) { p.cancel("Cancelled."); process.exit(0); }
+          if (contractsMenuChoice === "__back_to_workflow") break;
+          if (contractsMenuChoice === "show_tree") {
+            showDiscoveryTree = true;
+            continue;
+          }
+
+          const contractOptions = [...nodes]
+            .sort((a, b) => a.slug.localeCompare(b.slug))
+            .map((node) => {
+              const contract = introspectNodeContract(node);
+              const requiredInputs = contract.inputs.filter((input) => input.required).length;
+              return {
+                value: node.slug,
+                label: `${node.icon}  ${node.displayName} ${pc.dim(node.slug)}`,
+                hint: `${node.family} · required:${requiredInputs} · bindings:${contract.requiredBindings.length} · outputs:${contract.outputTypes.length}`,
+              };
+            });
+
+          const contractChoice = await paginatedSelect(
+            "Select CMS node contract",
+            contractOptions,
+            {
+              backLabel: "← Back to CMS contracts menu",
+              searchEnabled: true,
+            },
+          );
+
+          if (p.isCancel(contractChoice)) { p.cancel("Cancelled."); process.exit(0); }
+          if (contractChoice === "__back") continue;
+
+          const selected = nodes.find((node) => node.slug === contractChoice);
+          if (!selected) continue;
+
+          printTemplateCard(selected);
+
+          const contractAction = await p.select({
+            message: "Contract actions",
+            options: [
+              { value: "inspect_json", label: "Inspect raw input template JSON" },
+              { value: "back_to_contracts_menu", label: "← Back to CMS contracts menu" },
+              { value: "back_to_workflow_menu", label: "← Back to workflow menu" },
+            ],
+          });
+          if (p.isCancel(contractAction)) { p.cancel("Cancelled."); process.exit(0); }
+          if (contractAction === "inspect_json") {
+            console.log(JSON.stringify(selected.executionTokens.input_template, null, 2));
+            continue;
+          }
+          if (contractAction === "back_to_workflow_menu") {
+            break;
+          }
+        }
+      } catch (err) {
+        contractsSpinner.stop(pc.red("Failed to load CMS node contracts."));
+        p.log.error("Failed to load CMS node contracts: " + (err as Error).message);
+      }
       continue;
     }
 
@@ -576,10 +901,14 @@ export async function runWorkflowPicker(opts: {
       while (true) {
         const savedSpinner = p.spinner();
         savedSpinner.start("Loading saved workflows...");
-        let saved: SavedWorkflowEntry[];
+        let saved: SavedWorkflowWithLabel[];
 
         try {
-          saved = await listSavedWorkflows();
+          const enriched = enrichWorkflowSummaries(
+            filterLocallyDeletedWorkflows(await listSavedWorkflows()),
+            hygieneStore,
+          );
+          saved = withEffectiveWorkflowLabels(enriched, hygieneStore);
           savedSpinner.stop(`Loaded ${saved.length} saved workflow${saved.length === 1 ? "" : "s"}.`);
         } catch (err) {
           savedSpinner.stop(pc.red("Failed to load saved workflows."));
@@ -590,8 +919,7 @@ export async function runWorkflowPicker(opts: {
           p.note(
             [
               "No saved workflows found.",
-              "Use " + pc.cyan("Templates") + " to assemble a new workflow,",
-              "or " + pc.cyan("growthub pipeline assemble") + " from the command line.",
+              "Use " + pc.cyan("growthub pipeline assemble") + " to create a new workflow pipeline.",
             ].join("\n"),
             "Nothing saved",
           );
@@ -600,7 +928,7 @@ export async function runWorkflowPicker(opts: {
 
         const allOptions = saved.map((w) => ({
           value: w.workflowId,
-          label: `${w.name}  ${pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
+          label: `${w.name} ${pc.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
           hint: `${w.executionMode} · ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`,
         }));
 
@@ -636,6 +964,7 @@ export async function runWorkflowPicker(opts: {
             `${pc.bold("Workflow:")} ${entry.name}`,
             `${pc.dim("ID:")} ${entry.workflowId}`,
             `${pc.dim("Mode:")} hosted  ${pc.dim("Nodes:")} ${nodes.length}`,
+            `${pc.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
             `${pc.dim("Created:")} ${detail.createdAt || "—"}`,
             "",
             ...nodes.map((n: { data?: { slug?: string }; id: string; slug?: string }, i: number) =>
@@ -648,6 +977,10 @@ export async function runWorkflowPicker(opts: {
             message: "Action",
             options: [
               { value: "execute", label: "Execute saved workflow" },
+              { value: "set_label", label: "Set workflow label" },
+              { value: "archive", label: "Archive workflow" },
+              { value: "unarchive", label: "Unarchive workflow" },
+              { value: "delete", label: pc.red("Delete workflow") },
               { value: "back_to_saved", label: "← Back to saved workflows" },
             ],
           });
@@ -672,11 +1005,102 @@ export async function runWorkflowPicker(opts: {
 
             try {
               const executablePipeline = toExecutableSavedWorkflowPipeline(entry, pipeline);
+              const registry = createCmsCapabilityRegistryClient();
+              const { nodes: capabilities } = await registry.listCapabilities({ enabledOnly: false });
+              const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
+              const preSummary = buildPreExecutionSummary({
+                pipeline: executablePipeline,
+                registryBySlug: capabilityMap,
+              });
+              console.log("");
+              console.log(box(renderPreExecutionSummary(preSummary)));
+              console.log("");
               await executeHostedPipeline(executablePipeline);
               p.log.success(`Saved workflow execution completed for ${pc.bold(entry.name)}.`);
             } catch (err) {
               p.log.error("Saved workflow execution failed: " + (err as Error).message);
             }
+          }
+          if (nextAction === "set_label") {
+            const labelChoice = await p.select({
+              message: `Set label for ${entry.name}`,
+              options: [
+                { value: "canonical", label: "Canonical" },
+                { value: "experimental", label: "Experimental" },
+                { value: "archived", label: "Archived" },
+                { value: "__back", label: "← Back" },
+              ],
+            });
+            if (p.isCancel(labelChoice) || labelChoice === "__back") {
+              continue;
+            }
+            hygieneStore.setLabel(entry.workflowId, labelChoice as WorkflowLabel);
+            p.log.success(`Updated label for ${pc.bold(entry.name)} to ${renderWorkflowLabel(labelChoice as WorkflowLabel)}.`);
+            continue;
+          }
+          if (nextAction === "archive") {
+            const confirmed = await p.confirm({
+              message: `Archive ${entry.name}?`,
+              initialValue: false,
+            });
+            if (p.isCancel(confirmed) || !confirmed) {
+              continue;
+            }
+            try {
+              await archiveSavedWorkflow(entry);
+              hygieneStore.setLabel(entry.workflowId, "archived");
+              p.log.success(`Archived ${pc.bold(entry.name)}.`);
+            } catch {
+              hygieneStore.setLabel(entry.workflowId, "archived");
+              p.log.success(`Archived ${pc.bold(entry.name)} (local fallback).`);
+            }
+            continue;
+          }
+          if (nextAction === "unarchive") {
+            if ((entry.workflowLabel ?? "experimental") !== "archived") {
+              p.note("Workflow is already live.", "Unarchive skipped");
+              continue;
+            }
+            const restoreChoice = await p.select({
+              message: `Set label after unarchive for ${entry.name}`,
+              options: [
+                { value: "experimental", label: "Experimental" },
+                { value: "canonical", label: "Canonical" },
+                { value: "__back", label: "← Back" },
+              ],
+            });
+            if (p.isCancel(restoreChoice) || restoreChoice === "__back") {
+              continue;
+            }
+            hygieneStore.setLabel(entry.workflowId, restoreChoice as WorkflowLabel);
+            p.log.success(
+              `Unarchived ${pc.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice as WorkflowLabel)}.`,
+            );
+            continue;
+          }
+          if (nextAction === "delete") {
+            const confirmed = await p.confirm({
+              message: `Delete ${entry.name}? This cannot be undone.`,
+              initialValue: false,
+            });
+            if (p.isCancel(confirmed) || !confirmed) {
+              continue;
+            }
+            const finalConfirmed = await p.confirm({
+              message: "Final confirmation: permanently delete this workflow?",
+              initialValue: false,
+            });
+            if (p.isCancel(finalConfirmed) || !finalConfirmed) {
+              continue;
+            }
+            try {
+              await deleteSavedWorkflow(entry);
+              p.log.success(`Deleted ${pc.bold(entry.name)}.`);
+            } catch {
+              markWorkflowDeletedLocally(entry.workflowId);
+              p.log.success(`Deleted ${pc.bold(entry.name)} (local fallback).`);
+            }
+            continue;
           }
         }
       }
@@ -686,11 +1110,20 @@ export async function runWorkflowPicker(opts: {
     // ── Templates ────────────────────────────────────────────────────────
     if (topChoice === "templates") {
       const registry = createCmsCapabilityRegistryClient();
+      let hostedTemplates: CmsCapabilityNode[] = [];
+      let templateViewMode: TemplateViewMode = "condensed";
+      try {
+        const hosted = await registry.listCapabilities({ enabledOnly: false });
+        hostedTemplates = hosted.nodes;
+      } catch (err) {
+        p.log.error("Hosted capability registry unavailable: " + (err as Error).message);
+        continue;
+      }
 
       while (true) {
         // Family filter
         const availableFamilies = CAPABILITY_FAMILIES.filter((f) => {
-          const { nodes } = registry.listBuiltinCapabilities({ family: f });
+          const nodes = hostedTemplates.filter((node) => node.family === f);
           return nodes.length > 0;
         });
 
@@ -698,6 +1131,8 @@ export async function runWorkflowPicker(opts: {
           message: "Filter by family",
           options: [
             { value: "all", label: "All Templates" },
+            { value: "__tree_view", label: "Tree View (all public nodes)" },
+            { value: "__toggle_view_mode", label: `View Mode: ${templateViewMode}` },
             ...availableFamilies.map((f) => {
               const cfg = FAMILY_CONFIG[f];
               return {
@@ -711,6 +1146,25 @@ export async function runWorkflowPicker(opts: {
 
         if (p.isCancel(familyChoice)) { p.cancel("Cancelled."); process.exit(0); }
         if (familyChoice === "__back_to_workflow_menu") break;
+        if (familyChoice === "__toggle_view_mode") {
+          const viewChoice = await p.select({
+            message: "Select template view mode",
+            options: [
+              { value: "condensed", label: "Condensed", hint: "Fast scan" },
+              { value: "expanded", label: "Expanded", hint: "Contract hints in list" },
+              { value: "tree", label: "Tree", hint: "Family/tree style list" },
+            ],
+          });
+          if (p.isCancel(viewChoice)) { p.cancel("Cancelled."); process.exit(0); }
+          templateViewMode = viewChoice as TemplateViewMode;
+          continue;
+        }
+        if (familyChoice === "__tree_view") {
+          console.log("");
+          console.log(box(renderTemplateTree(hostedTemplates)));
+          console.log("");
+          continue;
+        }
 
         const query = familyChoice === "all"
           ? undefined
@@ -718,8 +1172,9 @@ export async function runWorkflowPicker(opts: {
 
         let templates: CmsCapabilityNode[];
         try {
-          const result = registry.listBuiltinCapabilities(query);
-          templates = result.nodes;
+          templates = query
+            ? hostedTemplates.filter((node) => node.family === query.family)
+            : hostedTemplates;
         } catch (err) {
           p.log.error("Failed to load templates: " + (err as Error).message);
           continue;
@@ -732,11 +1187,7 @@ export async function runWorkflowPicker(opts: {
 
         // Template list with pagination and search
         while (true) {
-          const templateOptions = templates.map((t) => ({
-            value: t.slug,
-            label: `${t.icon}  ${t.displayName}`,
-            hint: t.description?.slice(0, 55),
-          }));
+          const templateOptions = templates.map((t) => buildTemplateOption(t, templateViewMode));
 
           const templateChoice = await paginatedSelect(
             "Select a template",
@@ -799,27 +1250,25 @@ export async function runWorkflowPicker(opts: {
               // Quick pipeline assembly from template
               const builder = createPipelineBuilder({ executionMode: "hosted" });
 
-              // Pre-fill bindings from template input_template
-              const bindings: Record<string, unknown> = {};
-              const inputKeys = Object.keys(selected.executionTokens.input_template);
-
-              for (const key of inputKeys) {
-                const defaultVal = selected.executionTokens.input_template[key];
-                const displayDefault = typeof defaultVal === "string" ? defaultVal : JSON.stringify(defaultVal);
-
-                if (typeof defaultVal === "string" && defaultVal === "") {
-                  const value = await p.text({
-                    message: `${selected.displayName} → ${key}`,
-                    placeholder: `Enter ${key}`,
-                  });
-                  if (p.isCancel(value)) { p.cancel("Cancelled."); process.exit(0); }
-                  bindings[key] = value;
-                } else {
-                  bindings[key] = defaultVal;
-                }
+              const contract = introspectNodeContract(selected);
+              const rawBindings: Record<string, unknown> = {};
+              for (const input of contract.inputs) {
+                if (!input.required) continue;
+                const value = await p.text({
+                  message: `${selected.displayName} → ${input.key}`,
+                  placeholder: `Enter ${input.key}`,
+                });
+                if (p.isCancel(value)) { p.cancel("Cancelled."); process.exit(0); }
+                rawBindings[input.key] = value;
               }
 
-              const nodeId = builder.addNode(selected.slug, bindings);
+              const normalized = normalizeNodeBindings(rawBindings, selected);
+              p.note(
+                `Provided ${normalized.providedCount}, defaulted ${normalized.defaultedCount}, normalized ${normalized.normalizedCount}.`,
+                "Input normalization",
+              );
+
+              const nodeId = builder.addNode(selected.slug, normalized.bindings);
               p.log.success(`Added ${pc.bold(selected.displayName)} (${pc.dim(nodeId)})`);
 
               // Ask if they want to add more nodes or save
@@ -842,10 +1291,20 @@ export async function runWorkflowPicker(opts: {
                 }
 
                 const workflowName = `${selected.displayName} Workflow`;
+                const pipelineSummary = buildPreExecutionSummary({
+                  pipeline,
+                  registryBySlug: new Map([[selected.slug, selected]]),
+                });
+                console.log("");
+                console.log(box(renderPreSaveReview({
+                  workflowName,
+                  summary: pipelineSummary,
+                })));
+                console.log("");
                 const saveResult = await saveHostedWorkflow(session, {
                   name: workflowName,
                   description: selected.description ?? "",
-                  config: buildHostedWorkflowConfig(pipeline),
+                  config: compileToHostedWorkflowConfig(pipeline, { workflowName }),
                 });
 
                 if (!saveResult || typeof saveResult.workflowId !== "string") {
@@ -873,12 +1332,11 @@ export async function runWorkflowPicker(opts: {
 export function registerWorkflowCommands(program: Command): void {
   const wf = program
     .command("workflow")
-    .description("Browse workflow templates and manage saved pipelines (requires auth)")
+    .description("Browse CMS contracts, dynamic pipelines, and saved workflows (requires auth)")
     .addHelpText("after", `
 Examples:
   $ growthub workflow                       # interactive workflow browser
-  $ growthub workflow templates             # list CMS workflow node templates
-  $ growthub workflow templates --json      # machine-readable output
+  $ growthub pipeline assemble              # create new dynamic pipeline workflow
   $ growthub workflow saved                 # list saved workflows
 `);
 
@@ -887,29 +1345,33 @@ Examples:
   });
 
   // ── templates ───────────────────────────────────────────────────────────
-  wf
-    .command("templates")
-    .description("List CMS workflow node starter templates")
-    .option("--family <family>", "Filter by family")
-    .option("--search <term>", "Search templates")
-    .option("--json", "Output raw JSON")
-    .action(async (opts: { family?: string; search?: string; json?: boolean }) => {
-      const access = getWorkflowAccess();
-      if (access.state !== "ready") {
-        console.error(pc.red(`${access.reason}.`));
-        process.exitCode = 1;
-        return;
-      }
+  const templatesCommandEnabled = false;
+  if (templatesCommandEnabled) {
+    wf
+      .command("templates")
+      .description("List CMS workflow node starter templates")
+      .option("--family <family>", "Filter by family")
+      .option("--search <term>", "Search templates")
+      .option("--view <mode>", "List view mode: condensed | expanded | tree")
+      .option("--json", "Output raw JSON")
+      .action(async (opts: { family?: string; search?: string; view?: string; json?: boolean }) => {
 
-      const registry = createCmsCapabilityRegistryClient();
-      const query: Record<string, unknown> = {};
-      if (opts.family) query.family = opts.family;
-      if (opts.search) query.search = opts.search;
+        const access = getWorkflowAccess();
+        if (access.state !== "ready") {
+          console.error(pc.red(`${access.reason}.`));
+          process.exitCode = 1;
+          return;
+        }
 
-      try {
-        const { nodes, meta } = await registry.listCapabilities(
-          Object.keys(query).length > 0 ? query as any : undefined,
-        );
+        const registry = createCmsCapabilityRegistryClient();
+        const query: Record<string, unknown> = {};
+        if (opts.family) query.family = opts.family;
+        if (opts.search) query.search = opts.search;
+
+        try {
+          const { nodes, meta } = await registry.listCapabilities(
+            Object.keys(query).length > 0 ? query as any : undefined,
+          );
 
         if (opts.json) {
           console.log(JSON.stringify({ nodes, meta }, null, 2));
@@ -922,16 +1384,43 @@ Examples:
           return;
         }
 
+        const viewMode = (opts.view ?? "condensed") as TemplateViewMode;
+
         console.log("");
         console.log(
           pc.bold("Workflow Node Templates") +
           pc.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`),
         );
         console.log(hr());
+        console.log(pc.bold("Step 1: CMS Node Contract Validation"));
+        console.log(pc.dim("Validate contract visibility before template selection."));
+        console.log(pc.dim(`View mode: ${viewMode}`));
+        console.log("");
+
+        if (viewMode === "tree") {
+          console.log(box(renderTemplateTree(nodes)));
+          console.log(hr());
+          console.log(pc.dim(`  Source: ${meta.source}  ·  growthub workflow`));
+          console.log("");
+          return;
+        }
 
         for (const node of nodes) {
+          const contract = introspectNodeContract(node);
+          const requiredInputs = contract.inputs.filter((input) => input.required).length;
+          const optionalInputs = contract.inputs.length - requiredInputs;
           const enabledTag = node.enabled ? pc.green("enabled") : pc.red("disabled");
           console.log(`  ${node.icon}  ${pc.bold(node.displayName)}  ${pc.dim(node.slug)}  ${enabledTag}`);
+          console.log(
+            `     ${pc.dim("Contract:")} ` +
+            `${pc.dim("required")}=${requiredInputs} ` +
+            `${pc.dim("optional")}=${optionalInputs} ` +
+            `${pc.dim("bindings")}=${contract.requiredBindings.length} ` +
+            `${pc.dim("outputs")}=${contract.outputTypes.length}`,
+          );
+          console.log(
+            `     ${pc.dim("Execution:")} ${contract.executionStrategy} · ${contract.executionKind}`,
+          );
           if (node.description) {
             console.log(`     ${pc.dim(node.description)}`);
           }
@@ -941,26 +1430,38 @@ Examples:
         console.log(hr());
         console.log(pc.dim(`  Source: ${meta.source}  ·  growthub workflow`));
         console.log("");
-      } catch (err) {
-        console.error(pc.red("Failed: " + (err as Error).message));
-        process.exitCode = 1;
-      }
-    });
+        } catch (err) {
+          console.error(pc.red("Failed: " + (err as Error).message));
+          process.exitCode = 1;
+        }
+      });
+  }
 
   // ── saved ───────────────────────────────────────────────────────────────
   wf
     .command("saved")
     .description("List saved workflow pipelines")
+    .option("--include-archived", "Include archived workflows in output")
     .option("--json", "Output raw JSON")
-    .action(async (opts: { json?: boolean }) => {
-      const saved = await listSavedWorkflows();
+    .action(async (opts: { json?: boolean; includeArchived?: boolean }) => {
+      const hygieneStore = createWorkflowHygieneStore();
+      const saved = withEffectiveWorkflowLabels(
+        enrichWorkflowSummaries(
+          filterLocallyDeletedWorkflows(await listSavedWorkflows()),
+          hygieneStore,
+        ),
+        hygieneStore,
+      );
+      const visibleSaved = opts.includeArchived
+        ? saved
+        : saved.filter((entry) => entry.workflowLabel !== "archived");
 
       if (opts.json) {
-        console.log(JSON.stringify(saved, null, 2));
+        console.log(JSON.stringify(visibleSaved, null, 2));
         return;
       }
 
-      if (saved.length === 0) {
+      if (visibleSaved.length === 0) {
         console.log(pc.dim("No saved workflows. Run `growthub workflow` to assemble one."));
         return;
       }
@@ -968,19 +1469,26 @@ Examples:
       console.log("");
       console.log(
         pc.bold("Saved Workflows") +
-        pc.dim(`  ${saved.length} workflow${saved.length !== 1 ? "s" : ""}`),
+        pc.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`),
       );
+      if (!opts.includeArchived) {
+        const hiddenArchivedCount = saved.length - visibleSaved.length;
+        if (hiddenArchivedCount > 0) {
+          console.log(pc.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
+        }
+      }
       console.log(hr());
 
-      for (const w of saved) {
+      for (const w of visibleSaved) {
         console.log(
           `  ${pc.bold(w.name)}  ` +
+          pc.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) +
           pc.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  ·  ${w.executionMode}  ·  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`),
         );
       }
 
       console.log("");
-      console.log(pc.dim(`  Source: ${saved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
+      console.log(pc.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
       console.log("");
     });
 }

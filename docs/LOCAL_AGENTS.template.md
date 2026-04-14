@@ -63,9 +63,21 @@ If something on **`main`** does not show in the browser, first ask which **mode*
 
 ---
 
-## Semver grounding (mirror public rule)
+## Grounding for package names and commands
 
-Do **not** hardcode `@growthub/cli` versions in this file as “forever truth.” On each session, read **`cli/package.json`** and **`packages/create-growthub-local/package.json`** on disk — same rule as **`docs/ARTIFACT_VERSIONS.md`**.
+Do **not** hardcode versions or old command lists in this file.
+
+On each session, ground package and CLI statements in:
+
+- `cli/package.json`
+- `packages/create-growthub-local/package.json`
+- `cli/src/index.ts`
+- `docs/ARTIFACT_VERSIONS.md`
+
+Keep the installer naming straight:
+
+- User command: `npm create growthub-local@latest`
+- Published installer package: `@growthub/create-growthub-local`
 
 ---
 
@@ -75,8 +87,7 @@ Do **not** hardcode `@growthub/cli` versions in this file as “forever truth.�
 - **Branches:** Prefer feature branches or worktrees; avoid rewriting **`main`** without maintainer intent.
 - **Anti-patterns:** No **`node scripts/worktree-bootstrap.mjs`**; no manual **growthub-core** copies; no improvised dev servers replacing **`scripts/runtime-control.sh`** unless you explicitly override that in this file.
 - **`scripts/guard.sh`:** Destructive git is blocked by design for agents.
-- **Browser agents:** Validate through real issue assignment + heartbeat wakeup, not free-run invoke. Use `scripts/observability/tail-run.sh` on the exact run ids when checking separation behavior.
-- **Worker kits:** Treat worker kits as packaged execution environments, not just prompt bundles. If you build a new environment, prefer a self-contained kit folder with manifests, templates, standards, examples, and explicit runtime assumptions. Test it by exporting the kit and pointing the agent `Working directory` at the exported folder.
+- **Docs discipline:** Replace stale repo guidance directly. Do not leave old command lists, old package names, or old version strings in place once they are known to be wrong.
 
 ---
 

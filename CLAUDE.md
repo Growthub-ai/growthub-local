@@ -1,34 +1,95 @@
-# growthub-local — Agent Workflow
+# growthub-local — Repo Agent Rules
 
-## Required reading
-Before starting ANY work, read `CONTRIBUTING.md`, `AGENTS.md`, and `docs/ARTIFACT_VERSIONS.md`. Do not skip them.
+This file is the repo-specific agent contract for `growthub-local`.
 
-## Before any work
-1. Work in a feature branch or **git worktree** (isolation via `growthub worktree:make` when needed), not uncontrolled edits on **`main`**.
-2. Branch naming: `fix/`, `feat/`, `chore/`, `refactor/`, `docs/`, `ci/`, `test/`, `perf/`, `adapter/`, `sync/`
-3. Remote must point at the **growthub-local** GitHub repo you intend to PR against.
-4. Read source files before editing.
+## Required grounding
+
+Before changing repo docs or instructions, read:
+
+- `AGENTS.md`
+- `README.md`
+- `scripts/runtime-control.sh`
+- `cli/src/index.ts`
+
+Use `cli/src/commands/` when a command surface needs more detail than the top-level help text.
+
+## Core rules
+
+1. Work in a feature branch or git worktree, not on `main`.
+2. Treat `scripts/runtime-control.sh` as the canonical source-dev runtime path.
+3. Keep repo agent docs focused on agent workflow and current CLI discovery.
+4. Replace stale instructions directly instead of layering patches on top of old prose.
+5. Do not invent discovery options or command paths that the current repo does not ship.
+
+## Documentation lane split
+
+Keep docs and instructions separated by lane:
+
+- CLI/open-source lane: user features, discovery UX, command behavior, contribution flow
+- maintainer/super-admin lane: merge governance, release orchestration, npm publication steps
+
+Paperclip/admin operational scripts are lower priority unless the task explicitly targets them.
 
 ## Canonical runtime
-Use **`scripts/runtime-control.sh`** from the repo root — same commands as `AGENTS.md` (`up-main`, `up-branch`, `up-pr`, `stop`, `status`, `url`). Align **`GH_SERVER_PORT`** with the API process you are actually running.
+
+Use:
+
+```bash
+scripts/runtime-control.sh up-main
+scripts/runtime-control.sh up-branch <branch>
+scripts/runtime-control.sh up-pr <pr-number>
+scripts/runtime-control.sh stop
+scripts/runtime-control.sh status
+scripts/runtime-control.sh url
+```
+
+Current runtime facts from source:
+
+- `GH_SERVER_PORT` defaults to `3100`
+- `GH_UI_PORT` defaults to `5173`
+- the UI is started with `VITE_API_ORIGIN=http://127.0.0.1:${GH_SERVER_PORT}`
+- the server runs in `dev:watch`
+
+If the API is really on `3101`, set `GH_SERVER_PORT=3101` when starting the runtime.
+
+## Current CLI discovery surface
+
+The only documented discovery entrypoint for this repo is:
+
+```bash
+zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+```
+
+Current discovery options:
+
+- `Full Local App`
+- `Worker Kits`
+- `Templates`
+- `Workflows`
+- `Connect Growthub Account`
+- `Help CLI`
+
+If repo docs mention discovery, they should use that command path and reflect this structure.
 
 ## Anti-patterns
-- **Never** run **`node scripts/worktree-bootstrap.mjs`** yourself — that file is **maintainer/automation only**, not an agent entrypoint.
-- **Never** manually copy `ui/src` or `server/src` into **growthub-core** to “test”; that is not the agent workflow.
-- **Never** treat ad-hoc “terminal 1 server + terminal 2 vite” as the default substitute for **`scripts/runtime-control.sh`**.
+
+- Do not run `node scripts/worktree-bootstrap.mjs`.
+- Do not manually copy `ui/src` or `server/src` into `growthub-core`.
+- Do not describe raw two-terminal dev loops as the repo default when `scripts/runtime-control.sh` is the documented control surface.
+- Do not leave old discovery menus or old command lists in repo docs after the source changes.
 
 ## Before pushing
-Run `bash scripts/pr-ready.sh` — it validates everything in one shot.
 
-## Command guardrails
-Run `bash scripts/guard.sh check-command "<command>"` before any git operation to verify it's safe.
+Run:
 
-## Version bumps (only when source changes ship to npm)
-- `cli/package.json` version +1
-- `packages/create-growthub-local/package.json` version +1
-- dep pin in create must match cli version exactly
+```bash
+bash scripts/pr-ready.sh
+```
 
-## CI must pass before merge
-- smoke, validate, verify — all 3 green
-- Then: `node scripts/release-check.mjs` locally
-- Then: merge, release workflow, confirm npm when packages ship
+## Guardrails
+
+Before destructive git operations, run:
+
+```bash
+bash scripts/guard.sh check-command "<command>"
+```

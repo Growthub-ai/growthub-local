@@ -1,13 +1,12 @@
 # @growthub/cli
 
-`@growthub/cli` is the published CLI for Growthub Local. It covers four shipped workflows:
+`@growthub/cli` is the published CLI for Growthub Local. It covers five shipped user flows:
 
 - full local app discovery and onboarding
 - worker kit discovery, export, inspection, and validation
 - shared template discovery and extraction
+- hosted workflows, capabilities, dynamic pipelines, and artifacts
 - hosted Growthub auth + machine profile bridge
-
-Now supports the hosted for Growthub Auth Users, the `Workflows` discovery surface for saved workflows, templates, and hosted workflow execution.
 
 ## Install
 
@@ -18,19 +17,19 @@ npm install -g @growthub/cli
 You can also install through the guided installer:
 
 ```bash
-npx create-growthub-local
+npm create growthub-local@latest
 ```
 
 Or jump directly to a profile:
 
 ```bash
-npx create-growthub-local --profile gtm
-npx create-growthub-local --profile dx
+npm create growthub-local@latest -- --profile gtm
+npm create growthub-local@latest -- --profile dx
 ```
 
 ## CLI Editions
 
-The current CLI exposes four user-facing editions through `growthub discover` and direct subcommands.
+The current CLI exposes five user-facing flows through `growthub discover` and direct subcommands.
 
 ### 1. Full Local App
 
@@ -136,7 +135,17 @@ User flow:
 2. Preview the selected artifact.
 3. Print it, copy it to a local workspace, or use the slug in another workflow.
 
-### 4. Hosted Auth Bridge
+### 4. Hosted Workflows
+
+Use this when you want CMS node contract discovery, dynamic hosted pipeline creation, and saved workflow lifecycle management.
+
+```bash
+growthub workflow
+growthub workflow saved
+growthub pipeline assemble
+```
+
+### 5. Hosted Auth Bridge
 
 Use this when you want the hosted Growthub account to remain the top-level identity while syncing safe local-machine metadata into the CLI runtime.
 
@@ -163,17 +172,16 @@ The public CLI now supports a hosted workflow discovery flow inside the interact
 ```bash
 growthub discover
 growthub workflow
-growthub workflow templates
 growthub workflow saved
 ```
 
 Use this when you want to:
 
-- list hosted saved workflows
-- inspect saved workflow detail
-- save template-backed workflows into hosted Growthub
+- inspect CMS node contracts from the interactive contracts browser
+- list hosted saved workflows and inspect detail
+- create/save hosted workflows through Dynamic Pipelines
 - execute a hosted saved workflow from the CLI
-- see loading, progress, summary, artifacts, and credits in the terminal
+- manage workflow lifecycle actions (archive/delete) from CLI
 
 The full public usage and architecture notes live here:
 
@@ -192,7 +200,7 @@ For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXT
 
 ## Development Notes
 
-- `@growthub/cli` version: `0.3.48`
+- `@growthub/cli` version: `0.3.49`
 - Node.js: `>=20`
 - Source of truth repo: [Growthub Local](https://github.com/Growthub-ai/growthub-local)
 

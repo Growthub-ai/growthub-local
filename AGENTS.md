@@ -1,14 +1,48 @@
 # growthub-local — Agent Workflow
 
-This file is read by Codex, OpenAI agents, and any AI coding tool that follows AGENTS.md conventions.
+This file defines the repo-level workflow for agents working in `growthub-local`.
+
+## Scope
+
+This repo-level agent file should stay focused on:
+
+- how agents work in this repo
+- which files are the source of truth
+- how the local runtime is started
+- how the current CLI discovery surface is organized
+
+If a section drifts into stale release notes, old package folklore, or side-runbooks that are not part of the current agent workflow, replace it.
+
+## Frozen architecture snapshot
+
+The current repo documentation baseline is frozen to this shipped workflow split:
+
+- CLI feature/docs flow: discovery UX, commands, and contributor-facing behavior
+- maintainer/super-admin flow: release timing, npm publication, and admin-only merge governance
+
+Do not blend these lanes in routine feature/docs updates.
+
+## Source of truth
+
+For current behavior, read these files before editing docs or instructions:
+
+- `scripts/runtime-control.sh`
+- `cli/src/index.ts`
+- `cli/src/commands/`
+- `README.md`
+- `CLAUDE.md`
+
+If older prose conflicts with those files, the source files win.
 
 ## Before any work
-- Work in a feature branch or worktree, never directly on `main`.
-- Branch naming: `fix/`, `feat/`, `chore/`, `refactor/`, `docs/`, `ci/`, `test/`, `perf/`, `adapter/`, `sync/`
-- Read source files before editing.
 
-## Canonical runtime (source dev — use this)
-From the **growthub-local** repo root, the deterministic control surface is **`scripts/runtime-control.sh`** (kills stale processes, checks out the target branch when applicable, starts **server `dev:watch` + Vite** with the configured instance).
+- Work in a feature branch or worktree, never directly on `main`.
+- Read the files you are about to change before editing them.
+- Replace stale guidance directly instead of stacking corrections on top of it.
+
+## Canonical runtime
+
+From the repo root, use:
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -19,47 +53,74 @@ scripts/runtime-control.sh status
 scripts/runtime-control.sh url
 ```
 
-Typical GTM dev URL after `up-main` (adjust company slug if yours differs): `http://localhost:5173/gtm/GHA/workspace`
+Current runtime facts from source:
 
-**Ports:** The script defaults `GH_SERVER_PORT` to **3100**. Your API may listen on **3101** (see `ui/vite.config.ts` proxy default). If health checks or the UI fail to reach the API, set `GH_SERVER_PORT` to match the real listener, for example:
+- the script starts `server` in `dev:watch`
+- the script starts the Vite UI
+- `GH_SERVER_PORT` defaults to `3100`
+- `GH_UI_PORT` defaults to `5173`
+- the UI is started with `VITE_API_ORIGIN=http://127.0.0.1:${GH_SERVER_PORT}`
+
+If the API is actually listening on `3101`, start the runtime with:
 
 ```bash
 GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 ```
 
-**Paths:** Override with `GH_LOCAL_ROOT`, `GH_CONFIG`, `GH_UI_PORT`, `GH_LOG_DIR` when not using defaults.
+Typical GTM URL:
 
-## Anti-patterns (do not do this)
-- **Do not** improvise a “two-terminal” `pnpm --dir server` + `pnpm --dir ui` loop as your own primary workflow unless a maintainer explicitly told you to — it skips the same cleanup, env, and branch discipline as **`scripts/runtime-control.sh`**.
-- **Do not** run **`node scripts/worktree-bootstrap.mjs`** or copy files by hand into **growthub-core** — those paths are **maintainer / automation only**, not agent runbooks.
-- **Do not** treat copy-pasted **semver** numbers from chat, old PRs, or blog posts as truth — see **`docs/ARTIFACT_VERSIONS.md`** and read **`cli/package.json`** on your checkout.
+```text
+http://localhost:5173/gtm/GHA/workspace
+```
 
-## Isolated environments
-When you need an isolated DB, port, and instance state:
+## CLI discovery
+
+The only documented discovery entrypoint for this repo is:
+
+```bash
+zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+```
+
+That discovery hub exposes these user-facing paths:
+
+- `Full Local App`
+- `Worker Kits`
+- `Templates`
+- `Workflows`
+- `Connect Growthub Account`
+- `Help CLI`
+
+If repo docs describe discovery, they should use that command path and match this current surface.
+
+## Anti-patterns
+
+- Do not replace `scripts/runtime-control.sh` with an ad-hoc `pnpm --dir server` plus `pnpm --dir ui` loop unless a maintainer explicitly tells you to.
+- Do not run `node scripts/worktree-bootstrap.mjs`.
+- Do not manually copy code into `growthub-core`.
+- Do not leave stale command lists in place once the source says otherwise.
+
+## Worktrees
+
+When you need an isolated local environment, use:
 
 ```bash
 growthub worktree:make my-feature
 ```
 
-Use the maintainer’s instructions for that worktree; still **do not** run bootstrap scripts yourself.
+Do not improvise bootstrap steps around `worktree-bootstrap.mjs`.
 
 ## Before pushing
-Run `bash scripts/pr-ready.sh` — validates pre-push contracts in one shot.
 
-## Command guardrails
-Run `bash scripts/guard.sh check-command "<command>"` before destructive git operations.  
-Blocked patterns: `git reset --hard`, `git push --force`, `git clean -f`, push to `main`.
+Run:
 
-## Two-repo reality
-- **growthub-local** = source of truth for PRs, CI/CD, and npm (`@growthub/cli`, `create-growthub-local`).
-- **growthub-core** and other private trees are **outside** the agent runbook unless a maintainer gives you explicit steps.
+```bash
+bash scripts/pr-ready.sh
+```
 
-## Version bumps (only when npm-facing behavior ships)
-- Bump `cli/package.json`
-- Bump `packages/create-growthub-local/package.json`
-- The installer pin for `@growthub/cli` must match the CLI version exactly
+## Guardrails
 
-## CI gates
-- PR checks: `smoke`, `validate`, `verify` — all must pass
-- Local gate: `node scripts/release-check.mjs`
-- After merge: maintainer runs release workflow; confirm npm versions if you shipped packages
+Before destructive git operations, run:
+
+```bash
+bash scripts/guard.sh check-command "<command>"
+```

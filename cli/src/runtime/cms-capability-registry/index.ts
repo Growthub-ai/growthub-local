@@ -8,9 +8,8 @@
  *   - how they bind into pipelines
  *   - what execution shape they require
  *
- * Data sources:
- *   1. Hosted registry endpoint (primary — via HostedExecutionClient)
- *   2. Built-in catalog seeded from the production CMS workflow_node records
+ * Data source:
+ *   - Hosted registry endpoint via HostedExecutionClient
  *
  * The registry does NOT reimplement CMS semantics — it exposes them as
  * CLI/runtime-friendly node records.
@@ -20,9 +19,10 @@ import {
   createHostedExecutionClient,
   type HostedCapabilityRecord,
 } from "../hosted-execution-client/index.js";
+import { readSession, isSessionExpired } from "../../auth/session-store.js";
+import { listHostedWorkflows, fetchHostedWorkflow } from "../../auth/hosted-client.js";
 import type {
   CmsCapabilityNode,
-  CmsConnectorNode,
   CapabilityFamily,
   CapabilityQuery,
   CapabilityRegistryMeta,
@@ -44,316 +44,6 @@ export type {
 export { CAPABILITY_FAMILIES } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Built-in workflow node templates — seeded from production CMS
-// ---------------------------------------------------------------------------
-
-const BUILTIN_WORKFLOW_NODES: CmsCapabilityNode[] = [
-  {
-    slug: "llm-text-generation",
-    displayName: "LLM Text Generation",
-    icon: "🤖",
-    family: "text",
-    category: "automation",
-    nodeType: "tool_execution",
-    executionKind: "hosted-execute",
-    executionBinding: { type: "mcp_tool_call", strategy: "direct" },
-    executionTokens: {
-      tool_name: "llm_text_generation",
-      input_template: {
-        prompt: "",
-        modelId: "",
-        maxTokens: 4096,
-        temperature: 0.7,
-        systemPrompt: "",
-      },
-      output_mapping: {
-        text: "string",
-        model: "string",
-        success: "boolean",
-        duration: "number",
-        tokensUsed: "object",
-      },
-      migration_version: "20251018000000",
-    },
-    requiredBindings: ["provider-api-key"],
-    outputTypes: ["text"],
-    enabled: true,
-    experimental: false,
-    visibility: "public",
-    description: "Generate text using any AI model provider.",
-  },
-  {
-    slug: "image-generation",
-    displayName: "Image Generation",
-    icon: "🎨",
-    family: "image",
-    category: "automation",
-    nodeType: "tool_execution",
-    executionKind: "hosted-execute",
-    executionBinding: { type: "mcp_tool_call", strategy: "direct" },
-    executionTokens: {
-      tool_name: "image_generation",
-      input_template: {
-        size: "1024",
-        prompt: "",
-        brandKitId: "",
-        imageModel: "gpt-image-1",
-        creativeCount: 1,
-        sequenceConfig: {
-          delayMs: 0,
-          createdAt: "",
-          loopCount: 1,
-          continueOnError: false,
-        },
-        referenceImages: [],
-      },
-      output_mapping: {
-        type: "object",
-        required: ["success", "images"],
-        properties: {
-          error: { type: "string" },
-          model: { type: "string" },
-          images: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                alt: { type: "string" },
-                url: { type: "string" },
-                width: { type: "integer" },
-                height: { type: "integer" },
-                storage_path: { type: "string" },
-              },
-            },
-          },
-          success: { type: "boolean" },
-          loopCount: { type: "integer" },
-          executionTime: { type: "number" },
-          imagesGenerated: { type: "integer" },
-        },
-      },
-      migration_version: "20251018000000",
-    },
-    requiredBindings: ["provider-api-key"],
-    outputTypes: ["image"],
-    enabled: true,
-    experimental: false,
-    visibility: "public",
-    description: "Generate images with brand assets.",
-  },
-  {
-    slug: "video-generation",
-    displayName: "Video Generation",
-    icon: "🎥",
-    family: "video",
-    category: "automation",
-    nodeType: "tool_execution",
-    executionKind: "hosted-execute",
-    executionBinding: { type: "mcp_tool_call", strategy: "sequential-with-persistence" },
-    executionTokens: {
-      tool_name: "Video Generation",
-      input_template: {
-        size: "720x1280",
-        prompt: "",
-        seconds: "4",
-        lastFrame: "",
-        brandKitId: "",
-        firstFrame: "",
-        resolution: "1080p",
-        videoModel: "sora-2",
-        aspectRatio: "16:9",
-        extendVideo: "",
-        remixVideoId: "",
-        creativeCount: 1,
-        inputReference: "",
-        referenceImages: [],
-      },
-      output_mapping: {
-        size: "string",
-        error: "string",
-        model: "string",
-        assets: "array",
-        status: "string",
-        success: "boolean",
-        videoId: "string",
-        videoUri: "string",
-        videoUrl: "string",
-        durationMs: "number",
-        executedAt: "string",
-        tokenUsage: "object",
-        thumbnailUri: "string",
-        executionTime: "number",
-        durationSeconds: "number",
-        pollingAttempts: "number",
-        totalDurationMs: "number",
-      },
-      migration_version: "20251018000000",
-    },
-    requiredBindings: ["provider-api-key"],
-    outputTypes: ["video"],
-    enabled: true,
-    experimental: false,
-    visibility: "public",
-    description: "Generate AI videos.",
-  },
-  {
-    slug: "slides-generation",
-    displayName: "Slides Generation",
-    icon: "💻",
-    family: "slides",
-    category: "automation",
-    nodeType: "tool_execution",
-    executionKind: "hosted-execute",
-    executionBinding: { type: "mcp_tool_call", strategy: "direct" },
-    executionTokens: {
-      tool_name: "slides_generation",
-      input_template: {
-        prompt: "",
-        brandKitId: "",
-        slideCount: 6,
-        referenceImages: [],
-      },
-      output_mapping: {
-        slides: "slides",
-        totalSlides: "totalSlides",
-      },
-      migration_version: "20251018000000",
-    },
-    requiredBindings: ["provider-api-key"],
-    outputTypes: ["slides"],
-    enabled: true,
-    experimental: false,
-    visibility: "public",
-    description: "Generate presentation slides.",
-  },
-  {
-    slug: "deep-research-perplexity",
-    displayName: "Deep Research (Perplexity Sonar)",
-    icon: "🔍",
-    family: "research",
-    category: "automation",
-    nodeType: "cms_workflow",
-    executionKind: "hosted-execute",
-    executionBinding: { type: "mcp_tool_call", strategy: "direct" },
-    executionTokens: {
-      tool_name: "deep_research_perplexity",
-      input_template: {
-        model: "sonar",
-        query: "",
-        context: "",
-        maxResults: 10,
-      },
-      output_mapping: {
-        model: "string",
-        query: "string",
-        context: "string",
-        sources: "array",
-        success: "boolean",
-        duration: "number",
-        citations: "number",
-        executedAt: "string",
-        hasContext: "boolean",
-        tokensUsed: "object",
-        finishReason: "string",
-        researchSummary: "string",
-      },
-      migration_version: "20251018000000",
-    },
-    requiredBindings: ["provider-api-key"],
-    outputTypes: ["report", "text"],
-    enabled: true,
-    experimental: false,
-    visibility: "authenticated",
-    description: "Conduct deep research using Perplexity Sonar models with citations.",
-  },
-  {
-    slug: "image-analysis",
-    displayName: "Image Analysis",
-    icon: "👁️",
-    family: "vision",
-    category: "automation",
-    nodeType: "tool_execution",
-    executionKind: "hosted-execute",
-    executionBinding: { type: "mcp_tool_call", strategy: "direct" },
-    executionTokens: {
-      tool_name: "image_analysis",
-      input_template: {
-        imageUrl: "",
-        userPrompt: "",
-        visionModel: "gpt-4-vision",
-      },
-      output_mapping: {
-        tags: "array",
-        text: "string",
-        colors: "array",
-        objects: "array",
-        success: "boolean",
-        summary: "string",
-      },
-      migration_version: "20251018000000",
-    },
-    requiredBindings: ["provider-api-key"],
-    outputTypes: ["report", "text"],
-    enabled: true,
-    experimental: false,
-    visibility: "public",
-    description: "Analyze images with vision models to extract tags, summaries, and insights.",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Built-in connector registry — seeded from production CMS
-// ---------------------------------------------------------------------------
-
-const BUILTIN_CONNECTORS: CmsConnectorNode[] = [
-  {
-    slug: "growthub_local",
-    displayName: "Growthub Local Machine",
-    icon: "🖥️",
-    authType: "oauth_first_party",
-    tools: [
-      "growthub_local_list_knowledge_tables",
-      "growthub_local_list_knowledge_items",
-      "growthub_local_upsert_knowledge_item",
-      "growthub_local_update_knowledge_metadata",
-      "growthub_local_sync_run_output",
-    ],
-    description: "Connect a local Growthub DX or GTM machine so agents can read and write shared knowledge.",
-    longDescription: "Growthub Local Machine bridges a private Growthub account to a local Growthub DX or GTM installation.",
-    enabled: true,
-    mcpProvider: "growthub_local",
-  },
-  {
-    slug: "facebook_graph_api",
-    displayName: "Meta Ads",
-    icon: "📘",
-    authType: "oauth_first_party",
-    tools: [
-      "meta_ads_insights",
-      "creative_fatigue_analysis",
-      "demographic_targeting_insights",
-      "nlu_text_prompt_generator",
-    ],
-    description: "Facebook and Instagram advertising insights and management.",
-    enabled: true,
-    mcpProvider: "meta-ads",
-  },
-  {
-    slug: "foreplay_api",
-    displayName: "Foreplay",
-    icon: "🎯",
-    authType: "api_token",
-    tools: [
-      "foreplay_competitor_research",
-      "foreplay_board_analysis",
-    ],
-    description: "Competitive ad intelligence and creative insights.",
-    enabled: true,
-    mcpProvider: "foreplay",
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Normalize hosted records to CmsCapabilityNode
 // ---------------------------------------------------------------------------
 
@@ -369,27 +59,99 @@ function toCapabilityNode(record: HostedCapabilityRecord): CmsCapabilityNode {
     vision: "vision",
   };
 
+  const metadata = (record.metadata ?? {}) as Record<string, unknown>;
+  const executionTokens = (metadata.executionTokens ?? metadata.execution_tokens ?? {}) as Record<string, unknown>;
+  const inputTemplate = (executionTokens.input_template ?? metadata.input_template ?? {}) as Record<string, unknown>;
+  const outputMapping = (executionTokens.output_mapping ?? metadata.output_mapping ?? {}) as Record<string, unknown>;
+  const toolName = typeof executionTokens.tool_name === "string"
+    ? executionTokens.tool_name
+    : typeof metadata.tool_name === "string"
+      ? metadata.tool_name
+      : record.slug;
+  const executionStrategy = typeof (metadata.executionStrategy ?? metadata.execution_strategy) === "string"
+    ? (metadata.executionStrategy ?? metadata.execution_strategy) as "direct" | "sequential-with-persistence" | "async_operation"
+    : "direct";
+
   return {
     slug: record.slug,
     displayName: record.displayName,
-    icon: "",
+    icon: typeof metadata.icon === "string" ? metadata.icon : "",
     family: familyMap[record.family] ?? "ops",
-    category: "automation",
-    nodeType: "tool_execution",
+    category: typeof metadata.category === "string" ? metadata.category : "automation",
+    nodeType: (typeof metadata.nodeType === "string" ? metadata.nodeType : "tool_execution") as "tool_execution" | "cms_workflow",
     executionKind: record.executionKind,
-    executionBinding: { type: "mcp_tool_call", strategy: "direct" },
+    executionBinding: { type: "mcp_tool_call", strategy: executionStrategy },
     executionTokens: {
-      tool_name: record.slug,
-      input_template: {},
-      output_mapping: {},
+      tool_name: toolName,
+      input_template: inputTemplate,
+      output_mapping: outputMapping,
     },
     requiredBindings: record.requiredBindings,
     outputTypes: record.outputTypes,
     enabled: record.enabled,
-    experimental: false,
-    visibility: "authenticated",
-    manifestMetadata: record.metadata,
+    experimental: Boolean(metadata.experimental),
+    visibility: (typeof metadata.visibility === "string" ? metadata.visibility : "authenticated") as "public" | "authenticated" | "admin",
+    description: typeof metadata.description === "string" ? metadata.description : undefined,
+    manifestMetadata: metadata,
   };
+}
+
+function inferFamilyFromSlug(slug: string): CapabilityFamily {
+  const normalized = slug.toLowerCase();
+  if (normalized.includes("video")) return "video";
+  if (normalized.includes("image")) return "image";
+  if (normalized.includes("slide")) return "slides";
+  if (normalized.includes("research")) return "research";
+  if (normalized.includes("vision")) return "vision";
+  if (normalized.includes("text") || normalized.includes("llm")) return "text";
+  if (normalized.includes("data")) return "data";
+  return "ops";
+}
+
+async function deriveCapabilitiesFromHostedWorkflows(): Promise<HostedCapabilityRecord[]> {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) return [];
+
+  const list = await listHostedWorkflows(session);
+  const workflows = list?.workflows ?? [];
+  if (workflows.length === 0) return [];
+
+  const bySlug = new Map<string, HostedCapabilityRecord>();
+
+  for (const workflow of workflows.slice(0, 50)) {
+    const detail = await fetchHostedWorkflow(session, workflow.workflowId);
+    const nodes = Array.isArray(detail?.latestVersion?.config?.nodes)
+      ? (detail?.latestVersion?.config?.nodes as Array<Record<string, unknown>>)
+      : [];
+
+    for (const node of nodes) {
+      if (node.type !== "cmsNode") continue;
+      const data = (node.data ?? {}) as Record<string, unknown>;
+      const slug = typeof data.slug === "string" ? data.slug : null;
+      if (!slug) continue;
+      const inputs = (data.inputs ?? {}) as Record<string, unknown>;
+
+      if (!bySlug.has(slug)) {
+        bySlug.set(slug, {
+          slug,
+          family: inferFamilyFromSlug(slug),
+          displayName: slug,
+          executionKind: "hosted-execute",
+          requiredBindings: [],
+          outputTypes: [],
+          enabled: true,
+          metadata: {
+            input_template: inputs,
+            output_mapping: {},
+            tool_name: slug,
+            source: "derived-from-hosted-workflows",
+          },
+        });
+      }
+    }
+  }
+
+  return [...bySlug.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -419,33 +181,20 @@ export interface CmsCapabilityRegistryClient {
   listCapabilities(query?: CapabilityQuery): Promise<{ nodes: CmsCapabilityNode[]; meta: CapabilityRegistryMeta }>;
   /** Fetch a single capability by slug. */
   getCapability(slug: string): Promise<CmsCapabilityNode | null>;
-  /** Fetch only the built-in workflow node templates (no network). */
-  listBuiltinCapabilities(query?: CapabilityQuery): { nodes: CmsCapabilityNode[]; meta: CapabilityRegistryMeta };
-  /** Fetch built-in connectors (no network). */
-  listBuiltinConnectors(): CmsConnectorNode[];
 }
 
 export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient {
   return {
     async listCapabilities(query) {
-      let nodes: CmsCapabilityNode[];
-      let source: "hosted" | "local-fallback";
-
-      try {
-        const executionClient = createHostedExecutionClient();
-        const hostedRecords = await executionClient.getHostedCapabilities();
-
-        if (hostedRecords.length > 0) {
-          nodes = hostedRecords.map(toCapabilityNode);
-          source = "hosted";
-        } else {
-          nodes = [...BUILTIN_WORKFLOW_NODES];
-          source = "local-fallback";
-        }
-      } catch {
-        nodes = [...BUILTIN_WORKFLOW_NODES];
-        source = "local-fallback";
+      const executionClient = createHostedExecutionClient();
+      let hostedRecords = await executionClient.getHostedCapabilities();
+      if (hostedRecords.length === 0) {
+        hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
       }
+      if (hostedRecords.length === 0) {
+        throw new Error("Hosted capability registry returned zero nodes. No local fallback is enabled.");
+      }
+      const nodes = hostedRecords.map(toCapabilityNode);
 
       const enabledCount = nodes.filter((n) => n.enabled).length;
       const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
@@ -456,7 +205,7 @@ export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient
           total: nodes.length,
           enabledCount,
           fetchedAt: new Date().toISOString(),
-          source,
+          source: "hosted",
         },
       };
     },
@@ -466,24 +215,5 @@ export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient
       return nodes.find((n) => n.slug === slug) ?? null;
     },
 
-    listBuiltinCapabilities(query) {
-      const nodes = query
-        ? BUILTIN_WORKFLOW_NODES.filter((n) => matchesQuery(n, query))
-        : [...BUILTIN_WORKFLOW_NODES];
-
-      return {
-        nodes,
-        meta: {
-          total: BUILTIN_WORKFLOW_NODES.length,
-          enabledCount: BUILTIN_WORKFLOW_NODES.filter((n) => n.enabled).length,
-          fetchedAt: new Date().toISOString(),
-          source: "local-fallback",
-        },
-      };
-    },
-
-    listBuiltinConnectors() {
-      return [...BUILTIN_CONNECTORS];
-    },
   };
 }

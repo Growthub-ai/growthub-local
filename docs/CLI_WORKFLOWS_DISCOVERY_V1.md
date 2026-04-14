@@ -1,196 +1,441 @@
-# CLI Workflows Discovery V1
+# CLI Workflow Node CMS Orchestrator — Setup & Discovery Guide
 
-This document is the public source of truth for the `@growthub/cli` workflow discovery extension now shipped in `growthub-local`.
+This is the agent-facing source of truth for the `growthub-local` workflow discovery surface.
 
 It covers:
+- the exact discovery entrypoint
+- the three supported workflow surfaces and when to use each
+- the exact hosted workflow config schema that the bridge requires
+- the CMS node adapter contract
+- the video-generation node slot specification and validated adapter shape
+- the save and execute bridge endpoints
+- what the CLI owns vs what hosted Growthub owns
 
-- how to use the workflows surface from the public CLI
-- what the hosted bridge does
-- what is supported in V1
-- how the Discovery CLI maps to hosted Growthub execution
+For the validated Clarifion VEO reference-image path proven end to end, see
+[CLI_DISCOVERY_CLARIFION_VEO_WORKING_FLOW.md](./CLI_DISCOVERY_CLARIFION_VEO_WORKING_FLOW.md).
 
-## What This Extension Adds
+---
 
-The CLI now exposes a first-class `Workflows` surface inside the interactive discovery hub.
+## Discovery Entrypoint
 
-That surface is designed for a hosted-authenticated Growthub user who wants to:
-
-- browse their hosted saved workflows
-- browse workflow templates
-- assemble and save a new hosted workflow from a template
-- execute a saved hosted workflow from the CLI
-- see loading, progress, completion, summary, artifacts, and credits in the terminal
-
-This is not a separate workflow engine. The CLI is a hosted bridge into the existing Growthub workflow runtime.
-
-## How To Use It
-
-Install the public CLI:
+The single correct entrypoint for this repo is:
 
 ```bash
-npm install -g @growthub/cli
+zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 ```
 
-Open the discovery hub:
+Or via the public CLI after install:
 
 ```bash
 growthub discover
 ```
 
-Connect your hosted account if needed:
+Auth must be active before using Workflows:
 
 ```bash
-growthub auth login
-```
-
-Then enter:
-
-```text
-Discovery -> Workflows
-```
-
-Inside `Workflows`, V1 supports:
-
-- `Saved Workflows`
-- `Templates`
-- `Dynamic Pipelines`
-
-## Supported V1 Flows
-
-### 1. Saved Workflows
-
-Use this when the workflow already exists in hosted Growthub under the authenticated user.
-
-Supported behavior:
-
-- list hosted saved workflows
-- load workflow detail
-- show node count and metadata
-- require double confirmation before execution
-- execute the saved workflow through the hosted runtime
-- show pre-init loading state
-- show execution progress
-- show final summary
-- show credits after execution
-
-### 2. Templates
-
-Use this when you want to create a hosted workflow from a built-in template.
-
-Supported behavior:
-
-- browse template families from the CLI
-- inspect template metadata and input shape
-- assemble a single-node hosted workflow from the template
-- save that workflow through the hosted workflow bridge
-
-The current public template path is built around the shipped built-in catalog in the CLI so the public UX stays deterministic even when unrelated hosted catalog surfaces are unavailable.
-
-### 3. Dynamic Pipelines
-
-Use this when you want to assemble a pipeline interactively and execute it through the hosted runtime.
-
-This path is available from the same workflow surface but is a separate authoring flow from template-backed saved workflows.
-
-## How It Works
-
-The public CLI does four things:
-
-1. It authenticates the user against hosted Growthub.
-2. It fetches hosted workflow metadata for that user.
-3. It turns CLI selections into the hosted workflow config / execution payload shape.
-4. It executes through the canonical hosted runtime and prints the results back into the terminal.
-
-The CLI does not own workflow truth. Hosted Growthub does.
-
-## Hosted Bridge Contract
-
-The V1 workflow discovery path uses these hosted surfaces:
-
-- `GET /api/cli/session`
-- `GET /api/cli/profile?view=workflows`
-- `GET /api/cli/profile?view=workflow&workflowId=<id>`
-- `POST /api/cli/profile?action=save-workflow`
-- `GET /api/cli/profile?view=credits`
-- `POST /api/execute-workflow`
-- hosted browser login at `/cli/login`
-
-At a high level:
-
-1. `growthub auth login` opens hosted `/cli/login`.
-2. Hosted auth completes in the browser and returns the CLI bearer session.
-3. The CLI uses that session to fetch workflow list/detail data.
-4. The CLI can save a workflow config through the hosted profile bridge.
-5. The CLI executes workflows through the canonical hosted workflow runtime.
-6. The terminal prints progress, summary, artifact IDs, and credits.
-
-## V1 UX Guarantees
-
-For the workflow execution path, the CLI now guarantees:
-
-- explicit confirmation before hosted execution
-- a second confirmation when credits may be spent
-- a loading state before the first streamed workflow event arrives
-- progress rendering during execution
-- final completion output on success
-- final surfaced failure output on error
-- summary and credits output after completion
-
-## Output And Persistence Model
-
-The CLI is only the invoking surface. Hosted Growthub remains the persistence layer.
-
-That means successful workflow runs are expected to persist through hosted Growthub’s normal workflow storage and message surfaces, including:
-
-- workflow run records
-- user-visible artifacts
-- chat message persistence
-- structured `ui_message_parts`
-
-This is the same direction as GH Max mode: CLI execution should be terminal-visible and also hosted-visible.
-
-## V1 Supported Template Families
-
-The public workflow template surface currently covers these shipped families:
-
-- image
-- video
-- slides
-- text
-- research
-- vision
-
-The exact template inventory is determined by the current built-in CLI catalog and the hosted runtime support behind each node slug.
-
-## Commands You’ll Actually Use
-
-```bash
-growthub discover
-growthub workflow
-growthub workflow templates
-growthub workflow saved
-growthub pipeline
 growthub auth login
 growthub auth whoami
 ```
 
-## Validation Status
+---
 
-The V1 workflow discovery extension has been validated for:
+## Top-Level Discovery Menu
 
-- discovery hub entry into `Workflows`
-- saved workflow list loading
-- saved workflow detail loading
-- saved workflow execution
-- template-backed hosted workflow save
-- loading/progress/completion states
-- summary and credits reporting
+```
+Growthub Local
+├── Full Local App
+├── Worker Kits
+├── Templates
+├── Workflows          ← requires auth
+├── Connect Growthub Account
+└── Help CLI
+```
 
-## Public Positioning
+Inside `Workflows`, the hub presents three surfaces:
 
-If you are using the public CLI package, the correct mental model is:
+```
+Workflows
+├── Saved Workflows      (hosted-authenticated, no machine link required)
+├── Templates            (requires hosted auth + local machine link)
+└── Dynamic Pipelines    (requires hosted auth + local machine link)
+```
 
-- the CLI is the portable terminal surface
-- hosted Growthub is the workflow source of truth
-- the workflow discovery extension gives terminal access to hosted saved workflows and template-backed hosted execution without requiring the user to leave the CLI for the run itself
+---
 
+## Surface 1 — Saved Workflows
+
+Use this to list, inspect, and execute workflows already persisted in hosted Growthub.
+
+### What it does
+
+1. Fetches the workflow list from `GET /api/cli/profile?view=workflows`
+2. Paginates the list (10 per page, searchable)
+3. Loads workflow detail from `GET /api/cli/profile?view=workflow&workflowId=<id>`
+4. Shows node count, node slugs, creation date
+5. Requires two confirmations before execution (intent + credit acknowledgement)
+6. Deserializes the hosted config back into a `DynamicRegistryPipeline`
+7. Executes via `POST /api/execute-workflow`
+8. Streams progress, renders completion summary, reports credits
+9. Supports lifecycle actions from the same menu:
+   - archive via `POST /api/cli/profile?action=archive-workflow`
+   - delete via `POST /api/cli/profile?action=delete-workflow`
+
+### Discovery path
+
+```
+Workflows
+-> Saved Workflows
+-> <select workflow by name>
+-> Execute saved workflow
+-> Confirm x2
+```
+
+### Fallback
+
+If hosted auth is unavailable, falls back to local JSON files at:
+
+```
+~/.paperclip/workflows/*.json
+```
+
+---
+
+## Surface 2 — Templates
+
+Use this to assemble a new hosted workflow from a built-in CMS capability node.
+
+### What it does
+
+1. Reads the built-in CMS capability registry (shipped with the CLI)
+2. Filters by family (video / image / slides / text / data / ops / research / vision)
+3. Shows template card: displayName, slug, family, category, nodeType, execution strategy, tool name, output types, input fields
+4. Assembles a single-node pipeline via `createPipelineBuilder`
+5. Pre-fills bindings from the node's `input_template`; prompts only for empty string fields
+6. Saves the workflow through `POST /api/cli/profile?action=save-workflow`
+
+### Discovery path
+
+```
+Workflows
+-> Templates
+-> <select family>
+-> <select template>
+-> Assemble a pipeline from this template
+-> <fill required inputs>
+-> Save pipeline
+```
+
+### Saved name format
+
+Workflows saved through this path are named `<displayName> Workflow`.
+
+---
+
+## Surface 3 — Dynamic Pipelines
+
+Use this when you need to hand-assemble a multi-node pipeline interactively.
+
+Entry delegates to `runPipelineAssembler` in `cli/src/commands/pipeline.ts`.
+
+### Discovery path
+
+```
+Workflows
+-> Dynamic Pipelines
+-> <follow pipeline assembler prompts>
+```
+
+Requires hosted auth + local machine link.
+
+---
+
+## Hosted Workflow Config Schema
+
+This is the wire shape the hosted runtime expects. The CLI builds this via `buildHostedWorkflowConfig`.
+
+```json
+{
+  "name": "<pipelineId>",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 0, "y": 0 },
+      "data": {}
+    },
+    {
+      "id": "<node-id>",
+      "type": "cmsNode",
+      "position": { "x": 300, "y": 0 },
+      "data": {
+        "slug": "<node-slug>",
+        "inputs": { "<key>": "<value>" }
+      }
+    },
+    {
+      "id": "end-1",
+      "type": "end",
+      "position": { "x": 600, "y": 0 },
+      "data": {}
+    }
+  ],
+  "edges": [
+    { "id": "e-start-1-<node-id>", "source": "start-1", "target": "<node-id>" },
+    { "id": "e-<node-id>-end-1",   "source": "<node-id>", "target": "end-1" }
+  ]
+}
+```
+
+### Node position rule
+
+Each node position increments by 300 on the x-axis:
+- `start-1` → `x: 0`
+- first CMS node → `x: 300`
+- second CMS node → `x: 600`
+- `end-1` → `x: (cmsNodes.length + 1) * 300`
+
+### Edge wiring rules
+
+- Every CMS node with no `upstreamNodeIds` connects from `start-1`
+- Every CMS node that is not a source for another node connects to `end-1`
+- Multi-node chains use explicit upstream-to-downstream edges
+
+---
+
+## DynamicRegistryPipeline Schema
+
+This is the internal pipeline shape the CLI uses before converting to the hosted config.
+
+```ts
+{
+  pipelineId: string;
+  executionMode: "hosted";
+  nodes: Array<{
+    id: string;
+    slug: string;
+    bindings: Record<string, unknown>;
+    upstreamNodeIds?: string[];
+  }>;
+  metadata?: {
+    hostedWorkflowId?: string;
+    workflowName?: string;
+  };
+}
+```
+
+When deserializing a hosted workflow for execution, the CLI converts:
+- `node.data.slug` → `node.slug`
+- `node.data.inputs` → `node.bindings`
+- Edge source/target → `upstreamNodeIds`
+- `workflowId` → `metadata.hostedWorkflowId`
+
+---
+
+## Hosted Bridge Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/cli/session` | Verify active session |
+| `GET` | `/api/cli/profile?view=workflows` | List saved workflows |
+| `GET` | `/api/cli/profile?view=workflow&workflowId=<id>` | Load workflow detail + config |
+| `POST` | `/api/cli/profile?action=save-workflow` | Save new workflow |
+| `POST` | `/api/cli/profile?action=archive-workflow` | Archive existing workflow |
+| `POST` | `/api/cli/profile?action=delete-workflow` | Delete existing workflow |
+| `GET` | `/api/cli/profile?view=credits` | Read credit balance |
+| `POST` | `/api/execute-workflow` | Execute a workflow pipeline |
+
+---
+
+## CMS Node Adapter Contract
+
+Every CMS capability node registered in the CLI must conform to this shape in its `executionTokens`:
+
+```ts
+{
+  tool_name: string;
+  input_template: Record<string, unknown>;   // default values for each input field
+}
+```
+
+The CLI reads `input_template` to pre-fill bindings during template assembly. Fields with empty string values (`""`) are prompted interactively. All other fields use their default.
+
+### Available Template Families
+
+| Family | Color label | Notes |
+|--------|-------------|-------|
+| `video` | Video | Includes `video-generation` |
+| `image` | Image | |
+| `slides` | Slides | |
+| `text` | Text | |
+| `data` | Data | |
+| `ops` | Ops | |
+| `research` | Research | |
+| `vision` | Vision | |
+
+---
+
+## Video Generation Node — Adapter Specification
+
+### The one true node
+
+Do not create provider-specific graph nodes for video generation.
+
+```
+graph slug: video-generation
+```
+
+The provider choice belongs entirely inside `inputs.videoModel`.
+
+### Full input slot specification
+
+```json
+{
+  "videoModel": "veo-3.1-generate-001",
+  "prompt": "<your video generation prompt>",
+  "seconds": "8",
+  "resolution": "1080p",
+  "aspectRatio": "16:9",
+  "creativeCount": 1,
+  "refs": [
+    {
+      "name": "<reference label>",
+      "dataUrl": "data:image/jpeg;base64,<base64-encoded-image>"
+    }
+  ],
+  "referenceImages": [],
+  "firstFrame": "",
+  "inputReference": ""
+}
+```
+
+### Critical adapter rules
+
+| Slot | Rule |
+|------|------|
+| `refs[].dataUrl` | Must be a typed data URL. Example: `data:image/jpeg;base64,...` |
+| `referenceImages` | Keep empty (`[]`) when using `refs` |
+| `firstFrame` | Keep empty (`""`) on this path |
+| `inputReference` | Keep empty (`""`) on this path |
+| `videoModel` | Must match the provider slug exactly |
+
+**Do not** pass URL-only `referenceImages`. The Veo executor maps `refs[].dataUrl` to the Vertex reference-image path. URL-only payloads cause `image mime type is empty` at Vertex.
+
+### Validated provider models
+
+- `veo-3.1-generate-001` — proven working, confirmed in production execution
+
+---
+
+## End-to-End Setup — Custom Video Pipeline
+
+To set up a new custom video generation workflow through discovery:
+
+### Step 1 — Authenticate
+
+```bash
+growthub auth login
+growthub auth whoami
+```
+
+### Step 2 — Open discovery
+
+```bash
+zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+```
+
+### Step 3 — Assemble and save
+
+```
+Growthub Local
+-> Workflows
+-> Templates
+-> Video
+-> Video Generation
+-> Assemble a pipeline from this template
+-> <fill prompt field>
+-> Save pipeline
+```
+
+The workflow is saved to hosted Growthub via `POST /api/cli/profile?action=save-workflow`.
+
+Name format: `Video Generation Workflow` (unless customized in the pipeline assembler).
+
+### Step 4 — Execute from Saved Workflows
+
+```
+Growthub Local
+-> Workflows
+-> Saved Workflows
+-> <select workflow>
+-> Execute saved workflow
+-> Confirm x2
+```
+
+### Step 5 — Verify in asset library
+
+After execution completes with `Status: succeeded`, the generated artifact appears in the hosted Growthub media library automatically. This is handled by the hosted runtime persistence layer, not the CLI.
+
+---
+
+## Output And Persistence Model
+
+```
+CLI (invoking surface)
+  └── POST /api/execute-workflow
+        └── Hosted runtime (execution layer)
+              └── Hosted asset storage (persistence layer)
+                    └── Media library (browser-visible)
+```
+
+The CLI does not own artifact storage. It owns invocation and terminal rendering only.
+
+---
+
+## Definition Of Done For Any Video Pipeline Save
+
+A video pipeline save is correct only when all of the following are true:
+
+1. The workflow was assembled from the `Templates` surface using the `video-generation` slug
+2. The `refs[].dataUrl` field carries a typed data URL for reference image payloads
+3. The workflow was saved through `POST /api/cli/profile?action=save-workflow`
+4. The workflow appears in `Saved Workflows` in the discovery hub
+5. The workflow can be executed from `Saved Workflows` and returns `Status: succeeded`
+6. The generated clip appears in the hosted asset library
+
+---
+
+## Commands Reference
+
+```bash
+# Interactive discovery (repo path)
+zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+
+# Interactive discovery (public CLI)
+growthub discover
+
+# Workflow surfaces
+growthub workflow
+growthub workflow templates
+growthub workflow templates --family video
+growthub workflow templates --json
+growthub workflow saved
+growthub workflow saved --json
+
+# Auth
+growthub auth login
+growthub auth whoami
+
+# Pipeline assembler
+growthub pipeline
+growthub pipeline assemble
+```
+
+---
+
+## Anti-Patterns
+
+- Do not use `node_clarifion_veo` or any provider-specific node slug. Use `video-generation`.
+- Do not pass URL-only `referenceImages`. Use `refs[].dataUrl` with typed data URLs.
+- Do not manually construct the hosted config shape. Use `buildHostedWorkflowConfig` or the template assembler.
+- Do not bypass the `Saved Workflows` lifecycle menu for archive/delete; use the hosted bridge actions so CLI and GH app state stay consistent.
+- Do not describe the two-terminal dev loop as the repo default. Use `scripts/runtime-control.sh`.
