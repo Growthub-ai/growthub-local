@@ -29,6 +29,8 @@ Every custom workspace kit must satisfy these invariants before merge:
 - `QUICKSTART.md` is present and listed as a frozen asset
 - `.env.example` is only listed in manifests if the file physically exists in the kit directory — omit it from all three manifest lists (`frozenAssetPaths`, `outputStandard.requiredPaths`, `requiredFrozenAssets`) if it is not present
 - CI gates are green (`validate`, `smoke`, `verify`)
+- `cli/dist/index.js` esbuild bundle is rebuilt from source and force-committed after any source change — the release workflow does not build; it publishes the committed bundle as-is
+- `grep 'packageDirName' cli/dist/index.js | wc -l` matches the number of entries in `cli/src/kits/catalog.ts`
 
 ## Packet Inputs
 
@@ -74,9 +76,14 @@ bash scripts/check-custom-workspace-kernel.sh
 
 ### P5. Release + Ship Confirmation
 
+- rebuild the esbuild bundle: `cd cli && node --input-type=module` using `esbuild.config.mjs` (see Release Bundle Contract above)
+- verify `grep 'packageDirName' cli/dist/index.js | wc -l` equals the number of kits in `catalog.ts`
+- force-commit the bundle: `git add -f cli/dist/index.js`
 - merge PR after checks are green
-- run release workflow (stable publish)
-- confirm npm remote latest versions match merged package versions
+- trigger release workflow: `gh workflow run release.yml --ref main --field dry_run=false`
+- confirm npm remote: `npm view @growthub/cli version`
+- confirm all kits in the remote package: fresh `npm install @growthub/cli@<version>` + `kit list --json`
+- if a broken version was published, bump version, rebuild, and republish — npm will not overwrite
 
 ## Reuse Beyond Worker Kits
 
@@ -94,6 +101,87 @@ Apply the same structure for Templates, Workflows, Local Intelligence, and futur
 When a worker kit's external target is a hosted third-party SaaS REST API (no fork, no self-host, no new executor), use the narrower specialization that inherits every invariant of this packet and adds the thin-hosted-provider discipline:
 
 - [Hosted SaaS Kit Kernel Packet](./KERNEL_PACKET_HOSTED_SAAS_KIT.md)
+
+## Release Bundle Contract
+
+This contract governs the relationship between source changes, the esbuild bundle, and what remote npm users actually receive. It is the most common source of silent drift and must be understood before any release.
+
+### The bundle is what ships — not the TypeScript source
+
+`cli/dist/index.js` is a single-file esbuild bundle generated from `cli/src/index.ts`. It is what `npm publish cli/` sends to the registry. The TypeScript source in `cli/src/` and the multi-file tsc output are **not** what remote users run.
+
+**Critical:** `BUNDLED_KIT_CATALOG` from `cli/src/kits/catalog.ts` is baked into the bundle at build time. Adding a new kit to `catalog.ts` does not update the bundle. The bundle must be explicitly rebuilt and committed for the change to reach npm users.
+
+### The release workflow does not build
+
+`scripts/release.sh` and `.github/workflows/release.yml` do not run any build step. They verify `cli/dist/index.js` exists and publish it as-is. A stale bundle = stale package for all users.
+
+### The bundle is gitignored and must be force-committed
+
+`cli/dist/` is in `.gitignore`. After rebuilding, the bundle must be staged with `git add -f cli/dist/index.js` before committing.
+
+### How to rebuild the bundle
+
+From the repo root:
+
+```bash
+cd cli && node --input-type=module <<'SCRIPT'
+import config from './esbuild.config.mjs';
+const { build } = await import('/path/to/node_modules/.pnpm/esbuild@0.25.12/node_modules/esbuild/lib/main.js');
+await build(config);
+console.log('done');
+SCRIPT
+```
+
+Or locate esbuild in the pnpm store:
+
+```bash
+find node_modules/.pnpm/esbuild@* -name "esbuild" -type f | head -1
+# then run: <esbuild-binary> src/index.ts --bundle ... (see esbuild.config.mjs for full flags)
+```
+
+After rebuilding, verify the bundle contains all catalog entries:
+
+```bash
+grep 'packageDirName' cli/dist/index.js | wc -l
+# must equal the number of kits in cli/src/kits/catalog.ts
+```
+
+### Full release sequence — required every time source changes ship
+
+```bash
+# 1. Rebuild the bundle from source
+cd cli && node --input-type=module <<'SCRIPT'
+import config from './esbuild.config.mjs';
+const { build } = await import('<esbuild-path>');
+await build(config); console.log('done');
+SCRIPT
+
+# 2. Verify bundle has all kits
+grep 'packageDirName' dist/index.js | wc -l   # must match catalog.ts entry count
+
+# 3. Force-add the gitignored bundle and commit
+cd ..
+git add -f cli/dist/index.js
+git commit -m "chore(dist): rebuild esbuild bundle for <version>"
+
+# 4. Push to main (or PR if branch protection requires it)
+
+# 5. Trigger the release workflow
+gh workflow run release.yml --ref main --field dry_run=false
+
+# 6. Confirm remote npm version and kit list
+npm view @growthub/cli version
+node node_modules/@growthub/cli/dist/index.js kit list --json | grep '"id"'
+```
+
+### npm will not overwrite a published version
+
+If the release workflow ran with a stale bundle and published the wrong package at version `X`, that version is permanently broken on npm. The only fix is to bump to `X+1`, rebuild the bundle correctly, and republish. Always verify the remote package with a fresh `npm install` before treating a release as done.
+
+### PR body must use plain text
+
+The `pr-validate.yml` CI check inlines `${{ github.event.pull_request.body }}` directly into a bash script. PR body text containing backticks, parentheses, or markdown code spans will be interpreted as shell commands and fail the check. Use plain prose with no markdown code formatting in PR descriptions.
 
 ## Discovery Parity Contract
 
