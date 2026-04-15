@@ -1127,7 +1127,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.57")
+  .version("0.3.58")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
