@@ -776,9 +776,9 @@ async function runDiscoveryHub(opts?: {
       message: "What do you want to do first?",
       options: [
         {
-          value: "app",
-          label: "📦 Full Local App",
-          hint: "Work from existing app or build from scratch",
+          value: "agent-harness",
+          label: "🤖 Agent Harness",
+          hint: "Local app profiles, open-agents orchestration, and more",
         },
         {
           value: "kits",
@@ -805,11 +805,6 @@ async function runDiscoveryHub(opts?: {
           hint: "use local custom models adapaters",
         },
         {
-          value: "open-agents",
-          label: "🤖 Open Agents",
-          hint: "durable agent workflow orchestration harness",
-        },
-        {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
@@ -830,13 +825,12 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "help") {
       p.note(
         [
-          "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
+          "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles) or Open Agents (durable workflow orchestration).",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
           `   Locked state: ${workflowAccess.reason}.`,
-          "🤖 Open Agents: durable agent workflow orchestration via the open-agents harness (sessions, sandboxes, tools).",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -855,20 +849,20 @@ async function runDiscoveryHub(opts?: {
       continue;
     }
 
-    if (surfaceChoice === "app") {
+    if (surfaceChoice === "agent-harness") {
       while (true) {
-        const appModeChoice = await p.select({
-          message: "How do you want to open Growthub Local?",
+        const harnessType = await p.select({
+          message: "Filter by type",
           options: [
             {
-              value: "create",
-              label: "🆕 Create New Profile",
-              hint: "Build a new local app surface.",
+              value: "paperclip",
+              label: "📦 Paperclip Local App",
+              hint: "Create or load a GTM/DX profile on this machine",
             },
             {
-              value: "load",
-              label: "📂 Load Existing Profile",
-              hint: "Work from a profile already on this machine.",
+              value: "open-agents",
+              label: "🌐 Open Agents",
+              hint: "Durable agent workflow orchestration — sessions, sandboxes, tools",
             },
             {
               value: "__back_to_hub",
@@ -877,90 +871,131 @@ async function runDiscoveryHub(opts?: {
           ],
         });
 
-        if (p.isCancel(appModeChoice)) {
+        if (p.isCancel(harnessType)) {
           p.cancel("Cancelled.");
           process.exit(0);
         }
-        if (appModeChoice === "__back_to_hub") break;
+        if (harnessType === "__back_to_hub") break;
 
-        if (appModeChoice === "load") {
-          const existingSurfaces = listLocalSurfaces();
-          if (existingSurfaces.length === 0) {
-            p.note("No existing local app profiles were found on this machine.", "Nothing found");
-            continue;
+        // -- Paperclip Local App ---------------------------------------------
+        if (harnessType === "paperclip") {
+          let paperclipDone = false;
+          while (!paperclipDone) {
+            const appModeChoice = await p.select({
+              message: "How do you want to open Growthub Local?",
+              options: [
+                {
+                  value: "create",
+                  label: "🆕 Create New Profile",
+                  hint: "Build a new local app surface.",
+                },
+                {
+                  value: "load",
+                  label: "📂 Load Existing Profile",
+                  hint: "Work from a profile already on this machine.",
+                },
+                {
+                  value: "__back_to_harness",
+                  label: "← Back to harness type",
+                },
+              ],
+            });
+
+            if (p.isCancel(appModeChoice)) {
+              p.cancel("Cancelled.");
+              process.exit(0);
+            }
+            if (appModeChoice === "__back_to_harness") break;
+
+            if (appModeChoice === "load") {
+              const existingSurfaces = listLocalSurfaces();
+              if (existingSurfaces.length === 0) {
+                p.note("No existing local app profiles were found on this machine.", "Nothing found");
+                continue;
+              }
+
+              const existingChoice = await p.select({
+                message: "Select an existing app surface",
+                options: [
+                  ...existingSurfaces.map((surface) => ({
+                    value: surface.instanceId,
+                    label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
+                    hint: surface.configPath,
+                  })),
+                  { value: "__back_to_app_mode", label: "← Back to app options" },
+                ],
+              });
+
+              if (p.isCancel(existingChoice)) {
+                p.cancel("Cancelled.");
+                process.exit(0);
+              }
+              if (existingChoice === "__back_to_app_mode") {
+                continue;
+              }
+
+              const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
+              if (!selectedSurface) {
+                p.cancel("Selected profile not found.");
+                process.exit(1);
+              }
+
+              process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
+              await runCommand({
+                config: selectedSurface.configPath,
+                instance: selectedSurface.instanceId,
+                repair: true,
+                yes: true,
+              });
+              return;
+            }
+
+            const profileChoice = await p.select({
+              message: "Which new app surface do you want to create?",
+              options: [
+                {
+                  value: "gtm",
+                  label: "📈 GTM",
+                  hint: "Go-to-Market surface.",
+                },
+                {
+                  value: "dx",
+                  label: "🧠 DX",
+                  hint: "Developer Experience surface.",
+                },
+                {
+                  value: "__back_to_app_mode",
+                  label: "← Back to app options",
+                },
+              ],
+            });
+
+            if (p.isCancel(profileChoice)) {
+              p.cancel("Cancelled.");
+              process.exit(0);
+            }
+            if (profileChoice === "__back_to_app_mode") {
+              continue;
+            }
+
+            process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
+            await onboard({
+              config: opts?.config,
+              run: opts?.run ?? isInstallerMode(),
+              yes: isInstallerMode(),
+            });
+            return;
           }
 
-          const existingChoice = await p.select({
-            message: "Select an existing app surface",
-            options: [
-              ...existingSurfaces.map((surface) => ({
-                value: surface.instanceId,
-                label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
-                hint: surface.configPath,
-              })),
-              { value: "__back_to_app_mode", label: "← Back to app options" },
-            ],
-          });
-
-          if (p.isCancel(existingChoice)) {
-            p.cancel("Cancelled.");
-            process.exit(0);
-          }
-          if (existingChoice === "__back_to_app_mode") {
-            continue;
-          }
-
-          const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
-          if (!selectedSurface) {
-            p.cancel("Selected profile not found.");
-            process.exit(1);
-          }
-
-          process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
-          await runCommand({
-            config: selectedSurface.configPath,
-            instance: selectedSurface.instanceId,
-            repair: true,
-            yes: true,
-          });
-          return;
-        }
-
-        const profileChoice = await p.select({
-          message: "Which new app surface do you want to create?",
-          options: [
-            {
-              value: "gtm",
-              label: "📈 GTM",
-              hint: "Go-to-Market surface.",
-            },
-            {
-              value: "dx",
-              label: "🧠 DX",
-              hint: "Developer Experience surface.",
-            },
-            {
-              value: "__back_to_app_mode",
-              label: "← Back to app options",
-            },
-          ],
-        });
-
-        if (p.isCancel(profileChoice)) {
-          p.cancel("Cancelled.");
-          process.exit(0);
-        }
-        if (profileChoice === "__back_to_app_mode") {
           continue;
         }
 
-        process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
-        await onboard({
-          config: opts?.config,
-          run: opts?.run ?? isInstallerMode(),
-          yes: isInstallerMode(),
-        });
-        return;
+        // -- Open Agents -----------------------------------------------------
+        if (harnessType === "open-agents") {
+          const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
+          if (oaResult === "back") continue;
+          return;
+        }
       }
 
       continue;
@@ -980,12 +1015,6 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "native-intelligence") {
       const result = await runNativeIntelligenceHub();
-      if (result === "back") continue;
-      return;
-    }
-
-    if (surfaceChoice === "open-agents") {
-      const result = await runOpenAgentsHub({ allowBackToHub: true });
       if (result === "back") continue;
       return;
     }
