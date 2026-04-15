@@ -22820,7 +22820,7 @@ applyDataDirOverride(bootstrapOptions, {
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
-program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.58").addHelpText("after", `
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.59").addHelpText("after", `
 Worker Kits (agent execution environments):
 
   Discovery:
