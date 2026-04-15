@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-zernio-social-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-zernio-social-v1",
+    "workerId": "zernio-social-operator"
+  },
+  "briefType": "zernio-social-media-campaign",
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/zernio-social-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/social-campaign-brief.md",
+    "templates/content-calendar.md",
+    "templates/platform-publishing-plan.md",
+    "templates/caption-copy-deck.md",
+    "templates/analytics-brief.md",
+    "templates/scheduling-manifest.md",
+    "templates/client-proposal.md",
+    "examples/social-campaign-sample.md",
+    "examples/content-calendar-sample.md",
+    "examples/analytics-brief-sample.md",
+    "examples/client-proposal-sample.md",
+    "docs/zernio-api-integration.md",
+    "docs/platform-coverage.md",
+    "docs/ai-caption-layer.md",
+    "docs/posts-and-queues-layer.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "optionalPresets": [],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-zernio-social-v1",
+    "zipFileName": "growthub-agent-worker-kit-zernio-social-v1.zip"
+  },
+  "activationModes": ["export"]
+}

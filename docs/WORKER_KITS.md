@@ -150,6 +150,16 @@ An email kit would follow the same model:
 
 Browser-capable workflows such as lead sourcing, outbound, browser QA, and Chrome-assisted GTM work are also compatible with the same packaging model when their runtime assumptions are documented in the environment.
 
+### Social Media (Hosted API)
+
+`growthub-zernio-social-v1` is the reference environment for a hosted social-media provider:
+
+- campaign, calendar, caption, and scheduling-manifest instructions
+- 14 supported platforms (X/Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, Pinterest, Reddit, Bluesky, Threads, Google Business, Telegram, Snapchat, WhatsApp)
+- Zernio REST API shape for posts and queues (`POST /api/v1/posts`, `POST /api/v1/queues`)
+- `Idempotency-Key`-aware scheduling manifest so re-submission is safe
+- single bearer-token auth via `ZERNIO_API_KEY` — no fork or docker required
+
 ## What The Current Architecture Supports
 
 The current packaging model supports environments that depend on:

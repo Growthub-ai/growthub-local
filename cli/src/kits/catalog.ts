@@ -83,4 +83,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-zernio-social-v1",
+    packageDirName: "growthub-zernio-social-v1",
+    defaultBundleId: "growthub-zernio-social-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];

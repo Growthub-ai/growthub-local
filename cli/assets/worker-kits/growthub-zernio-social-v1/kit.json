@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "kit": {
+    "id": "growthub-zernio-social-v1",
+    "version": "1.0.0",
+    "name": "Growthub Agent Worker Kit — Zernio Social Media Studio",
+    "description": "Self-contained local execution environment for Zernio, the unified social media REST API for developers and AI agents. Produces implementation-ready social media campaigns, content calendars, multi-platform publishing plans, AI-assisted captions, Zernio-shaped scheduling manifests, recurring queue definitions, inbox reply plans, and analytics briefings across 14 platforms including X/Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, Pinterest, Reddit, Bluesky, Threads, Google Business, Telegram, Snapchat, and WhatsApp.",
+    "type": "worker",
+    "visibility": "public-open-source",
+    "sourceRepo": "growthub-local",
+    "family": "studio"
+  },
+  "entrypoint": {
+    "workerId": "zernio-social-operator",
+    "path": "workers/zernio-social-operator/CLAUDE.md"
+  },
+  "workerIds": [
+    "zernio-social-operator"
+  ],
+  "agentContractPath": "workers/zernio-social-operator/CLAUDE.md",
+  "brandTemplatePath": "brands/_template/brand-kit.md",
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "frozenAssetPaths": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/zernio-social-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/social-campaign-brief.md",
+    "templates/content-calendar.md",
+    "templates/platform-publishing-plan.md",
+    "templates/caption-copy-deck.md",
+    "templates/analytics-brief.md",
+    "templates/scheduling-manifest.md",
+    "templates/client-proposal.md",
+    "examples/social-campaign-sample.md",
+    "examples/content-calendar-sample.md",
+    "examples/analytics-brief-sample.md",
+    "examples/client-proposal-sample.md",
+    "docs/zernio-api-integration.md",
+    "docs/platform-coverage.md",
+    "docs/ai-caption-layer.md",
+    "docs/posts-and-queues-layer.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "setupPaths": {
+    "quickstart": "QUICKSTART.md",
+    "envExample": ".env.example",
+    "setupDir": "setup/",
+    "outputDir": "output/"
+  },
+  "outputStandard": {
+    "type": "working-directory",
+    "description": "Exported folder is intended to be pointed at directly by the agent Working Directory. All outputs are Markdown files written to output/<client-slug>/<project-slug>/ alongside a machine-readable scheduling-manifest.json shaped for POST https://zernio.com/api/v1/posts.",
+    "requiredPaths": [
+      "QUICKSTART.md",
+      ".env.example",
+      "kit.json",
+      "bundles/growthub-zernio-social-v1.json",
+      "skills.md",
+      "workers/zernio-social-operator/CLAUDE.md",
+      "brands/_template/brand-kit.md",
+      "brands/growthub/brand-kit.md",
+      "brands/NEW-CLIENT.md",
+      "setup/verify-env.mjs",
+      "setup/check-deps.sh",
+      "output/README.md",
+      "templates",
+      "docs",
+      "growthub-meta"
+    ]
+  },
+  "bundles": [
+    {
+      "id": "growthub-zernio-social-v1",
+      "version": "1.0.0",
+      "path": "bundles/growthub-zernio-social-v1.json"
+    }
+  ],
+  "executionMode": "export",
+  "activationModes": [
+    "export"
+  ],
+  "compatibility": {
+    "cliMinVersion": "0.3.53"
+  },
+  "provenance": {
+    "sourceRepo": "growthub-local",
+    "frozenAt": "2026-04-15T00:00:00.000Z"
+  }
+}
