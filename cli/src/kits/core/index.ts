@@ -54,6 +54,7 @@ export type {
 // ---------------------------------------------------------------------------
 
 import { createStudioKitConfig } from "./factory/studio-kit.js";
+import { createOperatorKitConfig } from "./factory/operator-kit.js";
 import type { ForkAdapterCoreConfig } from "./adapter-core/contracts.js";
 
 export function buildOpenHiggsfieldStudioConfig(): ForkAdapterCoreConfig {
@@ -64,5 +65,35 @@ export function buildOpenHiggsfieldStudioConfig(): ForkAdapterCoreConfig {
     defaultDevPort: 3001,
     apiKeyEnvVar: "MUAPI_API_KEY",
     providerId: "muapi",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reference config: Postiz Social Media Studio Kit (growthub-postiz-social-v1)
+// Operator family reference wrapping the Postiz open-source social media platform.
+// Supports 28+ platforms, BullMQ scheduling, AI captions, and multi-workspace.
+// ---------------------------------------------------------------------------
+
+export function buildPostizSocialConfig(): ForkAdapterCoreConfig {
+  return createOperatorKitConfig({
+    kitId: "growthub-postiz-social-v1",
+    vertical: "social-media",
+    apiKeyEnvVar: "ANTHROPIC_API_KEY",
+    apiKeyPlaceholder: "your_anthropic_key_here",
+    providerId: "postiz",
+    providerName: "Postiz (self-hosted)",
+    providerBaseUrl: "http://localhost:3000",
+    providerAuthField: "Authorization",
+    providerReferenceDocPath: "docs/postiz-fork-integration.md",
+    additionalRequiredEnvVars: ["POSTIZ_API_URL"],
+    artifacts: [
+      { name: "Social Campaign Brief",    relativePath: "templates/social-campaign-brief.md",    required: true,  description: "Campaign objectives, platforms, audience, and KPI targets" },
+      { name: "Content Calendar",         relativePath: "templates/content-calendar.md",         required: true,  description: "30/60/90-day posting plan with theme pillars and cadence" },
+      { name: "Platform Publishing Plan", relativePath: "templates/platform-publishing-plan.md", required: true,  description: "Per-platform format, frequency, and content mix specs" },
+      { name: "Caption Copy Deck",        relativePath: "templates/caption-copy-deck.md",        required: true,  description: "A/B/C caption variants per post with hashtag sets" },
+      { name: "Scheduling Manifest",      relativePath: "templates/scheduling-manifest.md",      required: false, description: "BullMQ-compatible JSON manifest for Postiz API bulk scheduling" },
+      { name: "Analytics Brief",          relativePath: "templates/analytics-brief.md",          required: false, description: "Per-platform performance report with recommendations" },
+      { name: "Client Proposal",          relativePath: "templates/client-proposal.md",          required: false, description: "Agency-ready pitch with platform mix and ROI projection" },
+    ],
   });
 }

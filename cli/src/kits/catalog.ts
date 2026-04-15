@@ -47,4 +47,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-postiz-social-v1",
+    packageDirName: "growthub-postiz-social-v1",
+    defaultBundleId: "growthub-postiz-social-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "operator",
+  },
 ];
