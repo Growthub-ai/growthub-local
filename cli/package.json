@@ -1,6 +1,6 @@
 {
   "name": "@growthub/cli",
-  "version": "0.3.56",
+  "version": "0.3.57",
   "description": "Growthub CLI — orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {

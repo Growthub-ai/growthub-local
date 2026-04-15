@@ -15,6 +15,11 @@ Use it as the canonical lane for:
 | --- | --- | --- |
 | Custom Workspace Kernel Packet | `v1` | `./KERNEL_PACKET_CUSTOM_WORKSPACES.md` |
 | Agent Harness Kernel Packet | `v1` | `./KERNEL_PACKET_AGENT_HARNESS.md` |
+| Hosted SaaS Kit Kernel Packet | `v1` | `./KERNEL_PACKET_HOSTED_SAAS_KIT.md` |
+
+## Packet Relationships
+
+The Hosted SaaS Kit Kernel Packet is a specialization of the Custom Workspace Kernel Packet. It inherits every invariant from the general worker-kit lifecycle and adds the narrow-case discipline for kits whose target is a hosted third-party REST API (no self-host, no SDK bundle, no new adapter registry entry). Reach for it when the provider is a hosted SaaS; reach for the Agent Harness packet when adding a local agent executor.
 
 ## Versioning Rules
 

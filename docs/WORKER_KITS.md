@@ -150,6 +150,26 @@ An email kit would follow the same model:
 
 Browser-capable workflows such as lead sourcing, outbound, browser QA, and Chrome-assisted GTM work are also compatible with the same packaging model when their runtime assumptions are documented in the environment.
 
+### Social Media (Hosted API)
+
+`growthub-zernio-social-v1` is the reference environment for a hosted social-media provider:
+
+- campaign, calendar, caption, and scheduling-manifest instructions
+- 14 supported platforms (X/Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, Pinterest, Reddit, Bluesky, Threads, Google Business, Telegram, Snapchat, WhatsApp)
+- Zernio REST API shape for posts and queues (`POST /api/v1/posts`, `POST /api/v1/queues`)
+- `Idempotency-Key`-aware scheduling manifest so re-submission is safe
+- single bearer-token auth via `ZERNIO_API_KEY` — no fork or docker required
+
+### Social Media Stack (Postiz UI shell + Zernio engine)
+
+A first-class paired environment that combines both social kits:
+
+- `growthub-postiz-social-v1` provides the UI shell — calendar, compose surface, analytics rendering, team workspace
+- `growthub-zernio-social-v1` provides the transport engine — 14-platform posting, queues, media uploads, unified inbox, analytics pull-back
+- The Postiz React app, Postgres schema, Redis runner, and auth system are all unchanged; only the provider + publish-bridge layers are swapped
+- The 7-module bridge recipe (provider override, post submission, queue sync, caption surface, platform coverage config, env/secret surface, CLI entry point) is documented in `cli/assets/worker-kits/growthub-zernio-social-v1/docs/postiz-ui-shell-integration.md`
+- Agents trigger `/zernio` commands laterally into the Postiz compose UI — not in the request path — so agent latency never blocks the end-user UI
+
 ## What The Current Architecture Supports
 
 The current packaging model supports environments that depend on:

@@ -136,6 +136,7 @@ flowchart TD
 - `growthub kit families` taxonomy (`studio`, `workflow`, `operator`, `ops`)
 - `growthub kit validate` schema and contract checks
 - kit payload includes entrypoint, agent contract, templates, frozen assets, setup scripts, and env examples
+- social media kits ship as `growthub-postiz-social-v1` (self-hosted Postiz) and `growthub-zernio-social-v1` (hosted Zernio REST API, 14 platforms)
 
 </details>
 
@@ -240,6 +241,7 @@ GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 - [Kernel Packet Registry](./docs/kernel-packets/README.md)
 - [Custom Workspace Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 - [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
+- [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
 
 ## Architecture Lanes
 

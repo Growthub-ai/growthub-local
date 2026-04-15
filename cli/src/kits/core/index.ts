@@ -114,3 +114,35 @@ export function buildAiWebsiteClonerConfig(): ForkAdapterCoreConfig {
     providerId: "local-agent",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Reference config: Zernio Social Media Studio Kit (growthub-zernio-social-v1)
+// Operator family wrapping the hosted Zernio unified social media REST API.
+// Supports 14 platforms, recurring queues, media uploads, unified inbox,
+// and analytics. Auth is a single ZERNIO_API_KEY bearer token against
+// https://zernio.com/api/v1 — no self-hosted fork to clone.
+// ---------------------------------------------------------------------------
+
+export function buildZernioSocialConfig(): ForkAdapterCoreConfig {
+  return createOperatorKitConfig({
+    kitId: "growthub-zernio-social-v1",
+    vertical: "social-media",
+    apiKeyEnvVar: "ZERNIO_API_KEY",
+    apiKeyPlaceholder: "your_zernio_api_key_here",
+    providerId: "zernio",
+    providerName: "Zernio (hosted)",
+    providerBaseUrl: "https://zernio.com/api/v1",
+    providerAuthField: "Authorization",
+    providerReferenceDocPath: "docs/zernio-api-integration.md",
+    additionalRequiredEnvVars: ["ZERNIO_API_URL"],
+    artifacts: [
+      { name: "Social Campaign Brief", relativePath: "templates/social-campaign-brief.md", required: true, description: "Campaign objectives, platforms, audience, and KPI targets" },
+      { name: "Content Calendar", relativePath: "templates/content-calendar.md", required: true, description: "30/60/90-day posting plan with theme pillars and cadence" },
+      { name: "Platform Publishing Plan", relativePath: "templates/platform-publishing-plan.md", required: true, description: "Per-platform format, frequency, and content mix specs" },
+      { name: "Caption Copy Deck", relativePath: "templates/caption-copy-deck.md", required: true, description: "A/B/C caption variants per post with hashtag sets" },
+      { name: "Scheduling Manifest", relativePath: "templates/scheduling-manifest.md", required: false, description: "Zernio-shaped JSON manifest for POST /api/v1/posts scheduling" },
+      { name: "Analytics Brief", relativePath: "templates/analytics-brief.md", required: false, description: "Per-platform performance report with recommendations" },
+      { name: "Client Proposal", relativePath: "templates/client-proposal.md", required: false, description: "Agency-ready pitch with platform mix and ROI projection" },
+    ],
+  });
+}
