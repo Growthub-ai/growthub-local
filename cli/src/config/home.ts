@@ -53,6 +53,14 @@ export function resolveDefaultBackupDir(instanceId?: string): string {
   return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "backups");
 }
 
+export function resolveMemoryDir(): string {
+  return path.resolve(resolvePaperclipHomeDir(), "memory");
+}
+
+export function resolveMemoryProjectsDir(): string {
+  return path.resolve(resolveMemoryDir(), "projects");
+}
+
 export function expandHomePrefix(value: string): string {
   if (value === "~") return os.homedir();
   if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
