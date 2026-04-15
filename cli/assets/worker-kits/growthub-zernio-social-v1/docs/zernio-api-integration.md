@@ -79,6 +79,18 @@ Supporting endpoints:
 | `/api/v1/connect/<platform>` | Begin platform OAuth / credential flow for a new account on a profile |
 | `/api/v1/platforms` | Live list of supported platforms and their per-platform capability flags |
 
+Extended capability surface (confirmed in `zernio-cli`, may be plan-gated):
+
+| Resource | Endpoint root | Role |
+|---|---|---|
+| Contacts | `/api/v1/contacts` | CRUD + bulk create + custom fields |
+| Broadcasts | `/api/v1/broadcasts` | Create / schedule / send / cancel + recipient management |
+| Sequences | `/api/v1/sequences` | Create / activate / pause + enrollment management |
+| Automations | `/api/v1/automations` | Create / run / inspect execution logs |
+| Webhooks | `/api/v1/webhooks` | Settings (create/update) + logs + signature verification; events include `account.connected`, `post.recycled` |
+
+The zernio-social-operator uses these endpoints only when the user explicitly asks for CRM-shaped work (contacts / broadcasts / sequences) or wants an automation wired into a campaign. Default campaign flow stays scoped to posts + queues + media + inbox + analytics.
+
 ---
 
 ## Endpoints Used By This Kit
@@ -200,6 +212,19 @@ Well-known codes the operator handles:
 
 ---
 
+## Plans and Quotas (as-of kit freeze)
+
+| Plan | Monthly | Annual (per mo) | Profiles | Posts / month | Notes |
+|---|---|---|---|---|---|
+| Free | $0 | $0 | 2 | 20 | Full REST API access; useful for prototypes |
+| Build | $19 | $16 | 10 | 120 | First paid tier |
+| Accelerate | $49 | $41 | 50 | unlimited | Recommended for agencies + multi-client operators |
+| Unlimited | $999 | $833 | unlimited | unlimited | Enterprise; includes higher support SLA |
+
+All plans ship the same REST contract (posts, queues, accounts, profiles, media, inbox, analytics, contacts, broadcasts, sequences, automations, webhooks, api-keys, connect, platforms). The post-count gate is the main throttle across tiers. Rate limit is 60 requests/minute per API key at every tier.
+
+The operator must degrade gracefully when a quota is hit: surface the Zernio error code (`rate_limited`, `quota_exhausted`) to the user, offer to switch the session into `agent-only` mode, and never silently drop scheduled posts.
+
 ## Rate Limit Handling
 
 Default plan: 60 requests/minute per API key. The operator batches reads during account inspection and never issues more than one write per post per second.
@@ -215,9 +240,20 @@ When a 429 is returned:
 
 ## SDK + Harness Options (informational)
 
-Zernio ships official SDKs for Node.js, Python, Go, Ruby, Java, PHP, .NET, and Rust, plus a `zernio-cli` and an MCP server. This kit intentionally uses the raw REST contract so the agent operates identically regardless of which local runtime the user has installed. If the user wants to wire up the Zernio MCP server separately, it is complementary — this kit stays SDK-agnostic.
+Zernio ships official SDKs for Node.js, Python, Go, Ruby, Java, PHP, .NET, and Rust. Source repos live under [github.com/zernio-dev](https://github.com/zernio-dev).
 
-Kit files never install or require any Zernio SDK.
+Two primitives are directly relevant to local AI coding environments:
+
+| Primitive | Distribution | Use from | Install |
+|---|---|---|---|
+| Official MCP server | bundled inside `zernio-python` | Claude Desktop, Claude Code, Cursor, any MCP-compatible IDE | `pip install zernio-sdk[mcp]` |
+| Zernio API Claude Code skill | `zernio-api` repo | Claude Code only | `npx clawhub@latest install zernio-api` |
+
+This kit intentionally uses the **raw REST contract** via Node's built-in `fetch()` so the operator behaves identically regardless of which local IDE the user has installed. If the user additionally plugs in Zernio's MCP server or the Claude Code skill, that is strictly complementary — the kit does not depend on either.
+
+See `docs/local-adapters.md` for the per-IDE setup matrix and `setup/install-mcp.mjs` for the copy-paste MCP config JSON blocks.
+
+Kit files never install or require any Zernio SDK. If the user wants to install one locally for their own tooling, that is their choice and does not affect kit behavior.
 
 ---
 

@@ -22,47 +22,102 @@ Supported platforms: X/Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, 
 
 ---
 
-## Setup — 5 Steps
+## Setup — One Command (Mac / Windows / Linux)
 
-### Step 1 — Point Your Working Directory
-
-Export this kit to a local folder and point Claude Code's Working Directory at the kit root. All paths in the kit are relative to the kit root.
-
-### Step 2 — Copy the Environment File
+From the exported kit folder:
 
 ```bash
-cp .env.example .env
+node setup/setup.mjs
 ```
 
-Fill in your Zernio API key and the target profile id. Platform OAuth is handled inside Zernio — no per-platform tokens live in this kit.
+That single command:
 
-### Step 3 — Verify the Environment
+1. Detects your host OS (macOS / Windows / Linux)
+2. Checks dependencies (Node 18+ required; `curl` and `git` optional)
+3. Copies `.env.example` → `.env` if you don't have one yet
+4. Runs `setup/verify-env.mjs` to validate your `ZERNIO_API_KEY` format and live-reachability against `GET /api/v1/profiles`
+5. Prints the exact next step for your OS
+
+**No bash required on Windows.** Everything runs under Node. PowerShell, cmd, WSL, git-bash all work identically.
+
+### After the first run
+
+Open `.env` and fill in:
+
+| Variable | Required? | What to put |
+|---|---|---|
+| `ZERNIO_API_KEY` | Yes (for live mode) | `sk_` + 64 hex characters — create one at [zernio.com/signup](https://zernio.com/signup) or via `POST /api/v1/api-keys` |
+| `ZERNIO_API_URL` | Yes | Default `https://zernio.com/api/v1` — override only for regional / proxy deployments |
+| `ZERNIO_PROFILE_ID` | Yes (for scheduling) | The profile you'll post from — find it in the Zernio dashboard |
+| `ZERNIO_TIMEZONE` | Optional | IANA tz name (e.g. `America/New_York`); defaults to the profile's timezone |
+| `ANTHROPIC_API_KEY` | Optional | Only for enhanced caption drafting in hybrid mode |
+
+Re-run `node setup/setup.mjs` after editing `.env` to confirm everything is valid.
+
+### Agent-only mode (no Zernio key needed)
+
+If you just want to plan, write captions, and produce dry-run manifests without touching the Zernio API, skip the key entirely:
 
 ```bash
-node setup/verify-env.mjs
+node setup/setup.mjs --skip-verify
 ```
 
-This checks:
+The operator falls back cleanly to `agent-only` mode and produces manifests with `"dryRun": true` that you can submit manually later.
 
-- `ZERNIO_API_KEY` is set and matches the `sk_` + 64 hex format
-- `ZERNIO_API_URL` is reachable (default `https://zernio.com/api/v1`)
-- Current API key is accepted by `GET /api/v1/profiles`
-- `ZERNIO_PROFILE_ID` exists in your account
-- `ANTHROPIC_API_KEY` is a plausible format (optional — used only for caption enhancement)
+---
 
-No OAuth tokens are validated here — those are managed inside the Zernio dashboard.
+## Open Your IDE
 
-### Step 4 — Check Dependencies
+Point your IDE's Working Directory at this exported folder. The agent entrypoint is `workers/zernio-social-operator/CLAUDE.md`.
+
+### macOS
 
 ```bash
-bash setup/check-deps.sh
+open .
+# or specifically:
+open -a "Claude" .                 # Claude Desktop with this folder
+code .                             # VS Code / Cursor
 ```
 
-Verifies `node` (18+), `curl`, and `git` are available.
+### Windows (PowerShell)
 
-### Step 5 — Start a Session
+```powershell
+start .
+# or specifically:
+code .                             # VS Code / Cursor
+```
 
-Open Claude Code, set the Working Directory to this kit root, and start your session. The operator will guide you through the 10-step workflow.
+### Linux
+
+```bash
+xdg-open .
+code .
+```
+
+Any of these IDEs can drive the operator from this folder:
+
+- Claude Code (CLI)
+- Claude Desktop
+- Codex
+- Cursor
+- Gemini CLI
+- OpenCode
+- Qwen Code CLI
+- Open Agents
+
+See `docs/local-adapters.md` for per-IDE setup notes + optional MCP server install.
+
+---
+
+## What the per-OS paths look like
+
+| OS | Exported kit path after `growthub kit download` |
+|---|---|
+| macOS | `~/paperclip/kits/exports/growthub-agent-worker-kit-zernio-social-v1/` |
+| Linux | `~/paperclip/kits/exports/growthub-agent-worker-kit-zernio-social-v1/` |
+| Windows | `%USERPROFILE%\paperclip\kits\exports\growthub-agent-worker-kit-zernio-social-v1\` |
+
+Override the export path with `--out <path>` on `growthub kit download`.
 
 ---
 
@@ -124,14 +179,20 @@ Tell the operator which you need:
 
 | File | Purpose |
 |---|---|
-| `workers/zernio-social-operator/CLAUDE.md` | Agent operating instructions (start here) |
+| `setup/setup.mjs` | **One-command cross-platform bootstrap — start here** |
+| `setup/verify-env.mjs` | Validates `ZERNIO_API_KEY` + live reachability |
+| `setup/check-deps.mjs` | Cross-platform Node dependency check (Windows parity) |
+| `setup/check-deps.sh` | Legacy Unix bash dependency check (Mac / Linux) |
+| `setup/install-mcp.mjs` | Prints per-IDE MCP config JSON for plugging in Zernio's official MCP server |
+| `workers/zernio-social-operator/CLAUDE.md` | Agent operating instructions |
 | `skills.md` | Full methodology — read at every session |
 | `brands/_template/brand-kit.md` | Blank brand kit template |
 | `brands/growthub/brand-kit.md` | Growthub reference example |
 | `output/README.md` | Output directory structure and naming |
-| `docs/zernio-api-integration.md` | How this kit integrates with Zernio |
+| `docs/zernio-api-integration.md` | How this kit integrates with Zernio (REST contract + plans + capability surface) |
 | `docs/platform-coverage.md` | All 14 supported platforms with format specs |
 | `docs/ai-caption-layer.md` | AI caption generation methodology |
 | `docs/posts-and-queues-layer.md` | Scheduling manifest + queue format for Zernio API |
-| `docs/postiz-ui-shell-integration.md` | Optional — how to run this kit as the engine under the Postiz UI shell (`growthub-postiz-social-v1`) |
+| `docs/local-adapters.md` | Per-IDE setup matrix (Claude Code / Desktop / Codex / Cursor / Gemini / OpenCode / Qwen / Open Agents) |
+| `docs/postiz-ui-shell-integration.md` | Optional — run this kit as the engine under the Postiz UI shell |
 | `validation-checklist.md` | Pre-session checklist |

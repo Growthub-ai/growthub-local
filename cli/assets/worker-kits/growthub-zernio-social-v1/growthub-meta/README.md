@@ -53,8 +53,11 @@ growthub-zernio-social-v1/
       brand-kit.md                      ← Growthub internal reference example
     NEW-CLIENT.md                       ← Instructions for adding new clients
   setup/
+    setup.mjs                           ← One-command cross-platform bootstrap (Win/Mac/Linux)
     verify-env.mjs                      ← Verifies API key, profile, reachability
-    check-deps.sh                       ← Verifies Node, curl, git
+    check-deps.sh                       ← Legacy Unix bash dep check
+    check-deps.mjs                      ← Cross-platform Node dep check (Windows parity)
+    install-mcp.mjs                     ← Prints per-IDE MCP server config JSON
   output/
     README.md                           ← Output directory structure and naming
   templates/                            ← 7 production-quality campaign templates
@@ -70,12 +73,13 @@ growthub-zernio-social-v1/
     content-calendar-sample.md
     analytics-brief-sample.md
     client-proposal-sample.md
-  docs/                                 ← 5 technical reference documents
+  docs/                                 ← 6 technical reference documents
     zernio-api-integration.md
     platform-coverage.md
     ai-caption-layer.md
     posts-and-queues-layer.md
     postiz-ui-shell-integration.md      ← Optional — pair with the Postiz UI kit
+    local-adapters.md                   ← Per-IDE matrix (Claude/Codex/Cursor/Gemini/OpenCode/…)
   growthub-meta/
     README.md                           ← This file
     kit-standard.md                     ← Kit rules and required-files contract

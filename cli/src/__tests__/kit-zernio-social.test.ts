@@ -298,6 +298,113 @@ describe("growthub-zernio-social-v1 — docs + templates + examples", () => {
   });
 });
 
+describe("growthub-zernio-social-v1 — cross-platform setup + local-adapter surface", () => {
+  it("ships setup.mjs as the cross-platform one-command bootstrap", () => {
+    const setup = readText("setup/setup.mjs");
+    // Host detection + per-OS next-step printing
+    expect(setup).toContain("platform()");
+    expect(setup).toContain("darwin");
+    expect(setup).toContain("win32");
+    // Reuses existing primitives, does not reinvent
+    expect(setup).toContain("verify-env.mjs");
+    expect(setup).toMatch(/copyFileSync|\.env\.example/);
+    // Supported CLI flags
+    expect(setup).toContain("--skip-deps");
+    expect(setup).toContain("--skip-verify");
+    expect(setup).toContain("--yes");
+  });
+
+  it("ships check-deps.mjs as the Windows-parity dep checker", () => {
+    const deps = readText("setup/check-deps.mjs");
+    // Cross-platform `which` shim
+    expect(deps).toContain("where");
+    expect(deps).toContain("which");
+    // Still enforces Node 18+
+    expect(deps).toMatch(/>=\s*18|nodeMajor/);
+    // Does not require curl (since Node has fetch())
+    expect(deps).toContain("fetch");
+  });
+
+  it("ships install-mcp.mjs that prints per-IDE MCP config JSON", () => {
+    const mcp = readText("setup/install-mcp.mjs");
+    // Advertises the four IDE surfaces we cover
+    expect(mcp).toContain("Claude Desktop");
+    expect(mcp).toContain("Claude Code");
+    expect(mcp).toContain("Cursor");
+    expect(mcp).toContain("Generic MCP-compatible IDE");
+    // Cross-platform config paths
+    expect(mcp).toContain("claude_desktop_config.json");
+    expect(mcp).toContain("mcp.json");
+    // Installer is print-only — must reference the upstream install command, not execute it
+    expect(mcp).toContain("pip install zernio-sdk[mcp]");
+    expect(mcp).toContain("ZERNIO_API_KEY");
+  });
+
+  it("docs/local-adapters.md documents every local IDE surface", () => {
+    const adapters = readText("docs/local-adapters.md");
+    for (const ide of [
+      "Claude Code",
+      "Claude Desktop",
+      "Codex",
+      "Cursor",
+      "Gemini",
+      "OpenCode",
+      "Qwen",
+      "Open Agents",
+    ]) {
+      expect(adapters, `missing IDE mention: ${ide}`).toContain(ide);
+    }
+    // Layers + anti-patterns
+    expect(adapters).toContain("Working Directory");
+    expect(adapters).toContain("pip install zernio-sdk[mcp]");
+    expect(adapters).toContain("npx clawhub@latest install zernio-api");
+    expect(adapters).toContain("ServerAdapterModule");
+    expect(adapters).toMatch(/does\s*\*\*not\*\*|does NOT/i);
+  });
+
+  it("kit.json + bundle register every new setup + adapters asset", () => {
+    const manifest = JSON.parse(readText("kit.json"));
+    const bundle = JSON.parse(readText(`bundles/${KIT_ID}.json`));
+    for (const rel of [
+      "setup/setup.mjs",
+      "setup/check-deps.mjs",
+      "setup/install-mcp.mjs",
+      "docs/local-adapters.md",
+    ]) {
+      expect(manifest.frozenAssetPaths, `missing in frozenAssetPaths: ${rel}`).toContain(rel);
+      expect(bundle.requiredFrozenAssets, `missing in requiredFrozenAssets: ${rel}`).toContain(rel);
+    }
+  });
+
+  it("zernio-api-integration doc documents plans + the extended capability surface", () => {
+    const doc = readText("docs/zernio-api-integration.md");
+    // Plans table
+    expect(doc).toContain("Plans and Quotas");
+    expect(doc).toContain("Free");
+    expect(doc).toContain("Accelerate");
+    expect(doc).toContain("Unlimited");
+    // Expanded capability surface
+    for (const resource of ["Contacts", "Broadcasts", "Sequences", "Automations", "Webhooks"]) {
+      expect(doc, `missing capability: ${resource}`).toContain(resource);
+    }
+    expect(doc).toContain("account.connected");
+    expect(doc).toContain("post.recycled");
+    // Primitives table
+    expect(doc).toContain("Claude Code skill");
+    expect(doc).toContain("Official MCP server");
+  });
+
+  it("QUICKSTART advertises the one-command bootstrap and per-OS paths", () => {
+    const q = readText("QUICKSTART.md");
+    expect(q).toContain("node setup/setup.mjs");
+    expect(q).toContain("macOS");
+    expect(q).toContain("Windows");
+    expect(q).toContain("Linux");
+    expect(q).toContain("%USERPROFILE%");
+    expect(q).toContain("docs/local-adapters.md");
+  });
+});
+
 describe("growthub-zernio-social-v1 — postiz UI shell companion surfacing", () => {
   it("QUICKSTART.md advertises the postiz-ui-shell execution mode and links the integration doc", () => {
     const quickstart = readText("QUICKSTART.md");
