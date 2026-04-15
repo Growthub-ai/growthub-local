@@ -186,6 +186,24 @@ Discovery flow:
    - `Create Session` to start a new durable agent workflow
    - `Resume Session` to reconnect to an existing session
 
+### Qwen Code CLI
+
+Use this command surface when you want to run the Qwen Code terminal AI coding agent integration directly.
+
+Entry points:
+
+```bash
+growthub qwen-code
+growthub qwen-code health
+growthub qwen-code prompt "fix the failing test"
+growthub qwen-code session
+growthub qwen-code session --yolo
+```
+
+Read the integration architecture here:
+
+- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
+
 ### Connect Growthub Account
 
 Use this path when you want to connect the local CLI to a hosted Growthub account.

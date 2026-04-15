@@ -9,6 +9,7 @@ import { printOpenClawGatewayStreamEvent } from "@paperclipai/adapter-openclaw-g
 import { processCLIAdapter } from "./process/index.js";
 import { httpCLIAdapter } from "./http/index.js";
 import { openAgentsCLIAdapter } from "./open-agents/index.js";
+import { qwenLocalCLIAdapter } from "./qwen/index.js";
 
 const claudeLocalCLIAdapter: CLIAdapterModule = {
   type: "claude_local",
@@ -55,6 +56,7 @@ const adaptersByType = new Map<string, CLIAdapterModule>(
     geminiLocalCLIAdapter,
     openclawGatewayCLIAdapter,
     openAgentsCLIAdapter,
+    qwenLocalCLIAdapter,
     processCLIAdapter,
     httpCLIAdapter,
   ].map((a) => [a.type, a]),

@@ -37,6 +37,7 @@ import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipel
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
+import { registerQwenCodeCommands } from "./commands/qwen-code.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -174,6 +175,7 @@ function registerSharedCommands(target: Command) {
   registerArtifactCommands(target);
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
+  registerQwenCodeCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -839,6 +841,9 @@ async function runDiscoveryHub(opts?: {
           "growthub kit",
           "growthub template",
           "growthub workflow",
+          "growthub qwen-code",
+          "growthub qwen-code health",
+          "growthub qwen-code prompt \"...\"",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
@@ -1111,7 +1116,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.54")
+  .version("0.3.55")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -1168,6 +1173,13 @@ Dynamic Registry Pipelines:
     $ growthub artifact list                    All pipeline artifacts
     $ growthub artifact list --type video       Filter by type
     $ growthub artifact inspect <id>            Inspect a specific artifact
+
+Qwen Code CLI (agent harness):
+    $ growthub qwen-code                        Interactive hub — health, prompt, session, configure
+    $ growthub qwen-code health                 Check Qwen Code CLI environment and readiness
+    $ growthub qwen-code prompt "fix the bug"   Headless single-prompt execution
+    $ growthub qwen-code session                Launch interactive terminal session
+    $ growthub qwen-code session --yolo         Auto-approve all tool calls
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)
