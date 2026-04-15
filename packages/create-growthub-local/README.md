@@ -29,13 +29,13 @@ npm create growthub-local@latest
 
 When no `--profile` is passed, the installer launches `growthub discover` so the user can choose between:
 
-- full local app
+- agent harness (Paperclip local app + Open Agents orchestration)
 - worker kits
 - shared templates
 
 ## CLI Edition User Flows
 
-### 1. Full Local App
+### 1. Agent Harness — Paperclip Local App
 
 If `--profile gtm` or `--profile dx` is passed, the installer runs a direct onboarding path for that surface.
 
@@ -53,7 +53,7 @@ If no profile is passed, the installer defers to `growthub discover`.
 Flow:
 
 1. Launch the CLI discovery hub.
-2. Choose `Full Local App`, `Worker Kits`, or `Templates`.
+2. Choose `Agent Harness`, `Worker Kits`, or `Templates`.
 3. Continue inside the matching CLI workflow.
 
 This is the correct path when the user does not yet know whether they want a full app install, a worker kit export, or a shared template pull.
@@ -76,7 +76,7 @@ This is the correct path when the user does not yet know whether they want a ful
 
 ## Starting Again After Install
 
-If you installed a full local app:
+If you installed a Paperclip local app via the Agent Harness:
 
 ```bash
 cd growthub-local

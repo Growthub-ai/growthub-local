@@ -62,12 +62,11 @@ zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 
 Current discovery options:
 
-- `Full Local App`
+- `Agent Harness` (filter by type: Paperclip Local App, Open Agents)
 - `Worker Kits`
 - `Templates`
 - `Workflows`
 - `Local Intelligence`
-- `Open Agents`
 - `Connect Growthub Account`
 - `Help CLI`
 

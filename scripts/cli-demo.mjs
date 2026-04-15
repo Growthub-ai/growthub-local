@@ -286,9 +286,9 @@ async function runInteractive() {
         hint: "Browse and download worker kits — geo-seo-v1, higgsfield-studio-v1, and more",
       },
       {
-        value: "open-agents",
-        label: "🤖 Open Agents Preview",
-        hint: "Durable agent workflow orchestration harness — sessions, sandboxes, tools",
+        value: "agent-harness",
+        label: "🤖 Agent Harness Preview",
+        hint: "Paperclip local app + Open Agents orchestration (filter by type)",
       },
     ],
   });
@@ -323,8 +323,8 @@ async function runInteractive() {
     runSourceKitPicker();
   }
 
-  if (choice === "open-agents") {
-    runCli(["open-agents"]);
+  if (choice === "agent-harness") {
+    runCli(["discover"]);
   }
 
   runCli([]);

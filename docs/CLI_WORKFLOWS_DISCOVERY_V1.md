@@ -43,10 +43,11 @@ growthub auth whoami
 
 ```
 Growthub Local
-├── Full Local App
+├── Agent Harness      (filter: Paperclip Local App, Open Agents)
 ├── Worker Kits
 ├── Templates
 ├── Workflows          ← requires auth
+├── Local Intelligence
 ├── Connect Growthub Account
 └── Help CLI
 ```

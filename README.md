@@ -10,24 +10,23 @@ zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 
 That discovery hub exposes:
 
-- `Full Local App`
+- `Agent Harness` (filter by type: Paperclip Local App, Open Agents)
 - `Worker Kits`
 - `Templates`
 - `Workflows`
 - `Local Intelligence`
-- `Open Agents`
 - `Connect Growthub Account`
 - `Help CLI`
 
 ## Install
 
-### Full local app: GTM
+### Agent Harness — Paperclip Local App: GTM
 
 ```bash
 npm create growthub-local@latest -- --profile gtm
 ```
 
-### Full local app: DX
+### Agent Harness — Paperclip Local App: DX
 
 ```bash
 npm create growthub-local@latest -- --profile dx
@@ -49,7 +48,14 @@ zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 
 The current discovery menu is defined in `cli/src/index.ts`.
 
-### 1. Full Local App
+### 1. Agent Harness
+
+The Agent Harness is the first discovery option. It presents a **filter by type** selector:
+
+- **Paperclip Local App** — create or reopen a full local Growthub surface (GTM/DX profiles)
+- **Open Agents** — durable agent workflow orchestration (sessions, sandboxes, tools)
+
+#### Paperclip Local App
 
 Use this path when you want to create or reopen a full local Growthub surface.
 
@@ -153,7 +159,7 @@ Read the architecture and adapter model here:
 - [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
 - [Gemma Setup and Validation](./docs/native-intelligence-gemma-setup.md)
 
-### Open Agents
+#### Open Agents
 
 Use this path when you want durable agent workflow orchestration via the Open Agents harness — sessions, sandboxes, and tool-based agent execution.
 
@@ -171,8 +177,9 @@ growthub open-agents resume <session-id> # resume an existing session
 Discovery flow:
 
 1. Open discovery.
-2. Choose `🤖 Open Agents`.
-3. Choose one of:
+2. Choose `🤖 Agent Harness`.
+3. Choose `🌐 Open Agents` from the type filter.
+4. Choose one of:
    - `Setup & Configure` to set the backend endpoint and API key
    - `Health Check` to verify backend availability
    - `List Sessions` to browse existing sessions

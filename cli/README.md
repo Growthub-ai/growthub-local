@@ -2,7 +2,7 @@
 
 `@growthub/cli` is the published CLI for Growthub Local. It covers five shipped user flows:
 
-- full local app discovery and onboarding
+- agent harness discovery (Paperclip local app + Open Agents orchestration)
 - worker kit discovery, export, inspection, and validation
 - shared template discovery and extraction
 - hosted workflows, capabilities, dynamic pipelines, and artifacts
@@ -31,9 +31,9 @@ npm create growthub-local@latest -- --profile dx
 
 The current CLI exposes five user-facing flows through `growthub discover` and direct subcommands.
 
-### 1. Full Local App
+### 1. Agent Harness
 
-Use this when you want to create or reopen a full Growthub local surface.
+Use this when you want to create or reopen a full Growthub local surface or launch Open Agents orchestration.
 
 ```bash
 growthub
@@ -41,15 +41,16 @@ growthub list
 growthub discover
 growthub onboard
 growthub run
+growthub open-agents
 ```
 
 User flow:
 
 1. Open the discovery hub.
-2. Choose `Full Local App`.
-3. Create a new `gtm` or `dx` profile, or load an existing local profile.
-4. Complete onboarding.
-5. Start the local server and finish the hosted authentication bridge.
+2. Choose `Agent Harness`.
+3. Filter by type: `Paperclip Local App` or `Open Agents`.
+4. For Paperclip: create a new `gtm` or `dx` profile, or load an existing local profile.
+5. For Open Agents: configure backend, create/resume sessions, browse events.
 
 ### 2. Worker Kits
 
