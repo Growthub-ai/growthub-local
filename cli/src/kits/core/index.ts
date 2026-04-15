@@ -66,3 +66,20 @@ export function buildOpenHiggsfieldStudioConfig(): ForkAdapterCoreConfig {
     providerId: "muapi",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Reference config: AI Website Cloner Kit (growthub-ai-website-cloner-v1)
+// Studio family — local fork of ai-website-cloner-template by JCodesMore.
+// No provider API key required — all AI work is done by the local agent.
+// ---------------------------------------------------------------------------
+
+export function buildAiWebsiteClonerConfig(): ForkAdapterCoreConfig {
+  return createStudioKitConfig({
+    kitId: "growthub-ai-website-cloner-v1",
+    upstreamRepoUrl: "https://github.com/JCodesMore/ai-website-cloner-template",
+    defaultLocalPath: "~/ai-website-cloner-template",
+    defaultDevPort: 3000,
+    apiKeyEnvVar: "AI_CLONER_FORK_PATH",
+    providerId: "local-agent",
+  });
+}
