@@ -204,6 +204,7 @@ http://localhost:5173/gtm/GHA/workspace
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
+- [Custom Workspace Kernel Packet](./docs/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 - [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
 
 ## Architecture snapshot (validated)

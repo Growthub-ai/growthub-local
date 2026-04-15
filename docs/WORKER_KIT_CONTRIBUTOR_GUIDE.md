@@ -27,6 +27,18 @@ A new environment should be added as a self-contained kit folder, not as scatter
 9. Export the kit locally.
 10. Point an agent `Working directory` at the exported folder and test it through a real local adapter.
 
+## Kernel Packet (Required For Custom Workspaces)
+
+For `family: studio` kits, follow the frozen kernel packet:
+
+- [Custom Workspace Kernel Packet](./KERNEL_PACKET_CUSTOM_WORKSPACES.md)
+
+Run the packet checks before opening or updating a PR:
+
+```bash
+bash scripts/check-custom-workspace-kernel.sh
+```
+
 ## Two Good Build Paths
 
 ### Build On Top Of An Existing Kit
