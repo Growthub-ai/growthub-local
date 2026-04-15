@@ -97,20 +97,20 @@ The CLI is multiple product surfaces, not one.
 <a id="ecosystem-map"></a>
 ### Ecosystem Map
 
-<details open>
+<details>
 <summary><strong>Open ecosystem chart</strong> — click section links to jump</summary>
 
 ```mermaid
 flowchart TD
-    A[Growthub Local] --> B[1) Kit System]
-    A --> C[2) Template System]
-    A --> D[3) Capability System]
-    A --> E[4) Workflow + Pipeline]
-    A --> F[5) Knowledge Sync]
-    A --> G[6) Local Models + Harnesses]
-    A --> H[Hosted Auth Bridge]
-    A --> I[Runtime Control]
-    A --> J[Kernel Packets]
+    A["Growthub Local"] --> B["1. Kit System"]
+    A --> C["2. Template System"]
+    A --> D["3. Capability System"]
+    A --> E["4. Workflow + Pipeline"]
+    A --> F["5. Knowledge Sync"]
+    A --> G["6. Local Models + Harnesses"]
+    A --> H["Hosted Auth Bridge"]
+    A --> I["Runtime Control"]
+    A --> J["Kernel Packets"]
 ```
 
 **Surface index**
@@ -127,10 +127,8 @@ flowchart TD
 
 </details>
 
----
-
 <a id="kit-system"></a>
-<details open>
+<details>
 <summary><strong>1) Kit System</strong> — full local app download and environment provisioning</summary>
 
 - `growthub kit` interactive browser with type filtering
@@ -141,10 +139,8 @@ flowchart TD
 
 </details>
 
----
-
 <a id="template-system"></a>
-<details open>
+<details>
 <summary><strong>2) Template System</strong> — shared artifact library with structured filtering</summary>
 
 - `growthub template` interactive picker
@@ -154,10 +150,8 @@ flowchart TD
 
 </details>
 
----
-
 <a id="capability-system"></a>
-<details open>
+<details>
 <summary><strong>3) Capability System</strong> — CMS node discovery and machine-scoped resolution</summary>
 
 - `growthub capability` interactive capability browser
@@ -166,10 +160,8 @@ flowchart TD
 
 </details>
 
----
-
 <a id="workflow--pipeline-system"></a>
-<details open>
+<details>
 <summary><strong>4) Workflow + Pipeline System</strong> — dynamic node orchestration graphs</summary>
 
 - `growthub workflow` and saved workflow lifecycle actions
@@ -178,10 +170,8 @@ flowchart TD
 
 </details>
 
----
-
 <a id="knowledge-sync-surface"></a>
-<details open>
+<details>
 <summary><strong>5) Knowledge Sync Surface</strong> — compound learnings and knowledge evolution lane</summary>
 
 - supports the two-way knowledge-sync direction for knowledge-engine
@@ -189,10 +179,8 @@ flowchart TD
 
 </details>
 
----
-
 <a id="local-models--harnesses"></a>
-<details open>
+<details>
 <summary><strong>6) Local Models + Harnesses</strong> — local custom models and external harness primitives</summary>
 
 - local intelligence adapters for machine-local model flows
