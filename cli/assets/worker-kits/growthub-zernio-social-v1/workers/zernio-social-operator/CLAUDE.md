@@ -140,6 +140,14 @@ validation-checklist.md
 
 These files define the execution environment, platform constraints, and output contract. Do not improvise around them.
 
+If the user is pairing this kit with the Postiz UI shell (a.k.a. `growthub-postiz-social-v1` running as the presentation layer while Zernio is the engine), also read:
+
+```text
+docs/postiz-ui-shell-integration.md
+```
+
+That document defines the 7-module bridge (provider override, post submission, queue sync, caption surface, platform coverage config, env/secret surface, CLI entry point). Treat it as authoritative whenever a request references Postiz.
+
 ---
 
 ### STEP 3 — Inspect the live Zernio account (api-live and hybrid modes only)

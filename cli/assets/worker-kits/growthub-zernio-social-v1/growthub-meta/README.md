@@ -70,11 +70,12 @@ growthub-zernio-social-v1/
     content-calendar-sample.md
     analytics-brief-sample.md
     client-proposal-sample.md
-  docs/                                 ← 4 technical reference documents
+  docs/                                 ← 5 technical reference documents
     zernio-api-integration.md
     platform-coverage.md
     ai-caption-layer.md
     posts-and-queues-layer.md
+    postiz-ui-shell-integration.md      ← Optional — pair with the Postiz UI kit
   growthub-meta/
     README.md                           ← This file
     kit-standard.md                     ← Kit rules and required-files contract
@@ -132,3 +133,9 @@ No server-side activation is required. The kit is fully self-contained.
 | `growthub-geo-seo-v1` | studio | GEO + SEO auditing |
 | `growthub-postiz-social-v1` | studio | Social media via self-hosted Postiz |
 | `growthub-zernio-social-v1` | studio | Social media via hosted Zernio REST API (this kit) |
+
+### Recommended Pairing — Social Media Stack
+
+`growthub-postiz-social-v1` (UI shell) + `growthub-zernio-social-v1` (engine) form a first-class paired environment. Postiz provides calendar, compose, analytics shell, and team workspace. Zernio provides the 14-platform transport, queues, media, inbox, and analytics against a single bearer-token REST API — no per-platform OAuth dance, no regional secrets sprayed across the kit.
+
+See `docs/postiz-ui-shell-integration.md` in this kit for the 7-module bridge recipe.

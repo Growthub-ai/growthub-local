@@ -73,6 +73,7 @@ Open Claude Code, set the Working Directory to this kit root, and start your ses
 | `api-live` | Valid `ZERNIO_API_KEY` + at least one connected account on a profile | You want to schedule posts and queues via the live Zernio API |
 | `agent-only` | Nothing — Claude Code handles everything | You need campaign planning, calendars, and captions without touching the Zernio API |
 | `hybrid` | `ANTHROPIC_API_KEY` + valid `ZERNIO_API_KEY` | Enhanced caption drafting via Anthropic plus live Zernio scheduling |
+| `postiz-ui-shell` | `api-live` / `hybrid` + the Postiz kit (`growthub-postiz-social-v1`) running | You want Postiz's UI (calendar, compose, analytics shell) with Zernio as the transport engine. See `docs/postiz-ui-shell-integration.md` for the 7-module bridge. |
 
 **Agent-only mode is always valid.** Zernio reachability never blocks campaign planning.
 
@@ -132,4 +133,5 @@ Tell the operator which you need:
 | `docs/platform-coverage.md` | All 14 supported platforms with format specs |
 | `docs/ai-caption-layer.md` | AI caption generation methodology |
 | `docs/posts-and-queues-layer.md` | Scheduling manifest + queue format for Zernio API |
+| `docs/postiz-ui-shell-integration.md` | Optional — how to run this kit as the engine under the Postiz UI shell (`growthub-postiz-social-v1`) |
 | `validation-checklist.md` | Pre-session checklist |

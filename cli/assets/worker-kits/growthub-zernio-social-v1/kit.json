@@ -51,6 +51,7 @@
     "docs/platform-coverage.md",
     "docs/ai-caption-layer.md",
     "docs/posts-and-queues-layer.md",
+    "docs/postiz-ui-shell-integration.md",
     "growthub-meta/README.md",
     "growthub-meta/kit-standard.md"
   ],

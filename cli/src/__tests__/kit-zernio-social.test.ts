@@ -202,11 +202,12 @@ describe("growthub-zernio-social-v1 — kit.json + bundle manifest", () => {
 });
 
 describe("growthub-zernio-social-v1 — docs + templates + examples", () => {
-  it("ships the four Zernio docs", () => {
+  it("ships the five Zernio docs (including the Postiz UI shell integration recipe)", () => {
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/zernio-api-integration.md"))).toBe(true);
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/platform-coverage.md"))).toBe(true);
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/ai-caption-layer.md"))).toBe(true);
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/posts-and-queues-layer.md"))).toBe(true);
+    expect(fs.existsSync(path.join(KIT_ROOT, "docs/postiz-ui-shell-integration.md"))).toBe(true);
   });
 
   it("platform coverage doc references all 14 Zernio platform ids", () => {
@@ -265,6 +266,63 @@ describe("growthub-zernio-social-v1 — docs + templates + examples", () => {
     expect(doc).toContain("zernioQueue");
     expect(doc).toMatch(/"day":\s*"mon"/);
     expect(doc).toContain("queueId");
+  });
+
+  it("postiz UI shell integration doc defines all 7 bridge modules", () => {
+    const doc = readText("docs/postiz-ui-shell-integration.md");
+    // 7-module bridge
+    expect(doc).toContain("Module 1");
+    expect(doc).toContain("Module 2");
+    expect(doc).toContain("Module 3");
+    expect(doc).toContain("Module 4");
+    expect(doc).toContain("Module 5");
+    expect(doc).toContain("Module 6");
+    expect(doc).toContain("Module 7");
+    // Key integration contracts
+    expect(doc).toContain("ZernioProvider");
+    expect(doc).toContain("POST /api/v1/posts");
+    expect(doc).toContain("POST /api/v1/queues");
+    expect(doc).toContain("Idempotency-Key");
+    expect(doc).toContain("growthub-postiz-social-v1");
+    expect(doc).toContain("ZERNIO_API_KEY");
+    // What stays untouched — core integration principle
+    expect(doc).toContain("Postgres schema");
+    expect(doc).toContain("Redis queue runner");
+  });
+
+  it("postiz integration doc is registered as a frozen + required asset", () => {
+    const manifest = JSON.parse(readText("kit.json"));
+    const bundle = JSON.parse(readText(`bundles/${KIT_ID}.json`));
+    expect(manifest.frozenAssetPaths).toContain("docs/postiz-ui-shell-integration.md");
+    expect(bundle.requiredFrozenAssets).toContain("docs/postiz-ui-shell-integration.md");
+  });
+});
+
+describe("growthub-zernio-social-v1 — postiz UI shell companion surfacing", () => {
+  it("QUICKSTART.md advertises the postiz-ui-shell execution mode and links the integration doc", () => {
+    const quickstart = readText("QUICKSTART.md");
+    expect(quickstart).toContain("postiz-ui-shell");
+    expect(quickstart).toContain("docs/postiz-ui-shell-integration.md");
+    expect(quickstart).toContain("growthub-postiz-social-v1");
+  });
+
+  it("skills.md quick-reference table lists the postiz integration doc", () => {
+    const skills = readText("skills.md");
+    expect(skills).toContain("docs/postiz-ui-shell-integration.md");
+    expect(skills).toContain("Postiz UI shell integration");
+  });
+
+  it("operator CLAUDE.md instructs reading the integration doc when pairing with Postiz", () => {
+    const claude = readText(`workers/${WORKER_ID}/CLAUDE.md`);
+    expect(claude).toContain("docs/postiz-ui-shell-integration.md");
+    expect(claude).toContain("Postiz UI shell");
+  });
+
+  it("growthub-meta/README.md documents the recommended Social Media Stack pairing", () => {
+    const meta = readText("growthub-meta/README.md");
+    expect(meta).toContain("Social Media Stack");
+    expect(meta).toContain("growthub-postiz-social-v1");
+    expect(meta).toContain("docs/postiz-ui-shell-integration.md");
   });
 });
 
