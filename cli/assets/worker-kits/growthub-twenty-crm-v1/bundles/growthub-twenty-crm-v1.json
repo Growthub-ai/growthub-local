@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-twenty-crm-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-twenty-crm-v1",
+    "workerId": "twenty-crm-operator"
+  },
+  "briefType": "twenty-crm-growth-stack",
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/twenty-crm-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/clone-fork.sh",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/crm-setup-brief.md",
+    "templates/data-model-design.md",
+    "templates/lead-enrichment-pipeline.md",
+    "templates/pipeline-automation-brief.md",
+    "templates/webhook-integration-spec.md",
+    "templates/api-query-plan.md",
+    "templates/crm-playbook.md",
+    "templates/custom-object-design.md",
+    "templates/import-mapping.md",
+    "templates/workspace-config-checklist.md",
+    "templates/integration-handoff.md",
+    "templates/enrichment-field-map.md",
+    "examples/crm-setup-sample.md",
+    "examples/lead-enrichment-sample.md",
+    "examples/pipeline-automation-sample.md",
+    "examples/crm-playbook-sample.md",
+    "docs/twenty-fork-integration.md",
+    "docs/api-and-webhooks.md",
+    "docs/data-model-layer.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "optionalPresets": [],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-twenty-crm-v1",
+    "zipFileName": "growthub-agent-worker-kit-twenty-crm-v1.zip"
+  },
+  "activationModes": ["export"]
+}

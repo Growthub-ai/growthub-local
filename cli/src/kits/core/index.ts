@@ -87,13 +87,30 @@ export function buildPostizSocialConfig(): ForkAdapterCoreConfig {
     providerReferenceDocPath: "docs/postiz-fork-integration.md",
     additionalRequiredEnvVars: ["POSTIZ_API_URL"],
     artifacts: [
-      { name: "Social Campaign Brief",    relativePath: "templates/social-campaign-brief.md",    required: true,  description: "Campaign objectives, platforms, audience, and KPI targets" },
-      { name: "Content Calendar",         relativePath: "templates/content-calendar.md",         required: true,  description: "30/60/90-day posting plan with theme pillars and cadence" },
-      { name: "Platform Publishing Plan", relativePath: "templates/platform-publishing-plan.md", required: true,  description: "Per-platform format, frequency, and content mix specs" },
-      { name: "Caption Copy Deck",        relativePath: "templates/caption-copy-deck.md",        required: true,  description: "A/B/C caption variants per post with hashtag sets" },
-      { name: "Scheduling Manifest",      relativePath: "templates/scheduling-manifest.md",      required: false, description: "BullMQ-compatible JSON manifest for Postiz API bulk scheduling" },
-      { name: "Analytics Brief",          relativePath: "templates/analytics-brief.md",          required: false, description: "Per-platform performance report with recommendations" },
-      { name: "Client Proposal",          relativePath: "templates/client-proposal.md",          required: false, description: "Agency-ready pitch with platform mix and ROI projection" },
+      { name: "Social Campaign Brief", relativePath: "templates/social-campaign-brief.md", required: true, description: "Campaign objectives, platforms, audience, and KPI targets" },
+      { name: "Content Calendar", relativePath: "templates/content-calendar.md", required: true, description: "30/60/90-day posting plan with theme pillars and cadence" },
+      { name: "Platform Publishing Plan", relativePath: "templates/platform-publishing-plan.md", required: true, description: "Per-platform format, frequency, and content mix specs" },
+      { name: "Caption Copy Deck", relativePath: "templates/caption-copy-deck.md", required: true, description: "A/B/C caption variants per post with hashtag sets" },
+      { name: "Scheduling Manifest", relativePath: "templates/scheduling-manifest.md", required: false, description: "BullMQ-compatible JSON manifest for Postiz API bulk scheduling" },
+      { name: "Analytics Brief", relativePath: "templates/analytics-brief.md", required: false, description: "Per-platform performance report with recommendations" },
+      { name: "Client Proposal", relativePath: "templates/client-proposal.md", required: false, description: "Agency-ready pitch with platform mix and ROI projection" },
     ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reference config: AI Website Cloner Kit (growthub-ai-website-cloner-v1)
+// Studio family — local fork of ai-website-cloner-template by JCodesMore.
+// No provider API key required — all AI work is done by the local agent.
+// ---------------------------------------------------------------------------
+
+export function buildAiWebsiteClonerConfig(): ForkAdapterCoreConfig {
+  return createStudioKitConfig({
+    kitId: "growthub-ai-website-cloner-v1",
+    upstreamRepoUrl: "https://github.com/JCodesMore/ai-website-cloner-template",
+    defaultLocalPath: "~/ai-website-cloner-template",
+    defaultDevPort: 3000,
+    apiKeyEnvVar: "AI_CLONER_FORK_PATH",
+    providerId: "local-agent",
   });
 }
