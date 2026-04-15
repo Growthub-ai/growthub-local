@@ -37,7 +37,8 @@ var init_constants = __esm({
       "pi_local",
       "cursor",
       "openclaw_gateway",
-      "hermes_local"
+      "hermes_local",
+      "qwen_local"
     ];
     AGENT_ROLES = [
       "ceo",
@@ -6268,9 +6269,9 @@ async function runDatabaseBackup(opts) {
         WHERE n.nspname = ${schema_name} AND t.relname = ${tablename} AND c.contype = 'p'
         GROUP BY c.conname
       `;
-      for (const p20 of pk) {
-        const cols = p20.column_names.map((c) => `"${c}"`).join(", ");
-        colDefs.push(`  CONSTRAINT "${p20.constraint_name}" PRIMARY KEY (${cols})`);
+      for (const p25 of pk) {
+        const cols = p25.column_names.map((c) => `"${c}"`).join(", ");
+        colDefs.push(`  CONSTRAINT "${p25.constraint_name}" PRIMARY KEY (${cols})`);
       }
       emit(`CREATE TABLE ${qualifiedTableName} (`);
       emit(colDefs.join(",\n"));
@@ -8016,9 +8017,11 @@ var init_onboard = __esm({
 init_onboard();
 init_doctor();
 import { Command } from "commander";
-import * as p19 from "@clack/prompts";
-import fs19 from "node:fs";
-import path27 from "node:path";
+import * as p24 from "@clack/prompts";
+import pc36 from "picocolors";
+import fs27 from "node:fs";
+import path35 from "node:path";
+import { spawnSync as spawnSync2 } from "node:child_process";
 
 // src/commands/env.ts
 init_store();
@@ -8502,7 +8505,7 @@ async function addAllowedHostname(host, opts) {
 
 // src/commands/heartbeat-run.ts
 import { setTimeout as delay } from "node:timers/promises";
-import pc17 from "picocolors";
+import pc18 from "picocolors";
 
 // ../packages/adapters/claude-local/src/cli/format-event.ts
 import pc9 from "picocolors";
@@ -8543,8 +8546,8 @@ function printClaudeStreamEvent(raw, debug) {
       const block = blockRaw;
       const blockType = typeof block.type === "string" ? block.type : "";
       if (blockType === "text") {
-        const text58 = typeof block.text === "string" ? block.text : "";
-        if (text58) console.log(pc9.green(`assistant: ${text58}`));
+        const text63 = typeof block.text === "string" ? block.text : "";
+        if (text63) console.log(pc9.green(`assistant: ${text63}`));
       } else if (blockType === "tool_use") {
         const name = typeof block.name === "string" ? block.name : "unknown";
         console.log(pc9.yellow(`tool_call: ${name}`));
@@ -8636,13 +8639,13 @@ function printItemStarted(item) {
 function printItemCompleted(item) {
   const itemType = asString(item.type);
   if (itemType === "agent_message") {
-    const text58 = asString(item.text);
-    if (text58) console.log(pc10.green(`assistant: ${text58}`));
+    const text63 = asString(item.text);
+    if (text63) console.log(pc10.green(`assistant: ${text63}`));
     return true;
   }
   if (itemType === "reasoning") {
-    const text58 = asString(item.text);
-    if (text58) console.log(pc10.gray(`thinking: ${text58}`));
+    const text63 = asString(item.text);
+    if (text63) console.log(pc10.gray(`thinking: ${text63}`));
     return true;
   }
   if (itemType === "tool_use") {
@@ -8677,8 +8680,8 @@ function printItemCompleted(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path28 = asString(change.path, "unknown");
-      return `${kind} ${path28}`;
+      const path36 = asString(change.path, "unknown");
+      return `${kind} ${path36}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -8692,9 +8695,9 @@ function printItemCompleted(item) {
   }
   if (itemType === "tool_result") {
     const isError = item.is_error === true || asString(item.status) === "error";
-    const text58 = asString(item.content) || asString(item.result) || asString(item.output);
+    const text63 = asString(item.content) || asString(item.result) || asString(item.output);
     console.log((isError ? pc10.red : pc10.cyan)(`tool_result${isError ? " (error)" : ""}`));
-    if (text58) console.log((isError ? pc10.red : pc10.gray)(text58));
+    if (text63) console.log((isError ? pc10.red : pc10.gray)(text63));
     return true;
   }
   return false;
@@ -8775,14 +8778,13 @@ function printCodexStreamEvent(raw, _debug) {
   console.log(line);
 }
 
-// ../../node_modules/@paperclipai/adapter-cursor-local/dist/cli/format-event.js
+// ../packages/adapters/cursor-local/src/cli/format-event.ts
 import pc11 from "picocolors";
 
-// ../../node_modules/@paperclipai/adapter-cursor-local/dist/shared/stream.js
+// ../packages/adapters/cursor-local/src/shared/stream.ts
 function normalizeCursorStreamLine(rawLine) {
   const trimmed = rawLine.trim();
-  if (!trimmed)
-    return { stream: null, line: "" };
+  if (!trimmed) return { stream: null, line: "" };
   const prefixed = trimmed.match(/^(stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
   if (!prefixed) {
     return { stream: null, line: trimmed };
@@ -8792,10 +8794,9 @@ function normalizeCursorStreamLine(rawLine) {
   return { stream, line };
 }
 
-// ../../node_modules/@paperclipai/adapter-cursor-local/dist/cli/format-event.js
+// ../packages/adapters/cursor-local/src/cli/format-event.ts
 function asRecord2(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value;
 }
 function asString2(value, fallback = "") {
@@ -8805,10 +8806,8 @@ function asNumber2(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown(value) {
-  if (typeof value === "string")
-    return value;
-  if (value === null || value === void 0)
-    return "";
+  if (typeof value === "string") return value;
+  if (value === null || value === void 0) return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -8817,59 +8816,47 @@ function stringifyUnknown(value) {
 }
 function printUserMessage(messageRaw) {
   if (typeof messageRaw === "string") {
-    const text58 = messageRaw.trim();
-    if (text58)
-      console.log(pc11.gray(`user: ${text58}`));
+    const text63 = messageRaw.trim();
+    if (text63) console.log(pc11.gray(`user: ${text63}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message)
-    return;
+  if (!message) return;
   const directText = asString2(message.text).trim();
-  if (directText)
-    console.log(pc11.gray(`user: ${directText}`));
+  if (directText) console.log(pc11.gray(`user: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part)
-      continue;
+    if (!part) continue;
     const type = asString2(part.type).trim();
-    if (type !== "output_text" && type !== "text")
-      continue;
-    const text58 = asString2(part.text).trim();
-    if (text58)
-      console.log(pc11.gray(`user: ${text58}`));
+    if (type !== "output_text" && type !== "text") continue;
+    const text63 = asString2(part.text).trim();
+    if (text63) console.log(pc11.gray(`user: ${text63}`));
   }
 }
 function printAssistantMessage(messageRaw) {
   if (typeof messageRaw === "string") {
-    const text58 = messageRaw.trim();
-    if (text58)
-      console.log(pc11.green(`assistant: ${text58}`));
+    const text63 = messageRaw.trim();
+    if (text63) console.log(pc11.green(`assistant: ${text63}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message)
-    return;
+  if (!message) return;
   const directText = asString2(message.text).trim();
-  if (directText)
-    console.log(pc11.green(`assistant: ${directText}`));
+  if (directText) console.log(pc11.green(`assistant: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part)
-      continue;
+    if (!part) continue;
     const type = asString2(part.type).trim();
     if (type === "output_text" || type === "text") {
-      const text58 = asString2(part.text).trim();
-      if (text58)
-        console.log(pc11.green(`assistant: ${text58}`));
+      const text63 = asString2(part.text).trim();
+      if (text63) console.log(pc11.green(`assistant: ${text63}`));
       continue;
     }
     if (type === "thinking") {
-      const text58 = asString2(part.text).trim();
-      if (text58)
-        console.log(pc11.gray(`thinking: ${text58}`));
+      const text63 = asString2(part.text).trim();
+      if (text63) console.log(pc11.gray(`thinking: ${text63}`));
       continue;
     }
     if (type === "tool_call") {
@@ -8889,8 +8876,7 @@ function printAssistantMessage(messageRaw) {
       const isError = part.is_error === true || asString2(part.status).toLowerCase() === "error";
       const contentText = asString2(part.output) || asString2(part.text) || asString2(part.result) || stringifyUnknown(part.output ?? part.result ?? part.text ?? part);
       console.log((isError ? pc11.red : pc11.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText)
-        console.log((isError ? pc11.red : pc11.gray)(contentText));
+      if (contentText) console.log((isError ? pc11.red : pc11.gray)(contentText));
     }
   }
 }
@@ -8960,8 +8946,7 @@ function printLegacyToolEvent(part) {
 }
 function printCursorStreamEvent(raw, _debug) {
   const line = normalizeCursorStreamLine(raw).line;
-  if (!line)
-    return;
+  if (!line) return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -8991,9 +8976,8 @@ function printCursorStreamEvent(raw, _debug) {
     return;
   }
   if (type === "thinking") {
-    const text58 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
-    if (text58)
-      console.log(pc11.gray(`thinking: ${text58}`));
+    const text63 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
+    if (text63) console.log(pc11.gray(`thinking: ${text63}`));
     return;
   }
   if (type === "tool_call") {
@@ -9004,18 +8988,19 @@ function printCursorStreamEvent(raw, _debug) {
     const usage = asRecord2(parsed.usage);
     const input = asNumber2(usage?.input_tokens, asNumber2(usage?.inputTokens));
     const output = asNumber2(usage?.output_tokens, asNumber2(usage?.outputTokens));
-    const cached = asNumber2(usage?.cached_input_tokens, asNumber2(usage?.cachedInputTokens, asNumber2(usage?.cache_read_input_tokens)));
+    const cached = asNumber2(
+      usage?.cached_input_tokens,
+      asNumber2(usage?.cachedInputTokens, asNumber2(usage?.cache_read_input_tokens))
+    );
     const cost = asNumber2(parsed.total_cost_usd, asNumber2(parsed.cost_usd, asNumber2(parsed.cost)));
     const subtype = asString2(parsed.subtype, "result");
     const isError = parsed.is_error === true || subtype === "error" || subtype === "failed";
     console.log(pc11.blue(`result: subtype=${subtype}`));
     console.log(pc11.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
     const resultText = asString2(parsed.result).trim();
-    if (resultText)
-      console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
+    if (resultText) console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
     const errors = Array.isArray(parsed.errors) ? parsed.errors.map((value) => stringifyUnknown(value)).filter(Boolean) : [];
-    if (errors.length > 0)
-      console.log(pc11.red(`errors: ${errors.join(" | ")}`));
+    if (errors.length > 0) console.log(pc11.red(`errors: ${errors.join(" | ")}`));
     return;
   }
   if (type === "error") {
@@ -9030,9 +9015,8 @@ function printCursorStreamEvent(raw, _debug) {
   }
   if (type === "text") {
     const part = asRecord2(parsed.part);
-    const text58 = asString2(part?.text);
-    if (text58)
-      console.log(pc11.green(`assistant: ${text58}`));
+    const text63 = asString2(part?.text);
+    if (text63) console.log(pc11.green(`assistant: ${text63}`));
     return;
   }
   if (type === "tool_use") {
@@ -9060,11 +9044,10 @@ function printCursorStreamEvent(raw, _debug) {
   console.log(line);
 }
 
-// ../../node_modules/@paperclipai/adapter-gemini-local/dist/cli/format-event.js
+// ../packages/adapters/gemini-local/src/cli/format-event.ts
 import pc12 from "picocolors";
 function asRecord3(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value;
 }
 function asString3(value, fallback = "") {
@@ -9074,10 +9057,8 @@ function asNumber3(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown2(value) {
-  if (typeof value === "string")
-    return value;
-  if (value === null || value === void 0)
-    return "";
+  if (typeof value === "string") return value;
+  if (value === null || value === void 0) return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -9085,14 +9066,11 @@ function stringifyUnknown2(value) {
   }
 }
 function errorText2(value) {
-  if (typeof value === "string")
-    return value;
+  if (typeof value === "string") return value;
   const rec = asRecord3(value);
-  if (!rec)
-    return "";
+  if (!rec) return "";
   const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg)
-    return msg;
+  if (msg) return msg;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -9101,49 +9079,41 @@ function errorText2(value) {
 }
 function printTextMessage(prefix, colorize, messageRaw) {
   if (typeof messageRaw === "string") {
-    const text58 = messageRaw.trim();
-    if (text58)
-      console.log(colorize(`${prefix}: ${text58}`));
+    const text63 = messageRaw.trim();
+    if (text63) console.log(colorize(`${prefix}: ${text63}`));
     return;
   }
   const message = asRecord3(messageRaw);
-  if (!message)
-    return;
+  if (!message) return;
   const directText = asString3(message.text).trim();
-  if (directText)
-    console.log(colorize(`${prefix}: ${directText}`));
+  if (directText) console.log(colorize(`${prefix}: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord3(partRaw);
-    if (!part)
-      continue;
+    if (!part) continue;
     const type = asString3(part.type).trim();
     if (type === "output_text" || type === "text" || type === "content") {
-      const text58 = asString3(part.text).trim() || asString3(part.content).trim();
-      if (text58)
-        console.log(colorize(`${prefix}: ${text58}`));
+      const text63 = asString3(part.text).trim() || asString3(part.content).trim();
+      if (text63) console.log(colorize(`${prefix}: ${text63}`));
       continue;
     }
     if (type === "thinking") {
-      const text58 = asString3(part.text).trim();
-      if (text58)
-        console.log(pc12.gray(`thinking: ${text58}`));
+      const text63 = asString3(part.text).trim();
+      if (text63) console.log(pc12.gray(`thinking: ${text63}`));
       continue;
     }
     if (type === "tool_call") {
       const name = asString3(part.name, asString3(part.tool, "tool"));
       console.log(pc12.yellow(`tool_call: ${name}`));
       const input = part.input ?? part.arguments ?? part.args;
-      if (input !== void 0)
-        console.log(pc12.gray(stringifyUnknown2(input)));
+      if (input !== void 0) console.log(pc12.gray(stringifyUnknown2(input)));
       continue;
     }
     if (type === "tool_result" || type === "tool_response") {
       const isError = part.is_error === true || asString3(part.status).toLowerCase() === "error";
       const contentText = asString3(part.output) || asString3(part.text) || asString3(part.result) || stringifyUnknown2(part.output ?? part.result ?? part.text ?? part.response);
       console.log((isError ? pc12.red : pc12.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText)
-        console.log((isError ? pc12.red : pc12.gray)(contentText));
+      if (contentText) console.log((isError ? pc12.red : pc12.gray)(contentText));
     }
   }
 }
@@ -9153,14 +9123,16 @@ function printUsage(parsed) {
   const source = usageMetadata ?? usage ?? {};
   const input = asNumber3(source.input_tokens, asNumber3(source.inputTokens, asNumber3(source.promptTokenCount)));
   const output = asNumber3(source.output_tokens, asNumber3(source.outputTokens, asNumber3(source.candidatesTokenCount)));
-  const cached = asNumber3(source.cached_input_tokens, asNumber3(source.cachedInputTokens, asNumber3(source.cachedContentTokenCount)));
+  const cached = asNumber3(
+    source.cached_input_tokens,
+    asNumber3(source.cachedInputTokens, asNumber3(source.cachedContentTokenCount))
+  );
   const cost = asNumber3(parsed.total_cost_usd, asNumber3(parsed.cost_usd, asNumber3(parsed.cost)));
   console.log(pc12.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
 }
 function printGeminiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line)
-    return;
+  if (!line) return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -9179,9 +9151,8 @@ function printGeminiStreamEvent(raw, _debug) {
       return;
     }
     if (subtype === "error") {
-      const text58 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-      if (text58)
-        console.log(pc12.red(`error: ${text58}`));
+      const text63 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
+      if (text63) console.log(pc12.red(`error: ${text63}`));
       return;
     }
     console.log(pc12.blue(`system: ${subtype || "event"}`));
@@ -9196,9 +9167,8 @@ function printGeminiStreamEvent(raw, _debug) {
     return;
   }
   if (type === "thinking") {
-    const text58 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
-    if (text58)
-      console.log(pc12.gray(`thinking: ${text58}`));
+    const text63 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
+    if (text63) console.log(pc12.gray(`thinking: ${text63}`));
     return;
   }
   if (type === "tool_call") {
@@ -9234,26 +9204,24 @@ function printGeminiStreamEvent(raw, _debug) {
     return;
   }
   if (type === "error") {
-    const text58 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-    if (text58)
-      console.log(pc12.red(`error: ${text58}`));
+    const text63 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
+    if (text63) console.log(pc12.red(`error: ${text63}`));
     return;
   }
   console.log(line);
 }
 
-// ../../node_modules/@paperclipai/adapter-opencode-local/dist/cli/format-event.js
+// ../packages/adapters/opencode-local/src/cli/format-event.ts
 import pc13 from "picocolors";
-function safeJsonParse(text58) {
+function safeJsonParse(text63) {
   try {
-    return JSON.parse(text58);
+    return JSON.parse(text63);
   } catch {
     return null;
   }
 }
 function asRecord4(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value;
 }
 function asString4(value, fallback = "") {
@@ -9263,15 +9231,12 @@ function asNumber4(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function errorText3(value) {
-  if (typeof value === "string")
-    return value;
+  if (typeof value === "string") return value;
   const rec = asRecord4(value);
-  if (!rec)
-    return "";
+  if (!rec) return "";
   const data = asRecord4(rec.data);
   const message = asString4(rec.message) || asString4(data?.message) || asString4(rec.name) || "";
-  if (message)
-    return message;
+  if (message) return message;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -9280,8 +9245,7 @@ function errorText3(value) {
 }
 function printOpenCodeStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line)
-    return;
+  if (!line) return;
   const parsed = asRecord4(safeJsonParse(line));
   if (!parsed) {
     console.log(line);
@@ -9295,16 +9259,14 @@ function printOpenCodeStreamEvent(raw, _debug) {
   }
   if (type === "text") {
     const part = asRecord4(parsed.part);
-    const text58 = asString4(part?.text).trim();
-    if (text58)
-      console.log(pc13.green(`assistant: ${text58}`));
+    const text63 = asString4(part?.text).trim();
+    if (text63) console.log(pc13.green(`assistant: ${text63}`));
     return;
   }
   if (type === "reasoning") {
     const part = asRecord4(parsed.part);
-    const text58 = asString4(part?.text).trim();
-    if (text58)
-      console.log(pc13.gray(`thinking: ${text58}`));
+    const text63 = asString4(part?.text).trim();
+    if (text63) console.log(pc13.gray(`thinking: ${text63}`));
     return;
   }
   if (type === "tool_use") {
@@ -9320,15 +9282,13 @@ function printOpenCodeStreamEvent(raw, _debug) {
       const metaParts = [`status=${status}`];
       if (metadata) {
         for (const [key, value] of Object.entries(metadata)) {
-          if (value !== void 0 && value !== null)
-            metaParts.push(`${key}=${value}`);
+          if (value !== void 0 && value !== null) metaParts.push(`${key}=${value}`);
         }
       }
       console.log((isError ? pc13.red : pc13.gray)(`tool_result ${metaParts.join(" ")}`));
     }
     const output = (asString4(state?.output) || asString4(state?.error)).trim();
-    if (output)
-      console.log((isError ? pc13.red : pc13.gray)(output));
+    if (output) console.log((isError ? pc13.red : pc13.gray)(output));
     return;
   }
   if (type === "step_finish") {
@@ -9346,41 +9306,36 @@ function printOpenCodeStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const message = errorText3(parsed.error ?? parsed.message);
-    if (message)
-      console.log(pc13.red(`error: ${message}`));
+    if (message) console.log(pc13.red(`error: ${message}`));
     return;
   }
   console.log(line);
 }
 
-// ../../node_modules/@paperclipai/adapter-pi-local/dist/cli/format-event.js
+// ../packages/adapters/pi-local/src/cli/format-event.ts
 import pc14 from "picocolors";
-function safeJsonParse2(text58) {
+function safeJsonParse2(text63) {
   try {
-    return JSON.parse(text58);
+    return JSON.parse(text63);
   } catch {
     return null;
   }
 }
 function asRecord5(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value;
 }
 function asString5(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 function extractTextContent(content) {
-  if (typeof content === "string")
-    return content;
-  if (!Array.isArray(content))
-    return "";
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
   return content.filter((c) => c.type === "text" && c.text).map((c) => c.text).join("");
 }
 function printPiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line)
-    return;
+  if (!line) return;
   const parsed = asRecord5(safeJsonParse2(line));
   if (!parsed) {
     console.log(line);
@@ -9403,9 +9358,9 @@ function printPiStreamEvent(raw, _debug) {
     const message = asRecord5(parsed.message);
     if (message) {
       const content = message.content;
-      const text58 = extractTextContent(content);
-      if (text58) {
-        console.log(pc14.green(`assistant: ${text58}`));
+      const text63 = extractTextContent(content);
+      if (text63) {
+        console.log(pc14.green(`assistant: ${text63}`));
       }
     }
     return;
@@ -9492,6 +9447,73 @@ var httpCLIAdapter = {
   formatStdoutEvent: printHttpStdoutEvent
 };
 
+// src/adapters/open-agents/format-event.ts
+import pc16 from "picocolors";
+var EVENT_PREFIXES = {
+  sandbox_create: pc16.cyan("sandbox"),
+  sandbox_resume: pc16.cyan("sandbox"),
+  sandbox_hibernate: pc16.cyan("sandbox"),
+  tool_start: pc16.yellow("tool"),
+  tool_result: pc16.yellow("tool"),
+  file_edit: pc16.green("file"),
+  file_create: pc16.green("file"),
+  shell_exec: pc16.magenta("shell"),
+  search: pc16.blue("search"),
+  git_commit: pc16.green("git"),
+  git_push: pc16.green("git"),
+  git_pr: pc16.green("git"),
+  agent_message: pc16.white("agent"),
+  agent_thinking: pc16.dim("think"),
+  task_delegate: pc16.yellow("delegate"),
+  workflow_step: pc16.blue("workflow"),
+  error: pc16.red("error")
+};
+function printOpenAgentsStreamEvent(raw, _debug) {
+  const line = raw.trim();
+  if (!line) return;
+  try {
+    const event = JSON.parse(line);
+    if (event.type && event.detail) {
+      const prefix = EVENT_PREFIXES[event.type] ?? pc16.dim(event.type);
+      console.log(`  ${prefix}  ${event.detail}`);
+      return;
+    }
+  } catch {
+  }
+  console.log(line);
+}
+
+// src/adapters/open-agents/index.ts
+var openAgentsCLIAdapter = {
+  type: "open_agents",
+  formatStdoutEvent: printOpenAgentsStreamEvent
+};
+
+// src/adapters/qwen/format-event.ts
+function printQwenStreamEvent(raw, _debug) {
+  const line = raw.trim();
+  if (!line) return;
+  try {
+    const parsed = JSON.parse(line);
+    if (parsed.type === "result" && typeof parsed.text === "string") {
+      console.log(parsed.text);
+      return;
+    }
+    if (parsed.type === "assistant" && typeof parsed.content === "string") {
+      process.stdout.write(parsed.content);
+      return;
+    }
+  } catch {
+  }
+  console.log(line);
+}
+
+// src/adapters/qwen/index.ts
+var qwenLocalCLIAdapter = {
+  type: "qwen_local",
+  formatStdoutEvent: printQwenStreamEvent
+};
+
 // src/adapters/registry.ts
 var claudeLocalCLIAdapter = {
   type: "claude_local",
@@ -9530,6 +9552,8 @@ var adaptersByType = new Map(
     cursorLocalCLIAdapter,
     geminiLocalCLIAdapter,
     openclawGatewayCLIAdapter,
+    openAgentsCLIAdapter,
+    qwenLocalCLIAdapter,
     processCLIAdapter,
     httpCLIAdapter
   ].map((a) => [a.type, a])
@@ -9540,7 +9564,7 @@ function getCLIAdapter(type) {
 
 // src/commands/client/common.ts
 init_store();
-import pc16 from "picocolors";
+import pc17 from "picocolors";
 
 // src/client/context.ts
 init_home();
@@ -9691,31 +9715,33 @@ var PaperclipApiClient = class {
   apiBase;
   apiKey;
   runId;
+  userId;
   constructor(opts) {
     this.apiBase = opts.apiBase.replace(/\/+$/, "");
     this.apiKey = opts.apiKey?.trim() || void 0;
     this.runId = opts.runId?.trim() || void 0;
+    this.userId = opts.userId?.trim() || void 0;
   }
-  get(path28, opts) {
-    return this.request(path28, { method: "GET" }, opts);
+  get(path36, opts) {
+    return this.request(path36, { method: "GET" }, opts);
   }
-  post(path28, body, opts) {
-    return this.request(path28, {
+  post(path36, body, opts) {
+    return this.request(path36, {
       method: "POST",
       body: body === void 0 ? void 0 : JSON.stringify(body)
     }, opts);
   }
-  patch(path28, body, opts) {
-    return this.request(path28, {
+  patch(path36, body, opts) {
+    return this.request(path36, {
       method: "PATCH",
       body: body === void 0 ? void 0 : JSON.stringify(body)
     }, opts);
   }
-  delete(path28, opts) {
-    return this.request(path28, { method: "DELETE" }, opts);
+  delete(path36, opts) {
+    return this.request(path36, { method: "DELETE" }, opts);
   }
-  async request(path28, init, opts) {
-    const url = buildUrl(this.apiBase, path28);
+  async request(path36, init, opts) {
+    const url = buildUrl(this.apiBase, path36);
     const headers = {
       accept: "application/json",
       ...toStringRecord(init.headers)
@@ -9728,6 +9754,9 @@ var PaperclipApiClient = class {
     }
     if (this.runId) {
       headers["x-paperclip-run-id"] = this.runId;
+    }
+    if (this.userId) {
+      headers["x-user-id"] = this.userId;
     }
     const response = await fetch(url, {
       ...init,
@@ -9742,31 +9771,31 @@ var PaperclipApiClient = class {
     if (response.status === 204) {
       return null;
     }
-    const text58 = await response.text();
-    if (!text58.trim()) {
+    const text63 = await response.text();
+    if (!text63.trim()) {
       return null;
     }
-    return safeParseJson(text58);
+    return safeParseJson(text63);
   }
 };
-function buildUrl(apiBase, path28) {
-  const normalizedPath = path28.startsWith("/") ? path28 : `/${path28}`;
+function buildUrl(apiBase, path36) {
+  const normalizedPath = path36.startsWith("/") ? path36 : `/${path36}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
   if (query) url.search = query;
   return url.toString();
 }
-function safeParseJson(text58) {
+function safeParseJson(text63) {
   try {
-    return JSON.parse(text58);
+    return JSON.parse(text63);
   } catch {
-    return text58;
+    return text63;
   }
 }
 async function toApiError(response) {
-  const text58 = await response.text();
-  const parsed = safeParseJson(text58);
+  const text63 = await response.text();
+  const parsed = safeParseJson(text63);
   if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
     const body = parsed;
     const message = typeof body.error === "string" && body.error.trim() || typeof body.message === "string" && body.message.trim() || `Request failed with status ${response.status}`;
@@ -9821,11 +9850,11 @@ function printOutput(data, opts = {}) {
     return;
   }
   if (opts.label) {
-    console.log(pc16.bold(opts.label));
+    console.log(pc17.bold(opts.label));
   }
   if (Array.isArray(data)) {
     if (data.length === 0) {
-      console.log(pc16.dim("(empty)"));
+      console.log(pc17.dim("(empty)"));
       return;
     }
     for (const item of data) {
@@ -9842,7 +9871,7 @@ function printOutput(data, opts = {}) {
     return;
   }
   if (data === void 0 || data === null) {
-    console.log(pc16.dim("(null)"));
+    console.log(pc17.dim("(null)"));
     return;
   }
   console.log(String(data));
@@ -9897,11 +9926,11 @@ function readKeyFromProfileEnv(profile) {
 function handleCommandError(error) {
   if (error instanceof ApiRequestError) {
     const detailSuffix = error.details !== void 0 ? ` details=${JSON.stringify(error.details)}` : "";
-    console.error(pc16.red(`API error ${error.status}: ${error.message}${detailSuffix}`));
+    console.error(pc17.red(`API error ${error.status}: ${error.message}${detailSuffix}`));
     process.exit(1);
   }
   const message = error instanceof Error ? error.message : String(error);
-  console.error(pc16.red(message));
+  console.error(pc17.red(message));
   process.exit(1);
 }
 
@@ -9942,7 +9971,7 @@ async function heartbeatRun(opts) {
   const api = ctx.api;
   const agent = await api.get(`/api/agents/${opts.agentId}`);
   if (!agent || typeof agent !== "object" || !agent.id) {
-    console.error(pc17.red(`Agent not found: ${opts.agentId}`));
+    console.error(pc18.red(`Agent not found: ${opts.agentId}`));
     return;
   }
   const invokeRes = await api.post(
@@ -9953,24 +9982,24 @@ async function heartbeatRun(opts) {
     }
   );
   if (!invokeRes) {
-    console.error(pc17.red("Failed to invoke heartbeat"));
+    console.error(pc18.red("Failed to invoke heartbeat"));
     return;
   }
   if (invokeRes.status === "skipped") {
-    console.log(pc17.yellow("Heartbeat invocation was skipped"));
+    console.log(pc18.yellow("Heartbeat invocation was skipped"));
     return;
   }
   const run = invokeRes;
-  console.log(pc17.cyan(`Invoked heartbeat run ${run.id} for agent ${agent.name} (${agent.id})`));
+  console.log(pc18.cyan(`Invoked heartbeat run ${run.id} for agent ${agent.name} (${agent.id})`));
   const runId = run.id;
   let activeRunId = null;
   let lastEventSeq = 0;
   let logOffset = 0;
   let stdoutJsonBuffer = "";
   const printRawChunk = (stream, chunk) => {
-    if (stream === "stdout") process.stdout.write(pc17.green("[stdout] ") + chunk);
-    else if (stream === "stderr") process.stdout.write(pc17.red("[stderr] ") + chunk);
-    else process.stdout.write(pc17.yellow("[system] ") + chunk);
+    if (stream === "stdout") process.stdout.write(pc18.green("[stdout] ") + chunk);
+    else if (stream === "stderr") process.stdout.write(pc18.red("[stderr] ") + chunk);
+    else process.stdout.write(pc18.yellow("[system] ") + chunk);
   };
   const printAdapterInvoke = (payload) => {
     const adapterType2 = typeof payload.adapterType === "string" ? payload.adapterType : "unknown";
@@ -9980,22 +10009,22 @@ async function heartbeatRun(opts) {
     const env = typeof payload.env === "object" && payload.env !== null && !Array.isArray(payload.env) ? payload.env : null;
     const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
     const context = typeof payload.context === "object" && payload.context !== null && !Array.isArray(payload.context) ? payload.context : null;
-    console.log(pc17.cyan(`Adapter: ${adapterType2}`));
-    if (cwd) console.log(pc17.cyan(`Working dir: ${cwd}`));
+    console.log(pc18.cyan(`Adapter: ${adapterType2}`));
+    if (cwd) console.log(pc18.cyan(`Working dir: ${cwd}`));
     if (command) {
       const rendered = args.length > 0 ? `${command} ${args.join(" ")}` : command;
-      console.log(pc17.cyan(`Command: ${rendered}`));
+      console.log(pc18.cyan(`Command: ${rendered}`));
     }
     if (env) {
-      console.log(pc17.cyan("Env:"));
-      console.log(pc17.gray(JSON.stringify(env, null, 2)));
+      console.log(pc18.cyan("Env:"));
+      console.log(pc18.gray(JSON.stringify(env, null, 2)));
     }
     if (context) {
-      console.log(pc17.cyan("Context:"));
-      console.log(pc17.gray(JSON.stringify(context, null, 2)));
+      console.log(pc18.cyan("Context:"));
+      console.log(pc18.gray(JSON.stringify(context, null, 2)));
     }
     if (prompt) {
-      console.log(pc17.cyan("Prompt:"));
+      console.log(pc18.cyan("Prompt:"));
       console.log(prompt);
     }
   };
@@ -10024,7 +10053,7 @@ async function heartbeatRun(opts) {
     if (eventType === "heartbeat.run.status") {
       const status = typeof payload.status === "string" ? payload.status : null;
       if (status) {
-        console.log(pc17.blue(`[status] ${status}`));
+        console.log(pc18.blue(`[status] ${status}`));
       }
     } else if (eventType === "adapter.invoke") {
       printAdapterInvoke(payload);
@@ -10036,7 +10065,7 @@ async function heartbeatRun(opts) {
         handleStreamChunk(stream, chunk);
       }
     } else if (typeof event.message === "string") {
-      console.log(pc17.gray(`[event] ${eventType || "heartbeat.run.event"}: ${event.message}`));
+      console.log(pc18.gray(`[event] ${eventType || "heartbeat.run.event"}: ${event.message}`));
     }
     lastEventSeq = Math.max(lastEventSeq, event.seq ?? 0);
   };
@@ -10046,7 +10075,7 @@ async function heartbeatRun(opts) {
   let finalRun = null;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   if (!activeRunId) {
-    console.error(pc17.red("Failed to capture heartbeat run id"));
+    console.error(pc18.red("Failed to capture heartbeat run id"));
     return;
   }
   while (true) {
@@ -10061,13 +10090,13 @@ async function heartbeatRun(opts) {
     ) || [];
     const currentRun = runList.find((r) => r && r.id === activeRunId) ?? null;
     if (!currentRun) {
-      console.error(pc17.red("Heartbeat run disappeared"));
+      console.error(pc18.red("Heartbeat run disappeared"));
       break;
     }
     const currentStatus = currentRun.status;
     if (currentStatus !== finalStatus && currentStatus) {
       finalStatus = currentStatus;
-      console.log(pc17.blue(`Status: ${currentStatus}`));
+      console.log(pc18.blue(`Status: ${currentStatus}`));
     }
     if (currentStatus && TERMINAL_STATUSES.has(currentStatus)) {
       finalStatus = currentRun.status;
@@ -10078,7 +10107,7 @@ async function heartbeatRun(opts) {
     if (deadline && Date.now() >= deadline) {
       finalError = `CLI timed out after ${timeoutMs}ms`;
       finalStatus = "timed_out";
-      console.error(pc17.yellow(finalError));
+      console.error(pc18.yellow(finalError));
       break;
     }
     const logResult = await api.get(
@@ -10107,12 +10136,12 @@ async function heartbeatRun(opts) {
     }
     const label = `Run ${activeRunId} completed with status ${finalStatus}`;
     if (finalStatus === "succeeded") {
-      console.log(pc17.green(label));
+      console.log(pc18.green(label));
       return;
     }
-    console.log(pc17.red(label));
+    console.log(pc18.red(label));
     if (finalError) {
-      console.log(pc17.red(`Error: ${finalError}`));
+      console.log(pc18.red(`Error: ${finalError}`));
     }
     if (finalRun) {
       const resultObj = asRecord6(finalRun.resultJson);
@@ -10122,28 +10151,28 @@ async function heartbeatRun(opts) {
         const errors = Array.isArray(resultObj.errors) ? resultObj.errors.map(asErrorText2).filter(Boolean) : [];
         const resultText = typeof resultObj.result === "string" ? resultObj.result.trim() : "";
         if (subtype || isError || errors.length > 0 || resultText) {
-          console.log(pc17.red("Claude result details:"));
-          if (subtype) console.log(pc17.red(`  subtype: ${subtype}`));
-          if (isError) console.log(pc17.red("  is_error: true"));
-          if (errors.length > 0) console.log(pc17.red(`  errors: ${errors.join(" | ")}`));
-          if (resultText) console.log(pc17.red(`  result: ${resultText}`));
+          console.log(pc18.red("Claude result details:"));
+          if (subtype) console.log(pc18.red(`  subtype: ${subtype}`));
+          if (isError) console.log(pc18.red("  is_error: true"));
+          if (errors.length > 0) console.log(pc18.red(`  errors: ${errors.join(" | ")}`));
+          if (resultText) console.log(pc18.red(`  result: ${resultText}`));
         }
       }
       const stderrExcerpt = typeof finalRun.stderrExcerpt === "string" ? finalRun.stderrExcerpt.trim() : "";
       const stdoutExcerpt = typeof finalRun.stdoutExcerpt === "string" ? finalRun.stdoutExcerpt.trim() : "";
       if (stderrExcerpt) {
-        console.log(pc17.red("stderr excerpt:"));
+        console.log(pc18.red("stderr excerpt:"));
         console.log(stderrExcerpt);
       }
       if (stdoutExcerpt && (debug || !stderrExcerpt)) {
-        console.log(pc17.gray("stdout excerpt:"));
+        console.log(pc18.gray("stdout excerpt:"));
         console.log(stdoutExcerpt);
       }
     }
     process.exitCode = 1;
   } else {
     process.exitCode = 1;
-    console.log(pc17.gray("Heartbeat stream ended without terminal status"));
+    console.log(pc18.gray("Heartbeat stream ended without terminal status"));
   }
 }
 function normalizePayload(payload) {
@@ -10170,7 +10199,7 @@ init_store();
 init_env();
 import os3 from "node:os";
 import * as p14 from "@clack/prompts";
-import pc18 from "picocolors";
+import pc19 from "picocolors";
 import open from "open";
 
 // src/auth/login-flow.ts
@@ -10678,6 +10707,134 @@ function writeEffectiveProfileSnapshot(profile) {
 
 // src/commands/auth-login.ts
 init_home();
+
+// src/auth/hosted-client.ts
+var DEFAULT_PULL_PATH = "/api/cli/profile";
+var DEFAULT_PUSH_PATH = "/api/cli/profile";
+var DEFAULT_SESSION_PATH = "/api/cli/session";
+var DEFAULT_WORKFLOWS_PATH = "/api/cli/profile?view=workflows";
+var DEFAULT_WORKFLOW_DETAIL_PATH = "/api/cli/profile?view=workflow";
+var DEFAULT_WORKFLOW_SAVE_PATH = "/api/cli/profile?action=save-workflow";
+var DEFAULT_WORKFLOW_ARCHIVE_PATH = "/api/cli/profile?action=archive-workflow";
+var DEFAULT_WORKFLOW_DELETE_PATH = "/api/cli/profile?action=delete-workflow";
+var DEFAULT_CREDITS_PATH = "/api/cli/profile?view=credits";
+function toApiClient(session) {
+  return new PaperclipApiClient({
+    apiBase: session.hostedBaseUrl,
+    apiKey: session.accessToken
+  });
+}
+var HostedEndpointUnavailableError = class extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+};
+async function fetchHostedSession(session) {
+  const client = toApiClient(session);
+  try {
+    return await client.get(DEFAULT_SESSION_PATH, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function fetchHostedProfile(session) {
+  const client = toApiClient(session);
+  try {
+    return await client.get(DEFAULT_PULL_PATH, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function pushHostedProfile(session, payload) {
+  const client = toApiClient(session);
+  try {
+    return await client.post(DEFAULT_PUSH_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function listHostedWorkflows(session) {
+  const client = toApiClient(session);
+  try {
+    return await client.get(DEFAULT_WORKFLOWS_PATH, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function fetchHostedWorkflow(session, workflowId) {
+  const client = toApiClient(session);
+  try {
+    return await client.get(
+      `${DEFAULT_WORKFLOW_DETAIL_PATH}&workflowId=${encodeURIComponent(workflowId)}`,
+      { ignoreNotFound: true }
+    );
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function saveHostedWorkflow(session, payload) {
+  const client = toApiClient(session);
+  try {
+    return await client.post(DEFAULT_WORKFLOW_SAVE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function archiveHostedWorkflow(session, payload) {
+  const client = toApiClient(session);
+  try {
+    return await client.post(DEFAULT_WORKFLOW_ARCHIVE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function deleteHostedWorkflow(session, payload) {
+  const client = toApiClient(session);
+  try {
+    return await client.post(DEFAULT_WORKFLOW_DELETE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+async function fetchHostedCredits(session) {
+  const client = toApiClient(session);
+  try {
+    return await client.get(DEFAULT_CREDITS_PATH, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+// src/commands/auth-login.ts
 var DEFAULT_HOSTED_BASE_URL = "https://www.growthub.ai";
 function trimSlashes2(value) {
   return value.replace(/\/+$/, "");
@@ -10705,30 +10862,38 @@ async function authLogin(opts) {
   const workspaceLabel = opts.workspaceLabel?.trim();
   const linkedInstanceId = resolvePaperclipInstanceId();
   const existingSession = readSession();
-  if (!opts.token && existingSession && !isSessionExpired(existingSession) && trimSlashes2(existingSession.hostedBaseUrl) === hostedBaseUrl) {
-    if (opts.json) {
-      console.log(
-        JSON.stringify(
-          {
-            status: "ok",
-            hostedBaseUrl,
-            userId: existingSession.userId ?? null,
-            email: existingSession.email ?? null,
-            reusedSession: true
-          },
-          null,
-          2
-        )
-      );
-      return;
+  if (!opts.token && existingSession && !isSessionExpired(existingSession)) {
+    const sameBaseUrl = trimSlashes2(existingSession.hostedBaseUrl) === hostedBaseUrl;
+    if (sameBaseUrl) {
+      try {
+        await fetchHostedSession(existingSession);
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                status: "ok",
+                hostedBaseUrl,
+                userId: existingSession.userId ?? null,
+                email: existingSession.email ?? null,
+                reusedSession: true
+              },
+              null,
+              2
+            )
+          );
+          return;
+        }
+        p14.log.success(
+          `Already connected${existingSession.email ? ` as ${existingSession.email}` : ""}.`
+        );
+        if (existingSession.hostedBaseUrl) {
+          p14.log.message(pc19.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
+        }
+        return;
+      } catch {
+        clearSession();
+      }
     }
-    p14.log.success(
-      `Already connected${existingSession.email ? ` as ${existingSession.email}` : ""}.`
-    );
-    if (existingSession.hostedBaseUrl) {
-      p14.log.message(pc18.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
-    }
-    return;
   }
   if (opts.token) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -10756,13 +10921,13 @@ async function authLogin(opts) {
       console.log(JSON.stringify({ status: "ok", hostedBaseUrl, mode: "token" }, null, 2));
     } else {
       p14.log.success("Saved hosted session from --token.");
-      p14.log.message(pc18.dim(`Session: ${describeSessionPath()}`));
-      p14.log.message(pc18.dim(`Overlay: ${describeHostedOverlayPath()}`));
+      p14.log.message(pc19.dim(`Session: ${describeSessionPath()}`));
+      p14.log.message(pc19.dim(`Overlay: ${describeHostedOverlayPath()}`));
     }
     return;
   }
-  p14.intro(pc18.bgCyan(pc18.black(" growthub auth login ")));
-  p14.log.message(pc18.dim(`Hosted app: ${hostedBaseUrl}`));
+  p14.intro(pc19.bgCyan(pc19.black(" growthub auth login ")));
+  p14.log.message(pc19.dim(`Hosted app: ${hostedBaseUrl}`));
   const flow = await startLoginFlow({
     hostedBaseUrl,
     machineLabel,
@@ -10775,18 +10940,18 @@ async function authLogin(opts) {
       await open(flow.loginUrl);
     } catch (err) {
       p14.log.warn(`Could not launch browser automatically: ${err instanceof Error ? err.message : String(err)}`);
-      p14.log.message(pc18.dim("Paste this URL into a browser:"));
-      p14.log.message(pc18.cyan(flow.loginUrl));
+      p14.log.message(pc19.dim("Paste this URL into a browser:"));
+      p14.log.message(pc19.cyan(flow.loginUrl));
     }
   } else {
-    p14.log.message(pc18.dim("Paste this URL into a browser:"));
-    p14.log.message(pc18.cyan(flow.loginUrl));
+    p14.log.message(pc19.dim("Paste this URL into a browser:"));
+    p14.log.message(pc19.cyan(flow.loginUrl));
   }
-  const spinner5 = p14.spinner();
-  spinner5.start("Waiting for hosted app to complete the exchange\u2026");
+  const spinner10 = p14.spinner();
+  spinner10.start("Waiting for hosted app to complete the exchange\u2026");
   try {
     const result = await flow.waitForCallback();
-    spinner5.stop("Received hosted session token.");
+    spinner10.stop("Received hosted session token.");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     writeSession({
       version: 1,
@@ -10838,11 +11003,11 @@ async function authLogin(opts) {
       );
     } else {
       p14.log.success(`Signed in${result.email ? ` as ${result.email}` : ""}.`);
-      p14.log.message(pc18.dim(`Session: ${describeSessionPath()}`));
+      p14.log.message(pc19.dim(`Session: ${describeSessionPath()}`));
     }
     p14.outro("Done");
   } catch (err) {
-    spinner5.stop("Login failed.");
+    spinner10.stop("Login failed.");
     p14.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   } finally {
@@ -10869,12 +11034,12 @@ async function authLogout(opts) {
     return;
   }
   if (!sessionCleared && !overlayCleared) {
-    console.log(pc18.dim("No hosted session or overlay present. Local workspace profile is untouched."));
+    console.log(pc19.dim("No hosted session or overlay present. Local workspace profile is untouched."));
     return;
   }
-  if (sessionCleared) console.log(pc18.green("Cleared hosted session."));
-  if (overlayCleared) console.log(pc18.green("Cleared hosted overlay."));
-  console.log(pc18.dim("Local workspace profile is untouched."));
+  if (sessionCleared) console.log(pc19.green("Cleared hosted session."));
+  if (overlayCleared) console.log(pc19.green("Cleared hosted overlay."));
+  console.log(pc19.dim("Local workspace profile is untouched."));
 }
 async function authWhoami(opts) {
   const session = readSession();
@@ -10901,97 +11066,56 @@ async function authWhoami(opts) {
     return;
   }
   if (!payload.authenticated) {
-    console.log(pc18.yellow("Not signed in."));
+    console.log(pc19.yellow("Not signed in."));
     if (effective.session.present && effective.session.expired) {
-      console.log(pc18.dim("Hosted session exists but is expired. Run `growthub auth login` to refresh."));
+      console.log(pc19.dim("Hosted session exists but is expired. Run `growthub auth login` to refresh."));
     } else {
-      console.log(pc18.dim("Run `growthub auth login` to connect this CLI to hosted Growthub."));
+      console.log(pc19.dim("Run `growthub auth login` to connect this CLI to hosted Growthub."));
     }
-    console.log(pc18.dim("Local workspace profile continues to work without authentication."));
+    console.log(pc19.dim("Local workspace profile continues to work without authentication."));
     return;
   }
-  console.log(pc18.bold(`Signed in${payload.email ? ` as ${payload.email}` : payload.userId ? ` as ${payload.userId}` : ""}.`));
-  if (payload.hostedBaseUrl) console.log(pc18.dim(`Hosted: ${payload.hostedBaseUrl}`));
+  console.log(pc19.bold(`Signed in${payload.email ? ` as ${payload.email}` : payload.userId ? ` as ${payload.userId}` : ""}.`));
+  if (payload.hostedBaseUrl) console.log(pc19.dim(`Hosted: ${payload.hostedBaseUrl}`));
   if (payload.orgName || payload.orgId) {
-    console.log(pc18.dim(`Org: ${payload.orgName ?? payload.orgId}`));
+    console.log(pc19.dim(`Org: ${payload.orgName ?? payload.orgId}`));
   }
   if (payload.linkedInstanceId) {
-    console.log(pc18.dim(`Linked local instance: ${payload.linkedInstanceId}`));
+    console.log(pc19.dim(`Linked local instance: ${payload.linkedInstanceId}`));
   }
   if (payload.entitlements.length > 0) {
-    console.log(pc18.dim(`Entitlements: ${payload.entitlements.join(", ")}`));
+    console.log(pc19.dim(`Entitlements: ${payload.entitlements.join(", ")}`));
   }
   if (payload.session.expiresAt) {
-    console.log(pc18.dim(`Session expires: ${payload.session.expiresAt}`));
+    console.log(pc19.dim(`Session expires: ${payload.session.expiresAt}`));
   }
 }
 
 // src/commands/profile.ts
 init_store();
 init_env();
-import pc19 from "picocolors";
-
-// src/auth/hosted-client.ts
-var DEFAULT_PULL_PATH = "/api/cli/profile";
-var DEFAULT_PUSH_PATH = "/api/cli/profile";
-function toApiClient(session) {
-  return new PaperclipApiClient({
-    apiBase: session.hostedBaseUrl,
-    apiKey: session.accessToken
-  });
-}
-var HostedEndpointUnavailableError = class extends Error {
-  status;
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-};
-async function fetchHostedProfile(session) {
-  const client = toApiClient(session);
-  try {
-    return await client.get(DEFAULT_PULL_PATH, { ignoreNotFound: true });
-  } catch (err) {
-    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
-      throw new HostedEndpointUnavailableError(err.status, err.message);
-    }
-    throw err;
-  }
-}
-async function pushHostedProfile(session, payload) {
-  const client = toApiClient(session);
-  try {
-    return await client.post(DEFAULT_PUSH_PATH, payload, { ignoreNotFound: true });
-  } catch (err) {
-    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
-      throw new HostedEndpointUnavailableError(err.status, err.message);
-    }
-    throw err;
-  }
-}
-
-// src/commands/profile.ts
+import pc20 from "picocolors";
 init_home();
 function printEffectiveProfileHuman(effective) {
-  console.log(pc19.bold("Effective profile"));
+  console.log(pc20.bold("Effective profile"));
   console.log(
-    `  Authenticated: ${effective.authenticated ? pc19.green("yes") : pc19.yellow("no")}${effective.session.expired ? pc19.yellow(" (session expired)") : ""}`
+    `  Authenticated: ${effective.authenticated ? pc20.green("yes") : pc20.yellow("no")}${effective.session.expired ? pc20.yellow(" (session expired)") : ""}`
   );
-  console.log(pc19.bold("Local workspace (base layer)"));
+  console.log(pc20.bold("Local workspace (base layer)"));
   console.log(`  Instance: ${effective.local.instanceId}`);
-  console.log(`  Config: ${pc19.dim(effective.local.configPath)}`);
+  console.log(`  Config: ${pc20.dim(effective.local.configPath)}`);
   console.log(
-    `  Surface: ${effective.local.surfaceProfile ?? pc19.dim("(unset)")}  Host: ${effective.local.serverHost ?? pc19.dim("(unset)")}  Port: ${effective.local.serverPort ?? pc19.dim("(unset)")}`
+    `  Surface: ${effective.local.surfaceProfile ?? pc20.dim("(unset)")}  Host: ${effective.local.serverHost ?? pc20.dim("(unset)")}  Port: ${effective.local.serverPort ?? pc20.dim("(unset)")}`
   );
   console.log(
-    `  Local-linked hosted token: ${effective.local.hasConfiguredToken ? pc19.green("set") : pc19.dim("none")}`
+    `  Local-linked hosted token: ${effective.local.hasConfiguredToken ? pc20.green("set") : pc20.dim("none")}`
   );
   if (effective.local.growthubBaseUrl) {
     console.log(`  Growthub base: ${effective.local.growthubBaseUrl}`);
   }
-  console.log(pc19.bold("Hosted overlay"));
+  console.log(pc20.bold("Hosted overlay"));
   if (!effective.hosted.present) {
-    console.log(pc19.dim("  No hosted overlay present. Run `growthub auth login` to attach one."));
+    console.log(pc20.dim("  No hosted overlay present. Run `growthub auth login` to attach one."));
   } else {
     if (effective.hosted.email || effective.hosted.userId) {
       console.log(`  User: ${effective.hosted.email ?? effective.hosted.userId}`);
@@ -11009,10 +11133,10 @@ function printEffectiveProfileHuman(effective) {
     if (effective.hosted.gatedKitSlugs.length > 0) {
       console.log(`  Gated kits: ${effective.hosted.gatedKitSlugs.join(", ")}`);
     }
-    if (effective.hosted.lastPulledAt) console.log(pc19.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
-    if (effective.hosted.lastPushedAt) console.log(pc19.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
+    if (effective.hosted.lastPulledAt) console.log(pc20.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
+    if (effective.hosted.lastPushedAt) console.log(pc20.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
   }
-  console.log(pc19.bold("Execution defaults"));
+  console.log(pc20.bold("Execution defaults"));
   console.log(
     `  preferredMode=${effective.executionDefaults.preferredMode}  serverlessFallback=${effective.executionDefaults.allowServerlessFallback}  browserBridge=${effective.executionDefaults.allowBrowserBridge}`
   );
@@ -11042,11 +11166,11 @@ async function runProfilePull(opts) {
   loadPaperclipEnvFile(configPath);
   const session = readSession();
   if (!session) {
-    console.error(pc19.red("No hosted session. Run `growthub auth login` first."));
+    console.error(pc20.red("No hosted session. Run `growthub auth login` first."));
     process.exit(1);
   }
   if (isSessionExpired(session)) {
-    console.error(pc19.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    console.error(pc20.red("Hosted session is expired. Run `growthub auth login` to refresh."));
     process.exit(1);
   }
   const existingOverlay = readHostedOverlay() ?? seedHostedOverlayFromSession({
@@ -11067,7 +11191,7 @@ async function runProfilePull(opts) {
       usedFallback = true;
       if (!opts.json) {
         console.log(
-          pc19.yellow(
+          pc20.yellow(
             "Hosted profile endpoint not yet available \u2014 keeping current overlay. (This is expected while gh-app is still shipping its CLI API.)"
           )
         );
@@ -11098,21 +11222,21 @@ async function runProfilePull(opts) {
     return;
   }
   if (!usedFallback) {
-    console.log(pc19.green("Hosted profile pulled and overlay updated."));
+    console.log(pc20.green("Hosted profile pulled and overlay updated."));
   }
-  console.log(pc19.dim(`Entitlements: ${merged.entitlements.length === 0 ? "(none)" : merged.entitlements.join(", ")}`));
-  console.log(pc19.dim(`Gated kits: ${merged.gatedKitSlugs.length === 0 ? "(none)" : merged.gatedKitSlugs.join(", ")}`));
+  console.log(pc20.dim(`Entitlements: ${merged.entitlements.length === 0 ? "(none)" : merged.entitlements.join(", ")}`));
+  console.log(pc20.dim(`Gated kits: ${merged.gatedKitSlugs.length === 0 ? "(none)" : merged.gatedKitSlugs.join(", ")}`));
 }
 async function runProfilePush(opts) {
   const configPath = resolveConfigPath(opts.config);
   loadPaperclipEnvFile(configPath);
   const session = readSession();
   if (!session) {
-    console.error(pc19.red("No hosted session. Run `growthub auth login` first."));
+    console.error(pc20.red("No hosted session. Run `growthub auth login` first."));
     process.exit(1);
   }
   if (isSessionExpired(session)) {
-    console.error(pc19.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    console.error(pc20.red("Hosted session is expired. Run `growthub auth login` to refresh."));
     process.exit(1);
   }
   const effective = computeEffectiveProfile({ configPath });
@@ -11155,14 +11279,49 @@ async function runProfilePush(opts) {
   }
   if (usedFallback) {
     console.log(
-      pc19.yellow(
+      pc20.yellow(
         "Hosted push endpoint not yet available \u2014 linkage recorded locally only. (This is expected while gh-app is still shipping its CLI API.)"
       )
     );
     return;
   }
-  console.log(pc19.green("Hosted profile push acknowledged."));
-  console.log(pc19.dim(`Linked instance: ${effective.local.instanceId}`));
+  console.log(pc20.green("Hosted profile push acknowledged."));
+  console.log(pc20.dim(`Linked instance: ${effective.local.instanceId}`));
+}
+async function runProfileCredits(opts) {
+  const configPath = resolveConfigPath(opts.config);
+  loadPaperclipEnvFile(configPath);
+  const session = readSession();
+  if (!session) {
+    console.error(pc20.red("No hosted session. Run `growthub auth login` first."));
+    process.exit(1);
+  }
+  if (isSessionExpired(session)) {
+    console.error(pc20.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    process.exit(1);
+  }
+  try {
+    const credits = await fetchHostedCredits(session);
+    if (!credits || typeof credits.totalAvailable !== "number") {
+      console.error(pc20.red("Hosted credits endpoint returned no data."));
+      process.exit(1);
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(credits, null, 2));
+      return;
+    }
+    console.log(pc20.bold("Hosted credits"));
+    console.log(`  Available: $${credits.totalAvailable.toFixed(2)}`);
+    console.log(`  Used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+    console.log(`  Plan: ${credits.planTier}`);
+    console.log(`  Period: ${credits.currentPeriodStart} \u2192 ${credits.currentPeriodEnd}`);
+  } catch (err) {
+    if (err instanceof HostedEndpointUnavailableError) {
+      console.error(pc20.red("Hosted credits endpoint is not available on this app version."));
+      process.exit(1);
+    }
+    throw err;
+  }
 }
 function registerProfileCommands(program2) {
   const profile = program2.command("profile").description("Inspect and sync the effective Growthub profile (local workspace + hosted overlay)");
@@ -11175,6 +11334,9 @@ function registerProfileCommands(program2) {
   profile.command("push").description("Push safe local profile metadata (workspace linkage, labels) upward").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--json", "Output raw JSON").action(async (opts) => {
     await runProfilePush(opts);
   });
+  profile.command("credits").description("Show hosted credit balance for the authenticated Growthub user").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--json", "Output raw JSON").action(async (opts) => {
+    await runProfileCredits(opts);
+  });
 }
 
 // src/commands/db-backup.ts
@@ -11184,7 +11346,7 @@ init_store();
 init_banner();
 import path14 from "node:path";
 import * as p15 from "@clack/prompts";
-import pc20 from "picocolors";
+import pc21 from "picocolors";
 function resolveConnectionString(configPath) {
   const envUrl = process.env.DATABASE_URL?.trim();
   if (envUrl) return { value: envUrl, source: "DATABASE_URL" };
@@ -11210,7 +11372,7 @@ function resolveBackupDir(raw) {
 }
 async function dbBackupCommand(opts) {
   printPaperclipCliBanner();
-  p15.intro(pc20.bgCyan(pc20.black(" paperclip db:backup ")));
+  p15.intro(pc21.bgCyan(pc21.black(" paperclip db:backup ")));
   const configPath = resolveConfigPath(opts.config);
   const config = readConfig(opts.config);
   const connection = resolveConnectionString(opts.config);
@@ -11222,12 +11384,12 @@ async function dbBackupCommand(opts) {
     config?.database.backup.retentionDays ?? 30
   );
   const filenamePrefix = opts.filenamePrefix?.trim() || "paperclip";
-  p15.log.message(pc20.dim(`Config: ${configPath}`));
-  p15.log.message(pc20.dim(`Connection source: ${connection.source}`));
-  p15.log.message(pc20.dim(`Backup dir: ${backupDir}`));
-  p15.log.message(pc20.dim(`Retention: ${retentionDays} day(s)`));
-  const spinner5 = p15.spinner();
-  spinner5.start("Creating database backup...");
+  p15.log.message(pc21.dim(`Config: ${configPath}`));
+  p15.log.message(pc21.dim(`Connection source: ${connection.source}`));
+  p15.log.message(pc21.dim(`Backup dir: ${backupDir}`));
+  p15.log.message(pc21.dim(`Retention: ${retentionDays} day(s)`));
+  const spinner10 = p15.spinner();
+  spinner10.start("Creating database backup...");
   try {
     const result = await runDatabaseBackup({
       connectionString: connection.value,
@@ -11235,7 +11397,7 @@ async function dbBackupCommand(opts) {
       retentionDays,
       filenamePrefix
     });
-    spinner5.stop(`Backup saved: ${formatDatabaseBackupResult(result)}`);
+    spinner10.stop(`Backup saved: ${formatDatabaseBackupResult(result)}`);
     if (opts.json) {
       console.log(
         JSON.stringify(
@@ -11252,15 +11414,15 @@ async function dbBackupCommand(opts) {
         )
       );
     }
-    p15.outro(pc20.green("Backup completed."));
+    p15.outro(pc21.green("Backup completed."));
   } catch (err) {
-    spinner5.stop(pc20.red("Backup failed."));
+    spinner10.stop(pc21.red("Backup failed."));
     throw err;
   }
 }
 
 // src/commands/client/context.ts
-import pc21 from "picocolors";
+import pc22 from "picocolors";
 function registerContextCommands(program2) {
   const context = program2.command("context").description("Manage CLI client context profiles");
   context.command("show").description("Show current context and active profile").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--context <path>", "Path to CLI context file").option("--profile <name>", "Profile to inspect").option("--json", "Output raw JSON").action((opts) => {
@@ -11289,7 +11451,7 @@ function registerContextCommands(program2) {
   });
   context.command("use").description("Set active context profile").argument("<profile>", "Profile name").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--context <path>", "Path to CLI context file").action((profile, opts) => {
     setCurrentProfile(profile, opts.context);
-    console.log(pc21.green(`Active profile set to '${profile}'.`));
+    console.log(pc22.green(`Active profile set to '${profile}'.`));
   });
   context.command("set").description("Set values on a profile").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--context <path>", "Path to CLI context file").option("--profile <name>", "Profile name (default: current profile)").option("--api-base <url>", "Default API base URL").option("--company-id <id>", "Default company ID").option("--api-key-env-var-name <name>", "Env var containing API key (recommended)").option("--use", "Set this profile as active").option("--json", "Output raw JSON").action((opts) => {
     const existing = readContext(opts.context);
@@ -11315,9 +11477,9 @@ function registerContextCommands(program2) {
       profile: resolved.profile
     };
     if (!opts.json) {
-      console.log(pc21.green(`Updated profile '${targetProfile}'.`));
+      console.log(pc22.green(`Updated profile '${targetProfile}'.`));
       if (opts.use) {
-        console.log(pc21.green(`Set '${targetProfile}' as active profile.`));
+        console.log(pc22.green(`Set '${targetProfile}' as active profile.`));
       }
     }
     printOutput(payload, { json: opts.json });
@@ -11426,17 +11588,17 @@ function assertDeleteConfirmation(company, opts) {
   if (!opts.yes) {
     throw new Error("Deletion requires --yes.");
   }
-  const confirm8 = opts.confirm?.trim();
-  if (!confirm8) {
+  const confirm13 = opts.confirm?.trim();
+  if (!confirm13) {
     throw new Error(
       "Deletion requires --confirm <value> where value matches the company ID or issue prefix."
     );
   }
-  const confirmsById = confirm8 === company.id;
-  const confirmsByPrefix = confirm8.toUpperCase() === company.issuePrefix.toUpperCase();
+  const confirmsById = confirm13 === company.id;
+  const confirmsByPrefix = confirm13.toUpperCase() === company.issuePrefix.toUpperCase();
   if (!confirmsById && !confirmsByPrefix) {
     throw new Error(
-      `Confirmation '${confirm8}' does not match target company. Expected ID '${company.id}' or prefix '${company.issuePrefix}'.`
+      `Confirmation '${confirm13}' does not match target company. Expected ID '${company.id}' or prefix '${company.issuePrefix}'.`
     );
   }
 }
@@ -11670,8 +11832,8 @@ function registerIssueCommands(program2) {
         if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
         if (opts.projectId) params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path28 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path28) ?? [];
+        const path36 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path36) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -11827,8 +11989,8 @@ function filterIssueRows(rows, match) {
   if (!match?.trim()) return rows;
   const needle = match.trim().toLowerCase();
   return rows.filter((row) => {
-    const text58 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
-    return text58.includes(needle);
+    const text63 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
+    return text63.includes(needle);
   });
 }
 
@@ -12277,8 +12439,8 @@ function registerActivityCommands(program2) {
         if (opts.entityType) params.set("entityType", opts.entityType);
         if (opts.entityId) params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path28 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path28) ?? [];
+        const path36 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path36) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -12361,7 +12523,7 @@ init_home();
 import fs16 from "node:fs";
 import path19 from "node:path";
 import { spawn } from "node:child_process";
-import pc22 from "picocolors";
+import pc23 from "picocolors";
 function resolveGtmStatePath() {
   return path19.resolve(resolvePaperclipHomeDir(), "gtm", "state.json");
 }
@@ -12411,7 +12573,7 @@ function printJsonOrMessage(payload, json, message) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
-  if (message) console.log(pc22.green(message));
+  if (message) console.log(pc23.green(message));
   console.log(payload);
 }
 function registerGtmCommands(program2) {
@@ -12481,7 +12643,7 @@ import path21 from "node:path";
 import { execFileSync } from "node:child_process";
 import { createServer as createServer2 } from "node:net";
 import * as p16 from "@clack/prompts";
-import pc23 from "picocolors";
+import pc24 from "picocolors";
 import { eq as eq2 } from "drizzle-orm";
 
 // src/commands/worktree-lib.ts
@@ -13166,8 +13328,8 @@ async function runWorktreeInit(opts) {
         `Cannot seed worktree database because source config was not found at ${sourceConfigPath}. Use --no-seed or provide --from-config.`
       );
     }
-    const spinner5 = p16.spinner();
-    spinner5.start(`Seeding isolated worktree database from source instance (${seedMode})...`);
+    const spinner10 = p16.spinner();
+    spinner10.start(`Seeding isolated worktree database from source instance (${seedMode})...`);
     try {
       const seeded = await seedWorktreeDatabase({
         sourceConfigPath,
@@ -13179,46 +13341,46 @@ async function runWorktreeInit(opts) {
       });
       seedSummary = seeded.backupSummary;
       reboundWorkspaceSummary = seeded.reboundWorkspaces;
-      spinner5.stop(`Seeded isolated worktree database (${seedMode}).`);
+      spinner10.stop(`Seeded isolated worktree database (${seedMode}).`);
     } catch (error) {
-      spinner5.stop(pc23.red("Failed to seed worktree database."));
+      spinner10.stop(pc24.red("Failed to seed worktree database."));
       throw error;
     }
   }
-  p16.log.message(pc23.dim(`Repo config: ${paths.configPath}`));
-  p16.log.message(pc23.dim(`Repo env: ${paths.envPath}`));
-  p16.log.message(pc23.dim(`Isolated home: ${paths.homeDir}`));
-  p16.log.message(pc23.dim(`Instance: ${paths.instanceId}`));
-  p16.log.message(pc23.dim(`Worktree badge: ${branding.name} (${branding.color})`));
-  p16.log.message(pc23.dim(`Server port: ${serverPort} | DB port: ${databasePort}`));
+  p16.log.message(pc24.dim(`Repo config: ${paths.configPath}`));
+  p16.log.message(pc24.dim(`Repo env: ${paths.envPath}`));
+  p16.log.message(pc24.dim(`Isolated home: ${paths.homeDir}`));
+  p16.log.message(pc24.dim(`Instance: ${paths.instanceId}`));
+  p16.log.message(pc24.dim(`Worktree badge: ${branding.name} (${branding.color})`));
+  p16.log.message(pc24.dim(`Server port: ${serverPort} | DB port: ${databasePort}`));
   if (copiedGitHooks?.copied) {
     p16.log.message(
-      pc23.dim(`Mirrored git hooks: ${copiedGitHooks.sourceHooksPath} -> ${copiedGitHooks.targetHooksPath}`)
+      pc24.dim(`Mirrored git hooks: ${copiedGitHooks.sourceHooksPath} -> ${copiedGitHooks.targetHooksPath}`)
     );
   }
   if (seedSummary) {
-    p16.log.message(pc23.dim(`Seed mode: ${seedMode}`));
-    p16.log.message(pc23.dim(`Seed snapshot: ${seedSummary}`));
+    p16.log.message(pc24.dim(`Seed mode: ${seedMode}`));
+    p16.log.message(pc24.dim(`Seed snapshot: ${seedSummary}`));
     for (const rebound of reboundWorkspaceSummary) {
       p16.log.message(
-        pc23.dim(`Rebound workspace ${rebound.name}: ${rebound.fromCwd} -> ${rebound.toCwd}`)
+        pc24.dim(`Rebound workspace ${rebound.name}: ${rebound.fromCwd} -> ${rebound.toCwd}`)
       );
     }
   }
   p16.outro(
-    pc23.green(
+    pc24.green(
       `Worktree ready. Run Paperclip inside this repo and the CLI/server will use ${paths.instanceId} automatically.`
     )
   );
 }
 async function worktreeInitCommand(opts) {
   printPaperclipCliBanner();
-  p16.intro(pc23.bgCyan(pc23.black(" paperclipai worktree init ")));
+  p16.intro(pc24.bgCyan(pc24.black(" paperclipai worktree init ")));
   await runWorktreeInit(opts);
 }
 async function worktreeMakeCommand(nameArg, opts) {
   printPaperclipCliBanner();
-  p16.intro(pc23.bgCyan(pc23.black(" paperclipai worktree:make ")));
+  p16.intro(pc24.bgCyan(pc24.black(" paperclipai worktree:make ")));
   const name = resolveWorktreeMakeName(nameArg);
   const startPoint = resolveWorktreeStartPoint(opts.startPoint);
   const sourceCwd = process.cwd();
@@ -13247,16 +13409,16 @@ async function worktreeMakeCommand(nameArg, opts) {
     branchExists: !startPoint && localBranchExists(sourceCwd, name),
     startPoint
   });
-  const spinner5 = p16.spinner();
-  spinner5.start(`Creating git worktree at ${targetPath}...`);
+  const spinner10 = p16.spinner();
+  spinner10.start(`Creating git worktree at ${targetPath}...`);
   try {
     execFileSync("git", worktreeArgs, {
       cwd: sourceCwd,
       stdio: ["ignore", "pipe", "pipe"]
     });
-    spinner5.stop(`Created git worktree at ${targetPath}.`);
+    spinner10.stop(`Created git worktree at ${targetPath}.`);
   } catch (error) {
-    spinner5.stop(pc23.red("Failed to create git worktree."));
+    spinner10.stop(pc24.red("Failed to create git worktree."));
     throw new Error(extractExecSyncErrorMessage(error) ?? String(error));
   }
   const installSpinner = p16.spinner();
@@ -13268,7 +13430,7 @@ async function worktreeMakeCommand(nameArg, opts) {
     });
     installSpinner.stop("Installed dependencies.");
   } catch (error) {
-    installSpinner.stop(pc23.yellow("Failed to install dependencies (continuing anyway)."));
+    installSpinner.stop(pc24.yellow("Failed to install dependencies (continuing anyway)."));
     p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
   }
   const originalCwd = process.cwd();
@@ -13286,7 +13448,7 @@ async function worktreeMakeCommand(nameArg, opts) {
   }
   const bootstrapScript = path21.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
   if (existsSync2(bootstrapScript)) {
-    p16.log.message(pc23.dim(`Running worktree bootstrap in ${targetPath}...`));
+    p16.log.message(pc24.dim(`Running worktree bootstrap in ${targetPath}...`));
     try {
       execFileSync("node", [bootstrapScript], { cwd: targetPath, stdio: "inherit" });
     } catch (error) {
@@ -13369,7 +13531,7 @@ function worktreePathHasUncommittedChanges(worktreePath) {
 }
 async function worktreeCleanupCommand(nameArg, opts) {
   printPaperclipCliBanner();
-  p16.intro(pc23.bgCyan(pc23.black(" paperclipai worktree:cleanup ")));
+  p16.intro(pc24.bgCyan(pc24.black(" paperclipai worktree:cleanup ")));
   const name = resolveWorktreeMakeName(nameArg);
   const sourceCwd = process.cwd();
   const targetPath = resolveWorktreeMakeTargetPath(name);
@@ -13385,7 +13547,7 @@ async function worktreeCleanupCommand(nameArg, opts) {
   );
   if (!hasBranch && !hasTargetDir && !hasInstanceData && !linkedWorktree) {
     p16.log.info("Nothing to clean up \u2014 no branch, worktree directory, or instance data found.");
-    p16.outro(pc23.green("Already clean."));
+    p16.outro(pc24.green("Already clean."));
     return;
   }
   const problems = [];
@@ -13419,9 +13581,9 @@ async function worktreeCleanupCommand(nameArg, opts) {
   }
   if (linkedWorktree) {
     const worktreeDirExists = existsSync2(linkedWorktree.worktree);
-    const spinner5 = p16.spinner();
+    const spinner10 = p16.spinner();
     if (worktreeDirExists) {
-      spinner5.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
+      spinner10.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
       try {
         const removeArgs = ["worktree", "remove", linkedWorktree.worktree];
         if (opts.force) removeArgs.push("--force");
@@ -13429,18 +13591,18 @@ async function worktreeCleanupCommand(nameArg, opts) {
           cwd: sourceCwd,
           stdio: ["ignore", "pipe", "pipe"]
         });
-        spinner5.stop(`Removed git worktree at ${linkedWorktree.worktree}.`);
+        spinner10.stop(`Removed git worktree at ${linkedWorktree.worktree}.`);
       } catch (error) {
-        spinner5.stop(pc23.yellow(`Could not remove worktree cleanly, will prune instead.`));
+        spinner10.stop(pc24.yellow(`Could not remove worktree cleanly, will prune instead.`));
         p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
       }
     } else {
-      spinner5.start("Pruning stale worktree entry...");
+      spinner10.start("Pruning stale worktree entry...");
       execFileSync("git", ["worktree", "prune"], {
         cwd: sourceCwd,
         stdio: ["ignore", "pipe", "pipe"]
       });
-      spinner5.stop("Pruned stale worktree entry.");
+      spinner10.stop("Pruned stale worktree entry.");
     }
   } else {
     execFileSync("git", ["worktree", "prune"], {
@@ -13449,33 +13611,33 @@ async function worktreeCleanupCommand(nameArg, opts) {
     });
   }
   if (existsSync2(targetPath)) {
-    const spinner5 = p16.spinner();
-    spinner5.start(`Removing worktree directory ${targetPath}...`);
+    const spinner10 = p16.spinner();
+    spinner10.start(`Removing worktree directory ${targetPath}...`);
     rmSync(targetPath, { recursive: true, force: true });
-    spinner5.stop(`Removed worktree directory ${targetPath}.`);
+    spinner10.stop(`Removed worktree directory ${targetPath}.`);
   }
   if (localBranchExists(sourceCwd, name)) {
-    const spinner5 = p16.spinner();
-    spinner5.start(`Deleting local branch "${name}"...`);
+    const spinner10 = p16.spinner();
+    spinner10.start(`Deleting local branch "${name}"...`);
     try {
       const deleteFlag = opts.force ? "-D" : "-d";
       execFileSync("git", ["branch", deleteFlag, name], {
         cwd: sourceCwd,
         stdio: ["ignore", "pipe", "pipe"]
       });
-      spinner5.stop(`Deleted local branch "${name}".`);
+      spinner10.stop(`Deleted local branch "${name}".`);
     } catch (error) {
-      spinner5.stop(pc23.yellow(`Could not delete branch "${name}".`));
+      spinner10.stop(pc24.yellow(`Could not delete branch "${name}".`));
       p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
     }
   }
   if (existsSync2(instanceRoot)) {
-    const spinner5 = p16.spinner();
-    spinner5.start(`Removing instance data at ${instanceRoot}...`);
+    const spinner10 = p16.spinner();
+    spinner10.start(`Removing instance data at ${instanceRoot}...`);
     rmSync(instanceRoot, { recursive: true, force: true });
-    spinner5.stop(`Removed instance data at ${instanceRoot}.`);
+    spinner10.stop(`Removed instance data at ${instanceRoot}.`);
   }
-  p16.outro(pc23.green("Cleanup complete."));
+  p16.outro(pc24.green("Cleanup complete."));
 }
 async function worktreeEnvCommand(opts) {
   const configPath = resolveConfigPath(opts.config);
@@ -13504,7 +13666,7 @@ function registerWorktreeCommands(program2) {
 
 // src/commands/client/plugin.ts
 import path22 from "node:path";
-import pc24 from "picocolors";
+import pc25 from "picocolors";
 function resolvePackageArg(packageArg, isLocal) {
   if (!isLocal) return packageArg;
   if (path22.isAbsolute(packageArg)) return packageArg;
@@ -13514,16 +13676,16 @@ function resolvePackageArg(packageArg, isLocal) {
   }
   return path22.resolve(process.cwd(), packageArg);
 }
-function formatPlugin(p20) {
-  const statusColor = p20.status === "ready" ? pc24.green(p20.status) : p20.status === "error" ? pc24.red(p20.status) : p20.status === "disabled" ? pc24.dim(p20.status) : pc24.yellow(p20.status);
+function formatPlugin(p25) {
+  const statusColor3 = p25.status === "ready" ? pc25.green(p25.status) : p25.status === "error" ? pc25.red(p25.status) : p25.status === "disabled" ? pc25.dim(p25.status) : pc25.yellow(p25.status);
   const parts = [
-    `key=${pc24.bold(p20.pluginKey)}`,
-    `status=${statusColor}`,
-    `version=${p20.version}`,
-    `id=${pc24.dim(p20.id)}`
+    `key=${pc25.bold(p25.pluginKey)}`,
+    `status=${statusColor3}`,
+    `version=${p25.version}`,
+    `id=${pc25.dim(p25.id)}`
   ];
-  if (p20.lastError) {
-    parts.push(`error=${pc24.red(p20.lastError.slice(0, 80))}`);
+  if (p25.lastError) {
+    parts.push(`error=${pc25.red(p25.lastError.slice(0, 80))}`);
   }
   return parts.join("  ");
 }
@@ -13541,11 +13703,11 @@ function registerPluginCommands(program2) {
         }
         const rows = plugins2 ?? [];
         if (rows.length === 0) {
-          console.log(pc24.dim("No plugins installed."));
+          console.log(pc25.dim("No plugins installed."));
           return;
         }
-        for (const p20 of rows) {
-          console.log(formatPlugin(p20));
+        for (const p25 of rows) {
+          console.log(formatPlugin(p25));
         }
       } catch (err) {
         handleCommandError(err);
@@ -13562,7 +13724,7 @@ function registerPluginCommands(program2) {
         const resolvedPackage = resolvePackageArg(packageArg, isLocal);
         if (!ctx.json) {
           console.log(
-            pc24.dim(
+            pc25.dim(
               isLocal ? `Installing plugin from local path: ${resolvedPackage}` : `Installing plugin: ${resolvedPackage}${opts.version ? `@${opts.version}` : ""}`
             )
           );
@@ -13577,16 +13739,16 @@ function registerPluginCommands(program2) {
           return;
         }
         if (!installedPlugin) {
-          console.log(pc24.dim("Install returned no plugin record."));
+          console.log(pc25.dim("Install returned no plugin record."));
           return;
         }
         console.log(
-          pc24.green(
-            `\u2713 Installed ${pc24.bold(installedPlugin.pluginKey)} v${installedPlugin.version} (${installedPlugin.status})`
+          pc25.green(
+            `\u2713 Installed ${pc25.bold(installedPlugin.pluginKey)} v${installedPlugin.version} (${installedPlugin.status})`
           )
         );
         if (installedPlugin.lastError) {
-          console.log(pc24.red(`  Warning: ${installedPlugin.lastError}`));
+          console.log(pc25.red(`  Warning: ${installedPlugin.lastError}`));
         }
       } catch (err) {
         handleCommandError(err);
@@ -13603,7 +13765,7 @@ function registerPluginCommands(program2) {
         const qs = purge ? "?purge=true" : "";
         if (!ctx.json) {
           console.log(
-            pc24.dim(
+            pc25.dim(
               purge ? `Uninstalling and purging plugin: ${pluginKey}` : `Uninstalling plugin: ${pluginKey}`
             )
           );
@@ -13615,7 +13777,7 @@ function registerPluginCommands(program2) {
           printOutput(result, { json: true });
           return;
         }
-        console.log(pc24.green(`\u2713 Uninstalled ${pc24.bold(pluginKey)}${purge ? " (purged)" : ""}`));
+        console.log(pc25.green(`\u2713 Uninstalled ${pc25.bold(pluginKey)}${purge ? " (purged)" : ""}`));
       } catch (err) {
         handleCommandError(err);
       }
@@ -13632,7 +13794,7 @@ function registerPluginCommands(program2) {
           printOutput(result, { json: true });
           return;
         }
-        console.log(pc24.green(`\u2713 Enabled ${pc24.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
+        console.log(pc25.green(`\u2713 Enabled ${pc25.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
       } catch (err) {
         handleCommandError(err);
       }
@@ -13649,7 +13811,7 @@ function registerPluginCommands(program2) {
           printOutput(result, { json: true });
           return;
         }
-        console.log(pc24.dim(`Disabled ${pc24.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
+        console.log(pc25.dim(`Disabled ${pc25.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
       } catch (err) {
         handleCommandError(err);
       }
@@ -13667,13 +13829,13 @@ function registerPluginCommands(program2) {
           return;
         }
         if (!result) {
-          console.log(pc24.red(`Plugin not found: ${pluginKey}`));
+          console.log(pc25.red(`Plugin not found: ${pluginKey}`));
           process.exit(1);
         }
         console.log(formatPlugin(result));
         if (result.lastError) {
           console.log(`
-${pc24.red("Last error:")}
+${pc25.red("Last error:")}
 ${result.lastError}`);
         }
       } catch (err) {
@@ -13692,14 +13854,14 @@ ${result.lastError}`);
         }
         const rows = examples ?? [];
         if (rows.length === 0) {
-          console.log(pc24.dim("No bundled examples available."));
+          console.log(pc25.dim("No bundled examples available."));
           return;
         }
         for (const ex of rows) {
           console.log(
-            `${pc24.bold(ex.displayName)}  ${pc24.dim(ex.pluginKey)}
+            `${pc25.bold(ex.displayName)}  ${pc25.dim(ex.pluginKey)}
   ${ex.description}
-  ${pc24.cyan(`paperclipai plugin install ${ex.localPath}`)}`
+  ${pc25.cyan(`paperclipai plugin install ${ex.localPath}`)}`
           );
         }
       } catch (err) {
@@ -13713,7 +13875,7 @@ ${result.lastError}`);
 import path24 from "node:path";
 import { pathToFileURL as pathToFileURL2 } from "node:url";
 import * as p17 from "@clack/prompts";
-import pc25 from "picocolors";
+import pc26 from "picocolors";
 
 // src/kits/service.ts
 init_home();
@@ -13745,6 +13907,60 @@ var BUNDLED_KIT_CATALOG = [
     id: "growthub-open-higgsfield-studio-v1",
     packageDirName: "growthub-open-higgsfield-studio-v1",
     defaultBundleId: "growthub-open-higgsfield-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
+  },
+  {
+    id: "growthub-geo-seo-v1",
+    packageDirName: "growthub-geo-seo-v1",
+    defaultBundleId: "growthub-geo-seo-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
+  },
+  {
+    id: "growthub-postiz-social-v1",
+    packageDirName: "growthub-postiz-social-v1",
+    defaultBundleId: "growthub-postiz-social-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
+  },
+  {
+    id: "growthub-open-montage-studio-v1",
+    packageDirName: "growthub-open-montage-studio-v1",
+    defaultBundleId: "growthub-open-montage-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
+  },
+  {
+    id: "growthub-ai-website-cloner-v1",
+    packageDirName: "growthub-ai-website-cloner-v1",
+    defaultBundleId: "growthub-ai-website-cloner-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
+  },
+  {
+    id: "growthub-twenty-crm-v1",
+    packageDirName: "growthub-twenty-crm-v1",
+    defaultBundleId: "growthub-twenty-crm-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio"
+  },
+  {
+    id: "growthub-zernio-social-v1",
+    packageDirName: "growthub-zernio-social-v1",
+    defaultBundleId: "growthub-zernio-social-v1",
     type: "worker",
     executionMode: "export",
     activationModes: ["export"],
@@ -14353,18 +14569,18 @@ function downloadBundledKit(kitId, outDir, options = {}) {
 // src/commands/kit.ts
 init_banner();
 var TYPE_CONFIG = {
-  studio: { color: pc25.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
-  specialized_agents: { color: pc25.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
-  ops: { color: pc25.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
+  studio: { color: pc26.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
+  specialized_agents: { color: pc26.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
+  ops: { color: pc26.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function displayTypeForFamily(family) {
   if (family === "workflow" || family === "operator") return "specialized_agents";
   if (family === "studio" || family === "ops") return family;
   return family;
 }
-function typeColor(family, text58) {
+function typeColor(family, text63) {
   const type = displayTypeForFamily(family);
-  return TYPE_CONFIG[type]?.color(text58) ?? text58;
+  return TYPE_CONFIG[type]?.color(text63) ?? text63;
 }
 function typeBadge(family) {
   const type = displayTypeForFamily(family);
@@ -14380,16 +14596,16 @@ function displayKitName(name) {
   return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
 }
 function hr(width = 72) {
-  return pc25.dim("\u2500".repeat(width));
+  return pc26.dim("\u2500".repeat(width));
 }
 function box(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi(l).length)) + 4;
-  const top = pc25.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc25.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc26.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc26.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad = width - stripAnsi(l).length;
-    return pc25.dim("\u2502") + l + " ".repeat(pad) + pc25.dim("\u2502");
+    return pc26.dim("\u2502") + l + " ".repeat(pad) + pc26.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
@@ -14410,7 +14626,7 @@ function renderProgressBar(progress) {
   const filled = Math.max(0, Math.min(width, Math.round(progress.percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
   const detail = truncate(progress.detail, 48);
-  const line = `\r${pc25.cyan("Exporting kit")} ${pc25.dim("[")}${pc25.green(bar)}${pc25.dim("]")} ${String(progress.percent).padStart(3)}% ${pc25.dim(detail)}`;
+  const line = `\r${pc26.cyan("Exporting kit")} ${pc26.dim("[")}${pc26.green(bar)}${pc26.dim("]")} ${String(progress.percent).padStart(3)}% ${pc26.dim(detail)}`;
   process.stdout.write(line);
   if (progress.phase === "done") {
     process.stdout.write("\n");
@@ -14420,12 +14636,12 @@ function printKitCard(item) {
   const badge2 = typeBadge(item.family);
   console.log("");
   console.log(box([
-    `${pc25.bold(item.name)}  ${pc25.dim("v" + item.version)}`,
-    `${badge2}  ${pc25.dim(item.id)}`,
+    `${pc26.bold(item.name)}  ${pc26.dim("v" + item.version)}`,
+    `${badge2}  ${pc26.dim(item.id)}`,
     "",
     truncate(item.description, 62),
     "",
-    `${pc25.dim("Brief:")} ${pc25.dim(item.briefType)}   ${pc25.dim("Mode:")} ${pc25.dim(item.executionMode)}`
+    `${pc26.dim("Brief:")} ${pc26.dim(item.briefType)}   ${pc26.dim("Mode:")} ${pc26.dim(item.executionMode)}`
   ]));
 }
 function getActionLabel(action) {
@@ -14439,10 +14655,10 @@ async function confirmKitActions(input) {
     return getActionLabel(action);
   });
   const summaryLines = [
-    pc25.bold("Selected kits"),
+    pc26.bold("Selected kits"),
     ...input.kits.map((kit) => `${typeBadge(kit.family)}  ${displayKitName(kit.name)}`),
     "",
-    pc25.bold("Selected actions"),
+    pc26.bold("Selected actions"),
     actionLabels.join(", ")
   ];
   console.log("");
@@ -14467,28 +14683,28 @@ function printGroupedList(kits) {
   const totalTypes = types.length;
   console.log("");
   console.log(
-    pc25.bold("Growthub Agent Worker Kits") + pc25.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
+    pc26.bold("Growthub Agent Worker Kits") + pc26.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
   );
   console.log(hr());
   for (const type of types) {
     const groupKits = byType[type];
     const header = typeBadge(type);
     console.log(`
-${header}  ${pc25.dim("(" + groupKits.length + ")")}`);
+${header}  ${pc26.dim("(" + groupKits.length + ")")}`);
     for (const kit of groupKits) {
-      console.log(`  ${typeColor(kit.family, pc25.bold(kit.id))}  ${pc25.dim("v" + kit.version)}`);
-      console.log(`  ${pc25.dim(truncate(kit.description, 62))}`);
-      console.log(`  ${pc25.dim("\u2192")} ${pc25.cyan("growthub kit download " + kit.id)}`);
+      console.log(`  ${typeColor(kit.family, pc26.bold(kit.id))}  ${pc26.dim("v" + kit.version)}`);
+      console.log(`  ${pc26.dim(truncate(kit.description, 62))}`);
+      console.log(`  ${pc26.dim("\u2192")} ${pc26.cyan("growthub kit download " + kit.id)}`);
       console.log("");
     }
   }
   console.log(hr());
-  console.log(pc25.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
+  console.log(pc26.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
   console.log("");
 }
 async function runInteractivePicker(opts) {
   printPaperclipCliBanner();
-  p17.intro(pc25.bold("Growthub Agent Worker Kits"));
+  p17.intro(pc26.bold("Growthub Agent Worker Kits"));
   let kits;
   try {
     kits = listBundledKits();
@@ -14530,7 +14746,7 @@ async function runInteractivePicker(opts) {
         options: [
           ...filtered.map((k) => ({
             value: k.id,
-            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc25.bold(displayKitName(k.name)) + "  " + pc25.dim("v" + k.version),
+            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc26.bold(displayKitName(k.name)) + "  " + pc26.dim("v" + k.version),
             hint: truncate(k.description, 55)
           })),
           { value: "__back_to_type", label: "\u2190 Back to type filter" }
@@ -14595,16 +14811,16 @@ async function runInteractivePicker(opts) {
         }
         if (action === "copy-id") {
           console.log(selected.id);
-          p17.outro(pc25.dim("Kit ID printed above."));
+          p17.outro(pc26.dim("Kit ID printed above."));
           return "done";
         }
         if (action === "inspect") {
           runInspect(selected.id, opts.out);
-          p17.outro(pc25.dim("Done."));
+          p17.outro(pc26.dim("Done."));
           return "done";
         }
         await runDownload(selected.id, opts);
-        p17.outro(pc25.green("Kit exported successfully."));
+        p17.outro(pc26.green("Kit exported successfully."));
         return "done";
       }
     }
@@ -14613,17 +14829,17 @@ async function runInteractivePicker(opts) {
 async function runDownload(kitId, opts) {
   const resolvedId = fuzzyResolveKitId(kitId);
   if (!resolvedId) {
-    console.error(pc25.red("Unknown kit '" + kitId + "'.") + pc25.dim(" Run `growthub kit list` to browse."));
+    console.error(pc26.red("Unknown kit '" + kitId + "'.") + pc26.dim(" Run `growthub kit list` to browse."));
     process.exit(1);
   }
   if (resolvedId !== kitId) {
-    console.log(pc25.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
+    console.log(pc26.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
   }
   const kits = listBundledKits();
   const item = kits.find((k) => k.id === resolvedId);
   printKitCard(item);
   if (!opts.yes) {
-    const confirmed = await p17.confirm({ message: "Download " + pc25.bold(displayKitName(item.name)) + "?" });
+    const confirmed = await p17.confirm({ message: "Download " + pc26.bold(displayKitName(item.name)) + "?" });
     if (p17.isCancel(confirmed) || !confirmed) {
       p17.cancel("Cancelled.");
       process.exit(0);
@@ -14633,35 +14849,35 @@ async function runDownload(kitId, opts) {
     onProgress: renderProgressBar
   });
   console.log("");
-  console.log(pc25.green(pc25.bold("Kit exported successfully.")));
+  console.log(pc26.green(pc26.bold("Kit exported successfully.")));
   console.log("");
   const nextSteps = [
-    pc25.bold("Next steps"),
+    pc26.bold("Next steps"),
     "",
-    pc25.dim("1.") + " Point Working Directory at:",
-    "   " + pc25.cyan(result.folderPath),
+    pc26.dim("1.") + " Point Working Directory at:",
+    "   " + pc26.cyan(result.folderPath),
     "",
-    pc25.dim("2.") + " " + pc25.cyan("cp .env.example .env") + "  \u2192  add your API key",
-    pc25.dim("3.") + " " + pc25.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
-    pc25.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
+    pc26.dim("2.") + " " + pc26.cyan("cp .env.example .env") + "  \u2192  add your API key",
+    pc26.dim("3.") + " " + pc26.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
+    pc26.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
     "",
-    pc25.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
+    pc26.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
   ];
   console.log("");
   console.log(box(nextSteps));
   console.log("");
-  console.log(pc25.bold("Open folder: ") + folderOpenLabel(result.folderPath));
-  console.log(pc25.dim("Folder: ") + result.folderPath);
+  console.log(pc26.bold("Open folder: ") + folderOpenLabel(result.folderPath));
+  console.log(pc26.dim("Folder: ") + result.folderPath);
   console.log("");
-  console.log(pc25.dim("Zip: ") + result.zipPath);
+  console.log(pc26.dim("Zip: ") + result.zipPath);
   console.log("");
 }
 function runInspect(kitId, outDir) {
   const info = inspectBundledKit(kitId, outDir);
-  const kv = (label, value) => console.log("  " + pc25.bold(label.padEnd(24)) + " " + value);
+  const kv = (label, value) => console.log("  " + pc26.bold(label.padEnd(24)) + " " + value);
   console.log("");
-  console.log(pc25.bold("Kit: " + info.id) + pc25.dim("  v" + info.version));
-  console.log(typeBadge(info.family) + pc25.dim("  schema v" + info.schemaVersion));
+  console.log(pc26.bold("Kit: " + info.id) + pc26.dim("  v" + info.version));
+  console.log(typeBadge(info.family) + pc26.dim("  schema v" + info.schemaVersion));
   console.log(hr());
   kv("Name:", info.name);
   kv("Description:", truncate(info.description, 55));
@@ -14677,8 +14893,8 @@ function runInspect(kitId, outDir) {
     kv("Compatibility:", JSON.stringify(info.compatibility));
   }
   console.log(hr());
-  console.log(pc25.bold("  Required Paths:"));
-  for (const rp of info.requiredPaths) console.log("    " + pc25.dim("\xB7") + " " + rp);
+  console.log(pc26.bold("  Required Paths:"));
+  for (const rp of info.requiredPaths) console.log("    " + pc26.dim("\xB7") + " " + rp);
   console.log("");
 }
 function registerKitCommands(program2) {
@@ -14708,8 +14924,8 @@ Examples:
       const wanted = opts.family.split(",").map((f) => f.trim().toLowerCase());
       kits = kits.filter((k) => wanted.includes(k.family));
       if (kits.length === 0) {
-        console.error(pc25.yellow("No kits found for family: " + opts.family));
-        console.error(pc25.dim("Valid families: studio, workflow, operator, ops"));
+        console.error(pc26.yellow("No kits found for family: " + opts.family));
+        console.error(pc26.dim("Valid families: studio, workflow, operator, ops"));
         process.exitCode = 1;
         return;
       }
@@ -14727,7 +14943,7 @@ Examples:
 `).action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc25.red("Unknown kit '" + kitId + "'.") + pc25.dim(" Run `growthub kit list` to browse."));
+      console.error(pc26.red("Unknown kit '" + kitId + "'.") + pc26.dim(" Run `growthub kit list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -14751,7 +14967,7 @@ Examples:
     }
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc25.red("Unknown kit '" + kitId + "'.") + pc25.dim(" Run `growthub kit list` to browse."));
+      console.error(pc26.red("Unknown kit '" + kitId + "'.") + pc26.dim(" Run `growthub kit list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -14760,14 +14976,14 @@ Examples:
         onProgress: renderProgressBar
       });
       console.log("");
-      console.log(pc25.bold("Exported folder:"), pc25.cyan(result.folderPath));
-      console.log(pc25.bold("Open folder:   "), folderOpenLabel(result.folderPath));
-      console.log(pc25.bold("Zip:           "), pc25.dim(result.zipPath));
+      console.log(pc26.bold("Exported folder:"), pc26.cyan(result.folderPath));
+      console.log(pc26.bold("Open folder:   "), folderOpenLabel(result.folderPath));
+      console.log(pc26.bold("Zip:           "), pc26.dim(result.zipPath));
       console.log("");
-      console.log(pc25.bold("Next steps:"));
-      console.log("  1. Point Working Directory at: " + pc25.cyan(result.folderPath));
-      console.log("  2. " + pc25.cyan("cp .env.example .env") + "  \u2192  add your API key");
-      console.log("  3. " + pc25.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
+      console.log(pc26.bold("Next steps:"));
+      console.log("  1. Point Working Directory at: " + pc26.cyan(result.folderPath));
+      console.log("  2. " + pc26.cyan("cp .env.example .env") + "  \u2192  add your API key");
+      console.log("  3. " + pc26.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
       console.log("  4. Open Growthub local \u2014 the agent loads automatically");
       console.log("");
       return;
@@ -14777,7 +14993,7 @@ Examples:
   kit.command("path").description("Resolve the expected export folder path without exporting").argument("<kit-id>", "Kit id or fuzzy slug").option("--out <path>", "Override the export root").action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc25.red("Unknown kit '" + kitId + "'."));
+      console.error(pc26.red("Unknown kit '" + kitId + "'."));
       process.exitCode = 1;
       return;
     }
@@ -14791,42 +15007,42 @@ Examples:
     const resolvedPath = path24.resolve(kitPath);
     const result = validateKitDirectory(resolvedPath);
     console.log("");
-    console.log(pc25.bold("Kit: " + result.kitId) + pc25.dim("  schema v" + result.schemaVersion));
+    console.log(pc26.bold("Kit: " + result.kitId) + pc26.dim("  schema v" + result.schemaVersion));
     console.log(hr());
     for (const w of result.warnings) {
-      console.log(pc25.yellow("  WARN  " + w.field + ": " + w.message));
+      console.log(pc26.yellow("  WARN  " + w.field + ": " + w.message));
     }
     for (const e of result.errors) {
-      console.log(pc25.red("  ERROR " + e.field + ": " + e.message));
+      console.log(pc26.red("  ERROR " + e.field + ": " + e.message));
     }
     if (result.errors.length > 0) {
       console.log("");
-      console.log(pc25.red(pc25.bold("  Result: INVALID")) + pc25.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
+      console.log(pc26.red(pc26.bold("  Result: INVALID")) + pc26.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
       process.exitCode = 1;
     } else {
-      console.log(pc25.green(pc25.bold("  Result: VALID")));
+      console.log(pc26.green(pc26.bold("  Result: VALID")));
     }
     console.log("");
   });
   kit.command("families").description("Show the kit family taxonomy with descriptions and examples").action(() => {
     const defs = [
-      { family: "studio", tagline: "AI generation studio backed by a local fork", surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1" },
+      { family: "studio", tagline: "AI generation studio backed by a local fork", surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1, growthub-postiz-social-v1, growthub-zernio-social-v1" },
       { family: "workflow", tagline: "Multi-step pipeline operator across tools or APIs", surfaces: "browser-hosted (primary)", example: "creative-strategist-v1" },
       { family: "operator", tagline: "Domain vertical specialist \u2014 one provider, structured deliverables", surfaces: "browser-hosted", example: "growthub-email-marketing-v1" },
       { family: "ops", tagline: "Infrastructure / toolchain operator (provider optional)", surfaces: "local-fork (primary)", example: "(coming soon)" }
     ];
     console.log("");
-    console.log(pc25.bold("Kit Family Taxonomy"));
+    console.log(pc26.bold("Kit Family Taxonomy"));
     console.log(hr());
     for (const def of defs) {
       console.log("\n  " + typeBadge(def.family));
-      console.log("  " + pc25.dim(def.tagline));
-      console.log("  " + pc25.dim("Surfaces: ") + pc25.dim(def.surfaces));
-      console.log("  " + pc25.dim("Example:  ") + pc25.cyan(def.example));
+      console.log("  " + pc26.dim(def.tagline));
+      console.log("  " + pc26.dim("Surfaces: ") + pc26.dim(def.surfaces));
+      console.log("  " + pc26.dim("Example:  ") + pc26.cyan(def.example));
     }
     console.log("");
     console.log(hr());
-    console.log(pc25.dim("  growthub kit list --family <family>  to filter by internal family"));
+    console.log(pc26.dim("  growthub kit list --family <family>  to filter by internal family"));
     console.log("");
   });
 }
@@ -14834,7 +15050,7 @@ Examples:
 // src/commands/template.ts
 import path26 from "node:path";
 import * as p18 from "@clack/prompts";
-import pc26 from "picocolors";
+import pc27 from "picocolors";
 
 // src/templates/service.ts
 import fs18 from "node:fs";
@@ -15183,7 +15399,7 @@ function stripAnsi2(s) {
   return s.replace(/\x1B\[[0-9;]*m/g, "");
 }
 function hr2(w = 72) {
-  return pc26.dim("\u2500".repeat(w));
+  return pc27.dim("\u2500".repeat(w));
 }
 function truncate2(s, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + "\u2026";
@@ -15191,32 +15407,32 @@ function truncate2(s, max) {
 function box2(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi2(l).length)) + 4;
-  const top = pc26.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc26.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
-  const body = padded.map((l) => pc26.dim("\u2502") + l + " ".repeat(width - stripAnsi2(l).length) + pc26.dim("\u2502"));
+  const top = pc27.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc27.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => pc27.dim("\u2502") + l + " ".repeat(width - stripAnsi2(l).length) + pc27.dim("\u2502"));
   return [top, ...body, bottom].join("\n");
 }
 function badge(a) {
-  if (a.type === "ad-format") return pc26.cyan("\u{1F3AC} Ad Format");
+  if (a.type === "ad-format") return pc27.cyan("\u{1F3AC} Ad Format");
   if (a.type === "scene-module") {
-    if (a.subtype === "hook") return pc26.yellow("\u{1FA9D} Hook");
-    if (a.subtype === "body") return pc26.blue("\u{1F9E9} Body");
-    if (a.subtype === "cta") return pc26.green("\u{1F3AF} CTA");
+    if (a.subtype === "hook") return pc27.yellow("\u{1FA9D} Hook");
+    if (a.subtype === "body") return pc27.blue("\u{1F9E9} Body");
+    if (a.subtype === "cta") return pc27.green("\u{1F3AF} CTA");
   }
-  return pc26.magenta("\u{1F9E9} Module");
+  return pc27.magenta("\u{1F9E9} Module");
 }
 function printCard(a) {
-  const compat = a.compatibleFormats.length ? pc26.dim("Works with: ") + a.compatibleFormats.map((f) => pc26.cyan(f)).join(", ") : pc26.dim("Works with: any format");
+  const compat = a.compatibleFormats.length ? pc27.dim("Works with: ") + a.compatibleFormats.map((f) => pc27.cyan(f)).join(", ") : pc27.dim("Works with: any format");
   const rows = [
-    pc26.bold(a.name),
-    `${badge(a)}  ${pc26.dim(a.id)}`,
+    pc27.bold(a.name),
+    `${badge(a)}  ${pc27.dim(a.id)}`,
     "",
     truncate2(a.category, 62),
     "",
     compat
   ];
   if (a.type === "ad-format" && a.scenes != null) {
-    rows.push(pc26.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc26.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
+    rows.push(pc27.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc27.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
   }
   console.log("");
   console.log(box2(rows));
@@ -15224,32 +15440,32 @@ function printCard(a) {
 function printSummary2(filter) {
   const artifacts = listArtifacts(filter);
   if (!artifacts.length) {
-    console.log(pc26.yellow("No templates matched. Try: growthub template list"));
+    console.log(pc27.yellow("No templates matched. Try: growthub template list"));
     return;
   }
   const stats = getCatalogStats();
   const groups = groupArtifacts(artifacts);
   console.log("");
-  console.log(pc26.bold("Growthub Shared Template Library") + pc26.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
-  console.log(pc26.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
+  console.log(pc27.bold("Growthub Shared Template Library") + pc27.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
+  console.log(pc27.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
   console.log(hr2());
   for (const g of groups) {
     console.log(`
-${pc26.bold(g.label)}  ${pc26.dim("(" + g.count + ")")}`);
-    console.log(pc26.dim("  " + g.description));
+${pc27.bold(g.label)}  ${pc27.dim("(" + g.count + ")")}`);
+    console.log(pc27.dim("  " + g.description));
     console.log("");
     for (const a of g.artifacts) {
-      const compat = a.compatibleFormats.length ? pc26.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
-      console.log(`  ${pc26.cyan(pc26.bold(a.name))}${compat}`);
-      console.log(`  ${pc26.dim("growthub template get " + a.slug)}`);
+      const compat = a.compatibleFormats.length ? pc27.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
+      console.log(`  ${pc27.cyan(pc27.bold(a.name))}${compat}`);
+      console.log(`  ${pc27.dim("growthub template get " + a.slug)}`);
       console.log("");
     }
   }
   console.log(hr2());
-  console.log(pc26.dim("  growthub template get <slug>"));
-  console.log(pc26.dim("  growthub template list --type ad-formats"));
-  console.log(pc26.dim("  growthub template list --type scene-modules --subtype hooks"));
-  console.log(pc26.dim("  growthub template   (interactive picker)"));
+  console.log(pc27.dim("  growthub template get <slug>"));
+  console.log(pc27.dim("  growthub template list --type ad-formats"));
+  console.log(pc27.dim("  growthub template list --type scene-modules --subtype hooks"));
+  console.log(pc27.dim("  growthub template   (interactive picker)"));
   console.log("");
 }
 var TEMPLATE_FAMILY_META = {
@@ -15275,7 +15491,7 @@ var TEMPLATE_FAMILY_META = {
   }
 };
 async function runTemplatePicker(opts) {
-  p18.intro(pc26.bold("Growthub Shared Template Library"));
+  p18.intro(pc27.bold("Growthub Shared Template Library"));
   let artifacts;
   try {
     artifacts = listArtifacts();
@@ -15327,7 +15543,7 @@ async function runTemplatePicker(opts) {
     message: `Select from: ${group.label}`,
     options: group.artifacts.map((a) => ({
       value: a.id,
-      label: pc26.bold(a.name),
+      label: pc27.bold(a.name),
       hint: truncate2(a.category, 52)
     }))
   });
@@ -15352,7 +15568,7 @@ async function runTemplatePicker(opts) {
   }
   if (action === "slug") {
     console.log(selected.slug);
-    p18.outro(pc26.dim("Use with: growthub template get " + selected.slug));
+    p18.outro(pc27.dim("Use with: growthub template get " + selected.slug));
     return "done";
   }
   if (action === "print") {
@@ -15360,7 +15576,7 @@ async function runTemplatePicker(opts) {
     console.log("\n" + hr2());
     console.log(r.content);
     console.log(hr2());
-    p18.outro(pc26.dim("Source: " + r.absolutePath));
+    p18.outro(pc27.dim("Source: " + r.absolutePath));
     return "done";
   }
   if (action === "copy") {
@@ -15375,7 +15591,7 @@ async function runTemplatePicker(opts) {
     }
     const destDir = path26.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
     const destPath = copyArtifact(selected.id, destDir);
-    p18.outro(pc26.green("Copied \u2192 ") + destPath);
+    p18.outro(pc27.green("Copied \u2192 ") + destPath);
     return "done";
   }
   return "done";
@@ -15402,7 +15618,7 @@ Any agent or kit resolves them by slug.
     if (opts.type) {
       const t = opts.type.replace(/s$/, "");
       if (t !== "ad-format" && t !== "scene-module") {
-        console.error(pc26.red(`Unknown --type '${opts.type}'.`) + pc26.dim(" Valid: ad-formats, scene-modules"));
+        console.error(pc27.red(`Unknown --type '${opts.type}'.`) + pc27.dim(" Valid: ad-formats, scene-modules"));
         process.exitCode = 1;
         return;
       }
@@ -15411,7 +15627,7 @@ Any agent or kit resolves them by slug.
     if (opts.subtype) {
       const sub = opts.subtype.replace(/s$/, "");
       if (!["hook", "body", "cta"].includes(sub)) {
-        console.error(pc26.red(`Unknown --subtype '${opts.subtype}'.`) + pc26.dim(" Valid: hooks, body, cta"));
+        console.error(pc27.red(`Unknown --subtype '${opts.subtype}'.`) + pc27.dim(" Valid: hooks, body, cta"));
         process.exitCode = 1;
         return;
       }
@@ -15427,18 +15643,18 @@ Any agent or kit resolves them by slug.
   cmd.command("get").description("Print or copy a template \u2014 fuzzy slug resolution").argument("<slug>", "Artifact slug (e.g. villain-animation, meme-overlay)").option("--out <path>", "Copy to this directory").option("--json", "Artifact metadata + content as JSON").action((slug, opts) => {
     const artifact = resolveSlug(slug);
     if (!artifact) {
-      console.error(pc26.red(`Unknown template '${slug}'.`) + pc26.dim(" Run `growthub template list` to browse."));
+      console.error(pc27.red(`Unknown template '${slug}'.`) + pc27.dim(" Run `growthub template list` to browse."));
       process.exitCode = 1;
       return;
     }
     if (artifact.id !== slug && artifact.slug !== slug) {
-      console.error(pc26.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
+      console.error(pc27.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
     }
     let resolved;
     try {
       resolved = getArtifact(artifact.id);
     } catch (err) {
-      console.error(pc26.red(err.message));
+      console.error(pc27.red(err.message));
       process.exitCode = 1;
       return;
     }
@@ -15450,9 +15666,9 @@ Any agent or kit resolves them by slug.
       const destDir = path26.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
       try {
         const dest = copyArtifact(artifact.id, destDir);
-        console.log(pc26.green("Copied \u2192 ") + dest);
+        console.log(pc27.green("Copied \u2192 ") + dest);
       } catch (err) {
-        console.error(pc26.red(err.message));
+        console.error(pc27.red(err.message));
         process.exitCode = 1;
       }
       return;
@@ -15461,8 +15677,6373 @@ Any agent or kit resolves them by slug.
     console.log(hr2());
     console.log(resolved.content);
     console.log(hr2());
-    console.log(pc26.dim("Source: " + resolved.absolutePath));
+    console.log(pc27.dim("Source: " + resolved.absolutePath));
     console.log("");
+  });
+}
+
+// src/commands/capability.ts
+import * as p19 from "@clack/prompts";
+import pc28 from "picocolors";
+
+// src/runtime/hosted-execution-client/index.ts
+import { randomUUID } from "node:crypto";
+var EXECUTE_PATH = "/api/execute-workflow";
+var THREAD_BIND_PATH = "/api/projects/threads/bind";
+var PROVIDER_REPORT_PATH = "/api/sandbox/provider-report";
+var PROFILE_PATH = "/api/cli/profile";
+var CAPABILITIES_PATH = "/api/cli/capabilities";
+var HostedExecutionError = class extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+};
+var NoActiveSessionError = class extends Error {
+  constructor() {
+    super(
+      "No active hosted session. Run `growthub auth login` to authenticate."
+    );
+  }
+};
+function requireSession() {
+  const session = readSession();
+  if (!session) throw new NoActiveSessionError();
+  if (isSessionExpired(session)) {
+    throw new HostedExecutionError(
+      401,
+      "Hosted session expired. Run `growthub auth login` to re-authenticate."
+    );
+  }
+  return session;
+}
+function clientFromSession(session) {
+  return new PaperclipApiClient({
+    apiBase: session.hostedBaseUrl,
+    apiKey: session.accessToken,
+    userId: session.userId
+  });
+}
+function isUnavailable(err) {
+  return err instanceof ApiRequestError && (err.status === 404 || err.status === 501);
+}
+function isPlaceholderString(value) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized.startsWith("enter ") || normalized.startsWith("select ") || normalized === "placeholder";
+}
+function sanitizeBindingValue(value) {
+  if (typeof value === "string") {
+    return isPlaceholderString(value) ? "" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeBindingValue(entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeBindingValue(entry)])
+    );
+  }
+  return value;
+}
+function sanitizeBindings(bindings) {
+  return Object.fromEntries(
+    Object.entries(bindings).map(([key, value]) => [key, sanitizeBindingValue(value)])
+  );
+}
+async function buildExecutionGraph(input, session) {
+  const workflowId = input.workflowId?.trim() || input.threadId?.trim() || input.pipelineId;
+  const threadId = await resolveExecutionThreadId(input, session, workflowId);
+  const userId = session.userId?.trim();
+  if (!userId) {
+    throw new HostedExecutionError(401, "Hosted session is missing the authenticated user id.");
+  }
+  const cmsNodes = input.nodes.map((node, index51) => ({
+    id: node.nodeId,
+    type: "cmsNode",
+    position: { x: (index51 + 1) * 300, y: 0 },
+    data: {
+      slug: node.slug,
+      inputs: sanitizeBindings(node.bindings)
+    }
+  }));
+  const nodes = [
+    { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
+    ...cmsNodes,
+    {
+      id: "end-1",
+      type: "end",
+      position: { x: (cmsNodes.length + 1) * 300, y: 0 },
+      data: {}
+    }
+  ];
+  const edges = [];
+  for (const node of input.nodes) {
+    const upstreamNodeIds = node.upstreamNodeIds ?? [];
+    if (upstreamNodeIds.length === 0) {
+      edges.push({
+        id: `e-start-1-${node.nodeId}`,
+        source: "start-1",
+        target: node.nodeId
+      });
+      continue;
+    }
+    for (const upstreamNodeId of upstreamNodeIds) {
+      edges.push({
+        id: `e-${upstreamNodeId}-${node.nodeId}`,
+        source: upstreamNodeId,
+        target: node.nodeId
+      });
+    }
+  }
+  const upstreamSources = new Set(
+    input.nodes.flatMap((node) => node.upstreamNodeIds ?? [])
+  );
+  for (const node of input.nodes) {
+    if (!upstreamSources.has(node.nodeId)) {
+      edges.push({
+        id: `e-${node.nodeId}-end-1`,
+        source: node.nodeId,
+        target: "end-1"
+      });
+    }
+  }
+  const userPrompt = inferUserPrompt(input);
+  return {
+    nodes,
+    edges,
+    userId,
+    workflowId,
+    threadId,
+    ...userPrompt ? { userPrompt } : {}
+  };
+}
+async function resolveExecutionThreadId(input, session, workflowId) {
+  const candidate = input.threadId?.trim();
+  if (candidate) {
+    if (!isUuid(candidate)) {
+      throw new HostedExecutionError(
+        400,
+        `Invalid thread id "${candidate}". Hosted workflow execution requires a real UUID thread id.`
+      );
+    }
+    return candidate;
+  }
+  if (isUuid(workflowId)) {
+    return workflowId;
+  }
+  return await createHostedThread(session);
+}
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+async function createHostedThread(session) {
+  const userId = session.userId?.trim();
+  if (!userId) {
+    throw new HostedExecutionError(401, "Hosted session is missing the authenticated user id.");
+  }
+  const threadId = randomUUID();
+  const response = await fetch(new URL(THREAD_BIND_PATH, `${session.hostedBaseUrl.replace(/\/+$/, "")}/`).toString(), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${session.accessToken}`,
+      "x-user-id": userId
+    },
+    body: JSON.stringify({ threadId })
+  });
+  if (!response.ok) {
+    throw await toHostedExecutionError(response);
+  }
+  return threadId;
+}
+function inferUserPrompt(input) {
+  if (typeof input.userPrompt === "string" && input.userPrompt.trim().length > 0) {
+    return input.userPrompt.trim();
+  }
+  const promptKeys = ["prompt", "userPrompt", "query", "instruction", "instructions"];
+  for (const node of input.nodes) {
+    for (const key of promptKeys) {
+      const promptValue = node.bindings[key];
+      if (typeof promptValue === "string" && promptValue.trim().length > 0 && !isPlaceholderString(promptValue)) {
+        return promptValue.trim();
+      }
+    }
+  }
+  return void 0;
+}
+function safeParseJson2(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+}
+async function executeWorkflowStream(request, session, opts) {
+  const response = await fetch(new URL(EXECUTE_PATH, `${session.hostedBaseUrl.replace(/\/+$/, "")}/`).toString(), {
+    method: "POST",
+    headers: {
+      accept: "text/plain",
+      "content-type": "application/json",
+      authorization: `Bearer ${session.accessToken}`,
+      "x-user-id": request.userId
+    },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    throw await toHostedExecutionError(response);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new HostedExecutionError(502, "Hosted workflow endpoint returned no stream body.");
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let executionId = request.workflowId;
+  let executionLog = null;
+  const nodeResults = /* @__PURE__ */ new Map();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line) {
+        const event = safeParseJson2(line);
+        if (event) {
+          await opts?.onEvent?.(event);
+          applyWorkflowEvent(event, nodeResults, request);
+          if (typeof event.executionId === "string" && event.executionId.trim()) {
+            executionId = event.executionId;
+          }
+          if (event.type === "complete" && Array.isArray(event.executionLog)) {
+            executionLog = event.executionLog;
+          }
+          if (event.type === "error") {
+            throw new HostedExecutionError(500, event.error || "Workflow execution failed.");
+          }
+        }
+      }
+      newlineIndex = buffer.indexOf("\n");
+    }
+  }
+  const trailing = buffer.trim();
+  if (trailing) {
+    const event = safeParseJson2(trailing);
+    if (event) {
+      await opts?.onEvent?.(event);
+      applyWorkflowEvent(event, nodeResults, request);
+      if (typeof event.executionId === "string" && event.executionId.trim()) {
+        executionId = event.executionId;
+      }
+      if (event.type === "complete" && Array.isArray(event.executionLog)) {
+        executionLog = event.executionLog;
+      }
+      if (event.type === "error") {
+        throw new HostedExecutionError(500, event.error || "Workflow execution failed.");
+      }
+    }
+  }
+  if (!executionLog) {
+    throw new HostedExecutionError(502, "Workflow stream ended without a completion event.");
+  }
+  const artifacts = collectArtifacts(executionLog);
+  const summary = summarizeExecution(executionLog);
+  const status = executionLog.some((entry) => typeof entry.error === "string" && entry.error.length > 0) ? "failed" : "succeeded";
+  return {
+    executionId,
+    threadId: request.threadId,
+    status,
+    nodeResults: Object.fromEntries(nodeResults.entries()),
+    artifacts,
+    executionLog,
+    summary
+  };
+}
+function applyWorkflowEvent(event, nodeResults, request) {
+  if (!event.nodeId) return;
+  const current = nodeResults.get(event.nodeId);
+  const next = current ?? {
+    nodeId: event.nodeId,
+    slug: resolveNodeSlug(request, event.nodeId),
+    status: "pending"
+  };
+  if (event.type === "node_start") {
+    next.status = "running";
+  } else if (event.type === "node_complete") {
+    next.status = "succeeded";
+    next.output = event.output;
+  } else if (event.type === "node_error") {
+    next.status = "failed";
+    next.error = event.error;
+  }
+  nodeResults.set(event.nodeId, next);
+}
+function collectArtifacts(executionLog) {
+  const artifacts = [];
+  for (const entry of executionLog) {
+    if (entry.type !== "cmsNode" || typeof entry.nodeId !== "string") continue;
+    const output = entry.output;
+    if (typeof output !== "object" || output === null) continue;
+    const record = output;
+    const images = Array.isArray(record.images) ? record.images : [];
+    for (const image of images) {
+      if (!image || typeof image !== "object") continue;
+      const imageRecord = image;
+      const storagePath = typeof imageRecord.storage_path === "string" ? imageRecord.storage_path : void 0;
+      artifacts.push({
+        artifactId: storagePath ?? `${entry.nodeId}-image-${artifacts.length + 1}`,
+        artifactType: "image",
+        nodeId: entry.nodeId,
+        url: typeof imageRecord.url === "string" ? imageRecord.url : void 0,
+        storagePath,
+        metadata: imageRecord
+      });
+    }
+    const slides = Array.isArray(record.slides) ? record.slides : [];
+    for (const slide of slides) {
+      if (!slide || typeof slide !== "object") continue;
+      const slideRecord = slide;
+      const storagePath = typeof slideRecord.storage_path === "string" ? slideRecord.storage_path : void 0;
+      artifacts.push({
+        artifactId: storagePath ?? `${entry.nodeId}-slide-${artifacts.length + 1}`,
+        artifactType: "slides",
+        nodeId: entry.nodeId,
+        url: typeof slideRecord.url === "string" ? slideRecord.url : void 0,
+        storagePath,
+        metadata: slideRecord
+      });
+    }
+  }
+  return artifacts;
+}
+function resolveNodeSlug(request, nodeId) {
+  const match = request.nodes.find((node) => node.id === nodeId);
+  if (!match || typeof match.data !== "object" || match.data === null) {
+    return nodeId;
+  }
+  const slug = match.data.slug;
+  return typeof slug === "string" && slug.trim().length > 0 ? slug : nodeId;
+}
+function summarizeExecution(executionLog) {
+  let outputText;
+  let imageCount = 0;
+  let slideCount = 0;
+  let videoCount = 0;
+  let workflowRunId;
+  for (const entry of executionLog) {
+    if (!workflowRunId && typeof entry.workflowRunId === "string") {
+      workflowRunId = entry.workflowRunId;
+    }
+    const output = entry.output;
+    if (typeof output !== "object" || output === null) continue;
+    const record = output;
+    if (!outputText && typeof record.text === "string" && record.text.trim().length > 0) {
+      outputText = record.text.trim();
+    }
+    if (Array.isArray(record.images)) imageCount += record.images.length;
+    if (Array.isArray(record.slides)) slideCount += record.slides.length;
+    if (Array.isArray(record.videos)) videoCount += record.videos.length;
+  }
+  return {
+    ...outputText ? { outputText } : {},
+    ...imageCount > 0 ? { imageCount } : {},
+    ...slideCount > 0 ? { slideCount } : {},
+    ...videoCount > 0 ? { videoCount } : {},
+    ...workflowRunId ? { workflowRunId } : {},
+    keyboardShortcutHint: "Open the full run in Growthub if you want the expanded UI view."
+  };
+}
+async function toHostedExecutionError(response) {
+  let message = `Request failed with status ${response.status}`;
+  try {
+    const text63 = await response.text();
+    if (text63.trim()) {
+      const parsed = JSON.parse(text63);
+      if (typeof parsed.error === "string" && parsed.error.trim()) {
+        message = parsed.error;
+      } else if (typeof parsed.message === "string" && parsed.message.trim()) {
+        message = parsed.message;
+      } else {
+        message = text63;
+      }
+    }
+  } catch {
+  }
+  return new HostedExecutionError(response.status, message);
+}
+function createHostedExecutionClient() {
+  return {
+    async executeWorkflow(input, opts) {
+      const session = requireSession();
+      try {
+        const request = await buildExecutionGraph(input, session);
+        return await executeWorkflowStream(request, session, opts);
+      } catch (err) {
+        if (isUnavailable(err)) {
+          throw new HostedExecutionError(
+            err.status,
+            "Hosted execution endpoint is not available. Ensure the hosted app supports /api/execute-workflow."
+          );
+        }
+        throw err;
+      }
+    },
+    async runProviderAssembly(input) {
+      const session = requireSession();
+      const client = clientFromSession(session);
+      try {
+        const result = await client.post(PROVIDER_REPORT_PATH, input);
+        if (!result) {
+          throw new HostedExecutionError(502, "Empty response from provider assembly endpoint.");
+        }
+        return result;
+      } catch (err) {
+        if (isUnavailable(err)) {
+          throw new HostedExecutionError(
+            err.status,
+            "Provider assembly endpoint is not available. Ensure the hosted app supports /api/sandbox/provider-report."
+          );
+        }
+        throw err;
+      }
+    },
+    async getHostedProfile() {
+      const session = requireSession();
+      const client = clientFromSession(session);
+      try {
+        const result = await client.get(PROFILE_PATH);
+        if (!result) {
+          const overlay = readHostedOverlay();
+          if (overlay) {
+            return {
+              userId: overlay.userId ?? "",
+              email: overlay.email,
+              displayName: overlay.displayName,
+              orgId: overlay.orgId,
+              orgName: overlay.orgName,
+              entitlements: overlay.entitlements,
+              gatedKitSlugs: overlay.gatedKitSlugs,
+              executionDefaults: overlay.executionDefaults
+            };
+          }
+          throw new HostedExecutionError(502, "No hosted profile available and no local overlay cached.");
+        }
+        return result;
+      } catch (err) {
+        if (isUnavailable(err)) {
+          const overlay = readHostedOverlay();
+          if (overlay) {
+            return {
+              userId: overlay.userId ?? "",
+              email: overlay.email,
+              displayName: overlay.displayName,
+              orgId: overlay.orgId,
+              orgName: overlay.orgName,
+              entitlements: overlay.entitlements,
+              gatedKitSlugs: overlay.gatedKitSlugs,
+              executionDefaults: overlay.executionDefaults
+            };
+          }
+          throw new HostedExecutionError(
+            err.status,
+            "Hosted profile endpoint not available and no local overlay cached."
+          );
+        }
+        throw err;
+      }
+    },
+    async getHostedCapabilities() {
+      const session = requireSession();
+      const client = clientFromSession(session);
+      try {
+        const result = await client.get(CAPABILITIES_PATH);
+        return result ?? [];
+      } catch (err) {
+        if (isUnavailable(err)) {
+          return [];
+        }
+        throw err;
+      }
+    }
+  };
+}
+
+// src/runtime/cms-capability-registry/types.ts
+var CAPABILITY_FAMILIES = [
+  "video",
+  "image",
+  "slides",
+  "text",
+  "data",
+  "ops",
+  "research",
+  "vision"
+];
+
+// src/runtime/cms-capability-registry/index.ts
+function toCapabilityNode(record) {
+  const familyMap = {
+    video: "video",
+    image: "image",
+    slides: "slides",
+    text: "text",
+    data: "data",
+    ops: "ops",
+    research: "research",
+    vision: "vision"
+  };
+  const metadata = record.metadata ?? {};
+  const executionTokens = metadata.executionTokens ?? metadata.execution_tokens ?? {};
+  const inputTemplate = executionTokens.input_template ?? metadata.input_template ?? {};
+  const outputMapping = executionTokens.output_mapping ?? metadata.output_mapping ?? {};
+  const toolName = typeof executionTokens.tool_name === "string" ? executionTokens.tool_name : typeof metadata.tool_name === "string" ? metadata.tool_name : record.slug;
+  const executionStrategy = typeof (metadata.executionStrategy ?? metadata.execution_strategy) === "string" ? metadata.executionStrategy ?? metadata.execution_strategy : "direct";
+  return {
+    slug: record.slug,
+    displayName: record.displayName,
+    icon: typeof metadata.icon === "string" ? metadata.icon : "",
+    family: familyMap[record.family] ?? "ops",
+    category: typeof metadata.category === "string" ? metadata.category : "automation",
+    nodeType: typeof metadata.nodeType === "string" ? metadata.nodeType : "tool_execution",
+    executionKind: record.executionKind,
+    executionBinding: { type: "mcp_tool_call", strategy: executionStrategy },
+    executionTokens: {
+      tool_name: toolName,
+      input_template: inputTemplate,
+      output_mapping: outputMapping
+    },
+    requiredBindings: record.requiredBindings,
+    outputTypes: record.outputTypes,
+    enabled: record.enabled,
+    experimental: Boolean(metadata.experimental),
+    visibility: typeof metadata.visibility === "string" ? metadata.visibility : "authenticated",
+    description: typeof metadata.description === "string" ? metadata.description : void 0,
+    manifestMetadata: metadata
+  };
+}
+function inferFamilyFromSlug(slug) {
+  const normalized = slug.toLowerCase();
+  if (normalized.includes("video")) return "video";
+  if (normalized.includes("image")) return "image";
+  if (normalized.includes("slide")) return "slides";
+  if (normalized.includes("research")) return "research";
+  if (normalized.includes("vision")) return "vision";
+  if (normalized.includes("text") || normalized.includes("llm")) return "text";
+  if (normalized.includes("data")) return "data";
+  return "ops";
+}
+async function deriveCapabilitiesFromHostedWorkflows() {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) return [];
+  const list = await listHostedWorkflows(session);
+  const workflows = list?.workflows ?? [];
+  if (workflows.length === 0) return [];
+  const bySlug = /* @__PURE__ */ new Map();
+  for (const workflow of workflows.slice(0, 50)) {
+    const detail = await fetchHostedWorkflow(session, workflow.workflowId);
+    const nodes = Array.isArray(detail?.latestVersion?.config?.nodes) ? detail?.latestVersion?.config?.nodes : [];
+    for (const node of nodes) {
+      if (node.type !== "cmsNode") continue;
+      const data = node.data ?? {};
+      const slug = typeof data.slug === "string" ? data.slug : null;
+      if (!slug) continue;
+      const inputs = data.inputs ?? {};
+      if (!bySlug.has(slug)) {
+        bySlug.set(slug, {
+          slug,
+          family: inferFamilyFromSlug(slug),
+          displayName: slug,
+          executionKind: "hosted-execute",
+          requiredBindings: [],
+          outputTypes: [],
+          enabled: true,
+          metadata: {
+            input_template: inputs,
+            output_mapping: {},
+            tool_name: slug,
+            source: "derived-from-hosted-workflows"
+          }
+        });
+      }
+    }
+  }
+  return [...bySlug.values()];
+}
+function matchesQuery(node, query) {
+  if (query.enabledOnly !== false && !node.enabled) return false;
+  if (query.family && node.family !== query.family) return false;
+  if (query.executionKind && node.executionKind !== query.executionKind) return false;
+  if (query.outputType && !node.outputTypes.includes(query.outputType)) return false;
+  if (query.slug && !node.slug.includes(query.slug)) return false;
+  if (query.search) {
+    const term = query.search.toLowerCase();
+    const haystack = `${node.slug} ${node.displayName} ${node.description ?? ""} ${node.category}`.toLowerCase();
+    if (!haystack.includes(term)) return false;
+  }
+  return true;
+}
+function createCmsCapabilityRegistryClient() {
+  return {
+    async listCapabilities(query) {
+      const executionClient = createHostedExecutionClient();
+      let hostedRecords = await executionClient.getHostedCapabilities();
+      if (hostedRecords.length === 0) {
+        hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
+      }
+      if (hostedRecords.length === 0) {
+        throw new Error("Hosted capability registry returned zero nodes. No local fallback is enabled.");
+      }
+      const nodes = hostedRecords.map(toCapabilityNode);
+      const enabledCount = nodes.filter((n) => n.enabled).length;
+      const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
+      return {
+        nodes: filtered,
+        meta: {
+          total: nodes.length,
+          enabledCount,
+          fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          source: "hosted"
+        }
+      };
+    },
+    async getCapability(slug) {
+      const { nodes } = await this.listCapabilities({ slug, enabledOnly: false });
+      return nodes.find((n) => n.slug === slug) ?? null;
+    }
+  };
+}
+
+// src/runtime/machine-capability-resolver/index.ts
+import os6 from "node:os";
+function buildMachineContext(profile) {
+  return {
+    hostname: os6.hostname(),
+    machineLabel: profile.local.machineLabel ?? void 0,
+    workspaceLabel: profile.local.workspaceLabel ?? void 0,
+    instanceId: profile.local.instanceId,
+    hasActiveSession: profile.authenticated
+  };
+}
+function resolveBinding(capability, profile) {
+  const binding = {
+    capabilitySlug: capability.slug,
+    allowed: false,
+    requiredConnectionCapabilities: capability.requiredBindings
+  };
+  if (!profile.authenticated) {
+    binding.reason = "No active hosted session. Run `growthub auth login`.";
+    return binding;
+  }
+  if (!capability.enabled) {
+    binding.reason = `Capability "${capability.slug}" is disabled for this user/org.`;
+    return binding;
+  }
+  if (capability.executionKind === "local-only") {
+    binding.allowed = true;
+    binding.reason = "Local-only execution \u2014 no hosted connection required.";
+    return binding;
+  }
+  const entitlements = new Set(profile.hosted.entitlements);
+  const missingEntitlements = [];
+  for (const req of capability.requiredBindings) {
+    const hasEntitlement = entitlements.has(req) || entitlements.has(`capability:${capability.slug}`) || entitlements.has("capability:*");
+    if (!hasEntitlement) {
+      missingEntitlements.push(req);
+    }
+  }
+  if (capability.executionKind === "hosted-execute") {
+    const canUseHosted = profile.executionDefaults.preferredMode !== "local" || profile.executionDefaults.allowBrowserBridge;
+    if (!canUseHosted && missingEntitlements.length > 0) {
+      binding.reason = `Hosted execution required but execution defaults prefer local. Missing bindings: ${missingEntitlements.join(", ")}.`;
+      return binding;
+    }
+  }
+  if (profile.hosted.entitlements.length === 0) {
+    binding.allowed = true;
+    binding.reason = "No entitlement restrictions configured \u2014 allowed by default.";
+    binding.machineConnectionId = profile.local.instanceId;
+    return binding;
+  }
+  if (missingEntitlements.length > 0) {
+    binding.reason = `Missing entitlements for required bindings: ${missingEntitlements.join(", ")}.`;
+    return binding;
+  }
+  binding.allowed = true;
+  binding.machineConnectionId = profile.local.instanceId;
+  binding.reason = "All binding requirements satisfied.";
+  return binding;
+}
+function createMachineCapabilityResolver() {
+  return {
+    async resolveAll() {
+      const profile = computeEffectiveProfile();
+      const machineContext = buildMachineContext(profile);
+      const registry = createCmsCapabilityRegistryClient();
+      const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+      const bindings = nodes.map((capability) => resolveBinding(capability, profile));
+      return {
+        bindings,
+        machineContext,
+        entitlements: profile.hosted.entitlements,
+        resolvedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+    },
+    async resolveCapability(slug) {
+      const profile = computeEffectiveProfile();
+      const registry = createCmsCapabilityRegistryClient();
+      const capability = await registry.getCapability(slug);
+      if (!capability) return null;
+      return resolveBinding(capability, profile);
+    },
+    getMachineContext() {
+      const profile = computeEffectiveProfile();
+      return buildMachineContext(profile);
+    }
+  };
+}
+
+// src/auth/workflow-access.ts
+function getWorkflowAccess() {
+  const profile = computeEffectiveProfile();
+  if (!profile.authenticated) {
+    return {
+      state: "unauthenticated",
+      reason: "Requires growthub auth login"
+    };
+  }
+  if (!profile.hosted.present || !profile.hosted.linkedInstanceId) {
+    return {
+      state: "unlinked",
+      reason: "Requires Growthub Local Machine connection"
+    };
+  }
+  if (profile.hosted.linkedInstanceId !== profile.local.instanceId) {
+    return {
+      state: "unlinked",
+      reason: `Linked to ${profile.hosted.linkedInstanceId}, not this workspace`
+    };
+  }
+  return {
+    state: "ready",
+    reason: "Workflow tools unlocked"
+  };
+}
+
+// src/commands/capability.ts
+init_banner();
+var FAMILY_CONFIG = {
+  video: { color: pc28.magenta, emoji: "\u{1F3AC}", label: "Video" },
+  image: { color: pc28.cyan, emoji: "\u{1F5BC}\uFE0F ", label: "Image" },
+  slides: { color: pc28.yellow, emoji: "\u{1F4CA}", label: "Slides" },
+  text: { color: pc28.green, emoji: "\u{1F4DD}", label: "Text" },
+  data: { color: pc28.blue, emoji: "\u{1F4E6}", label: "Data" },
+  ops: { color: pc28.red, emoji: "\u2699\uFE0F ", label: "Ops" }
+};
+function familyBadge(family) {
+  const cfg = FAMILY_CONFIG[family];
+  if (!cfg) return family;
+  return cfg.color(`${cfg.emoji} ${cfg.label}`);
+}
+function executionKindLabel(kind) {
+  if (kind === "hosted-execute") return pc28.cyan("hosted");
+  if (kind === "provider-assembly") return pc28.yellow("provider");
+  if (kind === "local-only") return pc28.green("local");
+  return kind;
+}
+function hr3(width = 72) {
+  return pc28.dim("\u2500".repeat(width));
+}
+function stripAnsi3(str) {
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+function box3(lines) {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi3(l).length)) + 4;
+  const top = pc28.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc28.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi3(l).length;
+    return pc28.dim("\u2502") + l + " ".repeat(pad) + pc28.dim("\u2502");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+function printGroupedCapabilities(nodes) {
+  const byFamily = {};
+  for (const node of nodes) {
+    (byFamily[node.family] ??= []).push(node);
+  }
+  const families = Object.keys(byFamily).sort();
+  const totalFamilies = families.length;
+  console.log("");
+  console.log(
+    pc28.bold("CMS Capability Registry") + pc28.dim(`  ${nodes.length} capabilit${nodes.length !== 1 ? "ies" : "y"}  \xB7  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`)
+  );
+  console.log(hr3());
+  for (const family of families) {
+    const groupNodes = byFamily[family];
+    const header = familyBadge(family);
+    console.log(`
+${header}  ${pc28.dim("(" + groupNodes.length + ")")}`);
+    for (const node of groupNodes) {
+      const enabledTag = node.enabled ? pc28.green("enabled") : pc28.red("disabled");
+      console.log(`  ${pc28.bold(node.slug)}  ${pc28.dim(node.displayName)}  ${enabledTag}`);
+      console.log(`  ${pc28.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc28.dim("Outputs:")} ${pc28.dim(node.outputTypes.join(", "))}`);
+      if (node.description) {
+        console.log(`  ${pc28.dim(node.description)}`);
+      }
+      console.log("");
+    }
+  }
+  console.log(hr3());
+  console.log(pc28.dim("  growthub capability inspect <slug>  \xB7  growthub capability resolve"));
+  console.log("");
+}
+function printCapabilityCard(node) {
+  const iconPrefix = node.icon ? `${node.icon}  ` : "";
+  const lines = [
+    `${iconPrefix}${pc28.bold(node.displayName)}  ${pc28.dim(node.slug)}`,
+    `${familyBadge(node.family)}  ${node.enabled ? pc28.green("enabled") : pc28.red("disabled")}`,
+    "",
+    `${pc28.dim("Category:")}          ${node.category}`,
+    `${pc28.dim("Node Type:")}         ${node.nodeType}`,
+    `${pc28.dim("Execution Kind:")}    ${executionKindLabel(node.executionKind)}`,
+    `${pc28.dim("Execution Strategy:")} ${node.executionBinding.strategy}`,
+    `${pc28.dim("Tool Name:")}         ${node.executionTokens.tool_name}`,
+    `${pc28.dim("Output Types:")}      ${node.outputTypes.join(", ")}`,
+    `${pc28.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc28.dim("(none)")}`
+  ];
+  if (node.description) {
+    lines.push("", pc28.dim(node.description));
+  }
+  const inputKeys = Object.keys(node.executionTokens.input_template);
+  if (inputKeys.length > 0) {
+    lines.push("", `${pc28.dim("Input fields:")} ${inputKeys.join(", ")}`);
+  }
+  console.log("");
+  console.log(box3(lines));
+  console.log("");
+}
+async function runCapabilityPicker(opts) {
+  printPaperclipCliBanner();
+  p19.intro(pc28.bold("CMS Capability Registry"));
+  const access = getWorkflowAccess();
+  if (access.state !== "ready") {
+    p19.note(
+      [
+        "Capabilities are unavailable until the hosted user is linked to this local machine.",
+        access.reason
+      ].join("\n"),
+      "Growthub Local Machine Required"
+    );
+    return opts.allowBackToHub ? "back" : "done";
+  }
+  const registry = createCmsCapabilityRegistryClient();
+  while (true) {
+    const familyChoice = await p19.select({
+      message: "Filter by capability family",
+      options: [
+        { value: "all", label: "All Families" },
+        ...CAPABILITY_FAMILIES.map((family) => {
+          const cfg = FAMILY_CONFIG[family];
+          return {
+            value: family,
+            label: cfg ? `${cfg.emoji}  ${cfg.label}` : family
+          };
+        }),
+        ...opts.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
+      ]
+    });
+    if (p19.isCancel(familyChoice)) {
+      p19.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (familyChoice === "__back_to_hub") return "back";
+    const query = familyChoice === "all" ? void 0 : { family: familyChoice };
+    let result;
+    try {
+      result = await registry.listCapabilities(query);
+    } catch (err) {
+      p19.log.error("Failed to load capabilities: " + err.message);
+      continue;
+    }
+    if (result.nodes.length === 0) {
+      p19.note("No capabilities available for that family.", "Nothing found");
+      continue;
+    }
+    while (true) {
+      const capChoice = await p19.select({
+        message: "Select capability",
+        options: [
+          ...result.nodes.map((n) => ({
+            value: n.slug,
+            label: `${familyBadge(n.family)}  ` + pc28.bold(n.displayName) + "  " + pc28.dim(n.slug),
+            hint: n.description ? n.description.slice(0, 55) : void 0
+          })),
+          { value: "__back_to_family", label: "\u2190 Back to family filter" }
+        ]
+      });
+      if (p19.isCancel(capChoice)) {
+        p19.cancel("Cancelled.");
+        process.exit(0);
+      }
+      if (capChoice === "__back_to_family") break;
+      const selected = result.nodes.find((n) => n.slug === capChoice);
+      if (!selected) continue;
+      printCapabilityCard(selected);
+      const nextStep = await p19.select({
+        message: "Next step",
+        options: [
+          { value: "resolve", label: "\u{1F50D} Check machine binding" },
+          { value: "back_to_caps", label: "\u2190 Back to capability list" }
+        ]
+      });
+      if (p19.isCancel(nextStep)) {
+        p19.cancel("Cancelled.");
+        process.exit(0);
+      }
+      if (nextStep === "back_to_caps") continue;
+      if (nextStep === "resolve") {
+        try {
+          const resolver = createMachineCapabilityResolver();
+          const binding = await resolver.resolveCapability(selected.slug);
+          if (binding) {
+            const statusColor3 = binding.allowed ? pc28.green : pc28.red;
+            console.log("");
+            console.log(box3([
+              `${pc28.bold("Machine Binding:")} ${selected.slug}`,
+              `${pc28.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+              `${pc28.dim("Reason:")}   ${binding.reason ?? "\u2014"}`,
+              ...binding.machineConnectionId ? [`${pc28.dim("Connection:")} ${binding.machineConnectionId}`] : []
+            ]));
+            console.log("");
+          }
+        } catch (err) {
+          p19.log.error("Resolution failed: " + err.message);
+        }
+      }
+    }
+  }
+}
+function registerCapabilityCommands(program2) {
+  const cap = program2.command("capability").description("Discover and inspect CMS-backed runtime node capabilities").addHelpText("after", `
+Examples:
+  $ growthub capability                     # interactive browser
+  $ growthub capability list                # all capabilities grouped by family
+  $ growthub capability list --family video # filter by family
+  $ growthub capability list --json         # machine-readable output
+  $ growthub capability inspect video-gen   # inspect a specific capability
+  $ growthub capability resolve             # resolve machine bindings for all
+`);
+  cap.action(async () => {
+    await runCapabilityPicker({});
+  });
+  cap.command("list").description("List all CMS-backed runtime node capabilities").option("--family <family>", "Filter by family (video, image, slides, text, data, ops)").option("--json", "Output raw JSON for scripting").action(async (opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc28.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    const registry = createCmsCapabilityRegistryClient();
+    const query = opts.family ? { family: opts.family } : void 0;
+    try {
+      const { nodes, meta } = await registry.listCapabilities(query);
+      if (opts.json) {
+        console.log(JSON.stringify({ nodes, meta }, null, 2));
+        return;
+      }
+      if (nodes.length === 0) {
+        console.error(pc28.yellow("No capabilities found" + (opts.family ? ` for family: ${opts.family}` : "") + "."));
+        console.error(pc28.dim("Valid families: " + CAPABILITY_FAMILIES.join(", ")));
+        process.exitCode = 1;
+        return;
+      }
+      printGroupedCapabilities(nodes);
+      console.log(pc28.dim(`  Source: ${meta.source}  \xB7  Fetched: ${meta.fetchedAt}`));
+      console.log("");
+    } catch (err) {
+      console.error(pc28.red("Failed to list capabilities: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  cap.command("inspect").description("Inspect a specific CMS capability node").argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')").option("--json", "Output raw JSON").action(async (slug, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc28.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    const registry = createCmsCapabilityRegistryClient();
+    try {
+      const node = await registry.getCapability(slug);
+      if (!node) {
+        console.error(pc28.red(`Unknown capability: "${slug}".`) + pc28.dim(" Run `growthub capability list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(node, null, 2));
+        return;
+      }
+      printCapabilityCard(node);
+    } catch (err) {
+      console.error(pc28.red("Failed to inspect capability: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  cap.command("resolve").description("Resolve machine-scoped capability bindings for all capabilities").option("--json", "Output raw JSON").action(async (opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc28.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const resolver = createMachineCapabilityResolver();
+      const result = await resolver.resolveAll();
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc28.bold("Machine Capability Resolution"));
+      console.log(hr3());
+      console.log(`  ${pc28.dim("Hostname:")}  ${result.machineContext.hostname}`);
+      console.log(`  ${pc28.dim("Instance:")}  ${result.machineContext.instanceId}`);
+      console.log(`  ${pc28.dim("Session:")}   ${result.machineContext.hasActiveSession ? pc28.green("active") : pc28.red("none")}`);
+      if (result.machineContext.machineLabel) {
+        console.log(`  ${pc28.dim("Machine:")}   ${result.machineContext.machineLabel}`);
+      }
+      console.log(`  ${pc28.dim("Entitlements:")} ${result.entitlements.length > 0 ? result.entitlements.join(", ") : pc28.dim("(none)")}`);
+      console.log(hr3());
+      for (const binding of result.bindings) {
+        const statusColor3 = binding.allowed ? pc28.green : pc28.red;
+        const statusIcon = binding.allowed ? "\u2713" : "\u2717";
+        console.log(
+          `  ${statusColor3(statusIcon)} ${pc28.bold(binding.capabilitySlug)}  ${pc28.dim(binding.reason ?? "")}`
+        );
+      }
+      console.log("");
+      console.log(pc28.dim(`  Resolved at: ${result.resolvedAt}`));
+      console.log("");
+    } catch (err) {
+      console.error(pc28.red("Failed to resolve capabilities: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+}
+
+// src/commands/pipeline.ts
+import fs21 from "node:fs";
+import path29 from "node:path";
+import * as p20 from "@clack/prompts";
+import pc30 from "picocolors";
+
+// src/runtime/dynamic-registry-pipeline/index.ts
+import { randomBytes as randomBytes6 } from "node:crypto";
+function generatePipelineId() {
+  return `pipe_${randomBytes6(8).toString("hex")}`;
+}
+function generateNodeId() {
+  return `node_${randomBytes6(6).toString("hex")}`;
+}
+function createPipelineBuilder(opts) {
+  const pipelineId = generatePipelineId();
+  const nodes = [];
+  const executionMode = opts?.executionMode ?? "hosted";
+  const threadId = opts?.threadId;
+  const metadata = opts?.metadata;
+  return {
+    addNode(slug, bindings, upstreamNodeIds) {
+      const id = generateNodeId();
+      nodes.push({ id, slug, bindings, upstreamNodeIds });
+      return id;
+    },
+    build() {
+      return {
+        pipelineId,
+        threadId,
+        nodes: [...nodes],
+        executionMode,
+        metadata
+      };
+    },
+    getNodes() {
+      return nodes;
+    },
+    async validate(registry) {
+      const capabilityMap = registry ?? await fetchCapabilityMap();
+      const issues2 = [];
+      if (nodes.length === 0) {
+        issues2.push({
+          severity: "error",
+          message: "Pipeline has no nodes."
+        });
+      }
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const seenSlugs = /* @__PURE__ */ new Set();
+      for (const node of nodes) {
+        const capability = capabilityMap.get(node.slug);
+        if (!capability) {
+          issues2.push({
+            severity: "error",
+            nodeId: node.id,
+            field: "slug",
+            message: `Unknown capability slug: "${node.slug}". Not found in the registry.`
+          });
+          continue;
+        }
+        if (!capability.enabled) {
+          issues2.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "slug",
+            message: `Capability "${node.slug}" is disabled for this user/org.`
+          });
+        }
+        for (const requiredBinding of capability.requiredBindings) {
+          if (!(requiredBinding in node.bindings)) {
+            issues2.push({
+              severity: "error",
+              nodeId: node.id,
+              field: `bindings.${requiredBinding}`,
+              message: `Missing required binding "${requiredBinding}" for capability "${node.slug}".`
+            });
+          }
+        }
+        if (node.upstreamNodeIds) {
+          for (const upId of node.upstreamNodeIds) {
+            if (!nodeIds.has(upId)) {
+              issues2.push({
+                severity: "error",
+                nodeId: node.id,
+                field: "upstreamNodeIds",
+                message: `Upstream node "${upId}" does not exist in the pipeline.`
+              });
+            }
+          }
+        }
+        seenSlugs.add(node.slug);
+      }
+      const cycleIssue = detectCycle(nodes);
+      if (cycleIssue) {
+        issues2.push(cycleIssue);
+      }
+      return {
+        valid: issues2.every((i) => i.severity !== "error"),
+        issues: issues2
+      };
+    },
+    async package(registry) {
+      const capabilityMap = registry ?? await fetchCapabilityMap();
+      const pipeline = this.build();
+      const nodeRoutes = {};
+      const routeSet = /* @__PURE__ */ new Set();
+      for (const node of pipeline.nodes) {
+        const capability = capabilityMap.get(node.slug);
+        const route = capability?.executionKind ?? "hosted-execute";
+        nodeRoutes[node.id] = route;
+        routeSet.add(route);
+      }
+      let executionRoute;
+      if (routeSet.size === 1) {
+        const single = [...routeSet][0];
+        executionRoute = single === "local-only" ? "hosted-execute" : single;
+      } else {
+        executionRoute = "mixed";
+      }
+      return {
+        pipeline,
+        executionRoute,
+        nodeRoutes
+      };
+    }
+  };
+}
+function deserializePipeline(raw) {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("Invalid pipeline: expected an object.");
+  }
+  const record = raw;
+  const pipelineRaw = record.version === 1 && record.pipeline ? record.pipeline : record;
+  const pipelineId = typeof pipelineRaw.pipelineId === "string" ? pipelineRaw.pipelineId : generatePipelineId();
+  const nodes = Array.isArray(pipelineRaw.nodes) ? pipelineRaw.nodes : [];
+  const executionMode = pipelineRaw.executionMode === "local" || pipelineRaw.executionMode === "hosted" || pipelineRaw.executionMode === "hybrid" ? pipelineRaw.executionMode : "hosted";
+  return {
+    pipelineId,
+    threadId: typeof pipelineRaw.threadId === "string" ? pipelineRaw.threadId : void 0,
+    nodes,
+    executionMode,
+    metadata: typeof pipelineRaw.metadata === "object" && pipelineRaw.metadata !== null ? pipelineRaw.metadata : void 0
+  };
+}
+async function fetchCapabilityMap() {
+  const registry = createCmsCapabilityRegistryClient();
+  const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+  return new Map(nodes.map((n) => [n.slug, n]));
+}
+function detectCycle(nodes) {
+  const adjacency = /* @__PURE__ */ new Map();
+  for (const node of nodes) {
+    adjacency.set(node.id, node.upstreamNodeIds ?? []);
+  }
+  const visited = /* @__PURE__ */ new Set();
+  const inStack = /* @__PURE__ */ new Set();
+  function dfs(nodeId) {
+    if (inStack.has(nodeId)) return true;
+    if (visited.has(nodeId)) return false;
+    visited.add(nodeId);
+    inStack.add(nodeId);
+    for (const upstream of adjacency.get(nodeId) ?? []) {
+      if (dfs(upstream)) return true;
+    }
+    inStack.delete(nodeId);
+    return false;
+  }
+  for (const node of nodes) {
+    if (dfs(node.id)) {
+      return {
+        severity: "error",
+        message: "Pipeline contains a dependency cycle."
+      };
+    }
+  }
+  return null;
+}
+
+// src/runtime/cms-node-contracts/introspect.ts
+function toFieldType(value) {
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "string") return "string";
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  if (value && typeof value === "object") return "object";
+  return "unknown";
+}
+function outputTypeFromSchema(value) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && typeof value.type === "string") {
+    return value.type;
+  }
+  return toFieldType(value);
+}
+function humanizeFieldKey(key) {
+  return key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().replace(/^\w/, (c) => c.toUpperCase());
+}
+function introspectNodeContract(node) {
+  const inputTemplate = node.executionTokens.input_template ?? {};
+  const outputMapping = node.executionTokens.output_mapping ?? {};
+  const inputs = Object.entries(inputTemplate).map(([key, value]) => {
+    const required = value === "" || value === null || value === void 0;
+    return {
+      key,
+      label: humanizeFieldKey(key),
+      type: toFieldType(value),
+      required,
+      defaultValue: value
+    };
+  });
+  const outputs = Object.entries(outputMapping).map(([key, value]) => ({
+    key,
+    type: outputTypeFromSchema(value),
+    required: false
+  }));
+  return {
+    slug: node.slug,
+    displayName: node.displayName,
+    family: node.family,
+    nodeType: node.nodeType,
+    executionKind: node.executionKind,
+    executionStrategy: node.executionBinding.strategy,
+    requiredBindings: node.requiredBindings ?? [],
+    outputTypes: node.outputTypes ?? [],
+    inputs,
+    outputs
+  };
+}
+
+// src/runtime/cms-node-contracts/normalize.ts
+function sanitizeValue(value) {
+  if (typeof value === "string") {
+    return isPlaceholderString(value) ? "" : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeValue(entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeValue(entry)])
+    );
+  }
+  return value;
+}
+function coerceValue(value, templateValue) {
+  if (templateValue === void 0) return value;
+  if (typeof templateValue === "number") {
+    if (typeof value === "number") return value;
+    if (typeof value === "string" && value.trim().length > 0 && !Number.isNaN(Number(value))) {
+      return Number(value);
+    }
+    return templateValue;
+  }
+  if (typeof templateValue === "boolean") {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      if (value.toLowerCase() === "true") return true;
+      if (value.toLowerCase() === "false") return false;
+    }
+    return templateValue;
+  }
+  if (Array.isArray(templateValue)) {
+    return Array.isArray(value) ? value : templateValue;
+  }
+  if (templateValue && typeof templateValue === "object") {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    return templateValue;
+  }
+  return value;
+}
+function normalizeNodeBindings(rawBindings, node) {
+  const template = node.executionTokens.input_template ?? {};
+  const incoming = rawBindings ?? {};
+  const merged = {};
+  let providedCount = 0;
+  let defaultedCount = 0;
+  let normalizedCount = 0;
+  for (const [key, templateValue] of Object.entries(template)) {
+    const hasIncoming = Object.prototype.hasOwnProperty.call(incoming, key);
+    const rawValue = hasIncoming ? incoming[key] : templateValue;
+    const sanitized = sanitizeValue(rawValue);
+    const coerced = coerceValue(sanitized, templateValue);
+    merged[key] = coerced;
+    if (hasIncoming) providedCount += 1;
+    if (!hasIncoming) defaultedCount += 1;
+    if (sanitized !== rawValue || coerced !== sanitized) normalizedCount += 1;
+  }
+  for (const [key, value] of Object.entries(incoming)) {
+    if (!(key in merged)) {
+      merged[key] = sanitizeValue(value);
+      providedCount += 1;
+    }
+  }
+  return {
+    bindings: merged,
+    providedCount,
+    defaultedCount,
+    normalizedCount
+  };
+}
+function validateNodeBindings(normalizedBindings, node) {
+  const contract = introspectNodeContract(node);
+  const missingRequiredInputs = [];
+  const missingRequiredBindings = [];
+  for (const input of contract.inputs) {
+    if (!input.required) continue;
+    const value = normalizedBindings[input.key];
+    if (value === void 0 || value === null || value === "") {
+      missingRequiredInputs.push(input.key);
+    }
+  }
+  for (const key of contract.requiredBindings) {
+    const value = normalizedBindings[key];
+    if (value === void 0 || value === null || value === "") {
+      missingRequiredBindings.push(key);
+    }
+  }
+  const warnings = [];
+  if (missingRequiredBindings.length > 0) {
+    warnings.push(`Missing required bindings: ${missingRequiredBindings.join(", ")}`);
+  }
+  if (missingRequiredInputs.length > 0) {
+    warnings.push(`Missing required inputs: ${missingRequiredInputs.join(", ")}`);
+  }
+  return {
+    valid: missingRequiredBindings.length === 0 && missingRequiredInputs.length === 0,
+    missingRequiredInputs,
+    missingRequiredBindings,
+    warnings
+  };
+}
+
+// src/runtime/cms-node-contracts/compile.ts
+function inferWorkflowName(pipeline) {
+  const metadataName = pipeline.metadata?.workflowName;
+  if (typeof metadataName === "string" && metadataName.trim().length > 0) {
+    return metadataName.trim();
+  }
+  return pipeline.pipelineId?.trim() || `${pipeline.nodes[0]?.slug ?? "workflow"} workflow`;
+}
+function compileToHostedWorkflowConfig(pipeline, opts) {
+  const cmsNodes = pipeline.nodes.map((node, index51) => ({
+    id: node.id,
+    type: "cmsNode",
+    position: { x: (index51 + 1) * 300, y: 0 },
+    data: {
+      slug: node.slug,
+      inputs: node.bindings
+    }
+  }));
+  const edges = [];
+  for (const node of pipeline.nodes) {
+    const upstreamNodeIds = node.upstreamNodeIds ?? [];
+    if (upstreamNodeIds.length === 0) {
+      edges.push({
+        id: `e-start-1-${node.id}`,
+        source: "start-1",
+        target: node.id
+      });
+      continue;
+    }
+    for (const upstreamNodeId of upstreamNodeIds) {
+      edges.push({
+        id: `e-${upstreamNodeId}-${node.id}`,
+        source: upstreamNodeId,
+        target: node.id
+      });
+    }
+  }
+  const upstreamSources = new Set(
+    pipeline.nodes.flatMap((node) => node.upstreamNodeIds ?? [])
+  );
+  for (const node of pipeline.nodes) {
+    if (!upstreamSources.has(node.id)) {
+      edges.push({
+        id: `e-${node.id}-end-1`,
+        source: node.id,
+        target: "end-1"
+      });
+    }
+  }
+  return {
+    name: opts?.workflowName ?? inferWorkflowName(pipeline),
+    nodes: [
+      { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
+      ...cmsNodes,
+      { id: "end-1", type: "end", position: { x: (cmsNodes.length + 1) * 300, y: 0 }, data: {} }
+    ],
+    edges
+  };
+}
+
+// src/runtime/cms-node-contracts/presenter.ts
+import pc29 from "picocolors";
+function renderInputLine(input) {
+  const required = input.required ? pc29.red("required") : pc29.green("optional");
+  return `${pc29.dim("\xB7")} ${input.label} ${pc29.dim(`(${input.type})`)} ${required}`;
+}
+function countNodeAssets(bindings) {
+  let count = 0;
+  for (const [key, value] of Object.entries(bindings)) {
+    if (Array.isArray(value) && (key.toLowerCase().includes("image") || key.toLowerCase().includes("asset") || key.toLowerCase().includes("ref"))) {
+      count += value.length;
+    }
+  }
+  return count;
+}
+function renderContractCard(contract) {
+  const lines = [
+    `${pc29.bold(contract.displayName)}  ${pc29.dim(contract.slug)}`,
+    `${pc29.dim("Family:")} ${contract.family}  ${pc29.dim("Execution:")} ${contract.executionStrategy}`,
+    `${pc29.dim("Kind:")} ${contract.executionKind}  ${pc29.dim("Node Type:")} ${contract.nodeType}`,
+    `${pc29.dim("Bindings:")} ${contract.requiredBindings.length > 0 ? contract.requiredBindings.join(", ") : "none"}`,
+    `${pc29.dim("Outputs:")} ${contract.outputTypes.length > 0 ? contract.outputTypes.join(", ") : "none"}`
+  ];
+  if (contract.inputs.length > 0) {
+    lines.push("", pc29.bold("Input Contract"));
+    lines.push(...contract.inputs.map(renderInputLine));
+  }
+  if (contract.outputs.length > 0) {
+    lines.push("", pc29.bold("Output Contract"));
+    lines.push(
+      ...contract.outputs.map((output) => `${pc29.dim("\xB7")} ${output.key} ${pc29.dim(`(${output.type})`)}`)
+    );
+  }
+  return lines;
+}
+function buildPreExecutionSummary(input) {
+  const warnings = [];
+  const nodes = input.pipeline.nodes.map((node) => {
+    const capability = input.registryBySlug.get(node.slug);
+    if (!capability) {
+      warnings.push(`Unknown capability slug: ${node.slug}`);
+      return {
+        nodeId: node.id,
+        slug: node.slug,
+        requiredMissing: [],
+        bindingCount: Object.keys(node.bindings ?? {}).length,
+        assetCount: countNodeAssets(node.bindings ?? {}),
+        outputTypes: []
+      };
+    }
+    const normalized = normalizeNodeBindings(node.bindings, capability);
+    const validation = validateNodeBindings(normalized.bindings, capability);
+    const contract = introspectNodeContract(capability);
+    if (!validation.valid) {
+      warnings.push(
+        `${node.slug}: ${[...validation.missingRequiredBindings, ...validation.missingRequiredInputs].join(", ")}`
+      );
+    }
+    return {
+      nodeId: node.id,
+      slug: node.slug,
+      requiredMissing: [...validation.missingRequiredBindings, ...validation.missingRequiredInputs],
+      bindingCount: Object.keys(normalized.bindings).length,
+      assetCount: countNodeAssets(normalized.bindings),
+      outputTypes: contract.outputTypes
+    };
+  });
+  const normalizedPipeline = {
+    ...input.pipeline,
+    nodes: input.pipeline.nodes.map((node) => {
+      const capability = input.registryBySlug.get(node.slug);
+      if (!capability) return node;
+      const normalized = normalizeNodeBindings(node.bindings, capability);
+      return { ...node, bindings: normalized.bindings };
+    })
+  };
+  return {
+    pipelineId: input.pipeline.pipelineId,
+    executionMode: input.pipeline.executionMode,
+    nodeCount: input.pipeline.nodes.length,
+    warnings,
+    nodes,
+    compiledConfig: compileToHostedWorkflowConfig(normalizedPipeline)
+  };
+}
+function renderPreExecutionSummary(summary) {
+  const lines = [
+    `${pc29.bold("Pre-Execution Contract Summary")} ${pc29.dim(summary.pipelineId)}`,
+    `${pc29.dim("Mode:")} ${summary.executionMode}  ${pc29.dim("Nodes:")} ${summary.nodeCount}`,
+    `${pc29.dim("Compiled:")} ${summary.compiledConfig.nodes.length} nodes / ${summary.compiledConfig.edges.length} edges`,
+    ""
+  ];
+  for (const [index51, node] of summary.nodes.entries()) {
+    const missing = node.requiredMissing.length > 0 ? pc29.red(`missing: ${node.requiredMissing.join(", ")}`) : pc29.green("ready");
+    const outputs = node.outputTypes.length > 0 ? node.outputTypes.join(", ") : "none";
+    lines.push(
+      `${pc29.dim(`${index51 + 1}.`)} ${pc29.bold(node.slug)} ${pc29.dim(node.nodeId)} \xB7 bindings=${node.bindingCount} \xB7 assets=${node.assetCount} \xB7 outputs=${outputs} \xB7 ${missing}`
+    );
+  }
+  if (summary.warnings.length > 0) {
+    lines.push("", pc29.yellow("Warnings"));
+    lines.push(...summary.warnings.map((warning) => `${pc29.dim("\xB7")} ${warning}`));
+  }
+  return lines;
+}
+function renderPreSaveReview(input) {
+  const lines = [
+    `${pc29.bold("Pre-Save Workflow Review")} ${pc29.dim(input.workflowName)}`,
+    `${pc29.dim("Pipeline:")} ${input.summary.pipelineId}`,
+    `${pc29.dim("Mode:")} ${input.summary.executionMode}`,
+    `${pc29.dim("Compiled:")} ${input.summary.compiledConfig.nodes.length} nodes / ${input.summary.compiledConfig.edges.length} edges`
+  ];
+  if (input.summary.warnings.length > 0) {
+    lines.push("", pc29.yellow(`Warnings: ${input.summary.warnings.length}`));
+  }
+  return lines;
+}
+
+// src/runtime/artifact-contracts/index.ts
+init_home();
+import fs19 from "node:fs";
+import path27 from "node:path";
+import { randomBytes as randomBytes7 } from "node:crypto";
+function generateArtifactId() {
+  return `art_${randomBytes7(8).toString("hex")}`;
+}
+function resolveArtifactsDir() {
+  return path27.resolve(resolvePaperclipHomeDir(), "artifacts");
+}
+function resolveArtifactManifestPath(artifactId) {
+  return path27.resolve(resolveArtifactsDir(), `${artifactId}.json`);
+}
+function readLocalManifest(artifactId) {
+  const filePath = resolveArtifactManifestPath(artifactId);
+  if (!fs19.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs19.readFileSync(filePath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function writeLocalManifest(manifest) {
+  const dir = resolveArtifactsDir();
+  fs19.mkdirSync(dir, { recursive: true });
+  const filePath = resolveArtifactManifestPath(manifest.id);
+  fs19.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
+`, { mode: 384 });
+}
+function listLocalManifests() {
+  const dir = resolveArtifactsDir();
+  if (!fs19.existsSync(dir)) return [];
+  return fs19.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
+    try {
+      const content = fs19.readFileSync(path27.resolve(dir, entry.name), "utf-8");
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }).filter((m) => m !== null).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+function matchesQuery2(manifest, query) {
+  if (query.artifactType && manifest.artifactType !== query.artifactType) return false;
+  if (query.pipelineId && manifest.pipelineId !== query.pipelineId) return false;
+  if (query.sourceNodeSlug && manifest.sourceNodeSlug !== query.sourceNodeSlug) return false;
+  if (query.executionContext && manifest.executionContext !== query.executionContext) return false;
+  if (query.status && manifest.status !== query.status) return false;
+  if (query.threadId && manifest.threadId !== query.threadId) return false;
+  return true;
+}
+function createArtifactManifest(input) {
+  return {
+    id: generateArtifactId(),
+    artifactType: input.artifactType,
+    sourceNodeSlug: input.sourceNodeSlug,
+    createdByConnectionId: input.createdByConnectionId,
+    executionContext: input.executionContext,
+    status: "pending",
+    pipelineId: input.pipelineId,
+    nodeId: input.nodeId,
+    threadId: input.threadId,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    metadata: input.metadata ?? {}
+  };
+}
+function createArtifactStore() {
+  return {
+    create(input) {
+      const manifest = createArtifactManifest(input);
+      writeLocalManifest(manifest);
+      return manifest;
+    },
+    get(artifactId) {
+      return readLocalManifest(artifactId);
+    },
+    list(query) {
+      let artifacts = listLocalManifests();
+      if (query) {
+        artifacts = artifacts.filter((m) => matchesQuery2(m, query));
+      }
+      if (query?.limit && query.limit > 0) {
+        artifacts = artifacts.slice(0, query.limit);
+      }
+      return {
+        artifacts,
+        meta: {
+          total: artifacts.length,
+          source: "local",
+          fetchedAt: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      };
+    },
+    update(artifactId, patch) {
+      const existing = readLocalManifest(artifactId);
+      if (!existing) return null;
+      const updated = {
+        ...existing,
+        ...patch.status !== void 0 ? { status: patch.status } : {},
+        ...patch.metadata !== void 0 ? { metadata: { ...existing.metadata, ...patch.metadata } } : {},
+        updatedAt: patch.updatedAt ?? (/* @__PURE__ */ new Date()).toISOString()
+      };
+      writeLocalManifest(updated);
+      return updated;
+    },
+    getStorePath() {
+      return resolveArtifactsDir();
+    }
+  };
+}
+
+// src/runtime/native-intelligence/index.ts
+init_home();
+import fs20 from "node:fs";
+import path28 from "node:path";
+
+// src/runtime/native-intelligence/contract.ts
+var DEFAULT_INTELLIGENCE_CONFIG = {
+  modelId: "gemma3",
+  backendType: "local",
+  endpoint: "http://localhost:8080/v1/chat/completions",
+  defaultTemperature: 0.3,
+  defaultMaxTokens: 4096,
+  timeoutMs: 3e4
+};
+
+// src/runtime/native-intelligence/provider.ts
+function createNativeIntelligenceBackend(config) {
+  return {
+    async complete(input) {
+      const startMs = Date.now();
+      const messages = [
+        { role: "system", content: input.systemPrompt },
+        { role: "user", content: input.userPrompt }
+      ];
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        config.timeoutMs ?? 3e4
+      );
+      try {
+        const headers = {
+          "content-type": "application/json",
+          accept: "application/json"
+        };
+        if (config.apiKey) {
+          headers.authorization = `Bearer ${config.apiKey}`;
+        }
+        const modelCandidates = resolveModelCandidates(config);
+        const endpointCandidates = resolveEndpointCandidates(config);
+        let result = null;
+        let lastError = null;
+        for (let endpointIndex = 0; endpointIndex < endpointCandidates.length; endpointIndex += 1) {
+          const endpoint = endpointCandidates[endpointIndex];
+          for (let modelIndex = 0; modelIndex < modelCandidates.length; modelIndex += 1) {
+            const model = modelCandidates[modelIndex];
+            const body = {
+              model,
+              messages,
+              temperature: input.temperature ?? config.defaultTemperature ?? 0.3,
+              max_tokens: input.maxTokens ?? config.defaultMaxTokens ?? 4096
+            };
+            if (input.responseFormat === "json") {
+              body.response_format = { type: "json_object" };
+            }
+            try {
+              const response = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(body),
+                signal: controller.signal
+              });
+              if (response.ok) {
+                result = await response.json();
+                break;
+              }
+              const errorText4 = await response.text().catch(() => "");
+              const backendError = new NativeIntelligenceBackendError(
+                response.status,
+                `Model backend responded with ${response.status}: ${errorText4 || response.statusText}`
+              );
+              lastError = backendError;
+              if (!shouldTryNextModel(response.status, errorText4, model, config, modelCandidates)) {
+                throw backendError;
+              }
+            } catch (err) {
+              if (err instanceof NativeIntelligenceBackendError) {
+                throw err;
+              }
+              lastError = new NativeIntelligenceBackendError(
+                502,
+                err instanceof Error ? err.message : "Unknown backend error"
+              );
+              const hasAnotherEndpoint = endpointIndex < endpointCandidates.length - 1;
+              if (!hasAnotherEndpoint) {
+                throw lastError;
+              }
+              break;
+            }
+          }
+          if (result) break;
+        }
+        if (!result) {
+          throw lastError ?? new NativeIntelligenceBackendError(502, "Model backend returned no response.");
+        }
+        const latencyMs = Date.now() - startMs;
+        const text63 = extractCompletionText(result);
+        return {
+          text: text63,
+          usage: result.usage ? {
+            promptTokens: result.usage.prompt_tokens ?? 0,
+            completionTokens: result.usage.completion_tokens ?? 0,
+            totalTokens: result.usage.total_tokens ?? 0
+          } : void 0,
+          modelId: result.model ?? config.modelId,
+          latencyMs
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+  };
+}
+function resolveModelCandidates(config) {
+  const primary = config.modelId;
+  const candidates = [];
+  if (typeof config.localModel === "string" && config.localModel.trim().length > 0) {
+    candidates.push(config.localModel.trim());
+  }
+  const envLocalModel = process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim() || process.env.OLLAMA_MODEL?.trim();
+  if (envLocalModel && !candidates.includes(envLocalModel)) {
+    candidates.push(envLocalModel);
+  }
+  if (!candidates.includes(primary)) {
+    candidates.push(primary);
+  }
+  if (config.backendType === "local" && primary === "gemma3" && !candidates.includes("gemma3:4b")) {
+    candidates.push("gemma3:4b");
+  }
+  return candidates;
+}
+function resolveEndpointCandidates(config) {
+  const primary = config.endpoint;
+  const candidates = [primary];
+  if (config.backendType !== "local") return candidates;
+  const normalized = primary.toLowerCase();
+  if ((normalized.includes("localhost:8080") || normalized.includes("127.0.0.1:8080")) && !candidates.includes("http://127.0.0.1:11434/v1/chat/completions")) {
+    candidates.push("http://127.0.0.1:11434/v1/chat/completions");
+  }
+  return candidates;
+}
+function shouldTryNextModel(status, errorText4, attemptedModel, config, candidates) {
+  const hasNextCandidate = candidates[candidates.length - 1] !== attemptedModel;
+  if (!hasNextCandidate) return false;
+  if (config.backendType !== "local") return false;
+  const normalizedError = errorText4.toLowerCase();
+  return status === 404 || normalizedError.includes("model") && normalizedError.includes("not found");
+}
+function extractCompletionText(response) {
+  if (response.choices && response.choices.length > 0) {
+    const choice = response.choices[0];
+    if (choice.message?.content) return choice.message.content;
+    if (choice.text) return choice.text;
+  }
+  throw new NativeIntelligenceBackendError(
+    502,
+    "Model backend returned no completion text."
+  );
+}
+async function checkBackendHealth(config) {
+  const startMs = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5e3);
+    try {
+      const response = await fetch(config.endpoint.replace(/\/chat\/completions$/, "/models"), {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          ...config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}
+        },
+        signal: controller.signal
+      });
+      const latencyMs = Date.now() - startMs;
+      return { available: response.ok, latencyMs };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (err) {
+    const latencyMs = Date.now() - startMs;
+    return {
+      available: false,
+      latencyMs,
+      error: err instanceof Error ? err.message : "Unknown error"
+    };
+  }
+}
+var NativeIntelligenceBackendError = class extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+};
+
+// src/runtime/native-intelligence/summarizer.ts
+var SUMMARIZER_SYSTEM_PROMPT = `You are a workflow execution analyst for the Growthub platform.
+Your job is to produce clear, concise, actionable summaries about workflow pipelines.
+
+You analyze:
+- Pipeline graph structure (node slugs, bindings, upstream dependencies)
+- Contract truth (required/optional inputs, output types, execution strategies)
+- Execution results when available (success/failure per node, artifacts produced)
+- Runtime mode (local, hosted, hybrid)
+
+Your summaries must be:
+- Specific: reference actual node slugs and binding names
+- Actionable: tell the user what to fix or what to expect
+- Concise: under 200 words for each summary section
+- Honest: flag real issues, don't invent phantom problems
+
+You NEVER recommend running workflows, only explain and analyze them.
+You NEVER generate executable code or modify pipeline configurations.
+
+Respond in JSON with this schema:
+{
+  "title": "string \u2014 short summary title",
+  "explanation": "string \u2014 1-3 sentence overview of the pipeline",
+  "missingBindingGuidance": ["string \u2014 one per missing binding with fix guidance"],
+  "runtimeModeNote": "string | null \u2014 note about execution mode implications",
+  "outputExpectation": "string | null \u2014 what artifacts/outputs to expect",
+  "costLatencyCautions": ["string \u2014 cost or latency warnings"],
+  "warnings": ["string \u2014 other warnings"],
+  "confidence": "number 0-1 \u2014 how confident in the analysis"
+}`;
+async function summarizeExecution2(input, backend) {
+  const userPrompt = buildSummarizerPrompt(input);
+  try {
+    const completion = await backend.complete({
+      systemPrompt: SUMMARIZER_SYSTEM_PROMPT,
+      userPrompt,
+      temperature: 0.2,
+      maxTokens: 2048,
+      responseFormat: "json"
+    });
+    const parsed = parseJsonSafe(completion.text);
+    if (parsed) {
+      return validateSummaryResult(parsed);
+    }
+  } catch {
+  }
+  return buildDeterministicSummary(input);
+}
+function buildDeterministicSummary(input) {
+  const { pipeline, registryContext, phase, executionResult } = input;
+  const nodeCount = pipeline.nodes.length;
+  const slugs = pipeline.nodes.map((n) => n.slug);
+  const allMissing = pipeline.nodes.flatMap((n) => n.missingRequired);
+  const allWarnings = [...pipeline.warnings];
+  const costCautions = [];
+  const missingGuidance = [];
+  for (const node of pipeline.nodes) {
+    for (const field of node.missingRequired) {
+      const contract = registryContext.find((c) => c.slug === node.slug);
+      const inputField = contract?.inputs.find((i) => i.key === field);
+      const label = inputField?.label ?? field;
+      missingGuidance.push(
+        `${node.slug}: "${label}" (${field}) is required but missing. Provide a value before execution.`
+      );
+    }
+  }
+  for (const node of pipeline.nodes) {
+    if (node.outputTypes.includes("video")) {
+      costCautions.push(`${node.slug}: video generation may have higher latency and cost.`);
+    }
+    if (node.assetCount > 5) {
+      costCautions.push(`${node.slug}: ${node.assetCount} assets referenced \u2014 verify all are accessible.`);
+    }
+  }
+  let title;
+  let explanation;
+  let runtimeModeNote;
+  let outputExpectation;
+  if (phase === "pre-save") {
+    title = `Pre-Save Review: ${nodeCount}-node pipeline`;
+    explanation = `Pipeline "${pipeline.pipelineId}" contains ${nodeCount} node(s): ${slugs.join(", ")}. ` + (allMissing.length > 0 ? `${allMissing.length} required binding(s) are missing.` : "All required bindings are present.");
+  } else if (phase === "pre-execution") {
+    title = `Pre-Execution Summary: ${nodeCount} node(s)`;
+    explanation = `About to execute pipeline "${pipeline.pipelineId}" with ${nodeCount} node(s) in ${pipeline.executionMode} mode. ` + (allMissing.length > 0 ? `Warning: ${allMissing.length} required binding(s) are unresolved.` : "All bindings are resolved.");
+    runtimeModeNote = pipeline.executionMode === "hosted" ? "Running in hosted mode \u2014 execution happens on Growthub servers." : pipeline.executionMode === "local" ? "Running in local mode \u2014 execution happens on this machine." : "Running in hybrid mode \u2014 some nodes execute locally, others hosted.";
+  } else if (phase === "post-execution" && executionResult) {
+    title = `Execution ${executionResult.status === "succeeded" ? "Completed" : "Failed"}: ${nodeCount} node(s)`;
+    const succeeded = Object.values(executionResult.nodeStatuses).filter((s) => s === "succeeded").length;
+    const failed = Object.values(executionResult.nodeStatuses).filter((s) => s === "failed").length;
+    explanation = `Execution finished: ${succeeded} succeeded, ${failed} failed. ` + (executionResult.artifactCount > 0 ? `${executionResult.artifactCount} artifact(s) produced.` : "No artifacts produced.");
+    if (executionResult.errorMessages && executionResult.errorMessages.length > 0) {
+      allWarnings.push(...executionResult.errorMessages.map((msg) => `Execution error: ${msg}`));
+    }
+    outputExpectation = executionResult.outputText ? `Output preview: ${executionResult.outputText.slice(0, 200)}` : void 0;
+  } else if (phase === "recommendation") {
+    title = `Workflow Analysis: ${nodeCount} node(s)`;
+    explanation = `Analyzing pipeline with ${nodeCount} node(s): ${slugs.join(", ")}. This pipeline ${allMissing.length === 0 ? "is ready for execution" : "needs attention before execution"}.`;
+  } else {
+    title = `Pipeline Summary: ${nodeCount} node(s)`;
+    explanation = `Pipeline "${pipeline.pipelineId}" with ${nodeCount} node(s) in ${pipeline.executionMode} mode.`;
+  }
+  const outputFamilies = new Set(pipeline.nodes.flatMap((n) => n.outputTypes));
+  if (!outputExpectation && outputFamilies.size > 0) {
+    outputExpectation = `Expected output types: ${[...outputFamilies].join(", ")}.`;
+  }
+  return {
+    title,
+    explanation,
+    missingBindingGuidance: missingGuidance,
+    runtimeModeNote,
+    outputExpectation,
+    costLatencyCautions: costCautions,
+    warnings: allWarnings,
+    confidence: 1
+  };
+}
+function buildSummarizerPrompt(input) {
+  const { pipeline, registryContext, phase, executionResult } = input;
+  const sections = [
+    `Phase: ${phase}`,
+    `Pipeline ID: ${pipeline.pipelineId}`,
+    `Execution Mode: ${pipeline.executionMode}`,
+    `Node Count: ${pipeline.nodes.length}`,
+    "",
+    "Nodes:"
+  ];
+  for (const node of pipeline.nodes) {
+    const contract = registryContext.find((c) => c.slug === node.slug);
+    sections.push(
+      `  - ${node.slug}: bindings=${node.bindingCount}, missing=[${node.missingRequired.join(",")}], outputs=[${node.outputTypes.join(",")}], assets=${node.assetCount}` + (contract ? `, family=${contract.family}, strategy=${contract.executionStrategy}` : "")
+    );
+  }
+  if (pipeline.warnings.length > 0) {
+    sections.push("", "Pipeline Warnings:", ...pipeline.warnings.map((w) => `  - ${w}`));
+  }
+  if (executionResult) {
+    sections.push(
+      "",
+      "Execution Result:",
+      `  Status: ${executionResult.status}`,
+      `  Artifacts: ${executionResult.artifactCount}`,
+      `  Node Statuses: ${JSON.stringify(executionResult.nodeStatuses)}`
+    );
+    if (executionResult.errorMessages && executionResult.errorMessages.length > 0) {
+      sections.push("  Errors:", ...executionResult.errorMessages.map((e) => `    - ${e}`));
+    }
+    if (executionResult.outputText) {
+      sections.push(`  Output Preview: ${executionResult.outputText.slice(0, 500)}`);
+    }
+  }
+  sections.push("", "Available Contract Context:");
+  for (const contract of registryContext.slice(0, 20)) {
+    sections.push(
+      `  - ${contract.slug} (${contract.family}): inputs=[${contract.inputs.map((i) => `${i.key}:${i.type}${i.required ? "*" : ""}`).join(",")}], outputs=[${contract.outputTypes.join(",")}]`
+    );
+  }
+  return sections.join("\n");
+}
+function parseJsonSafe(text63) {
+  try {
+    const trimmed = text63.trim();
+    const jsonStart = trimmed.indexOf("{");
+    const jsonEnd = trimmed.lastIndexOf("}");
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      return JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function validateSummaryResult(raw) {
+  return {
+    title: typeof raw.title === "string" ? raw.title : "Pipeline Summary",
+    explanation: typeof raw.explanation === "string" ? raw.explanation : "",
+    missingBindingGuidance: Array.isArray(raw.missingBindingGuidance) ? raw.missingBindingGuidance : [],
+    runtimeModeNote: typeof raw.runtimeModeNote === "string" ? raw.runtimeModeNote : void 0,
+    outputExpectation: typeof raw.outputExpectation === "string" ? raw.outputExpectation : void 0,
+    costLatencyCautions: Array.isArray(raw.costLatencyCautions) ? raw.costLatencyCautions : [],
+    warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
+    confidence: typeof raw.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0.5
+  };
+}
+
+// src/runtime/native-intelligence/normalizer.ts
+var NORMALIZER_SYSTEM_PROMPT = `You are a binding normalizer for the Growthub workflow platform.
+Your job is to take raw user/agent input bindings for a CMS workflow node and normalize them into runtime-safe shapes.
+
+Given a node contract (input schema) and raw bindings, you must:
+1. Identify which bindings are present and which are missing
+2. Detect placeholder-like values ("enter X", "select Y", empty strings, "placeholder")
+3. Coerce types where possible (string "123" -> number 123, "true" -> boolean true)
+4. Propose defaults for missing optional fields based on the contract
+5. Flag required fields that cannot be inferred
+6. Normalize asset references into consistent formats
+
+Rules:
+- NEVER invent values for required fields \u2014 only flag them as missing
+- For optional fields with obvious defaults (e.g., quality=1080, format="mp4"), propose the default
+- Detect and clear placeholder strings
+- Preserve user-provided values that are already valid
+
+Respond in JSON:
+{
+  "fields": [
+    {
+      "key": "string",
+      "originalValue": "any",
+      "normalizedValue": "any",
+      "action": "kept | coerced | defaulted | cleared | inferred",
+      "reason": "string | null"
+    }
+  ],
+  "missingRequired": ["string \u2014 keys of required fields that are missing"],
+  "warnings": ["string \u2014 warnings about the normalization"],
+  "confidence": 0.0-1.0
+}`;
+async function intelligentNormalizeBindings(input, backend) {
+  const userPrompt = buildNormalizerPrompt(input);
+  try {
+    const completion = await backend.complete({
+      systemPrompt: NORMALIZER_SYSTEM_PROMPT,
+      userPrompt,
+      temperature: 0.1,
+      maxTokens: 2048,
+      responseFormat: "json"
+    });
+    const parsed = parseJsonSafe2(completion.text);
+    if (parsed) {
+      return toNormalizationResult(parsed, input);
+    }
+  } catch {
+  }
+  return buildDeterministicNormalization(input);
+}
+function buildDeterministicNormalization(input) {
+  const { rawBindings, contract } = input;
+  const fields = [];
+  const missingRequired = [];
+  const warnings = [];
+  const normalizedBindings = {};
+  for (const field of contract.inputs) {
+    const rawValue = rawBindings[field.key];
+    const hasValue = field.key in rawBindings;
+    if (!hasValue) {
+      if (field.required) {
+        missingRequired.push(field.key);
+        fields.push({
+          key: field.key,
+          originalValue: void 0,
+          normalizedValue: void 0,
+          action: "cleared",
+          reason: `Required field "${field.label}" is not provided.`
+        });
+      } else if (field.defaultValue !== void 0 && field.defaultValue !== null && field.defaultValue !== "") {
+        normalizedBindings[field.key] = field.defaultValue;
+        fields.push({
+          key: field.key,
+          originalValue: void 0,
+          normalizedValue: field.defaultValue,
+          action: "defaulted",
+          reason: `Using contract default for "${field.label}".`
+        });
+      }
+      continue;
+    }
+    if (isPlaceholderValue(rawValue)) {
+      if (field.required) {
+        missingRequired.push(field.key);
+        warnings.push(`"${field.label}" contains a placeholder value and is required.`);
+      }
+      fields.push({
+        key: field.key,
+        originalValue: rawValue,
+        normalizedValue: field.defaultValue ?? "",
+        action: "cleared",
+        reason: "Placeholder value detected and cleared."
+      });
+      normalizedBindings[field.key] = field.defaultValue ?? "";
+      continue;
+    }
+    const coerced = coerceToFieldType(rawValue, field.type);
+    if (coerced !== rawValue) {
+      normalizedBindings[field.key] = coerced;
+      fields.push({
+        key: field.key,
+        originalValue: rawValue,
+        normalizedValue: coerced,
+        action: "coerced",
+        reason: `Coerced from ${typeof rawValue} to ${field.type}.`
+      });
+    } else {
+      normalizedBindings[field.key] = rawValue;
+      fields.push({
+        key: field.key,
+        originalValue: rawValue,
+        normalizedValue: rawValue,
+        action: "kept"
+      });
+    }
+  }
+  for (const [key, value] of Object.entries(rawBindings)) {
+    if (contract.inputs.some((i) => i.key === key)) continue;
+    normalizedBindings[key] = value;
+    fields.push({
+      key,
+      originalValue: value,
+      normalizedValue: value,
+      action: "kept",
+      reason: "Extra binding not in contract \u2014 passed through."
+    });
+  }
+  return {
+    normalizedBindings,
+    fields,
+    missingRequired,
+    warnings,
+    confidence: 1
+  };
+}
+function isPlaceholderValue(value) {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized.startsWith("enter ") || normalized.startsWith("select ") || normalized === "placeholder" || normalized === "todo" || normalized === "tbd" || normalized === "n/a" || normalized === "none" || normalized === "your_" || normalized.startsWith("your_") || normalized.startsWith("<") && normalized.endsWith(">");
+}
+function coerceToFieldType(value, targetType) {
+  if (targetType === "number" && typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 0 && !Number.isNaN(Number(trimmed))) {
+      return Number(trimmed);
+    }
+  }
+  if (targetType === "boolean" && typeof value === "string") {
+    const lower = value.trim().toLowerCase();
+    if (lower === "true" || lower === "yes" || lower === "1") return true;
+    if (lower === "false" || lower === "no" || lower === "0") return false;
+  }
+  if (targetType === "array" && typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+    }
+  }
+  if (targetType === "object" && typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch {
+    }
+  }
+  return value;
+}
+function buildNormalizerPrompt(input) {
+  const { nodeSlug, rawBindings, contract, userIntent, executionMode } = input;
+  const sections = [
+    `Node Slug: ${nodeSlug}`,
+    `Execution Mode: ${executionMode ?? "hosted"}`
+  ];
+  if (userIntent) {
+    sections.push(`User Intent: ${userIntent}`);
+  }
+  sections.push("", "Contract Inputs:");
+  for (const field of contract.inputs) {
+    sections.push(
+      `  - ${field.key} (${field.type}): ${field.required ? "REQUIRED" : "optional"}` + (field.defaultValue !== void 0 && field.defaultValue !== null && field.defaultValue !== "" ? ` [default: ${JSON.stringify(field.defaultValue)}]` : "")
+    );
+  }
+  sections.push("", "Raw Bindings:");
+  for (const [key, value] of Object.entries(rawBindings)) {
+    sections.push(`  - ${key}: ${JSON.stringify(value)}`);
+  }
+  return sections.join("\n");
+}
+function toNormalizationResult(raw, input) {
+  const normalizedBindings = {};
+  const fields = [];
+  if (Array.isArray(raw.fields)) {
+    for (const f of raw.fields) {
+      if (typeof f.key !== "string") continue;
+      const action = validateAction(f.action);
+      normalizedBindings[f.key] = f.normalizedValue ?? f.originalValue ?? input.rawBindings[f.key];
+      fields.push({
+        key: f.key,
+        originalValue: f.originalValue ?? input.rawBindings[f.key],
+        normalizedValue: f.normalizedValue ?? f.originalValue ?? input.rawBindings[f.key],
+        action,
+        reason: typeof f.reason === "string" ? f.reason : void 0
+      });
+    }
+  }
+  for (const [key, value] of Object.entries(input.rawBindings)) {
+    if (!(key in normalizedBindings)) {
+      normalizedBindings[key] = value;
+    }
+  }
+  return {
+    normalizedBindings,
+    fields,
+    missingRequired: Array.isArray(raw.missingRequired) ? raw.missingRequired : [],
+    warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
+    confidence: typeof raw.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0.5
+  };
+}
+function validateAction(action) {
+  const valid = ["kept", "coerced", "defaulted", "cleared", "inferred"];
+  if (typeof action === "string" && valid.includes(action)) {
+    return action;
+  }
+  return "kept";
+}
+function parseJsonSafe2(text63) {
+  try {
+    const trimmed = text63.trim();
+    const jsonStart = trimmed.indexOf("{");
+    const jsonEnd = trimmed.lastIndexOf("}");
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      return JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// src/runtime/native-intelligence/recommender.ts
+var RECOMMENDER_SYSTEM_PROMPT = `You are a workflow recommendation engine for the Growthub platform.
+Given a user's task intent, you decide the best path forward:
+
+1. "reuse-existing" \u2014 if a saved workflow closely matches the intent
+2. "start-from-template" \u2014 if a known node contract/template is a good starting point
+3. "synthesize-new" \u2014 if no existing workflow or template fits well
+
+You receive:
+- The user's task description/intent
+- A list of saved workflows (with names, node slugs, lifecycle labels)
+- A list of available CMS node contracts
+
+Your recommendation must:
+- Pick the best strategy and explain why
+- Provide 1-2 alternatives when possible
+- Reference specific workflow IDs, names, or node slugs
+- Consider lifecycle labels (canonical > experimental > archived)
+- Be honest about confidence level
+
+Respond in JSON:
+{
+  "topRecommendation": {
+    "strategy": "reuse-existing | start-from-template | synthesize-new",
+    "workflowId": "string | null \u2014 for reuse-existing",
+    "workflowName": "string | null \u2014 for reuse-existing",
+    "templateSlug": "string | null \u2014 for start-from-template",
+    "reason": "string \u2014 why this is recommended",
+    "confidence": 0.0-1.0
+  },
+  "alternatives": [
+    {
+      "strategy": "...",
+      "workflowId": "string | null",
+      "workflowName": "string | null",
+      "templateSlug": "string | null",
+      "reason": "string",
+      "confidence": 0.0-1.0
+    }
+  ],
+  "explanation": "string \u2014 overall recommendation rationale"
+}`;
+async function recommendWorkflow(input, backend) {
+  const userPrompt = buildRecommenderPrompt(input);
+  try {
+    const completion = await backend.complete({
+      systemPrompt: RECOMMENDER_SYSTEM_PROMPT,
+      userPrompt,
+      temperature: 0.3,
+      maxTokens: 2048,
+      responseFormat: "json"
+    });
+    const parsed = parseJsonSafe3(completion.text);
+    if (parsed) {
+      return validateRecommendationResult(parsed, input);
+    }
+  } catch {
+  }
+  return buildDeterministicRecommendation(input);
+}
+function buildDeterministicRecommendation(input) {
+  const { userIntent, savedWorkflows, availableContracts } = input;
+  const intentLower = userIntent.toLowerCase();
+  const intentTokens = intentLower.split(/\s+/).filter((t) => t.length > 2);
+  const scoredWorkflows = savedWorkflows.filter((w) => w.label !== "archived").map((w) => ({
+    workflow: w,
+    score: scoreWorkflowMatch(w, intentTokens, intentLower)
+  })).sort((a, b) => b.score - a.score);
+  const scoredContracts = availableContracts.map((c) => ({
+    contract: c,
+    score: scoreContractMatch(c, intentTokens, intentLower)
+  })).sort((a, b) => b.score - a.score);
+  const bestWorkflow = scoredWorkflows[0];
+  const bestContract = scoredContracts[0];
+  const alternatives = [];
+  if (bestWorkflow && bestWorkflow.score >= 3) {
+    const topRecommendation = {
+      strategy: "reuse-existing",
+      workflowId: bestWorkflow.workflow.workflowId,
+      workflowName: bestWorkflow.workflow.name,
+      reason: `Saved workflow "${bestWorkflow.workflow.name}" matches your intent with ${bestWorkflow.workflow.nodeCount} node(s): ${bestWorkflow.workflow.nodeSlugs.join(", ")}.`,
+      confidence: Math.min(0.9, bestWorkflow.score / 10)
+    };
+    if (bestContract && bestContract.score >= 2) {
+      alternatives.push({
+        strategy: "start-from-template",
+        templateSlug: bestContract.contract.slug,
+        reason: `Contract "${bestContract.contract.displayName}" could serve as a starting point for a new pipeline.`,
+        confidence: Math.min(0.7, bestContract.score / 10)
+      });
+    }
+    alternatives.push({
+      strategy: "synthesize-new",
+      reason: "Build a custom pipeline if the existing workflow doesn't fully match your needs.",
+      confidence: 0.3
+    });
+    return {
+      topRecommendation,
+      alternatives,
+      explanation: `Found ${scoredWorkflows.filter((w) => w.score >= 2).length} potentially matching saved workflow(s). "${bestWorkflow.workflow.name}" is the closest match.`
+    };
+  }
+  if (bestContract && bestContract.score >= 2) {
+    const topRecommendation = {
+      strategy: "start-from-template",
+      templateSlug: bestContract.contract.slug,
+      reason: `Contract "${bestContract.contract.displayName}" (${bestContract.contract.family}) is a good starting point for your task.`,
+      confidence: Math.min(0.7, bestContract.score / 10)
+    };
+    if (scoredWorkflows.length > 0 && bestWorkflow && bestWorkflow.score >= 1) {
+      alternatives.push({
+        strategy: "reuse-existing",
+        workflowId: bestWorkflow.workflow.workflowId,
+        workflowName: bestWorkflow.workflow.name,
+        reason: `Existing workflow "${bestWorkflow.workflow.name}" might partially match \u2014 review before reusing.`,
+        confidence: Math.min(0.5, bestWorkflow.score / 10)
+      });
+    }
+    alternatives.push({
+      strategy: "synthesize-new",
+      reason: "Compose a multi-node pipeline from available contracts.",
+      confidence: 0.4
+    });
+    return {
+      topRecommendation,
+      alternatives,
+      explanation: `No strong saved workflow match found. "${bestContract.contract.displayName}" is the best contract starting point.`
+    };
+  }
+  return {
+    topRecommendation: {
+      strategy: "synthesize-new",
+      reason: "No strong match found in saved workflows or available templates. A custom pipeline is recommended.",
+      confidence: 0.5
+    },
+    alternatives: savedWorkflows.length > 0 && bestWorkflow ? [{
+      strategy: "reuse-existing",
+      workflowId: bestWorkflow.workflow.workflowId,
+      workflowName: bestWorkflow.workflow.name,
+      reason: `"${bestWorkflow.workflow.name}" is the closest existing workflow, but may need significant modification.`,
+      confidence: Math.min(0.3, (bestWorkflow.score || 0) / 10)
+    }] : [],
+    explanation: "No strong matches found. Recommending a custom pipeline synthesis."
+  };
+}
+function scoreWorkflowMatch(workflow, intentTokens, intentLower) {
+  let score = 0;
+  const nameLower = workflow.name.toLowerCase();
+  const descLower = (workflow.description ?? "").toLowerCase();
+  const slugsLower = workflow.nodeSlugs.map((s) => s.toLowerCase()).join(" ");
+  for (const token of intentTokens) {
+    if (nameLower.includes(token)) score += 2;
+    if (descLower.includes(token)) score += 1;
+    if (slugsLower.includes(token)) score += 1.5;
+  }
+  for (const slug of workflow.nodeSlugs) {
+    if (intentLower.includes(slug.toLowerCase())) {
+      score += 2;
+    }
+  }
+  if (workflow.label === "canonical") score += 2;
+  if (workflow.label === "experimental") score += 0.5;
+  if (workflow.label === "archived") score -= 3;
+  if (workflow.versionCount >= 3) score += 1;
+  return score;
+}
+function scoreContractMatch(contract, intentTokens, intentLower) {
+  let score = 0;
+  const slugLower = contract.slug.toLowerCase();
+  const nameLower = contract.displayName.toLowerCase();
+  const familyLower = contract.family.toLowerCase();
+  for (const token of intentTokens) {
+    if (slugLower.includes(token)) score += 2;
+    if (nameLower.includes(token)) score += 2;
+    if (familyLower.includes(token)) score += 1;
+  }
+  for (const outputType of contract.outputTypes) {
+    if (intentLower.includes(outputType.toLowerCase())) {
+      score += 1.5;
+    }
+  }
+  return score;
+}
+function buildRecommenderPrompt(input) {
+  const { userIntent, savedWorkflows, availableContracts, executionMode } = input;
+  const sections = [
+    `User Intent: ${userIntent}`,
+    `Execution Mode: ${executionMode ?? "hosted"}`,
+    "",
+    `Saved Workflows (${savedWorkflows.length}):`
+  ];
+  for (const wf of savedWorkflows.slice(0, 30)) {
+    sections.push(
+      `  - [${wf.workflowId}] "${wf.name}" (${wf.label ?? "unlabeled"}) \u2014 ${wf.nodeCount} node(s): ${wf.nodeSlugs.join(", ")} \u2014 v${wf.versionCount}`
+    );
+  }
+  sections.push("", `Available Contracts (${availableContracts.length}):`);
+  for (const contract of availableContracts.slice(0, 30)) {
+    sections.push(
+      `  - ${contract.slug} "${contract.displayName}" (${contract.family}) \u2014 outputs: [${contract.outputTypes.join(",")}]`
+    );
+  }
+  return sections.join("\n");
+}
+function validateRecommendationResult(raw, input) {
+  return {
+    topRecommendation: validateRecommendation(raw.topRecommendation, input),
+    alternatives: Array.isArray(raw.alternatives) ? raw.alternatives.map((alt) => validateRecommendation(alt, input)) : [],
+    explanation: typeof raw.explanation === "string" ? raw.explanation : "Recommendation generated."
+  };
+}
+function validateRecommendation(raw, input) {
+  const strategy = validateStrategy(raw?.strategy);
+  return {
+    strategy,
+    workflowId: typeof raw?.workflowId === "string" ? raw.workflowId : void 0,
+    workflowName: typeof raw?.workflowName === "string" ? raw.workflowName : void 0,
+    templateSlug: typeof raw?.templateSlug === "string" ? raw.templateSlug : void 0,
+    reason: typeof raw?.reason === "string" ? raw.reason : "No specific reason provided.",
+    confidence: typeof raw?.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0.5
+  };
+}
+function validateStrategy(strategy) {
+  const valid = ["reuse-existing", "start-from-template", "synthesize-new"];
+  if (typeof strategy === "string" && valid.includes(strategy)) {
+    return strategy;
+  }
+  return "synthesize-new";
+}
+function parseJsonSafe3(text63) {
+  try {
+    const trimmed = text63.trim();
+    const jsonStart = trimmed.indexOf("{");
+    const jsonEnd = trimmed.lastIndexOf("}");
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      return JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// src/runtime/native-intelligence/planner.ts
+var PLANNER_SYSTEM_PROMPT = `You are a workflow graph planner for the Growthub platform.
+Your job is to propose a pipeline graph (sequence of CMS nodes) that fulfills the user's intent.
+
+You receive:
+- The user's intent/goal
+- Available CMS node contracts (with slugs, input schemas, output types, families)
+- Optionally, existing saved workflows that might already fulfill the need
+
+Rules:
+1. Only use node slugs that exist in the available contracts list
+2. Propose realistic bindings \u2014 use empty strings for values the user must provide
+3. Chain nodes by specifying upstream dependencies when outputs feed into downstream inputs
+4. Respect constraints (max nodes, required output types, preferred families)
+5. If an existing workflow already matches well, recommend it instead of planning a new graph
+6. Keep graphs minimal \u2014 prefer fewer nodes that accomplish the goal
+7. NEVER propose nodes that don't exist in the available contracts
+
+Respond in JSON:
+{
+  "proposedNodes": [
+    {
+      "slug": "string \u2014 must be from available contracts",
+      "displayName": "string",
+      "reason": "string \u2014 why this node is needed",
+      "suggestedBindings": { "key": "value or empty string" },
+      "upstreamNodeSlugs": ["string \u2014 slugs of upstream nodes, if any"]
+    }
+  ],
+  "explanation": "string \u2014 overall plan rationale",
+  "alternativeExistingWorkflowId": "string | null",
+  "alternativeExistingWorkflowReason": "string | null",
+  "confidence": 0.0-1.0,
+  "warnings": ["string"]
+}`;
+async function planWorkflow(input, backend) {
+  const userPrompt = buildPlannerPrompt(input);
+  try {
+    const completion = await backend.complete({
+      systemPrompt: PLANNER_SYSTEM_PROMPT,
+      userPrompt,
+      temperature: 0.4,
+      maxTokens: 3072,
+      responseFormat: "json"
+    });
+    const parsed = parseJsonSafe4(completion.text);
+    if (parsed) {
+      return validatePlanningResult(parsed, input);
+    }
+  } catch {
+  }
+  return buildDeterministicPlan(input);
+}
+function buildDeterministicPlan(input) {
+  const { userIntent, availableContracts, existingWorkflows, constraints } = input;
+  const intentLower = userIntent.toLowerCase();
+  const intentTokens = intentLower.split(/\s+/).filter((t) => t.length > 2);
+  const existingMatch = findBestExistingWorkflow(existingWorkflows ?? [], intentTokens, intentLower);
+  const scoredContracts = availableContracts.map((c) => ({ contract: c, score: scoreContract(c, intentTokens, intentLower, constraints) })).sort((a, b) => b.score - a.score);
+  const maxNodes = constraints?.maxNodes ?? 5;
+  const requiredOutputs = new Set(constraints?.requiredOutputTypes ?? []);
+  const selectedNodes = [];
+  const usedSlugs = /* @__PURE__ */ new Set();
+  const warnings = [];
+  for (const { contract, score } of scoredContracts) {
+    if (selectedNodes.length >= maxNodes) break;
+    if (score <= 0) break;
+    if (usedSlugs.has(contract.slug)) continue;
+    if (constraints?.avoidSlugs?.includes(contract.slug)) continue;
+    const suggestedBindings = {};
+    for (const field of contract.inputs) {
+      suggestedBindings[field.key] = field.defaultValue ?? "";
+    }
+    const upstreamSlugs = [];
+    if (selectedNodes.length > 0) {
+      const lastNode = selectedNodes[selectedNodes.length - 1];
+      const lastContract = availableContracts.find((c) => c.slug === lastNode.slug);
+      if (lastContract && hasOutputInputOverlap(lastContract, contract)) {
+        upstreamSlugs.push(lastNode.slug);
+      }
+    }
+    selectedNodes.push({
+      slug: contract.slug,
+      displayName: contract.displayName,
+      reason: `Matches intent tokens and produces ${contract.outputTypes.join(", ") || "general"} output.`,
+      suggestedBindings,
+      upstreamNodeSlugs: upstreamSlugs.length > 0 ? upstreamSlugs : void 0
+    });
+    usedSlugs.add(contract.slug);
+    for (const outType of contract.outputTypes) {
+      requiredOutputs.delete(outType);
+    }
+  }
+  if (requiredOutputs.size > 0) {
+    warnings.push(`Could not find contracts producing required output types: ${[...requiredOutputs].join(", ")}.`);
+  }
+  if (selectedNodes.length === 0) {
+    warnings.push("No contracts matched the user intent. Consider refining the task description.");
+    return {
+      proposedNodes: [],
+      explanation: "No matching contracts found for the given intent.",
+      confidence: 0.1,
+      warnings
+    };
+  }
+  return {
+    proposedNodes: selectedNodes,
+    explanation: `Proposed ${selectedNodes.length}-node pipeline using ${selectedNodes.map((n) => n.slug).join(" -> ")}.`,
+    alternativeExistingWorkflowId: existingMatch?.workflowId,
+    alternativeExistingWorkflowReason: existingMatch ? `Existing workflow "${existingMatch.name}" may already fulfill this intent.` : void 0,
+    confidence: Math.min(0.7, selectedNodes.length > 0 ? scoredContracts[0].score / 10 : 0.1),
+    warnings
+  };
+}
+function scoreContract(contract, intentTokens, intentLower, constraints) {
+  let score = 0;
+  const slugLower = contract.slug.toLowerCase();
+  const nameLower = contract.displayName.toLowerCase();
+  const familyLower = contract.family.toLowerCase();
+  for (const token of intentTokens) {
+    if (slugLower.includes(token)) score += 2;
+    if (nameLower.includes(token)) score += 2;
+    if (familyLower.includes(token)) score += 1;
+  }
+  if (constraints?.requiredOutputTypes) {
+    for (const requiredType of constraints.requiredOutputTypes) {
+      if (contract.outputTypes.includes(requiredType)) score += 3;
+    }
+  }
+  if (constraints?.preferredFamilies) {
+    if (constraints.preferredFamilies.includes(contract.family)) score += 2;
+  }
+  for (const outType of contract.outputTypes) {
+    if (intentLower.includes(outType.toLowerCase())) score += 1.5;
+  }
+  return score;
+}
+function findBestExistingWorkflow(workflows, intentTokens, intentLower) {
+  let best = null;
+  let bestScore = 0;
+  for (const wf of workflows) {
+    if (wf.label === "archived") continue;
+    let score = 0;
+    const nameLower = wf.name.toLowerCase();
+    const slugsLower = wf.nodeSlugs.join(" ").toLowerCase();
+    for (const token of intentTokens) {
+      if (nameLower.includes(token)) score += 2;
+      if (slugsLower.includes(token)) score += 1.5;
+    }
+    if (wf.label === "canonical") score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = wf;
+    }
+  }
+  return bestScore >= 3 ? best : null;
+}
+function hasOutputInputOverlap(upstream, downstream) {
+  const outputTypes = new Set(upstream.outputTypes.map((t) => t.toLowerCase()));
+  for (const input of downstream.inputs) {
+    const keyLower = input.key.toLowerCase();
+    for (const outType of outputTypes) {
+      if (keyLower.includes(outType) || outType.includes(keyLower)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+function buildPlannerPrompt(input) {
+  const { userIntent, availableContracts, existingWorkflows, executionMode, constraints } = input;
+  const sections = [
+    `User Intent: ${userIntent}`,
+    `Execution Mode: ${executionMode ?? "hosted"}`
+  ];
+  if (constraints) {
+    sections.push("", "Constraints:");
+    if (constraints.maxNodes) sections.push(`  Max Nodes: ${constraints.maxNodes}`);
+    if (constraints.requiredOutputTypes?.length) {
+      sections.push(`  Required Output Types: ${constraints.requiredOutputTypes.join(", ")}`);
+    }
+    if (constraints.preferredFamilies?.length) {
+      sections.push(`  Preferred Families: ${constraints.preferredFamilies.join(", ")}`);
+    }
+    if (constraints.avoidSlugs?.length) {
+      sections.push(`  Avoid Slugs: ${constraints.avoidSlugs.join(", ")}`);
+    }
+  }
+  sections.push("", `Available Contracts (${availableContracts.length}):`);
+  for (const contract of availableContracts.slice(0, 40)) {
+    const inputs = contract.inputs.map((i) => `${i.key}:${i.type}${i.required ? "*" : ""}`).join(", ");
+    sections.push(
+      `  - ${contract.slug} "${contract.displayName}" (${contract.family}) \u2014 inputs=[${inputs}], outputs=[${contract.outputTypes.join(",")}], strategy=${contract.executionStrategy}`
+    );
+  }
+  if (existingWorkflows && existingWorkflows.length > 0) {
+    sections.push("", `Existing Workflows (${existingWorkflows.length}):`);
+    for (const wf of existingWorkflows.slice(0, 20)) {
+      sections.push(
+        `  - [${wf.workflowId}] "${wf.name}" (${wf.label ?? "unlabeled"}) \u2014 nodes: ${wf.nodeSlugs.join(", ")} \u2014 v${wf.versionCount}`
+      );
+    }
+  }
+  return sections.join("\n");
+}
+function validatePlanningResult(raw, input) {
+  const availableSlugs = new Set(input.availableContracts.map((c) => c.slug));
+  const proposedNodes = [];
+  const warnings = Array.isArray(raw.warnings) ? [...raw.warnings] : [];
+  if (Array.isArray(raw.proposedNodes)) {
+    for (const node of raw.proposedNodes) {
+      if (typeof node.slug !== "string") continue;
+      if (!availableSlugs.has(node.slug)) {
+        warnings.push(`Proposed node slug "${node.slug}" is not in the available contracts \u2014 skipped.`);
+        continue;
+      }
+      proposedNodes.push({
+        slug: node.slug,
+        displayName: typeof node.displayName === "string" ? node.displayName : node.slug,
+        reason: typeof node.reason === "string" ? node.reason : "Selected by planner.",
+        suggestedBindings: node.suggestedBindings && typeof node.suggestedBindings === "object" ? node.suggestedBindings : {},
+        upstreamNodeSlugs: Array.isArray(node.upstreamNodeSlugs) ? node.upstreamNodeSlugs : void 0
+      });
+    }
+  }
+  return {
+    proposedNodes,
+    explanation: typeof raw.explanation === "string" ? raw.explanation : "Plan generated.",
+    alternativeExistingWorkflowId: typeof raw.alternativeExistingWorkflowId === "string" ? raw.alternativeExistingWorkflowId : void 0,
+    alternativeExistingWorkflowReason: typeof raw.alternativeExistingWorkflowReason === "string" ? raw.alternativeExistingWorkflowReason : void 0,
+    confidence: typeof raw.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0.5,
+    warnings
+  };
+}
+function parseJsonSafe4(text63) {
+  try {
+    const trimmed = text63.trim();
+    const jsonStart = trimmed.indexOf("{");
+    const jsonEnd = trimmed.lastIndexOf("}");
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      return JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// src/runtime/native-intelligence/index.ts
+function resolveConfigPath2() {
+  return path28.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
+}
+function readIntelligenceConfig() {
+  const configPath = resolveConfigPath2();
+  if (!fs20.existsSync(configPath)) {
+    return { ...DEFAULT_INTELLIGENCE_CONFIG };
+  }
+  try {
+    const raw = JSON.parse(fs20.readFileSync(configPath, "utf-8"));
+    return {
+      modelId: validateModelId(raw.modelId),
+      backendType: raw.backendType === "hosted" ? "hosted" : "local",
+      endpoint: typeof raw.endpoint === "string" ? raw.endpoint : DEFAULT_INTELLIGENCE_CONFIG.endpoint,
+      localModel: typeof raw.localModel === "string" ? raw.localModel : void 0,
+      apiKey: typeof raw.apiKey === "string" ? raw.apiKey : void 0,
+      defaultTemperature: typeof raw.defaultTemperature === "number" ? raw.defaultTemperature : DEFAULT_INTELLIGENCE_CONFIG.defaultTemperature,
+      defaultMaxTokens: typeof raw.defaultMaxTokens === "number" ? raw.defaultMaxTokens : DEFAULT_INTELLIGENCE_CONFIG.defaultMaxTokens,
+      timeoutMs: typeof raw.timeoutMs === "number" ? raw.timeoutMs : DEFAULT_INTELLIGENCE_CONFIG.timeoutMs
+    };
+  } catch {
+    return { ...DEFAULT_INTELLIGENCE_CONFIG };
+  }
+}
+function writeIntelligenceConfig(config) {
+  const configPath = resolveConfigPath2();
+  fs20.mkdirSync(path28.dirname(configPath), { recursive: true });
+  fs20.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
+`, "utf-8");
+}
+function validateModelId(id) {
+  if (id === "gemma3" || id === "gemma3n" || id === "codegemma") return id;
+  return "gemma3";
+}
+function createNativeIntelligenceProvider(configOverride) {
+  const config = { ...readIntelligenceConfig(), ...configOverride };
+  const backend = createNativeIntelligenceBackend(config);
+  return {
+    id: config.modelId,
+    async planWorkflow(input) {
+      return planWorkflow(input, backend);
+    },
+    async normalizeBindings(input) {
+      return intelligentNormalizeBindings(input, backend);
+    },
+    async recommendWorkflow(input) {
+      return recommendWorkflow(input, backend);
+    },
+    async summarizeExecution(input) {
+      return summarizeExecution2(input, backend);
+    }
+  };
+}
+
+// src/commands/pipeline.ts
+init_banner();
+function hr4(width = 72) {
+  return pc30.dim("\u2500".repeat(width));
+}
+function stripAnsi4(str) {
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+function box4(lines) {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi4(l).length)) + 4;
+  const top = pc30.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc30.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi4(l).length;
+    return pc30.dim("\u2502") + l + " ".repeat(pad) + pc30.dim("\u2502");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+async function runPipelineAssembler(opts) {
+  printPaperclipCliBanner();
+  p20.intro(pc30.bold("Dynamic Registry Pipeline Assembler"));
+  p20.note(
+    [
+      "Dynamic pipeline creation flow:",
+      "  1) Select capability nodes",
+      "  2) Normalize required bindings",
+      "  3) Validate graph",
+      "  4) Pre-execution contract summary",
+      "  5) Save to Saved Workflows",
+      "  6) Execute hosted workflow"
+    ].join("\n"),
+    "Interactive Tree"
+  );
+  const access = getWorkflowAccess();
+  if (access.state !== "ready") {
+    p20.note(
+      [
+        "Dynamic Pipelines are unavailable until the hosted user is linked to this local machine.",
+        access.reason
+      ].join("\n"),
+      "Growthub Local Machine Required"
+    );
+    return opts.allowBackToHub ? "back" : "done";
+  }
+  if (opts.allowBackToHub) {
+    const entryChoice = await p20.select({
+      message: "Dynamic Pipelines (hosted-only)",
+      options: [
+        { value: "start", label: "Start interactive assembler" },
+        { value: "__back_to_hub", label: "\u2190 Back to workflow menu" }
+      ]
+    });
+    if (p20.isCancel(entryChoice)) {
+      p20.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (entryChoice === "__back_to_hub") return "back";
+  } else {
+    p20.note("Execution mode is fixed to hosted for Dynamic Pipelines.", "Hosted only");
+  }
+  const registry = createCmsCapabilityRegistryClient();
+  let capabilities;
+  const capabilitiesSpinner = p20.spinner();
+  capabilitiesSpinner.start("Loading capability list...");
+  try {
+    const result = await registry.listCapabilities();
+    capabilities = result.nodes;
+    capabilitiesSpinner.stop(`Loaded ${capabilities.length} capabilities.`);
+  } catch (err) {
+    capabilitiesSpinner.stop(pc30.red("Failed to load capabilities."));
+    p20.log.error("Failed to load capabilities: " + err.message);
+    return "done";
+  }
+  if (capabilities.length === 0) {
+    p20.note("No capabilities available. Ensure you are authenticated.", "Nothing found");
+    return "done";
+  }
+  const builder = createPipelineBuilder({
+    executionMode: "hosted"
+  });
+  while (true) {
+    const currentNodes = builder.getNodes();
+    const action = await p20.select({
+      message: `Pipeline has ${currentNodes.length} node${currentNodes.length !== 1 ? "s" : ""}. What next?`,
+      options: [
+        { value: "add", label: "\u2795 Add a node", hint: "Select a capability to add" },
+        ...currentNodes.length > 0 ? [
+          { value: "preview", label: "\u{1F441}\uFE0F  Preview pipeline" },
+          { value: "validate", label: "\u2705 Validate pipeline" },
+          { value: "save", label: "\u{1F4BE} Save to Saved Workflows" },
+          { value: "execute", label: "\u{1F680} Execute pipeline" }
+        ] : [],
+        {
+          value: "cancel",
+          label: opts.allowBackToHub ? "\u2190 Back to workflow menu" : "\u2190 Cancel"
+        }
+      ]
+    });
+    if (p20.isCancel(action)) {
+      p20.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (action === "cancel") {
+      return opts.allowBackToHub ? "back" : "done";
+    }
+    if (action === "add") {
+      const capChoice = await p20.select({
+        message: "Select capability to add as pipeline node",
+        options: [
+          ...capabilities.map((c) => ({
+            value: c.slug,
+            label: `${pc30.bold(c.displayName)}  ${pc30.dim(c.slug)}`,
+            hint: `${c.family} \xB7 ${c.executionKind}`
+          })),
+          { value: "__back", label: "\u2190 Back" }
+        ]
+      });
+      if (p20.isCancel(capChoice)) {
+        p20.cancel("Cancelled.");
+        process.exit(0);
+      }
+      if (capChoice === "__back") continue;
+      const cap = capabilities.find((c) => c.slug === capChoice);
+      if (!cap) continue;
+      const bindings = {};
+      for (const bindingKey of cap.requiredBindings) {
+        const value = await p20.text({
+          message: `Binding "${bindingKey}" for ${cap.slug}`,
+          placeholder: `Enter value for ${bindingKey}`
+        });
+        if (p20.isCancel(value)) {
+          p20.cancel("Cancelled.");
+          process.exit(0);
+        }
+        bindings[bindingKey] = value;
+      }
+      let upstreamNodeIds;
+      if (currentNodes.length > 0) {
+        const upstreamChoice = await p20.multiselect({
+          message: "Select upstream nodes (outputs feed into this node)",
+          options: [
+            { value: "__none", label: "(no upstream)" },
+            ...currentNodes.map((n) => ({
+              value: n.id,
+              label: `${n.slug} (${n.id})`
+            }))
+          ],
+          required: false
+        });
+        if (p20.isCancel(upstreamChoice)) {
+          p20.cancel("Cancelled.");
+          process.exit(0);
+        }
+        const selected = upstreamChoice.filter((v) => v !== "__none");
+        if (selected.length > 0) {
+          upstreamNodeIds = selected;
+        }
+      }
+      const normalizedBindings = normalizeNodeBindings(bindings, cap);
+      const nodeId = builder.addNode(capChoice, normalizedBindings.bindings, upstreamNodeIds);
+      p20.log.success(`Added node ${pc30.bold(cap.displayName)} (${pc30.dim(nodeId)})`);
+      continue;
+    }
+    if (action === "preview") {
+      const pipeline = builder.build();
+      console.log("");
+      console.log(box4([
+        `${pc30.bold("Pipeline:")} ${pipeline.pipelineId}`,
+        `${pc30.dim("Mode:")} ${pipeline.executionMode}  ${pc30.dim("Nodes:")} ${pipeline.nodes.length}`,
+        "",
+        ...pipeline.nodes.map((n, i) => {
+          const upstream = n.upstreamNodeIds?.length ? pc30.dim(` \u2190 ${n.upstreamNodeIds.join(", ")}`) : "";
+          return `${pc30.dim(String(i + 1) + ".")} ${pc30.bold(n.slug)} ${pc30.dim(n.id)}${upstream}`;
+        })
+      ]));
+      console.log("");
+      continue;
+    }
+    if (action === "validate") {
+      try {
+        const result = await builder.validate();
+        if (result.valid) {
+          p20.log.success("Pipeline is valid.");
+        } else {
+          p20.log.error("Pipeline validation failed.");
+        }
+        for (const issue of result.issues) {
+          const prefix = issue.severity === "error" ? pc30.red("ERROR") : pc30.yellow("WARN");
+          const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
+          console.log(`  ${prefix}${nodeRef}: ${issue.message}`);
+        }
+      } catch (err) {
+        p20.log.error("Validation failed: " + err.message);
+      }
+      continue;
+    }
+    if (action === "save") {
+      const session = readSession();
+      if (!session || isSessionExpired(session)) {
+        p20.log.error("Hosted session expired. Run `growthub auth login` again.");
+        continue;
+      }
+      const pipeline = builder.build();
+      const defaultName = inferWorkflowName(pipeline);
+      const workflowName = await p20.text({
+        message: "Saved workflow name",
+        placeholder: defaultName,
+        defaultValue: defaultName
+      });
+      if (p20.isCancel(workflowName)) {
+        p20.cancel("Cancelled.");
+        process.exit(0);
+      }
+      const summary = buildPreExecutionSummary({
+        pipeline,
+        registryBySlug: new Map(capabilities.map((node) => [node.slug, node]))
+      });
+      console.log("");
+      console.log(box4(renderPreExecutionSummary(summary)));
+      console.log("");
+      const intelligenceSummary = await renderIntelligenceSummary(
+        pipeline,
+        capabilities,
+        "pre-save"
+      );
+      if (intelligenceSummary) {
+        console.log(box4(intelligenceSummary));
+        console.log("");
+      }
+      const confirmed = await p20.confirm({
+        message: `Save hosted workflow "${workflowName}"?`,
+        initialValue: true
+      });
+      if (p20.isCancel(confirmed) || !confirmed) continue;
+      try {
+        const saveResult = await saveHostedWorkflow(session, {
+          name: workflowName,
+          description: "Saved from Dynamic Pipelines assembler",
+          config: compileToHostedWorkflowConfig(pipeline, { workflowName })
+        });
+        if (!saveResult?.workflowId) {
+          throw new Error("Hosted workflow save returned no workflow id.");
+        }
+        p20.log.success(
+          `Saved to workflow registry as ${pc30.bold(workflowName)} (${pc30.dim(saveResult.workflowId)} \xB7 v${saveResult.version}).`
+        );
+      } catch (err) {
+        if (err instanceof HostedEndpointUnavailableError) {
+          p20.log.error("Hosted save endpoint is unavailable on this GH app surface.");
+        } else {
+          p20.log.error("Save failed: " + err.message);
+        }
+      }
+      continue;
+    }
+    if (action === "execute") {
+      const validation = await builder.validate();
+      if (!validation.valid) {
+        p20.log.error("Pipeline is not valid. Fix errors before executing.");
+        for (const issue of validation.issues.filter((i) => i.severity === "error")) {
+          console.log(`  ${pc30.red("ERROR")}: ${issue.message}`);
+        }
+        continue;
+      }
+      const pipeline = builder.build();
+      const summary = buildPreExecutionSummary({
+        pipeline,
+        registryBySlug: new Map(capabilities.map((node) => [node.slug, node]))
+      });
+      console.log("");
+      console.log(box4(renderPreExecutionSummary(summary)));
+      console.log("");
+      const intelligenceSummary = await renderIntelligenceSummary(
+        pipeline,
+        capabilities,
+        "pre-execution"
+      );
+      if (intelligenceSummary) {
+        console.log(box4(intelligenceSummary));
+        console.log("");
+      }
+      const confirmed = await p20.confirm({
+        message: "Execute this pipeline through the hosted runtime?",
+        initialValue: false
+      });
+      if (p20.isCancel(confirmed) || !confirmed) continue;
+      try {
+        const executionClient = createHostedExecutionClient();
+        const pipeline2 = builder.build();
+        const pkg = await builder.package();
+        p20.log.info(`Executing pipeline ${pc30.bold(pipeline2.pipelineId)} (${pkg.executionRoute})...`);
+        const result = await executionClient.executeWorkflow({
+          pipelineId: pipeline2.pipelineId,
+          threadId: pipeline2.threadId,
+          nodes: pipeline2.nodes.map((n) => ({
+            nodeId: n.id,
+            slug: n.slug,
+            bindings: n.bindings,
+            upstreamNodeIds: n.upstreamNodeIds
+          })),
+          executionMode: pipeline2.executionMode,
+          metadata: pipeline2.metadata
+        });
+        p20.log.success(`Execution ${pc30.bold(result.executionId)}: ${result.status}`);
+        const artifactStore = createArtifactStore();
+        for (const artRef of result.artifacts) {
+          const nodeResult = result.nodeResults[artRef.nodeId];
+          artifactStore.create({
+            artifactType: artRef.artifactType,
+            sourceNodeSlug: nodeResult?.slug ?? "unknown",
+            executionContext: pipeline2.executionMode === "local" ? "local" : "hosted",
+            pipelineId: pipeline2.pipelineId,
+            nodeId: artRef.nodeId,
+            threadId: pipeline2.threadId,
+            metadata: artRef.metadata ?? {}
+          });
+        }
+        if (result.artifacts.length > 0) {
+          p20.log.info(`${result.artifacts.length} artifact(s) recorded.`);
+        }
+      } catch (err) {
+        p20.log.error("Execution failed: " + err.message);
+      }
+      continue;
+    }
+  }
+}
+function loadPipelineFromFileOrJson(input) {
+  const resolvedPath = path29.resolve(input);
+  if (fs21.existsSync(resolvedPath)) {
+    const content = fs21.readFileSync(resolvedPath, "utf-8");
+    return deserializePipeline(JSON.parse(content));
+  }
+  try {
+    return deserializePipeline(JSON.parse(input));
+  } catch {
+    throw new Error(
+      `"${input}" is not a valid file path or JSON string. Provide a path to a pipeline JSON file or inline JSON.`
+    );
+  }
+}
+function renderExecutionProgress(completed, total, detail) {
+  if (!process.stdout.isTTY) return;
+  const width = 24;
+  const safeCompleted = Math.max(0, Math.min(completed, total));
+  const percent = total <= 0 ? 0 : Math.round(safeCompleted / total * 100);
+  const filled = Math.max(0, Math.min(width, Math.round(percent / 100 * width)));
+  const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
+  const line = `\r${pc30.cyan("Workflow run")} ${pc30.dim("[")}${pc30.green(bar)}${pc30.dim("]")} ${String(percent).padStart(3)}% ${pc30.dim(detail)}`;
+  process.stdout.write(line);
+  if (safeCompleted >= total) {
+    process.stdout.write("\n");
+  }
+}
+async function executeHostedPipeline(pipeline, opts) {
+  const executionClient = createHostedExecutionClient();
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    throw new Error("Hosted session expired. Run `growthub auth login` again.");
+  }
+  let hostedWorkflowId = typeof pipeline.metadata?.hostedWorkflowId === "string" ? pipeline.metadata.hostedWorkflowId : void 0;
+  try {
+    const saveResult = await saveHostedWorkflow(session, {
+      workflowId: hostedWorkflowId,
+      name: typeof pipeline.metadata?.workflowName === "string" ? pipeline.metadata.workflowName : inferWorkflowName(pipeline),
+      description: typeof pipeline.metadata?.description === "string" ? pipeline.metadata.description : "",
+      config: compileToHostedWorkflowConfig(pipeline)
+    });
+    hostedWorkflowId = saveResult?.workflowId ?? hostedWorkflowId;
+  } catch (err) {
+    if (!(err instanceof HostedEndpointUnavailableError)) {
+      throw err;
+    }
+  }
+  let completedNodes = 0;
+  const totalNodes = Math.max(1, pipeline.nodes.length);
+  const completed = /* @__PURE__ */ new Set();
+  const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
+  const startupSpinner = opts?.json ? null : p20.spinner();
+  let startupSettled = false;
+  startupSpinner?.start("Preparing hosted workflow execution...");
+  const settleStartup = (message) => {
+    if (!startupSpinner || startupSettled) return;
+    startupSettled = true;
+    startupSpinner.stop(message ?? "Hosted workflow execution started.");
+  };
+  const result = await executionClient.executeWorkflow({
+    pipelineId: pipeline.pipelineId,
+    workflowId: hostedWorkflowId,
+    threadId: hostedWorkflowId ?? pipeline.threadId,
+    nodes: pipeline.nodes.map((n) => ({
+      nodeId: n.id,
+      slug: n.slug,
+      bindings: n.bindings,
+      upstreamNodeIds: n.upstreamNodeIds
+    })),
+    executionMode: pipeline.executionMode,
+    metadata: pipeline.metadata
+  }, opts?.json ? void 0 : {
+    onEvent: async (event) => {
+      if (event.type === "node_start" || event.type === "node_complete") {
+        settleStartup("Hosted workflow execution started.");
+      }
+      if (event.type === "node_complete" && event.nodeId && trackableNodeIds.has(event.nodeId) && !completed.has(event.nodeId)) {
+        completed.add(event.nodeId);
+        completedNodes = completed.size;
+        const node = pipeline.nodes.find((candidate) => candidate.id === event.nodeId);
+        renderExecutionProgress(completedNodes, totalNodes, node?.slug ?? event.nodeId);
+      }
+      if (event.type === "error") {
+        settleStartup("Hosted workflow execution started.");
+        renderExecutionProgress(totalNodes, totalNodes, "failed");
+      }
+    }
+  });
+  settleStartup("Hosted workflow execution started.");
+  if (opts?.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log("");
+  console.log(pc30.bold("Pipeline Execution Result"));
+  console.log(hr4());
+  console.log(`  ${pc30.dim("Execution ID:")} ${result.executionId}`);
+  if (result.threadId) console.log(`  ${pc30.dim("Thread ID:")}    ${result.threadId}`);
+  console.log(`  ${pc30.dim("Status:")}       ${result.status === "succeeded" ? pc30.green(result.status) : pc30.red(result.status)}`);
+  if (result.startedAt) console.log(`  ${pc30.dim("Started:")}      ${result.startedAt}`);
+  if (result.completedAt) console.log(`  ${pc30.dim("Completed:")}    ${result.completedAt}`);
+  console.log(hr4());
+  for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+    const statusColor3 = nodeResult.status === "succeeded" ? pc30.green : pc30.red;
+    console.log(`  ${statusColor3(nodeResult.status)} ${pc30.bold(nodeResult.slug)} (${pc30.dim(nodeId)})`);
+    if (nodeResult.error) {
+      console.log(`    ${pc30.red(nodeResult.error)}`);
+    }
+  }
+  if (result.artifacts.length > 0) {
+    console.log("");
+    console.log(pc30.bold("  Artifacts:"));
+    for (const art of result.artifacts) {
+      console.log(`    ${pc30.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
+    }
+  }
+  if (result.summary) {
+    console.log("");
+    console.log(pc30.bold("  Summary:"));
+    if (result.summary.outputText) console.log(`    ${pc30.dim("\xB7")} ${result.summary.outputText}`);
+    if (typeof result.summary.imageCount === "number") console.log(`    ${pc30.dim("\xB7")} images: ${result.summary.imageCount}`);
+    if (typeof result.summary.slideCount === "number") console.log(`    ${pc30.dim("\xB7")} slides: ${result.summary.slideCount}`);
+    if (typeof result.summary.videoCount === "number") console.log(`    ${pc30.dim("\xB7")} videos: ${result.summary.videoCount}`);
+    if (result.summary.workflowRunId) console.log(`    ${pc30.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+    if (result.summary.keyboardShortcutHint) console.log(`    ${pc30.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+  }
+  try {
+    const credits = await fetchHostedCredits(session);
+    if (credits) {
+      console.log("");
+      console.log(pc30.bold("  Credits:"));
+      console.log(`    ${pc30.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
+      console.log(`    ${pc30.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+    }
+  } catch (err) {
+    if (err instanceof HostedEndpointUnavailableError) {
+      console.log("");
+      console.log(pc30.yellow("  Credits unavailable on this hosted surface."));
+    } else {
+      throw err;
+    }
+  }
+  const artifactStore = createArtifactStore();
+  for (const artRef of result.artifacts) {
+    const nodeResult = result.nodeResults[artRef.nodeId];
+    artifactStore.create({
+      artifactType: artRef.artifactType,
+      sourceNodeSlug: nodeResult?.slug ?? "unknown",
+      executionContext: pipeline.executionMode === "local" ? "local" : "hosted",
+      pipelineId: pipeline.pipelineId,
+      nodeId: artRef.nodeId,
+      threadId: result.threadId ?? pipeline.threadId,
+      metadata: artRef.metadata ?? {}
+    });
+  }
+  console.log("");
+}
+async function renderIntelligenceSummary(pipeline, capabilities, phase) {
+  try {
+    const provider = createNativeIntelligenceProvider();
+    const registryContext = capabilities.map((cap) => introspectNodeContract(cap));
+    const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
+    const pipelineSummary = {
+      pipelineId: pipeline.pipelineId,
+      executionMode: pipeline.executionMode,
+      nodes: pipeline.nodes.map((node) => {
+        const cap = capabilityMap.get(node.slug);
+        const contract = cap ? introspectNodeContract(cap) : null;
+        const missingRequired = [];
+        if (contract) {
+          for (const input2 of contract.inputs) {
+            if (!input2.required) continue;
+            const value = node.bindings[input2.key];
+            if (value === void 0 || value === null || value === "") {
+              missingRequired.push(input2.key);
+            }
+          }
+        }
+        return {
+          slug: node.slug,
+          bindingCount: Object.keys(node.bindings).length,
+          missingRequired,
+          outputTypes: contract?.outputTypes ?? [],
+          assetCount: 0
+        };
+      }),
+      warnings: []
+    };
+    const input = {
+      pipeline: pipelineSummary,
+      registryContext,
+      phase
+    };
+    const result = await provider.summarizeExecution(input);
+    const lines = [
+      `${pc30.bold("Intelligence Summary")} ${pc30.dim(result.title)}`,
+      result.explanation
+    ];
+    if (result.runtimeModeNote) {
+      lines.push(`${pc30.dim("Runtime:")} ${result.runtimeModeNote}`);
+    }
+    if (result.outputExpectation) {
+      lines.push(`${pc30.dim("Expected:")} ${result.outputExpectation}`);
+    }
+    if (result.missingBindingGuidance.length > 0) {
+      lines.push("", pc30.yellow("Missing Binding Guidance"));
+      for (const guidance of result.missingBindingGuidance) {
+        lines.push(`  ${pc30.dim("\xB7")} ${guidance}`);
+      }
+    }
+    if (result.costLatencyCautions.length > 0) {
+      lines.push("", pc30.yellow("Cost/Latency Notes"));
+      for (const caution of result.costLatencyCautions) {
+        lines.push(`  ${pc30.dim("\xB7")} ${caution}`);
+      }
+    }
+    if (result.warnings.length > 0) {
+      lines.push("", pc30.yellow("Warnings"));
+      for (const warning of result.warnings) {
+        lines.push(`  ${pc30.dim("\xB7")} ${warning}`);
+      }
+    }
+    return lines;
+  } catch {
+    return null;
+  }
+}
+function registerPipelineCommands(program2) {
+  const pipe = program2.command("pipeline").description("Assemble, validate, and execute dynamic registry pipelines").addHelpText("after", `
+Examples:
+  $ growthub pipeline                       # interactive assembler
+  $ growthub pipeline assemble              # interactive assembly
+  $ growthub pipeline validate ./pipeline.json
+  $ growthub pipeline execute ./pipeline.json
+`);
+  pipe.action(async () => {
+    await runPipelineAssembler({});
+  });
+  pipe.command("assemble").description("Interactively assemble a dynamic registry pipeline").action(async () => {
+    await runPipelineAssembler({});
+  });
+  pipe.command("validate").description("Validate a pipeline from a JSON file or inline JSON").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc30.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const pipeline = loadPipelineFromFileOrJson(input);
+      const builder = createPipelineBuilder({
+        executionMode: pipeline.executionMode,
+        threadId: pipeline.threadId,
+        metadata: pipeline.metadata
+      });
+      for (const node of pipeline.nodes) {
+        builder.addNode(node.slug, node.bindings, node.upstreamNodeIds);
+      }
+      const result = await builder.validate();
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (result.valid) {
+        console.log(pc30.green(pc30.bold("Pipeline is valid.")));
+      } else {
+        console.log(pc30.red(pc30.bold("Pipeline validation failed.")));
+      }
+      for (const issue of result.issues) {
+        const prefix = issue.severity === "error" ? pc30.red("  ERROR") : pc30.yellow("  WARN");
+        const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
+        console.log(`${prefix}${nodeRef}: ${issue.message}`);
+      }
+      if (!result.valid) process.exitCode = 1;
+    } catch (err) {
+      console.error(pc30.red("Validation failed: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  pipe.command("execute").description("Execute a pipeline from a JSON file or inline JSON").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc30.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const pipeline = loadPipelineFromFileOrJson(input);
+      if (!opts.json) {
+        const registry = createCmsCapabilityRegistryClient();
+        const { nodes: capabilities } = await registry.listCapabilities({ enabledOnly: false });
+        const summary = buildPreExecutionSummary({
+          pipeline,
+          registryBySlug: new Map(capabilities.map((node) => [node.slug, node]))
+        });
+        console.log("");
+        console.log(box4(renderPreExecutionSummary(summary)));
+        console.log("");
+      }
+      const executionClient = createHostedExecutionClient();
+      const session = readSession();
+      if (!session || isSessionExpired(session)) {
+        throw new Error("Hosted session expired. Run `growthub auth login` again.");
+      }
+      let hostedWorkflowId = typeof pipeline.metadata?.hostedWorkflowId === "string" ? pipeline.metadata.hostedWorkflowId : void 0;
+      try {
+        const saveResult = await saveHostedWorkflow(session, {
+          workflowId: hostedWorkflowId,
+          name: typeof pipeline.metadata?.workflowName === "string" ? pipeline.metadata.workflowName : inferWorkflowName(pipeline),
+          description: typeof pipeline.metadata?.description === "string" ? pipeline.metadata.description : "",
+          config: compileToHostedWorkflowConfig(pipeline)
+        });
+        hostedWorkflowId = saveResult?.workflowId ?? hostedWorkflowId;
+      } catch (err) {
+        if (!(err instanceof HostedEndpointUnavailableError)) {
+          throw err;
+        }
+      }
+      let completedNodes = 0;
+      const totalNodes = Math.max(1, pipeline.nodes.length);
+      const completed = /* @__PURE__ */ new Set();
+      const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
+      const result = await executionClient.executeWorkflow({
+        pipelineId: pipeline.pipelineId,
+        workflowId: hostedWorkflowId,
+        threadId: hostedWorkflowId ?? pipeline.threadId,
+        nodes: pipeline.nodes.map((n) => ({
+          nodeId: n.id,
+          slug: n.slug,
+          bindings: n.bindings,
+          upstreamNodeIds: n.upstreamNodeIds
+        })),
+        executionMode: pipeline.executionMode,
+        metadata: pipeline.metadata
+      }, opts.json ? void 0 : {
+        onEvent: async (event) => {
+          if (event.type === "node_complete" && event.nodeId && trackableNodeIds.has(event.nodeId) && !completed.has(event.nodeId)) {
+            completed.add(event.nodeId);
+            completedNodes = completed.size;
+            const node = pipeline.nodes.find((candidate) => candidate.id === event.nodeId);
+            renderExecutionProgress(completedNodes, totalNodes, node?.slug ?? event.nodeId);
+          }
+          if (event.type === "error") {
+            renderExecutionProgress(totalNodes, totalNodes, "failed");
+          }
+        }
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc30.bold("Pipeline Execution Result"));
+      console.log(hr4());
+      console.log(`  ${pc30.dim("Execution ID:")} ${result.executionId}`);
+      if (result.threadId) console.log(`  ${pc30.dim("Thread ID:")}    ${result.threadId}`);
+      console.log(`  ${pc30.dim("Status:")}       ${result.status === "succeeded" ? pc30.green(result.status) : pc30.red(result.status)}`);
+      if (result.startedAt) console.log(`  ${pc30.dim("Started:")}      ${result.startedAt}`);
+      if (result.completedAt) console.log(`  ${pc30.dim("Completed:")}    ${result.completedAt}`);
+      console.log(hr4());
+      for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+        const statusColor3 = nodeResult.status === "succeeded" ? pc30.green : pc30.red;
+        console.log(`  ${statusColor3(nodeResult.status)} ${pc30.bold(nodeResult.slug)} (${pc30.dim(nodeId)})`);
+        if (nodeResult.error) {
+          console.log(`    ${pc30.red(nodeResult.error)}`);
+        }
+      }
+      if (result.artifacts.length > 0) {
+        console.log("");
+        console.log(pc30.bold("  Artifacts:"));
+        for (const art of result.artifacts) {
+          console.log(`    ${pc30.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
+        }
+      }
+      if (result.summary) {
+        console.log("");
+        console.log(pc30.bold("  Summary:"));
+        if (result.summary.outputText) console.log(`    ${pc30.dim("\xB7")} ${result.summary.outputText}`);
+        if (typeof result.summary.imageCount === "number") console.log(`    ${pc30.dim("\xB7")} images: ${result.summary.imageCount}`);
+        if (typeof result.summary.slideCount === "number") console.log(`    ${pc30.dim("\xB7")} slides: ${result.summary.slideCount}`);
+        if (typeof result.summary.videoCount === "number") console.log(`    ${pc30.dim("\xB7")} videos: ${result.summary.videoCount}`);
+        if (result.summary.workflowRunId) console.log(`    ${pc30.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+        if (result.summary.keyboardShortcutHint) console.log(`    ${pc30.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+      }
+      try {
+        const credits = await fetchHostedCredits(session);
+        if (credits) {
+          console.log("");
+          console.log(pc30.bold("  Credits:"));
+          console.log(`    ${pc30.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
+          console.log(`    ${pc30.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+        }
+      } catch (err) {
+        if (!(err instanceof HostedEndpointUnavailableError)) {
+          throw err;
+        }
+      }
+      const artifactStore = createArtifactStore();
+      for (const artRef of result.artifacts) {
+        const nodeResult = result.nodeResults[artRef.nodeId];
+        artifactStore.create({
+          artifactType: artRef.artifactType,
+          sourceNodeSlug: nodeResult?.slug ?? "unknown",
+          executionContext: pipeline.executionMode === "local" ? "local" : "hosted",
+          pipelineId: pipeline.pipelineId,
+          nodeId: artRef.nodeId,
+          threadId: pipeline.threadId,
+          metadata: artRef.metadata ?? {}
+        });
+      }
+      console.log("");
+    } catch (err) {
+      console.error(pc30.red("Execution failed: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+}
+
+// src/commands/artifact.ts
+import pc31 from "picocolors";
+function hr5(width = 72) {
+  return pc31.dim("\u2500".repeat(width));
+}
+var ARTIFACT_TYPE_CONFIG = {
+  video: { color: pc31.magenta, emoji: "\u{1F3AC}" },
+  image: { color: pc31.cyan, emoji: "\u{1F5BC}\uFE0F " },
+  slides: { color: pc31.yellow, emoji: "\u{1F4CA}" },
+  text: { color: pc31.green, emoji: "\u{1F4DD}" },
+  report: { color: pc31.blue, emoji: "\u{1F4CB}" },
+  pipeline: { color: pc31.red, emoji: "\u{1F517}" }
+};
+function artifactTypeBadge(type) {
+  const cfg = ARTIFACT_TYPE_CONFIG[type];
+  if (!cfg) return type;
+  return cfg.color(`${cfg.emoji} ${type}`);
+}
+function statusColor(status) {
+  if (status === "ready") return pc31.green(status);
+  if (status === "generating" || status === "pending") return pc31.yellow(status);
+  if (status === "failed") return pc31.red(status);
+  if (status === "archived") return pc31.dim(status);
+  return status;
+}
+function printArtifactTable(artifacts) {
+  console.log("");
+  console.log(
+    pc31.bold("Pipeline Artifacts") + pc31.dim(`  ${artifacts.length} artifact${artifacts.length !== 1 ? "s" : ""}`)
+  );
+  console.log(hr5());
+  if (artifacts.length === 0) {
+    console.log(pc31.dim("  No artifacts found."));
+    console.log(pc31.dim("  Run `growthub pipeline execute` to produce artifacts."));
+    console.log("");
+    return;
+  }
+  for (const art of artifacts) {
+    const badge2 = artifactTypeBadge(art.artifactType);
+    const status = statusColor(art.status);
+    console.log(
+      `  ${badge2}  ${pc31.bold(art.id)}  ${status}  ${pc31.dim(art.sourceNodeSlug)}  ${pc31.dim(art.executionContext)}`
+    );
+    if (art.pipelineId) {
+      console.log(`    ${pc31.dim("Pipeline:")} ${art.pipelineId}`);
+    }
+    console.log(`    ${pc31.dim("Created:")} ${art.createdAt}`);
+    console.log("");
+  }
+  console.log(hr5());
+  console.log(pc31.dim("  growthub artifact inspect <id>  \xB7  growthub artifact list --type <type>"));
+  console.log("");
+}
+function printArtifactDetail(art) {
+  console.log("");
+  console.log(pc31.bold("Artifact: " + art.id));
+  console.log(hr5());
+  const kv = (label, value) => {
+    if (value === void 0) return;
+    console.log(`  ${pc31.bold(label.padEnd(22))} ${value}`);
+  };
+  kv("Type:", artifactTypeBadge(art.artifactType));
+  kv("Status:", statusColor(art.status));
+  kv("Source Node:", art.sourceNodeSlug);
+  kv("Execution Context:", art.executionContext);
+  kv("Pipeline ID:", art.pipelineId);
+  kv("Node ID:", art.nodeId);
+  kv("Thread ID:", art.threadId);
+  kv("Connection ID:", art.createdByConnectionId);
+  kv("Created:", art.createdAt);
+  kv("Updated:", art.updatedAt);
+  if (art.metadata && Object.keys(art.metadata).length > 0) {
+    console.log("");
+    console.log(pc31.bold("  Metadata:"));
+    console.log("  " + JSON.stringify(art.metadata, null, 2).split("\n").join("\n  "));
+  }
+  console.log(hr5());
+  console.log("");
+}
+function registerArtifactCommands(program2) {
+  const art = program2.command("artifact").description("List and inspect pipeline execution artifacts").addHelpText("after", `
+Examples:
+  $ growthub artifact list                  # all artifacts
+  $ growthub artifact list --type video     # filter by type
+  $ growthub artifact list --pipeline <id>  # filter by pipeline
+  $ growthub artifact list --json           # machine-readable output
+  $ growthub artifact inspect <id>          # inspect a specific artifact
+`);
+  art.action(async (opts) => {
+    const store = createArtifactStore();
+    const { artifacts, meta } = store.list();
+    if (opts.json) {
+      console.log(JSON.stringify({ artifacts, meta }, null, 2));
+      return;
+    }
+    printArtifactTable(artifacts);
+  });
+  art.command("list").description("List all pipeline execution artifacts").option("--type <type>", "Filter by artifact type (video, image, slides, text, report, pipeline)").option("--pipeline <id>", "Filter by pipeline ID").option("--status <status>", "Filter by status (pending, generating, ready, failed, archived)").option("--limit <n>", "Limit results", (v) => Number(v)).option("--json", "Output raw JSON for scripting").action((opts) => {
+    const store = createArtifactStore();
+    const { artifacts, meta } = store.list({
+      artifactType: opts.type,
+      pipelineId: opts.pipeline,
+      status: opts.status,
+      limit: opts.limit
+    });
+    if (opts.json) {
+      console.log(JSON.stringify({ artifacts, meta }, null, 2));
+      return;
+    }
+    printArtifactTable(artifacts);
+    console.log(pc31.dim(`  Store: ${store.getStorePath()}  \xB7  Source: ${meta.source}`));
+    console.log("");
+  });
+  art.command("inspect").description("Inspect a specific pipeline artifact").argument("<id>", "Artifact ID (e.g. art_xxxxxxxxxxxx)").option("--json", "Output raw JSON").action((artifactId, opts) => {
+    const store = createArtifactStore();
+    const artifact = store.get(artifactId);
+    if (!artifact) {
+      console.error(pc31.red(`Artifact not found: "${artifactId}".`) + pc31.dim(" Run `growthub artifact list` to browse."));
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(artifact, null, 2));
+      return;
+    }
+    printArtifactDetail(artifact);
+  });
+}
+
+// src/commands/workflow.ts
+import fs23 from "node:fs";
+import path31 from "node:path";
+import * as p21 from "@clack/prompts";
+import pc33 from "picocolors";
+
+// src/runtime/workflow-hygiene/labels.ts
+init_home();
+import fs22 from "node:fs";
+import path30 from "node:path";
+function resolveStorePath() {
+  return path30.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
+}
+function readStoreFile(filePath) {
+  if (!fs22.existsSync(filePath)) return { records: [] };
+  try {
+    const raw = JSON.parse(fs22.readFileSync(filePath, "utf-8"));
+    if (!Array.isArray(raw.records)) return { records: [] };
+    return raw;
+  } catch {
+    return { records: [] };
+  }
+}
+function writeStoreFile(filePath, data) {
+  fs22.mkdirSync(path30.dirname(filePath), { recursive: true });
+  fs22.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
+`, "utf-8");
+}
+function inferDefaultLabel(name, createdAt, versionCount) {
+  if (versionCount >= 3) return "canonical";
+  if (name.toLowerCase().includes("experiment")) return "experimental";
+  if (createdAt && Date.now() - Date.parse(createdAt) > 1e3 * 60 * 60 * 24 * 90) {
+    return "archived";
+  }
+  return "experimental";
+}
+function createWorkflowHygieneStore() {
+  const filePath = resolveStorePath();
+  return {
+    getLabel(workflowId) {
+      const store = readStoreFile(filePath);
+      const record = store.records.find((entry) => entry.workflowId === workflowId);
+      return record?.label ?? null;
+    },
+    setLabel(workflowId, label) {
+      const store = readStoreFile(filePath);
+      const idx = store.records.findIndex((entry) => entry.workflowId === workflowId);
+      const nextRecord = {
+        workflowId,
+        label,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (idx >= 0) {
+        store.records[idx] = nextRecord;
+      } else {
+        store.records.push(nextRecord);
+      }
+      writeStoreFile(filePath, store);
+    },
+    list() {
+      const store = readStoreFile(filePath);
+      return [...store.records];
+    }
+  };
+}
+
+// src/runtime/workflow-hygiene/summaries.ts
+import pc32 from "picocolors";
+function renderWorkflowLabel(label) {
+  if (label === "canonical") return pc32.green("canonical");
+  if (label === "archived") return pc32.dim("archived");
+  return pc32.yellow("experimental");
+}
+function enrichWorkflowSummaries(entries, store) {
+  return entries.map((entry) => {
+    const workflowLabel = store.getLabel(entry.workflowId) ?? inferDefaultLabel(entry.name, entry.createdAt, entry.versionCount ?? 0);
+    return { ...entry, workflowLabel };
+  });
+}
+
+// src/commands/workflow.ts
+init_banner();
+init_home();
+var PAGE_SIZE = 10;
+var FAMILY_CONFIG2 = {
+  video: { color: pc33.magenta, label: "Video" },
+  image: { color: pc33.cyan, label: "Image" },
+  slides: { color: pc33.yellow, label: "Slides" },
+  text: { color: pc33.green, label: "Text" },
+  data: { color: pc33.blue, label: "Data" },
+  ops: { color: pc33.red, label: "Ops" },
+  research: { color: pc33.blue, label: "Research" },
+  vision: { color: pc33.cyan, label: "Vision" }
+};
+var FAMILY_EMOJI = {
+  video: "\u{1F3AC}",
+  image: "\u{1F5BC}\uFE0F",
+  slides: "\u{1F9E9}",
+  text: "\u{1F4DD}",
+  data: "\u{1F4CA}",
+  ops: "\u{1F6E0}\uFE0F",
+  research: "\u{1F50E}",
+  vision: "\u{1F441}\uFE0F"
+};
+function familyLabel(family) {
+  const cfg = FAMILY_CONFIG2[family];
+  return cfg ? cfg.color(cfg.label) : family;
+}
+function hr6(width = 72) {
+  return pc33.dim("\u2500".repeat(width));
+}
+function stripAnsi5(str) {
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+function box5(lines) {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi5(l).length)) + 4;
+  const top = pc33.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc33.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi5(l).length;
+    return pc33.dim("\u2502") + l + " ".repeat(pad) + pc33.dim("\u2502");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+function resolveSavedWorkflowsDir() {
+  return path31.resolve(resolvePaperclipHomeDir(), "workflows");
+}
+function resolveDeletedWorkflowIdsPath() {
+  return path31.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
+}
+function readDeletedWorkflowIds() {
+  const filePath = resolveDeletedWorkflowIdsPath();
+  if (!fs23.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  try {
+    const raw = JSON.parse(fs23.readFileSync(filePath, "utf-8"));
+    if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
+    return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
+  } catch {
+    return /* @__PURE__ */ new Set();
+  }
+}
+function writeDeletedWorkflowIds(ids) {
+  const filePath = resolveDeletedWorkflowIdsPath();
+  fs23.mkdirSync(path31.dirname(filePath), { recursive: true });
+  fs23.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
+`, "utf-8");
+}
+function markWorkflowDeletedLocally(workflowId) {
+  const ids = readDeletedWorkflowIds();
+  ids.add(workflowId);
+  writeDeletedWorkflowIds(ids);
+}
+function effectiveWorkflowLabel(entry, hygieneStore) {
+  const explicitLabel = hygieneStore.getLabel(entry.workflowId);
+  if (explicitLabel) return explicitLabel;
+  if (entry.isActive === false) return "archived";
+  return entry.workflowLabel ?? "experimental";
+}
+function withEffectiveWorkflowLabels(entries, hygieneStore) {
+  return entries.map((entry) => ({
+    ...entry,
+    workflowLabel: effectiveWorkflowLabel(entry, hygieneStore)
+  }));
+}
+function filterLocallyDeletedWorkflows(entries) {
+  const deletedIds = readDeletedWorkflowIds();
+  return entries.filter((entry) => !deletedIds.has(entry.workflowId));
+}
+function listLocalSavedWorkflows() {
+  const dir = resolveSavedWorkflowsDir();
+  if (!fs23.existsSync(dir)) return [];
+  const entries = fs23.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
+    try {
+      const raw = JSON.parse(fs23.readFileSync(path31.resolve(dir, e.name), "utf-8"));
+      const pipeline = raw.pipeline ?? raw;
+      return {
+        filename: e.name,
+        workflowId: pipeline.metadata?.hostedWorkflowId ?? pipeline.pipelineId ?? e.name.replace(".json", ""),
+        pipelineId: pipeline.pipelineId ?? e.name.replace(".json", ""),
+        name: pipeline.metadata?.workflowName ?? pipeline.pipelineId ?? e.name.replace(".json", ""),
+        nodeCount: Array.isArray(pipeline.nodes) ? pipeline.nodes.length : 0,
+        executionMode: pipeline.executionMode ?? "hosted",
+        createdAt: raw.createdAt ?? "",
+        source: "local"
+      };
+    } catch {
+      return null;
+    }
+  });
+  return entries.filter((entry) => entry !== null).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+async function listSavedWorkflows() {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    return listLocalSavedWorkflows();
+  }
+  try {
+    const response = await listHostedWorkflows(session);
+    if (!response || !Array.isArray(response.workflows)) return listLocalSavedWorkflows();
+    return response.workflows.map((workflow) => ({
+      workflowId: workflow.workflowId,
+      pipelineId: workflow.workflowId,
+      name: workflow.name,
+      nodeCount: workflow.latestVersion?.nodeCount ?? 0,
+      executionMode: "hosted",
+      createdAt: workflow.createdAt,
+      updatedAt: workflow.updatedAt,
+      versionCount: workflow.versionCount,
+      source: "hosted",
+      isActive: workflow.isActive
+    }));
+  } catch (err) {
+    if (err instanceof HostedEndpointUnavailableError) {
+      return listLocalSavedWorkflows();
+    }
+    throw err;
+  }
+}
+async function archiveSavedWorkflow(entry) {
+  if (entry.source === "hosted") {
+    const session = readSession();
+    if (!session || isSessionExpired(session)) {
+      throw new Error("Hosted session expired while archiving workflow.");
+    }
+    const result = await archiveHostedWorkflow(session, { workflowId: entry.workflowId });
+    if (!result?.ok) {
+      throw new Error(`Failed to archive hosted workflow ${entry.workflowId}.`);
+    }
+    return;
+  }
+  if (!entry.filename) {
+    throw new Error("Local workflow entry is missing filename.");
+  }
+  const dir = resolveSavedWorkflowsDir();
+  const archiveDir = path31.resolve(dir, "archived");
+  fs23.mkdirSync(archiveDir, { recursive: true });
+  fs23.renameSync(
+    path31.resolve(dir, entry.filename),
+    path31.resolve(archiveDir, entry.filename)
+  );
+}
+async function deleteSavedWorkflow(entry) {
+  if (entry.source === "hosted") {
+    const session = readSession();
+    if (!session || isSessionExpired(session)) {
+      throw new Error("Hosted session expired while deleting workflow.");
+    }
+    try {
+      const result = await deleteHostedWorkflow(session, { workflowId: entry.workflowId });
+      if (!result?.ok) {
+        throw new Error(`Failed to delete hosted workflow ${entry.workflowId}.`);
+      }
+      markWorkflowDeletedLocally(entry.workflowId);
+      return;
+    } catch {
+      markWorkflowDeletedLocally(entry.workflowId);
+      return;
+    }
+  }
+  if (!entry.filename) {
+    throw new Error("Local workflow entry is missing filename.");
+  }
+  fs23.rmSync(path31.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  markWorkflowDeletedLocally(entry.workflowId);
+}
+async function loadSavedWorkflowDetail(entry) {
+  if (entry.source === "hosted") {
+    const session = readSession();
+    if (!session || isSessionExpired(session)) {
+      throw new Error("Hosted session expired while loading workflow detail.");
+    }
+    const detail = await fetchHostedWorkflow(session, entry.workflowId);
+    if (!detail) {
+      throw new Error(`Hosted workflow ${entry.workflowId} not found.`);
+    }
+    return {
+      pipeline: detail.latestVersion.config ?? {},
+      createdAt: detail.latestVersion.createdAt
+    };
+  }
+  const dir = resolveSavedWorkflowsDir();
+  const content = fs23.readFileSync(path31.resolve(dir, entry.filename), "utf-8");
+  const raw = JSON.parse(content);
+  return {
+    pipeline: raw.pipeline ?? raw,
+    createdAt: raw.createdAt ?? ""
+  };
+}
+function toDynamicPipelineFromHostedWorkflow(entry, pipeline) {
+  const rawNodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
+  const rawEdges = Array.isArray(pipeline.edges) ? pipeline.edges : [];
+  const cmsNodes = rawNodes.filter((node) => {
+    return typeof node === "object" && node !== null && node.type === "cmsNode";
+  });
+  const upstreamNodeIdsByTarget = /* @__PURE__ */ new Map();
+  for (const edge of rawEdges) {
+    if (typeof edge !== "object" || edge === null) continue;
+    const source = typeof edge.source === "string" ? edge.source : null;
+    const target = typeof edge.target === "string" ? edge.target : null;
+    if (!source || !target || source === "start-1" || target === "end-1") continue;
+    const existing = upstreamNodeIdsByTarget.get(target) ?? [];
+    existing.push(source);
+    upstreamNodeIdsByTarget.set(target, existing);
+  }
+  return {
+    pipelineId: entry.pipelineId,
+    executionMode: "hosted",
+    nodes: cmsNodes.map((node) => {
+      const id = typeof node.id === "string" ? node.id : `node-${Math.random().toString(36).slice(2, 8)}`;
+      const data = typeof node.data === "object" && node.data !== null ? node.data : {};
+      return {
+        id,
+        slug: typeof data.slug === "string" ? data.slug : id,
+        bindings: typeof data.inputs === "object" && data.inputs !== null ? data.inputs : {},
+        upstreamNodeIds: upstreamNodeIdsByTarget.get(id)
+      };
+    }),
+    metadata: {
+      hostedWorkflowId: entry.workflowId,
+      workflowName: entry.name
+    }
+  };
+}
+function toExecutableSavedWorkflowPipeline(entry, pipeline) {
+  const looksLikeDynamicPipeline = Array.isArray(pipeline.nodes) && pipeline.nodes.every((node) => {
+    if (typeof node !== "object" || node === null) return false;
+    const record = node;
+    return typeof record.id === "string" && typeof record.slug === "string";
+  });
+  if (looksLikeDynamicPipeline) {
+    const parsed = deserializePipeline(pipeline);
+    return {
+      ...parsed,
+      metadata: {
+        ...parsed.metadata ?? {},
+        hostedWorkflowId: entry.workflowId,
+        workflowName: entry.name
+      }
+    };
+  }
+  return toDynamicPipelineFromHostedWorkflow(entry, pipeline);
+}
+async function paginatedSelect(message, allOptions, opts) {
+  let offset = 0;
+  let filtered = allOptions;
+  while (true) {
+    const page = filtered.slice(offset, offset + PAGE_SIZE);
+    const hasMore = offset + PAGE_SIZE < filtered.length;
+    const hasPrev = offset > 0;
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+    const pageInfo = filtered.length > PAGE_SIZE ? pc33.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
+    const options = [
+      ...page.map((o) => ({
+        value: o.value,
+        label: o.label,
+        hint: o.hint
+      }))
+    ];
+    if (hasMore) {
+      options.push({ value: "__next_page", label: pc33.dim("\u2192 Next page") });
+    }
+    if (hasPrev) {
+      options.push({ value: "__prev_page", label: pc33.dim("\u2190 Previous page") });
+    }
+    if (opts?.searchEnabled) {
+      options.push({ value: "__search", label: pc33.dim("\u{1F50E} Search") });
+    }
+    options.push({
+      value: opts?.backValue ?? "__back",
+      label: opts?.backLabel ?? "\u2190 Back"
+    });
+    const choice = await p21.select({
+      message: message + pageInfo,
+      options
+    });
+    if (p21.isCancel(choice)) return choice;
+    if (choice === "__next_page") {
+      offset += PAGE_SIZE;
+      continue;
+    }
+    if (choice === "__prev_page") {
+      offset = Math.max(0, offset - PAGE_SIZE);
+      continue;
+    }
+    if (choice === "__search") {
+      const term = await p21.text({
+        message: "Search items",
+        placeholder: "Type to filter..."
+      });
+      if (p21.isCancel(term)) return term;
+      const searchStr = term.toLowerCase().trim();
+      if (searchStr) {
+        filtered = allOptions.filter((o) => {
+          const haystack = `${o.value} ${o.label} ${o.hint ?? ""}`.toLowerCase();
+          return haystack.includes(searchStr);
+        });
+        offset = 0;
+        if (filtered.length === 0) {
+          p21.note(`No results for "${term}".`, "No matches");
+          filtered = allOptions;
+        }
+      } else {
+        filtered = allOptions;
+        offset = 0;
+      }
+      continue;
+    }
+    return choice;
+  }
+}
+function printTemplateCard(node) {
+  const contract = introspectNodeContract(node);
+  const lines = renderContractCard(contract);
+  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc33.green("enabled") : pc33.red("disabled")}`);
+  if (node.description) lines.push("", pc33.dim(node.description));
+  console.log("");
+  console.log(box5(lines));
+  console.log("");
+}
+function renderTemplateTree(templates) {
+  const byFamily = /* @__PURE__ */ new Map();
+  for (const template of templates) {
+    const key = template.family;
+    const existing = byFamily.get(key) ?? [];
+    existing.push(template);
+    byFamily.set(key, existing);
+  }
+  const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const lines = [pc33.bold("Public CMS Node Tree")];
+  for (const [family, nodes] of families) {
+    lines.push(`${pc33.cyan("\u2022")} ${pc33.bold(family)}`);
+    const sorted = [...nodes].sort((a, b) => a.slug.localeCompare(b.slug));
+    for (const [index51, node] of sorted.entries()) {
+      const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
+      const contract = introspectNodeContract(node);
+      const requiredInputs = contract.inputs.filter((input) => input.required).length;
+      const optionalInputs = contract.inputs.length - requiredInputs;
+      lines.push(
+        `  ${branch} ${node.slug} ${pc33.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
+      );
+    }
+  }
+  lines.push("");
+  lines.push(pc33.dim("Shortcut: growthub workflow saved --json"));
+  return lines;
+}
+function renderWorkflowContractDiscoveryTree(nodes) {
+  const byFamily = /* @__PURE__ */ new Map();
+  for (const node of nodes) {
+    const key = node.family;
+    const group = byFamily.get(key) ?? [];
+    group.push(node);
+    byFamily.set(key, group);
+  }
+  const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const lines = [pc33.bold("CMS Node Contract Discovery")];
+  for (const [family, familyNodes] of families) {
+    const emoji = FAMILY_EMOJI[family] ?? "\u2022";
+    lines.push(`${emoji} ${pc33.bold(familyLabel(family))} ${pc33.dim(`(${familyNodes.length})`)}`);
+    const sorted = [...familyNodes].sort((a, b) => a.slug.localeCompare(b.slug));
+    for (const [index51, node] of sorted.entries()) {
+      const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
+      const contract = introspectNodeContract(node);
+      const requiredInputs = contract.inputs.filter((input) => input.required).length;
+      const optionalInputs = contract.inputs.length - requiredInputs;
+      lines.push(
+        `  ${branch} ${node.slug} ${pc33.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`
+      );
+    }
+  }
+  return lines;
+}
+function buildTemplateOption(template, viewMode) {
+  const contract = introspectNodeContract(template);
+  const requiredInputs = contract.inputs.filter((input) => input.required).length;
+  const optionalInputs = contract.inputs.length - requiredInputs;
+  if (viewMode === "expanded") {
+    return {
+      value: template.slug,
+      label: `${template.icon}  ${template.displayName} ${pc33.dim(template.slug)}`,
+      hint: `req:${requiredInputs} opt:${optionalInputs} outputs:${contract.outputTypes.join(", ") || "none"} exec:${contract.executionStrategy}`
+    };
+  }
+  if (viewMode === "tree") {
+    return {
+      value: template.slug,
+      label: `${template.family} / ${template.slug}`,
+      hint: `req:${requiredInputs} opt:${optionalInputs}`
+    };
+  }
+  return {
+    value: template.slug,
+    label: `${template.icon}  ${template.displayName}`,
+    hint: template.description?.slice(0, 55)
+  };
+}
+async function runWorkflowPicker(opts) {
+  printPaperclipCliBanner();
+  const hygieneStore = createWorkflowHygieneStore();
+  const access = getWorkflowAccess();
+  if (access.state === "unauthenticated") {
+    p21.intro(pc33.bold("Workflows") + pc33.dim(" (not connected)"));
+    p21.note(
+      [
+        "Workflow assembly requires an authenticated Growthub session.",
+        "Run " + pc33.cyan("growthub auth login") + " to connect your account.",
+        "",
+        "Once connected you can:",
+        "  - Browse CMS node contracts",
+        "  - Assemble dynamic hosted pipelines",
+        "  - Save and execute workflows"
+      ].join("\n"),
+      "Authentication Required"
+    );
+    if (opts.allowBackToHub) return "back";
+    return "done";
+  }
+  p21.intro(pc33.bold("Workflows"));
+  while (true) {
+    const refreshedAccess = getWorkflowAccess();
+    const topChoice = await p21.select({
+      message: "What would you like to do?",
+      options: [
+        {
+          value: "contracts",
+          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc33.dim("0. CMS Node Contracts (locked)"),
+          hint: refreshedAccess.state === "ready" ? "Discovery tree for CMS node primitives" : refreshedAccess.reason
+        },
+        {
+          value: "pipelines",
+          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc33.dim("1. Dynamic Pipelines (locked)"),
+          hint: refreshedAccess.state === "ready" ? "Create new pipelines and route into Saved Workflows" : refreshedAccess.reason
+        },
+        {
+          value: "saved",
+          label: "2. Saved Workflows",
+          hint: "Execute, label, archive, delete"
+        },
+        ...opts.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
+      ]
+    });
+    if (p21.isCancel(topChoice)) {
+      p21.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (topChoice === "__back_to_hub") return "back";
+    if (topChoice === "contracts" && refreshedAccess.state !== "ready") {
+      p21.note(
+        [
+          "CMS Node Contracts are only available when the hosted user is linked to this local machine.",
+          refreshedAccess.reason
+        ].join("\n"),
+        "Growthub Local Machine Required"
+      );
+      continue;
+    }
+    if (topChoice === "contracts") {
+      const contractsSpinner = p21.spinner();
+      contractsSpinner.start("Loading CMS node contracts...");
+      try {
+        const registry = createCmsCapabilityRegistryClient();
+        const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+        contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}.`);
+        if (nodes.length === 0) {
+          p21.note("No CMS node contracts available.", "Nothing found");
+          continue;
+        }
+        let showDiscoveryTree = false;
+        while (true) {
+          if (showDiscoveryTree) {
+            console.log("");
+            console.log(box5(renderWorkflowContractDiscoveryTree(nodes)));
+            console.log("");
+            showDiscoveryTree = false;
+          }
+          const contractsMenuChoice = await p21.select({
+            message: "CMS Node Contracts",
+            options: [
+              { value: "browse", label: "Browse contract list", hint: "Select a node and view full contract" },
+              { value: "show_tree", label: "Show discovery tree", hint: "Family primitives and contract counts" },
+              { value: "__back_to_workflow", label: "\u2190 Back to workflow menu" }
+            ]
+          });
+          if (p21.isCancel(contractsMenuChoice)) {
+            p21.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (contractsMenuChoice === "__back_to_workflow") break;
+          if (contractsMenuChoice === "show_tree") {
+            showDiscoveryTree = true;
+            continue;
+          }
+          const contractOptions = [...nodes].sort((a, b) => a.slug.localeCompare(b.slug)).map((node) => {
+            const contract = introspectNodeContract(node);
+            const requiredInputs = contract.inputs.filter((input) => input.required).length;
+            return {
+              value: node.slug,
+              label: `${node.icon}  ${node.displayName} ${pc33.dim(node.slug)}`,
+              hint: `${node.family} \xB7 required:${requiredInputs} \xB7 bindings:${contract.requiredBindings.length} \xB7 outputs:${contract.outputTypes.length}`
+            };
+          });
+          const contractChoice = await paginatedSelect(
+            "Select CMS node contract",
+            contractOptions,
+            {
+              backLabel: "\u2190 Back to CMS contracts menu",
+              searchEnabled: true
+            }
+          );
+          if (p21.isCancel(contractChoice)) {
+            p21.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (contractChoice === "__back") continue;
+          const selected = nodes.find((node) => node.slug === contractChoice);
+          if (!selected) continue;
+          printTemplateCard(selected);
+          const contractAction = await p21.select({
+            message: "Contract actions",
+            options: [
+              { value: "inspect_json", label: "Inspect raw input template JSON" },
+              { value: "back_to_contracts_menu", label: "\u2190 Back to CMS contracts menu" },
+              { value: "back_to_workflow_menu", label: "\u2190 Back to workflow menu" }
+            ]
+          });
+          if (p21.isCancel(contractAction)) {
+            p21.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (contractAction === "inspect_json") {
+            console.log(JSON.stringify(selected.executionTokens.input_template, null, 2));
+            continue;
+          }
+          if (contractAction === "back_to_workflow_menu") {
+            break;
+          }
+        }
+      } catch (err) {
+        contractsSpinner.stop(pc33.red("Failed to load CMS node contracts."));
+        p21.log.error("Failed to load CMS node contracts: " + err.message);
+      }
+      continue;
+    }
+    if (topChoice === "pipelines") {
+      if (refreshedAccess.state !== "ready") {
+        p21.note(
+          [
+            "Dynamic Pipelines are only available when the hosted user is linked to this local machine.",
+            refreshedAccess.reason
+          ].join("\n"),
+          "Growthub Local Machine Required"
+        );
+        continue;
+      }
+      const result = await runPipelineAssembler({ allowBackToHub: true });
+      if (result === "back") {
+        continue;
+      }
+      return "done";
+    }
+    if (topChoice === "saved") {
+      while (true) {
+        const savedSpinner = p21.spinner();
+        savedSpinner.start("Loading saved workflows...");
+        let saved;
+        try {
+          const enriched = enrichWorkflowSummaries(
+            filterLocallyDeletedWorkflows(await listSavedWorkflows()),
+            hygieneStore
+          );
+          saved = withEffectiveWorkflowLabels(enriched, hygieneStore);
+          savedSpinner.stop(`Loaded ${saved.length} saved workflow${saved.length === 1 ? "" : "s"}.`);
+        } catch (err) {
+          savedSpinner.stop(pc33.red("Failed to load saved workflows."));
+          throw err;
+        }
+        if (saved.length === 0) {
+          p21.note(
+            [
+              "No saved workflows found.",
+              "Use " + pc33.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
+            ].join("\n"),
+            "Nothing saved"
+          );
+          break;
+        }
+        const allOptions = saved.map((w) => ({
+          value: w.workflowId,
+          label: `${w.name} ${pc33.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc33.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
+          hint: `${w.executionMode} \xB7 ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`
+        }));
+        const choice = await paginatedSelect("Select a saved workflow", allOptions, {
+          backLabel: "\u2190 Back to workflow menu",
+          searchEnabled: true
+        });
+        if (p21.isCancel(choice)) {
+          p21.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (choice === "__back") break;
+        const entry = saved.find((w) => w.workflowId === choice);
+        if (entry) {
+          const detailSpinner = p21.spinner();
+          detailSpinner.start(`Loading ${entry.name}...`);
+          let detail;
+          try {
+            detail = await loadSavedWorkflowDetail(entry);
+            detailSpinner.stop(`Loaded ${entry.name}.`);
+          } catch (err) {
+            detailSpinner.stop(pc33.red(`Failed to load ${entry.name}.`));
+            p21.log.error(err.message);
+            continue;
+          }
+          const pipeline = detail.pipeline;
+          const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
+          console.log("");
+          console.log(box5([
+            `${pc33.bold("Workflow:")} ${entry.name}`,
+            `${pc33.dim("ID:")} ${entry.workflowId}`,
+            `${pc33.dim("Mode:")} hosted  ${pc33.dim("Nodes:")} ${nodes.length}`,
+            `${pc33.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
+            `${pc33.dim("Created:")} ${detail.createdAt || "\u2014"}`,
+            "",
+            ...nodes.map(
+              (n, i) => `${pc33.dim(String(i + 1) + ".")} ${pc33.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc33.dim(n.id)}`
+            )
+          ]));
+          console.log("");
+          const nextAction = await p21.select({
+            message: "Action",
+            options: [
+              { value: "execute", label: "Execute saved workflow" },
+              { value: "set_label", label: "Set workflow label" },
+              { value: "archive", label: "Archive workflow" },
+              { value: "unarchive", label: "Unarchive workflow" },
+              { value: "delete", label: pc33.red("Delete workflow") },
+              { value: "back_to_saved", label: "\u2190 Back to saved workflows" }
+            ]
+          });
+          if (p21.isCancel(nextAction)) {
+            p21.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (nextAction === "execute") {
+            const confirmed = await p21.confirm({
+              message: `Execute ${entry.name} now?`,
+              initialValue: false
+            });
+            if (p21.isCancel(confirmed) || !confirmed) {
+              continue;
+            }
+            const finalConfirmed = await p21.confirm({
+              message: "This will run the hosted workflow and may spend credits. Continue?",
+              initialValue: false
+            });
+            if (p21.isCancel(finalConfirmed) || !finalConfirmed) {
+              continue;
+            }
+            try {
+              const executablePipeline = toExecutableSavedWorkflowPipeline(entry, pipeline);
+              const registry = createCmsCapabilityRegistryClient();
+              const { nodes: capabilities } = await registry.listCapabilities({ enabledOnly: false });
+              const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
+              const preSummary = buildPreExecutionSummary({
+                pipeline: executablePipeline,
+                registryBySlug: capabilityMap
+              });
+              console.log("");
+              console.log(box5(renderPreExecutionSummary(preSummary)));
+              console.log("");
+              const intelligenceSummary = await renderWorkflowIntelligenceSummary(
+                executablePipeline,
+                capabilities,
+                "pre-execution"
+              );
+              if (intelligenceSummary) {
+                console.log(box5(intelligenceSummary));
+                console.log("");
+              }
+              await executeHostedPipeline(executablePipeline);
+              p21.log.success(`Saved workflow execution completed for ${pc33.bold(entry.name)}.`);
+            } catch (err) {
+              p21.log.error("Saved workflow execution failed: " + err.message);
+            }
+          }
+          if (nextAction === "set_label") {
+            const labelChoice = await p21.select({
+              message: `Set label for ${entry.name}`,
+              options: [
+                { value: "canonical", label: "Canonical" },
+                { value: "experimental", label: "Experimental" },
+                { value: "archived", label: "Archived" },
+                { value: "__back", label: "\u2190 Back" }
+              ]
+            });
+            if (p21.isCancel(labelChoice) || labelChoice === "__back") {
+              continue;
+            }
+            hygieneStore.setLabel(entry.workflowId, labelChoice);
+            p21.log.success(`Updated label for ${pc33.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
+            continue;
+          }
+          if (nextAction === "archive") {
+            const confirmed = await p21.confirm({
+              message: `Archive ${entry.name}?`,
+              initialValue: false
+            });
+            if (p21.isCancel(confirmed) || !confirmed) {
+              continue;
+            }
+            try {
+              await archiveSavedWorkflow(entry);
+              hygieneStore.setLabel(entry.workflowId, "archived");
+              p21.log.success(`Archived ${pc33.bold(entry.name)}.`);
+            } catch {
+              hygieneStore.setLabel(entry.workflowId, "archived");
+              p21.log.success(`Archived ${pc33.bold(entry.name)} (local fallback).`);
+            }
+            continue;
+          }
+          if (nextAction === "unarchive") {
+            if ((entry.workflowLabel ?? "experimental") !== "archived") {
+              p21.note("Workflow is already live.", "Unarchive skipped");
+              continue;
+            }
+            const restoreChoice = await p21.select({
+              message: `Set label after unarchive for ${entry.name}`,
+              options: [
+                { value: "experimental", label: "Experimental" },
+                { value: "canonical", label: "Canonical" },
+                { value: "__back", label: "\u2190 Back" }
+              ]
+            });
+            if (p21.isCancel(restoreChoice) || restoreChoice === "__back") {
+              continue;
+            }
+            hygieneStore.setLabel(entry.workflowId, restoreChoice);
+            p21.log.success(
+              `Unarchived ${pc33.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
+            );
+            continue;
+          }
+          if (nextAction === "delete") {
+            const confirmed = await p21.confirm({
+              message: `Delete ${entry.name}? This cannot be undone.`,
+              initialValue: false
+            });
+            if (p21.isCancel(confirmed) || !confirmed) {
+              continue;
+            }
+            const finalConfirmed = await p21.confirm({
+              message: "Final confirmation: permanently delete this workflow?",
+              initialValue: false
+            });
+            if (p21.isCancel(finalConfirmed) || !finalConfirmed) {
+              continue;
+            }
+            try {
+              await deleteSavedWorkflow(entry);
+              p21.log.success(`Deleted ${pc33.bold(entry.name)}.`);
+            } catch {
+              markWorkflowDeletedLocally(entry.workflowId);
+              p21.log.success(`Deleted ${pc33.bold(entry.name)} (local fallback).`);
+            }
+            continue;
+          }
+        }
+      }
+      continue;
+    }
+    if (topChoice === "templates") {
+      const registry = createCmsCapabilityRegistryClient();
+      let hostedTemplates = [];
+      let templateViewMode = "condensed";
+      try {
+        const hosted = await registry.listCapabilities({ enabledOnly: false });
+        hostedTemplates = hosted.nodes;
+      } catch (err) {
+        p21.log.error("Hosted capability registry unavailable: " + err.message);
+        continue;
+      }
+      while (true) {
+        const availableFamilies = CAPABILITY_FAMILIES.filter((f) => {
+          const nodes = hostedTemplates.filter((node) => node.family === f);
+          return nodes.length > 0;
+        });
+        const familyChoice = await p21.select({
+          message: "Filter by family",
+          options: [
+            { value: "all", label: "All Templates" },
+            { value: "__tree_view", label: "Tree View (all public nodes)" },
+            { value: "__toggle_view_mode", label: `View Mode: ${templateViewMode}` },
+            ...availableFamilies.map((f) => {
+              const cfg = FAMILY_CONFIG2[f];
+              return {
+                value: f,
+                label: cfg ? cfg.label : f
+              };
+            }),
+            { value: "__back_to_workflow_menu", label: "\u2190 Back to workflow menu" }
+          ]
+        });
+        if (p21.isCancel(familyChoice)) {
+          p21.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (familyChoice === "__back_to_workflow_menu") break;
+        if (familyChoice === "__toggle_view_mode") {
+          const viewChoice = await p21.select({
+            message: "Select template view mode",
+            options: [
+              { value: "condensed", label: "Condensed", hint: "Fast scan" },
+              { value: "expanded", label: "Expanded", hint: "Contract hints in list" },
+              { value: "tree", label: "Tree", hint: "Family/tree style list" }
+            ]
+          });
+          if (p21.isCancel(viewChoice)) {
+            p21.cancel("Cancelled.");
+            process.exit(0);
+          }
+          templateViewMode = viewChoice;
+          continue;
+        }
+        if (familyChoice === "__tree_view") {
+          console.log("");
+          console.log(box5(renderTemplateTree(hostedTemplates)));
+          console.log("");
+          continue;
+        }
+        const query = familyChoice === "all" ? void 0 : { family: familyChoice };
+        let templates;
+        try {
+          templates = query ? hostedTemplates.filter((node) => node.family === query.family) : hostedTemplates;
+        } catch (err) {
+          p21.log.error("Failed to load templates: " + err.message);
+          continue;
+        }
+        if (templates.length === 0) {
+          p21.note("No templates for that family.", "Nothing found");
+          continue;
+        }
+        while (true) {
+          const templateOptions = templates.map((t) => buildTemplateOption(t, templateViewMode));
+          const templateChoice = await paginatedSelect(
+            "Select a template",
+            templateOptions,
+            {
+              backLabel: "\u2190 Back to family filter",
+              searchEnabled: true
+            }
+          );
+          if (p21.isCancel(templateChoice)) {
+            p21.cancel("Cancelled.");
+            process.exit(0);
+          }
+          if (templateChoice === "__back") break;
+          const selected = templates.find((t) => t.slug === templateChoice);
+          if (!selected) continue;
+          printTemplateCard(selected);
+          while (true) {
+            const action = await p21.select({
+              message: "What would you like to do with this template?",
+              options: [
+                { value: "assemble", label: "Assemble a pipeline from this template" },
+                { value: "resolve", label: "Check machine binding" },
+                { value: "inspect_json", label: "Print input template as JSON" },
+                { value: "back_to_templates", label: "\u2190 Back to template list" }
+              ]
+            });
+            if (p21.isCancel(action)) {
+              p21.cancel("Cancelled.");
+              process.exit(0);
+            }
+            if (action === "back_to_templates") break;
+            if (action === "resolve") {
+              try {
+                const resolver = createMachineCapabilityResolver();
+                const binding = await resolver.resolveCapability(selected.slug);
+                if (binding) {
+                  const statusColor3 = binding.allowed ? pc33.green : pc33.red;
+                  console.log("");
+                  console.log(box5([
+                    `${pc33.bold("Machine Binding:")} ${selected.slug}`,
+                    `${pc33.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+                    `${pc33.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
+                  ]));
+                  console.log("");
+                }
+              } catch (err) {
+                p21.log.error("Resolution failed: " + err.message);
+              }
+              continue;
+            }
+            if (action === "inspect_json") {
+              console.log(JSON.stringify(selected.executionTokens.input_template, null, 2));
+              continue;
+            }
+            if (action === "assemble") {
+              const builder = createPipelineBuilder({ executionMode: "hosted" });
+              const contract = introspectNodeContract(selected);
+              const rawBindings = {};
+              for (const input of contract.inputs) {
+                if (!input.required) continue;
+                const value = await p21.text({
+                  message: `${selected.displayName} \u2192 ${input.key}`,
+                  placeholder: `Enter ${input.key}`
+                });
+                if (p21.isCancel(value)) {
+                  p21.cancel("Cancelled.");
+                  process.exit(0);
+                }
+                rawBindings[input.key] = value;
+              }
+              const normalized = normalizeNodeBindings(rawBindings, selected);
+              p21.note(
+                `Provided ${normalized.providedCount}, defaulted ${normalized.defaultedCount}, normalized ${normalized.normalizedCount}.`,
+                "Input normalization"
+              );
+              const nodeId = builder.addNode(selected.slug, normalized.bindings);
+              p21.log.success(`Added ${pc33.bold(selected.displayName)} (${pc33.dim(nodeId)})`);
+              const next = await p21.select({
+                message: "Pipeline has 1 node. What next?",
+                options: [
+                  { value: "save", label: "Save pipeline" },
+                  { value: "back_to_templates", label: "\u2190 Back to templates" }
+                ]
+              });
+              if (p21.isCancel(next)) {
+                p21.cancel("Cancelled.");
+                process.exit(0);
+              }
+              if (next === "save") {
+                const pipeline = builder.build();
+                const session = readSession();
+                if (!session || isSessionExpired(session)) {
+                  throw new Error("Hosted session expired. Run `growthub auth login` again.");
+                }
+                const workflowName = `${selected.displayName} Workflow`;
+                const pipelineSummary = buildPreExecutionSummary({
+                  pipeline,
+                  registryBySlug: /* @__PURE__ */ new Map([[selected.slug, selected]])
+                });
+                console.log("");
+                console.log(box5(renderPreSaveReview({
+                  workflowName,
+                  summary: pipelineSummary
+                })));
+                console.log("");
+                const saveResult = await saveHostedWorkflow(session, {
+                  name: workflowName,
+                  description: selected.description ?? "",
+                  config: compileToHostedWorkflowConfig(pipeline, { workflowName })
+                });
+                if (!saveResult || typeof saveResult.workflowId !== "string") {
+                  throw new Error("Hosted workflow save returned no payload.");
+                }
+                p21.log.success(
+                  `Hosted workflow saved as ${pc33.bold(workflowName)} (${pc33.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
+                );
+              }
+              break;
+            }
+          }
+        }
+      }
+      continue;
+    }
+  }
+}
+async function renderWorkflowIntelligenceSummary(pipeline, capabilities, phase) {
+  try {
+    const provider = createNativeIntelligenceProvider();
+    const registryContext = capabilities.map((cap) => introspectNodeContract(cap));
+    const capabilityMap = new Map(capabilities.map((n) => [n.slug, n]));
+    const pipelineSummary = {
+      pipelineId: pipeline.pipelineId,
+      executionMode: pipeline.executionMode,
+      nodes: pipeline.nodes.map((node) => {
+        const cap = capabilityMap.get(node.slug);
+        const contract = cap ? introspectNodeContract(cap) : null;
+        const missingRequired = [];
+        if (contract) {
+          for (const input2 of contract.inputs) {
+            if (!input2.required) continue;
+            const value = node.bindings[input2.key];
+            if (value === void 0 || value === null || value === "") {
+              missingRequired.push(input2.key);
+            }
+          }
+        }
+        return {
+          slug: node.slug,
+          bindingCount: Object.keys(node.bindings).length,
+          missingRequired,
+          outputTypes: contract?.outputTypes ?? [],
+          assetCount: 0
+        };
+      }),
+      warnings: []
+    };
+    const input = {
+      pipeline: pipelineSummary,
+      registryContext,
+      phase
+    };
+    const result = await provider.summarizeExecution(input);
+    const lines = [
+      `${pc33.bold("Intelligence Summary")} ${pc33.dim(result.title)}`,
+      result.explanation
+    ];
+    if (result.runtimeModeNote) {
+      lines.push(`${pc33.dim("Runtime:")} ${result.runtimeModeNote}`);
+    }
+    if (result.outputExpectation) {
+      lines.push(`${pc33.dim("Expected:")} ${result.outputExpectation}`);
+    }
+    if (result.missingBindingGuidance.length > 0) {
+      lines.push("", pc33.yellow("Missing Binding Guidance"));
+      for (const guidance of result.missingBindingGuidance) {
+        lines.push(`  ${pc33.dim("\xB7")} ${guidance}`);
+      }
+    }
+    if (result.costLatencyCautions.length > 0) {
+      lines.push("", pc33.yellow("Cost/Latency Notes"));
+      for (const caution of result.costLatencyCautions) {
+        lines.push(`  ${pc33.dim("\xB7")} ${caution}`);
+      }
+    }
+    if (result.warnings.length > 0) {
+      lines.push("", pc33.yellow("Warnings"));
+      for (const warning of result.warnings) {
+        lines.push(`  ${pc33.dim("\xB7")} ${warning}`);
+      }
+    }
+    return lines;
+  } catch {
+    return null;
+  }
+}
+function registerWorkflowCommands(program2) {
+  const wf = program2.command("workflow").description("Browse CMS contracts, dynamic pipelines, and saved workflows (requires auth)").addHelpText("after", `
+Examples:
+  $ growthub workflow                       # interactive workflow browser
+  $ growthub pipeline assemble              # create new dynamic pipeline workflow
+  $ growthub workflow saved                 # list saved workflows
+`);
+  wf.action(async () => {
+    await runWorkflowPicker({});
+  });
+  const templatesCommandEnabled = false;
+  if (templatesCommandEnabled) {
+    wf.command("templates").description("List CMS workflow node starter templates").option("--family <family>", "Filter by family").option("--search <term>", "Search templates").option("--view <mode>", "List view mode: condensed | expanded | tree").option("--json", "Output raw JSON").action(async (opts) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc33.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+      const registry = createCmsCapabilityRegistryClient();
+      const query = {};
+      if (opts.family) query.family = opts.family;
+      if (opts.search) query.search = opts.search;
+      try {
+        const { nodes, meta } = await registry.listCapabilities(
+          Object.keys(query).length > 0 ? query : void 0
+        );
+        if (opts.json) {
+          console.log(JSON.stringify({ nodes, meta }, null, 2));
+          return;
+        }
+        if (nodes.length === 0) {
+          console.error(pc33.yellow("No templates found."));
+          process.exitCode = 1;
+          return;
+        }
+        const viewMode = opts.view ?? "condensed";
+        console.log("");
+        console.log(
+          pc33.bold("Workflow Node Templates") + pc33.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
+        );
+        console.log(hr6());
+        console.log(pc33.bold("Step 1: CMS Node Contract Validation"));
+        console.log(pc33.dim("Validate contract visibility before template selection."));
+        console.log(pc33.dim(`View mode: ${viewMode}`));
+        console.log("");
+        if (viewMode === "tree") {
+          console.log(box5(renderTemplateTree(nodes)));
+          console.log(hr6());
+          console.log(pc33.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+          console.log("");
+          return;
+        }
+        for (const node of nodes) {
+          const contract = introspectNodeContract(node);
+          const requiredInputs = contract.inputs.filter((input) => input.required).length;
+          const optionalInputs = contract.inputs.length - requiredInputs;
+          const enabledTag = node.enabled ? pc33.green("enabled") : pc33.red("disabled");
+          console.log(`  ${node.icon}  ${pc33.bold(node.displayName)}  ${pc33.dim(node.slug)}  ${enabledTag}`);
+          console.log(
+            `     ${pc33.dim("Contract:")} ${pc33.dim("required")}=${requiredInputs} ${pc33.dim("optional")}=${optionalInputs} ${pc33.dim("bindings")}=${contract.requiredBindings.length} ${pc33.dim("outputs")}=${contract.outputTypes.length}`
+          );
+          console.log(
+            `     ${pc33.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
+          );
+          if (node.description) {
+            console.log(`     ${pc33.dim(node.description)}`);
+          }
+          console.log("");
+        }
+        console.log(hr6());
+        console.log(pc33.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+        console.log("");
+      } catch (err) {
+        console.error(pc33.red("Failed: " + err.message));
+        process.exitCode = 1;
+      }
+    });
+  }
+  wf.command("saved").description("List saved workflow pipelines").option("--include-archived", "Include archived workflows in output").option("--json", "Output raw JSON").action(async (opts) => {
+    const hygieneStore = createWorkflowHygieneStore();
+    const saved = withEffectiveWorkflowLabels(
+      enrichWorkflowSummaries(
+        filterLocallyDeletedWorkflows(await listSavedWorkflows()),
+        hygieneStore
+      ),
+      hygieneStore
+    );
+    const visibleSaved = opts.includeArchived ? saved : saved.filter((entry) => entry.workflowLabel !== "archived");
+    if (opts.json) {
+      console.log(JSON.stringify(visibleSaved, null, 2));
+      return;
+    }
+    if (visibleSaved.length === 0) {
+      console.log(pc33.dim("No saved workflows. Run `growthub workflow` to assemble one."));
+      return;
+    }
+    console.log("");
+    console.log(
+      pc33.bold("Saved Workflows") + pc33.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
+    );
+    if (!opts.includeArchived) {
+      const hiddenArchivedCount = saved.length - visibleSaved.length;
+      if (hiddenArchivedCount > 0) {
+        console.log(pc33.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
+      }
+    }
+    console.log(hr6());
+    for (const w of visibleSaved) {
+      console.log(
+        `  ${pc33.bold(w.name)}  ` + pc33.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc33.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
+      );
+    }
+    console.log("");
+    console.log(pc33.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
+    console.log("");
+  });
+}
+
+// src/commands/open-agents.ts
+import * as p22 from "@clack/prompts";
+import pc34 from "picocolors";
+
+// src/runtime/agent-harness/auth-store.ts
+init_home();
+import fs24 from "node:fs";
+import path32 from "node:path";
+function resolveHarnessAuthDir() {
+  return path32.resolve(resolvePaperclipHomeDir(), "harness-auth");
+}
+function resolveHarnessAuthFile(harnessId) {
+  return path32.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
+}
+function normalizeSecret(value) {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : void 0;
+}
+function ensureSecureDir(dirPath) {
+  fs24.mkdirSync(dirPath, { recursive: true });
+  try {
+    fs24.chmodSync(dirPath, 448);
+  } catch {
+  }
+}
+function ensureSecureFile(filePath) {
+  try {
+    fs24.chmodSync(filePath, 384);
+  } catch {
+  }
+}
+function readHarnessCredentials(harnessId) {
+  const filePath = resolveHarnessAuthFile(harnessId);
+  if (!fs24.existsSync(filePath)) return {};
+  try {
+    const parsed = JSON.parse(fs24.readFileSync(filePath, "utf-8"));
+    const creds = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value.trim().length > 0) {
+        creds[key] = value;
+      }
+    }
+    return creds;
+  } catch {
+    return {};
+  }
+}
+function getHarnessCredential(harnessId, key) {
+  const creds = readHarnessCredentials(harnessId);
+  return creds[key];
+}
+function setHarnessCredential(harnessId, key, value) {
+  const normalized = normalizeSecret(value);
+  const creds = readHarnessCredentials(harnessId);
+  if (normalized) {
+    creds[key] = normalized;
+  } else {
+    delete creds[key];
+  }
+  const dirPath = resolveHarnessAuthDir();
+  ensureSecureDir(dirPath);
+  const filePath = resolveHarnessAuthFile(harnessId);
+  fs24.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+`, "utf-8");
+  ensureSecureFile(filePath);
+}
+function setHarnessCredentials(harnessId, updates) {
+  const creds = readHarnessCredentials(harnessId);
+  for (const [key, rawValue] of Object.entries(updates)) {
+    const normalized = normalizeSecret(rawValue);
+    if (normalized) {
+      creds[key] = normalized;
+    } else {
+      delete creds[key];
+    }
+  }
+  const dirPath = resolveHarnessAuthDir();
+  ensureSecureDir(dirPath);
+  const filePath = resolveHarnessAuthFile(harnessId);
+  fs24.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+`, "utf-8");
+  ensureSecureFile(filePath);
+}
+function maskSecret(value) {
+  if (!value) return "(not set)";
+  if (value.length <= 4) return "****";
+  return `${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
+}
+
+// src/runtime/open-agents/index.ts
+init_home();
+import fs25 from "node:fs";
+import path33 from "node:path";
+
+// src/runtime/open-agents/contract.ts
+var DEFAULT_OPEN_AGENTS_CONFIG = {
+  backendType: "local",
+  authMode: "none",
+  endpoint: "http://localhost:3000",
+  sandboxTimeoutMs: 3e5,
+  timeoutMs: 3e4
+};
+
+// src/runtime/open-agents/provider.ts
+async function checkOpenAgentsHealth(config) {
+  const startMs = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5e3);
+    try {
+      const url = `${config.endpoint.replace(/\/$/, "")}/api/health`;
+      const headers = {
+        accept: "application/json",
+        ...config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}
+      };
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+        signal: controller.signal
+      });
+      const latencyMs = Date.now() - startMs;
+      if (!response.ok) {
+        return {
+          available: false,
+          latencyMs,
+          error: `Backend responded with ${response.status}: ${response.statusText}`
+        };
+      }
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: true,
+        latencyMs,
+        version: typeof data.version === "string" ? data.version : void 0
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (err) {
+    const latencyMs = Date.now() - startMs;
+    return {
+      available: false,
+      latencyMs,
+      error: err instanceof Error ? err.message : "Unknown error"
+    };
+  }
+}
+async function listOpenAgentsSessions(config) {
+  const url = `${config.endpoint.replace(/\/$/, "")}/api/sessions`;
+  const headers = {
+    accept: "application/json",
+    ...config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    config.timeoutMs ?? 3e4
+  );
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new OpenAgentsBackendError(
+        response.status,
+        `Failed to list sessions: ${response.status} ${response.statusText}`
+      );
+    }
+    const data = await response.json();
+    return data.sessions ?? [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+async function createOpenAgentsSession(config, input) {
+  const url = `${config.endpoint.replace(/\/$/, "")}/api/sessions`;
+  const headers = {
+    "content-type": "application/json",
+    accept: "application/json",
+    ...config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}
+  };
+  const body = {
+    prompt: input.prompt
+  };
+  if (input.repoUrl) body.repoUrl = input.repoUrl;
+  if (input.branch) body.branch = input.branch;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    config.timeoutMs ?? 3e4
+  );
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const errorText4 = await response.text().catch(() => "");
+      throw new OpenAgentsBackendError(
+        response.status,
+        `Failed to create session: ${response.status} ${errorText4 || response.statusText}`
+      );
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+async function resumeOpenAgentsSession(config, sessionId) {
+  const url = `${config.endpoint.replace(/\/$/, "")}/api/sessions/${encodeURIComponent(sessionId)}`;
+  const headers = {
+    accept: "application/json",
+    ...config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    config.timeoutMs ?? 3e4
+  );
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new OpenAgentsBackendError(
+        response.status,
+        `Failed to resume session: ${response.status} ${response.statusText}`
+      );
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+async function pollSessionEvents(config, sessionId, afterTimestamp) {
+  const base = `${config.endpoint.replace(/\/$/, "")}/api/sessions/${encodeURIComponent(sessionId)}/events`;
+  const url = afterTimestamp ? `${base}?after=${encodeURIComponent(afterTimestamp)}` : base;
+  const headers = {
+    accept: "application/json",
+    ...config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    config.timeoutMs ?? 3e4
+  );
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new OpenAgentsBackendError(
+        response.status,
+        `Failed to poll events: ${response.status} ${response.statusText}`
+      );
+    }
+    const data = await response.json();
+    return data.events ?? [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+var OpenAgentsBackendError = class extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+};
+
+// src/runtime/open-agents/index.ts
+function resolveConfigPath3() {
+  return path33.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
+}
+function readOpenAgentsConfig() {
+  const configPath = resolveConfigPath3();
+  if (!fs25.existsSync(configPath)) {
+    return {
+      ...DEFAULT_OPEN_AGENTS_CONFIG,
+      apiKey: getHarnessCredential("open-agents", "apiKey")
+    };
+  }
+  try {
+    const raw = JSON.parse(fs25.readFileSync(configPath, "utf-8"));
+    const storedApiKey = getHarnessCredential("open-agents", "apiKey");
+    return {
+      backendType: validateBackendType(raw.backendType),
+      authMode: validateAuthMode(raw.authMode),
+      endpoint: typeof raw.endpoint === "string" ? raw.endpoint : DEFAULT_OPEN_AGENTS_CONFIG.endpoint,
+      apiKey: storedApiKey ?? (typeof raw.apiKey === "string" ? raw.apiKey : void 0),
+      defaultRepo: typeof raw.defaultRepo === "string" ? raw.defaultRepo : void 0,
+      defaultBranch: typeof raw.defaultBranch === "string" ? raw.defaultBranch : void 0,
+      sandboxTimeoutMs: typeof raw.sandboxTimeoutMs === "number" ? raw.sandboxTimeoutMs : DEFAULT_OPEN_AGENTS_CONFIG.sandboxTimeoutMs,
+      timeoutMs: typeof raw.timeoutMs === "number" ? raw.timeoutMs : DEFAULT_OPEN_AGENTS_CONFIG.timeoutMs
+    };
+  } catch {
+    return {
+      ...DEFAULT_OPEN_AGENTS_CONFIG,
+      apiKey: getHarnessCredential("open-agents", "apiKey")
+    };
+  }
+}
+function writeOpenAgentsConfig(config) {
+  const configPath = resolveConfigPath3();
+  fs25.mkdirSync(path33.dirname(configPath), { recursive: true });
+  const persisted = {
+    ...config,
+    authMode: validateAuthMode(config.authMode),
+    apiKey: void 0
+  };
+  fs25.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
+`, "utf-8");
+  setHarnessCredential("open-agents", "apiKey", config.apiKey);
+}
+function validateBackendType(value) {
+  if (value === "local" || value === "hosted") return value;
+  return "local";
+}
+function validateAuthMode(value) {
+  if (value === "none" || value === "api-key" || value === "vercel-managed") {
+    return value;
+  }
+  return "none";
+}
+
+// src/commands/open-agents.ts
+init_banner();
+function statusColor2(status) {
+  if (status === "running") return pc34.green(status);
+  if (status === "completed") return pc34.cyan(status);
+  if (status === "failed" || status === "cancelled") return pc34.red(status);
+  if (status === "waiting" || status === "idle") return pc34.yellow(status);
+  return pc34.dim(status);
+}
+function sandboxBadge(state) {
+  if (state === "running") return pc34.green("running");
+  if (state === "hibernating") return pc34.yellow("hibernating");
+  if (state === "stopped") return pc34.dim("stopped");
+  if (state === "error") return pc34.red("error");
+  return pc34.dim(state);
+}
+function hr7(width = 72) {
+  return pc34.dim("\u2500".repeat(width));
+}
+function stripAnsi6(str) {
+  return str.replace(/\x1B\[[0-9;]*m/g, "");
+}
+function box6(lines) {
+  const padded = lines.map((l) => "  " + l);
+  const width = Math.max(...padded.map((l) => stripAnsi6(l).length)) + 4;
+  const top = pc34.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc34.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => {
+    const pad = width - stripAnsi6(l).length;
+    return pc34.dim("\u2502") + l + " ".repeat(pad) + pc34.dim("\u2502");
+  });
+  return [top, ...body, bottom].join("\n");
+}
+function printSessionCard(session) {
+  const lines = [
+    `${pc34.bold("Session")}  ${pc34.dim(session.sessionId)}`,
+    `${pc34.dim("Status:")}   ${statusColor2(session.status)}`,
+    `${pc34.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
+    `${pc34.dim("Events:")}   ${session.eventCount}`,
+    `${pc34.dim("Created:")}  ${session.createdAt}`
+  ];
+  if (session.repoUrl) lines.push(`${pc34.dim("Repo:")}     ${session.repoUrl}`);
+  if (session.branch) lines.push(`${pc34.dim("Branch:")}   ${session.branch}`);
+  if (session.prompt) {
+    const truncated = session.prompt.length > 80 ? session.prompt.slice(0, 77) + "..." : session.prompt;
+    lines.push(`${pc34.dim("Prompt:")}   ${truncated}`);
+  }
+  console.log("");
+  console.log(box6(lines));
+  console.log("");
+}
+var EVENT_EMOJI = {
+  sandbox_create: "\u{1F4E6}",
+  sandbox_resume: "\u25B6\uFE0F ",
+  sandbox_hibernate: "\u{1F4A4}",
+  tool_start: "\u{1F527}",
+  tool_result: "\u2705",
+  file_edit: "\u{1F4DD}",
+  file_create: "\u{1F4C4}",
+  shell_exec: "\u{1F4BB}",
+  search: "\u{1F50D}",
+  git_commit: "\u{1F4CC}",
+  git_push: "\u{1F680}",
+  git_pr: "\u{1F517}",
+  agent_message: "\u{1F4AC}",
+  agent_thinking: "\u{1F9E0}",
+  task_delegate: "\u{1F4CB}",
+  workflow_step: "\u2699\uFE0F ",
+  error: "\u274C"
+};
+function printEvent(event) {
+  const emoji = EVENT_EMOJI[event.type] ?? "\xB7";
+  const ts = pc34.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
+  console.log(`  ${emoji}  ${ts}  ${event.detail}`);
+}
+async function runOpenAgentsHub(opts) {
+  printPaperclipCliBanner();
+  p22.intro(pc34.bold("Open Agents"));
+  while (true) {
+    const config = readOpenAgentsConfig();
+    const action = await p22.select({
+      message: "Open Agents",
+      options: [
+        { value: "setup", label: "Setup & Configure", hint: "backend endpoint, API key, defaults" },
+        { value: "health", label: "Health Check", hint: `check ${config.endpoint}` },
+        { value: "list", label: "List Sessions", hint: "browse existing agent sessions" },
+        { value: "create", label: "Prompt (Create Session)", hint: "submit a task prompt and start a durable run" },
+        { value: "resume", label: "Chat (Resume Session)", hint: "reconnect to a session and continue the conversation" },
+        ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
+      ]
+    });
+    if (p22.isCancel(action) || action === "__back_to_hub") return "back";
+    if (action === "setup") {
+      await runSetupFlow(config);
+      continue;
+    }
+    if (action === "health") {
+      const spinner10 = p22.spinner();
+      spinner10.start(`Checking ${config.endpoint}...`);
+      const health = await checkOpenAgentsHealth(config);
+      if (health.available) {
+        spinner10.stop(
+          `Backend reachable (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
+        );
+      } else {
+        spinner10.stop(`Backend unavailable (${health.latencyMs}ms)`);
+        p22.note(
+          [
+            health.error ? `Error: ${health.error}` : "",
+            "",
+            "Quick setup:",
+            `  1) git clone https://github.com/vercel-labs/open-agents`,
+            `  2) cd open-agents && bun install`,
+            `  3) bun run web`,
+            `  4) growthub open-agents config --endpoint http://localhost:3000`,
+            "",
+            "Hosted auth guidance:",
+            "  - Use auth mode 'vercel-managed' when your deployment handles auth upstream.",
+            "  - Use auth mode 'api-key' to store a bearer token in local secure harness storage."
+          ].filter(Boolean).join("\n"),
+          "Open Agents Setup"
+        );
+      }
+      continue;
+    }
+    if (action === "list") {
+      const listResult = await runSessionListFlow(config);
+      if (listResult === "back") continue;
+      return "done";
+    }
+    if (action === "create") {
+      await runCreateSessionFlow(config);
+      continue;
+    }
+    if (action === "resume") {
+      await runResumeSessionFlow(config);
+      continue;
+    }
+  }
+}
+async function runSetupFlow(currentConfig) {
+  const backendChoice = await p22.select({
+    message: "Backend type",
+    options: [
+      { value: "local", label: "Local", hint: "open-agents dev server on this machine" },
+      { value: "hosted", label: "Hosted", hint: "deployed Vercel instance" }
+    ],
+    initialValue: currentConfig.backendType
+  });
+  if (p22.isCancel(backendChoice)) return;
+  const authMode = backendChoice === "hosted" ? await p22.select({
+    message: "Hosted authentication strategy",
+    options: [
+      {
+        value: "api-key",
+        label: "Bearer API key",
+        hint: "Recommended for CLI-safe server-to-server access"
+      },
+      {
+        value: "vercel-managed",
+        label: "Vercel-managed / gateway auth",
+        hint: "No CLI key; auth is handled upstream by your deployment"
+      }
+    ],
+    initialValue: currentConfig.authMode === "api-key" || currentConfig.authMode === "vercel-managed" ? currentConfig.authMode : "api-key"
+  }) : "none";
+  if (p22.isCancel(authMode)) return;
+  const endpoint = await p22.text({
+    message: "Backend endpoint",
+    placeholder: currentConfig.endpoint,
+    initialValue: currentConfig.endpoint
+  });
+  if (p22.isCancel(endpoint)) return;
+  let apiKeyValue;
+  if (authMode === "api-key") {
+    const existingKeyMasked = maskSecret(currentConfig.apiKey);
+    const apiKeyMode = await p22.select({
+      message: `API key (${existingKeyMasked})`,
+      options: [
+        { value: "keep", label: "Keep existing key", hint: "No change to currently stored key" },
+        { value: "replace", label: "Replace key", hint: "Enter a new key and store it securely" },
+        { value: "clear", label: "Clear key", hint: "Remove any stored key for this harness" }
+      ],
+      initialValue: currentConfig.apiKey ? "keep" : "replace"
+    });
+    if (p22.isCancel(apiKeyMode)) return;
+    if (apiKeyMode === "replace") {
+      const entered = await p22.password({
+        message: "Open Agents API key"
+      });
+      if (p22.isCancel(entered)) return;
+      apiKeyValue = String(entered).trim() || void 0;
+    } else if (apiKeyMode === "keep") {
+      apiKeyValue = currentConfig.apiKey;
+    } else {
+      apiKeyValue = void 0;
+    }
+  } else {
+    apiKeyValue = void 0;
+  }
+  const defaultRepo = await p22.text({
+    message: "Default repository URL (optional)",
+    placeholder: currentConfig.defaultRepo ?? "",
+    initialValue: currentConfig.defaultRepo ?? ""
+  });
+  if (p22.isCancel(defaultRepo)) return;
+  const confirmed = await p22.confirm({
+    message: "Save Open Agents configuration?",
+    initialValue: true
+  });
+  if (p22.isCancel(confirmed) || !confirmed) return;
+  const newConfig = {
+    ...currentConfig,
+    backendType: backendChoice,
+    authMode,
+    endpoint: String(endpoint).trim() || currentConfig.endpoint,
+    apiKey: apiKeyValue,
+    defaultRepo: String(defaultRepo).trim() || void 0
+  };
+  writeOpenAgentsConfig(newConfig);
+  p22.log.success("Configuration saved.");
+}
+async function runSessionListFlow(config) {
+  const spinner10 = p22.spinner();
+  spinner10.start("Loading sessions...");
+  let sessions;
+  try {
+    sessions = await listOpenAgentsSessions(config);
+  } catch (err) {
+    spinner10.stop("Failed to load sessions.");
+    p22.log.error(err.message);
+    return "back";
+  }
+  spinner10.stop(`${sessions.length} session${sessions.length !== 1 ? "s" : ""} found.`);
+  if (sessions.length === 0) {
+    p22.note("No agent sessions found. Create one to get started.", "Nothing found");
+    return "back";
+  }
+  while (true) {
+    const sessionChoice = await p22.select({
+      message: "Select a session",
+      options: [
+        ...sessions.map((s) => ({
+          value: s.sessionId,
+          label: `${statusColor2(s.status)}  ${pc34.dim(s.sessionId.slice(0, 12))}`,
+          hint: s.prompt ? s.prompt.slice(0, 50) : void 0
+        })),
+        { value: "__back", label: "\u2190 Back" }
+      ]
+    });
+    if (p22.isCancel(sessionChoice) || sessionChoice === "__back") return "back";
+    const selected = sessions.find((s) => s.sessionId === sessionChoice);
+    if (!selected) continue;
+    printSessionCard(selected);
+    const nextStep = await p22.select({
+      message: "What next?",
+      options: [
+        { value: "events", label: "\u{1F4DC} View recent events" },
+        { value: "back_to_list", label: "\u2190 Back to session list" }
+      ]
+    });
+    if (p22.isCancel(nextStep) || nextStep === "back_to_list") continue;
+    if (nextStep === "events") {
+      try {
+        const events = await pollSessionEvents(config, selected.sessionId);
+        if (events.length === 0) {
+          p22.note("No events recorded yet.", "Empty");
+        } else {
+          console.log("");
+          console.log(pc34.bold("Recent Events") + pc34.dim(`  (${events.length})`));
+          console.log(hr7());
+          for (const event of events.slice(-20)) {
+            printEvent(event);
+          }
+          console.log(hr7());
+          console.log("");
+        }
+      } catch (err) {
+        p22.log.error("Failed to load events: " + err.message);
+      }
+    }
+  }
+}
+async function runCreateSessionFlow(config) {
+  const prompt = await p22.text({
+    message: "What should the agent do?",
+    placeholder: "Describe the task for the agent"
+  });
+  if (p22.isCancel(prompt) || !String(prompt).trim()) return;
+  const repoUrl = await p22.text({
+    message: "Repository URL (optional)",
+    placeholder: config.defaultRepo ?? "https://github.com/org/repo",
+    initialValue: config.defaultRepo ?? ""
+  });
+  if (p22.isCancel(repoUrl)) return;
+  const branch = await p22.text({
+    message: "Branch (optional)",
+    placeholder: config.defaultBranch ?? "main",
+    initialValue: config.defaultBranch ?? ""
+  });
+  if (p22.isCancel(branch)) return;
+  const confirmed = await p22.confirm({
+    message: "Create agent session?",
+    initialValue: true
+  });
+  if (p22.isCancel(confirmed) || !confirmed) return;
+  const spinner10 = p22.spinner();
+  spinner10.start("Creating session...");
+  try {
+    const session = await createOpenAgentsSession(config, {
+      prompt: String(prompt).trim(),
+      repoUrl: String(repoUrl).trim() || void 0,
+      branch: String(branch).trim() || void 0
+    });
+    spinner10.stop("Session created.");
+    printSessionCard(session);
+  } catch (err) {
+    spinner10.stop("Failed to create session.");
+    p22.log.error(err.message);
+  }
+}
+async function runResumeSessionFlow(config) {
+  const sessionId = await p22.text({
+    message: "Session ID",
+    placeholder: "Paste the session ID to resume"
+  });
+  if (p22.isCancel(sessionId) || !String(sessionId).trim()) return;
+  const spinner10 = p22.spinner();
+  spinner10.start("Resuming session...");
+  try {
+    const session = await resumeOpenAgentsSession(config, String(sessionId).trim());
+    spinner10.stop("Session resumed.");
+    printSessionCard(session);
+    const events = await pollSessionEvents(config, session.sessionId);
+    if (events.length > 0) {
+      console.log(pc34.bold("Latest Events") + pc34.dim(`  (${events.length})`));
+      console.log(hr7());
+      for (const event of events.slice(-20)) {
+        printEvent(event);
+      }
+      console.log(hr7());
+      console.log("");
+    }
+  } catch (err) {
+    spinner10.stop("Failed to resume session.");
+    p22.log.error(err.message);
+  }
+}
+function registerOpenAgentsCommands(program2) {
+  const oa = program2.command("open-agents").description("Durable agent workflow orchestration via Open Agents harness").addHelpText("after", `
+Examples:
+  $ growthub open-agents                     # interactive browser
+  $ growthub open-agents config              # show current configuration
+  $ growthub open-agents config --endpoint http://localhost:3000
+  $ growthub open-agents status              # check backend health
+  $ growthub open-agents list                # list agent sessions
+  $ growthub open-agents list --json         # machine-readable output
+  $ growthub open-agents create              # create new session (interactive)
+  $ growthub open-agents prompt "fix tests"  # prompt and start a session
+  $ growthub open-agents chat <session-id>   # chat/resume an existing session
+  $ growthub open-agents resume <session-id> # resume existing session
+`);
+  oa.action(async () => {
+    await runOpenAgentsHub({});
+  });
+  oa.command("config").description("Show or update Open Agents backend configuration").option("--endpoint <url>", "Backend endpoint URL").option("--api-key <key>", "API key for authenticated backends").option("--auth-mode <mode>", "Auth mode: none | api-key | vercel-managed").option("--clear-api-key", "Clear stored API key").option("--default-repo <url>", "Default repository URL for new sessions").option("--default-branch <name>", "Default branch name for new sessions").option("--json", "Output raw JSON").action(async (opts) => {
+    const config = readOpenAgentsConfig();
+    const hasUpdate = opts.endpoint || opts.apiKey || opts.clearApiKey || opts.defaultRepo || opts.defaultBranch || opts.authMode;
+    if (hasUpdate) {
+      const nextAuthMode = opts.authMode === "none" || opts.authMode === "api-key" || opts.authMode === "vercel-managed" ? opts.authMode : config.authMode;
+      const updated = {
+        ...config,
+        ...nextAuthMode ? { authMode: nextAuthMode } : {},
+        ...opts.endpoint ? { endpoint: opts.endpoint } : {},
+        ...opts.apiKey || opts.clearApiKey ? { apiKey: opts.clearApiKey ? void 0 : opts.apiKey } : {},
+        ...opts.defaultRepo ? { defaultRepo: opts.defaultRepo } : {},
+        ...opts.defaultBranch ? { defaultBranch: opts.defaultBranch } : {}
+      };
+      writeOpenAgentsConfig(updated);
+      if (opts.json) {
+        console.log(JSON.stringify(updated, null, 2));
+      } else {
+        console.log(pc34.green("Configuration updated."));
+      }
+      return;
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(config, null, 2));
+      return;
+    }
+    console.log("");
+    console.log(pc34.bold("Open Agents Configuration"));
+    console.log(hr7());
+    console.log(`  ${pc34.dim("Backend:")}   ${config.backendType}`);
+    console.log(`  ${pc34.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
+    console.log(`  ${pc34.dim("Endpoint:")}  ${config.endpoint}`);
+    console.log(`  ${pc34.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc34.dim("(none)")}`);
+    console.log(`  ${pc34.dim("Repo:")}      ${config.defaultRepo ?? pc34.dim("(none)")}`);
+    console.log(`  ${pc34.dim("Branch:")}    ${config.defaultBranch ?? pc34.dim("(none)")}`);
+    console.log(`  ${pc34.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
+    console.log(hr7());
+    console.log("");
+  });
+  oa.command("status").description("Check Open Agents backend health").option("--json", "Output raw JSON").action(async (opts) => {
+    const config = readOpenAgentsConfig();
+    const health = await checkOpenAgentsHealth(config);
+    if (opts.json) {
+      console.log(JSON.stringify(health, null, 2));
+      return;
+    }
+    if (health.available) {
+      console.log(
+        pc34.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
+      );
+    } else {
+      console.log(pc34.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
+      if (health.error) {
+        console.log(pc34.dim(`  ${health.error}`));
+      }
+      process.exitCode = 1;
+    }
+  });
+  oa.command("list").description("List agent sessions").option("--json", "Output raw JSON for scripting").action(async (opts) => {
+    const config = readOpenAgentsConfig();
+    try {
+      const sessions = await listOpenAgentsSessions(config);
+      if (opts.json) {
+        console.log(JSON.stringify({ sessions }, null, 2));
+        return;
+      }
+      if (sessions.length === 0) {
+        console.log(pc34.yellow("No sessions found.") + pc34.dim(" Run `growthub open-agents create` to start one."));
+        return;
+      }
+      console.log("");
+      console.log(pc34.bold("Agent Sessions") + pc34.dim(`  (${sessions.length})`));
+      console.log(hr7());
+      for (const session of sessions) {
+        const truncatedPrompt = session.prompt ? pc34.dim(session.prompt.slice(0, 50)) : "";
+        console.log(
+          `  ${statusColor2(session.status)}  ${pc34.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
+        );
+      }
+      console.log(hr7());
+      console.log("");
+    } catch (err) {
+      console.error(pc34.red("Failed to list sessions: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  oa.command("create").description("Create a new agent session").option("--prompt <text>", "Task prompt for the agent").option("--repo <url>", "Repository URL").option("--branch <name>", "Branch name").option("--json", "Output raw JSON").action(async (opts) => {
+    const config = readOpenAgentsConfig();
+    if (!opts.prompt) {
+      await runCreateSessionFlow(config);
+      return;
+    }
+    try {
+      const session = await createOpenAgentsSession(config, {
+        prompt: opts.prompt,
+        repoUrl: opts.repo ?? config.defaultRepo,
+        branch: opts.branch ?? config.defaultBranch
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(session, null, 2));
+        return;
+      }
+      printSessionCard(session);
+    } catch (err) {
+      console.error(pc34.red("Failed to create session: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  oa.command("prompt").description("Create a new session from a prompt (prompt-first alias)").argument("<prompt>", "Task prompt for the agent").option("--repo <url>", "Repository URL").option("--branch <name>", "Branch name").option("--json", "Output raw JSON").action(async (prompt, opts) => {
+    const config = readOpenAgentsConfig();
+    try {
+      const session = await createOpenAgentsSession(config, {
+        prompt,
+        repoUrl: opts.repo ?? config.defaultRepo,
+        branch: opts.branch ?? config.defaultBranch
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(session, null, 2));
+        return;
+      }
+      printSessionCard(session);
+    } catch (err) {
+      console.error(pc34.red("Failed to create session: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  oa.command("resume").description("Resume an existing agent session").argument("<sessionId>", "Session ID to resume").option("--json", "Output raw JSON").action(async (sessionId, opts) => {
+    const config = readOpenAgentsConfig();
+    try {
+      const session = await resumeOpenAgentsSession(config, sessionId);
+      if (opts.json) {
+        console.log(JSON.stringify(session, null, 2));
+        return;
+      }
+      printSessionCard(session);
+      const events = await pollSessionEvents(config, session.sessionId);
+      if (events.length > 0) {
+        console.log(pc34.bold("Latest Events") + pc34.dim(`  (${events.length})`));
+        console.log(hr7());
+        for (const event of events.slice(-20)) {
+          printEvent(event);
+        }
+        console.log(hr7());
+        console.log("");
+      }
+    } catch (err) {
+      console.error(pc34.red("Failed to resume session: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  oa.command("chat").description("Chat by resuming an existing Open Agents session").argument("<sessionId>", "Session ID to resume").option("--json", "Output raw JSON").action(async (sessionId, opts) => {
+    const config = readOpenAgentsConfig();
+    try {
+      const session = await resumeOpenAgentsSession(config, sessionId);
+      if (opts.json) {
+        console.log(JSON.stringify(session, null, 2));
+        return;
+      }
+      printSessionCard(session);
+      const events = await pollSessionEvents(config, session.sessionId);
+      if (events.length > 0) {
+        console.log(pc34.bold("Latest Events") + pc34.dim(`  (${events.length})`));
+        console.log(hr7());
+        for (const event of events.slice(-20)) {
+          printEvent(event);
+        }
+        console.log(hr7());
+        console.log("");
+      }
+    } catch (err) {
+      console.error(pc34.red("Failed to chat/resume session: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+}
+
+// src/commands/qwen-code.ts
+import * as p23 from "@clack/prompts";
+import pc35 from "picocolors";
+
+// src/runtime/qwen-code/index.ts
+init_home();
+import fs26 from "node:fs";
+import path34 from "node:path";
+
+// src/runtime/qwen-code/contract.ts
+var QWEN_CODE_APPROVAL_MODES = [
+  "default",
+  "auto-edit",
+  "yolo"
+];
+var QWEN_CODE_SUPPORTED_ENV_KEYS = [
+  "DASHSCOPE_API_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "GOOGLE_API_KEY"
+];
+var DEFAULT_QWEN_CODE_CONFIG = {
+  binaryPath: "qwen",
+  defaultModel: "qwen3-coder",
+  cwd: process.cwd(),
+  approvalMode: "default",
+  maxSessionTurns: 0,
+  timeoutMs: 12e4,
+  env: {}
+};
+
+// src/runtime/qwen-code/provider.ts
+import { spawn as spawn2, spawnSync } from "node:child_process";
+async function executeHeadlessPrompt(prompt, configOverride) {
+  const config = { ...DEFAULT_QWEN_CODE_CONFIG, ...configOverride };
+  const startMs = Date.now();
+  const args = ["-p", prompt];
+  if (config.defaultModel) {
+    args.push("--model", config.defaultModel);
+  }
+  if (config.approvalMode === "yolo") {
+    args.push("--yolo");
+  }
+  if (config.maxSessionTurns > 0) {
+    args.push("--max-turns", String(config.maxSessionTurns));
+  }
+  const env = {
+    ...process.env,
+    ...config.env
+  };
+  return new Promise((resolve2) => {
+    const child = spawn2(config.binaryPath, args, {
+      cwd: config.cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const timeoutHandle = config.timeoutMs > 0 ? setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (!child.killed) child.kill("SIGKILL");
+      }, 5e3);
+    }, config.timeoutMs) : null;
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    child.on("close", (exitCode, signal) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      resolve2({
+        exitCode,
+        timedOut,
+        stdout,
+        stderr,
+        durationMs: Date.now() - startMs,
+        signal: signal ?? null
+      });
+    });
+    child.on("error", (err) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      resolve2({
+        exitCode: null,
+        timedOut: false,
+        stdout,
+        stderr: stderr + (err.message ?? "spawn error"),
+        durationMs: Date.now() - startMs,
+        signal: null
+      });
+    });
+  });
+}
+function launchInteractiveSession(configOverride) {
+  const config = { ...DEFAULT_QWEN_CODE_CONFIG, ...configOverride };
+  const args = [];
+  if (config.defaultModel) {
+    args.push("--model", config.defaultModel);
+  }
+  if (config.approvalMode === "yolo") {
+    args.push("--yolo");
+  }
+  const env = {
+    ...process.env,
+    ...config.env
+  };
+  const result = spawnSync(config.binaryPath, args, {
+    cwd: config.cwd,
+    env,
+    stdio: "inherit"
+  });
+  return { exitCode: result.status };
+}
+function detectQwenVersion(binaryPath = "qwen") {
+  try {
+    const result = spawnSync(binaryPath, ["--version"], {
+      timeout: 1e4,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (result.status === 0 && result.stdout) {
+      const versionMatch = result.stdout.trim().match(/(\d+\.\d+\.\d+)/);
+      return {
+        found: true,
+        version: versionMatch ? versionMatch[1] : result.stdout.trim(),
+        resolvedPath: binaryPath
+      };
+    }
+    return { found: false, version: null, resolvedPath: binaryPath };
+  } catch {
+    return { found: false, version: null, resolvedPath: binaryPath };
+  }
+}
+
+// src/runtime/qwen-code/health.ts
+function detectEnvironment(binaryPath = "qwen", runtimeEnv = {}) {
+  const osLabel = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux";
+  const versionInfo = detectQwenVersion(binaryPath);
+  const nodeVersion = process.version.replace(/^v/, "");
+  const nodeMajor = Number.parseInt(nodeVersion.split(".")[0], 10);
+  const nodeVersionSufficient = nodeMajor >= 20;
+  const mergedEnv = {
+    ...runtimeEnv,
+    ...process.env
+  };
+  const apiKeyConfigured = Boolean(
+    mergedEnv.DASHSCOPE_API_KEY?.trim() || mergedEnv.OPENAI_API_KEY?.trim() || mergedEnv.ANTHROPIC_API_KEY?.trim() || mergedEnv.GOOGLE_API_KEY?.trim()
+  );
+  return {
+    binaryFound: versionInfo.found,
+    binaryVersion: versionInfo.version,
+    binaryPath: versionInfo.resolvedPath,
+    nodeVersionSufficient,
+    nodeVersion,
+    apiKeyConfigured,
+    osLabel
+  };
+}
+function checkHealth(binaryPath = "qwen", runtimeEnv = {}) {
+  const environment = detectEnvironment(binaryPath, runtimeEnv);
+  if (!environment.binaryFound) {
+    return {
+      status: "unavailable",
+      environment,
+      summary: `Qwen Code CLI not found at "${binaryPath}". Install with: npm install -g @qwen-code/qwen-code`
+    };
+  }
+  if (!environment.nodeVersionSufficient) {
+    return {
+      status: "unavailable",
+      environment,
+      summary: `Node.js ${environment.nodeVersion} detected but Qwen Code requires >= 20.0.0.`
+    };
+  }
+  if (!environment.apiKeyConfigured) {
+    return {
+      status: "degraded",
+      environment,
+      summary: `Qwen Code CLI v${environment.binaryVersion} found but no API key configured. Set DASHSCOPE_API_KEY or another supported provider key.`
+    };
+  }
+  return {
+    status: "available",
+    environment,
+    summary: `Qwen Code CLI v${environment.binaryVersion} ready (Node ${environment.nodeVersion}).`
+  };
+}
+function buildSetupGuidance(env) {
+  const lines = [];
+  lines.push(`OS: ${env.osLabel}`);
+  lines.push(`Qwen CLI: ${env.binaryFound ? `v${env.binaryVersion}` : "not found"}`);
+  lines.push(`Node.js: v${env.nodeVersion} (${env.nodeVersionSufficient ? "OK" : "needs >= 20"})`);
+  lines.push(`API key: ${env.apiKeyConfigured ? "configured" : "not configured"}`);
+  lines.push("");
+  if (!env.binaryFound) {
+    if (env.osLabel === "macOS") {
+      lines.push("Install Qwen Code (macOS):");
+      lines.push("  brew install qwen-code");
+      lines.push("  \u2014 or \u2014");
+      lines.push("  npm install -g @qwen-code/qwen-code@latest");
+    } else if (env.osLabel === "Windows") {
+      lines.push("Install Qwen Code (Windows):");
+      lines.push("  npm install -g @qwen-code/qwen-code@latest");
+    } else {
+      lines.push("Install Qwen Code (Linux):");
+      lines.push("  npm install -g @qwen-code/qwen-code@latest");
+    }
+    lines.push("");
+  }
+  if (!env.apiKeyConfigured) {
+    lines.push("Configure an API key:");
+    lines.push("  (You can save this securely via: growthub qwen-code -> Configure)");
+    lines.push("  export DASHSCOPE_API_KEY=<your-dashscope-key>");
+    lines.push("  \u2014 or \u2014");
+    lines.push("  export OPENAI_API_KEY=<your-openai-compatible-key>");
+    lines.push("");
+  }
+  return lines;
+}
+
+// src/runtime/qwen-code/index.ts
+function resolveConfigPath4() {
+  return path34.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
+}
+function readQwenCodeConfig() {
+  const configPath = resolveConfigPath4();
+  const storedCredentials = readHarnessCredentials("qwen-code");
+  if (!fs26.existsSync(configPath)) {
+    return {
+      ...DEFAULT_QWEN_CODE_CONFIG,
+      env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
+    };
+  }
+  try {
+    const raw = JSON.parse(fs26.readFileSync(configPath, "utf-8"));
+    return {
+      binaryPath: typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_QWEN_CODE_CONFIG.binaryPath,
+      defaultModel: typeof raw.defaultModel === "string" ? raw.defaultModel : DEFAULT_QWEN_CODE_CONFIG.defaultModel,
+      cwd: typeof raw.cwd === "string" ? raw.cwd : DEFAULT_QWEN_CODE_CONFIG.cwd,
+      approvalMode: raw.approvalMode === "default" || raw.approvalMode === "auto-edit" || raw.approvalMode === "yolo" ? raw.approvalMode : DEFAULT_QWEN_CODE_CONFIG.approvalMode,
+      maxSessionTurns: typeof raw.maxSessionTurns === "number" ? raw.maxSessionTurns : DEFAULT_QWEN_CODE_CONFIG.maxSessionTurns,
+      timeoutMs: typeof raw.timeoutMs === "number" ? raw.timeoutMs : DEFAULT_QWEN_CODE_CONFIG.timeoutMs,
+      env: mergeHarnessEnv(
+        typeof raw.env === "object" && raw.env !== null ? raw.env : DEFAULT_QWEN_CODE_CONFIG.env,
+        storedCredentials
+      )
+    };
+  } catch {
+    return {
+      ...DEFAULT_QWEN_CODE_CONFIG,
+      env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
+    };
+  }
+}
+function writeQwenCodeConfig(config) {
+  const configPath = resolveConfigPath4();
+  fs26.mkdirSync(path34.dirname(configPath), { recursive: true });
+  const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
+  const credentialUpdates = {};
+  const publicEnv = {};
+  for (const [key, value] of Object.entries(rawEnv)) {
+    if (QWEN_CODE_SUPPORTED_ENV_KEYS.includes(key)) {
+      credentialUpdates[key] = value;
+      continue;
+    }
+    publicEnv[key] = value;
+  }
+  setHarnessCredentials("qwen-code", credentialUpdates);
+  fs26.writeFileSync(
+    configPath,
+    `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
+`,
+    "utf-8"
+  );
+}
+function mergeHarnessEnv(runtimeEnv, credentials) {
+  const merged = {};
+  for (const [key, value] of Object.entries(runtimeEnv)) {
+    if (typeof value === "string") merged[key] = value;
+  }
+  for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
+    const secret = credentials[key];
+    if (typeof secret === "string" && secret.trim().length > 0) {
+      merged[key] = secret;
+    }
+  }
+  return merged;
+}
+
+// src/commands/qwen-code.ts
+async function runQwenCodeHub(opts) {
+  while (true) {
+    const config = readQwenCodeConfig();
+    const health = checkHealth(config.binaryPath, config.env);
+    const statusHint = health.status === "available" ? pc35.green("ready") : health.status === "degraded" ? pc35.yellow("degraded") : pc35.red("unavailable");
+    const action = await p23.select({
+      message: `Qwen Code CLI (${statusHint})`,
+      options: [
+        { value: "health", label: "Setup & Health", hint: "environment detection + install guidance" },
+        { value: "prompt", label: "Prompt", hint: "single prompt run for quick tasks" },
+        { value: "session", label: "Chat Session", hint: "full interactive terminal chat (qwen)" },
+        { value: "configure", label: "Configure", hint: `model: ${config.defaultModel}, mode: ${config.approvalMode}` },
+        ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
+      ]
+    });
+    if (p23.isCancel(action) || action === "__back_to_hub") return "back";
+    if (action === "health") {
+      const env = detectEnvironment(config.binaryPath, config.env);
+      const guidance = buildSetupGuidance(env);
+      p23.note(guidance.join("\n"), "Qwen Code CLI \u2014 Setup Helper");
+      continue;
+    }
+    if (action === "prompt") {
+      if (health.status === "unavailable") {
+        p23.note(health.summary, "Qwen Code CLI unavailable");
+        continue;
+      }
+      const rawPrompt = await p23.text({
+        message: "Enter prompt for Qwen Code",
+        placeholder: "Describe what you want to build or analyze..."
+      });
+      if (p23.isCancel(rawPrompt)) continue;
+      const prompt = String(rawPrompt).trim();
+      if (!prompt) continue;
+      const runSpinner = p23.spinner();
+      runSpinner.start(`Running qwen -p (model: ${config.defaultModel})...`);
+      const result = await executeHeadlessPrompt(prompt, config);
+      if (result.timedOut) {
+        runSpinner.stop("Timed out.");
+        p23.note(`Process timed out after ${config.timeoutMs}ms.`, "Execution timeout");
+        continue;
+      }
+      if (result.exitCode !== 0) {
+        runSpinner.stop(`Exited with code ${result.exitCode ?? "null"}.`);
+        if (result.stderr.trim()) {
+          p23.note(result.stderr.trim().slice(0, 2e3), "stderr");
+        }
+        continue;
+      }
+      runSpinner.stop(`Completed (${result.durationMs}ms).`);
+      if (result.stdout.trim()) {
+        console.log("");
+        console.log(result.stdout.trim());
+        console.log("");
+      }
+      continue;
+    }
+    if (action === "session") {
+      if (health.status === "unavailable") {
+        p23.note(health.summary, "Qwen Code CLI unavailable");
+        continue;
+      }
+      p23.note(
+        [
+          `Binary: ${config.binaryPath}`,
+          `Model: ${config.defaultModel}`,
+          `Mode: ${config.approvalMode}`,
+          "",
+          "Launching interactive Qwen Code session...",
+          "The Growthub CLI will resume when the session ends."
+        ].join("\n"),
+        "Qwen Code Interactive Session"
+      );
+      launchInteractiveSession(config);
+      continue;
+    }
+    if (action === "configure") {
+      await runConfigureFlow(config);
+      continue;
+    }
+  }
+}
+async function runConfigureFlow(currentConfig) {
+  const modelInput = await p23.text({
+    message: "Default model",
+    placeholder: "qwen3-coder",
+    defaultValue: currentConfig.defaultModel
+  });
+  if (p23.isCancel(modelInput)) return;
+  const modeInput = await p23.select({
+    message: "Approval mode",
+    options: QWEN_CODE_APPROVAL_MODES.map((mode) => ({
+      value: mode,
+      label: mode,
+      hint: mode === "default" ? "write tools need approval" : mode === "auto-edit" ? "file edits auto-approved" : "everything auto-approved"
+    })),
+    initialValue: currentConfig.approvalMode
+  });
+  if (p23.isCancel(modeInput)) return;
+  const binaryInput = await p23.text({
+    message: "Binary path",
+    placeholder: "qwen",
+    defaultValue: currentConfig.binaryPath
+  });
+  if (p23.isCancel(binaryInput)) return;
+  const authAction = await p23.select({
+    message: "Authentication setup",
+    options: [
+      {
+        value: "skip",
+        label: "Skip auth changes",
+        hint: "Keep current key/OAuth setup"
+      },
+      {
+        value: "set-key",
+        label: "Set API key",
+        hint: "Store provider API key in local secure harness storage"
+      },
+      {
+        value: "clear-keys",
+        label: "Clear stored API keys",
+        hint: "Remove saved Qwen provider keys from local storage"
+      }
+    ],
+    initialValue: "skip"
+  });
+  if (p23.isCancel(authAction)) return;
+  const nextEnv = { ...currentConfig.env };
+  if (authAction === "set-key") {
+    const providerKey = await p23.select({
+      message: "Provider key variable",
+      options: [
+        ...QWEN_CODE_SUPPORTED_ENV_KEYS.map((key) => ({
+          value: key,
+          label: key,
+          hint: `current: ${maskSecret(currentConfig.env[key])}`
+        })),
+        {
+          value: "__back_to_auth_setup",
+          label: "\u2190 Back to authentication setup"
+        }
+      ]
+    });
+    if (p23.isCancel(providerKey)) return;
+    if (providerKey === "__back_to_auth_setup") return;
+    const keyValue = await p23.password({
+      message: `${providerKey} value`,
+      validate: (value) => {
+        if (!value || String(value).trim().length === 0) return "Key value is required.";
+      }
+    });
+    if (p23.isCancel(keyValue)) return;
+    nextEnv[providerKey] = String(keyValue).trim();
+  } else if (authAction === "clear-keys") {
+    for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
+      delete nextEnv[key];
+    }
+  }
+  const confirmed = await p23.confirm({
+    message: `Save Qwen Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
+    initialValue: true
+  });
+  if (p23.isCancel(confirmed) || !confirmed) return;
+  writeQwenCodeConfig({
+    ...currentConfig,
+    defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
+    approvalMode: modeInput,
+    binaryPath: String(binaryInput).trim() || currentConfig.binaryPath,
+    env: nextEnv
+  });
+  p23.log.success("Qwen Code config saved (including local auth storage updates).");
+}
+function registerQwenCodeCommands(program2) {
+  const qwenCode = program2.command("qwen-code").description("Qwen Code CLI agent integration \u2014 health, prompt, interactive session");
+  qwenCode.command("health").description("Check Qwen Code CLI environment and readiness").action(async () => {
+    const config = readQwenCodeConfig();
+    const health = checkHealth(config.binaryPath, config.env);
+    const env = detectEnvironment(config.binaryPath, config.env);
+    const guidance = buildSetupGuidance(env);
+    console.log(`Status: ${health.status}`);
+    console.log(health.summary);
+    console.log("");
+    for (const line of guidance) {
+      console.log(line);
+    }
+  });
+  qwenCode.command("prompt").description("Run a headless Qwen Code prompt and print the output").argument("<prompt>", "The prompt to send to Qwen Code").option("--model <model>", "Model override").option("--yolo", "Auto-approve all tool calls").option("--timeout-ms <ms>", "Execution timeout in milliseconds", (v) => Number(v)).option("--cwd <path>", "Working directory for the Qwen Code session").action(async (prompt, opts) => {
+    const config = readQwenCodeConfig();
+    const result = await executeHeadlessPrompt(prompt, {
+      ...config,
+      ...opts.model ? { defaultModel: opts.model } : {},
+      ...opts.yolo ? { approvalMode: "yolo" } : {},
+      ...opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {},
+      ...opts.cwd ? { cwd: opts.cwd } : {}
+    });
+    if (result.timedOut) {
+      console.error("Timed out.");
+      process.exit(124);
+    }
+    if (result.stdout.trim()) {
+      console.log(result.stdout.trim());
+    }
+    if (result.stderr.trim()) {
+      console.error(result.stderr.trim());
+    }
+    process.exit(result.exitCode ?? 1);
+  });
+  qwenCode.command("session").description("Launch an interactive Qwen Code terminal session").option("--model <model>", "Model override").option("--yolo", "Auto-approve all tool calls").option("--cwd <path>", "Working directory for the Qwen Code session").action((opts) => {
+    const config = readQwenCodeConfig();
+    const { exitCode } = launchInteractiveSession({
+      ...config,
+      ...opts.model ? { defaultModel: opts.model } : {},
+      ...opts.yolo ? { approvalMode: "yolo" } : {},
+      ...opts.cwd ? { cwd: opts.cwd } : {}
+    });
+    process.exit(exitCode ?? 0);
+  });
+  qwenCode.action(async () => {
+    await runQwenCodeHub({ allowBackToHub: false });
   });
 }
 
@@ -15511,6 +22092,12 @@ function registerSharedCommands(target) {
   });
   registerKitCommands(target);
   registerTemplateCommands(target);
+  registerCapabilityCommands(target);
+  registerPipelineCommands(target);
+  registerArtifactCommands(target);
+  registerWorkflowCommands(target);
+  registerOpenAgentsCommands(target);
+  registerQwenCodeCommands(target);
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
   auth.command("bootstrap-ceo").description("Create a one-time bootstrap invite URL for first instance admin").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--force", "Create new invite even if admin already exists", false).option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value)).option("--base-url <url>", "Public base URL used to print invite link").action(bootstrapCeoInvite);
   auth.command("login").description("Sign in to hosted Growthub and save a CLI session (browser flow)").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--base-url <url>", "Hosted Growthub base URL (defaults to auth.growthubBaseUrl or GROWTHUB_BASE_URL)").option("--token <token>", "Skip the browser flow by providing a pre-issued hosted token (scripting/CI)").option("--machine-label <label>", "Label identifying this machine in the hosted app").option("--workspace-label <label>", "Label identifying this workspace in the hosted app").option("--timeout-ms <ms>", "How long to wait for the browser callback", (value) => Number(value)).option("--no-browser", "Do not try to launch a browser \u2014 print the URL and wait").option("--json", "Output raw JSON").action(async (opts) => {
@@ -15533,18 +22120,416 @@ async function runHostedBridgeEntry(opts) {
     dataDir: opts?.dataDir
   });
 }
+async function runNativeIntelligenceHub() {
+  while (true) {
+    const baseUrl = (process.env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1").replace(/\/$/, "");
+    const currentConfig = readIntelligenceConfig();
+    const recommendedModel = "gemma3:4b";
+    const favoriteModel = currentConfig.localModel?.trim() || void 0;
+    const defaultModel = currentConfig.localModel?.trim() || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim() || process.env.OLLAMA_MODEL?.trim() || recommendedModel;
+    const status = await detectLocalIntelligenceStatus(baseUrl, defaultModel);
+    const action = await p24.select({
+      message: "Local Intelligence",
+      options: [
+        { value: "setup", label: "Setup helper", hint: "machine detection + install/env guidance" },
+        { value: "models", label: "Manage local custom models", hint: "select active favorite/default model" },
+        { value: "prompt", label: "Prompt local model (chat flow)", hint: "human first local prompt submissions" },
+        { value: "flows", label: "Run native-intelligence with your prompt", hint: "planner/normalizer/recommender/summarizer" },
+        { value: "__back_to_hub", label: "\u2190 Back to main menu" }
+      ]
+    });
+    if (p24.isCancel(action) || action === "__back_to_hub") return "back";
+    if (action === "setup") {
+      const setupLines = [
+        `OS: ${status.osLabel}`,
+        `Ollama CLI: ${status.ollamaInstalled ? "detected" : "not detected"}`,
+        `Ollama server: ${status.serverReachable ? "reachable" : "not reachable"} (${baseUrl})`,
+        `Configured local model: ${defaultModel}`,
+        `Model availability: ${status.modelAvailable ? "present" : "missing"}`,
+        `Detected models: ${status.availableModels.length}`,
+        "",
+        ...buildSetupCommands(status.osLabel, baseUrl, recommendedModel)
+      ];
+      p24.note(setupLines.join("\n"), "Local Intelligence Setup Helper");
+      continue;
+    }
+    if (action === "models") {
+      const modelOptions = [
+        ...prioritizeModelOptions(status.availableModels, favoriteModel, recommendedModel).map((modelId) => ({
+          value: modelId,
+          label: modelId === favoriteModel ? `\u2B50 ${modelId}` : modelId,
+          hint: modelId === favoriteModel ? "favorite local model" : modelId === recommendedModel ? "recommended (validated locally)" : "detected local model"
+        })),
+        { value: "__custom_model", label: "Enter custom local model id", hint: "for any other local adapter model" },
+        { value: "__back_to_local_intel", label: "\u2190 Back to Local Intelligence" }
+      ];
+      const adapterChoice = await p24.select({
+        message: "Choose local custom model adapter",
+        options: modelOptions
+      });
+      if (p24.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
+      const chosenModel = adapterChoice === "__custom_model" ? await promptForCustomModel(defaultModel) : adapterChoice;
+      if (!chosenModel) continue;
+      const applyConfirmed = await p24.confirm({
+        message: `Apply Local Intelligence config for model "${chosenModel}"?`,
+        initialValue: true
+      });
+      if (p24.isCancel(applyConfirmed) || !applyConfirmed) continue;
+      const applySpinner = p24.spinner();
+      applySpinner.start(`Applying model config (${chosenModel})...`);
+      writeIntelligenceConfig({
+        ...currentConfig,
+        backendType: "local",
+        modelId: inferCanonicalModelId(chosenModel),
+        localModel: chosenModel,
+        endpoint: `${baseUrl}/chat/completions`
+      });
+      const health = await checkBackendHealth(readIntelligenceConfig());
+      if (!health.available) {
+        applySpinner.stop(`Config saved, backend unavailable (${health.latencyMs}ms).`);
+        p24.note(
+          [...health.error ? [`Error: ${health.error}`] : [], "You can still run prompt flow and retry health later."].join("\n"),
+          "Local model status"
+        );
+        continue;
+      }
+      applySpinner.stop(`Config saved and backend reachable (${health.latencyMs}ms).`);
+      continue;
+    }
+    if (action === "prompt") {
+      await runLocalPromptChat(baseUrl, defaultModel);
+      continue;
+    }
+    const customPrompt = await p24.text({
+      message: "Enter your local intelligence prompt",
+      placeholder: "Describe what you want to create/analyze"
+    });
+    if (p24.isCancel(customPrompt)) continue;
+    const prompt = String(customPrompt).trim();
+    if (!prompt) {
+      p24.note("Prompt was empty. Nothing was run.", "Local Intelligence");
+      continue;
+    }
+    await runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt);
+  }
+}
+async function detectLocalIntelligenceStatus(baseUrl, model) {
+  const osLabel = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux";
+  const ollamaInstalled = spawnSync2("ollama", ["--version"], { stdio: "ignore" }).status === 0;
+  const modelsUrl = `${baseUrl}/models`;
+  try {
+    const response = await fetch(modelsUrl, { method: "GET" });
+    if (!response.ok) {
+      return { osLabel, ollamaInstalled, serverReachable: false, modelAvailable: false, availableModels: [] };
+    }
+    const data = await response.json();
+    const ids = (data.data ?? []).map((entry) => entry.id ?? "");
+    return {
+      osLabel,
+      ollamaInstalled,
+      serverReachable: true,
+      modelAvailable: ids.includes(model),
+      availableModels: ids.filter((id) => id.length > 0)
+    };
+  } catch {
+    return { osLabel, ollamaInstalled, serverReachable: false, modelAvailable: false, availableModels: [] };
+  }
+}
+function buildSetupCommands(osLabel, baseUrl, recommendedModel) {
+  if (osLabel === "Windows") {
+    return [
+      "Quick setup (Windows):",
+      "  1) Install Ollama from https://ollama.com/download/windows",
+      "  2) Start Ollama app/service",
+      `  3) Run: ollama pull ${recommendedModel}`,
+      "  4) Optional env (PowerShell):",
+      `     $env:OLLAMA_BASE_URL="${baseUrl}"`,
+      '     $env:NATIVE_INTELLIGENCE_LOCAL_MODEL="<your-model-id>"'
+    ];
+  }
+  return [
+    "Quick setup (macOS/Linux):",
+    "  1) brew install ollama",
+    "  2) ollama serve &",
+    `  3) ollama pull ${recommendedModel}`,
+    `  4) export OLLAMA_BASE_URL=${baseUrl}`,
+    "  5) export NATIVE_INTELLIGENCE_LOCAL_MODEL=<your-model-id>"
+  ];
+}
+function prioritizeModelOptions(models, favoriteModel, recommendedModel) {
+  const unique3 = [...new Set(models)];
+  if (unique3.length === 0) return unique3;
+  if (favoriteModel && unique3.includes(favoriteModel)) {
+    return [favoriteModel, ...unique3.filter((id) => id !== favoriteModel)];
+  }
+  if (recommendedModel && unique3.includes(recommendedModel)) {
+    return [recommendedModel, ...unique3.filter((id) => id !== recommendedModel)];
+  }
+  return unique3;
+}
+async function promptForCustomModel(defaultModel) {
+  const input = await p24.text({
+    message: "Enter local model id",
+    placeholder: "example: gemma3:4b",
+    defaultValue: defaultModel
+  });
+  if (p24.isCancel(input)) return null;
+  const trimmed = String(input).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+function inferCanonicalModelId(modelId) {
+  const lower = modelId.toLowerCase();
+  if (lower.includes("gemma3n")) return "gemma3n";
+  if (lower.includes("codegemma")) return "codegemma";
+  return "gemma3";
+}
+async function runLocalPromptChat(baseUrl, defaultModel) {
+  const activeModel = defaultModel;
+  const thread = loadOrCreateLocalThread();
+  const baseConfig = {
+    ...readIntelligenceConfig(),
+    backendType: "local",
+    modelId: inferCanonicalModelId(activeModel),
+    localModel: activeModel,
+    endpoint: `${baseUrl}/chat/completions`,
+    // Local models can take 20-40s on first warmup.
+    timeoutMs: Math.max(readIntelligenceConfig().timeoutMs ?? 3e4, 12e4)
+  };
+  const backend = createNativeIntelligenceBackend(baseConfig);
+  p24.note(
+    [
+      `Active local model: ${activeModel}`,
+      `Thread: ${thread.id}`,
+      `Saved at: ${thread.filePath}`,
+      "Type your prompt and press Enter.",
+      "Use '/back' to return to Local Intelligence menu."
+    ].join("\n"),
+    "Local Prompt Flow"
+  );
+  while (true) {
+    const rawPrompt = await p24.text({
+      message: `Prompt (${activeModel})`,
+      placeholder: "Ask anything..."
+    });
+    if (p24.isCancel(rawPrompt)) return;
+    const prompt = String(rawPrompt).trim();
+    if (prompt === "/back") return;
+    if (prompt.length === 0) continue;
+    const historyContext = renderHistoryContext(thread.messages, 8);
+    const runSpinner = p24.spinner();
+    runSpinner.start("Invoking local model...");
+    try {
+      const out = await completeWithRetry(
+        backend,
+        baseConfig,
+        {
+          systemPrompt: "You are Growthub Local Intelligence. Be concise, direct, and useful.",
+          userPrompt: historyContext.length > 0 ? `Conversation so far:
+${historyContext}
+
+User: ${prompt}` : prompt,
+          responseFormat: "text"
+        }
+      );
+      thread.messages.push({ role: "user", content: prompt, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
+      thread.messages.push({ role: "assistant", content: out.text, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
+      saveLocalThread(thread);
+      runSpinner.stop(`Response received (${out.latencyMs}ms \xB7 ${out.modelId})`);
+      console.log("");
+      console.log(out.text);
+      console.log("");
+    } catch (err) {
+      runSpinner.stop("Invocation failed.");
+      p24.note(err instanceof Error ? err.message : String(err), "Local model error");
+    }
+  }
+}
+function resolveLocalThreadsDir() {
+  return path35.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
+}
+function loadOrCreateLocalThread() {
+  const dir = resolveLocalThreadsDir();
+  fs27.mkdirSync(dir, { recursive: true });
+  const activePath = path35.resolve(dir, "active-thread.json");
+  if (fs27.existsSync(activePath)) {
+    try {
+      const parsed = JSON.parse(fs27.readFileSync(activePath, "utf-8"));
+      const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
+      const threadFile = path35.resolve(dir, `${id2}.json`);
+      const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+      return { id: id2, filePath: threadFile, messages };
+    } catch {
+    }
+  }
+  const id = `thread-${Date.now()}`;
+  const filePath = path35.resolve(dir, `${id}.json`);
+  const thread = { id, filePath, messages: [] };
+  saveLocalThread(thread);
+  return thread;
+}
+function saveLocalThread(thread) {
+  const dir = resolveLocalThreadsDir();
+  fs27.mkdirSync(dir, { recursive: true });
+  fs27.writeFileSync(
+    thread.filePath,
+    `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
+`,
+    "utf-8"
+  );
+  const activePath = path35.resolve(dir, "active-thread.json");
+  fs27.writeFileSync(
+    activePath,
+    `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
+`,
+    "utf-8"
+  );
+}
+function renderHistoryContext(messages, limit) {
+  return messages.slice(-limit).map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`).join("\n");
+}
+async function completeWithRetry(backend, baseConfig, input) {
+  try {
+    return await backend.complete(input);
+  } catch (err) {
+    const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    if (!message.includes("aborted")) throw err;
+    const retryBackend = createNativeIntelligenceBackend({
+      ...baseConfig,
+      timeoutMs: Math.max(baseConfig.timeoutMs, 18e4)
+    });
+    return retryBackend.complete(input);
+  }
+}
+async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
+  const provider = createNativeIntelligenceProvider({
+    backendType: "local",
+    modelId: inferCanonicalModelId(defaultModel),
+    localModel: defaultModel,
+    endpoint: `${baseUrl}/chat/completions`
+  });
+  try {
+    const contracts = await loadRuntimeContracts();
+    if (contracts.length === 0) {
+      throw new Error("No runtime contracts available for local-intelligence flow run.");
+    }
+    const savedWorkflows = await loadRuntimeWorkflows();
+    const primaryContract = contracts.find((contract) => contract.inputs.length > 0) ?? contracts[0];
+    const rawBindings = await collectBindingsFromContract(primaryContract, prompt);
+    const requiredOutputTypes = primaryContract.outputTypes.length > 0 ? [primaryContract.outputTypes[0]] : void 0;
+    const flowSpinner = p24.spinner();
+    flowSpinner.start("Running planner/normalizer/recommender/summarizer with your prompt...");
+    const plan = await provider.planWorkflow({
+      userIntent: prompt,
+      availableContracts: contracts,
+      executionMode: "hosted",
+      constraints: { maxNodes: 3, requiredOutputTypes }
+    });
+    const normalized = await provider.normalizeBindings({
+      nodeSlug: primaryContract.slug,
+      contract: primaryContract,
+      rawBindings,
+      executionMode: "hosted"
+    });
+    const recommendation = await provider.recommendWorkflow({
+      userIntent: prompt,
+      savedWorkflows,
+      availableContracts: contracts,
+      executionMode: "hosted"
+    });
+    const summaryNodes = plan.proposedNodes.length > 0 ? plan.proposedNodes.slice(0, 3).map((node) => {
+      const contract = contracts.find((entry) => entry.slug === node.slug);
+      return {
+        slug: node.slug,
+        bindingCount: 1,
+        missingRequired: [],
+        outputTypes: contract?.outputTypes ?? [],
+        assetCount: 0
+      };
+    }) : [{
+      slug: primaryContract.slug,
+      bindingCount: Object.keys(rawBindings).length,
+      missingRequired: normalized.missingRequired,
+      outputTypes: primaryContract.outputTypes,
+      assetCount: 0
+    }];
+    const summary = await provider.summarizeExecution({
+      pipeline: {
+        pipelineId: "local-intel-flow-suite",
+        executionMode: "hosted",
+        nodes: summaryNodes,
+        warnings: []
+      },
+      registryContext: contracts,
+      phase: "pre-execution"
+    });
+    flowSpinner.stop("Flow suite completed.");
+    p24.note(
+      [
+        `Prompt: ${prompt}`,
+        `Planner nodes: ${plan.proposedNodes.map((n) => n.slug).join(", ")}`,
+        `Normalizer contract: ${primaryContract.slug} (${normalized.fields.length} field updates)`,
+        `Recommender strategy: ${recommendation.topRecommendation.strategy}`,
+        `Summarizer title: ${summary.title}`
+      ].join("\n"),
+      "Native Intelligence Flow Results"
+    );
+  } catch (err) {
+    p24.note(err instanceof Error ? err.message : String(err), "Flow error");
+  }
+}
+async function loadRuntimeContracts() {
+  const registry = createCmsCapabilityRegistryClient();
+  const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+  return nodes.map((node) => introspectNodeContract(node));
+}
+async function loadRuntimeWorkflows() {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) return [];
+  const response = await listHostedWorkflows(session);
+  if (!response?.workflows) return [];
+  return response.workflows.map((workflow) => ({
+    workflowId: workflow.workflowId,
+    name: workflow.name,
+    description: workflow.description ?? void 0,
+    nodeCount: workflow.latestVersion?.nodeCount ?? 0,
+    nodeSlugs: [],
+    label: null,
+    createdAt: workflow.createdAt,
+    updatedAt: workflow.updatedAt ?? void 0,
+    versionCount: workflow.versionCount ?? 1
+  }));
+}
+async function collectBindingsFromContract(contract, promptSeed) {
+  const bindings = {};
+  for (const input of contract.inputs) {
+    const defaultValue = input.key === "prompt" ? promptSeed : input.defaultValue !== void 0 ? String(input.defaultValue) : "";
+    const raw = await p24.text({
+      message: `${contract.slug} \u2192 ${input.key} (${input.type}${input.required ? ", required" : ""})`,
+      placeholder: input.required ? `Enter ${input.key}` : `Optional: press Enter to skip ${input.key}`,
+      defaultValue
+    });
+    if (p24.isCancel(raw)) {
+      throw new Error("Cancelled while collecting contract input bindings.");
+    }
+    const value = String(raw).trim();
+    if (!value && input.required) {
+      throw new Error(`Required binding "${input.key}" was left empty.`);
+    }
+    if (!value) {
+      continue;
+    }
+    bindings[input.key] = value;
+  }
+  return bindings;
+}
 async function runDiscoveryHub(opts) {
   printPaperclipCliBanner();
-  p19.intro("Growthub Local");
+  p24.intro("Growthub Local");
   while (true) {
-    const surfaceChoice = await p19.select({
+    const workflowAccess = getWorkflowAccess();
+    const surfaceChoice = await p24.select({
       message: "What do you want to do first?",
       options: [
-        {
-          value: "app",
-          label: "\u{1F4E6} Full Local App",
-          hint: "Work from existing app or build from scratch"
-        },
         {
           value: "kits",
           label: "\u{1F9F0} Worker Kits",
@@ -15556,9 +22541,24 @@ async function runDiscoveryHub(opts) {
           hint: "Artifact template library"
         },
         {
+          value: "workflows",
+          label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc36.dim(" (locked)"),
+          hint: workflowAccess.state === "ready" ? "CMS contracts, dynamic pipelines, and saved workflows" : workflowAccess.reason
+        },
+        {
+          value: "native-intelligence",
+          label: "\u{1F9E0} Local Intelligence",
+          hint: "use local custom models adapaters"
+        },
+        {
           value: "hosted-auth",
           label: "\u{1F510} Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow"
+        },
+        {
+          value: "agent-harness",
+          label: "\u{1F916} Agent Harness",
+          hint: "Paperclip Local App + Open Agents + Qwen Code"
         },
         {
           value: "help",
@@ -15567,42 +22567,58 @@ async function runDiscoveryHub(opts) {
         }
       ]
     });
-    if (p19.isCancel(surfaceChoice)) {
-      p19.cancel("Cancelled.");
+    if (p24.isCancel(surfaceChoice)) {
+      p24.cancel("Cancelled.");
       process.exit(0);
     }
     if (surfaceChoice === "help") {
-      p19.note(
+      p24.note(
         [
-          "\u{1F4E6} Full Local App: open an existing local surface or create a new GTM/DX profile.",
+          "\u{1F916} Agent Harness: filter by type \u2014 Paperclip Local App (GTM/DX profiles) or Open Agents (durable workflow orchestration).",
           "\u{1F9F0} Worker Kits: browse specialized agents and custom workspaces.",
           "\u{1F4DA} Templates: browse reusable artifact templates by library type.",
+          "\u{1F517} Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
+          "\u{1F9E0} Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
+          `   Locked state: ${workflowAccess.reason}.`,
           "\u{1F510} Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
           "growthub auth login",
           "growthub auth whoami",
           "growthub kit",
-          "growthub template"
+          "growthub template",
+          "growthub workflow",
+          "growthub qwen-code",
+          "growthub qwen-code health",
+          'growthub qwen-code prompt "..."',
+          "growthub capability list",
+          "growthub pipeline assemble",
+          "growthub artifact list",
+          "growthub open-agents"
         ].join("\n"),
         "Growthub CLI Help"
       );
       continue;
     }
-    if (surfaceChoice === "app") {
+    if (surfaceChoice === "agent-harness") {
       while (true) {
-        const appModeChoice = await p19.select({
-          message: "How do you want to open Growthub Local?",
+        const harnessType = await p24.select({
+          message: "Filter by type",
           options: [
             {
-              value: "create",
-              label: "\u{1F195} Create New Profile",
-              hint: "Build a new local app surface."
+              value: "paperclip",
+              label: "\u{1F4E6} Paperclip Local App",
+              hint: "Create or load a GTM/DX profile on this machine"
             },
             {
-              value: "load",
-              label: "\u{1F4C2} Load Existing Profile",
-              hint: "Work from a profile already on this machine."
+              value: "open-agents",
+              label: "\u{1F310} Open Agents",
+              hint: "Durable workflow orchestration with prompt + chat session flow"
+            },
+            {
+              value: "qwen-code",
+              label: "\u{1F916} Qwen Code CLI",
+              hint: "Open-source coding harness with prompt + interactive chat session"
             },
             {
               value: "__back_to_hub",
@@ -15610,87 +22626,137 @@ async function runDiscoveryHub(opts) {
             }
           ]
         });
-        if (p19.isCancel(appModeChoice)) {
-          p19.cancel("Cancelled.");
+        if (p24.isCancel(harnessType)) {
+          p24.cancel("Cancelled.");
           process.exit(0);
         }
-        if (appModeChoice === "__back_to_hub") break;
-        if (appModeChoice === "load") {
-          const existingSurfaces = listLocalSurfaces();
-          if (existingSurfaces.length === 0) {
-            p19.note("No existing local app profiles were found on this machine.", "Nothing found");
-            continue;
-          }
-          const existingChoice = await p19.select({
-            message: "Select an existing app surface",
-            options: [
-              ...existingSurfaces.map((surface) => ({
-                value: surface.instanceId,
-                label: `${surface.profile === "gtm" ? "\u{1F4C8}" : "\u{1F9E0}"} ${surface.profile.toUpperCase()} \xB7 ${surface.instanceId}`,
-                hint: surface.configPath
-              })),
-              { value: "__back_to_app_mode", label: "\u2190 Back to app options" }
-            ]
-          });
-          if (p19.isCancel(existingChoice)) {
-            p19.cancel("Cancelled.");
-            process.exit(0);
-          }
-          if (existingChoice === "__back_to_app_mode") {
-            continue;
-          }
-          const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
-          if (!selectedSurface) {
-            p19.cancel("Selected profile not found.");
-            process.exit(1);
-          }
-          process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
-          await runCommand({
-            config: selectedSurface.configPath,
-            instance: selectedSurface.instanceId,
-            repair: true,
-            yes: true
-          });
-          return;
-        }
-        const profileChoice = await p19.select({
-          message: "Which new app surface do you want to create?",
-          options: [
-            {
-              value: "gtm",
-              label: "\u{1F4C8} GTM",
-              hint: "Go-to-Market surface."
-            },
-            {
-              value: "dx",
-              label: "\u{1F9E0} DX",
-              hint: "Developer Experience surface."
-            },
-            {
-              value: "__back_to_app_mode",
-              label: "\u2190 Back to app options"
+        if (harnessType === "__back_to_hub") break;
+        if (harnessType === "paperclip") {
+          let paperclipDone = false;
+          while (!paperclipDone) {
+            const appModeChoice = await p24.select({
+              message: "How do you want to open Growthub Local?",
+              options: [
+                {
+                  value: "create",
+                  label: "\u{1F195} Create New Profile",
+                  hint: "Build a new local app surface."
+                },
+                {
+                  value: "load",
+                  label: "\u{1F4C2} Load Existing Profile",
+                  hint: "Work from a profile already on this machine."
+                },
+                {
+                  value: "__back_to_harness",
+                  label: "\u2190 Back to harness type"
+                }
+              ]
+            });
+            if (p24.isCancel(appModeChoice)) {
+              p24.cancel("Cancelled.");
+              process.exit(0);
             }
-          ]
-        });
-        if (p19.isCancel(profileChoice)) {
-          p19.cancel("Cancelled.");
-          process.exit(0);
-        }
-        if (profileChoice === "__back_to_app_mode") {
+            if (appModeChoice === "__back_to_harness") break;
+            if (appModeChoice === "load") {
+              const existingSurfaces = listLocalSurfaces();
+              if (existingSurfaces.length === 0) {
+                p24.note("No existing local app profiles were found on this machine.", "Nothing found");
+                continue;
+              }
+              const existingChoice = await p24.select({
+                message: "Select an existing app surface",
+                options: [
+                  ...existingSurfaces.map((surface) => ({
+                    value: surface.instanceId,
+                    label: `${surface.profile === "gtm" ? "\u{1F4C8}" : "\u{1F9E0}"} ${surface.profile.toUpperCase()} \xB7 ${surface.instanceId}`,
+                    hint: surface.configPath
+                  })),
+                  { value: "__back_to_app_mode", label: "\u2190 Back to app options" }
+                ]
+              });
+              if (p24.isCancel(existingChoice)) {
+                p24.cancel("Cancelled.");
+                process.exit(0);
+              }
+              if (existingChoice === "__back_to_app_mode") {
+                continue;
+              }
+              const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
+              if (!selectedSurface) {
+                p24.cancel("Selected profile not found.");
+                process.exit(1);
+              }
+              process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
+              await runCommand({
+                config: selectedSurface.configPath,
+                instance: selectedSurface.instanceId,
+                repair: true,
+                yes: true
+              });
+              return;
+            }
+            const profileChoice = await p24.select({
+              message: "Which new app surface do you want to create?",
+              options: [
+                {
+                  value: "gtm",
+                  label: "\u{1F4C8} GTM",
+                  hint: "Go-to-Market surface."
+                },
+                {
+                  value: "dx",
+                  label: "\u{1F9E0} DX",
+                  hint: "Developer Experience surface."
+                },
+                {
+                  value: "__back_to_app_mode",
+                  label: "\u2190 Back to app options"
+                }
+              ]
+            });
+            if (p24.isCancel(profileChoice)) {
+              p24.cancel("Cancelled.");
+              process.exit(0);
+            }
+            if (profileChoice === "__back_to_app_mode") {
+              continue;
+            }
+            process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
+            await onboard({
+              config: opts?.config,
+              run: opts?.run ?? isInstallerMode(),
+              yes: isInstallerMode()
+            });
+            return;
+          }
           continue;
         }
-        process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
-        await onboard({
-          config: opts?.config,
-          run: opts?.run ?? isInstallerMode(),
-          yes: isInstallerMode()
-        });
-        return;
+        if (harnessType === "open-agents") {
+          const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
+          if (oaResult === "back") continue;
+          return;
+        }
+        if (harnessType === "qwen-code") {
+          const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
+          if (qwenResult === "back") continue;
+          return;
+        }
       }
       continue;
     }
     if (surfaceChoice === "kits") {
       const result2 = await runInteractivePicker({ allowBackToHub: true });
+      if (result2 === "back") continue;
+      return;
+    }
+    if (surfaceChoice === "workflows") {
+      const result2 = await runWorkflowPicker({ allowBackToHub: true });
+      if (result2 === "back") continue;
+      return;
+    }
+    if (surfaceChoice === "native-intelligence") {
+      const result2 = await runNativeIntelligenceHub();
       if (result2 === "back") continue;
       return;
     }
@@ -15708,12 +22774,12 @@ function isInstallerMode() {
 }
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
-  const instancesDir = path27.resolve(homeDir, "instances");
-  if (!fs19.existsSync(instancesDir)) return [];
-  return fs19.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  const instancesDir = path35.resolve(homeDir, "instances");
+  if (!fs27.existsSync(instancesDir)) return [];
+  return fs27.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
-    const configPath = path27.resolve(instancesDir, instanceId, "config.json");
-    if (!fs19.existsSync(configPath)) return null;
+    const configPath = path35.resolve(instancesDir, instanceId, "config.json");
+    if (!fs27.existsSync(configPath)) return null;
     try {
       const config = readConfig(configPath);
       if (!config) return null;
@@ -15754,7 +22820,7 @@ applyDataDirOverride(bootstrapOptions, {
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
-program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.48").addHelpText("after", `
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.58").addHelpText("after", `
 Worker Kits (agent execution environments):
 
   Discovery:
@@ -15766,6 +22832,8 @@ Worker Kits (agent execution environments):
   Download:
     $ growthub kit download                     Interactive (no arg = picker)
     $ growthub kit download higgsfield          Fuzzy slug \u2014 resolves automatically
+    $ growthub kit download postiz              Postiz Social Media Studio
+    $ growthub kit download zernio             Zernio Social Media Studio (Postiz UI Shell + Zernio Engine)
     $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
     $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
 
@@ -15785,6 +22853,38 @@ Instance setup:
     $ growthub doctor                           Diagnose and optionally repair
     $ growthub configure                        Update config sections
     $ growthub                                  Interactive discovery hub
+
+Workflows (requires auth):
+    $ growthub workflow                         Interactive workflow browser
+    $ growthub workflow saved                   List saved workflow pipelines
+    $ growthub pipeline assemble                Build and save hosted dynamic pipelines
+
+Dynamic Registry Pipelines:
+
+  Capabilities:
+    $ growthub capability                       Interactive capability browser
+    $ growthub capability list                  All capabilities grouped by family
+    $ growthub capability list --family video   Filter by family
+    $ growthub capability inspect video-gen     Inspect a specific capability
+    $ growthub capability resolve               Resolve machine-scoped bindings
+
+  Pipelines:
+    $ growthub pipeline                         Interactive pipeline assembler
+    $ growthub pipeline assemble                Interactive assembly
+    $ growthub pipeline validate ./pipeline.json
+    $ growthub pipeline execute ./pipeline.json
+
+  Artifacts:
+    $ growthub artifact list                    All pipeline artifacts
+    $ growthub artifact list --type video       Filter by type
+    $ growthub artifact inspect <id>            Inspect a specific artifact
+
+Qwen Code CLI (agent harness):
+    $ growthub qwen-code                        Interactive hub \u2014 health, prompt, session, configure
+    $ growthub qwen-code health                 Check Qwen Code CLI environment and readiness
+    $ growthub qwen-code prompt "fix the bug"   Headless single-prompt execution
+    $ growthub qwen-code session                Launch interactive terminal session
+    $ growthub qwen-code session --yolo         Auto-approve all tool calls
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)
