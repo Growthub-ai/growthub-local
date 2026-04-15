@@ -280,6 +280,11 @@ async function runInteractive() {
         label: "🔐 Hosted Auth Bridge Preview",
         hint: "Validate auth/profile commands in the branch CLI surface",
       },
+      {
+        value: "kit-picker",
+        label: "📦 Custom Workspace Download",
+        hint: "Browse and download worker kits — geo-seo-v1, higgsfield-studio-v1, and more",
+      },
     ],
   });
 
@@ -307,6 +312,10 @@ async function runInteractive() {
 
   if (choice === "hosted-auth") {
     runHostedBridgePreview();
+  }
+
+  if (choice === "kit-picker") {
+    runSourceKitPicker();
   }
 
   runCli([]);
