@@ -57,6 +57,7 @@ export type {
   NativeIntelligenceBackend,
   NativeIntelligenceConfig,
   NativeIntelligenceModelId,
+  IntelligenceProviderType,
   ModelCompletionInput,
   ModelCompletionResult,
   WorkflowPlanningInput,

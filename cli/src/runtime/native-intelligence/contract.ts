@@ -27,6 +27,16 @@ type NodeContractSummary = _NodeContractSummary;
 
 export type NativeIntelligenceModelId = "gemma3" | "gemma3n" | "codegemma";
 
+/**
+ * Extended provider types for multi-provider intelligence routing.
+ * "local" = Ollama / vLLM / local OpenAI-compatible (default, existing behavior)
+ * "claude" = Anthropic Messages API
+ * "openai" = OpenAI Chat Completions API
+ * "gemini" = Google Gemini API
+ * "openrouter" = OpenRouter (OpenAI-compatible proxy)
+ */
+export type IntelligenceProviderType = "local" | "claude" | "openai" | "gemini" | "openrouter";
+
 // ---------------------------------------------------------------------------
 // Execution mode context
 // ---------------------------------------------------------------------------
@@ -241,6 +251,10 @@ export interface NativeIntelligenceConfig {
   defaultTemperature?: number;
   defaultMaxTokens?: number;
   timeoutMs?: number;
+  /** Extended provider type for multi-provider routing. */
+  providerType?: IntelligenceProviderType;
+  /** Provider-specific model identifier (e.g. "claude-sonnet-4-6", "gpt-4o", "gemini-2.5-flash"). */
+  providerModelId?: string;
 }
 
 export const DEFAULT_INTELLIGENCE_CONFIG: NativeIntelligenceConfig = {

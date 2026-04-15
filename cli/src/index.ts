@@ -84,6 +84,23 @@ import type { WorkflowSummaryForIntelligence } from "./runtime/native-intelligen
 import { printPaperclipCliBanner } from "./utils/banner.js";
 import { resolvePaperclipHomeDir } from "./config/home.js";
 import type { SurfaceProfile } from "./config/schema.js";
+import {
+  addObservation,
+  addSummary,
+  searchMemory,
+  searchSummaries,
+  listMemoryProjects,
+  getMemoryStats,
+  getObservations,
+  buildMemoryContext,
+  buildSemanticContext,
+  canSync,
+  syncMemoriesToHosted,
+  readProviderConfig,
+  writeProviderConfig,
+} from "./runtime/memory/index.js";
+import type { ObservationType, ConceptCategory } from "./runtime/memory/index.js";
+import { promptExtendedProvider } from "./prompts/llm.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
@@ -298,6 +315,7 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
         { value: "models", label: "Manage local custom models", hint: "select active favorite/default model" },
         { value: "prompt", label: "Prompt local model (chat flow)", hint: "human first local prompt submissions" },
         { value: "flows", label: "Run native-intelligence with your prompt", hint: "planner/normalizer/recommender/summarizer" },
+        { value: "provider-config", label: "Configure API provider", hint: "Claude, OpenAI, Gemini, OpenRouter, or local" },
         { value: "__back_to_hub", label: "← Back to main menu" },
       ],
     });
@@ -375,6 +393,53 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
 
     if (action === "prompt") {
       await runLocalPromptChat(baseUrl, defaultModel);
+      continue;
+    }
+
+    if (action === "provider-config") {
+      const result = await promptExtendedProvider("intelligence");
+      if (!result) continue;
+
+      if (result.provider === "local") {
+        // Apply to native-intelligence config (existing Ollama path)
+        writeIntelligenceConfig({
+          ...currentConfig,
+          backendType: "local",
+          modelId: inferCanonicalModelId(result.modelId ?? "gemma3"),
+          localModel: result.modelId ?? "gemma3:4b",
+          endpoint: `${baseUrl}/chat/completions`,
+          providerType: "local",
+        });
+      } else {
+        // Apply API provider to native-intelligence config
+        const endpoints: Record<string, string> = {
+          claude: "https://api.anthropic.com/v1/messages",
+          openai: "https://api.openai.com/v1/chat/completions",
+          gemini: "https://generativelanguage.googleapis.com/v1beta",
+          openrouter: "https://openrouter.ai/api/v1/chat/completions",
+        };
+        writeIntelligenceConfig({
+          ...currentConfig,
+          backendType: "hosted",
+          providerType: result.provider as "claude" | "openai" | "gemini" | "openrouter",
+          providerModelId: result.modelId,
+          apiKey: result.apiKey,
+          endpoint: result.endpoint ?? endpoints[result.provider] ?? currentConfig.endpoint,
+        });
+      }
+
+      // Also sync to memory provider config
+      writeProviderConfig({
+        provider: result.provider,
+        apiKey: result.apiKey,
+        modelId: result.modelId,
+        endpoint: result.endpoint,
+      });
+
+      p.note(
+        `Provider: ${result.provider}\nModel: ${result.modelId ?? "default"}\nAPI key: ${result.apiKey ? "configured" : "not needed"}`,
+        "Provider config saved (intelligence + memory)",
+      );
       continue;
     }
 
@@ -487,6 +552,8 @@ function inferCanonicalModelId(modelId: string): "gemma3" | "gemma3n" | "codegem
 async function runLocalPromptChat(baseUrl: string, defaultModel: string): Promise<void> {
   const activeModel = defaultModel;
   const thread = loadOrCreateLocalThread();
+  const currentProject = resolveCurrentProject();
+  const sessionId = thread.id;
   const baseConfig = {
     ...readIntelligenceConfig(),
     backendType: "local" as const,
@@ -498,28 +565,57 @@ async function runLocalPromptChat(baseUrl: string, defaultModel: string): Promis
   };
   const backend = createNativeIntelligenceBackend(baseConfig);
 
-  p.note(
-    [
-      `Active local model: ${activeModel}`,
-      `Thread: ${thread.id}`,
-      `Saved at: ${thread.filePath}`,
-      "Type your prompt and press Enter.",
-      "Use '/back' to return to Local Intelligence menu.",
-    ].join("\n"),
-    "Local Prompt Flow",
-  );
+  // Inject memory context at session start
+  const memoryCtx = buildMemoryContext(currentProject, {
+    maxObservations: 30,
+    fullDetailCount: 3,
+    maxSummaries: 5,
+    tokenBudget: 2048,
+  });
+
+  const infoLines = [
+    `Active local model: ${activeModel}`,
+    `Thread: ${thread.id}`,
+    `Saved at: ${thread.filePath}`,
+  ];
+  if (memoryCtx.observationCount > 0 || memoryCtx.summaryCount > 0) {
+    infoLines.push(`Memory context: ${memoryCtx.observationCount} observations, ${memoryCtx.summaryCount} summaries (~${memoryCtx.estimatedTokens} tokens)`);
+  }
+  infoLines.push("Type your prompt and press Enter.");
+  infoLines.push("Use '/back' to return to Local Intelligence menu.");
+
+  p.note(infoLines.join("\n"), "Local Prompt Flow");
 
   while (true) {
     const rawPrompt = await p.text({
       message: `Prompt (${activeModel})`,
       placeholder: "Ask anything...",
     });
-    if (p.isCancel(rawPrompt)) return;
+    if (p.isCancel(rawPrompt)) {
+      captureSessionSummary(currentProject, sessionId, thread.messages);
+      return;
+    }
     const prompt = String(rawPrompt).trim();
-    if (prompt === "/back") return;
+    if (prompt === "/back") {
+      captureSessionSummary(currentProject, sessionId, thread.messages);
+      return;
+    }
     if (prompt.length === 0) continue;
 
+    // Build semantic context for this specific prompt
+    const semanticCtx = buildSemanticContext(currentProject, prompt, {
+      maxObservations: 10,
+      fullDetailCount: 2,
+      maxSummaries: 3,
+      tokenBudget: 1024,
+    });
+
     const historyContext = renderHistoryContext(thread.messages, 8);
+    const systemParts = ["You are Growthub Local Intelligence. Be concise, direct, and useful."];
+    if (semanticCtx.text) {
+      systemParts.push(semanticCtx.text);
+    }
+
     const runSpinner = p.spinner();
     runSpinner.start("Invoking local model...");
     try {
@@ -527,7 +623,7 @@ async function runLocalPromptChat(baseUrl: string, defaultModel: string): Promis
         backend,
         baseConfig,
         {
-        systemPrompt: "You are Growthub Local Intelligence. Be concise, direct, and useful.",
+        systemPrompt: systemParts.join("\n\n"),
           userPrompt: historyContext.length > 0
             ? `Conversation so far:\n${historyContext}\n\nUser: ${prompt}`
             : prompt,
@@ -541,10 +637,65 @@ async function runLocalPromptChat(baseUrl: string, defaultModel: string): Promis
       console.log("");
       console.log(out.text);
       console.log("");
+
+      // Capture memory observation from this exchange
+      try {
+        addObservation(currentProject, {
+          sessionId,
+          type: "conversation" as ObservationType,
+          title: prompt.slice(0, 120),
+          narrative: out.text.slice(0, 500),
+          facts: extractFactsFromResponse(out.text),
+          concepts: inferConceptsFromPrompt(prompt),
+        });
+      } catch {
+        // Memory capture is best-effort — never block the chat flow
+      }
     } catch (err) {
       runSpinner.stop("Invocation failed.");
       p.note(err instanceof Error ? err.message : String(err), "Local model error");
     }
+  }
+}
+
+function extractFactsFromResponse(text: string): string[] {
+  // Extract first 3 sentences as facts (simple heuristic)
+  const sentences = text.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 10);
+  return sentences.slice(0, 3);
+}
+
+function inferConceptsFromPrompt(prompt: string): ConceptCategory[] {
+  const lower = prompt.toLowerCase();
+  const concepts: ConceptCategory[] = [];
+  if (lower.includes("how") || lower.includes("explain")) concepts.push("how-it-works");
+  if (lower.includes("why")) concepts.push("why-it-exists");
+  if (lower.includes("change") || lower.includes("update") || lower.includes("modify")) concepts.push("what-changed");
+  if (lower.includes("fix") || lower.includes("bug") || lower.includes("issue") || lower.includes("error")) concepts.push("problem-solution");
+  if (lower.includes("careful") || lower.includes("warn") || lower.includes("watch out")) concepts.push("gotcha");
+  if (lower.includes("pattern") || lower.includes("approach") || lower.includes("best practice")) concepts.push("pattern");
+  if (lower.includes("trade") || lower.includes("versus") || lower.includes("vs")) concepts.push("trade-off");
+  return concepts.length > 0 ? concepts : ["how-it-works"];
+}
+
+function captureSessionSummary(
+  project: string,
+  sessionId: string,
+  messages: LocalThreadMessage[],
+): void {
+  if (messages.length === 0) return;
+  try {
+    const userMessages = messages.filter((m) => m.role === "user");
+    const assistantMessages = messages.filter((m) => m.role === "assistant");
+    const request = userMessages[0]?.content.slice(0, 200);
+    const lastAssistant = assistantMessages[assistantMessages.length - 1]?.content.slice(0, 300);
+    addSummary(project, {
+      sessionId,
+      request,
+      completed: lastAssistant,
+      notes: `${userMessages.length} prompts, ${assistantMessages.length} responses`,
+    });
+  } catch {
+    // Summary capture is best-effort
   }
 }
 
@@ -795,6 +946,183 @@ async function collectBindingsFromContract(
   return bindings;
 }
 
+// ---------------------------------------------------------------------------
+// Memory & Knowledge Hub
+// ---------------------------------------------------------------------------
+
+function resolveCurrentProject(): string {
+  return path.basename(process.cwd());
+}
+
+async function runMemoryKnowledgeHub(): Promise<"back"> {
+  const project = resolveCurrentProject();
+
+  while (true) {
+    const stats = getMemoryStats(project);
+    const syncStatus = canSync();
+    const providerConfig = readProviderConfig();
+
+    const action = await p.select({
+      message: "Memory & Knowledge",
+      options: [
+        {
+          value: "search",
+          label: "Search memories",
+          hint: `${stats.observationCount} observations stored`,
+        },
+        {
+          value: "timeline",
+          label: "View timeline",
+          hint: stats.newestObservation
+            ? `latest: ${stats.newestObservation.split("T")[0]}`
+            : "no observations yet",
+        },
+        {
+          value: "projects",
+          label: "Browse projects",
+          hint: "view all projects with stored memories",
+        },
+        {
+          value: "provider",
+          label: "Configure AI provider",
+          hint: `current: ${providerConfig.provider}${providerConfig.modelId ? ` (${providerConfig.modelId})` : ""}`,
+        },
+        {
+          value: "sync",
+          label: syncStatus.available
+            ? "Sync to Growthub"
+            : "Sync to Growthub" + pc.dim(" (unavailable)"),
+          hint: syncStatus.available
+            ? "push memories to hosted account"
+            : syncStatus.reason,
+        },
+        { value: "__back_to_hub", label: "← Back to main menu" },
+      ],
+    });
+
+    if (p.isCancel(action) || action === "__back_to_hub") return "back";
+
+    if (action === "search") {
+      const query = await p.text({
+        message: "Search query",
+        placeholder: "what are you looking for?",
+      });
+      if (p.isCancel(query)) continue;
+      const text = String(query).trim();
+      if (!text) continue;
+
+      const results = searchMemory({ text, project, limit: 15 });
+      if (results.totalMatched === 0) {
+        p.note("No matching observations found.", "Search Results");
+        continue;
+      }
+
+      const lines: string[] = [`Found ${results.totalMatched} match(es), showing top ${results.results.length}:`, ""];
+      for (const r of results.results) {
+        const date = r.observation.createdAt.split("T")[0];
+        lines.push(`#${r.observation.id} [${date}] ${r.observation.type}: ${r.observation.title}`);
+        if (r.observation.facts.length > 0) {
+          lines.push(`  • ${r.observation.facts[0]}`);
+        }
+        lines.push(`  Score: ${r.score.toFixed(1)} | Matched: ${r.matchedFields.join(", ")}`);
+        lines.push("");
+      }
+
+      // Also search summaries
+      const summaryResults = searchSummaries(project, text, 5);
+      if (summaryResults.length > 0) {
+        lines.push("--- Related Session Summaries ---");
+        for (const s of summaryResults) {
+          const date = s.createdAt.split("T")[0];
+          lines.push(`[${date}] ${s.request ?? "Session"}: ${s.completed ?? s.learned ?? "(no summary)"}`);
+        }
+      }
+
+      p.note(lines.join("\n"), "Search Results");
+      continue;
+    }
+
+    if (action === "timeline") {
+      const observations = getObservations(project, { limit: 20 });
+      if (observations.length === 0) {
+        p.note(
+          "No observations stored yet. Start a local prompt chat to begin capturing memories.",
+          "Timeline",
+        );
+        continue;
+      }
+
+      const lines: string[] = [];
+      let lastDate = "";
+      for (const obs of observations) {
+        const date = obs.createdAt.split("T")[0];
+        if (date !== lastDate) {
+          if (lastDate) lines.push("");
+          lines.push(`── ${date} ──`);
+          lastDate = date;
+        }
+        lines.push(`  #${obs.id} ${obs.type}: ${obs.title}`);
+        if (obs.narrative) {
+          lines.push(`    ${obs.narrative.slice(0, 120)}${obs.narrative.length > 120 ? "..." : ""}`);
+        }
+      }
+      p.note(lines.join("\n"), `Timeline — ${project} (${observations.length} recent)`);
+      continue;
+    }
+
+    if (action === "projects") {
+      const projects = listMemoryProjects();
+      if (projects.length === 0) {
+        p.note("No memory projects found. Interact with the local prompt chat to start capturing.", "Projects");
+        continue;
+      }
+      const lines: string[] = [];
+      for (const proj of projects) {
+        const s = getMemoryStats(proj);
+        lines.push(`${proj}: ${s.observationCount} observations, ${s.summaryCount} summaries`);
+      }
+      p.note(lines.join("\n"), "Memory Projects");
+      continue;
+    }
+
+    if (action === "provider") {
+      const result = await promptExtendedProvider("memory intelligence");
+      if (!result) continue;
+
+      writeProviderConfig({
+        provider: result.provider,
+        apiKey: result.apiKey,
+        modelId: result.modelId,
+        endpoint: result.endpoint,
+      });
+      p.note(
+        `Provider: ${result.provider}\nModel: ${result.modelId ?? "default"}\nAPI key: ${result.apiKey ? "configured" : "not needed"}`,
+        "Provider config saved",
+      );
+      continue;
+    }
+
+    if (action === "sync") {
+      if (!syncStatus.available) {
+        p.note(syncStatus.reason ?? "Sync unavailable", "Sync");
+        continue;
+      }
+      const syncSpinner = p.spinner();
+      syncSpinner.start("Syncing memories to Growthub...");
+      const syncResult = await syncMemoriesToHosted(project);
+      if (syncResult.success) {
+        syncSpinner.stop(
+          `Synced ${syncResult.syncedObservations} observations and ${syncResult.syncedSummaries} summaries.`,
+        );
+      } else {
+        syncSpinner.stop("Sync failed.");
+        p.note(syncResult.error ?? "Unknown error", "Sync Error");
+      }
+      continue;
+    }
+  }
+}
+
 async function runDiscoveryHub(opts?: {
   config?: string;
   dataDir?: string;
@@ -843,6 +1171,16 @@ async function runDiscoveryHub(opts?: {
           hint: "GitHub, Fork Sync, Integrations, Service Status, Starter, Fleet",
         },
         {
+          value: "memory-knowledge",
+          label: "📖 Memory & Knowledge",
+          hint: "persistent memory, search, multi-provider config, Growthub sync",
+        },
+        {
+          value: "hosted-auth",
+          label: "🔐 Connect Growthub Account",
+          hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -863,6 +1201,7 @@ async function runDiscoveryHub(opts?: {
           "📚 Templates: browse reusable artifact templates by library type.",
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
+          "📖 Memory & Knowledge: persistent cross-session memory, search observations, multi-provider AI config, sync to Growthub.",
           `   Locked state: ${workflowAccess.reason}.`,
           "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
@@ -1235,6 +1574,16 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
+    if (surfaceChoice === "memory-knowledge") {
+      const result = await runMemoryKnowledgeHub();
+      if (result === "back") continue;
+      return;
+    }
+
+    if (surfaceChoice === "hosted-auth") {
+      await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
+      continue;
+    }
     const result = await runTemplatePicker({ allowBackToHub: true });
     if (result === "back") continue;
     return;

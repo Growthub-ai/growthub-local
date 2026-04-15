@@ -16,6 +16,7 @@
 import type {
   NativeIntelligenceBackend,
   NativeIntelligenceConfig,
+  IntelligenceProviderType,
   ModelCompletionInput,
   ModelCompletionResult,
 } from "./contract.js";
@@ -40,12 +41,240 @@ interface OpenAICompatibleResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Backend creation
+// Anthropic Messages API response shape
+// ---------------------------------------------------------------------------
+
+interface AnthropicResponse {
+  id?: string;
+  content?: Array<{ type: string; text?: string }>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  };
+  model?: string;
+  stop_reason?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Gemini API response shape
+// ---------------------------------------------------------------------------
+
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  modelVersion?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Provider-specific backends
+// ---------------------------------------------------------------------------
+
+function resolveProviderType(config: NativeIntelligenceConfig): IntelligenceProviderType {
+  if (config.providerType) return config.providerType;
+  if (config.backendType === "local") return "local";
+  return "local";
+}
+
+function createClaudeBackend(config: NativeIntelligenceConfig): NativeIntelligenceBackend {
+  return {
+    async complete(input: ModelCompletionInput): Promise<ModelCompletionResult> {
+      const startMs = Date.now();
+      const model = config.providerModelId ?? "claude-sonnet-4-6";
+      const endpoint = config.endpoint || "https://api.anthropic.com/v1/messages";
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": config.apiKey ?? "",
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: input.maxTokens ?? config.defaultMaxTokens ?? 4096,
+            system: input.systemPrompt,
+            messages: [{ role: "user", content: input.userPrompt }],
+            ...(input.temperature !== undefined || config.defaultTemperature !== undefined
+              ? { temperature: input.temperature ?? config.defaultTemperature ?? 0.3 }
+              : {}),
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          throw new NativeIntelligenceBackendError(
+            response.status,
+            `Anthropic API responded with ${response.status}: ${errorText || response.statusText}`,
+          );
+        }
+
+        const result = (await response.json()) as AnthropicResponse;
+        const text = result.content?.find((c) => c.type === "text")?.text ?? "";
+
+        return {
+          text,
+          usage: result.usage
+            ? {
+                promptTokens: result.usage.input_tokens ?? 0,
+                completionTokens: result.usage.output_tokens ?? 0,
+                totalTokens: (result.usage.input_tokens ?? 0) + (result.usage.output_tokens ?? 0),
+              }
+            : undefined,
+          modelId: result.model ?? model,
+          latencyMs: Date.now() - startMs,
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+  };
+}
+
+function createGeminiBackend(config: NativeIntelligenceConfig): NativeIntelligenceBackend {
+  return {
+    async complete(input: ModelCompletionInput): Promise<ModelCompletionResult> {
+      const startMs = Date.now();
+      const model = config.providerModelId ?? "gemini-2.5-flash";
+      const baseEndpoint = config.endpoint || "https://generativelanguage.googleapis.com/v1beta";
+      const endpoint = `${baseEndpoint}/models/${model}:generateContent?key=${config.apiKey ?? ""}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: input.systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: input.userPrompt }] }],
+            generationConfig: {
+              temperature: input.temperature ?? config.defaultTemperature ?? 0.3,
+              maxOutputTokens: input.maxTokens ?? config.defaultMaxTokens ?? 4096,
+              ...(input.responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
+            },
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          throw new NativeIntelligenceBackendError(
+            response.status,
+            `Gemini API responded with ${response.status}: ${errorText || response.statusText}`,
+          );
+        }
+
+        const result = (await response.json()) as GeminiResponse;
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+        return {
+          text,
+          usage: result.usageMetadata
+            ? {
+                promptTokens: result.usageMetadata.promptTokenCount ?? 0,
+                completionTokens: result.usageMetadata.candidatesTokenCount ?? 0,
+                totalTokens: result.usageMetadata.totalTokenCount ?? 0,
+              }
+            : undefined,
+          modelId: result.modelVersion ?? model,
+          latencyMs: Date.now() - startMs,
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+  };
+}
+
+function createOpenRouterBackend(config: NativeIntelligenceConfig): NativeIntelligenceBackend {
+  return {
+    async complete(input: ModelCompletionInput): Promise<ModelCompletionResult> {
+      const startMs = Date.now();
+      const model = config.providerModelId ?? "meta-llama/llama-4-maverick";
+      const endpoint = config.endpoint || "https://openrouter.ai/api/v1/chat/completions";
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
+
+      try {
+        const body: Record<string, unknown> = {
+          model,
+          messages: [
+            { role: "system", content: input.systemPrompt },
+            { role: "user", content: input.userPrompt },
+          ],
+          temperature: input.temperature ?? config.defaultTemperature ?? 0.3,
+          max_tokens: input.maxTokens ?? config.defaultMaxTokens ?? 4096,
+        };
+        if (input.responseFormat === "json") {
+          body.response_format = { type: "json_object" };
+        }
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${config.apiKey ?? ""}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          throw new NativeIntelligenceBackendError(
+            response.status,
+            `OpenRouter API responded with ${response.status}: ${errorText || response.statusText}`,
+          );
+        }
+
+        const result = (await response.json()) as OpenAICompatibleResponse;
+        return {
+          text: extractCompletionText(result),
+          usage: result.usage
+            ? {
+                promptTokens: result.usage.prompt_tokens ?? 0,
+                completionTokens: result.usage.completion_tokens ?? 0,
+                totalTokens: result.usage.total_tokens ?? 0,
+              }
+            : undefined,
+          modelId: result.model ?? model,
+          latencyMs: Date.now() - startMs,
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Backend creation (unified entry point)
 // ---------------------------------------------------------------------------
 
 export function createNativeIntelligenceBackend(
   config: NativeIntelligenceConfig,
 ): NativeIntelligenceBackend {
+  const providerType = resolveProviderType(config);
+
+  if (providerType === "claude") return createClaudeBackend(config);
+  if (providerType === "gemini") return createGeminiBackend(config);
+  if (providerType === "openrouter") return createOpenRouterBackend(config);
+  // "openai" and "local" both use the OpenAI-compatible path below
+
   return {
     async complete(input: ModelCompletionInput): Promise<ModelCompletionResult> {
       const startMs = Date.now();
