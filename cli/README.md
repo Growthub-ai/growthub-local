@@ -83,10 +83,12 @@ growthub kit families
 ```bash
 growthub kit inspect creative-strategist-v1
 growthub kit inspect growthub-open-higgsfield-studio-v1
+growthub kit inspect growthub-postiz-social-v1
 growthub kit inspect growthub-email-marketing-v1 --json
 
 growthub kit download creative-strategist-v1
 growthub kit download growthub-open-higgsfield-studio-v1
+growthub kit download growthub-postiz-social-v1
 growthub kit download higgsfield --yes
 
 growthub kit path creative-strategist-v1
@@ -106,6 +108,8 @@ growthub kit validate /absolute/path/to/kit
 | `creative-strategist-v1` | workflow | Video creative briefs and campaign strategy |
 | `growthub-email-marketing-v1` | operator | Brand-aware email campaigns, sequences, and campaign planning |
 | `growthub-open-higgsfield-studio-v1` | studio | Open Higgsfield visual production workflows |
+| `growthub-geo-seo-v1` | studio | GEO + SEO audits via geo-seo-claude fork |
+| `growthub-postiz-social-v1` | studio | Postiz (gitroomhq/postiz-app) social + AEO distribution workspace |
 
 ### How local adapters use worker kits
 

@@ -283,7 +283,7 @@ async function runInteractive() {
       {
         value: "kit-picker",
         label: "📦 Custom Workspace Download",
-        hint: "Browse and download worker kits — geo-seo-v1, higgsfield-studio-v1, and more",
+        hint: "Browse and download worker kits — postiz-social-v1, geo-seo-v1, higgsfield-studio-v1, and more",
       },
     ],
   });

@@ -3,6 +3,8 @@ dist
 .DS_Store
 .env
 .env.*
+# Worker kit sample env files must stay trackable (pattern above matches `.env.example`)
+!**/.env.example
 coverage
 server/ui-dist
 growthub-local/instances

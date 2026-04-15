@@ -100,6 +100,8 @@ describe("worker kit service", () => {
       "creative-strategist-v1",
       "growthub-email-marketing-v1",
       "growthub-open-higgsfield-studio-v1",
+      "growthub-geo-seo-v1",
+      "growthub-postiz-social-v1",
     ]);
     expect(kits.find((kit) => kit.id === "creative-strategist-v1")).toMatchObject({
       bundleId: "creative-strategist-v1",
@@ -111,6 +113,13 @@ describe("worker kit service", () => {
     expect(kits.find((kit) => kit.id === "growthub-open-higgsfield-studio-v1")).toMatchObject({
       bundleId: "growthub-open-higgsfield-studio-v1",
       briefType: "open-higgsfield-visual-production",
+      type: "worker",
+      executionMode: "export",
+      activationModes: ["export"],
+    });
+    expect(kits.find((kit) => kit.id === "growthub-postiz-social-v1")).toMatchObject({
+      bundleId: "growthub-postiz-social-v1",
+      briefType: "postiz-social-aeo-operating",
       type: "worker",
       executionMode: "export",
       activationModes: ["export"],
@@ -166,6 +175,39 @@ describe("worker kit service", () => {
       path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-open-higgsfield-studio-v1"),
     );
     expect(info.requiredPaths).toContain("docs");
+  });
+
+  it("inspects the Postiz social kit and exposes the export path", () => {
+    const paperclipHome = makeTempDir("paperclip-home-");
+    process.env.PAPERCLIP_HOME = paperclipHome;
+
+    const info = inspectBundledKit("growthub-postiz-social-v1");
+
+    expect(info.type).toBe("worker");
+    expect(info.executionMode).toBe("export");
+    expect(info.activationModes).toEqual(["export"]);
+    expect(info.briefType).toBe("postiz-social-aeo-operating");
+    expect(info.exportFolderPath).toBe(
+      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-postiz-social-v1"),
+    );
+    expect(info.requiredPaths).toContain("templates");
+  });
+
+  it("downloads the Postiz kit folder and zip with aligned entries", () => {
+    const outDir = makeTempDir("worker-kit-out-");
+    const result = downloadBundledKit("growthub-postiz-social-v1", outDir);
+
+    expect(fs.existsSync(result.folderPath)).toBe(true);
+    expect(fs.existsSync(result.zipPath)).toBe(true);
+    expect(listRelativeFiles(result.folderPath)).toContain("workers/postiz-social-operator/CLAUDE.md");
+
+    const folderFiles = listRelativeFiles(result.folderPath);
+    const zipEntries = readZipEntryNames(result.zipPath);
+    const expectedZipEntries = folderFiles.map((relativePath) =>
+      path.posix.join("growthub-agent-worker-kit-postiz-social-v1", relativePath),
+    );
+
+    expect(zipEntries).toEqual(expectedZipEntries);
   });
 
   it("resolves the default materialized path without downloading", () => {

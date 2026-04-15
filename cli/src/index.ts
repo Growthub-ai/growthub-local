@@ -1067,7 +1067,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.49")
+  .version("0.3.54")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -1082,6 +1082,8 @@ Worker Kits (agent execution environments):
     $ growthub kit download higgsfield          Fuzzy slug — resolves automatically
     $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
     $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
+    $ growthub kit download postiz --yes
+    $ growthub kit download growthub-postiz-social-v1 --out ~/kits
 
   Inspect & validate:
     $ growthub kit inspect higgsfield-studio-v1
