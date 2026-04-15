@@ -15,6 +15,11 @@ Use it as the canonical lane for:
 | --- | --- | --- |
 | Custom Workspace Kernel Packet | `v1` | `./KERNEL_PACKET_CUSTOM_WORKSPACES.md` |
 | Agent Harness Kernel Packet | `v1` | `./KERNEL_PACKET_AGENT_HARNESS.md` |
+| CMS Contract Extension Kernel Packet | `v1` | `./KERNEL_PACKET_CMS_CONTRACT_EXTENSION.md` |
+| Native Intelligence Provider Kernel Packet | `v1` | `./KERNEL_PACKET_NATIVE_INTELLIGENCE_PROVIDER.md` |
+| Template Extension Kernel Packet | `v1` | `./KERNEL_PACKET_TEMPLATE_EXTENSION.md` |
+| Workflow Hygiene Extension Kernel Packet | `v1` | `./KERNEL_PACKET_WORKFLOW_HYGIENE_EXTENSION.md` |
+| Discovery UX Kernel Packet | `v1` | `./KERNEL_PACKET_DISCOVERY_UX.md` |
 
 ## Versioning Rules
 
