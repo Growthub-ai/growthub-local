@@ -1,5 +1,7 @@
 # Custom Workspace Kernel Packet
 
+Version: `v1`
+
 This packet freezes the reusable primitive for shipping CLI custom workspace worker kits end to end.
 
 Use it when you are adding a new worker kit, extending an existing one, or rolling up multiple kit branches into one integration branch.

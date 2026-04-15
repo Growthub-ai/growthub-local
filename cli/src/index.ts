@@ -36,6 +36,8 @@ import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capa
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
+import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
+import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -172,6 +174,8 @@ function registerSharedCommands(target: Command) {
   registerPipelineCommands(target);
   registerArtifactCommands(target);
   registerWorkflowCommands(target);
+  registerOpenAgentsCommands(target);
+  registerQwenCodeCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -774,11 +778,6 @@ async function runDiscoveryHub(opts?: {
       message: "What do you want to do first?",
       options: [
         {
-          value: "app",
-          label: "📦 Full Local App",
-          hint: "Work from existing app or build from scratch",
-        },
-        {
           value: "kits",
           label: "🧰 Worker Kits",
           hint: "Self-contained workspace environments for agents",
@@ -808,6 +807,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
         },
         {
+          value: "agent-harness",
+          label: "🤖 Agent Harness",
+          hint: "Paperclip Local App + Open Agents + Qwen Code",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -823,7 +827,7 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "help") {
       p.note(
         [
-          "📦 Full Local App: open an existing local surface or create a new GTM/DX profile.",
+          "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles) or Open Agents (durable workflow orchestration).",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
@@ -837,29 +841,38 @@ async function runDiscoveryHub(opts?: {
           "growthub kit",
           "growthub template",
           "growthub workflow",
+          "growthub qwen-code",
+          "growthub qwen-code health",
+          "growthub qwen-code prompt \"...\"",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
+          "growthub open-agents",
         ].join("\n"),
         "Growthub CLI Help",
       );
       continue;
     }
 
-    if (surfaceChoice === "app") {
+    if (surfaceChoice === "agent-harness") {
       while (true) {
-        const appModeChoice = await p.select({
-          message: "How do you want to open Growthub Local?",
+        const harnessType = await p.select({
+          message: "Filter by type",
           options: [
             {
-              value: "create",
-              label: "🆕 Create New Profile",
-              hint: "Build a new local app surface.",
+              value: "paperclip",
+              label: "📦 Paperclip Local App",
+              hint: "Create or load a GTM/DX profile on this machine",
             },
             {
-              value: "load",
-              label: "📂 Load Existing Profile",
-              hint: "Work from a profile already on this machine.",
+              value: "open-agents",
+              label: "🌐 Open Agents",
+              hint: "Durable workflow orchestration with prompt + chat session flow",
+            },
+            {
+              value: "qwen-code",
+              label: "🤖 Qwen Code CLI",
+              hint: "Open-source coding harness with prompt + interactive chat session",
             },
             {
               value: "__back_to_hub",
@@ -868,90 +881,137 @@ async function runDiscoveryHub(opts?: {
           ],
         });
 
-        if (p.isCancel(appModeChoice)) {
+        if (p.isCancel(harnessType)) {
           p.cancel("Cancelled.");
           process.exit(0);
         }
-        if (appModeChoice === "__back_to_hub") break;
+        if (harnessType === "__back_to_hub") break;
 
-        if (appModeChoice === "load") {
-          const existingSurfaces = listLocalSurfaces();
-          if (existingSurfaces.length === 0) {
-            p.note("No existing local app profiles were found on this machine.", "Nothing found");
-            continue;
+        // -- Paperclip Local App ---------------------------------------------
+        if (harnessType === "paperclip") {
+          let paperclipDone = false;
+          while (!paperclipDone) {
+            const appModeChoice = await p.select({
+              message: "How do you want to open Growthub Local?",
+              options: [
+                {
+                  value: "create",
+                  label: "🆕 Create New Profile",
+                  hint: "Build a new local app surface.",
+                },
+                {
+                  value: "load",
+                  label: "📂 Load Existing Profile",
+                  hint: "Work from a profile already on this machine.",
+                },
+                {
+                  value: "__back_to_harness",
+                  label: "← Back to harness type",
+                },
+              ],
+            });
+
+            if (p.isCancel(appModeChoice)) {
+              p.cancel("Cancelled.");
+              process.exit(0);
+            }
+            if (appModeChoice === "__back_to_harness") break;
+
+            if (appModeChoice === "load") {
+              const existingSurfaces = listLocalSurfaces();
+              if (existingSurfaces.length === 0) {
+                p.note("No existing local app profiles were found on this machine.", "Nothing found");
+                continue;
+              }
+
+              const existingChoice = await p.select({
+                message: "Select an existing app surface",
+                options: [
+                  ...existingSurfaces.map((surface) => ({
+                    value: surface.instanceId,
+                    label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
+                    hint: surface.configPath,
+                  })),
+                  { value: "__back_to_app_mode", label: "← Back to app options" },
+                ],
+              });
+
+              if (p.isCancel(existingChoice)) {
+                p.cancel("Cancelled.");
+                process.exit(0);
+              }
+              if (existingChoice === "__back_to_app_mode") {
+                continue;
+              }
+
+              const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
+              if (!selectedSurface) {
+                p.cancel("Selected profile not found.");
+                process.exit(1);
+              }
+
+              process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
+              await runCommand({
+                config: selectedSurface.configPath,
+                instance: selectedSurface.instanceId,
+                repair: true,
+                yes: true,
+              });
+              return;
+            }
+
+            const profileChoice = await p.select({
+              message: "Which new app surface do you want to create?",
+              options: [
+                {
+                  value: "gtm",
+                  label: "📈 GTM",
+                  hint: "Go-to-Market surface.",
+                },
+                {
+                  value: "dx",
+                  label: "🧠 DX",
+                  hint: "Developer Experience surface.",
+                },
+                {
+                  value: "__back_to_app_mode",
+                  label: "← Back to app options",
+                },
+              ],
+            });
+
+            if (p.isCancel(profileChoice)) {
+              p.cancel("Cancelled.");
+              process.exit(0);
+            }
+            if (profileChoice === "__back_to_app_mode") {
+              continue;
+            }
+
+            process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
+            await onboard({
+              config: opts?.config,
+              run: opts?.run ?? isInstallerMode(),
+              yes: isInstallerMode(),
+            });
+            return;
           }
 
-          const existingChoice = await p.select({
-            message: "Select an existing app surface",
-            options: [
-              ...existingSurfaces.map((surface) => ({
-                value: surface.instanceId,
-                label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
-                hint: surface.configPath,
-              })),
-              { value: "__back_to_app_mode", label: "← Back to app options" },
-            ],
-          });
-
-          if (p.isCancel(existingChoice)) {
-            p.cancel("Cancelled.");
-            process.exit(0);
-          }
-          if (existingChoice === "__back_to_app_mode") {
-            continue;
-          }
-
-          const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
-          if (!selectedSurface) {
-            p.cancel("Selected profile not found.");
-            process.exit(1);
-          }
-
-          process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
-          await runCommand({
-            config: selectedSurface.configPath,
-            instance: selectedSurface.instanceId,
-            repair: true,
-            yes: true,
-          });
-          return;
-        }
-
-        const profileChoice = await p.select({
-          message: "Which new app surface do you want to create?",
-          options: [
-            {
-              value: "gtm",
-              label: "📈 GTM",
-              hint: "Go-to-Market surface.",
-            },
-            {
-              value: "dx",
-              label: "🧠 DX",
-              hint: "Developer Experience surface.",
-            },
-            {
-              value: "__back_to_app_mode",
-              label: "← Back to app options",
-            },
-          ],
-        });
-
-        if (p.isCancel(profileChoice)) {
-          p.cancel("Cancelled.");
-          process.exit(0);
-        }
-        if (profileChoice === "__back_to_app_mode") {
           continue;
         }
 
-        process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
-        await onboard({
-          config: opts?.config,
-          run: opts?.run ?? isInstallerMode(),
-          yes: isInstallerMode(),
-        });
-        return;
+        // -- Open Agents -----------------------------------------------------
+        if (harnessType === "open-agents") {
+          const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
+          if (oaResult === "back") continue;
+          return;
+        }
+
+        if (harnessType === "qwen-code") {
+          const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
+          if (qwenResult === "back") continue;
+          return;
+        }
       }
 
       continue;
@@ -1067,7 +1127,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.54")
+  .version("0.3.55")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -1124,6 +1184,13 @@ Dynamic Registry Pipelines:
     $ growthub artifact list                    All pipeline artifacts
     $ growthub artifact list --type video       Filter by type
     $ growthub artifact inspect <id>            Inspect a specific artifact
+
+Qwen Code CLI (agent harness):
+    $ growthub qwen-code                        Interactive hub — health, prompt, session, configure
+    $ growthub qwen-code health                 Check Qwen Code CLI environment and readiness
+    $ growthub qwen-code prompt "fix the bug"   Headless single-prompt execution
+    $ growthub qwen-code session                Launch interactive terminal session
+    $ growthub qwen-code session --yolo         Auto-approve all tool calls
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)

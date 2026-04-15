@@ -113,3 +113,24 @@ export {
   type WorkflowHygieneRecord,
   type WorkflowHygieneStore,
 } from "./workflow-hygiene/index.js";
+
+export {
+  readOpenAgentsConfig,
+  writeOpenAgentsConfig,
+  checkOpenAgentsHealth,
+  listOpenAgentsSessions,
+  createOpenAgentsSession,
+  resumeOpenAgentsSession,
+  pollSessionEvents,
+  OpenAgentsBackendError,
+  DEFAULT_OPEN_AGENTS_CONFIG,
+  type OpenAgentsBackendType,
+  type SandboxState,
+  type AgentSessionStatus,
+  type AgentRunEventType,
+  type AgentRunEvent,
+  type OpenAgentsSessionSummary,
+  type OpenAgentsHealthResult,
+  type OpenAgentsConfig,
+  type CreateSessionInput,
+} from "./open-agents/index.js";

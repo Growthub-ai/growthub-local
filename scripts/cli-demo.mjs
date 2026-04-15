@@ -285,6 +285,16 @@ async function runInteractive() {
         label: "📦 Custom Workspace Download",
         hint: "Browse and download worker kits — geo-seo-v1, higgsfield-studio-v1, and more",
       },
+      {
+        value: "agent-harness",
+        label: "🤖 Agent Harness Preview",
+        hint: "Paperclip local app + Open Agents orchestration (filter by type)",
+      },
+      {
+        value: "qwen-code",
+        label: "🤖 Qwen Code CLI Preview",
+        hint: "Validate Qwen Code CLI integration — health, prompt, session",
+      },
     ],
   });
 
@@ -316,6 +326,14 @@ async function runInteractive() {
 
   if (choice === "kit-picker") {
     runSourceKitPicker();
+  }
+
+  if (choice === "agent-harness") {
+    runCli(["discover"]);
+  }
+
+  if (choice === "qwen-code") {
+    runCli(["qwen-code"]);
   }
 
   runCli([]);

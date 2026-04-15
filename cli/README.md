@@ -1,12 +1,6 @@
 # @growthub/cli
 
-`@growthub/cli` is the published CLI for Growthub Local. It covers five shipped user flows:
-
-- full local app discovery and onboarding
-- worker kit discovery, export, inspection, and validation
-- shared template discovery and extraction
-- hosted workflows, capabilities, dynamic pipelines, and artifacts
-- hosted Growthub auth + machine profile bridge
+`@growthub/cli` is the public CLI for Growthub Local.
 
 ## Install
 
@@ -14,201 +8,107 @@
 npm install -g @growthub/cli
 ```
 
-You can also install through the guided installer:
+Or use the guided installer:
 
 ```bash
 npm create growthub-local@latest
 ```
 
-Or jump directly to a profile:
+## At a Glance
+
+The CLI ships these user flows:
+
+- `Agent Harness` (Paperclip Local App, Open Agents, Qwen Code CLI)
+- `Worker Kits`
+- `Templates`
+- `Workflows`
+- `Local Intelligence`
+- `Hosted Auth Bridge`
+
+## Quick Commands
 
 ```bash
-npm create growthub-local@latest -- --profile gtm
-npm create growthub-local@latest -- --profile dx
-```
-
-## CLI Editions
-
-The current CLI exposes five user-facing flows through `growthub discover` and direct subcommands.
-
-### 1. Full Local App
-
-Use this when you want to create or reopen a full Growthub local surface.
-
-```bash
+# Discovery
 growthub
-growthub list
 growthub discover
+
+# Agent Harness
 growthub onboard
 growthub run
-```
+growthub open-agents
+growthub qwen-code
 
-User flow:
-
-1. Open the discovery hub.
-2. Choose `Full Local App`.
-3. Create a new `gtm` or `dx` profile, or load an existing local profile.
-4. Complete onboarding.
-5. Start the local server and finish the hosted authentication bridge.
-
-### 2. Worker Kits
-
-Use this when you want a working-directory-ready environment for an agent.
-
-### Discovery
-
-```bash
-# Interactive discovery hub
-growthub list
-
-# Interactive browser — type filter → kit selector → actions
+# Worker Kits
 growthub kit
-
-# All kits grouped by family with descriptions and inline commands
 growthub kit list
+growthub kit inspect <kit-id>
+growthub kit download <kit-id>
+growthub kit validate <path>
 
-# Filter by family
-growthub kit list --family studio
-growthub kit list --family studio,operator
+# Templates
+growthub template
+growthub template list
+growthub template get <slug>
 
-# Machine-readable output
-growthub kit list --json
+# Workflows
+growthub workflow
+growthub workflow saved
+growthub pipeline assemble
 
-# Family taxonomy
-growthub kit families
+# Hosted Auth Bridge
+growthub auth login
+growthub auth whoami
+growthub auth logout
 ```
 
-### Inspect, download, and validate
+## Worker Kit Command Surface
 
 ```bash
+growthub kit list
 growthub kit inspect creative-strategist-v1
 growthub kit inspect growthub-open-higgsfield-studio-v1
-growthub kit inspect growthub-email-marketing-v1 --json
-
 growthub kit download creative-strategist-v1
 growthub kit download growthub-open-higgsfield-studio-v1
-growthub kit download higgsfield --yes
-
 growthub kit path creative-strategist-v1
 growthub kit validate /absolute/path/to/kit
 ```
 
-### After download
-
-1. Point Growthub local or your local adapter `Working directory` at the exported folder.
-2. Add runtime-only environment variables required by the kit.
-3. Start a new session so the operator contract loads from `CLAUDE.md`.
-
-### Available bundled kits
-
-| Kit | Family | Description |
-|---|---|---|
-| `creative-strategist-v1` | workflow | Video creative briefs and campaign strategy |
-| `growthub-email-marketing-v1` | operator | Brand-aware email campaigns, sequences, and campaign planning |
-| `growthub-open-higgsfield-studio-v1` | studio | Open Higgsfield visual production workflows |
-
 ### How local adapters use worker kits
 
-Local adapters execute inside the agent `Working directory` path. Worker kits are designed to plug into that path directly:
+1. Download or resolve a kit path from the CLI.
+2. Point the agent working directory at the exported folder.
+3. Start a new session so the kit contract loads from `CLAUDE.md`.
 
-1. `growthub kit download <id>` exports the kit as a folder plus zip.
-2. Point the agent `Working directory` at the exported folder.
-3. Start a new session so the agent reads the kit contract from `CLAUDE.md`.
+## Harness Notes
 
-### 3. Shared Templates
+### Open Agents
 
-Use this when you need a reusable artifact primitive without exporting a full kit.
+- upstream: [vercel-labs/open-agents](https://github.com/vercel-labs/open-agents)
+- secure auth mode support: `none`, `api-key`, `vercel-managed`
+- prompt/chat commands: `growthub open-agents prompt`, `growthub open-agents chat`
 
-```bash
-growthub template
-growthub template list
-growthub template list --type ad-formats
-growthub template list --type scene-modules --subtype hooks
-growthub template get villain-animation
-growthub template get meme-overlay --out ~/kit/hooks/
-growthub template get villain-animation --json
-```
+### Qwen Code CLI
 
-User flow:
+- upstream: [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
+- secure local key setup from `growthub qwen-code` configure flow
+- prompt/chat session commands: `growthub qwen-code prompt`, `growthub qwen-code session`
 
-1. Browse by family and artifact group.
-2. Preview the selected artifact.
-3. Print it, copy it to a local workspace, or use the slug in another workflow.
+## Extension Model
 
-### 4. Hosted Workflows
+Content extensions:
 
-Use this when you want CMS node contract discovery, dynamic hosted pipeline creation, and saved workflow lifecycle management.
+- worker kits: `cli/assets/worker-kits/`
+- shared templates: `cli/assets/shared-templates/`
 
-```bash
-growthub workflow
-growthub workflow saved
-growthub pipeline assemble
-```
+Governance/reference docs:
 
-### 5. Hosted Auth Bridge
-
-Use this when you want the hosted Growthub account to remain the top-level identity while syncing safe local-machine metadata into the CLI runtime.
-
-```bash
-growthub auth login
-growthub auth whoami
-growthub auth logout
-growthub profile status
-growthub profile pull
-growthub profile push
-```
-
-Contract:
-
-1. Hosted Growthub auth remains the source of truth for the user identity.
-2. Local workspace config stays local-first and is not overwritten by hosted state.
-3. Hosted machine linkage is stored separately from `instances/<id>/config.json`.
-4. `growthub` and `paperclipai` remain intentional side-by-side surfaces rather than auto-loading one another.
-
-## Workflows Discovery V1
-
-The public CLI now supports a hosted workflow discovery flow inside the interactive hub for all Growthub Auth Users:
-
-```bash
-growthub discover
-growthub workflow
-growthub workflow saved
-```
-
-Use this when you want to:
-
-- inspect CMS node contracts from the interactive contracts browser
-- list hosted saved workflows and inspect detail
-- create/save hosted workflows through Dynamic Pipelines
-- execute a hosted saved workflow from the CLI
-- manage workflow lifecycle actions (archive/delete) from CLI
-
-The full public usage and architecture notes live here:
-
+- [Worker Kits](../docs/WORKER_KITS.md)
 - [CLI Workflows Discovery V1](../docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
-
-## Contribution Model
-
-The CLI has two extension surfaces for content:
-
-- worker kits in `cli/assets/worker-kits/`
-- shared templates in `cli/assets/shared-templates/`
-
-Use shared templates for reusable cross-kit primitives. Use worker kits for full opinionated environments with prompts, standards, examples, and runtime assumptions.
-
-For the agent-facing extension workflow, see [docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md](../docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md).
-
-## Development Notes
-
-- `@growthub/cli` version: `0.3.49`
-- Node.js: `>=20`
-- Source of truth repo: [Growthub Local](https://github.com/Growthub-ai/growthub-local)
+- [Agent Harness Auth Primitive](../docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
+- [Kernel Packet Registry](../docs/kernel-packets/README.md)
 
 ## Links
 
-- [GitHub README](https://github.com/Growthub-ai/growthub-local#readme)
+- [Growthub Local Repository](https://github.com/Growthub-ai/growthub-local)
+- [Root README](https://github.com/Growthub-ai/growthub-local#readme)
 - [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)
-- [Growthub Authentication Bridge](https://github.com/Growthub-ai/growthub-local/blob/main/docs/GROWTHUB_AUTH_BRIDGE.md)
-- [CLI Workflows Discovery V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
-- [Worker Kits](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKER_KITS.md)
-- [CLI Template Contribution Extension Workflows](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)
