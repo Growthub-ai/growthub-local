@@ -1,234 +1,229 @@
 # Growthub Local
 
-Growthub Local is the source-of-truth repo for the local Growthub runtime and the CLI surfaces that open through the current discovery hub.
+![Growthub Local Logo](./ui/public/growthub%20logo%20copy.png)
 
-The documented discovery entrypoint for this repo is:
+Growthub is an ecosystem for agents and humans where the CLI, machine bridge, profiles, artifacts, and integrations are first-class primitives.
+
+The CLI is the local control plane, the hosted app is the identity and connection authority, and Worker Kits are the portable execution unit. That is the foundation of the API ecosystem and enterprise platform.
+
+Growthub Local is a true agentic-first CLI ecosystem spawner designed for broad, production-grade use cases.
+
+![npm](https://img.shields.io/npm/v/@growthub/cli?label=%40growthub%2Fcli)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
+
+**Quick links:** [Ecosystem Map](#ecosystem-map) · [Quickstart](#quickstart) · [Feature Grid](#feature-grid) · [CLI Ecosystem Surfaces](#cli-ecosystem-surfaces) · [Docs](#docs)
+
+## Why Growthub Local
+
+| Ecosystem primitive | What it means |
+| --- | --- |
+| Local control plane | One CLI coordinates runtime, kits, templates, workflows, and harnesses. |
+| Identity bridge | Hosted auth stays canonical while machine context stays local-first. |
+| Portable execution | Worker Kits package complete runnable environments, not partial snippets. |
+
+## Feature Grid
+
+| Surface | Value |
+| --- | --- |
+| 🤖 Agent Harness | Paperclip Local App + Open Agents + Qwen Code in one flow |
+| 🧰 Worker Kits | Portable, validated agent environments |
+| 📚 Templates | Reusable creative and artifact primitives |
+| 🔗 Workflows | Contracts, pipelines, orchestration |
+| 🧠 Local Intelligence | Local model setup + chat flow |
+| 🔐 Connect Growthub Account | Hosted identity + local machine bridge |
+| ❓ Help CLI | Guided command navigation |
+
+## Quickstart
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
-```
+# Guided installer
+npm create growthub-local@latest
 
-That discovery hub exposes:
-
-- `Agent Harness` (filter by type: Paperclip Local App, Open Agents)
-- `Worker Kits`
-- `Templates`
-- `Workflows`
-- `Local Intelligence`
-- `Connect Growthub Account`
-- `Help CLI`
-
-## Install
-
-### Agent Harness — Paperclip Local App: GTM
-
-```bash
+# Direct profile install
 npm create growthub-local@latest -- --profile gtm
-```
-
-### Agent Harness — Paperclip Local App: DX
-
-```bash
 npm create growthub-local@latest -- --profile dx
-```
 
-### CLI-first access
-
-```bash
+# CLI-only install
 npm install -g @growthub/cli
 ```
 
-## Discovery-first workflow
-
-Open the discovery hub with:
+Open discovery:
 
 ```bash
 zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 ```
 
-The current discovery menu is defined in `cli/src/index.ts`.
-
-### 1. Agent Harness
-
-The Agent Harness is the first discovery option. It presents a **filter by type** selector:
-
-- **Paperclip Local App** — create or reopen a full local Growthub surface (GTM/DX profiles)
-- **Open Agents** — durable agent workflow orchestration (sessions, sandboxes, tools)
-
-#### Paperclip Local App
-
-Use this path when you want to create or reopen a full local Growthub surface.
-
-Entry points:
+## Core Commands
 
 ```bash
+# Main discovery
+growthub
+growthub discover
+
+# Paperclip local app
 growthub onboard
 growthub run
-```
 
-### Worker Kits
+# Open Agents harness
+growthub open-agents
+growthub open-agents config
+growthub open-agents status
+growthub open-agents prompt "your task"
+growthub open-agents chat <session-id>
 
-Use this path when you want the current worker-kit discovery and export flow from the CLI.
-
-Entry points:
-
-```bash
-growthub kit
-growthub kit list
-growthub kit inspect creative-strategist-v1
-growthub kit download creative-strategist-v1
-growthub kit path creative-strategist-v1
-growthub kit validate /absolute/path/to/kit
-```
-
-Current discovery flow:
-
-1. Open discovery.
-2. Choose `Worker Kits`.
-3. Browse, inspect, and export the kit you need.
-
-### Templates
-
-Use this path when you want the shared template library.
-
-Entry points:
-
-```bash
-growthub template
-growthub template list
-growthub template list --type ad-formats
-growthub template list --type scene-modules --subtype hooks
-growthub template get villain-animation
-```
-
-Current discovery flow:
-
-1. Open discovery.
-2. Choose `Templates`.
-3. Browse and extract the artifact you need.
-
-### Workflows
-
-Use this path when you want CMS node contract discovery, dynamic pipeline creation, and saved workflow lifecycle actions.
-
-Entry points:
-
-```bash
-growthub workflow
-growthub workflow saved
-growthub pipeline assemble
-```
-
-Current discovery flow:
-
-1. Open discovery.
-2. Choose `Workflows`.
-3. Authenticate if the workflow surface is locked.
-4. Choose:
-   - `CMS Node Contracts` for contract discovery and per-node contract inspection
-   - `Dynamic Pipelines` for hosted pipeline assembly/save/execute
-   - `Saved Workflows` for execute/archive/delete lifecycle actions
-
-Read the workflow extension doc here:
-
-- [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
-
-### Local Intelligence
-
-Use this path when you want local native-intelligence adapters for human prompt chat and workflow intelligence assistance (planner, normalizer, recommender, summarizer).
-
-Entry points:
-
-```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
-growthub discover
-```
-
-Current discovery flow:
-
-1. Open discovery.
-2. Choose `🧠 Local Intelligence`.
-3. Choose one of:
-   - `Setup helper` to validate OS/runtime/model status
-   - `Manage local custom models` to set an active favorite model
-   - `Prompt local model (chat flow)` for human-first local chat
-   - `Run native-intelligence with your prompt` for planner/normalizer/recommender/summarizer runs
-
-Read the architecture and adapter model here:
-
-- [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
-- [Gemma Setup and Validation](./docs/native-intelligence-gemma-setup.md)
-
-#### Open Agents
-
-Use this path when you want durable agent workflow orchestration via the Open Agents harness — sessions, sandboxes, and tool-based agent execution.
-
-Entry points:
-
-```bash
-growthub open-agents                     # interactive browser
-growthub open-agents config              # show or update backend configuration
-growthub open-agents status              # check backend health
-growthub open-agents list                # list agent sessions
-growthub open-agents create              # create a new agent session
-growthub open-agents resume <session-id> # resume an existing session
-```
-
-Discovery flow:
-
-1. Open discovery.
-2. Choose `🤖 Agent Harness`.
-3. Choose `🌐 Open Agents` from the type filter.
-4. Choose one of:
-   - `Setup & Configure` to set the backend endpoint and API key
-   - `Health Check` to verify backend availability
-   - `List Sessions` to browse existing sessions
-   - `Create Session` to start a new durable agent workflow
-   - `Resume Session` to reconnect to an existing session
-
-### Qwen Code CLI
-
-Use this command surface when you want to run the Qwen Code terminal AI coding agent integration directly.
-
-Entry points:
-
-```bash
+# Qwen harness
 growthub qwen-code
 growthub qwen-code health
-growthub qwen-code prompt "fix the failing test"
+growthub qwen-code prompt "your task"
 growthub qwen-code session
-growthub qwen-code session --yolo
-```
 
-Read the integration architecture here:
+# Kits, templates, workflows
+growthub kit
+growthub template
+growthub workflow
+growthub pipeline assemble
 
-- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
-
-### Connect Growthub Account
-
-Use this path when you want to connect the local CLI to a hosted Growthub account.
-
-Entry points:
-
-```bash
+# Hosted auth bridge
 growthub auth login
 growthub auth whoami
 growthub auth logout
-growthub profile status
-growthub profile pull
-growthub profile push
 ```
 
-Current discovery flow:
+## CLI Ecosystem Surfaces
 
-1. Open discovery.
-2. Choose `Connect Growthub Account`.
-3. Complete the hosted browser login flow.
-4. Return to the CLI with the linked session.
+The CLI is multiple product surfaces, not one.
 
-## Source development
+<a id="ecosystem-map"></a>
+### Ecosystem Map
 
-From the repo root, use the canonical runtime control path:
+<details open>
+<summary><strong>Open ecosystem chart</strong> — click section links to jump</summary>
+
+```mermaid
+flowchart TD
+    A[Growthub Local] --> B[1) Kit System]
+    A --> C[2) Template System]
+    A --> D[3) Capability System]
+    A --> E[4) Workflow + Pipeline]
+    A --> F[5) Knowledge Sync]
+    A --> G[6) Local Models + Harnesses]
+    A --> H[Hosted Auth Bridge]
+    A --> I[Runtime Control]
+    A --> J[Kernel Packets]
+```
+
+**Surface index**
+
+- [1) Kit System](#kit-system) — full environment provisioning and validation
+- [2) Template System](#template-system) — reusable artifact library
+- [3) Capability System](#capability-system) — contract discovery + machine-scoped resolution
+- [4) Workflow + Pipeline System](#workflow--pipeline-system) — dynamic node orchestration graph layer
+- [5) Knowledge Sync Surface](#knowledge-sync-surface) — two-way learning lane
+- [6) Local Models + Harnesses](#local-models--harnesses) — local models + harness execution
+- [Harness Authentication](#harness-authentication-native-cli) — native secure auth setup
+- [Local Runtime Control](#local-runtime-control) — canonical local runtime commands
+- [Docs](#docs) — contributor and architecture references
+
+</details>
+
+---
+
+<a id="kit-system"></a>
+<details open>
+<summary><strong>1) Kit System</strong> — full local app download and environment provisioning</summary>
+
+- `growthub kit` interactive browser with type filtering
+- `growthub kit download` complete worker environment download with fuzzy slug resolution
+- `growthub kit families` taxonomy (`studio`, `workflow`, `operator`, `ops`)
+- `growthub kit validate` schema and contract checks
+- kit payload includes entrypoint, agent contract, templates, frozen assets, setup scripts, and env examples
+
+</details>
+
+---
+
+<a id="template-system"></a>
+<details open>
+<summary><strong>2) Template System</strong> — shared artifact library with structured filtering</summary>
+
+- `growthub template` interactive picker
+- artifact model supports ad-format and scene-module flows
+- family/type/subtype-compatible filtering
+- print/copy/fuzzy-resolve without coupling to kit installs
+
+</details>
+
+---
+
+<a id="capability-system"></a>
+<details open>
+<summary><strong>3) Capability System</strong> — CMS node discovery and machine-scoped resolution</summary>
+
+- `growthub capability` interactive capability browser
+- `growthub capability resolve` machine/user/org scoped execution visibility
+- full contract introspection (inputs, outputs, execution strategy, binding requirements)
+
+</details>
+
+---
+
+<a id="workflow--pipeline-system"></a>
+<details open>
+<summary><strong>4) Workflow + Pipeline System</strong> — dynamic node orchestration graphs</summary>
+
+- `growthub workflow` and saved workflow lifecycle actions
+- `growthub pipeline assemble` dynamic hosted pipeline composition
+- orchestration sits on full local runtime (server, db, ui, heartbeat, plugins, worktrees, observability)
+
+</details>
+
+---
+
+<a id="knowledge-sync-surface"></a>
+<details open>
+<summary><strong>5) Knowledge Sync Surface</strong> — compound learnings and knowledge evolution lane</summary>
+
+- supports the two-way knowledge-sync direction for knowledge-engine
+- designed as a first-class extension for building specialized intellegence layer for agents
+
+</details>
+
+---
+
+<a id="local-models--harnesses"></a>
+<details open>
+<summary><strong>6) Local Models + Harnesses</strong> — local custom models and external harness primitives</summary>
+
+- local intelligence adapters for machine-local model flows
+- harness-first integration for Open Agents and Qwen Code with native CLI auth/setup
+
+</details>
+
+## Harness Authentication (Native CLI)
+
+### Open Agents
+
+- Upstream: [vercel-labs/open-agents](https://github.com/vercel-labs/open-agents)
+- Auth strategies in `Setup & Configure`:
+  - `none`
+  - `api-key`
+  - `vercel-managed`
+- API keys are saved in secure local harness storage.
+
+### Qwen Code CLI
+
+- Upstream: [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
+- `Configure` supports secure provider key setup/clear for:
+  - `DASHSCOPE_API_KEY`
+  - `OPENAI_API_KEY`
+  - `ANTHROPIC_API_KEY`
+  - `GOOGLE_API_KEY`
+- Runtime uses both shell env + secure local harness keys.
+
+## Local Runtime Control
+
+From repo root:
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -236,34 +231,29 @@ scripts/runtime-control.sh up-branch <branch>
 scripts/runtime-control.sh up-pr <pr-number>
 scripts/runtime-control.sh status
 scripts/runtime-control.sh stop
+scripts/runtime-control.sh url
 ```
 
-If the API is listening on `3101`, set:
+If the API is on `3101`:
 
 ```bash
 GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 ```
 
-Typical GTM URL:
-
-```text
-http://localhost:5173/gtm/GHA/workspace
-```
-
-## Contributor docs
+## Docs
 
 - [Contributing](./CONTRIBUTING.md)
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
-- [Custom Workspace Kernel Packet](./docs/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
+- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
 - [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
+- [Agent Harness Auth Primitive](./docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
+- [Kernel Packet Registry](./docs/kernel-packets/README.md)
+- [Custom Workspace Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
+- [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
 
-## Architecture snapshot (validated)
+## Architecture Lanes
 
-The current repo snapshot is frozen around this split:
-
-- CLI/open-source lane: discovery UX, command behavior, and contribution docs
-- maintainer/super-admin lane: merge governance, release timing, and npm publish operations
-
-For contributor-facing work, stay in the CLI/open-source lane unless a maintainer explicitly asks for release/admin updates.
+- **CLI/open-source lane:** discovery UX, command behavior, contributor docs
+- **Maintainer/super-admin lane:** merge governance, release timing, npm publication

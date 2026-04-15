@@ -24,17 +24,19 @@ import {
   executeHeadlessPrompt,
   launchInteractiveSession,
   QWEN_CODE_APPROVAL_MODES,
+  QWEN_CODE_SUPPORTED_ENV_KEYS,
 } from "../runtime/qwen-code/index.js";
 import type { QwenCodeApprovalMode } from "../runtime/qwen-code/index.js";
+import { maskSecret } from "../runtime/agent-harness/auth-store.js";
 
 // ---------------------------------------------------------------------------
 // Interactive hub (called from discovery menu)
 // ---------------------------------------------------------------------------
 
-export async function runQwenCodeHub(): Promise<"back"> {
+export async function runQwenCodeHub(opts?: { allowBackToHub?: boolean }): Promise<"back"> {
   while (true) {
     const config = readQwenCodeConfig();
-    const health = checkHealth(config.binaryPath);
+    const health = checkHealth(config.binaryPath, config.env);
 
     const statusHint = health.status === "available"
       ? pc.green("ready")
@@ -46,17 +48,17 @@ export async function runQwenCodeHub(): Promise<"back"> {
       message: `Qwen Code CLI (${statusHint})`,
       options: [
         { value: "health", label: "Setup & Health", hint: "environment detection + install guidance" },
-        { value: "prompt", label: "Run Headless Prompt", hint: "single prompt → capture output" },
-        { value: "session", label: "Interactive Session", hint: "full terminal UI (qwen)" },
+        { value: "prompt", label: "Prompt", hint: "single prompt run for quick tasks" },
+        { value: "session", label: "Chat Session", hint: "full interactive terminal chat (qwen)" },
         { value: "configure", label: "Configure", hint: `model: ${config.defaultModel}, mode: ${config.approvalMode}` },
-        { value: "__back_to_hub", label: "← Back to main menu" },
+        ...(opts?.allowBackToHub ? [{ value: "__back_to_hub" as const, label: "← Back to harness type" }] : []),
       ],
     });
 
     if (p.isCancel(action) || action === "__back_to_hub") return "back";
 
     if (action === "health") {
-      const env = detectEnvironment(config.binaryPath);
+      const env = detectEnvironment(config.binaryPath, config.env);
       const guidance = buildSetupGuidance(env);
       p.note(guidance.join("\n"), "Qwen Code CLI — Setup Helper");
       continue;
@@ -169,6 +171,62 @@ async function runConfigureFlow(
   });
   if (p.isCancel(binaryInput)) return;
 
+  const authAction = await p.select({
+    message: "Authentication setup",
+    options: [
+      {
+        value: "skip",
+        label: "Skip auth changes",
+        hint: "Keep current key/OAuth setup",
+      },
+      {
+        value: "set-key",
+        label: "Set API key",
+        hint: "Store provider API key in local secure harness storage",
+      },
+      {
+        value: "clear-keys",
+        label: "Clear stored API keys",
+        hint: "Remove saved Qwen provider keys from local storage",
+      },
+    ],
+    initialValue: "skip",
+  });
+  if (p.isCancel(authAction)) return;
+
+  const nextEnv: Record<string, string> = { ...currentConfig.env };
+  if (authAction === "set-key") {
+    const providerKey = await p.select({
+      message: "Provider key variable",
+      options: [
+        ...QWEN_CODE_SUPPORTED_ENV_KEYS.map((key) => ({
+          value: key,
+          label: key,
+          hint: `current: ${maskSecret(currentConfig.env[key])}`,
+        })),
+        {
+          value: "__back_to_auth_setup",
+          label: "← Back to authentication setup",
+        },
+      ],
+    });
+    if (p.isCancel(providerKey)) return;
+    if (providerKey === "__back_to_auth_setup") return;
+
+    const keyValue = await p.password({
+      message: `${providerKey} value`,
+      validate: (value) => {
+        if (!value || String(value).trim().length === 0) return "Key value is required.";
+      },
+    });
+    if (p.isCancel(keyValue)) return;
+    nextEnv[providerKey] = String(keyValue).trim();
+  } else if (authAction === "clear-keys") {
+    for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
+      delete nextEnv[key];
+    }
+  }
+
   const confirmed = await p.confirm({
     message: `Save Qwen Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
     initialValue: true,
@@ -180,9 +238,10 @@ async function runConfigureFlow(
     defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
     approvalMode: modeInput as QwenCodeApprovalMode,
     binaryPath: String(binaryInput).trim() || currentConfig.binaryPath,
+    env: nextEnv,
   });
 
-  p.log.success("Qwen Code config saved.");
+  p.log.success("Qwen Code config saved (including local auth storage updates).");
 }
 
 // ---------------------------------------------------------------------------
@@ -199,8 +258,8 @@ export function registerQwenCodeCommands(program: Command): void {
     .description("Check Qwen Code CLI environment and readiness")
     .action(async () => {
       const config = readQwenCodeConfig();
-      const health = checkHealth(config.binaryPath);
-      const env = detectEnvironment(config.binaryPath);
+      const health = checkHealth(config.binaryPath, config.env);
+      const env = detectEnvironment(config.binaryPath, config.env);
       const guidance = buildSetupGuidance(env);
 
       console.log(`Status: ${health.status}`);
@@ -271,6 +330,6 @@ export function registerQwenCodeCommands(program: Command): void {
 
   // Default action: launch interactive hub
   qwenCode.action(async () => {
-    await runQwenCodeHub();
+    await runQwenCodeHub({ allowBackToHub: false });
   });
 }

@@ -22,6 +22,7 @@
 // ---------------------------------------------------------------------------
 
 export type OpenAgentsBackendType = "local" | "hosted";
+export type OpenAgentsAuthMode = "none" | "api-key" | "vercel-managed";
 
 // ---------------------------------------------------------------------------
 // Sandbox state
@@ -114,6 +115,7 @@ export interface OpenAgentsHealthResult {
 
 export interface OpenAgentsConfig {
   backendType: OpenAgentsBackendType;
+  authMode?: OpenAgentsAuthMode;
   endpoint: string;
   apiKey?: string;
   defaultRepo?: string;
@@ -124,6 +126,7 @@ export interface OpenAgentsConfig {
 
 export const DEFAULT_OPEN_AGENTS_CONFIG: OpenAgentsConfig = {
   backendType: "local",
+  authMode: "none",
   endpoint: "http://localhost:3000",
   sandboxTimeoutMs: 300_000,
   timeoutMs: 30_000,

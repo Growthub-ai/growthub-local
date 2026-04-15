@@ -1,6 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenAgentsConfig } from "../runtime/open-agents/contract.js";
 
+const fsMock = vi.hoisted(() => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  chmodSync: vi.fn(),
+}));
+
+vi.mock("node:fs", () => ({
+  default: fsMock,
+}));
+
 // ---------------------------------------------------------------------------
 // Mock the config home so we never touch the real filesystem
 // ---------------------------------------------------------------------------
@@ -24,11 +36,14 @@ describe("open-agents contract", () => {
 describe("open-agents config persistence", () => {
   beforeEach(() => {
     vi.resetModules();
+    fsMock.existsSync.mockReset();
+    fsMock.readFileSync.mockReset();
+    fsMock.writeFileSync.mockReset();
+    fsMock.chmodSync.mockReset();
   });
 
   it("readOpenAgentsConfig returns defaults when no file exists", async () => {
-    const fs = await import("node:fs");
-    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    fsMock.existsSync.mockReturnValue(false);
 
     const { readOpenAgentsConfig, DEFAULT_OPEN_AGENTS_CONFIG } = await import(
       "../runtime/open-agents/index.js"
@@ -47,9 +62,8 @@ describe("open-agents config persistence", () => {
       timeoutMs: 10_000,
     };
 
-    const fs = await import("node:fs");
-    vi.spyOn(fs, "existsSync").mockReturnValue(true);
-    vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(stored));
+    fsMock.existsSync.mockImplementation((targetPath: unknown) => String(targetPath).includes("config.json"));
+    fsMock.readFileSync.mockReturnValue(JSON.stringify(stored));
 
     const { readOpenAgentsConfig } = await import("../runtime/open-agents/index.js");
     const config = readOpenAgentsConfig();
@@ -59,9 +73,8 @@ describe("open-agents config persistence", () => {
   });
 
   it("readOpenAgentsConfig returns defaults for invalid JSON", async () => {
-    const fs = await import("node:fs");
-    vi.spyOn(fs, "existsSync").mockReturnValue(true);
-    vi.spyOn(fs, "readFileSync").mockReturnValue("not-json");
+    fsMock.existsSync.mockImplementation((targetPath: unknown) => String(targetPath).includes("config.json"));
+    fsMock.readFileSync.mockReturnValue("not-json");
 
     const { readOpenAgentsConfig, DEFAULT_OPEN_AGENTS_CONFIG } = await import(
       "../runtime/open-agents/index.js"
@@ -71,9 +84,8 @@ describe("open-agents config persistence", () => {
   });
 
   it("readOpenAgentsConfig validates backendType", async () => {
-    const fs = await import("node:fs");
-    vi.spyOn(fs, "existsSync").mockReturnValue(true);
-    vi.spyOn(fs, "readFileSync").mockReturnValue(
+    fsMock.existsSync.mockImplementation((targetPath: unknown) => String(targetPath).includes("config.json"));
+    fsMock.readFileSync.mockReturnValue(
       JSON.stringify({ backendType: "invalid", endpoint: "http://test:3000" }),
     );
 
@@ -81,6 +93,28 @@ describe("open-agents config persistence", () => {
     const config = readOpenAgentsConfig();
     expect(config.backendType).toBe("local");
     expect(config.endpoint).toBe("http://test:3000");
+  });
+
+  it("writeOpenAgentsConfig stores API key in secure harness auth storage", async () => {
+    fsMock.existsSync.mockImplementation((targetPath: unknown) => String(targetPath).includes("harness-auth"));
+    fsMock.readFileSync.mockReturnValue("{}");
+
+    const { writeOpenAgentsConfig } = await import("../runtime/open-agents/index.js");
+    writeOpenAgentsConfig({
+      backendType: "hosted",
+      authMode: "api-key",
+      endpoint: "https://my-agents.vercel.app",
+      apiKey: "secret-token",
+    });
+
+    const writes = fsMock.writeFileSync.mock.calls.map((call) => ({
+      path: String(call[0]),
+      content: String(call[1]),
+    }));
+    const configWrite = writes.find((entry) => entry.path.includes("open-agents/config.json"));
+    const authWrite = writes.find((entry) => entry.path.includes("harness-auth/open-agents.json"));
+    expect(configWrite?.content.includes("secret-token")).toBe(false);
+    expect(authWrite?.content.includes("secret-token")).toBe(true);
   });
 });
 

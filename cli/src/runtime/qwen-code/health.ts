@@ -16,7 +16,10 @@ import { detectQwenVersion } from "./provider.js";
 // Environment detection
 // ---------------------------------------------------------------------------
 
-export function detectEnvironment(binaryPath: string = "qwen"): QwenCodeEnvironmentStatus {
+export function detectEnvironment(
+  binaryPath: string = "qwen",
+  runtimeEnv: Record<string, string> = {},
+): QwenCodeEnvironmentStatus {
   const osLabel = process.platform === "darwin"
     ? "macOS"
     : process.platform === "win32"
@@ -32,11 +35,15 @@ export function detectEnvironment(binaryPath: string = "qwen"): QwenCodeEnvironm
   const nodeVersionSufficient = nodeMajor >= 20;
 
   // Check API key availability (Qwen Code supports multiple providers)
+  const mergedEnv = {
+    ...runtimeEnv,
+    ...process.env,
+  };
   const apiKeyConfigured = Boolean(
-    process.env.DASHSCOPE_API_KEY?.trim()
-    || process.env.OPENAI_API_KEY?.trim()
-    || process.env.ANTHROPIC_API_KEY?.trim()
-    || process.env.GOOGLE_API_KEY?.trim(),
+    mergedEnv.DASHSCOPE_API_KEY?.trim()
+    || mergedEnv.OPENAI_API_KEY?.trim()
+    || mergedEnv.ANTHROPIC_API_KEY?.trim()
+    || mergedEnv.GOOGLE_API_KEY?.trim(),
   );
 
   return {
@@ -54,8 +61,11 @@ export function detectEnvironment(binaryPath: string = "qwen"): QwenCodeEnvironm
 // Health assessment
 // ---------------------------------------------------------------------------
 
-export function checkHealth(binaryPath: string = "qwen"): QwenCodeHealthResult {
-  const environment = detectEnvironment(binaryPath);
+export function checkHealth(
+  binaryPath: string = "qwen",
+  runtimeEnv: Record<string, string> = {},
+): QwenCodeHealthResult {
+  const environment = detectEnvironment(binaryPath, runtimeEnv);
 
   if (!environment.binaryFound) {
     return {
@@ -119,6 +129,7 @@ export function buildSetupGuidance(env: QwenCodeEnvironmentStatus): string[] {
 
   if (!env.apiKeyConfigured) {
     lines.push("Configure an API key:");
+    lines.push("  (You can save this securely via: growthub qwen-code -> Configure)");
     lines.push("  export DASHSCOPE_API_KEY=<your-dashscope-key>");
     lines.push("  — or —");
     lines.push("  export OPENAI_API_KEY=<your-openai-compatible-key>");

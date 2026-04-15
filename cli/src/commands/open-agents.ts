@@ -15,6 +15,7 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Command } from "commander";
+import { maskSecret } from "../runtime/agent-harness/auth-store.js";
 import {
   readOpenAgentsConfig,
   writeOpenAgentsConfig,
@@ -143,9 +144,9 @@ export async function runOpenAgentsHub(opts?: {
         { value: "setup", label: "Setup & Configure", hint: "backend endpoint, API key, defaults" },
         { value: "health", label: "Health Check", hint: `check ${config.endpoint}` },
         { value: "list", label: "List Sessions", hint: "browse existing agent sessions" },
-        { value: "create", label: "Create Session", hint: "start a new durable agent workflow" },
-        { value: "resume", label: "Resume Session", hint: "reconnect to an existing session" },
-        ...(opts?.allowBackToHub ? [{ value: "__back_to_hub" as const, label: "← Back to main menu" }] : []),
+        { value: "create", label: "Prompt (Create Session)", hint: "submit a task prompt and start a durable run" },
+        { value: "resume", label: "Chat (Resume Session)", hint: "reconnect to a session and continue the conversation" },
+        ...(opts?.allowBackToHub ? [{ value: "__back_to_hub" as const, label: "← Back to harness type" }] : []),
       ],
     });
 
@@ -178,6 +179,10 @@ export async function runOpenAgentsHub(opts?: {
             `  2) cd open-agents && bun install`,
             `  3) bun run web`,
             `  4) growthub open-agents config --endpoint http://localhost:3000`,
+            "",
+            "Hosted auth guidance:",
+            "  - Use auth mode 'vercel-managed' when your deployment handles auth upstream.",
+            "  - Use auth mode 'api-key' to store a bearer token in local secure harness storage.",
           ].filter(Boolean).join("\n"),
           "Open Agents Setup",
         );
@@ -221,6 +226,28 @@ async function runSetupFlow(currentConfig: OpenAgentsConfig): Promise<void> {
   });
   if (p.isCancel(backendChoice)) return;
 
+  const authMode = backendChoice === "hosted"
+    ? await p.select({
+        message: "Hosted authentication strategy",
+        options: [
+          {
+            value: "api-key",
+            label: "Bearer API key",
+            hint: "Recommended for CLI-safe server-to-server access",
+          },
+          {
+            value: "vercel-managed",
+            label: "Vercel-managed / gateway auth",
+            hint: "No CLI key; auth is handled upstream by your deployment",
+          },
+        ],
+        initialValue: currentConfig.authMode === "api-key" || currentConfig.authMode === "vercel-managed"
+          ? currentConfig.authMode
+          : "api-key",
+      })
+    : "none";
+  if (p.isCancel(authMode)) return;
+
   const endpoint = await p.text({
     message: "Backend endpoint",
     placeholder: currentConfig.endpoint,
@@ -228,12 +255,34 @@ async function runSetupFlow(currentConfig: OpenAgentsConfig): Promise<void> {
   });
   if (p.isCancel(endpoint)) return;
 
-  const apiKey = await p.text({
-    message: "API key (optional — leave empty for local dev)",
-    placeholder: currentConfig.apiKey ?? "",
-    initialValue: currentConfig.apiKey ?? "",
-  });
-  if (p.isCancel(apiKey)) return;
+  let apiKeyValue: string | undefined;
+  if (authMode === "api-key") {
+    const existingKeyMasked = maskSecret(currentConfig.apiKey);
+    const apiKeyMode = await p.select({
+      message: `API key (${existingKeyMasked})`,
+      options: [
+        { value: "keep", label: "Keep existing key", hint: "No change to currently stored key" },
+        { value: "replace", label: "Replace key", hint: "Enter a new key and store it securely" },
+        { value: "clear", label: "Clear key", hint: "Remove any stored key for this harness" },
+      ],
+      initialValue: currentConfig.apiKey ? "keep" : "replace",
+    });
+    if (p.isCancel(apiKeyMode)) return;
+
+    if (apiKeyMode === "replace") {
+      const entered = await p.password({
+        message: "Open Agents API key",
+      });
+      if (p.isCancel(entered)) return;
+      apiKeyValue = String(entered).trim() || undefined;
+    } else if (apiKeyMode === "keep") {
+      apiKeyValue = currentConfig.apiKey;
+    } else {
+      apiKeyValue = undefined;
+    }
+  } else {
+    apiKeyValue = undefined;
+  }
 
   const defaultRepo = await p.text({
     message: "Default repository URL (optional)",
@@ -251,8 +300,9 @@ async function runSetupFlow(currentConfig: OpenAgentsConfig): Promise<void> {
   const newConfig: OpenAgentsConfig = {
     ...currentConfig,
     backendType: backendChoice as "local" | "hosted",
+    authMode: authMode as "none" | "api-key" | "vercel-managed",
     endpoint: String(endpoint).trim() || currentConfig.endpoint,
-    apiKey: String(apiKey).trim() || undefined,
+    apiKey: apiKeyValue,
     defaultRepo: String(defaultRepo).trim() || undefined,
   };
 
@@ -437,6 +487,8 @@ Examples:
   $ growthub open-agents list                # list agent sessions
   $ growthub open-agents list --json         # machine-readable output
   $ growthub open-agents create              # create new session (interactive)
+  $ growthub open-agents prompt "fix tests"  # prompt and start a session
+  $ growthub open-agents chat <session-id>   # chat/resume an existing session
   $ growthub open-agents resume <session-id> # resume existing session
 `);
 
@@ -450,24 +502,32 @@ Examples:
     .description("Show or update Open Agents backend configuration")
     .option("--endpoint <url>", "Backend endpoint URL")
     .option("--api-key <key>", "API key for authenticated backends")
+    .option("--auth-mode <mode>", "Auth mode: none | api-key | vercel-managed")
+    .option("--clear-api-key", "Clear stored API key")
     .option("--default-repo <url>", "Default repository URL for new sessions")
     .option("--default-branch <name>", "Default branch name for new sessions")
     .option("--json", "Output raw JSON")
     .action(async (opts: {
       endpoint?: string;
       apiKey?: string;
+      authMode?: string;
+      clearApiKey?: boolean;
       defaultRepo?: string;
       defaultBranch?: string;
       json?: boolean;
     }) => {
       const config = readOpenAgentsConfig();
-      const hasUpdate = opts.endpoint || opts.apiKey || opts.defaultRepo || opts.defaultBranch;
+      const hasUpdate = opts.endpoint || opts.apiKey || opts.clearApiKey || opts.defaultRepo || opts.defaultBranch || opts.authMode;
 
       if (hasUpdate) {
+        const nextAuthMode = opts.authMode === "none" || opts.authMode === "api-key" || opts.authMode === "vercel-managed"
+          ? opts.authMode
+          : config.authMode;
         const updated: OpenAgentsConfig = {
           ...config,
+          ...(nextAuthMode ? { authMode: nextAuthMode } : {}),
           ...(opts.endpoint ? { endpoint: opts.endpoint } : {}),
-          ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
+          ...((opts.apiKey || opts.clearApiKey) ? { apiKey: opts.clearApiKey ? undefined : opts.apiKey } : {}),
           ...(opts.defaultRepo ? { defaultRepo: opts.defaultRepo } : {}),
           ...(opts.defaultBranch ? { defaultBranch: opts.defaultBranch } : {}),
         };
@@ -489,8 +549,9 @@ Examples:
       console.log(pc.bold("Open Agents Configuration"));
       console.log(hr());
       console.log(`  ${pc.dim("Backend:")}   ${config.backendType}`);
+      console.log(`  ${pc.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
       console.log(`  ${pc.dim("Endpoint:")}  ${config.endpoint}`);
-      console.log(`  ${pc.dim("API Key:")}   ${config.apiKey ? pc.dim("(set)") : pc.dim("(none)")}`);
+      console.log(`  ${pc.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc.dim("(none)")}`);
       console.log(`  ${pc.dim("Repo:")}      ${config.defaultRepo ?? pc.dim("(none)")}`);
       console.log(`  ${pc.dim("Branch:")}    ${config.defaultBranch ?? pc.dim("(none)")}`);
       console.log(`  ${pc.dim("Timeout:")}   ${config.timeoutMs ?? 30_000}ms`);
@@ -603,6 +664,35 @@ Examples:
       }
     });
 
+  // ── prompt (alias for create) ───────────────────────────────────────────
+  oa
+    .command("prompt")
+    .description("Create a new session from a prompt (prompt-first alias)")
+    .argument("<prompt>", "Task prompt for the agent")
+    .option("--repo <url>", "Repository URL")
+    .option("--branch <name>", "Branch name")
+    .option("--json", "Output raw JSON")
+    .action(async (prompt: string, opts: { repo?: string; branch?: string; json?: boolean }) => {
+      const config = readOpenAgentsConfig();
+      try {
+        const session = await createOpenAgentsSession(config, {
+          prompt,
+          repoUrl: opts.repo ?? config.defaultRepo,
+          branch: opts.branch ?? config.defaultBranch,
+        });
+
+        if (opts.json) {
+          console.log(JSON.stringify(session, null, 2));
+          return;
+        }
+
+        printSessionCard(session);
+      } catch (err) {
+        console.error(pc.red("Failed to create session: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
   // ── resume ─────────────────────────────────────────────────────────────
   oa
     .command("resume")
@@ -634,6 +724,41 @@ Examples:
         }
       } catch (err) {
         console.error(pc.red("Failed to resume session: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── chat (alias for resume) ─────────────────────────────────────────────
+  oa
+    .command("chat")
+    .description("Chat by resuming an existing Open Agents session")
+    .argument("<sessionId>", "Session ID to resume")
+    .option("--json", "Output raw JSON")
+    .action(async (sessionId: string, opts: { json?: boolean }) => {
+      const config = readOpenAgentsConfig();
+
+      try {
+        const session = await resumeOpenAgentsSession(config, sessionId);
+
+        if (opts.json) {
+          console.log(JSON.stringify(session, null, 2));
+          return;
+        }
+
+        printSessionCard(session);
+
+        const events = await pollSessionEvents(config, session.sessionId);
+        if (events.length > 0) {
+          console.log(pc.bold("Latest Events") + pc.dim(`  (${events.length})`));
+          console.log(hr());
+          for (const event of events.slice(-20)) {
+            printEvent(event);
+          }
+          console.log(hr());
+          console.log("");
+        }
+      } catch (err) {
+        console.error(pc.red("Failed to chat/resume session: " + (err as Error).message));
         process.exitCode = 1;
       }
     });

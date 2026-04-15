@@ -14,7 +14,8 @@ Related pages:
 - [Worker Kit Architecture](./WORKER_KIT_ARCHITECTURE.md)
 - [Worker Kit Contributor Guide](./WORKER_KIT_CONTRIBUTOR_GUIDE.md)
 - [Worker Kit Environment Examples](./WORKER_KIT_ENVIRONMENT_EXAMPLES.md)
-- [Custom Workspace Kernel Packet](./KERNEL_PACKET_CUSTOM_WORKSPACES.md)
+- [Custom Workspace Kernel Packet](./kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
+- [Kernel Packet Registry](./kernel-packets/README.md)
 
 ## V1 Scope
 

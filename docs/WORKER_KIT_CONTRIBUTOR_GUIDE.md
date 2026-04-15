@@ -31,7 +31,7 @@ A new environment should be added as a self-contained kit folder, not as scatter
 
 For `family: studio` kits, follow the frozen kernel packet:
 
-- [Custom Workspace Kernel Packet](./KERNEL_PACKET_CUSTOM_WORKSPACES.md)
+- [Custom Workspace Kernel Packet](./kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 
 Run the packet checks before opening or updating a PR:
 

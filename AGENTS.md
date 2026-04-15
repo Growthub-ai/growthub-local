@@ -83,7 +83,7 @@ zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 
 That discovery hub exposes these user-facing paths:
 
-- `Agent Harness` (filter by type: Paperclip Local App, Open Agents)
+- `Agent Harness` (filter by type: Paperclip Local App, Open Agents, Qwen Code CLI)
 - `Worker Kits`
 - `Templates`
 - `Workflows`

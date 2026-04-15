@@ -47,6 +47,15 @@ export const QWEN_CODE_APPROVAL_MODES: readonly QwenCodeApprovalMode[] = [
   "yolo",
 ] as const;
 
+export const QWEN_CODE_SUPPORTED_ENV_KEYS = [
+  "DASHSCOPE_API_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "GOOGLE_API_KEY",
+] as const;
+
+export type QwenCodeSupportedEnvKey = typeof QWEN_CODE_SUPPORTED_ENV_KEYS[number];
+
 export const DEFAULT_QWEN_CODE_CONFIG: QwenCodeConfig = {
   binaryPath: "qwen",
   defaultModel: "qwen3-coder",

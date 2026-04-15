@@ -37,7 +37,7 @@ import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipel
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
-import { registerQwenCodeCommands } from "./commands/qwen-code.js";
+import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -778,11 +778,6 @@ async function runDiscoveryHub(opts?: {
       message: "What do you want to do first?",
       options: [
         {
-          value: "agent-harness",
-          label: "🤖 Agent Harness",
-          hint: "Local app profiles, open-agents orchestration, and more",
-        },
-        {
           value: "kits",
           label: "🧰 Worker Kits",
           hint: "Self-contained workspace environments for agents",
@@ -810,6 +805,11 @@ async function runDiscoveryHub(opts?: {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
+        },
+        {
+          value: "agent-harness",
+          label: "🤖 Agent Harness",
+          hint: "Paperclip Local App + Open Agents + Qwen Code",
         },
         {
           value: "help",
@@ -867,7 +867,12 @@ async function runDiscoveryHub(opts?: {
             {
               value: "open-agents",
               label: "🌐 Open Agents",
-              hint: "Durable agent workflow orchestration — sessions, sandboxes, tools",
+              hint: "Durable workflow orchestration with prompt + chat session flow",
+            },
+            {
+              value: "qwen-code",
+              label: "🤖 Qwen Code CLI",
+              hint: "Open-source coding harness with prompt + interactive chat session",
             },
             {
               value: "__back_to_hub",
@@ -999,6 +1004,12 @@ async function runDiscoveryHub(opts?: {
         if (harnessType === "open-agents") {
           const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
           if (oaResult === "back") continue;
+          return;
+        }
+
+        if (harnessType === "qwen-code") {
+          const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
+          if (qwenResult === "back") continue;
           return;
         }
       }
