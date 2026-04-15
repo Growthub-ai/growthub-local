@@ -15,6 +15,7 @@ That discovery hub exposes:
 - `Templates`
 - `Workflows`
 - `Local Intelligence`
+- `Qwen Code CLI`
 - `Connect Growthub Account`
 - `Help CLI`
 
@@ -151,6 +152,34 @@ Read the architecture and adapter model here:
 
 - [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
 - [Gemma Setup and Validation](./docs/native-intelligence-gemma-setup.md)
+
+### Qwen Code CLI
+
+Use this path when you want to integrate the open-source Qwen Code terminal AI coding agent as a local agent harness.
+
+Entry points:
+
+```bash
+growthub qwen-code
+growthub qwen-code health
+growthub qwen-code prompt "fix the failing test"
+growthub qwen-code session
+growthub qwen-code session --yolo
+```
+
+Current discovery flow:
+
+1. Open discovery.
+2. Choose `🤖 Qwen Code CLI`.
+3. Choose one of:
+   - `Setup & Health` to validate binary/env/API key status
+   - `Run Headless Prompt` for single-prompt fire-and-forget execution
+   - `Interactive Session` for full Qwen Code terminal UI
+   - `Configure` to set default model, approval mode, binary path
+
+Read the integration architecture here:
+
+- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
 
 ### Connect Growthub Account
 

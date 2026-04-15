@@ -36,6 +36,7 @@ import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capa
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
+import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -172,6 +173,7 @@ function registerSharedCommands(target: Command) {
   registerPipelineCommands(target);
   registerArtifactCommands(target);
   registerWorkflowCommands(target);
+  registerQwenCodeCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -803,6 +805,11 @@ async function runDiscoveryHub(opts?: {
           hint: "use local custom models adapaters",
         },
         {
+          value: "qwen-code",
+          label: "🤖 Qwen Code CLI",
+          hint: "open-source terminal AI coding agent (qwen-code)",
+        },
+        {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
@@ -829,6 +836,7 @@ async function runDiscoveryHub(opts?: {
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
           `   Locked state: ${workflowAccess.reason}.`,
+          "🤖 Qwen Code CLI: open-source terminal AI coding agent — health, headless prompt, interactive session.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -837,6 +845,9 @@ async function runDiscoveryHub(opts?: {
           "growthub kit",
           "growthub template",
           "growthub workflow",
+          "growthub qwen-code",
+          "growthub qwen-code health",
+          "growthub qwen-code prompt \"...\"",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
@@ -971,6 +982,12 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "native-intelligence") {
       const result = await runNativeIntelligenceHub();
+      if (result === "back") continue;
+      return;
+    }
+
+    if (surfaceChoice === "qwen-code") {
+      const result = await runQwenCodeHub();
       if (result === "back") continue;
       return;
     }
@@ -1124,6 +1141,13 @@ Dynamic Registry Pipelines:
     $ growthub artifact list                    All pipeline artifacts
     $ growthub artifact list --type video       Filter by type
     $ growthub artifact inspect <id>            Inspect a specific artifact
+
+Qwen Code CLI (agent harness):
+    $ growthub qwen-code                        Interactive hub — health, prompt, session, configure
+    $ growthub qwen-code health                 Check Qwen Code CLI environment and readiness
+    $ growthub qwen-code prompt "fix the bug"   Headless single-prompt execution
+    $ growthub qwen-code session                Launch interactive terminal session
+    $ growthub qwen-code session --yolo         Auto-approve all tool calls
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)

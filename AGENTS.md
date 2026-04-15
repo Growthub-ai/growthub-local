@@ -87,6 +87,8 @@ That discovery hub exposes these user-facing paths:
 - `Worker Kits`
 - `Templates`
 - `Workflows`
+- `Local Intelligence`
+- `Qwen Code CLI`
 - `Connect Growthub Account`
 - `Help CLI`
 

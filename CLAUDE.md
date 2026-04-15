@@ -66,6 +66,8 @@ Current discovery options:
 - `Worker Kits`
 - `Templates`
 - `Workflows`
+- `Local Intelligence`
+- `Qwen Code CLI`
 - `Connect Growthub Account`
 - `Help CLI`
 
