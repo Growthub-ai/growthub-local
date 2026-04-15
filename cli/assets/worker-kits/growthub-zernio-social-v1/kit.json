@@ -24,7 +24,6 @@
   ],
   "frozenAssetPaths": [
     "QUICKSTART.md",
-    ".env.example",
     "skills.md",
     "output-standards.md",
     "runtime-assumptions.md",
@@ -61,7 +60,6 @@
   ],
   "setupPaths": {
     "quickstart": "QUICKSTART.md",
-    "envExample": ".env.example",
     "setupDir": "setup/",
     "outputDir": "output/"
   },
@@ -70,7 +68,6 @@
     "description": "Exported folder is intended to be pointed at directly by the agent Working Directory. All outputs are Markdown files written to output/<client-slug>/<project-slug>/ alongside a machine-readable scheduling-manifest.json shaped for POST https://zernio.com/api/v1/posts.",
     "requiredPaths": [
       "QUICKSTART.md",
-      ".env.example",
       "kit.json",
       "bundles/growthub-zernio-social-v1.json",
       "skills.md",

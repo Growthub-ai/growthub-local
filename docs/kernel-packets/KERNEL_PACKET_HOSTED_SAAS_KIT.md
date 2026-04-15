@@ -128,7 +128,7 @@ This packet forbids:
 - write `setup/setup.mjs` — one-command cross-platform bootstrap
 - write `setup/check-deps.mjs` — Node-native dep check with `which`/`where` fallback
 - write `setup/install-<provider-primitive>.mjs` if provider ships an MCP server / skill / CLI worth surfacing
-- write `.env.example` with every required env var as an explicit placeholder
+- **do not list `.env.example` in `frozenAssetPaths`, `outputStandard.requiredPaths`, or `requiredFrozenAssets` in `kit.json` or the bundle manifest unless the file physically exists in the kit directory** — listing a missing path in any of these three lists causes `listBundledKits()` to throw and removes all kits from discovery for all users
 
 ### P4. Adapter Matrix + API + Plans Documentation
 
@@ -150,9 +150,10 @@ Add a kit-specific test file under `cli/src/__tests__/kit-<kit-id>.test.ts` that
 
 - catalog entry present with correct family/type/executionMode
 - factory config shape (provider id, base URL, auth field, env gate vars, artifact count, required vs optional split)
-- every frozen asset path exists
-- every required frozen asset exists
-- `.env.example` declares every required env var as an explicit placeholder
+- every path in `frozenAssetPaths` exists on disk
+- every path in `outputStandard.requiredPaths` exists on disk
+- every path in `requiredFrozenAssets` exists on disk
+- no path is listed in any of those three manifest lists unless the file physically exists (the manifest/disk check is the parity gate for all users)
 - `verify-env.mjs` enforces the key regex and includes the reachability `Authorization: Bearer` call
 - agent law (`CLAUDE.md`) declares the full command surface
 - adapter matrix doc names all targeted IDEs + the `ServerAdapterModule` contract + the "does NOT" disclaimer

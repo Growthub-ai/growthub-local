@@ -1127,7 +1127,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.55")
+  .version("0.3.57")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -1140,6 +1140,8 @@ Worker Kits (agent execution environments):
   Download:
     $ growthub kit download                     Interactive (no arg = picker)
     $ growthub kit download higgsfield          Fuzzy slug — resolves automatically
+    $ growthub kit download postiz              Postiz Social Media Studio
+    $ growthub kit download zernio             Zernio Social Media Studio (Postiz UI Shell + Zernio Engine)
     $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
     $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
 

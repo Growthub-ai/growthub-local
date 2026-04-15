@@ -117,7 +117,7 @@ async function runDepsCheck() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 \u2014 Ensure .env exists (copy from .env.example if missing)
+// Step 2 \u2014 Ensure .env exists
 // ---------------------------------------------------------------------------
 
 function ensureEnvFile() {
@@ -131,15 +131,23 @@ function ensureEnvFile() {
     return { created: false, envPath };
   }
 
-  if (!existsSync(examplePath)) {
-    fail(".env.example missing \u2014 kit payload is incomplete");
-    return { created: false, envPath: null };
+  if (existsSync(examplePath)) {
+    copyFileSync(examplePath, envPath);
+    ok(`Copied .env.example \u2192 .env`);
+    warn(`Open .env and fill in ZERNIO_API_KEY + ZERNIO_PROFILE_ID before running the operator`);
+    return { created: true, envPath };
   }
 
-  copyFileSync(examplePath, envPath);
-  ok(`Copied .env.example \u2192 .env`);
-  warn(`Open .env and fill in ZERNIO_API_KEY + ZERNIO_PROFILE_ID before running the operator`);
-  return { created: true, envPath };
+  // No .env.example \u2014 guide the user to create .env directly.
+  warn(".env not found \u2014 create it with your Zernio credentials:");
+  log(`  ${DIM}ZERNIO_API_KEY=sk_<your-64-hex-key>${RESET}`);
+  log(`  ${DIM}ZERNIO_API_URL=https://zernio.com/api/v1${RESET}`);
+  log(`  ${DIM}ZERNIO_PROFILE_ID=<your-profile-id>${RESET}`);
+  log(`  ${DIM}ZERNIO_TIMEZONE=America/New_York  # optional${RESET}`);
+  log(`  ${DIM}ANTHROPIC_API_KEY=sk-ant-...       # optional, for hybrid caption mode${RESET}`);
+  log("");
+  log(`  Skip env entirely for agent-only mode: ${BOLD}node setup/setup.mjs --skip-verify${RESET}`);
+  return { created: false, envPath: null };
 }
 
 // ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@
   ],
   "requiredFrozenAssets": [
     "QUICKSTART.md",
-    ".env.example",
     "skills.md",
     "output-standards.md",
     "runtime-assumptions.md",
