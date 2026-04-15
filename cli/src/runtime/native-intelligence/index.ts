@@ -47,6 +47,7 @@ import { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 import { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 import { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";
 import { planWorkflow, buildDeterministicPlan } from "./planner.js";
+import { buildMarketingContext, buildDeterministicContext } from "./marketing-context-builder.js";
 
 // ---------------------------------------------------------------------------
 // Re-exports
@@ -84,6 +85,8 @@ export { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 export { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 export { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";
 export { planWorkflow, buildDeterministicPlan } from "./planner.js";
+export { buildMarketingContext, buildDeterministicContext } from "./marketing-context-builder.js";
+export type { MarketingContextInput, MarketingContextResult } from "./marketing-context-builder.js";
 
 // ---------------------------------------------------------------------------
 // Configuration persistence

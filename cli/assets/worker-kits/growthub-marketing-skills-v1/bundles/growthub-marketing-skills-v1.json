@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-marketing-skills-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-marketing-skills-v1",
+    "workerId": "marketing-operator"
+  },
+  "briefType": "marketing-operator",
+  "publicExampleBrandPaths": ["brands/growthub/product-marketing-context.md"],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "workers/marketing-operator/CLAUDE.md",
+    "brands/_template/product-marketing-context.md",
+    "brands/growthub/product-marketing-context.md",
+    "templates/cro-audit-brief.md",
+    "templates/seo-audit-report.md",
+    "templates/content-strategy-plan.md",
+    "templates/email-sequence-plan.md",
+    "templates/launch-checklist.md",
+    "templates/competitor-analysis.md",
+    "examples/landing-page-cro-sample.md",
+    "examples/seo-audit-sample.md",
+    "examples/email-sequence-sample.md",
+    "docs/fork-integration.md",
+    "docs/skill-dispatch-methodology.md",
+    "docs/evaluation-frameworks.md",
+    "setup/verify-env.mjs",
+    "output/README.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "optionalPresets": [],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-marketing-skills-v1",
+    "zipFileName": "growthub-agent-worker-kit-marketing-skills-v1.zip"
+  },
+  "activationModes": ["export"]
+}
