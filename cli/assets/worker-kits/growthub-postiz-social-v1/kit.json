@@ -8,7 +8,7 @@
     "type": "worker",
     "visibility": "public-open-source",
     "sourceRepo": "growthub-local",
-    "family": "operator"
+    "family": "studio"
   },
   "entrypoint": {
     "workerId": "postiz-social-operator",

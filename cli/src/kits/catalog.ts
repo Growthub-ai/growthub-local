@@ -54,6 +54,6 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     type: "worker",
     executionMode: "export",
     activationModes: ["export"],
-    family: "operator",
+    family: "studio",
   },
 ];
