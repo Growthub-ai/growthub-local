@@ -15,6 +15,7 @@ Use it as the canonical lane for:
 | --- | --- | --- |
 | Custom Workspace Kernel Packet | `v1` | `./KERNEL_PACKET_CUSTOM_WORKSPACES.md` |
 | Agent Harness Kernel Packet | `v1` | `./KERNEL_PACKET_AGENT_HARNESS.md` |
+| Cross-Workspace Knowledge Kernel Packet | `v1` | `./KERNEL_PACKET_CROSS_WORKSPACE_KNOWLEDGE.md` |
 
 ## Versioning Rules
 
@@ -40,3 +41,11 @@ When packet docs change, keep these surfaces in sync in the same PR:
 - any contract checks that point at packet file paths
 
 This prevents drift between packet docs and executable checks.
+
+## Validation Commands
+
+| Packet | Validation Script |
+| --- | --- |
+| Custom Workspace | `bash scripts/check-custom-workspace-kernel.sh` |
+| Agent Harness | `bash scripts/check-agent-harness-kernel.sh` |
+| Cross-Workspace Knowledge | `bash scripts/check-cross-workspace-knowledge-kernel.sh` |

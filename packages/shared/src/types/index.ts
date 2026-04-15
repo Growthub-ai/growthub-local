@@ -117,6 +117,22 @@ export type {
   CompanyPortabilityExportRequest,
 } from "./company-portability.js";
 export type {
+  WorkspaceRefKind,
+  WorkspaceKnowledgeRef,
+  KnowledgeSyncEnvelopeVersion,
+  KnowledgeSyncDirection,
+  KnowledgeSyncItem,
+  KnowledgeSyncEnvelope,
+  CrossWorkspaceKitBundle,
+  KnowledgeSyncStatus,
+  KnowledgeSyncItemResult,
+  KnowledgeSyncResult,
+  KnowledgeCaptureInput,
+  CaptureProposal,
+  KnowledgeCaptureResult,
+  WorkspaceKnowledgeSyncStatus,
+} from "./knowledge-sync.js";
+export type {
   JsonSchema,
   PluginJobDeclaration,
   PluginWebhookDeclaration,

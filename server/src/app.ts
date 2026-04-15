@@ -33,6 +33,7 @@ import { skillRoutes } from "./routes/skills.js";
 import { knowledgeImportRoutes } from "./routes/knowledge-import.js";
 import { skillsShRoutes } from "./routes/skills-sh.js";
 import { kbSkillDocRoutes } from "./routes/kb-skill-docs.js";
+import { knowledgeSyncRoutes } from "./routes/knowledge-sync.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -355,6 +356,7 @@ export async function createApp(
       }),
     );
     api.use(skillRoutes(db));
+    api.use(knowledgeSyncRoutes(db));
   }
   if (opts.surfaceRuntime.capabilities.gtmEnabled) {
     api.use("/companies", companyRoutes(db));
@@ -414,6 +416,7 @@ export async function createApp(
       }),
     );
     api.use(skillRoutes(db));
+    api.use(knowledgeSyncRoutes(db));
   }
   app.use("/api", api);
   app.use("/api", (_req, res) => {

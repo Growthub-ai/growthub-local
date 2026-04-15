@@ -38,6 +38,7 @@ import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
+import { registerKnowledgeCommands, runKnowledgeHub } from "./commands/knowledge.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -176,6 +177,7 @@ function registerSharedCommands(target: Command) {
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
+  registerKnowledgeCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -802,6 +804,11 @@ async function runDiscoveryHub(opts?: {
           hint: "use local custom models adapaters",
         },
         {
+          value: "knowledge-sync",
+          label: "📚 Knowledge Sync",
+          hint: "Cross-workspace knowledge orchestration and compounding intelligence",
+        },
+        {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
@@ -833,6 +840,7 @@ async function runDiscoveryHub(opts?: {
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
           `   Locked state: ${workflowAccess.reason}.`,
+          "📚 Knowledge Sync: export, import, and sync the local knowledge base across workspaces. Relay to hosted Growthub app. Post-run capture for compounding intelligence.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -848,6 +856,9 @@ async function runDiscoveryHub(opts?: {
           "growthub pipeline assemble",
           "growthub artifact list",
           "growthub open-agents",
+          "growthub knowledge status",
+          "growthub knowledge export",
+          "growthub knowledge import",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -1035,6 +1046,12 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
+    if (surfaceChoice === "knowledge-sync") {
+      const result = await runKnowledgeHub({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
     if (surfaceChoice === "hosted-auth") {
       await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
       continue;
@@ -1191,6 +1208,15 @@ Qwen Code CLI (agent harness):
     $ growthub qwen-code prompt "fix the bug"   Headless single-prompt execution
     $ growthub qwen-code session                Launch interactive terminal session
     $ growthub qwen-code session --yolo         Auto-approve all tool calls
+
+Knowledge Sync (cross-workspace intelligence):
+    $ growthub knowledge                        Interactive knowledge hub
+    $ growthub knowledge status                 Local KB state and workspace discovery
+    $ growthub knowledge export                 Export KB to a portable envelope
+    $ growthub knowledge export --relay         Export + relay to hosted Growthub app
+    $ growthub knowledge import ./kb-export.json  Import from an envelope file
+    $ growthub knowledge sync                   Interactive cross-workspace sync
+    $ growthub knowledge capture --run-id <id>  Capture knowledge from a completed run
 
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)

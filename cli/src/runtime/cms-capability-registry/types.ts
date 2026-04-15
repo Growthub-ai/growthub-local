@@ -11,7 +11,7 @@
 // Capability node families
 // ---------------------------------------------------------------------------
 
-export type CapabilityFamily = "video" | "image" | "slides" | "text" | "data" | "ops" | "research" | "vision";
+export type CapabilityFamily = "video" | "image" | "slides" | "text" | "data" | "ops" | "research" | "vision" | "knowledge";
 
 export const CAPABILITY_FAMILIES: readonly CapabilityFamily[] = [
   "video",
@@ -22,6 +22,7 @@ export const CAPABILITY_FAMILIES: readonly CapabilityFamily[] = [
   "ops",
   "research",
   "vision",
+  "knowledge",
 ] as const;
 
 export type CapabilityExecutionKind = "hosted-execute" | "provider-assembly" | "local-only";

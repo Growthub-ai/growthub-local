@@ -84,5 +84,5 @@ export interface SerializedPipeline {
   version: 1;
   pipeline: DynamicRegistryPipeline;
   createdAt: string;
-  source: "cli-assemble" | "file-import" | "agent";
+  source: "cli-assemble" | "file-import" | "agent" | "knowledge-sync";
 }

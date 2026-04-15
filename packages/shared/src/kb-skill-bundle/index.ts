@@ -25,3 +25,10 @@ export {
   type AppendSkillsOptions,
   type SkillsPromptAttachment,
 } from "./prompt.js";
+export {
+  buildEnvelopeFromSource,
+  buildCrossWorkspaceBundle,
+  flattenBundleItems,
+  type CrossWorkspaceSource,
+  type BuildCrossWorkspaceBundleOptions,
+} from "./cross-workspace.js";

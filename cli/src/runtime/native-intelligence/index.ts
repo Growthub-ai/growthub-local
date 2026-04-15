@@ -76,6 +76,9 @@ export type {
   ExecutionResultForIntelligence,
   ExecutionModeContext,
   WorkflowSummaryForIntelligence,
+  KnowledgeCaptureAdvisoryInput,
+  KnowledgeCaptureAdvisoryResult,
+  KnowledgeCaptureProposal,
 } from "./contract.js";
 
 export { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
@@ -84,6 +87,7 @@ export { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 export { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 export { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";
 export { planWorkflow, buildDeterministicPlan } from "./planner.js";
+export { adviseCaptureItems, buildDeterministicCaptureSuggestions } from "./capture-advisor.js";
 
 // ---------------------------------------------------------------------------
 // Configuration persistence

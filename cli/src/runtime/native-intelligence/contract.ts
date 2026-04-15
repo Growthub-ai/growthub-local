@@ -221,6 +221,48 @@ export interface NativeIntelligenceProvider {
 }
 
 // ---------------------------------------------------------------------------
+// 5. Post-Run Knowledge Capture Advisory (capture-advisor.ts)
+// ---------------------------------------------------------------------------
+
+/** Input to the capture advisor — what the model sees about the completed run. */
+export interface KnowledgeCaptureAdvisoryInput {
+  runId: string;
+  /** Plain-text execution summary (from summarizeExecution or deterministic). */
+  executionSummaryText: string;
+  /** The user's original intent / prompt for this run, if available. */
+  userIntent?: string;
+  /** High-level artifact descriptions produced by the run. */
+  artifactSummaries: Array<{
+    artifactType: string;
+    sourceNodeSlug: string;
+    outputText?: string;
+  }>;
+  /** Max number of knowledge items to propose. Default: 3. */
+  maxProposals?: number;
+}
+
+/** A proposed knowledge item from the capture advisor. */
+export interface KnowledgeCaptureProposal {
+  name: string;
+  description: string;
+  body: string;
+  format: "markdown" | "text" | "json";
+  source: "agent_run";
+  /** 0-1 confidence that this item is worth saving. */
+  confidence: number;
+  /** Brief reasoning for this proposal. */
+  reason: string;
+}
+
+/** Result of the capture advisory call. */
+export interface KnowledgeCaptureAdvisoryResult {
+  /** Ordered proposals from most to least useful. */
+  proposals: KnowledgeCaptureProposal[];
+  explanation: string;
+  confidence: number;
+}
+
+// ---------------------------------------------------------------------------
 // Backend adapter interface
 // ---------------------------------------------------------------------------
 
