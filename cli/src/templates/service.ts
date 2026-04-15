@@ -65,9 +65,10 @@ export function listArtifacts(filter: ArtifactFilter = {}): TemplateArtifact[] {
   if (filter.family)  results = results.filter((a) => a.family === filter.family);
   if (filter.format) {
     const fmt = filter.format.toLowerCase();
-    results = results.filter((a) =>
-      a.compatibleFormats.length === 0 || a.compatibleFormats.some((f) => f.includes(fmt)),
-    );
+    results = results.filter((a) => {
+      if (!("compatibleFormats" in a)) return true;
+      return a.compatibleFormats.length === 0 || a.compatibleFormats.some((f: string) => f.includes(fmt));
+    });
   }
   if (filter.tags?.length) {
     results = results.filter((a) => filter.tags!.some((tag) => a.tags.includes(tag)));
@@ -100,17 +101,19 @@ export function copyArtifact(slugOrId: string, destDir: string): string {
 // Group — two-step picker structure. Never flat.
 // ---------------------------------------------------------------------------
 
-const GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta"] as const;
+const GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta", "marketing-frameworks"] as const;
 
 const GROUP_META: Record<string, { label: string; description: string }> = {
-  "ad-formats":          { label: "Ad Formats",                   description: "Complete frozen video ad structures — scene count, sacred elements, adaptation rules" },
-  "scene-modules/hooks": { label: "Scene Modules — Hooks",        description: "Scene 1 — pattern interrupt, scroll stop, opening emotional beat" },
-  "scene-modules/body":  { label: "Scene Modules — Body",         description: "Scenes 2–N — problem confession, skeptic pivot, demo, social proof" },
-  "scene-modules/cta":   { label: "Scene Modules — CTA",          description: "Final scene — offer close, guarantee, conversion" },
+  "ad-formats":            { label: "Ad Formats",                   description: "Complete frozen video ad structures — scene count, sacred elements, adaptation rules" },
+  "scene-modules/hooks":   { label: "Scene Modules — Hooks",        description: "Scene 1 — pattern interrupt, scroll stop, opening emotional beat" },
+  "scene-modules/body":    { label: "Scene Modules — Body",         description: "Scenes 2–N — problem confession, skeptic pivot, demo, social proof" },
+  "scene-modules/cta":     { label: "Scene Modules — CTA",          description: "Final scene — offer close, guarantee, conversion" },
+  "marketing-frameworks":  { label: "Marketing Frameworks",          description: "Evaluation frameworks for CRO, SEO, email, content, launch, and competitive analysis" },
 };
 
 function groupKey(a: TemplateArtifact): string {
   if (a.type === "ad-format") return "ad-formats";
+  if (a.type === "marketing-framework") return "marketing-frameworks";
   return `scene-modules/${(a as { subtype: SceneModuleSubtype }).subtype}`;
 }
 

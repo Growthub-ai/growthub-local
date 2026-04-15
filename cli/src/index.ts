@@ -76,6 +76,8 @@ import {
   checkBackendHealth,
   readIntelligenceConfig,
   writeIntelligenceConfig,
+  buildMarketingContext,
+  buildDeterministicContext,
 } from "./runtime/native-intelligence/index.js";
 import type { NodeContractSummary } from "./runtime/cms-node-contracts/types.js";
 import { createCmsCapabilityRegistryClient } from "./runtime/cms-capability-registry/index.js";
@@ -315,6 +317,7 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
         { value: "models", label: "Manage local custom models", hint: "select active favorite/default model" },
         { value: "prompt", label: "Prompt local model (chat flow)", hint: "human first local prompt submissions" },
         { value: "flows", label: "Run native-intelligence with your prompt", hint: "planner/normalizer/recommender/summarizer" },
+        { value: "marketing-context", label: "Marketing Context Builder", hint: "auto-draft product-marketing-context from project artifacts" },
         { value: "provider-config", label: "Configure API provider", hint: "Claude, OpenAI, Gemini, OpenRouter, or local" },
         { value: "__back_to_hub", label: "← Back to main menu" },
       ],
@@ -443,6 +446,11 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
       continue;
     }
 
+    if (action === "marketing-context") {
+      await runMarketingContextBuilder(baseUrl, defaultModel);
+      continue;
+    }
+
     const customPrompt = await p.text({
       message: "Enter your local intelligence prompt",
       placeholder: "Describe what you want to create/analyze",
@@ -454,6 +462,70 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
       continue;
     }
     await runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt);
+  }
+}
+
+async function runMarketingContextBuilder(baseUrl: string, model: string): Promise<void> {
+  const projectDir = await p.text({
+    message: "Project directory to scan",
+    placeholder: process.cwd(),
+    defaultValue: process.cwd(),
+  });
+  if (p.isCancel(projectDir)) return;
+  const dir = String(projectDir).trim() || process.cwd();
+
+  if (!fs.existsSync(dir)) {
+    p.note(`Directory not found: ${dir}`, "Marketing Context Builder");
+    return;
+  }
+
+  const spinner = p.spinner();
+  spinner.start("Scanning project artifacts and drafting product-marketing context...");
+
+  try {
+    const config = readIntelligenceConfig();
+    const backend = createNativeIntelligenceBackend({
+      ...config,
+      endpoint: baseUrl.replace(/\/v1$/, "") + "/v1/chat/completions",
+      localModel: model,
+    });
+    const health = await checkBackendHealth(backend);
+    const input = { projectDir: dir };
+
+    let result;
+    if (health.ok) {
+      result = await buildMarketingContext(input, backend);
+    } else {
+      result = buildDeterministicContext(input);
+    }
+
+    spinner.stop("Product-marketing context drafted.");
+
+    const summaryLines = [
+      `Mode: ${result.mode}`,
+      `Confidence: ${(result.confidence * 100).toFixed(0)}%`,
+      `Sources used: ${result.sourcesUsed.join(", ") || "none"}`,
+      `Sources missing: ${result.sourcesMissing.join(", ") || "none"}`,
+    ];
+    p.note(summaryLines.join("\n"), "Marketing Context Builder");
+
+    const saveChoice = await p.confirm({
+      message: "Save the drafted context to .agents/product-marketing-context.md?",
+    });
+
+    if (p.isCancel(saveChoice) || !saveChoice) {
+      p.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
+      return;
+    }
+
+    const outDir = path.resolve(dir, ".agents");
+    fs.mkdirSync(outDir, { recursive: true });
+    const outPath = path.resolve(outDir, "product-marketing-context.md");
+    fs.writeFileSync(outPath, result.contextMarkdown, "utf-8");
+    p.note(`Saved to: ${outPath}\n\nReview the file and replace [NEEDS INPUT] placeholders with real data.`, "Marketing Context Builder");
+  } catch (err) {
+    spinner.stop("Failed to build marketing context.");
+    p.note(String(err), "Marketing Context Builder — Error");
   }
 }
 

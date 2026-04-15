@@ -7,7 +7,7 @@
  * To add a family:   add entries with new family value + add to TemplateFamily in contract.ts.
  */
 
-import type { AdFormatArtifact, SceneModuleArtifact, TemplateArtifact } from "./contract.js";
+import type { AdFormatArtifact, SceneModuleArtifact, MarketingFrameworkArtifact, TemplateArtifact } from "./contract.js";
 
 const AD_FORMATS: AdFormatArtifact[] = [
   {
@@ -221,12 +221,88 @@ const CTA: SceneModuleArtifact[] = [
   },
 ];
 
+const MARKETING_FRAMEWORKS: MarketingFrameworkArtifact[] = [
+  {
+    type: "marketing-framework",
+    slug: "cro-7-dimensions",
+    id: "marketing-frameworks/cro-7-dimensions",
+    name: "CRO Analysis — 7 Dimensions",
+    family: "marketing-framework",
+    category: "Conversion Optimization",
+    tags: ["cro", "conversion", "landing-page", "audit", "scoring"],
+    sourceSkill: "page-cro",
+    frozen: true,
+    path: "marketing-frameworks/cro-7-dimensions.md",
+  },
+  {
+    type: "marketing-framework",
+    slug: "seo-audit-eeat",
+    id: "marketing-frameworks/seo-audit-eeat",
+    name: "SEO Audit — E-E-A-T Framework",
+    family: "marketing-framework",
+    category: "SEO & Discovery",
+    tags: ["seo", "eeat", "audit", "technical-seo", "content-quality"],
+    sourceSkill: "seo-audit",
+    frozen: true,
+    path: "marketing-frameworks/seo-audit-eeat.md",
+  },
+  {
+    type: "marketing-framework",
+    slug: "email-sequence-architecture",
+    id: "marketing-frameworks/email-sequence-architecture",
+    name: "Email Sequence — 5-Type Architecture",
+    family: "marketing-framework",
+    category: "Email & Retention",
+    tags: ["email", "sequence", "nurture", "welcome", "retention"],
+    sourceSkill: "email-sequence",
+    frozen: true,
+    path: "marketing-frameworks/email-sequence-architecture.md",
+  },
+  {
+    type: "marketing-framework",
+    slug: "product-marketing-context",
+    id: "marketing-frameworks/product-marketing-context",
+    name: "Product Marketing Context — Foundation",
+    family: "marketing-framework",
+    category: "Strategy & Foundation",
+    tags: ["context", "positioning", "audience", "brand-voice", "foundation"],
+    sourceSkill: "product-marketing-context",
+    frozen: true,
+    path: "marketing-frameworks/product-marketing-context.md",
+  },
+  {
+    type: "marketing-framework",
+    slug: "launch-playbook",
+    id: "marketing-frameworks/launch-playbook",
+    name: "Launch Strategy — Phased Playbook",
+    family: "marketing-framework",
+    category: "Growth & Launch",
+    tags: ["launch", "gtm", "go-to-market", "playbook", "checklist"],
+    sourceSkill: "launch-strategy",
+    frozen: true,
+    path: "marketing-frameworks/launch-playbook.md",
+  },
+  {
+    type: "marketing-framework",
+    slug: "competitor-positioning",
+    id: "marketing-frameworks/competitor-positioning",
+    name: "Competitor Analysis — Positioning Gaps",
+    family: "marketing-framework",
+    category: "Strategy & Foundation",
+    tags: ["competitor", "positioning", "alternatives", "feature-matrix"],
+    sourceSkill: "competitor-alternatives",
+    frozen: true,
+    path: "marketing-frameworks/competitor-positioning.md",
+  },
+];
+
 /** Master catalog. Append new family arrays below. */
 export const TEMPLATE_CATALOG: readonly TemplateArtifact[] = [
   ...AD_FORMATS,
   ...HOOKS,
   ...BODY,
   ...CTA,
+  ...MARKETING_FRAMEWORKS,
   // ...EMAIL_TEMPLATES,
   // ...MOTION_TEMPLATES,
 ] as const;

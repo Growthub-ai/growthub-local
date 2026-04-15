@@ -9,7 +9,7 @@
  *   - New family         → add to TemplateFamily, add entries in catalog.ts
  */
 
-export type TemplateFamily = "video-creative" | "email" | "motion" | "general";
+export type TemplateFamily = "video-creative" | "email" | "motion" | "general" | "marketing-framework";
 
 export type SceneModuleSubtype = "hook" | "body" | "cta";
 
@@ -47,8 +47,21 @@ export interface SceneModuleArtifact {
   path: string;
 }
 
+export interface MarketingFrameworkArtifact {
+  type: "marketing-framework";
+  slug: string;
+  id: string;
+  name: string;
+  family: TemplateFamily;
+  category: string;
+  tags: string[];
+  sourceSkill: string;
+  frozen: boolean;
+  path: string;
+}
+
 /** Extend this union as new artifact families ship. */
-export type TemplateArtifact = AdFormatArtifact | SceneModuleArtifact;
+export type TemplateArtifact = AdFormatArtifact | SceneModuleArtifact | MarketingFrameworkArtifact;
 
 // ---------------------------------------------------------------------------
 // Service types
