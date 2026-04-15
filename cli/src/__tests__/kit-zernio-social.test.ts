@@ -405,6 +405,78 @@ describe("growthub-zernio-social-v1 — cross-platform setup + local-adapter sur
   });
 });
 
+describe("growthub-zernio-social-v1 — hosted-saas kernel packet alignment", () => {
+  const REPO_ROOT = path.resolve(KIT_ROOT, "../../../..");
+  const PACKET_PATH = path.join(REPO_ROOT, "docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md");
+
+  function readPacket(): string {
+    return fs.readFileSync(PACKET_PATH, "utf8");
+  }
+
+  it("the kernel packet exists on disk", () => {
+    expect(fs.existsSync(PACKET_PATH), `missing ${PACKET_PATH}`).toBe(true);
+  });
+
+  it("is registered in docs/kernel-packets/README.md registry", () => {
+    const registry = fs.readFileSync(path.join(REPO_ROOT, "docs/kernel-packets/README.md"), "utf8");
+    expect(registry).toContain("Hosted SaaS Kit Kernel Packet");
+    expect(registry).toContain("KERNEL_PACKET_HOSTED_SAAS_KIT.md");
+  });
+
+  it("is linked from the top-level README.md docs list", () => {
+    const readme = fs.readFileSync(path.join(REPO_ROOT, "README.md"), "utf8");
+    expect(readme).toContain("Hosted SaaS Kit Kernel Packet");
+    expect(readme).toContain("docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md");
+  });
+
+  it("is cross-linked from the Custom Workspace packet as a specialization", () => {
+    const parent = fs.readFileSync(path.join(REPO_ROOT, "docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md"), "utf8");
+    expect(parent).toContain("Specializations");
+    expect(parent).toContain("KERNEL_PACKET_HOSTED_SAAS_KIT.md");
+  });
+
+  it("declares v1 version + relationship + invariants + anti-patterns + procedure + reference", () => {
+    const packet = readPacket();
+    expect(packet).toMatch(/Version:\s*`v1`/);
+    expect(packet).toContain("Relationship to Other Packets");
+    expect(packet).toContain("Kernel Invariants");
+    expect(packet).toContain("Surface Area Contract");
+    expect(packet).toContain("Anti-Patterns");
+    expect(packet).toContain("Packet Procedure");
+    expect(packet).toContain("Reference Implementation");
+    expect(packet).toContain("Definition Of Done");
+  });
+
+  it("encodes the three bets as enforceable invariants", () => {
+    const packet = readPacket();
+    // Bet 1 — Package, don't wrap
+    expect(packet).toContain("IDE-agnostic entrypoint");
+    expect(packet).toContain("workers/<worker-id>/CLAUDE.md");
+    // Bet 2 — IDE-agnostic via Working Directory
+    expect(packet).toContain("Working Directory");
+    expect(packet).toContain("server/src/adapters/registry.ts");
+    expect(packet).toContain("No new registry entry");
+    // Bet 3 — Thin over thick, always additive
+    expect(packet).toContain("No SDK installed");
+    expect(packet).toContain("Agent-only mode is first-class");
+    expect(packet).toContain("Idempotency is part of the output contract");
+    expect(packet).toContain("Secret hygiene is a test");
+    expect(packet).toContain("Provider primitives stay opt-in");
+  });
+
+  it("names growthub-zernio-social-v1 as the canonical reference implementation", () => {
+    const packet = readPacket();
+    expect(packet).toContain("growthub-zernio-social-v1");
+    expect(packet).toContain("canonical v1 reference");
+  });
+
+  it("growthub-meta README points to the kernel packet", () => {
+    const meta = readText("growthub-meta/README.md");
+    expect(meta).toContain("Hosted SaaS Kit Kernel Packet");
+    expect(meta).toContain("canonical reference implementation");
+  });
+});
+
 describe("growthub-zernio-social-v1 — postiz UI shell companion surfacing", () => {
   it("QUICKSTART.md advertises the postiz-ui-shell execution mode and links the integration doc", () => {
     const quickstart = readText("QUICKSTART.md");

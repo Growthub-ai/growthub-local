@@ -241,6 +241,7 @@ GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 - [Kernel Packet Registry](./docs/kernel-packets/README.md)
 - [Custom Workspace Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 - [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
+- [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
 
 ## Architecture Lanes
 

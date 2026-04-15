@@ -17,6 +17,7 @@
 | Visibility | `public-open-source` |
 | Source Repo | `growthub-local` |
 | Frozen At | `2026-04-15T00:00:00.000Z` |
+| Kernel packet | [Hosted SaaS Kit Kernel Packet `v1`](../../../../docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md) — this kit is the canonical reference implementation |
 
 ---
 

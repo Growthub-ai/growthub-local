@@ -88,6 +88,12 @@ This packet is reusable for other CLI extension work by keeping the same shape:
 
 Apply the same structure for Templates, Workflows, Local Intelligence, and future discovery lanes.
 
+## Specializations
+
+When a worker kit's external target is a hosted third-party SaaS REST API (no fork, no self-host, no new executor), use the narrower specialization that inherits every invariant of this packet and adds the thin-hosted-provider discipline:
+
+- [Hosted SaaS Kit Kernel Packet](./KERNEL_PACKET_HOSTED_SAAS_KIT.md)
+
 ## Canonical Commands
 
 ```bash
