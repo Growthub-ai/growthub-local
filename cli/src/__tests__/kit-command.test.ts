@@ -103,4 +103,57 @@ describe("kit interactive download flow", () => {
     expect(printedOutput).toContain("/tmp/kits/growthub-agent-worker-kit-open-higgsfield-studio-v1");
     expect(printedOutput).toContain("Kit exported successfully.");
   });
+
+  it("downloads a non-default custom workspace kit from the same filtered list", async () => {
+    listBundledKitsMock.mockReturnValue([
+      {
+        id: "growthub-open-higgsfield-studio-v1",
+        family: "studio",
+        name: "Growthub Agent Worker Kit - Open Higgsfield Studio",
+        version: "1.0.0",
+        description: "Self-contained local execution environment for Open Higgsfield.",
+        briefType: "open-higgsfield-visual-production",
+        executionMode: "export",
+      },
+      {
+        id: "growthub-twenty-crm-v1",
+        family: "studio",
+        name: "Growthub Agent Worker Kit - Twenty CRM",
+        version: "1.0.0",
+        description: "Self-contained local execution environment for Twenty CRM.",
+        briefType: "twenty-crm-growth-stack",
+        executionMode: "export",
+      },
+    ]);
+
+    downloadBundledKitMock.mockImplementation((kitId: string, _out: string | undefined, options: { onProgress?: (progress: { phase: string; percent: number; detail: string }) => void }) => {
+      options.onProgress?.({ phase: "copying", percent: 50, detail: `${kitId}:default` });
+      options.onProgress?.({ phase: "done", percent: 100, detail: "complete" });
+      return {
+        folderPath: `/tmp/kits/growthub-agent-worker-kit-${kitId.replace("growthub-", "").replace("-v1", "-v1")}`,
+        zipPath: `/tmp/kits/growthub-agent-worker-kit-${kitId.replace("growthub-", "").replace("-v1", "-v1")}.zip`,
+      };
+    });
+
+    selectMock
+      .mockResolvedValueOnce("studio")
+      .mockResolvedValueOnce("growthub-twenty-crm-v1")
+      .mockResolvedValueOnce("actions")
+      .mockResolvedValueOnce("download");
+    confirmMock
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+
+    const { runInteractivePicker } = await import("../commands/kit.js");
+    const result = await runInteractivePicker({});
+
+    expect(result).toBe("done");
+    expect(downloadBundledKitMock).toHaveBeenCalledWith(
+      "growthub-twenty-crm-v1",
+      undefined,
+      expect.objectContaining({
+        onProgress: expect.any(Function),
+      }),
+    );
+  });
 });

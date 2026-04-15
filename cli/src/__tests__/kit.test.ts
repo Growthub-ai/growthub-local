@@ -22,6 +22,14 @@ import {
 } from "../kits/contract.js";
 
 const ORIGINAL_ENV = { ...process.env };
+const CUSTOM_WORKSPACE_KIT_IDS = [
+  "growthub-open-higgsfield-studio-v1",
+  "growthub-geo-seo-v1",
+  "growthub-postiz-social-v1",
+  "growthub-open-montage-studio-v1",
+  "growthub-ai-website-cloner-v1",
+  "growthub-twenty-crm-v1",
+] as const;
 
 function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -100,6 +108,11 @@ describe("worker kit service", () => {
       "creative-strategist-v1",
       "growthub-email-marketing-v1",
       "growthub-open-higgsfield-studio-v1",
+      "growthub-geo-seo-v1",
+      "growthub-postiz-social-v1",
+      "growthub-open-montage-studio-v1",
+      "growthub-ai-website-cloner-v1",
+      "growthub-twenty-crm-v1",
     ]);
     expect(kits.find((kit) => kit.id === "creative-strategist-v1")).toMatchObject({
       bundleId: "creative-strategist-v1",
@@ -116,6 +129,34 @@ describe("worker kit service", () => {
       activationModes: ["export"],
     });
   });
+
+  it.each(CUSTOM_WORKSPACE_KIT_IDS)(
+    "inspects custom workspace %s with required env and quickstart paths",
+    (kitId) => {
+      const info = inspectBundledKit(kitId);
+      expect(info.family).toBe("studio");
+      expect(info.requiredPaths).toContain(".env.example");
+      expect(info.requiredPaths).toContain("QUICKSTART.md");
+      expect(info.executionMode).toBe("export");
+      expect(info.activationModes).toEqual(["export"]);
+    },
+  );
+
+  it.each(CUSTOM_WORKSPACE_KIT_IDS)(
+    "downloads custom workspace %s with stable confirmation assets",
+    (kitId) => {
+      const outDir = makeTempDir(`worker-kit-out-${kitId}-`);
+      const result = downloadBundledKit(kitId, outDir);
+
+      const folderFiles = listRelativeFiles(result.folderPath);
+      expect(folderFiles).toContain(".env.example");
+      expect(folderFiles).toContain("QUICKSTART.md");
+
+      const zipEntries = readZipEntryNames(result.zipPath);
+      expect(zipEntries.some((entry) => entry.endsWith("/.env.example"))).toBe(true);
+      expect(zipEntries.some((entry) => entry.endsWith("/QUICKSTART.md"))).toBe(true);
+    },
+  );
 
   it("inspects the kit with capability metadata and default export paths", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
