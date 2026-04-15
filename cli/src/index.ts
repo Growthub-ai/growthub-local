@@ -36,6 +36,7 @@ import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capa
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
+import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -172,6 +173,7 @@ function registerSharedCommands(target: Command) {
   registerPipelineCommands(target);
   registerArtifactCommands(target);
   registerWorkflowCommands(target);
+  registerOpenAgentsCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -803,6 +805,11 @@ async function runDiscoveryHub(opts?: {
           hint: "use local custom models adapaters",
         },
         {
+          value: "open-agents",
+          label: "🤖 Open Agents",
+          hint: "durable agent workflow orchestration harness",
+        },
+        {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
@@ -829,6 +836,7 @@ async function runDiscoveryHub(opts?: {
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
           `   Locked state: ${workflowAccess.reason}.`,
+          "🤖 Open Agents: durable agent workflow orchestration via the open-agents harness (sessions, sandboxes, tools).",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -840,6 +848,7 @@ async function runDiscoveryHub(opts?: {
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
+          "growthub open-agents",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -971,6 +980,12 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "native-intelligence") {
       const result = await runNativeIntelligenceHub();
+      if (result === "back") continue;
+      return;
+    }
+
+    if (surfaceChoice === "open-agents") {
+      const result = await runOpenAgentsHub({ allowBackToHub: true });
       if (result === "back") continue;
       return;
     }

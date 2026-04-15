@@ -66,6 +66,8 @@ Current discovery options:
 - `Worker Kits`
 - `Templates`
 - `Workflows`
+- `Local Intelligence`
+- `Open Agents`
 - `Connect Growthub Account`
 - `Help CLI`
 

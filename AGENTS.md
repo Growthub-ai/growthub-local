@@ -87,6 +87,8 @@ That discovery hub exposes these user-facing paths:
 - `Worker Kits`
 - `Templates`
 - `Workflows`
+- `Local Intelligence`
+- `Open Agents`
 - `Connect Growthub Account`
 - `Help CLI`
 

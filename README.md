@@ -15,6 +15,7 @@ That discovery hub exposes:
 - `Templates`
 - `Workflows`
 - `Local Intelligence`
+- `Open Agents`
 - `Connect Growthub Account`
 - `Help CLI`
 
@@ -151,6 +152,32 @@ Read the architecture and adapter model here:
 
 - [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
 - [Gemma Setup and Validation](./docs/native-intelligence-gemma-setup.md)
+
+### Open Agents
+
+Use this path when you want durable agent workflow orchestration via the Open Agents harness — sessions, sandboxes, and tool-based agent execution.
+
+Entry points:
+
+```bash
+growthub open-agents                     # interactive browser
+growthub open-agents config              # show or update backend configuration
+growthub open-agents status              # check backend health
+growthub open-agents list                # list agent sessions
+growthub open-agents create              # create a new agent session
+growthub open-agents resume <session-id> # resume an existing session
+```
+
+Discovery flow:
+
+1. Open discovery.
+2. Choose `🤖 Open Agents`.
+3. Choose one of:
+   - `Setup & Configure` to set the backend endpoint and API key
+   - `Health Check` to verify backend availability
+   - `List Sessions` to browse existing sessions
+   - `Create Session` to start a new durable agent workflow
+   - `Resume Session` to reconnect to an existing session
 
 ### Connect Growthub Account
 
