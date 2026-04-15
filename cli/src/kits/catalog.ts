@@ -65,4 +65,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-ai-website-cloner-v1",
+    packageDirName: "growthub-ai-website-cloner-v1",
+    defaultBundleId: "growthub-ai-website-cloner-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];
