@@ -17,17 +17,23 @@ Related pages:
 - [Custom Workspace Kernel Packet](./kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 - [Kernel Packet Registry](./kernel-packets/README.md)
 
-## V1 Scope
+## Current CLI Surface
 
-V1 ships a narrow local file export surface in `@growthub/cli`:
+The current `@growthub/cli` worker-kit surface includes both deterministic export and local fork maintenance:
 
 - `growthub kit list`
 - `growthub kit inspect <kit-id>`
 - `growthub kit download <kit-id> [--out <path>]`
 - `growthub kit path <kit-id> [--out <path>]`
 - `growthub kit validate <path>`
+- `growthub kit sync init --kit <kit-id> --fork-path <path>`
+- `growthub kit sync list`
+- `growthub kit sync plan <fork-id>`
+- `growthub kit sync start <fork-id>`
+- `growthub kit sync status [fork-id]`
+- `growthub kit sync report [fork-id]`
 
-The first and only bundled kit in V1 is `creative-strategist-v1`.
+The bundled catalog now includes `creative-strategist-v1`, `growthub-email-marketing-v1`, `growthub-open-higgsfield-studio-v1`, `growthub-geo-seo-v1`, `growthub-postiz-social-v1`, `growthub-open-montage-studio-v1`, `growthub-ai-website-cloner-v1`, `growthub-twenty-crm-v1`, and `growthub-zernio-social-v1`.
 
 ## Core Mental Model
 
@@ -58,22 +64,24 @@ The easiest way to reason about a kit is as five connected layers:
 
 Prompts are one part of the system. The reusable unit is the full environment package.
 
-## What V1 Does
+## What the current CLI does
 
 - ships bundled catalog metadata inside the CLI package
 - validates the frozen bundled kit source before export
 - writes one deterministic zip and one expanded export folder
 - uses a deterministic CLI-owned default export root under Paperclip home when `--out` is omitted
 - produces a folder that can be pointed at directly with existing Working Directory path support
+- stores local fork-sync registrations, baseline snapshots, detached job state, logs, and review artifacts under Paperclip home
+- launches self-healing fork sync jobs in isolated git worktrees + branches instead of mutating the user's active checkout
 
-## What V1 Does Not Do
+## What the current CLI still does not do
 
 - no heartbeat integration
 - no server routes
 - no agent runtime injection
 - no app-side install surface
 - no plugin lifecycle reuse
-- no database registry or persistence for kits
+- no server or database registry for kits — fork sync state stays local under Paperclip home
 
 ## How Local Adapters Use Worker Kits
 
@@ -89,6 +97,29 @@ That makes the current runtime path:
 5. Run the local adapter inside that exported environment.
 
 Operationally, the exported folder is the environment the agent works inside. That is the current worker-kit integration surface.
+
+## Fork Sync Agent
+
+Fork sync is the current production lane for users who customize bundled kits and want to stay aligned with new Growthub releases without losing local changes.
+
+The current fork-sync flow is:
+
+1. Register the fork with `growthub kit sync init --kit <kit-id> --fork-path <path>`.
+2. Capture the bundled baseline snapshot under Paperclip home.
+3. Preview drift with `growthub kit sync plan <fork-id>`.
+4. Launch a detached sync agent with `growthub kit sync start <fork-id>`.
+5. Review status, logs, report JSON, and skill artifacts with `growthub kit sync status` and `growthub kit sync report`.
+
+The sync agent is intentionally local-first:
+
+- it works against a real git repository path supplied by the user
+- it creates an isolated worktree + branch for every sync run
+- it preserves local-only files by default
+- it applies upstream dependency and package version bumps when the fork still matches the saved baseline
+- it performs three-way merges for text files
+- it marks the job `needs_review` instead of erasing user changes when both the fork and upstream changed the same file
+
+This keeps Worker Kits self-contained while making fork maintenance agent-first and production-feasible.
 
 ## Relationship Between Materials And Environment Packaging
 

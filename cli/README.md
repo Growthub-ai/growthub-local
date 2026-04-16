@@ -44,6 +44,8 @@ growthub kit list
 growthub kit inspect <kit-id>
 growthub kit download <kit-id>
 growthub kit validate <path>
+growthub kit sync init --kit <kit-id> --fork-path <path>
+growthub kit sync status <fork-id>
 
 # Templates
 growthub template
@@ -71,6 +73,10 @@ growthub kit download creative-strategist-v1
 growthub kit download growthub-open-higgsfield-studio-v1
 growthub kit path creative-strategist-v1
 growthub kit validate /absolute/path/to/kit
+growthub kit sync init --kit growthub-postiz-social-v1 --fork-path ./forks/postiz
+growthub kit sync start my-postiz-fork
+growthub kit sync status my-postiz-fork
+growthub kit sync report my-postiz-fork
 ```
 
 ### How local adapters use worker kits
@@ -78,6 +84,17 @@ growthub kit validate /absolute/path/to/kit
 1. Download or resolve a kit path from the CLI.
 2. Point the agent working directory at the exported folder.
 3. Start a new session so the kit contract loads from `CLAUDE.md`.
+
+### Fork sync and self-heal
+
+`growthub kit sync` is the agent-first maintenance lane for forked worker kits:
+
+1. `growthub kit sync init` registers a local fork path and captures the current bundled kit as a baseline.
+2. `growthub kit sync plan` previews upstream drift, package-version pressure, and likely review hotspots.
+3. `growthub kit sync start` launches a detached background job in an isolated git worktree + branch.
+4. `growthub kit sync status` and `growthub kit sync report` expose logs, review artifacts, and the generated skill pack.
+
+The sync agent preserves local-only files, applies upstream updates when the fork still matches the saved baseline, performs three-way merges for text files, and escalates overlapping edits for human review instead of erasing customizations.
 
 ## Harness Notes
 

@@ -828,7 +828,7 @@ async function runDiscoveryHub(opts?: {
       p.note(
         [
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles) or Open Agents (durable workflow orchestration).",
-          "🧰 Worker Kits: browse specialized agents and custom workspaces.",
+          "🧰 Worker Kits: browse specialized agents, export custom workspaces, and run fork sync/self-heal jobs.",
           "📚 Templates: browse reusable artifact templates by library type.",
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
@@ -839,6 +839,8 @@ async function runDiscoveryHub(opts?: {
           "growthub auth login",
           "growthub auth whoami",
           "growthub kit",
+          "growthub kit sync list",
+          "growthub kit sync start <fork-id>",
           "growthub template",
           "growthub workflow",
           "growthub qwen-code",
@@ -1127,7 +1129,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.60")
+  .version("0.3.61")
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -1136,6 +1138,7 @@ Worker Kits (agent execution environments):
     $ growthub kit list                         All kits grouped by family (studio · workflow · operator · ops)
     $ growthub kit list --family studio         Filter by family
     $ growthub kit families                     Show family taxonomy with descriptions
+    $ growthub kit sync list                    Registered fork sync/self-heal targets
 
   Download:
     $ growthub kit download                     Interactive (no arg = picker)
@@ -1149,6 +1152,13 @@ Worker Kits (agent execution environments):
     $ growthub kit inspect higgsfield-studio-v1
     $ growthub kit inspect growthub-email-marketing-v1 --json
     $ growthub kit validate ./path/to/kit
+
+  Fork sync & self-heal:
+    $ growthub kit sync init --kit growthub-postiz-social-v1 --fork-path ./forks/postiz
+    $ growthub kit sync plan my-postiz-fork
+    $ growthub kit sync start my-postiz-fork
+    $ growthub kit sync status my-postiz-fork
+    $ growthub kit sync report my-postiz-fork
 
   After download:
     1. Point Growthub local (or Claude Code) Working Directory at the exported folder

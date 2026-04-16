@@ -27,7 +27,7 @@ Growthub Local is a true agentic-first CLI ecosystem spawner designed for broad,
 | Surface | Value |
 | --- | --- |
 | 🤖 Agent Harness | Paperclip Local App + Open Agents + Qwen Code in one flow |
-| 🧰 Worker Kits | Portable, validated agent environments |
+| 🧰 Worker Kits | Portable, validated agent environments with fork sync + self-heal |
 | 📚 Templates | Reusable creative and artifact primitives |
 | 🔗 Workflows | Contracts, pipelines, orchestration |
 | 🧠 Local Intelligence | Local model setup + chat flow |
@@ -80,6 +80,8 @@ growthub qwen-code session
 
 # Kits, templates, workflows
 growthub kit
+growthub kit sync init --kit growthub-postiz-social-v1 --fork-path ./forks/postiz
+growthub kit sync status my-postiz-fork
 growthub template
 growthub workflow
 growthub pipeline assemble
@@ -135,6 +137,7 @@ flowchart TD
 - `growthub kit download` complete worker environment download with fuzzy slug resolution
 - `growthub kit families` taxonomy (`studio`, `workflow`, `operator`, `ops`)
 - `growthub kit validate` schema and contract checks
+- `growthub kit sync` registers a forked kit, captures a bundled baseline, and launches a detached self-healing sync branch with logs/report artifacts
 - kit payload includes entrypoint, agent contract, templates, frozen assets, setup scripts, and env examples
 - social media kits ship as `growthub-postiz-social-v1` (self-hosted Postiz) and `growthub-zernio-social-v1` (hosted Zernio REST API, 14 platforms)
 

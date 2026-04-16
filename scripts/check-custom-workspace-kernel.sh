@@ -47,7 +47,7 @@ EOF
 echo "[kernel] running focused custom workspace vitest coverage"
 (
   cd cli
-  pnpm vitest src/__tests__/kit.test.ts src/__tests__/kit-command.test.ts src/__tests__/kit-zernio-social.test.ts
+  npx vitest run --config vitest.kit-sync.config.ts
 )
 
 echo "[kernel] custom workspace kernel checks passed"

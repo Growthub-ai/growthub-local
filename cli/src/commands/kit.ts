@@ -13,6 +13,18 @@ import {
   type KitListItem,
   type KitDownloadProgress,
 } from "../kits/service.js";
+import {
+  listRegisteredKitForks,
+  registerKitFork,
+  planKitForkSync,
+  startKitForkSyncJob,
+  listKitForkSyncJobs,
+  readKitForkSyncJob,
+  runPreparedKitForkSyncJob,
+  type KitForkRegistration,
+  type KitForkSyncJobState,
+  type KitForkSyncPlan,
+} from "../kits/fork-sync.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
 // ---------------------------------------------------------------------------
@@ -125,6 +137,7 @@ function printKitCard(item: KitListItem): void {
 function getActionLabel(action: string): string {
   if (action === "download") return "download";
   if (action === "inspect") return "inspect";
+  if (action === "fork-sync") return "fork sync & self-heal";
   if (action === "copy-id") return "print id";
   return action;
 }
@@ -199,6 +212,305 @@ function printGroupedList(kits: KitListItem[]): void {
   console.log(hr());
   console.log(pc.dim("  growthub kit download <id>  ·  growthub kit inspect <id>  ·  growthub kit families"));
   console.log("");
+}
+
+function forkStatusBadge(status: KitForkSyncJobState["status"]): string {
+  if (status === "succeeded") return pc.green("succeeded");
+  if (status === "running") return pc.cyan("running");
+  if (status === "queued") return pc.blue("queued");
+  if (status === "needs_review") return pc.yellow("needs review");
+  return pc.red("failed");
+}
+
+function latestJobForFork(forkId: string): KitForkSyncJobState | null {
+  const [latest] = listKitForkSyncJobs(forkId);
+  return latest ?? null;
+}
+
+function printForkRegistrations(registrations: KitForkRegistration[]): void {
+  if (registrations.length === 0) {
+    console.log("");
+    console.log(box([
+      pc.bold("Fork sync agent"),
+      "",
+      "No worker-kit forks are registered yet.",
+      "Use " + pc.cyan("growthub kit sync init <kit-id> --fork-path <path>") + " to register one.",
+    ]));
+    console.log("");
+    return;
+  }
+
+  console.log("");
+  console.log(pc.bold("Registered Worker Kit Forks"));
+  console.log(hr());
+  for (const registration of registrations) {
+    const latestJob = latestJobForFork(registration.id);
+    console.log(box([
+      `${pc.bold(registration.id)}  ${pc.dim(registration.kitId)}`,
+      `${pc.dim("Fork path:")} ${truncate(registration.forkPath, 70)}`,
+      `${pc.dim("Base branch:")} ${registration.baseBranch}   ${pc.dim("Sync prefix:")} ${registration.branchPrefix}`,
+      `${pc.dim("Baseline:")} ${registration.baselineVersion ?? "not captured"}   ${pc.dim("Last sync:")} ${registration.lastSyncedUpstreamVersion ?? "never"}`,
+      `${pc.dim("Latest job:")} ${latestJob ? `${latestJob.id} (${forkStatusBadge(latestJob.status)})` : "none"}`,
+    ]));
+    console.log("");
+  }
+}
+
+function printForkSyncPlan(plan: KitForkSyncPlan): void {
+  console.log("");
+  console.log(box([
+    `${pc.bold("Fork sync plan")}  ${pc.dim(plan.registration.id)}`,
+    `${pc.dim("Bundled kit:")} ${plan.registration.kitId}`,
+    `${pc.dim("Fork path:")} ${truncate(plan.registration.forkPath, 68)}`,
+    `${pc.dim("Baseline → upstream:")} ${plan.baselineVersion ?? "none"} → ${plan.upstreamVersion}`,
+    `${pc.dim("Dirty working tree:")} ${plan.dirtyWorkingTree ? pc.yellow("yes") : pc.green("no")}`,
+    "",
+    `${pc.dim("Upstream changed files:")} ${String(plan.upstreamChangedFiles)}`,
+    `${pc.dim("Fork customized files:")} ${String(plan.forkCustomizedFiles)}`,
+    `${pc.dim("Potential overlap:")} ${String(plan.potentialConflictFiles.length)}`,
+    `${pc.dim("Local-only files:")} ${String(plan.localOnlyFiles.length)}`,
+    `${pc.dim("Upstream-only files:")} ${String(plan.upstreamOnlyFiles.length)}`,
+    `${pc.dim("package.json files:")} ${String(plan.packageJsonFiles.length)}`,
+    "",
+    `${pc.dim("Preview:")} ${plan.previewFiles.length > 0 ? plan.previewFiles.join(", ") : "no drift detected"}`,
+  ]));
+  console.log("");
+}
+
+function printForkSyncJobs(jobs: KitForkSyncJobState[]): void {
+  if (jobs.length === 0) {
+    console.log("");
+    console.log(box([
+      pc.bold("Fork sync jobs"),
+      "",
+      "No detached jobs have been started yet.",
+    ]));
+    console.log("");
+    return;
+  }
+
+  console.log("");
+  console.log(pc.bold("Fork Sync Jobs"));
+  console.log(hr());
+  for (const job of jobs) {
+    console.log(box([
+      `${pc.bold(job.id)}  ${forkStatusBadge(job.status)}`,
+      `${pc.dim("Fork:")} ${job.forkId}   ${pc.dim("Kit:")} ${job.kitId}`,
+      `${pc.dim("Branch:")} ${job.branchName}`,
+      `${pc.dim("Worktree:")} ${truncate(job.worktreePath, 72)}`,
+      `${pc.dim("Log:")} ${truncate(job.logPath, 76)}`,
+      `${pc.dim("Report:")} ${truncate(job.reportPath, 73)}`,
+      `${pc.dim("Started:")} ${job.startedAt ?? "not started"}   ${pc.dim("Finished:")} ${job.finishedAt ?? "pending"}`,
+      ...(job.error ? [`${pc.dim("Error:")} ${truncate(job.error, 74)}`] : []),
+    ]));
+    console.log("");
+  }
+}
+
+function printForkSyncJobDetails(job: KitForkSyncJobState): void {
+  const summary = job.summary;
+  console.log("");
+  console.log(box([
+    `${pc.bold(job.id)}  ${forkStatusBadge(job.status)}`,
+    `${pc.dim("Fork:")} ${job.forkId}   ${pc.dim("Kit:")} ${job.kitId}`,
+    `${pc.dim("Branch:")} ${job.branchName}`,
+    `${pc.dim("Worktree:")} ${truncate(job.worktreePath, 72)}`,
+    `${pc.dim("Log:")} ${truncate(job.logPath, 76)}`,
+    `${pc.dim("Skill:")} ${truncate(job.skillPath, 74)}`,
+    `${pc.dim("Report:")} ${truncate(job.reportPath, 73)}`,
+    `${pc.dim("Started:")} ${job.startedAt ?? "not started"}`,
+    `${pc.dim("Finished:")} ${job.finishedAt ?? "pending"}`,
+    ...(job.error ? [`${pc.dim("Error:")} ${truncate(job.error, 74)}`] : []),
+    ...(summary ? [
+      "",
+      `${pc.dim("Merged files:")} ${String(summary.mergedFiles)}`,
+      `${pc.dim("Upstream applied:")} ${String(summary.upstreamAppliedFiles)}`,
+      `${pc.dim("Preserved fork files:")} ${String(summary.preservedForkFiles)}`,
+      `${pc.dim("Removed files:")} ${String(summary.removedFiles)}`,
+      `${pc.dim("Conflicts:")} ${summary.conflictFiles.length > 0 ? summary.conflictFiles.join(", ") : "none"}`,
+      `${pc.dim("Validation:")} ${summary.validationErrors.length > 0 ? summary.validationErrors.join(", ") : "passed"}`,
+    ] : []),
+  ]));
+  console.log("");
+}
+
+function printForkRegistration(
+  registration: KitForkRegistration,
+  baselinePath: string,
+  upstreamVersion: string,
+): void {
+  console.log("");
+  console.log(box([
+    `${pc.bold("Fork sync registration saved")}  ${pc.dim(registration.id)}`,
+    `${pc.dim("Bundled kit:")} ${registration.kitId}@${upstreamVersion}`,
+    `${pc.dim("Fork path:")} ${truncate(registration.forkPath, 72)}`,
+    `${pc.dim("Repo path:")} ${registration.repoRelativePath}`,
+    `${pc.dim("Base branch:")} ${registration.baseBranch}   ${pc.dim("Sync prefix:")} ${registration.branchPrefix}`,
+    `${pc.dim("Baseline snapshot:")} ${truncate(baselinePath, 62)}`,
+  ]));
+  console.log("");
+}
+
+function printStartedForkSyncJob(job: KitForkSyncJobState): void {
+  printForkSyncJobDetails(job);
+  console.log(box([
+    pc.bold("Next steps"),
+    "",
+    `Monitor: ${pc.cyan(`growthub kit sync status --job ${job.id}`)}`,
+    `Artifacts: ${pc.cyan(`growthub kit sync report --job ${job.id}`)}`,
+    `Job log: ${truncate(job.logPath, 66)}`,
+  ]));
+  console.log("");
+}
+
+function resolveRequestedJob(
+  forkOrJobId?: string,
+  explicitJobId?: string,
+): KitForkSyncJobState | null {
+  if (explicitJobId?.trim()) {
+    return readKitForkSyncJob(explicitJobId.trim());
+  }
+  if (forkOrJobId?.trim()) {
+    const trimmed = forkOrJobId.trim();
+    return readKitForkSyncJob(trimmed) ?? latestJobForFork(trimmed);
+  }
+  const [latest] = listKitForkSyncJobs();
+  return latest ?? null;
+}
+
+function printJobStatus(job: KitForkSyncJobState): void {
+  printForkSyncJobDetails(job);
+}
+
+function printJobList(jobs: KitForkSyncJobState[]): void {
+  printForkSyncJobs(jobs);
+}
+
+function printJobArtifacts(job: KitForkSyncJobState): void {
+  console.log("");
+  console.log(box([
+    `${pc.bold("Fork sync artifacts")}  ${forkStatusBadge(job.status)}`,
+    `${pc.dim("Job:")} ${job.id}`,
+    `${pc.dim("Report:")} ${truncate(job.reportPath, 72)}`,
+    `${pc.dim("Skill pack:")} ${truncate(job.skillPath, 68)}`,
+    `${pc.dim("Log:")} ${truncate(job.logPath, 75)}`,
+    `${pc.dim("Worktree:")} ${truncate(job.worktreePath, 71)}`,
+    "",
+    `Status: ${pc.cyan(`growthub kit sync status --job ${job.id}`)}`,
+  ]));
+  console.log("");
+}
+
+async function promptRequiredText(input: {
+  message: string;
+  placeholder?: string;
+  defaultValue?: string;
+}): Promise<string> {
+  const value = await p.text(input);
+  if (p.isCancel(value)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+  const trimmed = String(value).trim();
+  if (trimmed.length === 0) {
+    p.note("Value was empty. Nothing changed.", "Fork sync agent");
+    process.exit(0);
+  }
+  return trimmed;
+}
+
+async function runForkSyncWizard(selected: KitListItem): Promise<void> {
+  const existingRegistrations = listRegisteredKitForks().filter((registration) => registration.kitId === selected.id);
+  let chosenForkId: string | null = null;
+
+  if (existingRegistrations.length > 0) {
+    const existingChoice = await p.select({
+      message: "Select a registered fork or create a new one",
+      options: [
+        ...existingRegistrations.map((registration) => ({
+          value: registration.id,
+          label: pc.bold(registration.id),
+          hint: truncate(registration.forkPath, 50),
+        })),
+        { value: "__new", label: "Register a new fork path", hint: "capture a baseline and branch strategy" },
+        { value: "__view_jobs", label: "View latest sync jobs", hint: "see detached branch runs for this kit" },
+        { value: "__back", label: "← Back to kit actions" },
+      ],
+    });
+
+    if (p.isCancel(existingChoice) || existingChoice === "__back") return;
+    if (existingChoice === "__view_jobs") {
+      const relevantIds = new Set(existingRegistrations.map((registration) => registration.id));
+      const jobs = listKitForkSyncJobs().filter((job) => relevantIds.has(job.forkId));
+      printForkSyncJobs(jobs);
+      return;
+    }
+    if (existingChoice !== "__new") {
+      chosenForkId = existingChoice;
+    }
+  }
+
+  if (!chosenForkId) {
+    const forkPath = path.resolve(await promptRequiredText({
+      message: `Path to your forked ${displayKitName(selected.name)} directory`,
+      placeholder: "/absolute/path/to/your/git/repo/worker-kit",
+    }));
+    const forkId = await promptRequiredText({
+      message: "Fork id used for registry + sync jobs",
+      placeholder: "my-custom-kit",
+      defaultValue: path.basename(forkPath),
+    });
+    const baseBranch = await promptRequiredText({
+      message: "Base branch for detached sync worktrees",
+      defaultValue: "main",
+    });
+    const branchPrefix = await promptRequiredText({
+      message: "Sync branch prefix",
+      defaultValue: "sync",
+    });
+
+    const registration = registerKitFork({
+      forkId,
+      kitId: selected.id,
+      forkPath,
+      baseBranch,
+      branchPrefix,
+    });
+    chosenForkId = registration.registration.id;
+    p.note(
+      [
+        `Fork: ${registration.registration.id}`,
+        `Bundled source: ${registration.registration.kitId}@${registration.upstreamVersion}`,
+        `Baseline snapshot: ${registration.baselinePath}`,
+      ].join("\n"),
+      "Fork sync registration saved",
+    );
+  }
+
+  const plan = planKitForkSync(chosenForkId);
+  printForkSyncPlan(plan);
+  if (plan.dirtyWorkingTree) {
+    p.note(
+      `The fork path has uncommitted changes. Commit or stash ${plan.registration.repoRelativePath} before starting the background sync agent.`,
+      "Fork sync blocked",
+    );
+    return;
+  }
+
+  const startConfirmed = await p.confirm({
+    message: "Start the detached fork sync agent now?",
+    initialValue: true,
+  });
+  if (p.isCancel(startConfirmed) || !startConfirmed) {
+    p.note(
+      `Plan captured for ${plan.registration.id}. Start later with growthub kit sync start ${plan.registration.id}.`,
+      "Fork sync not started",
+    );
+    return;
+  }
+
+  const started = startKitForkSyncJob(chosenForkId);
+  printForkSyncJobDetails(started.job);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +606,7 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
           options: [
             { value: "download", label: "⬇️  Download kit", hint: "growthub kit download <id>" },
             { value: "inspect", label: "🔍 Inspect manifest", hint: "growthub kit inspect <id>" },
+            { value: "fork-sync", label: "🩺 Fork sync & self-heal", hint: "register a fork and launch a background sync branch" },
             { value: "copy-id", label: "📋 Print ID to stdout", hint: "echo <kit-id>" },
             { value: "back_to_kits", label: "← Back to kit list" },
           ],
@@ -330,6 +643,12 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
         if (action === "inspect") {
           runInspect(selected.id, opts.out);
           p.outro(pc.dim("Done."));
+          return "done";
+        }
+
+        if (action === "fork-sync") {
+          await runForkSyncWizard(selected);
+          p.outro(pc.green("Fork sync agent flow completed."));
           return "done";
         }
 
@@ -444,6 +763,8 @@ Examples:
   $ growthub kit download growthub-open-higgsfield-studio-v1
   $ growthub kit inspect higgsfield-studio-v1
   $ growthub kit families                 # show family taxonomy
+  $ growthub kit sync list                # registered fork sync targets
+  $ growthub kit sync init --kit growthub-postiz-social-v1 --fork-path ./forks/postiz
 `);
 
   // Default action — interactive picker
@@ -639,5 +960,159 @@ Examples:
       console.log(hr());
       console.log(pc.dim("  growthub kit list --family <family>  to filter by internal family"));
       console.log("");
+    });
+
+  const sync = kit
+    .command("sync")
+    .description("Register forked worker kits and run the background self-healing sync agent");
+
+  sync
+    .command("init")
+    .description("Register a forked worker kit path and capture the current upstream baseline")
+    .requiredOption("--kit <kit-id>", "Bundled worker kit id to track")
+    .requiredOption("--fork-path <path>", "Local fork path inside your git repository")
+    .option("--fork-id <id>", "Stable id for this registered fork (defaults to folder name)")
+    .option("--base-branch <branch>", "Base branch for background sync worktrees")
+    .option("--branch-prefix <prefix>", "Branch prefix used for sync branches", "sync")
+    .option("--refresh-baseline", "Replace the saved upstream baseline snapshot", false)
+    .option("--json", "Output raw JSON")
+    .addHelpText("after", `
+Examples:
+  $ growthub kit sync init --kit growthub-postiz-social-v1 --fork-path ./forks/postiz
+  $ growthub kit sync init --kit growthub-zernio-social-v1 --fork-path ./forks/zernio --fork-id my-zernio
+`)
+    .action((opts: {
+      kit: string;
+      forkPath: string;
+      forkId?: string;
+      baseBranch?: string;
+      branchPrefix?: string;
+      refreshBaseline?: boolean;
+      json?: boolean;
+    }) => {
+      const result = registerKitFork({
+        forkId: opts.forkId,
+        kitId: opts.kit,
+        forkPath: opts.forkPath,
+        baseBranch: opts.baseBranch,
+        branchPrefix: opts.branchPrefix,
+        refreshBaseline: opts.refreshBaseline,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      printForkRegistration(result.registration, result.baselinePath, result.upstreamVersion);
+    });
+
+  sync
+    .command("list")
+    .description("List registered worker kit forks")
+    .option("--json", "Output raw JSON")
+    .action((opts: { json?: boolean }) => {
+      const registrations = listRegisteredKitForks();
+      if (opts.json) {
+        console.log(JSON.stringify(registrations, null, 2));
+        return;
+      }
+      printForkRegistrations(registrations);
+    });
+
+  sync
+    .command("plan")
+    .description("Preview upstream drift and likely merge pressure for a registered fork")
+    .argument("<fork-id>", "Registered fork id")
+    .option("--json", "Output raw JSON")
+    .action((forkId: string, opts: { json?: boolean }) => {
+      const plan = planKitForkSync(forkId);
+      if (opts.json) {
+        console.log(JSON.stringify(plan, null, 2));
+        return;
+      }
+      printForkSyncPlan(plan);
+    });
+
+  sync
+    .command("start")
+    .description("Launch the detached fork sync/self-heal agent in the background")
+    .argument("<fork-id>", "Registered fork id")
+    .option("--json", "Output raw JSON")
+    .action((forkId: string, opts: { json?: boolean }) => {
+      const result = startKitForkSyncJob(forkId);
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      printStartedForkSyncJob(result.job);
+    });
+
+  sync
+    .command("status")
+    .description("Inspect the latest or a specific fork sync job")
+    .argument("[fork-or-job-id]", "Registered fork id or explicit job id")
+    .option("--job <job-id>", "Explicit job id")
+    .option("--json", "Output raw JSON")
+    .action((forkOrJobId: string | undefined, opts: { job?: string; json?: boolean }) => {
+      const job = resolveRequestedJob(forkOrJobId, opts.job);
+      if (!job) {
+        console.error(pc.red("No fork sync job found for the requested target."));
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(job, null, 2));
+        return;
+      }
+      printJobStatus(job);
+    });
+
+  sync
+    .command("jobs")
+    .description("List recent fork sync jobs")
+    .option("--fork <fork-id>", "Filter by registered fork id")
+    .option("--json", "Output raw JSON")
+    .action((opts: { fork?: string; json?: boolean }) => {
+      const jobs = listKitForkSyncJobs(opts.fork);
+      if (opts.json) {
+        console.log(JSON.stringify(jobs, null, 2));
+        return;
+      }
+      printJobList(jobs);
+    });
+
+  sync
+    .command("report")
+    .description("Print report and skill artifact locations for a completed sync job")
+    .argument("[fork-or-job-id]", "Registered fork id or explicit job id")
+    .option("--job <job-id>", "Explicit job id")
+    .option("--json", "Output raw JSON")
+    .action((forkOrJobId: string | undefined, opts: { job?: string; json?: boolean }) => {
+      const job = resolveRequestedJob(forkOrJobId, opts.job);
+      if (!job) {
+        console.error(pc.red("No fork sync job found for the requested target."));
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({
+          jobId: job.id,
+          reportPath: job.reportPath,
+          skillPath: job.skillPath,
+          logPath: job.logPath,
+          status: job.status,
+        }, null, 2));
+        return;
+      }
+      printJobArtifacts(job);
+    });
+
+  sync
+    .command("__run-job")
+    .argument("<job-id>", "Internal detached fork sync job id")
+    .action(async (jobId: string) => {
+      const job = await runPreparedKitForkSyncJob(jobId);
+      if (job.status === "failed") {
+        process.exitCode = 1;
+      }
     });
 }

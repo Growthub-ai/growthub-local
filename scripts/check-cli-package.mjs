@@ -56,6 +56,8 @@ for (const requiredToken of [
   "export function downloadBundledKit",
   "export function resolveKitPath",
   "export function validateKitDirectory",
+  "export function copyBundledKitSource",
+  "export function getBundledKitSourceInfo",
 ]) {
   assert(serviceModule.includes(requiredToken), `Kit service missing exported surface: ${requiredToken}`);
 }
@@ -68,6 +70,9 @@ for (const requiredSnippet of [
   "growthub kit download growthub-open-higgsfield-studio-v1",
   "growthub kit path creative-strategist-v1",
   "growthub kit validate /absolute/path/to/kit",
+  "growthub kit sync init --kit growthub-postiz-social-v1 --fork-path ./forks/postiz",
+  "growthub kit sync start my-postiz-fork",
+  "growthub kit sync status my-postiz-fork",
   "How local adapters use worker kits",
 ]) {
   assert(cliReadme.includes(requiredSnippet), `CLI README missing required kit documentation: ${requiredSnippet}`);

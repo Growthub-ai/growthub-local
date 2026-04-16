@@ -87,13 +87,22 @@ export interface KitDownloadOptions {
   onProgress?: (progress: KitDownloadProgress) => void;
 }
 
+export interface BundledKitSourceInfo {
+  id: string;
+  version: string;
+  family: KitFamily;
+  assetRoot: string;
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 function resolveBundledKitAssetsRoot(): string {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const overrideRoot = process.env.GROWTHUB_BUNDLED_KIT_ASSETS_ROOT?.trim();
   const candidates = [
+    ...(overrideRoot ? [path.resolve(expandHomePrefix(overrideRoot))] : []),
     path.resolve(moduleDir, "../../assets/worker-kits"),
     path.resolve(moduleDir, "../assets/worker-kits"),
   ];
@@ -569,6 +578,24 @@ export function inspectBundledKit(kitId: string, outDir?: string): KitInspectRes
 export function resolveKitPath(kitId: string, outDir?: string): string {
   const resolved = resolveBundledKit(kitId);
   return resolveOutputPaths(resolved, outDir).folderPath;
+}
+
+export function getBundledKitSourceInfo(kitId: string): BundledKitSourceInfo {
+  const resolved = resolveBundledKit(kitId);
+  return {
+    id: resolved.manifest.kit.id,
+    version: resolved.manifest.kit.version,
+    family: resolved.catalogEntry.family,
+    assetRoot: resolved.assetRoot,
+  };
+}
+
+export function copyBundledKitSource(kitId: string, destinationPath: string): BundledKitSourceInfo {
+  const info = getBundledKitSourceInfo(kitId);
+  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+  fs.rmSync(destinationPath, { recursive: true, force: true });
+  fs.cpSync(info.assetRoot, destinationPath, { recursive: true });
+  return info;
 }
 
 // ---------------------------------------------------------------------------
