@@ -529,6 +529,56 @@ export function resolveKitPath(kitId: string, outDir?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Bundled kit source helpers (reused by the fork sync surface)
+//
+// These are intentionally read-only views onto the same validated bundled
+// assets that power `kit list`, `kit inspect`, and `kit download`, so that
+// downstream consumers such as the sync service never re-implement or drift
+// away from the canonical kit resolution path.
+// ---------------------------------------------------------------------------
+
+export interface BundledKitSourceInfo {
+  kitId: string;
+  version: string;
+  schemaVersion: number;
+  bundleId: string;
+  bundleVersion: string;
+  assetRoot: string;
+  exportFolderName: string;
+  frozenAssetPaths: string[];
+  requiredPaths: string[];
+  relativeFiles: string[];
+}
+
+export function getBundledKitSource(kitId: string): BundledKitSourceInfo {
+  const resolved = resolveBundledKit(kitId);
+  return {
+    kitId: resolved.manifest.kit.id,
+    version: resolved.manifest.kit.version,
+    schemaVersion: resolved.manifest.schemaVersion,
+    bundleId: resolved.bundleManifest.bundle.id,
+    bundleVersion: resolved.bundleManifest.bundle.version,
+    assetRoot: resolved.assetRoot,
+    exportFolderName: resolved.bundleManifest.export.folderName,
+    frozenAssetPaths: [...resolved.manifest.frozenAssetPaths],
+    requiredPaths: [...resolved.manifest.outputStandard.requiredPaths],
+    relativeFiles: listRelativeFiles(resolved.assetRoot),
+  };
+}
+
+export function copyBundledKitSource(kitId: string, destination: string): BundledKitSourceInfo {
+  const info = getBundledKitSource(kitId);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.rmSync(destination, { recursive: true, force: true });
+  fs.cpSync(info.assetRoot, destination, { recursive: true });
+  return info;
+}
+
+export function listBundledKitIds(): string[] {
+  return BUNDLED_KIT_CATALOG.map((entry) => entry.id);
+}
+
+// ---------------------------------------------------------------------------
 // ZIP builder
 // ---------------------------------------------------------------------------
 

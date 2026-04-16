@@ -27,6 +27,30 @@ V1 ships a narrow local file export surface in `@growthub/cli`:
 
 The first and only bundled kit in V1 is `creative-strategist-v1`.
 
+## Fork Sync and Self-Heal
+
+Forked worker kits need a way to stay current as the bundled upstream evolves
+without discarding the user's local customizations. The fork sync surface
+makes self-healing a first-class CLI primitive:
+
+- `growthub kit sync init <kit-id> --fork <path>` — register a fork and
+  capture the current bundled kit as the baseline snapshot.
+- `growthub kit sync plan <fork-id>` — three-way drift preview
+  (baseline + upstream + fork) with per-file classification and the action
+  the sync job would take.
+- `growthub kit sync start <fork-id> [--auto-apply] [--detach]` — run the
+  self-healing job, apply safe upstream updates, merge package.json, and
+  escalate conflicts.
+- `growthub kit sync status | jobs | report <fork-id>` — observe job state
+  and inspect human-readable reports.
+- `growthub kit discover` — interactive Worker Kits discovery with a direct
+  entry into the fork sync and self-heal flow.
+
+The sync surface reuses the exact same validated bundled kit resolution path
+as `kit list`, `kit inspect`, and `kit download`, which guarantees discovery
+parity: there is one source of truth for upstream worker kit content and the
+sync service never reimplements it.
+
 ## Core Mental Model
 
 A worker kit is a self-contained execution environment that packages:

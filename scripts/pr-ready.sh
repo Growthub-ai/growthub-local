@@ -120,6 +120,12 @@ else
   fail "check-cli-package.mjs failed — run it manually for details"
 fi
 
+if node scripts/check-kit-sync.mjs >/dev/null 2>&1; then
+  ok "check-kit-sync.mjs passed"
+else
+  fail "check-kit-sync.mjs failed — run it manually for details"
+fi
+
 # ── 9. release-check.mjs ──────────────────────────────────────────────────
 if NPM_CONFIG_CACHE="${NPM_CONFIG_CACHE:-/tmp/growthub-npm-cache}" node scripts/release-check.mjs >/dev/null 2>&1; then
   ok "release-check.mjs passed"

@@ -34,6 +34,39 @@ growthub kit path creative-strategist-v1
 growthub kit validate /absolute/path/to/kit
 ```
 
+### Fork sync and self-heal
+
+Once a worker kit has been exported and customized locally, the CLI can keep
+the fork in sync with future upstream updates without overwriting your
+customizations. The sync surface captures a baseline snapshot, previews drift,
+and runs a self-healing job that safely applies upstream updates,
+package.json-aware merges, and escalates any true conflicts for human review.
+
+```bash
+growthub kit sync init creative-strategist-v1 --fork /absolute/path/to/fork --as my-fork
+growthub kit sync list
+growthub kit sync plan my-fork
+growthub kit sync start my-fork --auto-apply
+growthub kit sync status my-fork
+growthub kit sync jobs my-fork
+growthub kit sync report my-fork
+growthub kit discover
+```
+
+Sync state, baseline snapshots, logs, and reports live under
+`$PAPERCLIP_HOME/kits/sync/<fork-id>/` so they stay reproducible across
+sessions and isolated from the worker kit export root. Pass `--detach` to
+`kit sync start` to run the self-healing job as a detached background
+process; poll with `kit sync status --job <job-id>`.
+
+Notes on parity: the interactive `kit discover` action and the `kit sync`
+subcommands share the same service path as `kit list`, `kit inspect`, and
+`kit download`, so discovery never drifts from the validated bundled source.
+The `scripts/demo-cli.sh` wrapper currently hardcodes an environment-sensitive
+tsx loader, so discovery parity is validated through the shared Worker Kits
+command and focused vitest path (`pnpm --dir cli vitest -c vitest.sync.config.ts`)
+rather than through that script.
+
 V1 is intentionally narrow:
 
 - bundled catalog plus local export only
