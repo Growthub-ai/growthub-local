@@ -4,6 +4,28 @@ import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// Read the CLI version from the sibling package.json at runtime so the
+// `--version` string can never drift from the published package version.
+function resolveCliVersion(): string {
+  try {
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    // dist/index.js → ../package.json ; src/index.ts (vitest) → ../../package.json
+    const candidates = [
+      path.resolve(moduleDir, "../package.json"),
+      path.resolve(moduleDir, "../../package.json"),
+    ];
+    for (const candidate of candidates) {
+      if (!fs.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as { name?: string; version?: string };
+      if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
+    }
+  } catch {
+    /* fall through to fallback */
+  }
+  return "0.0.0-unknown";
+}
 import { onboard } from "./commands/onboard.js";
 import { doctor } from "./commands/doctor.js";
 import { envCommand } from "./commands/env.js";
@@ -38,6 +60,12 @@ import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
+import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
+import { registerGithubCommands } from "./commands/github.js";
+import { registerIntegrationsCommands } from "./commands/integrations.js";
+import { registerStatusCommands, runStatuspage } from "./commands/status.js";
+import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
+import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -802,14 +830,14 @@ async function runDiscoveryHub(opts?: {
           hint: "use local custom models adapaters",
         },
         {
-          value: "hosted-auth",
-          label: "🔐 Connect Growthub Account",
-          hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
-        },
-        {
           value: "agent-harness",
           label: "🤖 Agent Harness",
           hint: "Paperclip Local App + Open Agents + Qwen Code",
+        },
+        {
+          value: "settings",
+          label: "⚙️  Settings",
+          hint: "GitHub, Fork Sync, Integrations, Service Status, Starter, Fleet",
         },
         {
           value: "help",
@@ -833,6 +861,7 @@ async function runDiscoveryHub(opts?: {
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
           `   Locked state: ${workflowAccess.reason}.`,
+          "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -848,6 +877,10 @@ async function runDiscoveryHub(opts?: {
           "growthub pipeline assemble",
           "growthub artifact list",
           "growthub open-agents",
+          "growthub fork-sync",
+          "growthub fork-sync register <path>",
+          "growthub fork-sync status <fork-id>",
+          "growthub fork-sync heal <fork-id>",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -1017,6 +1050,99 @@ async function runDiscoveryHub(opts?: {
       continue;
     }
 
+    if (surfaceChoice === "settings") {
+      while (true) {
+        const settingsChoice = await p.select({
+          message: "Settings",
+          options: [
+            {
+              value: "hosted-auth",
+              label: "🔐 Connect Growthub Account",
+              hint: "Attach this CLI to your hosted Growthub account",
+            },
+            {
+              value: "github",
+              label: "🐙 GitHub Integration",
+              hint: "Connect GitHub — powers one-click fork creation & remote heal sync",
+            },
+            {
+              value: "fork-sync",
+              label: "🔀 Fork Sync Agent",
+              hint: "Keep your forked worker kits in sync with the latest upstream",
+            },
+            {
+              value: "service-status",
+              label: "🟢 Service Status",
+              hint: "Statuspage-style health of every mission-critical service the CLI depends on",
+            },
+            {
+              value: "custom-workspace-starter",
+              label: "🧪 Custom Workspace Starter",
+              hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring",
+            },
+            {
+              value: "fleet-ops",
+              label: "🚢 Fleet Operations",
+              hint: "Fleet-level fork view · drift · policy matrix · approvals · agent-led plans",
+            },
+            {
+              value: "__back_to_hub",
+              label: "← Back to main menu",
+            },
+          ],
+        });
+
+        if (p.isCancel(settingsChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        if (settingsChoice === "__back_to_hub") break;
+
+        // surfaceChoice alias keeps gate strings intact (check-fork-sync.mjs enforces these)
+        const surfaceChoice = settingsChoice;
+
+        if (surfaceChoice === "hosted-auth") {
+          await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
+          continue;
+        }
+
+        if (surfaceChoice === "github") {
+          const { githubWhoami } = await import("./commands/github.js");
+          await githubWhoami({});
+          continue;
+        }
+
+        if (surfaceChoice === "fork-sync") {
+          const result = await runKitForkHub({ allowBackToHub: true });
+          if (result === "back") continue;
+          break;
+        }
+
+        if (surfaceChoice === "service-status") {
+          await runStatuspage({});
+          continue;
+        }
+
+        if (surfaceChoice === "custom-workspace-starter") {
+          const outRaw = await p.text({
+            message: "Destination path for the new workspace (will be created if missing):",
+            placeholder: "./my-workspace",
+          });
+          if (p.isCancel(outRaw) || !outRaw) continue;
+          const nameRaw = await p.text({
+            message: "Optional label (leave blank to use directory basename):",
+            placeholder: "",
+          });
+          if (p.isCancel(nameRaw)) continue;
+          await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+          continue;
+        }
+
+        if (surfaceChoice === "fleet-ops") {
+          await fleetView({});
+          continue;
+        }
+      }
+      continue;
+    }
+
     if (surfaceChoice === "kits") {
       const result = await runInteractivePicker({ allowBackToHub: true });
       if (result === "back") continue;
@@ -1033,11 +1159,6 @@ async function runDiscoveryHub(opts?: {
       const result = await runNativeIntelligenceHub();
       if (result === "back") continue;
       return;
-    }
-
-    if (surfaceChoice === "hosted-auth") {
-      await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
-      continue;
     }
 
     const result = await runTemplatePicker({ allowBackToHub: true });
@@ -1127,7 +1248,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.60")
+  .version(resolveCliVersion())
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 
@@ -1149,6 +1270,13 @@ Worker Kits (agent execution environments):
     $ growthub kit inspect higgsfield-studio-v1
     $ growthub kit inspect growthub-email-marketing-v1 --json
     $ growthub kit validate ./path/to/kit
+
+  Fork Sync (keep your forked kits in sync):
+    $ growthub kit fork                         Interactive fork-sync hub
+    $ growthub kit fork register ./my-fork      Register a forked kit directory
+    $ growthub kit fork status <fork-id>        Detect drift against latest upstream
+    $ growthub kit fork heal <fork-id>          Self-healing sync (preserves your changes)
+    $ growthub fork-sync                        Alias for growthub kit fork
 
   After download:
     1. Point Growthub local (or Claude Code) Working Directory at the exported folder
@@ -1194,6 +1322,16 @@ Qwen Code CLI (agent harness):
     $ growthub qwen-code session                Launch interactive terminal session
     $ growthub qwen-code session --yolo         Auto-approve all tool calls
 
+Fork Sync Agent (keep forked worker kits in sync):
+    $ growthub fork-sync                        Interactive hub — register, check drift, heal
+    $ growthub fork-sync register ./my-fork     Register a forked worker kit for tracking
+    $ growthub fork-sync list                   List all registered forks
+    $ growthub fork-sync status <fork-id>       Detect drift against latest upstream kit
+    $ growthub fork-sync heal <fork-id>         Safe self-healing sync (preserves customisations)
+    $ growthub fork-sync heal <fork-id> --dry-run
+    $ growthub fork-sync heal <fork-id> --background  Async background job
+    $ growthub fork-sync jobs                   View background sync job queue
+
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)
     $ growthub auth whoami                      Show signed-in identity + linked local workspace
@@ -1222,6 +1360,12 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
 });
 
 registerSharedCommands(program);
+registerKitForkCommands(program);
+registerGithubCommands(program);
+registerIntegrationsCommands(program);
+registerStatusCommands(program);
+registerStarterCommands(program);
+registerFleetCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

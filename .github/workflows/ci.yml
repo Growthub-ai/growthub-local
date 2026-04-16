@@ -38,5 +38,8 @@ jobs:
       - name: Validate bundled worker kit contracts
         run: node scripts/check-worker-kits.mjs
 
+      - name: Validate Fork Sync Agent kernel packet
+        run: node scripts/check-fork-sync.mjs
+
       - name: Validate release packaging
         run: node scripts/release-check.mjs

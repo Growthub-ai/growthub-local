@@ -54,6 +54,9 @@ jobs:
       - name: Freeze check
         run: bash ./scripts/freeze-check.sh
 
+      - name: Fork Sync Agent kernel packet
+        run: node ./scripts/check-fork-sync.mjs
+
       - name: Release check
         run: node ./scripts/release-check.mjs
 

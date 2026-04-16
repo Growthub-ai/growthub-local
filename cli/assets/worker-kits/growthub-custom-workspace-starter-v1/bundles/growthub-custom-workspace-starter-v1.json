@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-custom-workspace-starter-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-custom-workspace-starter-v1",
+    "workerId": "custom-workspace-operator"
+  },
+  "briefType": "custom-workspace-starter",
+  "capabilityType": "worker",
+  "executionMode": "export",
+  "activationModes": ["export"],
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/custom-workspace-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/workspace-brief.md",
+    "templates/agent-contract.md",
+    "templates/deployment-plan.md",
+    "examples/workspace-sample.md",
+    "docs/starter-kit-overview.md",
+    "docs/fork-sync-integration.md",
+    "docs/vite-ui-shell-guide.md",
+    "studio/index.html",
+    "studio/package.json",
+    "studio/vite.config.js",
+    "studio/serve.mjs",
+    "studio/src/main.jsx",
+    "studio/src/App.jsx",
+    "studio/src/app.css",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ]
+}

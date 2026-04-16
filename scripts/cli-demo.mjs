@@ -300,6 +300,36 @@ async function runInteractive() {
         label: "🤖 Qwen Code CLI Preview",
         hint: "Validate Qwen Code CLI integration — health, prompt, session",
       },
+      {
+        value: "fork-sync",
+        label: "🔀 Fork Sync Agent Preview",
+        hint: "Self-healing forked worker kits — register, status, heal, policy, trace",
+      },
+      {
+        value: "github-integration",
+        label: "🐙 GitHub Integration Preview",
+        hint: "Device-flow login + whoami + effective auth source (direct or Growthub bridge)",
+      },
+      {
+        value: "integrations-bridge",
+        label: "🔗 Growthub Integrations Bridge Preview",
+        hint: "Render first-party integrations connected on your Growthub account through the CLI",
+      },
+      {
+        value: "service-status",
+        label: "🟢 Service Status Preview",
+        hint: "Statuspage-style health grid for every mission-critical service the CLI relies on",
+      },
+      {
+        value: "custom-workspace-starter",
+        label: "🧪 Custom Workspace Starter Preview",
+        hint: "Invoke `growthub starter init --help` against this branch CLI binary",
+      },
+      {
+        value: "fleet-ops",
+        label: "🚢 Fleet Operations Preview",
+        hint: "Invoke `growthub fleet view` against this branch CLI binary",
+      },
     ],
   });
 
@@ -343,6 +373,30 @@ async function runInteractive() {
 
   if (choice === "qwen-code") {
     runCli(["qwen-code"]);
+  }
+
+  if (choice === "fork-sync") {
+    runCli(["fork-sync"]);
+  }
+
+  if (choice === "github-integration") {
+    runCli(["github", "whoami"]);
+  }
+
+  if (choice === "integrations-bridge") {
+    runCli(["integrations", "status"]);
+  }
+
+  if (choice === "service-status") {
+    runCli(["status"]);
+  }
+
+  if (choice === "custom-workspace-starter") {
+    runCli(["starter", "init", "--help"]);
+  }
+
+  if (choice === "fleet-ops") {
+    runCli(["fleet", "view"]);
   }
 
   runCli([]);

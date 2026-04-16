@@ -242,6 +242,52 @@ GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 - [Custom Workspace Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 - [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
 - [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
+- [Fork Sync Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_FORK_SYNC_AGENT.md)
+
+## Forking + Self-Healing Fork Sync Agent
+
+Any bundled worker kit can be forked locally or via GitHub. The CLI ships a policy-driven, trace-backed, self-healing agent that keeps your fork in sync with upstream kit releases without ever overwriting your customisations.
+
+Three storage surfaces, each self-contained:
+
+- **In-fork state** at `<forkPath>/.growthub-fork/` — `fork.json`, `policy.json`, `trace.jsonl`, `jobs/`.  Canonical and portable.
+- **CLI-owned kit-forks home** at `GROWTHUB_KIT_FORKS_HOME` (default `~/.growthub/kit-forks`) — `index.json`, `orphan-jobs/`.  Discovery pointers only.
+- **CLI-owned GitHub home** at `GROWTHUB_GITHUB_HOME` (default `~/.growthub/github`) — `token.json` (chmod 600), `profile.json`.  Direct device-flow / PAT credentials only.
+
+```bash
+# Beginner — local-only fork
+growthub kit download creative-strategist-v1 --out ./my-fork
+growthub kit fork register --path ./my-fork --kit creative-strategist-v1
+
+# Advanced — one-click GitHub fork + scaffold + register
+growthub github login                          # device-flow OAuth (or --token <pat>)
+growthub kit fork create --kit creative-strategist-v1 \
+                         --upstream growthub-ai/creative-strategist \
+                         --out ./my-fork
+
+# Configure your policy (what stays untouched, what requires confirmation)
+growthub kit fork policy --fork-id <id> --set \
+  autoApprove=additive \
+  untouchablePaths+=custom/my-prompt.md \
+  remoteSyncMode=pr
+
+# Heal with explicit confirmation + trace
+growthub kit fork heal <fork-id> --dry-run
+growthub kit fork heal <fork-id> --background
+growthub kit fork trace --fork-id <id> --tail 50
+```
+
+### Growthub integrations bridge
+
+Users already authenticated into Growthub (via the gh-app) and with GitHub connected as a first-party integration there can use that connection through the CLI without re-authenticating:
+
+```bash
+growthub login                                # existing Growthub auth
+growthub integrations status                  # list connected integrations (MCP/hosted bridge)
+growthub integrations probe --provider github # test the resolver
+```
+
+The bridge is additive — direct CLI GitHub auth and the Growthub-hosted bridge are layered through a fixed-preference resolver (`direct → growthub-bridge`).  Bridge-minted credentials are never persisted to disk.
 
 ## Architecture Lanes
 
