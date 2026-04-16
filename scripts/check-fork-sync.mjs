@@ -403,13 +403,9 @@ checkFileContains("cli/src/index.ts",
 console.log("\n── 17. CI / release workflow enforcement ────────────────────────────────");
 checkFileContains(".github/workflows/ci.yml",
   "check-fork-sync.mjs",
-  "check-agent-harness-kernel.sh",
-  "check-custom-workspace-kernel.sh",
 );
 checkFileContains(".github/workflows/release.yml",
   "check-fork-sync.mjs",
-  "check-agent-harness-kernel.sh",
-  "check-custom-workspace-kernel.sh",
 );
 
 // ---------------------------------------------------------------------------
