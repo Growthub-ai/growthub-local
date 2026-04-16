@@ -1,51 +1,48 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { api, PROFILE_ID } from './api.js';
-import Dashboard    from './views/Dashboard.jsx';
-import Accounts     from './views/Accounts.jsx';
-import Compose      from './views/Compose.jsx';
-import Scheduled    from './views/Scheduled.jsx';
-import Queues       from './views/Queues.jsx';
-import Analytics    from './views/Analytics.jsx';
-import Agent        from './views/Agent.jsx';
-import ApiKeys      from './views/ApiKeys.jsx';
-import Automations  from './views/Automations.jsx';
-import Templates    from './views/Templates.jsx';
-import CommentRules from './views/CommentRules.jsx';
-import Sequences    from './views/Sequences.jsx';
+import Dashboard  from './views/Dashboard.jsx';
+import Accounts   from './views/Accounts.jsx';
+import Compose    from './views/Compose.jsx';
+import Posts      from './views/Posts.jsx';
+import Queues     from './views/Queues.jsx';
+import Analytics  from './views/Analytics.jsx';
+import Agent      from './views/Agent.jsx';
+import ApiKeys    from './views/ApiKeys.jsx';
+import Templates     from './views/Templates.jsx';
+import Sequences     from './views/Sequences.jsx';
+import CommentRules  from './views/CommentRules.jsx';
 
 export const AppCtx = createContext({});
 export const useApp = () => useContext(AppCtx);
 
 const NAV = [
   { section: 'Publishing' },
-  { id: 'dashboard', label: 'Dashboard',  icon: '🏠' },
-  { id: 'accounts',  label: 'Accounts',   icon: '🔗' },
-  { id: 'compose',   label: 'Compose',    icon: '✏️' },
-  { id: 'scheduled', label: 'Scheduled',  icon: '📅' },
-  { id: 'queues',    label: 'Queues',     icon: '🔄' },
-  { id: 'analytics', label: 'Analytics',  icon: '📊' },
+  { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+  { id: 'accounts',  label: 'Accounts',  icon: '🔗' },
+  { id: 'compose',   label: 'Compose',   icon: '✏️' },
+  { id: 'posts',     label: 'Posts',     icon: '📋' },
+  { id: 'queues',    label: 'Queues',    icon: '🔄' },
+  { id: 'analytics', label: 'Analytics', icon: '📊' },
   { section: 'Comment Automation' },
+  { id: 'commentrules', label: 'Comment Rules', icon: '💬' },
   { id: 'templates',    label: 'Templates',     icon: '📝' },
-  { id: 'commentrules', label: 'Comment Rules',  icon: '💬' },
-  { id: 'sequences',    label: 'Sequences',      icon: '🔀' },
-  { id: 'automations',  label: 'Automations',    icon: '⚡' },
+  { id: 'sequences',    label: 'Sequences',     icon: '🔀' },
   { section: 'Agent' },
   { id: 'agent',   label: 'Agent / Swarm', icon: '🤖' },
   { id: 'apikeys', label: 'API Keys',      icon: '🔑' },
 ];
 
 const VIEWS = {
-  dashboard:    Dashboard,
-  accounts:     Accounts,
-  compose:      Compose,
-  scheduled:    Scheduled,
-  queues:       Queues,
-  analytics:    Analytics,
-  agent:        Agent,
-  automations:  Automations,
-  apikeys:      ApiKeys,
-  templates:    Templates,
+  dashboard: Dashboard,
+  accounts:  Accounts,
+  compose:   Compose,
+  posts:     Posts,
+  queues:    Queues,
+  analytics: Analytics,
+  agent:     Agent,
+  apikeys:   ApiKeys,
   commentrules: CommentRules,
+  templates:    Templates,
   sequences:    Sequences,
 };
 

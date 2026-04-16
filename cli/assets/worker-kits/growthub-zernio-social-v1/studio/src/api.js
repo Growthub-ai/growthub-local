@@ -43,7 +43,9 @@ export const api = {
   getProfile:    (id) => get(`/profiles/${id}`),
 
   // ── Accounts ────────────────────────────────────────────────────────────────
-  getAccounts: (profileId) => get(`/accounts?profileId=${profileId}`),
+  getAccounts:     (profileId)           => get(`/accounts?profileId=${profileId}`),
+  // GET /accounts/{id}/posts → { status, posts: [{id,message,createdTime,picture,permalink,mediaType,commentCount,likeCount,platform}] }
+  getAccountPosts: (accountId, limit=50) => get(`/accounts/${accountId}/posts?limit=${limit}`),
 
   // ── Posts ───────────────────────────────────────────────────────────────────
   getPosts:    (profileId, status = 'scheduled') => get(`/posts?profileId=${profileId}&status=${status}`),
@@ -109,10 +111,12 @@ export const api = {
   getBroadcast:     (id)   => get(`/broadcasts/${id}`),
 
   // ── Sequences ────────────────────────────────────────────────────────────────
-  getSequences:   () => get('/sequences'),
-  getSequence:    (id) => get(`/sequences/${id}`),
-  activateSequence: (id) => post(`/sequences/${id}/activate`, {}),
-  pauseSequence:    (id) => post(`/sequences/${id}/pause`, {}),
+  getSequences:     ()          => get('/sequences'),
+  getSequence:      (id)        => get(`/sequences/${id}`),
+  createSequence:   (body)      => post('/sequences', body),
+  deleteSequence:   (id)        => del(`/sequences/${id}`),
+  activateSequence: (id)        => post(`/sequences/${id}/activate`, {}),
+  pauseSequence:    (id)        => post(`/sequences/${id}/pause`, {}),
 
   // ── Comment-to-DM Automations (Instagram + Facebook only) ───────────────────
   // Real endpoint: POST /api/v1/comment-automations
@@ -128,11 +132,13 @@ export const api = {
   // ── Platform OAuth connect ────────────────────────────────────────────────
   getConnectUrl: (platform, profileId) => get(`/connect/${platform}?profileId=${profileId || PROFILE_ID}`),
 
-  // ── Comments on posts ─────────────────────────────────────────────────────
-  getPostComments:  (postId, accountId) => get(`/posts/${postId}/comments?accountId=${accountId}`),
-  replyToComment:   (postId, body)      => post(`/posts/${postId}/comments`, body),
-  deleteComment:    (postId, commentId, accountId) => del(`/posts/${postId}/comments/${commentId}?accountId=${accountId}`),
-  hideComment:      (postId, commentId, body) => post(`/posts/${postId}/comments/${commentId}/hide`, body),
+  // ── Inbox Comments API (X, LinkedIn, YouTube, Facebook, Instagram, Reddit, Bluesky)
+  // GET  /api/v1/inbox/comments/{platformPostId}?accountId={id}  → fetch comments
+  // POST /api/v1/inbox/comments/{platformPostId}                  → reply { accountId, commentId, message }
+  // POST /api/v1/inbox/comments/{platformPostId}/{commentId}/hide → hide { accountId }
+  getComments:    (platformPostId, accountId) => get(`/inbox/comments/${platformPostId}?accountId=${accountId}`),
+  replyToComment: (platformPostId, body)      => post(`/inbox/comments/${platformPostId}`, body),
+  hideComment:    (platformPostId, commentId, accountId) => post(`/inbox/comments/${platformPostId}/${commentId}/hide`, { accountId }),
 
   // ── Legacy stubs (kept for backward compat in Agent view) ────────────────
   getAutomations:    ()          => get('/comment-automations'),
@@ -143,4 +149,25 @@ export const api = {
   createWebhook: (body) => post('/webhooks', body),
   updateWebhook: (id, body) => put(`/webhooks/${id}`, body),
   getWebhookLogs: (id) => get(`/webhooks/${id}/logs`),
+
+  // ── LinkedIn Voyager (reads Chrome cookies automatically via local proxy) ──
+  // serve.mjs / vite dev server reads li_at + JSESSIONID from Chrome on disk.
+  // No credentials need to be passed from the UI.
+  checkLinkedInSession: () => fetch('/api/li-cookies').then(r => r.json()),
+  openChromeToLinkedIn: () => fetch('/api/open-chrome-linkedin').then(r => r.json()),
+  getLinkedInProfilePosts: async (profileUrn) => {
+    const r = await fetch('/api/li-posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileUrn }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const e = new Error(data.message || data.error || `HTTP ${r.status}`);
+      e.status = r.status;
+      e.code = data.error;
+      throw e;
+    }
+    return data;
+  },
 };

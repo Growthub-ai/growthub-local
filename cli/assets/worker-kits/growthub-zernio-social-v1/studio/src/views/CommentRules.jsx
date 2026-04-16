@@ -1,592 +1,521 @@
 /**
- * CommentRules — live /api/v1/comment-automations
+ * CommentRules
  *
- * Real Zernio API shape (from docs):
- *   POST /api/v1/comment-automations
- *   { name, profileId, accountId, platformPostId,
- *     keywords?,       // comma-separated string — omit to trigger on ALL comments
- *     dmMessage,       // required — private DM sent to commenter
- *     commentReply?,   // optional — public reply to the comment
- *     isActive?        // default true
- *   }
- *
- * Constraint: Instagram and Facebook ONLY.
- * Other platforms → 400 "Comment-to-DM automations are only supported on Instagram and Facebook"
+ * TAB 1 — IG / FB  → /api/v1/comment-automations  (native Zernio automation)
+ * TAB 2 — X / LinkedIn → /api/v1/inbox/comments/{platformPostId}
+ *           Fetch comments → keyword match → preview → reply
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, PROFILE_ID } from '../api.js';
 import { useApp } from '../App.jsx';
-import { getTemplates, previewTemplate, seedIfEmpty } from '../lib/templates.js';
 
-const IG_FB = ['instagram', 'facebook'];
-const PLT_BG = { instagram: '#e1306c', facebook: '#1877f2' };
-const PLT_ICON = { instagram: '📸', facebook: 'f' };
+// ── helpers ────────────────────────────────────────────────────────────────
+const IG_FB   = ['instagram', 'facebook'];
+const XLI     = ['twitter', 'x', 'linkedin'];
 
-const ST = {
-  published: { cls: 'badge-green',  label: 'Published' },
-  scheduled: { cls: 'badge-blue',   label: 'Scheduled'  },
-  draft:     { cls: 'badge-neutral', label: 'Draft'     },
-};
-
-const EMPTY = { name: '', keywords: '', dmMessage: '', commentReply: '', platformPostId: '', accountId: '' };
-
-function tplBody(id, sub) {
-  const t = getTemplates().find(x => x.id === id);
-  if (!t) return '';
-  return t.type === 'both' ? (sub === 'reply' ? t.replyBody || '' : t.dmBody || '') : (t.body || '');
+/** Extract native post ID from a URL or return the raw value */
+function parsePostId(raw) {
+  const s = (raw || '').trim();
+  // X / Twitter: https://x.com/user/status/1234567890  or  twitter.com/…
+  const xm = s.match(/(?:twitter\.com|x\.com)\/[^/]+\/status\/(\d+)/i);
+  if (xm) return xm[1];
+  // LinkedIn: extract activity ID from URL
+  const lim = s.match(/activity[-:](\d+)/i);
+  if (lim) return lim[1];
+  // LinkedIn urn style
+  const urn = s.match(/urn:li:(?:share|ugcPost):(\d+)/i);
+  if (urn) return urn[1];
+  return s; // assume already a raw ID
 }
 
-export default function CommentRules({ onNavigate }) {
+function matchesKeywords(text, keywords, mode) {
+  if (!keywords.trim()) return true; // blank = ALL comments
+  const kws = keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+  const t = (text || '').toLowerCase();
+  if (mode === 'exact') return kws.some(k => t === k);
+  return kws.some(k => t.includes(k));
+}
+
+const REPLIED_KEY = 'zernio_replied_comments';
+function getReplied() {
+  try { return new Set(JSON.parse(localStorage.getItem(REPLIED_KEY) || '[]')); } catch { return new Set(); }
+}
+function markReplied(id) {
+  const s = getReplied(); s.add(id);
+  localStorage.setItem(REPLIED_KEY, JSON.stringify([...s]));
+}
+
+// ── component ──────────────────────────────────────────────────────────────
+export default function CommentRules() {
   const { accounts, showToast } = useApp();
+  const [tab, setTab] = useState('xli'); // 'igfb' | 'xli'
 
-  // IG/FB accounts only
-  const eligibleAccounts = accounts.filter(a => IG_FB.includes(a.platform));
-  const hasEligible = eligibleAccounts.length > 0;
-
-  const [posts, setPosts]               = useState([]);
-  const [postsLoading, setPostsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [search, setSearch]             = useState('');
-  const [selectedPost, setSelectedPost] = useState(null);
-
-  const [automations, setAutomations]   = useState([]);
-  const [autoLoading, setAutoLoading]   = useState(false);
-  const [logs, setLogs]                 = useState({});
-  const [logsOpen, setLogsOpen]         = useState(null);
-
-  const [form, setForm]                 = useState(EMPTY);
-  const [formOpen, setFormOpen]         = useState(false);
-  const [editingId, setEditingId]       = useState(null);
-  const [submitting, setSubmitting]     = useState(false);
-  const [deleting, setDeleting]         = useState(null);
-
-  const [connectUrls, setConnectUrls]   = useState({});
-  const [templates, setTemplates]       = useState([]);
-  const [dmTplId, setDmTplId]           = useState('');
-  const [replyTplId, setReplyTplId]     = useState('');
-
-  useEffect(() => { seedIfEmpty(); setTemplates(getTemplates()); }, []);
-
-  // Prefetch connect URLs for IG + FB
-  useEffect(() => {
-    if (!PROFILE_ID) return;
-    Promise.all(
-      ['instagram', 'facebook'].map(p =>
-        api.getConnectUrl(p, PROFILE_ID)
-          .then(d => ({ p, url: d.authUrl || d.url }))
-          .catch(() => null)
-      )
-    ).then(results => {
-      const map = {};
-      results.forEach(r => r && (map[r.p] = r.url));
-      setConnectUrls(map);
-    });
-  }, []);
-
-  // Load all posts (published + scheduled)
-  const loadPosts = useCallback(async () => {
-    if (!PROFILE_ID) { setPostsLoading(false); return; }
-    setPostsLoading(true);
-    try {
-      const [sch, pub] = await Promise.allSettled([
-        api.getPosts(PROFILE_ID, 'scheduled'),
-        api.getPosts(PROFILE_ID, 'published'),
-      ]);
-      const all = [...(sch.value?.posts || []), ...(pub.value?.posts || [])];
-      const seen = new Set();
-      const unique = all.filter(p => {
-        const k = p._id || p.id;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-      unique.sort((a, b) => ({ published: 0, scheduled: 1, draft: 2 }[a.status] - ({ published: 0, scheduled: 1, draft: 2 }[b.status] ?? 3)));
-      setPosts(unique);
-    } catch (e) {
-      showToast(e.message, false);
-    } finally {
-      setPostsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadPosts(); }, [loadPosts]);
-
-  // Load all automations for profile (then filter per post)
-  const loadAutomations = useCallback(async (post) => {
-    setAutoLoading(true);
-    setAutomations([]);
-    try {
-      const data = await api.getCommentAutomations(PROFILE_ID);
-      const all  = data.automations || data.data || [];
-      const postId = post._id || post.id;
-      // Filter by post._id match OR platformPostId match
-      setAutomations(all.filter(a =>
-        a.postId === postId || a._id === postId ||
-        a.platformPostId === (post.platformPostId || postId)
-      ));
-    } catch (e) {
-      showToast(e.message, false);
-    } finally {
-      setAutoLoading(false);
-    }
-  }, []);
-
-  const selectPost = (p) => {
-    setSelectedPost(p);
-    setFormOpen(false);
-    setEditingId(null);
-    setForm(EMPTY);
-    setDmTplId('');
-    setReplyTplId('');
-    loadAutomations(p);
-  };
-
-  // Template helpers
-  const dmTemplates    = templates.filter(t => t.type === 'send_dm' || t.type === 'both');
-  const replyTemplates = templates.filter(t => t.type === 'reply_comment' || t.type === 'both');
-
-  const applyDmTpl = (id) => {
-    setDmTplId(id);
-    const body = tplBody(id, 'dm');
-    if (body) setForm(f => ({ ...f, dmMessage: previewTemplate(body) }));
-  };
-  const applyReplyTpl = (id) => {
-    setReplyTplId(id);
-    const body = tplBody(id, 'reply');
-    if (body) setForm(f => ({ ...f, commentReply: previewTemplate(body) }));
-  };
-
-  const openNew = () => {
-    const firstEligible = eligibleAccounts[0];
-    setForm({
-      ...EMPTY,
-      accountId: firstEligible?._id || '',
-      name: selectedPost ? `Comment Rule — ${(selectedPost.content || '').slice(0, 40)}` : '',
-    });
-    setDmTplId(''); setReplyTplId('');
-    setEditingId(null);
-    setFormOpen(true);
-  };
-
-  const openEdit = (auto) => {
-    setForm({
-      name:          auto.name || '',
-      keywords:      Array.isArray(auto.keywords) ? auto.keywords.join(', ') : (auto.keywords || ''),
-      dmMessage:     auto.dmMessage || '',
-      commentReply:  auto.commentReply || '',
-      platformPostId: auto.platformPostId || '',
-      accountId:     auto.accountId || eligibleAccounts[0]?._id || '',
-    });
-    setDmTplId(''); setReplyTplId('');
-    setEditingId(auto._id || auto.id);
-    setFormOpen(true);
-  };
-
-  const resetForm = () => { setFormOpen(false); setEditingId(null); setForm(EMPTY); setDmTplId(''); setReplyTplId(''); };
-
-  const submit = async () => {
-    if (!form.name.trim())       { showToast('Enter a name', false); return; }
-    if (!form.accountId)         { showToast('Select an Instagram or Facebook account', false); return; }
-    if (!form.platformPostId.trim()) { showToast('Enter the platform post ID / URL', false); return; }
-    if (!form.dmMessage.trim())  { showToast('DM message is required', false); return; }
-
-    const acct = eligibleAccounts.find(a => a._id === form.accountId);
-    const body = {
-      name:          form.name.trim(),
-      profileId:     PROFILE_ID,
-      accountId:     form.accountId,
-      platformPostId: form.platformPostId.trim(),
-      dmMessage:     form.dmMessage.trim(),
-    };
-    if (form.keywords.trim())      body.keywords     = form.keywords.trim();
-    if (form.commentReply.trim())  body.commentReply = form.commentReply.trim();
-
-    setSubmitting(true);
-    try {
-      if (editingId) {
-        await api.updateCommentAutomation(editingId, body);
-        showToast('Automation updated ✓');
-      } else {
-        await api.createCommentAutomation(body);
-        showToast('Automation created ✓ — live on Zernio!');
-      }
-      resetForm();
-      if (selectedPost) loadAutomations(selectedPost);
-      else {
-        const all = await api.getCommentAutomations(PROFILE_ID);
-        setAutomations(all.automations || []);
-      }
-    } catch (e) {
-      showToast(e.message, false);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const deleteAuto = async (id) => {
-    if (!confirm('Delete this automation? All logs will be deleted.')) return;
-    setDeleting(id);
-    try {
-      await api.deleteCommentAutomation(id);
-      showToast('Automation deleted');
-      if (selectedPost) loadAutomations(selectedPost);
-    } catch (e) {
-      showToast(e.message, false);
-    } finally {
-      setDeleting(null);
-    }
-  };
-
-  const toggleActive = async (auto) => {
-    try {
-      await api.updateCommentAutomation(auto._id || auto.id, { isActive: !auto.isActive });
-      showToast(auto.isActive ? 'Paused' : 'Activated ✓');
-      if (selectedPost) loadAutomations(selectedPost);
-    } catch (e) {
-      showToast(e.message, false);
-    }
-  };
-
-  const loadLogs = async (id) => {
-    if (logsOpen === id) { setLogsOpen(null); return; }
-    setLogsOpen(id);
-    if (logs[id]) return;
-    try {
-      const d = await api.getCommentAutomationLogs(id);
-      setLogs(l => ({ ...l, [id]: d.logs || d.data || [] }));
-    } catch (e) {
-      showToast(e.message, false);
-    }
-  };
-
-  // All automations across all posts (for overview when no post selected)
-  const [allAutos, setAllAutos] = useState([]);
-  useEffect(() => {
-    if (!PROFILE_ID) return;
-    api.getCommentAutomations(PROFILE_ID)
-      .then(d => setAllAutos(d.automations || []))
-      .catch(() => {});
-  }, []);
-
-  const visiblePosts = posts.filter(p => {
-    const sOk = statusFilter === 'all' || p.status === statusFilter;
-    const qOk = !search || (p.content || '').toLowerCase().includes(search.toLowerCase());
-    return sOk && qOk;
-  });
-
-  // ── Connect required warning ─────────────────────────────────────────────
-  if (!hasEligible) {
-    return (
-      <div>
-        <div style={{ background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: 10, padding: '20px 24px', marginBottom: 20 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#fca5a5', marginBottom: 8 }}>
-            ⚠️ Instagram or Facebook required
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 14, lineHeight: 1.6 }}>
-            Comment-to-DM automations only work on <strong>Instagram</strong> and <strong>Facebook</strong>.<br />
-            Your current profile has Twitter + LinkedIn — connect Instagram or Facebook first.
-          </div>
-          <div className="row" style={{ gap: 10 }}>
-            {connectUrls.instagram && (
-              <a href={connectUrls.instagram} target="_blank" rel="noreferrer" className="btn btn-primary">
-                📸 Connect Instagram
-              </a>
-            )}
-            {connectUrls.facebook && (
-              <a href={connectUrls.facebook} target="_blank" rel="noreferrer" className="btn btn-secondary">
-                f Connect Facebook
-              </a>
-            )}
-            {!connectUrls.instagram && !connectUrls.facebook && (
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>Loading connect URLs…</span>
-            )}
-          </div>
-        </div>
-
-        <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
-          Once connected, you can set up automations like:
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 560 }}>
-          {[
-            { kw: 'FREE',  desc: 'Auto-DM the Winning Ads Playbook to anyone who comments "FREE"' },
-            { kw: 'GUIDE', desc: 'Auto-DM the SEO Mastersheet to anyone who comments "GUIDE"' },
-            { kw: 'HOOKS', desc: 'Auto-DM the 500+ Hooks library to anyone who comments "HOOKS"' },
-            { kw: '—',     desc: 'Trigger on ALL comments — DM everyone who engages' },
-          ].map((ex, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }}>
-              <span className="rule-keyword" style={{ flexShrink: 0 }}>{ex.kw}</span>
-              <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{ex.desc}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const igfbAccounts = accounts.filter(a => IG_FB.includes(a.platform));
+  const xliAccounts  = accounts.filter(a => XLI.includes(a.platform?.toLowerCase()));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border)' }}>
+        {[
+          { id: 'xli',  label: '🐦 X / LinkedIn  (comments API)' },
+          { id: 'igfb', label: '📸 Instagram / Facebook  (automation)' },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding: '9px 18px', border: 'none', background: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600,
+            color: tab === t.id ? 'var(--accentl)' : 'var(--muted)',
+            borderBottom: tab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+            marginBottom: -1,
+          }}>{t.label}</button>
+        ))}
+      </div>
 
-      {/* ── All automations overview ─────────────────────────────────── */}
-      {allAutos.length > 0 && !selectedPost && (
+      {tab === 'xli'  && <XLITab  accounts={xliAccounts}  showToast={showToast} />}
+      {tab === 'igfb' && <IGFBTab accounts={igfbAccounts} showToast={showToast} />}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: X / LinkedIn — direct comments API
+// ══════════════════════════════════════════════════════════════════════════════
+function XLITab({ accounts, showToast }) {
+  const [accountId, setAccountId]     = useState('');
+  const [postUrl, setPostUrl]         = useState('');
+  const [keywords, setKeywords]       = useState('');
+  const [matchMode, setMatchMode]     = useState('contains');
+  const [replyTemplate, setReplyTemplate] = useState('');
+  const [charCount, setCharCount]     = useState(0);
+
+  const [fetching, setFetching]       = useState(false);
+  const [comments, setComments]       = useState(null); // null = not fetched yet
+  const [fetchErr, setFetchErr]       = useState('');
+
+  const [running, setRunning]         = useState(false);
+  const [results, setResults]         = useState([]); // { comment, status, error }
+
+  // auto-select first account
+  useEffect(() => {
+    if (!accountId && accounts.length) setAccountId(accounts[0]._id);
+  }, [accounts]);
+
+  useEffect(() => { setCharCount(replyTemplate.length); }, [replyTemplate]);
+
+  const platformPostId = parsePostId(postUrl);
+
+  // ── STEP 1: Validate — fetch + preview matches ────────────────────────────
+  const validate = async () => {
+    if (!accountId)       { showToast('Select an account', false); return; }
+    if (!postUrl.trim())  { showToast('Enter a post URL or ID', false); return; }
+    if (!replyTemplate.trim()) { showToast('Enter a reply template', false); return; }
+
+    setFetching(true);
+    setFetchErr('');
+    setComments(null);
+    setResults([]);
+
+    try {
+      const data = await api.getComments(platformPostId, accountId);
+      const all  = data.comments || data.data || [];
+      setComments(all);
+      if (!all.length) showToast('No comments found on this post', false);
+      else showToast(`Fetched ${all.length} comment${all.length !== 1 ? 's' : ''} — preview below`);
+    } catch (e) {
+      setFetchErr(e.message);
+      showToast(e.message, false);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  // ── STEP 2: Run — reply to matched comments ───────────────────────────────
+  const run = async () => {
+    if (!comments?.length) { showToast('Validate first', false); return; }
+    const matched = comments.filter(c => matchesKeywords(c.text || c.content || c.message || '', keywords, matchMode));
+    if (!matched.length)   { showToast('No comments match the keywords', false); return; }
+
+    setRunning(true);
+    const replied = getReplied();
+    const out = [];
+
+    for (const c of matched) {
+      const cid = c._id || c.id || c.commentId;
+      if (replied.has(cid)) {
+        out.push({ comment: c, status: 'skipped', error: 'Already replied' });
+        continue;
+      }
+      try {
+        await api.replyToComment(platformPostId, {
+          accountId,
+          commentId: cid,
+          message:   replyTemplate,
+        });
+        markReplied(cid);
+        out.push({ comment: c, status: 'replied' });
+      } catch (e) {
+        out.push({ comment: c, status: 'error', error: e.message });
+      }
+    }
+
+    setResults(out);
+    const ok = out.filter(r => r.status === 'replied').length;
+    showToast(`Done — ${ok} repl${ok !== 1 ? 'ies' : 'y'} sent`);
+    setRunning(false);
+  };
+
+  const matched = comments
+    ? comments.filter(c => matchesKeywords(c.text || c.content || c.message || '', keywords, matchMode))
+    : [];
+
+  const acct = accounts.find(a => a._id === accountId);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 16, alignItems: 'start' }}>
+
+      {/* ── LEFT: config ──────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
         <div className="card">
-          <div className="section-title mb12">Active Automations ({allAutos.length})</div>
-          {allAutos.map(a => (
-            <div key={a._id || a.id} className={`rule-card ${a.isActive ? 'active' : 'paused'}`} style={{ marginBottom: 8 }}>
-              <div className="rule-header">
-                <span className="rule-keyword">{a.keywords || 'ALL COMMENTS'}</span>
-                <span style={{ fontSize: 12, color: 'var(--dim)' }}>📸/f {a.platform || ''}</span>
-                <span className={`badge ${a.isActive ? 'badge-green' : 'badge-neutral'}`} style={{ marginLeft: 'auto' }}>
-                  {a.isActive ? 'Active' : 'Paused'}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>{a.name}</div>
-              <div className="rule-footer">
-                <button className="btn btn-ghost btn-xs" onClick={() => loadLogs(a._id || a.id)}>
-                  {logsOpen === (a._id || a.id) ? 'Hide Logs' : 'Logs'}
-                </button>
-                <div className="toggle-wrap" onClick={() => toggleActive(a)}>
-                  <div className={`toggle ${a.isActive ? 'on' : ''}`} />
-                  <span className="toggle-label" style={{ fontSize: 11 }}>{a.isActive ? 'On' : 'Off'}</span>
-                </div>
-                <button className="btn btn-ghost btn-xs" onClick={() => { setSelectedPost(null); openEdit(a); }}>Edit</button>
-                <button className="btn btn-danger btn-xs" style={{ marginLeft: 'auto' }} onClick={() => deleteAuto(a._id || a.id)} disabled={deleting === (a._id || a.id)}>
-                  {deleting === (a._id || a.id) ? '…' : 'Delete'}
-                </button>
-              </div>
-              {logsOpen === (a._id || a.id) && (
-                <div style={{ marginTop: 10 }}>
-                  {(logs[a._id || a.id] || []).length === 0
-                    ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>No triggers yet.</div>
-                    : (logs[a._id || a.id] || []).slice(0, 10).map((l, i) => (
-                      <div key={i} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, marginBottom: 3, background: '#09090b', display: 'flex', gap: 8 }}>
-                        <span style={{ color: l.status === 'sent' ? 'var(--greenl)' : 'var(--redl)' }}>●</span>
-                        <span style={{ color: 'var(--dim)' }}>@{l.username || l.commenterUsername || '?'}</span>
-                        <span style={{ color: 'var(--muted)' }}>"{l.comment?.slice(0, 40) || '?'}"</span>
-                        <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{l.createdAt ? new Date(l.createdAt).toLocaleTimeString() : ''}</span>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Setup</div>
 
-      <div className="cr-layout" style={{ flex: 1 }}>
-
-        {/* ── LEFT: Post list ──────────────────────────────────────────── */}
-        <div className="cr-posts">
-          <div className="cr-posts-header">
-            <div className="row mb8" style={{ justifyContent: 'space-between' }}>
-              <span style={{ fontWeight: 600, fontSize: 13 }}>Posts</span>
-              <button className="btn btn-ghost" style={{ fontSize: 11, padding: '3px 8px' }} onClick={loadPosts}>↻</button>
-            </div>
-            <div className="row mb8" style={{ gap: 5 }}>
-              {[['all','All'], ['published','Pub'], ['scheduled','Sched']].map(([v,l]) => (
-                <button key={v} className={`filter-btn ${statusFilter === v ? 'active' : ''}`} style={{ fontSize: 11, padding: '3px 9px' }} onClick={() => setStatusFilter(v)}>{l}</button>
-              ))}
-            </div>
-            <input className="input" style={{ fontSize: 12, padding: '7px 10px' }} placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="field">
+            <label>Account</label>
+            {accounts.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--redl)', padding: '8px 0' }}>
+                No X or LinkedIn accounts connected
+              </div>
+            ) : (
+              <select className="select" value={accountId} onChange={e => setAccountId(e.target.value)}>
+                {accounts.map(a => (
+                  <option key={a._id} value={a._id}>
+                    {a.platform === 'linkedin' ? 'LinkedIn' : 'X / Twitter'} — {a.displayName || a.username}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-          <div className="cr-posts-list">
-            {postsLoading && <div className="loading-row" style={{ padding: 14 }}><span className="spinner" />Loading…</div>}
-            {!postsLoading && !visiblePosts.length && (
-              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                No posts yet. Compose one first.
+
+          <div className="field">
+            <label>Post URL or ID</label>
+            <input className="input"
+              placeholder="https://x.com/user/status/123… or paste LinkedIn URL"
+              value={postUrl} onChange={e => setPostUrl(e.target.value)} />
+            {postUrl && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                Post ID: <code style={{ color: 'var(--accentl)' }}>{platformPostId}</code>
               </div>
             )}
-            {visiblePosts.map(p => {
-              const id = p._id || p.id;
-              const st = ST[p.status] || ST.draft;
-              const active = selectedPost && (selectedPost._id || selectedPost.id) === id;
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Keywords <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(blank = all)</span></label>
+              <input className="input" placeholder="FREE, GUIDE, LINK"
+                value={keywords} onChange={e => setKeywords(e.target.value)} />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Match mode</label>
+              <select className="select" value={matchMode} onChange={e => setMatchMode(e.target.value)}>
+                <option value="contains">Contains</option>
+                <option value="exact">Exact</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>Reply template</label>
+            <textarea className="textarea" style={{ minHeight: 80 }}
+              placeholder="Hey @{{username}}! Check this out 👉 https://..."
+              value={replyTemplate} onChange={e => setReplyTemplate(e.target.value)} />
+            <div className={`char-count ${charCount > 280 ? 'char-over' : ''}`}>
+              {charCount} / 280 chars {acct?.platform?.toLowerCase().includes('linkedin') ? '(LinkedIn: 1250)' : '(X: 280)'}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button className="btn btn-secondary" style={{ flex: 1 }}
+              onClick={validate} disabled={fetching}>
+              {fetching ? <><span className="spinner" style={{ marginRight: 7 }} />Fetching…</> : '🔍 Validate (fetch + preview)'}
+            </button>
+          </div>
+
+          {comments !== null && matched.length > 0 && results.length === 0 && (
+            <button className="btn btn-primary" style={{ marginTop: 8, width: '100%' }}
+              onClick={run} disabled={running}>
+              {running ? <><span className="spinner" style={{ marginRight: 7 }} />Replying…</> : `🚀 Run — reply to ${matched.length} matched comment${matched.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+
+        {/* Legend */}
+        <div className="card" style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 600, color: 'var(--dim)', marginBottom: 6 }}>How it works</div>
+          <div>1. Paste your X or LinkedIn post URL</div>
+          <div>2. Set keywords — comments containing them get matched</div>
+          <div>3. <strong style={{ color: 'var(--dim)' }}>Validate</strong> — fetches comments, shows preview</div>
+          <div>4. <strong style={{ color: 'var(--dim)' }}>Run</strong> — replies to each matched comment</div>
+          <div style={{ marginTop: 6, color: '#52525b' }}>Already-replied comments are skipped (tracked locally)</div>
+        </div>
+      </div>
+
+      {/* ── RIGHT: results ────────────────────────────────────────────── */}
+      <div>
+        {fetchErr && (
+          <div className="banner banner-err" style={{ marginBottom: 12 }}>{fetchErr}</div>
+        )}
+
+        {/* After run: results table */}
+        {results.length > 0 && (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>
+              Results — {results.filter(r => r.status === 'replied').length} sent · {results.filter(r => r.status === 'error').length} errors · {results.filter(r => r.status === 'skipped').length} skipped
+            </div>
+            {results.map((r, i) => (
+              <ResultRow key={i} r={r} template={replyTemplate} />
+            ))}
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}
+              onClick={() => { setResults([]); }}>Clear results</button>
+          </div>
+        )}
+
+        {/* Preview: all comments with match highlight */}
+        {comments !== null && results.length === 0 && (
+          <div className="card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>
+                {comments.length} comment{comments.length !== 1 ? 's' : ''} fetched
+                {keywords.trim() && ` · ${matched.length} match "${keywords}"`}
+              </div>
+              <button className="btn btn-ghost btn-xs" onClick={validate}>↻ Refresh</button>
+            </div>
+
+            {comments.length === 0 && (
+              <div className="empty"><div className="empty-icon">💬</div><div className="empty-msg">No comments on this post yet.</div></div>
+            )}
+
+            {comments.map((c, i) => {
+              const cid  = c._id || c.id || c.commentId;
+              const text = c.text || c.content || c.message || '';
+              const user = c.username || c.author || c.authorName || c.displayName || '?';
+              const isMatch = matchesKeywords(text, keywords, matchMode);
+              const alreadyReplied = getReplied().has(cid);
+
               return (
-                <div key={id} className={`cr-post-item ${active ? 'selected' : ''}`} onClick={() => selectPost(p)}>
-                  <div className="row mb4" style={{ gap: 5 }}>
-                    {(p.platforms || []).slice(0, 3).map((pl, i) => (
-                      <span key={i} style={{ fontSize: 10, fontWeight: 700, background: PLT_BG[pl.platform] || '#3f3f46', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>
-                        {PLT_ICON[pl.platform] || pl.platform}
-                      </span>
-                    ))}
-                    <span className={`badge ${st.cls}`} style={{ fontSize: 9, padding: '1px 6px', marginLeft: 'auto' }}>{st.label}</span>
+                <div key={cid || i} style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  marginBottom: 6,
+                  background: isMatch ? 'rgba(124,58,237,0.08)' : 'var(--hover)',
+                  border: `1px solid ${isMatch ? 'var(--accent)' : 'var(--border)'}`,
+                }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>
+                        @{user}
+                        {c.createdAt && <span style={{ marginLeft: 8 }}>{new Date(c.createdAt).toLocaleString()}</span>}
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--dim)', lineHeight: 1.5 }}>{text}</div>
+                      {isMatch && replyTemplate && (
+                        <div style={{ marginTop: 8, padding: '7px 10px', background: 'var(--accentb)', borderRadius: 6, fontSize: 12, color: 'var(--accentl)', borderLeft: '3px solid var(--accent)' }}>
+                          <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>REPLY PREVIEW</div>
+                          {replyTemplate.replace(/\{\{username\}\}/g, user)}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+                      {isMatch && (
+                        <span className="badge badge-purple" style={{ fontSize: 10 }}>MATCH</span>
+                      )}
+                      {alreadyReplied && (
+                        <span className="badge badge-green" style={{ fontSize: 10 }}>REPLIED</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="cr-post-preview">{p.content || id}</div>
-                  {p.scheduledFor && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{new Date(p.scheduledFor).toLocaleDateString()}</div>}
                 </div>
               );
             })}
           </div>
-        </div>
+        )}
 
-        {/* ── RIGHT: Automations + form ────────────────────────────────── */}
-        <div className="cr-rules">
-          <div className="cr-rules-header">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {selectedPost ? (
-                <>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>Comment Automations</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {(selectedPost.content || '').slice(0, 80)}
-                  </div>
-                </>
-              ) : (
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>← Select a post, or use "+ New" for any post</span>
-              )}
-            </div>
-            <button className="btn btn-primary btn-sm" onClick={openNew}>+ New Automation</button>
+        {comments === null && !fetching && (
+          <div className="empty" style={{ marginTop: 40 }}>
+            <div className="empty-icon">🔍</div>
+            <div className="empty-msg">Enter a post URL and click Validate to fetch comments</div>
           </div>
-
-          <div className="cr-rules-body">
-
-            {/* ── Inline form ──────────────────────────────────────────── */}
-            {formOpen && (
-              <div className="rule-form mb16">
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
-                  {editingId ? 'Edit Automation' : '+ New Comment-to-DM Automation'}
-                </div>
-
-                <div className="field">
-                  <label>Name</label>
-                  <input className="input" placeholder="e.g. FREE keyword — Ads Playbook"
-                    value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div className="field" style={{ marginBottom: 0 }}>
-                    <label>📸 Account (IG / FB only)</label>
-                    <select className="select" value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))}>
-                      <option value="">— select —</option>
-                      {eligibleAccounts.map(a => (
-                        <option key={a._id} value={a._id}>{a.platform} @{a.username || a.displayName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field" style={{ marginBottom: 0 }}>
-                    <label>Trigger Keywords <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(leave blank = ALL)</span></label>
-                    <input className="input" placeholder="FREE, GUIDE, LINK — comma-separated"
-                      value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} />
-                  </div>
-                </div>
-
-                <div className="field mt12">
-                  <label>Platform Post ID <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(IG/FB native post ID or URL)</span></label>
-                  <input className="input" placeholder="e.g. 17846368219941196 or paste the post URL"
-                    value={form.platformPostId} onChange={e => setForm(f => ({ ...f, platformPostId: e.target.value }))} />
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                    Find this in your IG/FB post URL or Zernio dashboard → Posts → copy the platform post ID
-                  </div>
-                </div>
-
-                {/* DM template selector */}
-                <div className="field">
-                  <label>📩 DM Message <span style={{ color: 'var(--redl)', fontWeight: 400 }}>*required</span></label>
-                  {dmTemplates.length > 0 && (
-                    <div className="row mb8" style={{ gap: 6 }}>
-                      <select className="select" style={{ flex: 1 }} value={dmTplId}
-                        onChange={e => applyDmTpl(e.target.value)}>
-                        <option value="">— load from template —</option>
-                        {dmTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  <textarea className="textarea" style={{ minHeight: 90 }}
-                    placeholder="Hey {{firstName}}! Here's your free guide 👉 https://..."
-                    value={form.dmMessage} onChange={e => setForm(f => ({ ...f, dmMessage: e.target.value }))} />
-                  <div className="char-count">{form.dmMessage.length} chars</div>
-                </div>
-
-                {/* Comment reply (optional) */}
-                <div className="field">
-                  <label>💬 Comment Reply <span style={{ color: 'var(--muted)', fontWeight: 400 }}>optional — public reply to the comment</span></label>
-                  {replyTemplates.length > 0 && (
-                    <div className="row mb8" style={{ gap: 6 }}>
-                      <select className="select" style={{ flex: 1 }} value={replyTplId}
-                        onChange={e => applyReplyTpl(e.target.value)}>
-                        <option value="">— load from template —</option>
-                        {replyTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  <input className="input" placeholder="Check your DMs! 📩"
-                    value={form.commentReply} onChange={e => setForm(f => ({ ...f, commentReply: e.target.value }))} />
-                </div>
-
-                <div className="row-end">
-                  <button className="btn btn-ghost btn-sm" onClick={resetForm}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
-                    {submitting ? <><span className="spinner" style={{ marginRight: 7 }} />Saving…</> : (editingId ? 'Update' : '🚀 Create Automation')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Automations for selected post ────────────────────────── */}
-            {selectedPost && autoLoading && <div className="loading-row"><span className="spinner" />Loading…</div>}
-            {selectedPost && !autoLoading && !automations.length && !formOpen && (
-              <div className="empty" style={{ marginTop: 24 }}>
-                <div className="empty-icon" style={{ fontSize: 26 }}>💬</div>
-                <div className="empty-msg">No automations for this post yet.</div>
-                <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={openNew}>+ Add First Automation</button>
-              </div>
-            )}
-
-            {automations.map(a => (
-              <div key={a._id || a.id} className={`rule-card ${a.isActive ? 'active' : 'paused'}`}>
-                <div className="rule-header">
-                  <span className="rule-keyword">{a.keywords || 'ALL COMMENTS'}</span>
-                  <span className={`badge ${a.isActive ? 'badge-green' : 'badge-neutral'}`} style={{ marginLeft: 'auto' }}>
-                    {a.isActive ? 'Active' : 'Paused'}
-                  </span>
-                </div>
-                <div className="rule-actions-row">
-                  {a.commentReply && (
-                    <div className="rule-action-line">
-                      <span className="rule-action-icon">💬</span>
-                      <div style={{ fontSize: 12, color: 'var(--dim)' }}>{a.commentReply}</div>
-                    </div>
-                  )}
-                  <div className="rule-action-line">
-                    <span className="rule-action-icon">📩</span>
-                    <div style={{ fontSize: 12, color: 'var(--dim)' }}>{a.dmMessage}</div>
-                  </div>
-                </div>
-                {(a.totalTriggers !== undefined || a.successCount !== undefined) && (
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                    {a.totalTriggers ?? 0} triggers · {a.successCount ?? 0} DMs sent
-                  </div>
-                )}
-                <div className="rule-footer">
-                  <button className="btn btn-ghost btn-xs" onClick={() => loadLogs(a._id || a.id)}>
-                    {logsOpen === (a._id || a.id) ? 'Hide Logs' : 'Logs'}
-                  </button>
-                  <div className="toggle-wrap" onClick={() => toggleActive(a)}>
-                    <div className={`toggle ${a.isActive ? 'on' : ''}`} />
-                    <span className="toggle-label" style={{ fontSize: 11 }}>{a.isActive ? 'On' : 'Off'}</span>
-                  </div>
-                  <button className="btn btn-ghost btn-xs" onClick={() => openEdit(a)}>Edit</button>
-                  <button className="btn btn-danger btn-xs" style={{ marginLeft: 'auto' }}
-                    onClick={() => deleteAuto(a._id || a.id)} disabled={deleting === (a._id || a.id)}>
-                    {deleting === (a._id || a.id) ? '…' : 'Delete'}
-                  </button>
-                </div>
-                {logsOpen === (a._id || a.id) && (
-                  <div style={{ marginTop: 10 }}>
-                    {(logs[a._id || a.id] || []).length === 0
-                      ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>No triggers logged yet.</div>
-                      : (logs[a._id || a.id] || []).slice(0, 20).map((l, i) => (
-                        <div key={i} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, marginBottom: 3, background: '#09090b', display: 'flex', gap: 8 }}>
-                          <span style={{ color: l.status === 'sent' ? 'var(--greenl)' : 'var(--redl)' }}>●</span>
-                          <span style={{ color: 'var(--dim)' }}>@{l.username || l.commenterUsername || '?'}</span>
-                          <span style={{ color: 'var(--muted)' }}>"{(l.comment || '').slice(0, 50)}"</span>
-                          <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{l.createdAt ? new Date(l.createdAt).toLocaleString() : ''}</span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function ResultRow({ r, template }) {
+  const c    = r.comment;
+  const text = c.text || c.content || c.message || '';
+  const user = c.username || c.author || c.authorName || '?';
+  const colorMap = { replied: 'var(--greenl)', error: 'var(--redl)', skipped: 'var(--muted)' };
+  const iconMap  = { replied: '✓', error: '✗', skipped: '–' };
+
+  return (
+    <div style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
+      <span style={{ color: colorMap[r.status], fontSize: 14, fontWeight: 700, flexShrink: 0, minWidth: 16 }}>{iconMap[r.status]}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>@{user}</div>
+        <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{text.slice(0, 100)}</div>
+        {r.status === 'replied' && (
+          <div style={{ fontSize: 11, color: 'var(--accentl)', marginTop: 3 }}>
+            ↩ {template.slice(0, 80)}
+          </div>
+        )}
+        {r.error && <div style={{ fontSize: 11, color: 'var(--redl)', marginTop: 3 }}>{r.error}</div>}
+      </div>
+      <span style={{ fontSize: 11, color: colorMap[r.status], flexShrink: 0 }}>{r.status}</span>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Instagram / Facebook — native /api/v1/comment-automations
+// ══════════════════════════════════════════════════════════════════════════════
+function IGFBTab({ accounts, showToast }) {
+  const [automations, setAutomations] = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [form, setForm]               = useState({ name: '', accountId: '', platformPostId: '', keywords: '', dmMessage: '', commentReply: '' });
+  const [formOpen, setFormOpen]       = useState(false);
+  const [editId, setEditId]           = useState(null);
+  const [saving, setSaving]           = useState(false);
+  const [deleting, setDeleting]       = useState(null);
+  const [connectUrls, setConnectUrls] = useState({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await api.getCommentAutomations(PROFILE_ID);
+      setAutomations(d.automations || []);
+    } catch (e) {
+      showToast(e.message, false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!PROFILE_ID) return;
+    Promise.all(['instagram','facebook'].map(p =>
+      api.getConnectUrl(p, PROFILE_ID).then(d => ({ p, url: d.authUrl || d.url })).catch(() => null)
+    )).then(res => {
+      const m = {};
+      res.forEach(r => r && (m[r.p] = r.url));
+      setConnectUrls(m);
+    });
+  }, []);
+
+  const save = async () => {
+    if (!form.name.trim() || !form.accountId || !form.platformPostId.trim() || !form.dmMessage.trim()) {
+      showToast('Fill in all required fields', false); return;
+    }
+    setSaving(true);
+    const body = { name: form.name.trim(), profileId: PROFILE_ID, accountId: form.accountId, platformPostId: form.platformPostId.trim(), dmMessage: form.dmMessage.trim() };
+    if (form.keywords.trim())     body.keywords     = form.keywords.trim();
+    if (form.commentReply.trim()) body.commentReply = form.commentReply.trim();
+    try {
+      if (editId) { await api.updateCommentAutomation(editId, body); showToast('Updated ✓'); }
+      else        { await api.createCommentAutomation(body); showToast('Automation live ✓'); }
+      setFormOpen(false); setEditId(null);
+      load();
+    } catch (e) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const del = async (id) => {
+    if (!confirm('Delete automation?')) return;
+    setDeleting(id);
+    try { await api.deleteCommentAutomation(id); showToast('Deleted'); load(); }
+    catch (e) { showToast(e.message, false); }
+    finally { setDeleting(null); }
+  };
+
+  const toggle = async (a) => {
+    try { await api.updateCommentAutomation(a._id, { isActive: !a.isActive }); showToast(a.isActive ? 'Paused' : 'Activated ✓'); load(); }
+    catch (e) { showToast(e.message, false); }
+  };
+
+  if (!accounts.length) return (
+    <div className="card">
+      <div style={{ fontWeight: 600, color: 'var(--redl)', marginBottom: 10 }}>⚠️ Connect Instagram or Facebook first</div>
+      <div style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 14 }}>Comment-to-DM automations require a Meta platform account.</div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {connectUrls.instagram && <a href={connectUrls.instagram} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">📸 Connect Instagram</a>}
+        {connectUrls.facebook  && <a href={connectUrls.facebook}  target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">f Connect Facebook</a>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{automations.length} automation{automations.length !== 1 ? 's' : ''}</span>
+        <button className="btn btn-primary btn-sm" onClick={() => { setForm({ name: '', accountId: accounts[0]?._id || '', platformPostId: '', keywords: '', dmMessage: '', commentReply: '' }); setEditId(null); setFormOpen(true); }}>+ New</button>
+      </div>
+
+      {formOpen && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>{editId ? 'Edit' : 'New'} Comment-to-DM Automation</div>
+          <div className="field"><label>Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. FREE keyword — Ads Playbook" /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>IG / FB Account</label>
+              <select className="select" value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))}>
+                {accounts.map(a => <option key={a._id} value={a._id}>{a.platform} @{a.displayName || a.username}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Keywords (comma-sep, blank = all)</label>
+              <input className="input" value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} placeholder="FREE, GUIDE" />
+            </div>
+          </div>
+          <div className="field" style={{ marginTop: 10 }}>
+            <label>Platform Post ID</label>
+            <input className="input" value={form.platformPostId} onChange={e => setForm(f => ({ ...f, platformPostId: e.target.value }))} placeholder="Native IG/FB post ID" />
+          </div>
+          <div className="field">
+            <label>DM Message <span style={{ color: 'var(--redl)' }}>*</span></label>
+            <textarea className="textarea" value={form.dmMessage} onChange={e => setForm(f => ({ ...f, dmMessage: e.target.value }))} placeholder="Hey {{firstName}}! Here's your guide 👉 https://..." />
+          </div>
+          <div className="field">
+            <label>Comment Reply (optional — public)</label>
+            <input className="input" value={form.commentReply} onChange={e => setForm(f => ({ ...f, commentReply: e.target.value }))} placeholder="Check your DMs! 📩" />
+          </div>
+          <div className="row-end">
+            <button className="btn btn-ghost btn-sm" onClick={() => setFormOpen(false)}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : (editId ? 'Update' : '🚀 Create')}</button>
+          </div>
+        </div>
+      )}
+
+      {loading && <div className="loading-row"><span className="spinner" />Loading…</div>}
+      {!loading && !automations.length && !formOpen && (
+        <div className="empty"><div className="empty-icon">💬</div><div className="empty-msg">No automations yet</div></div>
+      )}
+
+      {automations.map(a => (
+        <div key={a._id} className="card" style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{a.name}</span>
+            <span className={`badge ${a.isActive ? 'badge-green' : 'badge-neutral'}`}>{a.isActive ? 'Active' : 'Paused'}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{a.keywords || 'ALL COMMENTS'}</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>📩 {a.dmMessage}</div>
+          {a.commentReply && <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>💬 {a.commentReply}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-xs" onClick={() => toggle(a)}>{a.isActive ? 'Pause' : 'Activate'}</button>
+            <button className="btn btn-ghost btn-xs" onClick={() => { setForm({ name: a.name, accountId: a.accountId, platformPostId: a.platformPostId, keywords: a.keywords || '', dmMessage: a.dmMessage, commentReply: a.commentReply || '' }); setEditId(a._id); setFormOpen(true); }}>Edit</button>
+            <button className="btn btn-danger btn-xs" style={{ marginLeft: 'auto' }} onClick={() => del(a._id)} disabled={deleting === a._id}>{deleting === a._id ? '…' : 'Delete'}</button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

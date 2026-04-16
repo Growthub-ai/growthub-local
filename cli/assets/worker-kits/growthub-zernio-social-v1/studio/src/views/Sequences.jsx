@@ -8,6 +8,7 @@ export default function Sequences({ onNavigate }) {
   const [loading, setLoading]     = useState(true);
   const [toggling, setToggling]   = useState(null);
   const [expanded, setExpanded]   = useState(null);
+  const [details, setDetails]     = useState({}); // id → full sequence with steps
 
   const load = useCallback(() => {
     api.getSequences()
@@ -15,6 +16,17 @@ export default function Sequences({ onNavigate }) {
       .catch(e => showToast(e.message, false))
       .finally(() => setLoading(false));
   }, []);
+
+  const expand = async (id) => {
+    if (expanded === id) { setExpanded(null); return; }
+    setExpanded(id);
+    if (details[id]) return;
+    try {
+      const d = await api.getSequence(id);
+      const seq = d.sequence || d;
+      setDetails(prev => ({ ...prev, [id]: seq }));
+    } catch {}
+  };
 
   useEffect(load, [load]);
 
@@ -81,13 +93,18 @@ export default function Sequences({ onNavigate }) {
           <div className="section-title" style={{ marginBottom: 2 }}>{sequences.length} Sequence{sequences.length !== 1 ? 's' : ''}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>Multi-step follow-up flows enrolled from comment automations</div>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+          <button className="btn btn-primary btn-sm" onClick={() => onNavigate?.('commentrules')}>+ New</button>
+        </div>
       </div>
 
       {sequences.map(seq => {
         const id       = seq._id || seq.id;
         const isActive = seq.status === 'active';
-        const steps    = seq.steps || seq.messages || [];
+        const detail   = details[id];
+        const steps    = detail?.steps || seq.steps || seq.messages || [];
+        const stepsCount = seq.stepsCount ?? steps.length;
         const isExpanded = expanded === id;
 
         return (
@@ -98,8 +115,8 @@ export default function Sequences({ onNavigate }) {
                 <span className={`badge ${isActive ? 'badge-green' : 'badge-neutral'}`}>{seq.status || 'unknown'}</span>
               </div>
               <div className="row" style={{ gap: 8 }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(e => e === id ? null : id)}>
-                  {isExpanded ? 'Hide Steps' : `${steps.length} Steps`}
+                <button className="btn btn-ghost btn-sm" onClick={() => expand(id)}>
+                  {isExpanded ? 'Hide Steps' : `${stepsCount} Step${stepsCount !== 1 ? 's' : ''}`}
                 </button>
                 <div className="toggle-wrap" onClick={() => !toggling && toggle(seq)}>
                   <div className={`toggle ${isActive ? 'on' : ''}`} />
@@ -109,9 +126,10 @@ export default function Sequences({ onNavigate }) {
             </div>
 
             <div className="seq-meta">
-              {seq.enrolledCount !== undefined && <span>👥 {seq.enrolledCount} enrolled</span>}
-              {seq.completedCount !== undefined && <span>✅ {seq.completedCount} completed</span>}
-              {seq.trigger && <span>🎯 Trigger: <span style={{ fontFamily: 'monospace', color: 'var(--accentl)' }}>{seq.trigger}</span></span>}
+              <span>👥 {detail?.totalEnrolled ?? seq.totalEnrolled ?? 0} enrolled</span>
+              <span>✅ {detail?.totalCompleted ?? seq.totalCompleted ?? 0} completed</span>
+              <span>🚪 {detail?.totalExited ?? seq.totalExited ?? 0} exited</span>
+              <span>📱 {seq.platform || 'linkedin'}</span>
               {seq.createdAt && <span>Created {new Date(seq.createdAt).toLocaleDateString()}</span>}
             </div>
 
@@ -121,27 +139,35 @@ export default function Sequences({ onNavigate }) {
 
             {isExpanded && steps.length > 0 && (
               <div className="seq-steps">
-                {steps.map((step, i) => (
-                  <div key={i} className="seq-step">
-                    <span className="seq-step-num">{i + 1}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 500, marginBottom: 2 }}>
-                        {step.type === 'send_dm' ? '📩' : step.type === 'reply_comment' ? '💬' : '📬'}{' '}
-                        {step.name || step.type || 'Step'}
-                        {step.delayDays ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · Day {step.delayDays}</span> : null}
-                        {step.delayHours ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · +{step.delayHours}h</span> : null}
-                      </div>
-                      {step.content && (
-                        <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>
-                          "{step.content.slice(0, 100)}{step.content.length > 100 ? '…' : ''}"
+                {steps.map((step, i) => {
+                  const text = step.template?.components?.[0]?.text ||
+                               step.content || step.message || step.body || '';
+                  const delayMin = step.delayMinutes ?? (step.delay && step.delayUnit === 'minutes' ? step.delay : null);
+                  const delayDay = step.delayDays ?? (step.delay && step.delayUnit === 'days' ? step.delay : null);
+                  return (
+                    <div key={i} className="seq-step">
+                      <span className="seq-step-num">{step.order ?? i + 1}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 500, marginBottom: 2 }}>
+                          📩 Message
+                          {delayDay ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · Day {delayDay}</span> : null}
+                          {!delayDay && delayMin === 0 ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · Instant</span> : null}
                         </div>
-                      )}
+                        {text && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>
+                            "{text.slice(0, 120)}{text.length > 120 ? '…' : ''}"
+                          </div>
+                        )}
+                      </div>
+                      <span className="badge badge-green" style={{ fontSize: 10 }}>active</span>
                     </div>
-                    <span className={`badge ${step.status === 'active' ? 'badge-green' : 'badge-neutral'}`} style={{ fontSize: 10 }}>
-                      {step.status || 'active'}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
+              </div>
+            )}
+            {isExpanded && !steps.length && !detail && (
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                <span className="spinner" style={{ marginRight: 6 }} />Loading steps…
               </div>
             )}
 
