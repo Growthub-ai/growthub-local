@@ -16,6 +16,7 @@ Use it as the canonical lane for:
 | Custom Workspace Kernel Packet | `v1` | `./KERNEL_PACKET_CUSTOM_WORKSPACES.md` |
 | Agent Harness Kernel Packet | `v1` | `./KERNEL_PACKET_AGENT_HARNESS.md` |
 | Hosted SaaS Kit Kernel Packet | `v1` | `./KERNEL_PACKET_HOSTED_SAAS_KIT.md` |
+| Fork Sync Agent Kernel Packet | `v1` | `./KERNEL_PACKET_FORK_SYNC_AGENT.md` |
 
 ## Packet Relationships
 

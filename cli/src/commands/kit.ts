@@ -14,6 +14,7 @@ import {
   type KitDownloadProgress,
 } from "../kits/service.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
+import { registerKitForkSubcommands } from "./kit-fork.js";
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -433,7 +434,7 @@ function runInspect(kitId: string, outDir?: string): void {
 export function registerKitCommands(program: Command): void {
   const kit = program
     .command("kit")
-    .description("Browse, inspect, and download Growthub Agent Worker Kits")
+    .description("Browse, inspect, download, and fork Growthub Agent Worker Kits")
     .addHelpText("after", `
 Examples:
   $ growthub kit                          # interactive browser
@@ -444,6 +445,12 @@ Examples:
   $ growthub kit download growthub-open-higgsfield-studio-v1
   $ growthub kit inspect higgsfield-studio-v1
   $ growthub kit families                 # show family taxonomy
+
+Fork Sync Agent:
+  $ growthub kit fork                     # interactive fork-sync hub
+  $ growthub kit fork register ./my-fork  # register a forked kit
+  $ growthub kit fork status <fork-id>    # detect drift
+  $ growthub kit fork heal <fork-id>      # self-healing sync
 `);
 
   // Default action — interactive picker
@@ -640,4 +647,7 @@ Examples:
       console.log(pc.dim("  growthub kit list --family <family>  to filter by internal family"));
       console.log("");
     });
+
+  // ── fork (Fork Sync Agent sub-tree) ──────────────────────────────────────
+  registerKitForkSubcommands(kit);
 }
