@@ -63,6 +63,7 @@ import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.j
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
+import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -847,6 +848,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Connect GitHub — powers one-click fork creation & remote heal sync",
         },
         {
+          value: "service-status",
+          label: "🟢 Service Status",
+          hint: "Statuspage-style health of every mission-critical service the CLI depends on",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -1066,6 +1072,11 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "github") {
       const { githubWhoami } = await import("./commands/github.js");
       await githubWhoami({});
+      continue;
+    }
+
+    if (surfaceChoice === "service-status") {
+      await runStatuspage({});
       continue;
     }
 
@@ -1294,6 +1305,7 @@ registerSharedCommands(program);
 registerKitForkCommands(program);
 registerGithubCommands(program);
 registerIntegrationsCommands(program);
+registerStatusCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

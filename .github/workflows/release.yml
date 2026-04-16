@@ -54,6 +54,15 @@ jobs:
       - name: Freeze check
         run: bash ./scripts/freeze-check.sh
 
+      - name: Agent Harness kernel packet
+        run: bash ./scripts/check-agent-harness-kernel.sh
+
+      - name: Custom Workspace kernel packet
+        run: bash ./scripts/check-custom-workspace-kernel.sh
+
+      - name: Fork Sync Agent kernel packet
+        run: node ./scripts/check-fork-sync.mjs
+
       - name: Release check
         run: node ./scripts/release-check.mjs
 

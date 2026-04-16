@@ -38,5 +38,14 @@ jobs:
       - name: Validate bundled worker kit contracts
         run: node scripts/check-worker-kits.mjs
 
+      - name: Validate Agent Harness kernel packet
+        run: bash scripts/check-agent-harness-kernel.sh
+
+      - name: Validate Custom Workspace kernel packet
+        run: bash scripts/check-custom-workspace-kernel.sh
+
+      - name: Validate Fork Sync Agent kernel packet
+        run: node scripts/check-fork-sync.mjs
+
       - name: Validate release packaging
         run: node scripts/release-check.mjs

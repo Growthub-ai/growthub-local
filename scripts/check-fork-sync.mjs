@@ -90,6 +90,12 @@ const requiredFiles = [
   "cli/src/__tests__/fork-policy.test.ts",
   "cli/src/__tests__/fork-trace.test.ts",
   "cli/src/__tests__/integrations-github-resolver.test.ts",
+  "cli/src/status/types.ts",
+  "cli/src/status/probes.ts",
+  "cli/src/status/runner.ts",
+  "cli/src/commands/status.ts",
+  ".github/workflows/ci.yml",
+  ".github/workflows/release.yml",
 ];
 for (const file of requiredFiles) checkFileExists(file);
 
@@ -349,6 +355,72 @@ checkFileContains("cli/src/index.ts",
   "registerGithubCommands",
   "🐙 GitHub Integration",
   "surfaceChoice === \"github\"",
+);
+
+// ---------------------------------------------------------------------------
+// 16. Statuspage subsystem (self-contained + wired)
+// ---------------------------------------------------------------------------
+console.log("\n── 16. Statuspage subsystem ─────────────────────────────────────────────");
+checkFileContains("cli/src/status/types.ts",
+  "ServiceStatusLevel",
+  "StatuspageComponent",
+  "ServiceProbeResult",
+  "StatuspageReport",
+  "StatuspageRunOptions",
+);
+checkFileContains("cli/src/status/probes.ts",
+  "probeGithubApi",
+  "probeNpmRegistry",
+  "probeGrowthubHosted",
+  "probeIntegrationsBridge",
+  "probeGithubDirectAuth",
+  "probeKitForksIndex",
+  "probeBundledKits",
+  "probeGit",
+  "probeNode",
+  "probeReleaseBundleArtifacts",
+);
+checkFileContains("cli/src/status/runner.ts",
+  "STATUSPAGE_REGISTRY",
+  "runStatuspageReport",
+  "aggregateLevel",
+);
+checkFileContains("cli/src/commands/status.ts",
+  "registerStatusCommands",
+  "runStatuspage",
+  "--super-admin",
+  "overallBanner",
+);
+checkFileContains("cli/src/index.ts",
+  "registerStatusCommands",
+  "🟢 Service Status",
+  "surfaceChoice === \"service-status\"",
+);
+
+// ---------------------------------------------------------------------------
+// 17. CI / release workflows enforce kernel packets
+// ---------------------------------------------------------------------------
+console.log("\n── 17. CI / release workflow enforcement ────────────────────────────────");
+checkFileContains(".github/workflows/ci.yml",
+  "check-fork-sync.mjs",
+  "check-agent-harness-kernel.sh",
+  "check-custom-workspace-kernel.sh",
+);
+checkFileContains(".github/workflows/release.yml",
+  "check-fork-sync.mjs",
+  "check-agent-harness-kernel.sh",
+  "check-custom-workspace-kernel.sh",
+);
+
+// ---------------------------------------------------------------------------
+// 18. Demo CLI ↔ real CLI parity
+// ---------------------------------------------------------------------------
+console.log("\n── 18. Demo CLI parity ──────────────────────────────────────────────────");
+checkFileContains("scripts/cli-demo.mjs",
+  "fork-sync",
+  "github-integration",
+  "integrations-bridge",
+  "service-status",
 );
 
 // ---------------------------------------------------------------------------
