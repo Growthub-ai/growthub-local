@@ -24,6 +24,7 @@
   ],
   "frozenAssetPaths": [
     "QUICKSTART.md",
+    ".env.example",
     "skills.md",
     "output-standards.md",
     "runtime-assumptions.md",
@@ -63,6 +64,7 @@
     "requiredPaths": [
       "QUICKSTART.md",
       "kit.json",
+      ".env.example",
       "bundles/growthub-custom-workspace-starter-v1.json",
       "skills.md",
       "workers/custom-workspace-operator/CLAUDE.md",
