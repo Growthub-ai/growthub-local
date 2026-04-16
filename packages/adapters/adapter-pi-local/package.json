@@ -1,0 +1,17 @@
+{
+  "name": "@paperclipai/adapter-pi-local",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts",
+    "./ui": "./src/ui.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@paperclipai/adapter-utils": "workspace:*"
+  }
+}
