@@ -418,6 +418,69 @@ checkFileContains("scripts/cli-demo.mjs",
   "integrations-bridge",
   "service-status",
   "custom-workspace-starter",
+  "fleet-ops",
+);
+
+// ---------------------------------------------------------------------------
+// 20. Fleet-level fork operations subsystem
+// ---------------------------------------------------------------------------
+console.log("\n── 20. Fleet operations subsystem ───────────────────────────────────────");
+checkFileExists("cli/src/fleet/types.ts");
+checkFileExists("cli/src/fleet/summary.ts");
+checkFileExists("cli/src/fleet/drift-summary.ts");
+checkFileExists("cli/src/fleet/approvals.ts");
+checkFileExists("cli/src/fleet/agent-plan.ts");
+checkFileExists("cli/src/commands/fleet.ts");
+
+checkFileContains("cli/src/fleet/types.ts",
+  "ForkHealthLevel",
+  "ForkSummary",
+  "FleetSummary",
+  "DriftArtifactSummary",
+  "ApprovalQueueEntry",
+  "AgentHealPlanDocument",
+);
+checkFileContains("cli/src/fleet/summary.ts",
+  "buildForkSummary",
+  "buildFleetSummary",
+  "listKitForkRegistrations",
+  "detectKitForkDrift",
+  "readKitForkPolicy",
+  "listKitForkSyncJobs",
+);
+checkFileContains("cli/src/fleet/drift-summary.ts",
+  "buildDriftArtifactSummary",
+  "summariseArtifactSummaryAsNarrative",
+  "safeAdditions",
+  "safeUpdates",
+  "skippedUserModified",
+  "skippedUntouchable",
+  "needsConfirmation",
+  "unresolvedUpstreamDeletion",
+);
+checkFileContains("cli/src/fleet/approvals.ts",
+  "buildApprovalQueue",
+  "awaiting_confirmation",
+);
+checkFileContains("cli/src/fleet/agent-plan.ts",
+  "buildAgentHealPlanDocument",
+  "agent_checkpoint",
+  "buildKitForkHealPlan",
+  "detectKitForkDrift",
+);
+checkFileContains("cli/src/commands/fleet.ts",
+  "registerFleetCommands",
+  "fleetView",
+  "fleetDrift",
+  "fleetDriftSummary",
+  "fleetPolicy",
+  "fleetApprovals",
+  "fleetAgentPlan",
+);
+checkFileContains("cli/src/index.ts",
+  "registerFleetCommands",
+  "🚢 Fleet Operations",
+  "surfaceChoice === \"fleet-ops\"",
 );
 
 // ---------------------------------------------------------------------------

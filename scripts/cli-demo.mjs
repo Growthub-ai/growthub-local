@@ -325,6 +325,11 @@ async function runInteractive() {
         label: "🧪 Custom Workspace Starter Preview",
         hint: "Invoke `growthub starter init --help` against this branch CLI binary",
       },
+      {
+        value: "fleet-ops",
+        label: "🚢 Fleet Operations Preview",
+        hint: "Invoke `growthub fleet view` against this branch CLI binary",
+      },
     ],
   });
 
@@ -388,6 +393,10 @@ async function runInteractive() {
 
   if (choice === "custom-workspace-starter") {
     runCli(["starter", "init", "--help"]);
+  }
+
+  if (choice === "fleet-ops") {
+    runCli(["fleet", "view"]);
   }
 
   runCli([]);

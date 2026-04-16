@@ -65,6 +65,7 @@ import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
+import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -859,6 +860,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring",
         },
         {
+          value: "fleet-ops",
+          label: "🚢 Fleet Operations",
+          hint: "Fleet-level fork view · drift · policy matrix · approvals · agent-led plans",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -1101,6 +1107,11 @@ async function runDiscoveryHub(opts?: {
       continue;
     }
 
+    if (surfaceChoice === "fleet-ops") {
+      await fleetView({});
+      continue;
+    }
+
     if (surfaceChoice === "kits") {
       const result = await runInteractivePicker({ allowBackToHub: true });
       if (result === "back") continue;
@@ -1328,6 +1339,7 @@ registerGithubCommands(program);
 registerIntegrationsCommands(program);
 registerStatusCommands(program);
 registerStarterCommands(program);
+registerFleetCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {
