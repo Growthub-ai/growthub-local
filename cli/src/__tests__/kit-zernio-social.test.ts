@@ -202,12 +202,12 @@ describe("growthub-zernio-social-v1 — kit.json + bundle manifest", () => {
 });
 
 describe("growthub-zernio-social-v1 — docs + templates + examples", () => {
-  it("ships the five Zernio docs (including the Postiz UI shell integration recipe)", () => {
+  it("ships the five Zernio docs (including the exported Growthub UI shell guide)", () => {
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/zernio-api-integration.md"))).toBe(true);
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/platform-coverage.md"))).toBe(true);
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/ai-caption-layer.md"))).toBe(true);
     expect(fs.existsSync(path.join(KIT_ROOT, "docs/posts-and-queues-layer.md"))).toBe(true);
-    expect(fs.existsSync(path.join(KIT_ROOT, "docs/postiz-ui-shell-integration.md"))).toBe(true);
+    expect(fs.existsSync(path.join(KIT_ROOT, "docs/growthub-agentic-social-platform-ui-shell.md"))).toBe(true);
   });
 
   it("platform coverage doc references all 14 Zernio platform ids", () => {
@@ -268,33 +268,24 @@ describe("growthub-zernio-social-v1 — docs + templates + examples", () => {
     expect(doc).toContain("queueId");
   });
 
-  it("postiz UI shell integration doc defines all 7 bridge modules", () => {
-    const doc = readText("docs/postiz-ui-shell-integration.md");
-    // 7-module bridge
-    expect(doc).toContain("Module 1");
-    expect(doc).toContain("Module 2");
-    expect(doc).toContain("Module 3");
-    expect(doc).toContain("Module 4");
-    expect(doc).toContain("Module 5");
-    expect(doc).toContain("Module 6");
-    expect(doc).toContain("Module 7");
-    // Key integration contracts
-    expect(doc).toContain("ZernioProvider");
-    expect(doc).toContain("POST /api/v1/posts");
-    expect(doc).toContain("POST /api/v1/queues");
-    expect(doc).toContain("Idempotency-Key");
-    expect(doc).toContain("growthub-postiz-social-v1");
-    expect(doc).toContain("ZERNIO_API_KEY");
-    // What stays untouched — core integration principle
-    expect(doc).toContain("Postgres schema");
-    expect(doc).toContain("Redis queue runner");
+  it("growthub UI shell doc defines the exported workspace launch and validation flow", () => {
+    const doc = readText("docs/growthub-agentic-social-platform-ui-shell.md");
+    expect(doc).toContain("The user exports this worker kit from the CLI.");
+    expect(doc).toContain("the user works inside the exported folder");
+    expect(doc).toContain("studio/");
+    expect(doc).toContain("npm install");
+    expect(doc).toContain("npm run dev");
+    expect(doc).toContain("VITE_ZERNIO_API_URL");
+    expect(doc).toContain("VITE_ZERNIO_API_KEY");
+    expect(doc).toContain("VITE_ZERNIO_PROFILE_ID");
+    expect(doc).toContain("comment-automations");
   });
 
-  it("postiz integration doc is registered as a frozen + required asset", () => {
+  it("growthub UI shell doc is registered as a frozen + required asset", () => {
     const manifest = JSON.parse(readText("kit.json"));
     const bundle = JSON.parse(readText(`bundles/${KIT_ID}.json`));
-    expect(manifest.frozenAssetPaths).toContain("docs/postiz-ui-shell-integration.md");
-    expect(bundle.requiredFrozenAssets).toContain("docs/postiz-ui-shell-integration.md");
+    expect(manifest.frozenAssetPaths).toContain("docs/growthub-agentic-social-platform-ui-shell.md");
+    expect(bundle.requiredFrozenAssets).toContain("docs/growthub-agentic-social-platform-ui-shell.md");
   });
 });
 
@@ -477,31 +468,31 @@ describe("growthub-zernio-social-v1 — hosted-saas kernel packet alignment", ()
   });
 });
 
-describe("growthub-zernio-social-v1 — postiz UI shell companion surfacing", () => {
-  it("QUICKSTART.md advertises the postiz-ui-shell execution mode and links the integration doc", () => {
+describe("growthub-zernio-social-v1 — growthub UI shell surfacing", () => {
+  it("QUICKSTART.md advertises the growthub-ui-shell execution mode and links the exported UI-shell doc", () => {
     const quickstart = readText("QUICKSTART.md");
-    expect(quickstart).toContain("postiz-ui-shell");
-    expect(quickstart).toContain("docs/postiz-ui-shell-integration.md");
-    expect(quickstart).toContain("growthub-postiz-social-v1");
+    expect(quickstart).toContain("growthub-ui-shell");
+    expect(quickstart).toContain("docs/growthub-agentic-social-platform-ui-shell.md");
+    expect(quickstart).toContain("studio/");
   });
 
-  it("skills.md quick-reference table lists the postiz integration doc", () => {
+  it("skills.md quick-reference table lists the growthub UI-shell doc", () => {
     const skills = readText("skills.md");
-    expect(skills).toContain("docs/postiz-ui-shell-integration.md");
-    expect(skills).toContain("Postiz UI shell integration");
+    expect(skills).toContain("docs/growthub-agentic-social-platform-ui-shell.md");
+    expect(skills).toContain("Growthub Agentic UI shell");
   });
 
-  it("operator CLAUDE.md instructs reading the integration doc when pairing with Postiz", () => {
+  it("operator CLAUDE.md instructs reading the UI-shell doc when the request targets the exported workspace", () => {
     const claude = readText(`workers/${WORKER_ID}/CLAUDE.md`);
-    expect(claude).toContain("docs/postiz-ui-shell-integration.md");
-    expect(claude).toContain("Postiz UI shell");
+    expect(claude).toContain("docs/growthub-agentic-social-platform-ui-shell.md");
+    expect(claude).toContain("Growthub social UI shell");
   });
 
-  it("growthub-meta/README.md documents the recommended Social Media Stack pairing", () => {
+  it("growthub-meta/README.md documents the exported workspace truth", () => {
     const meta = readText("growthub-meta/README.md");
-    expect(meta).toContain("Social Media Stack");
-    expect(meta).toContain("growthub-postiz-social-v1");
-    expect(meta).toContain("docs/postiz-ui-shell-integration.md");
+    expect(meta).toContain("Exported Workspace Truth");
+    expect(meta).toContain("studio/");
+    expect(meta).toContain("exporting this workspace cleanly");
   });
 });
 
@@ -528,6 +519,10 @@ describe("growthub-zernio-social-v1 — env example + setup scripts", () => {
     expect(script).toContain("command -v node");
     expect(script).toContain("command -v curl");
     expect(script).toContain("command -v git");
+  });
+
+  it("ships the studio-side .env.example inside the exported UI shell", () => {
+    expect(fs.existsSync(path.join(KIT_ROOT, "studio/.env.example"))).toBe(true);
   });
 });
 

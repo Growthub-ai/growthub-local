@@ -583,7 +583,8 @@ var init_agent = __esm({
     });
     adapterConfigSchema = z6.record(z6.unknown()).superRefine((value, ctx) => {
       const envValue = value.env;
-      if (envValue === void 0) return;
+      if (envValue === void 0)
+        return;
       const parsed = envConfigSchema.safeParse(envValue);
       if (!parsed.success) {
         ctx.addIssue({
@@ -1171,9 +1172,11 @@ var init_access = __esm({
 import { z as z18 } from "zod";
 function isValidCronExpression(expression) {
   const trimmed = expression.trim();
-  if (!trimmed) return false;
+  if (!trimmed)
+    return false;
   const fields = trimmed.split(/\s+/);
-  if (fields.length !== 5) return false;
+  if (fields.length !== 5)
+    return false;
   return fields.every((f) => CRON_FIELD_PATTERN.test(f));
 }
 var jsonSchemaSchema, CRON_FIELD_PATTERN, pluginJobDeclarationSchema, pluginWebhookDeclarationSchema, pluginToolDeclarationSchema, pluginUiSlotDeclarationSchema, entityScopedLauncherPlacementZones, launcherBoundsByEnvironment, pluginLauncherActionDeclarationSchema, pluginLauncherRenderDeclarationSchema, pluginLauncherDeclarationSchema, pluginManifestV1Schema, installPluginSchema, upsertPluginConfigSchema, patchPluginConfigSchema, updatePluginStatusSchema, uninstallPluginSchema, pluginStateScopeKeySchema, setPluginStateSchema, listPluginStateSchema;
@@ -1183,7 +1186,8 @@ var init_plugin = __esm({
     init_constants();
     jsonSchemaSchema = z18.record(z18.unknown()).refine(
       (val) => {
-        if (Object.keys(val).length === 0) return true;
+        if (Object.keys(val).length === 0)
+          return true;
         return typeof val.type === "string" || val.$ref !== void 0 || val.oneOf !== void 0 || val.anyOf !== void 0 || val.allOf !== void 0;
       },
       { message: "Must be a valid JSON Schema object (requires at least a 'type', '$ref', or composition keyword)" }
@@ -1819,7 +1823,8 @@ function buildSurfaceRuntimeContract(profile = "dx") {
   });
 }
 function initializeSurfaceRuntimeContract(profile = "dx") {
-  if (runtimeContract && runtimeContract.profile === profile) return runtimeContract;
+  if (runtimeContract && runtimeContract.profile === profile)
+    return runtimeContract;
   runtimeContract = buildSurfaceRuntimeContract(profile);
   return runtimeContract;
 }
@@ -1846,7 +1851,8 @@ function mapGtmKnowledgeKind(sourceType) {
   return sourceType === "table" ? "table" : "item";
 }
 function formatConnectorLabel(type) {
-  if (!type?.trim()) return "Manual";
+  if (!type?.trim())
+    return "Manual";
   return humanizeToken(type);
 }
 function formatKnowledgeGroupLabel(table) {
@@ -1903,7 +1909,8 @@ function createDefaultGtmState(now = (/* @__PURE__ */ new Date()).toISOString())
 }
 function coerceGtmState(raw) {
   const fallback = createDefaultGtmState();
-  if (!raw || typeof raw !== "object") return fallback;
+  if (!raw || typeof raw !== "object")
+    return fallback;
   const candidate = raw;
   const fallbackItemTemplate = fallback.knowledge.table;
   const fallbackConnectorTemplate = fallback.connectors[0] ?? {
@@ -2089,7 +2096,8 @@ import os from "node:os";
 import path from "node:path";
 function resolvePaperclipHomeDir() {
   const envHome = process.env.PAPERCLIP_HOME?.trim();
-  if (envHome) return path.resolve(expandHomePrefix(envHome));
+  if (envHome)
+    return path.resolve(expandHomePrefix(envHome));
   return path.resolve(os.homedir(), ".paperclip");
 }
 function resolvePaperclipInstanceId(override) {
@@ -2127,8 +2135,10 @@ function resolveDefaultBackupDir(instanceId) {
   return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "backups");
 }
 function expandHomePrefix(value) {
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
+  if (value === "~")
+    return os.homedir();
+  if (value.startsWith("~/"))
+    return path.resolve(os.homedir(), value.slice(2));
   return value;
 }
 function describeLocalInstancePaths(instanceId) {
@@ -2167,14 +2177,17 @@ function findConfigFileFromAncestors(startDir) {
       return candidate;
     }
     const nextDir = path2.resolve(currentDir, "..");
-    if (nextDir === currentDir) break;
+    if (nextDir === currentDir)
+      break;
     currentDir = nextDir;
   }
   return null;
 }
 function resolveConfigPath(overridePath) {
-  if (overridePath) return path2.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONFIG) return path2.resolve(process.env.PAPERCLIP_CONFIG);
+  if (overridePath)
+    return path2.resolve(overridePath);
+  if (process.env.PAPERCLIP_CONFIG)
+    return path2.resolve(process.env.PAPERCLIP_CONFIG);
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath(resolvePaperclipInstanceId());
 }
 function parseJson(filePath) {
@@ -2185,7 +2198,8 @@ function parseJson(filePath) {
   }
 }
 function migrateLegacyConfig(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return raw;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return raw;
   const config = { ...raw };
   const databaseRaw = config.database;
   if (typeof databaseRaw !== "object" || databaseRaw === null || Array.isArray(databaseRaw)) {
@@ -2218,7 +2232,8 @@ function formatValidationError(err) {
 }
 function readConfig(configPath) {
   const filePath = resolveConfigPath(configPath);
-  if (!fs.existsSync(filePath)) return null;
+  if (!fs.existsSync(filePath))
+    return null;
   const raw = parseJson(filePath);
   const migrated = migrateLegacyConfig(raw);
   const parsed = paperclipConfigSchema.safeParse(migrated);
@@ -2296,8 +2311,10 @@ function loadPaperclipEnvFile(configPath) {
   loadAgentJwtEnvFile(resolveEnvFilePath(configPath));
 }
 function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()) {
-  if (loadedEnvFiles.has(filePath)) return;
-  if (!fs2.existsSync(filePath)) return;
+  if (loadedEnvFiles.has(filePath))
+    return;
+  if (!fs2.existsSync(filePath))
+    return;
   loadedEnvFiles.add(filePath);
   loadDotenv({ path: filePath, override: false, quiet: true });
 }
@@ -2307,7 +2324,8 @@ function readAgentJwtSecretFromEnv(configPath) {
   return isNonEmpty(raw) ? raw.trim() : null;
 }
 function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()) {
-  if (!fs2.existsSync(filePath)) return null;
+  if (!fs2.existsSync(filePath))
+    return null;
   const raw = fs2.readFileSync(filePath, "utf-8");
   const values = parseEnvFile(raw);
   const value = values[JWT_SECRET_ENV_KEY];
@@ -2331,7 +2349,8 @@ function writeAgentJwtEnv(secret, filePath = resolveEnvFilePath()) {
   mergePaperclipEnvEntries({ [JWT_SECRET_ENV_KEY]: secret }, filePath);
 }
 function readPaperclipEnvEntries(filePath = resolveEnvFilePath()) {
-  if (!fs2.existsSync(filePath)) return {};
+  if (!fs2.existsSync(filePath))
+    return {};
   return parseEnvFile(fs2.readFileSync(filePath, "utf-8"));
 }
 function writePaperclipEnvEntries(entries, filePath = resolveEnvFilePath()) {
@@ -2370,7 +2389,8 @@ function unique(items) {
 }
 function resolveRuntimeLikePath(value, configPath) {
   const expanded = expandHomePrefix(value);
-  if (path4.isAbsolute(expanded)) return path4.resolve(expanded);
+  if (path4.isAbsolute(expanded))
+    return path4.resolve(expanded);
   const cwd = process.cwd();
   const configDir = configPath ? path4.dirname(configPath) : null;
   const workspaceRoot = configDir ? path4.resolve(configDir, "..") : cwd;
@@ -2463,8 +2483,10 @@ async function promptDatabase(current) {
       defaultValue: base.connectionString ?? "",
       placeholder: "postgres://user:pass@localhost:5432/paperclip",
       validate: (val) => {
-        if (!val) return "Connection string is required for PostgreSQL mode";
-        if (!val.startsWith("postgres")) return "Must be a postgres:// or postgresql:// URL";
+        if (!val)
+          return "Connection string is required for PostgreSQL mode";
+        if (!val.startsWith("postgres"))
+          return "Must be a postgres:// or postgresql:// URL";
       }
     });
     if (p.isCancel(value)) {
@@ -2489,7 +2511,8 @@ async function promptDatabase(current) {
       placeholder: "54329",
       validate: (val) => {
         const n = Number(val);
-        if (!Number.isInteger(n) || n < 1 || n > 65535) return "Port must be an integer between 1 and 65535";
+        if (!Number.isInteger(n) || n < 1 || n > 65535)
+          return "Port must be an integer between 1 and 65535";
       }
     });
     if (p.isCancel(portValue)) {
@@ -2523,8 +2546,10 @@ async function promptDatabase(current) {
     placeholder: "60",
     validate: (val) => {
       const n = Number(val);
-      if (!Number.isInteger(n) || n < 1) return "Interval must be a positive integer";
-      if (n > 10080) return "Interval must be 10080 minutes (7 days) or less";
+      if (!Number.isInteger(n) || n < 1)
+        return "Interval must be a positive integer";
+      if (n > 10080)
+        return "Interval must be 10080 minutes (7 days) or less";
       return void 0;
     }
   });
@@ -2538,8 +2563,10 @@ async function promptDatabase(current) {
     placeholder: "30",
     validate: (val) => {
       const n = Number(val);
-      if (!Number.isInteger(n) || n < 1) return "Retention must be a positive integer";
-      if (n > 3650) return "Retention must be 3650 days or less";
+      if (!Number.isInteger(n) || n < 1)
+        return "Retention must be a positive integer";
+      if (n > 3650)
+        return "Retention must be 3650 days or less";
       return void 0;
     }
   });
@@ -2578,7 +2605,8 @@ async function promptLlm() {
     p2.cancel("Setup cancelled.");
     process.exit(0);
   }
-  if (!configureLlm) return void 0;
+  if (!configureLlm)
+    return void 0;
   const provider = await p2.select({
     message: "LLM provider",
     options: [
@@ -2593,7 +2621,8 @@ async function promptLlm() {
   const apiKey = await p2.password({
     message: `${provider === "claude" ? "Anthropic" : "OpenAI"} API key`,
     validate: (val) => {
-      if (!val) return "API key is required";
+      if (!val)
+        return "API key is required";
     }
   });
   if (p2.isCancel(apiKey)) {
@@ -2708,7 +2737,8 @@ async function promptSecrets(current) {
       defaultValue: keyFilePath,
       placeholder: fallbackDefault,
       validate: (value) => {
-        if (!value || value.trim().length === 0) return "Key file path is required";
+        if (!value || value.trim().length === 0)
+          return "Key file path is required";
       }
     });
     if (p4.isCancel(keyPath)) {
@@ -2786,7 +2816,8 @@ async function promptStorage(current) {
       defaultValue: base.localDisk.baseDir || defaultStorageBaseDir(),
       placeholder: defaultStorageBaseDir(),
       validate: (value) => {
-        if (!value || value.trim().length === 0) return "Storage base directory is required";
+        if (!value || value.trim().length === 0)
+          return "Storage base directory is required";
       }
     });
     if (p5.isCancel(baseDir)) {
@@ -2806,7 +2837,8 @@ async function promptStorage(current) {
     defaultValue: base.s3.bucket || "paperclip",
     placeholder: "paperclip",
     validate: (value) => {
-      if (!value || value.trim().length === 0) return "Bucket is required";
+      if (!value || value.trim().length === 0)
+        return "Bucket is required";
     }
   });
   if (p5.isCancel(bucket)) {
@@ -2818,7 +2850,8 @@ async function promptStorage(current) {
     defaultValue: base.s3.region || "us-east-1",
     placeholder: "us-east-1",
     validate: (value) => {
-      if (!value || value.trim().length === 0) return "Region is required";
+      if (!value || value.trim().length === 0)
+        return "Region is required";
     }
   });
   if (p5.isCancel(region)) {
@@ -2879,14 +2912,16 @@ function normalizeHostnameInput(raw) {
   try {
     const url = input.includes("://") ? new URL(input) : new URL(`http://${input}`);
     const hostname = url.hostname.trim().toLowerCase();
-    if (!hostname) throw new Error("Hostname is required");
+    if (!hostname)
+      throw new Error("Hostname is required");
     return hostname;
   } catch {
     throw new Error(`Invalid hostname: ${raw}`);
   }
 }
 function parseHostnameCsv(raw) {
-  if (!raw.trim()) return [];
+  if (!raw.trim())
+    return [];
   const unique3 = /* @__PURE__ */ new Set();
   for (const part of raw.split(",")) {
     const hostname = normalizeHostnameInput(part);
@@ -2956,7 +2991,8 @@ async function promptServer(opts) {
     defaultValue: currentServer?.host ?? hostDefault,
     placeholder: hostDefault,
     validate: (val) => {
-      if (!val.trim()) return "Host is required";
+      if (!val.trim())
+        return "Host is required";
     }
   });
   if (p6.isCancel(hostStr)) {
@@ -3008,7 +3044,8 @@ async function promptServer(opts) {
       placeholder: "https://paperclip.example.com",
       validate: (val) => {
         const candidate = val.trim();
-        if (!candidate) return "Public base URL is required for public exposure";
+        if (!candidate)
+          return "Public base URL is required for public exposure";
         try {
           const url = new URL(candidate);
           if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -5502,7 +5539,8 @@ function isSafeIdentifier(value) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 function quoteIdentifier(value) {
-  if (!isSafeIdentifier(value)) throw new Error(`Unsafe SQL identifier: ${value}`);
+  if (!isSafeIdentifier(value))
+    throw new Error(`Unsafe SQL identifier: ${value}`);
   return `"${value.replaceAll('"', '""')}"`;
 }
 function quoteLiteral(value) {
@@ -5537,10 +5575,13 @@ async function listJournalMigrationEntries() {
   try {
     const raw = await readFile(MIGRATIONS_JOURNAL_JSON, "utf8");
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.entries)) return [];
+    if (!Array.isArray(parsed.entries))
+      return [];
     return parsed.entries.map((entry, entryIndex) => {
-      if (typeof entry?.tag !== "string") return null;
-      if (typeof entry?.when !== "number" || !Number.isFinite(entry.when)) return null;
+      if (typeof entry?.tag !== "string")
+        return null;
+      if (typeof entry?.when !== "number" || !Number.isFinite(entry.when))
+        return null;
       const order = Number.isInteger(entry.idx) ? Number(entry.idx) : entryIndex;
       return { fileName: `${entry.tag}.sql`, folderMillis: entry.when, order };
     }).filter((entry) => entry !== null);
@@ -5561,10 +5602,14 @@ async function orderMigrationsByJournal(migrationFiles) {
   return [...migrationFiles].sort((left, right) => {
     const leftOrder = orderByFileName.get(left);
     const rightOrder = orderByFileName.get(right);
-    if (leftOrder === void 0 && rightOrder === void 0) return left.localeCompare(right);
-    if (leftOrder === void 0) return 1;
-    if (rightOrder === void 0) return -1;
-    if (leftOrder === rightOrder) return left.localeCompare(right);
+    if (leftOrder === void 0 && rightOrder === void 0)
+      return left.localeCompare(right);
+    if (leftOrder === void 0)
+      return 1;
+    if (rightOrder === void 0)
+      return -1;
+    if (leftOrder === rightOrder)
+      return left.localeCompare(right);
     return leftOrder - rightOrder;
   });
 }
@@ -5610,9 +5655,12 @@ async function ensureMigrationJournalTable(sql2) {
 }
 async function migrationHistoryEntryExists(sql2, qualifiedTable, columnNames, migrationFile, hash) {
   const predicates = [];
-  if (columnNames.has("hash")) predicates.push(`hash = ${quoteLiteral(hash)}`);
-  if (columnNames.has("name")) predicates.push(`name = ${quoteLiteral(migrationFile)}`);
-  if (predicates.length === 0) return false;
+  if (columnNames.has("hash"))
+    predicates.push(`hash = ${quoteLiteral(hash)}`);
+  if (columnNames.has("name"))
+    predicates.push(`name = ${quoteLiteral(migrationFile)}`);
+  if (predicates.length === 0)
+    return false;
   const rows = await sql2.unsafe(
     `SELECT 1 AS one FROM ${qualifiedTable} WHERE ${predicates.join(" OR ")} LIMIT 1`
   );
@@ -5635,13 +5683,15 @@ async function recordMigrationHistoryEntry(sql2, qualifiedTable, columnNames, mi
     insertColumns.push(quoteIdentifier("created_at"));
     insertValues.push(quoteLiteral(String(createdAt)));
   }
-  if (insertColumns.length === 0) return;
+  if (insertColumns.length === 0)
+    return;
   await sql2.unsafe(
     `INSERT INTO ${qualifiedTable} (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`
   );
 }
 async function applyPendingMigrationsManually(url, pendingMigrations) {
-  if (pendingMigrations.length === 0) return;
+  if (pendingMigrations.length === 0)
+    return;
   const orderedPendingMigrations = await orderMigrationsByJournal(pendingMigrations);
   const journalEntries = await listJournalMigrationEntries();
   const folderMillisByFileName = new Map(
@@ -5661,7 +5711,8 @@ async function applyPendingMigrationsManually(url, pendingMigrations) {
         migrationFile,
         hash
       );
-      if (existingEntry) continue;
+      if (existingEntry)
+        continue;
       await runInTransaction(sql2, async () => {
         for (const statement of splitMigrationStatements(migrationContent)) {
           await sql2.unsafe(statement);
@@ -5774,10 +5825,12 @@ async function migrationStatementAlreadyApplied(sql2, statement) {
 }
 async function migrationContentAlreadyApplied(sql2, migrationContent) {
   const statements = splitMigrationStatements(migrationContent);
-  if (statements.length === 0) return false;
+  if (statements.length === 0)
+    return false;
   for (const statement of statements) {
     const applied = await migrationStatementAlreadyApplied(sql2, statement);
-    if (!applied) return false;
+    if (!applied)
+      return false;
   }
   return true;
 }
@@ -5794,7 +5847,8 @@ async function loadAppliedMigrations(sql2, migrationTableSchema, availableMigrat
     const hashesToMigrationFiles = await mapHashesToMigrationFiles(availableMigrations);
     const appliedFromHashes = rows2.map((row) => hashesToMigrationFiles.get(row.hash)).filter((name) => Boolean(name));
     if (appliedFromHashes.length > 0) {
-      if (appliedFromHashes.length === rows2.length) return appliedFromHashes;
+      if (appliedFromHashes.length === rows2.length)
+        return appliedFromHashes;
       return appliedFromHashes;
     }
     if (columnNames.has("created_at")) {
@@ -5813,7 +5867,8 @@ async function loadAppliedMigrations(sql2, migrationTableSchema, availableMigrat
   const rows = await sql2.unsafe(`SELECT id FROM ${qualifiedTable} ORDER BY id`);
   const journalMigrationFiles = await listJournalMigrationFiles();
   const appliedFromIds = rows.map((row) => journalMigrationFiles[row.id - 1]).filter((name) => Boolean(name));
-  if (appliedFromIds.length > 0) return appliedFromIds;
+  if (appliedFromIds.length > 0)
+    return appliedFromIds;
   return availableMigrations.slice(0, Math.max(0, rows.length));
 }
 async function reconcilePendingMigrationHistory(url) {
@@ -5835,7 +5890,8 @@ async function reconcilePendingMigrationHistory(url) {
     for (const migrationFile of state.pendingMigrations) {
       const migrationContent = await readMigrationFileContent(migrationFile);
       const alreadyApplied = await migrationContentAlreadyApplied(sql2, migrationContent);
-      if (!alreadyApplied) break;
+      if (!alreadyApplied)
+        break;
       const hash = createHash("sha256").update(migrationContent).digest("hex");
       const folderMillis = folderMillisByFile.get(migrationFile) ?? Date.now();
       const existingByHash = columnNames.has("hash") ? await sql2.unsafe(
@@ -5876,7 +5932,8 @@ async function reconcilePendingMigrationHistory(url) {
         insertColumns.push(quoteIdentifier("created_at"));
         insertValues.push(quoteLiteral(String(folderMillis)));
       }
-      if (insertColumns.length === 0) break;
+      if (insertColumns.length === 0)
+        break;
       await sql2.unsafe(
         `INSERT INTO ${qualifiedTable} (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`
       );
@@ -5898,11 +5955,14 @@ async function discoverMigrationTableSchema(sql2) {
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE c.relname = ${DRIZZLE_MIGRATIONS_TABLE} AND c.relkind = 'r'
   `;
-  if (rows.length === 0) return null;
+  if (rows.length === 0)
+    return null;
   const drizzleSchema = rows.find(({ schemaName }) => schemaName === "drizzle");
-  if (drizzleSchema) return drizzleSchema.schemaName;
+  if (drizzleSchema)
+    return drizzleSchema.schemaName;
   const publicSchema = rows.find(({ schemaName }) => schemaName === "public");
-  if (publicSchema) return publicSchema.schemaName;
+  if (publicSchema)
+    return publicSchema.schemaName;
   return rows[0]?.schemaName ?? null;
 }
 async function inspectMigrations(url) {
@@ -5961,7 +6021,8 @@ async function inspectMigrations(url) {
 }
 async function applyPendingMigrations(url) {
   const initialState = await inspectMigrations(url);
-  if (initialState.status === "upToDate") return;
+  if (initialState.status === "upToDate")
+    return;
   if (initialState.reason === "no-migration-journal-empty-db") {
     const sql2 = createUtilitySql(url);
     try {
@@ -5971,7 +6032,8 @@ async function applyPendingMigrations(url) {
       await sql2.end();
     }
     const bootstrappedState = await inspectMigrations(url);
-    if (bootstrappedState.status === "upToDate") return;
+    if (bootstrappedState.status === "upToDate")
+      return;
     throw new Error(
       `Failed to bootstrap migrations: ${bootstrappedState.pendingMigrations.join(", ")}`
     );
@@ -5982,11 +6044,13 @@ async function applyPendingMigrations(url) {
     );
   }
   let state = await inspectMigrations(url);
-  if (state.status === "upToDate") return;
+  if (state.status === "upToDate")
+    return;
   const repair = await reconcilePendingMigrationHistory(url);
   if (repair.repairedMigrations.length > 0) {
     state = await inspectMigrations(url);
-    if (state.status === "upToDate") return;
+    if (state.status === "upToDate")
+      return;
   }
   if (state.status !== "needsMigrations" || state.reason !== "pending-migrations") {
     throw new Error("Migrations are still pending after migration-history reconciliation; run inspectMigrations for details.");
@@ -6032,7 +6096,8 @@ async function ensurePostgresDatabase(url, databaseName) {
     const existing = await sql2`
       select 1 as one from pg_database where datname = ${databaseName} limit 1
     `;
-    if (existing.length > 0) return "exists";
+    if (existing.length > 0)
+      return "exists";
     await sql2.unsafe(`create database "${databaseName}" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0`);
     return "created";
   } finally {
@@ -6071,12 +6136,14 @@ function timestamp56(date2 = /* @__PURE__ */ new Date()) {
   return `${date2.getFullYear()}${pad(date2.getMonth() + 1)}${pad(date2.getDate())}-${pad(date2.getHours())}${pad(date2.getMinutes())}${pad(date2.getSeconds())}`;
 }
 function pruneOldBackups(backupDir, retentionDays, filenamePrefix) {
-  if (!existsSync(backupDir)) return 0;
+  if (!existsSync(backupDir))
+    return 0;
   const safeRetention = Math.max(1, Math.trunc(retentionDays));
   const cutoff = Date.now() - safeRetention * 24 * 60 * 60 * 1e3;
   let pruned = 0;
   for (const name of readdirSync(backupDir)) {
-    if (!name.startsWith(`${filenamePrefix}-`) || !name.endsWith(".sql")) continue;
+    if (!name.startsWith(`${filenamePrefix}-`) || !name.endsWith(".sql"))
+      continue;
     const fullPath = resolve(backupDir, name);
     const stat2 = statSync(fullPath);
     if (stat2.mtimeMs < cutoff) {
@@ -6087,8 +6154,10 @@ function pruneOldBackups(backupDir, retentionDays, filenamePrefix) {
   return pruned;
 }
 function formatBackupSize(sizeBytes) {
-  if (sizeBytes < 1024) return `${sizeBytes}B`;
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)}K`;
+  if (sizeBytes < 1024)
+    return `${sizeBytes}B`;
+  if (sizeBytes < 1024 * 1024)
+    return `${(sizeBytes / 1024).toFixed(1)}K`;
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)}M`;
 }
 function formatSqlLiteral(value) {
@@ -6106,10 +6175,12 @@ function normalizeTableNameSet(values) {
 }
 function normalizeNullifyColumnMap(values) {
   const out = /* @__PURE__ */ new Map();
-  if (!values) return out;
+  if (!values)
+    return out;
   for (const [tableName, columns] of Object.entries(values)) {
     const normalizedTable = tableName.trim();
-    if (normalizedTable.length === 0) continue;
+    if (normalizedTable.length === 0)
+      continue;
     const normalizedColumns = new Set(
       columns.map((column) => column.trim()).filter((column) => column.length > 0)
     );
@@ -6179,7 +6250,8 @@ async function runDatabaseBackup(opts) {
       const labels2 = e.labels.map((l) => `'${l.replace(/'/g, "''")}'`).join(", ");
       emitStatement(`CREATE TYPE "public"."${e.typname}" AS ENUM (${labels2});`);
     }
-    if (enums.length > 0) emit("");
+    if (enums.length > 0)
+      emit("");
     const allSequences = await sql2`
       SELECT
         s.sequence_schema,
@@ -6208,8 +6280,10 @@ async function runDatabaseBackup(opts) {
       (seq) => !seq.owner_table || includedTableNames.has(tableKey(seq.owner_schema ?? "public", seq.owner_table))
     );
     const schemas = /* @__PURE__ */ new Set();
-    for (const table of tables) schemas.add(table.schema_name);
-    for (const seq of sequences) schemas.add(seq.sequence_schema);
+    for (const table of tables)
+      schemas.add(table.schema_name);
+    for (const seq of sequences)
+      schemas.add(seq.sequence_schema);
     const extraSchemas = [...schemas].filter((schemaName) => schemaName !== "public");
     if (extraSchemas.length > 0) {
       emit("-- Schemas");
@@ -6255,8 +6329,10 @@ async function runDatabaseBackup(opts) {
           typeStr = col.data_type;
         }
         let def = `  "${col.column_name}" ${typeStr}`;
-        if (col.column_default != null) def += ` DEFAULT ${col.column_default}`;
-        if (col.is_nullable === "NO") def += " NOT NULL";
+        if (col.column_default != null)
+          def += ` DEFAULT ${col.column_default}`;
+        if (col.is_nullable === "NO")
+          def += " NOT NULL";
         colDefs.push(def);
       }
       const pk = await sql2`
@@ -6378,7 +6454,8 @@ async function runDatabaseBackup(opts) {
     for (const { schema_name, tablename } of tables) {
       const qualifiedTableName = quoteQualifiedName(schema_name, tablename);
       const count = await sql2.unsafe(`SELECT count(*)::int AS n FROM ${qualifiedTableName}`);
-      if (excludedTableNames.has(tablename) || (count[0]?.n ?? 0) === 0) continue;
+      if (excludedTableNames.has(tablename) || (count[0]?.n ?? 0) === 0)
+        continue;
       const cols = await sql2`
         SELECT column_name, data_type
         FROM information_schema.columns
@@ -6393,11 +6470,16 @@ async function runDatabaseBackup(opts) {
         const values = row.map((rawValue, index51) => {
           const columnName = cols[index51]?.column_name;
           const val = columnName && nullifiedColumns.has(columnName) ? null : rawValue;
-          if (val === null || val === void 0) return "NULL";
-          if (typeof val === "boolean") return val ? "true" : "false";
-          if (typeof val === "number") return String(val);
-          if (val instanceof Date) return formatSqlLiteral(val.toISOString());
-          if (typeof val === "object") return formatSqlLiteral(JSON.stringify(val));
+          if (val === null || val === void 0)
+            return "NULL";
+          if (typeof val === "boolean")
+            return val ? "true" : "false";
+          if (typeof val === "number")
+            return String(val);
+          if (val instanceof Date)
+            return formatSqlLiteral(val.toISOString());
+          if (typeof val === "object")
+            return formatSqlLiteral(JSON.stringify(val));
           return formatSqlLiteral(String(val));
         });
         emitStatement(`INSERT INTO ${qualifiedTableName} (${colNames}) VALUES (${values.join(", ")});`);
@@ -6562,9 +6644,11 @@ function createInviteToken() {
   return `pcp_bootstrap_${randomBytes3(24).toString("hex")}`;
 }
 function resolveDbUrl(configPath, explicitDbUrl) {
-  if (explicitDbUrl) return explicitDbUrl;
+  if (explicitDbUrl)
+    return explicitDbUrl;
   const config = readConfig(configPath);
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  if (process.env.DATABASE_URL)
+    return process.env.DATABASE_URL;
   if (config?.database.mode === "postgres" && config.database.connectionString) {
     return config.database.connectionString;
   }
@@ -6575,9 +6659,11 @@ function resolveDbUrl(configPath, explicitDbUrl) {
   return null;
 }
 function resolveBaseUrl(configPath, explicitBaseUrl) {
-  if (explicitBaseUrl) return explicitBaseUrl.replace(/\/+$/, "");
+  if (explicitBaseUrl)
+    return explicitBaseUrl.replace(/\/+$/, "");
   const fromEnv = process.env.PAPERCLIP_PUBLIC_URL ?? process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ?? process.env.BETTER_AUTH_URL ?? process.env.BETTER_AUTH_BASE_URL;
-  if (fromEnv?.trim()) return fromEnv.trim().replace(/\/+$/, "");
+  if (fromEnv?.trim())
+    return fromEnv.trim().replace(/\/+$/, "");
   const config = readConfig(configPath);
   if (config?.auth.baseUrlMode === "explicit" && config.auth.publicBaseUrl) {
     return config.auth.publicBaseUrl.replace(/\/+$/, "");
@@ -7080,13 +7166,15 @@ import fs7 from "node:fs";
 import path6 from "node:path";
 function decodeMasterKey(raw) {
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed)
+    return null;
   if (/^[A-Fa-f0-9]{64}$/.test(trimmed)) {
     return Buffer.from(trimmed, "hex");
   }
   try {
     const decoded = Buffer.from(trimmed, "base64");
-    if (decoded.length === 32) return decoded;
+    if (decoded.length === 32)
+      return decoded;
   } catch {
   }
   if (Buffer.byteLength(trimmed, "utf8") === 32) {
@@ -7096,8 +7184,10 @@ function decodeMasterKey(raw) {
 }
 function withStrictModeNote(base, config) {
   const strictModeDisabledInDeployedSetup = config.database.mode === "postgres" && config.secrets.strictMode === false;
-  if (!strictModeDisabledInDeployedSetup) return base;
-  if (base.status === "fail") return base;
+  if (!strictModeDisabledInDeployedSetup)
+    return base;
+  if (base.status === "fail")
+    return base;
   return {
     ...base,
     status: "warn",
@@ -7350,15 +7440,18 @@ function printResult(result) {
   }
 }
 async function maybeRepair(result, opts) {
-  if (result.status === "pass" || !result.canRepair || !result.repair) return false;
-  if (!opts.repair) return false;
+  if (result.status === "pass" || !result.canRepair || !result.repair)
+    return false;
+  if (!opts.repair)
+    return false;
   let shouldRepair = opts.yes;
   if (!shouldRepair) {
     const answer = await p8.confirm({
       message: `Repair "${result.name}"?`,
       initialValue: true
     });
-    if (p8.isCancel(answer)) return false;
+    if (p8.isCancel(answer))
+      return false;
     shouldRepair = answer;
   }
   if (shouldRepair) {
@@ -7376,7 +7469,8 @@ async function runRepairableCheck(input) {
   let result = await input.run();
   printResult(result);
   const repaired = await maybeRepair(result, input.opts);
-  if (!repaired) return result;
+  if (!repaired)
+    return result;
   loadPaperclipEnvFile(input.configPath);
   result = await input.run();
   printResult(result);
@@ -7388,8 +7482,10 @@ function printSummary(results) {
   const failed = results.filter((r) => r.status === "fail").length;
   const parts = [];
   parts.push(pc3.green(`${passed} passed`));
-  if (warned) parts.push(pc3.yellow(`${warned} warnings`));
-  if (failed) parts.push(pc3.red(`${failed} failed`));
+  if (warned)
+    parts.push(pc3.yellow(`${warned} warnings`));
+  if (failed)
+    parts.push(pc3.red(`${failed} failed`));
   p8.note(parts.join(", "), "Summary");
   if (failed > 0) {
     p8.outro(pc3.red("Some checks failed. Fix the issues above and re-run doctor."));
@@ -7484,10 +7580,12 @@ function resolveBootstrapInviteBaseUrl(config, startedServer) {
 }
 function formatError(err) {
   if (err instanceof Error) {
-    if (err.message && err.message.trim().length > 0) return err.message;
+    if (err.message && err.message.trim().length > 0)
+      return err.message;
     return err.name;
   }
-  if (typeof err === "string") return err;
+  if (typeof err === "string")
+    return err;
   try {
     return JSON.stringify(err);
   } catch {
@@ -7495,21 +7593,27 @@ function formatError(err) {
   }
 }
 function isModuleNotFoundError(err) {
-  if (!(err instanceof Error)) return false;
+  if (!(err instanceof Error))
+    return false;
   const code = err.code;
-  if (code === "ERR_MODULE_NOT_FOUND") return true;
+  if (code === "ERR_MODULE_NOT_FOUND")
+    return true;
   return err.message.includes("Cannot find module");
 }
 function getMissingModuleSpecifier(err) {
-  if (!(err instanceof Error)) return null;
+  if (!(err instanceof Error))
+    return null;
   const packageMatch = err.message.match(/Cannot find package '([^']+)' imported from/);
-  if (packageMatch?.[1]) return packageMatch[1];
+  if (packageMatch?.[1])
+    return packageMatch[1];
   const moduleMatch = err.message.match(/Cannot find module '([^']+)'/);
-  if (moduleMatch?.[1]) return moduleMatch[1];
+  if (moduleMatch?.[1])
+    return moduleMatch[1];
   return null;
 }
 function maybeEnableUiDevMiddleware(entrypoint) {
-  if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== void 0) return;
+  if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== void 0)
+    return;
   const normalized = entrypoint.replaceAll("\\", "/");
   if (normalized.endsWith("/server/src/index.ts") || normalized.endsWith("@paperclipai/server/src/index.ts")) {
     process.env.PAPERCLIP_UI_DEV_MIDDLEWARE = "true";
@@ -7578,24 +7682,31 @@ import * as p10 from "@clack/prompts";
 import path8 from "node:path";
 import pc5 from "picocolors";
 function parseBooleanFromEnv(rawValue) {
-  if (rawValue === void 0) return null;
+  if (rawValue === void 0)
+    return null;
   const lower = rawValue.trim().toLowerCase();
-  if (lower === "true" || lower === "1" || lower === "yes") return true;
-  if (lower === "false" || lower === "0" || lower === "no") return false;
+  if (lower === "true" || lower === "1" || lower === "yes")
+    return true;
+  if (lower === "false" || lower === "0" || lower === "no")
+    return false;
   return null;
 }
 function parseNumberFromEnv(rawValue) {
-  if (!rawValue) return null;
+  if (!rawValue)
+    return null;
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return null;
+  if (!Number.isFinite(parsed))
+    return null;
   return parsed;
 }
 function parseEnumFromEnv(rawValue, allowedValues) {
-  if (!rawValue) return null;
+  if (!rawValue)
+    return null;
   return allowedValues.includes(rawValue) ? rawValue : null;
 }
 function resolvePathFromEnv(rawValue) {
-  if (!rawValue || rawValue.trim().length === 0) return null;
+  if (!rawValue || rawValue.trim().length === 0)
+    return null;
   return path8.resolve(expandHomePrefix(rawValue.trim()));
 }
 function quickstartDefaultsFromEnv() {
@@ -8063,7 +8174,8 @@ async function envCommand(opts) {
   const requiredRows = sortedRows.filter((row) => row.required);
   const optionalRows = sortedRows.filter((row) => !row.required);
   const formatSection = (title, entries) => {
-    if (entries.length === 0) return;
+    if (entries.length === 0)
+      return;
     p11.log.message(pc6.bold(title));
     for (const entry of entries) {
       const status = entry.source === "missing" ? pc6.red("missing") : entry.source === "default" ? pc6.yellow("default") : pc6.green("set");
@@ -8290,14 +8402,16 @@ function uniqueByKey(rows) {
   const seen = /* @__PURE__ */ new Set();
   const result = [];
   for (const row of rows) {
-    if (seen.has(row.key)) continue;
+    if (seen.has(row.key))
+      continue;
     seen.add(row.key);
     result.push(row);
   }
   return result;
 }
 function quoteShellValue(value) {
-  if (value === "") return '""';
+  if (value === "")
+    return '""';
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
@@ -8510,11 +8624,14 @@ import pc18 from "picocolors";
 // ../packages/adapters/claude-local/src/cli/format-event.ts
 import pc9 from "picocolors";
 function asErrorText(value) {
-  if (typeof value === "string") return value;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
+  if (typeof value === "string")
+    return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return "";
   const obj = value;
   const message = typeof obj.message === "string" && obj.message || typeof obj.error === "string" && obj.error || typeof obj.code === "string" && obj.code || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(obj);
   } catch {
@@ -8523,7 +8640,8 @@ function asErrorText(value) {
 }
 function printClaudeStreamEvent(raw, debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -8542,12 +8660,14 @@ function printClaudeStreamEvent(raw, debug) {
     const message = typeof parsed.message === "object" && parsed.message !== null && !Array.isArray(parsed.message) ? parsed.message : {};
     const content = Array.isArray(message.content) ? message.content : [];
     for (const blockRaw of content) {
-      if (typeof blockRaw !== "object" || blockRaw === null || Array.isArray(blockRaw)) continue;
+      if (typeof blockRaw !== "object" || blockRaw === null || Array.isArray(blockRaw))
+        continue;
       const block = blockRaw;
       const blockType = typeof block.type === "string" ? block.type : "";
       if (blockType === "text") {
         const text63 = typeof block.text === "string" ? block.text : "";
-        if (text63) console.log(pc9.green(`assistant: ${text63}`));
+        if (text63)
+          console.log(pc9.green(`assistant: ${text63}`));
       } else if (blockType === "tool_use") {
         const name = typeof block.name === "string" ? block.name : "unknown";
         console.log(pc9.yellow(`tool_call: ${name}`));
@@ -8593,7 +8713,8 @@ function printClaudeStreamEvent(raw, debug) {
 // ../packages/adapters/codex-local/src/cli/format-event.ts
 import pc10 from "picocolors";
 function asRecord(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString(value, fallback = "") {
@@ -8603,11 +8724,14 @@ function asNumber(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function errorText(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
+  if (msg)
+    return msg;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -8619,7 +8743,8 @@ function printItemStarted(item) {
   if (itemType === "command_execution") {
     const command = asString(item.command);
     console.log(pc10.yellow("tool_call: command_execution"));
-    if (command) console.log(pc10.gray(command));
+    if (command)
+      console.log(pc10.gray(command));
     return true;
   }
   if (itemType === "tool_use") {
@@ -8640,12 +8765,14 @@ function printItemCompleted(item) {
   const itemType = asString(item.type);
   if (itemType === "agent_message") {
     const text63 = asString(item.text);
-    if (text63) console.log(pc10.green(`assistant: ${text63}`));
+    if (text63)
+      console.log(pc10.green(`assistant: ${text63}`));
     return true;
   }
   if (itemType === "reasoning") {
     const text63 = asString(item.text);
-    if (text63) console.log(pc10.gray(`thinking: ${text63}`));
+    if (text63)
+      console.log(pc10.gray(`thinking: ${text63}`));
     return true;
   }
   if (itemType === "tool_use") {
@@ -8673,7 +8800,8 @@ function printItemCompleted(item) {
       exitCode !== null ? `exit_code=${exitCode}` : ""
     ].filter(Boolean);
     console.log((isError ? pc10.red : pc10.cyan)(summaryParts.join(" ")));
-    if (output) console.log((isError ? pc10.red : pc10.gray)(output));
+    if (output)
+      console.log((isError ? pc10.red : pc10.gray)(output));
     return true;
   }
   if (itemType === "file_change") {
@@ -8690,21 +8818,24 @@ function printItemCompleted(item) {
   }
   if (itemType === "error") {
     const message = errorText(item.message ?? item.error ?? item);
-    if (message) console.log(pc10.red(`error: ${message}`));
+    if (message)
+      console.log(pc10.red(`error: ${message}`));
     return true;
   }
   if (itemType === "tool_result") {
     const isError = item.is_error === true || asString(item.status) === "error";
     const text63 = asString(item.content) || asString(item.result) || asString(item.output);
     console.log((isError ? pc10.red : pc10.cyan)(`tool_result${isError ? " (error)" : ""}`));
-    if (text63) console.log((isError ? pc10.red : pc10.gray)(text63));
+    if (text63)
+      console.log((isError ? pc10.red : pc10.gray)(text63));
     return true;
   }
   return false;
 }
 function printCodexStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -8756,7 +8887,8 @@ function printCodexStreamEvent(raw, _debug) {
       console.log(
         pc10.red(`result: subtype=${subtype || "unknown"} is_error=${isError ? "true" : "false"}`)
       );
-      if (errors.length > 0) console.log(pc10.red(`errors: ${errors.join(" | ")}`));
+      if (errors.length > 0)
+        console.log(pc10.red(`errors: ${errors.join(" | ")}`));
     }
     return;
   }
@@ -8772,7 +8904,8 @@ function printCodexStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const message = errorText(parsed.message ?? parsed.error ?? parsed);
-    if (message) console.log(pc10.red(`error: ${message}`));
+    if (message)
+      console.log(pc10.red(`error: ${message}`));
     return;
   }
   console.log(line);
@@ -8784,7 +8917,8 @@ import pc11 from "picocolors";
 // ../packages/adapters/cursor-local/src/shared/stream.ts
 function normalizeCursorStreamLine(rawLine) {
   const trimmed = rawLine.trim();
-  if (!trimmed) return { stream: null, line: "" };
+  if (!trimmed)
+    return { stream: null, line: "" };
   const prefixed = trimmed.match(/^(stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
   if (!prefixed) {
     return { stream: null, line: trimmed };
@@ -8796,7 +8930,8 @@ function normalizeCursorStreamLine(rawLine) {
 
 // ../packages/adapters/cursor-local/src/cli/format-event.ts
 function asRecord2(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString2(value, fallback = "") {
@@ -8806,8 +8941,10 @@ function asNumber2(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
+  if (typeof value === "string")
+    return value;
+  if (value === null || value === void 0)
+    return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -8817,46 +8954,58 @@ function stringifyUnknown(value) {
 function printUserMessage(messageRaw) {
   if (typeof messageRaw === "string") {
     const text63 = messageRaw.trim();
-    if (text63) console.log(pc11.gray(`user: ${text63}`));
+    if (text63)
+      console.log(pc11.gray(`user: ${text63}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.gray(`user: ${directText}`));
+  if (directText)
+    console.log(pc11.gray(`user: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString2(part.type).trim();
-    if (type !== "output_text" && type !== "text") continue;
+    if (type !== "output_text" && type !== "text")
+      continue;
     const text63 = asString2(part.text).trim();
-    if (text63) console.log(pc11.gray(`user: ${text63}`));
+    if (text63)
+      console.log(pc11.gray(`user: ${text63}`));
   }
 }
 function printAssistantMessage(messageRaw) {
   if (typeof messageRaw === "string") {
     const text63 = messageRaw.trim();
-    if (text63) console.log(pc11.green(`assistant: ${text63}`));
+    if (text63)
+      console.log(pc11.green(`assistant: ${text63}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.green(`assistant: ${directText}`));
+  if (directText)
+    console.log(pc11.green(`assistant: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString2(part.type).trim();
     if (type === "output_text" || type === "text") {
       const text63 = asString2(part.text).trim();
-      if (text63) console.log(pc11.green(`assistant: ${text63}`));
+      if (text63)
+        console.log(pc11.green(`assistant: ${text63}`));
       continue;
     }
     if (type === "thinking") {
       const text63 = asString2(part.text).trim();
-      if (text63) console.log(pc11.gray(`thinking: ${text63}`));
+      if (text63)
+        console.log(pc11.gray(`thinking: ${text63}`));
       continue;
     }
     if (type === "tool_call") {
@@ -8876,7 +9025,8 @@ function printAssistantMessage(messageRaw) {
       const isError = part.is_error === true || asString2(part.status).toLowerCase() === "error";
       const contentText = asString2(part.output) || asString2(part.text) || asString2(part.result) || stringifyUnknown(part.output ?? part.result ?? part.text ?? part);
       console.log((isError ? pc11.red : pc11.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc11.red : pc11.gray)(contentText));
+      if (contentText)
+        console.log((isError ? pc11.red : pc11.gray)(contentText));
     }
   }
 }
@@ -8946,7 +9096,8 @@ function printLegacyToolEvent(part) {
 }
 function printCursorStreamEvent(raw, _debug) {
   const line = normalizeCursorStreamLine(raw).line;
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -8977,7 +9128,8 @@ function printCursorStreamEvent(raw, _debug) {
   }
   if (type === "thinking") {
     const text63 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
-    if (text63) console.log(pc11.gray(`thinking: ${text63}`));
+    if (text63)
+      console.log(pc11.gray(`thinking: ${text63}`));
     return;
   }
   if (type === "tool_call") {
@@ -8998,9 +9150,11 @@ function printCursorStreamEvent(raw, _debug) {
     console.log(pc11.blue(`result: subtype=${subtype}`));
     console.log(pc11.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
     const resultText = asString2(parsed.result).trim();
-    if (resultText) console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
+    if (resultText)
+      console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
     const errors = Array.isArray(parsed.errors) ? parsed.errors.map((value) => stringifyUnknown(value)).filter(Boolean) : [];
-    if (errors.length > 0) console.log(pc11.red(`errors: ${errors.join(" | ")}`));
+    if (errors.length > 0)
+      console.log(pc11.red(`errors: ${errors.join(" | ")}`));
     return;
   }
   if (type === "error") {
@@ -9016,7 +9170,8 @@ function printCursorStreamEvent(raw, _debug) {
   if (type === "text") {
     const part = asRecord2(parsed.part);
     const text63 = asString2(part?.text);
-    if (text63) console.log(pc11.green(`assistant: ${text63}`));
+    if (text63)
+      console.log(pc11.green(`assistant: ${text63}`));
     return;
   }
   if (type === "tool_use") {
@@ -9047,7 +9202,8 @@ function printCursorStreamEvent(raw, _debug) {
 // ../packages/adapters/gemini-local/src/cli/format-event.ts
 import pc12 from "picocolors";
 function asRecord3(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString3(value, fallback = "") {
@@ -9057,8 +9213,10 @@ function asNumber3(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown2(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
+  if (typeof value === "string")
+    return value;
+  if (value === null || value === void 0)
+    return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -9066,11 +9224,14 @@ function stringifyUnknown2(value) {
   }
 }
 function errorText2(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord3(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
+  if (msg)
+    return msg;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -9080,40 +9241,48 @@ function errorText2(value) {
 function printTextMessage(prefix, colorize, messageRaw) {
   if (typeof messageRaw === "string") {
     const text63 = messageRaw.trim();
-    if (text63) console.log(colorize(`${prefix}: ${text63}`));
+    if (text63)
+      console.log(colorize(`${prefix}: ${text63}`));
     return;
   }
   const message = asRecord3(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString3(message.text).trim();
-  if (directText) console.log(colorize(`${prefix}: ${directText}`));
+  if (directText)
+    console.log(colorize(`${prefix}: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord3(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString3(part.type).trim();
     if (type === "output_text" || type === "text" || type === "content") {
       const text63 = asString3(part.text).trim() || asString3(part.content).trim();
-      if (text63) console.log(colorize(`${prefix}: ${text63}`));
+      if (text63)
+        console.log(colorize(`${prefix}: ${text63}`));
       continue;
     }
     if (type === "thinking") {
       const text63 = asString3(part.text).trim();
-      if (text63) console.log(pc12.gray(`thinking: ${text63}`));
+      if (text63)
+        console.log(pc12.gray(`thinking: ${text63}`));
       continue;
     }
     if (type === "tool_call") {
       const name = asString3(part.name, asString3(part.tool, "tool"));
       console.log(pc12.yellow(`tool_call: ${name}`));
       const input = part.input ?? part.arguments ?? part.args;
-      if (input !== void 0) console.log(pc12.gray(stringifyUnknown2(input)));
+      if (input !== void 0)
+        console.log(pc12.gray(stringifyUnknown2(input)));
       continue;
     }
     if (type === "tool_result" || type === "tool_response") {
       const isError = part.is_error === true || asString3(part.status).toLowerCase() === "error";
       const contentText = asString3(part.output) || asString3(part.text) || asString3(part.result) || stringifyUnknown2(part.output ?? part.result ?? part.text ?? part.response);
       console.log((isError ? pc12.red : pc12.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc12.red : pc12.gray)(contentText));
+      if (contentText)
+        console.log((isError ? pc12.red : pc12.gray)(contentText));
     }
   }
 }
@@ -9132,7 +9301,8 @@ function printUsage(parsed) {
 }
 function printGeminiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -9152,7 +9322,8 @@ function printGeminiStreamEvent(raw, _debug) {
     }
     if (subtype === "error") {
       const text63 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-      if (text63) console.log(pc12.red(`error: ${text63}`));
+      if (text63)
+        console.log(pc12.red(`error: ${text63}`));
       return;
     }
     console.log(pc12.blue(`system: ${subtype || "event"}`));
@@ -9168,7 +9339,8 @@ function printGeminiStreamEvent(raw, _debug) {
   }
   if (type === "thinking") {
     const text63 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
-    if (text63) console.log(pc12.gray(`thinking: ${text63}`));
+    if (text63)
+      console.log(pc12.gray(`thinking: ${text63}`));
     return;
   }
   if (type === "tool_call") {
@@ -9205,7 +9377,8 @@ function printGeminiStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const text63 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-    if (text63) console.log(pc12.red(`error: ${text63}`));
+    if (text63)
+      console.log(pc12.red(`error: ${text63}`));
     return;
   }
   console.log(line);
@@ -9221,7 +9394,8 @@ function safeJsonParse(text63) {
   }
 }
 function asRecord4(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString4(value, fallback = "") {
@@ -9231,12 +9405,15 @@ function asNumber4(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function errorText3(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord4(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const data = asRecord4(rec.data);
   const message = asString4(rec.message) || asString4(data?.message) || asString4(rec.name) || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -9245,7 +9422,8 @@ function errorText3(value) {
 }
 function printOpenCodeStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   const parsed = asRecord4(safeJsonParse(line));
   if (!parsed) {
     console.log(line);
@@ -9260,13 +9438,15 @@ function printOpenCodeStreamEvent(raw, _debug) {
   if (type === "text") {
     const part = asRecord4(parsed.part);
     const text63 = asString4(part?.text).trim();
-    if (text63) console.log(pc13.green(`assistant: ${text63}`));
+    if (text63)
+      console.log(pc13.green(`assistant: ${text63}`));
     return;
   }
   if (type === "reasoning") {
     const part = asRecord4(parsed.part);
     const text63 = asString4(part?.text).trim();
-    if (text63) console.log(pc13.gray(`thinking: ${text63}`));
+    if (text63)
+      console.log(pc13.gray(`thinking: ${text63}`));
     return;
   }
   if (type === "tool_use") {
@@ -9282,13 +9462,15 @@ function printOpenCodeStreamEvent(raw, _debug) {
       const metaParts = [`status=${status}`];
       if (metadata) {
         for (const [key, value] of Object.entries(metadata)) {
-          if (value !== void 0 && value !== null) metaParts.push(`${key}=${value}`);
+          if (value !== void 0 && value !== null)
+            metaParts.push(`${key}=${value}`);
         }
       }
       console.log((isError ? pc13.red : pc13.gray)(`tool_result ${metaParts.join(" ")}`));
     }
     const output = (asString4(state?.output) || asString4(state?.error)).trim();
-    if (output) console.log((isError ? pc13.red : pc13.gray)(output));
+    if (output)
+      console.log((isError ? pc13.red : pc13.gray)(output));
     return;
   }
   if (type === "step_finish") {
@@ -9306,7 +9488,8 @@ function printOpenCodeStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const message = errorText3(parsed.error ?? parsed.message);
-    if (message) console.log(pc13.red(`error: ${message}`));
+    if (message)
+      console.log(pc13.red(`error: ${message}`));
     return;
   }
   console.log(line);
@@ -9322,20 +9505,24 @@ function safeJsonParse2(text63) {
   }
 }
 function asRecord5(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString5(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 function extractTextContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return "";
   return content.filter((c) => c.type === "text" && c.text).map((c) => c.text).join("");
 }
 function printPiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   const parsed = asRecord5(safeJsonParse2(line));
   if (!parsed) {
     console.log(line);
@@ -9407,7 +9594,8 @@ function printPiStreamEvent(raw, _debug) {
 import pc15 from "picocolors";
 function printOpenClawGatewayStreamEvent(raw, debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   if (!debug) {
     console.log(line);
     return;
@@ -9426,7 +9614,8 @@ function printOpenClawGatewayStreamEvent(raw, debug) {
 // src/adapters/process/format-event.ts
 function printProcessStdoutEvent(raw, _debug) {
   const line = raw.trim();
-  if (line) console.log(line);
+  if (line)
+    console.log(line);
 }
 
 // src/adapters/process/index.ts
@@ -9438,7 +9627,8 @@ var processCLIAdapter = {
 // src/adapters/http/format-event.ts
 function printHttpStdoutEvent(raw, _debug) {
   const line = raw.trim();
-  if (line) console.log(line);
+  if (line)
+    console.log(line);
 }
 
 // src/adapters/http/index.ts
@@ -9470,7 +9660,8 @@ var EVENT_PREFIXES = {
 };
 function printOpenAgentsStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   try {
     const event = JSON.parse(line);
     if (event.type && event.detail) {
@@ -9492,7 +9683,8 @@ var openAgentsCLIAdapter = {
 // src/adapters/qwen/format-event.ts
 function printQwenStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   try {
     const parsed = JSON.parse(line);
     if (parsed.type === "result" && typeof parsed.text === "string") {
@@ -9581,14 +9773,17 @@ function findContextFileFromAncestors(startDir) {
       return candidate;
     }
     const nextDir = path9.resolve(currentDir, "..");
-    if (nextDir === currentDir) break;
+    if (nextDir === currentDir)
+      break;
     currentDir = nextDir;
   }
   return null;
 }
 function resolveContextPath(overridePath) {
-  if (overridePath) return path9.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONTEXT) return path9.resolve(process.env.PAPERCLIP_CONTEXT);
+  if (overridePath)
+    return path9.resolve(overridePath);
+  if (process.env.PAPERCLIP_CONTEXT)
+    return path9.resolve(process.env.PAPERCLIP_CONTEXT);
   return findContextFileFromAncestors(process.cwd()) ?? resolveDefaultContextPath();
 }
 function defaultClientContext() {
@@ -9611,7 +9806,8 @@ function toStringOrUndefined(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function normalizeProfile(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return {};
   const profile = value;
   return {
     apiBase: toStringOrUndefined(profile.apiBase),
@@ -9630,7 +9826,8 @@ function normalizeContext(raw) {
   const profiles = {};
   if (typeof rawProfiles === "object" && rawProfiles !== null && !Array.isArray(rawProfiles)) {
     for (const [name, profile] of Object.entries(rawProfiles)) {
-      if (!name.trim()) continue;
+      if (!name.trim())
+        continue;
       profiles[name] = normalizeProfile(profile);
     }
   }
@@ -9783,7 +9980,8 @@ function buildUrl(apiBase, path36) {
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
-  if (query) url.search = query;
+  if (query)
+    url.search = query;
   return url.toString();
 }
 function safeParseJson(text63) {
@@ -9804,7 +10002,8 @@ async function toApiError(response) {
   return new ApiRequestError(response.status, `Request failed with status ${response.status}`, void 0, parsed);
 }
 function toStringRecord(headers) {
-  if (!headers) return {};
+  if (!headers)
+    return {};
   if (Array.isArray(headers)) {
     return Object.fromEntries(headers.map(([key, value]) => [key, String(value)]));
   }
@@ -9881,19 +10080,23 @@ function formatInlineRecord(record) {
   const seen = /* @__PURE__ */ new Set();
   const parts = [];
   for (const key of keyOrder) {
-    if (!(key in record)) continue;
+    if (!(key in record))
+      continue;
     parts.push(`${key}=${renderValue(record[key])}`);
     seen.add(key);
   }
   for (const [key, value] of Object.entries(record)) {
-    if (seen.has(key)) continue;
-    if (typeof value === "object") continue;
+    if (seen.has(key))
+      continue;
+    if (typeof value === "object")
+      continue;
     parts.push(`${key}=${renderValue(value)}`);
   }
   return parts.join(" ");
 }
 function renderValue(value) {
-  if (value === null || value === void 0) return "-";
+  if (value === null || value === void 0)
+    return "-";
   if (typeof value === "string") {
     const compact = value.replace(/\s+/g, " ").trim();
     return compact.length > 90 ? `${compact.slice(0, 87)}...` : compact;
@@ -9920,7 +10123,8 @@ function inferApiBaseFromConfig(configPath) {
   return `http://${envHost}:${port}`;
 }
 function readKeyFromProfileEnv(profile) {
-  if (!profile.apiKeyEnvVarName) return void 0;
+  if (!profile.apiKeyEnvVarName)
+    return void 0;
   return process.env[profile.apiKeyEnvVarName]?.trim() || void 0;
 }
 function handleCommandError(error) {
@@ -9943,11 +10147,14 @@ function asRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
 }
 function asErrorText2(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const obj = asRecord6(value);
-  if (!obj) return "";
+  if (!obj)
+    return "";
   const message = typeof obj.message === "string" && obj.message || typeof obj.error === "string" && obj.error || typeof obj.code === "string" && obj.code || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(obj);
   } catch {
@@ -9997,9 +10204,12 @@ async function heartbeatRun(opts) {
   let logOffset = 0;
   let stdoutJsonBuffer = "";
   const printRawChunk = (stream, chunk) => {
-    if (stream === "stdout") process.stdout.write(pc18.green("[stdout] ") + chunk);
-    else if (stream === "stderr") process.stdout.write(pc18.red("[stderr] ") + chunk);
-    else process.stdout.write(pc18.yellow("[system] ") + chunk);
+    if (stream === "stdout")
+      process.stdout.write(pc18.green("[stdout] ") + chunk);
+    else if (stream === "stderr")
+      process.stdout.write(pc18.red("[stderr] ") + chunk);
+    else
+      process.stdout.write(pc18.yellow("[system] ") + chunk);
   };
   const printAdapterInvoke = (payload) => {
     const adapterType2 = typeof payload.adapterType === "string" ? payload.adapterType : "unknown";
@@ -10010,7 +10220,8 @@ async function heartbeatRun(opts) {
     const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
     const context = typeof payload.context === "object" && payload.context !== null && !Array.isArray(payload.context) ? payload.context : null;
     console.log(pc18.cyan(`Adapter: ${adapterType2}`));
-    if (cwd) console.log(pc18.cyan(`Working dir: ${cwd}`));
+    if (cwd)
+      console.log(pc18.cyan(`Working dir: ${cwd}`));
     if (command) {
       const rendered = args.length > 0 ? `${command} ${args.join(" ")}` : command;
       console.log(pc18.cyan(`Command: ${rendered}`));
@@ -10048,7 +10259,8 @@ async function heartbeatRun(opts) {
   };
   const handleEvent = (event) => {
     const payload = normalizePayload(event.payload);
-    if (event.runId !== runId) return;
+    if (event.runId !== runId)
+      return;
     const eventType = typeof event.eventType === "string" ? event.eventType : typeof event.type === "string" ? event.type : "";
     if (eventType === "heartbeat.run.status") {
       const status = typeof payload.status === "string" ? payload.status : null;
@@ -10060,7 +10272,8 @@ async function heartbeatRun(opts) {
     } else if (eventType === "heartbeat.run.log") {
       const stream = typeof payload.stream === "string" ? payload.stream : "system";
       const chunk = typeof payload.chunk === "string" ? payload.chunk : "";
-      if (!chunk) return;
+      if (!chunk)
+        return;
       if (stream === "stdout" || stream === "stderr" || stream === "system") {
         handleStreamChunk(stream, chunk);
       }
@@ -10116,9 +10329,11 @@ async function heartbeatRun(opts) {
     );
     if (logResult && logResult.content) {
       for (const chunk of logResult.content.split(/\r?\n/)) {
-        if (!chunk) continue;
+        if (!chunk)
+          continue;
         const parsed = safeParseLogLine(chunk);
-        if (!parsed) continue;
+        if (!parsed)
+          continue;
         handleStreamChunk(parsed.stream, parsed.chunk);
       }
       if (typeof logResult.nextOffset === "number") {
@@ -10152,10 +10367,14 @@ async function heartbeatRun(opts) {
         const resultText = typeof resultObj.result === "string" ? resultObj.result.trim() : "";
         if (subtype || isError || errors.length > 0 || resultText) {
           console.log(pc18.red("Claude result details:"));
-          if (subtype) console.log(pc18.red(`  subtype: ${subtype}`));
-          if (isError) console.log(pc18.red("  is_error: true"));
-          if (errors.length > 0) console.log(pc18.red(`  errors: ${errors.join(" | ")}`));
-          if (resultText) console.log(pc18.red(`  result: ${resultText}`));
+          if (subtype)
+            console.log(pc18.red(`  subtype: ${subtype}`));
+          if (isError)
+            console.log(pc18.red("  is_error: true"));
+          if (errors.length > 0)
+            console.log(pc18.red(`  errors: ${errors.join(" | ")}`));
+          if (resultText)
+            console.log(pc18.red(`  result: ${resultText}`));
         }
       }
       const stderrExcerpt = typeof finalRun.stderrExcerpt === "string" ? finalRun.stderrExcerpt.trim() : "";
@@ -10183,7 +10402,8 @@ function safeParseLogLine(line) {
     const parsed = JSON.parse(line);
     const stream = parsed.stream === "stdout" || parsed.stream === "stderr" || parsed.stream === "system" ? parsed.stream : "system";
     const chunk = typeof parsed.chunk === "string" ? parsed.chunk : "";
-    if (!chunk) return null;
+    if (!chunk)
+      return null;
     return { stream, chunk };
   } catch {
     return null;
@@ -10217,7 +10437,8 @@ function trimSlashes(value) {
 }
 function pickParam(url, name) {
   const value = url.searchParams.get(name);
-  if (value === null) return void 0;
+  if (value === null)
+    return void 0;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : void 0;
 }
@@ -10357,14 +10578,16 @@ async function startLoginFlow(opts) {
     url.searchParams.set("state", state);
     url.searchParams.set("callback", callbackUrl);
     url.searchParams.set("machineLabel", machineLabel);
-    if (workspaceLabel) url.searchParams.set("workspaceLabel", workspaceLabel);
+    if (workspaceLabel)
+      url.searchParams.set("workspaceLabel", workspaceLabel);
     url.searchParams.set("source", "cli");
     return url.toString();
   })();
   let timeoutHandle = setTimeout(() => {
     rejecter?.(new Error(`CLI login timed out after ${Math.round(timeoutMs / 1e3)}s.`));
   }, timeoutMs);
-  if (typeof timeoutHandle.unref === "function") timeoutHandle.unref();
+  if (typeof timeoutHandle.unref === "function")
+    timeoutHandle.unref();
   const close = () => {
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
@@ -10426,11 +10649,13 @@ function toStringOrUndefined2(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function normalizeSession(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return null;
   const record = raw;
   const accessToken = toStringOrUndefined2(record.accessToken);
   const hostedBaseUrl = toStringOrUndefined2(record.hostedBaseUrl);
-  if (!accessToken || !hostedBaseUrl) return null;
+  if (!accessToken || !hostedBaseUrl)
+    return null;
   const issuedAt = toStringOrUndefined2(record.issuedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
   return {
     version: 1,
@@ -10447,7 +10672,8 @@ function normalizeSession(raw) {
 }
 function readSession() {
   const filePath = resolveSessionPath();
-  if (!fs11.existsSync(filePath)) return null;
+  if (!fs11.existsSync(filePath))
+    return null;
   const raw = parseJson3(filePath);
   return normalizeSession(raw);
 }
@@ -10463,14 +10689,17 @@ function writeSession(session) {
 }
 function clearSession() {
   const filePath = resolveSessionPath();
-  if (!fs11.existsSync(filePath)) return false;
+  if (!fs11.existsSync(filePath))
+    return false;
   fs11.rmSync(filePath, { force: true });
   return true;
 }
 function isSessionExpired(session, now = /* @__PURE__ */ new Date()) {
-  if (!session.expiresAt) return false;
+  if (!session.expiresAt)
+    return false;
   const expires = Date.parse(session.expiresAt);
-  if (Number.isNaN(expires)) return false;
+  if (Number.isNaN(expires))
+    return false;
   return expires <= now.getTime();
 }
 function describeSessionPath() {
@@ -10493,16 +10722,19 @@ function toStringOrUndefined3(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function toStringArray(value) {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value))
+    return [];
   const out = [];
   for (const item of value) {
     const normalized = toStringOrUndefined3(item);
-    if (normalized && !out.includes(normalized)) out.push(normalized);
+    if (normalized && !out.includes(normalized))
+      out.push(normalized);
   }
   return out;
 }
 function toRecord(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return void 0;
   return value;
 }
 function normalizeExecutionDefaults(value) {
@@ -10523,10 +10755,12 @@ function defaultExecutionPreferences() {
   };
 }
 function normalizeOverlay(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return null;
   const record = raw;
   const hostedBaseUrl = toStringOrUndefined3(record.hostedBaseUrl);
-  if (!hostedBaseUrl) return null;
+  if (!hostedBaseUrl)
+    return null;
   return {
     version: 1,
     hostedBaseUrl,
@@ -10546,7 +10780,8 @@ function normalizeOverlay(raw) {
 }
 function readHostedOverlay() {
   const filePath = resolveHostedOverlayPath();
-  if (!fs12.existsSync(filePath)) return null;
+  if (!fs12.existsSync(filePath))
+    return null;
   return normalizeOverlay(parseJson4(filePath));
 }
 function writeHostedOverlay(overlay) {
@@ -10561,7 +10796,8 @@ function writeHostedOverlay(overlay) {
 }
 function clearHostedOverlay() {
   const filePath = resolveHostedOverlayPath();
-  if (!fs12.existsSync(filePath)) return false;
+  if (!fs12.existsSync(filePath))
+    return false;
   fs12.rmSync(filePath, { force: true });
   return true;
 }
@@ -10841,15 +11077,19 @@ function trimSlashes2(value) {
 }
 function resolveHostedBaseUrl(opts) {
   const explicit = opts.baseUrl?.trim();
-  if (explicit) return trimSlashes2(explicit);
+  if (explicit)
+    return trimSlashes2(explicit);
   const envBase = process.env.GROWTHUB_BASE_URL?.trim();
-  if (envBase) return trimSlashes2(envBase);
+  if (envBase)
+    return trimSlashes2(envBase);
   try {
     const config = readConfig(opts.configPath);
     const configuredBase = config?.auth?.growthubBaseUrl?.trim();
-    if (configuredBase) return trimSlashes2(configuredBase);
+    if (configuredBase)
+      return trimSlashes2(configuredBase);
     const portalBase = config?.auth?.growthubPortalBaseUrl?.trim();
-    if (portalBase) return trimSlashes2(portalBase);
+    if (portalBase)
+      return trimSlashes2(portalBase);
   } catch {
   }
   return DEFAULT_HOSTED_BASE_URL;
@@ -11037,8 +11277,10 @@ async function authLogout(opts) {
     console.log(pc19.dim("No hosted session or overlay present. Local workspace profile is untouched."));
     return;
   }
-  if (sessionCleared) console.log(pc19.green("Cleared hosted session."));
-  if (overlayCleared) console.log(pc19.green("Cleared hosted overlay."));
+  if (sessionCleared)
+    console.log(pc19.green("Cleared hosted session."));
+  if (overlayCleared)
+    console.log(pc19.green("Cleared hosted overlay."));
   console.log(pc19.dim("Local workspace profile is untouched."));
 }
 async function authWhoami(opts) {
@@ -11076,7 +11318,8 @@ async function authWhoami(opts) {
     return;
   }
   console.log(pc19.bold(`Signed in${payload.email ? ` as ${payload.email}` : payload.userId ? ` as ${payload.userId}` : ""}.`));
-  if (payload.hostedBaseUrl) console.log(pc19.dim(`Hosted: ${payload.hostedBaseUrl}`));
+  if (payload.hostedBaseUrl)
+    console.log(pc19.dim(`Hosted: ${payload.hostedBaseUrl}`));
   if (payload.orgName || payload.orgId) {
     console.log(pc19.dim(`Org: ${payload.orgName ?? payload.orgId}`));
   }
@@ -11123,7 +11366,8 @@ function printEffectiveProfileHuman(effective) {
     if (effective.hosted.orgName || effective.hosted.orgId) {
       console.log(`  Org: ${effective.hosted.orgName ?? effective.hosted.orgId}`);
     }
-    if (effective.hosted.hostedBaseUrl) console.log(`  Hosted: ${effective.hosted.hostedBaseUrl}`);
+    if (effective.hosted.hostedBaseUrl)
+      console.log(`  Hosted: ${effective.hosted.hostedBaseUrl}`);
     if (effective.hosted.linkedInstanceId) {
       console.log(`  Linked instance: ${effective.hosted.linkedInstanceId}`);
     }
@@ -11133,8 +11377,10 @@ function printEffectiveProfileHuman(effective) {
     if (effective.hosted.gatedKitSlugs.length > 0) {
       console.log(`  Gated kits: ${effective.hosted.gatedKitSlugs.join(", ")}`);
     }
-    if (effective.hosted.lastPulledAt) console.log(pc20.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
-    if (effective.hosted.lastPushedAt) console.log(pc20.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
+    if (effective.hosted.lastPulledAt)
+      console.log(pc20.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
+    if (effective.hosted.lastPushedAt)
+      console.log(pc20.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
   }
   console.log(pc20.bold("Execution defaults"));
   console.log(
@@ -11153,7 +11399,8 @@ async function runProfileStatus(opts) {
   printEffectiveProfileHuman(effective);
 }
 function normalizeExecutionPrefs(value, fallback) {
-  if (!value) return fallback;
+  if (!value)
+    return fallback;
   const preferredMode = value.preferredMode === "local" || value.preferredMode === "serverless" || value.preferredMode === "browser" || value.preferredMode === "auto" ? value.preferredMode : fallback.preferredMode;
   return {
     preferredMode,
@@ -11349,7 +11596,8 @@ import * as p15 from "@clack/prompts";
 import pc21 from "picocolors";
 function resolveConnectionString(configPath) {
   const envUrl = process.env.DATABASE_URL?.trim();
-  if (envUrl) return { value: envUrl, source: "DATABASE_URL" };
+  if (envUrl)
+    return { value: envUrl, source: "DATABASE_URL" };
   const config = readConfig(configPath);
   if (config?.database.mode === "postgres" && config.database.connectionString?.trim()) {
     return { value: config.database.connectionString.trim(), source: "config.database.connectionString" };
@@ -11496,7 +11744,8 @@ function normalizeSelector(input) {
   return input.trim();
 }
 function parseInclude(input) {
-  if (!input || !input.trim()) return { company: true, agents: true };
+  if (!input || !input.trim())
+    return { company: true, agents: true };
   const values = input.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
   const include = {
     company: values.includes("company"),
@@ -11508,11 +11757,14 @@ function parseInclude(input) {
   return include;
 }
 function parseAgents(input) {
-  if (!input || !input.trim()) return "all";
+  if (!input || !input.trim())
+    return "all";
   const normalized = input.trim().toLowerCase();
-  if (normalized === "all") return "all";
+  if (normalized === "all")
+    return "all";
   const values = input.split(",").map((part) => part.trim()).filter(Boolean);
-  if (values.length === 0) return "all";
+  if (values.length === 0)
+    return "all";
   return Array.from(new Set(values));
 }
 function isHttpUrl(input) {
@@ -11578,8 +11830,10 @@ function resolveCompanyForDeletion(companies2, selectorRaw, by = "auto") {
       `Selector '${selector}' is ambiguous (matches both an ID and a shortname). Re-run with --by id or --by prefix.`
     );
   }
-  if (idMatch) return idMatch;
-  if (prefixMatch) return prefixMatch;
+  if (idMatch)
+    return idMatch;
+  if (prefixMatch)
+    return prefixMatch;
   throw new Error(
     `No company found for selector '${selector}'. Use company ID or issue prefix (for example PAP).`
   );
@@ -11828,9 +12082,12 @@ function registerIssueCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
         const params = new URLSearchParams();
-        if (opts.status) params.set("status", opts.status);
-        if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
-        if (opts.projectId) params.set("projectId", opts.projectId);
+        if (opts.status)
+          params.set("status", opts.status);
+        if (opts.assigneeAgentId)
+          params.set("assigneeAgentId", opts.assigneeAgentId);
+        if (opts.projectId)
+          params.set("projectId", opts.projectId);
         const query = params.toString();
         const path36 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
         const rows = await ctx.api.get(path36) ?? [];
@@ -11969,11 +12226,13 @@ function registerIssueCommands(program2) {
   );
 }
 function parseCsv(value) {
-  if (!value) return [];
+  if (!value)
+    return [];
   return value.split(",").map((v) => v.trim()).filter(Boolean);
 }
 function parseOptionalInt(value) {
-  if (value === void 0) return void 0;
+  if (value === void 0)
+    return void 0;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) {
     throw new Error(`Invalid integer value: ${value}`);
@@ -11981,12 +12240,15 @@ function parseOptionalInt(value) {
   return parsed;
 }
 function parseHiddenAt(value) {
-  if (value === void 0) return void 0;
-  if (value.trim().toLowerCase() === "null") return null;
+  if (value === void 0)
+    return void 0;
+  if (value.trim().toLowerCase() === "null")
+    return null;
   return value;
 }
 function filterIssueRows(rows, match) {
-  if (!match?.trim()) return rows;
+  if (!match?.trim())
+    return rows;
   const needle = match.trim().toLowerCase();
   return rows.filter((row) => {
     const text63 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
@@ -12016,10 +12278,12 @@ async function resolvePaperclipSkillsDir(moduleDir, additionalCandidates = []) {
   ];
   const seenRoots = /* @__PURE__ */ new Set();
   for (const root of candidates) {
-    if (seenRoots.has(root)) continue;
+    if (seenRoots.has(root))
+      continue;
     seenRoots.add(root);
     const isDirectory = await fs14.stat(root).then((stats) => stats.isDirectory()).catch(() => false);
-    if (isDirectory) return root;
+    if (isDirectory)
+      return root;
   }
   return null;
 }
@@ -12029,12 +12293,15 @@ async function removeMaintainerOnlySkillSymlinks(skillsHome, allowedSkillNames) 
     const entries = await fs14.readdir(skillsHome, { withFileTypes: true });
     const removed = [];
     for (const entry of entries) {
-      if (allowed.has(entry.name)) continue;
+      if (allowed.has(entry.name))
+        continue;
       const target = path16.join(skillsHome, entry.name);
       const existing = await fs14.lstat(target).catch(() => null);
-      if (!existing?.isSymbolicLink()) continue;
+      if (!existing?.isSymbolicLink())
+        continue;
       const linkedPath = await fs14.readlink(target).catch(() => null);
-      if (!linkedPath) continue;
+      if (!linkedPath)
+        continue;
       const resolvedLinkedPath = path16.isAbsolute(linkedPath) ? linkedPath : path16.resolve(path16.dirname(target), linkedPath);
       if (!isMaintainerOnlySkillTarget(linkedPath) && !isMaintainerOnlySkillTarget(resolvedLinkedPath)) {
         continue;
@@ -12080,7 +12347,8 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
     entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
   );
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory())
+      continue;
     const source = path17.join(sourceSkillsDir, entry.name);
     const target = path17.join(targetSkillsDir, entry.name);
     const existing = await fs15.lstat(target).catch(() => null);
@@ -12277,7 +12545,8 @@ function registerApprovalCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
         const params = new URLSearchParams();
-        if (opts.status) params.set("status", opts.status);
+        if (opts.status)
+          params.set("status", opts.status);
         const query = params.toString();
         const rows = await ctx.api.get(
           `/api/companies/${ctx.companyId}/approvals${query ? `?${query}` : ""}`
@@ -12411,7 +12680,8 @@ function registerApprovalCommands(program2) {
   );
 }
 function parseCsv2(value) {
-  if (!value) return void 0;
+  if (!value)
+    return void 0;
   const rows = value.split(",").map((v) => v.trim()).filter(Boolean);
   return rows.length > 0 ? rows : void 0;
 }
@@ -12435,9 +12705,12 @@ function registerActivityCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
         const params = new URLSearchParams();
-        if (opts.agentId) params.set("agentId", opts.agentId);
-        if (opts.entityType) params.set("entityType", opts.entityType);
-        if (opts.entityId) params.set("entityId", opts.entityId);
+        if (opts.agentId)
+          params.set("agentId", opts.agentId);
+        if (opts.entityType)
+          params.set("entityType", opts.entityType);
+        if (opts.entityId)
+          params.set("entityId", opts.entityId);
         const query = params.toString();
         const path36 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
         const rows = await ctx.api.get(path36) ?? [];
@@ -12492,7 +12765,8 @@ init_home();
 import path18 from "node:path";
 function applyDataDirOverride(options, support = {}) {
   const rawDataDir = options.dataDir?.trim();
-  if (!rawDataDir) return null;
+  if (!rawDataDir)
+    return null;
   const resolvedDataDir = path18.resolve(expandHomePrefix(rawDataDir));
   process.env.PAPERCLIP_HOME = resolvedDataDir;
   if (support.hasConfigOption) {
@@ -12529,7 +12803,8 @@ function resolveGtmStatePath() {
 }
 function readState() {
   const filePath = resolveGtmStatePath();
-  if (!fs16.existsSync(filePath)) return createDefaultGtmState();
+  if (!fs16.existsSync(filePath))
+    return createDefaultGtmState();
   return coerceGtmState(JSON.parse(fs16.readFileSync(filePath, "utf-8")));
 }
 function writeState(state) {
@@ -12573,17 +12848,22 @@ function printJsonOrMessage(payload, json, message) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
-  if (message) console.log(pc23.green(message));
+  if (message)
+    console.log(pc23.green(message));
   console.log(payload);
 }
 function registerGtmCommands(program2) {
   const gtm = program2.command("gtm").description("Growthub GTM substrate on the local machine");
   gtm.command("init").description("Initialize the local GTM substrate state").option("--account-email <email>", "Growthub account email").option("--workspace <name>", "Workspace label").option("--gh-app-path <path>", "Path to gh-app").option("--internal-socials-path <path>", "Reference UI path for internal-socials").option("--local-sdr-path <path>", "Reference/local runner path for growthub-sdr").option("--json", "Output raw JSON").action((opts) => {
     const state = createDefaultGtmState();
-    if (opts.accountEmail) state.profile.growthubAccountEmail = opts.accountEmail.trim();
-    if (opts.workspace) state.profile.workspaceName = opts.workspace.trim();
-    if (opts.ghAppPath) state.profile.ghAppPath = opts.ghAppPath.trim();
-    if (opts.internalSocialsPath) state.workflow.referenceInterfaces.internalSocialsPath = opts.internalSocialsPath.trim();
+    if (opts.accountEmail)
+      state.profile.growthubAccountEmail = opts.accountEmail.trim();
+    if (opts.workspace)
+      state.profile.workspaceName = opts.workspace.trim();
+    if (opts.ghAppPath)
+      state.profile.ghAppPath = opts.ghAppPath.trim();
+    if (opts.internalSocialsPath)
+      state.workflow.referenceInterfaces.internalSocialsPath = opts.internalSocialsPath.trim();
     if (opts.localSdrPath) {
       state.workflow.referenceInterfaces.localSdrPath = opts.localSdrPath.trim();
       state.workflow.runnerPath = path19.resolve(opts.localSdrPath.trim(), "sdr-bot.mjs");
@@ -12758,10 +13038,12 @@ function resolveWorktreeLocalPaths(opts) {
   };
 }
 function rewriteLocalUrlPort(rawUrl, port) {
-  if (!rawUrl) return void 0;
+  if (!rawUrl)
+    return void 0;
   try {
     const parsed = new URL(rawUrl);
-    if (!isLoopbackHost2(parsed.hostname)) return rawUrl;
+    if (!isLoopbackHost2(parsed.hostname))
+      return rawUrl;
     parsed.port = String(port);
     return parsed.toString();
   } catch {
@@ -12916,7 +13198,8 @@ function resolveGitWorktreeAddArgs(input) {
   return ["worktree", "add", "-b", input.branchName, input.targetPath, commitish];
 }
 function readPidFilePort(postmasterPidFile) {
-  if (!existsSync2(postmasterPidFile)) return null;
+  if (!existsSync2(postmasterPidFile))
+    return null;
   try {
     const lines = readFileSync(postmasterPidFile, "utf8").split("\n");
     const port = Number(lines[3]?.trim());
@@ -12926,10 +13209,12 @@ function readPidFilePort(postmasterPidFile) {
   }
 }
 function readRunningPostmasterPid(postmasterPidFile) {
-  if (!existsSync2(postmasterPidFile)) return null;
+  if (!existsSync2(postmasterPidFile))
+    return null;
   try {
     const pid = Number(readFileSync(postmasterPidFile, "utf8").split("\n")[0]?.trim());
-    if (!Number.isInteger(pid) || pid <= 0) return null;
+    if (!Number.isInteger(pid) || pid <= 0)
+      return null;
     process.kill(pid, 0);
     return pid;
   } catch {
@@ -12998,9 +13283,11 @@ function detectGitWorkspaceInfo(cwd) {
   }
 }
 function copyDirectoryContents(sourceDir, targetDir) {
-  if (!existsSync2(sourceDir)) return false;
+  if (!existsSync2(sourceDir))
+    return false;
   const entries = readdirSync2(sourceDir, { withFileTypes: true });
-  if (entries.length === 0) return false;
+  if (entries.length === 0)
+    return false;
   mkdirSync2(targetDir, { recursive: true });
   let copied = false;
   for (const entry of entries) {
@@ -13029,7 +13316,8 @@ function copyDirectoryContents(sourceDir, targetDir) {
 }
 function copyGitHooksToWorktreeGitDir(cwd) {
   const workspace = detectGitWorkspaceInfo(cwd);
-  if (!workspace) return null;
+  if (!workspace)
+    return null;
   const sourceHooksPath = workspace.hooksPath;
   const targetHooksPath = path21.resolve(workspace.gitDir, "hooks");
   if (sourceHooksPath === targetHooksPath) {
@@ -13060,7 +13348,8 @@ function rebindWorkspaceCwd(input) {
 }
 async function rebindSeededProjectWorkspaces(input) {
   const targetRepo = detectGitWorkspaceInfo(input.currentCwd);
-  if (!targetRepo) return [];
+  if (!targetRepo)
+    return [];
   const db = createDb(input.targetConnectionString);
   const closableDb = db;
   try {
@@ -13072,19 +13361,25 @@ async function rebindSeededProjectWorkspaces(input) {
     const rebound = [];
     for (const row of rows) {
       const workspaceCwd = nonEmpty2(row.cwd);
-      if (!workspaceCwd) continue;
+      if (!workspaceCwd)
+        continue;
       const sourceRepo = detectGitWorkspaceInfo(workspaceCwd);
-      if (!sourceRepo) continue;
-      if (sourceRepo.commonDir !== targetRepo.commonDir) continue;
+      if (!sourceRepo)
+        continue;
+      if (sourceRepo.commonDir !== targetRepo.commonDir)
+        continue;
       const reboundCwd = rebindWorkspaceCwd({
         sourceRepoRoot: sourceRepo.root,
         targetRepoRoot: targetRepo.root,
         workspaceCwd
       });
-      if (!reboundCwd) continue;
+      if (!reboundCwd)
+        continue;
       const normalizedCurrent = path21.resolve(workspaceCwd);
-      if (reboundCwd === normalizedCurrent) continue;
-      if (!existsSync2(reboundCwd)) continue;
+      if (reboundCwd === normalizedCurrent)
+        continue;
+      if (!existsSync2(reboundCwd))
+        continue;
       await db.update(projectWorkspaces).set({
         cwd: reboundCwd,
         updatedAt: /* @__PURE__ */ new Date()
@@ -13101,8 +13396,10 @@ async function rebindSeededProjectWorkspaces(input) {
   }
 }
 function resolveSourceConfigPath(opts) {
-  if (opts.sourceConfigPathOverride) return path21.resolve(opts.sourceConfigPathOverride);
-  if (opts.fromConfig) return path21.resolve(opts.fromConfig);
+  if (opts.sourceConfigPathOverride)
+    return path21.resolve(opts.sourceConfigPathOverride);
+  if (opts.fromConfig)
+    return path21.resolve(opts.fromConfig);
   if (!opts.fromDataDir && !opts.fromInstance) {
     return resolveConfigPath();
   }
@@ -13586,7 +13883,8 @@ async function worktreeCleanupCommand(nameArg, opts) {
       spinner10.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
       try {
         const removeArgs = ["worktree", "remove", linkedWorktree.worktree];
-        if (opts.force) removeArgs.push("--force");
+        if (opts.force)
+          removeArgs.push("--force");
         execFileSync("git", removeArgs, {
           cwd: sourceCwd,
           stdio: ["ignore", "pipe", "pipe"]
@@ -13668,8 +13966,10 @@ function registerWorktreeCommands(program2) {
 import path22 from "node:path";
 import pc25 from "picocolors";
 function resolvePackageArg(packageArg, isLocal) {
-  if (!isLocal) return packageArg;
-  if (path22.isAbsolute(packageArg)) return packageArg;
+  if (!isLocal)
+    return packageArg;
+  if (path22.isAbsolute(packageArg))
+    return packageArg;
   if (packageArg.startsWith("~")) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     return path22.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
@@ -13976,7 +14276,8 @@ function isBundleManifestV2(manifest) {
   return manifest.schemaVersion === 2;
 }
 function normalizeManifest(manifest) {
-  if (isManifestV2(manifest)) return manifest;
+  if (isManifestV2(manifest))
+    return manifest;
   return {
     schemaVersion: 2,
     kit: {
@@ -13998,7 +14299,8 @@ function normalizeManifest(manifest) {
   };
 }
 function normalizeBundleManifest(manifest) {
-  if (isBundleManifestV2(manifest)) return manifest;
+  if (isBundleManifestV2(manifest))
+    return manifest;
   return {
     schemaVersion: 2,
     bundle: manifest.bundle,
@@ -14033,7 +14335,8 @@ function resolveBundledKitAssetsRoot() {
     path23.resolve(moduleDir, "../assets/worker-kits")
   ];
   for (const candidate of candidates) {
-    if (fs17.existsSync(candidate)) return candidate;
+    if (fs17.existsSync(candidate))
+      return candidate;
   }
   throw new Error("Could not locate bundled worker kit assets.");
 }
@@ -14245,7 +14548,8 @@ function validateKitDirectory(kitPath) {
     errors.push({ field: "frozenAssetPaths", message: "Missing required 'frozenAssetPaths' array" });
   } else {
     for (const assetPath of frozenAssets) {
-      if (typeof assetPath !== "string") continue;
+      if (typeof assetPath !== "string")
+        continue;
       const fullPath = path23.resolve(kitPath, assetPath);
       if (!fs17.existsSync(fullPath)) {
         errors.push({ field: "frozenAssetPaths", message: `Frozen asset not found: ${assetPath}` });
@@ -14264,7 +14568,8 @@ function validateKitDirectory(kitPath) {
       errors.push({ field: "outputStandard.requiredPaths", message: "Missing required 'outputStandard.requiredPaths' array" });
     } else {
       for (const reqPath of requiredPaths) {
-        if (typeof reqPath !== "string") continue;
+        if (typeof reqPath !== "string")
+          continue;
         const fullPath = path23.resolve(kitPath, reqPath);
         if (!fs17.existsSync(fullPath)) {
           errors.push({ field: "outputStandard.requiredPaths", message: `Required output path not found: ${reqPath}` });
@@ -14326,15 +14631,19 @@ function loadResolvedBundledKit(assetRoot, catalogEntry) {
 function fuzzyResolveKitId(input) {
   const needle = input.toLowerCase().trim();
   const exact = BUNDLED_KIT_CATALOG.find((e) => e.id === needle);
-  if (exact) return exact.id;
+  if (exact)
+    return exact.id;
   const suffix = BUNDLED_KIT_CATALOG.find((e) => e.id.endsWith(needle));
-  if (suffix) return suffix.id;
+  if (suffix)
+    return suffix.id;
   const contains = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(needle));
-  if (contains) return contains.id;
+  if (contains)
+    return contains.id;
   const tokens = needle.split(/[-\s]+/).filter((t) => t.length > 2);
   for (const token of tokens) {
     const tokenMatch = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(token));
-    if (tokenMatch) return tokenMatch.id;
+    if (tokenMatch)
+      return tokenMatch.id;
   }
   return null;
 }
@@ -14574,8 +14883,10 @@ var TYPE_CONFIG = {
   ops: { color: pc26.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function displayTypeForFamily(family) {
-  if (family === "workflow" || family === "operator") return "specialized_agents";
-  if (family === "studio" || family === "ops") return family;
+  if (family === "workflow" || family === "operator")
+    return "specialized_agents";
+  if (family === "studio" || family === "ops")
+    return family;
   return family;
 }
 function typeColor(family, text63) {
@@ -14585,11 +14896,13 @@ function typeColor(family, text63) {
 function typeBadge(family) {
   const type = displayTypeForFamily(family);
   const cfg = TYPE_CONFIG[type];
-  if (!cfg) return String(type);
+  if (!cfg)
+    return String(type);
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 function truncate(str, max) {
-  if (str.length <= max) return str;
+  if (str.length <= max)
+    return str;
   return str.slice(0, max - 1) + "\u2026";
 }
 function displayKitName(name) {
@@ -14621,7 +14934,8 @@ function folderOpenLabel(folderPath) {
   return terminalLink(label, href);
 }
 function renderProgressBar(progress) {
-  if (!process.stdout.isTTY) return;
+  if (!process.stdout.isTTY)
+    return;
   const width = 24;
   const filled = Math.max(0, Math.min(width, Math.round(progress.percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
@@ -14645,9 +14959,12 @@ function printKitCard(item) {
   ]));
 }
 function getActionLabel(action) {
-  if (action === "download") return "download";
-  if (action === "inspect") return "inspect";
-  if (action === "copy-id") return "print id";
+  if (action === "download")
+    return "download";
+  if (action === "inspect")
+    return "inspect";
+  if (action === "copy-id")
+    return "print id";
   return action;
 }
 async function confirmKitActions(input) {
@@ -14733,7 +15050,8 @@ async function runInteractivePicker(opts) {
       p17.cancel("Cancelled.");
       process.exit(0);
     }
-    if (typeChoice === "__back_to_hub") return "back";
+    if (typeChoice === "__back_to_hub")
+      return "back";
     const filtered = typeChoice === "all" ? kits : kits.filter((k) => displayTypeForFamily(k.family) === typeChoice);
     const showTypeBadgeInKitChoices = typeChoice === "all";
     if (filtered.length === 0) {
@@ -14756,7 +15074,8 @@ async function runInteractivePicker(opts) {
         p17.cancel("Cancelled.");
         process.exit(0);
       }
-      if (kitChoice === "__back_to_type") break;
+      if (kitChoice === "__back_to_type")
+        break;
       const selected = filtered.find((kit) => kit.id === kitChoice);
       if (!selected) {
         p17.cancel("Selected kit was not found.");
@@ -14774,7 +15093,8 @@ async function runInteractivePicker(opts) {
         p17.cancel("Cancelled.");
         process.exit(0);
       }
-      if (nextStep === "back_to_kits") continue;
+      if (nextStep === "back_to_kits")
+        continue;
       while (true) {
         const action = await p17.select({
           message: "What would you like to do?",
@@ -14789,7 +15109,8 @@ async function runInteractivePicker(opts) {
           p17.cancel("Cancelled.");
           process.exit(0);
         }
-        if (action === "back_to_kits") break;
+        if (action === "back_to_kits")
+          break;
         const confirmed = await confirmKitActions({
           kits: [selected],
           actions: [action]
@@ -14806,7 +15127,8 @@ async function runInteractivePicker(opts) {
             p17.cancel("Cancelled.");
             process.exit(0);
           }
-          if (reviewChoice === "back_to_kits") break;
+          if (reviewChoice === "back_to_kits")
+            break;
           continue;
         }
         if (action === "copy-id") {
@@ -14894,7 +15216,8 @@ function runInspect(kitId, outDir) {
   }
   console.log(hr());
   console.log(pc26.bold("  Required Paths:"));
-  for (const rp of info.requiredPaths) console.log("    " + pc26.dim("\xB7") + " " + rp);
+  for (const rp of info.requiredPaths)
+    console.log("    " + pc26.dim("\xB7") + " " + rp);
   console.log("");
 }
 function registerKitCommands(program2) {
@@ -15306,7 +15629,8 @@ function resolveSharedTemplatesRoot() {
     path25.resolve(moduleDir, "../../assets/shared-templates"),
     path25.resolve(moduleDir, "../assets/shared-templates")
   ]) {
-    if (fs18.existsSync(candidate)) return candidate;
+    if (fs18.existsSync(candidate))
+      return candidate;
   }
   throw new Error("Shared template assets not found at cli/assets/shared-templates/");
 }
@@ -15316,16 +15640,20 @@ function resolveSlug(input) {
     const tokens = needle.split(/[-_/\s]+/).filter((t) => t.length > 2);
     for (const token of tokens) {
       const match = TEMPLATE_CATALOG.find((a) => a.slug.includes(token) || a.id.includes(token));
-      if (match) return match;
+      if (match)
+        return match;
     }
     return null;
   })();
 }
 function listArtifacts(filter = {}) {
   let results = [...TEMPLATE_CATALOG];
-  if (filter.type) results = results.filter((a) => a.type === filter.type);
-  if (filter.subtype) results = results.filter((a) => a.type === "scene-module" && a.subtype === filter.subtype);
-  if (filter.family) results = results.filter((a) => a.family === filter.family);
+  if (filter.type)
+    results = results.filter((a) => a.type === filter.type);
+  if (filter.subtype)
+    results = results.filter((a) => a.type === "scene-module" && a.subtype === filter.subtype);
+  if (filter.family)
+    results = results.filter((a) => a.family === filter.family);
   if (filter.format) {
     const fmt = filter.format.toLowerCase();
     results = results.filter(
@@ -15339,10 +15667,12 @@ function listArtifacts(filter = {}) {
 }
 function getArtifact(slugOrId) {
   const artifact = resolveSlug(slugOrId);
-  if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
+  if (!artifact)
+    throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
   const root = resolveSharedTemplatesRoot();
   const absolutePath = path25.resolve(root, artifact.path);
-  if (!fs18.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  if (!fs18.existsSync(absolutePath))
+    throw new Error(`Template file missing: ${absolutePath}`);
   return { artifact, content: fs18.readFileSync(absolutePath, "utf8"), absolutePath };
 }
 function copyArtifact(slugOrId, destDir) {
@@ -15360,25 +15690,29 @@ var GROUP_META = {
   "scene-modules/cta": { label: "Scene Modules \u2014 CTA", description: "Final scene \u2014 offer close, guarantee, conversion" }
 };
 function groupKey(a) {
-  if (a.type === "ad-format") return "ad-formats";
+  if (a.type === "ad-format")
+    return "ad-formats";
   return `scene-modules/${a.subtype}`;
 }
 function groupArtifacts(artifacts) {
   const map = /* @__PURE__ */ new Map();
   for (const a of artifacts) {
     const key = groupKey(a);
-    if (!map.has(key)) map.set(key, []);
+    if (!map.has(key))
+      map.set(key, []);
     map.get(key).push(a);
   }
   const ordered = [];
   for (const key of GROUP_ORDER) {
-    if (!map.has(key)) continue;
+    if (!map.has(key))
+      continue;
     const items = map.get(key);
     const meta = GROUP_META[key] ?? { label: key, description: "" };
     ordered.push({ key, label: meta.label, description: meta.description, count: items.length, artifacts: items });
   }
   for (const [key, items] of map) {
-    if (GROUP_ORDER.includes(key)) continue;
+    if (GROUP_ORDER.includes(key))
+      continue;
     ordered.push({ key, label: key, description: "", count: items.length, artifacts: items });
   }
   return ordered;
@@ -15413,11 +15747,15 @@ function box2(lines) {
   return [top, ...body, bottom].join("\n");
 }
 function badge(a) {
-  if (a.type === "ad-format") return pc27.cyan("\u{1F3AC} Ad Format");
+  if (a.type === "ad-format")
+    return pc27.cyan("\u{1F3AC} Ad Format");
   if (a.type === "scene-module") {
-    if (a.subtype === "hook") return pc27.yellow("\u{1FA9D} Hook");
-    if (a.subtype === "body") return pc27.blue("\u{1F9E9} Body");
-    if (a.subtype === "cta") return pc27.green("\u{1F3AF} CTA");
+    if (a.subtype === "hook")
+      return pc27.yellow("\u{1FA9D} Hook");
+    if (a.subtype === "body")
+      return pc27.blue("\u{1F9E9} Body");
+    if (a.subtype === "cta")
+      return pc27.green("\u{1F3AF} CTA");
   }
   return pc27.magenta("\u{1F9E9} Module");
 }
@@ -15523,7 +15861,8 @@ async function runTemplatePicker(opts) {
     p18.cancel("Cancelled.");
     process.exit(0);
   }
-  if (familyChoice === "__back_to_hub") return "back";
+  if (familyChoice === "__back_to_hub")
+    return "back";
   const filteredArtifacts = artifacts.filter((artifact) => artifact.family === familyChoice);
   const groups = groupArtifacts(filteredArtifacts);
   const groupChoice = await p18.select({
@@ -15633,7 +15972,8 @@ Any agent or kit resolves them by slug.
       }
       filter.subtype = sub;
     }
-    if (opts.format) filter.format = opts.format;
+    if (opts.format)
+      filter.format = opts.format;
     if (opts.json) {
       console.log(JSON.stringify(listArtifacts(filter), null, 2));
       return;
@@ -15709,7 +16049,8 @@ var NoActiveSessionError = class extends Error {
 };
 function requireSession() {
   const session = readSession();
-  if (!session) throw new NoActiveSessionError();
+  if (!session)
+    throw new NoActiveSessionError();
   if (isSessionExpired(session)) {
     throw new HostedExecutionError(
       401,
@@ -15730,7 +16071,8 @@ function isUnavailable(err) {
 }
 function isPlaceholderString(value) {
   const normalized = value.trim().toLowerCase();
-  if (!normalized) return true;
+  if (!normalized)
+    return true;
   return normalized.startsWith("enter ") || normalized.startsWith("select ") || normalized === "placeholder";
 }
 function sanitizeBindingValue(value) {
@@ -15906,7 +16248,8 @@ async function executeWorkflowStream(request, session, opts) {
   const nodeResults = /* @__PURE__ */ new Map();
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
+    if (done)
+      break;
     buffer += decoder.decode(value, { stream: true });
     let newlineIndex = buffer.indexOf("\n");
     while (newlineIndex >= 0) {
@@ -15965,7 +16308,8 @@ async function executeWorkflowStream(request, session, opts) {
   };
 }
 function applyWorkflowEvent(event, nodeResults, request) {
-  if (!event.nodeId) return;
+  if (!event.nodeId)
+    return;
   const current = nodeResults.get(event.nodeId);
   const next = current ?? {
     nodeId: event.nodeId,
@@ -15986,13 +16330,16 @@ function applyWorkflowEvent(event, nodeResults, request) {
 function collectArtifacts(executionLog) {
   const artifacts = [];
   for (const entry of executionLog) {
-    if (entry.type !== "cmsNode" || typeof entry.nodeId !== "string") continue;
+    if (entry.type !== "cmsNode" || typeof entry.nodeId !== "string")
+      continue;
     const output = entry.output;
-    if (typeof output !== "object" || output === null) continue;
+    if (typeof output !== "object" || output === null)
+      continue;
     const record = output;
     const images = Array.isArray(record.images) ? record.images : [];
     for (const image of images) {
-      if (!image || typeof image !== "object") continue;
+      if (!image || typeof image !== "object")
+        continue;
       const imageRecord = image;
       const storagePath = typeof imageRecord.storage_path === "string" ? imageRecord.storage_path : void 0;
       artifacts.push({
@@ -16006,7 +16353,8 @@ function collectArtifacts(executionLog) {
     }
     const slides = Array.isArray(record.slides) ? record.slides : [];
     for (const slide of slides) {
-      if (!slide || typeof slide !== "object") continue;
+      if (!slide || typeof slide !== "object")
+        continue;
       const slideRecord = slide;
       const storagePath = typeof slideRecord.storage_path === "string" ? slideRecord.storage_path : void 0;
       artifacts.push({
@@ -16040,14 +16388,18 @@ function summarizeExecution(executionLog) {
       workflowRunId = entry.workflowRunId;
     }
     const output = entry.output;
-    if (typeof output !== "object" || output === null) continue;
+    if (typeof output !== "object" || output === null)
+      continue;
     const record = output;
     if (!outputText && typeof record.text === "string" && record.text.trim().length > 0) {
       outputText = record.text.trim();
     }
-    if (Array.isArray(record.images)) imageCount += record.images.length;
-    if (Array.isArray(record.slides)) slideCount += record.slides.length;
-    if (Array.isArray(record.videos)) videoCount += record.videos.length;
+    if (Array.isArray(record.images))
+      imageCount += record.images.length;
+    if (Array.isArray(record.slides))
+      slideCount += record.slides.length;
+    if (Array.isArray(record.videos))
+      videoCount += record.videos.length;
   }
   return {
     ...outputText ? { outputText } : {},
@@ -16228,30 +16580,41 @@ function toCapabilityNode(record) {
 }
 function inferFamilyFromSlug(slug) {
   const normalized = slug.toLowerCase();
-  if (normalized.includes("video")) return "video";
-  if (normalized.includes("image")) return "image";
-  if (normalized.includes("slide")) return "slides";
-  if (normalized.includes("research")) return "research";
-  if (normalized.includes("vision")) return "vision";
-  if (normalized.includes("text") || normalized.includes("llm")) return "text";
-  if (normalized.includes("data")) return "data";
+  if (normalized.includes("video"))
+    return "video";
+  if (normalized.includes("image"))
+    return "image";
+  if (normalized.includes("slide"))
+    return "slides";
+  if (normalized.includes("research"))
+    return "research";
+  if (normalized.includes("vision"))
+    return "vision";
+  if (normalized.includes("text") || normalized.includes("llm"))
+    return "text";
+  if (normalized.includes("data"))
+    return "data";
   return "ops";
 }
 async function deriveCapabilitiesFromHostedWorkflows() {
   const session = readSession();
-  if (!session || isSessionExpired(session)) return [];
+  if (!session || isSessionExpired(session))
+    return [];
   const list = await listHostedWorkflows(session);
   const workflows = list?.workflows ?? [];
-  if (workflows.length === 0) return [];
+  if (workflows.length === 0)
+    return [];
   const bySlug = /* @__PURE__ */ new Map();
   for (const workflow of workflows.slice(0, 50)) {
     const detail = await fetchHostedWorkflow(session, workflow.workflowId);
     const nodes = Array.isArray(detail?.latestVersion?.config?.nodes) ? detail?.latestVersion?.config?.nodes : [];
     for (const node of nodes) {
-      if (node.type !== "cmsNode") continue;
+      if (node.type !== "cmsNode")
+        continue;
       const data = node.data ?? {};
       const slug = typeof data.slug === "string" ? data.slug : null;
-      if (!slug) continue;
+      if (!slug)
+        continue;
       const inputs = data.inputs ?? {};
       if (!bySlug.has(slug)) {
         bySlug.set(slug, {
@@ -16275,15 +16638,21 @@ async function deriveCapabilitiesFromHostedWorkflows() {
   return [...bySlug.values()];
 }
 function matchesQuery(node, query) {
-  if (query.enabledOnly !== false && !node.enabled) return false;
-  if (query.family && node.family !== query.family) return false;
-  if (query.executionKind && node.executionKind !== query.executionKind) return false;
-  if (query.outputType && !node.outputTypes.includes(query.outputType)) return false;
-  if (query.slug && !node.slug.includes(query.slug)) return false;
+  if (query.enabledOnly !== false && !node.enabled)
+    return false;
+  if (query.family && node.family !== query.family)
+    return false;
+  if (query.executionKind && node.executionKind !== query.executionKind)
+    return false;
+  if (query.outputType && !node.outputTypes.includes(query.outputType))
+    return false;
+  if (query.slug && !node.slug.includes(query.slug))
+    return false;
   if (query.search) {
     const term = query.search.toLowerCase();
     const haystack = `${node.slug} ${node.displayName} ${node.description ?? ""} ${node.category}`.toLowerCase();
-    if (!haystack.includes(term)) return false;
+    if (!haystack.includes(term))
+      return false;
   }
   return true;
 }
@@ -16397,7 +16766,8 @@ function createMachineCapabilityResolver() {
       const profile = computeEffectiveProfile();
       const registry = createCmsCapabilityRegistryClient();
       const capability = await registry.getCapability(slug);
-      if (!capability) return null;
+      if (!capability)
+        return null;
       return resolveBinding(capability, profile);
     },
     getMachineContext() {
@@ -16446,13 +16816,17 @@ var FAMILY_CONFIG = {
 };
 function familyBadge(family) {
   const cfg = FAMILY_CONFIG[family];
-  if (!cfg) return family;
+  if (!cfg)
+    return family;
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 function executionKindLabel(kind) {
-  if (kind === "hosted-execute") return pc28.cyan("hosted");
-  if (kind === "provider-assembly") return pc28.yellow("provider");
-  if (kind === "local-only") return pc28.green("local");
+  if (kind === "hosted-execute")
+    return pc28.cyan("hosted");
+  if (kind === "provider-assembly")
+    return pc28.yellow("provider");
+  if (kind === "local-only")
+    return pc28.green("local");
   return kind;
 }
 function hr3(width = 72) {
@@ -16562,7 +16936,8 @@ async function runCapabilityPicker(opts) {
       p19.cancel("Cancelled.");
       process.exit(0);
     }
-    if (familyChoice === "__back_to_hub") return "back";
+    if (familyChoice === "__back_to_hub")
+      return "back";
     const query = familyChoice === "all" ? void 0 : { family: familyChoice };
     let result;
     try {
@@ -16591,9 +16966,11 @@ async function runCapabilityPicker(opts) {
         p19.cancel("Cancelled.");
         process.exit(0);
       }
-      if (capChoice === "__back_to_family") break;
+      if (capChoice === "__back_to_family")
+        break;
       const selected = result.nodes.find((n) => n.slug === capChoice);
-      if (!selected) continue;
+      if (!selected)
+        continue;
       printCapabilityCard(selected);
       const nextStep = await p19.select({
         message: "Next step",
@@ -16606,7 +16983,8 @@ async function runCapabilityPicker(opts) {
         p19.cancel("Cancelled.");
         process.exit(0);
       }
-      if (nextStep === "back_to_caps") continue;
+      if (nextStep === "back_to_caps")
+        continue;
       if (nextStep === "resolve") {
         try {
           const resolver = createMachineCapabilityResolver();
@@ -16895,12 +17273,15 @@ function detectCycle(nodes) {
   const visited = /* @__PURE__ */ new Set();
   const inStack = /* @__PURE__ */ new Set();
   function dfs(nodeId) {
-    if (inStack.has(nodeId)) return true;
-    if (visited.has(nodeId)) return false;
+    if (inStack.has(nodeId))
+      return true;
+    if (visited.has(nodeId))
+      return false;
     visited.add(nodeId);
     inStack.add(nodeId);
     for (const upstream of adjacency.get(nodeId) ?? []) {
-      if (dfs(upstream)) return true;
+      if (dfs(upstream))
+        return true;
     }
     inStack.delete(nodeId);
     return false;
@@ -16918,15 +17299,21 @@ function detectCycle(nodes) {
 
 // src/runtime/cms-node-contracts/introspect.ts
 function toFieldType(value) {
-  if (Array.isArray(value)) return "array";
-  if (typeof value === "string") return "string";
-  if (typeof value === "number") return "number";
-  if (typeof value === "boolean") return "boolean";
-  if (value && typeof value === "object") return "object";
+  if (Array.isArray(value))
+    return "array";
+  if (typeof value === "string")
+    return "string";
+  if (typeof value === "number")
+    return "number";
+  if (typeof value === "boolean")
+    return "boolean";
+  if (value && typeof value === "object")
+    return "object";
   return "unknown";
 }
 function outputTypeFromSchema(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   if (value && typeof value === "object" && typeof value.type === "string") {
     return value.type;
   }
@@ -16983,19 +17370,24 @@ function sanitizeValue(value) {
   return value;
 }
 function coerceValue(value, templateValue) {
-  if (templateValue === void 0) return value;
+  if (templateValue === void 0)
+    return value;
   if (typeof templateValue === "number") {
-    if (typeof value === "number") return value;
+    if (typeof value === "number")
+      return value;
     if (typeof value === "string" && value.trim().length > 0 && !Number.isNaN(Number(value))) {
       return Number(value);
     }
     return templateValue;
   }
   if (typeof templateValue === "boolean") {
-    if (typeof value === "boolean") return value;
+    if (typeof value === "boolean")
+      return value;
     if (typeof value === "string") {
-      if (value.toLowerCase() === "true") return true;
-      if (value.toLowerCase() === "false") return false;
+      if (value.toLowerCase() === "true")
+        return true;
+      if (value.toLowerCase() === "false")
+        return false;
     }
     return templateValue;
   }
@@ -17003,7 +17395,8 @@ function coerceValue(value, templateValue) {
     return Array.isArray(value) ? value : templateValue;
   }
   if (templateValue && typeof templateValue === "object") {
-    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    if (value && typeof value === "object" && !Array.isArray(value))
+      return value;
     return templateValue;
   }
   return value;
@@ -17021,9 +17414,12 @@ function normalizeNodeBindings(rawBindings, node) {
     const sanitized = sanitizeValue(rawValue);
     const coerced = coerceValue(sanitized, templateValue);
     merged[key] = coerced;
-    if (hasIncoming) providedCount += 1;
-    if (!hasIncoming) defaultedCount += 1;
-    if (sanitized !== rawValue || coerced !== sanitized) normalizedCount += 1;
+    if (hasIncoming)
+      providedCount += 1;
+    if (!hasIncoming)
+      defaultedCount += 1;
+    if (sanitized !== rawValue || coerced !== sanitized)
+      normalizedCount += 1;
   }
   for (const [key, value] of Object.entries(incoming)) {
     if (!(key in merged)) {
@@ -17043,7 +17439,8 @@ function validateNodeBindings(normalizedBindings, node) {
   const missingRequiredInputs = [];
   const missingRequiredBindings = [];
   for (const input of contract.inputs) {
-    if (!input.required) continue;
+    if (!input.required)
+      continue;
     const value = normalizedBindings[input.key];
     if (value === void 0 || value === null || value === "") {
       missingRequiredInputs.push(input.key);
@@ -17201,7 +17598,8 @@ function buildPreExecutionSummary(input) {
     ...input.pipeline,
     nodes: input.pipeline.nodes.map((node) => {
       const capability = input.registryBySlug.get(node.slug);
-      if (!capability) return node;
+      if (!capability)
+        return node;
       const normalized = normalizeNodeBindings(node.bindings, capability);
       return { ...node, bindings: normalized.bindings };
     })
@@ -17264,7 +17662,8 @@ function resolveArtifactManifestPath(artifactId) {
 }
 function readLocalManifest(artifactId) {
   const filePath = resolveArtifactManifestPath(artifactId);
-  if (!fs19.existsSync(filePath)) return null;
+  if (!fs19.existsSync(filePath))
+    return null;
   try {
     return JSON.parse(fs19.readFileSync(filePath, "utf-8"));
   } catch {
@@ -17280,7 +17679,8 @@ function writeLocalManifest(manifest) {
 }
 function listLocalManifests() {
   const dir = resolveArtifactsDir();
-  if (!fs19.existsSync(dir)) return [];
+  if (!fs19.existsSync(dir))
+    return [];
   return fs19.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
     try {
       const content = fs19.readFileSync(path27.resolve(dir, entry.name), "utf-8");
@@ -17291,12 +17691,18 @@ function listLocalManifests() {
   }).filter((m) => m !== null).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 }
 function matchesQuery2(manifest, query) {
-  if (query.artifactType && manifest.artifactType !== query.artifactType) return false;
-  if (query.pipelineId && manifest.pipelineId !== query.pipelineId) return false;
-  if (query.sourceNodeSlug && manifest.sourceNodeSlug !== query.sourceNodeSlug) return false;
-  if (query.executionContext && manifest.executionContext !== query.executionContext) return false;
-  if (query.status && manifest.status !== query.status) return false;
-  if (query.threadId && manifest.threadId !== query.threadId) return false;
+  if (query.artifactType && manifest.artifactType !== query.artifactType)
+    return false;
+  if (query.pipelineId && manifest.pipelineId !== query.pipelineId)
+    return false;
+  if (query.sourceNodeSlug && manifest.sourceNodeSlug !== query.sourceNodeSlug)
+    return false;
+  if (query.executionContext && manifest.executionContext !== query.executionContext)
+    return false;
+  if (query.status && manifest.status !== query.status)
+    return false;
+  if (query.threadId && manifest.threadId !== query.threadId)
+    return false;
   return true;
 }
 function createArtifactManifest(input) {
@@ -17343,7 +17749,8 @@ function createArtifactStore() {
     },
     update(artifactId, patch) {
       const existing = readLocalManifest(artifactId);
-      if (!existing) return null;
+      if (!existing)
+        return null;
       const updated = {
         ...existing,
         ...patch.status !== void 0 ? { status: patch.status } : {},
@@ -17448,7 +17855,8 @@ function createNativeIntelligenceBackend(config) {
               break;
             }
           }
-          if (result) break;
+          if (result)
+            break;
         }
         if (!result) {
           throw lastError ?? new NativeIntelligenceBackendError(502, "Model backend returned no response.");
@@ -17492,7 +17900,8 @@ function resolveModelCandidates(config) {
 function resolveEndpointCandidates(config) {
   const primary = config.endpoint;
   const candidates = [primary];
-  if (config.backendType !== "local") return candidates;
+  if (config.backendType !== "local")
+    return candidates;
   const normalized = primary.toLowerCase();
   if ((normalized.includes("localhost:8080") || normalized.includes("127.0.0.1:8080")) && !candidates.includes("http://127.0.0.1:11434/v1/chat/completions")) {
     candidates.push("http://127.0.0.1:11434/v1/chat/completions");
@@ -17501,16 +17910,20 @@ function resolveEndpointCandidates(config) {
 }
 function shouldTryNextModel(status, errorText4, attemptedModel, config, candidates) {
   const hasNextCandidate = candidates[candidates.length - 1] !== attemptedModel;
-  if (!hasNextCandidate) return false;
-  if (config.backendType !== "local") return false;
+  if (!hasNextCandidate)
+    return false;
+  if (config.backendType !== "local")
+    return false;
   const normalizedError = errorText4.toLowerCase();
   return status === 404 || normalizedError.includes("model") && normalizedError.includes("not found");
 }
 function extractCompletionText(response) {
   if (response.choices && response.choices.length > 0) {
     const choice = response.choices[0];
-    if (choice.message?.content) return choice.message.content;
-    if (choice.text) return choice.text;
+    if (choice.message?.content)
+      return choice.message.content;
+    if (choice.text)
+      return choice.text;
   }
   throw new NativeIntelligenceBackendError(
     502,
@@ -17855,7 +18268,8 @@ function buildDeterministicNormalization(input) {
     }
   }
   for (const [key, value] of Object.entries(rawBindings)) {
-    if (contract.inputs.some((i) => i.key === key)) continue;
+    if (contract.inputs.some((i) => i.key === key))
+      continue;
     normalizedBindings[key] = value;
     fields.push({
       key,
@@ -17874,9 +18288,11 @@ function buildDeterministicNormalization(input) {
   };
 }
 function isPlaceholderValue(value) {
-  if (typeof value !== "string") return false;
+  if (typeof value !== "string")
+    return false;
   const normalized = value.trim().toLowerCase();
-  if (!normalized) return true;
+  if (!normalized)
+    return true;
   return normalized.startsWith("enter ") || normalized.startsWith("select ") || normalized === "placeholder" || normalized === "todo" || normalized === "tbd" || normalized === "n/a" || normalized === "none" || normalized === "your_" || normalized.startsWith("your_") || normalized.startsWith("<") && normalized.endsWith(">");
 }
 function coerceToFieldType(value, targetType) {
@@ -17888,20 +18304,24 @@ function coerceToFieldType(value, targetType) {
   }
   if (targetType === "boolean" && typeof value === "string") {
     const lower = value.trim().toLowerCase();
-    if (lower === "true" || lower === "yes" || lower === "1") return true;
-    if (lower === "false" || lower === "no" || lower === "0") return false;
+    if (lower === "true" || lower === "yes" || lower === "1")
+      return true;
+    if (lower === "false" || lower === "no" || lower === "0")
+      return false;
   }
   if (targetType === "array" && typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed))
+        return parsed;
     } catch {
     }
   }
   if (targetType === "object" && typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        return parsed;
     } catch {
     }
   }
@@ -17933,7 +18353,8 @@ function toNormalizationResult(raw, input) {
   const fields = [];
   if (Array.isArray(raw.fields)) {
     for (const f of raw.fields) {
-      if (typeof f.key !== "string") continue;
+      if (typeof f.key !== "string")
+        continue;
       const action = validateAction(f.action);
       normalizedBindings[f.key] = f.normalizedValue ?? f.originalValue ?? input.rawBindings[f.key];
       fields.push({
@@ -18130,19 +18551,26 @@ function scoreWorkflowMatch(workflow, intentTokens, intentLower) {
   const descLower = (workflow.description ?? "").toLowerCase();
   const slugsLower = workflow.nodeSlugs.map((s) => s.toLowerCase()).join(" ");
   for (const token of intentTokens) {
-    if (nameLower.includes(token)) score += 2;
-    if (descLower.includes(token)) score += 1;
-    if (slugsLower.includes(token)) score += 1.5;
+    if (nameLower.includes(token))
+      score += 2;
+    if (descLower.includes(token))
+      score += 1;
+    if (slugsLower.includes(token))
+      score += 1.5;
   }
   for (const slug of workflow.nodeSlugs) {
     if (intentLower.includes(slug.toLowerCase())) {
       score += 2;
     }
   }
-  if (workflow.label === "canonical") score += 2;
-  if (workflow.label === "experimental") score += 0.5;
-  if (workflow.label === "archived") score -= 3;
-  if (workflow.versionCount >= 3) score += 1;
+  if (workflow.label === "canonical")
+    score += 2;
+  if (workflow.label === "experimental")
+    score += 0.5;
+  if (workflow.label === "archived")
+    score -= 3;
+  if (workflow.versionCount >= 3)
+    score += 1;
   return score;
 }
 function scoreContractMatch(contract, intentTokens, intentLower) {
@@ -18151,9 +18579,12 @@ function scoreContractMatch(contract, intentTokens, intentLower) {
   const nameLower = contract.displayName.toLowerCase();
   const familyLower = contract.family.toLowerCase();
   for (const token of intentTokens) {
-    if (slugLower.includes(token)) score += 2;
-    if (nameLower.includes(token)) score += 2;
-    if (familyLower.includes(token)) score += 1;
+    if (slugLower.includes(token))
+      score += 2;
+    if (nameLower.includes(token))
+      score += 2;
+    if (familyLower.includes(token))
+      score += 1;
   }
   for (const outputType of contract.outputTypes) {
     if (intentLower.includes(outputType.toLowerCase())) {
@@ -18287,10 +18718,14 @@ function buildDeterministicPlan(input) {
   const usedSlugs = /* @__PURE__ */ new Set();
   const warnings = [];
   for (const { contract, score } of scoredContracts) {
-    if (selectedNodes.length >= maxNodes) break;
-    if (score <= 0) break;
-    if (usedSlugs.has(contract.slug)) continue;
-    if (constraints?.avoidSlugs?.includes(contract.slug)) continue;
+    if (selectedNodes.length >= maxNodes)
+      break;
+    if (score <= 0)
+      break;
+    if (usedSlugs.has(contract.slug))
+      continue;
+    if (constraints?.avoidSlugs?.includes(contract.slug))
+      continue;
     const suggestedBindings = {};
     for (const field of contract.inputs) {
       suggestedBindings[field.key] = field.defaultValue ?? "";
@@ -18342,20 +18777,26 @@ function scoreContract(contract, intentTokens, intentLower, constraints) {
   const nameLower = contract.displayName.toLowerCase();
   const familyLower = contract.family.toLowerCase();
   for (const token of intentTokens) {
-    if (slugLower.includes(token)) score += 2;
-    if (nameLower.includes(token)) score += 2;
-    if (familyLower.includes(token)) score += 1;
+    if (slugLower.includes(token))
+      score += 2;
+    if (nameLower.includes(token))
+      score += 2;
+    if (familyLower.includes(token))
+      score += 1;
   }
   if (constraints?.requiredOutputTypes) {
     for (const requiredType of constraints.requiredOutputTypes) {
-      if (contract.outputTypes.includes(requiredType)) score += 3;
+      if (contract.outputTypes.includes(requiredType))
+        score += 3;
     }
   }
   if (constraints?.preferredFamilies) {
-    if (constraints.preferredFamilies.includes(contract.family)) score += 2;
+    if (constraints.preferredFamilies.includes(contract.family))
+      score += 2;
   }
   for (const outType of contract.outputTypes) {
-    if (intentLower.includes(outType.toLowerCase())) score += 1.5;
+    if (intentLower.includes(outType.toLowerCase()))
+      score += 1.5;
   }
   return score;
 }
@@ -18363,15 +18804,19 @@ function findBestExistingWorkflow(workflows, intentTokens, intentLower) {
   let best = null;
   let bestScore = 0;
   for (const wf of workflows) {
-    if (wf.label === "archived") continue;
+    if (wf.label === "archived")
+      continue;
     let score = 0;
     const nameLower = wf.name.toLowerCase();
     const slugsLower = wf.nodeSlugs.join(" ").toLowerCase();
     for (const token of intentTokens) {
-      if (nameLower.includes(token)) score += 2;
-      if (slugsLower.includes(token)) score += 1.5;
+      if (nameLower.includes(token))
+        score += 2;
+      if (slugsLower.includes(token))
+        score += 1.5;
     }
-    if (wf.label === "canonical") score += 1;
+    if (wf.label === "canonical")
+      score += 1;
     if (score > bestScore) {
       bestScore = score;
       best = wf;
@@ -18399,7 +18844,8 @@ function buildPlannerPrompt(input) {
   ];
   if (constraints) {
     sections.push("", "Constraints:");
-    if (constraints.maxNodes) sections.push(`  Max Nodes: ${constraints.maxNodes}`);
+    if (constraints.maxNodes)
+      sections.push(`  Max Nodes: ${constraints.maxNodes}`);
     if (constraints.requiredOutputTypes?.length) {
       sections.push(`  Required Output Types: ${constraints.requiredOutputTypes.join(", ")}`);
     }
@@ -18433,7 +18879,8 @@ function validatePlanningResult(raw, input) {
   const warnings = Array.isArray(raw.warnings) ? [...raw.warnings] : [];
   if (Array.isArray(raw.proposedNodes)) {
     for (const node of raw.proposedNodes) {
-      if (typeof node.slug !== "string") continue;
+      if (typeof node.slug !== "string")
+        continue;
       if (!availableSlugs.has(node.slug)) {
         warnings.push(`Proposed node slug "${node.slug}" is not in the available contracts \u2014 skipped.`);
         continue;
@@ -18502,7 +18949,8 @@ function writeIntelligenceConfig(config) {
 `, "utf-8");
 }
 function validateModelId(id) {
-  if (id === "gemma3" || id === "gemma3n" || id === "codegemma") return id;
+  if (id === "gemma3" || id === "gemma3n" || id === "codegemma")
+    return id;
   return "gemma3";
 }
 function createNativeIntelligenceProvider(configOverride) {
@@ -18582,7 +19030,8 @@ async function runPipelineAssembler(opts) {
       p20.cancel("Cancelled.");
       process.exit(0);
     }
-    if (entryChoice === "__back_to_hub") return "back";
+    if (entryChoice === "__back_to_hub")
+      return "back";
   } else {
     p20.note("Execution mode is fixed to hosted for Dynamic Pipelines.", "Hosted only");
   }
@@ -18647,9 +19096,11 @@ async function runPipelineAssembler(opts) {
         p20.cancel("Cancelled.");
         process.exit(0);
       }
-      if (capChoice === "__back") continue;
+      if (capChoice === "__back")
+        continue;
       const cap = capabilities.find((c) => c.slug === capChoice);
-      if (!cap) continue;
+      if (!cap)
+        continue;
       const bindings = {};
       for (const bindingKey of cap.requiredBindings) {
         const value = await p20.text({
@@ -18759,7 +19210,8 @@ async function runPipelineAssembler(opts) {
         message: `Save hosted workflow "${workflowName}"?`,
         initialValue: true
       });
-      if (p20.isCancel(confirmed) || !confirmed) continue;
+      if (p20.isCancel(confirmed) || !confirmed)
+        continue;
       try {
         const saveResult = await saveHostedWorkflow(session, {
           name: workflowName,
@@ -18811,7 +19263,8 @@ async function runPipelineAssembler(opts) {
         message: "Execute this pipeline through the hosted runtime?",
         initialValue: false
       });
-      if (p20.isCancel(confirmed) || !confirmed) continue;
+      if (p20.isCancel(confirmed) || !confirmed)
+        continue;
       try {
         const executionClient = createHostedExecutionClient();
         const pipeline2 = builder.build();
@@ -18868,7 +19321,8 @@ function loadPipelineFromFileOrJson(input) {
   }
 }
 function renderExecutionProgress(completed, total, detail) {
-  if (!process.stdout.isTTY) return;
+  if (!process.stdout.isTTY)
+    return;
   const width = 24;
   const safeCompleted = Math.max(0, Math.min(completed, total));
   const percent = total <= 0 ? 0 : Math.round(safeCompleted / total * 100);
@@ -18908,7 +19362,8 @@ async function executeHostedPipeline(pipeline, opts) {
   let startupSettled = false;
   startupSpinner?.start("Preparing hosted workflow execution...");
   const settleStartup = (message) => {
-    if (!startupSpinner || startupSettled) return;
+    if (!startupSpinner || startupSettled)
+      return;
     startupSettled = true;
     startupSpinner.stop(message ?? "Hosted workflow execution started.");
   };
@@ -18950,10 +19405,13 @@ async function executeHostedPipeline(pipeline, opts) {
   console.log(pc30.bold("Pipeline Execution Result"));
   console.log(hr4());
   console.log(`  ${pc30.dim("Execution ID:")} ${result.executionId}`);
-  if (result.threadId) console.log(`  ${pc30.dim("Thread ID:")}    ${result.threadId}`);
+  if (result.threadId)
+    console.log(`  ${pc30.dim("Thread ID:")}    ${result.threadId}`);
   console.log(`  ${pc30.dim("Status:")}       ${result.status === "succeeded" ? pc30.green(result.status) : pc30.red(result.status)}`);
-  if (result.startedAt) console.log(`  ${pc30.dim("Started:")}      ${result.startedAt}`);
-  if (result.completedAt) console.log(`  ${pc30.dim("Completed:")}    ${result.completedAt}`);
+  if (result.startedAt)
+    console.log(`  ${pc30.dim("Started:")}      ${result.startedAt}`);
+  if (result.completedAt)
+    console.log(`  ${pc30.dim("Completed:")}    ${result.completedAt}`);
   console.log(hr4());
   for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
     const statusColor3 = nodeResult.status === "succeeded" ? pc30.green : pc30.red;
@@ -18972,12 +19430,18 @@ async function executeHostedPipeline(pipeline, opts) {
   if (result.summary) {
     console.log("");
     console.log(pc30.bold("  Summary:"));
-    if (result.summary.outputText) console.log(`    ${pc30.dim("\xB7")} ${result.summary.outputText}`);
-    if (typeof result.summary.imageCount === "number") console.log(`    ${pc30.dim("\xB7")} images: ${result.summary.imageCount}`);
-    if (typeof result.summary.slideCount === "number") console.log(`    ${pc30.dim("\xB7")} slides: ${result.summary.slideCount}`);
-    if (typeof result.summary.videoCount === "number") console.log(`    ${pc30.dim("\xB7")} videos: ${result.summary.videoCount}`);
-    if (result.summary.workflowRunId) console.log(`    ${pc30.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-    if (result.summary.keyboardShortcutHint) console.log(`    ${pc30.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+    if (result.summary.outputText)
+      console.log(`    ${pc30.dim("\xB7")} ${result.summary.outputText}`);
+    if (typeof result.summary.imageCount === "number")
+      console.log(`    ${pc30.dim("\xB7")} images: ${result.summary.imageCount}`);
+    if (typeof result.summary.slideCount === "number")
+      console.log(`    ${pc30.dim("\xB7")} slides: ${result.summary.slideCount}`);
+    if (typeof result.summary.videoCount === "number")
+      console.log(`    ${pc30.dim("\xB7")} videos: ${result.summary.videoCount}`);
+    if (result.summary.workflowRunId)
+      console.log(`    ${pc30.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+    if (result.summary.keyboardShortcutHint)
+      console.log(`    ${pc30.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
   }
   try {
     const credits = await fetchHostedCredits(session);
@@ -19024,7 +19488,8 @@ async function renderIntelligenceSummary(pipeline, capabilities, phase) {
         const missingRequired = [];
         if (contract) {
           for (const input2 of contract.inputs) {
-            if (!input2.required) continue;
+            if (!input2.required)
+              continue;
             const value = node.bindings[input2.key];
             if (value === void 0 || value === null || value === "") {
               missingRequired.push(input2.key);
@@ -19126,7 +19591,8 @@ Examples:
         const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
         console.log(`${prefix}${nodeRef}: ${issue.message}`);
       }
-      if (!result.valid) process.exitCode = 1;
+      if (!result.valid)
+        process.exitCode = 1;
     } catch (err) {
       console.error(pc30.red("Validation failed: " + err.message));
       process.exitCode = 1;
@@ -19208,10 +19674,13 @@ Examples:
       console.log(pc30.bold("Pipeline Execution Result"));
       console.log(hr4());
       console.log(`  ${pc30.dim("Execution ID:")} ${result.executionId}`);
-      if (result.threadId) console.log(`  ${pc30.dim("Thread ID:")}    ${result.threadId}`);
+      if (result.threadId)
+        console.log(`  ${pc30.dim("Thread ID:")}    ${result.threadId}`);
       console.log(`  ${pc30.dim("Status:")}       ${result.status === "succeeded" ? pc30.green(result.status) : pc30.red(result.status)}`);
-      if (result.startedAt) console.log(`  ${pc30.dim("Started:")}      ${result.startedAt}`);
-      if (result.completedAt) console.log(`  ${pc30.dim("Completed:")}    ${result.completedAt}`);
+      if (result.startedAt)
+        console.log(`  ${pc30.dim("Started:")}      ${result.startedAt}`);
+      if (result.completedAt)
+        console.log(`  ${pc30.dim("Completed:")}    ${result.completedAt}`);
       console.log(hr4());
       for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
         const statusColor3 = nodeResult.status === "succeeded" ? pc30.green : pc30.red;
@@ -19230,12 +19699,18 @@ Examples:
       if (result.summary) {
         console.log("");
         console.log(pc30.bold("  Summary:"));
-        if (result.summary.outputText) console.log(`    ${pc30.dim("\xB7")} ${result.summary.outputText}`);
-        if (typeof result.summary.imageCount === "number") console.log(`    ${pc30.dim("\xB7")} images: ${result.summary.imageCount}`);
-        if (typeof result.summary.slideCount === "number") console.log(`    ${pc30.dim("\xB7")} slides: ${result.summary.slideCount}`);
-        if (typeof result.summary.videoCount === "number") console.log(`    ${pc30.dim("\xB7")} videos: ${result.summary.videoCount}`);
-        if (result.summary.workflowRunId) console.log(`    ${pc30.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-        if (result.summary.keyboardShortcutHint) console.log(`    ${pc30.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+        if (result.summary.outputText)
+          console.log(`    ${pc30.dim("\xB7")} ${result.summary.outputText}`);
+        if (typeof result.summary.imageCount === "number")
+          console.log(`    ${pc30.dim("\xB7")} images: ${result.summary.imageCount}`);
+        if (typeof result.summary.slideCount === "number")
+          console.log(`    ${pc30.dim("\xB7")} slides: ${result.summary.slideCount}`);
+        if (typeof result.summary.videoCount === "number")
+          console.log(`    ${pc30.dim("\xB7")} videos: ${result.summary.videoCount}`);
+        if (result.summary.workflowRunId)
+          console.log(`    ${pc30.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+        if (result.summary.keyboardShortcutHint)
+          console.log(`    ${pc30.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
       }
       try {
         const credits = await fetchHostedCredits(session);
@@ -19286,14 +19761,19 @@ var ARTIFACT_TYPE_CONFIG = {
 };
 function artifactTypeBadge(type) {
   const cfg = ARTIFACT_TYPE_CONFIG[type];
-  if (!cfg) return type;
+  if (!cfg)
+    return type;
   return cfg.color(`${cfg.emoji} ${type}`);
 }
 function statusColor(status) {
-  if (status === "ready") return pc31.green(status);
-  if (status === "generating" || status === "pending") return pc31.yellow(status);
-  if (status === "failed") return pc31.red(status);
-  if (status === "archived") return pc31.dim(status);
+  if (status === "ready")
+    return pc31.green(status);
+  if (status === "generating" || status === "pending")
+    return pc31.yellow(status);
+  if (status === "failed")
+    return pc31.red(status);
+  if (status === "archived")
+    return pc31.dim(status);
   return status;
 }
 function printArtifactTable(artifacts) {
@@ -19329,7 +19809,8 @@ function printArtifactDetail(art) {
   console.log(pc31.bold("Artifact: " + art.id));
   console.log(hr5());
   const kv = (label, value) => {
-    if (value === void 0) return;
+    if (value === void 0)
+      return;
     console.log(`  ${pc31.bold(label.padEnd(22))} ${value}`);
   };
   kv("Type:", artifactTypeBadge(art.artifactType));
@@ -19414,10 +19895,12 @@ function resolveStorePath() {
   return path30.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
 }
 function readStoreFile(filePath) {
-  if (!fs22.existsSync(filePath)) return { records: [] };
+  if (!fs22.existsSync(filePath))
+    return { records: [] };
   try {
     const raw = JSON.parse(fs22.readFileSync(filePath, "utf-8"));
-    if (!Array.isArray(raw.records)) return { records: [] };
+    if (!Array.isArray(raw.records))
+      return { records: [] };
     return raw;
   } catch {
     return { records: [] };
@@ -19429,8 +19912,10 @@ function writeStoreFile(filePath, data) {
 `, "utf-8");
 }
 function inferDefaultLabel(name, createdAt, versionCount) {
-  if (versionCount >= 3) return "canonical";
-  if (name.toLowerCase().includes("experiment")) return "experimental";
+  if (versionCount >= 3)
+    return "canonical";
+  if (name.toLowerCase().includes("experiment"))
+    return "experimental";
   if (createdAt && Date.now() - Date.parse(createdAt) > 1e3 * 60 * 60 * 24 * 90) {
     return "archived";
   }
@@ -19469,8 +19954,10 @@ function createWorkflowHygieneStore() {
 // src/runtime/workflow-hygiene/summaries.ts
 import pc32 from "picocolors";
 function renderWorkflowLabel(label) {
-  if (label === "canonical") return pc32.green("canonical");
-  if (label === "archived") return pc32.dim("archived");
+  if (label === "canonical")
+    return pc32.green("canonical");
+  if (label === "archived")
+    return pc32.dim("archived");
   return pc32.yellow("experimental");
 }
 function enrichWorkflowSummaries(entries, store) {
@@ -19533,10 +20020,12 @@ function resolveDeletedWorkflowIdsPath() {
 }
 function readDeletedWorkflowIds() {
   const filePath = resolveDeletedWorkflowIdsPath();
-  if (!fs23.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  if (!fs23.existsSync(filePath))
+    return /* @__PURE__ */ new Set();
   try {
     const raw = JSON.parse(fs23.readFileSync(filePath, "utf-8"));
-    if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
+    if (!Array.isArray(raw?.workflowIds))
+      return /* @__PURE__ */ new Set();
     return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
   } catch {
     return /* @__PURE__ */ new Set();
@@ -19555,8 +20044,10 @@ function markWorkflowDeletedLocally(workflowId) {
 }
 function effectiveWorkflowLabel(entry, hygieneStore) {
   const explicitLabel = hygieneStore.getLabel(entry.workflowId);
-  if (explicitLabel) return explicitLabel;
-  if (entry.isActive === false) return "archived";
+  if (explicitLabel)
+    return explicitLabel;
+  if (entry.isActive === false)
+    return "archived";
   return entry.workflowLabel ?? "experimental";
 }
 function withEffectiveWorkflowLabels(entries, hygieneStore) {
@@ -19571,7 +20062,8 @@ function filterLocallyDeletedWorkflows(entries) {
 }
 function listLocalSavedWorkflows() {
   const dir = resolveSavedWorkflowsDir();
-  if (!fs23.existsSync(dir)) return [];
+  if (!fs23.existsSync(dir))
+    return [];
   const entries = fs23.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
     try {
       const raw = JSON.parse(fs23.readFileSync(path31.resolve(dir, e.name), "utf-8"));
@@ -19599,7 +20091,8 @@ async function listSavedWorkflows() {
   }
   try {
     const response = await listHostedWorkflows(session);
-    if (!response || !Array.isArray(response.workflows)) return listLocalSavedWorkflows();
+    if (!response || !Array.isArray(response.workflows))
+      return listLocalSavedWorkflows();
     return response.workflows.map((workflow) => ({
       workflowId: workflow.workflowId,
       pipelineId: workflow.workflowId,
@@ -19697,10 +20190,12 @@ function toDynamicPipelineFromHostedWorkflow(entry, pipeline) {
   });
   const upstreamNodeIdsByTarget = /* @__PURE__ */ new Map();
   for (const edge of rawEdges) {
-    if (typeof edge !== "object" || edge === null) continue;
+    if (typeof edge !== "object" || edge === null)
+      continue;
     const source = typeof edge.source === "string" ? edge.source : null;
     const target = typeof edge.target === "string" ? edge.target : null;
-    if (!source || !target || source === "start-1" || target === "end-1") continue;
+    if (!source || !target || source === "start-1" || target === "end-1")
+      continue;
     const existing = upstreamNodeIdsByTarget.get(target) ?? [];
     existing.push(source);
     upstreamNodeIdsByTarget.set(target, existing);
@@ -19726,7 +20221,8 @@ function toDynamicPipelineFromHostedWorkflow(entry, pipeline) {
 }
 function toExecutableSavedWorkflowPipeline(entry, pipeline) {
   const looksLikeDynamicPipeline = Array.isArray(pipeline.nodes) && pipeline.nodes.every((node) => {
-    if (typeof node !== "object" || node === null) return false;
+    if (typeof node !== "object" || node === null)
+      return false;
     const record = node;
     return typeof record.id === "string" && typeof record.slug === "string";
   });
@@ -19777,7 +20273,8 @@ async function paginatedSelect(message, allOptions, opts) {
       message: message + pageInfo,
       options
     });
-    if (p21.isCancel(choice)) return choice;
+    if (p21.isCancel(choice))
+      return choice;
     if (choice === "__next_page") {
       offset += PAGE_SIZE;
       continue;
@@ -19791,7 +20288,8 @@ async function paginatedSelect(message, allOptions, opts) {
         message: "Search items",
         placeholder: "Type to filter..."
       });
-      if (p21.isCancel(term)) return term;
+      if (p21.isCancel(term))
+        return term;
       const searchStr = term.toLowerCase().trim();
       if (searchStr) {
         filtered = allOptions.filter((o) => {
@@ -19816,7 +20314,8 @@ function printTemplateCard(node) {
   const contract = introspectNodeContract(node);
   const lines = renderContractCard(contract);
   lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc33.green("enabled") : pc33.red("disabled")}`);
-  if (node.description) lines.push("", pc33.dim(node.description));
+  if (node.description)
+    lines.push("", pc33.dim(node.description));
   console.log("");
   console.log(box5(lines));
   console.log("");
@@ -19916,7 +20415,8 @@ async function runWorkflowPicker(opts) {
       ].join("\n"),
       "Authentication Required"
     );
-    if (opts.allowBackToHub) return "back";
+    if (opts.allowBackToHub)
+      return "back";
     return "done";
   }
   p21.intro(pc33.bold("Workflows"));
@@ -19947,7 +20447,8 @@ async function runWorkflowPicker(opts) {
       p21.cancel("Cancelled.");
       process.exit(0);
     }
-    if (topChoice === "__back_to_hub") return "back";
+    if (topChoice === "__back_to_hub")
+      return "back";
     if (topChoice === "contracts" && refreshedAccess.state !== "ready") {
       p21.note(
         [
@@ -19989,7 +20490,8 @@ async function runWorkflowPicker(opts) {
             p21.cancel("Cancelled.");
             process.exit(0);
           }
-          if (contractsMenuChoice === "__back_to_workflow") break;
+          if (contractsMenuChoice === "__back_to_workflow")
+            break;
           if (contractsMenuChoice === "show_tree") {
             showDiscoveryTree = true;
             continue;
@@ -20015,9 +20517,11 @@ async function runWorkflowPicker(opts) {
             p21.cancel("Cancelled.");
             process.exit(0);
           }
-          if (contractChoice === "__back") continue;
+          if (contractChoice === "__back")
+            continue;
           const selected = nodes.find((node) => node.slug === contractChoice);
-          if (!selected) continue;
+          if (!selected)
+            continue;
           printTemplateCard(selected);
           const contractAction = await p21.select({
             message: "Contract actions",
@@ -20101,7 +20605,8 @@ async function runWorkflowPicker(opts) {
           p21.cancel("Cancelled.");
           process.exit(0);
         }
-        if (choice === "__back") break;
+        if (choice === "__back")
+          break;
         const entry = saved.find((w) => w.workflowId === choice);
         if (entry) {
           const detailSpinner = p21.spinner();
@@ -20308,7 +20813,8 @@ async function runWorkflowPicker(opts) {
           p21.cancel("Cancelled.");
           process.exit(0);
         }
-        if (familyChoice === "__back_to_workflow_menu") break;
+        if (familyChoice === "__back_to_workflow_menu")
+          break;
         if (familyChoice === "__toggle_view_mode") {
           const viewChoice = await p21.select({
             message: "Select template view mode",
@@ -20357,9 +20863,11 @@ async function runWorkflowPicker(opts) {
             p21.cancel("Cancelled.");
             process.exit(0);
           }
-          if (templateChoice === "__back") break;
+          if (templateChoice === "__back")
+            break;
           const selected = templates.find((t) => t.slug === templateChoice);
-          if (!selected) continue;
+          if (!selected)
+            continue;
           printTemplateCard(selected);
           while (true) {
             const action = await p21.select({
@@ -20375,7 +20883,8 @@ async function runWorkflowPicker(opts) {
               p21.cancel("Cancelled.");
               process.exit(0);
             }
-            if (action === "back_to_templates") break;
+            if (action === "back_to_templates")
+              break;
             if (action === "resolve") {
               try {
                 const resolver = createMachineCapabilityResolver();
@@ -20404,7 +20913,8 @@ async function runWorkflowPicker(opts) {
               const contract = introspectNodeContract(selected);
               const rawBindings = {};
               for (const input of contract.inputs) {
-                if (!input.required) continue;
+                if (!input.required)
+                  continue;
                 const value = await p21.text({
                   message: `${selected.displayName} \u2192 ${input.key}`,
                   placeholder: `Enter ${input.key}`
@@ -20485,7 +20995,8 @@ async function renderWorkflowIntelligenceSummary(pipeline, capabilities, phase) 
         const missingRequired = [];
         if (contract) {
           for (const input2 of contract.inputs) {
-            if (!input2.required) continue;
+            if (!input2.required)
+              continue;
             const value = node.bindings[input2.key];
             if (value === void 0 || value === null || value === "") {
               missingRequired.push(input2.key);
@@ -20562,8 +21073,10 @@ Examples:
       }
       const registry = createCmsCapabilityRegistryClient();
       const query = {};
-      if (opts.family) query.family = opts.family;
-      if (opts.search) query.search = opts.search;
+      if (opts.family)
+        query.family = opts.family;
+      if (opts.search)
+        query.search = opts.search;
       try {
         const { nodes, meta } = await registry.listCapabilities(
           Object.keys(query).length > 0 ? query : void 0
@@ -20693,7 +21206,8 @@ function ensureSecureFile(filePath) {
 }
 function readHarnessCredentials(harnessId) {
   const filePath = resolveHarnessAuthFile(harnessId);
-  if (!fs24.existsSync(filePath)) return {};
+  if (!fs24.existsSync(filePath))
+    return {};
   try {
     const parsed = JSON.parse(fs24.readFileSync(filePath, "utf-8"));
     const creds = {};
@@ -20744,8 +21258,10 @@ function setHarnessCredentials(harnessId, updates) {
   ensureSecureFile(filePath);
 }
 function maskSecret(value) {
-  if (!value) return "(not set)";
-  if (value.length <= 4) return "****";
+  if (!value)
+    return "(not set)";
+  if (value.length <= 4)
+    return "****";
   return `${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
 }
 
@@ -20845,8 +21361,10 @@ async function createOpenAgentsSession(config, input) {
   const body = {
     prompt: input.prompt
   };
-  if (input.repoUrl) body.repoUrl = input.repoUrl;
-  if (input.branch) body.branch = input.branch;
+  if (input.repoUrl)
+    body.repoUrl = input.repoUrl;
+  if (input.branch)
+    body.branch = input.branch;
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
@@ -20982,7 +21500,8 @@ function writeOpenAgentsConfig(config) {
   setHarnessCredential("open-agents", "apiKey", config.apiKey);
 }
 function validateBackendType(value) {
-  if (value === "local" || value === "hosted") return value;
+  if (value === "local" || value === "hosted")
+    return value;
   return "local";
 }
 function validateAuthMode(value) {
@@ -20995,17 +21514,25 @@ function validateAuthMode(value) {
 // src/commands/open-agents.ts
 init_banner();
 function statusColor2(status) {
-  if (status === "running") return pc34.green(status);
-  if (status === "completed") return pc34.cyan(status);
-  if (status === "failed" || status === "cancelled") return pc34.red(status);
-  if (status === "waiting" || status === "idle") return pc34.yellow(status);
+  if (status === "running")
+    return pc34.green(status);
+  if (status === "completed")
+    return pc34.cyan(status);
+  if (status === "failed" || status === "cancelled")
+    return pc34.red(status);
+  if (status === "waiting" || status === "idle")
+    return pc34.yellow(status);
   return pc34.dim(status);
 }
 function sandboxBadge(state) {
-  if (state === "running") return pc34.green("running");
-  if (state === "hibernating") return pc34.yellow("hibernating");
-  if (state === "stopped") return pc34.dim("stopped");
-  if (state === "error") return pc34.red("error");
+  if (state === "running")
+    return pc34.green("running");
+  if (state === "hibernating")
+    return pc34.yellow("hibernating");
+  if (state === "stopped")
+    return pc34.dim("stopped");
+  if (state === "error")
+    return pc34.red("error");
   return pc34.dim(state);
 }
 function hr7(width = 72) {
@@ -21033,8 +21560,10 @@ function printSessionCard(session) {
     `${pc34.dim("Events:")}   ${session.eventCount}`,
     `${pc34.dim("Created:")}  ${session.createdAt}`
   ];
-  if (session.repoUrl) lines.push(`${pc34.dim("Repo:")}     ${session.repoUrl}`);
-  if (session.branch) lines.push(`${pc34.dim("Branch:")}   ${session.branch}`);
+  if (session.repoUrl)
+    lines.push(`${pc34.dim("Repo:")}     ${session.repoUrl}`);
+  if (session.branch)
+    lines.push(`${pc34.dim("Branch:")}   ${session.branch}`);
   if (session.prompt) {
     const truncated = session.prompt.length > 80 ? session.prompt.slice(0, 77) + "..." : session.prompt;
     lines.push(`${pc34.dim("Prompt:")}   ${truncated}`);
@@ -21083,7 +21612,8 @@ async function runOpenAgentsHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p22.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p22.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "setup") {
       await runSetupFlow(config);
       continue;
@@ -21119,7 +21649,8 @@ async function runOpenAgentsHub(opts) {
     }
     if (action === "list") {
       const listResult = await runSessionListFlow(config);
-      if (listResult === "back") continue;
+      if (listResult === "back")
+        continue;
       return "done";
     }
     if (action === "create") {
@@ -21141,7 +21672,8 @@ async function runSetupFlow(currentConfig) {
     ],
     initialValue: currentConfig.backendType
   });
-  if (p22.isCancel(backendChoice)) return;
+  if (p22.isCancel(backendChoice))
+    return;
   const authMode = backendChoice === "hosted" ? await p22.select({
     message: "Hosted authentication strategy",
     options: [
@@ -21158,13 +21690,15 @@ async function runSetupFlow(currentConfig) {
     ],
     initialValue: currentConfig.authMode === "api-key" || currentConfig.authMode === "vercel-managed" ? currentConfig.authMode : "api-key"
   }) : "none";
-  if (p22.isCancel(authMode)) return;
+  if (p22.isCancel(authMode))
+    return;
   const endpoint = await p22.text({
     message: "Backend endpoint",
     placeholder: currentConfig.endpoint,
     initialValue: currentConfig.endpoint
   });
-  if (p22.isCancel(endpoint)) return;
+  if (p22.isCancel(endpoint))
+    return;
   let apiKeyValue;
   if (authMode === "api-key") {
     const existingKeyMasked = maskSecret(currentConfig.apiKey);
@@ -21177,12 +21711,14 @@ async function runSetupFlow(currentConfig) {
       ],
       initialValue: currentConfig.apiKey ? "keep" : "replace"
     });
-    if (p22.isCancel(apiKeyMode)) return;
+    if (p22.isCancel(apiKeyMode))
+      return;
     if (apiKeyMode === "replace") {
       const entered = await p22.password({
         message: "Open Agents API key"
       });
-      if (p22.isCancel(entered)) return;
+      if (p22.isCancel(entered))
+        return;
       apiKeyValue = String(entered).trim() || void 0;
     } else if (apiKeyMode === "keep") {
       apiKeyValue = currentConfig.apiKey;
@@ -21197,12 +21733,14 @@ async function runSetupFlow(currentConfig) {
     placeholder: currentConfig.defaultRepo ?? "",
     initialValue: currentConfig.defaultRepo ?? ""
   });
-  if (p22.isCancel(defaultRepo)) return;
+  if (p22.isCancel(defaultRepo))
+    return;
   const confirmed = await p22.confirm({
     message: "Save Open Agents configuration?",
     initialValue: true
   });
-  if (p22.isCancel(confirmed) || !confirmed) return;
+  if (p22.isCancel(confirmed) || !confirmed)
+    return;
   const newConfig = {
     ...currentConfig,
     backendType: backendChoice,
@@ -21242,9 +21780,11 @@ async function runSessionListFlow(config) {
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p22.isCancel(sessionChoice) || sessionChoice === "__back") return "back";
+    if (p22.isCancel(sessionChoice) || sessionChoice === "__back")
+      return "back";
     const selected = sessions.find((s) => s.sessionId === sessionChoice);
-    if (!selected) continue;
+    if (!selected)
+      continue;
     printSessionCard(selected);
     const nextStep = await p22.select({
       message: "What next?",
@@ -21253,7 +21793,8 @@ async function runSessionListFlow(config) {
         { value: "back_to_list", label: "\u2190 Back to session list" }
       ]
     });
-    if (p22.isCancel(nextStep) || nextStep === "back_to_list") continue;
+    if (p22.isCancel(nextStep) || nextStep === "back_to_list")
+      continue;
     if (nextStep === "events") {
       try {
         const events = await pollSessionEvents(config, selected.sessionId);
@@ -21280,24 +21821,28 @@ async function runCreateSessionFlow(config) {
     message: "What should the agent do?",
     placeholder: "Describe the task for the agent"
   });
-  if (p22.isCancel(prompt) || !String(prompt).trim()) return;
+  if (p22.isCancel(prompt) || !String(prompt).trim())
+    return;
   const repoUrl = await p22.text({
     message: "Repository URL (optional)",
     placeholder: config.defaultRepo ?? "https://github.com/org/repo",
     initialValue: config.defaultRepo ?? ""
   });
-  if (p22.isCancel(repoUrl)) return;
+  if (p22.isCancel(repoUrl))
+    return;
   const branch = await p22.text({
     message: "Branch (optional)",
     placeholder: config.defaultBranch ?? "main",
     initialValue: config.defaultBranch ?? ""
   });
-  if (p22.isCancel(branch)) return;
+  if (p22.isCancel(branch))
+    return;
   const confirmed = await p22.confirm({
     message: "Create agent session?",
     initialValue: true
   });
-  if (p22.isCancel(confirmed) || !confirmed) return;
+  if (p22.isCancel(confirmed) || !confirmed)
+    return;
   const spinner10 = p22.spinner();
   spinner10.start("Creating session...");
   try {
@@ -21318,7 +21863,8 @@ async function runResumeSessionFlow(config) {
     message: "Session ID",
     placeholder: "Paste the session ID to resume"
   });
-  if (p22.isCancel(sessionId) || !String(sessionId).trim()) return;
+  if (p22.isCancel(sessionId) || !String(sessionId).trim())
+    return;
   const spinner10 = p22.spinner();
   spinner10.start("Resuming session...");
   try {
@@ -21595,7 +22141,8 @@ async function executeHeadlessPrompt(prompt, configOverride) {
       timedOut = true;
       child.kill("SIGTERM");
       setTimeout(() => {
-        if (!child.killed) child.kill("SIGKILL");
+        if (!child.killed)
+          child.kill("SIGKILL");
       }, 5e3);
     }, config.timeoutMs) : null;
     child.stdout.on("data", (data) => {
@@ -21605,7 +22152,8 @@ async function executeHeadlessPrompt(prompt, configOverride) {
       stderr += data.toString();
     });
     child.on("close", (exitCode, signal) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle)
+        clearTimeout(timeoutHandle);
       resolve2({
         exitCode,
         timedOut,
@@ -21616,7 +22164,8 @@ async function executeHeadlessPrompt(prompt, configOverride) {
       });
     });
     child.on("error", (err) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle)
+        clearTimeout(timeoutHandle);
       resolve2({
         exitCode: null,
         timedOut: false,
@@ -21813,7 +22362,8 @@ function writeQwenCodeConfig(config) {
 function mergeHarnessEnv(runtimeEnv, credentials) {
   const merged = {};
   for (const [key, value] of Object.entries(runtimeEnv)) {
-    if (typeof value === "string") merged[key] = value;
+    if (typeof value === "string")
+      merged[key] = value;
   }
   for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
     const secret = credentials[key];
@@ -21840,7 +22390,8 @@ async function runQwenCodeHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p23.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p23.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "health") {
       const env = detectEnvironment(config.binaryPath, config.env);
       const guidance = buildSetupGuidance(env);
@@ -21856,9 +22407,11 @@ async function runQwenCodeHub(opts) {
         message: "Enter prompt for Qwen Code",
         placeholder: "Describe what you want to build or analyze..."
       });
-      if (p23.isCancel(rawPrompt)) continue;
+      if (p23.isCancel(rawPrompt))
+        continue;
       const prompt = String(rawPrompt).trim();
-      if (!prompt) continue;
+      if (!prompt)
+        continue;
       const runSpinner = p23.spinner();
       runSpinner.start(`Running qwen -p (model: ${config.defaultModel})...`);
       const result = await executeHeadlessPrompt(prompt, config);
@@ -21913,7 +22466,8 @@ async function runConfigureFlow(currentConfig) {
     placeholder: "qwen3-coder",
     defaultValue: currentConfig.defaultModel
   });
-  if (p23.isCancel(modelInput)) return;
+  if (p23.isCancel(modelInput))
+    return;
   const modeInput = await p23.select({
     message: "Approval mode",
     options: QWEN_CODE_APPROVAL_MODES.map((mode) => ({
@@ -21923,13 +22477,15 @@ async function runConfigureFlow(currentConfig) {
     })),
     initialValue: currentConfig.approvalMode
   });
-  if (p23.isCancel(modeInput)) return;
+  if (p23.isCancel(modeInput))
+    return;
   const binaryInput = await p23.text({
     message: "Binary path",
     placeholder: "qwen",
     defaultValue: currentConfig.binaryPath
   });
-  if (p23.isCancel(binaryInput)) return;
+  if (p23.isCancel(binaryInput))
+    return;
   const authAction = await p23.select({
     message: "Authentication setup",
     options: [
@@ -21951,7 +22507,8 @@ async function runConfigureFlow(currentConfig) {
     ],
     initialValue: "skip"
   });
-  if (p23.isCancel(authAction)) return;
+  if (p23.isCancel(authAction))
+    return;
   const nextEnv = { ...currentConfig.env };
   if (authAction === "set-key") {
     const providerKey = await p23.select({
@@ -21968,15 +22525,19 @@ async function runConfigureFlow(currentConfig) {
         }
       ]
     });
-    if (p23.isCancel(providerKey)) return;
-    if (providerKey === "__back_to_auth_setup") return;
+    if (p23.isCancel(providerKey))
+      return;
+    if (providerKey === "__back_to_auth_setup")
+      return;
     const keyValue = await p23.password({
       message: `${providerKey} value`,
       validate: (value) => {
-        if (!value || String(value).trim().length === 0) return "Key value is required.";
+        if (!value || String(value).trim().length === 0)
+          return "Key value is required.";
       }
     });
-    if (p23.isCancel(keyValue)) return;
+    if (p23.isCancel(keyValue))
+      return;
     nextEnv[providerKey] = String(keyValue).trim();
   } else if (authAction === "clear-keys") {
     for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
@@ -21987,7 +22548,8 @@ async function runConfigureFlow(currentConfig) {
     message: `Save Qwen Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
     initialValue: true
   });
-  if (p23.isCancel(confirmed) || !confirmed) return;
+  if (p23.isCancel(confirmed) || !confirmed)
+    return;
   writeQwenCodeConfig({
     ...currentConfig,
     defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
@@ -22053,9 +22615,11 @@ init_home();
 var program = new Command();
 var DATA_DIR_OPTION_HELP = "Growthub data directory root (isolates local instance state)";
 function resolveSurfaceProfile(config) {
-  if (typeof config !== "object" || config === null) return null;
+  if (typeof config !== "object" || config === null)
+    return null;
   const surface = config.surface;
-  if (typeof surface !== "object" || surface === null) return null;
+  if (typeof surface !== "object" || surface === null)
+    return null;
   const profile = surface.profile;
   return profile === "dx" || profile === "gtm" ? profile : null;
 }
@@ -22138,7 +22702,8 @@ async function runNativeIntelligenceHub() {
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p24.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p24.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "setup") {
       const setupLines = [
         `OS: ${status.osLabel}`,
@@ -22167,14 +22732,17 @@ async function runNativeIntelligenceHub() {
         message: "Choose local custom model adapter",
         options: modelOptions
       });
-      if (p24.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
+      if (p24.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel")
+        continue;
       const chosenModel = adapterChoice === "__custom_model" ? await promptForCustomModel(defaultModel) : adapterChoice;
-      if (!chosenModel) continue;
+      if (!chosenModel)
+        continue;
       const applyConfirmed = await p24.confirm({
         message: `Apply Local Intelligence config for model "${chosenModel}"?`,
         initialValue: true
       });
-      if (p24.isCancel(applyConfirmed) || !applyConfirmed) continue;
+      if (p24.isCancel(applyConfirmed) || !applyConfirmed)
+        continue;
       const applySpinner = p24.spinner();
       applySpinner.start(`Applying model config (${chosenModel})...`);
       writeIntelligenceConfig({
@@ -22204,7 +22772,8 @@ async function runNativeIntelligenceHub() {
       message: "Enter your local intelligence prompt",
       placeholder: "Describe what you want to create/analyze"
     });
-    if (p24.isCancel(customPrompt)) continue;
+    if (p24.isCancel(customPrompt))
+      continue;
     const prompt = String(customPrompt).trim();
     if (!prompt) {
       p24.note("Prompt was empty. Nothing was run.", "Local Intelligence");
@@ -22258,7 +22827,8 @@ function buildSetupCommands(osLabel, baseUrl, recommendedModel) {
 }
 function prioritizeModelOptions(models, favoriteModel, recommendedModel) {
   const unique3 = [...new Set(models)];
-  if (unique3.length === 0) return unique3;
+  if (unique3.length === 0)
+    return unique3;
   if (favoriteModel && unique3.includes(favoriteModel)) {
     return [favoriteModel, ...unique3.filter((id) => id !== favoriteModel)];
   }
@@ -22273,14 +22843,17 @@ async function promptForCustomModel(defaultModel) {
     placeholder: "example: gemma3:4b",
     defaultValue: defaultModel
   });
-  if (p24.isCancel(input)) return null;
+  if (p24.isCancel(input))
+    return null;
   const trimmed = String(input).trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 function inferCanonicalModelId(modelId) {
   const lower = modelId.toLowerCase();
-  if (lower.includes("gemma3n")) return "gemma3n";
-  if (lower.includes("codegemma")) return "codegemma";
+  if (lower.includes("gemma3n"))
+    return "gemma3n";
+  if (lower.includes("codegemma"))
+    return "codegemma";
   return "gemma3";
 }
 async function runLocalPromptChat(baseUrl, defaultModel) {
@@ -22311,10 +22884,13 @@ async function runLocalPromptChat(baseUrl, defaultModel) {
       message: `Prompt (${activeModel})`,
       placeholder: "Ask anything..."
     });
-    if (p24.isCancel(rawPrompt)) return;
+    if (p24.isCancel(rawPrompt))
+      return;
     const prompt = String(rawPrompt).trim();
-    if (prompt === "/back") return;
-    if (prompt.length === 0) continue;
+    if (prompt === "/back")
+      return;
+    if (prompt.length === 0)
+      continue;
     const historyContext = renderHistoryContext(thread.messages, 8);
     const runSpinner = p24.spinner();
     runSpinner.start("Invoking local model...");
@@ -22392,7 +22968,8 @@ async function completeWithRetry(backend, baseConfig, input) {
     return await backend.complete(input);
   } catch (err) {
     const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-    if (!message.includes("aborted")) throw err;
+    if (!message.includes("aborted"))
+      throw err;
     const retryBackend = createNativeIntelligenceBackend({
       ...baseConfig,
       timeoutMs: Math.max(baseConfig.timeoutMs, 18e4)
@@ -22484,9 +23061,11 @@ async function loadRuntimeContracts() {
 }
 async function loadRuntimeWorkflows() {
   const session = readSession();
-  if (!session || isSessionExpired(session)) return [];
+  if (!session || isSessionExpired(session))
+    return [];
   const response = await listHostedWorkflows(session);
-  if (!response?.workflows) return [];
+  if (!response?.workflows)
+    return [];
   return response.workflows.map((workflow) => ({
     workflowId: workflow.workflowId,
     name: workflow.name,
@@ -22630,7 +23209,8 @@ async function runDiscoveryHub(opts) {
           p24.cancel("Cancelled.");
           process.exit(0);
         }
-        if (harnessType === "__back_to_hub") break;
+        if (harnessType === "__back_to_hub")
+          break;
         if (harnessType === "paperclip") {
           let paperclipDone = false;
           while (!paperclipDone) {
@@ -22657,7 +23237,8 @@ async function runDiscoveryHub(opts) {
               p24.cancel("Cancelled.");
               process.exit(0);
             }
-            if (appModeChoice === "__back_to_harness") break;
+            if (appModeChoice === "__back_to_harness")
+              break;
             if (appModeChoice === "load") {
               const existingSurfaces = listLocalSurfaces();
               if (existingSurfaces.length === 0) {
@@ -22734,12 +23315,14 @@ async function runDiscoveryHub(opts) {
         }
         if (harnessType === "open-agents") {
           const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
-          if (oaResult === "back") continue;
+          if (oaResult === "back")
+            continue;
           return;
         }
         if (harnessType === "qwen-code") {
           const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
-          if (qwenResult === "back") continue;
+          if (qwenResult === "back")
+            continue;
           return;
         }
       }
@@ -22747,17 +23330,20 @@ async function runDiscoveryHub(opts) {
     }
     if (surfaceChoice === "kits") {
       const result2 = await runInteractivePicker({ allowBackToHub: true });
-      if (result2 === "back") continue;
+      if (result2 === "back")
+        continue;
       return;
     }
     if (surfaceChoice === "workflows") {
       const result2 = await runWorkflowPicker({ allowBackToHub: true });
-      if (result2 === "back") continue;
+      if (result2 === "back")
+        continue;
       return;
     }
     if (surfaceChoice === "native-intelligence") {
       const result2 = await runNativeIntelligenceHub();
-      if (result2 === "back") continue;
+      if (result2 === "back")
+        continue;
       return;
     }
     if (surfaceChoice === "hosted-auth") {
@@ -22765,7 +23351,8 @@ async function runDiscoveryHub(opts) {
       continue;
     }
     const result = await runTemplatePicker({ allowBackToHub: true });
-    if (result === "back") continue;
+    if (result === "back")
+      continue;
     return;
   }
 }
@@ -22775,16 +23362,20 @@ function isInstallerMode() {
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
   const instancesDir = path35.resolve(homeDir, "instances");
-  if (!fs27.existsSync(instancesDir)) return [];
+  if (!fs27.existsSync(instancesDir))
+    return [];
   return fs27.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
     const configPath = path35.resolve(instancesDir, instanceId, "config.json");
-    if (!fs27.existsSync(configPath)) return null;
+    if (!fs27.existsSync(configPath))
+      return null;
     try {
       const config = readConfig(configPath);
-      if (!config) return null;
+      if (!config)
+        return null;
       const profile = resolveSurfaceProfile(config);
-      if (!profile) return null;
+      if (!profile)
+        return null;
       return {
         instanceId,
         profile,
@@ -22820,7 +23411,7 @@ applyDataDirOverride(bootstrapOptions, {
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
-program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.59").addHelpText("after", `
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version("0.3.60").addHelpText("after", `
 Worker Kits (agent execution environments):
 
   Discovery:

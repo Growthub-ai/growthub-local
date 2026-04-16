@@ -27,7 +27,7 @@ The Growthub Zernio Social Media Studio is a worker kit that wraps the [Zernio](
 
 The kit provides a self-contained local execution environment. An operator exports the kit, points Claude Code's Working Directory at the kit root, and the `zernio-social-operator` worker handles the complete 10-step social media campaign workflow.
 
-Unlike the Postiz kit (self-hosted fork), Zernio is a hosted SaaS: there is no docker / fork to clone. The kit works against the hosted `https://zernio.com/api/v1` endpoint using an API key.
+Zernio is a hosted SaaS: there is no docker image or local fork to clone. The kit works against the hosted `https://zernio.com/api/v1` endpoint using an API key, and the exported `studio/` workspace is the user-facing UI shell.
 
 ---
 
@@ -37,7 +37,7 @@ Unlike the Postiz kit (self-hosted fork), Zernio is a hosted SaaS: there is no d
 growthub-zernio-social-v1/
   kit.json                              ← Kit manifest (schemaVersion: 2)
   QUICKSTART.md                         ← Setup guide
-  .env.example                          ← Environment template
+  .env.example                          ← Worker-kit environment template
   skills.md                             ← Master methodology doc (read at every session)
   output-standards.md                   ← Output naming, structure, quality bar
   runtime-assumptions.md                ← Frozen upstream assumptions
@@ -79,7 +79,7 @@ growthub-zernio-social-v1/
     platform-coverage.md
     ai-caption-layer.md
     posts-and-queues-layer.md
-    postiz-ui-shell-integration.md      ← Optional — pair with the Postiz UI kit
+    growthub-agentic-social-platform-ui-shell.md ← Exported UI-shell workflow and setup truth
     local-adapters.md                   ← Per-IDE matrix (Claude/Codex/Cursor/Gemini/OpenCode/…)
   growthub-meta/
     README.md                           ← This file
@@ -136,11 +136,8 @@ No server-side activation is required. The kit is fully self-contained.
 | `growthub-email-marketing-v1` | operator | Email marketing campaigns |
 | `growthub-open-higgsfield-studio-v1` | studio | AI video generation via Open Higgsfield |
 | `growthub-geo-seo-v1` | studio | GEO + SEO auditing |
-| `growthub-postiz-social-v1` | studio | Social media via self-hosted Postiz |
 | `growthub-zernio-social-v1` | studio | Social media via hosted Zernio REST API (this kit) |
 
-### Recommended Pairing — Social Media Stack
+### Exported Workspace Truth
 
-`growthub-postiz-social-v1` (UI shell) + `growthub-zernio-social-v1` (engine) form a first-class paired environment. Postiz provides calendar, compose, analytics shell, and team workspace. Zernio provides the 14-platform transport, queues, media, inbox, and analytics against a single bearer-token REST API — no per-platform OAuth dance, no regional secrets sprayed across the kit.
-
-See `docs/postiz-ui-shell-integration.md` in this kit for the 7-module bridge recipe.
+The exported worker kit is the only user-facing workspace. Inside that exported folder, `studio/` is the Vite UI shell and the rest of the kit provides the Zernio operator law, templates, setup scripts, and API contract. The CLI is responsible only for exporting this workspace cleanly.

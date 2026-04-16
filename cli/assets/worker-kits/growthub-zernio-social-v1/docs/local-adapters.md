@@ -97,7 +97,7 @@ This installs Zernio's official Claude Code skill (docs + examples) alongside th
 | Simplest possible setup; agent-only mode included | Layer 1 (Working Directory) |
 | Typed tool calls from the agent to Zernio | Layer 1 + Layer 2 (MCP) |
 | First-class Zernio knowledge baked into Claude Code | Layer 1 + Layer 3 (Claude Code skill) |
-| Postiz UI shell with Zernio as the engine | See `docs/postiz-ui-shell-integration.md` |
+| Growthub Agentic Social Media Platform UI shell | See `docs/growthub-agentic-social-platform-ui-shell.md` |
 
 All four paths work from the same kit folder. You can layer them — they are strictly additive.
 
@@ -120,4 +120,4 @@ This keeps the diff surface minimal and the kit strictly reusable across every l
 - `../setup/setup.mjs` — cross-platform bootstrap
 - `../setup/install-mcp.mjs` — per-IDE MCP config printer
 - `./zernio-api-integration.md` — Zernio REST contract
-- `./postiz-ui-shell-integration.md` — pair the kit with the Postiz UI kit
+- `./growthub-agentic-social-platform-ui-shell.md` — exported-workspace UI shell guide
