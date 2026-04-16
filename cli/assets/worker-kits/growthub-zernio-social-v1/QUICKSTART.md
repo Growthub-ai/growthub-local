@@ -56,6 +56,40 @@ Open `.env` and fill in:
 
 Re-run `node setup/setup.mjs` after editing `.env` to confirm everything is valid.
 
+### Run the exported UI shell workspace
+
+The social UI lives in the exported worker-kit folder under `studio/`. Treat that exported folder as the working copy. Do not edit or rely on the CLI repo copy once the kit has been exported.
+
+From the exported kit folder:
+
+```bash
+cd studio
+npm install
+```
+
+Create a local `.env` in `studio/` with:
+
+```bash
+VITE_ZERNIO_API_URL=https://zernio.com/api/v1
+VITE_ZERNIO_API_KEY=<your-zernio-api-key>
+VITE_ZERNIO_PROFILE_ID=<your-profile-id>
+```
+
+Then start the UI shell:
+
+```bash
+cd studio
+npm run dev
+```
+
+Default local URL:
+
+```text
+http://127.0.0.1:5173
+```
+
+The exported Vite workspace is the user-facing setup path. The CLI's job is only to export the worker kit cleanly.
+
 ### Agent-only mode (no Zernio key needed)
 
 If you just want to plan, write captions, and produce dry-run manifests without touching the Zernio API, skip the key entirely:
@@ -133,7 +167,7 @@ Override the export path with `--out <path>` on `growthub kit download`.
 | `api-live`        | Valid `ZERNIO_API_KEY` + at least one connected account on a profile         | You want to schedule posts and queues via the live Zernio API                                                                                                     |
 | `agent-only`      | Nothing — Claude Code handles everything                                     | You need campaign planning, calendars, and captions without touching the Zernio API                                                                               |
 | `hybrid`          | `ANTHROPIC_API_KEY` + valid `ZERNIO_API_KEY`                                 | Enhanced caption drafting via Anthropic plus live Zernio scheduling                                                                                               |
-| `postiz-ui-shell` | `api-live` / `hybrid` + the Postiz kit (`growthub-postiz-social-v1`) running | You want Postiz's UI (calendar, compose, analytics shell) with Zernio as the transport engine. See `docs/postiz-ui-shell-integration.md` for the 7-module bridge. |
+| `growthub-ui-shell` | `api-live` / `hybrid` + the exported `studio/` workspace | You want the exported Growthub Agentic Social Media Platform UI shell for calendar, compose, comment automation, analytics, and account operations. See `docs/growthub-agentic-social-platform-ui-shell.md`. |
 
 
 **Agent-only mode is always valid.** Zernio reachability never blocks campaign planning.
@@ -203,7 +237,5 @@ Tell the operator which you need:
 | `docs/ai-caption-layer.md`                 | AI caption generation methodology                                                                      |
 | `docs/posts-and-queues-layer.md`           | Scheduling manifest + queue format for Zernio API                                                      |
 | `docs/local-adapters.md`                   | Per-IDE setup matrix (Claude Code / Desktop / Codex / Cursor / Gemini / OpenCode / Qwen / Open Agents) |
-| `docs/postiz-ui-shell-integration.md`      | Optional — run this kit as the engine under the Postiz UI shell                                        |
+| `docs/growthub-agentic-social-platform-ui-shell.md` | Exported UI-shell workflow and validation contract                                         |
 | `validation-checklist.md`                  | Pre-session checklist                                                                                  |
-
-

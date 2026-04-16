@@ -26,7 +26,7 @@ The following files must be present in every valid kit installation. Any missing
 | `output/README.md` | Output directory guide | No |
 | All 7 template files | Campaign output templates | No — each must have all sections |
 | All 4 example files | Reference samples | No — must contain realistic filled data |
-| All 4 doc files | Technical reference | No |
+| All 6 doc files | Technical reference | No |
 | `bundles/growthub-zernio-social-v1.json` | Bundle manifest | No |
 | `growthub-meta/README.md` | Kit metadata | No |
 | `growthub-meta/kit-standard.md` | This file | No |

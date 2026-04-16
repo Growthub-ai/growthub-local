@@ -140,13 +140,13 @@ validation-checklist.md
 
 These files define the execution environment, platform constraints, and output contract. Do not improvise around them.
 
-If the user is pairing this kit with the Postiz UI shell (a.k.a. `growthub-postiz-social-v1` running as the presentation layer while Zernio is the engine), also read:
+If the user is working on the exported Growthub UI shell that ships with this worker kit, also read:
 
 ```text
-docs/postiz-ui-shell-integration.md
+docs/growthub-agentic-social-platform-ui-shell.md
 ```
 
-That document defines the 7-module bridge (provider override, post submission, queue sync, caption surface, platform coverage config, env/secret surface, CLI entry point). Treat it as authoritative whenever a request references Postiz.
+That document defines the exported-workspace UI-shell truth: launch flow, API wiring, comment automation scope, and validation sequence. Treat it as authoritative whenever a request references the Growthub social UI shell.
 
 ---
 

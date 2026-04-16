@@ -17,7 +17,7 @@
 | Platform coverage | `docs/platform-coverage.md` |
 | AI caption layer | `docs/ai-caption-layer.md` |
 | Posts + queues layer | `docs/posts-and-queues-layer.md` |
-| Postiz UI shell integration | `docs/postiz-ui-shell-integration.md` |
+| Growthub Agentic UI shell | `docs/growthub-agentic-social-platform-ui-shell.md` |
 | Social campaign brief | `templates/social-campaign-brief.md` |
 | Content calendar | `templates/content-calendar.md` |
 | Platform publishing plan | `templates/platform-publishing-plan.md` |
