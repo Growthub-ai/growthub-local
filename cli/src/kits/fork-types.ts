@@ -46,6 +46,31 @@ export interface KitForkRegistration {
    * custom skills.  The sync engine always preserves these.
    */
   customSkills?: string[];
+  /**
+   * GitHub remote binding, when the fork is hosted on GitHub. Populated by
+   * `growthub kit fork create` (one-click fork) or `growthub kit fork connect`.
+   */
+  remote?: KitForkRemoteBinding;
+}
+
+export interface KitForkRemoteBinding {
+  provider: "github";
+  /** GitHub owner (user or org) the fork lives under. */
+  owner: string;
+  /** Repository name on GitHub. */
+  repo: string;
+  /** Default branch on the remote (e.g. "main"). */
+  defaultBranch: string;
+  /** HTTPS clone URL. */
+  cloneUrl: string;
+  /** Browser URL for the fork. */
+  htmlUrl: string;
+  /** ISO timestamp of last successful remote push. */
+  lastPushedAt?: string;
+  /** Branch name used for the most recent heal push. */
+  lastHealBranch?: string;
+  /** PR number + URL opened by the most recent heal, when applicable. */
+  lastHealPr?: { number: number; htmlUrl: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +137,14 @@ export interface KitHealAction {
   safe: boolean;
   /** Action-specific detail payload */
   payload?: Record<string, unknown>;
+  /**
+   * Set when the user's fork policy demands explicit confirmation before this
+   * action can be applied. The agent surfaces these to the user (interactive)
+   * or parks them in `requires_confirmation` state (background jobs).
+   */
+  needsConfirmation?: boolean;
+  /** Why confirmation is required — referenced in CLI prompts and trace. */
+  confirmationReason?: string;
 }
 
 export interface KitForkHealPlan {
@@ -157,6 +190,7 @@ export interface KitForkHealResult {
 export type KitForkSyncJobStatus =
   | "pending"
   | "running"
+  | "awaiting_confirmation"
   | "completed"
   | "failed"
   | "cancelled";
@@ -172,6 +206,16 @@ export interface KitForkSyncJob {
   driftReport?: KitForkDriftReport;
   healPlan?: KitForkHealPlan;
   healResult?: KitForkHealResult;
+  /** Action targetPaths still awaiting user confirmation. */
+  pendingConfirmations?: string[];
+  /** Remote push summary (if policy.remoteSyncMode !== "off"). */
+  remotePushSummary?: {
+    pushed: boolean;
+    branch?: string;
+    detail?: string;
+    prNumber?: number;
+    prUrl?: string;
+  };
   error?: string;
 }
 
@@ -191,4 +235,10 @@ export interface KitForkHealOptions {
   dryRun?: boolean;
   skipFiles?: string[];
   onProgress?: (step: string) => void;
+  /**
+   * Explicit confirmations supplied by the caller for actions that the policy
+   * flags as `needsConfirmation`. Each entry is an action targetPath that the
+   * user has explicitly approved for this run.
+   */
+  confirmations?: string[];
 }

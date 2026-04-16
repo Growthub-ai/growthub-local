@@ -572,6 +572,36 @@ export function resolveKitPath(kitId: string, outDir?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Bundled source snapshot helpers (used by fork-sync to materialize a fork
+// from the frozen bundled assets).
+// ---------------------------------------------------------------------------
+
+export interface BundledKitSourceInfo {
+  id: string;
+  version: string;
+  family: KitFamily;
+  assetRoot: string;
+}
+
+export function getBundledKitSourceInfo(kitId: string): BundledKitSourceInfo {
+  const resolved = resolveBundledKit(kitId);
+  return {
+    id: resolved.manifest.kit.id,
+    version: resolved.manifest.kit.version,
+    family: resolved.catalogEntry.family,
+    assetRoot: resolved.assetRoot,
+  };
+}
+
+export function copyBundledKitSource(kitId: string, destinationPath: string): BundledKitSourceInfo {
+  const info = getBundledKitSourceInfo(kitId);
+  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+  fs.rmSync(destinationPath, { recursive: true, force: true });
+  fs.cpSync(info.assetRoot, destinationPath, { recursive: true });
+  return info;
+}
+
+// ---------------------------------------------------------------------------
 // ZIP builder
 // ---------------------------------------------------------------------------
 

@@ -19,6 +19,7 @@
 
 import * as p from "@clack/prompts";
 import { Command } from "commander";
+import { registerKitForkRemoteSubcommands } from "./kit-fork-remote.js";
 import pc from "picocolors";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import {
@@ -548,6 +549,7 @@ Examples:
   });
 
   addForkSubcommands(forkCmd);
+  registerKitForkRemoteSubcommands(forkCmd);
 }
 
 /**
@@ -582,6 +584,7 @@ Examples:
 
   // Add subcommands directly onto fork-sync (not inside a nested "fork" wrapper)
   addForkSubcommands(forkSync);
+  registerKitForkRemoteSubcommands(forkSync);
 }
 
 /**

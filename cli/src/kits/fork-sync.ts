@@ -285,9 +285,29 @@ function isUserProtected(rel: string): boolean {
   return USER_PROTECTED_PATTERNS.some((rx) => rx.test(rel));
 }
 
-export function buildKitForkHealPlan(report: KitForkDriftReport): KitForkHealPlan {
+export function buildKitForkHealPlan(
+  report: KitForkDriftReport,
+  opts: { policy?: import("./fork-policy.js").KitForkPolicy } = {},
+): KitForkHealPlan {
+  const policy = opts.policy;
   const actions: KitHealAction[] = [];
   const preservedPaths: string[] = [];
+
+  const isPolicyUntouchable = (rel: string): boolean =>
+    policy ? policy.untouchablePaths.some((pat) => {
+      const normRel = rel.replace(/^\/+|\/+$/g, "");
+      const normPat = pat.replace(/^\/+|\/+$/g, "");
+      if (!normPat) return false;
+      return normRel === normPat || normRel.startsWith(`${normPat}/`);
+    }) : false;
+
+  const policyRequiresConfirm = (rel: string): boolean =>
+    policy ? policy.confirmBeforeChange.some((pat) => {
+      const normRel = rel.replace(/^\/+|\/+$/g, "");
+      const normPat = pat.replace(/^\/+|\/+$/g, "");
+      if (!normPat) return false;
+      return normRel === normPat || normRel.startsWith(`${normPat}/`);
+    }) : false;
 
   const severityOrder: KitDriftSeverity[] = ["none", "info", "warning", "critical"];
   let estimatedRisk: KitDriftSeverity = "none";
@@ -372,12 +392,66 @@ export function buildKitForkHealPlan(report: KitForkDriftReport): KitForkHealPla
     });
   }
 
+  // ------------------------------------------------------------------
+  // Apply user policy: rewrite actions touching untouchable paths into
+  // preservation, and flag confirmBeforeChange paths for explicit approval.
+  // ------------------------------------------------------------------
+  const finalActions: KitHealAction[] = [];
+  for (const action of actions) {
+    if (isPolicyUntouchable(action.targetPath)) {
+      preservedPaths.push(action.targetPath);
+      finalActions.push({
+        actionType: "skip_user_modified",
+        targetPath: action.targetPath,
+        description: `Policy untouchable — never modified by the agent: ${action.targetPath}`,
+        safe: true,
+      });
+      raiseTo("info");
+      continue;
+    }
+
+    const autoApproveMod = policy?.autoApprove === "all";
+    const autoApproveAdd = policy ? (policy.autoApprove === "additive" || policy.autoApprove === "all") : true;
+    const autoApproveDepAdd = policy ? (policy.autoApproveDepUpdates === "additive" || policy.autoApproveDepUpdates === "all") : true;
+    const autoApproveDepUpgrade = policy?.autoApproveDepUpdates === "all";
+
+    let needsConfirmation = false;
+    let reason: string | undefined;
+    if (policyRequiresConfirm(action.targetPath)) {
+      needsConfirmation = true;
+      reason = "Path listed in policy.confirmBeforeChange";
+    }
+    if (action.actionType === "add_file" && !autoApproveAdd) {
+      needsConfirmation = true;
+      reason ??= "policy.autoApprove excludes additions";
+    }
+    if (action.actionType === "patch_manifest" && !autoApproveMod) {
+      needsConfirmation = true;
+      reason ??= "policy.autoApprove excludes modifications";
+    }
+    if (action.actionType === "update_package_json_deps") {
+      const strategy = (action.payload?.strategy as string | undefined) ?? "merge_add_only";
+      if (strategy === "merge_add_only" && !autoApproveDepAdd) {
+        needsConfirmation = true;
+        reason ??= "policy.autoApproveDepUpdates excludes dep additions";
+      } else if (strategy !== "merge_add_only" && !autoApproveDepUpgrade) {
+        needsConfirmation = true;
+        reason ??= "policy.autoApproveDepUpdates excludes dep upgrades";
+      }
+    }
+
+    finalActions.push({
+      ...action,
+      ...(needsConfirmation ? { needsConfirmation: true, confirmationReason: reason } : {}),
+    });
+  }
+
   return {
     forkId: report.forkId,
     kitId: report.kitId,
     fromVersion: report.forkVersion,
     toVersion: report.upstreamVersion,
-    actions,
+    actions: finalActions,
     preservedPaths,
     estimatedRisk,
     generatedAt: new Date().toISOString(),
@@ -392,12 +466,13 @@ export function applyKitForkHealPlan(
   plan: KitForkHealPlan,
   opts: KitForkHealOptions & { registration: KitForkRegistration },
 ): KitForkHealResult {
-  const { dryRun = false, skipFiles = [], onProgress, registration } = opts;
+  const { dryRun = false, skipFiles = [], onProgress, registration, confirmations = [] } = opts;
   const forkPath = registration.forkPath;
   const actionResults: KitHealActionResult[] = [];
   let appliedCount = 0;
   let skippedCount = 0;
   let errorCount = 0;
+  const confirmSet = new Set(confirmations);
 
   for (const action of plan.actions) {
     const dryTag = dryRun ? "[dry-run] " : "";
@@ -405,6 +480,16 @@ export function applyKitForkHealPlan(
 
     if (skipFiles.includes(action.targetPath)) {
       actionResults.push({ action, status: "skipped", detail: "In explicit skip list" });
+      skippedCount++;
+      continue;
+    }
+
+    if (action.needsConfirmation && !confirmSet.has(action.targetPath)) {
+      actionResults.push({
+        action,
+        status: "skipped",
+        detail: `Policy requires confirmation — ${action.confirmationReason ?? "flagged by policy"}`,
+      });
       skippedCount++;
       continue;
     }
