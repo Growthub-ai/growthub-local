@@ -14,12 +14,17 @@
  */
 
 // ---------------------------------------------------------------------------
-// Fork registration — persisted per-fork in the CLI home directory
+// Fork registration — persisted inside the fork itself (self-describing)
 // ---------------------------------------------------------------------------
 
 /**
- * A registered fork entry stored at:
- *   PAPERCLIP_HOME/kit-forks/<kit-id>/<fork-id>/fork.json
+ * A registered fork entry. Canonical state lives inside the fork at:
+ *   <forkPath>/.growthub-fork/fork.json
+ *
+ * A thin CLI-owned discovery index at GROWTHUB_KIT_FORKS_HOME/index.json
+ * (default ~/.growthub/kit-forks/index.json) enumerates registered forks
+ * without filesystem scans. The in-fork file is authoritative; the index
+ * is rebuildable.
  */
 export interface KitForkRegistration {
   /** Stable unique ID generated at registration time */

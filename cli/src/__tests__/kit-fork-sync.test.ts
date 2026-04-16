@@ -46,7 +46,7 @@ function copyKitAssets(destRoot: string, kitId = "creative-strategist-v1"): void
 
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
-  process.env.PAPERCLIP_HOME = makeTempDir("paperclip-home-");
+  process.env.GROWTHUB_KIT_FORKS_HOME = makeTempDir("growthub-kit-forks-");
 });
 
 afterEach(() => {

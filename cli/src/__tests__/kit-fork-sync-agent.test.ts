@@ -40,20 +40,20 @@ function copyKitAssets(destRoot: string, kitId = "creative-strategist-v1"): void
   fs.cpSync(sourceRoot, destRoot, { recursive: true });
 }
 
-function resolveJobsRoot(): string {
-  const home = process.env.PAPERCLIP_HOME!;
-  return path.resolve(home, "kit-forks", ".jobs");
+function resolveOrphanJobsRoot(): string {
+  const home = process.env.GROWTHUB_KIT_FORKS_HOME!;
+  return path.resolve(home, "orphan-jobs");
 }
 
 function writeRawJob(jobId: string, data: object): void {
-  const dir = resolveJobsRoot();
+  const dir = resolveOrphanJobsRoot();
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.resolve(dir, `${jobId}.json`), JSON.stringify(data, null, 2) + "\n");
 }
 
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
-  process.env.PAPERCLIP_HOME = makeTempDir("paperclip-home-");
+  process.env.GROWTHUB_KIT_FORKS_HOME = makeTempDir("growthub-kit-forks-");
 });
 
 afterEach(() => {
@@ -175,7 +175,6 @@ describe("listKitForkSyncJobs", () => {
 
   it("returns jobs sorted by createdAt", () => {
     // Write two jobs with distinct, deterministic timestamps
-    const jobsRoot = resolveJobsRoot();
     const jobId1 = "sort-test-job-a";
     const jobId2 = "sort-test-job-b";
     writeRawJob(jobId1, {

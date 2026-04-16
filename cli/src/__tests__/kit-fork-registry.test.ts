@@ -32,7 +32,7 @@ function makeForkDir(): string {
 
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
-  process.env.PAPERCLIP_HOME = makeTempDir("paperclip-home-");
+  process.env.GROWTHUB_KIT_FORKS_HOME = makeTempDir("growthub-kit-forks-");
 });
 
 afterEach(() => {
@@ -58,13 +58,20 @@ describe("registerKitFork", () => {
     expect(reg.registeredAt).toBeTruthy();
     expect(typeof new Date(reg.registeredAt).getTime()).toBe("number");
 
-    // fork.json must exist on disk
-    const root = resolveKitForksRoot();
-    const jsonPath = path.resolve(root, "creative-strategist-v1", reg.forkId, "fork.json");
-    expect(fs.existsSync(jsonPath)).toBe(true);
+    // canonical fork.json must exist INSIDE the fork
+    const inForkJson = path.resolve(forkDir, ".growthub-fork", "fork.json");
+    expect(fs.existsSync(inForkJson)).toBe(true);
 
-    const fromDisk = JSON.parse(fs.readFileSync(jsonPath, "utf8")) as typeof reg;
+    const fromDisk = JSON.parse(fs.readFileSync(inForkJson, "utf8")) as typeof reg;
     expect(fromDisk.forkId).toBe(reg.forkId);
+
+    // discovery index must list it
+    const indexPath = path.resolve(resolveKitForksRoot(), "index.json");
+    expect(fs.existsSync(indexPath)).toBe(true);
+    const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as {
+      entries: Array<{ forkId: string; kitId: string; forkPath: string }>;
+    };
+    expect(index.entries.some((e) => e.forkId === reg.forkId)).toBe(true);
   });
 
   it("throws when forkPath does not exist", () => {
@@ -152,9 +159,8 @@ describe("listKitForkRegistrations", () => {
     const d1 = makeForkDir();
     const d2 = makeForkDir();
     const r1 = registerKitFork({ forkPath: d1, kitId: "creative-strategist-v1", baseVersion: "1.0.0" });
-    // Backdate r1 by writing it directly so sort order is deterministic
-    const kitForksRoot = path.resolve(process.env.PAPERCLIP_HOME!, "kit-forks");
-    const r1Path = path.resolve(kitForksRoot, "creative-strategist-v1", r1.forkId, "fork.json");
+    // Backdate r1 by rewriting its in-fork state file so sort order is deterministic
+    const r1Path = path.resolve(d1, ".growthub-fork", "fork.json");
     const r1Data = JSON.parse(fs.readFileSync(r1Path, "utf8")) as typeof r1;
     r1Data.registeredAt = "2020-01-01T00:00:00.000Z";
     fs.writeFileSync(r1Path, JSON.stringify(r1Data, null, 2));

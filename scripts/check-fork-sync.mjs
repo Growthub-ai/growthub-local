@@ -62,6 +62,7 @@ function checkFileContains(relPath, ...patterns) {
 // ---------------------------------------------------------------------------
 console.log("\n── 1. Source file structure ─────────────────────────────────────────────");
 const requiredFiles = [
+  "cli/src/config/kit-forks-home.ts",
   "cli/src/kits/fork-types.ts",
   "cli/src/kits/fork-registry.ts",
   "cli/src/kits/fork-sync.ts",
@@ -178,6 +179,54 @@ for (const stale of stalePaths) {
     ok(`Stale file absent: ${stale}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// 8. Zero Paperclip harness coupling in the fork-sync subsystem
+// ---------------------------------------------------------------------------
+console.log("\n── 8. No Paperclip harness coupling in fork-sync tree ───────────────────");
+const forkSyncTree = [
+  "cli/src/config/kit-forks-home.ts",
+  "cli/src/kits/fork-types.ts",
+  "cli/src/kits/fork-registry.ts",
+  "cli/src/kits/fork-sync.ts",
+  "cli/src/kits/fork-sync-agent.ts",
+  "cli/src/commands/kit-fork.ts",
+  "cli/src/__tests__/kit-fork-registry.test.ts",
+  "cli/src/__tests__/kit-fork-sync.test.ts",
+  "cli/src/__tests__/kit-fork-sync-agent.test.ts",
+  "cli/src/__tests__/kit-fork-command.test.ts",
+];
+const forbiddenTokens = ["PAPERCLIP_HOME", "resolvePaperclipHomeDir"];
+for (const file of forkSyncTree) {
+  const fullPath = resolve(ROOT, file);
+  if (!existsSync(fullPath)) {
+    fail(`Missing file during Paperclip coupling check: ${file}`);
+    continue;
+  }
+  const content = readFileSync(fullPath, "utf8");
+  for (const token of forbiddenTokens) {
+    if (content.includes(token)) {
+      fail(`${file} contains forbidden token '${token}' — fork-sync must not couple to Paperclip harness`);
+    } else {
+      ok(`${file} free of '${token}'`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 9. Kit Forks home resolver exports
+// ---------------------------------------------------------------------------
+console.log("\n── 9. Kit forks home resolver ───────────────────────────────────────────");
+checkFileContains("cli/src/config/kit-forks-home.ts",
+  "resolveKitForksHomeDir",
+  "resolveKitForksIndexPath",
+  "resolveKitForksJobsDir",
+  "resolveKitForksOrphanJobsDir",
+  "resolveInForkStateDir",
+  "resolveInForkRegistrationPath",
+  "GROWTHUB_KIT_FORKS_HOME",
+  ".growthub-fork",
+);
 
 // ---------------------------------------------------------------------------
 // Result

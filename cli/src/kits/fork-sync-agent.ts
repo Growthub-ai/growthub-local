@@ -8,11 +8,15 @@
  *   4. Executes the plan (applyKitForkHealPlan)
  *   5. Persists the updated registration on success
  *
- * Jobs are persisted as JSON files under:
- *   PAPERCLIP_HOME/kit-forks/.jobs/<job-id>.json
+ * Job state layout (zero Paperclip coupling):
+ *   <forkPath>/.growthub-fork/jobs/<job-id>.json   — when the fork resolves
+ *   GROWTHUB_KIT_FORKS_HOME/orphan-jobs/<job-id>.json — fallback for jobs
+ *                                                      whose fork isn't
+ *                                                      registered / on disk
  *
- * This keeps them lightweight (no child processes, no port binding),
- * human-inspectable, and restartable between CLI sessions.
+ * This keeps job state co-located with the fork whenever possible (kernel-
+ * packet-style self-description), and keeps orphan jobs off any harness-
+ * specific directory.
  *
  * Two dispatch modes:
  *   runKitForkSyncJob()               — awaitable foreground execution
@@ -22,8 +26,16 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { resolvePaperclipHomeDir } from "../config/home.js";
-import { loadKitForkRegistration, updateKitForkRegistration } from "./fork-registry.js";
+import {
+  resolveKitForksOrphanJobsDir,
+  resolveInForkStateDir,
+} from "../config/kit-forks-home.js";
+import {
+  loadKitForkRegistration,
+  updateKitForkRegistration,
+  lookupKitForkPath,
+  listKitForkRegistrations,
+} from "./fork-registry.js";
 import { detectKitForkDrift, buildKitForkHealPlan, applyKitForkHealPlan } from "./fork-sync.js";
 import type {
   KitForkSyncJob,
@@ -35,12 +47,20 @@ import type {
 // Paths
 // ---------------------------------------------------------------------------
 
-function resolveJobsRoot(): string {
-  return path.resolve(resolvePaperclipHomeDir(), "kit-forks", ".jobs");
+function resolveInForkJobsDir(forkPath: string): string {
+  return path.resolve(resolveInForkStateDir(forkPath), "jobs");
 }
 
-function resolveJobPath(jobId: string): string {
-  return path.resolve(resolveJobsRoot(), `${jobId}.json`);
+function resolveJobPath(jobId: string, kitId: string, forkId: string): string {
+  const forkPath = lookupKitForkPath(kitId, forkId);
+  if (forkPath) {
+    return path.resolve(resolveInForkJobsDir(forkPath), `${jobId}.json`);
+  }
+  return path.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
+}
+
+function resolveOrphanJobPath(jobId: string): string {
+  return path.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
 }
 
 // ---------------------------------------------------------------------------
@@ -52,11 +72,10 @@ function generateJobId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Persistence helpers
+// Low-level persistence helpers
 // ---------------------------------------------------------------------------
 
-function readJob(jobId: string): KitForkSyncJob | null {
-  const p = resolveJobPath(jobId);
+function parseJobFile(p: string): KitForkSyncJob | null {
   if (!fs.existsSync(p)) return null;
   try {
     return JSON.parse(fs.readFileSync(p, "utf8")) as KitForkSyncJob;
@@ -65,18 +84,78 @@ function readJob(jobId: string): KitForkSyncJob | null {
   }
 }
 
-function writeJob(job: KitForkSyncJob): void {
-  const dir = resolveJobsRoot();
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(resolveJobPath(job.jobId), JSON.stringify(job, null, 2) + "\n", "utf8");
+function findJobPath(jobId: string): string | null {
+  // 1. Check orphan jobs
+  const orphanPath = resolveOrphanJobPath(jobId);
+  if (fs.existsSync(orphanPath)) return orphanPath;
+
+  // 2. Scan every registered fork's in-fork job dir
+  for (const reg of listKitForkRegistrations()) {
+    const p = path.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 
-function patchJob(jobId: string, status: KitForkSyncJobStatus, patch?: Partial<KitForkSyncJob>): KitForkSyncJob | null {
-  const job = readJob(jobId);
+function readJob(jobId: string): KitForkSyncJob | null {
+  const p = findJobPath(jobId);
+  return p ? parseJobFile(p) : null;
+}
+
+function writeJob(job: KitForkSyncJob): void {
+  const p = resolveJobPath(job.jobId, job.kitId, job.forkId);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify(job, null, 2) + "\n", "utf8");
+}
+
+function patchJob(
+  jobId: string,
+  status: KitForkSyncJobStatus,
+  patch?: Partial<KitForkSyncJob>,
+): KitForkSyncJob | null {
+  const existingPath = findJobPath(jobId);
+  if (!existingPath) return null;
+  const job = parseJobFile(existingPath);
   if (!job) return null;
+
   const updated: KitForkSyncJob = { ...job, ...patch, status };
-  writeJob(updated);
+  const targetPath = resolveJobPath(updated.jobId, updated.kitId, updated.forkId);
+
+  // If the fork became resolvable between writes, migrate the file location.
+  if (path.resolve(existingPath) !== path.resolve(targetPath)) {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.rmSync(existingPath, { force: true });
+  }
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
+}
+
+function collectAllJobFiles(): string[] {
+  const files: string[] = [];
+
+  // In-fork jobs for every registered fork
+  for (const reg of listKitForkRegistrations()) {
+    const dir = resolveInForkJobsDir(reg.forkPath);
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".json")) {
+        files.push(path.resolve(dir, entry.name));
+      }
+    }
+  }
+
+  // Orphan jobs
+  const orphanDir = resolveKitForksOrphanJobsDir();
+  if (fs.existsSync(orphanDir)) {
+    for (const entry of fs.readdirSync(orphanDir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".json")) {
+        files.push(path.resolve(orphanDir, entry.name));
+      }
+    }
+  }
+
+  return files;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,19 +172,14 @@ export function listKitForkSyncJobs(filter?: {
   forkId?: string;
   status?: KitForkSyncJobStatus;
 }): KitForkSyncJob[] {
-  const root = resolveJobsRoot();
-  if (!fs.existsSync(root)) return [];
-
   const jobs: KitForkSyncJob[] = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    const job = readJob(entry.name.replace(/\.json$/, ""));
+  for (const filePath of collectAllJobFiles()) {
+    const job = parseJobFile(filePath);
     if (!job) continue;
     if (filter?.forkId && job.forkId !== filter.forkId) continue;
     if (filter?.status && job.status !== filter.status) continue;
     jobs.push(job);
   }
-
   return jobs.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
@@ -121,26 +195,20 @@ export function cancelKitForkSyncJob(jobId: string): boolean {
 
 /** Purge terminal jobs older than retentionMs (default: 7 days). Returns pruned count. */
 export function pruneKitForkSyncJobs(retentionMs = 7 * 24 * 60 * 60 * 1000): number {
-  const root = resolveJobsRoot();
-  if (!fs.existsSync(root)) return 0;
-
   const cutoff = Date.now() - retentionMs;
   let pruned = 0;
 
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    const job = readJob(entry.name.replace(/\.json$/, ""));
+  for (const filePath of collectAllJobFiles()) {
+    const job = parseJobFile(filePath);
     if (!job) continue;
     const terminal: KitForkSyncJobStatus[] = ["completed", "failed", "cancelled"];
-    if (terminal.includes(job.status)) {
-      const ts = new Date(job.completedAt ?? job.createdAt).getTime();
-      if (ts < cutoff) {
-        fs.rmSync(resolveJobPath(job.jobId), { force: true });
-        pruned++;
-      }
+    if (!terminal.includes(job.status)) continue;
+    const ts = new Date(job.completedAt ?? job.createdAt).getTime();
+    if (ts < cutoff) {
+      fs.rmSync(filePath, { force: true });
+      pruned++;
     }
   }
-
   return pruned;
 }
 
