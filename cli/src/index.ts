@@ -64,6 +64,7 @@ import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
+import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -853,6 +854,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Statuspage-style health of every mission-critical service the CLI depends on",
         },
         {
+          value: "custom-workspace-starter",
+          label: "🧪 Custom Workspace Starter",
+          hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -1077,6 +1083,21 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "service-status") {
       await runStatuspage({});
+      continue;
+    }
+
+    if (surfaceChoice === "custom-workspace-starter") {
+      const outRaw = await p.text({
+        message: "Destination path for the new workspace (will be created if missing):",
+        placeholder: "./my-workspace",
+      });
+      if (p.isCancel(outRaw) || !outRaw) continue;
+      const nameRaw = await p.text({
+        message: "Optional label (leave blank to use directory basename):",
+        placeholder: "",
+      });
+      if (p.isCancel(nameRaw)) continue;
+      await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
       continue;
     }
 
@@ -1306,6 +1327,7 @@ registerKitForkCommands(program);
 registerGithubCommands(program);
 registerIntegrationsCommands(program);
 registerStatusCommands(program);
+registerStarterCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

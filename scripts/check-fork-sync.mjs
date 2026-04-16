@@ -421,6 +421,79 @@ checkFileContains("scripts/cli-demo.mjs",
   "github-integration",
   "integrations-bridge",
   "service-status",
+  "custom-workspace-starter",
+);
+
+// ---------------------------------------------------------------------------
+// 19. Custom Workspace Starter Kit — bundled assets + CLI primitive
+// ---------------------------------------------------------------------------
+console.log("\n── 19. Custom Workspace Starter ─────────────────────────────────────────");
+const starterKitRoot = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1";
+const starterAssets = [
+  "kit.json",
+  "bundles/growthub-custom-workspace-starter-v1.json",
+  "QUICKSTART.md",
+  "skills.md",
+  "output-standards.md",
+  "runtime-assumptions.md",
+  "validation-checklist.md",
+  "workers/custom-workspace-operator/CLAUDE.md",
+  "brands/_template/brand-kit.md",
+  "brands/growthub/brand-kit.md",
+  "brands/NEW-CLIENT.md",
+  "setup/verify-env.mjs",
+  "setup/check-deps.sh",
+  "output/README.md",
+  "templates/workspace-brief.md",
+  "templates/agent-contract.md",
+  "templates/deployment-plan.md",
+  "examples/workspace-sample.md",
+  "docs/starter-kit-overview.md",
+  "docs/fork-sync-integration.md",
+  "docs/vite-ui-shell-guide.md",
+  "studio/index.html",
+  "studio/package.json",
+  "studio/vite.config.js",
+  "studio/serve.mjs",
+  "studio/src/main.jsx",
+  "studio/src/App.jsx",
+  "studio/src/app.css",
+  "growthub-meta/README.md",
+  "growthub-meta/kit-standard.md",
+];
+for (const a of starterAssets) checkFileExists(`${starterKitRoot}/${a}`);
+
+checkFileExists("cli/src/starter/types.ts");
+checkFileExists("cli/src/starter/init.ts");
+checkFileExists("cli/src/commands/starter.ts");
+checkFileExists("docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md");
+
+checkFileContains("cli/src/kits/catalog.ts",
+  "growthub-custom-workspace-starter-v1",
+);
+checkFileContains("cli/src/starter/init.ts",
+  "initStarterWorkspace",
+  "DEFAULT_STARTER_KIT_ID",
+  "copyBundledKitSource",
+  "registerKitFork",
+  "writeKitForkPolicy",
+  "appendKitForkTraceEvent",
+  "resolveGithubAccessToken",
+);
+checkFileContains("cli/src/commands/starter.ts",
+  "registerStarterCommands",
+  "runStarterInit",
+  "--remote-sync-mode",
+);
+checkFileContains("cli/src/index.ts",
+  "registerStarterCommands",
+  "🧪 Custom Workspace Starter",
+  "surfaceChoice === \"custom-workspace-starter\"",
+);
+checkFileContains(`${starterKitRoot}/kit.json`,
+  "growthub-custom-workspace-starter-v1",
+  "custom-workspace-operator",
+  "\"family\": \"studio\"",
 );
 
 // ---------------------------------------------------------------------------

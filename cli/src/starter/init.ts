@@ -1,0 +1,139 @@
+/**
+ * Growthub Custom Workspace Starter — init orchestrator.
+ *
+ * Composes three already-shipping primitives:
+ *   1. `copyBundledKitSource`   → materialize the frozen bundled asset tree
+ *   2. `registerKitFork`        → canonical in-fork registration + discovery index
+ *   3. `writeKitForkPolicy`     → seed the safety envelope
+ *   4. `appendKitForkTraceEvent`→ durable event log
+ *   5. (optional) `createFork`  → first-party GitHub remote
+ *
+ * No new transport, no new storage locations, no new auth primitive.  This
+ * module is the smallest legal orchestrator — everything else flows through
+ * the v1 Self-Healing Fork Sync Agent surface.
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import {
+  getBundledKitSourceInfo,
+  copyBundledKitSource,
+} from "../kits/service.js";
+import {
+  registerKitFork,
+  updateKitForkRegistration,
+} from "../kits/fork-registry.js";
+import {
+  writeKitForkPolicy,
+  makeDefaultKitForkPolicy,
+} from "../kits/fork-policy.js";
+import { appendKitForkTraceEvent } from "../kits/fork-trace.js";
+import {
+  gitAvailable,
+  isGitRepo,
+  initGitRepo,
+  setOrigin,
+  buildTokenCloneUrl,
+} from "../kits/fork-remote.js";
+import { resolveGithubAccessToken } from "../integrations/github-resolver.js";
+import { createFork, parseRepoRef } from "../github/client.js";
+import type { KitForkRemoteBinding } from "../kits/fork-types.js";
+import type { StarterInitOptions, StarterInitResult } from "./types.js";
+
+export const DEFAULT_STARTER_KIT_ID = "growthub-custom-workspace-starter-v1";
+
+export async function initStarterWorkspace(
+  opts: StarterInitOptions,
+): Promise<StarterInitResult> {
+  const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
+  const absOut = path.resolve(opts.out);
+
+  if (fs.existsSync(absOut) && fs.readdirSync(absOut).length > 0) {
+    throw new Error(`Destination ${absOut} already exists and is not empty.`);
+  }
+
+  // 1. Materialize bundled assets
+  const info = getBundledKitSourceInfo(kitId);
+  copyBundledKitSource(kitId, absOut);
+
+  // 2. Register as a kit-fork — canonical state inside the fork
+  const reg = registerKitFork({
+    forkPath: absOut,
+    kitId: info.id,
+    baseVersion: info.version,
+    label: opts.name?.trim() || path.basename(absOut),
+  });
+
+  // 3. Seed policy with the requested mode
+  const policy = {
+    ...makeDefaultKitForkPolicy(),
+    remoteSyncMode: opts.remoteSyncMode ?? ("off" as const),
+  };
+  writeKitForkPolicy(absOut, policy);
+
+  // 4. Append initial trace events
+  appendKitForkTraceEvent(absOut, {
+    forkId: reg.forkId, kitId: reg.kitId, type: "registered",
+    summary: `Scaffolded from starter kit ${info.id}@${info.version}`,
+    detail: { source: "growthub starter init", name: opts.name ?? null },
+  });
+  appendKitForkTraceEvent(absOut, {
+    forkId: reg.forkId, kitId: reg.kitId, type: "policy_updated",
+    summary: `Initial policy seeded (remoteSyncMode=${policy.remoteSyncMode})`,
+  });
+
+  let remote: KitForkRemoteBinding | undefined;
+
+  // 5. Optional: one-click GitHub fork + wire as origin
+  if (opts.upstream) {
+    const resolved = await resolveGithubAccessToken();
+    if (!resolved) {
+      throw new Error(
+        "GitHub is not authenticated. Run `growthub github login` or connect GitHub " +
+        "in your Growthub account before using --upstream.",
+      );
+    }
+    const upstream = parseRepoRef(opts.upstream);
+    const forkResult = await createFork(resolved.accessToken, {
+      upstream,
+      forkName: opts.forkName,
+      destinationOrg: opts.destinationOrg,
+    });
+    if (!gitAvailable()) {
+      throw new Error("git is not available on PATH — cannot wire remote origin.");
+    }
+    if (!isGitRepo(absOut)) initGitRepo(absOut);
+    setOrigin(absOut, buildTokenCloneUrl(forkResult.fork, resolved.accessToken));
+
+    remote = {
+      provider: "github",
+      owner: forkResult.fork.owner,
+      repo: forkResult.fork.repo,
+      defaultBranch: forkResult.defaultBranch,
+      cloneUrl: forkResult.cloneUrl,
+      htmlUrl: forkResult.htmlUrl,
+    };
+    updateKitForkRegistration({ ...reg, remote });
+    appendKitForkTraceEvent(absOut, {
+      forkId: reg.forkId, kitId: reg.kitId, type: "remote_connected",
+      summary: `Remote origin bound to ${forkResult.fork.owner}/${forkResult.fork.repo}`,
+      detail: { htmlUrl: forkResult.htmlUrl, authSource: resolved.source },
+    });
+  }
+
+  return {
+    kitId: info.id,
+    forkId: reg.forkId,
+    forkPath: absOut,
+    baseVersion: info.version,
+    policyMode: policy.remoteSyncMode,
+    remote: remote
+      ? {
+          owner: remote.owner,
+          repo: remote.repo,
+          htmlUrl: remote.htmlUrl,
+          defaultBranch: remote.defaultBranch,
+        }
+      : undefined,
+  };
+}

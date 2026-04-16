@@ -320,6 +320,11 @@ async function runInteractive() {
         label: "🟢 Service Status Preview",
         hint: "Statuspage-style health grid for every mission-critical service the CLI relies on",
       },
+      {
+        value: "custom-workspace-starter",
+        label: "🧪 Custom Workspace Starter Preview",
+        hint: "Invoke `growthub starter init --help` against this branch CLI binary",
+      },
     ],
   });
 
@@ -379,6 +384,10 @@ async function runInteractive() {
 
   if (choice === "service-status") {
     runCli(["status"]);
+  }
+
+  if (choice === "custom-workspace-starter") {
+    runCli(["starter", "init", "--help"]);
   }
 
   runCli([]);
