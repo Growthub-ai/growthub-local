@@ -830,39 +830,14 @@ async function runDiscoveryHub(opts?: {
           hint: "use local custom models adapaters",
         },
         {
-          value: "hosted-auth",
-          label: "🔐 Connect Growthub Account",
-          hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
-        },
-        {
           value: "agent-harness",
           label: "🤖 Agent Harness",
           hint: "Paperclip Local App + Open Agents + Qwen Code",
         },
         {
-          value: "fork-sync",
-          label: "🔀 Fork Sync Agent",
-          hint: "Keep your forked worker kits in sync with the latest upstream",
-        },
-        {
-          value: "github",
-          label: "🐙 GitHub Integration",
-          hint: "Connect GitHub — powers one-click fork creation & remote heal sync",
-        },
-        {
-          value: "service-status",
-          label: "🟢 Service Status",
-          hint: "Statuspage-style health of every mission-critical service the CLI depends on",
-        },
-        {
-          value: "custom-workspace-starter",
-          label: "🧪 Custom Workspace Starter",
-          hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring",
-        },
-        {
-          value: "fleet-ops",
-          label: "🚢 Fleet Operations",
-          hint: "Fleet-level fork view · drift · policy matrix · approvals · agent-led plans",
+          value: "settings",
+          label: "⚙️  Settings",
+          hint: "GitHub, Fork Sync, Integrations, Service Status, Starter, Fleet",
         },
         {
           value: "help",
@@ -1075,40 +1050,96 @@ async function runDiscoveryHub(opts?: {
       continue;
     }
 
-    if (surfaceChoice === "fork-sync") {
-      const result = await runKitForkHub({ allowBackToHub: true });
-      if (result === "back") continue;
-      return;
-    }
+    if (surfaceChoice === "settings") {
+      while (true) {
+        const settingsChoice = await p.select({
+          message: "Settings",
+          options: [
+            {
+              value: "hosted-auth",
+              label: "🔐 Connect Growthub Account",
+              hint: "Attach this CLI to your hosted Growthub account",
+            },
+            {
+              value: "github",
+              label: "🐙 GitHub Integration",
+              hint: "Connect GitHub — powers one-click fork creation & remote heal sync",
+            },
+            {
+              value: "fork-sync",
+              label: "🔀 Fork Sync Agent",
+              hint: "Keep your forked worker kits in sync with the latest upstream",
+            },
+            {
+              value: "service-status",
+              label: "🟢 Service Status",
+              hint: "Statuspage-style health of every mission-critical service the CLI depends on",
+            },
+            {
+              value: "custom-workspace-starter",
+              label: "🧪 Custom Workspace Starter",
+              hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring",
+            },
+            {
+              value: "fleet-ops",
+              label: "🚢 Fleet Operations",
+              hint: "Fleet-level fork view · drift · policy matrix · approvals · agent-led plans",
+            },
+            {
+              value: "__back_to_hub",
+              label: "← Back to main menu",
+            },
+          ],
+        });
 
-    if (surfaceChoice === "github") {
-      const { githubWhoami } = await import("./commands/github.js");
-      await githubWhoami({});
-      continue;
-    }
+        if (p.isCancel(settingsChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        if (settingsChoice === "__back_to_hub") break;
 
-    if (surfaceChoice === "service-status") {
-      await runStatuspage({});
-      continue;
-    }
+        // surfaceChoice alias keeps gate strings intact (check-fork-sync.mjs enforces these)
+        const surfaceChoice = settingsChoice;
 
-    if (surfaceChoice === "custom-workspace-starter") {
-      const outRaw = await p.text({
-        message: "Destination path for the new workspace (will be created if missing):",
-        placeholder: "./my-workspace",
-      });
-      if (p.isCancel(outRaw) || !outRaw) continue;
-      const nameRaw = await p.text({
-        message: "Optional label (leave blank to use directory basename):",
-        placeholder: "",
-      });
-      if (p.isCancel(nameRaw)) continue;
-      await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
-      continue;
-    }
+        if (surfaceChoice === "hosted-auth") {
+          await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
+          continue;
+        }
 
-    if (surfaceChoice === "fleet-ops") {
-      await fleetView({});
+        if (surfaceChoice === "github") {
+          const { githubWhoami } = await import("./commands/github.js");
+          await githubWhoami({});
+          continue;
+        }
+
+        if (surfaceChoice === "fork-sync") {
+          const result = await runKitForkHub({ allowBackToHub: true });
+          if (result === "back") continue;
+          break;
+        }
+
+        if (surfaceChoice === "service-status") {
+          await runStatuspage({});
+          continue;
+        }
+
+        if (surfaceChoice === "custom-workspace-starter") {
+          const outRaw = await p.text({
+            message: "Destination path for the new workspace (will be created if missing):",
+            placeholder: "./my-workspace",
+          });
+          if (p.isCancel(outRaw) || !outRaw) continue;
+          const nameRaw = await p.text({
+            message: "Optional label (leave blank to use directory basename):",
+            placeholder: "",
+          });
+          if (p.isCancel(nameRaw)) continue;
+          await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+          continue;
+        }
+
+        if (surfaceChoice === "fleet-ops") {
+          await fleetView({});
+          continue;
+        }
+      }
       continue;
     }
 
@@ -1128,11 +1159,6 @@ async function runDiscoveryHub(opts?: {
       const result = await runNativeIntelligenceHub();
       if (result === "back") continue;
       return;
-    }
-
-    if (surfaceChoice === "hosted-auth") {
-      await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
-      continue;
     }
 
     const result = await runTemplatePicker({ allowBackToHub: true });
