@@ -4,6 +4,28 @@ import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// Read the CLI version from the sibling package.json at runtime so the
+// `--version` string can never drift from the published package version.
+function resolveCliVersion(): string {
+  try {
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    // dist/index.js → ../package.json ; src/index.ts (vitest) → ../../package.json
+    const candidates = [
+      path.resolve(moduleDir, "../package.json"),
+      path.resolve(moduleDir, "../../package.json"),
+    ];
+    for (const candidate of candidates) {
+      if (!fs.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as { name?: string; version?: string };
+      if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
+    }
+  } catch {
+    /* fall through to fallback */
+  }
+  return "0.0.0-unknown";
+}
 import { onboard } from "./commands/onboard.js";
 import { doctor } from "./commands/doctor.js";
 import { envCommand } from "./commands/env.js";
@@ -1157,7 +1179,7 @@ const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bo
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
-  .version("0.3.60")
+  .version(resolveCliVersion())
   .addHelpText("after", `
 Worker Kits (agent execution environments):
 

@@ -87,6 +87,9 @@ const requiredFiles = [
   "cli/src/__tests__/kit-fork-sync.test.ts",
   "cli/src/__tests__/kit-fork-sync-agent.test.ts",
   "cli/src/__tests__/kit-fork-command.test.ts",
+  "cli/src/__tests__/fork-policy.test.ts",
+  "cli/src/__tests__/fork-trace.test.ts",
+  "cli/src/__tests__/integrations-github-resolver.test.ts",
 ];
 for (const file of requiredFiles) checkFileExists(file);
 
@@ -347,6 +350,26 @@ checkFileContains("cli/src/index.ts",
   "🐙 GitHub Integration",
   "surfaceChoice === \"github\"",
 );
+
+// ---------------------------------------------------------------------------
+// 15. CLI --version string must not be a hardcoded literal (must resolve at runtime)
+// ---------------------------------------------------------------------------
+console.log("\n── 15. Version drift prevention ─────────────────────────────────────────");
+{
+  const indexPath = resolve(ROOT, "cli/src/index.ts");
+  const indexContent = readFileSync(indexPath, "utf8");
+  if (indexContent.includes(".version(resolveCliVersion())")) {
+    ok("cli/src/index.ts .version() resolves from package.json at runtime");
+  } else {
+    fail("cli/src/index.ts .version() must call resolveCliVersion() — never a hardcoded literal");
+  }
+  const hardcodedMatch = indexContent.match(/\.version\("([0-9]+\.[0-9]+\.[0-9]+)"\)/);
+  if (hardcodedMatch) {
+    fail(`cli/src/index.ts has hardcoded .version("${hardcodedMatch[1]}") — risk of drift`);
+  } else {
+    ok("cli/src/index.ts has no hardcoded semver in .version()");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 14. Growthub-hosted integrations bridge (MCP-adjacent adapter)
