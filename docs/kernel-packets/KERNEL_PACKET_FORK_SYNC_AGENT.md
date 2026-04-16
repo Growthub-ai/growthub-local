@@ -98,10 +98,25 @@ cli/src/config/
 
 **Remote invariants**
 
-- Remote operations run only when `policy.remoteSyncMode !== "off"` AND `reg.remote` is populated AND `readGithubToken()` returns a token.
+- Remote operations run only when `policy.remoteSyncMode !== "off"` AND `reg.remote` is populated AND `resolveGithubAccessToken()` returns a token from one of the two supported sources.
+- GitHub access is resolved through a **two-source adapter** with a fixed preference order:
+  1. **Direct CLI auth** — `readGithubToken()` (device-flow or PAT under `GROWTHUB_GITHUB_HOME`).
+  2. **Growthub-hosted integrations bridge** — the user is authenticated into Growthub AND has connected GitHub inside the gh-app; token is minted on demand via `GET /api/cli/profile?view=integration&provider=github` through the existing `PaperclipApiClient` transport.
+- Bridge-minted credentials are **never persisted to disk** — in-memory cache only, TTL clamped to the declared expiry or `DEFAULT_CACHE_TTL_MS` (5 minutes).
 - Each heal push creates a dedicated branch `growthub/heal-<from>-to-<to>-<id>` — never force-pushes.
 - `remoteSyncMode === "pr"` opens the pull request as **draft** by default.
 - HTTPS push uses `https://x-access-token:<token>@github.com/...` form; token is never persisted in git config.
+- Trace events for remote operations carry `authSource` ∈ {`direct`, `growthub-bridge`} so operators can audit which source mintied each push.
+
+**Hosted integrations bridge invariants**
+
+- The bridge is layered on top of the existing CLI ↔ gh-app transport (`cli/src/auth/hosted-client.ts` → `PaperclipApiClient`). **No new transport, no new auth primitive.**
+- Hosted endpoints consumed:
+  - `GET /api/cli/profile?view=integrations` — list connected integrations.
+  - `GET /api/cli/profile?view=integration&provider=<id>` — mint a short-lived credential.
+- Both endpoints are treated as best-effort (`ignoreNotFound: true`). A hosted deployment that has not yet shipped the endpoint returns a `HostedEndpointUnavailableError` that the bridge surfaces as `bridgeAvailable: false` — **direct CLI auth must continue to work in that state**.
+- Additional first-party providers (beyond GitHub) flow through the same resolver: a new provider requires only a new resolver wrapper, not a new transport.
+- Logout from Growthub must invalidate the in-memory bridge cache — `clearIntegrationBridgeCache()` is exposed for that wiring.
 
 **Discovery Hub invariants**
 

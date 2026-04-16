@@ -40,6 +40,7 @@ import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-ag
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
+import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -1270,6 +1271,7 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
 registerSharedCommands(program);
 registerKitForkCommands(program);
 registerGithubCommands(program);
+registerIntegrationsCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

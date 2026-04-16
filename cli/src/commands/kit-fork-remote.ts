@@ -31,15 +31,20 @@ import {
   buildTokenCloneUrl,
 } from "../kits/fork-remote.js";
 import { confirmAndResumeJob, getKitForkSyncJob } from "../kits/fork-sync-agent.js";
-import { readGithubToken } from "../github/token-store.js";
+import { resolveGithubAccessToken } from "../integrations/github-resolver.js";
 import { createFork, parseRepoRef } from "../github/client.js";
 import { copyBundledKitSource, getBundledKitSourceInfo } from "../kits/service.js";
 import type { KitForkRemoteBinding } from "../kits/fork-types.js";
 
-function requireGithubToken(): string {
-  const t = readGithubToken();
-  if (!t) throw new Error("GitHub is not authenticated. Run `growthub github login` first.");
-  return t.accessToken;
+async function requireGithubToken(): Promise<string> {
+  const resolved = await resolveGithubAccessToken();
+  if (!resolved) {
+    throw new Error(
+      "GitHub is not authenticated. Either run `growthub github login` or " +
+      "connect GitHub inside your Growthub account (via the gh-app) and run `growthub login`.",
+    );
+  }
+  return resolved.accessToken;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +61,7 @@ export interface KitForkCreateOptions {
 }
 
 export async function kitForkCreate(opts: KitForkCreateOptions): Promise<void> {
-  const accessToken = requireGithubToken();
+  const accessToken = await requireGithubToken();
   const upstream = parseRepoRef(opts.upstream);
   const absOut = path.resolve(opts.out);
 
@@ -137,7 +142,7 @@ export interface KitForkConnectOptions {
 }
 
 export async function kitForkConnect(opts: KitForkConnectOptions): Promise<void> {
-  const token = requireGithubToken();
+  const token = await requireGithubToken();
   const repo = parseRepoRef(opts.remote);
 
   const reg = findRegistrationOrThrow(opts.forkId);

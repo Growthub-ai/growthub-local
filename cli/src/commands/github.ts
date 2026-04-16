@@ -32,6 +32,7 @@ import {
   fetchAuthenticatedUser,
   resolveGithubClientId,
 } from "../github/client.js";
+import { describeIntegrationBridge } from "../integrations/bridge.js";
 import type { CliGithubToken } from "../github/types.js";
 
 async function sleep(ms: number): Promise<void> {
@@ -128,30 +129,75 @@ export async function githubLogin(opts: GithubLoginOptions): Promise<void> {
 export async function githubWhoami(opts: { json?: boolean } = {}): Promise<void> {
   const token = readGithubToken();
   const profile = readGithubProfile();
+  const bridge = await describeIntegrationBridge();
+  const bridgeGithub = bridge.integrations.find((i) => i.provider === "github");
 
-  if (!token) {
-    if (opts.json) console.log(JSON.stringify({ connected: false }));
-    else p.log.warn("Not connected to GitHub. Run `growthub github login`.");
+  // No direct token + no bridge GitHub integration → fully unconnected.
+  if (!token && !bridgeGithub) {
+    if (opts.json) {
+      console.log(JSON.stringify({
+        connected: false,
+        bridge: { growthubConnected: bridge.growthubConnected, bridgeAvailable: bridge.bridgeAvailable },
+      }, null, 2));
+    } else {
+      p.log.warn(
+        "Not connected to GitHub. Either run `growthub github login` or connect GitHub inside your Growthub account.",
+      );
+      if (bridge.notice) p.log.info(bridge.notice);
+    }
     return;
   }
-  const expired = isGithubTokenExpired(token);
+
+  const directExpired = token ? isGithubTokenExpired(token) : true;
+  const effectiveSource: "direct" | "growthub-bridge" | "none" =
+    token && !directExpired ? "direct" : bridgeGithub ? "growthub-bridge" : "none";
+
   if (opts.json) {
     console.log(JSON.stringify({
-      connected: !expired,
-      expired,
-      authMode: token.authMode,
-      login: profile?.login ?? token.login ?? null,
-      userId: profile?.userId ?? token.userId ?? null,
-      scopes: token.scopes,
-      tokenPath: describeGithubTokenPath(),
-      clientId: resolveGithubClientId(),
+      connected: effectiveSource !== "none",
+      effectiveSource,
+      direct: token
+        ? {
+            expired: directExpired,
+            authMode: token.authMode,
+            login: profile?.login ?? token.login ?? null,
+            userId: profile?.userId ?? token.userId ?? null,
+            scopes: token.scopes,
+            tokenPath: describeGithubTokenPath(),
+            clientId: resolveGithubClientId(),
+          }
+        : null,
+      bridge: {
+        growthubConnected: bridge.growthubConnected,
+        growthubLogin: bridge.growthubLogin ?? null,
+        bridgeAvailable: bridge.bridgeAvailable,
+        github: bridgeGithub ?? null,
+      },
     }, null, 2));
     return;
   }
-  const status = expired ? pc.red("expired") : pc.green("active");
-  p.log.message(
-    `GitHub: ${status}  login=${profile?.login ?? token.login ?? "?"}  mode=${token.authMode}  scopes=[${token.scopes.join(", ")}]`,
-  );
+
+  if (token) {
+    const status = directExpired ? pc.red("expired") : pc.green("active");
+    p.log.message(
+      `GitHub (direct): ${status}  login=${profile?.login ?? token.login ?? "?"}  ` +
+      `mode=${token.authMode}  scopes=[${token.scopes.join(", ")}]`,
+    );
+  }
+  if (bridge.growthubConnected) {
+    if (bridgeGithub) {
+      p.log.message(
+        `GitHub (via Growthub bridge): ${pc.green("connected")}  ` +
+        `handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  ` +
+        `scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`,
+      );
+    } else if (bridge.bridgeAvailable) {
+      p.log.info(
+        `Growthub account connected (${bridge.growthubLogin ?? "?"}) but no GitHub integration attached in gh-app.`,
+      );
+    }
+  }
+  p.log.message(`Effective auth source: ${pc.cyan(effectiveSource)}`);
 }
 
 export function githubLogout(opts: { json?: boolean } = {}): void {

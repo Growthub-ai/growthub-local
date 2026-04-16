@@ -47,7 +47,7 @@ import {
   pushHealCommit,
   buildTokenCloneUrl,
 } from "./fork-remote.js";
-import { readGithubToken } from "../github/token-store.js";
+import { resolveGithubAccessToken } from "../integrations/github-resolver.js";
 import { openPullRequest } from "../github/client.js";
 import type {
   KitForkSyncJob,
@@ -393,16 +393,23 @@ async function maybePushRemote(
     return { pushed: false, detail: "Fork directory is not a git repo." };
   }
 
-  const token = readGithubToken();
-  if (!token) {
-    return { pushed: false, detail: "GitHub not authenticated; run `growthub github login`." };
+  const resolved = await resolveGithubAccessToken();
+  if (!resolved) {
+    return {
+      pushed: false,
+      detail:
+        "GitHub not authenticated — run `growthub github login` or connect GitHub inside your Growthub account.",
+    };
   }
 
   const branchName = `growthub/heal-${healPlan.fromVersion}-to-${healPlan.toVersion}-${Date.now().toString(36)}`;
-  const cloneUrl = buildTokenCloneUrl({ owner: reg.remote.owner, repo: reg.remote.repo }, token.accessToken);
+  const cloneUrl = buildTokenCloneUrl({ owner: reg.remote.owner, repo: reg.remote.repo }, resolved.accessToken);
   setOrigin(reg.forkPath, cloneUrl);
 
-  onProgress?.(`[kit-fork-agent] Pushing heal branch ${branchName} to ${reg.remote.owner}/${reg.remote.repo}...`);
+  onProgress?.(
+    `[kit-fork-agent] Pushing heal branch ${branchName} to ${reg.remote.owner}/${reg.remote.repo} ` +
+    `(auth=${resolved.source})...`,
+  );
   const pushRes = pushHealCommit({
     forkPath: reg.forkPath,
     branchName,
@@ -413,7 +420,7 @@ async function maybePushRemote(
     forkId: reg.forkId, kitId: reg.kitId, jobId,
     type: pushRes.pushed ? "remote_pushed" : "conflict_encountered",
     summary: pushRes.pushed ? `Pushed ${branchName}` : `Push failed: ${pushRes.detail}`,
-    detail: { branch: branchName },
+    detail: { branch: branchName, authSource: resolved.source },
   });
 
   if (!pushRes.pushed) {
@@ -424,7 +431,7 @@ async function maybePushRemote(
   }
 
   try {
-    const pr = await openPullRequest(token.accessToken, {
+    const pr = await openPullRequest(resolved.accessToken, {
       repo: { owner: reg.remote.owner, repo: reg.remote.repo },
       head: branchName,
       base: reg.remote.defaultBranch,

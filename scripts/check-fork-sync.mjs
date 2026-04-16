@@ -74,9 +74,14 @@ const requiredFiles = [
   "cli/src/github/types.ts",
   "cli/src/github/token-store.ts",
   "cli/src/github/client.ts",
+  "cli/src/auth/hosted-integrations.ts",
+  "cli/src/integrations/types.ts",
+  "cli/src/integrations/bridge.ts",
+  "cli/src/integrations/github-resolver.ts",
   "cli/src/commands/kit-fork.ts",
   "cli/src/commands/kit-fork-remote.ts",
   "cli/src/commands/github.ts",
+  "cli/src/commands/integrations.ts",
   "docs/kernel-packets/KERNEL_PACKET_FORK_SYNC_AGENT.md",
   "cli/src/__tests__/kit-fork-registry.test.ts",
   "cli/src/__tests__/kit-fork-sync.test.ts",
@@ -341,6 +346,50 @@ checkFileContains("cli/src/index.ts",
   "registerGithubCommands",
   "🐙 GitHub Integration",
   "surfaceChoice === \"github\"",
+);
+
+// ---------------------------------------------------------------------------
+// 14. Growthub-hosted integrations bridge (MCP-adjacent adapter)
+// ---------------------------------------------------------------------------
+console.log("\n── 14. Hosted integrations bridge ───────────────────────────────────────");
+checkFileContains("cli/src/auth/hosted-integrations.ts",
+  "fetchHostedIntegrations",
+  "fetchHostedIntegrationCredential",
+  "HostedEndpointUnavailableError",
+  "/api/cli/profile?view=integrations",
+  "/api/cli/profile?view=integration",
+);
+checkFileContains("cli/src/integrations/bridge.ts",
+  "describeIntegrationBridge",
+  "listConnectedIntegrations",
+  "resolveIntegrationCredential",
+  "clearIntegrationBridgeCache",
+  "never persisted",
+);
+checkFileContains("cli/src/integrations/github-resolver.ts",
+  "resolveGithubAccessToken",
+  "\"direct\"",
+  "\"growthub-bridge\"",
+);
+checkFileContains("cli/src/commands/integrations.ts",
+  "registerIntegrationsCommands",
+  "integrationsStatus",
+  "integrationsList",
+  "integrationsProbe",
+);
+checkFileContains("cli/src/kits/fork-sync-agent.ts",
+  "resolveGithubAccessToken",
+  "authSource",
+);
+checkFileContains("cli/src/commands/kit-fork-remote.ts",
+  "resolveGithubAccessToken",
+);
+checkFileContains("cli/src/commands/github.ts",
+  "describeIntegrationBridge",
+  "effectiveSource",
+);
+checkFileContains("cli/src/index.ts",
+  "registerIntegrationsCommands",
 );
 
 // ---------------------------------------------------------------------------
