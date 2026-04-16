@@ -38,6 +38,7 @@ import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
+import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -812,6 +813,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Paperclip Local App + Open Agents + Qwen Code",
         },
         {
+          value: "fork-sync",
+          label: "🔀 Fork Sync Agent",
+          hint: "Keep your forked worker kits in sync with the latest upstream",
+        },
+        {
           value: "help",
           label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
@@ -833,6 +839,7 @@ async function runDiscoveryHub(opts?: {
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
           "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
           `   Locked state: ${workflowAccess.reason}.`,
+          "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
@@ -848,6 +855,10 @@ async function runDiscoveryHub(opts?: {
           "growthub pipeline assemble",
           "growthub artifact list",
           "growthub open-agents",
+          "growthub fork-sync",
+          "growthub fork-sync register <path>",
+          "growthub fork-sync status <fork-id>",
+          "growthub fork-sync heal <fork-id>",
         ].join("\n"),
         "Growthub CLI Help",
       );
@@ -1017,6 +1028,12 @@ async function runDiscoveryHub(opts?: {
       continue;
     }
 
+    if (surfaceChoice === "fork-sync") {
+      const result = await runKitForkHub({ allowBackToHub: true });
+      if (result === "back") continue;
+      return;
+    }
+
     if (surfaceChoice === "kits") {
       const result = await runInteractivePicker({ allowBackToHub: true });
       if (result === "back") continue;
@@ -1150,6 +1167,13 @@ Worker Kits (agent execution environments):
     $ growthub kit inspect growthub-email-marketing-v1 --json
     $ growthub kit validate ./path/to/kit
 
+  Fork Sync (keep your forked kits in sync):
+    $ growthub kit fork                         Interactive fork-sync hub
+    $ growthub kit fork register ./my-fork      Register a forked kit directory
+    $ growthub kit fork status <fork-id>        Detect drift against latest upstream
+    $ growthub kit fork heal <fork-id>          Self-healing sync (preserves your changes)
+    $ growthub fork-sync                        Alias for growthub kit fork
+
   After download:
     1. Point Growthub local (or Claude Code) Working Directory at the exported folder
     2. cp .env.example .env  →  add your API key
@@ -1194,6 +1218,16 @@ Qwen Code CLI (agent harness):
     $ growthub qwen-code session                Launch interactive terminal session
     $ growthub qwen-code session --yolo         Auto-approve all tool calls
 
+Fork Sync Agent (keep forked worker kits in sync):
+    $ growthub fork-sync                        Interactive hub — register, check drift, heal
+    $ growthub fork-sync register ./my-fork     Register a forked worker kit for tracking
+    $ growthub fork-sync list                   List all registered forks
+    $ growthub fork-sync status <fork-id>       Detect drift against latest upstream kit
+    $ growthub fork-sync heal <fork-id>         Safe self-healing sync (preserves customisations)
+    $ growthub fork-sync heal <fork-id> --dry-run
+    $ growthub fork-sync heal <fork-id> --background  Async background job
+    $ growthub fork-sync jobs                   View background sync job queue
+
 Hosted account bridge:
     $ growthub auth login                       Sign in via the hosted app (browser flow)
     $ growthub auth whoami                      Show signed-in identity + linked local workspace
@@ -1222,6 +1256,7 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
 });
 
 registerSharedCommands(program);
+registerKitForkCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {
