@@ -44,6 +44,9 @@ npm create growthub-local@latest
 npm create growthub-local@latest -- --profile gtm
 npm create growthub-local@latest -- --profile dx
 
+# Custom Workspace Starter (scaffold + register as a fork in one shot)
+npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+
 # CLI-only install
 npm install -g @growthub/cli
 ```

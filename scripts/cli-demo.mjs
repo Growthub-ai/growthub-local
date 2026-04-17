@@ -104,19 +104,32 @@ function runInstaller(args) {
     }
   }
 
-  spawnNode(
-    [
-      createEntrypointPath,
-      "--profile",
-      profile,
-      "--data-dir",
-      resolvePreviewDataDir(),
-      ...args.filter((arg, index) => !(arg === "--profile" || args[index - 1] === "--profile")),
-    ],
-    {
-      GROWTHUB_LOCAL_CLI_ENTRYPOINT: cliDistPath,
-    },
+  const passthrough = args.filter(
+    (arg, index) => !(arg === "--profile" || args[index - 1] === "--profile"),
   );
+
+  const installerArgs =
+    profile === "workspace"
+      ? [
+          createEntrypointPath,
+          "--profile",
+          "workspace",
+          "--out",
+          path.join(resolveDemoHome(), "preview-workspace"),
+          ...passthrough,
+        ]
+      : [
+          createEntrypointPath,
+          "--profile",
+          profile,
+          "--data-dir",
+          resolvePreviewDataDir(),
+          ...passthrough,
+        ];
+
+  spawnNode(installerArgs, {
+    GROWTHUB_LOCAL_CLI_ENTRYPOINT: cliDistPath,
+  });
 }
 
 function runCli(args) {
@@ -344,6 +357,11 @@ async function runInteractive() {
       options: [
         { value: "gtm", label: "📈 GTM", hint: "Go-to-Market surface" },
         { value: "dx", label: "🧠 DX", hint: "Developer Experience surface" },
+        {
+          value: "workspace",
+          label: "🧪 Workspace",
+          hint: "Custom Workspace Starter — one-shot `create-growthub-local --profile workspace --out ./...`",
+        },
       ],
     });
 
