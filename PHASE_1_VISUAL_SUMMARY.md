@@ -189,43 +189,56 @@
 
 ---
 
-## Implementation Dependency Graph
+## Strict Dependency Order
 
 ```
-                        ┌─────────────────────────────┐
-                        │  Utilities Layer            │
-                        │ ─────────────────────────────│
-                        │ • table-renderer.ts         │
-                        │ • progress.ts               │
-                        │ • notify.ts                 │
-                        └──────────┬──────────────────┘
-                                   │
-                ┌──────────────────┼──────────────────┐
-                │                  │                  │
-                ▼                  ▼                  ▼
-        ┌──────────────┐   ┌──────────────┐  ┌─────────────┐
-        │ Fork Status  │   │ Heal & Jobs  │  │  Audit &    │
-        │ Commands     │   │  Commands    │  │  Starter    │
-        ├──────────────┤   ├──────────────┤  ├─────────────┤
-        │ • list       │   │ • heal       │  │ • history   │
-        │ • status     │   │   --preview  │  │ • starter   │
-        │ • policy     │   │   --background   │   --template│
-        │              │   │ • jobs       │  │ • tracer    │
-        │              │   │   --watch    │  │   events    │
-        │              │   │   --tail     │  │             │
-        └──────────────┘   └──────────────┘  └─────────────┘
-                │                  │                 │
-                └──────────────────┼─────────────────┘
-                                   │
-                        ┌──────────▼───────────┐
-                        │ Trace & Testing      │
-                        ├──────────────────────┤
-                        │ • Standardize events │
-                        │ • Full test suite    │
-                        │ • Kernel validation  │
-                        │ • Help text          │
-                        └──────────────────────┘
+LAYER 1: FOUNDATION (must complete first, unblocks everything)
+┌─────────────────────────────────────────────────────────┐
+│ • table-renderer.ts utility                             │
+│ • progress.ts utility                                   │
+│ • notify.ts utility (optional desktop notifications)    │
+│ • Trace event standardization (fork-trace.ts)           │
+│ • Test infrastructure setup                             │
+└────────────────┬────────────────────────────────────────┘
+                 │
+                 ▼
+LAYER 2: FORK STATUS (depends on Foundation)
+┌─────────────────────────────────────────────────────────┐
+│ • kit fork list (uses table-renderer)                   │
+│ • kit fork status (policy eval + plan inline)           │
+│ • kit fork policy (interactive editor)                  │
+│ • Tests for status/policy                               │
+└────────────────┬────────────────────────────────────────┘
+                 │
+                 ▼
+LAYER 3: HEAL & JOBS (depends on Foundation + Status)
+┌─────────────────────────────────────────────────────────┐
+│ • kit fork heal --preview (rich output)                 │
+│ • kit fork heal --background (progress + notifications) │
+│ • kit fork jobs (--watch, --tail enhancements)          │
+│ • Tests for heal/jobs                                   │
+└────────────────┬────────────────────────────────────────┘
+                 │
+                 ▼
+LAYER 4: AUDIT & STARTER (depends on Heal + Jobs)
+┌─────────────────────────────────────────────────────────┐
+│ • kit fork history (audit timeline + CSV export)        │
+│ • starter init --template (interactive picker)          │
+│ • Tests for audit/starter                               │
+└────────────────┬────────────────────────────────────────┘
+                 │
+                 ▼
+LAYER 5: VALIDATION & RELEASE (depends on all layers)
+┌─────────────────────────────────────────────────────────┐
+│ • Kernel packet validation script                       │
+│ • README & help text updates                            │
+│ • Full integration test suite                           │
+│ • Rebuild esbuild dist                                  │
+│ • Merge when all gates pass                             │
+└─────────────────────────────────────────────────────────┘
 ```
+
+**Strict rule:** No layer 2 work until layer 1 is complete. No layer 3 until 2 is complete. Etc.
 
 ---
 
@@ -321,34 +334,42 @@ ROADMAP_ENTERPRISE_AGENT_SWARMS.md
 
 ---
 
-## Weekly Breakdown (Recommended)
+## Implementation Sequence (Dependency-Ordered)
 
 ```
-WEEK 1: Foundations & Table View
-├─ Build utilities (table-renderer, progress, notify)
-├─ Standardize trace events
-├─ Implement growthub kit fork list
-└─ Tests for list command
+Phase 1 Task Sequence (ordered by dependency, not time):
 
-WEEK 2: Policy & Status
-├─ Implement growthub kit fork policy (interactive editor)
-├─ Enhance growthub kit fork status (policy eval + plan)
-└─ Tests for policy/status commands
+1. FOUNDATION LAYER (must complete first)
+   ├─ Build utilities (table-renderer, progress, notify)
+   ├─ Standardize trace events
+   └─ Create test infrastructure
 
-WEEK 3: Heal & Jobs
-├─ Implement growthub kit fork heal --preview
-├─ Implement growthub kit fork heal --background
-├─ Enhance growthub kit fork jobs (--watch, --tail)
-└─ Tests for heal/jobs commands
+2. FORK STATUS LAYER (depends on: Foundation)
+   ├─ Implement growthub kit fork list
+   ├─ Enhance growthub kit fork status (policy eval + plan)
+   ├─ Implement growthub kit fork policy (interactive editor)
+   └─ Tests for status/policy commands
 
-WEEK 4: Audit, Starter, Release
-├─ Implement growthub kit fork history (audit export)
-├─ Enhance growthub starter init (--template)
-├─ Create kernel packet validation script
-├─ Update README & help text
-├─ Full integration test suite
-└─ Commit esbuild dist + merge
+3. HEAL & JOB MANAGEMENT LAYER (depends on: Foundation + Status)
+   ├─ Implement growthub kit fork heal --preview
+   ├─ Implement growthub kit fork heal --background
+   ├─ Enhance growthub kit fork jobs (--watch, --tail)
+   └─ Tests for heal/jobs commands
+
+4. AUDIT & STARTER LAYER (depends on: Heal + Jobs)
+   ├─ Implement growthub kit fork history (audit export)
+   ├─ Enhance growthub starter init (--template)
+   └─ Tests for audit/starter commands
+
+5. VALIDATION & RELEASE LAYER (depends on: all above)
+   ├─ Create kernel packet validation script
+   ├─ Update README & help text
+   ├─ Full integration test suite
+   ├─ Rebuild esbuild dist
+   └─ Merge when all gates pass
 ```
+
+Each layer must be complete & tested before next layer begins. Parallelization within a layer is OK; cross-layer dependencies are strict.
 
 ---
 

@@ -809,31 +809,40 @@ Expand fork examples section to show all Phase 1 features
 
 ---
 
-## Implementation Order (Recommended)
+## Implementation Order (Strict Dependency Sequence)
 
-**Week 1:**
-1. Utilities (table-renderer, progress, notify)
-2. Trace standardization
-3. `kit fork list` command
-4. Tests for list command
+**Layer 1: Foundation (blocks all others)**
+1. Utilities: `table-renderer.ts`, `progress.ts`, `notify.ts`
+2. Trace standardization (`fork-trace.ts`)
+3. Test infrastructure setup
+4. ← Foundation must be complete before Layer 2 begins
 
-**Week 2:**
-1. `kit fork policy` interactive editor
-2. `kit fork status` enhancements
-3. Tests for policy/status
+**Layer 2: Fork Status (depends on Layer 1)**
+1. `kit fork list` command (uses table-renderer)
+2. `kit fork policy` interactive editor
+3. `kit fork status` enhancements (policy eval + plan)
+4. Tests for all three commands
+5. ← Layer 2 must be complete before Layer 3 begins
 
-**Week 3:**
+**Layer 3: Heal & Jobs (depends on Layer 2)**
 1. `kit fork heal --preview` rich output
 2. `kit fork heal --background` + job tracking
-3. `kit fork jobs` enhancements
-4. Tests for heal/jobs
+3. `kit fork jobs` enhancements (--watch, --tail)
+4. Tests for all three features
+5. ← Layer 3 must be complete before Layer 4 begins
 
-**Week 4:**
-1. `kit fork history` + audit export
-2. `starter init --template` picker
-3. Kernel packet validation script
-4. Documentation updates
-5. Full test suite
+**Layer 4: Audit & Starter (depends on Layer 3)**
+1. `kit fork history` audit timeline + CSV export
+2. `starter init --template` interactive picker
+3. Tests for audit/starter
+4. ← Layer 4 must be complete before Layer 5 begins
+
+**Layer 5: Validation & Release (depends on all layers)**
+1. Kernel packet validation script
+2. README & help text updates
+3. Full integration test suite
+4. Rebuild esbuild dist
+5. Merge when all gates pass
 
 ---
 
