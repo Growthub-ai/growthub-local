@@ -549,6 +549,16 @@ checkFileContains("cli/src/index.ts",
   "🧪 Custom Workspace Starter",
   "surfaceChoice === \"custom-workspace-starter\"",
 );
+checkFileContains("packages/create-growthub-local/bin/create-growthub-local.mjs",
+  "\"workspace\"",
+  "starter",
+  "init",
+  "--out",
+  "VALID_PROFILES",
+);
+checkFileContains("packages/create-growthub-local/README.md",
+  "--profile workspace --out",
+);
 checkFileContains(`${starterKitRoot}/kit.json`,
   "growthub-custom-workspace-starter-v1",
   "custom-workspace-operator",

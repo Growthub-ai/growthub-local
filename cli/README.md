@@ -11,7 +11,15 @@ npm install -g @growthub/cli
 Or use the guided installer:
 
 ```bash
+# Interactive discovery hub
 npm create growthub-local@latest
+
+# Paperclip Local App profiles
+npm create growthub-local@latest -- --profile gtm
+npm create growthub-local@latest -- --profile dx
+
+# Custom Workspace Starter (scaffold + register as a fork in one shot)
+npm create growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
 ## At a Glance
