@@ -23,6 +23,14 @@ Use it as the canonical lane for:
 
 The Hosted SaaS Kit Kernel Packet is a specialization of the Custom Workspace Kernel Packet. It inherits every invariant from the general worker-kit lifecycle and adds the narrow-case discipline for kits whose target is a hosted third-party REST API (no self-host, no SDK bundle, no new adapter registry entry). Reach for it when the provider is a hosted SaaS; reach for the Agent Harness packet when adding a local agent executor.
 
+## Companion Roadmap
+
+For the mental model, emergent patterns across the v0.4.x line, and a non-UX low-hanging-fruit inventory that extends these packets, see:
+
+- [Custom Workspace Ecosystem Roadmap](../CUSTOM_WORKSPACE_ECOSYSTEM_ROADMAP.md)
+
+That doc is a companion, not a contract — the packets above remain the governance source of truth.
+
 ## Versioning Rules
 
 Use semantic packet versions:

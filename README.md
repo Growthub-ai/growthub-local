@@ -239,6 +239,7 @@ GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 - [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
 - [Agent Harness Auth Primitive](./docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
 - [Kernel Packet Registry](./docs/kernel-packets/README.md)
+- [Custom Workspace Ecosystem Roadmap](./docs/CUSTOM_WORKSPACE_ECOSYSTEM_ROADMAP.md)
 - [Custom Workspace Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
 - [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
 - [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
