@@ -53,9 +53,10 @@ jobs:
           fi
 
       - name: Check PR has description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          body="${{ github.event.pull_request.body }}"
-          if [ -z "$body" ] || [ "${#body}" -lt 20 ]; then
+          if [ -z "$PR_BODY" ] || [ "${#PR_BODY}" -lt 20 ]; then
             echo "❌ PR description is required (min 20 chars). Describe what changed and why."
             exit 1
           fi
