@@ -254,28 +254,8 @@ Three storage surfaces, each self-contained:
 - **CLI-owned kit-forks home** at `GROWTHUB_KIT_FORKS_HOME` (default `~/.growthub/kit-forks`) — `index.json`, `orphan-jobs/`.  Discovery pointers only.
 - **CLI-owned GitHub home** at `GROWTHUB_GITHUB_HOME` (default `~/.growthub/github`) — `token.json` (chmod 600), `profile.json`.  Direct device-flow / PAT credentials only.
 
-```bash
-# Beginner — local-only fork
-growthub kit download creative-strategist-v1 --out ./my-fork
-growthub kit fork register --path ./my-fork --kit creative-strategist-v1
+<img width="928" height="1152" alt="2a" src="https://github.com/user-attachments/assets/52b82f65-91d0-48f8-a79a-a9aa37b6cd8b" />
 
-# Advanced — one-click GitHub fork + scaffold + register
-growthub github login                          # device-flow OAuth (or --token <pat>)
-growthub kit fork create --kit creative-strategist-v1 \
-                         --upstream growthub-ai/creative-strategist \
-                         --out ./my-fork
-
-# Configure your policy (what stays untouched, what requires confirmation)
-growthub kit fork policy --fork-id <id> --set \
-  autoApprove=additive \
-  untouchablePaths+=custom/my-prompt.md \
-  remoteSyncMode=pr
-
-# Heal with explicit confirmation + trace
-growthub kit fork heal <fork-id> --dry-run
-growthub kit fork heal <fork-id> --background
-growthub kit fork trace --fork-id <id> --tail 50
-```
 
 ### Growthub integrations bridge
 
