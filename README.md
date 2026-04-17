@@ -257,6 +257,39 @@ Three storage surfaces, each self-contained:
 - **CLI-owned kit-forks home** at `GROWTHUB_KIT_FORKS_HOME` (default `~/.growthub/kit-forks`) — `index.json`, `orphan-jobs/`.  Discovery pointers only.
 - **CLI-owned GitHub home** at `GROWTHUB_GITHUB_HOME` (default `~/.growthub/github`) — `token.json` (chmod 600), `profile.json`.  Direct device-flow / PAT credentials only.
 
+### Fork UX — keep customisations in sync
+
+Fork operations are surfaced through a production-grade CLI UX:
+
+```bash
+# See all forks with drift, policy-protected paths, and last-heal age at a glance
+growthub kit fork list
+growthub kit fork list --filter status=drift-major --sort-by last-heal
+
+# Drift check with inline policy evaluation + heal plan preview + next steps
+growthub kit fork status <fork-id>
+growthub kit fork status <fork-id> --policy-only
+
+# Interactive policy editor (clack): auto-approve level, remote sync mode,
+# protected paths, dep-update rules. Every change is trace-logged.
+growthub kit fork policy <fork-id> --edit
+
+# Heal with a rich grouped preview (safe add / safe update / protected /
+# unresolved) and a decision prompt: apply now, run in background, or cancel.
+growthub kit fork heal <fork-id> --preview
+
+# Background heal + live progress bar until terminal
+growthub kit fork heal <fork-id> --background
+growthub kit fork jobs --watch <job-id>
+growthub kit fork jobs --tail <job-id>
+
+# Audit timeline — filter by date or event type; CSV for compliance tooling
+growthub kit fork history <fork-id>
+growthub kit fork history <fork-id> --since 2024-01-01 --csv > audit.csv
+```
+
+Every write path appends to the fork's append-only `trace.jsonl`, so audits and post-mortems can be reconstructed from the fork directory alone.
+
 <img width="928" height="1152" alt="2a" src="https://github.com/user-attachments/assets/52b82f65-91d0-48f8-a79a-a9aa37b6cd8b" />
 
 
