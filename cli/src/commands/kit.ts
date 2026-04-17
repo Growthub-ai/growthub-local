@@ -442,8 +442,11 @@ Examples:
   $ growthub kit list --family studio     # filter by family
   $ growthub kit list --json              # machine-readable output
   $ growthub kit download higgsfield      # fuzzy slug — resolves automatically
+  $ growthub kit download hyperframes     # Hyperframes custom workspace
   $ growthub kit download growthub-open-higgsfield-studio-v1
+  $ growthub kit download growthub-hyperframes-studio-v1
   $ growthub kit inspect higgsfield-studio-v1
+  $ growthub kit inspect hyperframes
   $ growthub kit families                 # show family taxonomy
 
 Fork Sync Agent:
@@ -530,7 +533,9 @@ Examples:
 Examples:
   $ growthub kit download                           # interactive
   $ growthub kit download higgsfield                # fuzzy slug
+  $ growthub kit download hyperframes               # fuzzy slug
   $ growthub kit download growthub-open-higgsfield-studio-v1
+  $ growthub kit download growthub-hyperframes-studio-v1
   $ growthub kit download studio-v1 --out ~/kits
   $ growthub kit download studio-v1 --yes
 `)
@@ -625,7 +630,7 @@ Examples:
     .description("Show the kit family taxonomy with descriptions and examples")
     .action(() => {
       const defs = [
-        { family: "studio",   tagline: "AI generation studio backed by a local fork",                      surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1, growthub-postiz-social-v1, growthub-zernio-social-v1" },
+        { family: "studio",   tagline: "AI generation studio backed by a local fork",                      surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1, growthub-hyperframes-studio-v1, growthub-zernio-social-v1" },
         { family: "workflow", tagline: "Multi-step pipeline operator across tools or APIs",                surfaces: "browser-hosted (primary)",                example: "creative-strategist-v1" },
         { family: "operator", tagline: "Domain vertical specialist — one provider, structured deliverables", surfaces: "browser-hosted",                       example: "growthub-email-marketing-v1" },
         { family: "ops",      tagline: "Infrastructure / toolchain operator (provider optional)",          surfaces: "local-fork (primary)",                   example: "(coming soon)" },
