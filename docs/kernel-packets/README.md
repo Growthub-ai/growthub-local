@@ -18,10 +18,13 @@ Use it as the canonical lane for:
 | Hosted SaaS Kit Kernel Packet | `v1` | `./KERNEL_PACKET_HOSTED_SAAS_KIT.md` |
 | Fork Sync Agent Kernel Packet | `v1` | `./KERNEL_PACKET_FORK_SYNC_AGENT.md` |
 | Custom Workspace Starter Kit Kernel Packet | `v1` | `./KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md` |
+| Source Import Agent Kernel Packet | `v1` | `./KERNEL_PACKET_SOURCE_IMPORT_AGENT.md` |
 
 ## Packet Relationships
 
 The Hosted SaaS Kit Kernel Packet is a specialization of the Custom Workspace Kernel Packet. It inherits every invariant from the general worker-kit lifecycle and adds the narrow-case discipline for kits whose target is a hosted third-party REST API (no self-host, no SDK bundle, no new adapter registry entry). Reach for it when the provider is a hosted SaaS; reach for the Agent Harness packet when adding a local agent executor.
+
+The Source Import Agent Kernel Packet is a specialization of the Custom Workspace Starter Kit Kernel Packet. It inherits every starter invariant (bundled kit catalog, fork registration, policy seeding, trace seeding) and adds the portable-source discipline for turning GitHub repositories or skills.sh skills into a materialized fork via the same pipeline. Reach for it when the workspace starts from an external payload; reach for the Starter packet directly when initializing a greenfield workspace.
 
 ## Versioning Rules
 

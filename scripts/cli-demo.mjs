@@ -339,6 +339,11 @@ async function runInteractive() {
         hint: "Invoke `growthub starter init --help` against this branch CLI binary",
       },
       {
+        value: "source-import",
+        label: "📥 Source Import Agent Preview",
+        hint: "Portable Source → Agent Environment pipeline (GitHub repo + skills.sh skill)",
+      },
+      {
         value: "fleet-ops",
         label: "🚢 Fleet Operations Preview",
         hint: "Invoke `growthub fleet view` against this branch CLI binary",
@@ -411,6 +416,10 @@ async function runInteractive() {
 
   if (choice === "custom-workspace-starter") {
     runCli(["starter", "init", "--help"]);
+  }
+
+  if (choice === "source-import") {
+    runCli(["starter", "import-repo", "--help"]);
   }
 
   if (choice === "fleet-ops") {

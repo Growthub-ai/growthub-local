@@ -64,7 +64,7 @@ import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
-import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
+import { registerStarterCommands, runStarterInit, runBrowseSkills } from "./commands/starter.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
@@ -1121,17 +1121,101 @@ async function runDiscoveryHub(opts?: {
         }
 
         if (surfaceChoice === "custom-workspace-starter") {
-          const outRaw = await p.text({
-            message: "Destination path for the new workspace (will be created if missing):",
-            placeholder: "./my-workspace",
-          });
-          if (p.isCancel(outRaw) || !outRaw) continue;
-          const nameRaw = await p.text({
-            message: "Optional label (leave blank to use directory basename):",
-            placeholder: "",
-          });
-          if (p.isCancel(nameRaw)) continue;
-          await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+          starterLoop: while (true) {
+            const starterChoice = await p.select({
+              message: "Custom Workspace Starter",
+              options: [
+                {
+                  value: "new-greenfield",
+                  label: "🧪 New greenfield workspace",
+                  hint: "Scaffold a fresh starter-derived fork (no source import)",
+                },
+                {
+                  value: "import-github",
+                  label: "🐙 Build from GitHub repository",
+                  hint: "Import a public or private repo via the Source Import Agent",
+                },
+                {
+                  value: "import-skill",
+                  label: "🧠 Build from skills.sh skill",
+                  hint: "Import a skill from skills.sh — mandatory double confirmation",
+                },
+                {
+                  value: "browse-skills",
+                  label: "🔎 Browse skills.sh catalog",
+                  hint: "Search paginated skill listings before importing",
+                },
+                { value: "__back", label: "← Back to Settings" },
+              ],
+            });
+            if (p.isCancel(starterChoice)) { p.cancel("Cancelled."); process.exit(0); }
+            if (starterChoice === "__back") break starterLoop;
+
+            if (starterChoice === "new-greenfield") {
+              const outRaw = await p.text({
+                message: "Destination path for the new workspace (will be created if missing):",
+                placeholder: "./my-workspace",
+              });
+              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
+              const nameRaw = await p.text({
+                message: "Optional label (leave blank to use directory basename):",
+                placeholder: "",
+              });
+              if (p.isCancel(nameRaw)) continue starterLoop;
+              await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+              continue starterLoop;
+            }
+
+            if (starterChoice === "import-github") {
+              const repoRaw = await p.text({
+                message: "GitHub repo (owner/repo or https URL):",
+                placeholder: "octocat/Hello-World",
+              });
+              if (p.isCancel(repoRaw) || !repoRaw) continue starterLoop;
+              const outRaw = await p.text({
+                message: "Destination path for the imported workspace:",
+                placeholder: "./imported-repo",
+              });
+              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
+              const { startSourceImportFlow } = await import("./commands/source-import-discovery.js");
+              await startSourceImportFlow({
+                kind: "github-repo",
+                repo: String(repoRaw),
+                out: String(outRaw),
+              });
+              continue starterLoop;
+            }
+
+            if (starterChoice === "import-skill") {
+              const skillRaw = await p.text({
+                message: "skills.sh reference (author/skill, author/skill@version, or full URL):",
+                placeholder: "acme/hello-skill",
+              });
+              if (p.isCancel(skillRaw) || !skillRaw) continue starterLoop;
+              const outRaw = await p.text({
+                message: "Destination path for the imported workspace:",
+                placeholder: "./imported-skill",
+              });
+              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
+              const { startSourceImportFlow } = await import("./commands/source-import-discovery.js");
+              await startSourceImportFlow({
+                kind: "skills-skill",
+                skillRef: String(skillRaw),
+                out: String(outRaw),
+              });
+              continue starterLoop;
+            }
+
+            if (starterChoice === "browse-skills") {
+              const queryRaw = await p.text({
+                message: "Search query (leave blank for first page):",
+                placeholder: "",
+              });
+              if (p.isCancel(queryRaw)) continue starterLoop;
+              await runBrowseSkills({ query: queryRaw ? String(queryRaw) : undefined });
+              continue starterLoop;
+            }
+          }
           continue;
         }
 

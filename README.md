@@ -49,6 +49,11 @@ npm create growthub-local@latest -- --profile workspace --out ./my-workspace
 
 # CLI-only install
 npm install -g @growthub/cli
+
+# Portable Source → Agent Environment Pipeline
+growthub starter import-repo octocat/hello-world --out ./ws-repo
+growthub starter import-skill acme/research-agent@1.2.0 --out ./ws-skill
+growthub starter browse-skills
 ```
 
 Open discovery:
@@ -246,6 +251,8 @@ GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 - [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
 - [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
 - [Fork Sync Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_FORK_SYNC_AGENT.md)
+- [Custom Workspace Starter Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md)
+- [Source Import Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_SOURCE_IMPORT_AGENT.md)
 
 ## Forking + Self-Healing Fork Sync Agent
 
@@ -272,6 +279,35 @@ growthub integrations probe --provider github # test the resolver
 ```
 
 The bridge is additive — direct CLI GitHub auth and the Growthub-hosted bridge are layered through a fixed-preference resolver (`direct → growthub-bridge`).  Bridge-minted credentials are never persisted to disk.
+
+## Portable Source → Agent Environment Pipeline
+
+The Source Import Agent turns a *portable source* — a public/private GitHub repository OR a skills.sh skill — into a starter-derived Custom Workspace, registered as a Growthub fork with policy + trace from the first byte.
+
+Two first-class source types feed the same pipeline:
+
+| Source | Adapter | Auth |
+| --- | --- | --- |
+| `github-repo` | `github-source.ts` | direct CLI GitHub token → Growthub bridge → public |
+| `skills-skill` | `skills-source.ts` | public-by-design (`SKILLS_SH_BASE` env override) |
+
+Every import runs through the same five gates:
+
+1. **Probe** — resolve the source and surface warnings.
+2. **Fetch** — stage the payload into a quarantined directory; never mark files executable.
+3. **Inspect** — deterministic security scan (shell hooks, `curl | sh`, install hooks, prompt injection, suspicious binaries). Bounded at 2000 files / 16 MiB.
+4. **Double-confirm** — skills imports and any non-safe repo import park on `awaiting_confirmation` until the operator acknowledges the security report AND confirms materialisation.
+5. **Materialise** — copy the starter shell, move payload to `<forkPath>/imported/`, register the fork, seed policy + trace, write the manifest at `<forkPath>/.growthub-fork/source-import.json`, and emit `IMPORT_SUMMARY.md`.
+
+Commands:
+
+```bash
+growthub starter import-repo <owner>/<repo> --out ./my-workspace
+growthub starter import-skill <author>/<skill>[@version] --out ./my-workspace
+growthub starter browse-skills
+```
+
+Every command supports `--json` and `--confirm <targets...>` for scripted use. The Discovery Hub surfaces the same flows under **Settings → Custom Workspace Starter** (new-greenfield, import-github, import-skill, browse-skills).
 
 ## Architecture Lanes
 
