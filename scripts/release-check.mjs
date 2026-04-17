@@ -130,9 +130,13 @@ for (const pack of [cliPack, createPack]) {
   for (const pattern of leakBlockers) {
     assert(!pack.includes(pattern), `Release blocked: ${pattern} artifact detected in tarball`);
   }
-  // Block raw .ts source files (allow .d.ts declarations and .ts inside .js.map references)
+  // Block raw .ts source files from *our* source (allow .d.ts declarations, .js.map refs, and vendor node_modules)
   const rawTsLines = pack.split("\n").filter((l) =>
-    l.includes(".ts") && !l.includes(".d.ts") && !l.includes(".js.map") && !l.includes(".js")
+    l.includes(".ts") &&
+    !l.includes(".d.ts") &&
+    !l.includes(".js.map") &&
+    !l.includes(".js") &&
+    !l.includes("node_modules/")
   );
   assert(rawTsLines.length === 0, "Release blocked: raw .ts source file detected in tarball");
 }
