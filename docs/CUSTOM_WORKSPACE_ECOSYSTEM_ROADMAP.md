@@ -280,11 +280,11 @@ Ordered by value-to-effort ratio, not by calendar. Each item names the files it 
 **Proposal:** in Local Intelligence hub (gemma3:4b), pass the `DriftArtifactSummary` + `policySnapshot` to `provider.summarizeExecution` to get a model-written, operator-friendly recap. Pure add — if the local backend is unavailable, fall back to the existing narrative. Routes through `runNativeIntelligenceFlowSuite` shape.
 **Files:** `cli/src/fleet/drift-summary.ts` (opt-in helper), `cli/src/commands/fleet.ts`.
 
-### 4.12 Installer-aware starter (`create-growthub-local` → starter)
+### 4.12 Installer-aware starter (`create-growthub-local` → starter) — **SHIPPED in this PR**
 
-**Today:** `create-growthub-local` scaffolds the Paperclip Local App. Fresh users who want just a workspace still have to run `growthub starter init` as a second step.
-**Proposal:** add `create-growthub-local@latest -- --profile workspace --out ./my-workspace` that imports `initStarterWorkspace` directly (already an exported function). Zero cross-package coupling beyond the existing dependency pin.
-**Files:** `packages/create-growthub-local/bin/create-growthub-local.mjs`.
+**Before:** `create-growthub-local` scaffolded the Paperclip Local App only. Fresh users who wanted just a workspace had to run `growthub starter init` as a second step.
+**Now:** `create-growthub-local@0.3.0` accepts `--profile workspace` and forwards to `growthub starter init --out <path>` via the existing `@growthub/cli` dependency. All starter flags pass through (`--name`, `--upstream`, `--destination-org`, `--fork-name`, `--remote-sync-mode`, `--kit`, `--json`). Backwards compatible: `dx`, `gtm`, and no-profile paths are unchanged.
+**Files:** `packages/create-growthub-local/bin/create-growthub-local.mjs`, `packages/create-growthub-local/package.json`, `packages/create-growthub-local/README.md`, plus `cli/src/__tests__/create-growthub-local-installer.test.ts` covering the nine routing/validation scenarios.
 
 ### 4.13 `fleet export-manifest` — portable fleet dump
 
