@@ -110,7 +110,7 @@ describe("create-growthub-local — --profile workspace", () => {
     expect(outIndex).toBeGreaterThan(-1);
     const outValue = stub!.argv[outIndex + 1];
     expect(path.isAbsolute(outValue)).toBe(true);
-    expect(outValue).toBe(path.resolve(tmpRoot, "./my-workspace"));
+    expect(outValue).toBe(path.resolve(fs.realpathSync(tmpRoot), "./my-workspace"));
 
     expect(stub!.env.GROWTHUB_INSTALLER_MODE).toBe("true");
     expect(stub!.env.PAPERCLIP_SURFACE_PROFILE).toBeNull();
@@ -184,7 +184,7 @@ describe("create-growthub-local — backwards-compatible profiles", () => {
     expect(stub!.argv.slice(0, 2)).toEqual(["onboard", "--yes"]);
     expect(stub!.argv).toContain("--data-dir");
     expect(stub!.argv[stub!.argv.indexOf("--data-dir") + 1]).toBe(
-      path.resolve(tmpRoot, "./growthub-gtm"),
+      path.resolve(fs.realpathSync(tmpRoot), "./growthub-gtm"),
     );
     expect(stub!.env.PAPERCLIP_SURFACE_PROFILE).toBe("gtm");
     expect(stub!.env.GROWTHUB_INSTALLER_MODE).toBe("true");

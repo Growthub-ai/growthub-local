@@ -114,6 +114,7 @@ describe("worker kit service", () => {
       "growthub-open-montage-studio-v1",
       "growthub-ai-website-cloner-v1",
       "growthub-twenty-crm-v1",
+      "growthub-custom-workspace-starter-v1",
       "growthub-zernio-social-v1",
     ]);
     expect(kits.find((kit) => kit.id === "creative-strategist-v1")).toMatchObject({

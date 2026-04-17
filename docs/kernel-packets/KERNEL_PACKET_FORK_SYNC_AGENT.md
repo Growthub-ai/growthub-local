@@ -1,6 +1,6 @@
 # Fork Sync Agent Kernel Packet
 
-Version: `v1` (full surface)
+Version: `v2` (Phase 1 UX surface — `@growthub/cli@0.5.0`)
 
 This packet freezes the contract, invariants, and procedure for the Fork Sync Agent subsystem — the CLI-native, agent-first mechanism that enables users to fork any Growthub worker kit, apply their own customisations, and stay in sync with upstream kit releases on their terms, locally and/or through first-party native GitHub integration.
 
@@ -55,13 +55,46 @@ cli/src/kits/
 cli/src/github/
   types.ts, token-store.ts, client.ts  # device flow + REST + fork create + PR open
 cli/src/commands/
-  kit-fork.ts           # base verbs + interactive hub
-  kit-fork-remote.ts    # create, connect, policy, trace, confirm
+  kit-fork.ts           # base verbs + interactive hub (Phase 1: list/status/heal/jobs/history/policy)
+  kit-fork-remote.ts    # create, connect, policy (--edit/--dry-run), trace, confirm
   github.ts             # login (device flow + PAT), whoami, logout, status
+cli/src/utils/
+  table-renderer.ts     # ANSI-safe table formatter (width/maxWidth, align, format, truncation)
+  progress.ts           # renderProgressBar + formatRelative helpers
 cli/src/config/
   kit-forks-home.ts     # GROWTHUB_KIT_FORKS_HOME + in-fork paths
   github-home.ts        # GROWTHUB_GITHUB_HOME
 ```
+
+## Phase 1 UX Surface (v0.5.0)
+
+Phase 1 is a pure command-surface + presentation pass. No changes to drift/heal/policy semantics.
+
+### New utility modules
+
+- `cli/src/utils/table-renderer.ts` — ANSI-safe table formatter with width/maxWidth, left/right/center alignment, format callbacks, and ellipsis truncation.
+- `cli/src/utils/progress.ts` — `renderProgressBar(current, total)` with color-coded thresholds + `formatRelative(iso)` helper ("just now" / "45s ago" / "12m ago" / "3h ago" / "2d ago" / ISO date).
+
+### Phase 1 command flags
+
+| Subcommand | Phase 1 additions |
+| --- | --- |
+| `list` | `--filter`, `--sort-by`, `--no-upstream-check`, `--json`; rich table with drift / protected paths / last-heal age |
+| `status <fork>` | `--policy-only`, `--no-upstream-check`; inline heal-plan preview + actionable "next steps" footer |
+| `heal <fork>` | `--preview` → rich grouped preview (safe-add / safe-update / protected / unresolved) + decision prompt |
+| `jobs` | `--watch <job-id>` (live progress bar), `--tail <job-id>`, `--filter`, `--limit` |
+| `history <fork>` | **new** audit command: `--since`, `--until`, `--event-type`, `--json`, `--csv` |
+| `policy [fork-id]` | positional fork-id; `--edit` (interactive clack editor); `--dry-run` (preview writes) |
+
+### Trace events from Phase 1 write paths
+
+Every new write path appends a trace event to the fork's `trace.jsonl` (types: `status_ran`, `heal_proposed`, `policy_updated`) so audits stay kernel-packet portable.
+
+### Phase 1 tests
+
+- `cli/src/__tests__/table-renderer.test.ts` — 6 tests (ANSI width, alignment, truncation, empty state, format callbacks, null handling)
+- `cli/src/__tests__/progress.test.ts` — 11 tests (bar fill ratios, counts/no-counts, `formatRelative` all branches)
+- `cli/src/__tests__/kit-fork-phase-1.test.ts` — 6 tests (Commander flag registration for every Phase 1 subcommand)
 
 ## Kernel Invariants
 
@@ -148,21 +181,41 @@ growthub kit fork create \
 # Bind / manage existing fork
 growthub kit fork connect --fork-id <id> --remote <owner/repo>
 growthub kit fork register --path <fork> --kit <kit-id>
+
+# List forks (Phase 1: rich table with drift / protected paths / last-heal age)
 growthub kit fork list
+growthub kit fork list --filter status=drift-major --sort-by last-heal --json
+
+# Status (Phase 1: inline heal-plan preview + next-steps footer)
 growthub kit fork status <fork-id>
+growthub kit fork status <fork-id> --policy-only
+growthub kit fork status <fork-id> --no-upstream-check
 
-# Policy
-growthub kit fork policy --fork-id <id>
-growthub kit fork policy --fork-id <id> \
-  --set autoApprove=none untouchablePaths+=skills/mine.md remoteSyncMode=pr
+# Policy (Phase 1: positional fork-id, --edit interactive editor, --dry-run)
+growthub kit fork policy <fork-id>
+growthub kit fork policy <fork-id> --edit
+growthub kit fork policy <fork-id> \
+  --set autoApprove=none untouchablePaths+=skills/mine.md remoteSyncMode=pr \
+  --dry-run
 
-# Heal (honours policy)
+# Heal (Phase 1: --preview shows rich grouped plan + decision prompt)
+growthub kit fork heal <fork-id> --preview
 growthub kit fork heal <fork-id>
 growthub kit fork heal <fork-id> --dry-run
 growthub kit fork heal <fork-id> --background
 
-# Long-running coordination
+# Jobs (Phase 1: --watch live progress bar, --tail log stream)
 growthub kit fork jobs
+growthub kit fork jobs --watch <job-id>
+growthub kit fork jobs --tail <job-id>
+growthub kit fork jobs --filter status=running --limit 10
+
+# History — audit timeline (Phase 1: new subcommand)
+growthub kit fork history <fork-id>
+growthub kit fork history <fork-id> --since 2024-01-01 --event-type heal_applied
+growthub kit fork history <fork-id> --csv > audit.csv
+
+# Confirmation / trace (existing)
 growthub kit fork confirm --job-id <id>                 # approve all pending
 growthub kit fork confirm --job-id <id> --approve a.md b.md
 growthub kit fork trace --fork-id <id> --tail 50
@@ -244,6 +297,8 @@ node scripts/check-fork-sync.mjs
 - All invariants above satisfied.
 - `node scripts/check-fork-sync.mjs` passes.
 - Vitest suites (`cli/src/__tests__/kit-fork-*.test.ts`, `cli/src/__tests__/github-*.test.ts`, `cli/src/__tests__/fork-policy.test.ts`, `cli/src/__tests__/fork-trace.test.ts`) pass.
+- Phase 1 suites (`cli/src/__tests__/table-renderer.test.ts`, `cli/src/__tests__/progress.test.ts`, `cli/src/__tests__/kit-fork-phase-1.test.ts`) pass — 23 tests total.
 - Discovery Hub options `🔀 Fork Sync Agent` + `🐙 GitHub Integration` visible.
 - Zero `PAPERCLIP_HOME` / `resolvePaperclipHomeDir` references in fork-sync + github subsystems.
 - `bash scripts/pr-ready.sh` passes.
+- `@growthub/cli` version is `0.5.0`; `create-growthub-local` pin matches exactly.

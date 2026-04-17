@@ -1,7 +1,7 @@
 {
   "name": "@growthub/cli",
-  "version": "0.4.3",
-  "description": "Growthub CLI — orchestrate AI agent teams to run a business",
+  "version": "0.5.0",
+  "description": "Growthub Local is a control plane for forked worker kits. The CLI is the executor, the hosted app is the identity authority, the worker kit is the unit of portable agent infrastructure, and the fork is the operator's personal branch of that infrastructure — policy-governed, trace-backed, and self-healing.",
   "type": "module",
   "bin": {
     "growthub": "./dist/index.js",
