@@ -1,7 +1,7 @@
 {
   "name": "@growthub/create-growthub-local",
-  "version": "0.2.2",
-  "description": "Growthub local installer for DX and GTM profiles",
+  "version": "0.3.0",
+  "description": "Growthub local installer for DX, GTM, and Custom Workspace Starter profiles",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -31,6 +31,10 @@
     "local",
     "gtm",
     "dx",
+    "workspace",
+    "starter",
+    "worker-kit",
+    "fork-sync",
     "ai-agents",
     "agent-orchestration",
     "local-dev"
