@@ -1335,8 +1335,10 @@ Worker Kits (agent execution environments):
   Download:
     $ growthub kit download                     Interactive (no arg = picker)
     $ growthub kit download higgsfield          Fuzzy slug — resolves automatically
+    $ growthub kit download hyperframes         Hyperframes custom workspace
     $ growthub kit download postiz              Postiz Social Media Studio
     $ growthub kit download zernio             Zernio Social Media Studio (Postiz UI Shell + Zernio Engine)
+    $ growthub kit download growthub-hyperframes-studio-v1
     $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
     $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
 

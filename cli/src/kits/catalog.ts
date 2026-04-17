@@ -101,4 +101,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-hyperframes-studio-v1",
+    packageDirName: "growthub-hyperframes-studio-v1",
+    defaultBundleId: "growthub-hyperframes-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];
