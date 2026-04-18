@@ -1,5 +1,7 @@
 # Release Freeze
 
+> For the end-to-end dev → rebuild → publish workflow (OSS tree vs full workspace, Phases A / B / C), see `docs/RELEASE_DIST_REBUILD_WORKFLOW.md`. This doc covers the freeze-boundary invariants that workflow must not violate.
+
 ## Repo Boundary
 
 Growthub Local package publishing must happen from this repo boundary only.
