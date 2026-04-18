@@ -14,8 +14,10 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
+import { pathToFileURL } from "node:url";
 import { initStarterWorkspace, DEFAULT_STARTER_KIT_ID } from "../starter/init.js";
 import type { StarterInitOptions } from "../starter/types.js";
+import { renderTable } from "../utils/table-renderer.js";
 import {
   browseSkills,
   confirmAndResumeSourceImportJob,
@@ -23,6 +25,7 @@ import {
 } from "../starter/source-import/index.js";
 import type {
   GithubRepoSourceInput,
+  SkillsBrowseScope,
   SkillsSkillSourceInput,
   SourceImportInput,
   SourceImportJob,
@@ -41,6 +44,7 @@ export async function runStarterInit(opts: StarterInitOptions): Promise<void> {
       `  kitId:       ${result.kitId}\n` +
       `  forkId:      ${pc.cyan(result.forkId)}\n` +
       `  baseVersion: ${result.baseVersion}\n` +
+      `  open:        ${folderOpenLabel(result.forkPath)}\n` +
       `  policyMode:  remoteSyncMode=${result.policyMode}` +
       (result.remote ? `\n  remote:      ${pc.cyan(result.remote.htmlUrl)}` : "") +
       `\n\nNext: ${pc.dim(`growthub kit fork status ${result.forkId}`)}`,
@@ -64,6 +68,21 @@ export async function runStarterInit(opts: StarterInitOptions): Promise<void> {
 interface RunSourceImportOptions {
   input: SourceImportInput;
   json?: boolean;
+}
+
+function terminalLink(label: string, href: string): string {
+  return `\u001B]8;;${href}\u0007${label}\u001B]8;;\u0007`;
+}
+
+function folderOpenLabel(folderPath: string): string {
+  const href = pathToFileURL(folderPath).href;
+  const label =
+    process.platform === "darwin"
+      ? "Open in Finder"
+      : process.platform === "win32"
+        ? "Open in Explorer"
+        : "Open folder";
+  return terminalLink(label, href);
 }
 
 function formatSecuritySummary(result: SourceImportResult): string {
@@ -226,7 +245,14 @@ interface BrowseSkillsOptions {
   query?: string;
   page?: number;
   pageSize?: number;
+  scope?: SkillsBrowseScope;
   json?: boolean;
+}
+
+function scopeLabel(scope: SkillsBrowseScope): string {
+  if (scope === "trending") return "Trending (24h)";
+  if (scope === "hot") return "Hot";
+  return "All Time";
 }
 
 export async function runBrowseSkills(opts: BrowseSkillsOptions): Promise<void> {
@@ -235,23 +261,41 @@ export async function runBrowseSkills(opts: BrowseSkillsOptions): Promise<void> 
       q: opts.query,
       page: opts.page,
       pageSize: opts.pageSize,
+      scope: opts.scope,
     });
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", ...result }, null, 2));
       return;
     }
     if (result.entries.length === 0) {
-      p.log.info(`No skills matched (page ${result.page}, pageSize ${result.pageSize}).`);
+      p.log.info(
+        `No skills matched in ${scopeLabel(result.scope)} (page ${result.page}, pageSize ${result.pageSize}).`,
+      );
       return;
     }
     p.log.info(
-      `skills.sh — page ${result.page} of ${result.total ?? "?"} total (${result.entries.length} entries)`,
+      `skills.sh — ${scopeLabel(result.scope)} · page ${result.page} · ${result.total ?? "?"} matching result(s)`,
+    );
+    console.log(
+      renderTable({
+        columns: [
+          { key: "rank", label: "#", width: 3, align: "right" },
+          { key: "title", label: "Skill", maxWidth: 28 },
+          { key: "repository", label: "Repository", maxWidth: 30 },
+          { key: "weeklyInstalls", label: "Weekly", width: 8, align: "right" },
+          { key: "githubStars", label: "Stars", width: 8, align: "right" },
+        ],
+        rows: result.entries.map((entry) => ({
+          rank: entry.rank ? String(entry.rank) : "",
+          title: entry.title,
+          repository: entry.repository ?? entry.author,
+          weeklyInstalls: entry.weeklyInstalls ?? "",
+          githubStars: entry.githubStars ?? "",
+        })),
+      }),
     );
     for (const entry of result.entries) {
-      const version = entry.version ? ` @ ${entry.version}` : "";
-      p.log.message(
-        `  ${pc.bold(entry.skillId)}${version} — ${pc.dim(entry.title)}\n    ${pc.dim(entry.htmlUrl)}`,
-      );
+      p.log.message(`${pc.bold(entry.skillId)}  ${pc.dim(entry.htmlUrl)}`);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -337,7 +381,7 @@ export function registerStarterCommands(program: Command): void {
   starter
     .command("import-skill")
     .description("Import a skills.sh skill into a starter-derived portable workspace (double-confirm flow).")
-    .argument("<skill>", "Skill reference (author/skill, author/skill@version, or https URL)")
+    .argument("<skill>", "Skill reference (owner/repo/skill, owner/repo/skill@version, or full skills.sh URL)")
     .requiredOption("--out <path>", "Destination directory for the imported workspace")
     .option("--version <tag>", "Skill version (defaults to 'latest')")
     .option("--name <label>", "Human label for the fork (defaults to skill title)")
@@ -369,16 +413,18 @@ export function registerStarterCommands(program: Command): void {
 
   starter
     .command("browse-skills")
-    .description("Search paginated skills.sh catalog entries (Source Import Agent discovery).")
+    .description("Browse live skills.sh leaderboard entries with popularity-ordered paging.")
     .option("--query <q>", "Free-text search")
     .option("--page <n>", "Page index (1-based)", (v) => Number.parseInt(v, 10))
-    .option("--page-size <n>", "Page size (default 20, cap 50)", (v) => Number.parseInt(v, 10))
+    .option("--page-size <n>", "Page size (default 10, cap 50)", (v) => Number.parseInt(v, 10))
+    .option("--scope <scope>", "Leaderboard scope — all|trending|hot", "all")
     .option("--json", "Emit machine-readable output")
     .action(async (opts) => {
       await runBrowseSkills({
         query: opts.query,
         page: opts.page,
         pageSize: opts.pageSize,
+        scope: opts.scope,
         json: opts.json,
       });
     });

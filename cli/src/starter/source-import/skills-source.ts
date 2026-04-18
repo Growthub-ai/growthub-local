@@ -1,36 +1,29 @@
 /**
  * Source Import Agent — skills.sh source adapter.
  *
- * skills.sh is a public catalog of portable skill primitives. This adapter
- * exposes three operations over the catalog:
- *
- *   1. `browseSkills(query)`     — paginated search (Discovery UX).
- *   2. `probeSkillsSource(input)`— metadata probe that returns a
- *                                  `SkillsSkillAccessProbe`.
- *   3. `fetchSkillPayload(probe, dest)`
- *                                — materialise the skill's files into a
- *                                  bounded staging directory. Never
- *                                  auto-executes any script.
- *
- * Transport is the built-in `fetch`. No new credential surface is added —
- * skills.sh is public-by-design in v1 and we never attach Growthub-hosted
- * credentials to skills traffic.
- *
- * Base URL is sourced from `SKILLS_SH_BASE` so offline/test environments
- * can point at a local fixture server without code changes.
+ * The live skills.sh surface is HTML-first. This adapter therefore treats the
+ * public leaderboard pages and per-skill detail pages as the canonical source
+ * of truth for discovery and metadata, then resolves the selected skill back
+ * to its backing repository for payload materialization.
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { gitAvailable } from "../../kits/fork-remote.js";
 import type {
+  SkillsAuditSummary,
   SkillsBrowseEntry,
   SkillsBrowseQuery,
   SkillsBrowseResult,
+  SkillsBrowseScope,
   SkillsSkillAccessProbe,
   SkillsSkillSourceInput,
 } from "./types.js";
 
 const DEFAULT_BASE = "https://skills.sh";
+const COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
 
 function resolveBase(): string {
   const raw = process.env.SKILLS_SH_BASE?.trim();
@@ -38,11 +31,58 @@ function resolveBase(): string {
   return raw.replace(/\/+$/, "");
 }
 
-function baseHeaders(): Record<string, string> {
+function baseHeaders(accept = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"): Record<string, string> {
   return {
     "User-Agent": "growthub-cli",
-    Accept: "application/json",
+    Accept: accept,
   };
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;|&#x27;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&nbsp;/g, " ");
+}
+
+function stripTags(input: string): string {
+  return input.replace(/<[^>]+>/g, " ");
+}
+
+function cleanText(input: string): string {
+  return decodeHtmlEntities(stripTags(input))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeHtml(input: string): string {
+  return input.replace(COMMENT_PATTERN, "");
+}
+
+async function fetchHtml(url: string): Promise<string> {
+  const res = await fetch(url, { headers: baseHeaders() });
+  if (!res.ok) {
+    throw new Error(`skills.sh request failed: ${res.status} ${res.statusText}`);
+  }
+  return normalizeHtml(await res.text());
+}
+
+function scopePath(scope: SkillsBrowseScope): string {
+  if (scope === "trending") return "/trending";
+  if (scope === "hot") return "/hot";
+  return "/";
+}
+
+function buildBrowseUrl(base: string, query: SkillsBrowseQuery): string {
+  const url = new URL(scopePath(query.scope ?? "all"), `${base}/`);
+  if (query.q?.trim()) {
+    url.searchParams.set("q", query.q.trim());
+  }
+  return url.toString();
 }
 
 // ---------------------------------------------------------------------------
@@ -50,24 +90,16 @@ function baseHeaders(): Record<string, string> {
 // ---------------------------------------------------------------------------
 
 export interface ParsedSkillRef {
-  /** "author/skill" canonical id. */
+  /** Canonical skill id, typically "<owner>/<repo>/<skill>". */
   skillId: string;
-  /** Optional version suffix parsed from `author/skill@version`. */
+  /** Optional version suffix parsed from "@version". */
   version?: string;
 }
 
-/**
- * Parse a raw skill ref into canonical components. Accepts:
- *   - "author/skill"
- *   - "author/skill@version"
- *   - "https://skills.sh/author/skill"
- *   - "https://skills.sh/author/skill@version"
- */
 export function parseSkillRef(raw: string): ParsedSkillRef {
   let working = raw.trim();
   if (!working) throw new Error("Skill reference is empty.");
 
-  // Strip known URL prefixes.
   const urlMatch = working.match(/^https?:\/\/[^/]+\/(.*)$/i);
   if (urlMatch) working = urlMatch[1];
   working = working.replace(/^\/+|\/+$/g, "");
@@ -82,96 +114,114 @@ export function parseSkillRef(raw: string): ParsedSkillRef {
   const parts = working.split("/").filter(Boolean);
   if (parts.length < 2) {
     throw new Error(
-      `Invalid skill reference: '${raw}'. Use 'author/skill' or 'author/skill@version'.`,
+      `Invalid skill reference: '${raw}'. Use '<owner>/<repo>/<skill>', a full skills.sh URL, or '<owner>/<repo>/<skill>@version'.`,
     );
   }
-
-  const author = parts[0];
-  const skill = parts.slice(1).join("/");
-  if (!/^[A-Za-z0-9._-]+$/.test(author)) {
-    throw new Error(`Invalid skill author segment: '${author}'.`);
-  }
-  if (!/^[A-Za-z0-9._/-]+$/.test(skill)) {
-    throw new Error(`Invalid skill name segment: '${skill}'.`);
+  for (const part of parts) {
+    if (!/^[A-Za-z0-9._-]+$/.test(part)) {
+      throw new Error(`Invalid skill path segment: '${part}'.`);
+    }
   }
 
-  return { skillId: `${author}/${skill}`, version };
+  return { skillId: parts.join("/"), version };
 }
 
 // ---------------------------------------------------------------------------
 // Browse + pagination
 // ---------------------------------------------------------------------------
 
-interface RawBrowseEntry {
-  id?: string;
-  skillId?: string;
-  slug?: string;
-  title?: string;
-  name?: string;
-  author?: string;
-  authorHandle?: string;
-  description?: string;
-  version?: string;
-  htmlUrl?: string;
-  url?: string;
+function parseLeaderboardRows(html: string, base: string): SkillsBrowseEntry[] {
+  const rows: SkillsBrowseEntry[] = [];
+  const anchorRegex = /<a[^>]+href="\/([^"]+\/[^"]+\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  for (const match of html.matchAll(anchorRegex)) {
+    const skillId = cleanText(match[1] ?? "");
+    const block = match[2] ?? "";
+    const rankMatch = block.match(/font-mono">(\d+)<\/span>/);
+    const titleMatch = block.match(/<h3[^>]*>([^<]+)<\/h3>/);
+    const repositoryMatch = block.match(/<p[^>]*font-mono[^>]*>([^<]+)<\/p>/);
+    const installsMatch = block.match(/<span class="font-mono text-sm text-foreground">([^<]+)<\/span>/);
+    if (!skillId || !titleMatch?.[1] || !repositoryMatch?.[1]) continue;
+    const title = cleanText(titleMatch[1]);
+    const repository = cleanText(repositoryMatch[1]);
+    const skillSlug = skillId.split("/").at(-1) ?? title;
+    rows.push({
+      skillId,
+      title,
+      author: repository,
+      repository,
+      skillSlug,
+      htmlUrl: `${base}/${skillId}`,
+      rank: rankMatch ? Number(rankMatch[1]) : undefined,
+      weeklyInstalls: installsMatch ? cleanText(installsMatch[1]) : undefined,
+    });
+  }
+  return rows;
 }
 
-interface RawBrowseResponse {
-  total?: number;
-  entries?: RawBrowseEntry[];
-  results?: RawBrowseEntry[];
-  items?: RawBrowseEntry[];
+function matchesQuery(entry: SkillsBrowseEntry, rawQuery?: string): boolean {
+  const query = rawQuery?.trim().toLowerCase();
+  if (!query) return true;
+  const haystack = [
+    entry.title,
+    entry.skillId,
+    entry.author,
+    entry.repository,
+    entry.skillSlug,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return query
+    .split(/\s+/)
+    .every((token) => haystack.includes(token));
 }
 
-function coerceBrowseEntry(raw: RawBrowseEntry, base: string): SkillsBrowseEntry | null {
-  const skillId = raw.skillId ?? raw.id ?? raw.slug;
-  const title = raw.title ?? raw.name;
-  const author = raw.author ?? raw.authorHandle;
-  if (!skillId || !title || !author) return null;
-  return {
-    skillId,
-    title,
-    author,
-    description: raw.description,
-    htmlUrl: raw.htmlUrl ?? raw.url ?? `${base}/${skillId}`,
-    version: raw.version,
-  };
+function sortByPopularity(entries: SkillsBrowseEntry[]): SkillsBrowseEntry[] {
+  return [...entries].sort((left, right) => {
+    const leftRank = left.rank ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = right.rank ?? Number.MAX_SAFE_INTEGER;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return left.title.localeCompare(right.title);
+  });
 }
 
-/**
- * Search skills.sh with pagination. Returns normalised entries regardless
- * of which shape the upstream API emits.
- */
+async function enrichBrowseEntries(entries: SkillsBrowseEntry[]): Promise<SkillsBrowseEntry[]> {
+  return Promise.all(
+    entries.map(async (entry) => {
+      try {
+        const detail = await loadSkillDetail(entry.skillId);
+        return {
+          ...entry,
+          description: detail.summary ?? entry.description,
+          githubStars: detail.githubStars,
+          firstSeen: detail.firstSeen,
+        };
+      } catch {
+        return entry;
+      }
+    }),
+  );
+}
+
 export async function browseSkills(
   query: SkillsBrowseQuery = {},
 ): Promise<SkillsBrowseResult> {
+  const scope = query.scope ?? "all";
   const page = Math.max(1, Math.floor(query.page ?? 1));
-  const pageSize = Math.min(50, Math.max(1, Math.floor(query.pageSize ?? 20)));
+  const pageSize = Math.min(50, Math.max(1, Math.floor(query.pageSize ?? 10)));
   const base = resolveBase();
+  const html = await fetchHtml(buildBrowseUrl(base, query));
+  const allRows = parseLeaderboardRows(html, base);
+  const filtered = sortByPopularity(allRows.filter((entry) => matchesQuery(entry, query.q)));
+  const offset = (page - 1) * pageSize;
+  const entries = await enrichBrowseEntries(filtered.slice(offset, offset + pageSize));
 
-  const params = new URLSearchParams();
-  if (query.q) params.set("q", query.q);
-  params.set("page", String(page));
-  params.set("pageSize", String(pageSize));
-
-  const res = await fetch(`${base}/api/skills?${params.toString()}`, {
-    headers: baseHeaders(),
-  });
-  if (!res.ok) {
-    throw new Error(`skills.sh browse failed: ${res.status} ${res.statusText}`);
-  }
-  const raw = (await res.json()) as RawBrowseResponse;
-  const rawEntries = raw.entries ?? raw.results ?? raw.items ?? [];
-  const entries: SkillsBrowseEntry[] = [];
-  for (const r of rawEntries) {
-    const coerced = coerceBrowseEntry(r, base);
-    if (coerced) entries.push(coerced);
-  }
   return {
-    query: { q: query.q, page, pageSize },
-    total: typeof raw.total === "number" ? raw.total : undefined,
+    query: { q: query.q, page, pageSize, scope },
+    total: filtered.length,
     page,
     pageSize,
+    scope,
     entries,
   };
 }
@@ -180,44 +230,114 @@ export async function browseSkills(
 // Metadata probe
 // ---------------------------------------------------------------------------
 
-interface RawSkillMetadata {
-  skillId?: string;
-  id?: string;
-  slug?: string;
-  title?: string;
-  name?: string;
-  author?: string;
-  authorHandle?: string;
-  description?: string;
-  version?: string;
-  htmlUrl?: string;
-  url?: string;
-  files?: Array<string | { path?: string; name?: string }>;
+interface SkillDetailMetadata {
+  skillId: string;
+  title: string;
+  htmlUrl: string;
+  repository?: string;
+  repoUrl?: string;
+  skillSlug?: string;
+  installCommand?: string;
+  summary?: string;
+  weeklyInstalls?: string;
+  githubStars?: string;
+  firstSeen?: string;
+  audits?: SkillsAuditSummary[];
 }
 
-function coerceFileList(raw: RawSkillMetadata["files"]): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out: string[] = [];
-  for (const entry of raw) {
-    if (typeof entry === "string") {
-      if (entry) out.push(entry);
-      continue;
-    }
-    const p = entry?.path ?? entry?.name;
-    if (typeof p === "string" && p) out.push(p);
+function parseInstallCommand(html: string): {
+  installCommand?: string;
+  repoUrl?: string;
+  repository?: string;
+  skillSlug?: string;
+} {
+  const match = html.match(/npx skills add\s+([^\s<]+)\s+--skill\s+([A-Za-z0-9._:-]+)/);
+  if (!match) return {};
+  const repoUrl = cleanText(match[1] ?? "");
+  const skillSlug = cleanText(match[2] ?? "");
+  const repoMatch = repoUrl.match(/github\.com\/([^/\s]+\/[^/\s]+?)(?:\.git)?$/i);
+  return {
+    installCommand: cleanText(match[0] ?? ""),
+    repoUrl,
+    repository: repoMatch?.[1],
+    skillSlug,
+  };
+}
+
+function parseSectionValue(html: string, label: string): string | undefined {
+  if (label === "GitHub Stars") {
+    const starMatch = html.match(/GitHub Stars<\/span><\/div><div[^>]*>[\s\S]*?<span>([^<]+)<\/span>/);
+    return starMatch?.[1] ? cleanText(starMatch[1]) : undefined;
   }
-  return out;
+  const regex = new RegExp(
+    `${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/span><\\/div><div[^>]*>[\\s\\S]*?(?:<span>)?([^<]+)(?:<\\/span>)?[\\s\\S]*?<\\/div>`,
+  );
+  const match = html.match(regex);
+  return match?.[1] ? cleanText(match[1]) : undefined;
 }
 
-/**
- * Probe skills.sh for a skill's metadata. Returns a
- * `SkillsSkillAccessProbe` the planner can consume.
- */
+function parseSummary(html: string): string | undefined {
+  const summaryIdx = html.indexOf("Summary</div>");
+  if (summaryIdx === -1) return undefined;
+  const slice = html.slice(summaryIdx, summaryIdx + 4000);
+  const match = slice.match(/<p>([\s\S]*?)<\/p>/);
+  return match?.[1] ? cleanText(match[1]) : undefined;
+}
+
+function parseAudits(html: string, skillId: string, base: string): SkillsAuditSummary[] {
+  const sectionIdx = html.indexOf("Security Audits");
+  if (sectionIdx === -1) return [];
+  const endIdx = html.indexOf("Installed on", sectionIdx);
+  const section = html.slice(sectionIdx, endIdx === -1 ? sectionIdx + 4000 : endIdx);
+  const audits: SkillsAuditSummary[] = [];
+  const auditRegex = /href="([^"]+)"[\s\S]*?<span class="text-sm font-medium text-foreground truncate">([^<]+)<\/span>[\s\S]*?<span class="text-xs font-mono uppercase px-2 py-1 rounded [^"]*">([^<]+)<\/span>/g;
+  for (const match of section.matchAll(auditRegex)) {
+    const href = match[1]?.startsWith("/")
+      ? `${base}${match[1]}`
+      : cleanText(match[1] ?? "");
+    const statusRaw = cleanText(match[3] ?? "").toLowerCase();
+    audits.push({
+      name: cleanText(match[2] ?? ""),
+      href,
+      status:
+        statusRaw === "pass"
+          ? "pass"
+          : statusRaw === "warn"
+            ? "warn"
+            : statusRaw === "fail"
+              ? "fail"
+              : "unknown",
+    });
+  }
+  return audits.filter((audit) => audit.href?.includes(skillId) ?? true);
+}
+
+async function loadSkillDetail(
+  skillId: string,
+): Promise<SkillDetailMetadata> {
+  const base = resolveBase();
+  const htmlUrl = `${base}/${skillId}`;
+  const html = await fetchHtml(htmlUrl);
+  const install = parseInstallCommand(html);
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/);
+
+  return {
+    skillId,
+    title: titleMatch?.[1] ? cleanText(titleMatch[1]) : skillId.split("/").at(-1) ?? skillId,
+    htmlUrl,
+    ...install,
+    summary: parseSummary(html),
+    weeklyInstalls: parseSectionValue(html, "Weekly Installs"),
+    githubStars: parseSectionValue(html, "GitHub Stars"),
+    firstSeen: parseSectionValue(html, "First Seen"),
+    audits: parseAudits(html, skillId, base),
+  };
+}
+
 export async function probeSkillsSource(
   input: SkillsSkillSourceInput,
 ): Promise<SkillsSkillAccessProbe> {
   const parsed = parseSkillRef(input.skillRef);
-  const warnings: string[] = [];
   const base = resolveBase();
   const version = input.version ?? parsed.version ?? "latest";
 
@@ -228,42 +348,40 @@ export async function probeSkillsSource(
       skillRef: input.skillRef,
       skillId: parsed.skillId,
       version,
-      title: parsed.skillId,
-      author: parsed.skillId.split("/")[0] ?? "unknown",
+      title: parsed.skillId.split("/").at(-1) ?? parsed.skillId,
+      author: parsed.skillId.split("/").slice(0, 2).join("/") || "unknown",
       htmlUrl: `${base}/${parsed.skillId}`,
       files: [],
       warnings: ["--skip-probe set; metadata defaults used"],
     };
   }
 
-  const url = `${base}/api/skills/${parsed.skillId}${version === "latest" ? "" : `?version=${encodeURIComponent(version)}`}`;
-  const res = await fetch(url, { headers: baseHeaders() });
-  if (res.status === 404) {
-    throw new Error(`skill not found on skills.sh: '${parsed.skillId}' (version=${version})`);
-  }
-  if (!res.ok) {
-    throw new Error(`skills.sh metadata probe failed: ${res.status} ${res.statusText}`);
-  }
-  const raw = (await res.json()) as RawSkillMetadata;
-  const title = raw.title ?? raw.name ?? parsed.skillId;
-  const author = raw.author ?? raw.authorHandle ?? parsed.skillId.split("/")[0] ?? "unknown";
-  const resolvedVersion = raw.version ?? version;
-  const files = coerceFileList(raw.files);
-  if (files.length === 0) {
-    warnings.push("skills.sh returned no file manifest — payload fetch will stream the default archive.");
+  const detail = await loadSkillDetail(parsed.skillId);
+  const warnings: string[] = [];
+  if (!detail.repoUrl && !detail.repository) {
+    warnings.push("skills.sh detail page did not expose a backing repository URL.");
   }
 
   return {
     kind: "skills-skill",
     mode: "public",
     skillRef: input.skillRef,
-    skillId: raw.skillId ?? raw.id ?? raw.slug ?? parsed.skillId,
-    version: resolvedVersion,
-    title,
-    author,
-    description: raw.description,
-    htmlUrl: raw.htmlUrl ?? raw.url ?? `${base}/${parsed.skillId}`,
-    files,
+    skillId: detail.skillId,
+    version,
+    title: detail.title,
+    author: detail.repository ?? detail.skillId.split("/").slice(0, 2).join("/"),
+    description: detail.summary,
+    htmlUrl: detail.htmlUrl,
+    repository: detail.repository,
+    repoUrl: detail.repoUrl,
+    skillSlug: detail.skillSlug,
+    installCommand: detail.installCommand,
+    summary: detail.summary,
+    weeklyInstalls: detail.weeklyInstalls,
+    githubStars: detail.githubStars,
+    firstSeen: detail.firstSeen,
+    audits: detail.audits,
+    files: [],
     warnings,
   };
 }
@@ -290,71 +408,121 @@ function assertInsidePayloadRoot(root: string, candidate: string): void {
   }
 }
 
-async function fetchSkillFile(
-  base: string,
-  skillId: string,
-  version: string,
-  relPath: string,
-): Promise<Buffer> {
-  const url = `${base}/api/skills/${skillId}/files/${encodeURI(relPath)}?version=${encodeURIComponent(version)}`;
-  const res = await fetch(url, { headers: baseHeaders() });
-  if (!res.ok) {
-    throw new Error(
-      `skills.sh file fetch failed for '${relPath}': ${res.status} ${res.statusText}`,
-    );
-  }
-  const arrayBuf = await res.arrayBuffer();
-  return Buffer.from(arrayBuf);
+function runGit(args: string[], cwd: string): { ok: boolean; stderr: string } {
+  const res = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  return {
+    ok: res.status === 0,
+    stderr: res.stderr ?? "",
+  };
 }
 
-/**
- * Materialise a skill payload into `destination`. Writes each advertised
- * file as-is. Never marks any file executable. Never runs any script.
- */
+function skillDirectoryMatches(dir: string, skillSlug: string): boolean {
+  const skillFile = path.resolve(dir, "SKILL.md");
+  if (!fs.existsSync(skillFile) || !fs.statSync(skillFile).isFile()) {
+    return false;
+  }
+
+  if (path.basename(dir) === skillSlug) {
+    return true;
+  }
+
+  const content = fs.readFileSync(skillFile, "utf8");
+  const nameMatch = content.match(/(?:^|\n)name:\s*["']?([A-Za-z0-9._:-]+)["']?\s*(?:\n|$)/i);
+  return nameMatch?.[1] === skillSlug;
+}
+
+function locateSkillDirectory(root: string, skillSlug: string): string | null {
+  const preferred = [
+    path.resolve(root, "skills", skillSlug),
+    path.resolve(root, skillSlug),
+  ];
+  for (const candidate of preferred) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
+      return candidate;
+    }
+  }
+
+  const queue: string[] = [root];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (skillDirectoryMatches(current, skillSlug)) {
+      return current;
+    }
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if ([".git", "node_modules", ".next", "dist", "build", "coverage"].includes(entry.name)) {
+        continue;
+      }
+      queue.push(path.resolve(current, entry.name));
+    }
+  }
+  return null;
+}
+
+function copySkillTree(sourceDir: string, destination: string): number {
+  let written = 0;
+  const stack: Array<{ from: string; to: string }> = [{ from: sourceDir, to: destination }];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    fs.mkdirSync(current.to, { recursive: true });
+    for (const entry of fs.readdirSync(current.from, { withFileTypes: true })) {
+      const fromPath = path.resolve(current.from, entry.name);
+      const toPath = path.resolve(current.to, entry.name);
+      assertInsidePayloadRoot(destination, toPath);
+      if (entry.isDirectory()) {
+        stack.push({ from: fromPath, to: toPath });
+        continue;
+      }
+      const data = fs.readFileSync(fromPath);
+      fs.mkdirSync(path.dirname(toPath), { recursive: true });
+      fs.writeFileSync(toPath, data, { mode: 0o644 });
+      written += 1;
+    }
+  }
+  return written;
+}
+
 export async function fetchSkillPayload(
   input: FetchSkillPayloadInput,
 ): Promise<FetchSkillPayloadResult> {
   const { probe, destination } = input;
+  if (!gitAvailable()) {
+    throw new Error("`git` is not available on PATH — cannot materialize a skills.sh payload.");
+  }
   if (fs.existsSync(destination)) {
     throw new Error(`Skill payload destination already exists: ${destination}`);
   }
-  fs.mkdirSync(destination, { recursive: true });
 
-  const base = resolveBase();
-  let written = 0;
-
-  if (probe.files.length === 0) {
-    // Fall back to a manifest probe that will tell us what exists. This
-    // keeps the adapter behaviour deterministic even when the upstream
-    // probe returned no file list.
-    const manifestRes = await fetch(
-      `${base}/api/skills/${probe.skillId}/manifest?version=${encodeURIComponent(probe.version)}`,
-      { headers: baseHeaders() },
-    );
-    if (!manifestRes.ok) {
-      throw new Error(
-        `skills.sh manifest fetch failed: ${manifestRes.status} ${manifestRes.statusText}`,
-      );
-    }
-    const manifestRaw = (await manifestRes.json()) as { files?: string[] };
-    for (const f of manifestRaw.files ?? []) {
-      const target = path.resolve(destination, f);
-      assertInsidePayloadRoot(destination, target);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      const data = await fetchSkillFile(base, probe.skillId, probe.version, f);
-      fs.writeFileSync(target, data, { mode: 0o644 });
-      written += 1;
-    }
-  } else {
-    for (const rel of probe.files) {
-      const target = path.resolve(destination, rel);
-      assertInsidePayloadRoot(destination, target);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      const data = await fetchSkillFile(base, probe.skillId, probe.version, rel);
-      fs.writeFileSync(target, data, { mode: 0o644 });
-      written += 1;
-    }
+  const repoSource = probe.repoUrl ?? (probe.repository ? `https://github.com/${probe.repository}` : undefined);
+  const skillSlug = probe.skillSlug ?? probe.skillId.split("/").at(-1);
+  if (!repoSource || !skillSlug) {
+    throw new Error(`Skill '${probe.skillId}' is missing repository metadata — cannot materialize payload.`);
   }
 
-  return { destination, fileCount: written };
+  const cloneRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "growthub-skills-source-"),
+  );
+
+  try {
+    const cloneRes = runGit(["clone", "--depth", "1", repoSource, cloneRoot], path.dirname(cloneRoot));
+    if (!cloneRes.ok) {
+      throw new Error(`git clone failed: ${cloneRes.stderr || "unable to clone skill repository"}`);
+    }
+
+    const skillDir = locateSkillDirectory(cloneRoot, skillSlug);
+    if (!skillDir) {
+      throw new Error(
+        `Unable to locate skill '${skillSlug}' inside repository '${probe.repository ?? repoSource}'.`,
+      );
+    }
+
+    const fileCount = copySkillTree(skillDir, destination);
+    return { destination, fileCount };
+  } finally {
+    fs.rmSync(cloneRoot, { recursive: true, force: true });
+  }
 }

@@ -196,7 +196,7 @@ export function buildSourceImportPlan(
  * confirmation before the agent will execute them.
  */
 export function pendingConfirmations(plan: SourceImportPlan): string[] {
-  return plan.actions
+  return [...new Set(plan.actions
     .filter((a) => a.needsConfirmation)
-    .map((a) => a.targetPath);
+    .map((a) => a.confirmationLabel ?? a.targetPath))];
 }

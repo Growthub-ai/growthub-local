@@ -26,6 +26,7 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { copyBundledKitSource } from "../../kits/service.js";
 import { registerKitFork } from "../../kits/fork-registry.js";
@@ -93,9 +94,9 @@ function resolveSourceKind(probe: SourceAccessProbe): SourceKind {
 }
 
 function stagingDirFor(forkPath: string): string {
-  return path.resolve(
-    path.dirname(forkPath),
-    `.source-import-${path.basename(forkPath)}-${Date.now().toString(36)}`,
+  return path.join(
+    os.tmpdir(),
+    `growthub-source-import-${path.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   );
 }
 
@@ -164,8 +165,12 @@ function assertConfirmationsSatisfied(
 ): void {
   const confirmed = new Set(confirmations);
   const pending = plan.actions
-    .filter((a) => a.needsConfirmation && !confirmed.has(a.targetPath))
-    .map((a) => a.targetPath);
+    .filter((a) => {
+      if (!a.needsConfirmation) return false;
+      const token = a.confirmationLabel ?? a.targetPath;
+      return !confirmed.has(token);
+    })
+    .map((a) => a.confirmationLabel ?? a.targetPath);
   if (pending.length > 0) {
     throw new PendingConfirmationError(pending);
   }

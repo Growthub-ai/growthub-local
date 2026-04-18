@@ -64,7 +64,7 @@ import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
-import { registerStarterCommands, runStarterInit, runBrowseSkills } from "./commands/starter.js";
+import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
@@ -1137,13 +1137,8 @@ async function runDiscoveryHub(opts?: {
                 },
                 {
                   value: "import-skill",
-                  label: "🧠 Build from skills.sh skill",
-                  hint: "Import a skill from skills.sh — mandatory double confirmation",
-                },
-                {
-                  value: "browse-skills",
-                  label: "🔎 Browse skills.sh catalog",
-                  hint: "Search paginated skill listings before importing",
+                  label: "🧠 Build from skills.sh",
+                  hint: "Discover live skills, inspect metadata, then import the selected skill",
                 },
                 { value: "__back", label: "← Back to Settings" },
               ],
@@ -1172,47 +1167,27 @@ async function runDiscoveryHub(opts?: {
                 placeholder: "octocat/Hello-World",
               });
               if (p.isCancel(repoRaw) || !repoRaw) continue starterLoop;
-              const outRaw = await p.text({
-                message: "Destination path for the imported workspace:",
-                placeholder: "./imported-repo",
+              const {
+                promptForInteractiveWorkspacePath,
+                startSourceImportFlow,
+              } = await import("./commands/source-import-discovery.js");
+              const outPath = await promptForInteractiveWorkspacePath({
+                kind: "github-repo",
+                repo: String(repoRaw),
+                out: "",
               });
-              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
-              const { startSourceImportFlow } = await import("./commands/source-import-discovery.js");
+              if (!outPath) continue starterLoop;
               await startSourceImportFlow({
                 kind: "github-repo",
                 repo: String(repoRaw),
-                out: String(outRaw),
+                out: outPath,
               });
               continue starterLoop;
             }
 
             if (starterChoice === "import-skill") {
-              const skillRaw = await p.text({
-                message: "skills.sh reference (author/skill, author/skill@version, or full URL):",
-                placeholder: "acme/hello-skill",
-              });
-              if (p.isCancel(skillRaw) || !skillRaw) continue starterLoop;
-              const outRaw = await p.text({
-                message: "Destination path for the imported workspace:",
-                placeholder: "./imported-skill",
-              });
-              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
-              const { startSourceImportFlow } = await import("./commands/source-import-discovery.js");
-              await startSourceImportFlow({
-                kind: "skills-skill",
-                skillRef: String(skillRaw),
-                out: String(outRaw),
-              });
-              continue starterLoop;
-            }
-
-            if (starterChoice === "browse-skills") {
-              const queryRaw = await p.text({
-                message: "Search query (leave blank for first page):",
-                placeholder: "",
-              });
-              if (p.isCancel(queryRaw)) continue starterLoop;
-              await runBrowseSkills({ query: queryRaw ? String(queryRaw) : undefined });
+              const { startSkillsSourceImportFlow } = await import("./commands/source-import-discovery.js");
+              await startSkillsSourceImportFlow();
               continue starterLoop;
             }
           }

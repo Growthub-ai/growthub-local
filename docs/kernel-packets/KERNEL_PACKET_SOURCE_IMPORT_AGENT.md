@@ -81,8 +81,8 @@ Before this primitive, there was no source-agnostic path from "here is a thing I
 ## Command Surface
 
 - `growthub starter import-repo <repo>` — GitHub repo import (foreground).
-- `growthub starter import-skill <skill>` — skills.sh skill import (foreground).
-- `growthub starter browse-skills` — paginated skills.sh catalog browser.
+- `growthub starter import-skill <skill>` — skills.sh skill import (foreground, canonical skill ids or skills.sh URLs).
+- `growthub starter browse-skills` — live skills.sh leaderboard browser (all-time / trending / hot with pagination).
 
 Every command supports:
 
@@ -92,11 +92,14 @@ Every command supports:
 
 ## Discovery Hub Invariants
 
-- The **Settings → Custom Workspace Starter** entry opens a submenu with four options:
+- The **Settings → Custom Workspace Starter** entry opens a submenu with three options:
   1. `new-greenfield` — invokes `growthub starter init`.
   2. `import-github` — routes to `startSourceImportFlow({ kind: "github-repo" })`.
-  3. `import-skill` — routes to `startSourceImportFlow({ kind: "skills-skill" })`.
-  4. `browse-skills` — routes to `runBrowseSkills(...)` followed by an optional import.
+  3. `import-skill` — routes to a single interactive skills.sh discovery lane that:
+     - fetches the live leaderboard from skills.sh
+     - supports query + scope changes before selection
+     - previews real skill metadata from the selected detail page
+     - only asks for the output path after the operator confirms the selected skill
 - The submenu loops (`starterLoop`) so back navigation returns to Settings without losing context.
 - The demo CLI (`scripts/cli-demo.mjs`) exposes a `source-import` preview entry labelled `📥 Source Import Agent Preview` that invokes `growthub starter import-repo --help` through the real CLI binary.
 
@@ -112,10 +115,10 @@ growthub starter import-repo octocat/hello-world \
   --confirm materialize-starter-shell inspect-security --json
 
 # Skills.sh skill import (always requires confirmations)
-growthub starter import-skill acme/research-agent@1.2.0 --out ./ws-skill
+growthub starter import-skill anthropics/skills/frontend-design --out ./ws-skill
 
-# Browse skills.sh catalog, then import interactively
-growthub starter browse-skills
+# Browse the live skills.sh leaderboard
+growthub starter browse-skills --scope trending --query marketing
 ```
 
 ## Validation
@@ -138,6 +141,7 @@ The `check-fork-sync.mjs` source-import section asserts:
 - All invariants above satisfied.
 - `growthub starter import-repo <repo> --out <tmp>` produces a directory with valid `.growthub-fork/fork.json`, `policy.json`, `trace.jsonl`, `source-import.json`, plus a populated `imported/` payload and an `IMPORT_SUMMARY.md`.
 - `growthub starter import-skill <skill> --out <tmp>` parks on confirmation by default and produces the same final state after resume.
+- The discovery hub exposes one skills.sh lane, not separate "import" and "browse" prompts.
 - `cli/src/starter/source-import/` imports only the composing primitives listed above.
 - `node scripts/check-fork-sync.mjs` passes with the source-import section green.
 - Discovery Hub submenu + demo CLI preview entry are wired.

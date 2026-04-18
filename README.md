@@ -52,8 +52,8 @@ npm install -g @growthub/cli
 
 # Portable Source → Agent Environment Pipeline
 growthub starter import-repo octocat/hello-world --out ./ws-repo
-growthub starter import-skill acme/research-agent@1.2.0 --out ./ws-skill
-growthub starter browse-skills
+growthub starter import-skill anthropics/skills/frontend-design --out ./ws-skill
+growthub starter browse-skills --scope trending --query marketing
 ```
 
 Open discovery:
@@ -303,11 +303,11 @@ Commands:
 
 ```bash
 growthub starter import-repo <owner>/<repo> --out ./my-workspace
-growthub starter import-skill <author>/<skill>[@version] --out ./my-workspace
+growthub starter import-skill <owner>/<repo>/<skill>[@version] --out ./my-workspace
 growthub starter browse-skills
 ```
 
-Every command supports `--json` and `--confirm <targets...>` for scripted use. The Discovery Hub surfaces the same flows under **Settings → Custom Workspace Starter** (new-greenfield, import-github, import-skill, browse-skills).
+Every command supports `--json` and `--confirm <targets...>` for scripted use. The Discovery Hub surfaces the same flows under **Settings → Custom Workspace Starter** with a single live skills discovery lane for skills.sh selection before import.
 
 ## Architecture Lanes
 

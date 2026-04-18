@@ -160,7 +160,7 @@ export interface SkillsSkillAccessProbe {
   kind: "skills-skill";
   mode: "public";
   skillRef: string;
-  /** Canonical "author/skill" identifier as reported by skills.sh. */
+  /** Canonical "<owner>/<repo>/<skill>" identifier as reported by skills.sh. */
   skillId: string;
   /** Resolved skill version string. */
   version: string;
@@ -172,6 +172,24 @@ export interface SkillsSkillAccessProbe {
   description?: string;
   /** Browser URL for skill detail. */
   htmlUrl: string;
+  /** Canonical GitHub repository backing this skill. */
+  repository?: string;
+  /** Canonical GitHub repository URL backing this skill. */
+  repoUrl?: string;
+  /** Skill slug used by the upstream install command. */
+  skillSlug?: string;
+  /** Upstream install command shown on the skills.sh detail page. */
+  installCommand?: string;
+  /** Detail-page summary line used during discovery. */
+  summary?: string;
+  /** Live weekly installs shown on the detail page. */
+  weeklyInstalls?: string;
+  /** Live GitHub stars shown on the detail page. */
+  githubStars?: string;
+  /** First-seen date shown on the detail page. */
+  firstSeen?: string;
+  /** Audit badges shown on the detail page. */
+  audits?: SkillsAuditSummary[];
   /** Manifest-advertised file list (relative paths). */
   files: string[];
   warnings: string[];
@@ -183,6 +201,8 @@ export type SourceAccessProbe = GithubRepoAccessProbe | SkillsSkillAccessProbe;
 // Skills browse (search + pagination)
 // ---------------------------------------------------------------------------
 
+export type SkillsBrowseScope = "all" | "trending" | "hot";
+
 export interface SkillsBrowseQuery {
   /** Free-text search. */
   q?: string;
@@ -190,15 +210,30 @@ export interface SkillsBrowseQuery {
   page?: number;
   /** Page size (default 20, capped at 50). */
   pageSize?: number;
+  /** Leaderboard scope. */
+  scope?: SkillsBrowseScope;
+}
+
+export interface SkillsAuditSummary {
+  name: string;
+  status: "pass" | "warn" | "fail" | "unknown";
+  href?: string;
 }
 
 export interface SkillsBrowseEntry {
+  /** Canonical "<owner>/<repo>/<skill>" identifier. */
   skillId: string;
   title: string;
   author: string;
   description?: string;
   htmlUrl: string;
   version?: string;
+  repository?: string;
+  skillSlug?: string;
+  rank?: number;
+  weeklyInstalls?: string;
+  githubStars?: string;
+  firstSeen?: string;
 }
 
 export interface SkillsBrowseResult {
@@ -206,6 +241,7 @@ export interface SkillsBrowseResult {
   total?: number;
   page: number;
   pageSize: number;
+  scope: SkillsBrowseScope;
   entries: SkillsBrowseEntry[];
 }
 
