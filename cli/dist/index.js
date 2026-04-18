@@ -8015,8 +8015,8 @@ var init_onboard = __esm({
 
 // src/client/http.ts
 import { URL as URL2 } from "node:url";
-function buildUrl(apiBase, path56) {
-  const normalizedPath = path56.startsWith("/") ? path56 : `/${path56}`;
+function buildUrl(apiBase, path57) {
+  const normalizedPath = path57.startsWith("/") ? path57 : `/${path57}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
@@ -8078,26 +8078,26 @@ var init_http = __esm({
         this.runId = opts.runId?.trim() || void 0;
         this.userId = opts.userId?.trim() || void 0;
       }
-      get(path56, opts) {
-        return this.request(path56, { method: "GET" }, opts);
+      get(path57, opts) {
+        return this.request(path57, { method: "GET" }, opts);
       }
-      post(path56, body, opts) {
-        return this.request(path56, {
+      post(path57, body, opts) {
+        return this.request(path57, {
           method: "POST",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      patch(path56, body, opts) {
-        return this.request(path56, {
+      patch(path57, body, opts) {
+        return this.request(path57, {
           method: "PATCH",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      delete(path56, opts) {
-        return this.request(path56, { method: "DELETE" }, opts);
+      delete(path57, opts) {
+        return this.request(path57, { method: "DELETE" }, opts);
       }
-      async request(path56, init, opts) {
-        const url = buildUrl(this.apiBase, path56);
+      async request(path57, init, opts) {
+        const url = buildUrl(this.apiBase, path57);
         const headers = {
           accept: "application/json",
           ...toStringRecord(init.headers)
@@ -9622,9 +9622,9 @@ async function fetchHostedIntegrations(session) {
 }
 async function fetchHostedIntegrationCredential(session, providerId) {
   const client = toApiClient2(session);
-  const path56 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
+  const path57 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
   try {
-    return await client.get(path56, { ignoreNotFound: true });
+    return await client.get(path57, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);
@@ -10199,12 +10199,12 @@ var init_github = __esm({
 });
 
 // src/starter/init.ts
-import fs36 from "node:fs";
-import path45 from "node:path";
+import fs38 from "node:fs";
+import path46 from "node:path";
 async function initStarterWorkspace(opts) {
   const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
-  const absOut = path45.resolve(opts.out);
-  if (fs36.existsSync(absOut) && fs36.readdirSync(absOut).length > 0) {
+  const absOut = path46.resolve(opts.out);
+  if (fs38.existsSync(absOut) && fs38.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   const info = getBundledKitSourceInfo(kitId);
@@ -10213,7 +10213,7 @@ async function initStarterWorkspace(opts) {
     forkPath: absOut,
     kitId: info.id,
     baseVersion: info.version,
-    label: opts.name?.trim() || path45.basename(absOut)
+    label: opts.name?.trim() || path46.basename(absOut)
   });
   const policy = {
     ...makeDefaultKitForkPolicy(),
@@ -10306,8 +10306,8 @@ var init_types2 = __esm({
 });
 
 // src/starter/source-import/github-source.ts
-import fs37 from "node:fs";
-import path46 from "node:path";
+import fs39 from "node:fs";
+import path47 from "node:path";
 import { spawnSync as spawnSync4 } from "node:child_process";
 function baseHeaders() {
   return {
@@ -10438,12 +10438,12 @@ function cloneGithubRepo(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot clone.");
   }
-  if (fs37.existsSync(input.destination)) {
+  if (fs39.existsSync(input.destination)) {
     throw new Error(`Clone destination already exists: ${input.destination}`);
   }
   const cloneUrl = input.token ? buildTokenCloneUrl(input.probe.repo, input.token) : input.probe.cloneUrl;
-  const parent = path46.dirname(input.destination);
-  fs37.mkdirSync(parent, { recursive: true });
+  const parent = path47.dirname(input.destination);
+  fs39.mkdirSync(parent, { recursive: true });
   const depth = input.depth ?? 1;
   const branch = input.branch ?? input.probe.defaultBranch;
   const args = ["clone"];
@@ -10470,17 +10470,17 @@ function cloneGithubRepo(input) {
 function narrowToSubdirectory(rootDir, subdirectory) {
   const normalizedSub = subdirectory.replace(/^\/+|\/+$/g, "");
   if (!normalizedSub) return;
-  const abs = path46.resolve(rootDir, normalizedSub);
-  if (!fs37.existsSync(abs) || !fs37.statSync(abs).isDirectory()) {
+  const abs = path47.resolve(rootDir, normalizedSub);
+  if (!fs39.existsSync(abs) || !fs39.statSync(abs).isDirectory()) {
     throw new Error(`Subdirectory not found in cloned repo: ${subdirectory}`);
   }
-  const tmp = path46.resolve(
-    path46.dirname(rootDir),
-    `.${path46.basename(rootDir)}-narrow-${Date.now().toString(36)}`
+  const tmp = path47.resolve(
+    path47.dirname(rootDir),
+    `.${path47.basename(rootDir)}-narrow-${Date.now().toString(36)}`
   );
-  fs37.renameSync(abs, tmp);
-  fs37.rmSync(rootDir, { recursive: true, force: true });
-  fs37.renameSync(tmp, rootDir);
+  fs39.renameSync(abs, tmp);
+  fs39.rmSync(rootDir, { recursive: true, force: true });
+  fs39.renameSync(tmp, rootDir);
 }
 var GITHUB_API_BASE2;
 var init_github_source = __esm({
@@ -10494,9 +10494,9 @@ var init_github_source = __esm({
 });
 
 // src/starter/source-import/skills-source.ts
-import fs38 from "node:fs";
-import os9 from "node:os";
-import path47 from "node:path";
+import fs40 from "node:fs";
+import os10 from "node:os";
+import path48 from "node:path";
 import { spawnSync as spawnSync5 } from "node:child_process";
 function resolveBase() {
   const raw = process.env.SKILLS_SH_BASE?.trim();
@@ -10762,9 +10762,9 @@ async function probeSkillsSource(input) {
   };
 }
 function assertInsidePayloadRoot(root, candidate) {
-  const abs = path47.resolve(candidate);
-  const rootAbs = path47.resolve(root);
-  if (!abs.startsWith(rootAbs + path47.sep) && abs !== rootAbs) {
+  const abs = path48.resolve(candidate);
+  const rootAbs = path48.resolve(root);
+  if (!abs.startsWith(rootAbs + path48.sep) && abs !== rootAbs) {
     throw new Error(`Refusing to write outside payload root: ${candidate}`);
   }
 }
@@ -10780,24 +10780,24 @@ function runGit3(args, cwd) {
   };
 }
 function skillDirectoryMatches(dir, skillSlug) {
-  const skillFile = path47.resolve(dir, "SKILL.md");
-  if (!fs38.existsSync(skillFile) || !fs38.statSync(skillFile).isFile()) {
+  const skillFile = path48.resolve(dir, "SKILL.md");
+  if (!fs40.existsSync(skillFile) || !fs40.statSync(skillFile).isFile()) {
     return false;
   }
-  if (path47.basename(dir) === skillSlug) {
+  if (path48.basename(dir) === skillSlug) {
     return true;
   }
-  const content = fs38.readFileSync(skillFile, "utf8");
+  const content = fs40.readFileSync(skillFile, "utf8");
   const nameMatch = content.match(/(?:^|\n)name:\s*["']?([A-Za-z0-9._:-]+)["']?\s*(?:\n|$)/i);
   return nameMatch?.[1] === skillSlug;
 }
 function locateSkillDirectory(root, skillSlug) {
   const preferred = [
-    path47.resolve(root, "skills", skillSlug),
-    path47.resolve(root, skillSlug)
+    path48.resolve(root, "skills", skillSlug),
+    path48.resolve(root, skillSlug)
   ];
   for (const candidate of preferred) {
-    if (fs38.existsSync(candidate) && fs38.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
+    if (fs40.existsSync(candidate) && fs40.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
       return candidate;
     }
   }
@@ -10807,12 +10807,12 @@ function locateSkillDirectory(root, skillSlug) {
     if (skillDirectoryMatches(current, skillSlug)) {
       return current;
     }
-    for (const entry of fs38.readdirSync(current, { withFileTypes: true })) {
+    for (const entry of fs40.readdirSync(current, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if ([".git", "node_modules", ".next", "dist", "build", "coverage"].includes(entry.name)) {
         continue;
       }
-      queue.push(path47.resolve(current, entry.name));
+      queue.push(path48.resolve(current, entry.name));
     }
   }
   return null;
@@ -10822,18 +10822,18 @@ function copySkillTree(sourceDir, destination) {
   const stack = [{ from: sourceDir, to: destination }];
   while (stack.length > 0) {
     const current = stack.pop();
-    fs38.mkdirSync(current.to, { recursive: true });
-    for (const entry of fs38.readdirSync(current.from, { withFileTypes: true })) {
-      const fromPath = path47.resolve(current.from, entry.name);
-      const toPath = path47.resolve(current.to, entry.name);
+    fs40.mkdirSync(current.to, { recursive: true });
+    for (const entry of fs40.readdirSync(current.from, { withFileTypes: true })) {
+      const fromPath = path48.resolve(current.from, entry.name);
+      const toPath = path48.resolve(current.to, entry.name);
       assertInsidePayloadRoot(destination, toPath);
       if (entry.isDirectory()) {
         stack.push({ from: fromPath, to: toPath });
         continue;
       }
-      const data = fs38.readFileSync(fromPath);
-      fs38.mkdirSync(path47.dirname(toPath), { recursive: true });
-      fs38.writeFileSync(toPath, data, { mode: 420 });
+      const data = fs40.readFileSync(fromPath);
+      fs40.mkdirSync(path48.dirname(toPath), { recursive: true });
+      fs40.writeFileSync(toPath, data, { mode: 420 });
       written += 1;
     }
   }
@@ -10844,7 +10844,7 @@ async function fetchSkillPayload(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot materialize a skills.sh payload.");
   }
-  if (fs38.existsSync(destination)) {
+  if (fs40.existsSync(destination)) {
     throw new Error(`Skill payload destination already exists: ${destination}`);
   }
   const repoSource = probe.repoUrl ?? (probe.repository ? `https://github.com/${probe.repository}` : void 0);
@@ -10852,11 +10852,11 @@ async function fetchSkillPayload(input) {
   if (!repoSource || !skillSlug) {
     throw new Error(`Skill '${probe.skillId}' is missing repository metadata \u2014 cannot materialize payload.`);
   }
-  const cloneRoot = fs38.mkdtempSync(
-    path47.join(os9.tmpdir(), "growthub-skills-source-")
+  const cloneRoot = fs40.mkdtempSync(
+    path48.join(os10.tmpdir(), "growthub-skills-source-")
   );
   try {
-    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path47.dirname(cloneRoot));
+    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path48.dirname(cloneRoot));
     if (!cloneRes.ok) {
       throw new Error(`git clone failed: ${cloneRes.stderr || "unable to clone skill repository"}`);
     }
@@ -10869,7 +10869,7 @@ async function fetchSkillPayload(input) {
     const fileCount = copySkillTree(skillDir, destination);
     return { destination, fileCount };
   } finally {
-    fs38.rmSync(cloneRoot, { recursive: true, force: true });
+    fs40.rmSync(cloneRoot, { recursive: true, force: true });
   }
 }
 var DEFAULT_BASE, COMMENT_PATTERN;
@@ -10883,13 +10883,13 @@ var init_skills_source = __esm({
 });
 
 // src/starter/source-import/detect.ts
-import fs39 from "node:fs";
-import path48 from "node:path";
+import fs41 from "node:fs";
+import path49 from "node:path";
 function safeReadPackageJson(dir) {
-  const p33 = path48.resolve(dir, "package.json");
-  if (!fs39.existsSync(p33)) return null;
+  const p33 = path49.resolve(dir, "package.json");
+  if (!fs41.existsSync(p33)) return null;
   try {
-    return JSON.parse(fs39.readFileSync(p33, "utf8"));
+    return JSON.parse(fs41.readFileSync(p33, "utf8"));
   } catch {
     return null;
   }
@@ -10899,10 +10899,10 @@ function detectPackageManager(dir, pkg) {
   if (pkg?.packageManager?.startsWith("yarn")) return "yarn";
   if (pkg?.packageManager?.startsWith("npm")) return "npm";
   if (pkg?.packageManager?.startsWith("bun")) return "bun";
-  if (fs39.existsSync(path48.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs39.existsSync(path48.resolve(dir, "yarn.lock"))) return "yarn";
-  if (fs39.existsSync(path48.resolve(dir, "bun.lockb"))) return "bun";
-  if (fs39.existsSync(path48.resolve(dir, "package-lock.json"))) return "npm";
+  if (fs41.existsSync(path49.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs41.existsSync(path49.resolve(dir, "yarn.lock"))) return "yarn";
+  if (fs41.existsSync(path49.resolve(dir, "bun.lockb"))) return "bun";
+  if (fs41.existsSync(path49.resolve(dir, "package-lock.json"))) return "npm";
   return "unknown";
 }
 function collectDeps(pkg) {
@@ -10916,12 +10916,12 @@ function collectDeps(pkg) {
 }
 function looksLikeSkillPayload(rootDir) {
   const markers = ["SKILL.md", "skill.md", "skill.json", "skill.yml", "skill.yaml", "prompt.md"];
-  return markers.some((name) => fs39.existsSync(path48.resolve(rootDir, name)));
+  return markers.some((name) => fs41.existsSync(path49.resolve(rootDir, name)));
 }
 function detectFramework(rootDir, pkg) {
   if (!pkg) {
     if (looksLikeSkillPayload(rootDir)) return "skill";
-    if (fs39.existsSync(path48.resolve(rootDir, "docs"))) return "docs";
+    if (fs41.existsSync(path49.resolve(rootDir, "docs"))) return "docs";
     return "unknown";
   }
   const deps = collectDeps(pkg);
@@ -10930,8 +10930,8 @@ function detectFramework(rootDir, pkg) {
     "vite.config.ts",
     "vite.config.mjs",
     "vite.config.cjs"
-  ].some((name) => fs39.existsSync(path48.resolve(rootDir, name)));
-  if (deps.has("next") || fs39.existsSync(path48.resolve(rootDir, "next.config.js")) || fs39.existsSync(path48.resolve(rootDir, "next.config.mjs"))) {
+  ].some((name) => fs41.existsSync(path49.resolve(rootDir, name)));
+  if (deps.has("next") || fs41.existsSync(path49.resolve(rootDir, "next.config.js")) || fs41.existsSync(path49.resolve(rootDir, "next.config.mjs"))) {
     return "next";
   }
   if (deps.has("vite") || hasViteConfig) return "vite";
@@ -10957,15 +10957,15 @@ function pickScripts(pkg) {
   return out;
 }
 function listEnvFiles(dir) {
-  if (!fs39.existsSync(dir)) return [];
-  return fs39.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
+  if (!fs41.existsSync(dir)) return [];
+  return fs41.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
 }
 function findAppRoot(rootDir, pkg) {
   if (pkg) return ".";
   const candidates = ["app", "src", "apps", "packages"];
   for (const candidate of candidates) {
-    const abs = path48.resolve(rootDir, candidate);
-    if (fs39.existsSync(abs) && fs39.statSync(abs).isDirectory()) {
+    const abs = path49.resolve(rootDir, candidate);
+    if (fs41.existsSync(abs) && fs41.statSync(abs).isDirectory()) {
       const child = safeReadPackageJson(abs);
       if (child) return candidate;
     }
@@ -10981,12 +10981,12 @@ function computeConfidence(framework, manager, pkg) {
   return Math.min(1, Number(score.toFixed(2)));
 }
 function detectSourceShape(rootDir) {
-  if (!fs39.existsSync(rootDir) || !fs39.statSync(rootDir).isDirectory()) {
+  if (!fs41.existsSync(rootDir) || !fs41.statSync(rootDir).isDirectory()) {
     throw new Error(`Detection target is not a directory: ${rootDir}`);
   }
   const rootPkg = safeReadPackageJson(rootDir);
   const appRootRel = findAppRoot(rootDir, rootPkg);
-  const appRootAbs = path48.resolve(rootDir, appRootRel);
+  const appRootAbs = path49.resolve(rootDir, appRootRel);
   const appPkg = appRootRel === "." ? rootPkg : safeReadPackageJson(appRootAbs);
   const framework = detectFramework(appRootAbs, appPkg ?? rootPkg);
   const packageManager = detectPackageManager(rootDir, rootPkg ?? appPkg);
@@ -11026,18 +11026,18 @@ var init_detect = __esm({
 });
 
 // src/starter/source-import/security.ts
-import fs40 from "node:fs";
-import path49 from "node:path";
+import fs42 from "node:fs";
+import path50 from "node:path";
 function isLikelyTextFile(filename) {
-  const ext = path49.extname(filename).toLowerCase();
+  const ext = path50.extname(filename).toLowerCase();
   if (!ext) return true;
   return TEXT_EXTENSIONS.has(ext);
 }
 function isSuspiciousBinary(filename) {
-  return SUSPICIOUS_BINARY_EXTENSIONS.has(path49.extname(filename).toLowerCase());
+  return SUSPICIOUS_BINARY_EXTENSIONS.has(path50.extname(filename).toLowerCase());
 }
 function isUnexpectedArchive(filename) {
-  const ext = path49.extname(filename).toLowerCase();
+  const ext = path50.extname(filename).toLowerCase();
   return ARCHIVE_EXTENSIONS.has(ext) || filename.toLowerCase().endsWith(".tar.gz");
 }
 function shortExcerpt(line) {
@@ -11092,19 +11092,19 @@ function walkPayload(root, onFile, limits) {
     if (!current) break;
     let entries;
     try {
-      entries = fs40.readdirSync(current, { withFileTypes: true });
+      entries = fs42.readdirSync(current, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
-      const abs = path49.resolve(current, entry.name);
+      const abs = path50.resolve(current, entry.name);
       if (entry.isDirectory()) {
         if (entry.name === ".git" || entry.name === "node_modules") continue;
         stack.push(abs);
         continue;
       }
       if (!entry.isFile()) continue;
-      const rel = path49.relative(root, abs);
+      const rel = path50.relative(root, abs);
       onFile(abs, rel);
       visited += 1;
       if (visited >= limits.maxFiles) break;
@@ -11114,7 +11114,7 @@ function walkPayload(root, onFile, limits) {
 }
 function inspectSourcePayload(input) {
   const { payloadRoot } = input;
-  if (!fs40.existsSync(payloadRoot) || !fs40.statSync(payloadRoot).isDirectory()) {
+  if (!fs42.existsSync(payloadRoot) || !fs42.statSync(payloadRoot).isDirectory()) {
     throw new Error(`Inspection target is not a directory: ${payloadRoot}`);
   }
   const findings = [];
@@ -11124,7 +11124,7 @@ function inspectSourcePayload(input) {
     (abs, rel) => {
       let size = 0;
       try {
-        size = fs40.statSync(abs).size;
+        size = fs42.statSync(abs).size;
       } catch {
         return;
       }
@@ -11133,7 +11133,7 @@ function inspectSourcePayload(input) {
           category: "suspicious-binary",
           severity: "high-risk",
           path: rel,
-          message: `Payload ships a precompiled binary (${path49.extname(rel)}). Review provenance before use.`
+          message: `Payload ships a precompiled binary (${path50.extname(rel)}). Review provenance before use.`
         });
         return;
       }
@@ -11142,7 +11142,7 @@ function inspectSourcePayload(input) {
           category: "unexpected-archive",
           severity: "caution",
           path: rel,
-          message: `Payload ships an archive (${path49.extname(rel)}) \u2014 expand and review contents before use.`
+          message: `Payload ships an archive (${path50.extname(rel)}) \u2014 expand and review contents before use.`
         });
         return;
       }
@@ -11150,12 +11150,12 @@ function inspectSourcePayload(input) {
       if (bytesInspected + Math.min(size, MAX_BYTES_PER_FILE) > MAX_TOTAL_BYTES) return;
       let buf;
       try {
-        const handle = fs40.openSync(abs, "r");
+        const handle = fs42.openSync(abs, "r");
         try {
           buf = Buffer.alloc(Math.min(size, MAX_BYTES_PER_FILE));
-          fs40.readSync(handle, buf, 0, buf.length, 0);
+          fs42.readSync(handle, buf, 0, buf.length, 0);
         } finally {
-          fs40.closeSync(handle);
+          fs42.closeSync(handle);
         }
       } catch {
         return;
@@ -11364,18 +11364,18 @@ var init_security = __esm({
 });
 
 // src/starter/source-import/plan.ts
-import fs41 from "node:fs";
-import path50 from "node:path";
+import fs43 from "node:fs";
+import path51 from "node:path";
 function generateImportId() {
   return `si-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function destinationState(absDest) {
-  if (!fs41.existsSync(absDest)) return { exists: false, nonEmpty: false };
-  const stats = fs41.statSync(absDest);
+  if (!fs43.existsSync(absDest)) return { exists: false, nonEmpty: false };
+  const stats = fs43.statSync(absDest);
   if (!stats.isDirectory()) {
     throw new Error(`Destination is not a directory: ${absDest}`);
   }
-  const entries = fs41.readdirSync(absDest);
+  const entries = fs43.readdirSync(absDest);
   return { exists: true, nonEmpty: entries.length > 0 };
 }
 function describeSource(probe) {
@@ -11385,7 +11385,7 @@ function describeSource(probe) {
   return `skill ${probe.skillId}@${probe.version} (skills.sh)`;
 }
 function buildSourceImportPlan(input) {
-  const absDest = path50.resolve(input.destination);
+  const absDest = path51.resolve(input.destination);
   const state = destinationState(absDest);
   const payloadPath = "imported";
   const warnings = [...input.probe.warnings];
@@ -11498,8 +11498,8 @@ var init_plan = __esm({
 });
 
 // src/starter/source-import/summarize.ts
-import fs42 from "node:fs";
-import path51 from "node:path";
+import fs44 from "node:fs";
+import path52 from "node:path";
 function sourceHeading(manifest) {
   const src = manifest.source;
   if (src.kind === "github-repo") {
@@ -11554,7 +11554,7 @@ function nextStepsSection(manifest) {
 }
 function writeImportSummary(input) {
   const { forkPath, summaryRelativePath, manifest } = input;
-  const summaryPath = path51.resolve(forkPath, summaryRelativePath);
+  const summaryPath = path52.resolve(forkPath, summaryRelativePath);
   const body = [
     `# Source Import Summary`,
     ``,
@@ -11584,8 +11584,8 @@ function writeImportSummary(input) {
     `Generated by the Growthub Source Import Agent. Canonical manifest lives at \`.growthub-fork/source-import.json\`.`,
     ``
   ].join("\n");
-  fs42.mkdirSync(path51.dirname(summaryPath), { recursive: true });
-  fs42.writeFileSync(summaryPath, body, "utf8");
+  fs44.mkdirSync(path52.dirname(summaryPath), { recursive: true });
+  fs44.writeFileSync(summaryPath, body, "utf8");
   return summaryPath;
 }
 var init_summarize = __esm({
@@ -11595,16 +11595,16 @@ var init_summarize = __esm({
 });
 
 // src/starter/source-import/materialize.ts
-import fs43 from "node:fs";
-import os10 from "node:os";
-import path52 from "node:path";
+import fs45 from "node:fs";
+import os11 from "node:os";
+import path53 from "node:path";
 function resolveSourceKind(probe) {
   return probe.kind === "github-repo" ? "github-repo" : "skills-skill";
 }
 function stagingDirFor(forkPath) {
-  return path52.join(
-    os10.tmpdir(),
-    `growthub-source-import-${path52.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return path53.join(
+    os11.tmpdir(),
+    `growthub-source-import-${path53.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   );
 }
 async function fetchPayload(probe, stagingDir, opts) {
@@ -11636,18 +11636,18 @@ async function fetchPayload(probe, stagingDir, opts) {
   return { payloadRoot: stagingDir };
 }
 function movePayloadIntoFork(payloadRoot, forkPath, payloadRelativePath) {
-  const target = path52.resolve(forkPath, payloadRelativePath);
-  if (fs43.existsSync(target)) {
-    fs43.rmSync(target, { recursive: true, force: true });
+  const target = path53.resolve(forkPath, payloadRelativePath);
+  if (fs45.existsSync(target)) {
+    fs45.rmSync(target, { recursive: true, force: true });
   }
-  fs43.mkdirSync(path52.dirname(target), { recursive: true });
-  fs43.renameSync(payloadRoot, target);
+  fs45.mkdirSync(path53.dirname(target), { recursive: true });
+  fs45.renameSync(payloadRoot, target);
   return target;
 }
 function writeManifest(forkPath, manifest) {
-  const p33 = path52.resolve(forkPath, MANIFEST_RELATIVE_PATH);
-  fs43.mkdirSync(path52.dirname(p33), { recursive: true });
-  fs43.writeFileSync(p33, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  const p33 = path53.resolve(forkPath, MANIFEST_RELATIVE_PATH);
+  fs45.mkdirSync(path53.dirname(p33), { recursive: true });
+  fs45.writeFileSync(p33, JSON.stringify(manifest, null, 2) + "\n", "utf8");
   return p33;
 }
 function assertConfirmationsSatisfied(plan, confirmations) {
@@ -11687,7 +11687,7 @@ async function materializeImportPlan(input) {
     requireSkillAcknowledgement: sourceKind === "skills-skill"
   });
   if (security.blocked) {
-    fs43.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
+    fs45.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
     throw new Error(
       `Security inspection blocked the fetched payload: ${security.summaryLines[0] ?? "blocking finding"}`
     );
@@ -11818,26 +11818,26 @@ var init_materialize = __esm({
 });
 
 // src/starter/source-import/agent.ts
-import fs44 from "node:fs";
-import path53 from "node:path";
+import fs46 from "node:fs";
+import path54 from "node:path";
 function resolveJobsDir() {
-  return path53.resolve(resolveKitForksHomeDir(), "source-import-jobs");
+  return path54.resolve(resolveKitForksHomeDir(), "source-import-jobs");
 }
 function resolveJobPath2(jobId) {
-  return path53.resolve(resolveJobsDir(), `${jobId}.json`);
+  return path54.resolve(resolveJobsDir(), `${jobId}.json`);
 }
 function generateJobId2() {
   return `sij-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function writeJob2(job) {
   const p33 = resolveJobPath2(job.jobId);
-  fs44.mkdirSync(path53.dirname(p33), { recursive: true });
-  fs44.writeFileSync(p33, JSON.stringify(job, null, 2) + "\n", "utf8");
+  fs46.mkdirSync(path54.dirname(p33), { recursive: true });
+  fs46.writeFileSync(p33, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function readJobFile(p33) {
-  if (!fs44.existsSync(p33)) return null;
+  if (!fs46.existsSync(p33)) return null;
   try {
-    return JSON.parse(fs44.readFileSync(p33, "utf8"));
+    return JSON.parse(fs46.readFileSync(p33, "utf8"));
   } catch {
     return null;
   }
@@ -11847,7 +11847,7 @@ function patchJob2(jobId, status, patch = {}) {
   const job = readJobFile(p33);
   if (!job) return null;
   const updated = { ...job, ...patch, status };
-  fs44.writeFileSync(p33, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs46.writeFileSync(p33, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function getSourceImportJob(jobId) {
@@ -11866,7 +11866,7 @@ async function probeAndPlan(input, destination) {
 }
 async function runSourceImportJob(input) {
   const jobId = generateJobId2();
-  const destination = path53.resolve(input.out);
+  const destination = path54.resolve(input.out);
   const sourceKind = input.source.kind;
   const initial = {
     jobId,
@@ -12023,8 +12023,8 @@ __export(source_import_discovery_exports, {
 });
 import * as p31 from "@clack/prompts";
 import pc45 from "picocolors";
-import fs46 from "node:fs";
-import path54 from "node:path";
+import fs48 from "node:fs";
+import path55 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 function slugifyWorkspaceName(input) {
   const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -12052,10 +12052,10 @@ async function promptForInteractiveWorkspacePath(input) {
   });
   if (p31.isCancel(raw) || !raw) return null;
   const trimmed = String(raw).trim();
-  const expanded = trimmed.startsWith("~/") ? path54.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
-  const resolved = path54.resolve(expanded);
-  if (fs46.existsSync(resolved) && fs46.statSync(resolved).isDirectory()) {
-    const finalPath = path54.join(resolved, suggestedName);
+  const expanded = trimmed.startsWith("~/") ? path55.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
+  const resolved = path55.resolve(expanded);
+  if (fs48.existsSync(resolved) && fs48.statSync(resolved).isDirectory()) {
+    const finalPath = path55.join(resolved, suggestedName);
     p31.note(
       [
         `You selected an existing folder: ${resolved}`,
@@ -12328,8 +12328,8 @@ init_doctor();
 import { Command } from "commander";
 import * as p32 from "@clack/prompts";
 import pc46 from "picocolors";
-import fs47 from "node:fs";
-import path55 from "node:path";
+import fs49 from "node:fs";
+import path56 from "node:path";
 import { spawnSync as spawnSync6 } from "node:child_process";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
 
@@ -12990,8 +12990,8 @@ function printItemCompleted(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path56 = asString(change.path, "unknown");
-      return `${kind} ${path56}`;
+      const path57 = asString(change.path, "unknown");
+      return `${kind} ${path57}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -15823,8 +15823,8 @@ function registerIssueCommands(program2) {
         if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
         if (opts.projectId) params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path56 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path56) ?? [];
+        const path57 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path57) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -16430,8 +16430,8 @@ function registerActivityCommands(program2) {
         if (opts.entityType) params.set("entityType", opts.entityType);
         if (opts.entityId) params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path56 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path56) ?? [];
+        const path57 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path57) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -17865,12 +17865,13 @@ ${result.lastError}`);
 // src/commands/kit.ts
 init_service();
 init_banner();
-import path33 from "node:path";
+import path34 from "node:path";
 import { pathToFileURL as pathToFileURL2 } from "node:url";
 import * as p19 from "@clack/prompts";
 import pc30 from "picocolors";
 
 // src/commands/kit-fork.ts
+import fs27 from "node:fs";
 import * as p18 from "@clack/prompts";
 
 // src/commands/kit-fork-remote.ts
@@ -19219,6 +19220,243 @@ init_fork_registry();
 init_service();
 init_fork_policy();
 init_fork_trace();
+
+// src/kits/fork-authority.ts
+init_home();
+init_kit_forks_home();
+import crypto from "node:crypto";
+import fs26 from "node:fs";
+import os8 from "node:os";
+import path33 from "node:path";
+function resolveAuthorityHomeDir() {
+  const env = process.env.GROWTHUB_AUTHORITY_HOME?.trim();
+  if (env) return path33.resolve(expandHomePrefix(env));
+  return path33.resolve(os8.homedir(), ".growthub", "authority");
+}
+function resolveAuthorityIssuersPath() {
+  return path33.resolve(resolveAuthorityHomeDir(), "issuers.json");
+}
+function resolveInForkAuthorityPath(forkPath) {
+  return path33.resolve(resolveInForkStateDir(forkPath), "authority.json");
+}
+function canonicalize(value) {
+  if (value === null) return "null";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("Cannot canonicalize non-finite number");
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return "[" + value.map(canonicalize).join(",") + "]";
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value).filter(([, v]) => v !== void 0).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+    return "{" + entries.map(([k, v]) => JSON.stringify(k) + ":" + canonicalize(v)).join(",") + "}";
+  }
+  throw new Error(`Unsupported value type for canonicalize: ${typeof value}`);
+}
+function buildSigningPayload(envelope) {
+  return canonicalize({
+    version: envelope.version,
+    envelopeId: envelope.envelopeId,
+    issuerId: envelope.issuerId,
+    algorithm: envelope.algorithm,
+    subject: envelope.subject,
+    grants: envelope.grants,
+    issuedAt: envelope.issuedAt,
+    expiresAt: envelope.expiresAt,
+    nonce: envelope.nonce
+  });
+}
+function computePolicyHash(policy) {
+  const shape = {
+    version: policy.version,
+    untouchablePaths: [...policy.untouchablePaths].sort(),
+    confirmBeforeChange: [...policy.confirmBeforeChange].sort(),
+    autoApprove: policy.autoApprove,
+    autoApproveDepUpdates: policy.autoApproveDepUpdates,
+    remoteSyncMode: policy.remoteSyncMode,
+    interactiveConflicts: policy.interactiveConflicts,
+    allowedScripts: [...policy.allowedScripts].sort()
+  };
+  return crypto.createHash("sha256").update(canonicalize(shape), "utf8").digest("hex");
+}
+function readIssuerRegistry() {
+  const p33 = resolveAuthorityIssuersPath();
+  if (!fs26.existsSync(p33)) return { version: 1, issuers: [] };
+  try {
+    const parsed = JSON.parse(fs26.readFileSync(p33, "utf8"));
+    if (!parsed || !Array.isArray(parsed.issuers)) return { version: 1, issuers: [] };
+    return { version: 1, issuers: parsed.issuers.filter(isValidIssuer) };
+  } catch {
+    return { version: 1, issuers: [] };
+  }
+}
+function isValidIssuer(x) {
+  if (!x || typeof x !== "object") return false;
+  const o = x;
+  return typeof o.id === "string" && typeof o.publicKeyPem === "string" && (o.kind === "growthub-hosted" || o.kind === "self-signed" || o.kind === "enterprise");
+}
+function writeIssuerRegistry(registry) {
+  const p33 = resolveAuthorityIssuersPath();
+  fs26.mkdirSync(path33.dirname(p33), { recursive: true });
+  fs26.writeFileSync(p33, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
+}
+function upsertIssuer(issuer) {
+  if (!isValidIssuer(issuer)) {
+    throw new Error("Invalid issuer: id, publicKeyPem, and kind are required.");
+  }
+  const reg = readIssuerRegistry();
+  const idx = reg.issuers.findIndex((i) => i.id === issuer.id);
+  const stamped = { ...issuer, addedAt: issuer.addedAt ?? (/* @__PURE__ */ new Date()).toISOString() };
+  if (idx >= 0) reg.issuers[idx] = stamped;
+  else reg.issuers.push(stamped);
+  writeIssuerRegistry(reg);
+  return reg;
+}
+function removeIssuer(issuerId) {
+  const reg = readIssuerRegistry();
+  const next = reg.issuers.filter((i) => i.id !== issuerId);
+  if (next.length === reg.issuers.length) return false;
+  writeIssuerRegistry({ version: 1, issuers: next });
+  return true;
+}
+function findIssuer(issuerId) {
+  return readIssuerRegistry().issuers.find((i) => i.id === issuerId) ?? null;
+}
+function verifyAuthorityEnvelope(envelope, options = {}) {
+  if (!isWellFormedEnvelope(envelope)) {
+    return { ok: false, reason: "malformed", detail: "envelope shape invalid" };
+  }
+  if (options.expectedKitId && envelope.subject.kitId !== options.expectedKitId) {
+    return { ok: false, reason: "subject-mismatch", detail: `kitId expected ${options.expectedKitId}` };
+  }
+  if (options.expectedForkId && envelope.subject.forkId !== options.expectedForkId) {
+    return { ok: false, reason: "subject-mismatch", detail: `forkId expected ${options.expectedForkId}` };
+  }
+  if (options.expectedForkPath && envelope.subject.forkPath && envelope.subject.forkPath !== options.expectedForkPath) {
+    return { ok: false, reason: "subject-mismatch", detail: `forkPath expected ${options.expectedForkPath}` };
+  }
+  const now = options.now ?? /* @__PURE__ */ new Date();
+  if (envelope.expiresAt) {
+    const exp = Date.parse(envelope.expiresAt);
+    if (!Number.isFinite(exp) || exp <= now.getTime()) {
+      return { ok: false, reason: "expired", detail: envelope.expiresAt };
+    }
+  }
+  const issuer = options.issuerOverride ?? findIssuer(envelope.issuerId);
+  if (!issuer) {
+    return { ok: false, reason: "unknown-issuer", detail: envelope.issuerId };
+  }
+  let signatureBytes;
+  try {
+    signatureBytes = Buffer.from(envelope.signature, "base64");
+  } catch {
+    return { ok: false, reason: "bad-signature", detail: "signature is not base64" };
+  }
+  let ok = false;
+  try {
+    const { signature: _omit, ...unsigned } = envelope;
+    const payload = buildSigningPayload(unsigned);
+    const pubKey = crypto.createPublicKey({ key: issuer.publicKeyPem, format: "pem" });
+    ok = crypto.verify(null, Buffer.from(payload, "utf8"), pubKey, signatureBytes);
+  } catch (err) {
+    return { ok: false, reason: "bad-signature", detail: err.message };
+  }
+  if (!ok) return { ok: false, reason: "bad-signature" };
+  return { ok: true, issuer };
+}
+function isWellFormedEnvelope(x) {
+  if (!x || typeof x !== "object") return false;
+  const e = x;
+  return e.version === 1 && typeof e.envelopeId === "string" && typeof e.issuerId === "string" && e.algorithm === "ed25519" && typeof e.signature === "string" && typeof e.issuedAt === "string" && typeof e.nonce === "string" && !!e.subject && typeof e.subject.kitId === "string" && typeof e.subject.forkId === "string" && !!e.grants && Array.isArray(e.grants.capabilities) && typeof e.grants.policyAttested === "boolean";
+}
+function readForkAuthorityState(forkPath) {
+  const p33 = resolveInForkAuthorityPath(forkPath);
+  if (!fs26.existsSync(p33)) {
+    return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
+  }
+  try {
+    const parsed = JSON.parse(fs26.readFileSync(p33, "utf8"));
+    if (!parsed || parsed.version !== 1) {
+      return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
+    }
+    return parsed;
+  } catch {
+    return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
+  }
+}
+function writeForkAuthorityState(forkPath, state) {
+  const p33 = resolveInForkAuthorityPath(forkPath);
+  fs26.mkdirSync(path33.dirname(p33), { recursive: true });
+  fs26.writeFileSync(p33, JSON.stringify(state, null, 2) + "\n", "utf8");
+}
+function attachAuthorityEnvelope(forkPath, envelope, options = {}) {
+  const verification = verifyAuthorityEnvelope(envelope, options);
+  if (!verification.ok) {
+    throw new Error(
+      `Authority envelope rejected (${verification.reason}${verification.detail ? `: ${verification.detail}` : ""}).`
+    );
+  }
+  const state = {
+    state: "attested",
+    version: 1,
+    envelope,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  writeForkAuthorityState(forkPath, state);
+  return { state, verification };
+}
+function revokeForkAuthority(forkPath, reason) {
+  const current = readForkAuthorityState(forkPath);
+  if (current.state !== "attested") {
+    throw new Error("No active authority envelope to revoke.");
+  }
+  const next = {
+    state: "revoked",
+    version: 1,
+    envelope: current.envelope,
+    revocation: { reason, revokedAt: (/* @__PURE__ */ new Date()).toISOString() },
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  writeForkAuthorityState(forkPath, next);
+  return next;
+}
+function describePolicyAttestation(forkPath, policy, options = {}) {
+  const stateRecord = readForkAuthorityState(forkPath);
+  if (stateRecord.state === "none") {
+    return { origin: "operator-local" };
+  }
+  if (stateRecord.state === "revoked") {
+    return {
+      origin: "authority-revoked",
+      envelope: stateRecord.envelope,
+      revokedReason: stateRecord.revocation.reason
+    };
+  }
+  const envelope = stateRecord.envelope;
+  const verification = verifyAuthorityEnvelope(envelope, {
+    expectedForkId: options.expectedForkId,
+    expectedKitId: options.expectedKitId,
+    now: options.now
+  });
+  if (!verification.ok) {
+    return { origin: "operator-local", envelope, verification };
+  }
+  const policyHashMatches = envelope.subject.policyHash ? envelope.subject.policyHash === computePolicyHash(policy) : void 0;
+  return {
+    origin: "authority-attested",
+    envelope,
+    verification,
+    policyHashMatches
+  };
+}
+
+// src/commands/kit-fork.ts
 function hr(width = 72) {
   return pc29.dim("\u2500".repeat(width));
 }
@@ -20367,6 +20605,7 @@ function addForkSubcommands(parentCmd) {
     console.log(hr());
     console.log("");
   });
+  registerAuthoritySubcommands(parentCmd);
   parentCmd.command("deregister").description("Remove a fork registration (does not delete your fork directory)").argument("<fork-id>", "Fork ID to deregister").action(async (forkId) => {
     const allForks = listKitForkRegistrations();
     const reg = allForks.find((f) => f.forkId === forkId);
@@ -20391,6 +20630,193 @@ function addForkSubcommands(parentCmd) {
       process.exitCode = 1;
     }
   });
+}
+function registerAuthoritySubcommands(parentCmd) {
+  const authorityCmd = parentCmd.command("authority").description("Inspect and manage hosted-authority attestations attached to a fork");
+  authorityCmd.command("status").description("Show current authority attestation state for a fork").argument("<fork-id>", "Fork ID from list").option("--json", "Emit machine-readable JSON").action((forkId, opts) => {
+    const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
+    if (!reg) {
+      console.error(pc29.red(`Fork not found: ${forkId}`));
+      process.exitCode = 1;
+      return;
+    }
+    const policy = readKitForkPolicy(reg.forkPath);
+    const summary = describePolicyAttestation(reg.forkPath, policy, {
+      expectedForkId: reg.forkId,
+      expectedKitId: reg.kitId
+    });
+    const state = readForkAuthorityState(reg.forkPath);
+    if (opts.json) {
+      console.log(JSON.stringify({ forkId: reg.forkId, kitId: reg.kitId, state, summary }, null, 2));
+      return;
+    }
+    console.log("");
+    console.log(pc29.bold(`Authority: ${reg.forkId}`));
+    console.log(hr());
+    console.log(`  ${pc29.dim("Origin:")}           ${originLabel(summary.origin)}`);
+    if (summary.envelope) {
+      const env = summary.envelope;
+      console.log(`  ${pc29.dim("Issuer:")}           ${env.issuerId}`);
+      console.log(`  ${pc29.dim("Envelope ID:")}      ${env.envelopeId}`);
+      console.log(`  ${pc29.dim("Issued at:")}        ${env.issuedAt}`);
+      if (env.expiresAt) console.log(`  ${pc29.dim("Expires at:")}       ${env.expiresAt}`);
+      console.log(`  ${pc29.dim("Capabilities:")}     ${env.grants.capabilities.join(", ") || pc29.dim("(none)")}`);
+      console.log(`  ${pc29.dim("Policy attested:")}  ${env.grants.policyAttested ? "yes" : "no"}`);
+      if (summary.policyHashMatches === true) {
+        console.log(`  ${pc29.dim("Policy hash:")}       ${pc29.green("matches on-disk policy")}`);
+      } else if (summary.policyHashMatches === false) {
+        console.log(`  ${pc29.dim("Policy hash:")}       ${pc29.yellow("MISMATCH \u2014 policy changed since attestation")}`);
+      }
+      if (summary.verification && !summary.verification.ok) {
+        console.log(`  ${pc29.dim("Verification:")}      ${pc29.red(summary.verification.reason)}${summary.verification.detail ? pc29.dim(` (${summary.verification.detail})`) : ""}`);
+      }
+      if (summary.origin === "authority-revoked") {
+        console.log(`  ${pc29.dim("Revoked reason:")}   ${summary.revokedReason ?? pc29.dim("(none)")}`);
+      }
+    } else {
+      console.log(pc29.dim("  No authority envelope attached. Operator-local policy in effect."));
+    }
+    console.log("");
+  });
+  authorityCmd.command("attest").description("Attach a signed authority envelope to a fork").argument("<fork-id>", "Fork ID from list").requiredOption("--file <path>", "Path to a JSON file containing the envelope").action((forkId, opts) => {
+    const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
+    if (!reg) {
+      console.error(pc29.red(`Fork not found: ${forkId}`));
+      process.exitCode = 1;
+      return;
+    }
+    let raw;
+    try {
+      raw = fs27.readFileSync(opts.file, "utf8");
+    } catch (err) {
+      console.error(pc29.red(`Cannot read envelope file: ${err.message}`));
+      process.exitCode = 1;
+      return;
+    }
+    let envelope;
+    try {
+      envelope = JSON.parse(raw);
+    } catch (err) {
+      console.error(pc29.red(`Invalid JSON in envelope file: ${err.message}`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const result = attachAuthorityEnvelope(reg.forkPath, envelope, {
+        expectedForkId: reg.forkId,
+        expectedKitId: reg.kitId
+      });
+      appendKitForkTraceEvent(reg.forkPath, {
+        forkId: reg.forkId,
+        kitId: reg.kitId,
+        type: "authority_attested",
+        summary: `Authority envelope ${envelope.envelopeId} attached (issuer ${envelope.issuerId})`,
+        detail: {
+          envelopeId: envelope.envelopeId,
+          issuerId: envelope.issuerId,
+          capabilities: envelope.grants.capabilities,
+          expiresAt: envelope.expiresAt ?? null
+        }
+      });
+      console.log(pc29.green("Authority envelope attached:"), result.state.state);
+      if (result.verification.ok) {
+        console.log(pc29.dim("  Issuer:     "), result.verification.issuer.id);
+        console.log(pc29.dim("  Capabilities:"), envelope.grants.capabilities.join(", ") || pc29.dim("(none)"));
+      }
+    } catch (err) {
+      console.error(pc29.red(err.message));
+      process.exitCode = 1;
+    }
+  });
+  authorityCmd.command("revoke").description("Revoke the local authority attestation for a fork").argument("<fork-id>", "Fork ID from list").option("--reason <text>", "Why the attestation is being revoked").action((forkId, opts) => {
+    const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
+    if (!reg) {
+      console.error(pc29.red(`Fork not found: ${forkId}`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const next = revokeForkAuthority(reg.forkPath, opts.reason);
+      appendKitForkTraceEvent(reg.forkPath, {
+        forkId: reg.forkId,
+        kitId: reg.kitId,
+        type: "authority_revoked",
+        summary: `Authority envelope ${next.state === "revoked" ? next.envelope.envelopeId : ""} revoked`,
+        detail: { reason: opts.reason ?? null }
+      });
+      console.log(pc29.yellow("Authority attestation revoked."));
+      if (opts.reason) console.log(pc29.dim("  Reason:"), opts.reason);
+    } catch (err) {
+      console.error(pc29.red(err.message));
+      process.exitCode = 1;
+    }
+  });
+  const issuerCmd = authorityCmd.command("issuer").description("Manage trusted authority issuers (local trust root)");
+  issuerCmd.command("list").description("List trusted issuers from the local registry").option("--json", "Emit machine-readable JSON").action((opts) => {
+    const reg = readIssuerRegistry();
+    if (opts.json) {
+      console.log(JSON.stringify(reg, null, 2));
+      return;
+    }
+    console.log("");
+    console.log(pc29.bold("Trusted Authority Issuers"));
+    console.log(hr());
+    if (reg.issuers.length === 0) {
+      console.log(pc29.dim("  No issuers trusted. Add one with `growthub kit fork authority issuer add`."));
+    } else {
+      for (const i of reg.issuers) {
+        console.log(`  ${pc29.cyan(i.id)}  ${pc29.dim(`[${i.kind}]`)}${i.label ? `  ${i.label}` : ""}`);
+        if (i.addedAt) console.log(`    ${pc29.dim("added:")} ${i.addedAt}`);
+      }
+    }
+    console.log("");
+  });
+  issuerCmd.command("add").description("Add or replace a trusted issuer in the local registry").requiredOption("--id <id>", "Issuer ID (must match envelope.issuerId)").requiredOption("--kind <kind>", "Issuer kind: growthub-hosted | self-signed | enterprise").requiredOption("--key <path>", "Path to a PEM-encoded ed25519 public key file").option("--label <label>", "Human-readable label").action((opts) => {
+    const kinds = ["growthub-hosted", "self-signed", "enterprise"];
+    if (!kinds.includes(opts.kind)) {
+      console.error(pc29.red(`Invalid --kind: ${opts.kind}. Expected one of ${kinds.join(", ")}.`));
+      process.exitCode = 1;
+      return;
+    }
+    let pem;
+    try {
+      pem = fs27.readFileSync(opts.key, "utf8");
+    } catch (err) {
+      console.error(pc29.red(`Cannot read key file: ${err.message}`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      upsertIssuer({
+        id: opts.id,
+        kind: opts.kind,
+        publicKeyPem: pem,
+        label: opts.label
+      });
+      console.log(pc29.green("Issuer added:"), opts.id);
+    } catch (err) {
+      console.error(pc29.red(err.message));
+      process.exitCode = 1;
+    }
+  });
+  issuerCmd.command("remove").description("Remove a trusted issuer from the local registry").requiredOption("--id <id>", "Issuer ID to remove").action((opts) => {
+    const ok = removeIssuer(opts.id);
+    if (ok) console.log(pc29.green("Issuer removed:"), opts.id);
+    else {
+      console.error(pc29.red(`No issuer with id: ${opts.id}`));
+      process.exitCode = 1;
+    }
+  });
+}
+function originLabel(origin) {
+  switch (origin) {
+    case "authority-attested":
+      return pc29.green("authority-attested");
+    case "authority-revoked":
+      return pc29.yellow("authority-revoked");
+    default:
+      return pc29.dim("operator-local");
+  }
 }
 
 // src/commands/kit.ts
@@ -20836,7 +21262,7 @@ Examples:
   $ growthub kit validate ./my-kit
   $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
 `).action((kitPath) => {
-    const resolvedPath = path33.resolve(kitPath);
+    const resolvedPath = path34.resolve(kitPath);
     const result = validateKitDirectory(resolvedPath);
     console.log("");
     console.log(pc30.bold("Kit: " + result.kitId) + pc30.dim("  schema v" + result.schemaVersion));
@@ -20881,13 +21307,13 @@ Examples:
 }
 
 // src/commands/template.ts
-import path35 from "node:path";
+import path36 from "node:path";
 import * as p20 from "@clack/prompts";
 import pc31 from "picocolors";
 
 // src/templates/service.ts
-import fs26 from "node:fs";
-import path34 from "node:path";
+import fs28 from "node:fs";
+import path35 from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // src/templates/catalog.ts
@@ -21134,12 +21560,12 @@ var TEMPLATE_CATALOG = [
 
 // src/templates/service.ts
 function resolveSharedTemplatesRoot() {
-  const moduleDir = path34.dirname(fileURLToPath6(import.meta.url));
+  const moduleDir = path35.dirname(fileURLToPath6(import.meta.url));
   for (const candidate of [
-    path34.resolve(moduleDir, "../../assets/shared-templates"),
-    path34.resolve(moduleDir, "../assets/shared-templates")
+    path35.resolve(moduleDir, "../../assets/shared-templates"),
+    path35.resolve(moduleDir, "../assets/shared-templates")
   ]) {
-    if (fs26.existsSync(candidate)) return candidate;
+    if (fs28.existsSync(candidate)) return candidate;
   }
   throw new Error("Shared template assets not found at cli/assets/shared-templates/");
 }
@@ -21174,15 +21600,15 @@ function getArtifact(slugOrId) {
   const artifact = resolveSlug(slugOrId);
   if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
   const root = resolveSharedTemplatesRoot();
-  const absolutePath = path34.resolve(root, artifact.path);
-  if (!fs26.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
-  return { artifact, content: fs26.readFileSync(absolutePath, "utf8"), absolutePath };
+  const absolutePath = path35.resolve(root, artifact.path);
+  if (!fs28.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  return { artifact, content: fs28.readFileSync(absolutePath, "utf8"), absolutePath };
 }
 function copyArtifact(slugOrId, destDir) {
   const resolved = getArtifact(slugOrId);
-  fs26.mkdirSync(destDir, { recursive: true });
-  const destPath = path34.resolve(destDir, path34.basename(resolved.absolutePath));
-  fs26.copyFileSync(resolved.absolutePath, destPath);
+  fs28.mkdirSync(destDir, { recursive: true });
+  const destPath = path35.resolve(destDir, path35.basename(resolved.absolutePath));
+  fs28.copyFileSync(resolved.absolutePath, destPath);
   return destPath;
 }
 var GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta"];
@@ -21422,7 +21848,7 @@ async function runTemplatePicker(opts) {
       p20.cancel("Cancelled.");
       process.exit(0);
     }
-    const destDir = path35.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
+    const destDir = path36.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
     const destPath = copyArtifact(selected.id, destDir);
     p20.outro(pc31.green("Copied \u2192 ") + destPath);
     return "done";
@@ -21496,7 +21922,7 @@ Any agent or kit resolves them by slug.
       return;
     }
     if (opts.out) {
-      const destDir = path35.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
+      const destDir = path36.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
       try {
         const dest = copyArtifact(artifact.id, destDir);
         console.log(pc31.green("Copied \u2192 ") + dest);
@@ -22158,10 +22584,10 @@ function createCmsCapabilityRegistryClient() {
 }
 
 // src/runtime/machine-capability-resolver/index.ts
-import os8 from "node:os";
+import os9 from "node:os";
 function buildMachineContext(profile) {
   return {
-    hostname: os8.hostname(),
+    hostname: os9.hostname(),
     machineLabel: profile.local.machineLabel ?? void 0,
     workspaceLabel: profile.local.workspaceLabel ?? void 0,
     instanceId: profile.local.instanceId,
@@ -22580,8 +23006,8 @@ Examples:
 // src/commands/pipeline.ts
 init_session_store();
 init_hosted_client();
-import fs29 from "node:fs";
-import path38 from "node:path";
+import fs31 from "node:fs";
+import path39 from "node:path";
 import * as p22 from "@clack/prompts";
 import pc34 from "picocolors";
 
@@ -23091,40 +23517,40 @@ function renderPreSaveReview(input) {
 
 // src/runtime/artifact-contracts/index.ts
 init_home();
-import fs27 from "node:fs";
-import path36 from "node:path";
+import fs29 from "node:fs";
+import path37 from "node:path";
 import { randomBytes as randomBytes7 } from "node:crypto";
 function generateArtifactId() {
   return `art_${randomBytes7(8).toString("hex")}`;
 }
 function resolveArtifactsDir() {
-  return path36.resolve(resolvePaperclipHomeDir(), "artifacts");
+  return path37.resolve(resolvePaperclipHomeDir(), "artifacts");
 }
 function resolveArtifactManifestPath(artifactId) {
-  return path36.resolve(resolveArtifactsDir(), `${artifactId}.json`);
+  return path37.resolve(resolveArtifactsDir(), `${artifactId}.json`);
 }
 function readLocalManifest(artifactId) {
   const filePath = resolveArtifactManifestPath(artifactId);
-  if (!fs27.existsSync(filePath)) return null;
+  if (!fs29.existsSync(filePath)) return null;
   try {
-    return JSON.parse(fs27.readFileSync(filePath, "utf-8"));
+    return JSON.parse(fs29.readFileSync(filePath, "utf-8"));
   } catch {
     return null;
   }
 }
 function writeLocalManifest(manifest) {
   const dir = resolveArtifactsDir();
-  fs27.mkdirSync(dir, { recursive: true });
+  fs29.mkdirSync(dir, { recursive: true });
   const filePath = resolveArtifactManifestPath(manifest.id);
-  fs27.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
+  fs29.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
 `, { mode: 384 });
 }
 function listLocalManifests() {
   const dir = resolveArtifactsDir();
-  if (!fs27.existsSync(dir)) return [];
-  return fs27.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
+  if (!fs29.existsSync(dir)) return [];
+  return fs29.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
     try {
-      const content = fs27.readFileSync(path36.resolve(dir, entry.name), "utf-8");
+      const content = fs29.readFileSync(path37.resolve(dir, entry.name), "utf-8");
       return JSON.parse(content);
     } catch {
       return null;
@@ -23202,8 +23628,8 @@ function createArtifactStore() {
 
 // src/runtime/native-intelligence/index.ts
 init_home();
-import fs28 from "node:fs";
-import path37 from "node:path";
+import fs30 from "node:fs";
+import path38 from "node:path";
 
 // src/runtime/native-intelligence/contract.ts
 var DEFAULT_INTELLIGENCE_CONFIG = {
@@ -24313,15 +24739,15 @@ function parseJsonSafe4(text66) {
 
 // src/runtime/native-intelligence/index.ts
 function resolveConfigPath2() {
-  return path37.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
+  return path38.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
 }
 function readIntelligenceConfig() {
   const configPath = resolveConfigPath2();
-  if (!fs28.existsSync(configPath)) {
+  if (!fs30.existsSync(configPath)) {
     return { ...DEFAULT_INTELLIGENCE_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs28.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs30.readFileSync(configPath, "utf-8"));
     return {
       modelId: validateModelId(raw.modelId),
       backendType: raw.backendType === "hosted" ? "hosted" : "local",
@@ -24338,8 +24764,8 @@ function readIntelligenceConfig() {
 }
 function writeIntelligenceConfig(config) {
   const configPath = resolveConfigPath2();
-  fs28.mkdirSync(path37.dirname(configPath), { recursive: true });
-  fs28.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
+  fs30.mkdirSync(path38.dirname(configPath), { recursive: true });
+  fs30.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
 `, "utf-8");
 }
 function validateModelId(id) {
@@ -24695,9 +25121,9 @@ async function runPipelineAssembler(opts) {
   }
 }
 function loadPipelineFromFileOrJson(input) {
-  const resolvedPath = path38.resolve(input);
-  if (fs29.existsSync(resolvedPath)) {
-    const content = fs29.readFileSync(resolvedPath, "utf-8");
+  const resolvedPath = path39.resolve(input);
+  if (fs31.existsSync(resolvedPath)) {
+    const content = fs31.readFileSync(resolvedPath, "utf-8");
     return deserializePipeline(JSON.parse(content));
   }
   try {
@@ -25242,8 +25668,8 @@ Examples:
 }
 
 // src/commands/workflow.ts
-import fs31 from "node:fs";
-import path40 from "node:path";
+import fs33 from "node:fs";
+import path41 from "node:path";
 import * as p23 from "@clack/prompts";
 import pc37 from "picocolors";
 init_session_store();
@@ -25251,15 +25677,15 @@ init_hosted_client();
 
 // src/runtime/workflow-hygiene/labels.ts
 init_home();
-import fs30 from "node:fs";
-import path39 from "node:path";
+import fs32 from "node:fs";
+import path40 from "node:path";
 function resolveStorePath() {
-  return path39.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
+  return path40.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
 }
 function readStoreFile(filePath) {
-  if (!fs30.existsSync(filePath)) return { records: [] };
+  if (!fs32.existsSync(filePath)) return { records: [] };
   try {
-    const raw = JSON.parse(fs30.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs32.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw.records)) return { records: [] };
     return raw;
   } catch {
@@ -25267,8 +25693,8 @@ function readStoreFile(filePath) {
   }
 }
 function writeStoreFile(filePath, data) {
-  fs30.mkdirSync(path39.dirname(filePath), { recursive: true });
-  fs30.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
+  fs32.mkdirSync(path40.dirname(filePath), { recursive: true });
+  fs32.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
 `, "utf-8");
 }
 function inferDefaultLabel(name, createdAt, versionCount) {
@@ -25369,16 +25795,16 @@ function box5(lines) {
   return [top, ...body, bottom].join("\n");
 }
 function resolveSavedWorkflowsDir() {
-  return path40.resolve(resolvePaperclipHomeDir(), "workflows");
+  return path41.resolve(resolvePaperclipHomeDir(), "workflows");
 }
 function resolveDeletedWorkflowIdsPath() {
-  return path40.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
+  return path41.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
 }
 function readDeletedWorkflowIds() {
   const filePath = resolveDeletedWorkflowIdsPath();
-  if (!fs31.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  if (!fs33.existsSync(filePath)) return /* @__PURE__ */ new Set();
   try {
-    const raw = JSON.parse(fs31.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs33.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
     return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
   } catch {
@@ -25387,8 +25813,8 @@ function readDeletedWorkflowIds() {
 }
 function writeDeletedWorkflowIds(ids) {
   const filePath = resolveDeletedWorkflowIdsPath();
-  fs31.mkdirSync(path40.dirname(filePath), { recursive: true });
-  fs31.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
+  fs33.mkdirSync(path41.dirname(filePath), { recursive: true });
+  fs33.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
 `, "utf-8");
 }
 function markWorkflowDeletedLocally(workflowId) {
@@ -25414,10 +25840,10 @@ function filterLocallyDeletedWorkflows(entries) {
 }
 function listLocalSavedWorkflows() {
   const dir = resolveSavedWorkflowsDir();
-  if (!fs31.existsSync(dir)) return [];
-  const entries = fs31.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
+  if (!fs33.existsSync(dir)) return [];
+  const entries = fs33.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
     try {
-      const raw = JSON.parse(fs31.readFileSync(path40.resolve(dir, e.name), "utf-8"));
+      const raw = JSON.parse(fs33.readFileSync(path41.resolve(dir, e.name), "utf-8"));
       const pipeline = raw.pipeline ?? raw;
       return {
         filename: e.name,
@@ -25478,11 +25904,11 @@ async function archiveSavedWorkflow(entry) {
     throw new Error("Local workflow entry is missing filename.");
   }
   const dir = resolveSavedWorkflowsDir();
-  const archiveDir = path40.resolve(dir, "archived");
-  fs31.mkdirSync(archiveDir, { recursive: true });
-  fs31.renameSync(
-    path40.resolve(dir, entry.filename),
-    path40.resolve(archiveDir, entry.filename)
+  const archiveDir = path41.resolve(dir, "archived");
+  fs33.mkdirSync(archiveDir, { recursive: true });
+  fs33.renameSync(
+    path41.resolve(dir, entry.filename),
+    path41.resolve(archiveDir, entry.filename)
   );
 }
 async function deleteSavedWorkflow(entry) {
@@ -25506,7 +25932,7 @@ async function deleteSavedWorkflow(entry) {
   if (!entry.filename) {
     throw new Error("Local workflow entry is missing filename.");
   }
-  fs31.rmSync(path40.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  fs33.rmSync(path41.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
   markWorkflowDeletedLocally(entry.workflowId);
 }
 async function loadSavedWorkflowDetail(entry) {
@@ -25525,7 +25951,7 @@ async function loadSavedWorkflowDetail(entry) {
     };
   }
   const dir = resolveSavedWorkflowsDir();
-  const content = fs31.readFileSync(path40.resolve(dir, entry.filename), "utf-8");
+  const content = fs33.readFileSync(path41.resolve(dir, entry.filename), "utf-8");
   const raw = JSON.parse(content);
   return {
     pipeline: raw.pipeline ?? raw,
@@ -26509,36 +26935,36 @@ import pc38 from "picocolors";
 
 // src/runtime/agent-harness/auth-store.ts
 init_home();
-import fs32 from "node:fs";
-import path41 from "node:path";
+import fs34 from "node:fs";
+import path42 from "node:path";
 function resolveHarnessAuthDir() {
-  return path41.resolve(resolvePaperclipHomeDir(), "harness-auth");
+  return path42.resolve(resolvePaperclipHomeDir(), "harness-auth");
 }
 function resolveHarnessAuthFile(harnessId) {
-  return path41.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
+  return path42.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
 }
 function normalizeSecret(value) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : void 0;
 }
 function ensureSecureDir(dirPath) {
-  fs32.mkdirSync(dirPath, { recursive: true });
+  fs34.mkdirSync(dirPath, { recursive: true });
   try {
-    fs32.chmodSync(dirPath, 448);
+    fs34.chmodSync(dirPath, 448);
   } catch {
   }
 }
 function ensureSecureFile(filePath) {
   try {
-    fs32.chmodSync(filePath, 384);
+    fs34.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessCredentials(harnessId) {
   const filePath = resolveHarnessAuthFile(harnessId);
-  if (!fs32.existsSync(filePath)) return {};
+  if (!fs34.existsSync(filePath)) return {};
   try {
-    const parsed = JSON.parse(fs32.readFileSync(filePath, "utf-8"));
+    const parsed = JSON.parse(fs34.readFileSync(filePath, "utf-8"));
     const creds = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value.trim().length > 0) {
@@ -26565,7 +26991,7 @@ function setHarnessCredential(harnessId, key, value) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs32.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs34.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -26582,7 +27008,7 @@ function setHarnessCredentials(harnessId, updates) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs32.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs34.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -26594,8 +27020,8 @@ function maskSecret(value) {
 
 // src/runtime/open-agents/index.ts
 init_home();
-import fs33 from "node:fs";
-import path42 from "node:path";
+import fs35 from "node:fs";
+import path43 from "node:path";
 
 // src/runtime/open-agents/contract.ts
 var DEFAULT_OPEN_AGENTS_CONFIG = {
@@ -26782,18 +27208,18 @@ var OpenAgentsBackendError = class extends Error {
 
 // src/runtime/open-agents/index.ts
 function resolveConfigPath3() {
-  return path42.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
+  return path43.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
 }
 function readOpenAgentsConfig() {
   const configPath = resolveConfigPath3();
-  if (!fs33.existsSync(configPath)) {
+  if (!fs35.existsSync(configPath)) {
     return {
       ...DEFAULT_OPEN_AGENTS_CONFIG,
       apiKey: getHarnessCredential("open-agents", "apiKey")
     };
   }
   try {
-    const raw = JSON.parse(fs33.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs35.readFileSync(configPath, "utf-8"));
     const storedApiKey = getHarnessCredential("open-agents", "apiKey");
     return {
       backendType: validateBackendType(raw.backendType),
@@ -26814,13 +27240,13 @@ function readOpenAgentsConfig() {
 }
 function writeOpenAgentsConfig(config) {
   const configPath = resolveConfigPath3();
-  fs33.mkdirSync(path42.dirname(configPath), { recursive: true });
+  fs35.mkdirSync(path43.dirname(configPath), { recursive: true });
   const persisted = {
     ...config,
     authMode: validateAuthMode(config.authMode),
     apiKey: void 0
   };
-  fs33.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
+  fs35.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
 `, "utf-8");
   setHarnessCredential("open-agents", "apiKey", config.apiKey);
 }
@@ -27381,8 +27807,8 @@ import pc39 from "picocolors";
 
 // src/runtime/qwen-code/index.ts
 init_home();
-import fs34 from "node:fs";
-import path43 from "node:path";
+import fs36 from "node:fs";
+import path44 from "node:path";
 
 // src/runtime/qwen-code/contract.ts
 var QWEN_CODE_APPROVAL_MODES = [
@@ -27600,19 +28026,19 @@ function buildSetupGuidance(env) {
 
 // src/runtime/qwen-code/index.ts
 function resolveConfigPath4() {
-  return path43.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
+  return path44.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
 }
 function readQwenCodeConfig() {
   const configPath = resolveConfigPath4();
   const storedCredentials = readHarnessCredentials("qwen-code");
-  if (!fs34.existsSync(configPath)) {
+  if (!fs36.existsSync(configPath)) {
     return {
       ...DEFAULT_QWEN_CODE_CONFIG,
       env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs34.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs36.readFileSync(configPath, "utf-8"));
     return {
       binaryPath: typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_QWEN_CODE_CONFIG.binaryPath,
       defaultModel: typeof raw.defaultModel === "string" ? raw.defaultModel : DEFAULT_QWEN_CODE_CONFIG.defaultModel,
@@ -27634,7 +28060,7 @@ function readQwenCodeConfig() {
 }
 function writeQwenCodeConfig(config) {
   const configPath = resolveConfigPath4();
-  fs34.mkdirSync(path43.dirname(configPath), { recursive: true });
+  fs36.mkdirSync(path44.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -27646,7 +28072,7 @@ function writeQwenCodeConfig(config) {
     publicEnv[key] = value;
   }
   setHarnessCredentials("qwen-code", credentialUpdates);
-  fs34.writeFileSync(
+  fs36.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -27979,8 +28405,8 @@ import pc42 from "picocolors";
 
 // src/status/probes.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
-import fs35 from "node:fs";
-import path44 from "node:path";
+import fs37 from "node:fs";
+import path45 from "node:path";
 var GITHUB_API = "https://api.github.com";
 var NPM_REGISTRY = "https://registry.npmjs.org";
 function isoNow() {
@@ -28145,7 +28571,7 @@ async function probeKitForksIndex(_timeoutMs) {
   try {
     const { resolveKitForksIndexPath: resolveKitForksIndexPath2 } = await Promise.resolve().then(() => (init_kit_forks_home(), kit_forks_home_exports));
     const p33 = resolveKitForksIndexPath2();
-    if (!fs35.existsSync(p33)) {
+    if (!fs37.existsSync(p33)) {
       return {
         componentId: "kit-forks-index",
         level: "operational",
@@ -28153,7 +28579,7 @@ async function probeKitForksIndex(_timeoutMs) {
         lastCheckedAt: isoNow()
       };
     }
-    const parsed = JSON.parse(fs35.readFileSync(p33, "utf8"));
+    const parsed = JSON.parse(fs37.readFileSync(p33, "utf8"));
     const count = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
     return {
       componentId: "kit-forks-index",
@@ -28222,10 +28648,10 @@ async function probeNode(_timeoutMs) {
   };
 }
 async function probeReleaseBundleArtifacts(_timeoutMs) {
-  const distPath = path44.resolve(process.cwd(), "cli/dist/index.js");
-  const installerPath = path44.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
-  const distOk = fs35.existsSync(distPath);
-  const installerOk = fs35.existsSync(installerPath);
+  const distPath = path45.resolve(process.cwd(), "cli/dist/index.js");
+  const installerPath = path45.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
+  const distOk = fs37.existsSync(distPath);
+  const installerOk = fs37.existsSync(installerPath);
   const ok = distOk && installerOk;
   return {
     componentId: "release-bundle",
@@ -28772,7 +29198,7 @@ import pc44 from "picocolors";
 
 // src/fleet/summary.ts
 init_fork_registry();
-import fs45 from "node:fs";
+import fs47 from "node:fs";
 init_fork_policy();
 init_fork_trace();
 function classifyHealth(drift, pendingConfirmationJobs, lastJobStatus) {
@@ -28792,7 +29218,7 @@ var REMOTE_EVENT_TYPES = /* @__PURE__ */ new Set([
   "conflict_encountered"
 ]);
 function buildForkSummary(reg) {
-  if (!fs45.existsSync(reg.forkPath)) {
+  if (!fs47.existsSync(reg.forkPath)) {
     return {
       forkId: reg.forkId,
       kitId: reg.kitId,
@@ -29253,8 +29679,8 @@ async function fleetApprovals(opts) {
     p30.log.message(
       `  \xB7 ${pc44.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
     );
-    for (const path56 of entry.pendingPaths.slice(0, 6)) {
-      p30.log.message(`      ${pc44.dim("awaits")} ${path56}`);
+    for (const path57 of entry.pendingPaths.slice(0, 6)) {
+      p30.log.message(`      ${pc44.dim("awaits")} ${path57}`);
     }
     if (entry.pendingPaths.length > 6) {
       p30.log.message(`      ${pc44.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
@@ -29321,14 +29747,14 @@ init_banner();
 init_home();
 function resolveCliVersion() {
   try {
-    const moduleDir = path55.dirname(fileURLToPath7(import.meta.url));
+    const moduleDir = path56.dirname(fileURLToPath7(import.meta.url));
     const candidates = [
-      path55.resolve(moduleDir, "../package.json"),
-      path55.resolve(moduleDir, "../../package.json")
+      path56.resolve(moduleDir, "../package.json"),
+      path56.resolve(moduleDir, "../../package.json")
     ];
     for (const candidate of candidates) {
-      if (!fs47.existsSync(candidate)) continue;
-      const parsed = JSON.parse(fs47.readFileSync(candidate, "utf8"));
+      if (!fs49.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs49.readFileSync(candidate, "utf8"));
       if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
     }
   } catch {
@@ -29630,39 +30056,39 @@ User: ${prompt}` : prompt,
   }
 }
 function resolveLocalThreadsDir() {
-  return path55.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
+  return path56.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
 }
 function loadOrCreateLocalThread() {
   const dir = resolveLocalThreadsDir();
-  fs47.mkdirSync(dir, { recursive: true });
-  const activePath = path55.resolve(dir, "active-thread.json");
-  if (fs47.existsSync(activePath)) {
+  fs49.mkdirSync(dir, { recursive: true });
+  const activePath = path56.resolve(dir, "active-thread.json");
+  if (fs49.existsSync(activePath)) {
     try {
-      const parsed = JSON.parse(fs47.readFileSync(activePath, "utf-8"));
+      const parsed = JSON.parse(fs49.readFileSync(activePath, "utf-8"));
       const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
-      const threadFile = path55.resolve(dir, `${id2}.json`);
+      const threadFile = path56.resolve(dir, `${id2}.json`);
       const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
       return { id: id2, filePath: threadFile, messages };
     } catch {
     }
   }
   const id = `thread-${Date.now()}`;
-  const filePath = path55.resolve(dir, `${id}.json`);
+  const filePath = path56.resolve(dir, `${id}.json`);
   const thread = { id, filePath, messages: [] };
   saveLocalThread(thread);
   return thread;
 }
 function saveLocalThread(thread) {
   const dir = resolveLocalThreadsDir();
-  fs47.mkdirSync(dir, { recursive: true });
-  fs47.writeFileSync(
+  fs49.mkdirSync(dir, { recursive: true });
+  fs49.writeFileSync(
     thread.filePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
     "utf-8"
   );
-  const activePath = path55.resolve(dir, "active-thread.json");
-  fs47.writeFileSync(
+  const activePath = path56.resolve(dir, "active-thread.json");
+  fs49.writeFileSync(
     activePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
@@ -30205,12 +30631,12 @@ function isInstallerMode() {
 }
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
-  const instancesDir = path55.resolve(homeDir, "instances");
-  if (!fs47.existsSync(instancesDir)) return [];
-  return fs47.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  const instancesDir = path56.resolve(homeDir, "instances");
+  if (!fs49.existsSync(instancesDir)) return [];
+  return fs49.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
-    const configPath = path55.resolve(instancesDir, instanceId, "config.json");
-    if (!fs47.existsSync(configPath)) return null;
+    const configPath = path56.resolve(instancesDir, instanceId, "config.json");
+    if (!fs49.existsSync(configPath)) return null;
     try {
       const config = readConfig(configPath);
       if (!config) return null;
