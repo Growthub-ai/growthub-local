@@ -51,14 +51,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Rebuild CLI dist
-        run: |
-          npm install -g esbuild
-          cd cli && node -e "
-            import('./esbuild.config.mjs').then(m =>
-              import('esbuild').then(e => e.build(m.default).then(() => console.log('esbuild done')))
-            ).catch(e => { console.error(e.message); process.exit(1); });
-          "
+      - name: Verify CLI dist
+        run: test -f cli/dist/index.js && echo "dist/index.js exists"
 
       - name: Freeze check
         run: bash ./scripts/freeze-check.sh
@@ -91,14 +85,8 @@ jobs:
         with:
           version: 10.4.1
 
-      - name: Rebuild CLI dist
-        run: |
-          npm install -g esbuild
-          cd cli && node -e "
-            import('./esbuild.config.mjs').then(m =>
-              import('esbuild').then(e => e.build(m.default).then(() => console.log('esbuild done')))
-            ).catch(e => { console.error(e.message); process.exit(1); });
-          "
+      - name: Verify CLI dist
+        run: test -f cli/dist/index.js && echo "dist/index.js exists"
 
       - name: Configure git
         run: |
