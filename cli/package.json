@@ -1,6 +1,6 @@
 {
   "name": "@growthub/cli",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Growthub Local is a control plane for forked worker kits. The CLI is the executor, the hosted app is the identity authority, the worker kit is the unit of portable agent infrastructure, and the fork is the operator's personal branch of that infrastructure — policy-governed, trace-backed, and self-healing.",
   "type": "module",
   "bin": {
@@ -35,8 +35,9 @@
     "pack:dry-run": "npm pack --dry-run"
   },
   "dependencies": {
-    "@paperclipai/shared": "^2026.416.0",
-    "@paperclipai/db": "^2026.416.0",
+    "@paperclipai/shared": "0.3.1",
+    "@paperclipai/db": "0.3.1",
+    "@paperclipai/adapter-utils": "0.3.1",
     "@aws-sdk/client-s3": "^3.888.0",
     "@clack/prompts": "^0.10.0",
     "ajv": "^8.18.0",
