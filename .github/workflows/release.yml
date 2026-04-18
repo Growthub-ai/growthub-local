@@ -52,7 +52,13 @@ jobs:
           node-version: 24
 
       - name: Rebuild CLI dist
-        run: pnpm --dir cli exec tsc -p tsconfig.json --noCheck
+        run: |
+          npm install -g esbuild
+          cd cli && node -e "
+            import('./esbuild.config.mjs').then(m =>
+              import('esbuild').then(e => e.build(m.default).then(() => console.log('esbuild done')))
+            ).catch(e => { console.error(e.message); process.exit(1); });
+          "
 
       - name: Freeze check
         run: bash ./scripts/freeze-check.sh
@@ -86,7 +92,13 @@ jobs:
           version: 10.4.1
 
       - name: Rebuild CLI dist
-        run: pnpm --dir cli exec tsc -p tsconfig.json --noCheck
+        run: |
+          npm install -g esbuild
+          cd cli && node -e "
+            import('./esbuild.config.mjs').then(m =>
+              import('esbuild').then(e => e.build(m.default).then(() => console.log('esbuild done')))
+            ).catch(e => { console.error(e.message); process.exit(1); });
+          "
 
       - name: Configure git
         run: |
