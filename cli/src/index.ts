@@ -1121,17 +1121,76 @@ async function runDiscoveryHub(opts?: {
         }
 
         if (surfaceChoice === "custom-workspace-starter") {
-          const outRaw = await p.text({
-            message: "Destination path for the new workspace (will be created if missing):",
-            placeholder: "./my-workspace",
-          });
-          if (p.isCancel(outRaw) || !outRaw) continue;
-          const nameRaw = await p.text({
-            message: "Optional label (leave blank to use directory basename):",
-            placeholder: "",
-          });
-          if (p.isCancel(nameRaw)) continue;
-          await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+          starterLoop: while (true) {
+            const starterChoice = await p.select({
+              message: "Custom Workspace Starter",
+              options: [
+                {
+                  value: "new-greenfield",
+                  label: "🧪 New greenfield workspace",
+                  hint: "Scaffold a fresh starter-derived fork (no source import)",
+                },
+                {
+                  value: "import-github",
+                  label: "🐙 Build from GitHub repository",
+                  hint: "Import a public or private repo via the Source Import Agent",
+                },
+                {
+                  value: "import-skill",
+                  label: "🧠 Build from skills.sh",
+                  hint: "Discover live skills, inspect metadata, then import the selected skill",
+                },
+                { value: "__back", label: "← Back to Settings" },
+              ],
+            });
+            if (p.isCancel(starterChoice)) { p.cancel("Cancelled."); process.exit(0); }
+            if (starterChoice === "__back") break starterLoop;
+
+            if (starterChoice === "new-greenfield") {
+              const outRaw = await p.text({
+                message: "Destination path for the new workspace (will be created if missing):",
+                placeholder: "./my-workspace",
+              });
+              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
+              const nameRaw = await p.text({
+                message: "Optional label (leave blank to use directory basename):",
+                placeholder: "",
+              });
+              if (p.isCancel(nameRaw)) continue starterLoop;
+              await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+              continue starterLoop;
+            }
+
+            if (starterChoice === "import-github") {
+              const repoRaw = await p.text({
+                message: "GitHub repo (owner/repo or https URL):",
+                placeholder: "octocat/Hello-World",
+              });
+              if (p.isCancel(repoRaw) || !repoRaw) continue starterLoop;
+              const {
+                promptForInteractiveWorkspacePath,
+                startSourceImportFlow,
+              } = await import("./commands/source-import-discovery.js");
+              const outPath = await promptForInteractiveWorkspacePath({
+                kind: "github-repo",
+                repo: String(repoRaw),
+                out: "",
+              });
+              if (!outPath) continue starterLoop;
+              await startSourceImportFlow({
+                kind: "github-repo",
+                repo: String(repoRaw),
+                out: outPath,
+              });
+              continue starterLoop;
+            }
+
+            if (starterChoice === "import-skill") {
+              const { startSkillsSourceImportFlow } = await import("./commands/source-import-discovery.js");
+              await startSkillsSourceImportFlow();
+              continue starterLoop;
+            }
+          }
           continue;
         }
 

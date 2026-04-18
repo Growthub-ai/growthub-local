@@ -630,6 +630,163 @@ checkFileContains("cli/src/index.ts",
 );
 
 // ---------------------------------------------------------------------------
+// 21. Source Import Agent — portable source → agent environment pipeline
+// ---------------------------------------------------------------------------
+console.log("\n── 21. Source Import Agent ──────────────────────────────────────────────");
+const sourceImportRoot = "cli/src/starter/source-import";
+const sourceImportFiles = [
+  `${sourceImportRoot}/types.ts`,
+  `${sourceImportRoot}/github-source.ts`,
+  `${sourceImportRoot}/skills-source.ts`,
+  `${sourceImportRoot}/detect.ts`,
+  `${sourceImportRoot}/security.ts`,
+  `${sourceImportRoot}/plan.ts`,
+  `${sourceImportRoot}/materialize.ts`,
+  `${sourceImportRoot}/summarize.ts`,
+  `${sourceImportRoot}/agent.ts`,
+  `${sourceImportRoot}/index.ts`,
+  "cli/src/commands/source-import-discovery.ts",
+  "docs/kernel-packets/KERNEL_PACKET_SOURCE_IMPORT_AGENT.md",
+];
+for (const f of sourceImportFiles) checkFileExists(f);
+
+checkFileContains(`${sourceImportRoot}/types.ts`,
+  "SourceKind",
+  "\"github-repo\"",
+  "\"skills-skill\"",
+  "SourceAccessProbe",
+  "SourceImportPlan",
+  "SourceImportManifest",
+  "SourceImportResult",
+  "SourceImportJob",
+  "SourceRiskClass",
+  "SecurityFinding",
+);
+
+checkFileContains(`${sourceImportRoot}/security.ts`,
+  "inspectSourcePayload",
+  "MAX_FILES",
+  "MAX_BYTES_PER_FILE",
+  "MAX_TOTAL_BYTES",
+  "requireSkillAcknowledgement",
+);
+
+checkFileContains(`${sourceImportRoot}/plan.ts`,
+  "buildSourceImportPlan",
+  "pendingConfirmations",
+  "needsConfirmation",
+);
+
+checkFileContains(`${sourceImportRoot}/materialize.ts`,
+  "materializeImportPlan",
+  "PendingConfirmationError",
+  "copyBundledKitSource",
+  "registerKitFork",
+  "writeKitForkPolicy",
+  "appendKitForkTraceEvent",
+);
+
+checkFileContains(`${sourceImportRoot}/agent.ts`,
+  "runSourceImportJob",
+  "confirmAndResumeSourceImportJob",
+  "dispatchSourceImportJobBackground",
+  "getSourceImportJob",
+  "listSourceImportJobs",
+  "cancelSourceImportJob",
+  "pruneSourceImportJobs",
+  "awaiting_confirmation",
+  "source-import-jobs",
+);
+
+checkFileContains(`${sourceImportRoot}/github-source.ts`,
+  "probeGithubRepoSource",
+  "cloneGithubRepo",
+  "narrowToSubdirectory",
+  "resolveGithubAccessToken",
+);
+
+checkFileContains(`${sourceImportRoot}/skills-source.ts`,
+  "parseSkillRef",
+  "browseSkills",
+  "probeSkillsSource",
+  "fetchSkillPayload",
+  "SKILLS_SH_BASE",
+);
+
+checkFileContains(`${sourceImportRoot}/index.ts`,
+  "importSourceAsWorkspace",
+  "confirmAndResumeSourceImportJob",
+);
+
+checkFileContains("cli/src/commands/starter.ts",
+  "runSourceImportCommand",
+  "runBrowseSkills",
+  "import-repo",
+  "import-skill",
+  "browse-skills",
+);
+
+checkFileContains("cli/src/commands/source-import-discovery.ts",
+  "startSourceImportFlow",
+  "confirmAndResumeSourceImportJob",
+  "importSourceAsWorkspace",
+);
+
+checkFileContains("scripts/cli-demo.mjs",
+  "source-import",
+);
+
+// Paperclip-coupling prohibition for the source-import tree
+{
+  const forbiddenInImport = ["PAPERCLIP_HOME", "resolvePaperclipHomeDir"];
+  const importTreeFiles = [
+    `${sourceImportRoot}/types.ts`,
+    `${sourceImportRoot}/github-source.ts`,
+    `${sourceImportRoot}/skills-source.ts`,
+    `${sourceImportRoot}/detect.ts`,
+    `${sourceImportRoot}/security.ts`,
+    `${sourceImportRoot}/plan.ts`,
+    `${sourceImportRoot}/materialize.ts`,
+    `${sourceImportRoot}/summarize.ts`,
+    `${sourceImportRoot}/agent.ts`,
+    `${sourceImportRoot}/index.ts`,
+  ];
+  for (const file of importTreeFiles) {
+    const fullPath = resolve(ROOT, file);
+    if (!existsSync(fullPath)) {
+      fail(`Missing file during source-import coupling check: ${file}`);
+      continue;
+    }
+    const content = readFileSync(fullPath, "utf8");
+    for (const token of forbiddenInImport) {
+      if (content.includes(token)) {
+        fail(`${file} contains forbidden token '${token}' — source-import must not couple to Paperclip harness`);
+      } else {
+        ok(`${file} free of '${token}'`);
+      }
+    }
+    // Also forbid direct fork-sync engine coupling
+    for (const token of ["fork-sync-agent", "fork-sync.js", "from \"./fork-sync\""]) {
+      if (content.includes(token)) {
+        fail(`${file} contains forbidden fork-sync engine coupling '${token}'`);
+      }
+    }
+  }
+}
+
+// Kernel packet registered
+checkFileContains("docs/kernel-packets/README.md",
+  "Source Import Agent Kernel Packet",
+  "KERNEL_PACKET_SOURCE_IMPORT_AGENT.md",
+);
+
+// Discovery Hub wires source-import submenu
+checkFileContains("cli/src/index.ts",
+  "source-import-discovery",
+  "startSourceImportFlow",
+);
+
+// ---------------------------------------------------------------------------
 // Result
 // ---------------------------------------------------------------------------
 console.log("\n─────────────────────────────────────────────────────────────────────────");
