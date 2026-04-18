@@ -17,6 +17,7 @@
  *   growthub fork-sync  →  same hub as above
  */
 
+import fs from "node:fs";
 import * as p from "@clack/prompts";
 import { Command } from "commander";
 import { registerKitForkRemoteSubcommands } from "./kit-fork-remote.js";
@@ -52,6 +53,17 @@ import {
   type KitForkPolicy,
 } from "../kits/fork-policy.js";
 import { appendKitForkTraceEvent, readKitForkTrace } from "../kits/fork-trace.js";
+import {
+  attachAuthorityEnvelope,
+  revokeForkAuthority,
+  readForkAuthorityState,
+  describePolicyAttestation,
+  readIssuerRegistry,
+  upsertIssuer,
+  removeIssuer,
+  type AuthorityEnvelope,
+  type AuthorityIssuerKind,
+} from "../kits/fork-authority.js";
 import type {
   KitForkRegistration,
   KitForkDriftReport,
@@ -1479,6 +1491,9 @@ function addForkSubcommands(parentCmd: Command): void {
       console.log("");
     });
 
+  // ── authority ──────────────────────────────────────────────────────────────
+  registerAuthoritySubcommands(parentCmd);
+
   // ── deregister ─────────────────────────────────────────────────────────────
   parentCmd
     .command("deregister")
@@ -1506,4 +1521,244 @@ function addForkSubcommands(parentCmd: Command): void {
         process.exitCode = 1;
       }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Authority subcommands — `growthub kit fork authority ...`
+// ---------------------------------------------------------------------------
+
+function registerAuthoritySubcommands(parentCmd: Command): void {
+  const authorityCmd = parentCmd
+    .command("authority")
+    .description("Inspect and manage hosted-authority attestations attached to a fork");
+
+  // ── status ────────────────────────────────────────────────────────────────
+  authorityCmd
+    .command("status")
+    .description("Show current authority attestation state for a fork")
+    .argument("<fork-id>", "Fork ID from list")
+    .option("--json", "Emit machine-readable JSON")
+    .action((forkId: string, opts: { json?: boolean }) => {
+      const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
+      if (!reg) {
+        console.error(pc.red(`Fork not found: ${forkId}`));
+        process.exitCode = 1;
+        return;
+      }
+      const policy = readKitForkPolicy(reg.forkPath);
+      const summary = describePolicyAttestation(reg.forkPath, policy, {
+        expectedForkId: reg.forkId,
+        expectedKitId: reg.kitId,
+      });
+      const state = readForkAuthorityState(reg.forkPath);
+
+      if (opts.json) {
+        console.log(JSON.stringify({ forkId: reg.forkId, kitId: reg.kitId, state, summary }, null, 2));
+        return;
+      }
+
+      console.log("");
+      console.log(pc.bold(`Authority: ${reg.forkId}`));
+      console.log(hr());
+      console.log(`  ${pc.dim("Origin:")}           ${originLabel(summary.origin)}`);
+      if (summary.envelope) {
+        const env = summary.envelope;
+        console.log(`  ${pc.dim("Issuer:")}           ${env.issuerId}`);
+        console.log(`  ${pc.dim("Envelope ID:")}      ${env.envelopeId}`);
+        console.log(`  ${pc.dim("Issued at:")}        ${env.issuedAt}`);
+        if (env.expiresAt) console.log(`  ${pc.dim("Expires at:")}       ${env.expiresAt}`);
+        console.log(`  ${pc.dim("Capabilities:")}     ${env.grants.capabilities.join(", ") || pc.dim("(none)")}`);
+        console.log(`  ${pc.dim("Policy attested:")}  ${env.grants.policyAttested ? "yes" : "no"}`);
+        if (summary.policyHashMatches === true) {
+          console.log(`  ${pc.dim("Policy hash:")}       ${pc.green("matches on-disk policy")}`);
+        } else if (summary.policyHashMatches === false) {
+          console.log(`  ${pc.dim("Policy hash:")}       ${pc.yellow("MISMATCH — policy changed since attestation")}`);
+        }
+        if (summary.verification && !summary.verification.ok) {
+          console.log(`  ${pc.dim("Verification:")}      ${pc.red(summary.verification.reason)}${summary.verification.detail ? pc.dim(` (${summary.verification.detail})`) : ""}`);
+        }
+        if (summary.origin === "authority-revoked") {
+          console.log(`  ${pc.dim("Revoked reason:")}   ${summary.revokedReason ?? pc.dim("(none)")}`);
+        }
+      } else {
+        console.log(pc.dim("  No authority envelope attached. Operator-local policy in effect."));
+      }
+      console.log("");
+    });
+
+  // ── attest ────────────────────────────────────────────────────────────────
+  authorityCmd
+    .command("attest")
+    .description("Attach a signed authority envelope to a fork")
+    .argument("<fork-id>", "Fork ID from list")
+    .requiredOption("--file <path>", "Path to a JSON file containing the envelope")
+    .action((forkId: string, opts: { file: string }) => {
+      const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
+      if (!reg) {
+        console.error(pc.red(`Fork not found: ${forkId}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      let raw: string;
+      try {
+        raw = fs.readFileSync(opts.file, "utf8");
+      } catch (err) {
+        console.error(pc.red(`Cannot read envelope file: ${(err as Error).message}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      let envelope: AuthorityEnvelope;
+      try {
+        envelope = JSON.parse(raw) as AuthorityEnvelope;
+      } catch (err) {
+        console.error(pc.red(`Invalid JSON in envelope file: ${(err as Error).message}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const result = attachAuthorityEnvelope(reg.forkPath, envelope, {
+          expectedForkId: reg.forkId,
+          expectedKitId: reg.kitId,
+        });
+        appendKitForkTraceEvent(reg.forkPath, {
+          forkId: reg.forkId,
+          kitId: reg.kitId,
+          type: "authority_attested",
+          summary: `Authority envelope ${envelope.envelopeId} attached (issuer ${envelope.issuerId})`,
+          detail: {
+            envelopeId: envelope.envelopeId,
+            issuerId: envelope.issuerId,
+            capabilities: envelope.grants.capabilities,
+            expiresAt: envelope.expiresAt ?? null,
+          },
+        });
+        console.log(pc.green("Authority envelope attached:"), result.state.state);
+        if (result.verification.ok) {
+          console.log(pc.dim("  Issuer:     "), result.verification.issuer.id);
+          console.log(pc.dim("  Capabilities:"), envelope.grants.capabilities.join(", ") || pc.dim("(none)"));
+        }
+      } catch (err) {
+        console.error(pc.red((err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── revoke ────────────────────────────────────────────────────────────────
+  authorityCmd
+    .command("revoke")
+    .description("Revoke the local authority attestation for a fork")
+    .argument("<fork-id>", "Fork ID from list")
+    .option("--reason <text>", "Why the attestation is being revoked")
+    .action((forkId: string, opts: { reason?: string }) => {
+      const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
+      if (!reg) {
+        console.error(pc.red(`Fork not found: ${forkId}`));
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        const next = revokeForkAuthority(reg.forkPath, opts.reason);
+        appendKitForkTraceEvent(reg.forkPath, {
+          forkId: reg.forkId,
+          kitId: reg.kitId,
+          type: "authority_revoked",
+          summary: `Authority envelope ${next.state === "revoked" ? next.envelope.envelopeId : ""} revoked`,
+          detail: { reason: opts.reason ?? null },
+        });
+        console.log(pc.yellow("Authority attestation revoked."));
+        if (opts.reason) console.log(pc.dim("  Reason:"), opts.reason);
+      } catch (err) {
+        console.error(pc.red((err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── issuer list/add/remove ────────────────────────────────────────────────
+  const issuerCmd = authorityCmd
+    .command("issuer")
+    .description("Manage trusted authority issuers (local trust root)");
+
+  issuerCmd
+    .command("list")
+    .description("List trusted issuers from the local registry")
+    .option("--json", "Emit machine-readable JSON")
+    .action((opts: { json?: boolean }) => {
+      const reg = readIssuerRegistry();
+      if (opts.json) {
+        console.log(JSON.stringify(reg, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc.bold("Trusted Authority Issuers"));
+      console.log(hr());
+      if (reg.issuers.length === 0) {
+        console.log(pc.dim("  No issuers trusted. Add one with `growthub kit fork authority issuer add`."));
+      } else {
+        for (const i of reg.issuers) {
+          console.log(`  ${pc.cyan(i.id)}  ${pc.dim(`[${i.kind}]`)}${i.label ? `  ${i.label}` : ""}`);
+          if (i.addedAt) console.log(`    ${pc.dim("added:")} ${i.addedAt}`);
+        }
+      }
+      console.log("");
+    });
+
+  issuerCmd
+    .command("add")
+    .description("Add or replace a trusted issuer in the local registry")
+    .requiredOption("--id <id>", "Issuer ID (must match envelope.issuerId)")
+    .requiredOption("--kind <kind>", "Issuer kind: growthub-hosted | self-signed | enterprise")
+    .requiredOption("--key <path>", "Path to a PEM-encoded ed25519 public key file")
+    .option("--label <label>", "Human-readable label")
+    .action((opts: { id: string; kind: string; key: string; label?: string }) => {
+      const kinds: AuthorityIssuerKind[] = ["growthub-hosted", "self-signed", "enterprise"];
+      if (!kinds.includes(opts.kind as AuthorityIssuerKind)) {
+        console.error(pc.red(`Invalid --kind: ${opts.kind}. Expected one of ${kinds.join(", ")}.`));
+        process.exitCode = 1;
+        return;
+      }
+      let pem: string;
+      try {
+        pem = fs.readFileSync(opts.key, "utf8");
+      } catch (err) {
+        console.error(pc.red(`Cannot read key file: ${(err as Error).message}`));
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        upsertIssuer({
+          id: opts.id,
+          kind: opts.kind as AuthorityIssuerKind,
+          publicKeyPem: pem,
+          label: opts.label,
+        });
+        console.log(pc.green("Issuer added:"), opts.id);
+      } catch (err) {
+        console.error(pc.red((err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  issuerCmd
+    .command("remove")
+    .description("Remove a trusted issuer from the local registry")
+    .requiredOption("--id <id>", "Issuer ID to remove")
+    .action((opts: { id: string }) => {
+      const ok = removeIssuer(opts.id);
+      if (ok) console.log(pc.green("Issuer removed:"), opts.id);
+      else {
+        console.error(pc.red(`No issuer with id: ${opts.id}`));
+        process.exitCode = 1;
+      }
+    });
+}
+
+function originLabel(origin: "operator-local" | "authority-attested" | "authority-revoked"): string {
+  switch (origin) {
+    case "authority-attested": return pc.green("authority-attested");
+    case "authority-revoked":  return pc.yellow("authority-revoked");
+    default:                    return pc.dim("operator-local");
+  }
 }

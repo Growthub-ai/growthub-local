@@ -32,7 +32,9 @@ export type KitForkTraceEventType =
   | "conflict_resolved"
   | "conflict_aborted"
   | "script_executed"
-  | "agent_checkpoint";
+  | "agent_checkpoint"
+  | "authority_attested"
+  | "authority_revoked";
 
 export interface KitForkTraceEvent {
   timestamp: string;
