@@ -1,0 +1,47 @@
+name: Publish @paperclipai/shared
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview without publishing
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-stable
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+
+      - name: Install typescript
+        run: npm install -g typescript
+
+      - name: Build
+        working-directory: packages/shared
+        run: tsc --noCheck
+
+      - name: Publish (dry run)
+        if: inputs.dry_run
+        working-directory: packages/shared
+        run: npm publish --access public --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+
+      - name: Publish
+        if: "!inputs.dry_run"
+        working-directory: packages/shared
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
