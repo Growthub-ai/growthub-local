@@ -97,7 +97,7 @@ export default {
   target: "node20",
   format: "esm",
   outfile: "dist/index.js",
-  banner: { js: "#!/usr/bin/env node" },
+  banner: {},
   external: [...externals].sort(),
   alias: workspaceAliases,
   treeShaking: true,
