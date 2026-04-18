@@ -108,6 +108,18 @@ assert(
   "CLI tarball is missing bundled runtime server app.js",
 );
 assert(
+  cliPack.includes("dist/commands/onboard.js"),
+  "CLI tarball is missing dist/commands/onboard.js",
+);
+assert(
+  cliPack.includes("dist/commands/starter.js"),
+  "CLI tarball is missing dist/commands/starter.js",
+);
+assert(
+  cliPack.includes("dist/commands/source-import-discovery.js"),
+  "CLI tarball is missing dist/commands/source-import-discovery.js",
+);
+assert(
   cliPack.includes("dist/runtime/server/ui-dist"),
   "CLI tarball is missing bundled runtime UI payload",
 );

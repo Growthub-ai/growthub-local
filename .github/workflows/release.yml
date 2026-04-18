@@ -51,6 +51,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Rebuild CLI dist
+        run: pnpm --dir cli exec tsc -p tsconfig.json --noCheck
+
       - name: Freeze check
         run: bash ./scripts/freeze-check.sh
 
@@ -77,6 +80,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - name: Rebuild CLI dist
+        run: pnpm --dir cli exec tsc -p tsconfig.json --noCheck
 
       - name: Configure git
         run: |

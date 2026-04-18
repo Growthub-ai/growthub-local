@@ -36,8 +36,6 @@ fi
 BRANCH="$(git branch --show-current 2>/dev/null || echo '')"
 if [[ -z "$BRANCH" ]]; then
   fail "Detached HEAD — no branch name"
-elif [[ "$BRANCH" == "claude/repo-import-agent-SnZdm" ]]; then
-  ok "Branch name allowed by pinned task contract: $BRANCH"
 elif [[ "$BRANCH" =~ ^(fix|feat|chore|refactor|docs|ci|test|perf|adapter|sync)/ ]]; then
   ok "Branch name follows convention: $BRANCH"
 else
