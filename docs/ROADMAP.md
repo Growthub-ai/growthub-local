@@ -1,179 +1,140 @@
 # Growthub Substrate Roadmap
 
-Derived from verified code audit against v0.7.0. Each item is a confirmed
-absent implementation that is a direct prerequisite for the one that follows.
+The v0.7.0 architecture is sealed. L1–L6 are production-stable. The fork
+substrate quad is complete. The three strategic outcomes (agent-composed
+environments, enterprise-managed fleets, offline cross-operator handoff) are
+now structurally achievable without further substrate work.
+
+This roadmap is about what you build ON the substrate — not more substrate.
+Each item is a direct product consequence of the architecture that exists.
 
 ---
 
-## What is already fully implemented (not roadmap items)
+## 1 — Fork Bundle (the portable distribution unit)
 
-- Authority issuer registry: read/write/CRUD, ed25519 sign/verify (`fork-authority.ts`)
-- Enterprise issuer add: `growthub kit fork authority issuer add --kind enterprise`
-- Fork Sync Agent: drift detection, heal plans, apply, background jobs
-- Source Import Agent: probe → security → plan → confirmation → materialize → fork registration
-- `growthub auth login` / `auth logout` / `auth whoami`
-- Fleet view/drift/drift-summary/policy/approvals/agent-plan
+The fork substrate quad (fork.json + policy.json + trace.jsonl + authority.json)
+is a complete, verifiable description of an operator environment. Nothing today
+packages these four files — plus the kit's frozen asset set — into a portable
+artifact that a second operator can verify, import, and run from.
 
----
+`growthub kit fork bundle export <fork-id>` produces a signed tarball. The
+authority envelope inside it carries the capability set. The receiving operator
+runs `growthub kit fork bundle import <bundle.tar.gz>`, which verifies the
+envelope signature against their issuer registry and registers the fork. No
+shared session. No shared server. Cryptographic verification from the artifact
+alone.
 
-## The compounding sequence
-
-### 1 — Hosted Plane Issuer Pairing (auto-populate registry on auth login)
-
-**What's missing:** `growthub auth login` completes and writes a session token,
-but the hosted plane has no endpoint that responds with an ed25519 public key
-to auto-populate `~/.growthub/authority/issuers.json`. The comment in
-`fork-authority.ts:27` marks this explicitly as future: `"future: via
-\`growthub account connect\`"`. The issuer add command exists and the registry
-infrastructure works — what's absent is the server route that generates/issues
-a `growthub-hosted` issuer record and the CLI call that writes it after login.
-
-**Why this is first:** `describePolicyAttestation` returns
-`{ origin: "operator-local" }` when the registry is empty. Every fork sits
-permanently at `operator-local` unless an operator manually runs the issuer add
-command with a key they sourced themselves. The hosted-plane capability gate
-(`hasAuthorityCapability`) is structurally complete but never activates in a
-default operator environment.
-
-**What it unlocks:** Attestation calls in item 2 have an issuer to sign against.
+This is the atomic distribution unit. Every item that follows uses it.
 
 ---
 
-### 2 — Born-Attested Forks (materializeImportPlan writes authority.json)
+## 2 — Fork Handoff Protocol (peer-to-peer governed transfer)
 
-**What's missing:** `materializeImportPlan` runs 10 steps — registers the fork,
-writes `policy.json`, writes the trace, writes `source-import.json` — and
-returns. It never imports or calls anything from `fork-authority.ts`. No
-`authority.json` is written. Forks created through Source Import are born with
-no authority state.
+The fork bundle (item 1) enables two operators to exchange environments. The
+handoff protocol makes that exchange governed: the sender proposes custody
+transfer, the receiver inspects the bundle's authority and policy before
+accepting, and both operators' traces record the event.
 
-**Depends on:** Item 1 — a hosted issuer must be registered before the
-materialization step can request a valid envelope to write.
+`growthub kit fork transfer request <fork-id> --to <operator>` opens a transfer.
+`growthub kit fork transfer accept <bundle>` completes it. The trace event
+`custody_transferred` is appended on both sides.
 
-**What it unlocks:** Forks born attested have a live capability set from the
-start. The `script-execution` gate in item 3 can fire correctly on a fork that
-was just created, not only on forks an operator manually attested after the
-fact.
+Builds on item 1 because the bundle is the transport. The protocol adds
+governance: explicit consent, both-party audit trail, authority re-attestation
+at the moment of acceptance so the receiving operator's hosted plane signs the
+fork's capability set under their identity.
 
----
-
-### 3 — Kit Install Activation Mode (first runnable kit)
-
-**What's missing:** `KitExecutionMode` and `KitActivationMode` define
-`"install" | "mount" | "run"` as valid values. Every kit manifest schema
-accepts them. The service layer reads and exposes `activationModes` on list
-and inspect results. There is no function anywhere in the codebase that
-actually executes a kit's install entrypoint — no `execSync`, `spawnSync`, or
-equivalent keyed off these modes. All 10 bundled kits are `export`-only at
-runtime despite the type system being ready.
-
-**Depends on:** Item 2 — install entrypoints need `script-execution` capability
-gating. A fork born attested (item 2) can have that gate evaluated correctly
-before anything runs.
-
-**What it unlocks:** Kits become runnable, not just distributable. The worker
-kit layer (L2) moves from structured metadata to actual operator infrastructure.
-Items 4 and 5 both require real installed forks with real state to be useful.
+What it unlocks: the cross-operator collaboration use case that v0.7.0 made
+cryptographically possible is now accessible as a first-class operator workflow.
 
 ---
 
-### 4 — Fork Diff (heal plan as inspectable diff before apply)
+## 3 — Kit Registry (capability discovery at scale)
 
-**What's missing:** `detectKitForkDrift` and `buildKitForkHealPlan` are
-implemented and called by the sync agent. There is no CLI command that runs
-them in read-only mode and renders the result. `growthub kit fork diff <fork-id>`
-does not exist. The `heal` subcommand applies immediately with a confirmation
-prompt but does not show a structured render of what will change, what is
-protected, and what user-modified files are being skipped.
+Right now kits are bundled locally (10 kits) or imported from GitHub repos or
+skills.sh skills via Source Import. A first-party kit registry URL is the third
+source type — a catalog of discoverable, forkable, composable capability units
+that operators can pull without knowing the specific GitHub path.
 
-**Depends on:** Item 3 — operators need real installed forks with real local
-modifications before a diff surface has anything meaningful to show.
+`growthub kit search <query>` → scores against the registry catalog.
+`growthub starter init --kit <registry-slug>` → Source Import pipeline against
+a registry entry.
 
-**What it unlocks:** Fork state becomes inspectable before it changes. This is
-also a forcing function: it requires the heal plan serialization format to
-stabilize, which item 5 depends on for the bundle format to be stable.
+Builds on item 1 because the bundle format is the registry's distribution
+artifact. Operators don't just discover kits — they receive them as verified
+bundles that import the same way local forks do. The registry is a catalog of
+forkable, authority-backed capability units.
 
----
-
-### 5 — Fork Bundle (signed cross-operator handoff)
-
-**What's missing:** No command packages all four quad files (`fork.json`,
-`policy.json`, `trace.jsonl`, `authority.json`) plus frozen assets into a
-portable artifact, and no command imports and verifies one. The `kit download`
-command exports a canonical kit zip but carries no fork-specific state. A fork
-bundle is a different primitive: it captures a customized, attested fork
-environment for transfer to another operator, who verifies the envelope
-signature against their issuer registry before registering.
-
-**Depends on:** Item 4 — portable forks need stable, inspectable internal state.
-A bundle whose heal plan format can change arbitrarily after export is not
-safely importable.
-
-**What it unlocks:** Two operators with no shared session can hand a fork to
-each other and the receiver can verify — offline, from the artifact alone —
-exactly what the fork is authorized to do. Cross-org collaboration becomes a
-governed act rather than a file copy.
+What it unlocks: the kit ecosystem scales beyond 10 bundled kits. The operator
+experience transitions from "pick from what's here" to "find what you need."
 
 ---
 
-### 6 — Hosted Intelligence Backend (backendType: "hosted" with real routing)
+## 4 — Scheduled Fork Operations (self-managing environments)
 
-**What's missing:** `backendType: "hosted"` is read from config and preserved
-through normalization. In `provider.ts` it only suppresses two Ollama-specific
-fallback behaviors (`localhost:8080 → 11434` failover, `try-next-model` retry
-logic). There is no hosted model endpoint URL, no hosted authentication, and no
-code path that routes differently for hosted mode. An operator who sets
-`backendType: "hosted"` gets a plain POST to whatever `config.endpoint` they
-configured — no different from local mode with a custom URL.
+The heal cycle, sync, and attestation renewal all require manual triggering.
+At scale — enterprise fleets, operators with many forks, registry-sourced kits
+that update frequently — manual triggers stop working.
 
-**Depends on:** Item 5 — operators who receive fork bundles from other orgs may
-not have a local Ollama instance. Without meaningful hosted routing, the
-intelligence flows (planner, recommender, summarizer, normalizer) silently fail
-for those operators, making fork portability incomplete.
+A scheduled operations layer runs fork sync, drift detection, and authority
+renewal on a configurable cadence. `policy.json` already carries
+`remoteSyncMode: "off" | "branch" | "pr"` — this is the fork's declared intent
+for when to run. Scheduled operations is the engine that executes that intent
+without requiring the operator to type a command.
 
-**What it unlocks:** The full substrate — installed, attested, diff-visible,
-portable forks — is functional regardless of local hardware. Operators without
-local GPU are not second-class.
+Builds on item 3 because the registry creates a class of kits that update
+frequently. An operator who forks a registry kit needs their fork to track
+upstream automatically, not manually. The scheduled layer turns the Self-Healing
+Fork Sync Agent from a command the operator runs into a background process
+that runs on their behalf.
 
----
-
-### 7 — Fleet Attestation Sweep
-
-**What's missing:** `growthub fleet` registers six subcommands: `view`, `drift`,
-`drift-summary`, `policy`, `approvals`, `agent-plan`. There is no `attest`
-subcommand. No command walks all registered forks, reads their `authority.json`,
-evaluates each against the issuer registry, and surfaces a fleet-wide authority
-report. `growthub fleet drift` covers sync drift; authority state is invisible
-at fleet scope.
-
-**Depends on:** Items 1–6 — the sweep reports truth only when forks are
-genuinely attested (items 1–2), running real activation modes (item 3), have
-inspectable drift state (item 4), may be imported bundles from other operators
-(item 5), and may be running on hosted intelligence (item 6). Before that, a
-sweep over a default install reports only `operator-local` for every fork, which
-is not actionable.
-
-**What it unlocks:** Fleet-level authority visibility: `attested | expired |
-revoked | operator-local | missing` per fork, with batch re-attestation as a
-follow-on operation. The management surface for a substrate that is now fully
-operational end-to-end.
+What it unlocks: the Self-Healing Fork Sync Agent becomes genuinely autonomous.
+`policy.json` becomes a live contract, not a configuration file that requires
+manual invocation to take effect.
 
 ---
 
-## The loop
+## 5 — Certified Workspace Commerce (the economic layer)
+
+A workspace (multi-kit, pre-attested fork bundle) is now a complete, portable,
+cryptographically-certified environment. The infrastructure to sell one is
+already present: the authority envelope is the certificate, the bundle is the
+artifact, the policy is the usage contract, the trace is the audit log.
+
+What's missing is the commercial wrapper: a workspace listing on a marketplace,
+a purchase that triggers bundle delivery, and an operator experience that goes
+from "buy" to "running in a governed environment" in one step.
+
+`growthub starter init --workspace <marketplace-slug>` → receives the pre-built
+bundle → imports it → authority is re-attested under the buyer's identity → they
+are running in a certified environment with a known capability set, auditable
+history, and policy that the seller declared.
+
+Builds on item 4 because certified workspaces that sell as products need to
+self-manage. A customer who buys a workspace and never sees a manual sync/heal
+command is a customer who sees a product, not a kit. Scheduled operations
+(item 4) is what makes a purchased workspace feel like a product rather than
+infrastructure.
+
+What it unlocks: the operator's fork is now a commercial artifact. Capability
+producers (kit authors, workspace builders) have a distribution channel. The
+substrate becomes a platform with an economic layer.
+
+---
+
+## The compounding chain
 
 ```
-hosted plane issues issuer key on login      (item 1)
+fork bundle as atomic distribution unit    (item 1)
     ↓
-forks born with authority.json attested      (item 2)
+governed peer-to-peer handoff protocol     (item 2)
     ↓
-kits activate with capability gates live     (item 3)
+registry catalogs forkable capabilities    (item 3)
     ↓
-fork drift is inspectable before apply       (item 4)
+scheduled operations make forks autonomous (item 4)
     ↓
-forks move across org boundaries as bundles  (item 5)
-    ↓
-compute availability gaps close              (item 6)
-    ↓
-fleet authority state is visible + managed   (item 7)
+workspace becomes a commercial product     (item 5)
 ```
+
+None of these require new substrate primitives. The floor was sealed at
+v0.7.0. Every item above is a product built on that floor.
