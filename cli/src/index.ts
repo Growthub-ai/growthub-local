@@ -61,6 +61,7 @@ import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
+import { registerT3CodeCommands, runT3CodeHub } from "./commands/t3code.js";
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
@@ -205,6 +206,7 @@ function registerSharedCommands(target: Command) {
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
+  registerT3CodeCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -833,7 +835,7 @@ async function runDiscoveryHub(opts?: {
         {
           value: "agent-harness",
           label: "🤖 Agent Harness",
-          hint: "Paperclip Local App + Open Agents + Qwen Code",
+          hint: "Paperclip Local App + Open Agents + Qwen Code + T3 Code",
         },
         {
           value: "settings",
@@ -856,7 +858,7 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "help") {
       p.note(
         [
-          "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles) or Open Agents (durable workflow orchestration).",
+          "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
@@ -907,6 +909,11 @@ async function runDiscoveryHub(opts?: {
               value: "qwen-code",
               label: "🤖 Qwen Code CLI",
               hint: "Open-source coding harness with prompt + interactive chat session",
+            },
+            {
+              value: "t3code",
+              label: "△ T3 Code CLI",
+              hint: "T3 stack coding agent — prompt, session, Growthub profile (pingdotgg/t3code)",
             },
             {
               value: "__back_to_hub",
@@ -1044,6 +1051,13 @@ async function runDiscoveryHub(opts?: {
         if (harnessType === "qwen-code") {
           const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
           if (qwenResult === "back") continue;
+          return;
+        }
+
+        // -- T3 Code CLI -----------------------------------------------------
+        if (harnessType === "t3code") {
+          const t3Result = await runT3CodeHub({ allowBackToHub: true });
+          if (t3Result === "back") continue;
           return;
         }
       }
@@ -1381,6 +1395,16 @@ Qwen Code CLI (agent harness):
     $ growthub qwen-code prompt "fix the bug"   Headless single-prompt execution
     $ growthub qwen-code session                Launch interactive terminal session
     $ growthub qwen-code session --yolo         Auto-approve all tool calls
+
+T3 Code CLI (agent harness):
+    $ growthub t3code                           Interactive hub — health, prompt, session, configure, profile
+    $ growthub t3code health                    Check T3 Code CLI environment and readiness
+    $ growthub t3code prompt "fix the bug"      Headless single-prompt execution
+    $ growthub t3code session                   Launch interactive terminal session
+    $ growthub t3code session --yolo            Auto-approve all tool calls
+    $ growthub t3code profile                   Show Growthub workspace profile status
+    $ growthub t3code profile link              Link this harness to a Growthub workspace
+    $ growthub t3code profile unlink            Remove the Growthub profile
 
 Fork Sync Agent (keep forked worker kits in sync):
     $ growthub fork-sync                        Interactive hub — register, check drift, heal
