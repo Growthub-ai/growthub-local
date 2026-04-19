@@ -83,6 +83,7 @@ import type { WorkflowSummaryForIntelligence } from "./runtime/native-intelligen
 import { printPaperclipCliBanner } from "./utils/banner.js";
 import { resolvePaperclipHomeDir } from "./config/home.js";
 import type { SurfaceProfile } from "./config/schema.js";
+import { initTelemetry, track, shutdown as telemetryShutdown } from "./telemetry/index.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
@@ -849,9 +850,12 @@ async function runDiscoveryHub(opts?: {
     });
 
     if (p.isCancel(surfaceChoice)) {
+      track("discovery_hub_cancelled");
       p.cancel("Cancelled.");
       process.exit(0);
     }
+
+    track("discovery_hub_nav", { selection: surfaceChoice as string });
 
     if (surfaceChoice === "help") {
       p.note(
@@ -1093,8 +1097,10 @@ async function runDiscoveryHub(opts?: {
           ],
         });
 
-        if (p.isCancel(settingsChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        if (p.isCancel(settingsChoice)) { track("discovery_hub_cancelled"); p.cancel("Cancelled."); process.exit(0); }
         if (settingsChoice === "__back_to_hub") break;
+
+        track("discovery_hub_settings_nav", { selection: settingsChoice as string });
 
         // surfaceChoice alias keeps gate strings intact (check-fork-sync.mjs enforces these)
         const surfaceChoice = settingsChoice;
@@ -1305,6 +1311,9 @@ loadPaperclipEnvFile(bootstrapOptions.config);
 const bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 const surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? undefined);
 
+initTelemetry(resolveCliVersion());
+process.once("beforeExit", () => { void telemetryShutdown(); });
+
 program
   .name("growthub")
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
@@ -1409,6 +1418,8 @@ program
     await runDiscoveryHub();
   });
 
+const _commandStartTimes = new Map<string, number>();
+
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;
   const optionNames = new Set(actionCommand.options.map((option) => option.attributeName()));
@@ -1417,6 +1428,28 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
     hasContextOption: optionNames.has("context"),
   });
   loadPaperclipEnvFile(options.config);
+
+  const cmd = actionCommand.parent
+    ? `${actionCommand.parent.name()} ${actionCommand.name()}`
+    : actionCommand.name();
+  _commandStartTimes.set(cmd, Date.now());
+  track("cli_command_started", {
+    command: cmd,
+    surface: surfaceRuntime.capabilities.dxEnabled ? "dx" : "gtm",
+  });
+});
+
+program.hook("postAction", (_thisCommand, actionCommand) => {
+  const cmd = actionCommand.parent
+    ? `${actionCommand.parent.name()} ${actionCommand.name()}`
+    : actionCommand.name();
+  const start = _commandStartTimes.get(cmd);
+  track("cli_command_completed", {
+    command: cmd,
+    duration_ms: start !== undefined ? Date.now() - start : undefined,
+    surface: surfaceRuntime.capabilities.dxEnabled ? "dx" : "gtm",
+  });
+  _commandStartTimes.delete(cmd);
 });
 
 registerSharedCommands(program);

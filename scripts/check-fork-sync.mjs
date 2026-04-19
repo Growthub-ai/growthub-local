@@ -787,6 +787,60 @@ checkFileContains("cli/src/index.ts",
 );
 
 // ---------------------------------------------------------------------------
+// 22. PostHog Telemetry — structural invariants
+// ---------------------------------------------------------------------------
+
+// Telemetry module files exist
+checkFileExists("cli/src/telemetry/posthog.ts");
+checkFileExists("cli/src/telemetry/index.ts");
+
+// posthog.ts exports the three required functions
+checkFileContains("cli/src/telemetry/posthog.ts",
+  "export function initTelemetry",
+  "export function track",
+  "export async function shutdown",
+);
+
+// Opt-out env var is referenced
+checkFileContains("cli/src/telemetry/posthog.ts",
+  "GROWTHUB_TELEMETRY_DISABLED",
+  "GROWTHUB_POSTHOG_KEY",
+);
+
+// index.ts re-exports the public surface
+checkFileContains("cli/src/telemetry/index.ts",
+  "initTelemetry",
+  "track",
+  "shutdown",
+);
+
+// CLI entry point imports and initialises telemetry
+checkFileContains("cli/src/index.ts",
+  "./telemetry/index.js",
+  "initTelemetry(",
+  "telemetryShutdown",
+);
+
+// Discovery hub navigation is tracked
+checkFileContains("cli/src/index.ts",
+  "discovery_hub_nav",
+  "discovery_hub_settings_nav",
+  "discovery_hub_cancelled",
+);
+
+// Command lifecycle is tracked via commander hooks
+checkFileContains("cli/src/index.ts",
+  "cli_command_started",
+  "cli_command_completed",
+);
+
+// Kernel packet registered
+checkFileContains("docs/kernel-packets/README.md",
+  "PostHog Telemetry Kernel Packet",
+  "KERNEL_PACKET_POSTHOG_TELEMETRY.md",
+);
+
+// ---------------------------------------------------------------------------
 // Result
 // ---------------------------------------------------------------------------
 console.log("\n─────────────────────────────────────────────────────────────────────────");

@@ -19,6 +19,7 @@ Use it as the canonical lane for:
 | Fork Sync Agent Kernel Packet | `v1` | `./KERNEL_PACKET_FORK_SYNC_AGENT.md` |
 | Custom Workspace Starter Kit Kernel Packet | `v1` | `./KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md` |
 | Source Import Agent Kernel Packet | `v1` | `./KERNEL_PACKET_SOURCE_IMPORT_AGENT.md` |
+| PostHog Telemetry Kernel Packet | `v1` | `./KERNEL_PACKET_POSTHOG_TELEMETRY.md` |
 
 ## Packet Relationships
 
