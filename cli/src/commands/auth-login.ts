@@ -2,6 +2,7 @@ import os from "node:os";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import open from "open";
+import { track, setHostedUserId } from "../analytics/posthog.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 import { loadPaperclipEnvFile } from "../config/env.js";
 import { startLoginFlow } from "../auth/login-flow.js";
@@ -217,6 +218,9 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
 
     const effective = computeEffectiveProfile({ configPath });
     writeEffectiveProfileSnapshot(effective);
+
+    if (result.userId) setHostedUserId(result.userId);
+    track("growthub_auth_connected", { has_org: Boolean(result.orgId) });
 
     if (opts.json) {
       console.log(

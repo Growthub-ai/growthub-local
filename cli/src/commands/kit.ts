@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import * as p from "@clack/prompts";
 import { Command } from "commander";
 import pc from "picocolors";
+import { track, printActivationNudge } from "../analytics/posthog.js";
 import {
   downloadBundledKit,
   inspectBundledKit,
@@ -368,6 +369,9 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   const result = downloadBundledKit(resolvedId, opts.out, {
     onProgress: renderProgressBar,
   });
+
+  track("kit_download_completed", { kit_id: resolvedId });
+  printActivationNudge("kit_download");
 
   console.log("");
   console.log(pc.green(pc.bold("Kit exported successfully.")));

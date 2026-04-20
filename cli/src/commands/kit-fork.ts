@@ -22,6 +22,7 @@ import * as p from "@clack/prompts";
 import { Command } from "commander";
 import { registerKitForkRemoteSubcommands } from "./kit-fork-remote.js";
 import pc from "picocolors";
+import { track } from "../analytics/posthog.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { renderTable } from "../utils/table-renderer.js";
 import { renderProgressBar, formatRelative } from "../utils/progress.js";
@@ -701,6 +702,7 @@ async function runRegisterFlow(): Promise<void> {
       label: (labelInput as string).trim() || undefined,
     });
     spinner.stop(pc.green("Fork registered."));
+    track("fork_registered", { kit_id: reg.kitId });
     p.note(
       [
         `Fork ID:  ${pc.cyan(reg.forkId)}`,
@@ -757,6 +759,7 @@ async function runStatusFlow(): Promise<void> {
   try {
     const report = detectKitForkDrift(reg);
     spinner.stop(pc.green("Analysis complete."));
+    track("fork_sync_preview_started", { kit_id: reg.kitId, drift_severity: report.overallSeverity });
     printDriftReport(report);
   } catch (err) {
     spinner.stop(pc.red("Drift detection failed."));
@@ -857,6 +860,14 @@ async function runHealFlow(): Promise<void> {
       ? pc.green(isDryRun ? "Dry run complete." : "Heal complete.")
       : pc.red("Heal encountered errors."),
   );
+
+  if (job.status === "completed" && !isDryRun) {
+    track("fork_sync_heal_applied", {
+      kit_id: reg.kitId,
+      action_count: plan.actions.length,
+      applied_count: job.healResult?.appliedCount ?? 0,
+    });
+  }
 
   if (job.healResult) {
     const r = job.healResult;
