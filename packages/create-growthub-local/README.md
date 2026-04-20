@@ -1,75 +1,69 @@
-# create-growthub-local
+# @growthub/create-growthub-local
 
-`create-growthub-local` is the guided installer for Growthub Local.
+`@growthub/create-growthub-local` is the guided installer for Growthub Local.
 
-It now handles three lanes in one command, so a fresh user can get either the
-Paperclip Local App or a Custom Workspace Starter workspace in a single step —
-no second `growthub starter init` call required.
+It is designed for immediate value first: choose a profile, create a usable local environment, then optionally activate hosted lanes later.
 
 ## Quickstart
 
 ```bash
-# Interactive discovery hub (kits / templates / workflows / agent harness / settings)
 npm create growthub-local@latest
+```
 
-# Paperclip Local App profiles
+## Profile-first install
+
+The installer offers profile selection before command/harness depth:
+
+```bash
 npm create growthub-local@latest -- --profile gtm
 npm create growthub-local@latest -- --profile dx
-
-# Custom Workspace Starter (zero second step — scaffolds + registers as a fork)
 npm create growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
-## Installer Paths
+## First-run outcomes
 
-- **Paperclip Local App** (`--profile gtm|dx`)
-  - runs `growthub onboard --yes` for the selected surface profile
-- **Custom Workspace Starter** (`--profile workspace`)
-  - runs `growthub starter init --out <path>` against the bundled
-    `growthub-custom-workspace-starter-v1` kit
-  - composes the already-shipping primitives — `copyBundledKitSource`,
-    `registerKitFork`, `writeKitForkPolicy`, `appendKitForkTraceEvent`,
-    and (optionally) `createFork` via the first-party GitHub integration
-  - no cross-package coupling beyond the existing `@growthub/cli` dep pin
-- **Discovery mode** (no profile)
-  - opens `growthub discover` so users can pick Worker Kits, Templates,
-    Workflows, Local Intelligence, Agent Harness, Settings, or Help
+After install, users typically choose one of these six outcomes:
 
-## Options
+1. import a GitHub repo into a governed workspace
+2. import a skills.sh skill into a governed workspace
+3. start from a custom workspace starter
+4. download a worker kit
+5. connect Growthub account after local value is proven
+6. optionally activate upgrade path for hosted depth
+
+## Installer options
 
 | Flag | Applies to | Description |
 |---|---|---|
-| `--profile gtm\|dx\|workspace` | all | Pick an install lane |
-| `--run` | `dx`, `gtm`, discovery | Start Growthub immediately after saving config |
+| `--profile gtm\|dx\|workspace` | all | Pick an install profile |
+| `--run` | `dx`, `gtm`, discovery | Start Growthub immediately after config |
 | `--data-dir <path>` | `dx`, `gtm`, discovery | Override install directory (default: `./growthub-local`) |
 | `--config <path>` | `dx`, `gtm`, discovery | Use a custom config path |
-| `--out <path>` | `workspace` | Destination directory for the new workspace |
+| `--out <path>` | `workspace` | Destination for workspace scaffold |
 | `--kit <kit-id>` | `workspace` | Source kit id (default: `growthub-custom-workspace-starter-v1`) |
-| `--name <label>` | `workspace` | Human label for the fork |
-| `--upstream <owner/repo>` | `workspace` | When set, also creates a remote GitHub fork |
-| `--destination-org <org>` | `workspace` | Create the GitHub fork under an org |
-| `--fork-name <name>` | `workspace` | Override the GitHub fork name |
-| `--remote-sync-mode <mode>` | `workspace` | Initial `policy.remoteSyncMode` — `off` (default), `branch`, `pr` |
-| `--json` | `workspace` | Emit machine-readable output from `growthub starter init` |
+| `--name <label>` | `workspace` | Human label for fork registration |
+| `--upstream <owner/repo>` | `workspace` | Optionally create remote GitHub fork |
+| `--destination-org <org>` | `workspace` | Create fork under org |
+| `--fork-name <name>` | `workspace` | Override GitHub fork name |
+| `--remote-sync-mode <mode>` | `workspace` | Initial policy mode: `off`, `branch`, `pr` |
+| `--json` | `workspace` | Emit machine-readable output |
 
-## After install — Paperclip Local App
+## Post-install examples
 
 ```bash
-cd growthub-local
+# Re-open the CLI discovery hub
+npx growthub discover
+
+# Run local app runtime
 npx growthub run
 ```
 
-## After install — Custom Workspace Starter
+## Optional upgrade activation
 
-```bash
-cd my-workspace
+Local value comes first. Activation is optional and additive:
 
-# Inspect your new fork (registration + policy + trace)
-npx growthub kit fork status <fork-id>
-
-# Re-open the discovery hub any time
-npx growthub
-```
+[![Activate on Growthub](https://img.shields.io/badge/Activate-Growthub-111827?style=for-the-badge)](https://www.growthub.ai/)
+[![First Month](https://img.shields.io/badge/First%20Month-%241-22c55e?style=for-the-badge)](https://www.growthub.ai/)
 
 ## Requirements
 
@@ -78,5 +72,6 @@ npx growthub
 
 ## Links
 
-- [Growthub Local](https://github.com/Growthub-ai/growthub-local)
+- [Growthub Local README](https://github.com/Growthub-ai/growthub-local#readme)
 - [@growthub/cli package docs](https://github.com/Growthub-ai/growthub-local/tree/main/cli)
+- [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)

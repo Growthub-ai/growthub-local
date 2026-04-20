@@ -1,38 +1,30 @@
 # growthub-local — Repo Agent Rules
 
-This file is the repo-specific agent contract for `growthub-local`.
+This is the repo-specific instruction contract for agents working in `growthub-local`.
 
-## Required grounding
+## Canonical Mental Model
 
-Before changing repo docs or instructions, read:
+Anchor all docs and guidance to the same user journey described in `README.md`:
 
-- `AGENTS.md`
-- `README.md`
-- `scripts/runtime-control.sh`
-- `cli/src/index.ts`
+`repo / skill / starter / kit -> governed local workspace -> safe customization -> safe sync -> optional hosted authority`
 
-Use `cli/src/commands/` when a command surface needs more detail than the top-level help text.
+If instructions drift from this model, update or remove them.
 
-## Core rules
+## Required Grounding Before Edits
 
-1. Work in a feature branch or git worktree, not on `main`.
-2. Treat `scripts/runtime-control.sh` as the canonical source-dev runtime path.
-3. Keep repo agent docs focused on agent workflow and current CLI discovery.
-4. Replace stale instructions directly instead of layering patches on top of old prose.
-5. Do not invent discovery options or command paths that the current repo does not ship.
+Read, in order:
 
-## Documentation lane split
+1. `README.md`
+2. `AGENTS.md`
+3. `cli/src/index.ts`
+4. `cli/src/commands/`
+5. `scripts/runtime-control.sh`
 
-Keep docs and instructions separated by lane:
+Do not preserve conflicting historical instructions in active docs.
 
-- CLI/open-source lane: user features, discovery UX, command behavior, contribution flow
-- maintainer/super-admin lane: merge governance, release orchestration, npm publication steps
+## Runtime Contract
 
-Paperclip/admin operational scripts are lower priority unless the task explicitly targets them.
-
-## Canonical runtime
-
-Use:
+Use the canonical runtime script:
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -43,53 +35,31 @@ scripts/runtime-control.sh status
 scripts/runtime-control.sh url
 ```
 
-Current runtime facts from source:
+Use `GH_SERVER_PORT` override when needed.
 
-- `GH_SERVER_PORT` defaults to `3100`
-- `GH_UI_PORT` defaults to `5173`
-- the UI is started with `VITE_API_ORIGIN=http://127.0.0.1:${GH_SERVER_PORT}`
-- the server runs in `dev:watch`
+## Discovery Contract
 
-If the API is really on `3101`, set `GH_SERVER_PORT=3101` when starting the runtime.
+Primary command surfaces:
 
-## Current CLI discovery surface
+- `growthub`
+- `growthub discover`
 
-The only documented discovery entrypoint for this repo is:
+Preview parity command:
 
 ```bash
 zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
 ```
 
-Current discovery options:
+Preview docs must match shipped CLI behavior, not speculative or stale menu trees.
 
-- `Worker Kits`
-- `Templates`
-- `Workflows`
-- `Local Intelligence`
-- `Agent Harness` (filter by type: Paperclip Local App, Open Agents, Qwen Code CLI, T3 Code CLI)
-- `Settings` (contains: Connect Growthub Account, GitHub Integration, Fork Sync Agent, Service Status, Custom Workspace Starter, Fleet Operations)
-- `Help CLI`
+## Non-Negotiables
 
-If repo docs mention discovery, they should use that command path and reflect this structure.
+- Work in a feature branch or worktree, not directly on `main`.
+- Replace stale instructions directly; avoid additive "correction layers."
+- Do not run `node scripts/worktree-bootstrap.mjs` unless explicitly assigned.
+- Before push, run `bash scripts/pr-ready.sh`.
 
-## Anti-patterns
-
-- Do not run `node scripts/worktree-bootstrap.mjs`.
-- Do not manually copy `ui/src` or `server/src` into `growthub-core`.
-- Do not describe raw two-terminal dev loops as the repo default when `scripts/runtime-control.sh` is the documented control surface.
-- Do not leave old discovery menus or old command lists in repo docs after the source changes.
-
-## Before pushing
-
-Run:
-
-```bash
-bash scripts/pr-ready.sh
-```
-
-## Guardrails
-
-Before destructive git operations, run:
+Before destructive git operations:
 
 ```bash
 bash scripts/guard.sh check-command "<command>"

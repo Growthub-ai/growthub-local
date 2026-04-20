@@ -1,85 +1,75 @@
 # Contributing to Growthub Local
 
-Growthub Local is open source and agent-native. Contributions from humans and AI agents follow the same pipeline.
+Growthub Local is open source and agent-native. Contributions from humans and AI agents follow the same quality gates.
 
 ---
 
-## Quick rules
+## Product Grounding First
 
-| Rule | Value |
-|---|---|
-| Branch prefix | `feat/` `fix/` `docs/` `chore/` `ci/` `refactor/` `adapter/` `sync/` |
-| PR title | Conventional Commits: `type(scope): description` (min 10 chars after colon) |
-| PR description | Required — min 20 chars, describe what and why |
-| lockfile | Never commit `pnpm-lock.yaml` — CI owns it |
-| Review | All PRs require maintainer approval (`@antonioromero1220`) |
+Before coding or documenting, align to the canonical model in `README.md`:
+
+`repo / skill / starter / kit -> governed workspace -> customize safely -> sync safely -> optional hosted authority`
+
+If your change conflicts with that model, fix the change or update the docs in the same PR.
 
 ---
 
-## CI checks (all must pass)
+## Quick Rules
 
-| Check | What it verifies |
-|---|---|
-| `verify` | Freeze boundary exists, package manifests are valid, version pins are consistent |
-| `validate` | Branch name, PR title format, description present, auto-labels PR type and agent vs human |
-| `smoke` | Source contract tokens present in key files, version consistency across packages |
+- Branch prefixes: `feat/` `fix/` `docs/` `chore/` `ci/` `refactor/` `adapter/` `sync/`
+- PR titles must follow Conventional Commits: `type(scope): description`
+- PR description is required (explain what changed and why)
+- Maintainer approval is required before merge
 
 ---
 
-## Workflow separation (important)
+## Workflow Separation
 
-### Open-source contributor workflow (default)
+### Contributor lane (default)
 
-Most contributors and agents should stay in this lane:
+Most work belongs here:
 
-1. implement scoped changes
+1. implement scoped change
 2. run local validation
 3. open PR
-4. pass `smoke` + `validate` + `verify`
-5. maintainer reviews/merges
+4. pass CI
+5. maintainer review + merge
 
-### Maintainer/super-admin workflow (release/admin lane)
+### Maintainer lane (release/admin)
 
-This lane is maintainer-owned and lower priority for normal contributors:
+This is maintainer-owned:
 
 - release timing and npm publication
-- post-merge private-monorepo sync governance
-- super-admin operational scripts/policies
+- privileged operational governance
 
 If your PR is feature/docs/bugfix scope, do not mix in release-admin changes.
 
 ---
 
-## What this repo owns
+## What This Repo Owns
 
-This repo is a **published slice** of the private monorepo. It contains:
+Key surfaces:
 
 - `cli/` — `@growthub/cli` (the `growthub` command)
 - `packages/create-growthub-local/` — `@growthub/create-growthub-local` installer
-- `packages/shared/` — `@paperclipai/shared` types
-- `server/` — `@paperclipai/server` core HTTP server
-- `ui/` — Vite/React UI (GTM + DX surfaces)
-
-It does **not** contain adapter packages, the DB package, or plugin infrastructure — those live in the private monorepo.
+- `packages/shared/` — shared runtime/types
+- `server/` and `ui/` — local control-plane runtime surfaces
 
 ---
 
-## Layer guide — where to make changes
+## Where To Make Changes
 
-| What you want to change | File location |
-|---|---|
-| Server behavior, API routes, agent execution | `server/src/` |
-| GTM UI | `ui/src/gtm/` |
-| DX UI | `ui/src/` (root App) |
-| CLI commands | `cli/src/commands/` |
-| Installer logic | `packages/create-growthub-local/bin/` |
-| Shared types | `packages/shared/src/` |
+- CLI commands and discovery: `cli/src/commands/`, `cli/src/index.ts`
+- Installer flow: `packages/create-growthub-local/bin/`
+- Server behavior/API: `server/src/`
+- UI behavior: `ui/src/`
+- Shared contracts/types: `packages/shared/src/`
 
 ---
 
 ## Canonical dev loop
 
-**Default:** from the repo root, use **`scripts/runtime-control.sh`** so cleanup, env (`PAPERCLIP_CONFIG`, `PAPERCLIP_SURFACE_PROFILE=gtm`, `VITE_API_ORIGIN`), and branch checkout stay consistent:
+From repo root, use `scripts/runtime-control.sh`:
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -90,60 +80,23 @@ scripts/runtime-control.sh status
 scripts/runtime-control.sh url
 ```
 
-**Ports:** The script defaults `GH_SERVER_PORT=3100` and sets `VITE_API_ORIGIN` from it. The Vite dev proxy in `ui/vite.config.ts` otherwise defaults to **3101**. If your `pnpm --dir server run dev:watch` process listens on **3101**, run with `GH_SERVER_PORT=3101` so the UI hits the correct API.
-
-**Anti-patterns for agents:** Do not run **`node scripts/worktree-bootstrap.mjs`**. Do not improvise raw `pnpm --dir server` + `pnpm --dir ui` as a substitute for **`scripts/runtime-control.sh`** unless a maintainer explicitly instructs you. Do not manually copy sources into **growthub-core** for validation.
-
-Open the surface you are testing — for example GTM:
-
-```text
-http://127.0.0.1:5173/gtm/<COMPANY_PREFIX>/workspace
-```
-
-Verify health against the **same API port** you configured (`GH_SERVER_PORT` / your server config), for example:
+If API is not on default port:
 
 ```bash
-curl "http://127.0.0.1:${GH_SERVER_PORT:-3100}/api/health"
-curl http://127.0.0.1:5173/api/health
+GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
 ```
 
-**Grounding:** Never treat prose or old PRs as semver truth — read **`docs/ARTIFACT_VERSIONS.md`** and the `package.json` files on your branch.
+Anti-patterns:
+
+- do not run `node scripts/worktree-bootstrap.mjs` unless explicitly assigned
+- do not replace the runtime script with ad-hoc server/UI loops as default
+- do not rely on stale docs over source behavior
 
 Run the pre-push gate before any push:
 
 ```bash
 bash scripts/pr-ready.sh
 ```
-
-## Browser agent validation (optional, lower priority)
-
-Run this only when your change explicitly touches browser-agent isolation or heartbeat dispatch behavior. Otherwise treat it as out of scope for routine CLI/docs contributions.
-
-When needed, browser-agent behavior must be validated through the same runtime path that ships:
-
-1. create a real issue
-2. assign it to the target browser agent
-3. let heartbeat dispatch the run on `issue_assigned`
-4. validate the exact run with observability
-
-Do **not** treat a bare GTM browser invoke as the source of truth for isolation behavior.
-
-Use:
-
-```bash
-bash scripts/observability/watch-agents.sh <company-id> --today
-bash scripts/observability/tail-run.sh <agent-prefix> <run-prefix>
-```
-
-Validation should confirm:
-
-- the run is issue-bound (`invocationSource=assignment`)
-- the correct `issueId` is present in heartbeat context
-- `paperclipBrowserIsolation` is present on the run
-- concurrent browser agents hold distinct active Chrome lease slots
-- live run traces show distinct workstreams, not drift into the other agent's task
-
----
 
 ## Submitting a PR
 
@@ -160,24 +113,18 @@ git checkout -b feat/your-feature
 # 4. Run pre-push gate
 bash scripts/pr-ready.sh
 
-# 5. Commit and push
+# 5. Commit and push (example)
 git commit -m "feat(server): add your change"
 git push origin feat/your-feature
 ```
 
-CI runs automatically. All 3 checks must pass. Once green, the maintainer reviews and merges.
+CI runs automatically. Once green, maintainer review controls merge.
 
 ---
 
 ## Agent-submitted PRs
 
 AI agents (Claude, Codex, Cursor, etc.) can submit PRs directly. The pipeline auto-detects `[bot]` actors and applies the `agent-pr` label. Structure your commits and branch names the same way a human would — no special setup needed.
-
----
-
-## After merge
-
-When a PR merges to `main`, the pipeline automatically notifies the private monorepo to pull in the validated changes. The maintainer reviews the sync PR there before it lands in the private codebase. You don't need to do anything after your PR merges.
 
 ---
 
@@ -199,18 +146,16 @@ Each worktree gets its own server port (3101+) and embedded Postgres instance. Y
 
 ## Version bumps
 
-When **`@growthub/cli`** or **`@growthub/create-growthub-local`** behavior that consumers rely on changes, bump and align in **one PR**:
+When published package behavior changes, bump and align in one PR:
 
 - bump `cli/package.json` `version`
 - bump `packages/create-growthub-local/package.json` `version`
 - set `packages/create-growthub-local/package.json` `dependencies["@growthub/cli"]` to the **same** semver as the CLI
 
-Pure documentation or repo-only hygiene that does **not** change published package behavior does not require a version bump — but the PR description should still say what stayed **out of scope** for npm so reviewers do not assume a release. See **`docs/ARTIFACT_VERSIONS.md`**.
-
-The browser-agent isolation work is npm-facing runtime behavior and requires the coordinated bump.
+Docs-only changes do not require a package bump.
 
 ---
 
 ## Release
 
-Releases are triggered manually by the maintainer only. Contributing a feature does not automatically publish it — the maintainer controls when stable versions ship to npm.
+Releases are maintainer-triggered. Contributor PRs do not publish npm artifacts automatically.

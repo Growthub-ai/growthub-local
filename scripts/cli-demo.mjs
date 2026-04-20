@@ -133,12 +133,17 @@ function runInstaller(args) {
 }
 
 function runCli(args) {
-  spawnNode([
-    "--import",
-    tsxLoaderPath,
-    cliSourceEntrypointPath,
-    ...args,
-  ]);
+  const useSourceMode = process.env.GROWTHUB_DEMO_USE_SOURCE === "1";
+  if (useSourceMode) {
+    spawnNode([
+      "--import",
+      tsxLoaderPath,
+      cliSourceEntrypointPath,
+      ...args,
+    ]);
+    return;
+  }
+  spawnNode([cliDistPath, ...args]);
 }
 
 function runHostedBridgePreview() {

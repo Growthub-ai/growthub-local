@@ -2,314 +2,446 @@
 
 ![Growthub Local Logo](./ui/public/growthub%20logo%20copy.png)
 
-Growthub is an ecosystem for agents and humans where the CLI, machine bridge, profiles, artifacts, and integrations are first-class primitives.
+**Turn a repo, skill, or starter into a governed agent environment you can customize, keep current, and run through a CLI that works for both humans and agents.**
 
-The CLI is the local control plane, the hosted app is the identity and connection authority, and Worker Kits are the portable execution unit. That is the foundation of the API ecosystem and enterprise platform.
+Growthub Local is a **local control plane for portable agent environments**.
 
-Growthub Local is a true agentic-first CLI ecosystem spawner designed for broad, production-grade use cases.
+- **The CLI** is the local executor
+- **The hosted app** is the identity and connection authority
+- **Worker Kits** are the portable execution unit
+- **Forks** are your customizable, policy-governed branch of that infrastructure
 
 ![npm](https://img.shields.io/npm/v/@growthub/cli?label=%40growthub%2Fcli)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 
-**Quick links:** [Ecosystem Map](#ecosystem-map) · [Quickstart](#quickstart) · [Feature Grid](#feature-grid) · [CLI Ecosystem Surfaces](#cli-ecosystem-surfaces) · [Docs](#docs)
+**Quick links:** [Start here](#start-here) · [Why this exists](#why-this-exists) · [What you can do](#what-you-can-do) · [Install](#install) · [First-run paths](#first-run-paths) · [How it works](#how-it-works) · [CLI surfaces](#cli-surfaces) · [Docs](#docs)
 
-## Why Growthub Local
+---
 
-| Ecosystem primitive | What it means |
-| --- | --- |
-| Local control plane | One CLI coordinates runtime, kits, templates, workflows, and harnesses. |
-| Identity bridge | Hosted auth stays canonical while machine context stays local-first. |
-| Portable execution | Worker Kits package complete runnable environments, not partial snippets. |
+## Start here
 
-## Feature Grid
-
-| Surface | Value |
-| --- | --- |
-| 🤖 Agent Harness | Paperclip Local App + Open Agents + Qwen Code in one flow |
-| 🧰 Worker Kits | Portable, validated agent environments |
-| 📚 Templates | Reusable creative and artifact primitives |
-| 🔗 Workflows | Contracts, pipelines, orchestration |
-| 🧠 Local Intelligence | Local model setup + chat flow |
-| 🔐 Connect Growthub Account | Hosted identity + local machine bridge |
-| ❓ Help CLI | Guided command navigation |
-
-## Quickstart
+If you only do one thing, do this:
 
 ```bash
-# Guided installer
 npm create growthub-local@latest
+```
 
-# Direct profile install
+Then choose one of these six paths:
+
+1. [**Import a GitHub repo into a governed workspace**](#1-import-a-repo)
+2. [**Import a skills.sh skill into a governed workspace**](#2-import-a-skill)
+3. [**Start from a custom workspace starter**](#3-start-from-a-workspace-starter)
+4. [**Download a worker kit**](#4-download-a-worker-kit)
+5. [**Connect your Growthub account after local value is clear**](#5-connect-your-growthub-account)
+6. [**Activate Growthub upgrade path (optional)**](#6-activate-growthub-upgrade-path-optional)
+
+---
+
+## Why this exists
+
+Most tools make you choose between:
+
+- **open-source freedom**
+- **deep customization**
+- **staying current with upstream**
+- **enterprise trust and control**
+
+Growthub Local is built so you do not have to choose.
+
+It gives you a control plane where you can:
+
+- start from a repo, skill, starter, or kit
+- turn it into a governed local environment
+- keep your customizations
+- sync safely with upstream over time
+- optionally layer in hosted identity, authority, and premium capabilities later
+
+---
+
+## What you can do
+
+### Turn sources into real environments
+
+Import a public or private GitHub repo, or a skills.sh skill, into a starter-derived workspace with policy, trace, and fork registration from the first byte.
+
+### Fork and customize without losing the upgrade path
+
+Use self-healing fork sync to detect upstream drift, protect your local changes, and apply safe additive updates.
+
+### Use portable worker kits
+
+Download complete, validated agent environments instead of starting from a blank prompt.
+
+### Run workflows and pipelines
+
+Use saved workflows, templates, and dynamic pipelines through the CLI, backed by hosted execution where needed.
+
+### Use local intelligence and harnesses
+
+Run local model flows and external harnesses like Open Agents and Qwen Code through the same CLI ecosystem.
+
+### Add authority when needed
+
+Keep the open-source substrate useful by default, then add hosted identity, capability gating, and authority-backed activation only where it matters.
+
+---
+
+## Install
+
+### Guided installer
+
+```bash
+npm create growthub-local@latest
+```
+
+The guided installer is **profile-first**:
+
+1. choose your base profile (`gtm`, `dx`, or `workspace`)
+2. then move into command/harness lanes (Open Agents, Qwen Code, workflows, kits, auth)
+
+### Direct profile install
+
+```bash
 npm create growthub-local@latest -- --profile gtm
 npm create growthub-local@latest -- --profile dx
-
-# Custom Workspace Starter (scaffold + register as a fork in one shot)
 npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+```
 
-# CLI-only install
+Use profile selection to choose the initial environment shape before deeper workflow and harness configuration.
+
+### CLI-only install
+
+```bash
 npm install -g @growthub/cli
+```
 
-# Portable Source → Agent Environment Pipeline
+Growthub Local currently ships `@growthub/cli@0.7.3` and the guided installer `@growthub/create-growthub-local@0.4.2`, with the installer pin aligned to the CLI version.
+
+---
+
+## First-run paths
+
+### 1) Import a repo
+
+```bash
 growthub starter import-repo octocat/hello-world --out ./ws-repo
+```
+
+Use this when you want to turn an open-source repository into a governed local environment with starter shell, policy, trace, and fork registration.
+
+### 2) Import a skill
+
+```bash
 growthub starter import-skill anthropics/skills/frontend-design --out ./ws-skill
 growthub starter browse-skills --scope trending --query marketing
 ```
 
-Open discovery:
+Use this when you want to turn a portable skill into a governed environment you can continue to evolve locally.
+
+### 3) Start from a workspace starter
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+npm create growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
-## Core Commands
+Use this when you want the cleanest path to a custom workspace without importing an external source first.
+
+### 4) Download a worker kit
 
 ```bash
-# Main discovery
+growthub kit
+growthub kit list
+growthub kit inspect <kit-id>
+growthub kit download <kit-id>
+```
+
+Use this when you want a prepackaged environment with runtime assumptions, templates, setup files, and agent contract already in place.
+
+### 5) Connect your Growthub account
+
+```bash
+growthub auth login
+growthub auth whoami
+```
+
+Use this after local value is clear, when you want hosted identity, connection authority, workflow access, or premium activation flows.
+
+### 6) Activate Growthub upgrade path (optional)
+
+This is intentionally **after** immediate local value discovery.
+
+If you want full hosted activation lanes and enterprise customization support, activate on Growthub:
+
+- [Open Growthub Activation](https://www.growthub.ai/)
+- [Plans and pricing](https://www.growthub.ai/)
+- [Start with first-month $1 path](https://www.growthub.ai/)
+
+Upgrade positioning:
+
+- keep free local CLI value first
+- activate when you want expanded hosted capability depth
+- first-month offer gives a low-friction path to unlock full CLI-connected capability lanes
+
+---
+
+## The simplest mental model
+
+```text
+Discover source
+  -> create environment
+  -> register fork
+  -> customize safely
+  -> sync safely
+  -> optionally activate hosted authority
+```
+
+Or more concretely:
+
+```text
+repo / skill / starter / kit
+  -> local workspace
+  -> governed fork
+  -> self-healing lifecycle
+  -> optional hosted identity + capability activation
+```
+
+---
+
+## How it works
+
+### The portable unit
+
+A governed fork carries its own state in:
+
+```text
+<forkPath>/.growthub-fork/
+├── fork.json
+├── policy.json
+├── trace.jsonl
+└── authority.json   # when present
+```
+
+That means:
+
+- `fork.json` = identity
+- `policy.json` = operator contract
+- `trace.jsonl` = append-only history
+- `authority.json` = signed attestation when authority is attached
+
+The canonical state lives in the artifact itself. Discovery indexes and CLI-owned homes are supporting surfaces, not the source of truth.
+
+### The control-plane split
+
+Growthub Local is intentionally split into:
+
+- **local CLI / machine layer** for execution, forks, kits, workflows, and harnesses
+- **hosted authority layer** for identity, connections, and higher-trust capability flows
+
+---
+
+## CLI surfaces
+
+The CLI is multiple product surfaces, not one. The public docs and READMEs expose these core lanes:
+
+- **Agent Harness**
+- **Worker Kits**
+- **Templates**
+- **Workflows**
+- **Local Intelligence**
+- **Connect Growthub Account**
+
+### Main commands
+
+```bash
 growthub
 growthub discover
 
-# Paperclip local app
-growthub onboard
-growthub run
-
-# Open Agents harness
-growthub open-agents
-growthub open-agents config
-growthub open-agents status
-growthub open-agents prompt "your task"
-growthub open-agents chat <session-id>
-
-# Qwen harness
-growthub qwen-code
-growthub qwen-code health
-growthub qwen-code prompt "your task"
-growthub qwen-code session
-
-# Kits, templates, workflows
 growthub kit
 growthub template
 growthub workflow
 growthub pipeline assemble
 
-# Hosted auth bridge
+growthub open-agents
+growthub qwen-code
+
 growthub auth login
 growthub auth whoami
 growthub auth logout
 ```
 
-## CLI Ecosystem Surfaces
-
-The CLI is multiple product surfaces, not one.
-
-<a id="ecosystem-map"></a>
-### Ecosystem Map
-
 <details>
-<summary><strong>Open ecosystem chart</strong> — click section links to jump</summary>
+<summary><strong>Command examples (accordion)</strong></summary>
 
-```mermaid
-flowchart TD
-    A["Growthub Local"] --> B["1. Kit System"]
-    A --> C["2. Template System"]
-    A --> D["3. Capability System"]
-    A --> E["4. Workflow + Pipeline"]
-    A --> F["5. Knowledge Sync"]
-    A --> G["6. Local Models + Harnesses"]
-    A --> H["Hosted Auth Bridge"]
-    A --> I["Runtime Control"]
-    A --> J["Kernel Packets"]
-```
-
-**Surface index**
-
-- [1) Kit System](#kit-system) — full environment provisioning and validation
-- [2) Template System](#template-system) — reusable artifact library
-- [3) Capability System](#capability-system) — contract discovery + machine-scoped resolution
-- [4) Workflow + Pipeline System](#workflow--pipeline-system) — dynamic node orchestration graph layer
-- [5) Knowledge Sync Surface](#knowledge-sync-surface) — two-way learning lane
-- [6) Local Models + Harnesses](#local-models--harnesses) — local models + harness execution
-- [Harness Authentication](#harness-authentication-native-cli) — native secure auth setup
-- [Local Runtime Control](#local-runtime-control) — canonical local runtime commands
-- [Docs](#docs) — contributor and architecture references
-
-</details>
-
-<a id="kit-system"></a>
-<details>
-<summary><strong>1) Kit System</strong> — full local app download and environment provisioning</summary>
-
-- `growthub kit` interactive browser with type filtering
-- `growthub kit download` complete worker environment download with fuzzy slug resolution
-- `growthub kit families` taxonomy (`studio`, `workflow`, `operator`, `ops`)
-- `growthub kit validate` schema and contract checks
-- kit payload includes entrypoint, agent contract, templates, frozen assets, setup scripts, and env examples
-- social media kits ship as `growthub-postiz-social-v1` (self-hosted Postiz) and `growthub-zernio-social-v1` (hosted Zernio REST API, 14 platforms)
-
-</details>
-
-<a id="template-system"></a>
-<details>
-<summary><strong>2) Template System</strong> — shared artifact library with structured filtering</summary>
-
-- `growthub template` interactive picker
-- artifact model supports ad-format and scene-module flows
-- family/type/subtype-compatible filtering
-- print/copy/fuzzy-resolve without coupling to kit installs
-
-</details>
-
-<a id="capability-system"></a>
-<details>
-<summary><strong>3) Capability System</strong> — CMS node discovery and machine-scoped resolution</summary>
-
-- `growthub capability` interactive capability browser
-- `growthub capability resolve` machine/user/org scoped execution visibility
-- full contract introspection (inputs, outputs, execution strategy, binding requirements)
-
-</details>
-
-<a id="workflow--pipeline-system"></a>
-<details>
-<summary><strong>4) Workflow + Pipeline System</strong> — dynamic node orchestration graphs</summary>
-
-- `growthub workflow` and saved workflow lifecycle actions
-- `growthub pipeline assemble` dynamic hosted pipeline composition
-- orchestration sits on full local runtime (server, db, ui, heartbeat, plugins, worktrees, observability)
-
-</details>
-
-<a id="knowledge-sync-surface"></a>
-<details>
-<summary><strong>5) Knowledge Sync Surface</strong> — compound learnings and knowledge evolution lane</summary>
-
-- supports the two-way knowledge-sync direction for knowledge-engine
-- designed as a first-class extension for building specialized intellegence layer for agents
-
-</details>
-
-<a id="local-models--harnesses"></a>
-<details>
-<summary><strong>6) Local Models + Harnesses</strong> — local custom models and external harness primitives</summary>
-
-- local intelligence adapters for machine-local model flows
-- harness-first integration for Open Agents and Qwen Code with native CLI auth/setup
-
-</details>
-
-## Harness Authentication (Native CLI)
-
-### Open Agents
-
-- Upstream: [vercel-labs/open-agents](https://github.com/vercel-labs/open-agents)
-- Auth strategies in `Setup & Configure`:
-  - `none`
-  - `api-key`
-  - `vercel-managed`
-- API keys are saved in secure local harness storage.
-
-### Qwen Code CLI
-
-- Upstream: [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
-- `Configure` supports secure provider key setup/clear for:
-  - `DASHSCOPE_API_KEY`
-  - `OPENAI_API_KEY`
-  - `ANTHROPIC_API_KEY`
-  - `GOOGLE_API_KEY`
-- Runtime uses both shell env + secure local harness keys.
-
-## Local Runtime Control
-
-From repo root:
+### Discovery + first-run
 
 ```bash
-scripts/runtime-control.sh up-main
-scripts/runtime-control.sh up-branch <branch>
-scripts/runtime-control.sh up-pr <pr-number>
-scripts/runtime-control.sh status
-scripts/runtime-control.sh stop
-scripts/runtime-control.sh url
+growthub discover
 ```
 
-If the API is on `3101`:
+Example:
+
+```text
+Growthub Local
+-> Worker Kits / Templates / Workflows / Local Intelligence / Agent Harness / Settings
+```
+
+### Kits
 
 ```bash
-GH_SERVER_PORT=3101 scripts/runtime-control.sh up-main
+growthub kit list
+growthub kit inspect <kit-id>
+growthub kit download <kit-id>
 ```
+
+Example:
+
+```text
+Lists bundled kits, shows contract details, then materializes selected kit locally.
+```
+
+### Workflows + pipelines
+
+```bash
+growthub workflow
+growthub pipeline assemble
+```
+
+Example:
+
+```text
+Select Saved Workflows, Templates, or Dynamic Pipelines and execute through hosted bridge lanes.
+```
+
+### Harness lanes
+
+```bash
+growthub open-agents
+growthub qwen-code
+```
+
+Example:
+
+```text
+Run harness health/setup/prompt/session flows with local credential handling.
+```
+
+### Auth + activation bridge
+
+```bash
+growthub auth login
+growthub auth whoami
+```
+
+Example:
+
+```text
+Attaches hosted identity/authority after local value is already established.
+```
+</details>
+
+<details>
+<summary><strong>Surface details (accordion)</strong></summary>
+
+### Workflows
+
+The workflow surface currently supports three paths:
+
+- **Saved Workflows**
+- **Templates**
+- **Dynamic Pipelines**
+
+Use workflows when you want typed orchestration over CMS-backed nodes and hosted execution.
+
+Use repo import, skill import, kits, or starter workspaces when you want the fastest first-run environment creation.
+
+### Harnesses
+
+Growthub Local includes harness-first integration for:
+
+- **Open Agents**
+- **Qwen Code CLI**
+
+These run through native CLI flows with secure local credential handling and guided setup/configuration surfaces.
+
+</details>
+
+---
+
+## Forking and self-healing
+
+Once a workspace is registered as a fork, you can keep customizing it without giving up the ability to stay current with upstream.
+
+Growthub Local ships a policy-driven, trace-backed, self-healing fork sync agent that can:
+
+- detect drift
+- preview changes
+- apply safe additive updates
+- preserve protected paths
+- use optional GitHub integration and draft PR flows
+- maintain append-only trace of lifecycle events
+
+This is the core promise:
+
+**customize freely, without accepting decay as the price of customization**
+
+---
+
+## Growthub account connection
+
+You do **not** need to connect a Growthub account to get value from the open-source substrate.
+
+You connect your account when you want:
+
+- hosted workflow access
+- machine bridge flows
+- integration bridge flows
+- higher-trust or premium activation surfaces
+
+That separation is intentional.
+
+### Upgrade CTA (optional, explicit)
+
+You can stay local-first indefinitely. When you are ready to activate deeper hosted lanes:
+
+[![Activate on Growthub](https://img.shields.io/badge/Activate-Growthub-111827?style=for-the-badge)](https://www.growthub.ai/)
+[![First Month](https://img.shields.io/badge/First%20Month-%241-22c55e?style=for-the-badge)](https://www.growthub.ai/)
+
+This keeps the mental model intact:
+
+1. get immediate free local value
+2. prove fit on your workflow
+3. activate hosted depth when needed
+
+---
 
 ## Docs
 
-- [Contributing](./CONTRIBUTING.md)
+### Start here
+
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
-- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
-- [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
-- [Agent Harness Auth Primitive](./docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
+
+### Architecture and protocol
+
 - [Kernel Packet Registry](./docs/kernel-packets/README.md)
-- [Custom Workspace Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACES.md)
-- [Agent Harness Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_AGENT_HARNESS.md)
-- [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
 - [Fork Sync Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_FORK_SYNC_AGENT.md)
-- [Custom Workspace Starter Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md)
 - [Source Import Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_SOURCE_IMPORT_AGENT.md)
+- [Custom Workspace Starter Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md)
+- [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
 
-## Forking + Self-Healing Fork Sync Agent
+### Local intelligence and harnesses
 
-Any bundled worker kit can be forked locally or via GitHub. The CLI ships a policy-driven, trace-backed, self-healing agent that keeps your fork in sync with upstream kit releases without ever overwriting your customisations.
+- [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
+- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
+- [Agent Harness Auth Primitive](./docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
 
-Three storage surfaces, each self-contained:
+### Contributor references
 
-- **In-fork state** at `<forkPath>/.growthub-fork/` — `fork.json`, `policy.json`, `trace.jsonl`, `jobs/`.  Canonical and portable.
-- **CLI-owned kit-forks home** at `GROWTHUB_KIT_FORKS_HOME` (default `~/.growthub/kit-forks`) — `index.json`, `orphan-jobs/`.  Discovery pointers only.
-- **CLI-owned GitHub home** at `GROWTHUB_GITHUB_HOME` (default `~/.growthub/github`) — `token.json` (chmod 600), `profile.json`.  Direct device-flow / PAT credentials only.
+- [Contributing](./CONTRIBUTING.md)
+- [CLI README](./cli/README.md)
 
+---
 
-<img width="928" height="1152" alt="2a" src="https://github.com/user-attachments/assets/52b82f65-91d0-48f8-a79a-a9aa37b6cd8b" />
-
-
-### Growthub integrations bridge
-
-Users already authenticated into Growthub (via the gh-app) and with GitHub connected as a first-party integration there can use that connection through the CLI without re-authenticating:
-
-```bash
-growthub login                                # existing Growthub auth
-growthub integrations status                  # list connected integrations (MCP/hosted bridge)
-growthub integrations probe --provider github # test the resolver
-```
-
-The bridge is additive — direct CLI GitHub auth and the Growthub-hosted bridge are layered through a fixed-preference resolver (`direct → growthub-bridge`).  Bridge-minted credentials are never persisted to disk.
-
-## Portable Source → Agent Environment Pipeline
-
-The Source Import Agent turns a *portable source* — a public/private GitHub repository OR a skills.sh skill — into a starter-derived Custom Workspace, registered as a Growthub fork with policy + trace from the first byte.
-
-Two first-class source types feed the same pipeline:
-
-| Source | Adapter | Auth |
-| --- | --- | --- |
-| `github-repo` | `github-source.ts` | direct CLI GitHub token → Growthub bridge → public |
-| `skills-skill` | `skills-source.ts` | public-by-design (`SKILLS_SH_BASE` env override) |
-
-Every import runs through the same five gates:
-
-1. **Probe** — resolve the source and surface warnings.
-2. **Fetch** — stage the payload into a quarantined directory; never mark files executable.
-3. **Inspect** — deterministic security scan (shell hooks, `curl | sh`, install hooks, prompt injection, suspicious binaries). Bounded at 2000 files / 16 MiB.
-4. **Double-confirm** — skills imports and any non-safe repo import park on `awaiting_confirmation` until the operator acknowledges the security report AND confirms materialisation.
-5. **Materialise** — copy the starter shell, move payload to `<forkPath>/imported/`, register the fork, seed policy + trace, write the manifest at `<forkPath>/.growthub-fork/source-import.json`, and emit `IMPORT_SUMMARY.md`.
-
-Commands:
-
-```bash
-growthub starter import-repo <owner>/<repo> --out ./my-workspace
-growthub starter import-skill <owner>/<repo>/<skill>[@version] --out ./my-workspace
-growthub starter browse-skills
-```
-
-Every command supports `--json` and `--confirm <targets...>` for scripted use. The Discovery Hub surfaces the same flows under **Settings → Custom Workspace Starter** with a single live skills discovery lane for skills.sh selection before import.
-
-## Architecture Lanes
-
-- **CLI/open-source lane:** discovery UX, command behavior, contributor docs
-- **Maintainer/super-admin lane:** merge governance, release timing, npm publication
+**One-line summary:** Growthub Local turns repos, skills, starters, and kits into governed agent environments you can customize, keep current, and optionally activate with hosted authority over time.

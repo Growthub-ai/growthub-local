@@ -1,6 +1,8 @@
 # @growthub/cli
 
-`@growthub/cli` is the public CLI for Growthub Local.
+`@growthub/cli` is the CLI control plane for Growthub Local.
+
+It helps you turn a repo, skill, starter, or kit into a governed local agent environment you can customize, keep current, and optionally activate with hosted authority.
 
 ## Install
 
@@ -8,115 +10,117 @@
 npm install -g @growthub/cli
 ```
 
-Or use the guided installer:
+Or start with the guided installer:
 
 ```bash
-# Interactive discovery hub
 npm create growthub-local@latest
+```
 
-# Paperclip Local App profiles
+## Profile-first setup (recommended)
+
+The guided flow is profile-first before deeper harness/workflow choices:
+
+```bash
 npm create growthub-local@latest -- --profile gtm
 npm create growthub-local@latest -- --profile dx
-
-# Custom Workspace Starter (scaffold + register as a fork in one shot)
 npm create growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
-## At a Glance
+## Discovery lanes
 
-The CLI ships these user flows:
-
-- `Agent Harness` (Paperclip Local App, Open Agents, Qwen Code CLI)
-- `Worker Kits`
-- `Templates`
-- `Workflows`
-- `Local Intelligence`
-- `Hosted Auth Bridge`
-
-## Quick Commands
+Main entry:
 
 ```bash
-# Discovery
+growthub discover
+```
+
+Core lanes:
+
+1. Worker Kits
+2. Templates
+3. Workflows
+4. Local Intelligence
+5. Agent Harness
+6. Settings / account connection
+
+## Main commands
+
+```bash
 growthub
 growthub discover
 
-# Agent Harness
-growthub onboard
-growthub run
+growthub kit
+growthub template
+growthub workflow
+growthub pipeline assemble
+
 growthub open-agents
 growthub qwen-code
 
-# Worker Kits
-growthub kit
-growthub kit list
-growthub kit inspect <kit-id>
-growthub kit download <kit-id>
-growthub kit validate <path>
-
-# Templates
-growthub template
-growthub template list
-growthub template get <slug>
-
-# Workflows
-growthub workflow
-growthub workflow saved
-growthub pipeline assemble
-
-# Hosted Auth Bridge
 growthub auth login
 growthub auth whoami
 growthub auth logout
 ```
 
-## Worker Kit Command Surface
+<details>
+<summary><strong>Command examples</strong></summary>
+
+### Discovery
+
+```bash
+growthub discover
+```
+
+Example:
+
+```text
+Open the interactive hub and choose a lane by outcome (kit/template/workflow/harness/auth).
+```
+
+### Kits
 
 ```bash
 growthub kit list
-growthub kit inspect creative-strategist-v1
-growthub kit inspect growthub-open-higgsfield-studio-v1
-growthub kit download creative-strategist-v1
-growthub kit download growthub-open-higgsfield-studio-v1
-growthub kit path creative-strategist-v1
-growthub kit validate /absolute/path/to/kit
+growthub kit inspect <kit-id>
+growthub kit download <kit-id>
 ```
 
-### How local adapters use worker kits
+### Workflows + pipelines
 
-1. Download or resolve a kit path from the CLI.
-2. Point the agent working directory at the exported folder.
-3. Start a new session so the kit contract loads from `CLAUDE.md`.
+```bash
+growthub workflow
+growthub pipeline assemble
+```
 
-## Harness Notes
+### Harnesses
 
-### Open Agents
+```bash
+growthub open-agents
+growthub qwen-code
+```
 
-- upstream: [vercel-labs/open-agents](https://github.com/vercel-labs/open-agents)
-- secure auth mode support: `none`, `api-key`, `vercel-managed`
-- prompt/chat commands: `growthub open-agents prompt`, `growthub open-agents chat`
+### Account connection
 
-### Qwen Code CLI
+```bash
+growthub auth login
+growthub auth whoami
+```
 
-- upstream: [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
-- secure local key setup from `growthub qwen-code` configure flow
-- prompt/chat session commands: `growthub qwen-code prompt`, `growthub qwen-code session`
+</details>
 
-## Extension Model
+## Immediate value first, activation optional
 
-Content extensions:
+You can get real local value without connecting a hosted account.
 
-- worker kits: `cli/assets/worker-kits/`
-- shared templates: `cli/assets/shared-templates/`
+When ready, activate deeper hosted lanes:
 
-Governance/reference docs:
+[![Activate on Growthub](https://img.shields.io/badge/Activate-Growthub-111827?style=for-the-badge)](https://www.growthub.ai/)
+[![First Month](https://img.shields.io/badge/First%20Month-%241-22c55e?style=for-the-badge)](https://www.growthub.ai/)
 
-- [Worker Kits](../docs/WORKER_KITS.md)
-- [CLI Workflows Discovery V1](../docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
-- [Agent Harness Auth Primitive](../docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
-- [Kernel Packet Registry](../docs/kernel-packets/README.md)
+## Docs
 
-## Links
-
-- [Growthub Local Repository](https://github.com/Growthub-ai/growthub-local)
-- [Root README](https://github.com/Growthub-ai/growthub-local#readme)
+- [Growthub Local README](https://github.com/Growthub-ai/growthub-local#readme)
+- [Worker Kits](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKER_KITS.md)
+- [CLI Workflows Discovery](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
+- [Agent Harness Auth Primitive](https://github.com/Growthub-ai/growthub-local/blob/main/docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
 - [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)

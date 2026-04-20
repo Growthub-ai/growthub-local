@@ -3,16 +3,12 @@
 This is the agent-facing source of truth for the `growthub-local` workflow discovery surface.
 
 It covers:
-- the exact discovery entrypoint
+- discovery entrypoints for workflow lanes
 - the three supported workflow surfaces and when to use each
-- the exact hosted workflow config schema that the bridge requires
-- the CMS node adapter contract
-- the video-generation node slot specification and validated adapter shape
-- the save and execute bridge endpoints
+- hosted workflow config and bridge schema expectations
+- CMS node adapter contract
+- save and execute bridge endpoints
 - what the CLI owns vs what hosted Growthub owns
-
-For the validated Clarifion VEO reference-image path proven end to end, see
-[CLI_DISCOVERY_CLARIFION_VEO_WORKING_FLOW.md](./CLI_DISCOVERY_CLARIFION_VEO_WORKING_FLOW.md).
 
 ---
 
@@ -39,16 +35,16 @@ growthub auth whoami
 
 ---
 
-## Top-Level Discovery Menu
+## Top-Level Discovery Menu (Workflow-Relevant)
 
 ```
 Growthub Local
-├── Agent Harness      (filter: Paperclip Local App, Open Agents)
+├── Agent Harness      (filter and harness tooling)
 ├── Worker Kits
 ├── Templates
 ├── Workflows          ← requires auth
 ├── Local Intelligence
-├── Connect Growthub Account
+├── Settings           ← includes account connection and integration lanes
 └── Help CLI
 ```
 
