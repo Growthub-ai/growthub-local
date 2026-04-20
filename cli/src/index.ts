@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { track, trackCliStart } from "./analytics/posthog.js";
 
 // Read the CLI version from the sibling package.json at runtime so the
 // `--version` string can never drift from the published package version.
@@ -1200,6 +1201,7 @@ async function runDiscoveryHub(opts?: {
   dataDir?: string;
   run?: boolean;
 }): Promise<void> {
+  track("discover_opened");
   printPaperclipCliBanner();
   p.intro("Growthub Local");
 
@@ -1879,6 +1881,7 @@ if (surfaceRuntime.capabilities.dxEnabled) {
   registerGtmCommands(program);
 }
 
+trackCliStart();
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
