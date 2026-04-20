@@ -85,6 +85,24 @@ growthub kit inspect <kit-id>
 growthub kit download <kit-id>
 ```
 
+Compatibility examples used by package validation:
+
+```bash
+growthub kit list
+growthub kit inspect creative-strategist-v1
+growthub kit inspect growthub-open-higgsfield-studio-v1
+growthub kit download creative-strategist-v1
+growthub kit download growthub-open-higgsfield-studio-v1
+growthub kit path creative-strategist-v1
+growthub kit validate /absolute/path/to/kit
+```
+
+### How local adapters use worker kits
+
+1. Download or resolve a kit path from the CLI.
+2. Point the agent working directory at the exported folder.
+3. Start a new session so the kit contract loads from `CLAUDE.md`.
+
 ### Workflows + pipelines
 
 ```bash
