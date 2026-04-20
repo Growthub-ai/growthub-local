@@ -34,7 +34,7 @@ Then choose one of these six paths:
 3. [**Start from a custom workspace starter**](#3-start-from-a-workspace-starter)
 4. [**Download a worker kit**](#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](#5-connect-your-growthub-account)
-6. [**Activate Growthub upgrade path (optional)**](#6-activate-growthub-upgrade-path-optional)
+6. [**Unlock hosted workflows and enterprise customization (optional)**](#6-unlock-hosted-workflows-and-enterprise-customization-optional)
 
 ---
 
@@ -167,7 +167,7 @@ growthub auth whoami
 
 Use this after local value is clear, when you want hosted identity, connection authority, workflow access, or premium activation flows.
 
-### 6) Activate Growthub upgrade path (optional)
+### 6) Unlock hosted workflows and enterprise customization (optional)
 
 This is intentionally **after** immediate local value discovery.
 
