@@ -486,6 +486,7 @@ This keeps the mental model intact:
 
 - [Contributing](./CONTRIBUTING.md)
 - [CLI README](./cli/README.md)
+- [PostHog Observability — activation funnel](./docs/POSTHOG_OBSERVABILITY.md)
 
 ---
 
