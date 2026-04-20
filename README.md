@@ -189,11 +189,23 @@ Keep free local CLI value first. Upgrade when you want more scale, coordination,
 
 **Features**
 
-|  |  |  |
-| --- | --- | --- |
-| **🔌 Bring Your Own Agent**<br>Any agent, any runtime, one org chart. If it can receive a heartbeat, it can be hired. | **🎯 Goal Alignment**<br>Every task traces back to the company mission. Agents know what to do and why. | **💓 Heartbeats**<br>Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart. |
-| **💰 Cost Control**<br>Set monthly budgets per agent. When limits are hit, they stop so spend stays predictable. | **🏢 Multi-Company**<br>One deployment, many companies. Complete data isolation with one control plane across your portfolio. | **🎫 Ticket System**<br>Every conversation is traced. Every decision is explained. Full auditability is built in. |
-| **🛡️ Governance**<br>You stay in control: approve hires, override strategy, and terminate agents at any time. | **📊 Org Chart**<br>Hierarchies, roles, and reporting lines are explicit so teams and agents execute with clarity. | **📱 Mobile Ready**<br>Monitor and manage autonomous operations from anywhere. |
+<table>
+  <tr>
+    <td align="center"><strong>🔌 Bring Your Own Agent</strong><br>Any agent, any runtime, one org chart. If it can receive a heartbeat, it can be hired.</td>
+    <td align="center"><strong>🎯 Goal Alignment</strong><br>Every task traces back to the company mission. Agents know what to do and why.</td>
+    <td align="center"><strong>💓 Heartbeats</strong><br>Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart.</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>💰 Cost Control</strong><br>Set monthly budgets per agent. When limits are hit, they stop so spend stays predictable.</td>
+    <td align="center"><strong>🏢 Multi-Company</strong><br>One deployment, many companies. Complete data isolation with one control plane across your portfolio.</td>
+    <td align="center"><strong>🎫 Ticket System</strong><br>Every conversation is traced. Every decision is explained. Full auditability is built in.</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>🛡️ Governance</strong><br>You stay in control: approve hires, override strategy, and terminate agents at any time.</td>
+    <td align="center"><strong>📊 Org Chart</strong><br>Hierarchies, roles, and reporting lines are explicit so teams and agents execute with clarity.</td>
+    <td align="center"><strong>📱 Mobile Ready</strong><br>Monitor and manage autonomous operations from anywhere.</td>
+  </tr>
+</table>
 
 
 **Problems Growthub Local solves**
