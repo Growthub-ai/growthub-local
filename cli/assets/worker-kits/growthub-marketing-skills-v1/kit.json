@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 2,
+  "kit": {
+    "id": "growthub-marketing-skills-v1",
+    "version": "1.0.0",
+    "name": "Growthub Agent Worker Kit — Marketing Operator",
+    "description": "Self-contained marketing execution environment wrapping the open-source marketingskills library (coreyhaines31/marketingskills). Provides structured marketing workflows for CRO, SEO, content strategy, email sequences, paid ads, and growth — grounded in product-marketing context and brand voice. Skills are one dimension of the kit; the operator workflow, brand kit, templates, and output standards form the complete environment.",
+    "type": "worker",
+    "visibility": "public-open-source",
+    "sourceRepo": "growthub-local",
+    "family": "operator"
+  },
+  "entrypoint": {
+    "workerId": "marketing-operator",
+    "path": "workers/marketing-operator/CLAUDE.md"
+  },
+  "workerIds": ["marketing-operator"],
+  "agentContractPath": "workers/marketing-operator/CLAUDE.md",
+  "brandTemplatePath": "brands/_template/product-marketing-context.md",
+  "publicExampleBrandPaths": ["brands/growthub/product-marketing-context.md"],
+  "frozenAssetPaths": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "workers/marketing-operator/CLAUDE.md",
+    "brands/_template/product-marketing-context.md",
+    "brands/growthub/product-marketing-context.md",
+    "templates/cro-audit-brief.md",
+    "templates/seo-audit-report.md",
+    "templates/content-strategy-plan.md",
+    "templates/email-sequence-plan.md",
+    "templates/launch-checklist.md",
+    "templates/competitor-analysis.md",
+    "examples/landing-page-cro-sample.md",
+    "examples/seo-audit-sample.md",
+    "examples/email-sequence-sample.md",
+    "docs/fork-integration.md",
+    "docs/skill-dispatch-methodology.md",
+    "docs/evaluation-frameworks.md",
+    "setup/verify-env.mjs",
+    "output/README.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "setupPaths": {
+    "quickstart": "QUICKSTART.md",
+    "envExample": ".env.example",
+    "setupDir": "setup/",
+    "outputDir": "output/"
+  },
+  "outputStandard": {
+    "type": "working-directory",
+    "description": "Exported folder is intended to be pointed at directly by the agent Working Directory. All outputs are Markdown files written to output/<client-slug>/<project-slug>/.",
+    "requiredPaths": [
+      "QUICKSTART.md",
+      ".env.example",
+      "kit.json",
+      "bundles/growthub-marketing-skills-v1.json",
+      "skills.md",
+      "workers/marketing-operator/CLAUDE.md",
+      "brands/_template/product-marketing-context.md",
+      "brands/growthub/product-marketing-context.md",
+      "templates",
+      "docs",
+      "growthub-meta"
+    ]
+  },
+  "bundles": [
+    {
+      "id": "growthub-marketing-skills-v1",
+      "version": "1.0.0",
+      "path": "bundles/growthub-marketing-skills-v1.json"
+    }
+  ],
+  "executionMode": "export",
+  "activationModes": ["export"],
+  "compatibility": {
+    "cliMinVersion": "0.3.53"
+  },
+  "provenance": {
+    "sourceRepo": "growthub-local",
+    "upstream": "https://github.com/coreyhaines31/marketingskills",
+    "frozenAt": "2026-04-15T00:00:00.000Z"
+  }
+}

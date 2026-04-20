@@ -344,6 +344,11 @@ async function runInteractive() {
         hint: "Portable Source → Agent Environment pipeline (GitHub repo + skills.sh skill)",
       },
       {
+        value: "hyperframes-custom-workspace",
+        label: "🎞️ Hyperframes Custom Workspace Preview",
+        hint: "Inspect Hyperframes worker kit discovery on this branch",
+      },
+      {
         value: "fleet-ops",
         label: "🚢 Fleet Operations Preview",
         hint: "Invoke `growthub fleet view` against this branch CLI binary",
@@ -420,6 +425,10 @@ async function runInteractive() {
 
   if (choice === "source-import") {
     runCli(["starter", "import-repo", "--help"]);
+  }
+
+  if (choice === "hyperframes-custom-workspace") {
+    runCli(["kit", "inspect", "hyperframes"]);
   }
 
   if (choice === "fleet-ops") {

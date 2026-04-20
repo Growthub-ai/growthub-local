@@ -66,7 +66,7 @@ Current discovery options:
 - `Templates`
 - `Workflows`
 - `Local Intelligence`
-- `Agent Harness` (filter by type: Paperclip Local App, Open Agents, Qwen Code CLI)
+- `Agent Harness` (filter by type: Paperclip Local App, Open Agents, Qwen Code CLI, T3 Code CLI)
 - `Settings` (contains: Connect Growthub Account, GitHub Integration, Fork Sync Agent, Service Status, Custom Workspace Starter, Fleet Operations)
 - `Help CLI`
 

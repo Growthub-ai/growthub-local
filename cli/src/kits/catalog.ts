@@ -101,4 +101,22 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-marketing-skills-v1",
+    packageDirName: "growthub-marketing-skills-v1",
+    defaultBundleId: "growthub-marketing-skills-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "operator",
+  },
+  {
+    id: "growthub-hyperframes-studio-v1",
+    packageDirName: "growthub-hyperframes-studio-v1",
+    defaultBundleId: "growthub-hyperframes-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];
