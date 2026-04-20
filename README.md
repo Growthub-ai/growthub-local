@@ -177,11 +177,39 @@ If you want full hosted activation lanes and enterprise customization support, a
 - [Plans and pricing](https://www.growthub.ai/)
 - [Start with first-month $1 path](https://www.growthub.ai/)
 
-Upgrade positioning:
+#### Why Upgrade?
 
-- keep free local CLI value first
-- activate when you want expanded hosted capability depth
-- first-month offer gives a low-friction path to unlock full CLI-connected capability lanes
+Keep free local CLI value first. Upgrade when you want more scale, coordination, and governance.
+
+- Fork anything, keep customizations, stay current
+- Turn repos and skills into agent-operable environments
+- Portable local environments with policy, trace, and authority
+- Open-source freedom with enterprise-grade governance
+- A CLI both humans and agents can operate
+
+**Features**
+
+|  |  |  |
+| --- | --- | --- |
+| **🔌 Bring Your Own Agent**<br>Any agent, any runtime, one org chart. If it can receive a heartbeat, it can be hired. | **🎯 Goal Alignment**<br>Every task traces back to the company mission. Agents know what to do and why. | **💓 Heartbeats**<br>Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart. |
+| **💰 Cost Control**<br>Set monthly budgets per agent. When limits are hit, they stop so spend stays predictable. | **🏢 Multi-Company**<br>One deployment, many companies. Complete data isolation with one control plane across your portfolio. | **🎫 Ticket System**<br>Every conversation is traced. Every decision is explained. Full auditability is built in. |
+| **🛡️ Governance**<br>You stay in control: approve hires, override strategy, and terminate agents at any time. | **📊 Org Chart**<br>Hierarchies, roles, and reporting lines are explicit so teams and agents execute with clarity. | **📱 Mobile Ready**<br>Monitor and manage autonomous operations from anywhere. |
+
+
+**Problems Growthub Local solves**
+
+| Without Growthub Local | With Growthub Local |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ❌ You find a useful repo, skill, or prompt pack, but turning it into a real working environment is manual, messy, and inconsistent.  | ✅ Turn a repo, skill, starter, or kit into a governed agent environment with a clear structure, policy, and lifecycle.                           |
+| ❌ Every customization creates upgrade debt. The more you change, the harder it is to stay current with upstream improvements.        | ✅ Forks are first-class and self-healing. You keep your customizations while safely detecting, reviewing, and applying upstream changes.         |
+| ❌ Your agent setup lives in scattered folders, prompts, scripts, and ad hoc configs with no real source of truth.                    | ✅ Each environment has a portable substrate with identity, policy, trace, and optional authority inside `.growthub-fork/`.                       |
+| ❌ Repos, skills, and starter projects are disconnected things. You have to invent your own way to package, govern, and operate them. | ✅ GitHub repos, skills.sh skills, worker kits, and starter workspaces all flow into the same governed environment model.                         |
+| ❌ Humans and agents both lose time figuring out what commands, configs, and workflows actually matter.                               | ✅ The CLI is designed to be legible to both humans and agents, with guided discovery, structured commands, and reusable environment primitives.  |
+| ❌ Local experimentation is powerful, but it often breaks trust, governance, and team consistency.                                    | ✅ Local control stays first, while hosted identity, activation, and enterprise authority can be layered in when needed.                          |
+| ❌ Teams end up with one-off environments that are hard to audit, transfer, or maintain across operators and machines.                | ✅ Environments are portable, trace-backed, and reconstructible, making handoff, audit, and long-term maintenance far easier.                     |
+| ❌ Valuable workflows stay trapped in one person’s setup, one machine, or one prompt thread.                                          | ✅ Growthub Local turns workflows into reusable, governed infrastructure objects that can be shared, evolved, and operated over time.             |
+| ❌ It is hard to know what is safe to automate versus what still needs human confirmation.                                            | ✅ Policy, confirmations, and capability gates make automation explicit, controlled, and safe by default.                                         |
+| ❌ Open-source freedom usually means more maintenance burden, more drift, and more operational chaos.                                 | ✅ Growthub Local gives you open-source flexibility with self-healing lifecycle management, policy controls, and optional authority-backed trust. |
 
 ---
 
