@@ -191,19 +191,24 @@ Keep free local CLI value first. Upgrade when you want more scale, coordination,
 
 <table>
   <tr>
-    <td align="center"><strong>🔌 Bring Your Own Agent</strong><br>Any agent, any runtime, one org chart. If it can receive a heartbeat, it can be hired.</td>
-    <td align="center"><strong>🎯 Goal Alignment</strong><br>Every task traces back to the company mission. Agents know what to do and why.</td>
-    <td align="center"><strong>💓 Heartbeats</strong><br>Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart.</td>
+    <td align="center"><strong>🧩 Portable Agent Environments</strong><br>Turn repos, skills, starters, and kits into real governed environments instead of loose prompts, scripts, or folders.</td>
+    <td align="center"><strong>🔀 Source Import Pipeline</strong><br>Import from GitHub or skills.sh through one shared pipeline with probing, inspection, confirmations, and materialization into a proper workspace.</td>
+    <td align="center"><strong>🛠️ Worker Kits</strong><br>Download complete, self-contained operator environments with setup files, runtime assumptions, templates, examples, and output standards.</td>
   </tr>
   <tr>
-    <td align="center"><strong>💰 Cost Control</strong><br>Set monthly budgets per agent. When limits are hit, they stop so spend stays predictable.</td>
-    <td align="center"><strong>🏢 Multi-Company</strong><br>One deployment, many companies. Complete data isolation with one control plane across your portfolio.</td>
-    <td align="center"><strong>🎫 Ticket System</strong><br>Every conversation is traced. Every decision is explained. Full auditability is built in.</td>
+    <td align="center"><strong>🌿 Self-Healing Forks</strong><br>Customize freely while keeping an upgrade path. Detect upstream drift, preview heal plans, preserve protected paths, and apply safe additive updates.</td>
+    <td align="center"><strong>📜 Policy + Trace</strong><br>Every fork carries identity, policy, and append-only history so the environment is portable, auditable, and reconstructible over time.</td>
+    <td align="center"><strong>🔐 Authority Protocol</strong><br>Attach signed attestation envelopes to forks so capabilities can be verified offline from the artifact itself with expiry, revocation, and drift-aware gating.</td>
   </tr>
   <tr>
-    <td align="center"><strong>🛡️ Governance</strong><br>You stay in control: approve hires, override strategy, and terminate agents at any time.</td>
-    <td align="center"><strong>📊 Org Chart</strong><br>Hierarchies, roles, and reporting lines are explicit so teams and agents execute with clarity.</td>
-    <td align="center"><strong>📱 Mobile Ready</strong><br>Monitor and manage autonomous operations from anywhere.</td>
+    <td align="center"><strong>🤖 Human + Agent Operable CLI</strong><br>The CLI is legible to both humans and agents, with discovery flows, structured commands, and reusable primitives that work through Claude Code, Cursor, Codex, and similar tools.</td>
+    <td align="center"><strong>🧠 Local Intelligence</strong><br>Run local model flows, memory-aware reasoning, planning, normalization, summarization, and provider-flexible intelligence directly on the operator's machine.</td>
+    <td align="center"><strong>🔌 Agent Harnesses</strong><br>Use first-class harness surfaces like Open Agents, Qwen Code, and T3 Code with secure auth storage, profile binding, and workspace-aware execution.</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>⚙️ Typed Workflows</strong><br>Saved workflows, templates, CMS node contracts, and dynamic pipelines are structured, versioned, inspectable, and increasingly reusable across environments.</td>
+    <td align="center"><strong>🏢 Hosted Activation Layer</strong><br>Keep local open-source value first, then connect Growthub when you want hosted identity, workflow access, capability activation, and enterprise customization depth.</td>
+    <td align="center"><strong>📈 Fleet + Operations Ready</strong><br>Manage multiple forks and environments with service status, job surfaces, health checks, background jobs, and operator-friendly lifecycle controls.</td>
   </tr>
 </table>
 
