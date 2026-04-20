@@ -487,6 +487,19 @@ This keeps the mental model intact:
 - [Contributing](./CONTRIBUTING.md)
 - [CLI README](./cli/README.md)
 
+### Runtime control
+
+Use the canonical runtime script to start, stop, and inspect local instances:
+
+```bash
+scripts/runtime-control.sh up-main
+scripts/runtime-control.sh up-branch <branch>
+scripts/runtime-control.sh up-pr <pr-number>
+scripts/runtime-control.sh stop
+scripts/runtime-control.sh status
+scripts/runtime-control.sh url
+```
+
 ---
 
 **One-line summary:** Growthub Local turns repos, skills, starters, and kits into governed agent environments you can customize, keep current, and optionally activate with hosted authority over time.
