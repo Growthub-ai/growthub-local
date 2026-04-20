@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -244,7 +245,69 @@ function buildCliEnv(opts) {
   return env;
 }
 
+/**
+ * Fire-and-forget `cli_installed` PostHog event for the activation
+ * funnel. Matches the thin-layer contract in the CLI itself:
+ *
+ *   - OFF unless GROWTHUB_POSTHOG_PROJECT_KEY is set.
+ *   - Respects GROWTHUB_TELEMETRY_DISABLED / DO_NOT_TRACK.
+ *   - No source code, no prompt contents, no repo contents, no secrets,
+ *     no env vars, no private URLs — only the event name and coarse
+ *     installer metadata. See docs/POSTHOG_OBSERVABILITY.md.
+ *
+ * The installer can run before the CLI has ever created its anon-id
+ * file (that's the whole point of `cli_installed`), so we mint an
+ * install-scoped random id here rather than reading the CLI home.
+ */
+function fireCliInstalledEvent() {
+  try {
+    const optedOut =
+      process.env.GROWTHUB_TELEMETRY_DISABLED === "1" ||
+      process.env.DO_NOT_TRACK === "1";
+    const projectKey = process.env.GROWTHUB_POSTHOG_PROJECT_KEY;
+    if (optedOut || !projectKey) return;
+
+    const host = (process.env.GROWTHUB_POSTHOG_HOST || "https://us.i.posthog.com").replace(/\/+$/, "");
+    const osLabel =
+      process.platform === "darwin"
+        ? "macos"
+        : process.platform === "win32"
+          ? "windows"
+          : "linux";
+    const nodeMajor = Number.parseInt((process.version || "").replace(/^v/, "").split(".")[0] || "0", 10) || 0;
+
+    const envelope = {
+      api_key: projectKey,
+      event: "cli_installed",
+      distinct_id: `installer-${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      properties: {
+        funnel_stage: "acquisition",
+        surface: "create-growthub-local",
+        installer_mode: true,
+        os: osLabel,
+        node_major: nodeMajor,
+        $lib: "@growthub/create-growthub-local",
+      },
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    fetch(`${host}/i/v0/e/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(envelope),
+      signal: controller.signal,
+    })
+      .catch(() => {})
+      .finally(() => clearTimeout(timer));
+  } catch {
+    // Observability must never break the installer flow.
+  }
+}
+
 const opts = parseArgs(process.argv.slice(2));
+fireCliInstalledEvent();
 const effectiveDataDir = opts.dataDir
   ? path.resolve(process.cwd(), opts.dataDir)
   : path.resolve(process.cwd(), "growthub-local");
