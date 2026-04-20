@@ -72,6 +72,12 @@ import type {
   KitForkSyncJob,
   KitDriftSeverity,
 } from "../kits/fork-types.js";
+import { captureEvent } from "../runtime/telemetry/index.js";
+import { createHash } from "node:crypto";
+
+function hashForkId(forkId: string): string {
+  return createHash("sha256").update(forkId).digest("hex").slice(0, 12);
+}
 
 // ---------------------------------------------------------------------------
 // Display helpers (mirrors patterns from kit.ts)
@@ -700,6 +706,14 @@ async function runRegisterFlow(): Promise<void> {
       baseVersion: kitVersion,
       label: (labelInput as string).trim() || undefined,
     });
+    void captureEvent({
+      event: "fork_registered",
+      properties: {
+        funnel_stage: "expansion",
+        fork_id_hash: hashForkId(reg.forkId),
+        surface: "interactive",
+      },
+    });
     spinner.stop(pc.green("Fork registered."));
     p.note(
       [
@@ -812,6 +826,16 @@ async function runHealFlow(): Promise<void> {
   }
 
   const plan = buildKitForkHealPlan(driftReport);
+  void captureEvent({
+    event: "fork_sync_preview_started",
+    properties: {
+      funnel_stage: "expansion",
+      fork_id_hash: hashForkId(reg.forkId),
+      drift_severity: driftReport.overallSeverity,
+      heal_action_count: plan.actions.length,
+      surface: "interactive",
+    },
+  });
   printHealPlan(plan);
 
   if (plan.actions.length === 0) {
@@ -847,10 +871,26 @@ async function runHealFlow(): Promise<void> {
   const healSpinner = p.spinner();
   healSpinner.start(isDryRun ? "Running dry run..." : "Applying heal plan...");
 
+  const healStartedAt = Date.now();
   const job = await runKitForkSyncJob(reg.forkId, reg.kitId, {
     dryRun: isDryRun,
     onProgress: (step) => { healSpinner.message(step); },
   });
+
+  if (!isDryRun) {
+    void captureEvent({
+      event: "fork_sync_heal_applied",
+      properties: {
+        funnel_stage: "expansion",
+        fork_id_hash: hashForkId(reg.forkId),
+        drift_severity: driftReport.overallSeverity,
+        heal_action_count: plan.actions.length,
+        duration_ms: Date.now() - healStartedAt,
+        outcome: job.status === "completed" ? "success" : "failure",
+        surface: "interactive",
+      },
+    });
+  }
 
   healSpinner.stop(
     job.status === "completed"
@@ -1079,6 +1119,14 @@ function addForkSubcommands(parentCmd: Command): void {
           baseVersion: kit.version,
           label: opts.label,
         });
+        void captureEvent({
+          event: "fork_registered",
+          properties: {
+            funnel_stage: "expansion",
+            fork_id_hash: hashForkId(reg.forkId),
+            surface: "cli_register",
+          },
+        });
         console.log(pc.green("Fork registered:"), reg.forkId);
         console.log(pc.dim("Kit:  "), reg.kitId, "v" + reg.baseVersion);
         console.log(pc.dim("Path: "), reg.forkPath);
@@ -1296,6 +1344,16 @@ function addForkSubcommands(parentCmd: Command): void {
           summary: `preview requested — ${plan.actions.length} action(s), risk=${plan.estimatedRisk}`,
           detail: { mode: "preview" },
         });
+        void captureEvent({
+          event: "fork_sync_preview_started",
+          properties: {
+            funnel_stage: "expansion",
+            fork_id_hash: hashForkId(reg.forkId),
+            drift_severity: report.overallSeverity,
+            heal_action_count: plan.actions.length,
+            surface: "cli_flag",
+          },
+        });
         printRichHealPreview(plan, policy);
 
         if (plan.actions.length === 0) {
@@ -1343,11 +1401,25 @@ function addForkSubcommands(parentCmd: Command): void {
         return;
       }
 
+      const flagHealStartedAt = Date.now();
       const job = await runKitForkSyncJob(reg.forkId, reg.kitId, {
         dryRun: opts.dryRun,
         skipFiles: opts.skip?.split(",").map((s) => s.trim()),
         onProgress: (step) => process.stderr.write(pc.dim(step) + "\n"),
       });
+
+      if (!opts.dryRun) {
+        void captureEvent({
+          event: "fork_sync_heal_applied",
+          properties: {
+            funnel_stage: "expansion",
+            fork_id_hash: hashForkId(reg.forkId),
+            duration_ms: Date.now() - flagHealStartedAt,
+            outcome: job.status === "completed" ? "success" : "failure",
+            surface: "cli_flag",
+          },
+        });
+      }
 
       const r = job.healResult;
       if (r) {

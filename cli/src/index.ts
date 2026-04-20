@@ -103,6 +103,8 @@ import {
 } from "./runtime/memory/index.js";
 import type { ObservationType, ConceptCategory } from "./runtime/memory/index.js";
 import { promptExtendedProvider } from "./prompts/llm.js";
+import { captureEvent } from "./runtime/telemetry/index.js";
+import { maybeEmitCliFirstRun } from "./runtime/telemetry/first-run.js";
 
 const program = new Command();
 const DATA_DIR_OPTION_HELP =
@@ -1203,6 +1205,12 @@ async function runDiscoveryHub(opts?: {
   printPaperclipCliBanner();
   p.intro("Growthub Local");
 
+  void maybeEmitCliFirstRun("discover");
+  void captureEvent({
+    event: "discover_opened",
+    properties: { surface: "discover", funnel_stage: "acquisition" },
+  });
+
   while (true) {
     const workflowAccess = getWorkflowAccess();
     const surfaceChoice = await p.select({
@@ -1635,6 +1643,16 @@ async function runDiscoveryHub(opts?: {
     }
 
     if (surfaceChoice === "workflows") {
+      if (workflowAccess.state !== "ready") {
+        void captureEvent({
+          event: "auth_required_encountered",
+          properties: {
+            funnel_stage: "friction",
+            surface: "workflows",
+            path: "discover",
+          },
+        });
+      }
       const result = await runWorkflowPicker({ allowBackToHub: true });
       if (result === "back") continue;
       return;

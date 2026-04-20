@@ -16,6 +16,7 @@ import {
 } from "../checks/index.js";
 import { loadPaperclipEnvFile } from "../config/env.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
+import { captureEvent } from "../runtime/telemetry/index.js";
 
 const STATUS_ICON = {
   pass: pc.green("✓"),
@@ -197,6 +198,17 @@ function printSummary(results: CheckResult[]): { passed: number; warned: number;
     p.outro(pc.yellow("All critical checks passed with some warnings."));
   } else {
     p.outro(pc.green("All checks passed!"));
+  }
+
+  if (failed > 0) {
+    void captureEvent({
+      event: "setup_health_failed",
+      properties: {
+        funnel_stage: "friction",
+        surface: "doctor",
+        outcome: "failure",
+      },
+    });
   }
 
   return { passed, warned, failed };

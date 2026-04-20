@@ -20,6 +20,7 @@ import {
 import { resolvePaperclipInstanceId } from "../config/home.js";
 import { isSessionExpired } from "../auth/session-store.js";
 import { fetchHostedSession } from "../auth/hosted-client.js";
+import { captureEvent } from "../runtime/telemetry/index.js";
 
 const DEFAULT_HOSTED_BASE_URL = "https://www.growthub.ai";
 
@@ -77,6 +78,16 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
     if (sameBaseUrl) {
       try {
         await fetchHostedSession(existingSession);
+        void captureEvent({
+          event: "growthub_auth_connected",
+          properties: {
+            funnel_stage: "expansion",
+            hosted_user_id: existingSession.userId,
+            hosted_org_id: existingSession.orgId,
+            outcome: "success",
+            surface: "session_reused",
+          },
+        });
         if (opts.json) {
           console.log(
             JSON.stringify(
@@ -135,6 +146,15 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
 
     const effective = computeEffectiveProfile({ configPath });
     writeEffectiveProfileSnapshot(effective);
+
+    void captureEvent({
+      event: "growthub_auth_connected",
+      properties: {
+        funnel_stage: "expansion",
+        outcome: "success",
+        surface: "token_flow",
+      },
+    });
 
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", hostedBaseUrl, mode: "token" }, null, 2));
@@ -217,6 +237,17 @@ export async function authLogin(opts: AuthLoginOptions): Promise<void> {
 
     const effective = computeEffectiveProfile({ configPath });
     writeEffectiveProfileSnapshot(effective);
+
+    void captureEvent({
+      event: "growthub_auth_connected",
+      properties: {
+        funnel_stage: "expansion",
+        hosted_user_id: result.userId,
+        hosted_org_id: result.orgId,
+        outcome: "success",
+        surface: "browser_flow",
+      },
+    });
 
     if (opts.json) {
       console.log(

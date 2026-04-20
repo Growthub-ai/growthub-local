@@ -15,6 +15,13 @@ import {
 } from "../kits/service.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { registerKitForkSubcommands } from "./kit-fork.js";
+import { captureEvent } from "../runtime/telemetry/index.js";
+import { renderActivationNudge } from "./activation-bridge.js";
+import { createHash } from "node:crypto";
+
+function kitIdHash(kitId: string): string {
+  return createHash("sha256").update(kitId).digest("hex").slice(0, 12);
+}
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -365,8 +372,20 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
     if (p.isCancel(confirmed) || !confirmed) { p.cancel("Cancelled."); process.exit(0); }
   }
 
+  const startedAt = Date.now();
   const result = downloadBundledKit(resolvedId, opts.out, {
     onProgress: renderProgressBar,
+  });
+
+  void captureEvent({
+    event: "kit_download_completed",
+    properties: {
+      funnel_stage: "activation",
+      kit_family: item.family,
+      kit_id_hash: kitIdHash(resolvedId),
+      duration_ms: Date.now() - startedAt,
+      outcome: "success",
+    },
   });
 
   console.log("");
@@ -393,6 +412,7 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   console.log("");
   console.log(pc.dim("Zip: ") + result.zipPath);
   console.log("");
+  renderActivationNudge("kit_download");
 }
 
 // ---------------------------------------------------------------------------
@@ -553,8 +573,20 @@ Examples:
       }
 
       if (opts.yes) {
+        const startedAt = Date.now();
         const result = downloadBundledKit(resolvedId, opts.out, {
           onProgress: renderProgressBar,
+        });
+        const resolvedItem = listBundledKits().find((entry) => entry.id === resolvedId);
+        void captureEvent({
+          event: "kit_download_completed",
+          properties: {
+            funnel_stage: "activation",
+            kit_family: resolvedItem?.family,
+            kit_id_hash: kitIdHash(resolvedId),
+            duration_ms: Date.now() - startedAt,
+            outcome: "success",
+          },
         });
         console.log("");
         console.log(pc.bold("Exported folder:"), pc.cyan(result.folderPath));
@@ -567,6 +599,7 @@ Examples:
         console.log("  3. " + pc.cyan("bash setup/clone-fork.sh") + "  →  boot local studio");
         console.log("  4. Open Growthub local — the agent loads automatically");
         console.log("");
+        renderActivationNudge("kit_download");
         return;
       }
 

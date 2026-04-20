@@ -18,6 +18,8 @@ import { pathToFileURL } from "node:url";
 import { initStarterWorkspace, DEFAULT_STARTER_KIT_ID } from "../starter/init.js";
 import type { StarterInitOptions } from "../starter/types.js";
 import { renderTable } from "../utils/table-renderer.js";
+import { captureEvent, captureOutcome } from "../runtime/telemetry/index.js";
+import { renderActivationNudge } from "./activation-bridge.js";
 import {
   browseSkills,
   confirmAndResumeSourceImportJob,
@@ -33,8 +35,20 @@ import type {
 } from "../starter/source-import/index.js";
 
 export async function runStarterInit(opts: StarterInitOptions): Promise<void> {
+  const startedAt = Date.now();
   try {
     const result = await initStarterWorkspace(opts);
+    void captureEvent({
+      event: "workspace_starter_created",
+      properties: {
+        funnel_stage: "activation",
+        source_kind: "starter",
+        starter_kit_id: result.kitId,
+        remote_sync_mode: result.policyMode,
+        duration_ms: Date.now() - startedAt,
+        outcome: "success",
+      },
+    });
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", ...result }, null, 2));
       return;
@@ -49,8 +63,13 @@ export async function runStarterInit(opts: StarterInitOptions): Promise<void> {
       (result.remote ? `\n  remote:      ${pc.cyan(result.remote.htmlUrl)}` : "") +
       `\n\nNext: ${pc.dim(`growthub kit fork status ${result.forkId}`)}`,
     );
+    renderActivationNudge("starter_init");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    void captureOutcome("first_run_failed", "failure", startedAt, {
+      funnel_stage: "friction",
+      surface: "starter_init",
+    });
     if (opts.json) {
       console.log(JSON.stringify({ status: "error", error: msg }));
       process.exitCode = 1;
@@ -134,6 +153,30 @@ async function runSourceImportCommand(
   opts: RunSourceImportOptions,
 ): Promise<void> {
   const { input, json } = opts;
+  const sourceKind = input.source.kind;
+  const started_event =
+    sourceKind === "github-repo"
+      ? "starter_import_repo_started"
+      : "starter_import_skill_started";
+  const completed_event =
+    sourceKind === "github-repo"
+      ? "starter_import_repo_completed"
+      : "starter_import_skill_completed";
+  const nudgeSurface =
+    sourceKind === "github-repo" ? "source_import_repo" : "source_import_skill";
+  const startedAt = Date.now();
+
+  void captureEvent({
+    event: started_event,
+    properties: {
+      funnel_stage: "activation",
+      source_kind: sourceKind,
+      import_mode: input.importMode,
+      starter_kit_id: input.starterKitId,
+      remote_sync_mode: input.remoteSyncMode,
+    },
+  });
+
   try {
     const onProgressFromInput = input.onProgress;
     const onProgress = (step: string): void => {
@@ -147,6 +190,15 @@ async function runSourceImportCommand(
     });
 
     if (job.status === "awaiting_confirmation") {
+      void captureEvent({
+        event: "awaiting_confirmation_reached",
+        properties: {
+          funnel_stage: "friction",
+          source_kind: sourceKind,
+          import_mode: input.importMode,
+          surface: nudgeSurface,
+        },
+      });
       if (json) {
         console.log(
           JSON.stringify(
@@ -179,16 +231,41 @@ async function runSourceImportCommand(
       });
       if (!resumed || resumed.status !== "completed" || !resumed.result) {
         const msg = resumed?.error ?? "Import did not complete.";
+        void captureOutcome("import_failed", "failure", startedAt, {
+          funnel_stage: "friction",
+          source_kind: sourceKind,
+          import_mode: input.importMode,
+        });
         p.log.error(msg);
         process.exitCode = 1;
         return;
       }
-      finalizeSuccess(resumed.result, resumed.jobId);
+      void captureEvent({
+        event: completed_event,
+        properties: {
+          funnel_stage: "activation",
+          source_kind: sourceKind,
+          import_mode: input.importMode,
+          starter_kit_id: input.starterKitId,
+          remote_sync_mode: input.remoteSyncMode,
+          duration_ms: Date.now() - startedAt,
+          outcome: "success",
+        },
+      });
+      if (!json) {
+        finalizeSuccess(resumed.result, resumed.jobId);
+        renderActivationNudge(nudgeSurface);
+      }
       return;
     }
 
     if (job.status === "failed" || !result) {
       const msg = job.error ?? "Import failed.";
+      void captureOutcome("import_failed", "failure", startedAt, {
+        funnel_stage: "friction",
+        source_kind: sourceKind,
+        import_mode: input.importMode,
+      });
       if (json) {
         console.log(JSON.stringify({ status: "error", error: msg, job: renderJob(job) }, null, 2));
       } else {
@@ -198,6 +275,19 @@ async function runSourceImportCommand(
       return;
     }
 
+    void captureEvent({
+      event: completed_event,
+      properties: {
+        funnel_stage: "activation",
+        source_kind: sourceKind,
+        import_mode: input.importMode,
+        starter_kit_id: input.starterKitId,
+        remote_sync_mode: input.remoteSyncMode,
+        duration_ms: Date.now() - startedAt,
+        outcome: "success",
+      },
+    });
+
     if (json) {
       console.log(
         JSON.stringify({ status: "ok", jobId: job.jobId, ...result }, null, 2),
@@ -205,8 +295,14 @@ async function runSourceImportCommand(
       return;
     }
     finalizeSuccess(result, job.jobId);
+    renderActivationNudge(nudgeSurface);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    void captureOutcome("import_failed", "failure", startedAt, {
+      funnel_stage: "friction",
+      source_kind: sourceKind,
+      import_mode: input.importMode,
+    });
     if (json) {
       console.log(JSON.stringify({ status: "error", error: msg }));
     } else {
