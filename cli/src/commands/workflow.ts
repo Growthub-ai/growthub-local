@@ -660,7 +660,37 @@ function renderTemplateTree(templates: CmsCapabilityNode[]): string[] {
   return lines;
 }
 
-function renderWorkflowContractDiscoveryTree(nodes: CmsCapabilityNode[]): string[] {
+function strategyHint(node: CmsCapabilityNode): string {
+  const strategy = node.executionBinding.strategy;
+  if (strategy === "async_operation") return pc.yellow("[async]");
+  if (strategy === "sequential-with-persistence") return pc.cyan("[seq]");
+  return "";
+}
+
+function providerHint(node: CmsCapabilityNode): string {
+  const meta = node.manifestMetadata ?? {};
+  const isProviderBacked = (
+    typeof meta.providerBacked === "boolean" ? meta.providerBacked :
+    typeof meta.source === "string" && meta.source !== "derived-from-hosted-workflows"
+  );
+  if (!isProviderBacked) return "";
+  const modelKey = (node.executionTokens.input_template.videoModel ?? node.executionTokens.input_template.imageModel ?? node.executionTokens.input_template.model);
+  if (typeof modelKey === "string" && modelKey) return pc.magenta(`[${modelKey}]`);
+  return pc.magenta("[provider]");
+}
+
+function outputMappingSummary(node: CmsCapabilityNode): string {
+  const entries = Object.keys(node.executionTokens.output_mapping);
+  if (entries.length === 0) return "";
+  return pc.dim(`map:${entries.length}`);
+}
+
+function migrationVersionHint(node: CmsCapabilityNode): string {
+  const v = node.executionTokens.migration_version;
+  return v ? pc.dim(`v${v}`) : "";
+}
+
+function renderWorkflowContractDiscoveryTree(nodes: CmsCapabilityNode[], cacheMeta?: { fromCache?: boolean; source?: string; fetchedAt?: string; cacheAgeSeconds?: number }): string[] {
   const byFamily = new Map<string, CmsCapabilityNode[]>();
   for (const node of nodes) {
     const key = node.family;
@@ -670,6 +700,18 @@ function renderWorkflowContractDiscoveryTree(nodes: CmsCapabilityNode[]): string
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   const lines: string[] = [pc.bold("CMS Node Contract Discovery")];
+
+  // Cache/source freshness header
+  if (cacheMeta) {
+    if (cacheMeta.fromCache) {
+      const age = cacheMeta.cacheAgeSeconds !== undefined ? ` · ${cacheMeta.cacheAgeSeconds}s ago` : "";
+      lines.push(pc.dim(`Source: cache${age}  (growthub capability cache status)`));
+    } else {
+      lines.push(pc.dim(`Source: ${cacheMeta.source ?? "hosted"} · ${cacheMeta.fetchedAt?.slice(0, 19).replace("T", " ") ?? "just now"} UTC`));
+    }
+  }
+
+  lines.push("");
   for (const [family, familyNodes] of families) {
     const emoji = FAMILY_EMOJI[family] ?? "•";
     lines.push(`${emoji} ${pc.bold(familyLabel(family))} ${pc.dim(`(${familyNodes.length})`)}`);
@@ -679,8 +721,14 @@ function renderWorkflowContractDiscoveryTree(nodes: CmsCapabilityNode[]): string
       const contract = introspectNodeContract(node);
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
+      const hints = [
+        strategyHint(node),
+        providerHint(node),
+        outputMappingSummary(node),
+        migrationVersionHint(node),
+      ].filter(Boolean).join(" ");
       lines.push(
-        `  ${branch} ${node.slug} ${pc.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`,
+        `  ${branch} ${node.slug} ${pc.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}${hints ? "  " + hints : ""}`,
       );
     }
   }
@@ -800,8 +848,11 @@ export async function runWorkflowPicker(opts: {
       contractsSpinner.start("Loading CMS node contracts...");
       try {
         const registry = createCmsCapabilityRegistryClient();
-        const { nodes } = await registry.listCapabilities({ enabledOnly: false });
-        contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}.`);
+        const { nodes, meta: contractsMeta } = await registry.listCapabilities({ enabledOnly: false });
+        const cacheHint = contractsMeta.fromCache
+          ? pc.dim(` (cache · ${contractsMeta.cacheAgeSeconds ?? "?"}s ago)`)
+          : pc.dim(` (${contractsMeta.source})`);
+        contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}${cacheHint}.`);
         if (nodes.length === 0) {
           p.note("No CMS node contracts available.", "Nothing found");
           continue;
@@ -811,7 +862,7 @@ export async function runWorkflowPicker(opts: {
         while (true) {
           if (showDiscoveryTree) {
             console.log("");
-            console.log(box(renderWorkflowContractDiscoveryTree(nodes)));
+            console.log(box(renderWorkflowContractDiscoveryTree(nodes, contractsMeta)));
             console.log("");
             showDiscoveryTree = false;
           }
@@ -860,10 +911,26 @@ export async function runWorkflowPicker(opts: {
 
           printTemplateCard(selected);
 
+          // Enrich card with execution strategy and async hint
+          const strategyTag = selected.executionBinding.strategy === "async_operation"
+            ? pc.yellow("async_operation")
+            : selected.executionBinding.strategy === "sequential-with-persistence"
+              ? pc.cyan("sequential-with-persistence")
+              : pc.green("direct");
+          const outputKeys = Object.keys(selected.executionTokens.output_mapping);
+          const migVer = selected.executionTokens.migration_version;
+          console.log(pc.dim(
+            `  Strategy: ${strategyTag}  ·  Output mapping keys: ${outputKeys.length > 0 ? outputKeys.join(", ") : "(none)"}` +
+            (migVer ? `  ·  v${migVer}` : "") +
+            (contractsMeta.fromCache ? `  ·  cache ${contractsMeta.cacheAgeSeconds ?? "?"}s ago` : ""),
+          ));
+          console.log("");
+
           const contractAction = await p.select({
             message: "Contract actions",
             options: [
-              { value: "inspect_json", label: "Inspect raw input template JSON" },
+              { value: "inspect_json", label: "Inspect input_template JSON" },
+              { value: "inspect_output_mapping", label: "Inspect output_mapping JSON" },
               { value: "back_to_contracts_menu", label: "← Back to CMS contracts menu" },
               { value: "back_to_workflow_menu", label: "← Back to workflow menu" },
             ],
@@ -871,6 +938,10 @@ export async function runWorkflowPicker(opts: {
           if (p.isCancel(contractAction)) { p.cancel("Cancelled."); process.exit(0); }
           if (contractAction === "inspect_json") {
             console.log(JSON.stringify(selected.executionTokens.input_template, null, 2));
+            continue;
+          }
+          if (contractAction === "inspect_output_mapping") {
+            console.log(JSON.stringify(selected.executionTokens.output_mapping, null, 2));
             continue;
           }
           if (contractAction === "back_to_workflow_menu") {

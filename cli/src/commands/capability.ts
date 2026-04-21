@@ -13,15 +13,79 @@ import pc from "picocolors";
 import { Command } from "commander";
 import {
   createCmsCapabilityRegistryClient,
+  clearCapabilityCache,
+  getCapabilityCacheStatus,
   CAPABILITY_FAMILIES,
   type CmsCapabilityNode,
   type CapabilityFamily,
+  type InputTemplateField,
+  type OutputMappingEntry,
 } from "../runtime/cms-capability-registry/index.js";
 import {
   createMachineCapabilityResolver,
 } from "../runtime/machine-capability-resolver/index.js";
 import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
+
+// ---------------------------------------------------------------------------
+// Execution token inspection helpers
+// ---------------------------------------------------------------------------
+
+function extractInputTemplateFields(template: Record<string, unknown>): InputTemplateField[] {
+  return Object.entries(template).map(([key, value]) => ({
+    key,
+    value,
+    valueType: Array.isArray(value) ? "array" : typeof value,
+    isEmpty: value === "" || value === null || value === undefined,
+  }));
+}
+
+function extractOutputMappingEntries(mapping: Record<string, unknown>): OutputMappingEntry[] {
+  return Object.entries(mapping).map(([key, path]) => ({ key, path }));
+}
+
+function printInputTemplateTable(fields: InputTemplateField[]): void {
+  if (fields.length === 0) {
+    console.log(pc.dim("  (no input fields defined)"));
+    return;
+  }
+  const keyWidth = Math.max(8, ...fields.map((f) => f.key.length));
+  const typeWidth = Math.max(6, ...fields.map((f) => f.valueType.length));
+  console.log(
+    "  " + pc.dim("key".padEnd(keyWidth)) + "  " + pc.dim("type".padEnd(typeWidth)) + "  " + pc.dim("default"),
+  );
+  console.log("  " + pc.dim("─".repeat(keyWidth + typeWidth + 20)));
+  for (const field of fields) {
+    const defaultStr = field.isEmpty
+      ? pc.dim("(empty)")
+      : pc.green(JSON.stringify(field.value).slice(0, 60));
+    console.log("  " + pc.bold(field.key.padEnd(keyWidth)) + "  " + pc.dim(field.valueType.padEnd(typeWidth)) + "  " + defaultStr);
+  }
+}
+
+function printOutputMappingTable(entries: OutputMappingEntry[]): void {
+  if (entries.length === 0) {
+    console.log(pc.dim("  (no output mappings defined)"));
+    return;
+  }
+  const keyWidth = Math.max(8, ...entries.map((e) => e.key.length));
+  console.log("  " + pc.dim("key".padEnd(keyWidth)) + "  " + pc.dim("path / value"));
+  console.log("  " + pc.dim("─".repeat(keyWidth + 40)));
+  for (const entry of entries) {
+    console.log("  " + pc.bold(entry.key.padEnd(keyWidth)) + "  " + pc.cyan(JSON.stringify(entry.path).slice(0, 80)));
+  }
+}
+
+function printCacheFreshnessLine(meta: { fromCache?: boolean; source?: string; fetchedAt?: string; expiresAt?: string; cacheAgeSeconds?: number }): void {
+  if (meta.fromCache) {
+    const age = meta.cacheAgeSeconds !== undefined ? `${meta.cacheAgeSeconds}s ago` : "?";
+    const expires = meta.expiresAt ? `expires ${meta.expiresAt.slice(11, 19)} UTC` : "";
+    console.log(pc.dim(`  Cache: warm · fetched ${age} · ${expires}`));
+  } else {
+    const ts = meta.fetchedAt ? meta.fetchedAt.slice(0, 19).replace("T", " ") + " UTC" : "just now";
+    console.log(pc.dim(`  Source: ${meta.source ?? "hosted"} · fetched ${ts}`));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -291,7 +355,8 @@ Examples:
     .description("List all CMS-backed runtime node capabilities")
     .option("--family <family>", "Filter by family (video, image, slides, text, data, ops)")
     .option("--json", "Output raw JSON for scripting")
-    .action(async (opts: { family?: string; json?: boolean }) => {
+    .option("--refresh", "Bypass local TTL cache and fetch fresh from hosted")
+    .action(async (opts: { family?: string; json?: boolean; refresh?: boolean }) => {
       const access = getWorkflowAccess();
       if (access.state !== "ready") {
         console.error(pc.red(`${access.reason}.`));
@@ -300,12 +365,13 @@ Examples:
       }
 
       const registry = createCmsCapabilityRegistryClient();
-      const query = opts.family
-        ? { family: opts.family as CapabilityFamily }
-        : undefined;
+      const query = {
+        ...(opts.family ? { family: opts.family as CapabilityFamily } : {}),
+        ...(opts.refresh ? { refresh: true } : {}),
+      };
 
       try {
-        const { nodes, meta } = await registry.listCapabilities(query);
+        const { nodes, meta } = await registry.listCapabilities(Object.keys(query).length > 0 ? query : undefined);
 
         if (opts.json) {
           console.log(JSON.stringify({ nodes, meta }, null, 2));
@@ -320,7 +386,7 @@ Examples:
         }
 
         printGroupedCapabilities(nodes);
-        console.log(pc.dim(`  Source: ${meta.source}  ·  Fetched: ${meta.fetchedAt}`));
+        printCacheFreshnessLine(meta);
         console.log("");
       } catch (err) {
         console.error(pc.red("Failed to list capabilities: " + (err as Error).message));
@@ -414,5 +480,303 @@ Examples:
         console.error(pc.red("Failed to resolve capabilities: " + (err as Error).message));
         process.exitCode = 1;
       }
+    });
+
+  // ── manifest ─────────────────────────────────────────────────────────────
+  cap
+    .command("manifest")
+    .description("Show normalized hosted manifest metadata and execution tokens for a capability")
+    .argument("<slug>", "Capability slug")
+    .option("--json", "Output raw JSON")
+    .option("--refresh", "Bypass local TTL cache")
+    .action(async (slug: string, opts: { json?: boolean; refresh?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const registry = createCmsCapabilityRegistryClient();
+      try {
+        const { nodes, meta } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+        const node = nodes.find((n) => n.slug === slug);
+        if (!node) {
+          console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
+          process.exitCode = 1;
+          return;
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify({
+            slug: node.slug,
+            displayName: node.displayName,
+            family: node.family,
+            category: node.category,
+            nodeType: node.nodeType,
+            executionKind: node.executionKind,
+            executionBinding: node.executionBinding,
+            executionTokens: node.executionTokens,
+            requiredBindings: node.requiredBindings,
+            outputTypes: node.outputTypes,
+            enabled: node.enabled,
+            experimental: node.experimental,
+            visibility: node.visibility,
+            description: node.description,
+            manifestMetadata: node.manifestMetadata,
+            _meta: meta,
+          }, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(pc.bold(`Manifest: ${node.displayName}`) + "  " + pc.dim(node.slug));
+        console.log(hr());
+        console.log(`  ${pc.dim("Family:")}             ${node.family}`);
+        console.log(`  ${pc.dim("Category:")}           ${node.category}`);
+        console.log(`  ${pc.dim("Node Type:")}          ${node.nodeType}`);
+        console.log(`  ${pc.dim("Execution Kind:")}     ${node.executionKind}`);
+        console.log(`  ${pc.dim("Strategy:")}           ${node.executionBinding.strategy}`);
+        console.log(`  ${pc.dim("Tool Name:")}          ${node.executionTokens.tool_name}`);
+        console.log(`  ${pc.dim("Required Bindings:")}  ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc.dim("(none)")}`);
+        console.log(`  ${pc.dim("Output Types:")}       ${node.outputTypes.length > 0 ? node.outputTypes.join(", ") : pc.dim("(none)")}`);
+        console.log(`  ${pc.dim("Visibility:")}         ${node.visibility}`);
+        console.log(`  ${pc.dim("Enabled:")}            ${node.enabled ? pc.green("yes") : pc.red("no")}`);
+        console.log(`  ${pc.dim("Experimental:")}       ${node.experimental ? pc.yellow("yes") : "no"}`);
+        if (node.executionTokens.migration_version) {
+          console.log(`  ${pc.dim("Migration Version:")}  ${node.executionTokens.migration_version}`);
+        }
+        if (node.executionBinding.timeoutMs) {
+          console.log(`  ${pc.dim("Timeout:")}            ${node.executionBinding.timeoutMs}ms`);
+        }
+        if (node.executionBinding.max_retries !== undefined) {
+          console.log(`  ${pc.dim("Max Retries:")}        ${node.executionBinding.max_retries}`);
+        }
+        if (node.executionBinding.polling_interval !== undefined) {
+          console.log(`  ${pc.dim("Poll Interval:")}      ${node.executionBinding.polling_interval}ms`);
+        }
+        if (node.executionTokens.endpoint_config) {
+          const ec = node.executionTokens.endpoint_config;
+          const parts: string[] = [];
+          if (ec.env_var) parts.push(`env=${ec.env_var}`);
+          if (ec.endpoint_type) parts.push(`type=${ec.endpoint_type}`);
+          console.log(`  ${pc.dim("Endpoint Config:")}    ${parts.join("  ")}`);
+        }
+        if (node.description) {
+          console.log("");
+          console.log("  " + pc.dim(node.description));
+        }
+        console.log(hr());
+        printCacheFreshnessLine(meta);
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to load manifest: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── schema ────────────────────────────────────────────────────────────────
+  cap
+    .command("schema")
+    .description("Show the input_template (input schema) for a capability")
+    .argument("<slug>", "Capability slug")
+    .option("--json", "Output raw JSON")
+    .option("--refresh", "Bypass local TTL cache")
+    .action(async (slug: string, opts: { json?: boolean; refresh?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const registry = createCmsCapabilityRegistryClient();
+      try {
+        const { nodes } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+        const node = nodes.find((n) => n.slug === slug);
+        if (!node) {
+          console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
+          process.exitCode = 1;
+          return;
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify(node.executionTokens.input_template, null, 2));
+          return;
+        }
+
+        const fields = extractInputTemplateFields(node.executionTokens.input_template);
+        console.log("");
+        console.log(pc.bold(`Input Schema: ${node.displayName}`) + "  " + pc.dim(`${fields.length} field${fields.length !== 1 ? "s" : ""}`));
+        console.log(hr());
+        printInputTemplateTable(fields);
+        console.log(hr());
+        console.log(pc.dim(`  growthub capability manifest ${slug}  ·  growthub capability outputs ${slug}`));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to load schema: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── outputs ───────────────────────────────────────────────────────────────
+  cap
+    .command("outputs")
+    .description("Show the output_mapping for a capability")
+    .argument("<slug>", "Capability slug")
+    .option("--json", "Output raw JSON")
+    .option("--refresh", "Bypass local TTL cache")
+    .action(async (slug: string, opts: { json?: boolean; refresh?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const registry = createCmsCapabilityRegistryClient();
+      try {
+        const { nodes } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+        const node = nodes.find((n) => n.slug === slug);
+        if (!node) {
+          console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
+          process.exitCode = 1;
+          return;
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify(node.executionTokens.output_mapping, null, 2));
+          return;
+        }
+
+        const entries = extractOutputMappingEntries(node.executionTokens.output_mapping);
+        console.log("");
+        console.log(pc.bold(`Output Mapping: ${node.displayName}`) + "  " + pc.dim(`${entries.length} entr${entries.length !== 1 ? "ies" : "y"}`));
+        console.log(`  ${pc.dim("Output Types:")} ${node.outputTypes.length > 0 ? node.outputTypes.join(", ") : pc.dim("(none)")}`);
+        console.log(hr());
+        printOutputMappingTable(entries);
+        console.log(hr());
+        console.log(pc.dim(`  growthub capability schema ${slug}  ·  growthub capability manifest ${slug}`));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to load output mapping: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── versions ──────────────────────────────────────────────────────────────
+  cap
+    .command("versions")
+    .description("Show version, migration marker, cache source, and hosted revision metadata for a capability")
+    .argument("<slug>", "Capability slug")
+    .option("--json", "Output raw JSON")
+    .option("--refresh", "Bypass local TTL cache")
+    .action(async (slug: string, opts: { json?: boolean; refresh?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const registry = createCmsCapabilityRegistryClient();
+      try {
+        const { nodes, meta } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+        const node = nodes.find((n) => n.slug === slug);
+        if (!node) {
+          console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
+          process.exitCode = 1;
+          return;
+        }
+
+        const migrationVersion = node.executionTokens.migration_version ?? null;
+        const manifestMeta = node.manifestMetadata ?? {};
+        const hostedRevision = typeof manifestMeta.revision === "string" ? manifestMeta.revision
+          : typeof manifestMeta.version === "string" ? manifestMeta.version
+          : null;
+
+        if (opts.json) {
+          console.log(JSON.stringify({
+            slug: node.slug,
+            migrationVersion,
+            hostedRevision,
+            cacheSource: meta.source,
+            fromCache: meta.fromCache ?? false,
+            fetchedAt: meta.fetchedAt,
+            expiresAt: meta.expiresAt ?? null,
+            cacheAgeSeconds: meta.cacheAgeSeconds ?? null,
+          }, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(pc.bold(`Version Info: ${node.displayName}`) + "  " + pc.dim(node.slug));
+        console.log(hr());
+        console.log(`  ${pc.dim("Migration Version:")}  ${migrationVersion ?? pc.dim("(not set)")}`);
+        console.log(`  ${pc.dim("Hosted Revision:")}    ${hostedRevision ?? pc.dim("(not set)")}`);
+        console.log(`  ${pc.dim("Source:")}             ${meta.source}`);
+        console.log(`  ${pc.dim("From Cache:")}         ${meta.fromCache ? pc.yellow("yes") : "no"}`);
+        console.log(`  ${pc.dim("Fetched At:")}         ${meta.fetchedAt}`);
+        if (meta.expiresAt) {
+          console.log(`  ${pc.dim("Cache Expires:")}      ${meta.expiresAt}`);
+        }
+        if (meta.cacheAgeSeconds !== undefined) {
+          console.log(`  ${pc.dim("Cache Age:")}          ${meta.cacheAgeSeconds}s`);
+        }
+        console.log(hr());
+        console.log(pc.dim("  Use --refresh to bypass cache and fetch the latest version from hosted."));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to load version info: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── cache ─────────────────────────────────────────────────────────────────
+  const cacheCmd = cap
+    .command("cache")
+    .description("Manage the local capability registry TTL cache");
+
+  cacheCmd
+    .command("status")
+    .description("Show cache freshness, node count, and source metadata")
+    .option("--json", "Output raw JSON")
+    .action((opts: { json?: boolean }) => {
+      const status = getCapabilityCacheStatus();
+
+      if (opts.json) {
+        console.log(JSON.stringify(status, null, 2));
+        return;
+      }
+
+      console.log("");
+      console.log(pc.bold("Capability Registry Cache"));
+      console.log(hr());
+
+      if (!status.exists) {
+        console.log("  " + pc.yellow("No cache found.") + pc.dim("  Run `growthub capability list` to populate."));
+        console.log("");
+        return;
+      }
+
+      const freshLabel = status.fresh ? pc.green("fresh") : pc.yellow("stale");
+      console.log(`  ${pc.dim("Status:")}       ${freshLabel}`);
+      console.log(`  ${pc.dim("Source:")}       ${status.source ?? "?"}`);
+      console.log(`  ${pc.dim("Total:")}        ${status.total ?? "?"} capabilities`);
+      console.log(`  ${pc.dim("Enabled:")}      ${status.enabledCount ?? "?"} capabilities`);
+      console.log(`  ${pc.dim("Fetched:")}      ${status.fetchedAt ?? "?"}`);
+      console.log(`  ${pc.dim("Expires:")}      ${status.expiresAt ?? "?"}`);
+      console.log(`  ${pc.dim("Age:")}          ${status.ageSeconds !== undefined ? `${status.ageSeconds}s` : "?"}`);
+      console.log(hr());
+      console.log(pc.dim("  growthub capability cache clear  ·  growthub capability list --refresh"));
+      console.log("");
+    });
+
+  cacheCmd
+    .command("clear")
+    .description("Clear the local capability registry cache")
+    .action(() => {
+      clearCapabilityCache();
+      console.log(pc.green("Capability registry cache cleared.") + pc.dim("  Next list will fetch fresh from hosted."));
     });
 }

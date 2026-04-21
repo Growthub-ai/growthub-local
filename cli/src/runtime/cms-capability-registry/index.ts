@@ -9,23 +9,30 @@
  *   - what execution shape they require
  *
  * Data source:
- *   - Hosted registry endpoint via HostedExecutionClient
+ *   - Hosted registry endpoint via HostedExecutionClient (primary)
+ *   - Derived from saved hosted workflows (fallback when registry unavailable)
+ *   - Local TTL cache (advisory; bypassed by query.refresh=true)
  *
  * The registry does NOT reimplement CMS semantics — it exposes them as
  * CLI/runtime-friendly node records.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import {
   createHostedExecutionClient,
   type HostedCapabilityRecord,
 } from "../hosted-execution-client/index.js";
 import { readSession, isSessionExpired } from "../../auth/session-store.js";
 import { listHostedWorkflows, fetchHostedWorkflow } from "../../auth/hosted-client.js";
+import { resolvePaperclipHomeDir } from "../../config/home.js";
 import type {
   CmsCapabilityNode,
   CapabilityFamily,
   CapabilityQuery,
   CapabilityRegistryMeta,
+  CachedCapabilityRegistry,
+  CapabilityCacheStatus,
 } from "./types.js";
 
 export type {
@@ -39,9 +46,96 @@ export type {
   CmsVisibility,
   CmsExecutionBinding,
   CmsExecutionTokens,
+  CachedCapabilityRegistry,
+  CapabilityRegistryCacheMeta,
+  CapabilityCacheStatus,
+  InputTemplateField,
+  OutputMappingEntry,
 } from "./types.js";
 
 export { CAPABILITY_FAMILIES } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// TTL cache — advisory, file-backed, non-blocking
+// ---------------------------------------------------------------------------
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function resolveCapabilityCachePath(): string {
+  return path.resolve(resolvePaperclipHomeDir(), "cache", "capability-registry.json");
+}
+
+function readCapabilityCache(): CachedCapabilityRegistry | null {
+  try {
+    const cachePath = resolveCapabilityCachePath();
+    if (!fs.existsSync(cachePath)) return null;
+    const raw = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as unknown;
+    if (
+      typeof raw !== "object" || raw === null ||
+      !("fetchedAt" in raw) || !("expiresAt" in raw) || !("nodes" in raw) ||
+      !Array.isArray((raw as { nodes: unknown }).nodes)
+    ) return null;
+    return raw as CachedCapabilityRegistry;
+  } catch {
+    return null;
+  }
+}
+
+function writeCapabilityCache(
+  nodes: CmsCapabilityNode[],
+  meta: { source: "hosted" | "derived"; total: number; enabledCount: number },
+): void {
+  try {
+    const cachePath = resolveCapabilityCachePath();
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    const now = Date.now();
+    const entry: CachedCapabilityRegistry = {
+      fetchedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + CACHE_TTL_MS).toISOString(),
+      source: meta.source,
+      total: meta.total,
+      enabledCount: meta.enabledCount,
+      nodes,
+    };
+    fs.writeFileSync(cachePath, `${JSON.stringify(entry, null, 2)}\n`, "utf-8");
+  } catch {
+    // Cache write is non-fatal — never block discovery
+  }
+}
+
+function isCacheValid(cache: CachedCapabilityRegistry): boolean {
+  return new Date(cache.expiresAt).getTime() > Date.now();
+}
+
+/** Clear the local capability registry cache. */
+export function clearCapabilityCache(): void {
+  try {
+    const cachePath = resolveCapabilityCachePath();
+    if (fs.existsSync(cachePath)) {
+      fs.rmSync(cachePath);
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+/** Return current cache state without loading node payloads. */
+export function getCapabilityCacheStatus(): CapabilityCacheStatus {
+  const cache = readCapabilityCache();
+  if (!cache) return { exists: false, fresh: false };
+  const fresh = isCacheValid(cache);
+  const ageSeconds = Math.floor((Date.now() - new Date(cache.fetchedAt).getTime()) / 1000);
+  return {
+    exists: true,
+    fresh,
+    fetchedAt: cache.fetchedAt,
+    expiresAt: cache.expiresAt,
+    source: cache.source,
+    total: cache.total,
+    enabledCount: cache.enabledCount,
+    ageSeconds,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Normalize hosted records to CmsCapabilityNode
@@ -85,6 +179,12 @@ function toCapabilityNode(record: HostedCapabilityRecord): CmsCapabilityNode {
       tool_name: toolName,
       input_template: inputTemplate,
       output_mapping: outputMapping,
+      endpoint_config: typeof executionTokens.endpoint_config === "object" && executionTokens.endpoint_config !== null
+        ? executionTokens.endpoint_config as { env_var?: string; endpoint_type?: string }
+        : undefined,
+      migration_version: typeof executionTokens.migration_version === "string"
+        ? executionTokens.migration_version
+        : undefined,
     },
     requiredBindings: record.requiredBindings,
     outputTypes: record.outputTypes,
@@ -177,7 +277,7 @@ function matchesQuery(node: CmsCapabilityNode, query: CapabilityQuery): boolean 
 // ---------------------------------------------------------------------------
 
 export interface CmsCapabilityRegistryClient {
-  /** Fetch all capabilities, optionally filtered. */
+  /** Fetch all capabilities, optionally filtered. Pass query.refresh=true to bypass cache. */
   listCapabilities(query?: CapabilityQuery): Promise<{ nodes: CmsCapabilityNode[]; meta: CapabilityRegistryMeta }>;
   /** Fetch a single capability by slug. */
   getCapability(slug: string): Promise<CmsCapabilityNode | null>;
@@ -186,26 +286,80 @@ export interface CmsCapabilityRegistryClient {
 export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient {
   return {
     async listCapabilities(query) {
+      const forceRefresh = query?.refresh === true;
+
+      // Check warm cache first (skip when forceRefresh or explicitly disabled)
+      if (!forceRefresh) {
+        const cached = readCapabilityCache();
+        if (cached && isCacheValid(cached)) {
+          const allNodes = cached.nodes.map((n) => n); // preserve shape
+          const filtered = query ? allNodes.filter((n) => matchesQuery(n, query)) : allNodes;
+          const ageSeconds = Math.floor((Date.now() - new Date(cached.fetchedAt).getTime()) / 1000);
+          return {
+            nodes: filtered,
+            meta: {
+              total: cached.total,
+              enabledCount: cached.enabledCount,
+              fetchedAt: cached.fetchedAt,
+              source: "cache",
+              fromCache: true,
+              expiresAt: cached.expiresAt,
+              cacheAgeSeconds: ageSeconds,
+            },
+          };
+        }
+      }
+
+      // Fetch from hosted
       const executionClient = createHostedExecutionClient();
       let hostedRecords = await executionClient.getHostedCapabilities();
+      let derivedSource: "hosted" | "derived" = "hosted";
+
       if (hostedRecords.length === 0) {
         hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
+        derivedSource = "derived";
       }
+
       if (hostedRecords.length === 0) {
+        // Last resort: serve stale cache if available rather than hard-failing
+        const staleCache = readCapabilityCache();
+        if (staleCache) {
+          const allNodes = staleCache.nodes;
+          const filtered = query ? allNodes.filter((n) => matchesQuery(n, query)) : allNodes;
+          const ageSeconds = Math.floor((Date.now() - new Date(staleCache.fetchedAt).getTime()) / 1000);
+          return {
+            nodes: filtered,
+            meta: {
+              total: staleCache.total,
+              enabledCount: staleCache.enabledCount,
+              fetchedAt: staleCache.fetchedAt,
+              source: "cache",
+              fromCache: true,
+              expiresAt: staleCache.expiresAt,
+              cacheAgeSeconds: ageSeconds,
+            },
+          };
+        }
         throw new Error("Hosted capability registry returned zero nodes. No local fallback is enabled.");
       }
-      const nodes = hostedRecords.map(toCapabilityNode);
 
+      const nodes = hostedRecords.map(toCapabilityNode);
       const enabledCount = nodes.filter((n) => n.enabled).length;
+
+      // Persist to cache (non-blocking)
+      writeCapabilityCache(nodes, { source: derivedSource, total: nodes.length, enabledCount });
+
       const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
+      const now = new Date().toISOString();
 
       return {
         nodes: filtered,
         meta: {
           total: nodes.length,
           enabledCount,
-          fetchedAt: new Date().toISOString(),
-          source: "hosted",
+          fetchedAt: now,
+          source: derivedSource,
+          fromCache: false,
         },
       };
     },

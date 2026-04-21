@@ -134,6 +134,8 @@ export interface CapabilityQuery {
   enabledOnly?: boolean;
   /** Text search across slug, displayName, description. */
   search?: string;
+  /** Bypass local TTL cache and fetch fresh from hosted. */
+  refresh?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,5 +150,63 @@ export interface CapabilityRegistryMeta {
   /** ISO timestamp of registry data freshness. */
   fetchedAt: string;
   /** Source of the data. */
-  source: "hosted";
+  source: "hosted" | "derived" | "cache";
+  /** Whether this result came from local TTL cache. */
+  fromCache?: boolean;
+  /** ISO timestamp when the cache entry expires (only present when fromCache=true). */
+  expiresAt?: string;
+  /** Age of the cache entry in seconds (only present when fromCache=true). */
+  cacheAgeSeconds?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Local TTL cache types
+// ---------------------------------------------------------------------------
+
+export interface CapabilityRegistryCacheMeta {
+  fetchedAt: string;
+  expiresAt: string;
+  source: "hosted" | "derived";
+  total: number;
+  enabledCount: number;
+}
+
+/** Full cache snapshot stored on disk. */
+export interface CachedCapabilityRegistry extends CapabilityRegistryCacheMeta {
+  nodes: CmsCapabilityNode[];
+}
+
+/** Summary returned by getCapabilityCacheStatus() — no node payloads. */
+export interface CapabilityCacheStatus {
+  exists: boolean;
+  fresh: boolean;
+  fetchedAt?: string;
+  expiresAt?: string;
+  source?: "hosted" | "derived";
+  total?: number;
+  enabledCount?: number;
+  /** Seconds elapsed since the cache was written. */
+  ageSeconds?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Execution token inspection helpers
+// ---------------------------------------------------------------------------
+
+/** A single field extracted from executionTokens.input_template for display. */
+export interface InputTemplateField {
+  key: string;
+  value: unknown;
+  /** JS typeof of the value. */
+  valueType: string;
+  /** True when value is "" or null or undefined. */
+  isEmpty: boolean;
+}
+
+/** A single mapping entry extracted from executionTokens.output_mapping for display. */
+export interface OutputMappingEntry {
+  key: string;
+  /** JSON path expression or constant value pointing to the output field. */
+  path: unknown;
+  description?: string;
 }
