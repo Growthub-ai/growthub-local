@@ -1286,7 +1286,7 @@ async function runDiscoveryHub(opts?: {
       p.note(
         [
           "🧭 Environment Management: one-pane view of Local fork state, Hosted account, and Bridge health — refresh the capability manifest, inspect drift, jump into fleet / statuspage.",
-          "💬 Chat: streaming conversational surface with slash commands (/registry, /plan, /generate) wired into the CMS registry and native intelligence.",
+          "💬 Chat: streaming conversational surface with slash commands (/registry, /plan, /configure, /generate) — /configure + /generate open a rich schema-driven form that supports local MP4/PNG/MP3/PDF attachments.",
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
@@ -1315,6 +1315,7 @@ async function runDiscoveryHub(opts?: {
           "growthub capability refresh",
           "growthub capability register <file>",
           "growthub capability diff",
+          "growthub capability configure <slug>",
           "growthub auth login",
           "growthub auth whoami",
           "growthub kit",

@@ -28,6 +28,10 @@ import {
   type ManifestDriftReport,
 } from "../runtime/cms-capability-registry/index.js";
 import {
+  promptNodeInputs,
+  renderInputFormSummary,
+} from "../runtime/node-input-form/index.js";
+import {
   createMachineCapabilityResolver,
 } from "../runtime/machine-capability-resolver/index.js";
 import { getWorkflowAccess } from "../auth/workflow-access.js";
@@ -311,6 +315,7 @@ Examples:
   $ growthub capability register ./my.json  # install a local extension
   $ growthub capability diff                # drift between cache and hosted
   $ growthub capability clear-cache         # drop the on-disk manifest cache
+  $ growthub capability configure video-gen # rich form — supports MP4/PNG local files
 `);
 
   cap.action(async () => {
@@ -567,6 +572,72 @@ Examples:
         printDriftReport(drift, envelope.meta.registryHash);
       } catch (err) {
         console.error(pc.red("Failed to compute drift: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── configure (rich schema-driven form) ─────────────────────────────────
+  cap
+    .command("configure")
+    .description("Rich schema-driven form for a capability — supports local MP4/PNG/media")
+    .argument("<slug>", "Capability slug")
+    .option("--json", "Output the collected bindings as JSON (no rendered summary)")
+    .option("--seed <file>", "Seed values from a JSON file")
+    .action(async (slug: string, opts: { json?: boolean; seed?: string }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const registry = createCmsCapabilityRegistryClient();
+      try {
+        const node = await registry.getCapability(slug);
+        if (!node) {
+          console.error(pc.red(`Unknown capability: "${slug}".`));
+          process.exitCode = 1;
+          return;
+        }
+
+        let seed: Record<string, unknown> | undefined;
+        if (opts.seed) {
+          const seedPath = path.resolve(opts.seed);
+          if (!fs.existsSync(seedPath)) {
+            console.error(pc.red(`Seed file not found: ${seedPath}`));
+            process.exitCode = 1;
+            return;
+          }
+          seed = JSON.parse(fs.readFileSync(seedPath, "utf8")) as Record<string, unknown>;
+        }
+
+        const result = await promptNodeInputs(node, { seed });
+        if (result.cancelled) {
+          console.error(pc.yellow("Configuration cancelled."));
+          process.exitCode = 1;
+          return;
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify({
+            slug: node.slug,
+            bindings: result.bindings,
+            attachments: result.attachments.map((a) => ({
+              key: a.key,
+              path: a.file.absolutePath,
+              mime: a.file.mime,
+              category: a.file.category,
+              sizeBytes: a.file.sizeBytes,
+            })),
+          }, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(renderInputFormSummary(result));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Configure failed: " + (err as Error).message));
         process.exitCode = 1;
       }
     });

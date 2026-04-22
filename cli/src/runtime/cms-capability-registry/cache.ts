@@ -6,16 +6,19 @@
  *   - Agents can inspect the last-known-good registry without a hosted round-trip
  *   - Drift detection compares `registryHash` before vs after a refresh
  *
- * Cache lives under the paperclip home dir, keyed per hosted origin so that
+ * Cache lives under the Growthub profile home (operator-wide, not tied to
+ * a single paperclip instance), keyed per hosted origin so that
  * multi-tenant operators running against several hosted targets never collide.
  *
  * Layout:
- *   ~/.paperclip/manifests/<hostedHost>.capabilities.json
+ *   ~/.growthub/profile/manifests/<hostedHost>.capabilities.json
+ *
+ * Override with the `GROWTHUB_PROFILE_HOME` environment variable.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import { resolvePaperclipHomeDir } from "../../config/home.js";
+import { resolveGrowthubProfileManifestsDir } from "../../config/growthub-profile-home.js";
 import type { CapabilityManifestEnvelope } from "@growthub/api-contract/manifest";
 
 const DEFAULT_TTL_SECONDS = 5 * 60;
@@ -30,7 +33,7 @@ function sanitizeHost(hostedBaseUrl: string): string {
 }
 
 export function resolveManifestCacheDir(): string {
-  return path.resolve(resolvePaperclipHomeDir(), "manifests");
+  return resolveGrowthubProfileManifestsDir();
 }
 
 export function resolveManifestCachePath(hostedBaseUrl: string): string {

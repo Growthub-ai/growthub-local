@@ -30,11 +30,16 @@ import {
 import {
   createCmsCapabilityRegistryClient,
   type CapabilityFamily,
+  type CmsCapabilityNode,
 } from "../runtime/cms-capability-registry/index.js";
 import {
   createStreamingConsole,
   type StreamingConsoleHandle,
 } from "../runtime/streaming-console/index.js";
+import {
+  promptNodeInputs,
+  renderInputFormSummary,
+} from "../runtime/node-input-form/index.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
 const SYSTEM_PROMPT =
@@ -130,11 +135,12 @@ async function handleSlashCommand(text: string, console_: StreamingConsoleHandle
   if (cmd === "help") {
     console_.writeSystem([
       "slash commands:",
-      "  /help                   — this list",
-      "  /registry               — compact capability registry summary",
-      "  /plan <intent>          — propose a pipeline for an intent",
-      "  /generate <family> <…>  — preview the single-node pipeline for a family",
-      "  /exit                   — leave chat",
+      "  /help                    — this list",
+      "  /registry                — compact capability registry summary",
+      "  /plan <intent>           — propose a pipeline for an intent",
+      "  /configure <slug>        — schema-driven rich form for a CMS node",
+      "  /generate <family> <…>   — configure + preview a single-node pipeline",
+      "  /exit                    — leave chat",
     ].join("\n"));
     return;
   }
@@ -186,33 +192,56 @@ async function handleSlashCommand(text: string, console_: StreamingConsoleHandle
     return;
   }
 
+  if (cmd === "configure") {
+    if (!arg) {
+      console_.writeSystem("usage: /configure <slug>");
+      return;
+    }
+    try {
+      const registry = createCmsCapabilityRegistryClient();
+      const node = await registry.getCapability(arg);
+      if (!node) {
+        console_.writeSystem(`no capability with slug "${arg}". try /registry.`);
+        return;
+      }
+      await runConfigurationForm(node, console_);
+    } catch (err) {
+      console_.writeError("Registry error", (err as Error).message);
+    }
+    return;
+  }
+
   if (cmd === "generate") {
     if (!arg) {
-      console_.writeSystem("usage: /generate <family> <prompt>");
+      console_.writeSystem("usage: /generate <family> [prompt]");
       return;
     }
     const [familyRaw, ...promptParts] = arg.split(/\s+/);
     const family = familyRaw as CapabilityFamily;
-    const prompt = promptParts.join(" ");
+    const seedPrompt = promptParts.join(" ");
     try {
       const registry = createCmsCapabilityRegistryClient();
       const { nodes } = await registry.listCapabilities({ family, enabledOnly: true });
-      const pick = nodes[0];
-      if (!pick) {
+      if (nodes.length === 0) {
         console_.writeSystem(`no enabled capability found in family "${family}".`);
         return;
       }
-      console_.writeAssistantMessage({
-        text: [
-          `would assemble a single-node pipeline:`,
-          `  slug:     ${pick.slug}`,
-          `  family:   ${pick.family}`,
-          `  bindings: ${pick.requiredBindings.join(", ") || "(none)"}`,
-          `  prompt:   ${prompt}`,
-          "",
-          "to execute: growthub pipeline assemble (interactive) or POST /api/execute-workflow.",
-        ].join("\n"),
-      });
+      let pick = nodes[0];
+      if (nodes.length > 1) {
+        const selected = await p.select({
+          message: `multiple ${family} capabilities — choose one`,
+          options: nodes.map((n) => ({
+            value: n.slug,
+            label: `${n.icon ? n.icon + " " : ""}${n.displayName}`,
+            hint: n.slug,
+          })),
+        });
+        if (p.isCancel(selected)) return;
+        const match = nodes.find((n) => n.slug === selected);
+        if (match) pick = match;
+      }
+      const seed = seedPrompt ? buildSeedFromPrompt(pick, seedPrompt) : undefined;
+      await runConfigurationForm(pick, console_, seed);
     } catch (err) {
       console_.writeError("Registry error", (err as Error).message);
     }
@@ -220,6 +249,68 @@ async function handleSlashCommand(text: string, console_: StreamingConsoleHandle
   }
 
   console_.writeSystem(`unknown slash command: /${cmd}. type /help.`);
+}
+
+async function runConfigurationForm(
+  node: CmsCapabilityNode,
+  console_: StreamingConsoleHandle,
+  seed?: Record<string, unknown>,
+): Promise<void> {
+  const result = await promptNodeInputs(node, { seed });
+  if (result.cancelled) {
+    console_.writeSystem("configuration cancelled.");
+    return;
+  }
+
+  const lines: string[] = [
+    `configured ${pc.bold(node.slug)} (${node.family}):`,
+    "",
+    renderInputFormSummary(result),
+    "",
+    "Preview pipeline payload (single node):",
+    JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: `n1-${node.slug}`,
+            slug: node.slug,
+            bindings: result.bindings,
+          },
+        ],
+        executionMode: "hosted",
+      },
+      null,
+      2,
+    ),
+    "",
+    "next:",
+    "  • growthub pipeline assemble  (interactive multi-node)",
+    "  • POST /api/execute-workflow  (programmatic)",
+  ];
+  if (result.attachments.length > 0) {
+    lines.push(
+      "",
+      `local attachments (${result.attachments.length}) will be uploaded at execution:`,
+      ...result.attachments.map((a) => `  ${a.key} → ${a.file.mime} · ${a.file.absolutePath}`),
+    );
+  }
+  console_.writeAssistantMessage({ text: lines.join("\n") });
+}
+
+/**
+ * Map the trailing prompt text onto the most likely seed key. We look for
+ * input fields named `prompt`, `userPrompt`, `query`, `instruction(s)`, or
+ * `description` — whichever the node defines first.
+ */
+function buildSeedFromPrompt(node: CmsCapabilityNode, promptText: string): Record<string, unknown> {
+  const template = node.executionTokens.input_template ?? {};
+  const preferred = ["prompt", "userPrompt", "query", "instruction", "instructions", "description"];
+  for (const key of preferred) {
+    if (Object.prototype.hasOwnProperty.call(template, key)) {
+      return { [key]: promptText };
+    }
+  }
+  return {};
 }
 
 export function registerChatCommands(program: Command): void {

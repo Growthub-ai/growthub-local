@@ -20,8 +20,9 @@ Read, in order:
 4. `cli/src/index.ts`
 5. `cli/src/commands/` (including `environment.ts`, `chat.ts`,
    `authority.ts`, `policy.ts`, `org.ts`, `capability.ts`)
-6. `cli/src/runtime/cms-capability-registry/` and
-   `cli/src/runtime/streaming-console/`
+6. `cli/src/runtime/cms-capability-registry/`,
+   `cli/src/runtime/streaming-console/`, and
+   `cli/src/runtime/node-input-form/`
 7. `scripts/runtime-control.sh`
 
 The canonical v1 type contract lives in `@growthub/api-contract`. Do not

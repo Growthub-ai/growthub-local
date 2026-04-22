@@ -483,6 +483,7 @@ This keeps the mental model intact:
 
 - [Growthub API v1](./docs/GROWTHUB_API_V1.md)
 - [CMS Node Manifest Registry](./docs/CMS_NODE_MANIFEST_REGISTRY.md)
+- [Node Input Form (rich configuration)](./docs/NODE_INPUT_FORM.md)
 - [Enterprise Management Surface](./docs/ENTERPRISE_MANAGEMENT.md)
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)

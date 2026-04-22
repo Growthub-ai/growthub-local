@@ -6,8 +6,9 @@ CMS-backed node primitives are available to a given fork. It is:
 - **Hosted-authoritative** — the hosted Growthub app publishes the canonical
   list via `GET /api/cli/capabilities`.
 - **Locally cached** — the CLI persists the last-known-good manifest under
-  `~/.paperclip/manifests/<host>.capabilities.json` so discovery works
-  offline and the first call on a fresh shell is instant.
+  `~/.growthub/profile/manifests/<host>.capabilities.json` (override with
+  the `GROWTHUB_PROFILE_HOME` env var) so discovery works offline and the
+  first call on a fresh shell is instant.
 - **Locally extensible** — operators may register additional nodes inside
   `<forkPath>/.growthub-fork/capabilities/*.json`. These are merged into the
   view with local-overrides-hosted precedence and are always tagged with

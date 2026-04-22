@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveInForkStateDir } from "../../config/kit-forks-home.js";
-import { resolvePaperclipHomeDir } from "../../config/home.js";
+import { resolveGrowthubProfileSessionsDir } from "../../config/growthub-profile-home.js";
 import type { StreamingConsoleRecord } from "./types.js";
 
 export const SESSIONS_DIRNAME = "sessions";
@@ -27,8 +27,8 @@ export function resolveSessionsDir(forkPath?: string): string {
       return path.resolve(stateDir, SESSIONS_DIRNAME);
     }
   }
-  // Fallback — home-scoped sessions dir.
-  return path.resolve(resolvePaperclipHomeDir(), SESSIONS_DIRNAME);
+  // Fallback — operator-wide growthub profile sessions dir.
+  return resolveGrowthubProfileSessionsDir();
 }
 
 export function resolveSessionTranscriptPath(sessionId: string, forkPath?: string): string {

@@ -12,6 +12,10 @@ What this release ships and what stability guarantees come with it.
   - `growthub chat` (one-shot + interactive) + `StreamingConsole` primitive
   - `growthub capability refresh` / `register` / `diff` / `clear-cache`
     backed by the new manifest envelope, TTL cache, and local-extension loader
+  - `growthub capability configure <slug>` — rich schema-driven form
+    with local MP4/PNG/MP3/PDF attachment support (see
+    `docs/NODE_INPUT_FORM.md`). Available inside chat as
+    `/configure` and `/generate`.
   - `growthub authority show` / `verify` / `issuers`
   - `growthub policy show` / `check <slug>` / `providers`
   - `growthub org show` / `entitlements` / `gated`
@@ -22,10 +26,14 @@ What this release ships and what stability guarantees come with it.
   - `cli/src/runtime/cms-capability-registry/{manifest,cache,local-extensions,schema}.ts`
   - `cli/src/runtime/environment-snapshot/{index,renderers,types}.ts`
   - `cli/src/runtime/streaming-console/{index,session-log,types}.ts`
+  - `cli/src/runtime/node-input-form/{index,mime,types}.ts`
+  - `cli/src/config/growthub-profile-home.ts` (profile-level home,
+    houses the manifest cache at `~/.growthub/profile/manifests/`)
 - Docs:
   - `docs/GROWTHUB_API_V1.md`
   - `docs/CMS_NODE_MANIFEST_REGISTRY.md`
   - `docs/ENTERPRISE_MANAGEMENT.md`
+  - `docs/NODE_INPUT_FORM.md`
   - `docs/RELEASE_GROWTHUB_API_V1.md` (this file)
 
 ## Stability
