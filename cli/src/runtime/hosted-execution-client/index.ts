@@ -499,6 +499,42 @@ function collectArtifacts(
         metadata: slideRecord,
       });
     }
+
+    const videos = Array.isArray(record.videos) ? record.videos : [];
+    for (const video of videos) {
+      if (!video || typeof video !== "object") continue;
+      const videoRecord = video as Record<string, unknown>;
+      const storagePath = typeof videoRecord.storage_path === "string" ? videoRecord.storage_path : undefined;
+      const url = typeof videoRecord.url === "string" ? videoRecord.url
+        : typeof videoRecord.dataUrl === "string" ? videoRecord.dataUrl
+        : undefined;
+      artifacts.push({
+        artifactId: storagePath ?? `${entry.nodeId}-video-${artifacts.length + 1}`,
+        artifactType: "video",
+        nodeId: entry.nodeId,
+        url,
+        storagePath,
+        metadata: videoRecord,
+      });
+    }
+
+    // refs[] pattern — video generation output (dataUrl or url per ref)
+    const refs = Array.isArray(record.refs) ? record.refs : [];
+    for (const ref of refs) {
+      if (!ref || typeof ref !== "object") continue;
+      const refRecord = ref as Record<string, unknown>;
+      const url = typeof refRecord.dataUrl === "string" ? refRecord.dataUrl
+        : typeof refRecord.url === "string" ? refRecord.url
+        : undefined;
+      if (!url) continue;
+      artifacts.push({
+        artifactId: `${entry.nodeId}-ref-${artifacts.length + 1}`,
+        artifactType: "video",
+        nodeId: entry.nodeId,
+        url,
+        metadata: refRecord,
+      });
+    }
   }
 
   return artifacts;

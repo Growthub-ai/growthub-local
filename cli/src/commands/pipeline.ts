@@ -194,15 +194,32 @@ export async function runPipelineAssembler(opts: {
       const cap = capabilities.find((c) => c.slug === capChoice);
       if (!cap) continue;
 
-      // Collect bindings
+      // Collect bindings using contract-driven introspection
+      const contract = introspectNodeContract(cap);
       const bindings: Record<string, unknown> = {};
+
+      // Provider connection binding keys first
       for (const bindingKey of cap.requiredBindings) {
         const value = await p.text({
-          message: `Binding "${bindingKey}" for ${cap.slug}`,
+          message: `Connection: "${bindingKey}" for ${cap.slug}`,
           placeholder: `Enter value for ${bindingKey}`,
         });
         if (p.isCancel(value)) { p.cancel("Cancelled."); process.exit(0); }
         bindings[bindingKey] = value;
+      }
+
+      // Required input_template fields (prompt, model, etc.) — skip any that overlap
+      for (const input of contract.inputs) {
+        if (!input.required) continue;
+        if (cap.requiredBindings.includes(input.key)) continue;
+        const value = await p.text({
+          message: `Input: ${input.label} (${input.type})`,
+          placeholder: `Enter ${input.label.toLowerCase()}`,
+        });
+        if (p.isCancel(value)) { p.cancel("Cancelled."); process.exit(0); }
+        if (typeof value === "string" && value.trim().length > 0) {
+          bindings[input.key] = value;
+        }
       }
 
       // Upstream node selection (if there are existing nodes)
@@ -345,6 +362,31 @@ export async function runPipelineAssembler(opts: {
         continue;
       }
 
+      // Package to get output summaries, async node list, and preflight warnings
+      const pkg = await builder.package();
+
+      // Show validation warnings
+      const validationWarnings = validation.issues.filter((i) => i.severity === "warning");
+      if (validationWarnings.length > 0) {
+        console.log("");
+        for (const w of validationWarnings) {
+          console.log(`  ${pc.yellow("WARN")} ${w.message}`);
+        }
+      }
+
+      // Show preflight warnings (cross-node compat, async strategy, empty bindings)
+      if (pkg.preflightWarnings.length > 0) {
+        console.log("");
+        for (const w of pkg.preflightWarnings) {
+          console.log(`  ${pc.yellow("⚠")}  ${w.message}`);
+        }
+      }
+
+      // Async node advisory
+      if (pkg.asyncNodeIds.length > 0) {
+        p.log.warn(`${pkg.asyncNodeIds.length} async node(s) — execution will not be immediate and will require polling.`);
+      }
+
       const pipeline = builder.build();
       const summary = buildPreExecutionSummary({
         pipeline,
@@ -372,8 +414,6 @@ export async function runPipelineAssembler(opts: {
 
       try {
         const executionClient = createHostedExecutionClient();
-        const pipeline = builder.build();
-        const pkg = await builder.package();
 
         p.log.info(`Executing pipeline ${pc.bold(pipeline.pipelineId)} (${pkg.executionRoute})...`);
 
@@ -791,6 +831,166 @@ Examples:
         if (!result.valid) process.exitCode = 1;
       } catch (err) {
         console.error(pc.red("Validation failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── package ─────────────────────────────────────────────────────────────
+  pipe
+    .command("package")
+    .description("Show execution package: routes, output summaries, async nodes, preflight warnings")
+    .argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string")
+    .option("--json", "Output raw JSON")
+    .action(async (input: string, opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const pipeline = loadPipelineFromFileOrJson(input);
+        const builder = createPipelineBuilder({
+          executionMode: pipeline.executionMode,
+          threadId: pipeline.threadId,
+          metadata: pipeline.metadata,
+        });
+        for (const node of pipeline.nodes) {
+          builder.addNode(node.slug, node.bindings, node.upstreamNodeIds);
+        }
+
+        const pkg = await builder.package();
+
+        if (opts.json) {
+          console.log(JSON.stringify(pkg, null, 2));
+          return;
+        }
+
+        console.log("");
+        console.log(pc.bold("Pipeline Package"));
+        console.log(hr());
+        console.log(`  ${pc.dim("Pipeline:")}      ${pkg.pipeline.pipelineId}`);
+        console.log(`  ${pc.dim("Route:")}         ${pkg.executionRoute}`);
+        console.log(`  ${pc.dim("Async nodes:")}   ${pkg.asyncNodeIds.length > 0 ? pkg.asyncNodeIds.join(", ") : pc.dim("(none)")}`);
+        console.log("");
+        console.log(pc.bold("  Node Output Summaries"));
+        for (const [nodeId, summary] of Object.entries(pkg.nodeOutputSummaries)) {
+          const keys = summary.outputKeys.length > 0 ? summary.outputKeys.join(", ") : pc.dim("(none)");
+          const types = summary.outputTypes.length > 0 ? summary.outputTypes.join(", ") : pc.dim("(none)");
+          console.log(`  ${pc.dim("·")} ${pc.bold(summary.slug)} ${pc.dim(nodeId)}`);
+          console.log(`    ${pc.dim("output keys:")} ${keys}  ${pc.dim("types:")} ${types}`);
+        }
+        if (pkg.preflightWarnings.length > 0) {
+          console.log("");
+          console.log(pc.bold("  Preflight Warnings"));
+          for (const w of pkg.preflightWarnings) {
+            console.log(`  ${pc.yellow("⚠")}  ${w.message}`);
+          }
+        }
+        console.log(hr());
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Package failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── preflight ────────────────────────────────────────────────────────────
+  pipe
+    .command("preflight")
+    .description("Full pre-execution analysis: validate + package + contract summary")
+    .argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string")
+    .option("--json", "Output raw JSON")
+    .action(async (input: string, opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const pipeline = loadPipelineFromFileOrJson(input);
+        const builder = createPipelineBuilder({
+          executionMode: pipeline.executionMode,
+          threadId: pipeline.threadId,
+          metadata: pipeline.metadata,
+        });
+        for (const node of pipeline.nodes) {
+          builder.addNode(node.slug, node.bindings, node.upstreamNodeIds);
+        }
+
+        const [validation, pkg] = await Promise.all([builder.validate(), builder.package()]);
+
+        const registry = createCmsCapabilityRegistryClient();
+        const { nodes: capabilities } = await registry.listCapabilities({ enabledOnly: false });
+        const contractSummary = buildPreExecutionSummary({
+          pipeline,
+          registryBySlug: new Map(capabilities.map((n) => [n.slug, n])),
+        });
+
+        if (opts.json) {
+          console.log(JSON.stringify({ validation, pkg, contractSummary }, null, 2));
+          return;
+        }
+
+        const readyLabel = validation.valid ? pc.green("ready") : pc.red("not ready");
+        console.log("");
+        console.log(pc.bold("Pipeline Preflight") + `  ${readyLabel}`);
+        console.log(hr());
+
+        const errors = validation.issues.filter((i) => i.severity === "error");
+        const warnings = validation.issues.filter((i) => i.severity === "warning");
+
+        if (errors.length > 0) {
+          console.log(pc.red(`  ${errors.length} error(s):`));
+          for (const e of errors) {
+            const ref = e.nodeId ? ` [${e.nodeId}]` : "";
+            console.log(`  ${pc.red("✗")}${ref} ${e.message}`);
+          }
+          console.log("");
+        }
+
+        if (warnings.length > 0) {
+          console.log(pc.yellow(`  ${warnings.length} validation warning(s):`));
+          for (const w of warnings) {
+            const ref = w.nodeId ? ` [${w.nodeId}]` : "";
+            console.log(`  ${pc.yellow("!")}${ref} ${w.message}`);
+          }
+          console.log("");
+        }
+
+        console.log(box(renderPreExecutionSummary(contractSummary)));
+        console.log("");
+
+        if (pkg.asyncNodeIds.length > 0) {
+          console.log(pc.yellow(`  Async nodes (require polling): `) + pkg.asyncNodeIds.join(", "));
+          console.log("");
+        }
+
+        console.log(pc.bold("  Execution Route:") + `  ${pkg.executionRoute}`);
+        console.log("");
+        console.log(pc.bold("  Node Output Summaries"));
+        for (const summary of Object.values(pkg.nodeOutputSummaries)) {
+          const keys = summary.outputKeys.length > 0 ? summary.outputKeys.join(", ") : pc.dim("(none defined)");
+          const types = summary.outputTypes.length > 0 ? summary.outputTypes.join(", ") : pc.dim("(none)");
+          console.log(`  ${pc.dim("·")} ${pc.bold(summary.slug)}: output_mapping=[${keys}]  types=[${types}]`);
+        }
+
+        if (pkg.preflightWarnings.length > 0) {
+          console.log("");
+          console.log(pc.yellow(`  ${pkg.preflightWarnings.length} preflight warning(s):`));
+          for (const w of pkg.preflightWarnings) {
+            console.log(`  ${pc.yellow("⚠")}  ${w.message}`);
+          }
+        }
+
+        console.log(hr());
+        if (!validation.valid) process.exitCode = 1;
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Preflight failed: " + (err as Error).message));
         process.exitCode = 1;
       }
     });
