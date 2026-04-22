@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import * as p from "@clack/prompts";
 import { Command } from "commander";
 import pc from "picocolors";
+import { track, printActivationNudge } from "../analytics/posthog.js";
 import {
   downloadBundledKit,
   inspectBundledKit,
@@ -369,6 +370,9 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
     onProgress: renderProgressBar,
   });
 
+  track("kit_download_completed", { kit_id: resolvedId });
+  printActivationNudge("kit_download");
+
   console.log("");
   console.log(pc.green(pc.bold("Kit exported successfully.")));
   console.log("");
@@ -556,6 +560,8 @@ Examples:
         const result = downloadBundledKit(resolvedId, opts.out, {
           onProgress: renderProgressBar,
         });
+        // Preserve the existing --yes output surface while still recording telemetry.
+        track("kit_download_completed", { kit_id: resolvedId });
         console.log("");
         console.log(pc.bold("Exported folder:"), pc.cyan(result.folderPath));
         console.log(pc.bold("Open folder:   "), folderOpenLabel(result.folderPath));

@@ -15,6 +15,7 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { pathToFileURL } from "node:url";
+import { track, printActivationNudge } from "../analytics/posthog.js";
 import { initStarterWorkspace, DEFAULT_STARTER_KIT_ID } from "../starter/init.js";
 import type { StarterInitOptions } from "../starter/types.js";
 import { renderTable } from "../utils/table-renderer.js";
@@ -35,6 +36,8 @@ import type {
 export async function runStarterInit(opts: StarterInitOptions): Promise<void> {
   try {
     const result = await initStarterWorkspace(opts);
+    track("workspace_starter_created", { kit_id: result.kitId });
+    printActivationNudge("workspace_created");
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", ...result }, null, 2));
       return;
@@ -134,6 +137,11 @@ async function runSourceImportCommand(
   opts: RunSourceImportOptions,
 ): Promise<void> {
   const { input, json } = opts;
+  track(
+    input.source.kind === "github-repo"
+      ? "starter_import_repo_started"
+      : "starter_import_skill_started",
+  );
   try {
     const onProgressFromInput = input.onProgress;
     const onProgress = (step: string): void => {
@@ -147,6 +155,7 @@ async function runSourceImportCommand(
     });
 
     if (job.status === "awaiting_confirmation") {
+      track("awaiting_confirmation_reached", { source_kind: job.sourceKind });
       if (json) {
         console.log(
           JSON.stringify(
@@ -188,6 +197,7 @@ async function runSourceImportCommand(
     }
 
     if (job.status === "failed" || !result) {
+      track("import_failed", { source_kind: job.sourceKind });
       const msg = job.error ?? "Import failed.";
       if (json) {
         console.log(JSON.stringify({ status: "error", error: msg, job: renderJob(job) }, null, 2));
@@ -217,6 +227,13 @@ async function runSourceImportCommand(
 }
 
 function finalizeSuccess(result: SourceImportResult, jobId: string): void {
+  track(
+    result.sourceKind === "github-repo"
+      ? "starter_import_repo_completed"
+      : "starter_import_skill_completed",
+    { import_mode: result.importMode },
+  );
+  printActivationNudge("import_completed");
   const sourceLine =
     result.source.kind === "github-repo"
       ? `${result.source.repo.owner}/${result.source.repo.repo}`
