@@ -111,6 +111,13 @@ if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   PUBLISH_ARGS="$PUBLISH_ARGS --provenance"
 fi
 
+# npm requires explicit tags for prerelease versions (e.g. 1.0.0-alpha.1)
+API_CONTRACT_TAG="latest"
+if [[ "$API_CONTRACT_VERSION" == *-* ]]; then
+  API_CONTRACT_TAG="${API_CONTRACT_VERSION#*-}"
+  API_CONTRACT_TAG="${API_CONTRACT_TAG%%.*}"
+fi
+
 # Publish CLI
 echo "Publishing @growthub/cli@${CLI_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
@@ -135,9 +142,9 @@ echo ""
 # Publish api-contract
 echo "Publishing @growthub/api-contract@${API_CONTRACT_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
-  echo "[DRY RUN] npm publish packages/api-contract/ $PUBLISH_ARGS"
+  echo "[DRY RUN] npm publish packages/api-contract/ $PUBLISH_ARGS --tag $API_CONTRACT_TAG"
 else
-  npm publish packages/api-contract/ $PUBLISH_ARGS
+  npm publish packages/api-contract/ $PUBLISH_ARGS --tag "$API_CONTRACT_TAG"
   echo "✓ @growthub/api-contract@${API_CONTRACT_VERSION} published"
 fi
 
