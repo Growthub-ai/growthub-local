@@ -1,0 +1,87 @@
+{
+  "name": "@growthub/api-contract",
+  "version": "0.1.0",
+  "description": "Growthub CMS SDK v1 — stable public contract for capabilities, manifests, node schemas, provider assembly, execution payloads, and streaming execution events.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Growthub-ai/growthub-local",
+    "directory": "packages/api-contract"
+  },
+  "homepage": "https://github.com/Growthub-ai/growthub-local#readme",
+  "bugs": {
+    "url": "https://github.com/Growthub-ai/growthub-local/issues"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./capabilities": "./src/capabilities.ts",
+    "./manifests": "./src/manifests.ts",
+    "./execution": "./src/execution.ts",
+    "./providers": "./src/providers.ts",
+    "./profile": "./src/profile.ts",
+    "./events": "./src/events.ts",
+    "./schemas": "./src/schemas.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./capabilities": {
+        "types": "./dist/capabilities.d.ts",
+        "import": "./dist/capabilities.js"
+      },
+      "./manifests": {
+        "types": "./dist/manifests.d.ts",
+        "import": "./dist/manifests.js"
+      },
+      "./execution": {
+        "types": "./dist/execution.d.ts",
+        "import": "./dist/execution.js"
+      },
+      "./providers": {
+        "types": "./dist/providers.d.ts",
+        "import": "./dist/providers.js"
+      },
+      "./profile": {
+        "types": "./dist/profile.d.ts",
+        "import": "./dist/profile.js"
+      },
+      "./events": {
+        "types": "./dist/events.d.ts",
+        "import": "./dist/events.js"
+      },
+      "./schemas": {
+        "types": "./dist/schemas.d.ts",
+        "import": "./dist/schemas.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "keywords": [
+    "growthub",
+    "cms",
+    "sdk",
+    "contract",
+    "capabilities",
+    "manifests",
+    "agent-orchestration"
+  ]
+}
