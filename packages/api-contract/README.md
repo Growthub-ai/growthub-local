@@ -78,3 +78,75 @@ CLI imports can migrate onto `@growthub/api-contract` without any semantic chang
 - `API_CONTRACT_VERSION` is a literal `1`.
 - Breaking changes require a new major contract version.
 - Additive changes ship under the same `API_CONTRACT_VERSION`.
+
+## How to use the SDK
+
+Use this package to type your workflow payloads and safely parse execution streams.
+
+### 1) Type a workflow execute payload
+
+```ts
+import type { ExecuteWorkflowInput } from "@growthub/api-contract";
+
+const payload: ExecuteWorkflowInput = {
+  pipelineId: "my-pipeline",
+  workflowId: "my-workflow",
+  executionMode: "hosted",
+  nodes: [
+    {
+      nodeId: "img-1",
+      slug: "image-generation",
+      bindings: {
+        prompt: "Simple abstract gradient sphere on white background",
+      },
+    },
+  ],
+};
+```
+
+### 2) Parse NDJSON execution events safely
+
+```ts
+import { isExecutionEvent } from "@growthub/api-contract";
+
+function onStreamLine(line: string) {
+  const value = JSON.parse(line);
+  if (!isExecutionEvent(value)) return;
+
+  if (value.type === "node_error") {
+    console.error("Node failed:", value.nodeId, value.error);
+  }
+}
+```
+
+### 3) Type capability manifests and node schemas
+
+```ts
+import type { CapabilityManifestEnvelope } from "@growthub/api-contract/manifests";
+import type { NodeInputSchema } from "@growthub/api-contract/schemas";
+
+function readManifest(env: CapabilityManifestEnvelope) {
+  return env.capabilities.map((c) => c.slug);
+}
+
+function readInputs(schema: NodeInputSchema) {
+  return schema.fields.filter((f) => f.required).map((f) => f.key);
+}
+```
+
+### 4) Use narrow imports when needed
+
+```ts
+import type { ExecutionEvent } from "@growthub/api-contract/events";
+import type { ProviderAssemblyResult } from "@growthub/api-contract/providers";
+```
+
+### 5) Version guard
+
+```ts
+import { API_CONTRACT_VERSION } from "@growthub/api-contract";
+
+if (API_CONTRACT_VERSION !== 1) {
+  throw new Error("Unsupported Growthub API contract version");
+}
+```
