@@ -31,3 +31,7 @@ docs/FROZEN_*.md
 .paperclip/config.json
 .paperclip/config.json.backup
 *.tsbuildinfo
+
+# Keep SDK package dist in source control for release tarball checks
+!packages/api-contract/dist/
+!packages/api-contract/dist/**
