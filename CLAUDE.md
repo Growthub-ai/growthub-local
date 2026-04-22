@@ -47,7 +47,7 @@ Primary command surfaces:
 Preview parity command:
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 
 Preview docs must match shipped CLI behavior, not speculative or stale menu trees.
