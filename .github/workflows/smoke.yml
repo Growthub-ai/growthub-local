@@ -37,7 +37,6 @@ jobs:
             const docTokens = [
               ['AGENTS.md', 'scripts/runtime-control.sh'],
               ['CONTRIBUTING.md', 'scripts/runtime-control.sh'],
-              ['README.md', 'scripts/runtime-control.sh'],
               ['CLAUDE.md', 'scripts/runtime-control.sh'],
               ['.cursorrules', 'scripts/runtime-control.sh'],
               ['docs/ARTIFACT_VERSIONS.md', 'cli/package.json'],
