@@ -207,6 +207,9 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
         issues.push(cycleIssue);
       }
 
+      // Cross-node output type compatibility
+      issues.push(...checkCrossNodeCompatibility(nodes, capabilityMap));
+
       return {
         valid: issues.every((i) => i.severity !== "error"),
         issues,
@@ -261,6 +264,9 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
           }
         }
       }
+
+      // Cross-node output type compatibility warnings
+      preflightWarnings.push(...checkCrossNodeCompatibility(pipeline.nodes, capabilityMap));
 
       let executionRoute: PipelineExecutionPackage["executionRoute"];
       if (routeSet.size === 1) {
@@ -379,4 +385,70 @@ function detectCycle(nodes: DynamicRegistryPipelineNode[]): PipelineValidationIs
   }
 
   return null;
+}
+
+/**
+ * Families that clearly cannot directly consume a given upstream output artifact type.
+ * Text and data outputs are omitted — they can flow into any family (text as prompts,
+ * data as structured payloads). Only media-to-family mismatches are checked.
+ */
+const OUTPUT_INCOMPATIBLE_FAMILIES: Record<string, string[]> = {
+  video:  ["text", "slides", "research", "image"],
+  image:  ["text", "research"],
+  slides: ["text", "research", "video", "image"],
+};
+
+/**
+ * Check cross-node output type compatibility across upstream → downstream edges.
+ * Returns warnings for:
+ *   - upstream nodes that declare no typed output contract (can't verify compatibility)
+ *   - clear family-level mismatches between upstream outputTypes and downstream family
+ */
+function checkCrossNodeCompatibility(
+  nodes: DynamicRegistryPipelineNode[],
+  capabilityMap: Map<string, CmsCapabilityNode>,
+): PipelineValidationIssue[] {
+  const issues: PipelineValidationIssue[] = [];
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  for (const node of nodes) {
+    if (!node.upstreamNodeIds || node.upstreamNodeIds.length === 0) continue;
+
+    const downstreamCap = capabilityMap.get(node.slug);
+    if (!downstreamCap) continue;
+
+    for (const upId of node.upstreamNodeIds) {
+      const upNode = nodeById.get(upId);
+      if (!upNode) continue; // dangling reference already caught by upstream reference check
+
+      const upCap = capabilityMap.get(upNode.slug);
+      if (!upCap) continue;
+
+      // Upstream produces no typed output contract — compatibility unverifiable
+      if (upCap.outputTypes.length === 0) {
+        issues.push({
+          severity: "warning",
+          nodeId: node.id,
+          field: "upstreamNodeIds",
+          message: `Upstream "${upNode.slug}" (${upId}) declares no output types — cannot verify type compatibility with downstream "${node.slug}".`,
+        });
+        continue;
+      }
+
+      // Check for clear family-level mismatches
+      for (const outputType of upCap.outputTypes) {
+        const incompatibleWith = OUTPUT_INCOMPATIBLE_FAMILIES[outputType];
+        if (incompatibleWith?.includes(downstreamCap.family)) {
+          issues.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "upstreamNodeIds",
+            message: `Upstream "${upNode.slug}" produces "${outputType}" artifacts but downstream "${node.slug}" is a "${downstreamCap.family}" node — these may not be directly compatible.`,
+          });
+        }
+      }
+    }
+  }
+
+  return issues;
 }

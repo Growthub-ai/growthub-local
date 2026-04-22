@@ -476,6 +476,9 @@ Examples:
             `  ${statusColor(statusIcon)} ${pc.bold(binding.capabilitySlug)}${tagStr}` +
             `\n     ${pc.dim(binding.reason ?? "")}`,
           );
+          for (const note of binding.notes ?? []) {
+            console.log(`     ${pc.yellow("⚠")}  ${pc.dim(note)}`);
+          }
         }
 
         console.log("");

@@ -62,6 +62,19 @@ function resolveBinding(
   capability: CmsCapabilityNode,
   profile: EffectiveProfile,
 ): ResolvedCapabilityBinding {
+  // Execution-prep notes — computed upfront and attached to every binding regardless
+  // of allow/deny so agents get a uniform JSON shape across the full resolve output.
+  const notes: string[] = [];
+  if (capability.executionBinding.strategy === "async_operation") {
+    notes.push("async_operation strategy — execution will not be immediate and requires polling.");
+  }
+  if (capability.experimental) {
+    notes.push("Experimental capability — behavior may be unstable.");
+  }
+  if (capability.outputTypes.length === 0) {
+    notes.push("No output types declared — output contract is undefined.");
+  }
+
   const binding: ResolvedCapabilityBinding = {
     capabilitySlug: capability.slug,
     allowed: false,
@@ -69,6 +82,7 @@ function resolveBinding(
     strategy: capability.executionBinding.strategy,
     outputTypes: capability.outputTypes,
     family: capability.family,
+    ...(notes.length > 0 ? { notes } : {}),
   };
 
   // Gate 1: authentication

@@ -31,6 +31,12 @@ export interface ResolvedCapabilityBinding {
   outputTypes?: string[];
   /** Capability family classification. */
   family?: string;
+  /**
+   * Execution-prep notes mirroring the concerns pipeline.validate() and package() emit
+   * for this capability (async strategy, experimental flag, missing output contract).
+   * Present on all bindings regardless of allow/deny status for uniform agent scripting.
+   */
+  notes?: string[];
 }
 
 // ---------------------------------------------------------------------------
