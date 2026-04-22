@@ -56,11 +56,11 @@ function getBaseEnv() {
 }
 
 function printHelp() {
-  console.log(`Usage:
-  zsh /Users/antonio/growthub-local/scripts/demo-cli.sh interactive
-  zsh /Users/antonio/growthub-local/scripts/demo-cli.sh installer --profile gtm
-  zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli
-  zsh /Users/antonio/growthub-local/scripts/demo-cli.sh env
+  console.log(`Usage (run from the repo root):
+  bash scripts/demo-cli.sh interactive
+  bash scripts/demo-cli.sh installer --profile gtm
+  bash scripts/demo-cli.sh cli
+  bash scripts/demo-cli.sh env
 
 Modes:
   interactive  Top-level preview menu for this branch

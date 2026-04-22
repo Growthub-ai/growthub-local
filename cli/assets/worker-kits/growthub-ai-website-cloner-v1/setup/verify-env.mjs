@@ -5,7 +5,7 @@ import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 
-const FORK_PATH = process.env.AI_CLONER_FORK_PATH || resolve(homedir(), "ai-website-cloner-template");
+const FORK_PATH = process.env.AI_WEBSITE_CLONER_HOME || process.env.AI_CLONER_FORK_PATH || resolve(homedir(), "ai-website-cloner-template");
 
 let passed = 0;
 let failed = 0;

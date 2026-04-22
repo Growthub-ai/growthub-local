@@ -60,7 +60,7 @@ Next.js proxies them to `api.muapi.ai` from the server where CORS does not apply
 **To apply manually if not already patched:**
 ```bash
 bash setup/patch-cors-proxy.sh [path-to-fork]
-# defaults to ~/open-higgsfield-ai
+# defaults to $HOME/open-higgsfield-ai
 ```
 
 **Affected functions in muapi.js:**

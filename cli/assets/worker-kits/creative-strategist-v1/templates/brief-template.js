@@ -25,7 +25,7 @@ const CONFIG = {
   doctor_name:       "[DR. NAME, CREDENTIALS]", // e.g. "Dr. Anthony Carabasi, DO"
   campaign_name:     "[CAMPAIGN NAME]",          // e.g. "Regenerative Medicine — Spring 2026"
   date:              "[MONTH YEAR]",             // e.g. "April 2026"
-  output_path:       "/Users/antonio/Downloads/[ClientSlug]_Video_Creative_Brief_v1_[DATE].docx",
+  output_path:       `${process.env.HOME}/Downloads/[ClientSlug]_Video_Creative_Brief_v1_[DATE].docx`,
 
   // Brief metadata
   video_length:      "[XX seconds]",

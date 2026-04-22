@@ -100,7 +100,7 @@ bash scripts/check-agent-harness-kernel.sh
 ## Canonical Commands
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 bash scripts/check-agent-harness-kernel.sh
 bash scripts/pr-ready.sh
 ```

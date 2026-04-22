@@ -8,8 +8,9 @@ if (!fs.existsSync(envPath)) {
 }
 
 const raw = fs.readFileSync(envPath, "utf8");
-if (!raw.includes("HYPERFRAMES_LOCAL_PATH=")) {
-  console.error("HYPERFRAMES_LOCAL_PATH is required in .env");
+// Canonical: HYPERFRAMES_HOME. Legacy alias: HYPERFRAMES_LOCAL_PATH.
+if (!raw.includes("HYPERFRAMES_HOME=") && !raw.includes("HYPERFRAMES_LOCAL_PATH=")) {
+  console.error("HYPERFRAMES_HOME (or legacy HYPERFRAMES_LOCAL_PATH) is required in .env");
   process.exit(1);
 }
 

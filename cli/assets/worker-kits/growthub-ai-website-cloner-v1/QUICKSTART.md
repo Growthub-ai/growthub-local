@@ -19,7 +19,7 @@
 bash setup/clone-fork.sh
 ```
 
-This clones the `ai-website-cloner-template` fork to `~/ai-website-cloner-template` and runs `npm install`.
+This clones the `ai-website-cloner-template` fork to `$HOME/ai-website-cloner-template` and runs `npm install`.
 
 ---
 
@@ -85,12 +85,12 @@ The agent will:
 
 All artifacts land in:
 ```
-~/ai-website-cloner-template/output/<client-slug>/<project-slug>/
+$HOME/ai-website-cloner-template/output/<client-slug>/<project-slug>/
 ```
 
 The cloned Next.js components live in:
 ```
-~/ai-website-cloner-template/src/components/
+$HOME/ai-website-cloner-template/src/components/
 ```
 
 ---
@@ -98,7 +98,7 @@ The cloned Next.js components live in:
 ## Running the cloned site
 
 ```bash
-cd ~/ai-website-cloner-template
+cd $HOME/ai-website-cloner-template
 npm run dev
 ```
 

@@ -16,9 +16,9 @@ Run through this checklist before your first generation session.
 - [ ] Python 3.10+ installed: `python3 --version`
 - [ ] FFmpeg installed: `ffmpeg -version`
 - [ ] Node.js 18+ installed: `node --version`
-- [ ] OpenMontage clone exists at `$OPENMONTAGE_PATH` (default `~/OpenMontage`)
-- [ ] OpenMontage setup completed: `cd ~/OpenMontage && python -c "from tools.tool_registry import registry; registry.discover(); print('OK')"`
-- [ ] Remotion dependencies installed: `cd ~/OpenMontage/remotion-composer && node -e "require('remotion')"`
+- [ ] OpenMontage clone exists at `$OPENMONTAGE_PATH` (default `$HOME/OpenMontage`)
+- [ ] OpenMontage setup completed: `cd $HOME/OpenMontage && python -c "from tools.tool_registry import registry; registry.discover(); print('OK')"`
+- [ ] Remotion dependencies installed: `cd $HOME/OpenMontage/remotion-composer && node -e "require('remotion')"`
 
 ## CMS Node Validation (skip if local-fork only)
 

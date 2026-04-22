@@ -89,8 +89,11 @@ if (configured.length === 0) {
 
 console.log(`[summary] ${configured.length} provider(s) configured, ${missing.length} not set.`);
 
-// Check OpenMontage path
-const omPath = env.OPENMONTAGE_PATH || resolve(process.env.HOME || "~", "OpenMontage");
+// Check OpenMontage path — canonical OPEN_MONTAGE_HOME, legacy alias OPENMONTAGE_PATH.
+const omPath =
+  env.OPEN_MONTAGE_HOME ||
+  env.OPENMONTAGE_PATH ||
+  resolve(process.env.HOME || "~", "OpenMontage");
 if (existsSync(omPath)) {
   console.log(`[ok] OpenMontage clone found at: ${omPath}`);
 } else {

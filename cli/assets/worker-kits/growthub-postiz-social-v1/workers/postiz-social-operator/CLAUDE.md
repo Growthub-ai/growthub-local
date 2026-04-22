@@ -64,7 +64,7 @@ If either is not found, stop and tell the user:
 
 **Check 2 — Postiz fork exists (local-fork mode only):**
 
-Check whether Postiz is cloned at `POSTIZ_FORK_PATH` (default `~/postiz-app`).
+Check whether Postiz is cloned at `POSTIZ_HOME` (legacy: `POSTIZ_FORK_PATH`) (default `$HOME/postiz-app`).
 
 If the clone is missing and the user wants local-fork mode, stop and tell the user:
 

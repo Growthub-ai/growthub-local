@@ -475,7 +475,7 @@ Do not manually claim release completion before workflow success confirmation.
 ## 46. Super-Admin Quickstart
 Run:
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 Then run local intelligence actions in order:
 1) Setup helper.

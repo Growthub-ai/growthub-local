@@ -68,7 +68,7 @@ If `python3` is not found, stop and tell the user:
 
 **Check 2 — Fork exists (local-fork mode only):**
 
-Check whether geo-seo-claude is cloned at `GEO_SEO_FORK_PATH` (default `~/geo-seo-claude`).
+Check whether geo-seo-claude is cloned at `GEO_SEO_HOME` (legacy alias: `GEO_SEO_FORK_PATH`; default `$HOME/geo-seo-claude`).
 
 If the clone is missing and the user wants local-fork mode, stop and tell the user:
 

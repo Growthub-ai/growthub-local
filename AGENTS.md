@@ -59,6 +59,28 @@ bash scripts/demo-cli.sh cli discover
 
 The preview must mirror the real CLI surface; do not document divergent menu trees.
 
+## Claude Skills
+
+Invokable Claude Code skills for this repo live under `.claude/skills/`. Each `SKILL.md` carries YAML frontmatter (`name`, `description`) and a markdown body, and resolves the CLI through a three-step environment-agnostic ladder (installed binary → `cli/dist/index.js` → `scripts/demo-cli.sh cli`), so they work identically on a maintainer's laptop, CI, or a fresh sandbox with only the source tree.
+
+Catalog:
+
+- `growthub-discover` — enter the discovery hub (`runDiscoveryHub` in `cli/src/index.ts`) and route to any lane
+- `growthub-auth` — hosted auth flow (`login` / `whoami` / `logout` + token scripting); pre-flight for every auth-gated skill
+- `growthub-pipeline-execute` — headless `growthub pipeline {assemble,validate,execute}` typed by CMS SDK v1
+- `growthub-video-generation` — one-true `video-generation` node with correct `refs[].dataUrl` bindings
+- `growthub-cms-sdk-v1` — public `@growthub/api-contract` package usage (types, events, manifests, schemas)
+- `growthub-kit-fork-authority` — `growthub kit fork` + ed25519-signed authority attestations
+- `growthub-t3code-harness` — T3 Code CLI health / prompt / session / profile
+- `growthub-marketing-operator` — dispatch marketing intent to the correct skill + framework + template in `growthub-marketing-skills-v1`
+- `growthub-worker-kits` — umbrella skill for operating any worker kit: uniform `${<KIT>_HOME}` workspace resolution, QUICKSTART pattern, cross-kit CLI entries
+
+## Worker-kit workspace convention
+
+Every worker kit with a local fork or tool clone uses the uniform env-var convention: `${<KIT>_HOME:-$HOME/<default>}`. The canonical var per kit is tabulated in `.claude/skills/growthub-worker-kits/SKILL.md`. Legacy env-var names (e.g. `<KIT>_FORK_PATH`) remain accepted by setup scripts as aliases, but docs and new code should emit only the canonical `<KIT>_HOME` form. Kit exports use `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}`. Never hardcode `/Users/<name>/…` or `/home/<name>/…` inside kit docs, templates, or fixtures.
+
+Authoring rules and conventions are documented in `.claude/skills/README.md`. Add new skills there rather than widening any existing one.
+
 ## Type-Checking & Tests
 
 The `cli` package requires devDependencies installed before type checks or tests will pass. Run `pnpm install` from the repo root first.

@@ -12,17 +12,25 @@ function usage() {
       "Usage:",
       "  node scripts/export-worker-kit.mjs <kit-id> [--out <dir>] [--qa]",
       "",
+      "Default export directory resolution (first match wins):",
+      "  1. --out <dir>",
+      "  2. $GROWTHUB_KIT_EXPORTS_HOME",
+      "  3. $HOME/growthub-worker-kit-exports",
+      "",
       "Example:",
-      "  node scripts/export-worker-kit.mjs growthub-open-higgsfield-studio-v1 --out ~/growthub-worker-kit-exports --qa",
+      "  node scripts/export-worker-kit.mjs growthub-open-higgsfield-studio-v1 --qa",
     ].join("\n"),
   );
 }
 
 function parseArgs(argv) {
   const args = argv.slice(2);
+  const defaultOut =
+    process.env.GROWTHUB_KIT_EXPORTS_HOME?.trim() ||
+    path.join(process.env.HOME || root, "growthub-worker-kit-exports");
   const result = {
     kitId: "",
-    outDir: path.join(process.env.HOME || root, "growthub-worker-kit-exports"),
+    outDir: defaultOut,
     qa: false,
   };
 

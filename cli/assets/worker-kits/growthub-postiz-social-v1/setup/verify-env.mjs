@@ -29,7 +29,8 @@ console.log("=".repeat(60));
 console.log("");
 
 // --- Check 1: Postiz fork path ---
-const forkPath = process.env.POSTIZ_FORK_PATH ?? join(homedir(), "postiz-app");
+// Canonical: POSTIZ_HOME. Legacy alias: POSTIZ_FORK_PATH.
+const forkPath = process.env.POSTIZ_HOME ?? process.env.POSTIZ_FORK_PATH ?? join(homedir(), "postiz-app");
 const forkExists = existsSync(forkPath);
 check("Postiz fork directory exists", forkExists, forkExists ? forkPath : `Not found at ${forkPath}`);
 

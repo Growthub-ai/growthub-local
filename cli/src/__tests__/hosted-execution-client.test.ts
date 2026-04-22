@@ -97,7 +97,7 @@ describe("hosted execution client", () => {
           bindings: {
             prompt: "Create a polished software product hero image.",
             brandKitId: "Enter brandKitId",
-            referenceImages: [{ url: "file:///Users/antonio/Desktop/ref.png", type: "reference" }],
+            referenceImages: [{ url: "file:///tmp/fixtures/ref.png", type: "reference" }],
           },
         },
       ],
@@ -108,7 +108,7 @@ describe("hosted execution client", () => {
     expect((cmsNode.data as Record<string, unknown>).inputs).toMatchObject({
       prompt: "Create a polished software product hero image.",
       brandKitId: "",
-      referenceImages: [{ url: "file:///Users/antonio/Desktop/ref.png", type: "reference" }],
+      referenceImages: [{ url: "file:///tmp/fixtures/ref.png", type: "reference" }],
     });
   });
 });

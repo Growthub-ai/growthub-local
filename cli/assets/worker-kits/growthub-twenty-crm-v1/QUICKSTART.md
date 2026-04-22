@@ -52,7 +52,7 @@ Checks for `node`, `npm`, `git`, and `docker`. Docker is required for self-hoste
 bash setup/clone-fork.sh
 ```
 
-Clones the Twenty repo to `~/twenty`, installs dependencies, and starts the development environment (PostgreSQL, Redis, and the Twenty server + frontend) via Docker Compose.
+Clones the Twenty repo to `$HOME/twenty`, installs dependencies, and starts the development environment (PostgreSQL, Redis, and the Twenty server + frontend) via Docker Compose.
 
 Skip this step if you are using Twenty Cloud or have an existing self-hosted deployment.
 

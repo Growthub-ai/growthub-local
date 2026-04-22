@@ -14,10 +14,10 @@ It covers:
 
 ## Discovery Entrypoint
 
-The single correct entrypoint for this repo is:
+The single correct entrypoint for this repo is (run from the repo root):
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 
 Or via the public CLI after install:
@@ -337,7 +337,7 @@ growthub auth whoami
 ### Step 2 — Open discovery
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 
 ### Step 3 — Assemble and save
@@ -404,8 +404,8 @@ A video pipeline save is correct only when all of the following are true:
 ## Commands Reference
 
 ```bash
-# Interactive discovery (repo path)
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+# Interactive discovery (repo path, run from repo root)
+bash scripts/demo-cli.sh cli discover
 
 # Interactive discovery (public CLI)
 growthub discover
