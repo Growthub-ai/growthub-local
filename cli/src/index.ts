@@ -61,6 +61,7 @@ import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipel
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
+import { registerImageGenerationCommands } from "./commands/image-generation.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
 import { registerT3CodeCommands, runT3CodeHub } from "./commands/t3code.js";
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
@@ -225,6 +226,7 @@ function registerSharedCommands(target: Command) {
   registerArtifactCommands(target);
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
+  registerImageGenerationCommands(target);
   registerQwenCodeCommands(target);
   registerT3CodeCommands(target);
 
