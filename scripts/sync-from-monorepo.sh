@@ -2,7 +2,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MONOREPO="${MONOREPO:-/Users/antonio/growthub-core/growthub-core}"
+MONOREPO="${MONOREPO:-}"
+
+if [[ -z "${MONOREPO}" ]]; then
+  echo "ERROR: set MONOREPO to the absolute path of your growthub-core checkout" >&2
+  echo "  example: MONOREPO=\"\$HOME/code/growthub-core\" bash scripts/sync-from-monorepo.sh" >&2
+  exit 1
+fi
+
+if [[ ! -d "${MONOREPO}" ]]; then
+  echo "ERROR: MONOREPO directory does not exist: ${MONOREPO}" >&2
+  exit 1
+fi
 
 copy_dir() {
   local source="$1"

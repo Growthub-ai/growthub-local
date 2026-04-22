@@ -8,7 +8,7 @@ Run through this checklist before producing the platform handoff.
 
 ## Environment validation
 
-- [ ] Fork exists at `~/ai-website-cloner-template` (or `AI_CLONER_FORK_PATH`)
+- [ ] Fork exists at `$HOME/ai-website-cloner-template` (or `AI_WEBSITE_CLONER_HOME` (legacy: `AI_CLONER_FORK_PATH`))
 - [ ] Node.js 24+ confirmed (`node --version`)
 - [ ] `node_modules/` installed in fork root
 - [ ] AI agent is active and running in the fork directory

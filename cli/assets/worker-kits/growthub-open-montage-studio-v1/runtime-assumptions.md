@@ -27,7 +27,7 @@ This file documents the runtime environment expectations for the Open Montage St
 
 ### OpenMontage Clone
 
-- Default path: `~/OpenMontage` (override with `OPENMONTAGE_PATH` in `.env`)
+- Default path: `$HOME/OpenMontage` (override with `OPEN_MONTAGE_HOME` (legacy: `OPENMONTAGE_PATH`) in `.env`)
 - Setup: `git clone https://github.com/calesthio/OpenMontage.git && cd OpenMontage && make setup`
 - The clone includes Python requirements, Remotion composer, and Piper TTS
 

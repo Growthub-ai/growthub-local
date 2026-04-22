@@ -10,7 +10,7 @@ This kit assumes the `ai-website-cloner-template` fork is checked out and instal
 
 | Assumption | Default | Override |
 |---|---|---|
-| Fork directory | `~/ai-website-cloner-template` | `AI_CLONER_FORK_PATH` env var |
+| Fork directory | `$HOME/ai-website-cloner-template` | `AI_WEBSITE_CLONER_HOME` (legacy: `AI_CLONER_FORK_PATH`) env var |
 | Fork repo URL | `https://github.com/JCodesMore/ai-website-cloner-template` | n/a |
 | Node.js version | 24+ (strict) | n/a — minimum requirement |
 | Package manager | npm | n/a |

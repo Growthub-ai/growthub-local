@@ -15,7 +15,7 @@
 
 ### Local-Fork Mode (skip if agent-only)
 
-- [ ] Postiz fork is cloned at `POSTIZ_FORK_PATH` (default: `~/postiz-app`)
+- [ ] Postiz fork is cloned at `POSTIZ_HOME` (legacy: `POSTIZ_FORK_PATH`) (default: `$HOME/postiz-app`)
 - [ ] `docker compose ps` shows `postiz`, `postiz-postgres`, `postiz-redis` all running
 - [ ] `curl http://localhost:3000/api/healthcheck` returns a 200 response
 - [ ] At least one platform integration is connected and authorized in the Postiz admin UI

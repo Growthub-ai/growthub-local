@@ -77,7 +77,7 @@ curl -sS -X POST http://127.0.0.1:11434/v1/chat/completions \
 Discovery entrypoint:
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 
 Interactive setup helper:

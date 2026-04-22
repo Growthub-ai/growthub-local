@@ -68,7 +68,7 @@ console.log("--- Fork Path Check ---");
 
 // ─── Fork Path ─────────────────────────────────────────────────────────────
 
-const forkPathRaw = config["GEO_SEO_FORK_PATH"] || join(homedir(), "geo-seo-claude");
+const forkPathRaw = config["GEO_SEO_HOME"] || config["GEO_SEO_FORK_PATH"] || join(homedir(), "geo-seo-claude");
 const forkPath = resolve(forkPathRaw);
 
 if (existsSync(forkPath)) {

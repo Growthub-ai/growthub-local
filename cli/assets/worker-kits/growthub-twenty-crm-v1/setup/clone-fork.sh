@@ -4,7 +4,7 @@
 # Requires: git, node, npm, docker, docker-compose
 set -e
 
-FORK_DIR="${TWENTY_FORK_PATH:-$HOME/twenty}"
+FORK_DIR="${TWENTY_HOME:-${TWENTY_FORK_PATH:-$HOME/twenty}}"
 REPO_URL="https://github.com/twentyhq/twenty"
 
 echo "=== Growthub Twenty CRM Studio — Fork Setup ==="

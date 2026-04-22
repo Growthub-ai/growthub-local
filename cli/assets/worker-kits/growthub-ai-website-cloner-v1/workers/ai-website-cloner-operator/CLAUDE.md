@@ -55,7 +55,7 @@ Before loading any methodology, verify the environment is ready.
 
 **Check 1 — Fork directory exists:**
 
-Confirm the fork is checked out at `~/ai-website-cloner-template` (or `AI_CLONER_FORK_PATH` if set).
+Confirm the fork is checked out at `$HOME/ai-website-cloner-template` (or `AI_WEBSITE_CLONER_HOME` (legacy: `AI_CLONER_FORK_PATH`) if set).
 
 If missing, tell the user:
 

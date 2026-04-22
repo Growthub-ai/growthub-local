@@ -7,7 +7,7 @@ Use this checklist before starting a session, when validating a kit installation
 ## PRE-SESSION CHECKLIST
 
 ### Environment
-- [ ] geo-seo-claude fork is present at `GEO_SEO_FORK_PATH` (or `~/geo-seo-claude`) — OR agent-only mode is confirmed
+- [ ] geo-seo-claude fork is present at `GEO_SEO_HOME` / `GEO_SEO_FORK_PATH` (default `$HOME/geo-seo-claude`) — OR agent-only mode is confirmed
 - [ ] Python 3.8+ is installed (`python3 --version`)
 - [ ] Playwright is installed (`playwright --version`)
 - [ ] Playwright chromium browser is installed (`playwright install chromium` — or already done)

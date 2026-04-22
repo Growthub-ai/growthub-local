@@ -1,8 +1,10 @@
-# Claude Workers — Creative Strategist Skill
+# Creative Strategist Worker Skill
 ## Video Creative Brief Production  |  Multi-Brand System
 
-> **Who this is for:** Any Claude agent in `/Users/antonio/claude-workers/` producing a Video Creative Brief.
+> **Who this is for:** Any agent (Claude is first-party; Cursor / Codex / Gemini / custom harnesses are equally supported) operating inside `${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/` and producing a Video Creative Brief.
 > Read this file fully before starting. Every section is a required step.
+>
+> **Workspace path:** all commands below reference the kit workspace via the `CREATIVE_STRATEGIST_HOME` env var. Default: `$HOME/creative-strategist`. Override it to any directory (e.g. `export CREATIVE_STRATEGIST_HOME=$HOME/claude-workers`) to mount your own brand/template tree without forking this kit.
 
 ---
 
@@ -53,7 +55,7 @@ Required fields: `client_name`, `slug`, `primary_service`, `landing_page`, `targ
 ## STEP 1b — READ THE BRAND KIT
 
 ```bash
-cat /Users/antonio/claude-workers/brands/<client-slug>/brand-kit.md
+cat ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<client-slug>/brand-kit.md
 ```
 
 Load every field. The brief JS must pull colors, tone, and guardrails from this file — not memory.
@@ -88,7 +90,7 @@ Phone + Website:         [from brand kit]
 > **Do this first — every time.** A frozen format skips frame extraction entirely.
 
 ```
-Read /Users/antonio/claude-workers/templates/ad-formats/INDEX.md
+Read ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/templates/ad-formats/INDEX.md
 ```
 
 **Match found?**
@@ -99,7 +101,7 @@ Read /Users/antonio/claude-workers/templates/ad-formats/INDEX.md
 
 **Then load scene modules:**
 ```
-Read /Users/antonio/claude-workers/templates/scene-modules/INDEX.md
+Read ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/templates/scene-modules/INDEX.md
 ```
 Pull each module listed under "Scene Modules Used" in the format file.
 
@@ -123,7 +125,7 @@ Add rows to templates/scene-modules/INDEX.md
 **3-pass grep method (fast):**
 
 ```bash
-CSV=/Users/antonio/claude-workers/templates/hooks-library/500-winning-hooks.csv
+CSV=${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/templates/hooks-library/500-winning-hooks.csv
 
 # Pass 1 — client niche / pain-point keywords
 grep -i "KEYWORD1\|KEYWORD2" "$CSV" | head -10
@@ -218,13 +220,13 @@ APPENDIX             — AI video generation prompts (Veo 3 / Runway) — labele
 
 ```bash
 # Copy and fill the template
-cp /Users/antonio/claude-workers/templates/brief-template.js /tmp/docx_work/<slug>_brief_v1.js
+cp ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/templates/brief-template.js /tmp/docx_work/<slug>_brief_v1.js
 # Edit: fill CONFIG (colors from brand kit) + BRIEF (all content)
 
 # Run
 cd /tmp/docx_work && npm install docx   # once per session
 node <slug>_brief_v1.js
-# Output: /Users/antonio/Downloads/<slug>_VideoBrief_<concept>_v1_<YYYYMMDD>.docx
+# Output: $HOME/Downloads/<slug>_VideoBrief_<concept>_v1_<YYYYMMDD>.docx
 ```
 
 **JS non-negotiables:**
@@ -242,7 +244,7 @@ node <slug>_brief_v1.js
 ## STEP 5 — OPEN IN GOOGLE DOCS
 
 ```bash
-open -R "/Users/antonio/Downloads/<filename>.docx"
+open -R "$HOME/Downloads/<filename>.docx"
 osascript -e 'tell application "Google Chrome" to open location "https://drive.google.com/drive/my-drive"'
 ```
 
@@ -254,7 +256,7 @@ Tell the user: "File revealed in Finder. Drag into the Google Drive browser wind
 
 ```bash
 echo "- $(date +%Y-%m-%d) | Video Creative Brief v1 | ~/Downloads/<filename>.docx" \
-  >> /Users/antonio/claude-workers/brands/<client-slug>/brand-kit.md
+  >> ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<client-slug>/brand-kit.md
 ```
 
 ---
@@ -313,7 +315,7 @@ Change only the 6 color constants at the top of the JS file — pull from `brand
 ## FOLDER STRUCTURE
 
 ```
-/Users/antonio/claude-workers/
+${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/
 ├── skills.md                          ← this file — read first, every session
 ├── README.md                          ← kit overview + template library summary
 ├── templates/

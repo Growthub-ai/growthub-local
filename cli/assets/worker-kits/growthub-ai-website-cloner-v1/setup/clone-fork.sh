@@ -3,7 +3,7 @@
 # Run from any location. Installs to ~/ai-website-cloner-template (or AI_CLONER_FORK_PATH).
 set -e
 
-FORK_DIR="${AI_CLONER_FORK_PATH:-$HOME/ai-website-cloner-template}"
+FORK_DIR="${AI_WEBSITE_CLONER_HOME:-${AI_CLONER_FORK_PATH:-$HOME/ai-website-cloner-template}}"
 REPO_URL="https://github.com/JCodesMore/ai-website-cloner-template.git"
 
 echo "=== Growthub AI Website Cloner — Fork Setup ==="

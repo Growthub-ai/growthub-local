@@ -58,7 +58,7 @@ bash setup/check-deps.sh     # Check Python, FFmpeg, Node.js, Git
 bash setup/clone-fork.sh     # Clone OpenMontage and run make setup
 ```
 
-This clones OpenMontage to `~/OpenMontage`, installs all dependencies (Python packages, Remotion, Piper TTS), and verifies the tool registry.
+This clones OpenMontage to `$HOME/OpenMontage`, installs all dependencies (Python packages, Remotion, Piper TTS), and verifies the tool registry.
 
 Skip this step if you are using agent-only or hybrid mode.
 

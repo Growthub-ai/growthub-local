@@ -50,7 +50,7 @@ Checks for `node`, `npm`, `git`, and `ffmpeg`. All four are required for local-f
 bash setup/clone-fork.sh
 ```
 
-Clones the Open Higgsfield AI repo to `~/open-higgsfield-ai`, installs dependencies, **automatically applies the CORS proxy patch** (see `setup/patch-cors-proxy.sh`), and starts the dev server at `http://localhost:3001`.
+Clones the Open Higgsfield AI repo to `$HOME/open-higgsfield-ai`, installs dependencies, **automatically applies the CORS proxy patch** (see `setup/patch-cors-proxy.sh`), and starts the dev server at `http://localhost:3001`.
 
 The CORS patch is required — the upstream repo calls `api.muapi.ai` directly from the browser, which modern browsers block. The patch routes all API calls through the local Next.js server instead.
 

@@ -4,8 +4,9 @@ set -euo pipefail
 # Canonical runtime control for agents and humans.
 # Keeps growthub-local main/branch loading deterministic.
 
-ROOT="${GH_LOCAL_ROOT:-/Users/antonio/growthub-local}"
-CONFIG="${GH_CONFIG:-/Users/antonio/.paperclip/instances/default/config.json}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${GH_LOCAL_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+CONFIG="${GH_CONFIG:-${PAPERCLIP_HOME:-$HOME/.paperclip}/instances/default/config.json}"
 SERVER_PORT="${GH_SERVER_PORT:-3100}"
 UI_PORT="${GH_UI_PORT:-5173}"
 LOG_DIR="${GH_LOG_DIR:-/tmp/growthub-local}"

@@ -4,7 +4,8 @@ set -euo pipefail
 # Clone and set up OpenMontage for local-fork execution mode.
 # Usage: bash setup/clone-fork.sh [target-dir]
 
-TARGET_DIR="${1:-${OPENMONTAGE_PATH:-$HOME/OpenMontage}}"
+# Canonical: OPEN_MONTAGE_HOME. Legacy alias: OPENMONTAGE_PATH.
+TARGET_DIR="${1:-${OPEN_MONTAGE_HOME:-${OPENMONTAGE_PATH:-$HOME/OpenMontage}}}"
 
 echo "=== OpenMontage Fork Setup ==="
 echo "Target directory: $TARGET_DIR"

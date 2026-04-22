@@ -43,7 +43,7 @@ node setup/verify-env.mjs
 ```
 
 This checks:
-- Whether the Postiz fork is cloned at `POSTIZ_FORK_PATH` (default: `~/postiz-app`)
+- Whether the Postiz fork is cloned at `POSTIZ_HOME` (legacy: `POSTIZ_FORK_PATH`) (default: `$HOME/postiz-app`)
 - Whether the Postiz API is reachable on port 3000
 - Whether `ANTHROPIC_API_KEY` is valid format (if set for AI caption enhancement)
 - No OAuth tokens are validated here — those are managed inside Postiz
@@ -62,7 +62,7 @@ Verifies that `node`, `docker`, `docker compose`, and `git` are available. Check
 bash setup/clone-fork.sh
 ```
 
-This clones `postiz-app` to `~/postiz-app` (or `POSTIZ_FORK_PATH` if set), runs `docker compose up -d` to start Redis, PostgreSQL, and the Postiz API, and waits for the API healthcheck to pass.
+This clones `postiz-app` to `$HOME/postiz-app` (or `POSTIZ_HOME` (legacy: `POSTIZ_FORK_PATH`) if set), runs `docker compose up -d` to start Redis, PostgreSQL, and the Postiz API, and waits for the API healthcheck to pass.
 
 Skip this step if you are using **agent-only mode** — the operator can plan campaigns, draft captions, and produce content calendars without a running Postiz instance.
 

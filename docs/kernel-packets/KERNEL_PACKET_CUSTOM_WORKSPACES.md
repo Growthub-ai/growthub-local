@@ -225,13 +225,13 @@ node scripts/check-worker-kits.mjs
 node -e "const p=require('./cli/package.json');const s=require('fs').readFileSync('cli/src/index.ts','utf8');const m=s.match(/\.version\(\"([^\"]+)\"\)/);console.log('package.json:',p.version,'index.ts:',m?m[1]:'NOT FOUND',p.version===m?.[1]?'✓ MATCH':'✗ DRIFT')"
 
 # 3. Discovery round-trip
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 
 ## Canonical Commands
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 node scripts/check-worker-kits.mjs
 bash scripts/check-custom-workspace-kernel.sh
 bash scripts/pr-ready.sh

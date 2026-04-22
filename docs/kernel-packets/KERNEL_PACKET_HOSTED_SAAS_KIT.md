@@ -171,7 +171,7 @@ Wire the new test file into `scripts/check-custom-workspace-kernel.sh` so it run
 ## Canonical Commands
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 node scripts/check-worker-kits.mjs
 bash scripts/check-custom-workspace-kernel.sh
 bash scripts/pr-ready.sh

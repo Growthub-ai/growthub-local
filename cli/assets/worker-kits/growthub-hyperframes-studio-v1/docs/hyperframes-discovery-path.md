@@ -8,5 +8,5 @@ Discovery path:
 
 Feature branch demo checks:
 
-- `zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli kit list --family studio`
-- `zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli kit inspect hyperframes`
+- `bash scripts/demo-cli.sh cli kit list --family studio`
+- `bash scripts/demo-cli.sh cli kit inspect hyperframes`

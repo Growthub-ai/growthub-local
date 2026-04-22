@@ -3,7 +3,7 @@
 # Usage: bash setup/clone-fork.sh
 set -e
 
-FORK_DIR="${POSTIZ_FORK_PATH:-$HOME/postiz-app}"
+FORK_DIR="${POSTIZ_HOME:-${POSTIZ_FORK_PATH:-$HOME/postiz-app}}"
 REPO_URL="https://github.com/gitroomhq/postiz-app"
 
 echo "=== Growthub Postiz Social Media Studio — Fork Setup ==="

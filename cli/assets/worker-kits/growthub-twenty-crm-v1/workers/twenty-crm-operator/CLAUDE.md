@@ -77,7 +77,7 @@ If Docker is not found and the user wants self-hosted mode, stop and tell the us
 
 **Check 3 — Fork exists (local-fork mode only):**
 
-Check whether the Twenty repo is cloned at `TWENTY_FORK_PATH` (default `~/twenty`).
+Check whether the Twenty repo is cloned at `TWENTY_HOME` (legacy: `TWENTY_FORK_PATH`) (default `$HOME/twenty`).
 
 If the clone is missing and the user wants local-fork mode, stop and tell the user:
 

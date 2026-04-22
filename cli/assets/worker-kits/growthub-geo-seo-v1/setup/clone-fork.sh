@@ -3,7 +3,7 @@
 # Usage: bash setup/clone-fork.sh
 set -e
 
-FORK_DIR="${GEO_SEO_FORK_PATH:-$HOME/geo-seo-claude}"
+FORK_DIR="${GEO_SEO_HOME:-${GEO_SEO_FORK_PATH:-$HOME/geo-seo-claude}}"
 REPO_URL="https://github.com/zubair-trabzada/geo-seo-claude"
 
 echo "=== Growthub GEO SEO Studio — Fork Setup ==="

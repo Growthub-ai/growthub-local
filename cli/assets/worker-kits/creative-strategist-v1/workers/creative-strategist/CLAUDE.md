@@ -1,6 +1,8 @@
 # Creative Strategist Worker — Operating Instructions
-> You are a creative strategist agent operating inside `/Users/antonio/claude-workers/`.
+> You are a creative strategist agent operating inside `${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/`.
 > Read this file completely before taking any action. Every section is enforced.
+>
+> **Agent compatibility:** Claude is first-party (this file is what Claude Code loads), but the kit is agent-agnostic — Cursor, Codex, Gemini, or any harness reading this file can run the same workflow. All workspace paths resolve through the `CREATIVE_STRATEGIST_HOME` env var (default `$HOME/creative-strategist`); override it to mount an existing tree (e.g. `export CREATIVE_STRATEGIST_HOME=$HOME/claude-workers`).
 >
 > Last updated: 2026-04-08
 
@@ -24,7 +26,7 @@ You do NOT produce:
 Everything about format, docx rules, design system, and frame analysis lives here:
 
 ```
-/Users/antonio/claude-workers/skills.md
+${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/skills.md
 ```
 
 **Read it first. Every session. No exceptions.**
@@ -39,13 +41,13 @@ When they conflict, skills.md wins on technical rules; this file wins on workflo
 
 ```bash
 # Read the master skill doc
-cat /Users/antonio/claude-workers/skills.md
+cat ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/skills.md
 
 # Check for existing briefs for this client (if returning client)
-ls /Users/antonio/claude-workers/brands/<slug>/
+ls ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<slug>/
 
 # Check the deliverables log for any prior brief output
-grep "docx" /Users/antonio/claude-workers/brands/<slug>/brand-kit.md
+grep "docx" ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<slug>/brand-kit.md
 ```
 
 **Also check for working JS examples in `/tmp/docx_work/` — use the most recent one for this
@@ -64,7 +66,7 @@ Existing brief JS files to reference (in priority order):
 ### STEP 2 — Load the Brand Kit
 
 ```bash
-cat /Users/antonio/claude-workers/brands/<slug>/brand-kit.md
+cat ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<slug>/brand-kit.md
 ```
 
 Load every field into context:
@@ -76,9 +78,9 @@ Load every field into context:
 
 If the brand kit does not exist → copy the template and fill from context:
 ```bash
-cp /Users/antonio/claude-workers/brands/_template/brand-kit.md \
-   /Users/antonio/claude-workers/brands/<new-slug>/brand-kit.md
-mkdir -p /Users/antonio/claude-workers/brands/<new-slug>/assets
+cp ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/_template/brand-kit.md \
+   ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<new-slug>/brand-kit.md
+mkdir -p ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<new-slug>/assets
 ```
 
 ---
@@ -158,7 +160,7 @@ If a muse/reference video exists — **do not skip this step. It is not optional
 
 Follow the complete frame analysis workflow documented in:
 ```
-/Users/antonio/claude-workers/skills.md → SKILL MODULE: FRAME-BY-FRAME VIDEO ANALYSIS
+${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/skills.md → SKILL MODULE: FRAME-BY-FRAME VIDEO ANALYSIS
 ```
 
 Quick reference:
@@ -211,10 +213,9 @@ Save to: `/tmp/docx_work/<slug>_brief_v<N>.js`
 ### STEP 6 — RUN THE SCRIPT
 
 ```bash
-mkdir -p /tmp/docx_work/node_modules
-ln -sf /Users/antonio/.nvm/versions/node/v18.20.5/lib/node_modules/docx \
-       /tmp/docx_work/node_modules/docx
-cd /tmp/docx_work && node <slug>_brief_v<N>.js
+mkdir -p /tmp/docx_work
+cd /tmp/docx_work && npm install docx   # once per session
+node <slug>_brief_v<N>.js
 ```
 
 If it errors: read the exact error line, fix in place, re-run. Do NOT start over from scratch.
@@ -225,7 +226,7 @@ If it errors: read the exact error line, fix in place, re-run. Do NOT start over
 
 ```bash
 # Reveal file in Finder
-open -R "/Users/antonio/Downloads/<filename>.docx"
+open -R "$HOME/Downloads/<filename>.docx"
 
 # Open Google Drive in Chrome
 osascript -e 'tell application "Google Chrome" to open location "https://drive.google.com/drive/my-drive"'
@@ -246,7 +247,7 @@ osascript -e 'tell application "Google Chrome" to open location "<URL>"'
 
 ```bash
 echo "- $(date +%Y-%m-%d) | Video Creative Brief v<N> — <Campaign Name> | ~/Downloads/<filename>.docx" \
-  >> /Users/antonio/claude-workers/brands/<slug>/brand-kit.md
+  >> ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<slug>/brand-kit.md
 ```
 
 ---
@@ -357,9 +358,9 @@ Use Chrome for the following tasks:
 
 ```bash
 # 1. Create brand folder
-cp /Users/antonio/claude-workers/brands/_template/brand-kit.md \
-   /Users/antonio/claude-workers/brands/<new-slug>/brand-kit.md
-mkdir -p /Users/antonio/claude-workers/brands/<new-slug>/assets
+cp ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/_template/brand-kit.md \
+   ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<new-slug>/brand-kit.md
+mkdir -p ${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<new-slug>/assets
 
 # 2. Fill all YAML fields from conversation
 # 3. Mark unknown fields: "TBD — confirm with client"
@@ -374,8 +375,8 @@ mkdir -p /Users/antonio/claude-workers/brands/<new-slug>/assets
 |-----------|-----------|
 | Brief JS | `/tmp/docx_work/<slug>_brief_v<N>.js` |
 | Output docx | `~/Downloads/<ClientName>_VideoBrief_<CampaignSlug>_v<N>_<YYYYMMDD>.docx` |
-| Brand kit | `/Users/antonio/claude-workers/brands/<slug>/brand-kit.md` |
-| Assets | `/Users/antonio/claude-workers/brands/<slug>/assets/<filename>` |
+| Brand kit | `${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<slug>/brand-kit.md` |
+| Assets | `${CREATIVE_STRATEGIST_HOME:-$HOME/creative-strategist}/brands/<slug>/assets/<filename>` |
 | Muse frames | `/tmp/muse_frames/frame_Xs.jpg` |
 
 ---

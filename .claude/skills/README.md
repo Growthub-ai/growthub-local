@@ -23,22 +23,43 @@ Every skill here plugs into that journey.
 | Skill | Trigger | Anchors to |
 |---|---|---|
 | [`growthub-discover`](./growthub-discover/SKILL.md) | "open discover", enter the hub, reach any Growthub lane | `cli/src/index.ts` → `runDiscoveryHub`, `docs/CLI_WORKFLOWS_DISCOVERY_V1.md` |
+| [`growthub-auth`](./growthub-auth/SKILL.md) | Sign in, confirm identity, sign out; pre-flight guard before auth-gated skills | `cli/src/commands/auth-login.ts`, `cli/src/index.ts` (`auth` block) |
+| [`growthub-pipeline-execute`](./growthub-pipeline-execute/SKILL.md) | Headlessly `growthub pipeline {assemble,validate,execute}` with JSON input typed by CMS SDK v1 | `cli/src/commands/pipeline.ts`, `cli/src/runtime/hosted-execution-client/`, `packages/api-contract/src/execution.ts` |
 | [`growthub-video-generation`](./growthub-video-generation/SKILL.md) | Run the one-true `video-generation` node with correct `refs[].dataUrl` bindings | `docs/CLI_WORKFLOWS_DISCOVERY_V1.md`, `cli/src/runtime/hosted-execution-client/` |
 | [`growthub-cms-sdk-v1`](./growthub-cms-sdk-v1/SKILL.md) | Use `@growthub/api-contract` (CMS SDK v1) types, events, manifests, schemas | `packages/api-contract/`, `docs/CMS_SDK_V1.md`, `docs/CMS_SDK_V1_USER_GUIDE.md` |
 | [`growthub-kit-fork-authority`](./growthub-kit-fork-authority/SKILL.md) | Register/heal forks and manage ed25519-signed authority attestations | `cli/src/commands/kit-fork.ts`, `cli/src/kits/fork-authority.ts` |
 | [`growthub-t3code-harness`](./growthub-t3code-harness/SKILL.md) | T3 Code health, prompt, session, and generic Growthub profile primitive | `cli/src/commands/t3code.ts`, `cli/src/runtime/t3code/`, `cli/src/runtime/agent-harness/harness-profile.ts` |
 | [`growthub-marketing-operator`](./growthub-marketing-operator/SKILL.md) | Dispatch marketing intents to the correct skill + framework + template | `cli/assets/worker-kits/growthub-marketing-skills-v1/` |
+| [`growthub-worker-kits`](./growthub-worker-kits/SKILL.md) | Umbrella skill for operating any worker kit — workspace resolution via `${<KIT>_HOME}`, QUICKSTART pattern, kit-wide CLI entries | `cli/assets/worker-kits/`, `scripts/export-worker-kit.mjs` |
+
+## Core loop — every agent follows this order
+
+1. `growthub-auth` → verify `auth whoami --json` before any auth-gated skill.
+2. `growthub-discover` → route to a Growthub lane (Worker Kits / Templates / Workflows / Agent Harness / Memory).
+3. Family-specific adapter skill (`growthub-video-generation` today; image / slides / text are the same pattern — see the CMS SDK v1 family union) → correct bindings.
+4. `growthub-pipeline-execute` → scripted headless run, typed by CMS SDK v1. Or stay in discover for interactive Saved Workflows.
+5. `growthub-cms-sdk-v1` → parse NDJSON events, validate manifests, type response shapes.
+6. `growthub-kit-fork-authority` → only when the user is tracking/attesting a forked worker kit.
+7. `growthub-t3code-harness` → only when the user is operating the T3 Code harness.
+8. `growthub-marketing-operator` → only when the user is producing marketing deliverables.
 
 ## When to use which
 
 - **User wants to browse / pick anything interactively** → `growthub-discover`.
+- **User needs to authenticate, check identity, or script auth with a token** → `growthub-auth`.
+- **User wants a scripted / headless pipeline run with JSON in, artifact URL out** → `growthub-pipeline-execute`.
 - **User wants a video generated from a local reference image** → `growthub-video-generation`.
 - **User is building against types for workflow payloads, event streams, manifests, node schemas** → `growthub-cms-sdk-v1`.
 - **User is tracking, healing, or attesting a forked worker kit** → `growthub-kit-fork-authority`.
 - **User wants T3 Code CLI (health / prompt / session / profile)** → `growthub-t3code-harness`.
 - **User is doing marketing work (CRO, SEO, content, email, launch, pricing)** → `growthub-marketing-operator`.
+- **User is operating inside any worker kit (running, inspecting, installing, forking)** → `growthub-worker-kits` (umbrella) + the per-kit operator runbook it points to.
 
 If multiple skills could apply, prefer the one that is the narrowest match for the user's stated outcome.
+
+## Uniform workspace-path convention (enterprise pattern)
+
+Every worker kit that has a local fork / tool clone uses a single canonical env var: `${<KIT>_HOME:-$HOME/<default>}`. This is the pattern every agent should emit in any guidance it gives the user. Legacy env-var names (e.g. `<KIT>_FORK_PATH`) are still accepted by the setup scripts but are documented only as aliases. The full kit → env var → default table is maintained in `.claude/skills/growthub-worker-kits/SKILL.md` and must not drift between kits. Kit exports (`scripts/export-worker-kit.mjs`) use the same shape: `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}`.
 
 ## Authoring rules (if you add a new skill here)
 

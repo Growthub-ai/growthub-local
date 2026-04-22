@@ -54,14 +54,14 @@ if command -v playwright >/dev/null 2>&1; then
 fi
 
 # Check for the fork directory
-FORK_DIR="${GEO_SEO_FORK_PATH:-$HOME/geo-seo-claude}"
+FORK_DIR="${GEO_SEO_HOME:-${GEO_SEO_FORK_PATH:-$HOME/geo-seo-claude}}"
 if [ -d "$FORK_DIR" ]; then
   echo "OK   geo-seo-claude fork at $FORK_DIR"
   PASS=$((PASS+1))
 else
   echo "MISS geo-seo-claude fork not found at $FORK_DIR"
   echo "     Run: bash setup/clone-fork.sh"
-  echo "     Or set GEO_SEO_FORK_PATH to your fork path in .env"
+  echo "     Or set GEO_SEO_HOME (legacy alias: GEO_SEO_FORK_PATH) to your fork path in .env"
   FAIL=$((FAIL+1))
 fi
 

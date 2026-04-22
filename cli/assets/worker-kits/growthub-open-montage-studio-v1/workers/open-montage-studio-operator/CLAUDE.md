@@ -76,7 +76,7 @@ If none are set, check whether the user has a GrowthHub session for CMS node gen
 
 **Check 3 — OpenMontage clone (local-fork mode only):**
 
-If using `local-fork` execution mode, check whether the clone exists at the path in `OPENMONTAGE_PATH` (default `~/OpenMontage`).
+If using `local-fork` execution mode, check whether the clone exists at the path in `OPEN_MONTAGE_HOME` (legacy: `OPENMONTAGE_PATH`) (default `$HOME/OpenMontage`).
 
 If not found:
 
@@ -148,7 +148,7 @@ remotion-composer/                      # React/Remotion composition engine
 Run capability discovery if local fork is available:
 
 ```bash
-cd ~/OpenMontage && python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.support_envelope(), indent=2))"
+cd $HOME/OpenMontage && python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.support_envelope(), indent=2))"
 ```
 
 If the user is not pointing at a fork checkout, proceed using the assumptions frozen in this kit and explicitly mark the plan as `repo-unverified`.
