@@ -5,7 +5,6 @@
   "packageManager": "pnpm@10.4.1",
   "scripts": {
     "check:cli-package": "node ./scripts/check-cli-package.mjs",
-    "check:cli-type-scope": "node ./scripts/check-cli-type-scope.mjs",
     "check:version-sync": "node ./scripts/check-version-sync.mjs",
     "check:worker-kits": "node ./scripts/check-worker-kits.mjs",
     "check:kernel:custom-workspaces": "bash ./scripts/check-custom-workspace-kernel.sh",

@@ -81,20 +81,6 @@ Two tsconfig files govern the CLI:
 
 Cloud agents blocked on `Cannot find name 'process'` or `Cannot find module 'vitest'` need `pnpm install` run first; after that the devDependencies resolve and both tsconfigs pass cleanly.
 
-For low-risk PR validation focused on the active integration scope (ignoring unrelated legacy TS noise), run:
-
-```bash
-pnpm run check:cli-type-scope
-```
-
-This command runs `tsc` and fails only if errors hit the scoped integration files:
-- `cli/src/analytics/posthog.ts`
-- `cli/src/commands/kit.ts`
-- `cli/src/auth/session-store.ts`
-- `cli/tsconfig.json`
-- `cli/tsconfig.test.json`
-- `cli/vitest.config.ts`
-
 ## Contribution Guardrails
 
 - Work in a feature branch or worktree; do not work directly on `main`.
