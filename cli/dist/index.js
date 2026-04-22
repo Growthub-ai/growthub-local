@@ -9,6 +9,188 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/config/home.ts
+import os from "node:os";
+import path from "node:path";
+function resolvePaperclipHomeDir() {
+  const envHome = process.env.PAPERCLIP_HOME?.trim();
+  if (envHome) return path.resolve(expandHomePrefix(envHome));
+  return path.resolve(os.homedir(), ".paperclip");
+}
+function resolvePaperclipInstanceId(override) {
+  const raw = override?.trim() || process.env.PAPERCLIP_INSTANCE_ID?.trim() || DEFAULT_INSTANCE_ID;
+  if (!INSTANCE_ID_RE.test(raw)) {
+    throw new Error(
+      `Invalid instance id '${raw}'. Allowed characters: letters, numbers, '_' and '-'.`
+    );
+  }
+  return raw;
+}
+function resolvePaperclipInstanceRoot(instanceId) {
+  const id = resolvePaperclipInstanceId(instanceId);
+  return path.resolve(resolvePaperclipHomeDir(), "instances", id);
+}
+function resolveDefaultConfigPath(instanceId) {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "config.json");
+}
+function resolveDefaultContextPath() {
+  return path.resolve(resolvePaperclipHomeDir(), "context.json");
+}
+function resolveDefaultEmbeddedPostgresDir(instanceId) {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "db");
+}
+function resolveDefaultLogsDir(instanceId) {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "logs");
+}
+function resolveDefaultSecretsKeyFilePath(instanceId) {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "secrets", "master.key");
+}
+function resolveDefaultStorageDir(instanceId) {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "storage");
+}
+function resolveDefaultBackupDir(instanceId) {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "backups");
+}
+function resolveMemoryDir() {
+  return path.resolve(resolvePaperclipHomeDir(), "memory");
+}
+function resolveMemoryProjectsDir() {
+  return path.resolve(resolveMemoryDir(), "projects");
+}
+function expandHomePrefix(value) {
+  if (value === "~") return os.homedir();
+  if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
+  return value;
+}
+function describeLocalInstancePaths(instanceId) {
+  const resolvedInstanceId = resolvePaperclipInstanceId(instanceId);
+  const instanceRoot = resolvePaperclipInstanceRoot(resolvedInstanceId);
+  return {
+    homeDir: resolvePaperclipHomeDir(),
+    instanceId: resolvedInstanceId,
+    instanceRoot,
+    configPath: resolveDefaultConfigPath(resolvedInstanceId),
+    embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(resolvedInstanceId),
+    backupDir: resolveDefaultBackupDir(resolvedInstanceId),
+    logDir: resolveDefaultLogsDir(resolvedInstanceId),
+    secretsKeyFilePath: resolveDefaultSecretsKeyFilePath(resolvedInstanceId),
+    storageDir: resolveDefaultStorageDir(resolvedInstanceId)
+  };
+}
+var DEFAULT_INSTANCE_ID, INSTANCE_ID_RE;
+var init_home = __esm({
+  "src/config/home.ts"() {
+    "use strict";
+    DEFAULT_INSTANCE_ID = "default";
+    INSTANCE_ID_RE = /^[a-zA-Z0-9_-]+$/;
+  }
+});
+
+// src/auth/paths.ts
+import path2 from "node:path";
+function resolveAuthDir() {
+  return path2.resolve(resolvePaperclipHomeDir(), "auth");
+}
+function resolveProfilesDir() {
+  return path2.resolve(resolvePaperclipHomeDir(), "profiles");
+}
+function resolveSessionPath() {
+  return path2.resolve(resolveAuthDir(), "session.json");
+}
+function resolveHostedOverlayPath() {
+  return path2.resolve(resolveProfilesDir(), "hosted-overlay.json");
+}
+function resolveEffectiveProfilePath() {
+  return path2.resolve(resolveProfilesDir(), "effective-profile.json");
+}
+var init_paths = __esm({
+  "src/auth/paths.ts"() {
+    "use strict";
+    init_home();
+  }
+});
+
+// src/auth/session-store.ts
+var session_store_exports = {};
+__export(session_store_exports, {
+  clearSession: () => clearSession,
+  describeSessionPath: () => describeSessionPath,
+  isSessionExpired: () => isSessionExpired,
+  readSession: () => readSession,
+  writeSession: () => writeSession
+});
+import fs from "node:fs";
+import path3 from "node:path";
+function parseJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  } catch (err) {
+    throw new Error(
+      `Failed to parse auth session at ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+function toStringOrUndefined(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
+}
+function normalizeSession(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const record = raw;
+  const accessToken = toStringOrUndefined(record.accessToken);
+  const hostedBaseUrl = toStringOrUndefined(record.hostedBaseUrl);
+  if (!accessToken || !hostedBaseUrl) return null;
+  const issuedAt = toStringOrUndefined(record.issuedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    version: 1,
+    hostedBaseUrl,
+    accessToken,
+    expiresAt: toStringOrUndefined(record.expiresAt),
+    userId: toStringOrUndefined(record.userId),
+    email: toStringOrUndefined(record.email),
+    orgId: toStringOrUndefined(record.orgId),
+    orgName: toStringOrUndefined(record.orgName),
+    machineLabel: toStringOrUndefined(record.machineLabel),
+    issuedAt
+  };
+}
+function readSession() {
+  const filePath = resolveSessionPath();
+  if (!fs.existsSync(filePath)) return null;
+  const raw = parseJson(filePath);
+  return normalizeSession(raw);
+}
+function writeSession(session) {
+  const filePath = resolveSessionPath();
+  fs.mkdirSync(resolveAuthDir(), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(session, null, 2)}
+`, { mode: 384 });
+  try {
+    fs.chmodSync(filePath, 384);
+  } catch {
+  }
+}
+function clearSession() {
+  const filePath = resolveSessionPath();
+  if (!fs.existsSync(filePath)) return false;
+  fs.rmSync(filePath, { force: true });
+  return true;
+}
+function isSessionExpired(session, now = /* @__PURE__ */ new Date()) {
+  if (!session.expiresAt) return false;
+  const expires = Date.parse(session.expiresAt);
+  if (Number.isNaN(expires)) return false;
+  return expires <= now.getTime();
+}
+function describeSessionPath() {
+  return path3.resolve(resolveSessionPath());
+}
+var init_session_store = __esm({
+  "src/auth/session-store.ts"() {
+    "use strict";
+    init_paths();
+  }
+});
+
 // ../packages/shared/src/constants.ts
 var COMPANY_STATUSES, DEPLOYMENT_MODES, DEPLOYMENT_EXPOSURES, AUTH_BASE_URL_MODES, SURFACE_PROFILES, AGENT_STATUSES, AGENT_ADAPTER_TYPES, AGENT_ROLES, AGENT_ICON_NAMES, TICKET_STAGE_KINDS, TICKET_STAGE_HANDOFF_MODES, TICKET_STATUSES, ISSUE_STATUSES, ISSUE_PRIORITIES, GOAL_LEVELS, GOAL_STATUSES, PROJECT_STATUSES, APPROVAL_TYPES, SECRET_PROVIDERS, STORAGE_PROVIDERS, BILLING_TYPES, FINANCE_EVENT_KINDS, FINANCE_DIRECTIONS, FINANCE_UNITS, BUDGET_SCOPE_TYPES, BUDGET_METRICS, BUDGET_WINDOW_KINDS, BUDGET_INCIDENT_RESOLUTION_ACTIONS, INVITE_JOIN_TYPES, JOIN_REQUEST_TYPES, JOIN_REQUEST_STATUSES, PERMISSION_KEYS, PLUGIN_STATUSES, PLUGIN_CATEGORIES, PLUGIN_CAPABILITIES, PLUGIN_UI_SLOT_TYPES, PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS, PLUGIN_LAUNCHER_PLACEMENT_ZONES, PLUGIN_LAUNCHER_ACTIONS, PLUGIN_LAUNCHER_BOUNDS, PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS, PLUGIN_UI_SLOT_ENTITY_TYPES, PLUGIN_STATE_SCOPE_KINDS;
 var init_constants = __esm({
@@ -2084,108 +2266,31 @@ var init_schema = __esm({
   }
 });
 
-// src/config/home.ts
-import os from "node:os";
-import path from "node:path";
-function resolvePaperclipHomeDir() {
-  const envHome = process.env.PAPERCLIP_HOME?.trim();
-  if (envHome) return path.resolve(expandHomePrefix(envHome));
-  return path.resolve(os.homedir(), ".paperclip");
-}
-function resolvePaperclipInstanceId(override) {
-  const raw = override?.trim() || process.env.PAPERCLIP_INSTANCE_ID?.trim() || DEFAULT_INSTANCE_ID;
-  if (!INSTANCE_ID_RE.test(raw)) {
-    throw new Error(
-      `Invalid instance id '${raw}'. Allowed characters: letters, numbers, '_' and '-'.`
-    );
-  }
-  return raw;
-}
-function resolvePaperclipInstanceRoot(instanceId) {
-  const id = resolvePaperclipInstanceId(instanceId);
-  return path.resolve(resolvePaperclipHomeDir(), "instances", id);
-}
-function resolveDefaultConfigPath(instanceId) {
-  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "config.json");
-}
-function resolveDefaultContextPath() {
-  return path.resolve(resolvePaperclipHomeDir(), "context.json");
-}
-function resolveDefaultEmbeddedPostgresDir(instanceId) {
-  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "db");
-}
-function resolveDefaultLogsDir(instanceId) {
-  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "logs");
-}
-function resolveDefaultSecretsKeyFilePath(instanceId) {
-  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "secrets", "master.key");
-}
-function resolveDefaultStorageDir(instanceId) {
-  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "storage");
-}
-function resolveDefaultBackupDir(instanceId) {
-  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "backups");
-}
-function resolveMemoryDir() {
-  return path.resolve(resolvePaperclipHomeDir(), "memory");
-}
-function resolveMemoryProjectsDir() {
-  return path.resolve(resolveMemoryDir(), "projects");
-}
-function expandHomePrefix(value) {
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
-  return value;
-}
-function describeLocalInstancePaths(instanceId) {
-  const resolvedInstanceId = resolvePaperclipInstanceId(instanceId);
-  const instanceRoot = resolvePaperclipInstanceRoot(resolvedInstanceId);
-  return {
-    homeDir: resolvePaperclipHomeDir(),
-    instanceId: resolvedInstanceId,
-    instanceRoot,
-    configPath: resolveDefaultConfigPath(resolvedInstanceId),
-    embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(resolvedInstanceId),
-    backupDir: resolveDefaultBackupDir(resolvedInstanceId),
-    logDir: resolveDefaultLogsDir(resolvedInstanceId),
-    secretsKeyFilePath: resolveDefaultSecretsKeyFilePath(resolvedInstanceId),
-    storageDir: resolveDefaultStorageDir(resolvedInstanceId)
-  };
-}
-var DEFAULT_INSTANCE_ID, INSTANCE_ID_RE;
-var init_home = __esm({
-  "src/config/home.ts"() {
-    "use strict";
-    DEFAULT_INSTANCE_ID = "default";
-    INSTANCE_ID_RE = /^[a-zA-Z0-9_-]+$/;
-  }
-});
-
 // src/config/store.ts
-import fs from "node:fs";
-import path2 from "node:path";
+import fs3 from "node:fs";
+import path5 from "node:path";
 function findConfigFileFromAncestors(startDir) {
-  const absoluteStartDir = path2.resolve(startDir);
+  const absoluteStartDir = path5.resolve(startDir);
   let currentDir = absoluteStartDir;
   while (true) {
-    const candidate = path2.resolve(currentDir, ".paperclip", DEFAULT_CONFIG_BASENAME);
-    if (fs.existsSync(candidate)) {
+    const candidate = path5.resolve(currentDir, ".paperclip", DEFAULT_CONFIG_BASENAME);
+    if (fs3.existsSync(candidate)) {
       return candidate;
     }
-    const nextDir = path2.resolve(currentDir, "..");
+    const nextDir = path5.resolve(currentDir, "..");
     if (nextDir === currentDir) break;
     currentDir = nextDir;
   }
   return null;
 }
 function resolveConfigPath(overridePath) {
-  if (overridePath) return path2.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONFIG) return path2.resolve(process.env.PAPERCLIP_CONFIG);
+  if (overridePath) return path5.resolve(overridePath);
+  if (process.env.PAPERCLIP_CONFIG) return path5.resolve(process.env.PAPERCLIP_CONFIG);
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath(resolvePaperclipInstanceId());
 }
-function parseJson(filePath) {
+function parseJson2(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return JSON.parse(fs3.readFileSync(filePath, "utf-8"));
   } catch (err) {
     throw new Error(`Failed to parse JSON at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -2224,8 +2329,8 @@ function formatValidationError(err) {
 }
 function readConfig(configPath) {
   const filePath = resolveConfigPath(configPath);
-  if (!fs.existsSync(filePath)) return null;
-  const raw = parseJson(filePath);
+  if (!fs3.existsSync(filePath)) return null;
+  const raw = parseJson2(filePath);
   const migrated = migrateLegacyConfig(raw);
   const parsed = paperclipConfigSchema.safeParse(migrated);
   if (!parsed.success) {
@@ -2235,19 +2340,19 @@ function readConfig(configPath) {
 }
 function writeConfig(config, configPath) {
   const filePath = resolveConfigPath(configPath);
-  const dir = path2.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-  if (fs.existsSync(filePath)) {
+  const dir = path5.dirname(filePath);
+  fs3.mkdirSync(dir, { recursive: true });
+  if (fs3.existsSync(filePath)) {
     const backupPath = filePath + ".backup";
-    fs.copyFileSync(filePath, backupPath);
-    fs.chmodSync(backupPath, 384);
+    fs3.copyFileSync(filePath, backupPath);
+    fs3.chmodSync(backupPath, 384);
   }
-  fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", {
+  fs3.writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", {
     mode: 384
   });
 }
 function configExists(configPath) {
-  return fs.existsSync(resolveConfigPath(configPath));
+  return fs3.existsSync(resolveConfigPath(configPath));
 }
 var DEFAULT_CONFIG_BASENAME;
 var init_store = __esm({
@@ -2260,12 +2365,12 @@ var init_store = __esm({
 });
 
 // src/config/env.ts
-import fs2 from "node:fs";
-import path3 from "node:path";
+import fs4 from "node:fs";
+import path6 from "node:path";
 import { randomBytes } from "node:crypto";
 import { config as loadDotenv, parse as parseEnvFileContents } from "dotenv";
 function resolveEnvFilePath(configPath) {
-  return path3.resolve(path3.dirname(resolveConfigPath(configPath)), ".env");
+  return path6.resolve(path6.dirname(resolveConfigPath(configPath)), ".env");
 }
 function isNonEmpty(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -2303,7 +2408,7 @@ function loadPaperclipEnvFile(configPath) {
 }
 function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()) {
   if (loadedEnvFiles.has(filePath)) return;
-  if (!fs2.existsSync(filePath)) return;
+  if (!fs4.existsSync(filePath)) return;
   loadedEnvFiles.add(filePath);
   loadDotenv({ path: filePath, override: false, quiet: true });
 }
@@ -2313,8 +2418,8 @@ function readAgentJwtSecretFromEnv(configPath) {
   return isNonEmpty(raw) ? raw.trim() : null;
 }
 function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()) {
-  if (!fs2.existsSync(filePath)) return null;
-  const raw = fs2.readFileSync(filePath, "utf-8");
+  if (!fs4.existsSync(filePath)) return null;
+  const raw = fs4.readFileSync(filePath, "utf-8");
   const values = parseEnvFile(raw);
   const value = values[JWT_SECRET_ENV_KEY];
   return isNonEmpty(value) ? value.trim() : null;
@@ -2337,13 +2442,13 @@ function writeAgentJwtEnv(secret, filePath = resolveEnvFilePath()) {
   mergePaperclipEnvEntries({ [JWT_SECRET_ENV_KEY]: secret }, filePath);
 }
 function readPaperclipEnvEntries(filePath = resolveEnvFilePath()) {
-  if (!fs2.existsSync(filePath)) return {};
-  return parseEnvFile(fs2.readFileSync(filePath, "utf-8"));
+  if (!fs4.existsSync(filePath)) return {};
+  return parseEnvFile(fs4.readFileSync(filePath, "utf-8"));
 }
 function writePaperclipEnvEntries(entries, filePath = resolveEnvFilePath()) {
-  const dir = path3.dirname(filePath);
-  fs2.mkdirSync(dir, { recursive: true });
-  fs2.writeFileSync(filePath, renderEnvFile(entries), {
+  const dir = path6.dirname(filePath);
+  fs4.mkdirSync(dir, { recursive: true });
+  fs4.writeFileSync(filePath, renderEnvFile(entries), {
     mode: 384
   });
 }
@@ -2369,24 +2474,24 @@ var init_env = __esm({
 });
 
 // src/utils/path-resolver.ts
-import fs3 from "node:fs";
-import path4 from "node:path";
+import fs5 from "node:fs";
+import path7 from "node:path";
 function unique(items) {
   return Array.from(new Set(items));
 }
 function resolveRuntimeLikePath(value, configPath) {
   const expanded = expandHomePrefix(value);
-  if (path4.isAbsolute(expanded)) return path4.resolve(expanded);
+  if (path7.isAbsolute(expanded)) return path7.resolve(expanded);
   const cwd = process.cwd();
-  const configDir = configPath ? path4.dirname(configPath) : null;
-  const workspaceRoot = configDir ? path4.resolve(configDir, "..") : cwd;
+  const configDir = configPath ? path7.dirname(configPath) : null;
+  const workspaceRoot = configDir ? path7.resolve(configDir, "..") : cwd;
   const candidates = unique([
-    ...configDir ? [path4.resolve(configDir, expanded)] : [],
-    path4.resolve(workspaceRoot, "server", expanded),
-    path4.resolve(workspaceRoot, expanded),
-    path4.resolve(cwd, expanded)
+    ...configDir ? [path7.resolve(configDir, expanded)] : [],
+    path7.resolve(workspaceRoot, "server", expanded),
+    path7.resolve(workspaceRoot, expanded),
+    path7.resolve(cwd, expanded)
   ]);
-  return candidates.find((candidate) => fs3.existsSync(candidate)) ?? candidates[0];
+  return candidates.find((candidate) => fs5.existsSync(candidate)) ?? candidates[0];
 }
 var init_path_resolver = __esm({
   "src/utils/path-resolver.ts"() {
@@ -2397,8 +2502,8 @@ var init_path_resolver = __esm({
 
 // src/config/secrets-key.ts
 import { randomBytes as randomBytes2 } from "node:crypto";
-import fs4 from "node:fs";
-import path5 from "node:path";
+import fs6 from "node:fs";
+import path8 from "node:path";
 function ensureLocalSecretsKeyFile(config, configPath) {
   if (config.secrets.provider !== "local_encrypted") {
     return { status: "skipped_provider", path: null };
@@ -2410,16 +2515,16 @@ function ensureLocalSecretsKeyFile(config, configPath) {
   const keyFileOverride = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
   const configuredPath = keyFileOverride && keyFileOverride.trim().length > 0 ? keyFileOverride.trim() : config.secrets.localEncrypted.keyFilePath;
   const keyFilePath = resolveRuntimeLikePath(configuredPath, configPath);
-  if (fs4.existsSync(keyFilePath)) {
+  if (fs6.existsSync(keyFilePath)) {
     return { status: "existing", path: keyFilePath };
   }
-  fs4.mkdirSync(path5.dirname(keyFilePath), { recursive: true });
-  fs4.writeFileSync(keyFilePath, randomBytes2(32).toString("base64"), {
+  fs6.mkdirSync(path8.dirname(keyFilePath), { recursive: true });
+  fs6.writeFileSync(keyFilePath, randomBytes2(32).toString("base64"), {
     encoding: "utf8",
     mode: 384
   });
   try {
-    fs4.chmodSync(keyFilePath, 384);
+    fs6.chmodSync(keyFilePath, 384);
   } catch {
   }
   return { status: "created", path: keyFilePath };
@@ -2596,17 +2701,17 @@ async function promptLlm() {
     p2.cancel("Setup cancelled.");
     process.exit(0);
   }
-  const apiKey = await p2.password({
+  const apiKey2 = await p2.password({
     message: `${provider === "claude" ? "Anthropic" : "OpenAI"} API key`,
     validate: (val) => {
       if (!val) return "API key is required";
     }
   });
-  if (p2.isCancel(apiKey)) {
+  if (p2.isCancel(apiKey2)) {
     p2.cancel("Setup cancelled.");
     process.exit(0);
   }
-  return { provider, apiKey };
+  return { provider, apiKey: apiKey2 };
 }
 async function promptExtendedProvider(context) {
   const provider = await p2.select({
@@ -2630,13 +2735,13 @@ async function promptExtendedProvider(context) {
       modelId: String(modelId2).trim() || DEFAULT_MODELS.local
     };
   }
-  const apiKey = await p2.password({
+  const apiKey2 = await p2.password({
     message: `${PROVIDER_LABELS[selectedProvider]} API key`,
     validate: (val) => {
       if (!val) return "API key is required for this provider";
     }
   });
-  if (p2.isCancel(apiKey)) return null;
+  if (p2.isCancel(apiKey2)) return null;
   const modelId = await p2.text({
     message: "Model id",
     placeholder: DEFAULT_MODELS[selectedProvider],
@@ -2645,7 +2750,7 @@ async function promptExtendedProvider(context) {
   if (p2.isCancel(modelId)) return null;
   return {
     provider: selectedProvider,
-    apiKey: String(apiKey),
+    apiKey: String(apiKey2),
     modelId: String(modelId).trim() || DEFAULT_MODELS[selectedProvider]
   };
 }
@@ -6912,7 +7017,7 @@ var init_path_resolver2 = __esm({
 });
 
 // src/checks/database-check.ts
-import fs5 from "node:fs";
+import fs7 from "node:fs";
 async function databaseCheck(config, configPath) {
   if (config.database.mode === "postgres") {
     if (!config.database.connectionString) {
@@ -6946,8 +7051,8 @@ async function databaseCheck(config, configPath) {
   if (config.database.mode === "embedded-postgres") {
     const dataDir = resolveRuntimeLikePath(config.database.embeddedPostgresDataDir, configPath);
     const reportedPath = dataDir;
-    if (!fs5.existsSync(dataDir)) {
-      fs5.mkdirSync(reportedPath, { recursive: true });
+    if (!fs7.existsSync(dataDir)) {
+      fs7.mkdirSync(reportedPath, { recursive: true });
     }
     return {
       name: "Database",
@@ -7055,15 +7160,15 @@ var init_llm_check = __esm({
 });
 
 // src/checks/log-check.ts
-import fs6 from "node:fs";
+import fs8 from "node:fs";
 function logCheck(config, configPath) {
   const logDir = resolveRuntimeLikePath(config.logging.logDir, configPath);
   const reportedDir = logDir;
-  if (!fs6.existsSync(logDir)) {
-    fs6.mkdirSync(reportedDir, { recursive: true });
+  if (!fs8.existsSync(logDir)) {
+    fs8.mkdirSync(reportedDir, { recursive: true });
   }
   try {
-    fs6.accessSync(reportedDir, fs6.constants.W_OK);
+    fs8.accessSync(reportedDir, fs8.constants.W_OK);
     return {
       name: "Log directory",
       status: "pass",
@@ -7138,8 +7243,8 @@ var init_port_check = __esm({
 
 // src/checks/secrets-check.ts
 import { randomBytes as randomBytes4 } from "node:crypto";
-import fs7 from "node:fs";
-import path6 from "node:path";
+import fs9 from "node:fs";
+import path9 from "node:path";
 function decodeMasterKey(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -7201,7 +7306,7 @@ function secretsCheck(config, configPath) {
   const keyFileOverride = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
   const configuredPath = keyFileOverride && keyFileOverride.trim().length > 0 ? keyFileOverride.trim() : config.secrets.localEncrypted.keyFilePath;
   const keyFilePath = resolveRuntimeLikePath(configuredPath, configPath);
-  if (!fs7.existsSync(keyFilePath)) {
+  if (!fs9.existsSync(keyFilePath)) {
     return withStrictModeNote(
       {
         name: "Secrets adapter",
@@ -7209,13 +7314,13 @@ function secretsCheck(config, configPath) {
         message: `Secrets key file does not exist yet: ${keyFilePath}`,
         canRepair: true,
         repair: () => {
-          fs7.mkdirSync(path6.dirname(keyFilePath), { recursive: true });
-          fs7.writeFileSync(keyFilePath, randomBytes4(32).toString("base64"), {
+          fs9.mkdirSync(path9.dirname(keyFilePath), { recursive: true });
+          fs9.writeFileSync(keyFilePath, randomBytes4(32).toString("base64"), {
             encoding: "utf8",
             mode: 384
           });
           try {
-            fs7.chmodSync(keyFilePath, 384);
+            fs9.chmodSync(keyFilePath, 384);
           } catch {
           }
         },
@@ -7226,7 +7331,7 @@ function secretsCheck(config, configPath) {
   }
   let raw;
   try {
-    raw = fs7.readFileSync(keyFilePath, "utf8");
+    raw = fs9.readFileSync(keyFilePath, "utf8");
   } catch (err) {
     return {
       name: "Secrets adapter",
@@ -7262,15 +7367,15 @@ var init_secrets_check = __esm({
 });
 
 // src/checks/storage-check.ts
-import fs8 from "node:fs";
+import fs10 from "node:fs";
 function storageCheck(config, configPath) {
   if (config.storage.provider === "local_disk") {
     const baseDir = resolveRuntimeLikePath(config.storage.localDisk.baseDir, configPath);
-    if (!fs8.existsSync(baseDir)) {
-      fs8.mkdirSync(baseDir, { recursive: true });
+    if (!fs10.existsSync(baseDir)) {
+      fs10.mkdirSync(baseDir, { recursive: true });
     }
     try {
-      fs8.accessSync(baseDir, fs8.constants.W_OK);
+      fs10.accessSync(baseDir, fs10.constants.W_OK);
       return {
         name: "Storage",
         status: "pass",
@@ -7483,8 +7588,8 @@ var run_exports = {};
 __export(run_exports, {
   runCommand: () => runCommand
 });
-import fs9 from "node:fs";
-import path7 from "node:path";
+import fs11 from "node:fs";
+import path10 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 import * as p9 from "@clack/prompts";
 import pc4 from "picocolors";
@@ -7492,9 +7597,9 @@ async function runCommand(opts) {
   const instanceId = resolvePaperclipInstanceId(opts.instance);
   process.env.PAPERCLIP_INSTANCE_ID = instanceId;
   const homeDir = resolvePaperclipHomeDir();
-  fs9.mkdirSync(homeDir, { recursive: true });
+  fs11.mkdirSync(homeDir, { recursive: true });
   const paths = describeLocalInstancePaths(instanceId);
-  fs9.mkdirSync(paths.instanceRoot, { recursive: true });
+  fs11.mkdirSync(paths.instanceRoot, { recursive: true });
   const configPath = resolveConfigPath(opts.config);
   process.env.PAPERCLIP_CONFIG = configPath;
   loadPaperclipEnvFile(configPath);
@@ -7578,18 +7683,18 @@ function maybeEnableUiDevMiddleware(entrypoint) {
   }
 }
 async function importServerEntry() {
-  const projectRoot = path7.resolve(path7.dirname(fileURLToPath2(import.meta.url)), "../../..");
-  const devEntry = path7.resolve(projectRoot, "server/src/index.ts");
-  if (fs9.existsSync(devEntry)) {
+  const projectRoot = path10.resolve(path10.dirname(fileURLToPath2(import.meta.url)), "../../..");
+  const devEntry = path10.resolve(projectRoot, "server/src/index.ts");
+  if (fs11.existsSync(devEntry)) {
     maybeEnableUiDevMiddleware(devEntry);
     const mod = await import(pathToFileURL(devEntry).href);
     return await startServerFromModule(mod, devEntry);
   }
-  const bundledEntry = path7.resolve(
-    path7.dirname(fileURLToPath2(import.meta.url)),
+  const bundledEntry = path10.resolve(
+    path10.dirname(fileURLToPath2(import.meta.url)),
     "./runtime/server/dist/index.js"
   );
-  if (fs9.existsSync(bundledEntry)) {
+  if (fs11.existsSync(bundledEntry)) {
     const mod = await import(pathToFileURL(bundledEntry).href);
     return await startServerFromModule(mod, bundledEntry);
   }
@@ -7637,7 +7742,7 @@ var init_run = __esm({
 
 // src/commands/onboard.ts
 import * as p10 from "@clack/prompts";
-import path8 from "node:path";
+import path11 from "node:path";
 import pc5 from "picocolors";
 function parseBooleanFromEnv(rawValue) {
   if (rawValue === void 0) return null;
@@ -7658,7 +7763,7 @@ function parseEnumFromEnv(rawValue, allowedValues) {
 }
 function resolvePathFromEnv(rawValue) {
   if (!rawValue || rawValue.trim().length === 0) return null;
-  return path8.resolve(expandHomePrefix(rawValue.trim()));
+  return path11.resolve(expandHomePrefix(rawValue.trim()));
 }
 function quickstartDefaultsFromEnv() {
   const instanceId = resolvePaperclipInstanceId();
@@ -8077,8 +8182,8 @@ var init_onboard = __esm({
 
 // src/client/http.ts
 import { URL as URL2 } from "node:url";
-function buildUrl(apiBase, path61) {
-  const normalizedPath = path61.startsWith("/") ? path61 : `/${path61}`;
+function buildUrl(apiBase, path62) {
+  const normalizedPath = path62.startsWith("/") ? path62 : `/${path62}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
@@ -8140,26 +8245,26 @@ var init_http = __esm({
         this.runId = opts.runId?.trim() || void 0;
         this.userId = opts.userId?.trim() || void 0;
       }
-      get(path61, opts) {
-        return this.request(path61, { method: "GET" }, opts);
+      get(path62, opts) {
+        return this.request(path62, { method: "GET" }, opts);
       }
-      post(path61, body, opts) {
-        return this.request(path61, {
+      post(path62, body, opts) {
+        return this.request(path62, {
           method: "POST",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      patch(path61, body, opts) {
-        return this.request(path61, {
+      patch(path62, body, opts) {
+        return this.request(path62, {
           method: "PATCH",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      delete(path61, opts) {
-        return this.request(path61, { method: "DELETE" }, opts);
+      delete(path62, opts) {
+        return this.request(path62, { method: "DELETE" }, opts);
       }
-      async request(path61, init, opts) {
-        const url = buildUrl(this.apiBase, path61);
+      async request(path62, init, opts) {
+        const url = buildUrl(this.apiBase, path62);
         const headers = {
           accept: "application/json",
           ...toStringRecord(init.headers)
@@ -8196,111 +8301,6 @@ var init_http = __esm({
         return safeParseJson(text69);
       }
     };
-  }
-});
-
-// src/auth/paths.ts
-import path10 from "node:path";
-function resolveAuthDir() {
-  return path10.resolve(resolvePaperclipHomeDir(), "auth");
-}
-function resolveProfilesDir() {
-  return path10.resolve(resolvePaperclipHomeDir(), "profiles");
-}
-function resolveSessionPath() {
-  return path10.resolve(resolveAuthDir(), "session.json");
-}
-function resolveHostedOverlayPath() {
-  return path10.resolve(resolveProfilesDir(), "hosted-overlay.json");
-}
-function resolveEffectiveProfilePath() {
-  return path10.resolve(resolveProfilesDir(), "effective-profile.json");
-}
-var init_paths = __esm({
-  "src/auth/paths.ts"() {
-    "use strict";
-    init_home();
-  }
-});
-
-// src/auth/session-store.ts
-var session_store_exports = {};
-__export(session_store_exports, {
-  clearSession: () => clearSession,
-  describeSessionPath: () => describeSessionPath,
-  isSessionExpired: () => isSessionExpired,
-  readSession: () => readSession,
-  writeSession: () => writeSession
-});
-import fs11 from "node:fs";
-import path11 from "node:path";
-function parseJson3(filePath) {
-  try {
-    return JSON.parse(fs11.readFileSync(filePath, "utf-8"));
-  } catch (err) {
-    throw new Error(
-      `Failed to parse auth session at ${filePath}: ${err instanceof Error ? err.message : String(err)}`
-    );
-  }
-}
-function toStringOrUndefined2(value) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
-}
-function normalizeSession(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const record = raw;
-  const accessToken = toStringOrUndefined2(record.accessToken);
-  const hostedBaseUrl = toStringOrUndefined2(record.hostedBaseUrl);
-  if (!accessToken || !hostedBaseUrl) return null;
-  const issuedAt = toStringOrUndefined2(record.issuedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
-  return {
-    version: 1,
-    hostedBaseUrl,
-    accessToken,
-    expiresAt: toStringOrUndefined2(record.expiresAt),
-    userId: toStringOrUndefined2(record.userId),
-    email: toStringOrUndefined2(record.email),
-    orgId: toStringOrUndefined2(record.orgId),
-    orgName: toStringOrUndefined2(record.orgName),
-    machineLabel: toStringOrUndefined2(record.machineLabel),
-    issuedAt
-  };
-}
-function readSession() {
-  const filePath = resolveSessionPath();
-  if (!fs11.existsSync(filePath)) return null;
-  const raw = parseJson3(filePath);
-  return normalizeSession(raw);
-}
-function writeSession(session) {
-  const filePath = resolveSessionPath();
-  fs11.mkdirSync(resolveAuthDir(), { recursive: true });
-  fs11.writeFileSync(filePath, `${JSON.stringify(session, null, 2)}
-`, { mode: 384 });
-  try {
-    fs11.chmodSync(filePath, 384);
-  } catch {
-  }
-}
-function clearSession() {
-  const filePath = resolveSessionPath();
-  if (!fs11.existsSync(filePath)) return false;
-  fs11.rmSync(filePath, { force: true });
-  return true;
-}
-function isSessionExpired(session, now = /* @__PURE__ */ new Date()) {
-  if (!session.expiresAt) return false;
-  const expires = Date.parse(session.expiresAt);
-  if (Number.isNaN(expires)) return false;
-  return expires <= now.getTime();
-}
-function describeSessionPath() {
-  return path11.resolve(resolveSessionPath());
-}
-var init_session_store = __esm({
-  "src/auth/session-store.ts"() {
-    "use strict";
-    init_paths();
   }
 });
 
@@ -8643,52 +8643,52 @@ __export(service_exports, {
   validateBundledKitAssetRoot: () => validateBundledKitAssetRoot,
   validateKitDirectory: () => validateKitDirectory
 });
-import fs17 from "node:fs";
-import path23 from "node:path";
+import fs18 from "node:fs";
+import path24 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 function resolveBundledKitAssetsRoot() {
-  const moduleDir = path23.dirname(fileURLToPath4(import.meta.url));
+  const moduleDir = path24.dirname(fileURLToPath4(import.meta.url));
   const candidates = [
-    path23.resolve(moduleDir, "../../assets/worker-kits"),
-    path23.resolve(moduleDir, "../assets/worker-kits")
+    path24.resolve(moduleDir, "../../assets/worker-kits"),
+    path24.resolve(moduleDir, "../assets/worker-kits")
   ];
   for (const candidate of candidates) {
-    if (fs17.existsSync(candidate)) return candidate;
+    if (fs18.existsSync(candidate)) return candidate;
   }
   throw new Error("Could not locate bundled worker kit assets.");
 }
 function resolveRequestedOutputRoot(outDir) {
   if (outDir?.trim()) {
-    return path23.resolve(expandHomePrefix(outDir.trim()));
+    return path24.resolve(expandHomePrefix(outDir.trim()));
   }
-  return path23.resolve(resolvePaperclipHomeDir(), "kits", "exports");
+  return path24.resolve(resolvePaperclipHomeDir(), "kits", "exports");
 }
 function readJsonFile(filePath) {
-  return JSON.parse(fs17.readFileSync(filePath, "utf8"));
+  return JSON.parse(fs18.readFileSync(filePath, "utf8"));
 }
 function assertRelativePathExists(assetRoot, relativePath, label) {
-  const fullPath = path23.resolve(assetRoot, relativePath);
-  if (!fs17.existsSync(fullPath)) {
+  const fullPath = path24.resolve(assetRoot, relativePath);
+  if (!fs18.existsSync(fullPath)) {
     throw new Error(`${label} is missing required path: ${relativePath}`);
   }
 }
 function listRelativeFiles(rootDir) {
   const files = [];
   const walk = (currentDir) => {
-    for (const entry of fs17.readdirSync(currentDir, { withFileTypes: true })) {
-      const fullPath = path23.join(currentDir, entry.name);
+    for (const entry of fs18.readdirSync(currentDir, { withFileTypes: true })) {
+      const fullPath = path24.join(currentDir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath);
         continue;
       }
-      files.push(path23.relative(rootDir, fullPath).split(path23.sep).join("/"));
+      files.push(path24.relative(rootDir, fullPath).split(path24.sep).join("/"));
     }
   };
   walk(rootDir);
   return files.sort();
 }
 function parseManifest(assetRoot) {
-  const raw = readJsonFile(path23.resolve(assetRoot, "kit.json"));
+  const raw = readJsonFile(path24.resolve(assetRoot, "kit.json"));
   if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
     throw new Error(`Unsupported kit schema version for ${assetRoot}: ${raw.schemaVersion}`);
   }
@@ -8699,7 +8699,7 @@ function parseBundleManifest(assetRoot, manifest, bundleId) {
   if (!bundleRef) {
     throw new Error(`Kit ${manifest.kit.id} does not declare bundle ${bundleId}.`);
   }
-  const raw = readJsonFile(path23.resolve(assetRoot, bundleRef.path));
+  const raw = readJsonFile(path24.resolve(assetRoot, bundleRef.path));
   if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
     throw new Error(
       `Unsupported bundle schema version for ${bundleRef.path}: ${raw.schemaVersion}`
@@ -8764,14 +8764,14 @@ function validateKitDirectory(kitPath) {
   const warnings = [];
   let schemaVersion = 0;
   let kitId = "<unknown>";
-  const kitJsonPath = path23.resolve(kitPath, "kit.json");
-  if (!fs17.existsSync(kitJsonPath)) {
+  const kitJsonPath = path24.resolve(kitPath, "kit.json");
+  if (!fs18.existsSync(kitJsonPath)) {
     errors.push({ field: "kit.json", message: "kit.json not found in kit directory" });
     return { valid: false, schemaVersion, kitId, errors, warnings };
   }
   let raw;
   try {
-    raw = JSON.parse(fs17.readFileSync(kitJsonPath, "utf8"));
+    raw = JSON.parse(fs18.readFileSync(kitJsonPath, "utf8"));
   } catch {
     errors.push({ field: "kit.json", message: "kit.json is not valid JSON" });
     return { valid: false, schemaVersion, kitId, errors, warnings };
@@ -8838,8 +8838,8 @@ function validateKitDirectory(kitPath) {
     if (typeof entrypoint.path !== "string") {
       errors.push({ field: "entrypoint.path", message: "Missing required field 'entrypoint.path'" });
     } else {
-      const fullPath = path23.resolve(kitPath, entrypoint.path);
-      if (!fs17.existsSync(fullPath)) {
+      const fullPath = path24.resolve(kitPath, entrypoint.path);
+      if (!fs18.existsSync(fullPath)) {
         errors.push({ field: "entrypoint.path", message: `Entrypoint file not found: ${entrypoint.path}` });
       }
     }
@@ -8847,16 +8847,16 @@ function validateKitDirectory(kitPath) {
   if (typeof raw.agentContractPath !== "string") {
     errors.push({ field: "agentContractPath", message: "Missing required field 'agentContractPath'" });
   } else {
-    const fullPath = path23.resolve(kitPath, raw.agentContractPath);
-    if (!fs17.existsSync(fullPath)) {
+    const fullPath = path24.resolve(kitPath, raw.agentContractPath);
+    if (!fs18.existsSync(fullPath)) {
       errors.push({ field: "agentContractPath", message: `Agent contract not found: ${raw.agentContractPath}` });
     }
   }
   if (typeof raw.brandTemplatePath !== "string") {
     errors.push({ field: "brandTemplatePath", message: "Missing required field 'brandTemplatePath'" });
   } else {
-    const fullPath = path23.resolve(kitPath, raw.brandTemplatePath);
-    if (!fs17.existsSync(fullPath)) {
+    const fullPath = path24.resolve(kitPath, raw.brandTemplatePath);
+    if (!fs18.existsSync(fullPath)) {
       errors.push({ field: "brandTemplatePath", message: `Brand template not found: ${raw.brandTemplatePath}` });
     }
   }
@@ -8866,8 +8866,8 @@ function validateKitDirectory(kitPath) {
   } else {
     for (const assetPath of frozenAssets) {
       if (typeof assetPath !== "string") continue;
-      const fullPath = path23.resolve(kitPath, assetPath);
-      if (!fs17.existsSync(fullPath)) {
+      const fullPath = path24.resolve(kitPath, assetPath);
+      if (!fs18.existsSync(fullPath)) {
         errors.push({ field: "frozenAssetPaths", message: `Frozen asset not found: ${assetPath}` });
       }
     }
@@ -8885,8 +8885,8 @@ function validateKitDirectory(kitPath) {
     } else {
       for (const reqPath of requiredPaths) {
         if (typeof reqPath !== "string") continue;
-        const fullPath = path23.resolve(kitPath, reqPath);
-        if (!fs17.existsSync(fullPath)) {
+        const fullPath = path24.resolve(kitPath, reqPath);
+        if (!fs18.existsSync(fullPath)) {
           errors.push({ field: "outputStandard.requiredPaths", message: `Required output path not found: ${reqPath}` });
         }
       }
@@ -8902,13 +8902,13 @@ function validateKitDirectory(kitPath) {
         errors.push({ field: "bundles[].path", message: "Bundle ref missing 'path' field" });
         continue;
       }
-      const bundlePath = path23.resolve(kitPath, ref.path);
-      if (!fs17.existsSync(bundlePath)) {
+      const bundlePath = path24.resolve(kitPath, ref.path);
+      if (!fs18.existsSync(bundlePath)) {
         errors.push({ field: "bundles[].path", message: `Bundle manifest not found: ${ref.path}` });
         continue;
       }
       try {
-        const bundleRaw = JSON.parse(fs17.readFileSync(bundlePath, "utf8"));
+        const bundleRaw = JSON.parse(fs18.readFileSync(bundlePath, "utf8"));
         const bundleBlock = bundleRaw.bundle;
         if (!bundleBlock || typeof bundleBlock !== "object") {
           errors.push({ field: `bundle(${ref.id})`, message: "Bundle manifest missing 'bundle' block" });
@@ -8946,7 +8946,7 @@ function loadResolvedBundledKit(assetRoot, catalogEntry) {
 function validateBundledKitAssetRoot(assetRoot, input) {
   const catalogEntry = {
     id: input.kitId,
-    packageDirName: path23.basename(assetRoot),
+    packageDirName: path24.basename(assetRoot),
     defaultBundleId: input.bundleId ?? input.kitId,
     type: "worker",
     executionMode: "export",
@@ -8980,7 +8980,7 @@ Available: ${available}`
     );
   }
   const catalogEntry = BUNDLED_KIT_CATALOG.find((e) => e.id === resolvedId);
-  const assetRoot = path23.resolve(resolveBundledKitAssetsRoot(), catalogEntry.packageDirName);
+  const assetRoot = path24.resolve(resolveBundledKitAssetsRoot(), catalogEntry.packageDirName);
   return loadResolvedBundledKit(assetRoot, catalogEntry);
 }
 function toListItem(resolved) {
@@ -9000,8 +9000,8 @@ function toListItem(resolved) {
 }
 function resolveOutputPaths(resolved, outDir) {
   const outputRoot = resolveRequestedOutputRoot(outDir);
-  const folderPath = path23.resolve(outputRoot, resolved.bundleManifest.export.folderName);
-  const zipPath = path23.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
+  const folderPath = path24.resolve(outputRoot, resolved.bundleManifest.export.folderName);
+  const zipPath = path24.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
   return { outputRoot, folderPath, zipPath };
 }
 function listBundledKits() {
@@ -9043,9 +9043,9 @@ function getBundledKitSourceInfo(kitId) {
 }
 function copyBundledKitSource(kitId, destinationPath) {
   const info = getBundledKitSourceInfo(kitId);
-  fs17.mkdirSync(path23.dirname(destinationPath), { recursive: true });
-  fs17.rmSync(destinationPath, { recursive: true, force: true });
-  fs17.cpSync(info.assetRoot, destinationPath, { recursive: true });
+  fs18.mkdirSync(path24.dirname(destinationPath), { recursive: true });
+  fs18.rmSync(destinationPath, { recursive: true, force: true });
+  fs18.cpSync(info.assetRoot, destinationPath, { recursive: true });
   return info;
 }
 function crc32(buffer) {
@@ -9133,7 +9133,7 @@ function reportProgress(onProgress, progress) {
 function copyDirectoryWithProgress(sourceRoot, targetRoot, onProgress) {
   const files = listRelativeFiles(sourceRoot);
   const total = Math.max(files.length, 1);
-  fs17.mkdirSync(targetRoot, { recursive: true });
+  fs18.mkdirSync(targetRoot, { recursive: true });
   reportProgress(onProgress, {
     phase: "copying",
     completed: 0,
@@ -9142,10 +9142,10 @@ function copyDirectoryWithProgress(sourceRoot, targetRoot, onProgress) {
     detail: "Preparing files"
   });
   files.forEach((relativePath, index51) => {
-    const sourcePath = path23.resolve(sourceRoot, relativePath);
-    const targetPath = path23.resolve(targetRoot, relativePath);
-    fs17.mkdirSync(path23.dirname(targetPath), { recursive: true });
-    fs17.copyFileSync(sourcePath, targetPath);
+    const sourcePath = path24.resolve(sourceRoot, relativePath);
+    const targetPath = path24.resolve(targetRoot, relativePath);
+    fs18.mkdirSync(path24.dirname(targetPath), { recursive: true });
+    fs18.copyFileSync(sourcePath, targetPath);
     const completed = index51 + 1;
     const percent = 10 + Math.round(completed / total * 55);
     reportProgress(onProgress, {
@@ -9171,8 +9171,8 @@ function buildZipEntriesWithProgress(sourceRoot, exportFolderName, onProgress) {
       detail: relativePath
     });
     return {
-      name: path23.posix.join(exportFolderName, relativePath),
-      data: fs17.readFileSync(path23.resolve(sourceRoot, relativePath))
+      name: path24.posix.join(exportFolderName, relativePath),
+      data: fs18.readFileSync(path24.resolve(sourceRoot, relativePath))
     };
   });
 }
@@ -9187,8 +9187,8 @@ function downloadBundledKit(kitId, outDir, options = {}) {
     percent: 0,
     detail: "Resolving export target"
   });
-  fs17.mkdirSync(outputPaths.outputRoot, { recursive: true });
-  fs17.rmSync(outputPaths.folderPath, { recursive: true, force: true });
+  fs18.mkdirSync(outputPaths.outputRoot, { recursive: true });
+  fs18.rmSync(outputPaths.folderPath, { recursive: true, force: true });
   copyDirectoryWithProgress(resolved.assetRoot, outputPaths.folderPath, onProgress);
   const zipBuffer = buildStoredZip(
     buildZipEntriesWithProgress(outputPaths.folderPath, resolved.bundleManifest.export.folderName, onProgress)
@@ -9198,9 +9198,9 @@ function downloadBundledKit(kitId, outDir, options = {}) {
     completed: 1,
     total: 1,
     percent: 98,
-    detail: path23.basename(outputPaths.zipPath)
+    detail: path24.basename(outputPaths.zipPath)
   });
-  fs17.writeFileSync(outputPaths.zipPath, zipBuffer);
+  fs18.writeFileSync(outputPaths.zipPath, zipBuffer);
   reportProgress(onProgress, {
     phase: "done",
     completed: 1,
@@ -9236,26 +9236,26 @@ __export(kit_forks_home_exports, {
   resolveKitForksOrphanJobsDir: () => resolveKitForksOrphanJobsDir
 });
 import os6 from "node:os";
-import path24 from "node:path";
+import path25 from "node:path";
 function resolveKitForksHomeDir() {
   const envHome = process.env.GROWTHUB_KIT_FORKS_HOME?.trim();
-  if (envHome) return path24.resolve(expandHomePrefix(envHome));
-  return path24.resolve(os6.homedir(), ".growthub", "kit-forks");
+  if (envHome) return path25.resolve(expandHomePrefix(envHome));
+  return path25.resolve(os6.homedir(), ".growthub", "kit-forks");
 }
 function resolveKitForksIndexPath() {
-  return path24.resolve(resolveKitForksHomeDir(), "index.json");
+  return path25.resolve(resolveKitForksHomeDir(), "index.json");
 }
 function resolveKitForksJobsDir() {
-  return path24.resolve(resolveKitForksHomeDir(), "jobs");
+  return path25.resolve(resolveKitForksHomeDir(), "jobs");
 }
 function resolveKitForksOrphanJobsDir() {
-  return path24.resolve(resolveKitForksHomeDir(), "orphan-jobs");
+  return path25.resolve(resolveKitForksHomeDir(), "orphan-jobs");
 }
 function resolveInForkStateDir(forkPath) {
-  return path24.resolve(forkPath, IN_FORK_STATE_DIRNAME);
+  return path25.resolve(forkPath, IN_FORK_STATE_DIRNAME);
 }
 function resolveInForkRegistrationPath(forkPath) {
-  return path24.resolve(resolveInForkStateDir(forkPath), "fork.json");
+  return path25.resolve(resolveInForkStateDir(forkPath), "fork.json");
 }
 var IN_FORK_STATE_DIRNAME;
 var init_kit_forks_home = __esm({
@@ -9267,13 +9267,13 @@ var init_kit_forks_home = __esm({
 });
 
 // src/kits/fork-registry.ts
-import fs18 from "node:fs";
-import path25 from "node:path";
+import fs19 from "node:fs";
+import path26 from "node:path";
 function readIndex() {
   const p35 = resolveKitForksIndexPath();
-  if (!fs18.existsSync(p35)) return { version: 1, entries: [] };
+  if (!fs19.existsSync(p35)) return { version: 1, entries: [] };
   try {
-    const parsed = JSON.parse(fs18.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs19.readFileSync(p35, "utf8"));
     if (!parsed || !Array.isArray(parsed.entries)) return { version: 1, entries: [] };
     return parsed;
   } catch {
@@ -9282,8 +9282,8 @@ function readIndex() {
 }
 function writeIndex(index51) {
   const p35 = resolveKitForksIndexPath();
-  fs18.mkdirSync(path25.dirname(p35), { recursive: true });
-  fs18.writeFileSync(p35, JSON.stringify(index51, null, 2) + "\n", "utf8");
+  fs19.mkdirSync(path26.dirname(p35), { recursive: true });
+  fs19.writeFileSync(p35, JSON.stringify(index51, null, 2) + "\n", "utf8");
 }
 function upsertIndexEntry(entry) {
   const index51 = readIndex();
@@ -9303,32 +9303,32 @@ function sanitizeForkId(raw) {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 56);
 }
 function generateForkId(forkPath, kitId) {
-  const dirName = path25.basename(forkPath);
+  const dirName = path26.basename(forkPath);
   const base = sanitizeForkId(`${kitId}-${dirName}`);
   const suffix = Date.now().toString(36).slice(-4);
   return `${base}-${suffix}`;
 }
 function readForkJson(forkPath) {
   const p35 = resolveInForkRegistrationPath(forkPath);
-  if (!fs18.existsSync(p35)) return null;
+  if (!fs19.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs18.readFileSync(p35, "utf8"));
+    return JSON.parse(fs19.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
 }
 function writeForkJson(reg) {
   const stateDir = resolveInForkStateDir(reg.forkPath);
-  fs18.mkdirSync(stateDir, { recursive: true });
-  fs18.writeFileSync(
+  fs19.mkdirSync(stateDir, { recursive: true });
+  fs19.writeFileSync(
     resolveInForkRegistrationPath(reg.forkPath),
     JSON.stringify(reg, null, 2) + "\n",
     "utf8"
   );
 }
 function registerKitFork(opts) {
-  const resolvedPath = path25.resolve(opts.forkPath);
-  if (!fs18.existsSync(resolvedPath)) {
+  const resolvedPath = path26.resolve(opts.forkPath);
+  if (!fs19.existsSync(resolvedPath)) {
     throw new Error(`Fork path does not exist: ${resolvedPath}`);
   }
   const forkId = generateForkId(resolvedPath, opts.kitId);
@@ -9362,7 +9362,7 @@ function updateKitForkRegistration(reg) {
 function loadKitForkRegistration(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
   if (!entry) return null;
-  if (!fs18.existsSync(entry.forkPath)) return null;
+  if (!fs19.existsSync(entry.forkPath)) return null;
   return readForkJson(entry.forkPath);
 }
 function listKitForkRegistrations(filterKitId) {
@@ -9370,7 +9370,7 @@ function listKitForkRegistrations(filterKitId) {
   const results = [];
   for (const entry of index51.entries) {
     if (filterKitId && entry.kitId !== filterKitId) continue;
-    if (!fs18.existsSync(entry.forkPath)) continue;
+    if (!fs19.existsSync(entry.forkPath)) continue;
     const reg = readForkJson(entry.forkPath);
     if (reg) results.push(reg);
   }
@@ -9379,9 +9379,9 @@ function listKitForkRegistrations(filterKitId) {
 function deregisterKitFork(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
   if (!entry) return false;
-  if (fs18.existsSync(entry.forkPath)) {
+  if (fs19.existsSync(entry.forkPath)) {
     const stateDir = resolveInForkStateDir(entry.forkPath);
-    fs18.rmSync(stateDir, { recursive: true, force: true });
+    fs19.rmSync(stateDir, { recursive: true, force: true });
   }
   removeIndexEntry(kitId, forkId);
   return true;
@@ -9389,7 +9389,7 @@ function deregisterKitFork(kitId, forkId) {
 function lookupKitForkPath(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
   if (!entry) return null;
-  if (!fs18.existsSync(entry.forkPath)) return null;
+  if (!fs19.existsSync(entry.forkPath)) return null;
   return entry.forkPath;
 }
 var init_fork_registry = __esm({
@@ -9400,8 +9400,8 @@ var init_fork_registry = __esm({
 });
 
 // src/kits/fork-policy.ts
-import fs19 from "node:fs";
-import path26 from "node:path";
+import fs20 from "node:fs";
+import path27 from "node:path";
 function makeDefaultKitForkPolicy() {
   return {
     version: 1,
@@ -9416,13 +9416,13 @@ function makeDefaultKitForkPolicy() {
   };
 }
 function resolvePolicyPath(forkPath) {
-  return path26.resolve(resolveInForkStateDir(forkPath), "policy.json");
+  return path27.resolve(resolveInForkStateDir(forkPath), "policy.json");
 }
 function readKitForkPolicy(forkPath) {
   const p35 = resolvePolicyPath(forkPath);
-  if (!fs19.existsSync(p35)) return makeDefaultKitForkPolicy();
+  if (!fs20.existsSync(p35)) return makeDefaultKitForkPolicy();
   try {
-    const parsed = JSON.parse(fs19.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs20.readFileSync(p35, "utf8"));
     return { ...makeDefaultKitForkPolicy(), ...parsed, version: 1 };
   } catch {
     return makeDefaultKitForkPolicy();
@@ -9430,9 +9430,9 @@ function readKitForkPolicy(forkPath) {
 }
 function writeKitForkPolicy(forkPath, policy) {
   const p35 = resolvePolicyPath(forkPath);
-  fs19.mkdirSync(path26.dirname(p35), { recursive: true });
+  fs20.mkdirSync(path27.dirname(p35), { recursive: true });
   const body = { ...policy, version: 1, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  fs19.writeFileSync(p35, JSON.stringify(body, null, 2) + "\n", "utf8");
+  fs20.writeFileSync(p35, JSON.stringify(body, null, 2) + "\n", "utf8");
 }
 function matchesAnyPrefix(targetPath, patterns) {
   const normalized = targetPath.replace(/^\/+|\/+$/g, "");
@@ -9454,10 +9454,10 @@ var init_fork_policy = __esm({
 });
 
 // src/kits/fork-trace.ts
-import fs20 from "node:fs";
-import path27 from "node:path";
+import fs21 from "node:fs";
+import path28 from "node:path";
 function resolveTracePath(forkPath) {
-  return path27.resolve(resolveInForkStateDir(forkPath), "trace.jsonl");
+  return path28.resolve(resolveInForkStateDir(forkPath), "trace.jsonl");
 }
 function appendKitForkTraceEvent(forkPath, event) {
   const full = {
@@ -9465,14 +9465,14 @@ function appendKitForkTraceEvent(forkPath, event) {
     timestamp: event.timestamp ?? (/* @__PURE__ */ new Date()).toISOString()
   };
   const p35 = resolveTracePath(forkPath);
-  fs20.mkdirSync(path27.dirname(p35), { recursive: true });
-  fs20.appendFileSync(p35, JSON.stringify(full) + "\n", "utf8");
+  fs21.mkdirSync(path28.dirname(p35), { recursive: true });
+  fs21.appendFileSync(p35, JSON.stringify(full) + "\n", "utf8");
   return full;
 }
 function readKitForkTrace(forkPath) {
   const p35 = resolveTracePath(forkPath);
-  if (!fs20.existsSync(p35)) return [];
-  const raw = fs20.readFileSync(p35, "utf8").trim();
+  if (!fs21.existsSync(p35)) return [];
+  const raw = fs21.readFileSync(p35, "utf8").trim();
   if (!raw) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -9498,8 +9498,8 @@ var init_fork_trace = __esm({
 
 // src/kits/fork-remote.ts
 import { execFileSync as execFileSync2, spawnSync } from "node:child_process";
-import fs21 from "node:fs";
-import path28 from "node:path";
+import fs22 from "node:fs";
+import path29 from "node:path";
 function runGit(cwd, args, opts) {
   const res = spawnSync("git", args, {
     cwd,
@@ -9515,7 +9515,7 @@ function runGit(cwd, args, opts) {
   };
 }
 function isGitRepo(forkPath) {
-  if (!fs21.existsSync(path28.resolve(forkPath, ".git"))) return false;
+  if (!fs22.existsSync(path29.resolve(forkPath, ".git"))) return false;
   const res = runGit(forkPath, ["rev-parse", "--is-inside-work-tree"]);
   return res.ok && res.stdout.trim() === "true";
 }
@@ -9582,17 +9582,17 @@ var init_fork_remote = __esm({
 
 // src/config/github-home.ts
 import os7 from "node:os";
-import path30 from "node:path";
+import path31 from "node:path";
 function resolveGithubHomeDir() {
   const envHome = process.env.GROWTHUB_GITHUB_HOME?.trim();
-  if (envHome) return path30.resolve(expandHomePrefix(envHome));
-  return path30.resolve(os7.homedir(), ".growthub", "github");
+  if (envHome) return path31.resolve(expandHomePrefix(envHome));
+  return path31.resolve(os7.homedir(), ".growthub", "github");
 }
 function resolveGithubTokenPath() {
-  return path30.resolve(resolveGithubHomeDir(), "token.json");
+  return path31.resolve(resolveGithubHomeDir(), "token.json");
 }
 function resolveGithubProfilePath() {
-  return path30.resolve(resolveGithubHomeDir(), "profile.json");
+  return path31.resolve(resolveGithubHomeDir(), "profile.json");
 }
 var init_github_home = __esm({
   "src/config/github-home.ts"() {
@@ -9613,24 +9613,24 @@ __export(token_store_exports, {
   writeGithubProfile: () => writeGithubProfile,
   writeGithubToken: () => writeGithubToken
 });
-import fs23 from "node:fs";
+import fs24 from "node:fs";
 function ensureDir(dir) {
-  fs23.mkdirSync(dir, { recursive: true });
+  fs24.mkdirSync(dir, { recursive: true });
 }
 function atomicWrite(filePath, body) {
   const tmp = `${filePath}.tmp`;
-  fs23.writeFileSync(tmp, body, { encoding: "utf8", mode: 384 });
-  fs23.renameSync(tmp, filePath);
+  fs24.writeFileSync(tmp, body, { encoding: "utf8", mode: 384 });
+  fs24.renameSync(tmp, filePath);
   try {
-    fs23.chmodSync(filePath, 384);
+    fs24.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readGithubToken() {
   const p35 = resolveGithubTokenPath();
-  if (!fs23.existsSync(p35)) return null;
+  if (!fs24.existsSync(p35)) return null;
   try {
-    const parsed = JSON.parse(fs23.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs24.readFileSync(p35, "utf8"));
     if (!parsed?.accessToken) return null;
     return parsed;
   } catch {
@@ -9643,7 +9643,7 @@ function writeGithubToken(token) {
 }
 function clearGithubToken() {
   const p35 = resolveGithubTokenPath();
-  if (fs23.existsSync(p35)) fs23.rmSync(p35, { force: true });
+  if (fs24.existsSync(p35)) fs24.rmSync(p35, { force: true });
 }
 function isGithubTokenExpired(token) {
   if (!token) return true;
@@ -9654,9 +9654,9 @@ function isGithubTokenExpired(token) {
 }
 function readGithubProfile() {
   const p35 = resolveGithubProfilePath();
-  if (!fs23.existsSync(p35)) return null;
+  if (!fs24.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs23.readFileSync(p35, "utf8"));
+    return JSON.parse(fs24.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
@@ -9667,7 +9667,7 @@ function writeGithubProfile(profile) {
 }
 function clearGithubProfile() {
   const p35 = resolveGithubProfilePath();
-  if (fs23.existsSync(p35)) fs23.rmSync(p35, { force: true });
+  if (fs24.existsSync(p35)) fs24.rmSync(p35, { force: true });
 }
 function describeGithubTokenPath() {
   return resolveGithubTokenPath();
@@ -9702,9 +9702,9 @@ async function fetchHostedIntegrations(session) {
 }
 async function fetchHostedIntegrationCredential(session, providerId) {
   const client = toApiClient2(session);
-  const path61 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
+  const path62 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
   try {
-    return await client.get(path61, { ignoreNotFound: true });
+    return await client.get(path62, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);
@@ -10279,12 +10279,12 @@ var init_github = __esm({
 });
 
 // src/starter/init.ts
-import fs41 from "node:fs";
-import path49 from "node:path";
+import fs42 from "node:fs";
+import path50 from "node:path";
 async function initStarterWorkspace(opts) {
   const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
-  const absOut = path49.resolve(opts.out);
-  if (fs41.existsSync(absOut) && fs41.readdirSync(absOut).length > 0) {
+  const absOut = path50.resolve(opts.out);
+  if (fs42.existsSync(absOut) && fs42.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   const info = getBundledKitSourceInfo(kitId);
@@ -10293,7 +10293,7 @@ async function initStarterWorkspace(opts) {
     forkPath: absOut,
     kitId: info.id,
     baseVersion: info.version,
-    label: opts.name?.trim() || path49.basename(absOut)
+    label: opts.name?.trim() || path50.basename(absOut)
   });
   const policy = {
     ...makeDefaultKitForkPolicy(),
@@ -10386,8 +10386,8 @@ var init_types2 = __esm({
 });
 
 // src/starter/source-import/github-source.ts
-import fs42 from "node:fs";
-import path50 from "node:path";
+import fs43 from "node:fs";
+import path51 from "node:path";
 import { spawnSync as spawnSync5 } from "node:child_process";
 function baseHeaders() {
   return {
@@ -10518,12 +10518,12 @@ function cloneGithubRepo(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot clone.");
   }
-  if (fs42.existsSync(input.destination)) {
+  if (fs43.existsSync(input.destination)) {
     throw new Error(`Clone destination already exists: ${input.destination}`);
   }
   const cloneUrl = input.token ? buildTokenCloneUrl(input.probe.repo, input.token) : input.probe.cloneUrl;
-  const parent = path50.dirname(input.destination);
-  fs42.mkdirSync(parent, { recursive: true });
+  const parent = path51.dirname(input.destination);
+  fs43.mkdirSync(parent, { recursive: true });
   const depth = input.depth ?? 1;
   const branch = input.branch ?? input.probe.defaultBranch;
   const args = ["clone"];
@@ -10550,17 +10550,17 @@ function cloneGithubRepo(input) {
 function narrowToSubdirectory(rootDir, subdirectory) {
   const normalizedSub = subdirectory.replace(/^\/+|\/+$/g, "");
   if (!normalizedSub) return;
-  const abs = path50.resolve(rootDir, normalizedSub);
-  if (!fs42.existsSync(abs) || !fs42.statSync(abs).isDirectory()) {
+  const abs = path51.resolve(rootDir, normalizedSub);
+  if (!fs43.existsSync(abs) || !fs43.statSync(abs).isDirectory()) {
     throw new Error(`Subdirectory not found in cloned repo: ${subdirectory}`);
   }
-  const tmp = path50.resolve(
-    path50.dirname(rootDir),
-    `.${path50.basename(rootDir)}-narrow-${Date.now().toString(36)}`
+  const tmp = path51.resolve(
+    path51.dirname(rootDir),
+    `.${path51.basename(rootDir)}-narrow-${Date.now().toString(36)}`
   );
-  fs42.renameSync(abs, tmp);
-  fs42.rmSync(rootDir, { recursive: true, force: true });
-  fs42.renameSync(tmp, rootDir);
+  fs43.renameSync(abs, tmp);
+  fs43.rmSync(rootDir, { recursive: true, force: true });
+  fs43.renameSync(tmp, rootDir);
 }
 var GITHUB_API_BASE2;
 var init_github_source = __esm({
@@ -10574,9 +10574,9 @@ var init_github_source = __esm({
 });
 
 // src/starter/source-import/skills-source.ts
-import fs43 from "node:fs";
+import fs44 from "node:fs";
 import os10 from "node:os";
-import path51 from "node:path";
+import path52 from "node:path";
 import { spawnSync as spawnSync6 } from "node:child_process";
 function resolveBase() {
   const raw = process.env.SKILLS_SH_BASE?.trim();
@@ -10842,9 +10842,9 @@ async function probeSkillsSource(input) {
   };
 }
 function assertInsidePayloadRoot(root, candidate) {
-  const abs = path51.resolve(candidate);
-  const rootAbs = path51.resolve(root);
-  if (!abs.startsWith(rootAbs + path51.sep) && abs !== rootAbs) {
+  const abs = path52.resolve(candidate);
+  const rootAbs = path52.resolve(root);
+  if (!abs.startsWith(rootAbs + path52.sep) && abs !== rootAbs) {
     throw new Error(`Refusing to write outside payload root: ${candidate}`);
   }
 }
@@ -10860,24 +10860,24 @@ function runGit3(args, cwd) {
   };
 }
 function skillDirectoryMatches(dir, skillSlug) {
-  const skillFile = path51.resolve(dir, "SKILL.md");
-  if (!fs43.existsSync(skillFile) || !fs43.statSync(skillFile).isFile()) {
+  const skillFile = path52.resolve(dir, "SKILL.md");
+  if (!fs44.existsSync(skillFile) || !fs44.statSync(skillFile).isFile()) {
     return false;
   }
-  if (path51.basename(dir) === skillSlug) {
+  if (path52.basename(dir) === skillSlug) {
     return true;
   }
-  const content = fs43.readFileSync(skillFile, "utf8");
+  const content = fs44.readFileSync(skillFile, "utf8");
   const nameMatch = content.match(/(?:^|\n)name:\s*["']?([A-Za-z0-9._:-]+)["']?\s*(?:\n|$)/i);
   return nameMatch?.[1] === skillSlug;
 }
 function locateSkillDirectory(root, skillSlug) {
   const preferred = [
-    path51.resolve(root, "skills", skillSlug),
-    path51.resolve(root, skillSlug)
+    path52.resolve(root, "skills", skillSlug),
+    path52.resolve(root, skillSlug)
   ];
   for (const candidate of preferred) {
-    if (fs43.existsSync(candidate) && fs43.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
+    if (fs44.existsSync(candidate) && fs44.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
       return candidate;
     }
   }
@@ -10887,12 +10887,12 @@ function locateSkillDirectory(root, skillSlug) {
     if (skillDirectoryMatches(current, skillSlug)) {
       return current;
     }
-    for (const entry of fs43.readdirSync(current, { withFileTypes: true })) {
+    for (const entry of fs44.readdirSync(current, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if ([".git", "node_modules", ".next", "dist", "build", "coverage"].includes(entry.name)) {
         continue;
       }
-      queue.push(path51.resolve(current, entry.name));
+      queue.push(path52.resolve(current, entry.name));
     }
   }
   return null;
@@ -10902,18 +10902,18 @@ function copySkillTree(sourceDir, destination) {
   const stack = [{ from: sourceDir, to: destination }];
   while (stack.length > 0) {
     const current = stack.pop();
-    fs43.mkdirSync(current.to, { recursive: true });
-    for (const entry of fs43.readdirSync(current.from, { withFileTypes: true })) {
-      const fromPath = path51.resolve(current.from, entry.name);
-      const toPath = path51.resolve(current.to, entry.name);
+    fs44.mkdirSync(current.to, { recursive: true });
+    for (const entry of fs44.readdirSync(current.from, { withFileTypes: true })) {
+      const fromPath = path52.resolve(current.from, entry.name);
+      const toPath = path52.resolve(current.to, entry.name);
       assertInsidePayloadRoot(destination, toPath);
       if (entry.isDirectory()) {
         stack.push({ from: fromPath, to: toPath });
         continue;
       }
-      const data = fs43.readFileSync(fromPath);
-      fs43.mkdirSync(path51.dirname(toPath), { recursive: true });
-      fs43.writeFileSync(toPath, data, { mode: 420 });
+      const data = fs44.readFileSync(fromPath);
+      fs44.mkdirSync(path52.dirname(toPath), { recursive: true });
+      fs44.writeFileSync(toPath, data, { mode: 420 });
       written += 1;
     }
   }
@@ -10924,7 +10924,7 @@ async function fetchSkillPayload(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot materialize a skills.sh payload.");
   }
-  if (fs43.existsSync(destination)) {
+  if (fs44.existsSync(destination)) {
     throw new Error(`Skill payload destination already exists: ${destination}`);
   }
   const repoSource = probe.repoUrl ?? (probe.repository ? `https://github.com/${probe.repository}` : void 0);
@@ -10932,11 +10932,11 @@ async function fetchSkillPayload(input) {
   if (!repoSource || !skillSlug) {
     throw new Error(`Skill '${probe.skillId}' is missing repository metadata \u2014 cannot materialize payload.`);
   }
-  const cloneRoot = fs43.mkdtempSync(
-    path51.join(os10.tmpdir(), "growthub-skills-source-")
+  const cloneRoot = fs44.mkdtempSync(
+    path52.join(os10.tmpdir(), "growthub-skills-source-")
   );
   try {
-    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path51.dirname(cloneRoot));
+    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path52.dirname(cloneRoot));
     if (!cloneRes.ok) {
       throw new Error(`git clone failed: ${cloneRes.stderr || "unable to clone skill repository"}`);
     }
@@ -10949,7 +10949,7 @@ async function fetchSkillPayload(input) {
     const fileCount = copySkillTree(skillDir, destination);
     return { destination, fileCount };
   } finally {
-    fs43.rmSync(cloneRoot, { recursive: true, force: true });
+    fs44.rmSync(cloneRoot, { recursive: true, force: true });
   }
 }
 var DEFAULT_BASE, COMMENT_PATTERN;
@@ -10963,13 +10963,13 @@ var init_skills_source = __esm({
 });
 
 // src/starter/source-import/detect.ts
-import fs44 from "node:fs";
-import path52 from "node:path";
+import fs45 from "node:fs";
+import path53 from "node:path";
 function safeReadPackageJson(dir) {
-  const p35 = path52.resolve(dir, "package.json");
-  if (!fs44.existsSync(p35)) return null;
+  const p35 = path53.resolve(dir, "package.json");
+  if (!fs45.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs44.readFileSync(p35, "utf8"));
+    return JSON.parse(fs45.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
@@ -10979,10 +10979,10 @@ function detectPackageManager(dir, pkg) {
   if (pkg?.packageManager?.startsWith("yarn")) return "yarn";
   if (pkg?.packageManager?.startsWith("npm")) return "npm";
   if (pkg?.packageManager?.startsWith("bun")) return "bun";
-  if (fs44.existsSync(path52.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs44.existsSync(path52.resolve(dir, "yarn.lock"))) return "yarn";
-  if (fs44.existsSync(path52.resolve(dir, "bun.lockb"))) return "bun";
-  if (fs44.existsSync(path52.resolve(dir, "package-lock.json"))) return "npm";
+  if (fs45.existsSync(path53.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs45.existsSync(path53.resolve(dir, "yarn.lock"))) return "yarn";
+  if (fs45.existsSync(path53.resolve(dir, "bun.lockb"))) return "bun";
+  if (fs45.existsSync(path53.resolve(dir, "package-lock.json"))) return "npm";
   return "unknown";
 }
 function collectDeps(pkg) {
@@ -10996,12 +10996,12 @@ function collectDeps(pkg) {
 }
 function looksLikeSkillPayload(rootDir) {
   const markers = ["SKILL.md", "skill.md", "skill.json", "skill.yml", "skill.yaml", "prompt.md"];
-  return markers.some((name) => fs44.existsSync(path52.resolve(rootDir, name)));
+  return markers.some((name) => fs45.existsSync(path53.resolve(rootDir, name)));
 }
 function detectFramework(rootDir, pkg) {
   if (!pkg) {
     if (looksLikeSkillPayload(rootDir)) return "skill";
-    if (fs44.existsSync(path52.resolve(rootDir, "docs"))) return "docs";
+    if (fs45.existsSync(path53.resolve(rootDir, "docs"))) return "docs";
     return "unknown";
   }
   const deps = collectDeps(pkg);
@@ -11010,8 +11010,8 @@ function detectFramework(rootDir, pkg) {
     "vite.config.ts",
     "vite.config.mjs",
     "vite.config.cjs"
-  ].some((name) => fs44.existsSync(path52.resolve(rootDir, name)));
-  if (deps.has("next") || fs44.existsSync(path52.resolve(rootDir, "next.config.js")) || fs44.existsSync(path52.resolve(rootDir, "next.config.mjs"))) {
+  ].some((name) => fs45.existsSync(path53.resolve(rootDir, name)));
+  if (deps.has("next") || fs45.existsSync(path53.resolve(rootDir, "next.config.js")) || fs45.existsSync(path53.resolve(rootDir, "next.config.mjs"))) {
     return "next";
   }
   if (deps.has("vite") || hasViteConfig) return "vite";
@@ -11037,15 +11037,15 @@ function pickScripts(pkg) {
   return out;
 }
 function listEnvFiles(dir) {
-  if (!fs44.existsSync(dir)) return [];
-  return fs44.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
+  if (!fs45.existsSync(dir)) return [];
+  return fs45.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
 }
 function findAppRoot(rootDir, pkg) {
   if (pkg) return ".";
   const candidates = ["app", "src", "apps", "packages"];
   for (const candidate of candidates) {
-    const abs = path52.resolve(rootDir, candidate);
-    if (fs44.existsSync(abs) && fs44.statSync(abs).isDirectory()) {
+    const abs = path53.resolve(rootDir, candidate);
+    if (fs45.existsSync(abs) && fs45.statSync(abs).isDirectory()) {
       const child = safeReadPackageJson(abs);
       if (child) return candidate;
     }
@@ -11061,12 +11061,12 @@ function computeConfidence(framework, manager, pkg) {
   return Math.min(1, Number(score.toFixed(2)));
 }
 function detectSourceShape(rootDir) {
-  if (!fs44.existsSync(rootDir) || !fs44.statSync(rootDir).isDirectory()) {
+  if (!fs45.existsSync(rootDir) || !fs45.statSync(rootDir).isDirectory()) {
     throw new Error(`Detection target is not a directory: ${rootDir}`);
   }
   const rootPkg = safeReadPackageJson(rootDir);
   const appRootRel = findAppRoot(rootDir, rootPkg);
-  const appRootAbs = path52.resolve(rootDir, appRootRel);
+  const appRootAbs = path53.resolve(rootDir, appRootRel);
   const appPkg = appRootRel === "." ? rootPkg : safeReadPackageJson(appRootAbs);
   const framework = detectFramework(appRootAbs, appPkg ?? rootPkg);
   const packageManager = detectPackageManager(rootDir, rootPkg ?? appPkg);
@@ -11106,18 +11106,18 @@ var init_detect = __esm({
 });
 
 // src/starter/source-import/security.ts
-import fs45 from "node:fs";
-import path53 from "node:path";
+import fs46 from "node:fs";
+import path54 from "node:path";
 function isLikelyTextFile(filename) {
-  const ext = path53.extname(filename).toLowerCase();
+  const ext = path54.extname(filename).toLowerCase();
   if (!ext) return true;
   return TEXT_EXTENSIONS.has(ext);
 }
 function isSuspiciousBinary(filename) {
-  return SUSPICIOUS_BINARY_EXTENSIONS.has(path53.extname(filename).toLowerCase());
+  return SUSPICIOUS_BINARY_EXTENSIONS.has(path54.extname(filename).toLowerCase());
 }
 function isUnexpectedArchive(filename) {
-  const ext = path53.extname(filename).toLowerCase();
+  const ext = path54.extname(filename).toLowerCase();
   return ARCHIVE_EXTENSIONS.has(ext) || filename.toLowerCase().endsWith(".tar.gz");
 }
 function shortExcerpt(line) {
@@ -11172,19 +11172,19 @@ function walkPayload(root, onFile, limits) {
     if (!current) break;
     let entries;
     try {
-      entries = fs45.readdirSync(current, { withFileTypes: true });
+      entries = fs46.readdirSync(current, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
-      const abs = path53.resolve(current, entry.name);
+      const abs = path54.resolve(current, entry.name);
       if (entry.isDirectory()) {
         if (entry.name === ".git" || entry.name === "node_modules") continue;
         stack.push(abs);
         continue;
       }
       if (!entry.isFile()) continue;
-      const rel = path53.relative(root, abs);
+      const rel = path54.relative(root, abs);
       onFile(abs, rel);
       visited += 1;
       if (visited >= limits.maxFiles) break;
@@ -11194,7 +11194,7 @@ function walkPayload(root, onFile, limits) {
 }
 function inspectSourcePayload(input) {
   const { payloadRoot } = input;
-  if (!fs45.existsSync(payloadRoot) || !fs45.statSync(payloadRoot).isDirectory()) {
+  if (!fs46.existsSync(payloadRoot) || !fs46.statSync(payloadRoot).isDirectory()) {
     throw new Error(`Inspection target is not a directory: ${payloadRoot}`);
   }
   const findings = [];
@@ -11204,7 +11204,7 @@ function inspectSourcePayload(input) {
     (abs, rel) => {
       let size = 0;
       try {
-        size = fs45.statSync(abs).size;
+        size = fs46.statSync(abs).size;
       } catch {
         return;
       }
@@ -11213,7 +11213,7 @@ function inspectSourcePayload(input) {
           category: "suspicious-binary",
           severity: "high-risk",
           path: rel,
-          message: `Payload ships a precompiled binary (${path53.extname(rel)}). Review provenance before use.`
+          message: `Payload ships a precompiled binary (${path54.extname(rel)}). Review provenance before use.`
         });
         return;
       }
@@ -11222,7 +11222,7 @@ function inspectSourcePayload(input) {
           category: "unexpected-archive",
           severity: "caution",
           path: rel,
-          message: `Payload ships an archive (${path53.extname(rel)}) \u2014 expand and review contents before use.`
+          message: `Payload ships an archive (${path54.extname(rel)}) \u2014 expand and review contents before use.`
         });
         return;
       }
@@ -11230,12 +11230,12 @@ function inspectSourcePayload(input) {
       if (bytesInspected + Math.min(size, MAX_BYTES_PER_FILE) > MAX_TOTAL_BYTES) return;
       let buf;
       try {
-        const handle = fs45.openSync(abs, "r");
+        const handle = fs46.openSync(abs, "r");
         try {
           buf = Buffer.alloc(Math.min(size, MAX_BYTES_PER_FILE));
-          fs45.readSync(handle, buf, 0, buf.length, 0);
+          fs46.readSync(handle, buf, 0, buf.length, 0);
         } finally {
-          fs45.closeSync(handle);
+          fs46.closeSync(handle);
         }
       } catch {
         return;
@@ -11444,18 +11444,18 @@ var init_security = __esm({
 });
 
 // src/starter/source-import/plan.ts
-import fs46 from "node:fs";
-import path54 from "node:path";
+import fs47 from "node:fs";
+import path55 from "node:path";
 function generateImportId() {
   return `si-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function destinationState(absDest) {
-  if (!fs46.existsSync(absDest)) return { exists: false, nonEmpty: false };
-  const stats = fs46.statSync(absDest);
+  if (!fs47.existsSync(absDest)) return { exists: false, nonEmpty: false };
+  const stats = fs47.statSync(absDest);
   if (!stats.isDirectory()) {
     throw new Error(`Destination is not a directory: ${absDest}`);
   }
-  const entries = fs46.readdirSync(absDest);
+  const entries = fs47.readdirSync(absDest);
   return { exists: true, nonEmpty: entries.length > 0 };
 }
 function describeSource(probe) {
@@ -11465,7 +11465,7 @@ function describeSource(probe) {
   return `skill ${probe.skillId}@${probe.version} (skills.sh)`;
 }
 function buildSourceImportPlan(input) {
-  const absDest = path54.resolve(input.destination);
+  const absDest = path55.resolve(input.destination);
   const state = destinationState(absDest);
   const payloadPath = "imported";
   const warnings = [...input.probe.warnings];
@@ -11578,8 +11578,8 @@ var init_plan = __esm({
 });
 
 // src/starter/source-import/summarize.ts
-import fs47 from "node:fs";
-import path55 from "node:path";
+import fs48 from "node:fs";
+import path56 from "node:path";
 function sourceHeading(manifest) {
   const src = manifest.source;
   if (src.kind === "github-repo") {
@@ -11634,7 +11634,7 @@ function nextStepsSection(manifest) {
 }
 function writeImportSummary(input) {
   const { forkPath, summaryRelativePath, manifest } = input;
-  const summaryPath = path55.resolve(forkPath, summaryRelativePath);
+  const summaryPath = path56.resolve(forkPath, summaryRelativePath);
   const body = [
     `# Source Import Summary`,
     ``,
@@ -11664,8 +11664,8 @@ function writeImportSummary(input) {
     `Generated by the Growthub Source Import Agent. Canonical manifest lives at \`.growthub-fork/source-import.json\`.`,
     ``
   ].join("\n");
-  fs47.mkdirSync(path55.dirname(summaryPath), { recursive: true });
-  fs47.writeFileSync(summaryPath, body, "utf8");
+  fs48.mkdirSync(path56.dirname(summaryPath), { recursive: true });
+  fs48.writeFileSync(summaryPath, body, "utf8");
   return summaryPath;
 }
 var init_summarize = __esm({
@@ -11675,16 +11675,16 @@ var init_summarize = __esm({
 });
 
 // src/starter/source-import/materialize.ts
-import fs48 from "node:fs";
+import fs49 from "node:fs";
 import os11 from "node:os";
-import path56 from "node:path";
+import path57 from "node:path";
 function resolveSourceKind(probe) {
   return probe.kind === "github-repo" ? "github-repo" : "skills-skill";
 }
 function stagingDirFor(forkPath) {
-  return path56.join(
+  return path57.join(
     os11.tmpdir(),
-    `growthub-source-import-${path56.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    `growthub-source-import-${path57.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   );
 }
 async function fetchPayload(probe, stagingDir, opts) {
@@ -11716,18 +11716,18 @@ async function fetchPayload(probe, stagingDir, opts) {
   return { payloadRoot: stagingDir };
 }
 function movePayloadIntoFork(payloadRoot, forkPath, payloadRelativePath) {
-  const target = path56.resolve(forkPath, payloadRelativePath);
-  if (fs48.existsSync(target)) {
-    fs48.rmSync(target, { recursive: true, force: true });
+  const target = path57.resolve(forkPath, payloadRelativePath);
+  if (fs49.existsSync(target)) {
+    fs49.rmSync(target, { recursive: true, force: true });
   }
-  fs48.mkdirSync(path56.dirname(target), { recursive: true });
-  fs48.renameSync(payloadRoot, target);
+  fs49.mkdirSync(path57.dirname(target), { recursive: true });
+  fs49.renameSync(payloadRoot, target);
   return target;
 }
 function writeManifest(forkPath, manifest) {
-  const p35 = path56.resolve(forkPath, MANIFEST_RELATIVE_PATH);
-  fs48.mkdirSync(path56.dirname(p35), { recursive: true });
-  fs48.writeFileSync(p35, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  const p35 = path57.resolve(forkPath, MANIFEST_RELATIVE_PATH);
+  fs49.mkdirSync(path57.dirname(p35), { recursive: true });
+  fs49.writeFileSync(p35, JSON.stringify(manifest, null, 2) + "\n", "utf8");
   return p35;
 }
 function assertConfirmationsSatisfied(plan, confirmations) {
@@ -11767,7 +11767,7 @@ async function materializeImportPlan(input) {
     requireSkillAcknowledgement: sourceKind === "skills-skill"
   });
   if (security.blocked) {
-    fs48.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
+    fs49.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
     throw new Error(
       `Security inspection blocked the fetched payload: ${security.summaryLines[0] ?? "blocking finding"}`
     );
@@ -11898,26 +11898,26 @@ var init_materialize = __esm({
 });
 
 // src/starter/source-import/agent.ts
-import fs49 from "node:fs";
-import path57 from "node:path";
+import fs50 from "node:fs";
+import path58 from "node:path";
 function resolveJobsDir() {
-  return path57.resolve(resolveKitForksHomeDir(), "source-import-jobs");
+  return path58.resolve(resolveKitForksHomeDir(), "source-import-jobs");
 }
 function resolveJobPath2(jobId) {
-  return path57.resolve(resolveJobsDir(), `${jobId}.json`);
+  return path58.resolve(resolveJobsDir(), `${jobId}.json`);
 }
 function generateJobId2() {
   return `sij-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function writeJob2(job) {
   const p35 = resolveJobPath2(job.jobId);
-  fs49.mkdirSync(path57.dirname(p35), { recursive: true });
-  fs49.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
+  fs50.mkdirSync(path58.dirname(p35), { recursive: true });
+  fs50.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function readJobFile(p35) {
-  if (!fs49.existsSync(p35)) return null;
+  if (!fs50.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs49.readFileSync(p35, "utf8"));
+    return JSON.parse(fs50.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
@@ -11927,7 +11927,7 @@ function patchJob2(jobId, status, patch = {}) {
   const job = readJobFile(p35);
   if (!job) return null;
   const updated = { ...job, ...patch, status };
-  fs49.writeFileSync(p35, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs50.writeFileSync(p35, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function getSourceImportJob(jobId) {
@@ -11946,7 +11946,7 @@ async function probeAndPlan(input, destination) {
 }
 async function runSourceImportJob(input) {
   const jobId = generateJobId2();
-  const destination = path57.resolve(input.out);
+  const destination = path58.resolve(input.out);
   const sourceKind = input.source.kind;
   const initial = {
     jobId,
@@ -12103,20 +12103,20 @@ __export(source_import_discovery_exports, {
 });
 import * as p33 from "@clack/prompts";
 import pc47 from "picocolors";
-import fs52 from "node:fs";
-import path59 from "node:path";
+import fs53 from "node:fs";
+import path60 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 function slugifyWorkspaceName(input) {
   const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug || "custom-workspace";
 }
-function terminalLink3(label, href) {
+function terminalLink4(label, href) {
   return `\x1B]8;;${href}\x07${label}\x1B]8;;\x07`;
 }
 function folderOpenLabel3(folderPath) {
   const href = pathToFileURL4(folderPath).href;
   const label = process.platform === "darwin" ? "Open in Finder" : process.platform === "win32" ? "Open in Explorer" : "Open folder";
-  return terminalLink3(label, href);
+  return terminalLink4(label, href);
 }
 function defaultWorkspaceFolderName(input) {
   if (input.kind === "github-repo") {
@@ -12132,10 +12132,10 @@ async function promptForInteractiveWorkspacePath(input) {
   });
   if (p33.isCancel(raw) || !raw) return null;
   const trimmed = String(raw).trim();
-  const expanded = trimmed.startsWith("~/") ? path59.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
-  const resolved = path59.resolve(expanded);
-  if (fs52.existsSync(resolved) && fs52.statSync(resolved).isDirectory()) {
-    const finalPath = path59.join(resolved, suggestedName);
+  const expanded = trimmed.startsWith("~/") ? path60.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
+  const resolved = path60.resolve(expanded);
+  if (fs53.existsSync(resolved) && fs53.statSync(resolved).isDirectory()) {
+    const finalPath = path60.join(resolved, suggestedName);
     p33.note(
       [
         `You selected an existing folder: ${resolved}`,
@@ -12403,15 +12403,153 @@ var init_source_import_discovery = __esm({
 });
 
 // src/index.ts
-init_onboard();
-init_doctor();
 import { Command } from "commander";
 import * as p34 from "@clack/prompts";
 import pc48 from "picocolors";
-import fs53 from "node:fs";
-import path60 from "node:path";
+import fs54 from "node:fs";
+import path61 from "node:path";
 import { spawnSync as spawnSync7 } from "node:child_process";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
+
+// src/analytics/posthog.ts
+init_home();
+init_session_store();
+import crypto from "node:crypto";
+import fs2 from "node:fs";
+import path4 from "node:path";
+function resolveHost() {
+  return (process.env.GROWTHUB_POSTHOG_HOST ?? "").trim() || (process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "").trim() || "https://us.posthog.com";
+}
+function apiKey() {
+  return (process.env.GROWTHUB_POSTHOG_API_KEY ?? "").trim() || (process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "").trim();
+}
+function debugEnabled() {
+  return process.env.GROWTHUB_POSTHOG_DEBUG === "true";
+}
+function resolveHostedIdentity() {
+  if (_hostedUserId !== null || _hostedEmail !== null) {
+    return { userId: _hostedUserId, email: _hostedEmail };
+  }
+  const session = readSession();
+  if (session && !isSessionExpired(session)) {
+    if (typeof session.userId === "string" && session.userId.length > 0) {
+      _hostedUserId = session.userId;
+    }
+    if (typeof session.email === "string" && session.email.length > 0) {
+      _hostedEmail = session.email;
+    }
+  }
+  return { userId: _hostedUserId, email: _hostedEmail };
+}
+function isDisabled() {
+  return !apiKey() || process.env.GROWTHUB_TELEMETRY_DISABLED === "true" || process.env.DO_NOT_TRACK === "1" || process.env.CI === "true";
+}
+var _machineId = null;
+var _isFirstRun = false;
+var _hostedUserId = null;
+var _hostedEmail = null;
+function analyticsIdPath() {
+  return path4.resolve(resolvePaperclipHomeDir(), "analytics-machine-id");
+}
+function ensureMachineId() {
+  if (_machineId !== null) return _machineId;
+  const idPath = analyticsIdPath();
+  let resolved = "anon";
+  try {
+    if (fs2.existsSync(idPath)) {
+      const stored = fs2.readFileSync(idPath, "utf-8").trim();
+      if (stored.length > 0) {
+        _machineId = stored;
+        return stored;
+      }
+    }
+    _isFirstRun = true;
+    const fresh = crypto.randomUUID();
+    fs2.mkdirSync(path4.dirname(idPath), { recursive: true });
+    fs2.writeFileSync(idPath, fresh, "utf-8");
+    resolved = fresh;
+  } catch {
+    resolved = "anon";
+  }
+  _machineId = resolved;
+  return resolved;
+}
+function setHostedUserId(userId) {
+  _hostedUserId = userId;
+}
+function track(event, properties) {
+  if (isDisabled()) return;
+  const distinctId = ensureMachineId();
+  const key = apiKey();
+  const host = resolveHost();
+  const identity = resolveHostedIdentity();
+  const body = JSON.stringify({
+    api_key: key,
+    event,
+    distinct_id: distinctId,
+    properties: {
+      ...properties,
+      $lib: "growthub-cli",
+      platform: process.platform,
+      ...identity.userId !== null ? { hosted_user_id: identity.userId } : {},
+      ...identity.email !== null ? { hosted_email: identity.email } : {}
+    },
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  fetch(`${host}/capture/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    signal: AbortSignal.timeout(5e3)
+  }).then(async (response) => {
+    if (response.ok) {
+      if (debugEnabled()) {
+        console.error(
+          `[posthog] captured ${event} (${response.status}) user=${identity.userId ?? "none"} email=${identity.email ?? "none"}`
+        );
+      }
+      return;
+    }
+    if (debugEnabled()) {
+      const text69 = await response.text().catch(() => "");
+      console.error(`[posthog] failed ${event} (${response.status}) ${text69.slice(0, 240)}`);
+    }
+  }).catch((err) => {
+    if (debugEnabled()) {
+      console.error(`[posthog] error ${event}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+}
+function trackCliStart() {
+  ensureMachineId();
+  if (_isFirstRun) {
+    track("cli_first_run");
+  }
+}
+var ACTIVATION_URL = "https://www.growthub.ai/";
+function isAlreadyConnected() {
+  const session = readSession();
+  if (!session) return false;
+  return !isSessionExpired(session);
+}
+function terminalLink(label, href) {
+  return `\x1B]8;;${href}\x07${label}\x1B]8;;\x07`;
+}
+function printActivationNudge(trigger) {
+  if (isAlreadyConnected()) return;
+  track("email_capture_shown", { trigger });
+  const link = terminalLink("growthub.ai \u2014 first month $1", ACTIVATION_URL);
+  console.log("");
+  console.log(`  \x1B[2m\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\x1B[0m`);
+  console.log(`  \x1B[36m\u2726\x1B[0m  Fork anything. Stay current. Ship faster.`);
+  console.log(`  \x1B[2mActivate Growthub \u2192\x1B[0m  \x1B[36m${link}\x1B[0m`);
+  console.log(`  \x1B[2m\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\x1B[0m`);
+  console.log("");
+}
+
+// src/index.ts
+init_onboard();
+init_doctor();
 
 // src/commands/env.ts
 init_store();
@@ -13070,8 +13208,8 @@ function printItemCompleted(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path61 = asString(change.path, "unknown");
-      return `${kind} ${path61}`;
+      const path62 = asString(change.path, "unknown");
+      return `${kind} ${path62}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -13958,27 +14096,27 @@ import pc17 from "picocolors";
 
 // src/client/context.ts
 init_home();
-import fs10 from "node:fs";
-import path9 from "node:path";
+import fs12 from "node:fs";
+import path12 from "node:path";
 var DEFAULT_CONTEXT_BASENAME = "context.json";
 var DEFAULT_PROFILE = "default";
 function findContextFileFromAncestors(startDir) {
-  const absoluteStartDir = path9.resolve(startDir);
+  const absoluteStartDir = path12.resolve(startDir);
   let currentDir = absoluteStartDir;
   while (true) {
-    const candidate = path9.resolve(currentDir, ".paperclip", DEFAULT_CONTEXT_BASENAME);
-    if (fs10.existsSync(candidate)) {
+    const candidate = path12.resolve(currentDir, ".paperclip", DEFAULT_CONTEXT_BASENAME);
+    if (fs12.existsSync(candidate)) {
       return candidate;
     }
-    const nextDir = path9.resolve(currentDir, "..");
+    const nextDir = path12.resolve(currentDir, "..");
     if (nextDir === currentDir) break;
     currentDir = nextDir;
   }
   return null;
 }
 function resolveContextPath(overridePath) {
-  if (overridePath) return path9.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONTEXT) return path9.resolve(process.env.PAPERCLIP_CONTEXT);
+  if (overridePath) return path12.resolve(overridePath);
+  if (process.env.PAPERCLIP_CONTEXT) return path12.resolve(process.env.PAPERCLIP_CONTEXT);
   return findContextFileFromAncestors(process.cwd()) ?? resolveDefaultContextPath();
 }
 function defaultClientContext() {
@@ -13990,23 +14128,23 @@ function defaultClientContext() {
     }
   };
 }
-function parseJson2(filePath) {
+function parseJson3(filePath) {
   try {
-    return JSON.parse(fs10.readFileSync(filePath, "utf-8"));
+    return JSON.parse(fs12.readFileSync(filePath, "utf-8"));
   } catch (err) {
     throw new Error(`Failed to parse JSON at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
-function toStringOrUndefined(value) {
+function toStringOrUndefined2(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function normalizeProfile(value) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   const profile = value;
   return {
-    apiBase: toStringOrUndefined(profile.apiBase),
-    companyId: toStringOrUndefined(profile.companyId),
-    apiKeyEnvVarName: toStringOrUndefined(profile.apiKeyEnvVarName)
+    apiBase: toStringOrUndefined2(profile.apiBase),
+    companyId: toStringOrUndefined2(profile.companyId),
+    apiKeyEnvVarName: toStringOrUndefined2(profile.apiKeyEnvVarName)
   };
 }
 function normalizeContext(raw) {
@@ -14015,7 +14153,7 @@ function normalizeContext(raw) {
   }
   const record = raw;
   const version = record.version === 1 ? 1 : 1;
-  const currentProfile = toStringOrUndefined(record.currentProfile) ?? DEFAULT_PROFILE;
+  const currentProfile = toStringOrUndefined2(record.currentProfile) ?? DEFAULT_PROFILE;
   const rawProfiles = record.profiles;
   const profiles = {};
   if (typeof rawProfiles === "object" && rawProfiles !== null && !Array.isArray(rawProfiles)) {
@@ -14038,18 +14176,18 @@ function normalizeContext(raw) {
 }
 function readContext(contextPath) {
   const filePath = resolveContextPath(contextPath);
-  if (!fs10.existsSync(filePath)) {
+  if (!fs12.existsSync(filePath)) {
     return defaultClientContext();
   }
-  const raw = parseJson2(filePath);
+  const raw = parseJson3(filePath);
   return normalizeContext(raw);
 }
 function writeContext(context, contextPath) {
   const filePath = resolveContextPath(contextPath);
-  const dir = path9.dirname(filePath);
-  fs10.mkdirSync(dir, { recursive: true });
+  const dir = path12.dirname(filePath);
+  fs12.mkdirSync(dir, { recursive: true });
   const normalized = normalizeContext(context);
-  fs10.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}
+  fs12.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}
 `, { mode: 384 });
 }
 function upsertProfile(profileName, patch, contextPath) {
@@ -14101,14 +14239,14 @@ function resolveCommandContext(options, opts) {
   const context = readContext(options.context);
   const { name: profileName, profile } = resolveProfile(context, options.profile);
   const apiBase = options.apiBase?.trim() || process.env.PAPERCLIP_API_URL?.trim() || profile.apiBase || inferApiBaseFromConfig(options.config);
-  const apiKey = options.apiKey?.trim() || process.env.PAPERCLIP_API_KEY?.trim() || readKeyFromProfileEnv(profile);
+  const apiKey2 = options.apiKey?.trim() || process.env.PAPERCLIP_API_KEY?.trim() || readKeyFromProfileEnv(profile);
   const companyId = options.companyId?.trim() || process.env.PAPERCLIP_COMPANY_ID?.trim() || profile.companyId;
   if (opts?.requireCompany && !companyId) {
     throw new Error(
       "Company ID is required. Pass --company-id, set PAPERCLIP_COMPANY_ID, or set context profile companyId via `growthub context set`."
     );
   }
-  const api = new PaperclipApiClient({ apiBase, apiKey });
+  const api = new PaperclipApiClient({ apiBase, apiKey: apiKey2 });
   return {
     api,
     companyId,
@@ -14468,12 +14606,12 @@ init_run();
 init_auth_bootstrap_ceo();
 
 // src/commands/auth-login.ts
-init_store();
-init_env();
 import os3 from "node:os";
 import * as p14 from "@clack/prompts";
 import pc19 from "picocolors";
 import open from "open";
+init_store();
+init_env();
 
 // src/auth/login-flow.ts
 import { createServer } from "node:http";
@@ -14667,11 +14805,11 @@ init_session_store();
 
 // src/auth/overlay-store.ts
 init_paths();
-import fs12 from "node:fs";
-import path12 from "node:path";
+import fs13 from "node:fs";
+import path13 from "node:path";
 function parseJson4(filePath) {
   try {
-    return JSON.parse(fs12.readFileSync(filePath, "utf-8"));
+    return JSON.parse(fs13.readFileSync(filePath, "utf-8"));
   } catch (err) {
     throw new Error(
       `Failed to parse hosted overlay at ${filePath}: ${err instanceof Error ? err.message : String(err)}`
@@ -14735,27 +14873,27 @@ function normalizeOverlay(raw) {
 }
 function readHostedOverlay() {
   const filePath = resolveHostedOverlayPath();
-  if (!fs12.existsSync(filePath)) return null;
+  if (!fs13.existsSync(filePath)) return null;
   return normalizeOverlay(parseJson4(filePath));
 }
 function writeHostedOverlay(overlay) {
   const filePath = resolveHostedOverlayPath();
-  fs12.mkdirSync(resolveProfilesDir(), { recursive: true });
-  fs12.writeFileSync(filePath, `${JSON.stringify(overlay, null, 2)}
+  fs13.mkdirSync(resolveProfilesDir(), { recursive: true });
+  fs13.writeFileSync(filePath, `${JSON.stringify(overlay, null, 2)}
 `, { mode: 384 });
   try {
-    fs12.chmodSync(filePath, 384);
+    fs13.chmodSync(filePath, 384);
   } catch {
   }
 }
 function clearHostedOverlay() {
   const filePath = resolveHostedOverlayPath();
-  if (!fs12.existsSync(filePath)) return false;
-  fs12.rmSync(filePath, { force: true });
+  if (!fs13.existsSync(filePath)) return false;
+  fs13.rmSync(filePath, { force: true });
   return true;
 }
 function describeHostedOverlayPath() {
-  return path12.resolve(resolveHostedOverlayPath());
+  return path13.resolve(resolveHostedOverlayPath());
 }
 function seedHostedOverlayFromSession(input) {
   return {
@@ -14779,8 +14917,8 @@ function seedHostedOverlayFromSession(input) {
 // src/auth/effective-profile.ts
 init_store();
 init_home();
-import fs13 from "node:fs";
-import path13 from "node:path";
+import fs14 from "node:fs";
+import path14 from "node:path";
 init_session_store();
 init_paths();
 function toLocalWorkspaceView(configPath, config) {
@@ -14890,10 +15028,10 @@ function computeEffectiveProfile(opts = {}) {
 }
 function writeEffectiveProfileSnapshot(profile) {
   const filePath = resolveEffectiveProfilePath();
-  fs13.mkdirSync(resolveProfilesDir(), { recursive: true });
-  fs13.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
+  fs14.mkdirSync(resolveProfilesDir(), { recursive: true });
+  fs14.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
 `, { mode: 384 });
-  return path13.resolve(filePath);
+  return path14.resolve(filePath);
 }
 
 // src/commands/auth-login.ts
@@ -15052,6 +15190,8 @@ async function authLogin(opts) {
     writeHostedOverlay(overlay);
     const effective = computeEffectiveProfile({ configPath });
     writeEffectiveProfileSnapshot(effective);
+    if (result.userId) setHostedUserId(result.userId);
+    track("growthub_auth_connected", { has_org: Boolean(result.orgId) });
     if (opts.json) {
       console.log(
         JSON.stringify(
@@ -15414,7 +15554,7 @@ init_src2();
 init_home();
 init_store();
 init_banner();
-import path14 from "node:path";
+import path15 from "node:path";
 import * as p15 from "@clack/prompts";
 import pc21 from "picocolors";
 function resolveConnectionString(configPath) {
@@ -15438,7 +15578,7 @@ function normalizeRetentionDays(value, fallback) {
   return candidate;
 }
 function resolveBackupDir(raw) {
-  return path14.resolve(expandHomePrefix(raw.trim()));
+  return path15.resolve(expandHomePrefix(raw.trim()));
 }
 async function dbBackupCommand(opts) {
   printPaperclipCliBanner();
@@ -15559,7 +15699,7 @@ function registerContextCommands(program2) {
 // src/commands/client/company.ts
 init_http();
 import { mkdir, readFile as readFile3, stat, writeFile as writeFile2 } from "node:fs/promises";
-import path15 from "node:path";
+import path16 from "node:path";
 function isUuidLike2(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -15593,32 +15733,32 @@ function isGithubUrl(input) {
   return /^https?:\/\/github\.com\//i.test(input.trim());
 }
 async function resolveInlineSourceFromPath(inputPath) {
-  const resolved = path15.resolve(inputPath);
+  const resolved = path16.resolve(inputPath);
   const resolvedStat = await stat(resolved);
-  const manifestPath = resolvedStat.isDirectory() ? path15.join(resolved, "paperclip.manifest.json") : resolved;
-  const manifestBaseDir = path15.dirname(manifestPath);
+  const manifestPath = resolvedStat.isDirectory() ? path16.join(resolved, "paperclip.manifest.json") : resolved;
+  const manifestBaseDir = path16.dirname(manifestPath);
   const manifestRaw = await readFile3(manifestPath, "utf8");
   const manifest = JSON.parse(manifestRaw);
   const files = {};
   if (manifest.company?.path) {
     const companyPath = manifest.company.path.replace(/\\/g, "/");
-    files[companyPath] = await readFile3(path15.join(manifestBaseDir, companyPath), "utf8");
+    files[companyPath] = await readFile3(path16.join(manifestBaseDir, companyPath), "utf8");
   }
   for (const agent of manifest.agents ?? []) {
     const agentPath = agent.path.replace(/\\/g, "/");
-    files[agentPath] = await readFile3(path15.join(manifestBaseDir, agentPath), "utf8");
+    files[agentPath] = await readFile3(path16.join(manifestBaseDir, agentPath), "utf8");
   }
   return { manifest, files };
 }
 async function writeExportToFolder(outDir, exported) {
-  const root = path15.resolve(outDir);
+  const root = path16.resolve(outDir);
   await mkdir(root, { recursive: true });
-  const manifestPath = path15.join(root, "paperclip.manifest.json");
+  const manifestPath = path16.join(root, "paperclip.manifest.json");
   await writeFile2(manifestPath, JSON.stringify(exported.manifest, null, 2), "utf8");
   for (const [relativePath, content] of Object.entries(exported.files)) {
     const normalized = relativePath.replace(/\\/g, "/");
-    const filePath = path15.join(root, normalized);
-    await mkdir(path15.dirname(filePath), { recursive: true });
+    const filePath = path16.join(root, normalized);
+    await mkdir(path16.dirname(filePath), { recursive: true });
     await writeFile2(filePath, content, "utf8");
   }
 }
@@ -15741,7 +15881,7 @@ function registerCompanyCommands(program2) {
         printOutput(
           {
             ok: true,
-            out: path15.resolve(opts.out),
+            out: path16.resolve(opts.out),
             filesWritten: Object.keys(exported.files).length + 1,
             warningCount: exported.warnings.length
           },
@@ -15903,8 +16043,8 @@ function registerIssueCommands(program2) {
         if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
         if (opts.projectId) params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path61 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path61) ?? [];
+        const path62 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path62) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -16066,8 +16206,8 @@ function filterIssueRows(rows, match) {
 }
 
 // ../packages/adapter-utils/src/server-utils.ts
-import { constants as fsConstants, promises as fs14 } from "node:fs";
-import path16 from "node:path";
+import { constants as fsConstants, promises as fs15 } from "node:fs";
+import path17 from "node:path";
 var MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
 var MAX_EXCERPT_BYTES = 32 * 1024;
 var PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES = [
@@ -16082,14 +16222,14 @@ function isMaintainerOnlySkillTarget(candidate) {
 }
 async function resolvePaperclipSkillsDir(moduleDir, additionalCandidates = []) {
   const candidates = [
-    ...PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES.map((relativePath) => path16.resolve(moduleDir, relativePath)),
-    ...additionalCandidates.map((candidate) => path16.resolve(candidate))
+    ...PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES.map((relativePath) => path17.resolve(moduleDir, relativePath)),
+    ...additionalCandidates.map((candidate) => path17.resolve(candidate))
   ];
   const seenRoots = /* @__PURE__ */ new Set();
   for (const root of candidates) {
     if (seenRoots.has(root)) continue;
     seenRoots.add(root);
-    const isDirectory = await fs14.stat(root).then((stats) => stats.isDirectory()).catch(() => false);
+    const isDirectory = await fs15.stat(root).then((stats) => stats.isDirectory()).catch(() => false);
     if (isDirectory) return root;
   }
   return null;
@@ -16097,20 +16237,20 @@ async function resolvePaperclipSkillsDir(moduleDir, additionalCandidates = []) {
 async function removeMaintainerOnlySkillSymlinks(skillsHome, allowedSkillNames) {
   const allowed = new Set(Array.from(allowedSkillNames));
   try {
-    const entries = await fs14.readdir(skillsHome, { withFileTypes: true });
+    const entries = await fs15.readdir(skillsHome, { withFileTypes: true });
     const removed = [];
     for (const entry of entries) {
       if (allowed.has(entry.name)) continue;
-      const target = path16.join(skillsHome, entry.name);
-      const existing = await fs14.lstat(target).catch(() => null);
+      const target = path17.join(skillsHome, entry.name);
+      const existing = await fs15.lstat(target).catch(() => null);
       if (!existing?.isSymbolicLink()) continue;
-      const linkedPath = await fs14.readlink(target).catch(() => null);
+      const linkedPath = await fs15.readlink(target).catch(() => null);
       if (!linkedPath) continue;
-      const resolvedLinkedPath = path16.isAbsolute(linkedPath) ? linkedPath : path16.resolve(path16.dirname(target), linkedPath);
+      const resolvedLinkedPath = path17.isAbsolute(linkedPath) ? linkedPath : path17.resolve(path17.dirname(target), linkedPath);
       if (!isMaintainerOnlySkillTarget(linkedPath) && !isMaintainerOnlySkillTarget(resolvedLinkedPath)) {
         continue;
       }
-      await fs14.unlink(target);
+      await fs15.unlink(target);
       removed.push(entry.name);
     }
     return removed;
@@ -16120,20 +16260,20 @@ async function removeMaintainerOnlySkillSymlinks(skillsHome, allowedSkillNames) 
 }
 
 // src/commands/client/agent.ts
-import fs15 from "node:fs/promises";
+import fs16 from "node:fs/promises";
 import os4 from "node:os";
-import path17 from "node:path";
+import path18 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
-var __moduleDir = path17.dirname(fileURLToPath3(import.meta.url));
+var __moduleDir = path18.dirname(fileURLToPath3(import.meta.url));
 function codexSkillsHome() {
   const fromEnv = process.env.CODEX_HOME?.trim();
-  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path17.join(os4.homedir(), ".codex");
-  return path17.join(base, "skills");
+  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path18.join(os4.homedir(), ".codex");
+  return path18.join(base, "skills");
 }
 function claudeSkillsHome() {
   const fromEnv = process.env.CLAUDE_HOME?.trim();
-  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path17.join(os4.homedir(), ".claude");
-  return path17.join(base, "skills");
+  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path18.join(os4.homedir(), ".claude");
+  return path18.join(base, "skills");
 }
 async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
   const summary = {
@@ -16144,26 +16284,26 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
     skipped: [],
     failed: []
   };
-  await fs15.mkdir(targetSkillsDir, { recursive: true });
-  const entries = await fs15.readdir(sourceSkillsDir, { withFileTypes: true });
+  await fs16.mkdir(targetSkillsDir, { recursive: true });
+  const entries = await fs16.readdir(sourceSkillsDir, { withFileTypes: true });
   summary.removed = await removeMaintainerOnlySkillSymlinks(
     targetSkillsDir,
     entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
   );
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const source = path17.join(sourceSkillsDir, entry.name);
-    const target = path17.join(targetSkillsDir, entry.name);
-    const existing = await fs15.lstat(target).catch(() => null);
+    const source = path18.join(sourceSkillsDir, entry.name);
+    const target = path18.join(targetSkillsDir, entry.name);
+    const existing = await fs16.lstat(target).catch(() => null);
     if (existing) {
       if (existing.isSymbolicLink()) {
         let linkedPath = null;
         try {
-          linkedPath = await fs15.readlink(target);
+          linkedPath = await fs16.readlink(target);
         } catch (err) {
-          await fs15.unlink(target);
+          await fs16.unlink(target);
           try {
-            await fs15.symlink(source, target);
+            await fs16.symlink(source, target);
             summary.linked.push(entry.name);
             continue;
           } catch (linkErr) {
@@ -16174,10 +16314,10 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
             continue;
           }
         }
-        const resolvedLinkedPath = path17.isAbsolute(linkedPath) ? linkedPath : path17.resolve(path17.dirname(target), linkedPath);
-        const linkedTargetExists = await fs15.stat(resolvedLinkedPath).then(() => true).catch(() => false);
+        const resolvedLinkedPath = path18.isAbsolute(linkedPath) ? linkedPath : path18.resolve(path18.dirname(target), linkedPath);
+        const linkedTargetExists = await fs16.stat(resolvedLinkedPath).then(() => true).catch(() => false);
         if (!linkedTargetExists) {
-          await fs15.unlink(target);
+          await fs16.unlink(target);
         } else {
           summary.skipped.push(entry.name);
           continue;
@@ -16188,7 +16328,7 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
       }
     }
     try {
-      await fs15.symlink(source, target);
+      await fs16.symlink(source, target);
       summary.linked.push(entry.name);
     } catch (err) {
       summary.failed.push({
@@ -16277,7 +16417,7 @@ function registerAgentCommands(program2) {
         }
         const installSummaries = [];
         if (opts.installSkills !== false) {
-          const skillsDir = await resolvePaperclipSkillsDir(__moduleDir, [path17.resolve(process.cwd(), "skills")]);
+          const skillsDir = await resolvePaperclipSkillsDir(__moduleDir, [path18.resolve(process.cwd(), "skills")]);
           if (!skillsDir) {
             throw new Error(
               "Could not locate local Paperclip skills directory. Expected ./skills in the repo checkout."
@@ -16510,8 +16650,8 @@ function registerActivityCommands(program2) {
         if (opts.entityType) params.set("entityType", opts.entityType);
         if (opts.entityId) params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path61 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path61) ?? [];
+        const path62 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path62) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -16560,11 +16700,11 @@ function registerDashboardCommands(program2) {
 
 // src/config/data-dir.ts
 init_home();
-import path18 from "node:path";
+import path19 from "node:path";
 function applyDataDirOverride(options, support = {}) {
   const rawDataDir = options.dataDir?.trim();
   if (!rawDataDir) return null;
-  const resolvedDataDir = path18.resolve(expandHomePrefix(rawDataDir));
+  const resolvedDataDir = path19.resolve(expandHomePrefix(rawDataDir));
   process.env.PAPERCLIP_HOME = resolvedDataDir;
   if (support.hasConfigOption) {
     const hasConfigOverride = Boolean(options.config?.trim()) || Boolean(process.env.PAPERCLIP_CONFIG?.trim());
@@ -16591,35 +16731,35 @@ init_store();
 // src/commands/gtm.ts
 init_src();
 init_home();
-import fs16 from "node:fs";
-import path19 from "node:path";
+import fs17 from "node:fs";
+import path20 from "node:path";
 import { spawn } from "node:child_process";
 import pc23 from "picocolors";
 function resolveGtmStatePath() {
-  return path19.resolve(resolvePaperclipHomeDir(), "gtm", "state.json");
+  return path20.resolve(resolvePaperclipHomeDir(), "gtm", "state.json");
 }
 function readState() {
   const filePath = resolveGtmStatePath();
-  if (!fs16.existsSync(filePath)) return createDefaultGtmState();
-  return coerceGtmState(JSON.parse(fs16.readFileSync(filePath, "utf-8")));
+  if (!fs17.existsSync(filePath)) return createDefaultGtmState();
+  return coerceGtmState(JSON.parse(fs17.readFileSync(filePath, "utf-8")));
 }
 function writeState(state) {
   const filePath = resolveGtmStatePath();
-  fs16.mkdirSync(path19.dirname(filePath), { recursive: true });
-  fs16.writeFileSync(filePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+  fs17.mkdirSync(path20.dirname(filePath), { recursive: true });
+  fs17.writeFileSync(filePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
 }
 function launchWorkflow(state) {
   const runnerPath = state.workflow.runnerPath?.trim();
   if (!runnerPath) {
     throw new Error("No local SDR runner configured.");
   }
-  if (!fs16.existsSync(runnerPath)) {
+  if (!fs17.existsSync(runnerPath)) {
     throw new Error(`Runner not found at ${runnerPath}`);
   }
   const args = runnerPath.endsWith(".mjs") || runnerPath.endsWith(".js") ? [runnerPath] : [];
   const command = args.length > 0 ? process.execPath : runnerPath;
   const child = spawn(command, args, {
-    cwd: path19.dirname(runnerPath),
+    cwd: path20.dirname(runnerPath),
     detached: true,
     stdio: "ignore"
   });
@@ -16657,7 +16797,7 @@ function registerGtmCommands(program2) {
     if (opts.internalSocialsPath) state.workflow.referenceInterfaces.internalSocialsPath = opts.internalSocialsPath.trim();
     if (opts.localSdrPath) {
       state.workflow.referenceInterfaces.localSdrPath = opts.localSdrPath.trim();
-      state.workflow.runnerPath = path19.resolve(opts.localSdrPath.trim(), "sdr-bot.mjs");
+      state.workflow.runnerPath = path20.resolve(opts.localSdrPath.trim(), "sdr-bot.mjs");
     }
     writeState(state);
     const view = toGtmViewModel(state);
@@ -16710,7 +16850,7 @@ import {
   writeFileSync
 } from "node:fs";
 import os5 from "node:os";
-import path21 from "node:path";
+import path22 from "node:path";
 import { execFileSync } from "node:child_process";
 import { createServer as createServer2 } from "node:net";
 import * as p16 from "@clack/prompts";
@@ -16720,7 +16860,7 @@ import { eq as eq2 } from "drizzle-orm";
 // src/commands/worktree-lib.ts
 init_home();
 import { randomInt } from "node:crypto";
-import path20 from "node:path";
+import path21 from "node:path";
 var DEFAULT_WORKTREE_HOME = "~/.paperclip-worktrees";
 var WORKTREE_SEED_MODES = ["minimal", "full"];
 var MINIMAL_WORKTREE_EXCLUDED_TABLES = [
@@ -16768,7 +16908,7 @@ function sanitizeWorktreeInstanceId(rawValue) {
   return normalized || "worktree";
 }
 function resolveSuggestedWorktreeName(cwd, explicitName) {
-  return nonEmpty(explicitName) ?? path20.basename(path20.resolve(cwd));
+  return nonEmpty(explicitName) ?? path21.basename(path21.resolve(cwd));
 }
 function hslComponentToHex(n) {
   return Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, "0");
@@ -16808,24 +16948,24 @@ function generateWorktreeColor() {
   return hslToHex(randomInt(0, 360), 68, 56);
 }
 function resolveWorktreeLocalPaths(opts) {
-  const cwd = path20.resolve(opts.cwd);
-  const homeDir = path20.resolve(expandHomePrefix(opts.homeDir ?? DEFAULT_WORKTREE_HOME));
-  const instanceRoot = path20.resolve(homeDir, "instances", opts.instanceId);
-  const repoConfigDir = path20.resolve(cwd, ".paperclip");
+  const cwd = path21.resolve(opts.cwd);
+  const homeDir = path21.resolve(expandHomePrefix(opts.homeDir ?? DEFAULT_WORKTREE_HOME));
+  const instanceRoot = path21.resolve(homeDir, "instances", opts.instanceId);
+  const repoConfigDir = path21.resolve(cwd, ".paperclip");
   return {
     cwd,
     repoConfigDir,
-    configPath: path20.resolve(repoConfigDir, "config.json"),
-    envPath: path20.resolve(repoConfigDir, ".env"),
+    configPath: path21.resolve(repoConfigDir, "config.json"),
+    envPath: path21.resolve(repoConfigDir, ".env"),
     homeDir,
     instanceId: opts.instanceId,
     instanceRoot,
-    contextPath: path20.resolve(homeDir, "context.json"),
-    embeddedPostgresDataDir: path20.resolve(instanceRoot, "db"),
-    backupDir: path20.resolve(instanceRoot, "data", "backups"),
-    logDir: path20.resolve(instanceRoot, "logs"),
-    secretsKeyFilePath: path20.resolve(instanceRoot, "secrets", "master.key"),
-    storageDir: path20.resolve(instanceRoot, "data", "storage")
+    contextPath: path21.resolve(homeDir, "context.json"),
+    embeddedPostgresDataDir: path21.resolve(instanceRoot, "db"),
+    backupDir: path21.resolve(instanceRoot, "data", "backups"),
+    logDir: path21.resolve(instanceRoot, "logs"),
+    secretsKeyFilePath: path21.resolve(instanceRoot, "secrets", "master.key"),
+    storageDir: path21.resolve(instanceRoot, "data", "storage")
   };
 }
 function rewriteLocalUrlPort(rawUrl, port) {
@@ -16931,7 +17071,7 @@ function isCurrentSourceConfigPath(sourceConfigPath) {
   if (!currentConfigPath || currentConfigPath.trim().length === 0) {
     return false;
   }
-  return path21.resolve(currentConfigPath) === path21.resolve(sourceConfigPath);
+  return path22.resolve(currentConfigPath) === path22.resolve(sourceConfigPath);
 }
 var WORKTREE_NAME_PREFIX = "paperclip-";
 function resolveWorktreeMakeName(name) {
@@ -16953,7 +17093,7 @@ function resolveWorktreeStartPoint(explicit) {
   return explicit ?? nonEmpty2(process.env.PAPERCLIP_WORKTREE_START_POINT) ?? void 0;
 }
 function resolveWorktreeMakeTargetPath(name) {
-  return path21.resolve(os5.homedir(), resolveWorktreeMakeName(name));
+  return path22.resolve(os5.homedir(), resolveWorktreeMakeName(name));
 }
 function extractExecSyncErrorMessage(error) {
   if (!error || typeof error !== "object") {
@@ -17059,10 +17199,10 @@ function detectGitWorkspaceInfo(cwd) {
       stdio: ["ignore", "pipe", "ignore"]
     }).trim();
     return {
-      root: path21.resolve(root),
-      commonDir: path21.resolve(root, commonDirRaw),
-      gitDir: path21.resolve(root, gitDirRaw),
-      hooksPath: path21.resolve(root, hooksPathRaw)
+      root: path22.resolve(root),
+      commonDir: path22.resolve(root, commonDirRaw),
+      gitDir: path22.resolve(root, gitDirRaw),
+      hooksPath: path22.resolve(root, hooksPathRaw)
     };
   } catch {
     return null;
@@ -17075,8 +17215,8 @@ function copyDirectoryContents(sourceDir, targetDir) {
   mkdirSync2(targetDir, { recursive: true });
   let copied = false;
   for (const entry of entries) {
-    const sourcePath = path21.resolve(sourceDir, entry.name);
-    const targetPath = path21.resolve(targetDir, entry.name);
+    const sourcePath = path22.resolve(sourceDir, entry.name);
+    const targetPath = path22.resolve(targetDir, entry.name);
     if (entry.isDirectory()) {
       mkdirSync2(targetPath, { recursive: true });
       copyDirectoryContents(sourcePath, targetPath);
@@ -17102,7 +17242,7 @@ function copyGitHooksToWorktreeGitDir(cwd) {
   const workspace = detectGitWorkspaceInfo(cwd);
   if (!workspace) return null;
   const sourceHooksPath = workspace.hooksPath;
-  const targetHooksPath = path21.resolve(workspace.gitDir, "hooks");
+  const targetHooksPath = path22.resolve(workspace.gitDir, "hooks");
   if (sourceHooksPath === targetHooksPath) {
     return {
       sourceHooksPath,
@@ -17117,17 +17257,17 @@ function copyGitHooksToWorktreeGitDir(cwd) {
   };
 }
 function rebindWorkspaceCwd(input) {
-  const sourceRepoRoot = path21.resolve(input.sourceRepoRoot);
-  const targetRepoRoot = path21.resolve(input.targetRepoRoot);
-  const workspaceCwd = path21.resolve(input.workspaceCwd);
-  const relative = path21.relative(sourceRepoRoot, workspaceCwd);
+  const sourceRepoRoot = path22.resolve(input.sourceRepoRoot);
+  const targetRepoRoot = path22.resolve(input.targetRepoRoot);
+  const workspaceCwd = path22.resolve(input.workspaceCwd);
+  const relative = path22.relative(sourceRepoRoot, workspaceCwd);
   if (!relative || relative === "") {
     return targetRepoRoot;
   }
-  if (relative.startsWith("..") || path21.isAbsolute(relative)) {
+  if (relative.startsWith("..") || path22.isAbsolute(relative)) {
     return null;
   }
-  return path21.resolve(targetRepoRoot, relative);
+  return path22.resolve(targetRepoRoot, relative);
 }
 async function rebindSeededProjectWorkspaces(input) {
   const targetRepo = detectGitWorkspaceInfo(input.currentCwd);
@@ -17153,7 +17293,7 @@ async function rebindSeededProjectWorkspaces(input) {
         workspaceCwd
       });
       if (!reboundCwd) continue;
-      const normalizedCurrent = path21.resolve(workspaceCwd);
+      const normalizedCurrent = path22.resolve(workspaceCwd);
       if (reboundCwd === normalizedCurrent) continue;
       if (!existsSync2(reboundCwd)) continue;
       await db.update(projectWorkspaces).set({
@@ -17172,14 +17312,14 @@ async function rebindSeededProjectWorkspaces(input) {
   }
 }
 function resolveSourceConfigPath(opts) {
-  if (opts.sourceConfigPathOverride) return path21.resolve(opts.sourceConfigPathOverride);
-  if (opts.fromConfig) return path21.resolve(opts.fromConfig);
+  if (opts.sourceConfigPathOverride) return path22.resolve(opts.sourceConfigPathOverride);
+  if (opts.fromConfig) return path22.resolve(opts.fromConfig);
   if (!opts.fromDataDir && !opts.fromInstance) {
     return resolveConfigPath();
   }
-  const sourceHome = path21.resolve(expandHomePrefix(opts.fromDataDir ?? "~/.paperclip"));
+  const sourceHome = path22.resolve(expandHomePrefix(opts.fromDataDir ?? "~/.paperclip"));
   const sourceInstanceId = sanitizeWorktreeInstanceId(opts.fromInstance ?? "default");
-  return path21.resolve(sourceHome, "instances", sourceInstanceId, "config.json");
+  return path22.resolve(sourceHome, "instances", sourceInstanceId, "config.json");
 }
 function resolveSourceConnectionString(config, envEntries, portOverride) {
   if (config.database.mode === "postgres") {
@@ -17198,7 +17338,7 @@ function copySeededSecretsKey(input) {
   if (input.sourceConfig.secrets.provider !== "local_encrypted") {
     return;
   }
-  mkdirSync2(path21.dirname(input.targetKeyFilePath), { recursive: true });
+  mkdirSync2(path22.dirname(input.targetKeyFilePath), { recursive: true });
   const allowProcessEnvFallback = isCurrentSourceConfigPath(input.sourceConfigPath);
   const sourceInlineMasterKey = nonEmpty2(input.sourceEnvEntries.PAPERCLIP_SECRETS_MASTER_KEY) ?? (allowProcessEnvFallback ? nonEmpty2(process.env.PAPERCLIP_SECRETS_MASTER_KEY) : null);
   if (sourceInlineMasterKey) {
@@ -17237,7 +17377,7 @@ async function ensureEmbeddedPostgres(dataDir, preferredPort) {
       "Embedded PostgreSQL support requires dependency `embedded-postgres`. Reinstall dependencies and try again."
     );
   }
-  const postmasterPidFile = path21.resolve(dataDir, "postmaster.pid");
+  const postmasterPidFile = path22.resolve(dataDir, "postmaster.pid");
   const runningPid = readRunningPostmasterPid(postmasterPidFile);
   if (runningPid) {
     return {
@@ -17260,7 +17400,7 @@ async function ensureEmbeddedPostgres(dataDir, preferredPort) {
     onError: () => {
     }
   });
-  if (!existsSync2(path21.resolve(dataDir, "PG_VERSION"))) {
+  if (!existsSync2(path22.resolve(dataDir, "PG_VERSION"))) {
     await instance.initialise();
   }
   if (existsSync2(postmasterPidFile)) {
@@ -17301,7 +17441,7 @@ async function seedWorktreeDatabase(input) {
     );
     const backup = await runDatabaseBackup({
       connectionString: sourceConnectionString,
-      backupDir: path21.resolve(input.targetPaths.backupDir, "seed"),
+      backupDir: path22.resolve(input.targetPaths.backupDir, "seed"),
       retentionDays: 7,
       filenamePrefix: `${input.instanceId}-seed`,
       includeMigrationJournal: true,
@@ -17460,7 +17600,7 @@ async function worktreeMakeCommand(nameArg, opts) {
   if (existsSync2(targetPath)) {
     throw new Error(`Target path already exists: ${targetPath}`);
   }
-  mkdirSync2(path21.dirname(targetPath), { recursive: true });
+  mkdirSync2(path22.dirname(targetPath), { recursive: true });
   if (startPoint) {
     const [remote] = startPoint.split("/", 1);
     try {
@@ -17517,7 +17657,7 @@ async function worktreeMakeCommand(nameArg, opts) {
   } finally {
     process.chdir(originalCwd);
   }
-  const bootstrapScript = path21.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
+  const bootstrapScript = path22.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
   if (existsSync2(bootstrapScript)) {
     p16.log.message(pc24.dim(`Running worktree bootstrap in ${targetPath}...`));
     try {
@@ -17607,14 +17747,14 @@ async function worktreeCleanupCommand(nameArg, opts) {
   const sourceCwd = process.cwd();
   const targetPath = resolveWorktreeMakeTargetPath(name);
   const instanceId = sanitizeWorktreeInstanceId(opts.instance ?? name);
-  const homeDir = path21.resolve(expandHomePrefix(resolveWorktreeHome(opts.home)));
-  const instanceRoot = path21.resolve(homeDir, "instances", instanceId);
+  const homeDir = path22.resolve(expandHomePrefix(resolveWorktreeHome(opts.home)));
+  const instanceRoot = path22.resolve(homeDir, "instances", instanceId);
   const hasBranch = localBranchExists(sourceCwd, name);
   const hasTargetDir = existsSync2(targetPath);
   const hasInstanceData = existsSync2(instanceRoot);
   const worktrees = parseGitWorktreeList(sourceCwd);
   const linkedWorktree = worktrees.find(
-    (wt) => wt.branch === `refs/heads/${name}` || path21.resolve(wt.worktree) === path21.resolve(targetPath)
+    (wt) => wt.branch === `refs/heads/${name}` || path22.resolve(wt.worktree) === path22.resolve(targetPath)
   );
   if (!hasBranch && !hasTargetDir && !hasInstanceData && !linkedWorktree) {
     p16.log.info("Nothing to clean up \u2014 no branch, worktree directory, or instance data found.");
@@ -17736,16 +17876,16 @@ function registerWorktreeCommands(program2) {
 }
 
 // src/commands/client/plugin.ts
-import path22 from "node:path";
+import path23 from "node:path";
 import pc25 from "picocolors";
 function resolvePackageArg(packageArg, isLocal) {
   if (!isLocal) return packageArg;
-  if (path22.isAbsolute(packageArg)) return packageArg;
+  if (path23.isAbsolute(packageArg)) return packageArg;
   if (packageArg.startsWith("~")) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-    return path22.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
+    return path23.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
   }
-  return path22.resolve(process.cwd(), packageArg);
+  return path23.resolve(process.cwd(), packageArg);
 }
 function formatPlugin(p35) {
   const statusColor3 = p35.status === "ready" ? pc25.green(p35.status) : p35.status === "error" ? pc25.red(p35.status) : p35.status === "disabled" ? pc25.dim(p35.status) : pc25.yellow(p35.status);
@@ -17943,15 +18083,15 @@ ${result.lastError}`);
 }
 
 // src/commands/kit.ts
-init_service();
-init_banner();
-import path34 from "node:path";
+import path35 from "node:path";
 import { pathToFileURL as pathToFileURL2 } from "node:url";
 import * as p19 from "@clack/prompts";
 import pc30 from "picocolors";
+init_service();
+init_banner();
 
 // src/commands/kit-fork.ts
-import fs27 from "node:fs";
+import fs28 from "node:fs";
 import * as p18 from "@clack/prompts";
 
 // src/commands/kit-fork-remote.ts
@@ -17961,50 +18101,50 @@ init_fork_trace();
 init_fork_remote();
 import * as p17 from "@clack/prompts";
 import pc26 from "picocolors";
-import fs25 from "node:fs";
-import path32 from "node:path";
+import fs26 from "node:fs";
+import path33 from "node:path";
 
 // src/kits/fork-sync-agent.ts
 init_kit_forks_home();
 init_fork_registry();
-import fs24 from "node:fs";
-import path31 from "node:path";
+import fs25 from "node:fs";
+import path32 from "node:path";
 
 // src/kits/fork-sync.ts
 init_service();
-import fs22 from "node:fs";
-import path29 from "node:path";
+import fs23 from "node:fs";
+import path30 from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 function resolveUpstreamAssetRoot(kitId) {
-  const moduleDir = path29.dirname(fileURLToPath5(import.meta.url));
+  const moduleDir = path30.dirname(fileURLToPath5(import.meta.url));
   const candidates = [
-    path29.resolve(moduleDir, "../../assets/worker-kits", kitId),
-    path29.resolve(moduleDir, "../assets/worker-kits", kitId)
+    path30.resolve(moduleDir, "../../assets/worker-kits", kitId),
+    path30.resolve(moduleDir, "../assets/worker-kits", kitId)
   ];
   for (const c of candidates) {
-    if (fs22.existsSync(c)) return c;
+    if (fs23.existsSync(c)) return c;
   }
   throw new Error(`Cannot locate bundled asset root for kit: ${kitId}`);
 }
 function readFileIfExists(p35) {
-  if (!fs22.existsSync(p35)) return null;
+  if (!fs23.existsSync(p35)) return null;
   try {
-    return fs22.readFileSync(p35, "utf8");
+    return fs23.readFileSync(p35, "utf8");
   } catch {
     return null;
   }
 }
 function listRelativeFiles2(rootDir) {
   const files = /* @__PURE__ */ new Set();
-  if (!fs22.existsSync(rootDir)) return files;
+  if (!fs23.existsSync(rootDir)) return files;
   const walk = (cur) => {
-    for (const entry of fs22.readdirSync(cur, { withFileTypes: true })) {
-      const full = path29.join(cur, entry.name);
+    for (const entry of fs23.readdirSync(cur, { withFileTypes: true })) {
+      const full = path30.join(cur, entry.name);
       if (entry.isDirectory()) {
         walk(full);
         continue;
       }
-      files.add(path29.relative(rootDir, full).split(path29.sep).join("/"));
+      files.add(path30.relative(rootDir, full).split(path30.sep).join("/"));
     }
   };
   walk(rootDir);
@@ -18068,7 +18208,7 @@ function getUpstreamFiles(kitId) {
   return files;
 }
 function detectKitForkDrift(reg) {
-  if (!fs22.existsSync(reg.forkPath)) {
+  if (!fs23.existsSync(reg.forkPath)) {
     throw new Error(`Fork path does not exist: ${reg.forkPath}`);
   }
   const allKits = listBundledKits();
@@ -18107,8 +18247,8 @@ function detectKitForkDrift(reg) {
   const AUDIT_PATHS = ["kit.json", "package.json", ".env.example", "QUICKSTART.md"];
   for (const rel of AUDIT_PATHS) {
     if (upstreamFiles.has(rel) && forkFiles.has(rel)) {
-      const upContent = readFileIfExists(path29.resolve(upstreamRoot, rel));
-      const fkContent = readFileIfExists(path29.resolve(reg.forkPath, rel));
+      const upContent = readFileIfExists(path30.resolve(upstreamRoot, rel));
+      const fkContent = readFileIfExists(path30.resolve(reg.forkPath, rel));
       if (upContent !== null && fkContent !== null && upContent !== fkContent) {
         fileDrifts.push({
           relativePath: rel,
@@ -18120,12 +18260,12 @@ function detectKitForkDrift(reg) {
     }
   }
   let packageDrifts = [];
-  const upPkgPath = path29.resolve(upstreamRoot, "package.json");
-  const fkPkgPath = path29.resolve(reg.forkPath, "package.json");
-  if (fs22.existsSync(upPkgPath) && fs22.existsSync(fkPkgPath)) {
+  const upPkgPath = path30.resolve(upstreamRoot, "package.json");
+  const fkPkgPath = path30.resolve(reg.forkPath, "package.json");
+  if (fs23.existsSync(upPkgPath) && fs23.existsSync(fkPkgPath)) {
     try {
-      const upPkg = JSON.parse(fs22.readFileSync(upPkgPath, "utf8"));
-      const fkPkg = JSON.parse(fs22.readFileSync(fkPkgPath, "utf8"));
+      const upPkg = JSON.parse(fs23.readFileSync(upPkgPath, "utf8"));
+      const fkPkg = JSON.parse(fs23.readFileSync(fkPkgPath, "utf8"));
       packageDrifts = detectPackageDrift(upPkg, fkPkg);
     } catch {
     }
@@ -18384,38 +18524,38 @@ function executeHealAction(action, forkPath, kitId, _toVersion) {
   }
 }
 function execAddFile(action, forkPath, kitId) {
-  const targetFull = path29.resolve(forkPath, action.targetPath);
-  if (fs22.existsSync(targetFull)) {
+  const targetFull = path30.resolve(forkPath, action.targetPath);
+  if (fs23.existsSync(targetFull)) {
     return { action, status: "skipped", detail: "File already exists in fork" };
   }
   const upstreamRoot = resolveUpstreamAssetRoot(kitId);
-  const upstreamFull = path29.resolve(upstreamRoot, action.targetPath);
-  if (!fs22.existsSync(upstreamFull)) {
+  const upstreamFull = path30.resolve(upstreamRoot, action.targetPath);
+  if (!fs23.existsSync(upstreamFull)) {
     return { action, status: "skipped", detail: "Upstream file not found \u2014 skipped" };
   }
   const content = readFileIfExists(upstreamFull);
   if (content === null) {
     return { action, status: "skipped", detail: "Could not read upstream file (binary?) \u2014 skipped" };
   }
-  fs22.mkdirSync(path29.dirname(targetFull), { recursive: true });
-  fs22.writeFileSync(targetFull, content, "utf8");
+  fs23.mkdirSync(path30.dirname(targetFull), { recursive: true });
+  fs23.writeFileSync(targetFull, content, "utf8");
   return { action, status: "applied", detail: `Added ${action.targetPath}` };
 }
 function execUpdatePackageDeps(action, forkPath, kitId) {
-  const forkPkgPath = path29.resolve(forkPath, "package.json");
-  if (!fs22.existsSync(forkPkgPath)) {
+  const forkPkgPath = path30.resolve(forkPath, "package.json");
+  if (!fs23.existsSync(forkPkgPath)) {
     return { action, status: "skipped", detail: "No package.json in fork" };
   }
   const upstreamRoot = resolveUpstreamAssetRoot(kitId);
-  const upstreamPkgPath = path29.resolve(upstreamRoot, "package.json");
-  if (!fs22.existsSync(upstreamPkgPath)) {
+  const upstreamPkgPath = path30.resolve(upstreamRoot, "package.json");
+  if (!fs23.existsSync(upstreamPkgPath)) {
     return { action, status: "skipped", detail: "No package.json in upstream kit" };
   }
   let forkPkg;
   let upstreamPkg;
   try {
-    forkPkg = JSON.parse(fs22.readFileSync(forkPkgPath, "utf8"));
-    upstreamPkg = JSON.parse(fs22.readFileSync(upstreamPkgPath, "utf8"));
+    forkPkg = JSON.parse(fs23.readFileSync(forkPkgPath, "utf8"));
+    upstreamPkg = JSON.parse(fs23.readFileSync(upstreamPkgPath, "utf8"));
   } catch {
     return { action, status: "error", detail: "Failed to parse package.json" };
   }
@@ -18433,7 +18573,7 @@ function execUpdatePackageDeps(action, forkPath, kitId) {
   const updated = { ...forkPkg };
   if (mergedDeps) updated.dependencies = mergedDeps;
   if (mergedDevDeps) updated.devDependencies = mergedDevDeps;
-  fs22.writeFileSync(forkPkgPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs23.writeFileSync(forkPkgPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return { action, status: "applied", detail: "Merged upstream dependency additions" };
 }
 function mergeAddOnlyDeps(fork, upstream) {
@@ -18449,20 +18589,20 @@ function mergeAddOnlyDeps(fork, upstream) {
   return changed ? merged : null;
 }
 function execPatchManifest(action, forkPath, kitId) {
-  const forkManifestPath = path29.resolve(forkPath, "kit.json");
-  if (!fs22.existsSync(forkManifestPath)) {
+  const forkManifestPath = path30.resolve(forkPath, "kit.json");
+  if (!fs23.existsSync(forkManifestPath)) {
     return { action, status: "skipped", detail: "No kit.json in fork" };
   }
   const upstreamRoot = resolveUpstreamAssetRoot(kitId);
-  const upstreamManifestPath = path29.resolve(upstreamRoot, "kit.json");
-  if (!fs22.existsSync(upstreamManifestPath)) {
+  const upstreamManifestPath = path30.resolve(upstreamRoot, "kit.json");
+  if (!fs23.existsSync(upstreamManifestPath)) {
     return { action, status: "skipped", detail: "No kit.json in upstream kit" };
   }
   let forkManifest;
   let upstreamManifest;
   try {
-    forkManifest = JSON.parse(fs22.readFileSync(forkManifestPath, "utf8"));
-    upstreamManifest = JSON.parse(fs22.readFileSync(upstreamManifestPath, "utf8"));
+    forkManifest = JSON.parse(fs23.readFileSync(forkManifestPath, "utf8"));
+    upstreamManifest = JSON.parse(fs23.readFileSync(upstreamManifestPath, "utf8"));
   } catch {
     return { action, status: "error", detail: "Failed to parse kit.json" };
   }
@@ -18478,7 +18618,7 @@ function execPatchManifest(action, forkPath, kitId) {
   if (patched.length === 0) {
     return { action, status: "skipped", detail: "kit.json alignment fields already match" };
   }
-  fs22.writeFileSync(forkManifestPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs23.writeFileSync(forkManifestPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return { action, status: "applied", detail: `Patched kit.json fields: ${patched.join(", ")}` };
 }
 
@@ -18489,35 +18629,35 @@ init_fork_remote();
 init_github_resolver();
 init_client2();
 function resolveInForkJobsDir(forkPath) {
-  return path31.resolve(resolveInForkStateDir(forkPath), "jobs");
+  return path32.resolve(resolveInForkStateDir(forkPath), "jobs");
 }
 function resolveJobPath(jobId, kitId, forkId) {
   const forkPath = lookupKitForkPath(kitId, forkId);
   if (forkPath) {
-    return path31.resolve(resolveInForkJobsDir(forkPath), `${jobId}.json`);
+    return path32.resolve(resolveInForkJobsDir(forkPath), `${jobId}.json`);
   }
-  return path31.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
+  return path32.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
 }
 function resolveOrphanJobPath(jobId) {
-  return path31.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
+  return path32.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
 }
 function generateJobId() {
   return `kfj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function parseJobFile(p35) {
-  if (!fs24.existsSync(p35)) return null;
+  if (!fs25.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs24.readFileSync(p35, "utf8"));
+    return JSON.parse(fs25.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
 }
 function findJobPath(jobId) {
   const orphanPath = resolveOrphanJobPath(jobId);
-  if (fs24.existsSync(orphanPath)) return orphanPath;
+  if (fs25.existsSync(orphanPath)) return orphanPath;
   for (const reg of listKitForkRegistrations()) {
-    const p35 = path31.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
-    if (fs24.existsSync(p35)) return p35;
+    const p35 = path32.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
+    if (fs25.existsSync(p35)) return p35;
   }
   return null;
 }
@@ -18527,8 +18667,8 @@ function readJob(jobId) {
 }
 function writeJob(job) {
   const p35 = resolveJobPath(job.jobId, job.kitId, job.forkId);
-  fs24.mkdirSync(path31.dirname(p35), { recursive: true });
-  fs24.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
+  fs25.mkdirSync(path32.dirname(p35), { recursive: true });
+  fs25.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function patchJob(jobId, status, patch) {
   const existingPath = findJobPath(jobId);
@@ -18537,30 +18677,30 @@ function patchJob(jobId, status, patch) {
   if (!job) return null;
   const updated = { ...job, ...patch, status };
   const targetPath = resolveJobPath(updated.jobId, updated.kitId, updated.forkId);
-  if (path31.resolve(existingPath) !== path31.resolve(targetPath)) {
-    fs24.mkdirSync(path31.dirname(targetPath), { recursive: true });
-    fs24.rmSync(existingPath, { force: true });
+  if (path32.resolve(existingPath) !== path32.resolve(targetPath)) {
+    fs25.mkdirSync(path32.dirname(targetPath), { recursive: true });
+    fs25.rmSync(existingPath, { force: true });
   }
-  fs24.mkdirSync(path31.dirname(targetPath), { recursive: true });
-  fs24.writeFileSync(targetPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs25.mkdirSync(path32.dirname(targetPath), { recursive: true });
+  fs25.writeFileSync(targetPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function collectAllJobFiles() {
   const files = [];
   for (const reg of listKitForkRegistrations()) {
     const dir = resolveInForkJobsDir(reg.forkPath);
-    if (!fs24.existsSync(dir)) continue;
-    for (const entry of fs24.readdirSync(dir, { withFileTypes: true })) {
+    if (!fs25.existsSync(dir)) continue;
+    for (const entry of fs25.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
-        files.push(path31.resolve(dir, entry.name));
+        files.push(path32.resolve(dir, entry.name));
       }
     }
   }
   const orphanDir = resolveKitForksOrphanJobsDir();
-  if (fs24.existsSync(orphanDir)) {
-    for (const entry of fs24.readdirSync(orphanDir, { withFileTypes: true })) {
+  if (fs25.existsSync(orphanDir)) {
+    for (const entry of fs25.readdirSync(orphanDir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
-        files.push(path31.resolve(orphanDir, entry.name));
+        files.push(path32.resolve(orphanDir, entry.name));
       }
     }
   }
@@ -18598,7 +18738,7 @@ function pruneKitForkSyncJobs(retentionMs = 7 * 24 * 60 * 60 * 1e3) {
     if (!terminal.includes(job.status)) continue;
     const ts = new Date(job.completedAt ?? job.createdAt).getTime();
     if (ts < cutoff) {
-      fs24.rmSync(filePath, { force: true });
+      fs25.rmSync(filePath, { force: true });
       pruned++;
     }
   }
@@ -18858,8 +18998,8 @@ async function requireGithubToken() {
 async function kitForkCreate(opts) {
   const accessToken = await requireGithubToken();
   const upstream = parseRepoRef(opts.upstream);
-  const absOut = path32.resolve(opts.out);
-  if (fs25.existsSync(absOut) && fs25.readdirSync(absOut).length > 0) {
+  const absOut = path33.resolve(opts.out);
+  if (fs26.existsSync(absOut) && fs26.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   p17.log.step(`Forking ${upstream.owner}/${upstream.repo} on GitHub...`);
@@ -19260,9 +19400,9 @@ Examples:
 }
 
 // src/commands/kit-fork.ts
+import pc29 from "picocolors";
 init_banner();
 init_table_renderer();
-import pc29 from "picocolors";
 
 // src/utils/progress.ts
 import pc28 from "picocolors";
@@ -19304,20 +19444,20 @@ init_fork_trace();
 // src/kits/fork-authority.ts
 init_home();
 init_kit_forks_home();
-import crypto from "node:crypto";
-import fs26 from "node:fs";
+import crypto2 from "node:crypto";
+import fs27 from "node:fs";
 import os8 from "node:os";
-import path33 from "node:path";
+import path34 from "node:path";
 function resolveAuthorityHomeDir() {
   const env = process.env.GROWTHUB_AUTHORITY_HOME?.trim();
-  if (env) return path33.resolve(expandHomePrefix(env));
-  return path33.resolve(os8.homedir(), ".growthub", "authority");
+  if (env) return path34.resolve(expandHomePrefix(env));
+  return path34.resolve(os8.homedir(), ".growthub", "authority");
 }
 function resolveAuthorityIssuersPath() {
-  return path33.resolve(resolveAuthorityHomeDir(), "issuers.json");
+  return path34.resolve(resolveAuthorityHomeDir(), "issuers.json");
 }
 function resolveInForkAuthorityPath(forkPath) {
-  return path33.resolve(resolveInForkStateDir(forkPath), "authority.json");
+  return path34.resolve(resolveInForkStateDir(forkPath), "authority.json");
 }
 function canonicalize(value) {
   if (value === null) return "null";
@@ -19363,13 +19503,13 @@ function computePolicyHash(policy) {
     interactiveConflicts: policy.interactiveConflicts,
     allowedScripts: [...policy.allowedScripts].sort()
   };
-  return crypto.createHash("sha256").update(canonicalize(shape), "utf8").digest("hex");
+  return crypto2.createHash("sha256").update(canonicalize(shape), "utf8").digest("hex");
 }
 function readIssuerRegistry() {
   const p35 = resolveAuthorityIssuersPath();
-  if (!fs26.existsSync(p35)) return { version: 1, issuers: [] };
+  if (!fs27.existsSync(p35)) return { version: 1, issuers: [] };
   try {
-    const parsed = JSON.parse(fs26.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs27.readFileSync(p35, "utf8"));
     if (!parsed || !Array.isArray(parsed.issuers)) return { version: 1, issuers: [] };
     return { version: 1, issuers: parsed.issuers.filter(isValidIssuer) };
   } catch {
@@ -19383,8 +19523,8 @@ function isValidIssuer(x) {
 }
 function writeIssuerRegistry(registry) {
   const p35 = resolveAuthorityIssuersPath();
-  fs26.mkdirSync(path33.dirname(p35), { recursive: true });
-  fs26.writeFileSync(p35, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
+  fs27.mkdirSync(path34.dirname(p35), { recursive: true });
+  fs27.writeFileSync(p35, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
 }
 function upsertIssuer(issuer) {
   if (!isValidIssuer(issuer)) {
@@ -19442,8 +19582,8 @@ function verifyAuthorityEnvelope(envelope, options = {}) {
   try {
     const { signature: _omit, ...unsigned } = envelope;
     const payload = buildSigningPayload(unsigned);
-    const pubKey = crypto.createPublicKey({ key: issuer.publicKeyPem, format: "pem" });
-    ok = crypto.verify(null, Buffer.from(payload, "utf8"), pubKey, signatureBytes);
+    const pubKey = crypto2.createPublicKey({ key: issuer.publicKeyPem, format: "pem" });
+    ok = crypto2.verify(null, Buffer.from(payload, "utf8"), pubKey, signatureBytes);
   } catch (err) {
     return { ok: false, reason: "bad-signature", detail: err.message };
   }
@@ -19457,11 +19597,11 @@ function isWellFormedEnvelope(x) {
 }
 function readForkAuthorityState(forkPath) {
   const p35 = resolveInForkAuthorityPath(forkPath);
-  if (!fs26.existsSync(p35)) {
+  if (!fs27.existsSync(p35)) {
     return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
   }
   try {
-    const parsed = JSON.parse(fs26.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs27.readFileSync(p35, "utf8"));
     if (!parsed || parsed.version !== 1) {
       return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
     }
@@ -19472,8 +19612,8 @@ function readForkAuthorityState(forkPath) {
 }
 function writeForkAuthorityState(forkPath, state) {
   const p35 = resolveInForkAuthorityPath(forkPath);
-  fs26.mkdirSync(path33.dirname(p35), { recursive: true });
-  fs26.writeFileSync(p35, JSON.stringify(state, null, 2) + "\n", "utf8");
+  fs27.mkdirSync(path34.dirname(p35), { recursive: true });
+  fs27.writeFileSync(p35, JSON.stringify(state, null, 2) + "\n", "utf8");
 }
 function attachAuthorityEnvelope(forkPath, envelope, options = {}) {
   const verification = verifyAuthorityEnvelope(envelope, options);
@@ -20090,6 +20230,7 @@ async function runRegisterFlow() {
       label: labelInput.trim() || void 0
     });
     spinner13.stop(pc29.green("Fork registered."));
+    track("fork_registered", { kit_id: reg.kitId });
     p18.note(
       [
         `Fork ID:  ${pc29.cyan(reg.forkId)}`,
@@ -20136,6 +20277,7 @@ async function runStatusFlow() {
   try {
     const report = detectKitForkDrift(reg);
     spinner13.stop(pc29.green("Analysis complete."));
+    track("fork_sync_preview_started", { kit_id: reg.kitId, drift_severity: report.overallSeverity });
     printDriftReport(report);
   } catch (err) {
     spinner13.stop(pc29.red("Drift detection failed."));
@@ -20221,6 +20363,13 @@ async function runHealFlow() {
   healSpinner.stop(
     job.status === "completed" ? pc29.green(isDryRun ? "Dry run complete." : "Heal complete.") : pc29.red("Heal encountered errors.")
   );
+  if (job.status === "completed" && !isDryRun) {
+    track("fork_sync_heal_applied", {
+      kit_id: reg.kitId,
+      action_count: plan.actions.length,
+      applied_count: job.healResult?.appliedCount ?? 0
+    });
+  }
   if (job.healResult) {
     const r = job.healResult;
     console.log("");
@@ -20767,7 +20916,7 @@ function registerAuthoritySubcommands(parentCmd) {
     }
     let raw;
     try {
-      raw = fs27.readFileSync(opts.file, "utf8");
+      raw = fs28.readFileSync(opts.file, "utf8");
     } catch (err) {
       console.error(pc29.red(`Cannot read envelope file: ${err.message}`));
       process.exitCode = 1;
@@ -20860,7 +21009,7 @@ function registerAuthoritySubcommands(parentCmd) {
     }
     let pem;
     try {
-      pem = fs27.readFileSync(opts.key, "utf8");
+      pem = fs28.readFileSync(opts.key, "utf8");
     } catch (err) {
       console.error(pc29.red(`Cannot read key file: ${err.message}`));
       process.exitCode = 1;
@@ -20944,13 +21093,13 @@ function box(lines) {
 function stripAnsi2(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
 }
-function terminalLink(label, href) {
+function terminalLink2(label, href) {
   return `\x1B]8;;${href}\x07${label}\x1B]8;;\x07`;
 }
 function folderOpenLabel(folderPath) {
   const href = pathToFileURL2(folderPath).href;
   const label = process.platform === "darwin" ? "Open in Finder" : process.platform === "win32" ? "Open in Explorer" : "Open folder";
-  return terminalLink(label, href);
+  return terminalLink2(label, href);
 }
 function renderProgressBar2(progress) {
   if (!process.stdout.isTTY) return;
@@ -21180,6 +21329,8 @@ async function runDownload(kitId, opts) {
   const result = downloadBundledKit(resolvedId, opts.out, {
     onProgress: renderProgressBar2
   });
+  track("kit_download_completed", { kit_id: resolvedId });
+  printActivationNudge("kit_download");
   console.log("");
   console.log(pc30.green(pc30.bold("Kit exported successfully.")));
   console.log("");
@@ -21318,6 +21469,7 @@ Examples:
       const result = downloadBundledKit(resolvedId, opts.out, {
         onProgress: renderProgressBar2
       });
+      track("kit_download_completed", { kit_id: resolvedId });
       console.log("");
       console.log(pc30.bold("Exported folder:"), pc30.cyan(result.folderPath));
       console.log(pc30.bold("Open folder:   "), folderOpenLabel(result.folderPath));
@@ -21347,7 +21499,7 @@ Examples:
   $ growthub kit validate ./my-kit
   $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
 `).action((kitPath) => {
-    const resolvedPath = path34.resolve(kitPath);
+    const resolvedPath = path35.resolve(kitPath);
     const result = validateKitDirectory(resolvedPath);
     console.log("");
     console.log(pc30.bold("Kit: " + result.kitId) + pc30.dim("  schema v" + result.schemaVersion));
@@ -21392,13 +21544,13 @@ Examples:
 }
 
 // src/commands/template.ts
-import path36 from "node:path";
+import path37 from "node:path";
 import * as p20 from "@clack/prompts";
 import pc31 from "picocolors";
 
 // src/templates/service.ts
-import fs28 from "node:fs";
-import path35 from "node:path";
+import fs29 from "node:fs";
+import path36 from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // src/templates/catalog.ts
@@ -21720,12 +21872,12 @@ var TEMPLATE_CATALOG = [
 
 // src/templates/service.ts
 function resolveSharedTemplatesRoot() {
-  const moduleDir = path35.dirname(fileURLToPath6(import.meta.url));
+  const moduleDir = path36.dirname(fileURLToPath6(import.meta.url));
   for (const candidate of [
-    path35.resolve(moduleDir, "../../assets/shared-templates"),
-    path35.resolve(moduleDir, "../assets/shared-templates")
+    path36.resolve(moduleDir, "../../assets/shared-templates"),
+    path36.resolve(moduleDir, "../assets/shared-templates")
   ]) {
-    if (fs28.existsSync(candidate)) return candidate;
+    if (fs29.existsSync(candidate)) return candidate;
   }
   throw new Error("Shared template assets not found at cli/assets/shared-templates/");
 }
@@ -21761,15 +21913,15 @@ function getArtifact(slugOrId) {
   const artifact = resolveSlug(slugOrId);
   if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
   const root = resolveSharedTemplatesRoot();
-  const absolutePath = path35.resolve(root, artifact.path);
-  if (!fs28.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
-  return { artifact, content: fs28.readFileSync(absolutePath, "utf8"), absolutePath };
+  const absolutePath = path36.resolve(root, artifact.path);
+  if (!fs29.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  return { artifact, content: fs29.readFileSync(absolutePath, "utf8"), absolutePath };
 }
 function copyArtifact(slugOrId, destDir) {
   const resolved = getArtifact(slugOrId);
-  fs28.mkdirSync(destDir, { recursive: true });
-  const destPath = path35.resolve(destDir, path35.basename(resolved.absolutePath));
-  fs28.copyFileSync(resolved.absolutePath, destPath);
+  fs29.mkdirSync(destDir, { recursive: true });
+  const destPath = path36.resolve(destDir, path36.basename(resolved.absolutePath));
+  fs29.copyFileSync(resolved.absolutePath, destPath);
   return destPath;
 }
 var GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta", "marketing-frameworks"];
@@ -22011,7 +22163,7 @@ async function runTemplatePicker(opts) {
       p20.cancel("Cancelled.");
       process.exit(0);
     }
-    const destDir = path36.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
+    const destDir = path37.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
     const destPath = copyArtifact(selected.id, destDir);
     p20.outro(pc31.green("Copied \u2192 ") + destPath);
     return "done";
@@ -22085,7 +22237,7 @@ Any agent or kit resolves them by slug.
       return;
     }
     if (opts.out) {
-      const destDir = path36.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
+      const destDir = path37.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
       try {
         const dest = copyArtifact(artifact.id, destDir);
         console.log(pc31.green("Copied \u2192 ") + dest);
@@ -23169,8 +23321,8 @@ Examples:
 // src/commands/pipeline.ts
 init_session_store();
 init_hosted_client();
-import fs32 from "node:fs";
-import path40 from "node:path";
+import fs33 from "node:fs";
+import path41 from "node:path";
 import * as p22 from "@clack/prompts";
 import pc34 from "picocolors";
 
@@ -23680,40 +23832,40 @@ function renderPreSaveReview(input) {
 
 // src/runtime/artifact-contracts/index.ts
 init_home();
-import fs29 from "node:fs";
-import path37 from "node:path";
+import fs30 from "node:fs";
+import path38 from "node:path";
 import { randomBytes as randomBytes7 } from "node:crypto";
 function generateArtifactId() {
   return `art_${randomBytes7(8).toString("hex")}`;
 }
 function resolveArtifactsDir() {
-  return path37.resolve(resolvePaperclipHomeDir(), "artifacts");
+  return path38.resolve(resolvePaperclipHomeDir(), "artifacts");
 }
 function resolveArtifactManifestPath(artifactId) {
-  return path37.resolve(resolveArtifactsDir(), `${artifactId}.json`);
+  return path38.resolve(resolveArtifactsDir(), `${artifactId}.json`);
 }
 function readLocalManifest(artifactId) {
   const filePath = resolveArtifactManifestPath(artifactId);
-  if (!fs29.existsSync(filePath)) return null;
+  if (!fs30.existsSync(filePath)) return null;
   try {
-    return JSON.parse(fs29.readFileSync(filePath, "utf-8"));
+    return JSON.parse(fs30.readFileSync(filePath, "utf-8"));
   } catch {
     return null;
   }
 }
 function writeLocalManifest(manifest) {
   const dir = resolveArtifactsDir();
-  fs29.mkdirSync(dir, { recursive: true });
+  fs30.mkdirSync(dir, { recursive: true });
   const filePath = resolveArtifactManifestPath(manifest.id);
-  fs29.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
+  fs30.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
 `, { mode: 384 });
 }
 function listLocalManifests() {
   const dir = resolveArtifactsDir();
-  if (!fs29.existsSync(dir)) return [];
-  return fs29.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
+  if (!fs30.existsSync(dir)) return [];
+  return fs30.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
     try {
-      const content = fs29.readFileSync(path37.resolve(dir, entry.name), "utf-8");
+      const content = fs30.readFileSync(path38.resolve(dir, entry.name), "utf-8");
       return JSON.parse(content);
     } catch {
       return null;
@@ -23791,8 +23943,8 @@ function createArtifactStore() {
 
 // src/runtime/native-intelligence/index.ts
 init_home();
-import fs31 from "node:fs";
-import path39 from "node:path";
+import fs32 from "node:fs";
+import path40 from "node:path";
 
 // src/runtime/native-intelligence/contract.ts
 var DEFAULT_INTELLIGENCE_CONFIG = {
@@ -25063,8 +25215,8 @@ function parseJsonSafe4(text69) {
 }
 
 // src/runtime/native-intelligence/marketing-context-builder.ts
-import fs30 from "node:fs";
-import path38 from "node:path";
+import fs31 from "node:fs";
+import path39 from "node:path";
 var CONTEXT_BUILDER_SYSTEM_PROMPT = `You are a marketing strategist drafting a product-marketing-context document.
 
 You receive project artifacts (README content, package.json metadata, any landing page content) and produce a structured product-marketing-context.md with 12 sections.
@@ -25083,17 +25235,17 @@ var MAX_ARTIFACT_LENGTH = 8e3;
 function scanProjectArtifacts(projectDir, existingContext) {
   const artifacts = { otherFiles: [] };
   for (const name of ["README.md", "readme.md", "Readme.md", "README"]) {
-    const readmePath = path38.join(projectDir, name);
-    if (fs30.existsSync(readmePath)) {
-      const content = fs30.readFileSync(readmePath, "utf-8");
+    const readmePath = path39.join(projectDir, name);
+    if (fs31.existsSync(readmePath)) {
+      const content = fs31.readFileSync(readmePath, "utf-8");
       artifacts.readme = content.slice(0, MAX_ARTIFACT_LENGTH);
       break;
     }
   }
-  const pkgPath = path38.join(projectDir, "package.json");
-  if (fs30.existsSync(pkgPath)) {
+  const pkgPath = path39.join(projectDir, "package.json");
+  if (fs31.existsSync(pkgPath)) {
     try {
-      artifacts.packageJson = JSON.parse(fs30.readFileSync(pkgPath, "utf-8"));
+      artifacts.packageJson = JSON.parse(fs31.readFileSync(pkgPath, "utf-8"));
     } catch {
     }
   }
@@ -25105,15 +25257,15 @@ function scanProjectArtifacts(projectDir, existingContext) {
       ".claude/product-marketing-context.md",
       "brands/_template/product-marketing-context.md"
     ]) {
-      const ctxPath = path38.join(projectDir, candidate);
-      if (fs30.existsSync(ctxPath)) {
-        artifacts.existingContext = fs30.readFileSync(ctxPath, "utf-8");
+      const ctxPath = path39.join(projectDir, candidate);
+      if (fs31.existsSync(ctxPath)) {
+        artifacts.existingContext = fs31.readFileSync(ctxPath, "utf-8");
         break;
       }
     }
   }
   for (const name of ["CONTRIBUTING.md", "AGENTS.md", "landing-page.md", "about.md"]) {
-    if (fs30.existsSync(path38.join(projectDir, name))) {
+    if (fs31.existsSync(path39.join(projectDir, name))) {
       artifacts.otherFiles.push(name);
     }
   }
@@ -25354,15 +25506,15 @@ function cleanMarkdownResponse(text69) {
 
 // src/runtime/native-intelligence/index.ts
 function resolveConfigPath2() {
-  return path39.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
+  return path40.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
 }
 function readIntelligenceConfig() {
   const configPath = resolveConfigPath2();
-  if (!fs31.existsSync(configPath)) {
+  if (!fs32.existsSync(configPath)) {
     return { ...DEFAULT_INTELLIGENCE_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs31.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs32.readFileSync(configPath, "utf-8"));
     return {
       modelId: validateModelId(raw.modelId),
       backendType: raw.backendType === "hosted" ? "hosted" : "local",
@@ -25379,8 +25531,8 @@ function readIntelligenceConfig() {
 }
 function writeIntelligenceConfig(config) {
   const configPath = resolveConfigPath2();
-  fs31.mkdirSync(path39.dirname(configPath), { recursive: true });
-  fs31.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
+  fs32.mkdirSync(path40.dirname(configPath), { recursive: true });
+  fs32.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
 `, "utf-8");
 }
 function validateModelId(id) {
@@ -25736,9 +25888,9 @@ async function runPipelineAssembler(opts) {
   }
 }
 function loadPipelineFromFileOrJson(input) {
-  const resolvedPath = path40.resolve(input);
-  if (fs32.existsSync(resolvedPath)) {
-    const content = fs32.readFileSync(resolvedPath, "utf-8");
+  const resolvedPath = path41.resolve(input);
+  if (fs33.existsSync(resolvedPath)) {
+    const content = fs33.readFileSync(resolvedPath, "utf-8");
     return deserializePipeline(JSON.parse(content));
   }
   try {
@@ -26283,8 +26435,8 @@ Examples:
 }
 
 // src/commands/workflow.ts
-import fs34 from "node:fs";
-import path42 from "node:path";
+import fs35 from "node:fs";
+import path43 from "node:path";
 import * as p23 from "@clack/prompts";
 import pc37 from "picocolors";
 init_session_store();
@@ -26292,15 +26444,15 @@ init_hosted_client();
 
 // src/runtime/workflow-hygiene/labels.ts
 init_home();
-import fs33 from "node:fs";
-import path41 from "node:path";
+import fs34 from "node:fs";
+import path42 from "node:path";
 function resolveStorePath() {
-  return path41.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
+  return path42.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
 }
 function readStoreFile(filePath) {
-  if (!fs33.existsSync(filePath)) return { records: [] };
+  if (!fs34.existsSync(filePath)) return { records: [] };
   try {
-    const raw = JSON.parse(fs33.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs34.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw.records)) return { records: [] };
     return raw;
   } catch {
@@ -26308,8 +26460,8 @@ function readStoreFile(filePath) {
   }
 }
 function writeStoreFile(filePath, data) {
-  fs33.mkdirSync(path41.dirname(filePath), { recursive: true });
-  fs33.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
+  fs34.mkdirSync(path42.dirname(filePath), { recursive: true });
+  fs34.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
 `, "utf-8");
 }
 function inferDefaultLabel(name, createdAt, versionCount) {
@@ -26410,16 +26562,16 @@ function box5(lines) {
   return [top, ...body, bottom].join("\n");
 }
 function resolveSavedWorkflowsDir() {
-  return path42.resolve(resolvePaperclipHomeDir(), "workflows");
+  return path43.resolve(resolvePaperclipHomeDir(), "workflows");
 }
 function resolveDeletedWorkflowIdsPath() {
-  return path42.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
+  return path43.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
 }
 function readDeletedWorkflowIds() {
   const filePath = resolveDeletedWorkflowIdsPath();
-  if (!fs34.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  if (!fs35.existsSync(filePath)) return /* @__PURE__ */ new Set();
   try {
-    const raw = JSON.parse(fs34.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs35.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
     return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
   } catch {
@@ -26428,8 +26580,8 @@ function readDeletedWorkflowIds() {
 }
 function writeDeletedWorkflowIds(ids) {
   const filePath = resolveDeletedWorkflowIdsPath();
-  fs34.mkdirSync(path42.dirname(filePath), { recursive: true });
-  fs34.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
+  fs35.mkdirSync(path43.dirname(filePath), { recursive: true });
+  fs35.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
 `, "utf-8");
 }
 function markWorkflowDeletedLocally(workflowId) {
@@ -26455,10 +26607,10 @@ function filterLocallyDeletedWorkflows(entries) {
 }
 function listLocalSavedWorkflows() {
   const dir = resolveSavedWorkflowsDir();
-  if (!fs34.existsSync(dir)) return [];
-  const entries = fs34.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
+  if (!fs35.existsSync(dir)) return [];
+  const entries = fs35.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
     try {
-      const raw = JSON.parse(fs34.readFileSync(path42.resolve(dir, e.name), "utf-8"));
+      const raw = JSON.parse(fs35.readFileSync(path43.resolve(dir, e.name), "utf-8"));
       const pipeline = raw.pipeline ?? raw;
       return {
         filename: e.name,
@@ -26519,11 +26671,11 @@ async function archiveSavedWorkflow(entry) {
     throw new Error("Local workflow entry is missing filename.");
   }
   const dir = resolveSavedWorkflowsDir();
-  const archiveDir = path42.resolve(dir, "archived");
-  fs34.mkdirSync(archiveDir, { recursive: true });
-  fs34.renameSync(
-    path42.resolve(dir, entry.filename),
-    path42.resolve(archiveDir, entry.filename)
+  const archiveDir = path43.resolve(dir, "archived");
+  fs35.mkdirSync(archiveDir, { recursive: true });
+  fs35.renameSync(
+    path43.resolve(dir, entry.filename),
+    path43.resolve(archiveDir, entry.filename)
   );
 }
 async function deleteSavedWorkflow(entry) {
@@ -26547,7 +26699,7 @@ async function deleteSavedWorkflow(entry) {
   if (!entry.filename) {
     throw new Error("Local workflow entry is missing filename.");
   }
-  fs34.rmSync(path42.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  fs35.rmSync(path43.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
   markWorkflowDeletedLocally(entry.workflowId);
 }
 async function loadSavedWorkflowDetail(entry) {
@@ -26566,7 +26718,7 @@ async function loadSavedWorkflowDetail(entry) {
     };
   }
   const dir = resolveSavedWorkflowsDir();
-  const content = fs34.readFileSync(path42.resolve(dir, entry.filename), "utf-8");
+  const content = fs35.readFileSync(path43.resolve(dir, entry.filename), "utf-8");
   const raw = JSON.parse(content);
   return {
     pipeline: raw.pipeline ?? raw,
@@ -27550,36 +27702,36 @@ import pc38 from "picocolors";
 
 // src/runtime/agent-harness/auth-store.ts
 init_home();
-import fs35 from "node:fs";
-import path43 from "node:path";
+import fs36 from "node:fs";
+import path44 from "node:path";
 function resolveHarnessAuthDir() {
-  return path43.resolve(resolvePaperclipHomeDir(), "harness-auth");
+  return path44.resolve(resolvePaperclipHomeDir(), "harness-auth");
 }
 function resolveHarnessAuthFile(harnessId) {
-  return path43.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
+  return path44.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
 }
 function normalizeSecret(value) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : void 0;
 }
 function ensureSecureDir(dirPath) {
-  fs35.mkdirSync(dirPath, { recursive: true });
+  fs36.mkdirSync(dirPath, { recursive: true });
   try {
-    fs35.chmodSync(dirPath, 448);
+    fs36.chmodSync(dirPath, 448);
   } catch {
   }
 }
 function ensureSecureFile(filePath) {
   try {
-    fs35.chmodSync(filePath, 384);
+    fs36.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessCredentials(harnessId) {
   const filePath = resolveHarnessAuthFile(harnessId);
-  if (!fs35.existsSync(filePath)) return {};
+  if (!fs36.existsSync(filePath)) return {};
   try {
-    const parsed = JSON.parse(fs35.readFileSync(filePath, "utf-8"));
+    const parsed = JSON.parse(fs36.readFileSync(filePath, "utf-8"));
     const creds = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value.trim().length > 0) {
@@ -27606,7 +27758,7 @@ function setHarnessCredential(harnessId, key, value) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs35.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs36.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -27623,7 +27775,7 @@ function setHarnessCredentials(harnessId, updates) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs35.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs36.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -27635,8 +27787,8 @@ function maskSecret(value) {
 
 // src/runtime/open-agents/index.ts
 init_home();
-import fs36 from "node:fs";
-import path44 from "node:path";
+import fs37 from "node:fs";
+import path45 from "node:path";
 
 // src/runtime/open-agents/contract.ts
 var DEFAULT_OPEN_AGENTS_CONFIG = {
@@ -27823,18 +27975,18 @@ var OpenAgentsBackendError = class extends Error {
 
 // src/runtime/open-agents/index.ts
 function resolveConfigPath3() {
-  return path44.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
+  return path45.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
 }
 function readOpenAgentsConfig() {
   const configPath = resolveConfigPath3();
-  if (!fs36.existsSync(configPath)) {
+  if (!fs37.existsSync(configPath)) {
     return {
       ...DEFAULT_OPEN_AGENTS_CONFIG,
       apiKey: getHarnessCredential("open-agents", "apiKey")
     };
   }
   try {
-    const raw = JSON.parse(fs36.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs37.readFileSync(configPath, "utf-8"));
     const storedApiKey = getHarnessCredential("open-agents", "apiKey");
     return {
       backendType: validateBackendType(raw.backendType),
@@ -27855,13 +28007,13 @@ function readOpenAgentsConfig() {
 }
 function writeOpenAgentsConfig(config) {
   const configPath = resolveConfigPath3();
-  fs36.mkdirSync(path44.dirname(configPath), { recursive: true });
+  fs37.mkdirSync(path45.dirname(configPath), { recursive: true });
   const persisted = {
     ...config,
     authMode: validateAuthMode(config.authMode),
     apiKey: void 0
   };
-  fs36.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
+  fs37.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
 `, "utf-8");
   setHarnessCredential("open-agents", "apiKey", config.apiKey);
 }
@@ -28422,8 +28574,8 @@ import pc39 from "picocolors";
 
 // src/runtime/qwen-code/index.ts
 init_home();
-import fs37 from "node:fs";
-import path45 from "node:path";
+import fs38 from "node:fs";
+import path46 from "node:path";
 
 // src/runtime/qwen-code/contract.ts
 var QWEN_CODE_APPROVAL_MODES = [
@@ -28641,19 +28793,19 @@ function buildSetupGuidance(env) {
 
 // src/runtime/qwen-code/index.ts
 function resolveConfigPath4() {
-  return path45.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
+  return path46.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
 }
 function readQwenCodeConfig() {
   const configPath = resolveConfigPath4();
   const storedCredentials = readHarnessCredentials("qwen-code");
-  if (!fs37.existsSync(configPath)) {
+  if (!fs38.existsSync(configPath)) {
     return {
       ...DEFAULT_QWEN_CODE_CONFIG,
       env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs37.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs38.readFileSync(configPath, "utf-8"));
     return {
       binaryPath: typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_QWEN_CODE_CONFIG.binaryPath,
       defaultModel: typeof raw.defaultModel === "string" ? raw.defaultModel : DEFAULT_QWEN_CODE_CONFIG.defaultModel,
@@ -28675,7 +28827,7 @@ function readQwenCodeConfig() {
 }
 function writeQwenCodeConfig(config) {
   const configPath = resolveConfigPath4();
-  fs37.mkdirSync(path45.dirname(configPath), { recursive: true });
+  fs38.mkdirSync(path46.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -28687,7 +28839,7 @@ function writeQwenCodeConfig(config) {
     publicEnv[key] = value;
   }
   setHarnessCredentials("qwen-code", credentialUpdates);
-  fs37.writeFileSync(
+  fs38.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -28937,32 +29089,32 @@ import pc41 from "picocolors";
 
 // src/runtime/t3code/index.ts
 init_home();
-import fs39 from "node:fs";
-import path47 from "node:path";
+import fs40 from "node:fs";
+import path48 from "node:path";
 
 // src/runtime/agent-harness/harness-profile.ts
 init_home();
-import fs38 from "node:fs";
-import path46 from "node:path";
+import fs39 from "node:fs";
+import path47 from "node:path";
 import * as p26 from "@clack/prompts";
 import pc40 from "picocolors";
 function resolveProfileDir(harnessId) {
-  return path46.resolve(resolvePaperclipHomeDir(), harnessId);
+  return path47.resolve(resolvePaperclipHomeDir(), harnessId);
 }
 function resolveProfilePath(harnessId) {
-  return path46.resolve(resolveProfileDir(harnessId), "growthub-profile.json");
+  return path47.resolve(resolveProfileDir(harnessId), "growthub-profile.json");
 }
 function ensureSecureFile2(filePath) {
   try {
-    fs38.chmodSync(filePath, 384);
+    fs39.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (!fs38.existsSync(filePath)) return null;
+  if (!fs39.existsSync(filePath)) return null;
   try {
-    const raw = JSON.parse(fs38.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs39.readFileSync(filePath, "utf-8"));
     if (typeof raw.workspaceId !== "string" || typeof raw.machineLabel !== "string") return null;
     return {
       profileVersion: 1,
@@ -28980,14 +29132,14 @@ function readHarnessProfile(harnessId) {
 function writeHarnessProfile(harnessId, profile) {
   const dirPath = resolveProfileDir(harnessId);
   const filePath = resolveProfilePath(harnessId);
-  fs38.mkdirSync(dirPath, { recursive: true });
-  fs38.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
+  fs39.mkdirSync(dirPath, { recursive: true });
+  fs39.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
 `, "utf-8");
   ensureSecureFile2(filePath);
 }
 function clearHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (fs38.existsSync(filePath)) fs38.rmSync(filePath);
+  if (fs39.existsSync(filePath)) fs39.rmSync(filePath);
 }
 function buildProfileStatusLines(harnessId, harnessLabel, profile) {
   if (!profile) {
@@ -29268,19 +29420,19 @@ function writeT3GrowthubProfile(profile) {
   writeHarnessProfile(T3_HARNESS_ID, profile);
 }
 function resolveConfigPath5() {
-  return path47.resolve(resolvePaperclipHomeDir(), "t3code", "config.json");
+  return path48.resolve(resolvePaperclipHomeDir(), "t3code", "config.json");
 }
 function readT3CodeConfig() {
   const configPath = resolveConfigPath5();
   const storedCredentials = readHarnessCredentials(T3_HARNESS_ID);
-  if (!fs39.existsSync(configPath)) {
+  if (!fs40.existsSync(configPath)) {
     return {
       ...DEFAULT_T3_CODE_CONFIG,
       env: mergeHarnessEnv2(DEFAULT_T3_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs39.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs40.readFileSync(configPath, "utf-8"));
     const profile = readHarnessProfile(T3_HARNESS_ID);
     const resolvedBinaryPath = profile?.forkBinaryPath ?? (typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_T3_CODE_CONFIG.binaryPath);
     return {
@@ -29303,7 +29455,7 @@ function readT3CodeConfig() {
 }
 function writeT3CodeConfig(config) {
   const configPath = resolveConfigPath5();
-  fs39.mkdirSync(path47.dirname(configPath), { recursive: true });
+  fs40.mkdirSync(path48.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -29315,7 +29467,7 @@ function writeT3CodeConfig(config) {
     }
   }
   setHarnessCredentials(T3_HARNESS_ID, credentialUpdates);
-  fs39.writeFileSync(
+  fs40.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -29697,8 +29849,8 @@ import pc44 from "picocolors";
 
 // src/status/probes.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
-import fs40 from "node:fs";
-import path48 from "node:path";
+import fs41 from "node:fs";
+import path49 from "node:path";
 var GITHUB_API = "https://api.github.com";
 var NPM_REGISTRY = "https://registry.npmjs.org";
 function isoNow() {
@@ -29863,7 +30015,7 @@ async function probeKitForksIndex(_timeoutMs) {
   try {
     const { resolveKitForksIndexPath: resolveKitForksIndexPath2 } = await Promise.resolve().then(() => (init_kit_forks_home(), kit_forks_home_exports));
     const p35 = resolveKitForksIndexPath2();
-    if (!fs40.existsSync(p35)) {
+    if (!fs41.existsSync(p35)) {
       return {
         componentId: "kit-forks-index",
         level: "operational",
@@ -29871,7 +30023,7 @@ async function probeKitForksIndex(_timeoutMs) {
         lastCheckedAt: isoNow()
       };
     }
-    const parsed = JSON.parse(fs40.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs41.readFileSync(p35, "utf8"));
     const count = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
     return {
       componentId: "kit-forks-index",
@@ -29940,10 +30092,10 @@ async function probeNode(_timeoutMs) {
   };
 }
 async function probeReleaseBundleArtifacts(_timeoutMs) {
-  const distPath = path48.resolve(process.cwd(), "cli/dist/index.js");
-  const installerPath = path48.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
-  const distOk = fs40.existsSync(distPath);
-  const installerOk = fs40.existsSync(installerPath);
+  const distPath = path49.resolve(process.cwd(), "cli/dist/index.js");
+  const installerPath = path49.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
+  const distOk = fs41.existsSync(distPath);
+  const installerOk = fs41.existsSync(installerPath);
   const ok = distOk && installerOk;
   return {
     componentId: "release-bundle",
@@ -30188,15 +30340,17 @@ function registerStatusCommands(program2) {
 }
 
 // src/commands/starter.ts
-init_init();
-init_table_renderer();
-init_source_import();
 import * as p31 from "@clack/prompts";
 import pc45 from "picocolors";
 import { pathToFileURL as pathToFileURL3 } from "node:url";
+init_init();
+init_table_renderer();
+init_source_import();
 async function runStarterInit(opts) {
   try {
     const result = await initStarterWorkspace(opts);
+    track("workspace_starter_created", { kit_id: result.kitId });
+    printActivationNudge("workspace_created");
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", ...result }, null, 2));
       return;
@@ -30223,13 +30377,13 @@ Next: ${pc45.dim(`growthub kit fork status ${result.forkId}`)}`
     process.exitCode = 1;
   }
 }
-function terminalLink2(label, href) {
+function terminalLink3(label, href) {
   return `\x1B]8;;${href}\x07${label}\x1B]8;;\x07`;
 }
 function folderOpenLabel2(folderPath) {
   const href = pathToFileURL3(folderPath).href;
   const label = process.platform === "darwin" ? "Open in Finder" : process.platform === "win32" ? "Open in Explorer" : "Open folder";
-  return terminalLink2(label, href);
+  return terminalLink3(label, href);
 }
 function formatSecuritySummary(result) {
   const findings = result.security.findings.length;
@@ -30270,6 +30424,9 @@ async function promptConfirmations(pending, securitySummary) {
 }
 async function runSourceImportCommand(opts) {
   const { input, json } = opts;
+  track(
+    input.source.kind === "github-repo" ? "starter_import_repo_started" : "starter_import_skill_started"
+  );
   try {
     const onProgressFromInput = input.onProgress;
     const onProgress = (step) => {
@@ -30281,6 +30438,7 @@ async function runSourceImportCommand(opts) {
       onProgress
     });
     if (job.status === "awaiting_confirmation") {
+      track("awaiting_confirmation_reached", { source_kind: job.sourceKind });
       if (json) {
         console.log(
           JSON.stringify(
@@ -30317,6 +30475,7 @@ async function runSourceImportCommand(opts) {
       return;
     }
     if (job.status === "failed" || !result) {
+      track("import_failed", { source_kind: job.sourceKind });
       const msg = job.error ?? "Import failed.";
       if (json) {
         console.log(JSON.stringify({ status: "error", error: msg, job: renderJob(job) }, null, 2));
@@ -30344,6 +30503,11 @@ async function runSourceImportCommand(opts) {
   }
 }
 function finalizeSuccess(result, jobId) {
+  track(
+    result.sourceKind === "github-repo" ? "starter_import_repo_completed" : "starter_import_skill_completed",
+    { import_mode: result.importMode }
+  );
+  printActivationNudge("import_completed");
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
   p31.outro(
     `Imported ${sourceLine} into ${pc45.cyan(result.forkPath)}
@@ -30490,7 +30654,7 @@ import pc46 from "picocolors";
 
 // src/fleet/summary.ts
 init_fork_registry();
-import fs50 from "node:fs";
+import fs51 from "node:fs";
 init_fork_policy();
 init_fork_trace();
 function classifyHealth(drift, pendingConfirmationJobs, lastJobStatus) {
@@ -30510,7 +30674,7 @@ var REMOTE_EVENT_TYPES = /* @__PURE__ */ new Set([
   "conflict_encountered"
 ]);
 function buildForkSummary(reg) {
-  if (!fs50.existsSync(reg.forkPath)) {
+  if (!fs51.existsSync(reg.forkPath)) {
     return {
       forkId: reg.forkId,
       kitId: reg.kitId,
@@ -30971,8 +31135,8 @@ async function fleetApprovals(opts) {
     p32.log.message(
       `  \xB7 ${pc46.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
     );
-    for (const path61 of entry.pendingPaths.slice(0, 6)) {
-      p32.log.message(`      ${pc46.dim("awaits")} ${path61}`);
+    for (const path62 of entry.pendingPaths.slice(0, 6)) {
+      p32.log.message(`      ${pc46.dim("awaits")} ${path62}`);
     }
     if (entry.pendingPaths.length > 6) {
       p32.log.message(`      ${pc46.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
@@ -31058,21 +31222,21 @@ var DEFAULT_MEMORY_PROVIDER_CONFIG = {
 
 // src/runtime/memory/store.ts
 init_home();
-import fs51 from "node:fs";
-import path58 from "node:path";
+import fs52 from "node:fs";
+import path59 from "node:path";
 function toProjectSlug(project) {
   return project.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "default";
 }
 function resolveProjectPath(project) {
-  return path58.resolve(resolveMemoryProjectsDir(), `${toProjectSlug(project)}.json`);
+  return path59.resolve(resolveMemoryProjectsDir(), `${toProjectSlug(project)}.json`);
 }
 function loadMemoryDatabase(project) {
   const filePath = resolveProjectPath(project);
-  if (!fs51.existsSync(filePath)) {
+  if (!fs52.existsSync(filePath)) {
     return { version: 1, project, observations: [], summaries: [], nextObservationId: 1, nextSummaryId: 1 };
   }
   try {
-    const raw = JSON.parse(fs51.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs52.readFileSync(filePath, "utf-8"));
     return {
       version: 1,
       project,
@@ -31087,9 +31251,9 @@ function loadMemoryDatabase(project) {
 }
 function saveMemoryDatabase(db) {
   const dir = resolveMemoryProjectsDir();
-  fs51.mkdirSync(dir, { recursive: true });
+  fs52.mkdirSync(dir, { recursive: true });
   const filePath = resolveProjectPath(db.project);
-  fs51.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
+  fs52.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
 `, "utf-8");
 }
 function addObservation(project, input) {
@@ -31183,8 +31347,8 @@ function incrementRelevanceCount(project, observationId) {
 }
 function listMemoryProjects() {
   const dir = resolveMemoryProjectsDir();
-  if (!fs51.existsSync(dir)) return [];
-  return fs51.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+  if (!fs52.existsSync(dir)) return [];
+  return fs52.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
 }
 function getMemoryStats(project) {
   const db = loadMemoryDatabase(project);
@@ -31196,15 +31360,15 @@ function getMemoryStats(project) {
   };
 }
 function resolveProviderConfigPath() {
-  return path58.resolve(resolveMemoryDir(), "provider-config.json");
+  return path59.resolve(resolveMemoryDir(), "provider-config.json");
 }
 function readProviderConfig() {
   const filePath = resolveProviderConfigPath();
-  if (!fs51.existsSync(filePath)) {
+  if (!fs52.existsSync(filePath)) {
     return { ...DEFAULT_MEMORY_PROVIDER_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs51.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs52.readFileSync(filePath, "utf-8"));
     return {
       provider: validateProvider(raw.provider),
       apiKey: typeof raw.apiKey === "string" ? raw.apiKey : void 0,
@@ -31217,9 +31381,9 @@ function readProviderConfig() {
 }
 function writeProviderConfig(config) {
   const dir = resolveMemoryDir();
-  fs51.mkdirSync(dir, { recursive: true });
+  fs52.mkdirSync(dir, { recursive: true });
   const filePath = resolveProviderConfigPath();
-  fs51.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
+  fs52.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
 `, { mode: 384 });
 }
 function validateProvider(value) {
@@ -31598,14 +31762,14 @@ async function syncMemoriesToHosted(project, options) {
 init_llm();
 function resolveCliVersion() {
   try {
-    const moduleDir = path60.dirname(fileURLToPath7(import.meta.url));
+    const moduleDir = path61.dirname(fileURLToPath7(import.meta.url));
     const candidates = [
-      path60.resolve(moduleDir, "../package.json"),
-      path60.resolve(moduleDir, "../../package.json")
+      path61.resolve(moduleDir, "../package.json"),
+      path61.resolve(moduleDir, "../../package.json")
     ];
     for (const candidate of candidates) {
-      if (!fs53.existsSync(candidate)) continue;
-      const parsed = JSON.parse(fs53.readFileSync(candidate, "utf8"));
+      if (!fs54.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs54.readFileSync(candidate, "utf8"));
       if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
     }
   } catch {
@@ -31832,7 +31996,7 @@ async function runMarketingContextBuilder(baseUrl, model) {
   });
   if (p34.isCancel(projectDir)) return;
   const dir = String(projectDir).trim() || process.cwd();
-  if (!fs53.existsSync(dir)) {
+  if (!fs54.existsSync(dir)) {
     p34.note(`Directory not found: ${dir}`, "Marketing Context Builder");
     return;
   }
@@ -31868,10 +32032,10 @@ async function runMarketingContextBuilder(baseUrl, model) {
       p34.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
       return;
     }
-    const outDir = path60.resolve(dir, ".agents");
-    fs53.mkdirSync(outDir, { recursive: true });
-    const outPath = path60.resolve(outDir, "product-marketing-context.md");
-    fs53.writeFileSync(outPath, result.contextMarkdown, "utf-8");
+    const outDir = path61.resolve(dir, ".agents");
+    fs54.mkdirSync(outDir, { recursive: true });
+    const outPath = path61.resolve(outDir, "product-marketing-context.md");
+    fs54.writeFileSync(outPath, result.contextMarkdown, "utf-8");
     p34.note(`Saved to: ${outPath}
 
 Review the file and replace [NEEDS INPUT] placeholders with real data.`, "Marketing Context Builder");
@@ -32080,39 +32244,39 @@ function captureSessionSummary(project, sessionId, messages) {
   }
 }
 function resolveLocalThreadsDir() {
-  return path60.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
+  return path61.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
 }
 function loadOrCreateLocalThread() {
   const dir = resolveLocalThreadsDir();
-  fs53.mkdirSync(dir, { recursive: true });
-  const activePath = path60.resolve(dir, "active-thread.json");
-  if (fs53.existsSync(activePath)) {
+  fs54.mkdirSync(dir, { recursive: true });
+  const activePath = path61.resolve(dir, "active-thread.json");
+  if (fs54.existsSync(activePath)) {
     try {
-      const parsed = JSON.parse(fs53.readFileSync(activePath, "utf-8"));
+      const parsed = JSON.parse(fs54.readFileSync(activePath, "utf-8"));
       const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
-      const threadFile = path60.resolve(dir, `${id2}.json`);
+      const threadFile = path61.resolve(dir, `${id2}.json`);
       const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
       return { id: id2, filePath: threadFile, messages };
     } catch {
     }
   }
   const id = `thread-${Date.now()}`;
-  const filePath = path60.resolve(dir, `${id}.json`);
+  const filePath = path61.resolve(dir, `${id}.json`);
   const thread = { id, filePath, messages: [] };
   saveLocalThread(thread);
   return thread;
 }
 function saveLocalThread(thread) {
   const dir = resolveLocalThreadsDir();
-  fs53.mkdirSync(dir, { recursive: true });
-  fs53.writeFileSync(
+  fs54.mkdirSync(dir, { recursive: true });
+  fs54.writeFileSync(
     thread.filePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
     "utf-8"
   );
-  const activePath = path60.resolve(dir, "active-thread.json");
-  fs53.writeFileSync(
+  const activePath = path61.resolve(dir, "active-thread.json");
+  fs54.writeFileSync(
     activePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
@@ -32258,7 +32422,7 @@ async function collectBindingsFromContract(contract, promptSeed) {
   return bindings;
 }
 function resolveCurrentProject() {
-  return path60.basename(process.cwd());
+  return path61.basename(process.cwd());
 }
 async function runMemoryKnowledgeHub() {
   const project = resolveCurrentProject();
@@ -32410,6 +32574,7 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
   }
 }
 async function runDiscoveryHub(opts) {
+  track("discover_opened");
   printPaperclipCliBanner();
   p34.intro("Growthub Local");
   while (true) {
@@ -32837,12 +33002,12 @@ function isInstallerMode() {
 }
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
-  const instancesDir = path60.resolve(homeDir, "instances");
-  if (!fs53.existsSync(instancesDir)) return [];
-  return fs53.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  const instancesDir = path61.resolve(homeDir, "instances");
+  if (!fs54.existsSync(instancesDir)) return [];
+  return fs54.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
-    const configPath = path60.resolve(instancesDir, instanceId, "config.json");
-    if (!fs53.existsSync(configPath)) return null;
+    const configPath = path61.resolve(instancesDir, instanceId, "config.json");
+    if (!fs54.existsSync(configPath)) return null;
     try {
       const config = readConfig(configPath);
       if (!config) return null;
@@ -33010,6 +33175,7 @@ if (surfaceRuntime.capabilities.dxEnabled) {
 } else {
   registerGtmCommands(program);
 }
+trackCliStart();
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
