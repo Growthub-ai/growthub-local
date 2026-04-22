@@ -61,6 +61,7 @@ import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
+import { registerMiniMaxM1Commands, runMiniMaxM1Hub } from "./commands/minimax-m1.js";
 import { registerT3CodeCommands, runT3CodeHub } from "./commands/t3code.js";
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
@@ -225,6 +226,7 @@ function registerSharedCommands(target: Command) {
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
+  registerMiniMaxM1Commands(target);
   registerT3CodeCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
@@ -1235,7 +1237,7 @@ async function runDiscoveryHub(opts?: {
         {
           value: "agent-harness",
           label: "🤖 Agent Harness",
-          hint: "Paperclip Local App + Open Agents + Qwen Code + T3 Code",
+          hint: "Paperclip Local App + Open Agents + Qwen Code + T3 Code + MiniMax-M1",
         },
         {
           value: "settings",
@@ -1268,7 +1270,7 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "help") {
       p.note(
         [
-          "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
+          "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, T3 Code CLI (pingdotgg/t3code), or MiniMax-M1 (1M-context MoE reasoning primitive).",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
           "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
@@ -1287,6 +1289,9 @@ async function runDiscoveryHub(opts?: {
           "growthub qwen-code",
           "growthub qwen-code health",
           "growthub qwen-code prompt \"...\"",
+          "growthub minimax-m1",
+          "growthub minimax-m1 health",
+          "growthub minimax-m1 prompt \"...\"",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",
@@ -1325,6 +1330,11 @@ async function runDiscoveryHub(opts?: {
               value: "t3code",
               label: "△ T3 Code CLI",
               hint: "T3 stack coding agent — prompt, session, Growthub profile (pingdotgg/t3code)",
+            },
+            {
+              value: "minimax-m1",
+              label: "🧠 MiniMax-M1",
+              hint: "1M-context MoE reasoning primitive — prompt, chat, vLLM serve helper",
             },
             {
               value: "__back_to_hub",
@@ -1469,6 +1479,13 @@ async function runDiscoveryHub(opts?: {
         if (harnessType === "t3code") {
           const t3Result = await runT3CodeHub({ allowBackToHub: true });
           if (t3Result === "back") continue;
+          return;
+        }
+
+        // -- MiniMax-M1 ------------------------------------------------------
+        if (harnessType === "minimax-m1") {
+          const minimaxResult = await runMiniMaxM1Hub({ allowBackToHub: true });
+          if (minimaxResult === "back") continue;
           return;
         }
       }
@@ -1828,6 +1845,14 @@ T3 Code CLI (agent harness):
     $ growthub t3code profile                   Show Growthub workspace profile status
     $ growthub t3code profile link              Link this harness to a Growthub workspace
     $ growthub t3code profile unlink            Remove the Growthub profile
+
+MiniMax-M1 (1M-context MoE reasoning primitive):
+    $ growthub minimax-m1                       Interactive hub — health, serve, prompt, chat, configure
+    $ growthub minimax-m1 health                Probe the configured endpoint and print setup guidance
+    $ growthub minimax-m1 serve                 Print a copy-pasteable \`vllm serve\` command
+    $ growthub minimax-m1 serve --variant 40k   Print serve command for the 40k thinking-budget variant
+    $ growthub minimax-m1 prompt "summarise..." Headless single-prompt generation
+    $ growthub minimax-m1 chat                  Governed chat session against the local endpoint
 
 Fork Sync Agent (keep forked worker kits in sync):
     $ growthub fork-sync                        Interactive hub — register, check drift, heal

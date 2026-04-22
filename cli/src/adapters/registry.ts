@@ -10,6 +10,7 @@ import { processCLIAdapter } from "./process/index.js";
 import { httpCLIAdapter } from "./http/index.js";
 import { openAgentsCLIAdapter } from "./open-agents/index.js";
 import { qwenLocalCLIAdapter } from "./qwen/index.js";
+import { miniMaxM1LocalCLIAdapter } from "./minimax-m1/index.js";
 
 const claudeLocalCLIAdapter: CLIAdapterModule = {
   type: "claude_local",
@@ -57,6 +58,7 @@ const adaptersByType = new Map<string, CLIAdapterModule>(
     openclawGatewayCLIAdapter,
     openAgentsCLIAdapter,
     qwenLocalCLIAdapter,
+    miniMaxM1LocalCLIAdapter,
     processCLIAdapter,
     httpCLIAdapter,
   ].map((a) => [a.type, a]),
