@@ -59,6 +59,21 @@ bash scripts/demo-cli.sh cli discover
 
 The preview must mirror the real CLI surface; do not document divergent menu trees.
 
+## Claude Skills
+
+Invokable Claude Code skills for this repo live under `.claude/skills/`. Each `SKILL.md` carries YAML frontmatter (`name`, `description`) and a markdown body, and resolves the CLI through a three-step environment-agnostic ladder (installed binary → `cli/dist/index.js` → `scripts/demo-cli.sh cli`), so they work identically on a maintainer's laptop, CI, or a fresh sandbox with only the source tree.
+
+Catalog:
+
+- `growthub-discover` — enter the discovery hub (`runDiscoveryHub` in `cli/src/index.ts`) and route to any lane
+- `growthub-video-generation` — one-true `video-generation` node with correct `refs[].dataUrl` bindings
+- `growthub-cms-sdk-v1` — public `@growthub/api-contract` package usage (types, events, manifests, schemas)
+- `growthub-kit-fork-authority` — `growthub kit fork` + ed25519-signed authority attestations
+- `growthub-t3code-harness` — T3 Code CLI health / prompt / session / profile
+- `growthub-marketing-operator` — dispatch marketing intent to the correct skill + framework + template in `growthub-marketing-skills-v1`
+
+Authoring rules and conventions are documented in `.claude/skills/README.md`. Add new skills there rather than widening any existing one.
+
 ## Type-Checking & Tests
 
 The `cli` package requires devDependencies installed before type checks or tests will pass. Run `pnpm install` from the repo root first.

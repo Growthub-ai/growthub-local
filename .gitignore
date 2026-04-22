@@ -35,3 +35,6 @@ docs/FROZEN_*.md
 # Keep SDK package dist in source control for release tarball checks
 !packages/api-contract/dist/
 !packages/api-contract/dist/**
+
+# Keep repo-committed Claude Code skills (overrides the generic SKILL.md ignore)
+!.claude/skills/**/SKILL.md
