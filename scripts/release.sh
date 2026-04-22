@@ -36,11 +36,13 @@ done
 # Read versions from package.json files
 CLI_VERSION=$(jq -r '.version' cli/package.json)
 CREATE_VERSION=$(jq -r '.version' packages/create-growthub-local/package.json)
+API_CONTRACT_VERSION=$(jq -r '.version' packages/api-contract/package.json)
 
 echo "=== Growthub Local Release ==="
 echo "Mode: $MODE"
 echo "CLI version: $CLI_VERSION"
 echo "@growthub/create-growthub-local version: $CREATE_VERSION"
+echo "@growthub/api-contract version: $API_CONTRACT_VERSION"
 echo "Dry run: $DRY_RUN"
 echo ""
 
@@ -52,6 +54,11 @@ fi
 
 if [ ! -f "packages/create-growthub-local/bin/create-growthub-local.mjs" ]; then
   echo "❌ packages/create-growthub-local/bin/create-growthub-local.mjs not found"
+  exit 1
+fi
+
+if [ ! -f "packages/api-contract/dist/index.js" ]; then
+  echo "❌ packages/api-contract/dist/index.js not found"
   exit 1
 fi
 
@@ -125,9 +132,20 @@ else
 fi
 
 echo ""
+# Publish api-contract
+echo "Publishing @growthub/api-contract@${API_CONTRACT_VERSION}..."
+if [ "$DRY_RUN" = true ]; then
+  echo "[DRY RUN] npm publish packages/api-contract/ $PUBLISH_ARGS"
+else
+  npm publish packages/api-contract/ $PUBLISH_ARGS
+  echo "✓ @growthub/api-contract@${API_CONTRACT_VERSION} published"
+fi
+
+echo ""
 echo "=== Release Complete ==="
 echo "CLI: @growthub/cli@${CLI_VERSION}"
 echo "Installer: @growthub/create-growthub-local@${CREATE_VERSION}"
+echo "API contract: @growthub/api-contract@${API_CONTRACT_VERSION}"
 
 # Cleanup
 rm -f ~/.npmrc

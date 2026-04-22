@@ -38,15 +38,31 @@ function run(command, args, cwd) {
 
 const cliPkg = readJson("cli/package.json");
 const createPkg = readJson("packages/create-growthub-local/package.json");
+const apiContractPkg = readJson("packages/api-contract/package.json");
 
 assert(cliPkg.name === "@growthub/cli", "cli/package.json must publish @growthub/cli");
 assert(createPkg.name === "@growthub/create-growthub-local", "packages/create-growthub-local/package.json must publish @growthub/create-growthub-local");
+assert(apiContractPkg.name === "@growthub/api-contract", "packages/api-contract/package.json must publish @growthub/api-contract");
 assert(
   createPkg.dependencies?.["@growthub/cli"] === cliPkg.version,
   `@growthub/create-growthub-local must depend on @growthub/cli@${cliPkg.version}`,
 );
 
 for (const pkg of [cliPkg, createPkg]) {
+  assert(
+    String(pkg.repository?.url || "").includes("Growthub-ai/growthub-local"),
+    `${pkg.name} repository URL must point at Growthub-ai/growthub-local`,
+  );
+  assert(
+    String(pkg.homepage || "").includes("Growthub-ai/growthub-local"),
+    `${pkg.name} homepage must point at Growthub-ai/growthub-local`,
+  );
+  assert(
+    String(pkg.bugs?.url || "").includes("Growthub-ai/growthub-local"),
+    `${pkg.name} bugs URL must point at Growthub-ai/growthub-local`,
+  );
+}
+for (const pkg of [apiContractPkg]) {
   assert(
     String(pkg.repository?.url || "").includes("Growthub-ai/growthub-local"),
     `${pkg.name} repository URL must point at Growthub-ai/growthub-local`,
@@ -102,6 +118,7 @@ assert(
 
 const cliPack = run("npm", ["pack", "--dry-run"], path.join(root, "cli"));
 const createPack = run("npm", ["pack", "--dry-run"], path.join(root, "packages/create-growthub-local"));
+const apiContractPack = run("npm", ["pack", "--dry-run"], path.join(root, "packages/api-contract"));
 
 assert(
   cliPack.includes("dist/runtime/server/dist/app.js"),
@@ -127,10 +144,18 @@ assert(
   createPack.includes("bin/create-growthub-local.mjs"),
   "create-growthub-local tarball is missing installer entrypoint",
 );
+assert(
+  apiContractPack.includes("dist/index.js"),
+  "api-contract tarball is missing dist/index.js",
+);
+assert(
+  apiContractPack.includes("dist/index.d.ts"),
+  "api-contract tarball is missing dist/index.d.ts",
+);
 
 // Leak-prevention: block debug/source artifacts from escaping into published tarballs
 const leakBlockers = ["src.zip", "r2.dev"];
-for (const pack of [cliPack, createPack]) {
+for (const pack of [cliPack, createPack, apiContractPack]) {
   for (const pattern of leakBlockers) {
     assert(!pack.includes(pattern), `Release blocked: ${pattern} artifact detected in tarball`);
   }
@@ -150,5 +175,6 @@ process.stdout.write(
     `release:check passed`,
     `@growthub/cli@${cliPkg.version}`,
     `@growthub/create-growthub-local@${createPkg.version}`,
+    `@growthub/api-contract@${apiContractPkg.version}`,
   ].join("\n") + "\n",
 );
