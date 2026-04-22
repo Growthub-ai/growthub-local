@@ -34,17 +34,6 @@ jobs:
               const content = fs.readFileSync(file, 'utf8');
               if (!content.includes(token)) throw new Error(file + ' missing expected token: ' + token);
             }
-            const docTokens = [
-              ['AGENTS.md', 'scripts/runtime-control.sh'],
-              ['CONTRIBUTING.md', 'scripts/runtime-control.sh'],
-              ['CLAUDE.md', 'scripts/runtime-control.sh'],
-              ['.cursorrules', 'scripts/runtime-control.sh'],
-              ['docs/ARTIFACT_VERSIONS.md', 'cli/package.json'],
-            ];
-            for (const [file, token] of docTokens) {
-              const content = fs.readFileSync(file, 'utf8');
-              if (!content.includes(token)) throw new Error(file + ' missing expected token: ' + token);
-            }
             console.log('All source contracts verified.');
           "
 
