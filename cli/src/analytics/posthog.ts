@@ -6,18 +6,48 @@
  * full event taxonomy.
  *
  * Opt-out: set GROWTHUB_TELEMETRY_DISABLED=true
- * API key: set GROWTHUB_POSTHOG_API_KEY=<your-project-key>
- * Host:    set GROWTHUB_POSTHOG_HOST=<custom-host> (defaults to app.posthog.com)
+ * API key: set GROWTHUB_POSTHOG_API_KEY or NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN
+ * Host:    set GROWTHUB_POSTHOG_HOST or NEXT_PUBLIC_POSTHOG_HOST
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolvePaperclipHomeDir } from "../config/home.js";
+import { readSession, isSessionExpired } from "../auth/session-store.js";
 
-const POSTHOG_HOST = (process.env.GROWTHUB_POSTHOG_HOST ?? "").trim() || "https://app.posthog.com";
+function resolveHost(): string {
+  return (
+    (process.env.GROWTHUB_POSTHOG_HOST ?? "").trim()
+    || (process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "").trim()
+    || "https://us.posthog.com"
+  );
+}
 
 function apiKey(): string {
-  return (process.env.GROWTHUB_POSTHOG_API_KEY ?? "").trim();
+  return (
+    (process.env.GROWTHUB_POSTHOG_API_KEY ?? "").trim()
+    || (process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "").trim()
+  );
+}
+
+function debugEnabled(): boolean {
+  return process.env.GROWTHUB_POSTHOG_DEBUG === "true";
+}
+
+function resolveHostedIdentity(): { userId: string | null; email: string | null } {
+  if (_hostedUserId !== null || _hostedEmail !== null) {
+    return { userId: _hostedUserId, email: _hostedEmail };
+  }
+  const session = readSession();
+  if (session && !isSessionExpired(session)) {
+    if (typeof session.userId === "string" && session.userId.length > 0) {
+      _hostedUserId = session.userId;
+    }
+    if (typeof session.email === "string" && session.email.length > 0) {
+      _hostedEmail = session.email;
+    }
+  }
+  return { userId: _hostedUserId, email: _hostedEmail };
 }
 
 function isDisabled(): boolean {
@@ -32,6 +62,7 @@ function isDisabled(): boolean {
 let _machineId: string | null = null;
 let _isFirstRun = false;
 let _hostedUserId: string | null = null;
+let _hostedEmail: string | null = null;
 
 function analyticsIdPath(): string {
   return path.resolve(resolvePaperclipHomeDir(), "analytics-machine-id");
@@ -109,6 +140,8 @@ export function track(event: GrowthubAnalyticsEvent, properties?: SafeProperties
 
   const distinctId = ensureMachineId();
   const key = apiKey();
+  const host = resolveHost();
+  const identity = resolveHostedIdentity();
 
   const body = JSON.stringify({
     api_key: key,
@@ -118,18 +151,40 @@ export function track(event: GrowthubAnalyticsEvent, properties?: SafeProperties
       ...properties,
       $lib: "growthub-cli",
       platform: process.platform,
-      ...(_hostedUserId !== null ? { hosted_user_id: _hostedUserId } : {}),
+      ...(identity.userId !== null ? { hosted_user_id: identity.userId } : {}),
+      ...(identity.email !== null ? { hosted_email: identity.email } : {}),
     },
     timestamp: new Date().toISOString(),
   });
 
   // Fire-and-forget — analytics must never block or crash the CLI.
-  fetch(`${POSTHOG_HOST}/capture/`, {
+  fetch(`${host}/capture/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
     signal: AbortSignal.timeout(5000),
-  }).catch(() => undefined);
+  })
+    .then(async (response) => {
+      if (response.ok) {
+        if (debugEnabled()) {
+          console.error(
+            `[posthog] captured ${event} (${response.status})`
+            + ` user=${identity.userId ?? "none"}`
+            + ` email=${identity.email ?? "none"}`,
+          );
+        }
+        return;
+      }
+      if (debugEnabled()) {
+        const text = await response.text().catch(() => "");
+        console.error(`[posthog] failed ${event} (${response.status}) ${text.slice(0, 240)}`);
+      }
+    })
+    .catch((err) => {
+      if (debugEnabled()) {
+        console.error(`[posthog] error ${event}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -154,18 +209,9 @@ export function trackCliStart(): void {
 const ACTIVATION_URL = "https://www.growthub.ai/";
 
 function isAlreadyConnected(): boolean {
-  try {
-    // Dynamic require avoids circular deps — session-store has no analytics dep.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const store = require("../auth/session-store.js") as {
-      readSession: () => unknown;
-      isSessionExpired: (s: unknown) => boolean;
-    };
-    const session = store.readSession();
-    return Boolean(session) && !store.isSessionExpired(session);
-  } catch {
-    return false;
-  }
+  const session = readSession();
+  if (!session) return false;
+  return !isSessionExpired(session);
 }
 
 function terminalLink(label: string, href: string): string {

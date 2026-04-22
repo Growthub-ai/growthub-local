@@ -560,6 +560,8 @@ Examples:
         const result = downloadBundledKit(resolvedId, opts.out, {
           onProgress: renderProgressBar,
         });
+        // Preserve the existing --yes output surface while still recording telemetry.
+        track("kit_download_completed", { kit_id: resolvedId });
         console.log("");
         console.log(pc.bold("Exported folder:"), pc.cyan(result.folderPath));
         console.log(pc.bold("Open folder:   "), folderOpenLabel(result.folderPath));
