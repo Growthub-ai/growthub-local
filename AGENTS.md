@@ -54,10 +54,32 @@ Primary user discovery entrypoints are:
 For local preview/debug parity, use:
 
 ```bash
-zsh /Users/antonio/growthub-local/scripts/demo-cli.sh cli discover
+bash scripts/demo-cli.sh cli discover
 ```
 
 The preview must mirror the real CLI surface; do not document divergent menu trees.
+
+## Type-Checking & Tests
+
+The `cli` package requires devDependencies installed before type checks or tests will pass. Run `pnpm install` from the repo root first.
+
+```bash
+# Source-only type check (excludes __tests__)
+pnpm --filter @growthub/cli exec tsc --noEmit
+
+# Test type check (includes __tests__, resolves vitest globals)
+pnpm --filter @growthub/cli exec tsc --noEmit -p tsconfig.test.json
+
+# Run all CLI tests
+pnpm --filter @growthub/cli exec vitest run
+```
+
+Two tsconfig files govern the CLI:
+
+- `cli/tsconfig.json` — production source compilation; excludes `src/__tests__`
+- `cli/tsconfig.test.json` — test type-checking only; adds `vitest/globals`, re-includes `__tests__`
+
+Cloud agents blocked on `Cannot find name 'process'` or `Cannot find module 'vitest'` need `pnpm install` run first; after that the devDependencies resolve and both tsconfigs pass cleanly.
 
 ## Contribution Guardrails
 
