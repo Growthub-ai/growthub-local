@@ -67,6 +67,11 @@ import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
+import { registerEnvironmentCommands, runEnvironmentHub } from "./commands/environment.js";
+import { registerChatCommands, runChat } from "./commands/chat.js";
+import { registerAuthorityCommands } from "./commands/authority.js";
+import { registerPolicyCommands } from "./commands/policy.js";
+import { registerOrgCommands } from "./commands/org.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
@@ -1211,6 +1216,16 @@ async function runDiscoveryHub(opts?: {
       message: "What do you want to do first?",
       options: [
         {
+          value: "environment",
+          label: "🧭 Environment Management",
+          hint: "Local fork · Hosted account · Bridge health in one pane",
+        },
+        {
+          value: "chat",
+          label: "💬 Chat",
+          hint: "Streaming chat with slash commands backed by the CMS registry",
+        },
+        {
           value: "kits",
           label: "🧰 Worker Kits",
           hint: "Self-contained workspace environments for agents",
@@ -1270,6 +1285,8 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "help") {
       p.note(
         [
+          "🧭 Environment Management: one-pane view of Local fork state, Hosted account, and Bridge health — refresh the capability manifest, inspect drift, jump into fleet / statuspage.",
+          "💬 Chat: streaming conversational surface with slash commands (/registry, /plan, /generate) wired into the CMS registry and native intelligence.",
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "🧰 Worker Kits: browse specialized agents and custom workspaces.",
           "📚 Templates: browse reusable artifact templates by library type.",
@@ -1281,6 +1298,23 @@ async function runDiscoveryHub(opts?: {
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
           "",
           "Direct commands:",
+          "growthub environment",
+          "growthub environment snapshot",
+          "growthub environment refresh",
+          "growthub chat",
+          "growthub chat \"one-shot prompt\"",
+          "growthub authority show",
+          "growthub authority verify",
+          "growthub authority issuers",
+          "growthub policy show",
+          "growthub policy check <slug>",
+          "growthub policy providers",
+          "growthub org show",
+          "growthub org entitlements",
+          "growthub org gated",
+          "growthub capability refresh",
+          "growthub capability register <file>",
+          "growthub capability diff",
           "growthub auth login",
           "growthub auth whoami",
           "growthub kit",
@@ -1300,6 +1334,17 @@ async function runDiscoveryHub(opts?: {
         ].join("\n"),
         "Growthub CLI Help",
       );
+      continue;
+    }
+
+    if (surfaceChoice === "environment") {
+      const envResult = await runEnvironmentHub({ allowBackToHub: true });
+      if (envResult === "back") continue;
+      return;
+    }
+
+    if (surfaceChoice === "chat") {
+      await runChat({});
       continue;
     }
 
@@ -1875,6 +1920,11 @@ registerIntegrationsCommands(program);
 registerStatusCommands(program);
 registerStarterCommands(program);
 registerFleetCommands(program);
+registerEnvironmentCommands(program);
+registerChatCommands(program);
+registerAuthorityCommands(program);
+registerPolicyCommands(program);
+registerOrgCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

@@ -289,6 +289,8 @@ Growthub Local is intentionally split into:
 
 The CLI is multiple product surfaces, not one. The public docs and READMEs expose these core lanes:
 
+- **Environment Management** — Local fork · Hosted account · Bridge health in one pane
+- **Chat** — streaming conversational surface with slash commands wired into the CMS registry
 - **Agent Harness**
 - **Worker Kits**
 - **Templates**
@@ -301,6 +303,21 @@ The CLI is multiple product surfaces, not one. The public docs and READMEs expos
 ```bash
 growthub
 growthub discover
+
+growthub environment
+growthub environment snapshot --json
+growthub capability refresh
+growthub capability diff
+growthub capability register ./my-extension.json
+
+growthub chat
+growthub chat "plan a post-launch recap video"
+
+growthub authority show
+growthub authority verify
+growthub policy show
+growthub policy check <slug>
+growthub org show
 
 growthub kit
 growthub template
@@ -464,6 +481,9 @@ This keeps the mental model intact:
 
 ### Start here
 
+- [Growthub API v1](./docs/GROWTHUB_API_V1.md)
+- [CMS Node Manifest Registry](./docs/CMS_NODE_MANIFEST_REGISTRY.md)
+- [Enterprise Management Surface](./docs/ENTERPRISE_MANAGEMENT.md)
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)

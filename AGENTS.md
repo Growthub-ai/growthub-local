@@ -22,10 +22,14 @@ If any repo doc conflicts with that sequence, update or remove the conflicting d
 When behavior conflicts, use this order:
 
 1. `README.md`
-2. `cli/src/index.ts`
-3. `cli/src/commands/`
-4. `scripts/runtime-control.sh`
-5. focused docs in `docs/`
+2. `packages/growthub-api-contract/src/` (v1 types — canonical)
+3. `cli/src/index.ts`
+4. `cli/src/commands/`
+5. `scripts/runtime-control.sh`
+6. focused docs in `docs/`
+
+The v1 API contract lives in `@growthub/api-contract`. Do not duplicate
+its types anywhere else — re-export or import directly.
 
 Do not preserve older prose "for history" in active docs.
 

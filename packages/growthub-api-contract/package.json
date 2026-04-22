@@ -1,0 +1,72 @@
+{
+  "name": "@growthub/api-contract",
+  "version": "1.0.0",
+  "description": "Growthub API v1 — canonical type contract shared by the CLI, hosted server, and external adapter authors. Defines capability registry, pipeline, execution, provider, manifest, metrics, and route primitives.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Growthub-ai/growthub-local",
+    "directory": "packages/growthub-api-contract"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./capabilities": "./src/capabilities.ts",
+    "./pipelines": "./src/pipelines.ts",
+    "./execute": "./src/execute.ts",
+    "./provider": "./src/provider.ts",
+    "./manifest": "./src/manifest.ts",
+    "./metrics": "./src/metrics.ts",
+    "./routes": "./src/routes.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./capabilities": {
+        "types": "./dist/capabilities.d.ts",
+        "import": "./dist/capabilities.js"
+      },
+      "./pipelines": {
+        "types": "./dist/pipelines.d.ts",
+        "import": "./dist/pipelines.js"
+      },
+      "./execute": {
+        "types": "./dist/execute.d.ts",
+        "import": "./dist/execute.js"
+      },
+      "./provider": {
+        "types": "./dist/provider.d.ts",
+        "import": "./dist/provider.js"
+      },
+      "./manifest": {
+        "types": "./dist/manifest.d.ts",
+        "import": "./dist/manifest.js"
+      },
+      "./metrics": {
+        "types": "./dist/metrics.d.ts",
+        "import": "./dist/metrics.js"
+      },
+      "./routes": {
+        "types": "./dist/routes.d.ts",
+        "import": "./dist/routes.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

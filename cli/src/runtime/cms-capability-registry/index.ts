@@ -2,17 +2,18 @@
  * CMS Capability Registry Client
  *
  * Treats the CMS-backed node/tool definitions as a first-class registry for
- * the CLI/runtime. This layer lets agents discover:
- *   - which core node primitives exist
- *   - which are available to the authenticated user/org
- *   - how they bind into pipelines
- *   - what execution shape they require
+ * the CLI/runtime. Layers:
  *
- * Data source:
- *   - Hosted registry endpoint via HostedExecutionClient
+ *   1. Hosted authority   — GET /api/cli/capabilities
+ *   2. On-disk TTL cache  — ~/.paperclip/manifests/<host>.capabilities.json
+ *   3. Local extensions   — <forkPath>/.growthub-fork/capabilities/*.json
+ *   4. Hosted-derived     — reconstructed from saved workflows when the
+ *                           registry endpoint is absent (legacy path)
  *
- * The registry does NOT reimplement CMS semantics — it exposes them as
- * CLI/runtime-friendly node records.
+ * Reads layer in this order: cache (when fresh) → hosted (refresh on miss
+ * / when forced) → local extensions merged on top. Provenance is preserved
+ * on every node so agents, renderers, and diffs can explain where each
+ * capability came from.
  */
 
 import {
@@ -26,7 +27,27 @@ import type {
   CapabilityFamily,
   CapabilityQuery,
   CapabilityRegistryMeta,
-} from "./types.js";
+  CapabilitySource,
+} from "@growthub/api-contract/capabilities";
+import {
+  buildCapabilityManifestEnvelope,
+  computeManifestDrift,
+  type CapabilityManifestEnvelope,
+  type ManifestDriftReport,
+} from "./manifest.js";
+import {
+  readCachedManifest,
+  writeCachedManifest,
+  clearCachedManifest,
+  resolveManifestCachePath,
+  CAPABILITY_CACHE_DEFAULT_TTL_SECONDS,
+} from "./cache.js";
+import {
+  readLocalCapabilityExtensions,
+  mergeLocalExtensions,
+  resolveLocalExtensionDir,
+  type LocalExtensionScanResult,
+} from "./local-extensions.js";
 
 export type {
   CmsCapabilityNode,
@@ -39,15 +60,42 @@ export type {
   CmsVisibility,
   CmsExecutionBinding,
   CmsExecutionTokens,
+  CapabilitySource,
+  CapabilityProvenance,
 } from "./types.js";
 
 export { CAPABILITY_FAMILIES } from "./types.js";
+export {
+  hashCapabilityNodes,
+  buildCapabilityManifestEnvelope,
+  computeManifestDrift,
+  type CapabilityManifestEnvelope,
+  type ManifestDriftReport,
+} from "./manifest.js";
+export {
+  readLocalCapabilityExtensions,
+  resolveLocalExtensionDir,
+  mergeLocalExtensions,
+  LOCAL_EXTENSIONS_DIRNAME,
+} from "./local-extensions.js";
+export {
+  validateCmsCapabilityNode,
+  validateLocalCapabilityExtension,
+} from "./schema.js";
+export {
+  resolveManifestCachePath,
+  clearCachedManifest,
+  CAPABILITY_CACHE_DEFAULT_TTL_SECONDS,
+} from "./cache.js";
 
 // ---------------------------------------------------------------------------
 // Normalize hosted records to CmsCapabilityNode
 // ---------------------------------------------------------------------------
 
-function toCapabilityNode(record: HostedCapabilityRecord): CmsCapabilityNode {
+function toCapabilityNode(
+  record: HostedCapabilityRecord,
+  provenance: { source: CapabilitySource; sourceUrl?: string; fetchedAt: string; manifestHash?: string },
+): CmsCapabilityNode {
   const familyMap: Record<string, CapabilityFamily> = {
     video: "video",
     image: "image",
@@ -93,6 +141,12 @@ function toCapabilityNode(record: HostedCapabilityRecord): CmsCapabilityNode {
     visibility: (typeof metadata.visibility === "string" ? metadata.visibility : "authenticated") as "public" | "authenticated" | "admin",
     description: typeof metadata.description === "string" ? metadata.description : undefined,
     manifestMetadata: metadata,
+    provenance: {
+      source: provenance.source,
+      sourceUrl: provenance.sourceUrl,
+      fetchedAt: provenance.fetchedAt,
+      manifestHash: provenance.manifestHash,
+    },
   };
 }
 
@@ -164,6 +218,7 @@ function matchesQuery(node: CmsCapabilityNode, query: CapabilityQuery): boolean 
   if (query.executionKind && node.executionKind !== query.executionKind) return false;
   if (query.outputType && !node.outputTypes.includes(query.outputType)) return false;
   if (query.slug && !node.slug.includes(query.slug)) return false;
+  if (query.source && node.provenance?.source !== query.source) return false;
   if (query.search) {
     const term = query.search.toLowerCase();
     const haystack = `${node.slug} ${node.displayName} ${node.description ?? ""} ${node.category}`.toLowerCase();
@@ -176,44 +231,161 @@ function matchesQuery(node: CmsCapabilityNode, query: CapabilityQuery): boolean 
 // Registry client
 // ---------------------------------------------------------------------------
 
-export interface CmsCapabilityRegistryClient {
-  /** Fetch all capabilities, optionally filtered. */
-  listCapabilities(query?: CapabilityQuery): Promise<{ nodes: CmsCapabilityNode[]; meta: CapabilityRegistryMeta }>;
-  /** Fetch a single capability by slug. */
-  getCapability(slug: string): Promise<CmsCapabilityNode | null>;
+export interface CapabilityRefreshResult {
+  envelope: CapabilityManifestEnvelope;
+  cachePath: string;
+  drift: ManifestDriftReport;
 }
 
-export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient {
+export interface CmsCapabilityRegistryClient {
+  /** Fetch all capabilities, optionally filtered. Uses cache + local extensions. */
+  listCapabilities(query?: CapabilityQuery): Promise<{ nodes: CmsCapabilityNode[]; meta: CapabilityRegistryMeta }>;
+  /** Fetch a single capability by slug (uses the same merge pipeline). */
+  getCapability(slug: string): Promise<CmsCapabilityNode | null>;
+  /** Force a hosted refresh, rewriting the cache and reporting drift. */
+  refresh(opts?: { ttlSeconds?: number }): Promise<CapabilityRefreshResult>;
+  /** Read cached envelope without touching hosted (null if no cache). */
+  readCachedEnvelope(): CapabilityManifestEnvelope | null;
+  /** Drop the on-disk cache; next read re-fetches. */
+  clearCache(): boolean;
+  /** Scan local extensions under registered forks (no hosted call). */
+  scanLocalExtensions(): LocalExtensionScanResult;
+}
+
+export interface CmsCapabilityRegistryClientOptions {
+  /** Cache TTL in seconds. Defaults to the hosted suggested TTL or 5 min. */
+  ttlSeconds?: number;
+  /** If true, bypass the on-disk cache and fetch hosted every time. */
+  bypassCache?: boolean;
+}
+
+function resolveHostedBaseUrl(): string {
+  const session = readSession();
+  return session?.hostedBaseUrl ?? "https://app.growthub.local";
+}
+
+async function fetchHostedEnvelope(opts: { sourceUrl: string }): Promise<CapabilityManifestEnvelope> {
+  const executionClient = createHostedExecutionClient();
+  let hostedRecords = await executionClient.getHostedCapabilities();
+  let derived = false;
+  if (hostedRecords.length === 0) {
+    hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
+    derived = true;
+  }
+  if (hostedRecords.length === 0) {
+    throw new Error(
+      "Hosted capability registry returned zero nodes. No local fallback is enabled.",
+    );
+  }
+  const fetchedAt = new Date().toISOString();
+  const sourceLabel: CapabilitySource = derived ? "hosted-derived" : "hosted";
+  const envelope = buildCapabilityManifestEnvelope(
+    hostedRecords.map((r) => toCapabilityNode(r, {
+      source: sourceLabel,
+      sourceUrl: opts.sourceUrl,
+      fetchedAt,
+    })),
+    { sourceUrl: opts.sourceUrl, fetchedAt, suggestedTtlSeconds: CAPABILITY_CACHE_DEFAULT_TTL_SECONDS },
+  );
+  // Stamp every node with the computed registry hash for provenance.
+  for (const node of envelope.nodes) {
+    if (node.provenance) node.provenance.manifestHash = envelope.meta.registryHash;
+  }
+  return envelope;
+}
+
+export function createCmsCapabilityRegistryClient(
+  options?: CmsCapabilityRegistryClientOptions,
+): CmsCapabilityRegistryClient {
+  const ttlSeconds = options?.ttlSeconds;
+  const bypassCache = options?.bypassCache ?? false;
+
+  async function loadEnvelope(): Promise<{ envelope: CapabilityManifestEnvelope; cached: boolean }> {
+    const sourceUrl = resolveHostedBaseUrl();
+
+    if (!bypassCache) {
+      const cached = readCachedManifest(sourceUrl, { ttlSeconds });
+      if (cached?.isFresh) {
+        return { envelope: cached.envelope, cached: true };
+      }
+    }
+
+    try {
+      const envelope = await fetchHostedEnvelope({ sourceUrl });
+      writeCachedManifest(sourceUrl, envelope);
+      return { envelope, cached: false };
+    } catch (err) {
+      // Last-resort: fall back to stale cache rather than failing closed.
+      const cached = readCachedManifest(sourceUrl, { ttlSeconds: Number.POSITIVE_INFINITY });
+      if (cached) return { envelope: cached.envelope, cached: true };
+      throw err;
+    }
+  }
+
+  async function assembleRegistry(): Promise<{
+    nodes: CmsCapabilityNode[];
+    meta: CapabilityRegistryMeta;
+    cached: boolean;
+  }> {
+    const { envelope, cached } = await loadEnvelope();
+    const scan = readLocalCapabilityExtensions();
+    const merged = mergeLocalExtensions(envelope.nodes, scan);
+
+    const enabledCount = merged.nodes.filter((n) => n.enabled).length;
+    const source: CapabilityRegistryMeta["source"] =
+      merged.localExtensionCount > 0 ? "mixed" : cached ? "cache" : "hosted";
+
+    return {
+      nodes: merged.nodes,
+      meta: {
+        total: merged.nodes.length,
+        enabledCount,
+        fetchedAt: envelope.meta.fetchedAt,
+        source,
+        cached,
+        manifestHash: envelope.meta.registryHash,
+        localExtensionCount: merged.localExtensionCount,
+      },
+      cached,
+    };
+  }
+
   return {
     async listCapabilities(query) {
-      const executionClient = createHostedExecutionClient();
-      let hostedRecords = await executionClient.getHostedCapabilities();
-      if (hostedRecords.length === 0) {
-        hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
-      }
-      if (hostedRecords.length === 0) {
-        throw new Error("Hosted capability registry returned zero nodes. No local fallback is enabled.");
-      }
-      const nodes = hostedRecords.map(toCapabilityNode);
-
-      const enabledCount = nodes.filter((n) => n.enabled).length;
+      const { nodes, meta } = await assembleRegistry();
       const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
-
-      return {
-        nodes: filtered,
-        meta: {
-          total: nodes.length,
-          enabledCount,
-          fetchedAt: new Date().toISOString(),
-          source: "hosted",
-        },
-      };
+      return { nodes: filtered, meta };
     },
 
     async getCapability(slug) {
-      const { nodes } = await this.listCapabilities({ slug, enabledOnly: false });
+      const { nodes } = await assembleRegistry();
       return nodes.find((n) => n.slug === slug) ?? null;
     },
 
+    async refresh(refreshOpts) {
+      const sourceUrl = resolveHostedBaseUrl();
+      const priorCache = readCachedManifest(sourceUrl, {
+        ttlSeconds: Number.POSITIVE_INFINITY,
+      });
+      const envelope = await fetchHostedEnvelope({ sourceUrl });
+      const cachePath = writeCachedManifest(sourceUrl, envelope);
+      const drift = computeManifestDrift(priorCache?.envelope ?? null, envelope);
+      return { envelope, cachePath, drift };
+    },
+
+    readCachedEnvelope() {
+      const sourceUrl = resolveHostedBaseUrl();
+      const cached = readCachedManifest(sourceUrl, { ttlSeconds: Number.POSITIVE_INFINITY });
+      return cached?.envelope ?? null;
+    },
+
+    clearCache() {
+      const sourceUrl = resolveHostedBaseUrl();
+      return clearCachedManifest(sourceUrl);
+    },
+
+    scanLocalExtensions() {
+      return readLocalCapabilityExtensions();
+    },
   };
 }

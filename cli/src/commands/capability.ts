@@ -1,26 +1,37 @@
 /**
  * CLI Commands — capability
  *
- * growthub capability list       — List CMS-backed runtime node primitives
- * growthub capability inspect    — Show capability bindings, family, outputs
- * growthub capability resolve    — Show machine-scoped resolution for all caps
+ * growthub capability list        — List CMS-backed runtime node primitives
+ * growthub capability inspect     — Show capability bindings, family, outputs
+ * growthub capability resolve     — Show machine-scoped resolution for all caps
+ * growthub capability refresh     — Re-pull the hosted manifest and report drift
+ * growthub capability register    — Validate + install a local extension file
+ * growthub capability diff        — Show drift between cache and hosted manifest
+ * growthub capability clear-cache — Drop the on-disk manifest cache
  *
  * Interactive picker is available via `growthub capability` (no subcommand).
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Command } from "commander";
 import {
   createCmsCapabilityRegistryClient,
   CAPABILITY_FAMILIES,
+  resolveLocalExtensionDir,
+  validateLocalCapabilityExtension,
+  resolveManifestCachePath,
   type CmsCapabilityNode,
   type CapabilityFamily,
+  type ManifestDriftReport,
 } from "../runtime/cms-capability-registry/index.js";
 import {
   createMachineCapabilityResolver,
 } from "../runtime/machine-capability-resolver/index.js";
 import { getWorkflowAccess } from "../auth/workflow-access.js";
+import { readSession } from "../auth/session-store.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +58,13 @@ function executionKindLabel(kind: string): string {
   if (kind === "provider-assembly") return pc.yellow("provider");
   if (kind === "local-only") return pc.green("local");
   return kind;
+}
+
+function sourceBadge(node: CmsCapabilityNode): string {
+  const source = node.provenance?.source ?? "hosted";
+  if (source === "local-extension") return pc.magenta("local-ext");
+  if (source === "hosted-derived") return pc.yellow("derived");
+  return pc.dim("hosted");
 }
 
 function hr(width = 72): string {
@@ -98,7 +116,7 @@ function printGroupedCapabilities(nodes: CmsCapabilityNode[]): void {
 
     for (const node of groupNodes) {
       const enabledTag = node.enabled ? pc.green("enabled") : pc.red("disabled");
-      console.log(`  ${pc.bold(node.slug)}  ${pc.dim(node.displayName)}  ${enabledTag}`);
+      console.log(`  ${pc.bold(node.slug)}  ${pc.dim(node.displayName)}  ${enabledTag}  ${sourceBadge(node)}`);
       console.log(`  ${pc.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc.dim("Outputs:")} ${pc.dim(node.outputTypes.join(", "))}`);
       if (node.description) {
         console.log(`  ${pc.dim(node.description)}`);
@@ -138,6 +156,16 @@ function printCapabilityCard(node: CmsCapabilityNode): void {
   const inputKeys = Object.keys(node.executionTokens.input_template);
   if (inputKeys.length > 0) {
     lines.push("", `${pc.dim("Input fields:")} ${inputKeys.join(", ")}`);
+  }
+
+  if (node.provenance) {
+    lines.push(
+      "",
+      `${pc.dim("Provenance:")}        ${sourceBadge(node)}`,
+      `${pc.dim("Fetched:")}           ${node.provenance.fetchedAt}`,
+      ...(node.provenance.manifestHash ? [`${pc.dim("Manifest hash:")}     ${node.provenance.manifestHash}`] : []),
+      ...(node.provenance.filePath ? [`${pc.dim("File:")}              ${node.provenance.filePath}`] : []),
+    );
   }
 
   console.log("");
@@ -279,6 +307,10 @@ Examples:
   $ growthub capability list --json         # machine-readable output
   $ growthub capability inspect video-gen   # inspect a specific capability
   $ growthub capability resolve             # resolve machine bindings for all
+  $ growthub capability refresh             # re-pull hosted manifest + report drift
+  $ growthub capability register ./my.json  # install a local extension
+  $ growthub capability diff                # drift between cache and hosted
+  $ growthub capability clear-cache         # drop the on-disk manifest cache
 `);
 
   cap.action(async () => {
@@ -320,7 +352,14 @@ Examples:
         }
 
         printGroupedCapabilities(nodes);
-        console.log(pc.dim(`  Source: ${meta.source}  ·  Fetched: ${meta.fetchedAt}`));
+        const cacheSuffix = meta.cached ? pc.yellow(" (served from cache)") : "";
+        const extSuffix = meta.localExtensionCount && meta.localExtensionCount > 0
+          ? pc.magenta(` · ${meta.localExtensionCount} local extension${meta.localExtensionCount === 1 ? "" : "s"}`)
+          : "";
+        console.log(pc.dim(`  Source: ${meta.source}${cacheSuffix}${extSuffix}  ·  Fetched: ${meta.fetchedAt}`));
+        if (meta.manifestHash) {
+          console.log(pc.dim(`  Manifest: ${meta.manifestHash}`));
+        }
         console.log("");
       } catch (err) {
         console.error(pc.red("Failed to list capabilities: " + (err as Error).message));
@@ -415,4 +454,163 @@ Examples:
         process.exitCode = 1;
       }
     });
+
+  // ── refresh ─────────────────────────────────────────────────────────────
+  cap
+    .command("refresh")
+    .description("Re-fetch the hosted capability manifest and report drift")
+    .option("--json", "Output raw JSON")
+    .action(async (opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const registry = createCmsCapabilityRegistryClient({ bypassCache: true });
+        const result = await registry.refresh();
+
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        printDriftReport(result.drift, result.envelope.meta.registryHash);
+        console.log(pc.dim(`  Cache: ${result.cachePath}`));
+        console.log(pc.dim(`  Hash:  ${result.envelope.meta.registryHash}`));
+        console.log(pc.dim(`  Nodes: ${result.envelope.meta.nodeCount}  ·  Enabled: ${result.envelope.meta.enabledCount}`));
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to refresh capabilities: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── register (local extension) ──────────────────────────────────────────
+  cap
+    .command("register")
+    .description("Install a local capability extension file into the active fork")
+    .argument("<file>", "Path to a LocalCapabilityExtension JSON file")
+    .option("--fork <path>", "Target fork path (defaults to the current working directory)")
+    .option("--force", "Overwrite an existing extension with the same slug")
+    .action(async (file: string, opts: { fork?: string; force?: boolean }) => {
+      const sourcePath = path.resolve(file);
+      if (!fs.existsSync(sourcePath)) {
+        console.error(pc.red(`File not found: ${sourcePath}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(fs.readFileSync(sourcePath, "utf8"));
+      } catch (err) {
+        console.error(pc.red(`Invalid JSON: ${(err as Error).message}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const verdict = validateLocalCapabilityExtension(parsed);
+      if (!verdict.ok) {
+        console.error(pc.red("Extension failed validation:"));
+        for (const issue of verdict.issues) {
+          console.error(pc.red(`  ${issue.path}: ${issue.message}`));
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      const envelope = parsed as { node: { slug: string } };
+      const forkPath = opts.fork ? path.resolve(opts.fork) : process.cwd();
+      const targetDir = resolveLocalExtensionDir(forkPath);
+      fs.mkdirSync(targetDir, { recursive: true });
+      const targetFile = path.join(targetDir, `${envelope.node.slug}.json`);
+
+      if (fs.existsSync(targetFile) && !opts.force) {
+        console.error(pc.red(`Extension already exists at ${targetFile}. Use --force to overwrite.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      fs.copyFileSync(sourcePath, targetFile);
+      console.log("");
+      console.log(pc.green(`✓ Installed local extension: ${envelope.node.slug}`));
+      console.log(pc.dim(`  Fork: ${forkPath}`));
+      console.log(pc.dim(`  File: ${targetFile}`));
+      console.log("");
+    });
+
+  // ── diff ────────────────────────────────────────────────────────────────
+  cap
+    .command("diff")
+    .description("Show drift between the cached manifest and the hosted registry")
+    .option("--json", "Output raw JSON")
+    .action(async (opts: { json?: boolean }) => {
+      const access = getWorkflowAccess();
+      if (access.state !== "ready") {
+        console.error(pc.red(`${access.reason}.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const registry = createCmsCapabilityRegistryClient({ bypassCache: true });
+        const { drift, envelope } = await registry.refresh();
+
+        if (opts.json) {
+          console.log(JSON.stringify({ drift, hash: envelope.meta.registryHash }, null, 2));
+          return;
+        }
+
+        printDriftReport(drift, envelope.meta.registryHash);
+      } catch (err) {
+        console.error(pc.red("Failed to compute drift: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── clear-cache ─────────────────────────────────────────────────────────
+  cap
+    .command("clear-cache")
+    .description("Drop the on-disk manifest cache")
+    .action(async () => {
+      const session = readSession();
+      const host = session?.hostedBaseUrl ?? "https://app.growthub.local";
+      const cachePath = resolveManifestCachePath(host);
+      const registry = createCmsCapabilityRegistryClient();
+      const cleared = registry.clearCache();
+      if (cleared) {
+        console.log(pc.green(`✓ Cache cleared: ${cachePath}`));
+      } else {
+        console.log(pc.dim(`No cache file at ${cachePath}.`));
+      }
+    });
+}
+
+function printDriftReport(drift: ManifestDriftReport, remoteHash: string): void {
+  const color =
+    drift.severity === "none"
+      ? pc.green
+      : drift.severity === "node-added"
+        ? pc.yellow
+        : pc.red;
+  console.log("");
+  console.log(pc.bold("Capability Registry Drift"));
+  console.log(hr());
+  console.log(`  ${pc.dim("Severity:")}     ${color(drift.severity)}`);
+  console.log(`  ${pc.dim("Local hash:")}   ${drift.localHash || pc.dim("(no prior cache)")}`);
+  console.log(`  ${pc.dim("Remote hash:")}  ${remoteHash}`);
+  if (drift.addedSlugs.length > 0) {
+    console.log(`  ${pc.dim("Added:")}        ${drift.addedSlugs.map((s) => pc.green(s)).join(", ")}`);
+  }
+  if (drift.removedSlugs.length > 0) {
+    console.log(`  ${pc.dim("Removed:")}      ${drift.removedSlugs.map((s) => pc.red(s)).join(", ")}`);
+  }
+  if (drift.mutatedSlugs.length > 0) {
+    console.log(`  ${pc.dim("Mutated:")}      ${drift.mutatedSlugs.map((s) => pc.yellow(s)).join(", ")}`);
+  }
+  console.log(hr());
+  console.log("");
 }

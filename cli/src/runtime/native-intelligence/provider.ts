@@ -19,6 +19,7 @@ import type {
   IntelligenceProviderType,
   ModelCompletionInput,
   ModelCompletionResult,
+  ModelStreamChunkHandler,
 } from "./contract.js";
 
 // ---------------------------------------------------------------------------
@@ -526,4 +527,25 @@ export class NativeIntelligenceBackendError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Streaming helper
+//
+// Wraps a `NativeIntelligenceBackend`. When the backend already implements
+// `streamComplete` (native SSE), calls are forwarded. Otherwise we fall
+// back to a single-chunk emission so callers can always use the same API.
+// ---------------------------------------------------------------------------
+
+export async function streamWithBackend(
+  backend: NativeIntelligenceBackend,
+  input: ModelCompletionInput,
+  onChunk: ModelStreamChunkHandler,
+): Promise<ModelCompletionResult> {
+  if (backend.streamComplete) {
+    return backend.streamComplete(input, onChunk);
+  }
+  const result = await backend.complete(input);
+  await onChunk({ text: result.text, final: true });
+  return result;
 }

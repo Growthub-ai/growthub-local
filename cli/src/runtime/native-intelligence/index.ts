@@ -81,7 +81,8 @@ export type {
 } from "./contract.js";
 
 export { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
-export { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth, NativeIntelligenceBackendError } from "./provider.js";
+export { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth, NativeIntelligenceBackendError, streamWithBackend } from "./provider.js";
+export type { ModelStreamChunkHandler } from "./contract.js";
 export { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 export { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 export { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";

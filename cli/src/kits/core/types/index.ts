@@ -25,32 +25,14 @@ export const KIT_FAMILIES: readonly KitFamily[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// Provider operation contract
+// Provider operation contract (canonical home: @growthub/api-contract/provider)
 // ---------------------------------------------------------------------------
 
-export type ProviderOperation =
-  | "UPLOAD_ASSET"
-  | "SUBMIT_GENERATION"
-  | "POLL_RESULT"
-  | "NORMALIZE_RESULT"
-  | "LIST_MODEL_CAPABILITIES"
-  | "CANCEL_JOB"
-  | "LIST_HISTORY"
-  | "HEALTHCHECK";
-
-export const REQUIRED_PROVIDER_OPERATIONS: readonly ProviderOperation[] = [
-  "UPLOAD_ASSET",
-  "SUBMIT_GENERATION",
-  "POLL_RESULT",
-  "NORMALIZE_RESULT",
-  "LIST_MODEL_CAPABILITIES",
-] as const;
-
-export const OPTIONAL_PROVIDER_OPERATIONS: readonly ProviderOperation[] = [
-  "CANCEL_JOB",
-  "LIST_HISTORY",
-  "HEALTHCHECK",
-] as const;
+export type { ProviderOperation, ProviderAuthMechanism } from "@growthub/api-contract/provider";
+export {
+  REQUIRED_PROVIDER_OPERATIONS,
+  OPTIONAL_PROVIDER_OPERATIONS,
+} from "@growthub/api-contract/provider";
 
 // ---------------------------------------------------------------------------
 // Runtime surface types

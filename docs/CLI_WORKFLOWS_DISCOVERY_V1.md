@@ -39,12 +39,16 @@ growthub auth whoami
 
 ```
 Growthub Local
-├── Agent Harness      (filter and harness tooling)
+├── Environment Management  (Local · Hosted · Bridge one-pane view)
+├── Chat                    (streaming chat + slash commands /registry /plan /generate)
+├── Agent Harness           (filter and harness tooling)
 ├── Worker Kits
 ├── Templates
-├── Workflows          ← requires auth
+├── Workflows               ← requires auth
 ├── Local Intelligence
-├── Settings           ← includes account connection and integration lanes
+├── Memory & Knowledge
+├── Connect Growthub Account
+├── Settings                ← includes account connection and integration lanes
 └── Help CLI
 ```
 

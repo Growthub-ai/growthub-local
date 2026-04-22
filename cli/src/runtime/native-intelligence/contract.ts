@@ -234,8 +234,19 @@ export interface NativeIntelligenceProvider {
 // Backend adapter interface
 // ---------------------------------------------------------------------------
 
+export type ModelStreamChunkHandler = (chunk: { text: string; final: boolean }) => void | Promise<void>;
+
 export interface NativeIntelligenceBackend {
   complete(input: ModelCompletionInput): Promise<ModelCompletionResult>;
+  /**
+   * Optional token-level streaming. If absent, callers must fall back to
+   * `complete()`; a synthetic chunk is emitted when streaming is used on a
+   * backend that doesn't implement it natively.
+   */
+  streamComplete?(
+    input: ModelCompletionInput,
+    onChunk: ModelStreamChunkHandler,
+  ): Promise<ModelCompletionResult>;
 }
 
 // ---------------------------------------------------------------------------

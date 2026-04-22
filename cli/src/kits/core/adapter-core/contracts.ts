@@ -14,9 +14,9 @@
  * Shared across Studio, Workflow, Operator, and Ops kit families.
  */
 
+import type { ProviderOperationContract } from "@growthub/api-contract/provider";
 import type {
   KitFamily,
-  ProviderOperation,
   RuntimeSurfaceType,
   ReachabilityProbe,
   SetupFileDeclaration,
@@ -25,26 +25,7 @@ import type {
   OutputArtifactDeclaration,
 } from "../types/index.js";
 
-// ---------------------------------------------------------------------------
-// Provider operation contract
-// ---------------------------------------------------------------------------
-
-export interface ProviderOperationContract {
-  /** Unique provider identifier (e.g. "muapi", "replicate", "fal") */
-  providerId: string;
-  /** Human-readable provider name */
-  providerName: string;
-  /** Operations this provider implements */
-  operations: ProviderOperation[];
-  /** Path to the provider adapter reference doc inside the kit (relative to kit root) */
-  referenceDocPath: string;
-  /** Auth mechanism used by the provider */
-  authMechanism: "api-key-header" | "bearer-token" | "oauth" | "custom";
-  /** Header or field name for the auth value */
-  authField: string;
-  /** Base URL assumption for the provider API */
-  baseUrl: string;
-}
+export type { ProviderOperationContract } from "@growthub/api-contract/provider";
 
 // ---------------------------------------------------------------------------
 // Environment gate contract

@@ -16,9 +16,16 @@ Read, in order:
 
 1. `README.md`
 2. `AGENTS.md`
-3. `cli/src/index.ts`
-4. `cli/src/commands/`
-5. `scripts/runtime-control.sh`
+3. `packages/growthub-api-contract/src/` (v1 type contract)
+4. `cli/src/index.ts`
+5. `cli/src/commands/` (including `environment.ts`, `chat.ts`,
+   `authority.ts`, `policy.ts`, `org.ts`, `capability.ts`)
+6. `cli/src/runtime/cms-capability-registry/` and
+   `cli/src/runtime/streaming-console/`
+7. `scripts/runtime-control.sh`
+
+The canonical v1 type contract lives in `@growthub/api-contract`. Do not
+introduce parallel copies.
 
 Do not preserve conflicting historical instructions in active docs.
 
