@@ -118,10 +118,18 @@ if [[ "$API_CONTRACT_VERSION" == *-* ]]; then
   API_CONTRACT_TAG="${API_CONTRACT_TAG%%.*}"
 fi
 
+is_version_published() {
+  local package_name="$1"
+  local package_version="$2"
+  npm view "${package_name}@${package_version}" version >/dev/null 2>&1
+}
+
 # Publish CLI
 echo "Publishing @growthub/cli@${CLI_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
   echo "[DRY RUN] npm publish cli/ $PUBLISH_ARGS"
+elif is_version_published "@growthub/cli" "$CLI_VERSION"; then
+  echo "✓ @growthub/cli@${CLI_VERSION} already published; skipping"
 else
   npm publish cli/ $PUBLISH_ARGS
   echo "✓ @growthub/cli@${CLI_VERSION} published"
@@ -133,6 +141,8 @@ echo ""
 echo "Publishing @growthub/create-growthub-local@${CREATE_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
   echo "[DRY RUN] npm publish packages/create-growthub-local/ $PUBLISH_ARGS"
+elif is_version_published "@growthub/create-growthub-local" "$CREATE_VERSION"; then
+  echo "✓ @growthub/create-growthub-local@${CREATE_VERSION} already published; skipping"
 else
   npm publish packages/create-growthub-local/ $PUBLISH_ARGS
   echo "✓ @growthub/create-growthub-local@${CREATE_VERSION} published"
@@ -143,6 +153,8 @@ echo ""
 echo "Publishing @growthub/api-contract@${API_CONTRACT_VERSION}..."
 if [ "$DRY_RUN" = true ]; then
   echo "[DRY RUN] npm publish packages/api-contract/ $PUBLISH_ARGS --tag $API_CONTRACT_TAG"
+elif is_version_published "@growthub/api-contract" "$API_CONTRACT_VERSION"; then
+  echo "✓ @growthub/api-contract@${API_CONTRACT_VERSION} already published; skipping"
 else
   npm publish packages/api-contract/ $PUBLISH_ARGS --tag "$API_CONTRACT_TAG"
   echo "✓ @growthub/api-contract@${API_CONTRACT_VERSION} published"
