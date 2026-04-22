@@ -940,12 +940,12 @@ var init_ticket = __esm({
     });
     ticketStageDefinitionsSchema = z11.array(ticketStageDefinitionSchema).min(1).superRefine((value, ctx) => {
       const seen = /* @__PURE__ */ new Set();
-      value.forEach((definition, index51) => {
+      value.forEach((definition, index) => {
         const normalizedKey = normalizeTicketStageKey(String(definition.key));
         if (!normalizedKey) {
           ctx.addIssue({
             code: z11.ZodIssueCode.custom,
-            path: [index51, "key"],
+            path: [index, "key"],
             message: "Stage key must not be empty"
           });
           return;
@@ -953,7 +953,7 @@ var init_ticket = __esm({
         if (seen.has(normalizedKey)) {
           ctx.addIssue({
             code: z11.ZodIssueCode.custom,
-            path: [index51, "key"],
+            path: [index, "key"],
             message: "Stage keys must be unique"
           });
           return;
@@ -1930,7 +1930,7 @@ function coerceGtmState(raw) {
           ...candidate.knowledge?.table?.metadata
         }
       },
-      items: Array.isArray(candidate.knowledge?.items) && candidate.knowledge.items.length > 0 ? candidate.knowledge.items.map((item, index51) => ({
+      items: Array.isArray(candidate.knowledge?.items) && candidate.knowledge.items.length > 0 ? candidate.knowledge.items.map((item, index) => ({
         ...fallbackItemTemplate,
         ...item,
         metadata: {
@@ -1939,7 +1939,7 @@ function coerceGtmState(raw) {
         }
       })) : fallback.knowledge.items
     },
-    connectors: Array.isArray(candidate.connectors) && candidate.connectors.length > 0 ? candidate.connectors.map((connector, index51) => ({
+    connectors: Array.isArray(candidate.connectors) && candidate.connectors.length > 0 ? candidate.connectors.map((connector, index) => ({
       ...fallbackConnectorTemplate,
       ...connector,
       config: {
@@ -2211,9 +2211,9 @@ function migrateLegacyConfig(raw) {
   return config;
 }
 function formatValidationError(err) {
-  const issues2 = err?.issues;
-  if (Array.isArray(issues2) && issues2.length > 0) {
-    return issues2.map((issue) => {
+  const issues = err?.issues;
+  if (Array.isArray(issues) && issues.length > 0) {
+    return issues.map((issue) => {
       const pathParts = Array.isArray(issue.path) ? issue.path.map(String) : [];
       const issuePath = pathParts.length > 0 ? pathParts.join(".") : "config";
       const message = typeof issue.message === "string" ? issue.message : "Invalid value";
@@ -2949,12 +2949,12 @@ function normalizeHostnameInput(raw) {
 }
 function parseHostnameCsv(raw) {
   if (!raw.trim()) return [];
-  const unique3 = /* @__PURE__ */ new Set();
+  const unique2 = /* @__PURE__ */ new Set();
   for (const part of raw.split(",")) {
     const hostname = normalizeHostnameInput(part);
-    unique3.add(hostname);
+    unique2.add(hostname);
   }
-  return Array.from(unique3);
+  return Array.from(unique2);
 }
 var init_hostnames = __esm({
   "src/config/hostnames.ts"() {
@@ -3117,3508 +3117,14 @@ var init_server = __esm({
   }
 });
 
-// ../packages/db/src/schema/companies.ts
-import { pgTable, uuid, text as text7, integer, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
-var companies;
-var init_companies = __esm({
-  "../packages/db/src/schema/companies.ts"() {
-    "use strict";
-    companies = pgTable(
-      "companies",
-      {
-        id: uuid("id").primaryKey().defaultRandom(),
-        name: text7("name").notNull(),
-        description: text7("description"),
-        status: text7("status").notNull().default("active"),
-        pauseReason: text7("pause_reason"),
-        pausedAt: timestamp("paused_at", { withTimezone: true }),
-        issuePrefix: text7("issue_prefix").notNull().default("PAP"),
-        issueCounter: integer("issue_counter").notNull().default(0),
-        budgetMonthlyCents: integer("budget_monthly_cents").notNull().default(0),
-        spentMonthlyCents: integer("spent_monthly_cents").notNull().default(0),
-        requireBoardApprovalForNewAgents: boolean("require_board_approval_for_new_agents").notNull().default(true),
-        brandColor: text7("brand_color"),
-        createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        issuePrefixUniqueIdx: uniqueIndex("companies_issue_prefix_idx").on(table.issuePrefix)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/agents.ts
-import {
-  pgTable as pgTable2,
-  uuid as uuid2,
-  text as text8,
-  integer as integer2,
-  timestamp as timestamp2,
-  jsonb,
-  index
-} from "drizzle-orm/pg-core";
-var agents;
-var init_agents = __esm({
-  "../packages/db/src/schema/agents.ts"() {
-    "use strict";
-    init_companies();
-    agents = pgTable2(
-      "agents",
-      {
-        id: uuid2("id").primaryKey().defaultRandom(),
-        companyId: uuid2("company_id").notNull().references(() => companies.id),
-        name: text8("name").notNull(),
-        role: text8("role").notNull().default("general"),
-        title: text8("title"),
-        icon: text8("icon"),
-        status: text8("status").notNull().default("idle"),
-        reportsTo: uuid2("reports_to").references(() => agents.id),
-        capabilities: text8("capabilities"),
-        adapterType: text8("adapter_type").notNull().default("process"),
-        adapterConfig: jsonb("adapter_config").$type().notNull().default({}),
-        runtimeConfig: jsonb("runtime_config").$type().notNull().default({}),
-        budgetMonthlyCents: integer2("budget_monthly_cents").notNull().default(0),
-        spentMonthlyCents: integer2("spent_monthly_cents").notNull().default(0),
-        pauseReason: text8("pause_reason"),
-        pausedAt: timestamp2("paused_at", { withTimezone: true }),
-        permissions: jsonb("permissions").$type().notNull().default({}),
-        lastHeartbeatAt: timestamp2("last_heartbeat_at", { withTimezone: true }),
-        metadata: jsonb("metadata").$type(),
-        createdAt: timestamp2("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp2("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyStatusIdx: index("agents_company_status_idx").on(table.companyId, table.status),
-        companyReportsToIdx: index("agents_company_reports_to_idx").on(table.companyId, table.reportsTo)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/assets.ts
-import { pgTable as pgTable3, uuid as uuid3, text as text9, integer as integer3, timestamp as timestamp3, index as index2, uniqueIndex as uniqueIndex2 } from "drizzle-orm/pg-core";
-var assets;
-var init_assets = __esm({
-  "../packages/db/src/schema/assets.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    assets = pgTable3(
-      "assets",
-      {
-        id: uuid3("id").primaryKey().defaultRandom(),
-        companyId: uuid3("company_id").notNull().references(() => companies.id),
-        provider: text9("provider").notNull(),
-        objectKey: text9("object_key").notNull(),
-        contentType: text9("content_type").notNull(),
-        byteSize: integer3("byte_size").notNull(),
-        sha256: text9("sha256").notNull(),
-        originalFilename: text9("original_filename"),
-        createdByAgentId: uuid3("created_by_agent_id").references(() => agents.id),
-        createdByUserId: text9("created_by_user_id"),
-        createdAt: timestamp3("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp3("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyCreatedIdx: index2("assets_company_created_idx").on(table.companyId, table.createdAt),
-        companyProviderIdx: index2("assets_company_provider_idx").on(table.companyId, table.provider),
-        companyObjectKeyUq: uniqueIndex2("assets_company_object_key_uq").on(table.companyId, table.objectKey)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/company_logos.ts
-import { pgTable as pgTable4, uuid as uuid4, timestamp as timestamp4, uniqueIndex as uniqueIndex3 } from "drizzle-orm/pg-core";
-var companyLogos;
-var init_company_logos = __esm({
-  "../packages/db/src/schema/company_logos.ts"() {
-    "use strict";
-    init_companies();
-    init_assets();
-    companyLogos = pgTable4(
-      "company_logos",
-      {
-        id: uuid4("id").primaryKey().defaultRandom(),
-        companyId: uuid4("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-        assetId: uuid4("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
-        createdAt: timestamp4("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp4("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyUq: uniqueIndex3("company_logos_company_uq").on(table.companyId),
-        assetUq: uniqueIndex3("company_logos_asset_uq").on(table.assetId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/auth.ts
-import { pgTable as pgTable5, text as text10, timestamp as timestamp5, boolean as boolean2 } from "drizzle-orm/pg-core";
-var authUsers, authSessions, authAccounts, authVerifications;
-var init_auth = __esm({
-  "../packages/db/src/schema/auth.ts"() {
-    "use strict";
-    authUsers = pgTable5("user", {
-      id: text10("id").primaryKey(),
-      name: text10("name").notNull(),
-      email: text10("email").notNull(),
-      emailVerified: boolean2("email_verified").notNull().default(false),
-      image: text10("image"),
-      createdAt: timestamp5("created_at", { withTimezone: true }).notNull(),
-      updatedAt: timestamp5("updated_at", { withTimezone: true }).notNull()
-    });
-    authSessions = pgTable5("session", {
-      id: text10("id").primaryKey(),
-      expiresAt: timestamp5("expires_at", { withTimezone: true }).notNull(),
-      token: text10("token").notNull(),
-      createdAt: timestamp5("created_at", { withTimezone: true }).notNull(),
-      updatedAt: timestamp5("updated_at", { withTimezone: true }).notNull(),
-      ipAddress: text10("ip_address"),
-      userAgent: text10("user_agent"),
-      userId: text10("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" })
-    });
-    authAccounts = pgTable5("account", {
-      id: text10("id").primaryKey(),
-      accountId: text10("account_id").notNull(),
-      providerId: text10("provider_id").notNull(),
-      userId: text10("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
-      accessToken: text10("access_token"),
-      refreshToken: text10("refresh_token"),
-      idToken: text10("id_token"),
-      accessTokenExpiresAt: timestamp5("access_token_expires_at", { withTimezone: true }),
-      refreshTokenExpiresAt: timestamp5("refresh_token_expires_at", { withTimezone: true }),
-      scope: text10("scope"),
-      password: text10("password"),
-      createdAt: timestamp5("created_at", { withTimezone: true }).notNull(),
-      updatedAt: timestamp5("updated_at", { withTimezone: true }).notNull()
-    });
-    authVerifications = pgTable5("verification", {
-      id: text10("id").primaryKey(),
-      identifier: text10("identifier").notNull(),
-      value: text10("value").notNull(),
-      expiresAt: timestamp5("expires_at", { withTimezone: true }).notNull(),
-      createdAt: timestamp5("created_at", { withTimezone: true }),
-      updatedAt: timestamp5("updated_at", { withTimezone: true })
-    });
-  }
-});
-
-// ../packages/db/src/schema/instance_settings.ts
-import { pgTable as pgTable6, uuid as uuid5, text as text11, timestamp as timestamp6, jsonb as jsonb2, uniqueIndex as uniqueIndex4 } from "drizzle-orm/pg-core";
-var instanceSettings;
-var init_instance_settings = __esm({
-  "../packages/db/src/schema/instance_settings.ts"() {
-    "use strict";
-    instanceSettings = pgTable6(
-      "instance_settings",
-      {
-        id: uuid5("id").primaryKey().defaultRandom(),
-        singletonKey: text11("singleton_key").notNull().default("default"),
-        experimental: jsonb2("experimental").$type().notNull().default({}),
-        createdAt: timestamp6("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp6("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        singletonKeyIdx: uniqueIndex4("instance_settings_singleton_key_idx").on(table.singletonKey)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/instance_user_roles.ts
-import { pgTable as pgTable7, uuid as uuid6, text as text12, timestamp as timestamp7, uniqueIndex as uniqueIndex5, index as index3 } from "drizzle-orm/pg-core";
-var instanceUserRoles;
-var init_instance_user_roles = __esm({
-  "../packages/db/src/schema/instance_user_roles.ts"() {
-    "use strict";
-    instanceUserRoles = pgTable7(
-      "instance_user_roles",
-      {
-        id: uuid6("id").primaryKey().defaultRandom(),
-        userId: text12("user_id").notNull(),
-        role: text12("role").notNull().default("instance_admin"),
-        createdAt: timestamp7("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp7("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        userRoleUniqueIdx: uniqueIndex5("instance_user_roles_user_role_unique_idx").on(table.userId, table.role),
-        roleIdx: index3("instance_user_roles_role_idx").on(table.role)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/company_memberships.ts
-import { pgTable as pgTable8, uuid as uuid7, text as text13, timestamp as timestamp8, uniqueIndex as uniqueIndex6, index as index4 } from "drizzle-orm/pg-core";
-var companyMemberships;
-var init_company_memberships = __esm({
-  "../packages/db/src/schema/company_memberships.ts"() {
-    "use strict";
-    init_companies();
-    companyMemberships = pgTable8(
-      "company_memberships",
-      {
-        id: uuid7("id").primaryKey().defaultRandom(),
-        companyId: uuid7("company_id").notNull().references(() => companies.id),
-        principalType: text13("principal_type").notNull(),
-        principalId: text13("principal_id").notNull(),
-        status: text13("status").notNull().default("active"),
-        membershipRole: text13("membership_role"),
-        createdAt: timestamp8("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp8("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyPrincipalUniqueIdx: uniqueIndex6("company_memberships_company_principal_unique_idx").on(
-          table.companyId,
-          table.principalType,
-          table.principalId
-        ),
-        principalStatusIdx: index4("company_memberships_principal_status_idx").on(
-          table.principalType,
-          table.principalId,
-          table.status
-        ),
-        companyStatusIdx: index4("company_memberships_company_status_idx").on(table.companyId, table.status)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/principal_permission_grants.ts
-import { pgTable as pgTable9, uuid as uuid8, text as text14, timestamp as timestamp9, jsonb as jsonb3, uniqueIndex as uniqueIndex7, index as index5 } from "drizzle-orm/pg-core";
-var principalPermissionGrants;
-var init_principal_permission_grants = __esm({
-  "../packages/db/src/schema/principal_permission_grants.ts"() {
-    "use strict";
-    init_companies();
-    principalPermissionGrants = pgTable9(
-      "principal_permission_grants",
-      {
-        id: uuid8("id").primaryKey().defaultRandom(),
-        companyId: uuid8("company_id").notNull().references(() => companies.id),
-        principalType: text14("principal_type").notNull(),
-        principalId: text14("principal_id").notNull(),
-        permissionKey: text14("permission_key").notNull(),
-        scope: jsonb3("scope").$type(),
-        grantedByUserId: text14("granted_by_user_id"),
-        createdAt: timestamp9("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp9("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        uniqueGrantIdx: uniqueIndex7("principal_permission_grants_unique_idx").on(
-          table.companyId,
-          table.principalType,
-          table.principalId,
-          table.permissionKey
-        ),
-        companyPermissionIdx: index5("principal_permission_grants_company_permission_idx").on(
-          table.companyId,
-          table.permissionKey
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/invites.ts
-import { pgTable as pgTable10, uuid as uuid9, text as text15, timestamp as timestamp10, jsonb as jsonb4, index as index6, uniqueIndex as uniqueIndex8 } from "drizzle-orm/pg-core";
-var invites;
-var init_invites = __esm({
-  "../packages/db/src/schema/invites.ts"() {
-    "use strict";
-    init_companies();
-    invites = pgTable10(
-      "invites",
-      {
-        id: uuid9("id").primaryKey().defaultRandom(),
-        companyId: uuid9("company_id").references(() => companies.id),
-        inviteType: text15("invite_type").notNull().default("company_join"),
-        tokenHash: text15("token_hash").notNull(),
-        allowedJoinTypes: text15("allowed_join_types").notNull().default("both"),
-        defaultsPayload: jsonb4("defaults_payload").$type(),
-        expiresAt: timestamp10("expires_at", { withTimezone: true }).notNull(),
-        invitedByUserId: text15("invited_by_user_id"),
-        revokedAt: timestamp10("revoked_at", { withTimezone: true }),
-        acceptedAt: timestamp10("accepted_at", { withTimezone: true }),
-        createdAt: timestamp10("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp10("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        tokenHashUniqueIdx: uniqueIndex8("invites_token_hash_unique_idx").on(table.tokenHash),
-        companyInviteStateIdx: index6("invites_company_invite_state_idx").on(
-          table.companyId,
-          table.inviteType,
-          table.revokedAt,
-          table.expiresAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/join_requests.ts
-import { pgTable as pgTable11, uuid as uuid10, text as text16, timestamp as timestamp11, jsonb as jsonb5, index as index7, uniqueIndex as uniqueIndex9 } from "drizzle-orm/pg-core";
-var joinRequests;
-var init_join_requests = __esm({
-  "../packages/db/src/schema/join_requests.ts"() {
-    "use strict";
-    init_companies();
-    init_invites();
-    init_agents();
-    joinRequests = pgTable11(
-      "join_requests",
-      {
-        id: uuid10("id").primaryKey().defaultRandom(),
-        inviteId: uuid10("invite_id").notNull().references(() => invites.id),
-        companyId: uuid10("company_id").notNull().references(() => companies.id),
-        requestType: text16("request_type").notNull(),
-        status: text16("status").notNull().default("pending_approval"),
-        requestIp: text16("request_ip").notNull(),
-        requestingUserId: text16("requesting_user_id"),
-        requestEmailSnapshot: text16("request_email_snapshot"),
-        agentName: text16("agent_name"),
-        adapterType: text16("adapter_type"),
-        capabilities: text16("capabilities"),
-        agentDefaultsPayload: jsonb5("agent_defaults_payload").$type(),
-        claimSecretHash: text16("claim_secret_hash"),
-        claimSecretExpiresAt: timestamp11("claim_secret_expires_at", { withTimezone: true }),
-        claimSecretConsumedAt: timestamp11("claim_secret_consumed_at", { withTimezone: true }),
-        createdAgentId: uuid10("created_agent_id").references(() => agents.id),
-        approvedByUserId: text16("approved_by_user_id"),
-        approvedAt: timestamp11("approved_at", { withTimezone: true }),
-        rejectedByUserId: text16("rejected_by_user_id"),
-        rejectedAt: timestamp11("rejected_at", { withTimezone: true }),
-        createdAt: timestamp11("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp11("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        inviteUniqueIdx: uniqueIndex9("join_requests_invite_unique_idx").on(table.inviteId),
-        companyStatusTypeCreatedIdx: index7("join_requests_company_status_type_created_idx").on(
-          table.companyId,
-          table.status,
-          table.requestType,
-          table.createdAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/budget_policies.ts
-import { boolean as boolean3, index as index8, integer as integer4, pgTable as pgTable12, text as text17, timestamp as timestamp12, uuid as uuid11, uniqueIndex as uniqueIndex10 } from "drizzle-orm/pg-core";
-var budgetPolicies;
-var init_budget_policies = __esm({
-  "../packages/db/src/schema/budget_policies.ts"() {
-    "use strict";
-    init_companies();
-    budgetPolicies = pgTable12(
-      "budget_policies",
-      {
-        id: uuid11("id").primaryKey().defaultRandom(),
-        companyId: uuid11("company_id").notNull().references(() => companies.id),
-        scopeType: text17("scope_type").notNull(),
-        scopeId: uuid11("scope_id").notNull(),
-        metric: text17("metric").notNull().default("billed_cents"),
-        windowKind: text17("window_kind").notNull(),
-        amount: integer4("amount").notNull().default(0),
-        warnPercent: integer4("warn_percent").notNull().default(80),
-        hardStopEnabled: boolean3("hard_stop_enabled").notNull().default(true),
-        notifyEnabled: boolean3("notify_enabled").notNull().default(true),
-        isActive: boolean3("is_active").notNull().default(true),
-        createdByUserId: text17("created_by_user_id"),
-        updatedByUserId: text17("updated_by_user_id"),
-        createdAt: timestamp12("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp12("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyScopeActiveIdx: index8("budget_policies_company_scope_active_idx").on(
-          table.companyId,
-          table.scopeType,
-          table.scopeId,
-          table.isActive
-        ),
-        companyWindowIdx: index8("budget_policies_company_window_idx").on(
-          table.companyId,
-          table.windowKind,
-          table.metric
-        ),
-        companyScopeMetricUniqueIdx: uniqueIndex10("budget_policies_company_scope_metric_unique_idx").on(
-          table.companyId,
-          table.scopeType,
-          table.scopeId,
-          table.metric,
-          table.windowKind
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/approvals.ts
-import { pgTable as pgTable13, uuid as uuid12, text as text18, timestamp as timestamp13, jsonb as jsonb6, index as index9 } from "drizzle-orm/pg-core";
-var approvals;
-var init_approvals = __esm({
-  "../packages/db/src/schema/approvals.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    approvals = pgTable13(
-      "approvals",
-      {
-        id: uuid12("id").primaryKey().defaultRandom(),
-        companyId: uuid12("company_id").notNull().references(() => companies.id),
-        type: text18("type").notNull(),
-        requestedByAgentId: uuid12("requested_by_agent_id").references(() => agents.id),
-        requestedByUserId: text18("requested_by_user_id"),
-        status: text18("status").notNull().default("pending"),
-        payload: jsonb6("payload").$type().notNull(),
-        decisionNote: text18("decision_note"),
-        decidedByUserId: text18("decided_by_user_id"),
-        decidedAt: timestamp13("decided_at", { withTimezone: true }),
-        createdAt: timestamp13("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp13("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyStatusTypeIdx: index9("approvals_company_status_type_idx").on(
-          table.companyId,
-          table.status,
-          table.type
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/budget_incidents.ts
-import { sql } from "drizzle-orm";
-import { index as index10, integer as integer5, pgTable as pgTable14, text as text19, timestamp as timestamp14, uuid as uuid13, uniqueIndex as uniqueIndex11 } from "drizzle-orm/pg-core";
-var budgetIncidents;
-var init_budget_incidents = __esm({
-  "../packages/db/src/schema/budget_incidents.ts"() {
-    "use strict";
-    init_approvals();
-    init_budget_policies();
-    init_companies();
-    budgetIncidents = pgTable14(
-      "budget_incidents",
-      {
-        id: uuid13("id").primaryKey().defaultRandom(),
-        companyId: uuid13("company_id").notNull().references(() => companies.id),
-        policyId: uuid13("policy_id").notNull().references(() => budgetPolicies.id),
-        scopeType: text19("scope_type").notNull(),
-        scopeId: uuid13("scope_id").notNull(),
-        metric: text19("metric").notNull(),
-        windowKind: text19("window_kind").notNull(),
-        windowStart: timestamp14("window_start", { withTimezone: true }).notNull(),
-        windowEnd: timestamp14("window_end", { withTimezone: true }).notNull(),
-        thresholdType: text19("threshold_type").notNull(),
-        amountLimit: integer5("amount_limit").notNull(),
-        amountObserved: integer5("amount_observed").notNull(),
-        status: text19("status").notNull().default("open"),
-        approvalId: uuid13("approval_id").references(() => approvals.id),
-        resolvedAt: timestamp14("resolved_at", { withTimezone: true }),
-        createdAt: timestamp14("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp14("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyStatusIdx: index10("budget_incidents_company_status_idx").on(table.companyId, table.status),
-        companyScopeIdx: index10("budget_incidents_company_scope_idx").on(
-          table.companyId,
-          table.scopeType,
-          table.scopeId,
-          table.status
-        ),
-        policyWindowIdx: uniqueIndex11("budget_incidents_policy_window_threshold_idx").on(
-          table.policyId,
-          table.windowStart,
-          table.thresholdType
-        ).where(sql`${table.status} <> 'dismissed'`)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/agent_config_revisions.ts
-import { pgTable as pgTable15, uuid as uuid14, text as text20, timestamp as timestamp15, jsonb as jsonb7, index as index11 } from "drizzle-orm/pg-core";
-var agentConfigRevisions;
-var init_agent_config_revisions = __esm({
-  "../packages/db/src/schema/agent_config_revisions.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    agentConfigRevisions = pgTable15(
-      "agent_config_revisions",
-      {
-        id: uuid14("id").primaryKey().defaultRandom(),
-        companyId: uuid14("company_id").notNull().references(() => companies.id),
-        agentId: uuid14("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
-        createdByAgentId: uuid14("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text20("created_by_user_id"),
-        source: text20("source").notNull().default("patch"),
-        rolledBackFromRevisionId: uuid14("rolled_back_from_revision_id"),
-        changedKeys: jsonb7("changed_keys").$type().notNull().default([]),
-        beforeConfig: jsonb7("before_config").$type().notNull(),
-        afterConfig: jsonb7("after_config").$type().notNull(),
-        createdAt: timestamp15("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyAgentCreatedIdx: index11("agent_config_revisions_company_agent_created_idx").on(
-          table.companyId,
-          table.agentId,
-          table.createdAt
-        ),
-        agentCreatedIdx: index11("agent_config_revisions_agent_created_idx").on(table.agentId, table.createdAt)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/agent_api_keys.ts
-import { pgTable as pgTable16, uuid as uuid15, text as text21, timestamp as timestamp16, index as index12 } from "drizzle-orm/pg-core";
-var agentApiKeys;
-var init_agent_api_keys = __esm({
-  "../packages/db/src/schema/agent_api_keys.ts"() {
-    "use strict";
-    init_agents();
-    init_companies();
-    agentApiKeys = pgTable16(
-      "agent_api_keys",
-      {
-        id: uuid15("id").primaryKey().defaultRandom(),
-        agentId: uuid15("agent_id").notNull().references(() => agents.id),
-        companyId: uuid15("company_id").notNull().references(() => companies.id),
-        name: text21("name").notNull(),
-        keyHash: text21("key_hash").notNull(),
-        lastUsedAt: timestamp16("last_used_at", { withTimezone: true }),
-        revokedAt: timestamp16("revoked_at", { withTimezone: true }),
-        createdAt: timestamp16("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        keyHashIdx: index12("agent_api_keys_key_hash_idx").on(table.keyHash),
-        companyAgentIdx: index12("agent_api_keys_company_agent_idx").on(table.companyId, table.agentId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/agent_runtime_state.ts
-import { pgTable as pgTable17, uuid as uuid16, text as text22, timestamp as timestamp17, jsonb as jsonb8, bigint, index as index13 } from "drizzle-orm/pg-core";
-var agentRuntimeState;
-var init_agent_runtime_state = __esm({
-  "../packages/db/src/schema/agent_runtime_state.ts"() {
-    "use strict";
-    init_agents();
-    init_companies();
-    agentRuntimeState = pgTable17(
-      "agent_runtime_state",
-      {
-        agentId: uuid16("agent_id").primaryKey().references(() => agents.id),
-        companyId: uuid16("company_id").notNull().references(() => companies.id),
-        adapterType: text22("adapter_type").notNull(),
-        sessionId: text22("session_id"),
-        stateJson: jsonb8("state_json").$type().notNull().default({}),
-        lastRunId: uuid16("last_run_id"),
-        lastRunStatus: text22("last_run_status"),
-        totalInputTokens: bigint("total_input_tokens", { mode: "number" }).notNull().default(0),
-        totalOutputTokens: bigint("total_output_tokens", { mode: "number" }).notNull().default(0),
-        totalCachedInputTokens: bigint("total_cached_input_tokens", { mode: "number" }).notNull().default(0),
-        totalCostCents: bigint("total_cost_cents", { mode: "number" }).notNull().default(0),
-        lastError: text22("last_error"),
-        createdAt: timestamp17("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp17("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyAgentIdx: index13("agent_runtime_state_company_agent_idx").on(table.companyId, table.agentId),
-        companyUpdatedIdx: index13("agent_runtime_state_company_updated_idx").on(table.companyId, table.updatedAt)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/agent_wakeup_requests.ts
-import { pgTable as pgTable18, uuid as uuid17, text as text23, timestamp as timestamp18, jsonb as jsonb9, integer as integer6, index as index14 } from "drizzle-orm/pg-core";
-var agentWakeupRequests;
-var init_agent_wakeup_requests = __esm({
-  "../packages/db/src/schema/agent_wakeup_requests.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    agentWakeupRequests = pgTable18(
-      "agent_wakeup_requests",
-      {
-        id: uuid17("id").primaryKey().defaultRandom(),
-        companyId: uuid17("company_id").notNull().references(() => companies.id),
-        agentId: uuid17("agent_id").notNull().references(() => agents.id),
-        source: text23("source").notNull(),
-        triggerDetail: text23("trigger_detail"),
-        reason: text23("reason"),
-        payload: jsonb9("payload").$type(),
-        status: text23("status").notNull().default("queued"),
-        coalescedCount: integer6("coalesced_count").notNull().default(0),
-        requestedByActorType: text23("requested_by_actor_type"),
-        requestedByActorId: text23("requested_by_actor_id"),
-        idempotencyKey: text23("idempotency_key"),
-        runId: uuid17("run_id"),
-        requestedAt: timestamp18("requested_at", { withTimezone: true }).notNull().defaultNow(),
-        claimedAt: timestamp18("claimed_at", { withTimezone: true }),
-        finishedAt: timestamp18("finished_at", { withTimezone: true }),
-        error: text23("error"),
-        createdAt: timestamp18("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp18("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyAgentStatusIdx: index14("agent_wakeup_requests_company_agent_status_idx").on(
-          table.companyId,
-          table.agentId,
-          table.status
-        ),
-        companyRequestedIdx: index14("agent_wakeup_requests_company_requested_idx").on(
-          table.companyId,
-          table.requestedAt
-        ),
-        agentRequestedIdx: index14("agent_wakeup_requests_agent_requested_idx").on(table.agentId, table.requestedAt)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/heartbeat_runs.ts
-import { pgTable as pgTable19, uuid as uuid18, text as text24, timestamp as timestamp19, jsonb as jsonb10, index as index15, integer as integer7, bigint as bigint2, boolean as boolean4 } from "drizzle-orm/pg-core";
-var heartbeatRuns;
-var init_heartbeat_runs = __esm({
-  "../packages/db/src/schema/heartbeat_runs.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_agent_wakeup_requests();
-    heartbeatRuns = pgTable19(
-      "heartbeat_runs",
-      {
-        id: uuid18("id").primaryKey().defaultRandom(),
-        companyId: uuid18("company_id").notNull().references(() => companies.id),
-        agentId: uuid18("agent_id").notNull().references(() => agents.id),
-        invocationSource: text24("invocation_source").notNull().default("on_demand"),
-        triggerDetail: text24("trigger_detail"),
-        status: text24("status").notNull().default("queued"),
-        startedAt: timestamp19("started_at", { withTimezone: true }),
-        finishedAt: timestamp19("finished_at", { withTimezone: true }),
-        error: text24("error"),
-        wakeupRequestId: uuid18("wakeup_request_id").references(() => agentWakeupRequests.id),
-        exitCode: integer7("exit_code"),
-        signal: text24("signal"),
-        usageJson: jsonb10("usage_json").$type(),
-        resultJson: jsonb10("result_json").$type(),
-        sessionIdBefore: text24("session_id_before"),
-        sessionIdAfter: text24("session_id_after"),
-        logStore: text24("log_store"),
-        logRef: text24("log_ref"),
-        logBytes: bigint2("log_bytes", { mode: "number" }),
-        logSha256: text24("log_sha256"),
-        logCompressed: boolean4("log_compressed").notNull().default(false),
-        stdoutExcerpt: text24("stdout_excerpt"),
-        stderrExcerpt: text24("stderr_excerpt"),
-        errorCode: text24("error_code"),
-        externalRunId: text24("external_run_id"),
-        processPid: integer7("process_pid"),
-        processStartedAt: timestamp19("process_started_at", { withTimezone: true }),
-        retryOfRunId: uuid18("retry_of_run_id").references(() => heartbeatRuns.id, {
-          onDelete: "set null"
-        }),
-        processLossRetryCount: integer7("process_loss_retry_count").notNull().default(0),
-        contextSnapshot: jsonb10("context_snapshot").$type(),
-        createdAt: timestamp19("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp19("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyAgentStartedIdx: index15("heartbeat_runs_company_agent_started_idx").on(
-          table.companyId,
-          table.agentId,
-          table.startedAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/agent_task_sessions.ts
-import { pgTable as pgTable20, uuid as uuid19, text as text25, timestamp as timestamp20, jsonb as jsonb11, index as index16, uniqueIndex as uniqueIndex12 } from "drizzle-orm/pg-core";
-var agentTaskSessions;
-var init_agent_task_sessions = __esm({
-  "../packages/db/src/schema/agent_task_sessions.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_heartbeat_runs();
-    agentTaskSessions = pgTable20(
-      "agent_task_sessions",
-      {
-        id: uuid19("id").primaryKey().defaultRandom(),
-        companyId: uuid19("company_id").notNull().references(() => companies.id),
-        agentId: uuid19("agent_id").notNull().references(() => agents.id),
-        adapterType: text25("adapter_type").notNull(),
-        taskKey: text25("task_key").notNull(),
-        sessionParamsJson: jsonb11("session_params_json").$type(),
-        sessionDisplayId: text25("session_display_id"),
-        lastRunId: uuid19("last_run_id").references(() => heartbeatRuns.id),
-        lastError: text25("last_error"),
-        createdAt: timestamp20("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp20("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyAgentTaskUniqueIdx: uniqueIndex12("agent_task_sessions_company_agent_adapter_task_uniq").on(
-          table.companyId,
-          table.agentId,
-          table.adapterType,
-          table.taskKey
-        ),
-        companyAgentUpdatedIdx: index16("agent_task_sessions_company_agent_updated_idx").on(
-          table.companyId,
-          table.agentId,
-          table.updatedAt
-        ),
-        companyTaskUpdatedIdx: index16("agent_task_sessions_company_task_updated_idx").on(
-          table.companyId,
-          table.taskKey,
-          table.updatedAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/goals.ts
-import {
-  pgTable as pgTable21,
-  uuid as uuid20,
-  text as text26,
-  timestamp as timestamp21,
-  index as index17
-} from "drizzle-orm/pg-core";
-var goals;
-var init_goals = __esm({
-  "../packages/db/src/schema/goals.ts"() {
-    "use strict";
-    init_agents();
-    init_companies();
-    goals = pgTable21(
-      "goals",
-      {
-        id: uuid20("id").primaryKey().defaultRandom(),
-        companyId: uuid20("company_id").notNull().references(() => companies.id),
-        title: text26("title").notNull(),
-        description: text26("description"),
-        level: text26("level").notNull().default("task"),
-        status: text26("status").notNull().default("planned"),
-        parentId: uuid20("parent_id").references(() => goals.id),
-        ownerAgentId: uuid20("owner_agent_id").references(() => agents.id),
-        createdAt: timestamp21("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp21("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIdx: index17("goals_company_idx").on(table.companyId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/projects.ts
-import { pgTable as pgTable22, uuid as uuid21, text as text27, timestamp as timestamp22, date, index as index18, jsonb as jsonb12 } from "drizzle-orm/pg-core";
-var projects;
-var init_projects = __esm({
-  "../packages/db/src/schema/projects.ts"() {
-    "use strict";
-    init_companies();
-    init_goals();
-    init_agents();
-    projects = pgTable22(
-      "projects",
-      {
-        id: uuid21("id").primaryKey().defaultRandom(),
-        companyId: uuid21("company_id").notNull().references(() => companies.id),
-        goalId: uuid21("goal_id").references(() => goals.id),
-        name: text27("name").notNull(),
-        description: text27("description"),
-        status: text27("status").notNull().default("backlog"),
-        leadAgentId: uuid21("lead_agent_id").references(() => agents.id),
-        targetDate: date("target_date"),
-        color: text27("color"),
-        pauseReason: text27("pause_reason"),
-        pausedAt: timestamp22("paused_at", { withTimezone: true }),
-        executionWorkspacePolicy: jsonb12("execution_workspace_policy").$type(),
-        archivedAt: timestamp22("archived_at", { withTimezone: true }),
-        createdAt: timestamp22("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp22("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIdx: index18("projects_company_idx").on(table.companyId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/project_workspaces.ts
-import {
-  boolean as boolean5,
-  index as index19,
-  jsonb as jsonb13,
-  pgTable as pgTable23,
-  text as text28,
-  timestamp as timestamp23,
-  uniqueIndex as uniqueIndex13,
-  uuid as uuid22
-} from "drizzle-orm/pg-core";
-var projectWorkspaces;
-var init_project_workspaces = __esm({
-  "../packages/db/src/schema/project_workspaces.ts"() {
-    "use strict";
-    init_companies();
-    init_projects();
-    projectWorkspaces = pgTable23(
-      "project_workspaces",
-      {
-        id: uuid22("id").primaryKey().defaultRandom(),
-        companyId: uuid22("company_id").notNull().references(() => companies.id),
-        projectId: uuid22("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-        name: text28("name").notNull(),
-        sourceType: text28("source_type").notNull().default("local_path"),
-        cwd: text28("cwd"),
-        repoUrl: text28("repo_url"),
-        repoRef: text28("repo_ref"),
-        defaultRef: text28("default_ref"),
-        visibility: text28("visibility").notNull().default("default"),
-        setupCommand: text28("setup_command"),
-        cleanupCommand: text28("cleanup_command"),
-        remoteProvider: text28("remote_provider"),
-        remoteWorkspaceRef: text28("remote_workspace_ref"),
-        sharedWorkspaceKey: text28("shared_workspace_key"),
-        metadata: jsonb13("metadata").$type(),
-        isPrimary: boolean5("is_primary").notNull().default(false),
-        createdAt: timestamp23("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp23("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyProjectIdx: index19("project_workspaces_company_project_idx").on(table.companyId, table.projectId),
-        projectPrimaryIdx: index19("project_workspaces_project_primary_idx").on(table.projectId, table.isPrimary),
-        projectSourceTypeIdx: index19("project_workspaces_project_source_type_idx").on(table.projectId, table.sourceType),
-        companySharedKeyIdx: index19("project_workspaces_company_shared_key_idx").on(table.companyId, table.sharedWorkspaceKey),
-        projectRemoteRefIdx: uniqueIndex13("project_workspaces_project_remote_ref_idx").on(table.projectId, table.remoteProvider, table.remoteWorkspaceRef)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/tickets.ts
-import { pgTable as pgTable24, uuid as uuid23, text as text29, timestamp as timestamp24, jsonb as jsonb14, index as index20 } from "drizzle-orm/pg-core";
-var tickets;
-var init_tickets = __esm({
-  "../packages/db/src/schema/tickets.ts"() {
-    "use strict";
-    init_companies();
-    tickets = pgTable24(
-      "tickets",
-      {
-        id: uuid23("id").primaryKey().defaultRandom(),
-        companyId: uuid23("company_id").notNull().references(() => companies.id),
-        title: text29("title").notNull(),
-        description: text29("description"),
-        identifier: text29("identifier"),
-        status: text29("status").notNull().default("active"),
-        currentStage: text29("current_stage").notNull().default("planning"),
-        stageOrder: jsonb14("stage_order").$type().notNull().default(["planning", "execution", "review", "qa", "human"]),
-        createdByUserId: text29("created_by_user_id"),
-        createdByAgentId: uuid23("created_by_agent_id"),
-        completedAt: timestamp24("completed_at", { withTimezone: true }),
-        createdAt: timestamp24("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp24("updated_at", { withTimezone: true }).notNull().defaultNow(),
-        metadata: jsonb14("metadata").$type().default({}),
-        instructions: text29("instructions"),
-        leadAgentId: uuid23("lead_agent_id")
-      },
-      (table) => ({
-        companyIdx: index20("tickets_company_idx").on(table.companyId),
-        companyStatusIdx: index20("tickets_company_status_idx").on(table.companyId, table.status)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issues.ts
-import {
-  pgTable as pgTable25,
-  uuid as uuid24,
-  text as text30,
-  timestamp as timestamp25,
-  integer as integer8,
-  jsonb as jsonb15,
-  index as index21,
-  uniqueIndex as uniqueIndex14
-} from "drizzle-orm/pg-core";
-var issues;
-var init_issues = __esm({
-  "../packages/db/src/schema/issues.ts"() {
-    "use strict";
-    init_agents();
-    init_projects();
-    init_goals();
-    init_companies();
-    init_heartbeat_runs();
-    init_project_workspaces();
-    init_execution_workspaces();
-    init_tickets();
-    issues = pgTable25(
-      "issues",
-      {
-        id: uuid24("id").primaryKey().defaultRandom(),
-        companyId: uuid24("company_id").notNull().references(() => companies.id),
-        projectId: uuid24("project_id").references(() => projects.id),
-        projectWorkspaceId: uuid24("project_workspace_id").references(() => projectWorkspaces.id, { onDelete: "set null" }),
-        goalId: uuid24("goal_id").references(() => goals.id),
-        parentId: uuid24("parent_id").references(() => issues.id),
-        ticketId: uuid24("ticket_id").references(() => tickets.id, { onDelete: "set null" }),
-        // Which pipeline stage this issue belongs to within its ticket
-        ticketStage: text30("ticket_stage"),
-        title: text30("title").notNull(),
-        description: text30("description"),
-        status: text30("status").notNull().default("backlog"),
-        priority: text30("priority").notNull().default("medium"),
-        assigneeAgentId: uuid24("assignee_agent_id").references(() => agents.id),
-        assigneeUserId: text30("assignee_user_id"),
-        checkoutRunId: uuid24("checkout_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
-        executionRunId: uuid24("execution_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
-        executionAgentNameKey: text30("execution_agent_name_key"),
-        executionLockedAt: timestamp25("execution_locked_at", { withTimezone: true }),
-        createdByAgentId: uuid24("created_by_agent_id").references(() => agents.id),
-        createdByUserId: text30("created_by_user_id"),
-        issueNumber: integer8("issue_number"),
-        identifier: text30("identifier"),
-        requestDepth: integer8("request_depth").notNull().default(0),
-        billingCode: text30("billing_code"),
-        assigneeAdapterOverrides: jsonb15("assignee_adapter_overrides").$type(),
-        executionWorkspaceId: uuid24("execution_workspace_id").references(() => executionWorkspaces.id, { onDelete: "set null" }),
-        executionWorkspacePreference: text30("execution_workspace_preference"),
-        executionWorkspaceSettings: jsonb15("execution_workspace_settings").$type(),
-        startedAt: timestamp25("started_at", { withTimezone: true }),
-        completedAt: timestamp25("completed_at", { withTimezone: true }),
-        cancelledAt: timestamp25("cancelled_at", { withTimezone: true }),
-        hiddenAt: timestamp25("hidden_at", { withTimezone: true }),
-        createdAt: timestamp25("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp25("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyStatusIdx: index21("issues_company_status_idx").on(table.companyId, table.status),
-        assigneeStatusIdx: index21("issues_company_assignee_status_idx").on(
-          table.companyId,
-          table.assigneeAgentId,
-          table.status
-        ),
-        assigneeUserStatusIdx: index21("issues_company_assignee_user_status_idx").on(
-          table.companyId,
-          table.assigneeUserId,
-          table.status
-        ),
-        parentIdx: index21("issues_company_parent_idx").on(table.companyId, table.parentId),
-        ticketIdx: index21("issues_company_ticket_idx").on(table.companyId, table.ticketId),
-        projectIdx: index21("issues_company_project_idx").on(table.companyId, table.projectId),
-        projectWorkspaceIdx: index21("issues_company_project_workspace_idx").on(table.companyId, table.projectWorkspaceId),
-        executionWorkspaceIdx: index21("issues_company_execution_workspace_idx").on(table.companyId, table.executionWorkspaceId),
-        identifierIdx: uniqueIndex14("issues_identifier_idx").on(table.identifier)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/execution_workspaces.ts
-import {
-  index as index22,
-  jsonb as jsonb16,
-  pgTable as pgTable26,
-  text as text31,
-  timestamp as timestamp26,
-  uuid as uuid25
-} from "drizzle-orm/pg-core";
-var executionWorkspaces;
-var init_execution_workspaces = __esm({
-  "../packages/db/src/schema/execution_workspaces.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    init_project_workspaces();
-    init_projects();
-    executionWorkspaces = pgTable26(
-      "execution_workspaces",
-      {
-        id: uuid25("id").primaryKey().defaultRandom(),
-        companyId: uuid25("company_id").notNull().references(() => companies.id),
-        projectId: uuid25("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-        projectWorkspaceId: uuid25("project_workspace_id").references(() => projectWorkspaces.id, { onDelete: "set null" }),
-        sourceIssueId: uuid25("source_issue_id").references(() => issues.id, { onDelete: "set null" }),
-        mode: text31("mode").notNull(),
-        strategyType: text31("strategy_type").notNull(),
-        name: text31("name").notNull(),
-        status: text31("status").notNull().default("active"),
-        cwd: text31("cwd"),
-        repoUrl: text31("repo_url"),
-        baseRef: text31("base_ref"),
-        branchName: text31("branch_name"),
-        providerType: text31("provider_type").notNull().default("local_fs"),
-        providerRef: text31("provider_ref"),
-        derivedFromExecutionWorkspaceId: uuid25("derived_from_execution_workspace_id").references(() => executionWorkspaces.id, { onDelete: "set null" }),
-        lastUsedAt: timestamp26("last_used_at", { withTimezone: true }).notNull().defaultNow(),
-        openedAt: timestamp26("opened_at", { withTimezone: true }).notNull().defaultNow(),
-        closedAt: timestamp26("closed_at", { withTimezone: true }),
-        cleanupEligibleAt: timestamp26("cleanup_eligible_at", { withTimezone: true }),
-        cleanupReason: text31("cleanup_reason"),
-        metadata: jsonb16("metadata").$type(),
-        createdAt: timestamp26("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp26("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyProjectStatusIdx: index22("execution_workspaces_company_project_status_idx").on(
-          table.companyId,
-          table.projectId,
-          table.status
-        ),
-        companyProjectWorkspaceStatusIdx: index22("execution_workspaces_company_project_workspace_status_idx").on(
-          table.companyId,
-          table.projectWorkspaceId,
-          table.status
-        ),
-        companySourceIssueIdx: index22("execution_workspaces_company_source_issue_idx").on(
-          table.companyId,
-          table.sourceIssueId
-        ),
-        companyLastUsedIdx: index22("execution_workspaces_company_last_used_idx").on(
-          table.companyId,
-          table.lastUsedAt
-        ),
-        companyBranchIdx: index22("execution_workspaces_company_branch_idx").on(
-          table.companyId,
-          table.branchName
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/workspace_operations.ts
-import {
-  bigint as bigint3,
-  boolean as boolean6,
-  index as index23,
-  integer as integer9,
-  jsonb as jsonb17,
-  pgTable as pgTable27,
-  text as text32,
-  timestamp as timestamp27,
-  uuid as uuid26
-} from "drizzle-orm/pg-core";
-var workspaceOperations;
-var init_workspace_operations = __esm({
-  "../packages/db/src/schema/workspace_operations.ts"() {
-    "use strict";
-    init_companies();
-    init_execution_workspaces();
-    init_heartbeat_runs();
-    workspaceOperations = pgTable27(
-      "workspace_operations",
-      {
-        id: uuid26("id").primaryKey().defaultRandom(),
-        companyId: uuid26("company_id").notNull().references(() => companies.id),
-        executionWorkspaceId: uuid26("execution_workspace_id").references(() => executionWorkspaces.id, {
-          onDelete: "set null"
-        }),
-        heartbeatRunId: uuid26("heartbeat_run_id").references(() => heartbeatRuns.id, {
-          onDelete: "set null"
-        }),
-        phase: text32("phase").notNull(),
-        command: text32("command"),
-        cwd: text32("cwd"),
-        status: text32("status").notNull().default("running"),
-        exitCode: integer9("exit_code"),
-        logStore: text32("log_store"),
-        logRef: text32("log_ref"),
-        logBytes: bigint3("log_bytes", { mode: "number" }),
-        logSha256: text32("log_sha256"),
-        logCompressed: boolean6("log_compressed").notNull().default(false),
-        stdoutExcerpt: text32("stdout_excerpt"),
-        stderrExcerpt: text32("stderr_excerpt"),
-        metadata: jsonb17("metadata").$type(),
-        startedAt: timestamp27("started_at", { withTimezone: true }).notNull().defaultNow(),
-        finishedAt: timestamp27("finished_at", { withTimezone: true }),
-        createdAt: timestamp27("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp27("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyRunStartedIdx: index23("workspace_operations_company_run_started_idx").on(
-          table.companyId,
-          table.heartbeatRunId,
-          table.startedAt
-        ),
-        companyWorkspaceStartedIdx: index23("workspace_operations_company_workspace_started_idx").on(
-          table.companyId,
-          table.executionWorkspaceId,
-          table.startedAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/workspace_runtime_services.ts
-import {
-  index as index24,
-  integer as integer10,
-  jsonb as jsonb18,
-  pgTable as pgTable28,
-  text as text33,
-  timestamp as timestamp28,
-  uuid as uuid27
-} from "drizzle-orm/pg-core";
-var workspaceRuntimeServices;
-var init_workspace_runtime_services = __esm({
-  "../packages/db/src/schema/workspace_runtime_services.ts"() {
-    "use strict";
-    init_companies();
-    init_projects();
-    init_project_workspaces();
-    init_execution_workspaces();
-    init_issues();
-    init_agents();
-    init_heartbeat_runs();
-    workspaceRuntimeServices = pgTable28(
-      "workspace_runtime_services",
-      {
-        id: uuid27("id").primaryKey(),
-        companyId: uuid27("company_id").notNull().references(() => companies.id),
-        projectId: uuid27("project_id").references(() => projects.id, { onDelete: "set null" }),
-        projectWorkspaceId: uuid27("project_workspace_id").references(() => projectWorkspaces.id, { onDelete: "set null" }),
-        executionWorkspaceId: uuid27("execution_workspace_id").references(() => executionWorkspaces.id, { onDelete: "set null" }),
-        issueId: uuid27("issue_id").references(() => issues.id, { onDelete: "set null" }),
-        scopeType: text33("scope_type").notNull(),
-        scopeId: text33("scope_id"),
-        serviceName: text33("service_name").notNull(),
-        status: text33("status").notNull(),
-        lifecycle: text33("lifecycle").notNull(),
-        reuseKey: text33("reuse_key"),
-        command: text33("command"),
-        cwd: text33("cwd"),
-        port: integer10("port"),
-        url: text33("url"),
-        provider: text33("provider").notNull(),
-        providerRef: text33("provider_ref"),
-        ownerAgentId: uuid27("owner_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        startedByRunId: uuid27("started_by_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
-        lastUsedAt: timestamp28("last_used_at", { withTimezone: true }).notNull().defaultNow(),
-        startedAt: timestamp28("started_at", { withTimezone: true }).notNull().defaultNow(),
-        stoppedAt: timestamp28("stopped_at", { withTimezone: true }),
-        stopPolicy: jsonb18("stop_policy").$type(),
-        healthStatus: text33("health_status").notNull().default("unknown"),
-        createdAt: timestamp28("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp28("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyWorkspaceStatusIdx: index24("workspace_runtime_services_company_workspace_status_idx").on(
-          table.companyId,
-          table.projectWorkspaceId,
-          table.status
-        ),
-        companyExecutionWorkspaceStatusIdx: index24("workspace_runtime_services_company_execution_workspace_status_idx").on(
-          table.companyId,
-          table.executionWorkspaceId,
-          table.status
-        ),
-        companyProjectStatusIdx: index24("workspace_runtime_services_company_project_status_idx").on(
-          table.companyId,
-          table.projectId,
-          table.status
-        ),
-        runIdx: index24("workspace_runtime_services_run_idx").on(table.startedByRunId),
-        companyUpdatedIdx: index24("workspace_runtime_services_company_updated_idx").on(
-          table.companyId,
-          table.updatedAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/project_goals.ts
-import { pgTable as pgTable29, uuid as uuid28, timestamp as timestamp29, index as index25, primaryKey } from "drizzle-orm/pg-core";
-var projectGoals;
-var init_project_goals = __esm({
-  "../packages/db/src/schema/project_goals.ts"() {
-    "use strict";
-    init_companies();
-    init_projects();
-    init_goals();
-    projectGoals = pgTable29(
-      "project_goals",
-      {
-        projectId: uuid28("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-        goalId: uuid28("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
-        companyId: uuid28("company_id").notNull().references(() => companies.id),
-        createdAt: timestamp29("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp29("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pk: primaryKey({ columns: [table.projectId, table.goalId] }),
-        projectIdx: index25("project_goals_project_idx").on(table.projectId),
-        goalIdx: index25("project_goals_goal_idx").on(table.goalId),
-        companyIdx: index25("project_goals_company_idx").on(table.companyId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_work_products.ts
-import {
-  boolean as boolean7,
-  index as index26,
-  jsonb as jsonb19,
-  pgTable as pgTable30,
-  text as text34,
-  timestamp as timestamp30,
-  uuid as uuid29
-} from "drizzle-orm/pg-core";
-var issueWorkProducts;
-var init_issue_work_products = __esm({
-  "../packages/db/src/schema/issue_work_products.ts"() {
-    "use strict";
-    init_companies();
-    init_execution_workspaces();
-    init_heartbeat_runs();
-    init_issues();
-    init_projects();
-    init_workspace_runtime_services();
-    issueWorkProducts = pgTable30(
-      "issue_work_products",
-      {
-        id: uuid29("id").primaryKey().defaultRandom(),
-        companyId: uuid29("company_id").notNull().references(() => companies.id),
-        projectId: uuid29("project_id").references(() => projects.id, { onDelete: "set null" }),
-        issueId: uuid29("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-        executionWorkspaceId: uuid29("execution_workspace_id").references(() => executionWorkspaces.id, { onDelete: "set null" }),
-        runtimeServiceId: uuid29("runtime_service_id").references(() => workspaceRuntimeServices.id, { onDelete: "set null" }),
-        type: text34("type").notNull(),
-        provider: text34("provider").notNull(),
-        externalId: text34("external_id"),
-        title: text34("title").notNull(),
-        url: text34("url"),
-        status: text34("status").notNull(),
-        reviewState: text34("review_state").notNull().default("none"),
-        isPrimary: boolean7("is_primary").notNull().default(false),
-        healthStatus: text34("health_status").notNull().default("unknown"),
-        summary: text34("summary"),
-        metadata: jsonb19("metadata").$type(),
-        createdByRunId: uuid29("created_by_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
-        createdAt: timestamp30("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp30("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIssueTypeIdx: index26("issue_work_products_company_issue_type_idx").on(
-          table.companyId,
-          table.issueId,
-          table.type
-        ),
-        companyExecutionWorkspaceTypeIdx: index26("issue_work_products_company_execution_workspace_type_idx").on(
-          table.companyId,
-          table.executionWorkspaceId,
-          table.type
-        ),
-        companyProviderExternalIdIdx: index26("issue_work_products_company_provider_external_id_idx").on(
-          table.companyId,
-          table.provider,
-          table.externalId
-        ),
-        companyUpdatedIdx: index26("issue_work_products_company_updated_idx").on(
-          table.companyId,
-          table.updatedAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/labels.ts
-import { pgTable as pgTable31, uuid as uuid30, text as text35, timestamp as timestamp31, index as index27, uniqueIndex as uniqueIndex15 } from "drizzle-orm/pg-core";
-var labels;
-var init_labels = __esm({
-  "../packages/db/src/schema/labels.ts"() {
-    "use strict";
-    init_companies();
-    labels = pgTable31(
-      "labels",
-      {
-        id: uuid30("id").primaryKey().defaultRandom(),
-        companyId: uuid30("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-        name: text35("name").notNull(),
-        color: text35("color").notNull(),
-        createdAt: timestamp31("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp31("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIdx: index27("labels_company_idx").on(table.companyId),
-        companyNameIdx: uniqueIndex15("labels_company_name_idx").on(table.companyId, table.name)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_labels.ts
-import { pgTable as pgTable32, uuid as uuid31, timestamp as timestamp32, index as index28, primaryKey as primaryKey2 } from "drizzle-orm/pg-core";
-var issueLabels;
-var init_issue_labels = __esm({
-  "../packages/db/src/schema/issue_labels.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    init_labels();
-    issueLabels = pgTable32(
-      "issue_labels",
-      {
-        issueId: uuid31("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-        labelId: uuid31("label_id").notNull().references(() => labels.id, { onDelete: "cascade" }),
-        companyId: uuid31("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-        createdAt: timestamp32("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pk: primaryKey2({ columns: [table.issueId, table.labelId], name: "issue_labels_pk" }),
-        issueIdx: index28("issue_labels_issue_idx").on(table.issueId),
-        labelIdx: index28("issue_labels_label_idx").on(table.labelId),
-        companyIdx: index28("issue_labels_company_idx").on(table.companyId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_approvals.ts
-import { pgTable as pgTable33, uuid as uuid32, text as text36, timestamp as timestamp33, index as index29, primaryKey as primaryKey3 } from "drizzle-orm/pg-core";
-var issueApprovals;
-var init_issue_approvals = __esm({
-  "../packages/db/src/schema/issue_approvals.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    init_approvals();
-    init_agents();
-    issueApprovals = pgTable33(
-      "issue_approvals",
-      {
-        companyId: uuid32("company_id").notNull().references(() => companies.id),
-        issueId: uuid32("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-        approvalId: uuid32("approval_id").notNull().references(() => approvals.id, { onDelete: "cascade" }),
-        linkedByAgentId: uuid32("linked_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        linkedByUserId: text36("linked_by_user_id"),
-        createdAt: timestamp33("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pk: primaryKey3({ columns: [table.issueId, table.approvalId], name: "issue_approvals_pk" }),
-        issueIdx: index29("issue_approvals_issue_idx").on(table.issueId),
-        approvalIdx: index29("issue_approvals_approval_idx").on(table.approvalId),
-        companyIdx: index29("issue_approvals_company_idx").on(table.companyId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_comments.ts
-import { pgTable as pgTable34, uuid as uuid33, text as text37, timestamp as timestamp34, index as index30 } from "drizzle-orm/pg-core";
-var issueComments;
-var init_issue_comments = __esm({
-  "../packages/db/src/schema/issue_comments.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    init_agents();
-    issueComments = pgTable34(
-      "issue_comments",
-      {
-        id: uuid33("id").primaryKey().defaultRandom(),
-        companyId: uuid33("company_id").notNull().references(() => companies.id),
-        issueId: uuid33("issue_id").notNull().references(() => issues.id),
-        authorAgentId: uuid33("author_agent_id").references(() => agents.id),
-        authorUserId: text37("author_user_id"),
-        body: text37("body").notNull(),
-        createdAt: timestamp34("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp34("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        issueIdx: index30("issue_comments_issue_idx").on(table.issueId),
-        companyIdx: index30("issue_comments_company_idx").on(table.companyId),
-        companyIssueCreatedAtIdx: index30("issue_comments_company_issue_created_at_idx").on(
-          table.companyId,
-          table.issueId,
-          table.createdAt
-        ),
-        companyAuthorIssueCreatedAtIdx: index30("issue_comments_company_author_issue_created_at_idx").on(
-          table.companyId,
-          table.authorUserId,
-          table.issueId,
-          table.createdAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_read_states.ts
-import { pgTable as pgTable35, uuid as uuid34, text as text38, timestamp as timestamp35, index as index31, uniqueIndex as uniqueIndex16 } from "drizzle-orm/pg-core";
-var issueReadStates;
-var init_issue_read_states = __esm({
-  "../packages/db/src/schema/issue_read_states.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    issueReadStates = pgTable35(
-      "issue_read_states",
-      {
-        id: uuid34("id").primaryKey().defaultRandom(),
-        companyId: uuid34("company_id").notNull().references(() => companies.id),
-        issueId: uuid34("issue_id").notNull().references(() => issues.id),
-        userId: text38("user_id").notNull(),
-        lastReadAt: timestamp35("last_read_at", { withTimezone: true }).notNull().defaultNow(),
-        createdAt: timestamp35("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp35("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIssueIdx: index31("issue_read_states_company_issue_idx").on(table.companyId, table.issueId),
-        companyUserIdx: index31("issue_read_states_company_user_idx").on(table.companyId, table.userId),
-        companyIssueUserUnique: uniqueIndex16("issue_read_states_company_issue_user_idx").on(
-          table.companyId,
-          table.issueId,
-          table.userId
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_attachments.ts
-import { pgTable as pgTable36, uuid as uuid35, timestamp as timestamp36, index as index32, uniqueIndex as uniqueIndex17 } from "drizzle-orm/pg-core";
-var issueAttachments;
-var init_issue_attachments = __esm({
-  "../packages/db/src/schema/issue_attachments.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    init_assets();
-    init_issue_comments();
-    issueAttachments = pgTable36(
-      "issue_attachments",
-      {
-        id: uuid35("id").primaryKey().defaultRandom(),
-        companyId: uuid35("company_id").notNull().references(() => companies.id),
-        issueId: uuid35("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-        assetId: uuid35("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
-        issueCommentId: uuid35("issue_comment_id").references(() => issueComments.id, { onDelete: "set null" }),
-        createdAt: timestamp36("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp36("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIssueIdx: index32("issue_attachments_company_issue_idx").on(table.companyId, table.issueId),
-        issueCommentIdx: index32("issue_attachments_issue_comment_idx").on(table.issueCommentId),
-        assetUq: uniqueIndex17("issue_attachments_asset_uq").on(table.assetId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/documents.ts
-import { pgTable as pgTable37, uuid as uuid36, text as text39, integer as integer11, timestamp as timestamp37, index as index33 } from "drizzle-orm/pg-core";
-var documents;
-var init_documents = __esm({
-  "../packages/db/src/schema/documents.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    documents = pgTable37(
-      "documents",
-      {
-        id: uuid36("id").primaryKey().defaultRandom(),
-        companyId: uuid36("company_id").notNull().references(() => companies.id),
-        title: text39("title"),
-        format: text39("format").notNull().default("markdown"),
-        latestBody: text39("latest_body").notNull(),
-        latestRevisionId: uuid36("latest_revision_id"),
-        latestRevisionNumber: integer11("latest_revision_number").notNull().default(1),
-        createdByAgentId: uuid36("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text39("created_by_user_id"),
-        updatedByAgentId: uuid36("updated_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        updatedByUserId: text39("updated_by_user_id"),
-        createdAt: timestamp37("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp37("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyUpdatedIdx: index33("documents_company_updated_idx").on(table.companyId, table.updatedAt),
-        companyCreatedIdx: index33("documents_company_created_idx").on(table.companyId, table.createdAt)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/kb_skill_docs.ts
-import { pgTable as pgTable38, uuid as uuid37, text as text40, boolean as boolean8, timestamp as timestamp38, index as index34, jsonb as jsonb20 } from "drizzle-orm/pg-core";
-var kbSkillDocs;
-var init_kb_skill_docs = __esm({
-  "../packages/db/src/schema/kb_skill_docs.ts"() {
-    "use strict";
-    init_companies();
-    kbSkillDocs = pgTable38(
-      "kb_skill_docs",
-      {
-        id: uuid37("id").primaryKey().defaultRandom(),
-        companyId: uuid37("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-        name: text40("name").notNull(),
-        description: text40("description").notNull().default(""),
-        body: text40("body").notNull().default(""),
-        format: text40("format").notNull().default("markdown"),
-        source: text40("source").notNull().default("custom"),
-        metadata: jsonb20("metadata").$type().notNull().default({}),
-        isActive: boolean8("is_active").notNull().default(true),
-        createdAt: timestamp38("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp38("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyActiveIdx: index34("kb_skill_docs_company_active_idx").on(table.companyId, table.isActive),
-        companyUpdatedIdx: index34("kb_skill_docs_company_updated_idx").on(table.companyId, table.updatedAt)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/document_revisions.ts
-import { pgTable as pgTable39, uuid as uuid38, text as text41, integer as integer12, timestamp as timestamp39, index as index35, uniqueIndex as uniqueIndex18 } from "drizzle-orm/pg-core";
-var documentRevisions;
-var init_document_revisions = __esm({
-  "../packages/db/src/schema/document_revisions.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_documents();
-    documentRevisions = pgTable39(
-      "document_revisions",
-      {
-        id: uuid38("id").primaryKey().defaultRandom(),
-        companyId: uuid38("company_id").notNull().references(() => companies.id),
-        documentId: uuid38("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-        revisionNumber: integer12("revision_number").notNull(),
-        body: text41("body").notNull(),
-        changeSummary: text41("change_summary"),
-        createdByAgentId: uuid38("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text41("created_by_user_id"),
-        createdAt: timestamp39("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        documentRevisionUq: uniqueIndex18("document_revisions_document_revision_uq").on(
-          table.documentId,
-          table.revisionNumber
-        ),
-        companyDocumentCreatedIdx: index35("document_revisions_company_document_created_idx").on(
-          table.companyId,
-          table.documentId,
-          table.createdAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/issue_documents.ts
-import { pgTable as pgTable40, uuid as uuid39, text as text42, timestamp as timestamp40, index as index36, uniqueIndex as uniqueIndex19 } from "drizzle-orm/pg-core";
-var issueDocuments;
-var init_issue_documents = __esm({
-  "../packages/db/src/schema/issue_documents.ts"() {
-    "use strict";
-    init_companies();
-    init_issues();
-    init_documents();
-    issueDocuments = pgTable40(
-      "issue_documents",
-      {
-        id: uuid39("id").primaryKey().defaultRandom(),
-        companyId: uuid39("company_id").notNull().references(() => companies.id),
-        issueId: uuid39("issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
-        documentId: uuid39("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-        key: text42("key").notNull(),
-        createdAt: timestamp40("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp40("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIssueKeyUq: uniqueIndex19("issue_documents_company_issue_key_uq").on(
-          table.companyId,
-          table.issueId,
-          table.key
-        ),
-        documentUq: uniqueIndex19("issue_documents_document_uq").on(table.documentId),
-        companyIssueUpdatedIdx: index36("issue_documents_company_issue_updated_idx").on(
-          table.companyId,
-          table.issueId,
-          table.updatedAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/heartbeat_run_events.ts
-import { pgTable as pgTable41, uuid as uuid40, text as text43, timestamp as timestamp41, integer as integer13, jsonb as jsonb21, index as index37, bigserial } from "drizzle-orm/pg-core";
-var heartbeatRunEvents;
-var init_heartbeat_run_events = __esm({
-  "../packages/db/src/schema/heartbeat_run_events.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_heartbeat_runs();
-    heartbeatRunEvents = pgTable41(
-      "heartbeat_run_events",
-      {
-        id: bigserial("id", { mode: "number" }).primaryKey(),
-        companyId: uuid40("company_id").notNull().references(() => companies.id),
-        runId: uuid40("run_id").notNull().references(() => heartbeatRuns.id),
-        agentId: uuid40("agent_id").notNull().references(() => agents.id),
-        seq: integer13("seq").notNull(),
-        eventType: text43("event_type").notNull(),
-        stream: text43("stream"),
-        level: text43("level"),
-        color: text43("color"),
-        message: text43("message"),
-        payload: jsonb21("payload").$type(),
-        createdAt: timestamp41("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        runSeqIdx: index37("heartbeat_run_events_run_seq_idx").on(table.runId, table.seq),
-        companyRunIdx: index37("heartbeat_run_events_company_run_idx").on(table.companyId, table.runId),
-        companyCreatedIdx: index37("heartbeat_run_events_company_created_idx").on(table.companyId, table.createdAt)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/cost_events.ts
-import { pgTable as pgTable42, uuid as uuid41, text as text44, timestamp as timestamp42, integer as integer14, index as index38 } from "drizzle-orm/pg-core";
-var costEvents;
-var init_cost_events = __esm({
-  "../packages/db/src/schema/cost_events.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_issues();
-    init_projects();
-    init_goals();
-    init_heartbeat_runs();
-    costEvents = pgTable42(
-      "cost_events",
-      {
-        id: uuid41("id").primaryKey().defaultRandom(),
-        companyId: uuid41("company_id").notNull().references(() => companies.id),
-        agentId: uuid41("agent_id").notNull().references(() => agents.id),
-        issueId: uuid41("issue_id").references(() => issues.id),
-        projectId: uuid41("project_id").references(() => projects.id),
-        goalId: uuid41("goal_id").references(() => goals.id),
-        heartbeatRunId: uuid41("heartbeat_run_id").references(() => heartbeatRuns.id),
-        billingCode: text44("billing_code"),
-        provider: text44("provider").notNull(),
-        biller: text44("biller").notNull().default("unknown"),
-        billingType: text44("billing_type").notNull().default("unknown"),
-        model: text44("model").notNull(),
-        inputTokens: integer14("input_tokens").notNull().default(0),
-        cachedInputTokens: integer14("cached_input_tokens").notNull().default(0),
-        outputTokens: integer14("output_tokens").notNull().default(0),
-        costCents: integer14("cost_cents").notNull(),
-        occurredAt: timestamp42("occurred_at", { withTimezone: true }).notNull(),
-        createdAt: timestamp42("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyOccurredIdx: index38("cost_events_company_occurred_idx").on(table.companyId, table.occurredAt),
-        companyAgentOccurredIdx: index38("cost_events_company_agent_occurred_idx").on(
-          table.companyId,
-          table.agentId,
-          table.occurredAt
-        ),
-        companyProviderOccurredIdx: index38("cost_events_company_provider_occurred_idx").on(
-          table.companyId,
-          table.provider,
-          table.occurredAt
-        ),
-        companyBillerOccurredIdx: index38("cost_events_company_biller_occurred_idx").on(
-          table.companyId,
-          table.biller,
-          table.occurredAt
-        ),
-        companyHeartbeatRunIdx: index38("cost_events_company_heartbeat_run_idx").on(
-          table.companyId,
-          table.heartbeatRunId
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/finance_events.ts
-import { pgTable as pgTable43, uuid as uuid42, text as text45, timestamp as timestamp43, integer as integer15, index as index39, boolean as boolean9, jsonb as jsonb22 } from "drizzle-orm/pg-core";
-var financeEvents;
-var init_finance_events = __esm({
-  "../packages/db/src/schema/finance_events.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_issues();
-    init_projects();
-    init_goals();
-    init_heartbeat_runs();
-    init_cost_events();
-    financeEvents = pgTable43(
-      "finance_events",
-      {
-        id: uuid42("id").primaryKey().defaultRandom(),
-        companyId: uuid42("company_id").notNull().references(() => companies.id),
-        agentId: uuid42("agent_id").references(() => agents.id),
-        issueId: uuid42("issue_id").references(() => issues.id),
-        projectId: uuid42("project_id").references(() => projects.id),
-        goalId: uuid42("goal_id").references(() => goals.id),
-        heartbeatRunId: uuid42("heartbeat_run_id").references(() => heartbeatRuns.id),
-        costEventId: uuid42("cost_event_id").references(() => costEvents.id),
-        billingCode: text45("billing_code"),
-        description: text45("description"),
-        eventKind: text45("event_kind").notNull(),
-        direction: text45("direction").notNull().default("debit"),
-        biller: text45("biller").notNull(),
-        provider: text45("provider"),
-        executionAdapterType: text45("execution_adapter_type"),
-        pricingTier: text45("pricing_tier"),
-        region: text45("region"),
-        model: text45("model"),
-        quantity: integer15("quantity"),
-        unit: text45("unit"),
-        amountCents: integer15("amount_cents").notNull(),
-        currency: text45("currency").notNull().default("USD"),
-        estimated: boolean9("estimated").notNull().default(false),
-        externalInvoiceId: text45("external_invoice_id"),
-        metadataJson: jsonb22("metadata_json").$type(),
-        occurredAt: timestamp43("occurred_at", { withTimezone: true }).notNull(),
-        createdAt: timestamp43("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyOccurredIdx: index39("finance_events_company_occurred_idx").on(table.companyId, table.occurredAt),
-        companyBillerOccurredIdx: index39("finance_events_company_biller_occurred_idx").on(
-          table.companyId,
-          table.biller,
-          table.occurredAt
-        ),
-        companyKindOccurredIdx: index39("finance_events_company_kind_occurred_idx").on(
-          table.companyId,
-          table.eventKind,
-          table.occurredAt
-        ),
-        companyDirectionOccurredIdx: index39("finance_events_company_direction_occurred_idx").on(
-          table.companyId,
-          table.direction,
-          table.occurredAt
-        ),
-        companyHeartbeatRunIdx: index39("finance_events_company_heartbeat_run_idx").on(
-          table.companyId,
-          table.heartbeatRunId
-        ),
-        companyCostEventIdx: index39("finance_events_company_cost_event_idx").on(
-          table.companyId,
-          table.costEventId
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/approval_comments.ts
-import { pgTable as pgTable44, uuid as uuid43, text as text46, timestamp as timestamp44, index as index40 } from "drizzle-orm/pg-core";
-var approvalComments;
-var init_approval_comments = __esm({
-  "../packages/db/src/schema/approval_comments.ts"() {
-    "use strict";
-    init_companies();
-    init_approvals();
-    init_agents();
-    approvalComments = pgTable44(
-      "approval_comments",
-      {
-        id: uuid43("id").primaryKey().defaultRandom(),
-        companyId: uuid43("company_id").notNull().references(() => companies.id),
-        approvalId: uuid43("approval_id").notNull().references(() => approvals.id),
-        authorAgentId: uuid43("author_agent_id").references(() => agents.id),
-        authorUserId: text46("author_user_id"),
-        body: text46("body").notNull(),
-        createdAt: timestamp44("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp44("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIdx: index40("approval_comments_company_idx").on(table.companyId),
-        approvalIdx: index40("approval_comments_approval_idx").on(table.approvalId),
-        approvalCreatedIdx: index40("approval_comments_approval_created_idx").on(
-          table.approvalId,
-          table.createdAt
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/activity_log.ts
-import { pgTable as pgTable45, uuid as uuid44, text as text47, timestamp as timestamp45, jsonb as jsonb23, index as index41 } from "drizzle-orm/pg-core";
-var activityLog;
-var init_activity_log = __esm({
-  "../packages/db/src/schema/activity_log.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    init_heartbeat_runs();
-    activityLog = pgTable45(
-      "activity_log",
-      {
-        id: uuid44("id").primaryKey().defaultRandom(),
-        companyId: uuid44("company_id").notNull().references(() => companies.id),
-        actorType: text47("actor_type").notNull().default("system"),
-        actorId: text47("actor_id").notNull(),
-        action: text47("action").notNull(),
-        entityType: text47("entity_type").notNull(),
-        entityId: text47("entity_id").notNull(),
-        agentId: uuid44("agent_id").references(() => agents.id),
-        runId: uuid44("run_id").references(() => heartbeatRuns.id),
-        details: jsonb23("details").$type(),
-        createdAt: timestamp45("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyCreatedIdx: index41("activity_log_company_created_idx").on(table.companyId, table.createdAt),
-        runIdIdx: index41("activity_log_run_id_idx").on(table.runId),
-        entityIdx: index41("activity_log_entity_type_id_idx").on(table.entityType, table.entityId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/company_secrets.ts
-import { pgTable as pgTable46, uuid as uuid45, text as text48, timestamp as timestamp46, integer as integer16, index as index42, uniqueIndex as uniqueIndex20 } from "drizzle-orm/pg-core";
-var companySecrets;
-var init_company_secrets = __esm({
-  "../packages/db/src/schema/company_secrets.ts"() {
-    "use strict";
-    init_companies();
-    init_agents();
-    companySecrets = pgTable46(
-      "company_secrets",
-      {
-        id: uuid45("id").primaryKey().defaultRandom(),
-        companyId: uuid45("company_id").notNull().references(() => companies.id),
-        name: text48("name").notNull(),
-        provider: text48("provider").notNull().default("local_encrypted"),
-        externalRef: text48("external_ref"),
-        latestVersion: integer16("latest_version").notNull().default(1),
-        description: text48("description"),
-        createdByAgentId: uuid45("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text48("created_by_user_id"),
-        createdAt: timestamp46("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp46("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIdx: index42("company_secrets_company_idx").on(table.companyId),
-        companyProviderIdx: index42("company_secrets_company_provider_idx").on(table.companyId, table.provider),
-        companyNameUq: uniqueIndex20("company_secrets_company_name_uq").on(table.companyId, table.name)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/company_secret_versions.ts
-import { pgTable as pgTable47, uuid as uuid46, text as text49, timestamp as timestamp47, integer as integer17, jsonb as jsonb24, index as index43, uniqueIndex as uniqueIndex21 } from "drizzle-orm/pg-core";
-var companySecretVersions;
-var init_company_secret_versions = __esm({
-  "../packages/db/src/schema/company_secret_versions.ts"() {
-    "use strict";
-    init_agents();
-    init_company_secrets();
-    companySecretVersions = pgTable47(
-      "company_secret_versions",
-      {
-        id: uuid46("id").primaryKey().defaultRandom(),
-        secretId: uuid46("secret_id").notNull().references(() => companySecrets.id, { onDelete: "cascade" }),
-        version: integer17("version").notNull(),
-        material: jsonb24("material").$type().notNull(),
-        valueSha256: text49("value_sha256").notNull(),
-        createdByAgentId: uuid46("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
-        createdByUserId: text49("created_by_user_id"),
-        createdAt: timestamp47("created_at", { withTimezone: true }).notNull().defaultNow(),
-        revokedAt: timestamp47("revoked_at", { withTimezone: true })
-      },
-      (table) => ({
-        secretIdx: index43("company_secret_versions_secret_idx").on(table.secretId, table.createdAt),
-        valueHashIdx: index43("company_secret_versions_value_sha256_idx").on(table.valueSha256),
-        secretVersionUq: uniqueIndex21("company_secret_versions_secret_version_uq").on(table.secretId, table.version)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugins.ts
-import {
-  pgTable as pgTable48,
-  uuid as uuid47,
-  text as text50,
-  integer as integer18,
-  timestamp as timestamp48,
-  jsonb as jsonb25,
-  index as index44,
-  uniqueIndex as uniqueIndex22
-} from "drizzle-orm/pg-core";
-var plugins;
-var init_plugins = __esm({
-  "../packages/db/src/schema/plugins.ts"() {
-    "use strict";
-    plugins = pgTable48(
-      "plugins",
-      {
-        id: uuid47("id").primaryKey().defaultRandom(),
-        pluginKey: text50("plugin_key").notNull(),
-        packageName: text50("package_name").notNull(),
-        version: text50("version").notNull(),
-        apiVersion: integer18("api_version").notNull().default(1),
-        categories: jsonb25("categories").$type().notNull().default([]),
-        manifestJson: jsonb25("manifest_json").$type().notNull(),
-        status: text50("status").$type().notNull().default("installed"),
-        installOrder: integer18("install_order"),
-        /** Resolved package path for local-path installs; used to find worker entrypoint. */
-        packagePath: text50("package_path"),
-        lastError: text50("last_error"),
-        installedAt: timestamp48("installed_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp48("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pluginKeyIdx: uniqueIndex22("plugins_plugin_key_idx").on(table.pluginKey),
-        statusIdx: index44("plugins_status_idx").on(table.status)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_config.ts
-import { pgTable as pgTable49, uuid as uuid48, text as text51, timestamp as timestamp49, jsonb as jsonb26, uniqueIndex as uniqueIndex23 } from "drizzle-orm/pg-core";
-var pluginConfig;
-var init_plugin_config = __esm({
-  "../packages/db/src/schema/plugin_config.ts"() {
-    "use strict";
-    init_plugins();
-    pluginConfig = pgTable49(
-      "plugin_config",
-      {
-        id: uuid48("id").primaryKey().defaultRandom(),
-        pluginId: uuid48("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        configJson: jsonb26("config_json").$type().notNull().default({}),
-        lastError: text51("last_error"),
-        createdAt: timestamp49("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp49("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pluginIdIdx: uniqueIndex23("plugin_config_plugin_id_idx").on(table.pluginId)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_company_settings.ts
-import { pgTable as pgTable50, uuid as uuid49, text as text52, timestamp as timestamp50, jsonb as jsonb27, index as index45, uniqueIndex as uniqueIndex24, boolean as boolean10 } from "drizzle-orm/pg-core";
-var pluginCompanySettings;
-var init_plugin_company_settings = __esm({
-  "../packages/db/src/schema/plugin_company_settings.ts"() {
-    "use strict";
-    init_companies();
-    init_plugins();
-    pluginCompanySettings = pgTable50(
-      "plugin_company_settings",
-      {
-        id: uuid49("id").primaryKey().defaultRandom(),
-        companyId: uuid49("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-        pluginId: uuid49("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        enabled: boolean10("enabled").notNull().default(true),
-        settingsJson: jsonb27("settings_json").$type().notNull().default({}),
-        lastError: text52("last_error"),
-        createdAt: timestamp50("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp50("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        companyIdx: index45("plugin_company_settings_company_idx").on(table.companyId),
-        pluginIdx: index45("plugin_company_settings_plugin_idx").on(table.pluginId),
-        companyPluginUq: uniqueIndex24("plugin_company_settings_company_plugin_uq").on(
-          table.companyId,
-          table.pluginId
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_state.ts
-import {
-  pgTable as pgTable51,
-  uuid as uuid50,
-  text as text53,
-  timestamp as timestamp51,
-  jsonb as jsonb28,
-  index as index46,
-  unique as unique2
-} from "drizzle-orm/pg-core";
-var pluginState;
-var init_plugin_state = __esm({
-  "../packages/db/src/schema/plugin_state.ts"() {
-    "use strict";
-    init_plugins();
-    pluginState = pgTable51(
-      "plugin_state",
-      {
-        id: uuid50("id").primaryKey().defaultRandom(),
-        /** FK to the owning plugin. Cascades on delete. */
-        pluginId: uuid50("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        /** Granularity of the scope (e.g. `"instance"`, `"project"`, `"issue"`). */
-        scopeKind: text53("scope_kind").$type().notNull(),
-        /**
-         * UUID or text identifier for the scoped object.
-         * Null for `instance` scope (which has no associated entity).
-         */
-        scopeId: text53("scope_id"),
-        /**
-         * Sub-namespace to avoid key collisions within a scope.
-         * Defaults to `"default"` if the plugin does not specify one.
-         */
-        namespace: text53("namespace").notNull().default("default"),
-        /** The key identifying this state entry within the namespace. */
-        stateKey: text53("state_key").notNull(),
-        /** JSON-serializable value stored by the plugin. */
-        valueJson: jsonb28("value_json").notNull(),
-        /** Timestamp of the most recent write. */
-        updatedAt: timestamp51("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        /**
-         * Unique constraint enforces that there is at most one value per
-         * (plugin, scope kind, scope id, namespace, key) tuple.
-         *
-         * `nullsNotDistinct()` is required so that `scope_id IS NULL` entries
-         * (used by `instance` scope) are treated as equal by PostgreSQL rather
-         * than as distinct nulls — otherwise the upsert target in `set()` would
-         * fail to match existing rows and create duplicates.
-         *
-         * Requires PostgreSQL 15+.
-         */
-        uniqueEntry: unique2("plugin_state_unique_entry_idx").on(
-          table.pluginId,
-          table.scopeKind,
-          table.scopeId,
-          table.namespace,
-          table.stateKey
-        ).nullsNotDistinct(),
-        /** Speed up lookups by plugin + scope kind (most common access pattern). */
-        pluginScopeIdx: index46("plugin_state_plugin_scope_idx").on(
-          table.pluginId,
-          table.scopeKind
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_entities.ts
-import {
-  pgTable as pgTable52,
-  uuid as uuid51,
-  text as text54,
-  timestamp as timestamp52,
-  jsonb as jsonb29,
-  index as index47,
-  uniqueIndex as uniqueIndex25
-} from "drizzle-orm/pg-core";
-var pluginEntities;
-var init_plugin_entities = __esm({
-  "../packages/db/src/schema/plugin_entities.ts"() {
-    "use strict";
-    init_plugins();
-    pluginEntities = pgTable52(
-      "plugin_entities",
-      {
-        id: uuid51("id").primaryKey().defaultRandom(),
-        pluginId: uuid51("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        entityType: text54("entity_type").notNull(),
-        scopeKind: text54("scope_kind").$type().notNull(),
-        scopeId: text54("scope_id"),
-        // NULL for global scope (text to match plugin_state.scope_id)
-        externalId: text54("external_id"),
-        // ID in the external system
-        title: text54("title"),
-        status: text54("status"),
-        data: jsonb29("data").$type().notNull().default({}),
-        createdAt: timestamp52("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp52("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pluginIdx: index47("plugin_entities_plugin_idx").on(table.pluginId),
-        typeIdx: index47("plugin_entities_type_idx").on(table.entityType),
-        scopeIdx: index47("plugin_entities_scope_idx").on(table.scopeKind, table.scopeId),
-        externalIdx: uniqueIndex25("plugin_entities_external_idx").on(
-          table.pluginId,
-          table.entityType,
-          table.externalId
-        )
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_jobs.ts
-import {
-  pgTable as pgTable53,
-  uuid as uuid52,
-  text as text55,
-  integer as integer19,
-  timestamp as timestamp53,
-  jsonb as jsonb30,
-  index as index48,
-  uniqueIndex as uniqueIndex26
-} from "drizzle-orm/pg-core";
-var pluginJobs, pluginJobRuns;
-var init_plugin_jobs = __esm({
-  "../packages/db/src/schema/plugin_jobs.ts"() {
-    "use strict";
-    init_plugins();
-    pluginJobs = pgTable53(
-      "plugin_jobs",
-      {
-        id: uuid52("id").primaryKey().defaultRandom(),
-        /** FK to the owning plugin. Cascades on delete. */
-        pluginId: uuid52("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        /** Identifier matching the key in the plugin manifest's `jobs` array. */
-        jobKey: text55("job_key").notNull(),
-        /** Cron expression (e.g. `"0 * * * *"`) or interval string. */
-        schedule: text55("schedule").notNull(),
-        /** Current scheduling state. */
-        status: text55("status").$type().notNull().default("active"),
-        /** Timestamp of the most recent successful execution. */
-        lastRunAt: timestamp53("last_run_at", { withTimezone: true }),
-        /** Pre-computed timestamp of the next scheduled execution. */
-        nextRunAt: timestamp53("next_run_at", { withTimezone: true }),
-        createdAt: timestamp53("created_at", { withTimezone: true }).notNull().defaultNow(),
-        updatedAt: timestamp53("updated_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pluginIdx: index48("plugin_jobs_plugin_idx").on(table.pluginId),
-        nextRunIdx: index48("plugin_jobs_next_run_idx").on(table.nextRunAt),
-        uniqueJobIdx: uniqueIndex26("plugin_jobs_unique_idx").on(table.pluginId, table.jobKey)
-      })
-    );
-    pluginJobRuns = pgTable53(
-      "plugin_job_runs",
-      {
-        id: uuid52("id").primaryKey().defaultRandom(),
-        /** FK to the parent job definition. Cascades on delete. */
-        jobId: uuid52("job_id").notNull().references(() => pluginJobs.id, { onDelete: "cascade" }),
-        /** Denormalized FK to the owning plugin for efficient querying. Cascades on delete. */
-        pluginId: uuid52("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        /** What caused this run to start (`"scheduled"` or `"manual"`). */
-        trigger: text55("trigger").$type().notNull(),
-        /** Current lifecycle state of this run. */
-        status: text55("status").$type().notNull().default("pending"),
-        /** Wall-clock duration in milliseconds. Null until the run finishes. */
-        durationMs: integer19("duration_ms"),
-        /** Error message if `status === "failed"`. */
-        error: text55("error"),
-        /** Ordered list of log lines emitted during this run. */
-        logs: jsonb30("logs").$type().notNull().default([]),
-        startedAt: timestamp53("started_at", { withTimezone: true }),
-        finishedAt: timestamp53("finished_at", { withTimezone: true }),
-        createdAt: timestamp53("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        jobIdx: index48("plugin_job_runs_job_idx").on(table.jobId),
-        pluginIdx: index48("plugin_job_runs_plugin_idx").on(table.pluginId),
-        statusIdx: index48("plugin_job_runs_status_idx").on(table.status)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_webhooks.ts
-import {
-  pgTable as pgTable54,
-  uuid as uuid53,
-  text as text56,
-  integer as integer20,
-  timestamp as timestamp54,
-  jsonb as jsonb31,
-  index as index49
-} from "drizzle-orm/pg-core";
-var pluginWebhookDeliveries;
-var init_plugin_webhooks = __esm({
-  "../packages/db/src/schema/plugin_webhooks.ts"() {
-    "use strict";
-    init_plugins();
-    pluginWebhookDeliveries = pgTable54(
-      "plugin_webhook_deliveries",
-      {
-        id: uuid53("id").primaryKey().defaultRandom(),
-        /** FK to the owning plugin. Cascades on delete. */
-        pluginId: uuid53("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        /** Identifier matching the key in the plugin manifest's `webhooks` array. */
-        webhookKey: text56("webhook_key").notNull(),
-        /** Optional de-duplication ID provided by the external system. */
-        externalId: text56("external_id"),
-        /** Current delivery state. */
-        status: text56("status").$type().notNull().default("pending"),
-        /** Wall-clock processing duration in milliseconds. Null until delivery finishes. */
-        durationMs: integer20("duration_ms"),
-        /** Error message if `status === "failed"`. */
-        error: text56("error"),
-        /** Raw JSON body of the inbound HTTP request. */
-        payload: jsonb31("payload").$type().notNull(),
-        /** Relevant HTTP headers from the inbound request (e.g. signature headers). */
-        headers: jsonb31("headers").$type().notNull().default({}),
-        startedAt: timestamp54("started_at", { withTimezone: true }),
-        finishedAt: timestamp54("finished_at", { withTimezone: true }),
-        createdAt: timestamp54("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pluginIdx: index49("plugin_webhook_deliveries_plugin_idx").on(table.pluginId),
-        statusIdx: index49("plugin_webhook_deliveries_status_idx").on(table.status),
-        keyIdx: index49("plugin_webhook_deliveries_key_idx").on(table.webhookKey)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/plugin_logs.ts
-import {
-  pgTable as pgTable55,
-  uuid as uuid54,
-  text as text57,
-  timestamp as timestamp55,
-  jsonb as jsonb32,
-  index as index50
-} from "drizzle-orm/pg-core";
-var pluginLogs;
-var init_plugin_logs = __esm({
-  "../packages/db/src/schema/plugin_logs.ts"() {
-    "use strict";
-    init_plugins();
-    pluginLogs = pgTable55(
-      "plugin_logs",
-      {
-        id: uuid54("id").primaryKey().defaultRandom(),
-        pluginId: uuid54("plugin_id").notNull().references(() => plugins.id, { onDelete: "cascade" }),
-        level: text57("level").notNull().default("info"),
-        message: text57("message").notNull(),
-        meta: jsonb32("meta").$type(),
-        createdAt: timestamp55("created_at", { withTimezone: true }).notNull().defaultNow()
-      },
-      (table) => ({
-        pluginTimeIdx: index50("plugin_logs_plugin_time_idx").on(
-          table.pluginId,
-          table.createdAt
-        ),
-        levelIdx: index50("plugin_logs_level_idx").on(table.level)
-      })
-    );
-  }
-});
-
-// ../packages/db/src/schema/index.ts
-var schema_exports = {};
-__export(schema_exports, {
-  activityLog: () => activityLog,
-  agentApiKeys: () => agentApiKeys,
-  agentConfigRevisions: () => agentConfigRevisions,
-  agentRuntimeState: () => agentRuntimeState,
-  agentTaskSessions: () => agentTaskSessions,
-  agentWakeupRequests: () => agentWakeupRequests,
-  agents: () => agents,
-  approvalComments: () => approvalComments,
-  approvals: () => approvals,
-  assets: () => assets,
-  authAccounts: () => authAccounts,
-  authSessions: () => authSessions,
-  authUsers: () => authUsers,
-  authVerifications: () => authVerifications,
-  budgetIncidents: () => budgetIncidents,
-  budgetPolicies: () => budgetPolicies,
-  companies: () => companies,
-  companyLogos: () => companyLogos,
-  companyMemberships: () => companyMemberships,
-  companySecretVersions: () => companySecretVersions,
-  companySecrets: () => companySecrets,
-  costEvents: () => costEvents,
-  documentRevisions: () => documentRevisions,
-  documents: () => documents,
-  executionWorkspaces: () => executionWorkspaces,
-  financeEvents: () => financeEvents,
-  goals: () => goals,
-  heartbeatRunEvents: () => heartbeatRunEvents,
-  heartbeatRuns: () => heartbeatRuns,
-  instanceSettings: () => instanceSettings,
-  instanceUserRoles: () => instanceUserRoles,
-  invites: () => invites,
-  issueApprovals: () => issueApprovals,
-  issueAttachments: () => issueAttachments,
-  issueComments: () => issueComments,
-  issueDocuments: () => issueDocuments,
-  issueLabels: () => issueLabels,
-  issueReadStates: () => issueReadStates,
-  issueWorkProducts: () => issueWorkProducts,
-  issues: () => issues,
-  joinRequests: () => joinRequests,
-  kbSkillDocs: () => kbSkillDocs,
-  labels: () => labels,
-  pluginCompanySettings: () => pluginCompanySettings,
-  pluginConfig: () => pluginConfig,
-  pluginEntities: () => pluginEntities,
-  pluginJobRuns: () => pluginJobRuns,
-  pluginJobs: () => pluginJobs,
-  pluginLogs: () => pluginLogs,
-  pluginState: () => pluginState,
-  pluginWebhookDeliveries: () => pluginWebhookDeliveries,
-  plugins: () => plugins,
-  principalPermissionGrants: () => principalPermissionGrants,
-  projectGoals: () => projectGoals,
-  projectWorkspaces: () => projectWorkspaces,
-  projects: () => projects,
-  tickets: () => tickets,
-  workspaceOperations: () => workspaceOperations,
-  workspaceRuntimeServices: () => workspaceRuntimeServices
-});
-var init_schema2 = __esm({
-  "../packages/db/src/schema/index.ts"() {
-    "use strict";
-    init_companies();
-    init_company_logos();
-    init_auth();
-    init_instance_settings();
-    init_instance_user_roles();
-    init_agents();
-    init_company_memberships();
-    init_principal_permission_grants();
-    init_invites();
-    init_join_requests();
-    init_budget_policies();
-    init_budget_incidents();
-    init_agent_config_revisions();
-    init_agent_api_keys();
-    init_agent_runtime_state();
-    init_agent_task_sessions();
-    init_agent_wakeup_requests();
-    init_projects();
-    init_project_workspaces();
-    init_execution_workspaces();
-    init_workspace_operations();
-    init_workspace_runtime_services();
-    init_project_goals();
-    init_goals();
-    init_tickets();
-    init_issues();
-    init_issue_work_products();
-    init_labels();
-    init_issue_labels();
-    init_issue_approvals();
-    init_issue_comments();
-    init_issue_read_states();
-    init_assets();
-    init_issue_attachments();
-    init_documents();
-    init_kb_skill_docs();
-    init_document_revisions();
-    init_issue_documents();
-    init_heartbeat_runs();
-    init_heartbeat_run_events();
-    init_cost_events();
-    init_finance_events();
-    init_approvals();
-    init_approval_comments();
-    init_activity_log();
-    init_company_secrets();
-    init_company_secret_versions();
-    init_plugins();
-    init_plugin_config();
-    init_plugin_company_settings();
-    init_plugin_state();
-    init_plugin_entities();
-    init_plugin_jobs();
-    init_plugin_webhooks();
-    init_plugin_logs();
-  }
-});
-
-// ../packages/db/src/client.ts
-import { createHash } from "node:crypto";
-import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
-import { migrate as migratePg } from "drizzle-orm/postgres-js/migrator";
-import { readFile, readdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import postgres from "postgres";
-function createUtilitySql(url) {
-  return postgres(url, { max: 1, onnotice: () => {
-  } });
-}
-function isSafeIdentifier(value) {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
-}
-function quoteIdentifier(value) {
-  if (!isSafeIdentifier(value)) throw new Error(`Unsafe SQL identifier: ${value}`);
-  return `"${value.replaceAll('"', '""')}"`;
-}
-function quoteLiteral(value) {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-function splitMigrationStatements(content) {
-  return content.split("--> statement-breakpoint").map((statement) => statement.trim()).filter((statement) => statement.length > 0);
-}
-function createDb(url) {
-  const sql2 = postgres(url);
-  return drizzlePg(sql2, { schema: schema_exports });
-}
-async function getPostgresDataDirectory(url) {
-  const sql2 = createUtilitySql(url);
-  try {
-    const rows = await sql2`
-      SELECT current_setting('data_directory', true) AS data_directory
-    `;
-    const actual = rows[0]?.data_directory;
-    return typeof actual === "string" && actual.length > 0 ? actual : null;
-  } catch {
-    return null;
-  } finally {
-    await sql2.end();
-  }
-}
-async function listMigrationFiles() {
-  const entries = await readdir(MIGRATIONS_FOLDER, { withFileTypes: true });
-  return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".sql")).map((entry) => entry.name).sort((a, b) => a.localeCompare(b));
-}
-async function listJournalMigrationEntries() {
-  try {
-    const raw = await readFile(MIGRATIONS_JOURNAL_JSON, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.entries)) return [];
-    return parsed.entries.map((entry, entryIndex) => {
-      if (typeof entry?.tag !== "string") return null;
-      if (typeof entry?.when !== "number" || !Number.isFinite(entry.when)) return null;
-      const order = Number.isInteger(entry.idx) ? Number(entry.idx) : entryIndex;
-      return { fileName: `${entry.tag}.sql`, folderMillis: entry.when, order };
-    }).filter((entry) => entry !== null);
-  } catch {
-    return [];
-  }
-}
-async function listJournalMigrationFiles() {
-  const entries = await listJournalMigrationEntries();
-  return entries.map((entry) => entry.fileName);
-}
-async function readMigrationFileContent(migrationFile) {
-  return readFile(new URL(`./migrations/${migrationFile}`, import.meta.url), "utf8");
-}
-async function orderMigrationsByJournal(migrationFiles) {
-  const journalEntries = await listJournalMigrationEntries();
-  const orderByFileName = new Map(journalEntries.map((entry) => [entry.fileName, entry.order]));
-  return [...migrationFiles].sort((left, right) => {
-    const leftOrder = orderByFileName.get(left);
-    const rightOrder = orderByFileName.get(right);
-    if (leftOrder === void 0 && rightOrder === void 0) return left.localeCompare(right);
-    if (leftOrder === void 0) return 1;
-    if (rightOrder === void 0) return -1;
-    if (leftOrder === rightOrder) return left.localeCompare(right);
-    return leftOrder - rightOrder;
-  });
-}
-async function runInTransaction(sql2, action) {
-  await sql2.unsafe("BEGIN");
-  try {
-    await action();
-    await sql2.unsafe("COMMIT");
-  } catch (error) {
-    try {
-      await sql2.unsafe("ROLLBACK");
-    } catch {
-    }
-    throw error;
-  }
-}
-async function latestMigrationCreatedAt(sql2, qualifiedTable) {
-  const rows = await sql2.unsafe(
-    `SELECT created_at FROM ${qualifiedTable} ORDER BY created_at DESC NULLS LAST LIMIT 1`
-  );
-  const value = Number(rows[0]?.created_at ?? Number.NaN);
-  return Number.isFinite(value) ? value : null;
-}
-function normalizeFolderMillis(value) {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-    return Math.trunc(value);
-  }
-  return Date.now();
-}
-async function ensureMigrationJournalTable(sql2) {
-  let migrationTableSchema = await discoverMigrationTableSchema(sql2);
-  if (!migrationTableSchema) {
-    const drizzleSchema = quoteIdentifier("drizzle");
-    const migrationTable = quoteIdentifier(DRIZZLE_MIGRATIONS_TABLE);
-    await sql2.unsafe(`CREATE SCHEMA IF NOT EXISTS ${drizzleSchema}`);
-    await sql2.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${drizzleSchema}.${migrationTable} (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)`
-    );
-    migrationTableSchema = await discoverMigrationTableSchema(sql2) ?? "drizzle";
-  }
-  const columnNames = await getMigrationTableColumnNames(sql2, migrationTableSchema);
-  return { migrationTableSchema, columnNames };
-}
-async function migrationHistoryEntryExists(sql2, qualifiedTable, columnNames, migrationFile, hash) {
-  const predicates = [];
-  if (columnNames.has("hash")) predicates.push(`hash = ${quoteLiteral(hash)}`);
-  if (columnNames.has("name")) predicates.push(`name = ${quoteLiteral(migrationFile)}`);
-  if (predicates.length === 0) return false;
-  const rows = await sql2.unsafe(
-    `SELECT 1 AS one FROM ${qualifiedTable} WHERE ${predicates.join(" OR ")} LIMIT 1`
-  );
-  return rows.length > 0;
-}
-async function recordMigrationHistoryEntry(sql2, qualifiedTable, columnNames, migrationFile, hash, folderMillis) {
-  const insertColumns = [];
-  const insertValues = [];
-  if (columnNames.has("hash")) {
-    insertColumns.push(quoteIdentifier("hash"));
-    insertValues.push(quoteLiteral(hash));
-  }
-  if (columnNames.has("name")) {
-    insertColumns.push(quoteIdentifier("name"));
-    insertValues.push(quoteLiteral(migrationFile));
-  }
-  if (columnNames.has("created_at")) {
-    const latestCreatedAt = await latestMigrationCreatedAt(sql2, qualifiedTable);
-    const createdAt = latestCreatedAt === null ? normalizeFolderMillis(folderMillis) : Math.max(latestCreatedAt + 1, normalizeFolderMillis(folderMillis));
-    insertColumns.push(quoteIdentifier("created_at"));
-    insertValues.push(quoteLiteral(String(createdAt)));
-  }
-  if (insertColumns.length === 0) return;
-  await sql2.unsafe(
-    `INSERT INTO ${qualifiedTable} (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`
-  );
-}
-async function applyPendingMigrationsManually(url, pendingMigrations) {
-  if (pendingMigrations.length === 0) return;
-  const orderedPendingMigrations = await orderMigrationsByJournal(pendingMigrations);
-  const journalEntries = await listJournalMigrationEntries();
-  const folderMillisByFileName = new Map(
-    journalEntries.map((entry) => [entry.fileName, normalizeFolderMillis(entry.folderMillis)])
-  );
-  const sql2 = createUtilitySql(url);
-  try {
-    const { migrationTableSchema, columnNames } = await ensureMigrationJournalTable(sql2);
-    const qualifiedTable = `${quoteIdentifier(migrationTableSchema)}.${quoteIdentifier(DRIZZLE_MIGRATIONS_TABLE)}`;
-    for (const migrationFile of orderedPendingMigrations) {
-      const migrationContent = await readMigrationFileContent(migrationFile);
-      const hash = createHash("sha256").update(migrationContent).digest("hex");
-      const existingEntry = await migrationHistoryEntryExists(
-        sql2,
-        qualifiedTable,
-        columnNames,
-        migrationFile,
-        hash
-      );
-      if (existingEntry) continue;
-      await runInTransaction(sql2, async () => {
-        for (const statement of splitMigrationStatements(migrationContent)) {
-          await sql2.unsafe(statement);
-        }
-        await recordMigrationHistoryEntry(
-          sql2,
-          qualifiedTable,
-          columnNames,
-          migrationFile,
-          hash,
-          folderMillisByFileName.get(migrationFile) ?? Date.now()
-        );
-      });
-    }
-  } finally {
-    await sql2.end();
-  }
-}
-async function mapHashesToMigrationFiles(migrationFiles) {
-  const mapped = /* @__PURE__ */ new Map();
-  await Promise.all(
-    migrationFiles.map(async (migrationFile) => {
-      const content = await readMigrationFileContent(migrationFile);
-      const hash = createHash("sha256").update(content).digest("hex");
-      mapped.set(hash, migrationFile);
-    })
-  );
-  return mapped;
-}
-async function getMigrationTableColumnNames(sql2, migrationTableSchema) {
-  const columns = await sql2.unsafe(
-    `
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = ${quoteLiteral(migrationTableSchema)}
-        AND table_name = ${quoteLiteral(DRIZZLE_MIGRATIONS_TABLE)}
-    `
-  );
-  return new Set(columns.map((column) => column.column_name));
-}
-async function tableExists(sql2, tableName) {
-  const rows = await sql2`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name = ${tableName}
-    ) AS exists
-  `;
-  return rows[0]?.exists ?? false;
-}
-async function columnExists(sql2, tableName, columnName) {
-  const rows = await sql2`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = ${tableName}
-        AND column_name = ${columnName}
-    ) AS exists
-  `;
-  return rows[0]?.exists ?? false;
-}
-async function indexExists(sql2, indexName) {
-  const rows = await sql2`
-    SELECT EXISTS (
-      SELECT 1
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public'
-        AND c.relkind = 'i'
-        AND c.relname = ${indexName}
-    ) AS exists
-  `;
-  return rows[0]?.exists ?? false;
-}
-async function constraintExists(sql2, constraintName) {
-  const rows = await sql2`
-    SELECT EXISTS (
-      SELECT 1
-      FROM pg_constraint c
-      JOIN pg_namespace n ON n.oid = c.connamespace
-      WHERE n.nspname = 'public'
-        AND c.conname = ${constraintName}
-    ) AS exists
-  `;
-  return rows[0]?.exists ?? false;
-}
-async function migrationStatementAlreadyApplied(sql2, statement) {
-  const normalized = statement.replace(/\s+/g, " ").trim();
-  const createTableMatch = normalized.match(/^CREATE TABLE(?: IF NOT EXISTS)? "([^"]+)"/i);
-  if (createTableMatch) {
-    return tableExists(sql2, createTableMatch[1]);
-  }
-  const addColumnMatch = normalized.match(
-    /^ALTER TABLE "([^"]+)" ADD COLUMN(?: IF NOT EXISTS)? "([^"]+)"/i
-  );
-  if (addColumnMatch) {
-    return columnExists(sql2, addColumnMatch[1], addColumnMatch[2]);
-  }
-  const createIndexMatch = normalized.match(/^CREATE (?:UNIQUE )?INDEX(?: IF NOT EXISTS)? "([^"]+)"/i);
-  if (createIndexMatch) {
-    return indexExists(sql2, createIndexMatch[1]);
-  }
-  const addConstraintMatch = normalized.match(/^ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)"/i);
-  if (addConstraintMatch) {
-    return constraintExists(sql2, addConstraintMatch[2]);
-  }
-  return false;
-}
-async function migrationContentAlreadyApplied(sql2, migrationContent) {
-  const statements = splitMigrationStatements(migrationContent);
-  if (statements.length === 0) return false;
-  for (const statement of statements) {
-    const applied = await migrationStatementAlreadyApplied(sql2, statement);
-    if (!applied) return false;
-  }
-  return true;
-}
-async function loadAppliedMigrations(sql2, migrationTableSchema, availableMigrations) {
-  const quotedSchema = quoteIdentifier(migrationTableSchema);
-  const qualifiedTable = `${quotedSchema}.${quoteIdentifier(DRIZZLE_MIGRATIONS_TABLE)}`;
-  const columnNames = await getMigrationTableColumnNames(sql2, migrationTableSchema);
-  if (columnNames.has("name")) {
-    const rows2 = await sql2.unsafe(`SELECT name FROM ${qualifiedTable} ORDER BY id`);
-    return rows2.map((row) => row.name).filter((name) => Boolean(name));
-  }
-  if (columnNames.has("hash")) {
-    const rows2 = await sql2.unsafe(`SELECT hash FROM ${qualifiedTable} ORDER BY id`);
-    const hashesToMigrationFiles = await mapHashesToMigrationFiles(availableMigrations);
-    const appliedFromHashes = rows2.map((row) => hashesToMigrationFiles.get(row.hash)).filter((name) => Boolean(name));
-    if (appliedFromHashes.length > 0) {
-      if (appliedFromHashes.length === rows2.length) return appliedFromHashes;
-      return appliedFromHashes;
-    }
-    if (columnNames.has("created_at")) {
-      const journalEntries = await listJournalMigrationEntries();
-      if (journalEntries.length > 0) {
-        const lastDbRows = await sql2.unsafe(
-          `SELECT created_at FROM ${qualifiedTable} ORDER BY created_at DESC LIMIT 1`
-        );
-        const lastCreatedAt = Number(lastDbRows[0]?.created_at ?? -1);
-        if (Number.isFinite(lastCreatedAt) && lastCreatedAt >= 0) {
-          return journalEntries.filter((entry) => availableMigrations.includes(entry.fileName)).filter((entry) => entry.folderMillis <= lastCreatedAt).map((entry) => entry.fileName).slice(0, rows2.length);
-        }
-      }
-    }
-  }
-  const rows = await sql2.unsafe(`SELECT id FROM ${qualifiedTable} ORDER BY id`);
-  const journalMigrationFiles = await listJournalMigrationFiles();
-  const appliedFromIds = rows.map((row) => journalMigrationFiles[row.id - 1]).filter((name) => Boolean(name));
-  if (appliedFromIds.length > 0) return appliedFromIds;
-  return availableMigrations.slice(0, Math.max(0, rows.length));
-}
-async function reconcilePendingMigrationHistory(url) {
-  const state = await inspectMigrations(url);
-  if (state.status !== "needsMigrations" || state.reason !== "pending-migrations") {
-    return { repairedMigrations: [], remainingMigrations: [] };
-  }
-  const sql2 = createUtilitySql(url);
-  const repairedMigrations = [];
-  try {
-    const journalEntries = await listJournalMigrationEntries();
-    const folderMillisByFile = new Map(journalEntries.map((entry) => [entry.fileName, entry.folderMillis]));
-    const migrationTableSchema = await discoverMigrationTableSchema(sql2);
-    if (!migrationTableSchema) {
-      return { repairedMigrations, remainingMigrations: state.pendingMigrations };
-    }
-    const columnNames = await getMigrationTableColumnNames(sql2, migrationTableSchema);
-    const qualifiedTable = `${quoteIdentifier(migrationTableSchema)}.${quoteIdentifier(DRIZZLE_MIGRATIONS_TABLE)}`;
-    for (const migrationFile of state.pendingMigrations) {
-      const migrationContent = await readMigrationFileContent(migrationFile);
-      const alreadyApplied = await migrationContentAlreadyApplied(sql2, migrationContent);
-      if (!alreadyApplied) break;
-      const hash = createHash("sha256").update(migrationContent).digest("hex");
-      const folderMillis = folderMillisByFile.get(migrationFile) ?? Date.now();
-      const existingByHash = columnNames.has("hash") ? await sql2.unsafe(
-        `SELECT created_at FROM ${qualifiedTable} WHERE hash = ${quoteLiteral(hash)} ORDER BY created_at DESC LIMIT 1`
-      ) : [];
-      const existingByName = columnNames.has("name") ? await sql2.unsafe(
-        `SELECT created_at FROM ${qualifiedTable} WHERE name = ${quoteLiteral(migrationFile)} ORDER BY created_at DESC LIMIT 1`
-      ) : [];
-      if (existingByHash.length > 0 || existingByName.length > 0) {
-        if (columnNames.has("created_at")) {
-          const existingHashCreatedAt = Number(existingByHash[0]?.created_at ?? -1);
-          if (existingByHash.length > 0 && Number.isFinite(existingHashCreatedAt) && existingHashCreatedAt < folderMillis) {
-            await sql2.unsafe(
-              `UPDATE ${qualifiedTable} SET created_at = ${quoteLiteral(String(folderMillis))} WHERE hash = ${quoteLiteral(hash)} AND created_at < ${quoteLiteral(String(folderMillis))}`
-            );
-          }
-          const existingNameCreatedAt = Number(existingByName[0]?.created_at ?? -1);
-          if (existingByName.length > 0 && Number.isFinite(existingNameCreatedAt) && existingNameCreatedAt < folderMillis) {
-            await sql2.unsafe(
-              `UPDATE ${qualifiedTable} SET created_at = ${quoteLiteral(String(folderMillis))} WHERE name = ${quoteLiteral(migrationFile)} AND created_at < ${quoteLiteral(String(folderMillis))}`
-            );
-          }
-        }
-        repairedMigrations.push(migrationFile);
-        continue;
-      }
-      const insertColumns = [];
-      const insertValues = [];
-      if (columnNames.has("hash")) {
-        insertColumns.push(quoteIdentifier("hash"));
-        insertValues.push(quoteLiteral(hash));
-      }
-      if (columnNames.has("name")) {
-        insertColumns.push(quoteIdentifier("name"));
-        insertValues.push(quoteLiteral(migrationFile));
-      }
-      if (columnNames.has("created_at")) {
-        insertColumns.push(quoteIdentifier("created_at"));
-        insertValues.push(quoteLiteral(String(folderMillis)));
-      }
-      if (insertColumns.length === 0) break;
-      await sql2.unsafe(
-        `INSERT INTO ${qualifiedTable} (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`
-      );
-      repairedMigrations.push(migrationFile);
-    }
-  } finally {
-    await sql2.end();
-  }
-  const refreshed = await inspectMigrations(url);
-  return {
-    repairedMigrations,
-    remainingMigrations: refreshed.status === "needsMigrations" ? refreshed.pendingMigrations : []
-  };
-}
-async function discoverMigrationTableSchema(sql2) {
-  const rows = await sql2`
-    SELECT n.nspname AS "schemaName"
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE c.relname = ${DRIZZLE_MIGRATIONS_TABLE} AND c.relkind = 'r'
-  `;
-  if (rows.length === 0) return null;
-  const drizzleSchema = rows.find(({ schemaName }) => schemaName === "drizzle");
-  if (drizzleSchema) return drizzleSchema.schemaName;
-  const publicSchema = rows.find(({ schemaName }) => schemaName === "public");
-  if (publicSchema) return publicSchema.schemaName;
-  return rows[0]?.schemaName ?? null;
-}
-async function inspectMigrations(url) {
-  const sql2 = createUtilitySql(url);
-  try {
-    const availableMigrations = await listMigrationFiles();
-    const tableCountResult = await sql2`
-      select count(*)::int as count
-      from information_schema.tables
-      where table_schema = 'public'
-        and table_type = 'BASE TABLE'
-    `;
-    const tableCount = tableCountResult[0]?.count ?? 0;
-    const migrationTableSchema = await discoverMigrationTableSchema(sql2);
-    if (!migrationTableSchema) {
-      if (tableCount > 0) {
-        return {
-          status: "needsMigrations",
-          tableCount,
-          availableMigrations,
-          appliedMigrations: [],
-          pendingMigrations: availableMigrations,
-          reason: "no-migration-journal-non-empty-db"
-        };
-      }
-      return {
-        status: "needsMigrations",
-        tableCount,
-        availableMigrations,
-        appliedMigrations: [],
-        pendingMigrations: availableMigrations,
-        reason: "no-migration-journal-empty-db"
-      };
-    }
-    const appliedMigrations = await loadAppliedMigrations(sql2, migrationTableSchema, availableMigrations);
-    const pendingMigrations = availableMigrations.filter((name) => !appliedMigrations.includes(name));
-    if (pendingMigrations.length === 0) {
-      return {
-        status: "upToDate",
-        tableCount,
-        availableMigrations,
-        appliedMigrations
-      };
-    }
-    return {
-      status: "needsMigrations",
-      tableCount,
-      availableMigrations,
-      appliedMigrations,
-      pendingMigrations,
-      reason: "pending-migrations"
-    };
-  } finally {
-    await sql2.end();
-  }
-}
-async function applyPendingMigrations(url) {
-  const initialState = await inspectMigrations(url);
-  if (initialState.status === "upToDate") return;
-  if (initialState.reason === "no-migration-journal-empty-db") {
-    const sql2 = createUtilitySql(url);
-    try {
-      const db = drizzlePg(sql2);
-      await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
-    } finally {
-      await sql2.end();
-    }
-    const bootstrappedState = await inspectMigrations(url);
-    if (bootstrappedState.status === "upToDate") return;
-    throw new Error(
-      `Failed to bootstrap migrations: ${bootstrappedState.pendingMigrations.join(", ")}`
-    );
-  }
-  if (initialState.reason === "no-migration-journal-non-empty-db") {
-    throw new Error(
-      "Database has tables but no migration journal; automatic migration is unsafe. Initialize migration history manually."
-    );
-  }
-  let state = await inspectMigrations(url);
-  if (state.status === "upToDate") return;
-  const repair = await reconcilePendingMigrationHistory(url);
-  if (repair.repairedMigrations.length > 0) {
-    state = await inspectMigrations(url);
-    if (state.status === "upToDate") return;
-  }
-  if (state.status !== "needsMigrations" || state.reason !== "pending-migrations") {
-    throw new Error("Migrations are still pending after migration-history reconciliation; run inspectMigrations for details.");
-  }
-  await applyPendingMigrationsManually(url, state.pendingMigrations);
-  const finalState = await inspectMigrations(url);
-  if (finalState.status !== "upToDate") {
-    throw new Error(
-      `Failed to apply pending migrations: ${finalState.pendingMigrations.join(", ")}`
-    );
-  }
-}
-async function migratePostgresIfEmpty(url) {
-  const sql2 = createUtilitySql(url);
-  try {
-    const migrationTableSchema = await discoverMigrationTableSchema(sql2);
-    const tableCountResult = await sql2`
-      select count(*)::int as count
-      from information_schema.tables
-      where table_schema = 'public'
-        and table_type = 'BASE TABLE'
-    `;
-    const tableCount = tableCountResult[0]?.count ?? 0;
-    if (migrationTableSchema) {
-      return { migrated: false, reason: "already-migrated", tableCount };
-    }
-    if (tableCount > 0) {
-      return { migrated: false, reason: "not-empty-no-migration-journal", tableCount };
-    }
-    const db = drizzlePg(sql2);
-    await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
-    return { migrated: true, reason: "migrated-empty-db", tableCount: 0 };
-  } finally {
-    await sql2.end();
-  }
-}
-async function ensurePostgresDatabase(url, databaseName) {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(databaseName)) {
-    throw new Error(`Unsafe database name: ${databaseName}`);
-  }
-  const sql2 = createUtilitySql(url);
-  try {
-    const existing = await sql2`
-      select 1 as one from pg_database where datname = ${databaseName} limit 1
-    `;
-    if (existing.length > 0) return "exists";
-    await sql2.unsafe(`create database "${databaseName}" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0`);
-    return "created";
-  } finally {
-    await sql2.end();
-  }
-}
-var MIGRATIONS_FOLDER, DRIZZLE_MIGRATIONS_TABLE, MIGRATIONS_JOURNAL_JSON;
-var init_client = __esm({
-  "../packages/db/src/client.ts"() {
-    "use strict";
-    init_schema2();
-    MIGRATIONS_FOLDER = fileURLToPath(new URL("./migrations", import.meta.url));
-    DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
-    MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
-  }
-});
-
-// ../packages/db/src/backup-lib.ts
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { readFile as readFile2, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
-import postgres2 from "postgres";
-function sanitizeRestoreErrorMessage(error) {
-  if (error && typeof error === "object") {
-    const record = error;
-    const firstLine = typeof record.message === "string" ? record.message.split(/\r?\n/, 1)[0]?.trim() : "";
-    const detail = typeof record.detail === "string" ? record.detail.trim() : "";
-    const severity = typeof record.severity === "string" ? record.severity.trim() : "";
-    const message = firstLine || detail || (error instanceof Error ? error.message : String(error));
-    return severity ? `${severity}: ${message}` : message;
-  }
-  return error instanceof Error ? error.message : String(error);
-}
-function timestamp56(date2 = /* @__PURE__ */ new Date()) {
-  const pad2 = (n) => String(n).padStart(2, "0");
-  return `${date2.getFullYear()}${pad2(date2.getMonth() + 1)}${pad2(date2.getDate())}-${pad2(date2.getHours())}${pad2(date2.getMinutes())}${pad2(date2.getSeconds())}`;
-}
-function pruneOldBackups(backupDir, retentionDays, filenamePrefix) {
-  if (!existsSync(backupDir)) return 0;
-  const safeRetention = Math.max(1, Math.trunc(retentionDays));
-  const cutoff = Date.now() - safeRetention * 24 * 60 * 60 * 1e3;
-  let pruned = 0;
-  for (const name of readdirSync(backupDir)) {
-    if (!name.startsWith(`${filenamePrefix}-`) || !name.endsWith(".sql")) continue;
-    const fullPath = resolve(backupDir, name);
-    const stat2 = statSync(fullPath);
-    if (stat2.mtimeMs < cutoff) {
-      unlinkSync(fullPath);
-      pruned++;
-    }
-  }
-  return pruned;
-}
-function formatBackupSize(sizeBytes) {
-  if (sizeBytes < 1024) return `${sizeBytes}B`;
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)}K`;
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)}M`;
-}
-function formatSqlLiteral(value) {
-  const sanitized = value.replace(/\u0000/g, "");
-  let tag = "$paperclip$";
-  while (sanitized.includes(tag)) {
-    tag = `$paperclip_${Math.random().toString(36).slice(2, 8)}$`;
-  }
-  return `${tag}${sanitized}${tag}`;
-}
-function normalizeTableNameSet(values) {
-  return new Set(
-    (values ?? []).map((value) => value.trim()).filter((value) => value.length > 0)
-  );
-}
-function normalizeNullifyColumnMap(values) {
-  const out = /* @__PURE__ */ new Map();
-  if (!values) return out;
-  for (const [tableName, columns] of Object.entries(values)) {
-    const normalizedTable = tableName.trim();
-    if (normalizedTable.length === 0) continue;
-    const normalizedColumns = new Set(
-      columns.map((column) => column.trim()).filter((column) => column.length > 0)
-    );
-    if (normalizedColumns.size > 0) {
-      out.set(normalizedTable, normalizedColumns);
-    }
-  }
-  return out;
-}
-function quoteIdentifier2(value) {
-  return `"${value.replaceAll('"', '""')}"`;
-}
-function quoteQualifiedName(schemaName, objectName) {
-  return `${quoteIdentifier2(schemaName)}.${quoteIdentifier2(objectName)}`;
-}
-function tableKey(schemaName, tableName) {
-  return `${schemaName}.${tableName}`;
-}
-async function runDatabaseBackup(opts) {
-  const filenamePrefix = opts.filenamePrefix ?? "paperclip";
-  const retentionDays = Math.max(1, Math.trunc(opts.retentionDays));
-  const connectTimeout = Math.max(1, Math.trunc(opts.connectTimeoutSeconds ?? 5));
-  const includeMigrationJournal = opts.includeMigrationJournal === true;
-  const excludedTableNames = normalizeTableNameSet(opts.excludeTables);
-  const nullifiedColumnsByTable = normalizeNullifyColumnMap(opts.nullifyColumns);
-  const sql2 = postgres2(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
-  try {
-    await sql2`SELECT 1`;
-    const lines = [];
-    const emit = (line) => lines.push(line);
-    const emitStatement = (statement) => {
-      emit(statement);
-      emit(STATEMENT_BREAKPOINT);
-    };
-    const emitStatementBoundary = () => {
-      emit(STATEMENT_BREAKPOINT);
-    };
-    emit("-- Paperclip database backup");
-    emit(`-- Created: ${(/* @__PURE__ */ new Date()).toISOString()}`);
-    emit("");
-    emitStatement("BEGIN;");
-    emitStatement("SET LOCAL session_replication_role = replica;");
-    emitStatement("SET LOCAL client_min_messages = warning;");
-    emit("");
-    const allTables = await sql2`
-      SELECT table_schema AS schema_name, table_name AS tablename
-      FROM information_schema.tables
-      WHERE table_type = 'BASE TABLE'
-        AND (
-          table_schema = 'public'
-          OR (${includeMigrationJournal}::boolean AND table_schema = ${DRIZZLE_SCHEMA} AND table_name = ${DRIZZLE_MIGRATIONS_TABLE2})
-        )
-      ORDER BY table_schema, table_name
-    `;
-    const tables = allTables;
-    const includedTableNames = new Set(tables.map(({ schema_name, tablename }) => tableKey(schema_name, tablename)));
-    const enums = await sql2`
-      SELECT t.typname, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS labels
-      FROM pg_type t
-      JOIN pg_enum e ON t.oid = e.enumtypid
-      JOIN pg_namespace n ON t.typnamespace = n.oid
-      WHERE n.nspname = 'public'
-      GROUP BY t.typname
-      ORDER BY t.typname
-    `;
-    for (const e of enums) {
-      const labels2 = e.labels.map((l) => `'${l.replace(/'/g, "''")}'`).join(", ");
-      emitStatement(`CREATE TYPE "public"."${e.typname}" AS ENUM (${labels2});`);
-    }
-    if (enums.length > 0) emit("");
-    const allSequences = await sql2`
-      SELECT
-        s.sequence_schema,
-        s.sequence_name,
-        s.data_type,
-        s.start_value,
-        s.minimum_value,
-        s.maximum_value,
-        s.increment,
-        s.cycle_option,
-        tblns.nspname AS owner_schema,
-        tbl.relname AS owner_table,
-        attr.attname AS owner_column
-      FROM information_schema.sequences s
-      JOIN pg_class seq ON seq.relname = s.sequence_name
-      JOIN pg_namespace n ON n.oid = seq.relnamespace AND n.nspname = s.sequence_schema
-      LEFT JOIN pg_depend dep ON dep.objid = seq.oid AND dep.deptype = 'a'
-      LEFT JOIN pg_class tbl ON tbl.oid = dep.refobjid
-      LEFT JOIN pg_namespace tblns ON tblns.oid = tbl.relnamespace
-      LEFT JOIN pg_attribute attr ON attr.attrelid = tbl.oid AND attr.attnum = dep.refobjsubid
-      WHERE s.sequence_schema = 'public'
-         OR (${includeMigrationJournal}::boolean AND s.sequence_schema = ${DRIZZLE_SCHEMA})
-      ORDER BY s.sequence_schema, s.sequence_name
-    `;
-    const sequences = allSequences.filter(
-      (seq) => !seq.owner_table || includedTableNames.has(tableKey(seq.owner_schema ?? "public", seq.owner_table))
-    );
-    const schemas = /* @__PURE__ */ new Set();
-    for (const table of tables) schemas.add(table.schema_name);
-    for (const seq of sequences) schemas.add(seq.sequence_schema);
-    const extraSchemas = [...schemas].filter((schemaName) => schemaName !== "public");
-    if (extraSchemas.length > 0) {
-      emit("-- Schemas");
-      for (const schemaName of extraSchemas) {
-        emitStatement(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier2(schemaName)};`);
-      }
-      emit("");
-    }
-    if (sequences.length > 0) {
-      emit("-- Sequences");
-      for (const seq of sequences) {
-        const qualifiedSequenceName = quoteQualifiedName(seq.sequence_schema, seq.sequence_name);
-        emitStatement(`DROP SEQUENCE IF EXISTS ${qualifiedSequenceName} CASCADE;`);
-        emitStatement(
-          `CREATE SEQUENCE ${qualifiedSequenceName} AS ${seq.data_type} INCREMENT BY ${seq.increment} MINVALUE ${seq.minimum_value} MAXVALUE ${seq.maximum_value} START WITH ${seq.start_value}${seq.cycle_option === "YES" ? " CYCLE" : " NO CYCLE"};`
-        );
-      }
-      emit("");
-    }
-    for (const { schema_name, tablename } of tables) {
-      const qualifiedTableName = quoteQualifiedName(schema_name, tablename);
-      const columns = await sql2`
-        SELECT column_name, data_type, udt_name, is_nullable, column_default,
-               character_maximum_length, numeric_precision, numeric_scale
-        FROM information_schema.columns
-        WHERE table_schema = ${schema_name} AND table_name = ${tablename}
-        ORDER BY ordinal_position
-      `;
-      emit(`-- Table: ${schema_name}.${tablename}`);
-      emitStatement(`DROP TABLE IF EXISTS ${qualifiedTableName} CASCADE;`);
-      const colDefs = [];
-      for (const col of columns) {
-        let typeStr;
-        if (col.data_type === "USER-DEFINED") {
-          typeStr = `"${col.udt_name}"`;
-        } else if (col.data_type === "ARRAY") {
-          typeStr = `${col.udt_name.replace(/^_/, "")}[]`;
-        } else if (col.data_type === "character varying") {
-          typeStr = col.character_maximum_length ? `varchar(${col.character_maximum_length})` : "varchar";
-        } else if (col.data_type === "numeric" && col.numeric_precision != null) {
-          typeStr = col.numeric_scale != null ? `numeric(${col.numeric_precision}, ${col.numeric_scale})` : `numeric(${col.numeric_precision})`;
-        } else {
-          typeStr = col.data_type;
-        }
-        let def = `  "${col.column_name}" ${typeStr}`;
-        if (col.column_default != null) def += ` DEFAULT ${col.column_default}`;
-        if (col.is_nullable === "NO") def += " NOT NULL";
-        colDefs.push(def);
-      }
-      const pk = await sql2`
-        SELECT c.conname AS constraint_name,
-               array_agg(a.attname ORDER BY array_position(c.conkey, a.attnum)) AS column_names
-        FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
-        WHERE n.nspname = ${schema_name} AND t.relname = ${tablename} AND c.contype = 'p'
-        GROUP BY c.conname
-      `;
-      for (const p35 of pk) {
-        const cols = p35.column_names.map((c) => `"${c}"`).join(", ");
-        colDefs.push(`  CONSTRAINT "${p35.constraint_name}" PRIMARY KEY (${cols})`);
-      }
-      emit(`CREATE TABLE ${qualifiedTableName} (`);
-      emit(colDefs.join(",\n"));
-      emit(");");
-      emitStatementBoundary();
-      emit("");
-    }
-    const ownedSequences = sequences.filter((seq) => seq.owner_table && seq.owner_column);
-    if (ownedSequences.length > 0) {
-      emit("-- Sequence ownership");
-      for (const seq of ownedSequences) {
-        emitStatement(
-          `ALTER SEQUENCE ${quoteQualifiedName(seq.sequence_schema, seq.sequence_name)} OWNED BY ${quoteQualifiedName(seq.owner_schema ?? "public", seq.owner_table)}.${quoteIdentifier2(seq.owner_column)};`
-        );
-      }
-      emit("");
-    }
-    const allForeignKeys = await sql2`
-      SELECT
-        c.conname AS constraint_name,
-        srcn.nspname AS source_schema,
-        src.relname AS source_table,
-        array_agg(sa.attname ORDER BY array_position(c.conkey, sa.attnum)) AS source_columns,
-        tgtn.nspname AS target_schema,
-        tgt.relname AS target_table,
-        array_agg(ta.attname ORDER BY array_position(c.confkey, ta.attnum)) AS target_columns,
-        CASE c.confupdtype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS update_rule,
-        CASE c.confdeltype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS delete_rule
-      FROM pg_constraint c
-      JOIN pg_class src ON src.oid = c.conrelid
-      JOIN pg_namespace srcn ON srcn.oid = src.relnamespace
-      JOIN pg_class tgt ON tgt.oid = c.confrelid
-      JOIN pg_namespace tgtn ON tgtn.oid = tgt.relnamespace
-      JOIN pg_attribute sa ON sa.attrelid = src.oid AND sa.attnum = ANY(c.conkey)
-      JOIN pg_attribute ta ON ta.attrelid = tgt.oid AND ta.attnum = ANY(c.confkey)
-      WHERE c.contype = 'f' AND (
-        srcn.nspname = 'public'
-        OR (${includeMigrationJournal}::boolean AND srcn.nspname = ${DRIZZLE_SCHEMA})
-      )
-      GROUP BY c.conname, srcn.nspname, src.relname, tgtn.nspname, tgt.relname, c.confupdtype, c.confdeltype
-      ORDER BY srcn.nspname, src.relname, c.conname
-    `;
-    const fks = allForeignKeys.filter(
-      (fk) => includedTableNames.has(tableKey(fk.source_schema, fk.source_table)) && includedTableNames.has(tableKey(fk.target_schema, fk.target_table))
-    );
-    if (fks.length > 0) {
-      emit("-- Foreign keys");
-      for (const fk of fks) {
-        const srcCols = fk.source_columns.map((c) => `"${c}"`).join(", ");
-        const tgtCols = fk.target_columns.map((c) => `"${c}"`).join(", ");
-        emitStatement(
-          `ALTER TABLE ${quoteQualifiedName(fk.source_schema, fk.source_table)} ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${srcCols}) REFERENCES ${quoteQualifiedName(fk.target_schema, fk.target_table)} (${tgtCols}) ON UPDATE ${fk.update_rule} ON DELETE ${fk.delete_rule};`
-        );
-      }
-      emit("");
-    }
-    const allUniqueConstraints = await sql2`
-      SELECT c.conname AS constraint_name,
-             n.nspname AS schema_name,
-             t.relname AS tablename,
-             array_agg(a.attname ORDER BY array_position(c.conkey, a.attnum)) AS column_names
-      FROM pg_constraint c
-      JOIN pg_class t ON t.oid = c.conrelid
-      JOIN pg_namespace n ON n.oid = t.relnamespace
-      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
-      WHERE c.contype = 'u' AND (
-        n.nspname = 'public'
-        OR (${includeMigrationJournal}::boolean AND n.nspname = ${DRIZZLE_SCHEMA})
-      )
-      GROUP BY c.conname, n.nspname, t.relname
-      ORDER BY n.nspname, t.relname, c.conname
-    `;
-    const uniques = allUniqueConstraints.filter((entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)));
-    if (uniques.length > 0) {
-      emit("-- Unique constraints");
-      for (const u of uniques) {
-        const cols = u.column_names.map((c) => `"${c}"`).join(", ");
-        emitStatement(`ALTER TABLE ${quoteQualifiedName(u.schema_name, u.tablename)} ADD CONSTRAINT "${u.constraint_name}" UNIQUE (${cols});`);
-      }
-      emit("");
-    }
-    const allIndexes = await sql2`
-      SELECT schemaname AS schema_name, tablename, indexdef
-      FROM pg_indexes
-      WHERE (
-          schemaname = 'public'
-          OR (${includeMigrationJournal}::boolean AND schemaname = ${DRIZZLE_SCHEMA})
-        )
-        AND indexname NOT IN (
-          SELECT conname FROM pg_constraint c
-          JOIN pg_namespace n ON n.oid = c.connamespace
-          WHERE n.nspname = pg_indexes.schemaname
-        )
-      ORDER BY schemaname, tablename, indexname
-    `;
-    const indexes = allIndexes.filter((entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)));
-    if (indexes.length > 0) {
-      emit("-- Indexes");
-      for (const idx of indexes) {
-        emitStatement(`${idx.indexdef};`);
-      }
-      emit("");
-    }
-    for (const { schema_name, tablename } of tables) {
-      const qualifiedTableName = quoteQualifiedName(schema_name, tablename);
-      const count = await sql2.unsafe(`SELECT count(*)::int AS n FROM ${qualifiedTableName}`);
-      if (excludedTableNames.has(tablename) || (count[0]?.n ?? 0) === 0) continue;
-      const cols = await sql2`
-        SELECT column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = ${schema_name} AND table_name = ${tablename}
-        ORDER BY ordinal_position
-      `;
-      const colNames = cols.map((c) => `"${c.column_name}"`).join(", ");
-      emit(`-- Data for: ${schema_name}.${tablename} (${count[0].n} rows)`);
-      const rows = await sql2.unsafe(`SELECT * FROM ${qualifiedTableName}`).values();
-      const nullifiedColumns = nullifiedColumnsByTable.get(tablename) ?? /* @__PURE__ */ new Set();
-      for (const row of rows) {
-        const values = row.map((rawValue, index51) => {
-          const columnName = cols[index51]?.column_name;
-          const val = columnName && nullifiedColumns.has(columnName) ? null : rawValue;
-          if (val === null || val === void 0) return "NULL";
-          if (typeof val === "boolean") return val ? "true" : "false";
-          if (typeof val === "number") return String(val);
-          if (val instanceof Date) return formatSqlLiteral(val.toISOString());
-          if (typeof val === "object") return formatSqlLiteral(JSON.stringify(val));
-          return formatSqlLiteral(String(val));
-        });
-        emitStatement(`INSERT INTO ${qualifiedTableName} (${colNames}) VALUES (${values.join(", ")});`);
-      }
-      emit("");
-    }
-    if (sequences.length > 0) {
-      emit("-- Sequence values");
-      for (const seq of sequences) {
-        const qualifiedSequenceName = quoteQualifiedName(seq.sequence_schema, seq.sequence_name);
-        const val = await sql2.unsafe(
-          `SELECT last_value::text, is_called FROM ${qualifiedSequenceName}`
-        );
-        const skipSequenceValue = seq.owner_table !== null && excludedTableNames.has(seq.owner_table);
-        if (val[0] && !skipSequenceValue) {
-          emitStatement(`SELECT setval('${qualifiedSequenceName.replaceAll("'", "''")}', ${val[0].last_value}, ${val[0].is_called ? "true" : "false"});`);
-        }
-      }
-      emit("");
-    }
-    emitStatement("COMMIT;");
-    emit("");
-    mkdirSync(opts.backupDir, { recursive: true });
-    const backupFile = resolve(opts.backupDir, `${filenamePrefix}-${timestamp56()}.sql`);
-    await writeFile(backupFile, lines.join("\n"), "utf8");
-    const sizeBytes = statSync(backupFile).size;
-    const prunedCount = pruneOldBackups(opts.backupDir, retentionDays, filenamePrefix);
-    return {
-      backupFile,
-      sizeBytes,
-      prunedCount
-    };
-  } finally {
-    await sql2.end();
-  }
-}
-async function runDatabaseRestore(opts) {
-  const connectTimeout = Math.max(1, Math.trunc(opts.connectTimeoutSeconds ?? 5));
-  const sql2 = postgres2(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
-  try {
-    await sql2`SELECT 1`;
-    const contents = await readFile2(opts.backupFile, "utf8");
-    const statements = contents.split(STATEMENT_BREAKPOINT).map((statement) => statement.trim()).filter((statement) => statement.length > 0);
-    for (const statement of statements) {
-      await sql2.unsafe(statement).execute();
-    }
-  } catch (error) {
-    const statementPreview = typeof error === "object" && error !== null && typeof error.query === "string" ? String(error.query).split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0 && !line.startsWith("--")) : null;
-    throw new Error(
-      `Failed to restore ${basename(opts.backupFile)}: ${sanitizeRestoreErrorMessage(error)}${statementPreview ? ` [statement: ${statementPreview.slice(0, 120)}]` : ""}`
-    );
-  } finally {
-    await sql2.end();
-  }
-}
-function formatDatabaseBackupResult(result) {
-  const size = formatBackupSize(result.sizeBytes);
-  const pruned = result.prunedCount > 0 ? `; pruned ${result.prunedCount} old backup(s)` : "";
-  return `${result.backupFile} (${size}${pruned})`;
-}
-var DRIZZLE_SCHEMA, DRIZZLE_MIGRATIONS_TABLE2, STATEMENT_BREAKPOINT;
-var init_backup_lib = __esm({
-  "../packages/db/src/backup-lib.ts"() {
-    "use strict";
-    DRIZZLE_SCHEMA = "drizzle";
-    DRIZZLE_MIGRATIONS_TABLE2 = "__drizzle_migrations";
-    STATEMENT_BREAKPOINT = "-- paperclip statement breakpoint 69f6f3f1-42fd-46a6-bf17-d1d85f8f3900";
-  }
-});
-
-// ../packages/db/src/index.ts
-var src_exports = {};
-__export(src_exports, {
-  activityLog: () => activityLog,
-  agentApiKeys: () => agentApiKeys,
-  agentConfigRevisions: () => agentConfigRevisions,
-  agentRuntimeState: () => agentRuntimeState,
-  agentTaskSessions: () => agentTaskSessions,
-  agentWakeupRequests: () => agentWakeupRequests,
-  agents: () => agents,
-  applyPendingMigrations: () => applyPendingMigrations,
-  approvalComments: () => approvalComments,
-  approvals: () => approvals,
-  assets: () => assets,
-  authAccounts: () => authAccounts,
-  authSessions: () => authSessions,
-  authUsers: () => authUsers,
-  authVerifications: () => authVerifications,
-  budgetIncidents: () => budgetIncidents,
-  budgetPolicies: () => budgetPolicies,
-  companies: () => companies,
-  companyLogos: () => companyLogos,
-  companyMemberships: () => companyMemberships,
-  companySecretVersions: () => companySecretVersions,
-  companySecrets: () => companySecrets,
-  costEvents: () => costEvents,
-  createDb: () => createDb,
-  documentRevisions: () => documentRevisions,
-  documents: () => documents,
-  ensurePostgresDatabase: () => ensurePostgresDatabase,
-  executionWorkspaces: () => executionWorkspaces,
-  financeEvents: () => financeEvents,
-  formatDatabaseBackupResult: () => formatDatabaseBackupResult,
-  getPostgresDataDirectory: () => getPostgresDataDirectory,
-  goals: () => goals,
-  heartbeatRunEvents: () => heartbeatRunEvents,
-  heartbeatRuns: () => heartbeatRuns,
-  inspectMigrations: () => inspectMigrations,
-  instanceSettings: () => instanceSettings,
-  instanceUserRoles: () => instanceUserRoles,
-  invites: () => invites,
-  issueApprovals: () => issueApprovals,
-  issueAttachments: () => issueAttachments,
-  issueComments: () => issueComments,
-  issueDocuments: () => issueDocuments,
-  issueLabels: () => issueLabels,
-  issueReadStates: () => issueReadStates,
-  issueWorkProducts: () => issueWorkProducts,
-  issues: () => issues,
-  joinRequests: () => joinRequests,
-  kbSkillDocs: () => kbSkillDocs,
-  labels: () => labels,
-  migratePostgresIfEmpty: () => migratePostgresIfEmpty,
-  pluginCompanySettings: () => pluginCompanySettings,
-  pluginConfig: () => pluginConfig,
-  pluginEntities: () => pluginEntities,
-  pluginJobRuns: () => pluginJobRuns,
-  pluginJobs: () => pluginJobs,
-  pluginLogs: () => pluginLogs,
-  pluginState: () => pluginState,
-  pluginWebhookDeliveries: () => pluginWebhookDeliveries,
-  plugins: () => plugins,
-  principalPermissionGrants: () => principalPermissionGrants,
-  projectGoals: () => projectGoals,
-  projectWorkspaces: () => projectWorkspaces,
-  projects: () => projects,
-  reconcilePendingMigrationHistory: () => reconcilePendingMigrationHistory,
-  runDatabaseBackup: () => runDatabaseBackup,
-  runDatabaseRestore: () => runDatabaseRestore,
-  tickets: () => tickets,
-  workspaceOperations: () => workspaceOperations,
-  workspaceRuntimeServices: () => workspaceRuntimeServices
-});
-var init_src2 = __esm({
-  "../packages/db/src/index.ts"() {
-    "use strict";
-    init_client();
-    init_backup_lib();
-    init_schema2();
-  }
-});
-
 // src/commands/auth-bootstrap-ceo.ts
-import { createHash as createHash2, randomBytes as randomBytes3 } from "node:crypto";
+import { createHash, randomBytes as randomBytes3 } from "node:crypto";
 import * as p7 from "@clack/prompts";
 import pc from "picocolors";
 import { and, eq, gt, isNull } from "drizzle-orm";
+import { createDb, instanceUserRoles, invites } from "@paperclipai/db";
 function hashToken(token) {
-  return createHash2("sha256").update(token).digest("hex");
+  return createHash("sha256").update(token).digest("hex");
 }
 function createInviteToken() {
   return `pcp_bootstrap_${randomBytes3(24).toString("hex")}`;
@@ -6709,7 +3215,6 @@ async function bootstrapCeoInvite(opts) {
 var init_auth_bootstrap_ceo = __esm({
   "src/commands/auth-bootstrap-ceo.ts"() {
     "use strict";
-    init_src2();
     init_env();
     init_store();
   }
@@ -6925,8 +3430,8 @@ async function databaseCheck(config, configPath) {
       };
     }
     try {
-      const { createDb: createDb2 } = await Promise.resolve().then(() => (init_src2(), src_exports));
-      const db = createDb2(config.database.connectionString);
+      const { createDb: createDb3 } = await import("@paperclipai/db");
+      const db = createDb3(config.database.connectionString);
       await db.execute("SELECT 1");
       return {
         name: "Database",
@@ -7089,17 +3594,17 @@ var init_log_check = __esm({
 // src/utils/net.ts
 import net from "node:net";
 function checkPort(port) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve) => {
     const server = net.createServer();
     server.once("error", (err) => {
       if (err.code === "EADDRINUSE") {
-        resolve2({ available: false, error: `Port ${port} is already in use` });
+        resolve({ available: false, error: `Port ${port} is already in use` });
       } else {
-        resolve2({ available: false, error: err.message });
+        resolve({ available: false, error: err.message });
       }
     });
     server.once("listening", () => {
-      server.close(() => resolve2({ available: true }));
+      server.close(() => resolve({ available: true }));
     });
     server.listen(port, "127.0.0.1");
   });
@@ -7485,7 +3990,7 @@ __export(run_exports, {
 });
 import fs9 from "node:fs";
 import path7 from "node:path";
-import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import * as p9 from "@clack/prompts";
 import pc4 from "picocolors";
 async function runCommand(opts) {
@@ -7578,7 +4083,7 @@ function maybeEnableUiDevMiddleware(entrypoint) {
   }
 }
 async function importServerEntry() {
-  const projectRoot = path7.resolve(path7.dirname(fileURLToPath2(import.meta.url)), "../../..");
+  const projectRoot = path7.resolve(path7.dirname(fileURLToPath(import.meta.url)), "../../..");
   const devEntry = path7.resolve(projectRoot, "server/src/index.ts");
   if (fs9.existsSync(devEntry)) {
     maybeEnableUiDevMiddleware(devEntry);
@@ -7586,7 +4091,7 @@ async function importServerEntry() {
     return await startServerFromModule(mod, devEntry);
   }
   const bundledEntry = path7.resolve(
-    path7.dirname(fileURLToPath2(import.meta.url)),
+    path7.dirname(fileURLToPath(import.meta.url)),
     "./runtime/server/dist/index.js"
   );
   if (fs9.existsSync(bundledEntry)) {
@@ -7835,8 +4340,8 @@ ${err instanceof Error ? err.message : String(err)}`
       const s = p10.spinner();
       s.start("Testing database connection...");
       try {
-        const { createDb: createDb2 } = await Promise.resolve().then(() => (init_src2(), src_exports));
-        const db = createDb2(database.connectionString);
+        const { createDb: createDb3 } = await import("@paperclipai/db");
+        const db = createDb3(database.connectionString);
         await db.execute("SELECT 1");
         s.stop("Database connection successful");
       } catch {
@@ -8085,16 +4590,16 @@ function buildUrl(apiBase, path61) {
   if (query) url.search = query;
   return url.toString();
 }
-function safeParseJson(text69) {
+function safeParseJson(text18) {
   try {
-    return JSON.parse(text69);
+    return JSON.parse(text18);
   } catch {
-    return text69;
+    return text18;
   }
 }
 async function toApiError(response) {
-  const text69 = await response.text();
-  const parsed = safeParseJson(text69);
+  const text18 = await response.text();
+  const parsed = safeParseJson(text18);
   if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
     const body = parsed;
     const message = typeof body.error === "string" && body.error.trim() || typeof body.message === "string" && body.message.trim() || `Request failed with status ${response.status}`;
@@ -8189,11 +4694,11 @@ var init_http = __esm({
         if (response.status === 204) {
           return null;
         }
-        const text69 = await response.text();
-        if (!text69.trim()) {
+        const text18 = await response.text();
+        if (!text18.trim()) {
           return null;
         }
-        return safeParseJson(text69);
+        return safeParseJson(text18);
       }
     };
   }
@@ -8643,52 +5148,52 @@ __export(service_exports, {
   validateBundledKitAssetRoot: () => validateBundledKitAssetRoot,
   validateKitDirectory: () => validateKitDirectory
 });
-import fs17 from "node:fs";
-import path23 from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import fs16 from "node:fs";
+import path22 from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 function resolveBundledKitAssetsRoot() {
-  const moduleDir = path23.dirname(fileURLToPath4(import.meta.url));
+  const moduleDir = path22.dirname(fileURLToPath3(import.meta.url));
   const candidates = [
-    path23.resolve(moduleDir, "../../assets/worker-kits"),
-    path23.resolve(moduleDir, "../assets/worker-kits")
+    path22.resolve(moduleDir, "../../assets/worker-kits"),
+    path22.resolve(moduleDir, "../assets/worker-kits")
   ];
   for (const candidate of candidates) {
-    if (fs17.existsSync(candidate)) return candidate;
+    if (fs16.existsSync(candidate)) return candidate;
   }
   throw new Error("Could not locate bundled worker kit assets.");
 }
 function resolveRequestedOutputRoot(outDir) {
   if (outDir?.trim()) {
-    return path23.resolve(expandHomePrefix(outDir.trim()));
+    return path22.resolve(expandHomePrefix(outDir.trim()));
   }
-  return path23.resolve(resolvePaperclipHomeDir(), "kits", "exports");
+  return path22.resolve(resolvePaperclipHomeDir(), "kits", "exports");
 }
 function readJsonFile(filePath) {
-  return JSON.parse(fs17.readFileSync(filePath, "utf8"));
+  return JSON.parse(fs16.readFileSync(filePath, "utf8"));
 }
 function assertRelativePathExists(assetRoot, relativePath, label) {
-  const fullPath = path23.resolve(assetRoot, relativePath);
-  if (!fs17.existsSync(fullPath)) {
+  const fullPath = path22.resolve(assetRoot, relativePath);
+  if (!fs16.existsSync(fullPath)) {
     throw new Error(`${label} is missing required path: ${relativePath}`);
   }
 }
 function listRelativeFiles(rootDir) {
   const files = [];
   const walk = (currentDir) => {
-    for (const entry of fs17.readdirSync(currentDir, { withFileTypes: true })) {
-      const fullPath = path23.join(currentDir, entry.name);
+    for (const entry of fs16.readdirSync(currentDir, { withFileTypes: true })) {
+      const fullPath = path22.join(currentDir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath);
         continue;
       }
-      files.push(path23.relative(rootDir, fullPath).split(path23.sep).join("/"));
+      files.push(path22.relative(rootDir, fullPath).split(path22.sep).join("/"));
     }
   };
   walk(rootDir);
   return files.sort();
 }
 function parseManifest(assetRoot) {
-  const raw = readJsonFile(path23.resolve(assetRoot, "kit.json"));
+  const raw = readJsonFile(path22.resolve(assetRoot, "kit.json"));
   if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
     throw new Error(`Unsupported kit schema version for ${assetRoot}: ${raw.schemaVersion}`);
   }
@@ -8699,7 +5204,7 @@ function parseBundleManifest(assetRoot, manifest, bundleId) {
   if (!bundleRef) {
     throw new Error(`Kit ${manifest.kit.id} does not declare bundle ${bundleId}.`);
   }
-  const raw = readJsonFile(path23.resolve(assetRoot, bundleRef.path));
+  const raw = readJsonFile(path22.resolve(assetRoot, bundleRef.path));
   if (!SUPPORTED_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
     throw new Error(
       `Unsupported bundle schema version for ${bundleRef.path}: ${raw.schemaVersion}`
@@ -8764,14 +5269,14 @@ function validateKitDirectory(kitPath) {
   const warnings = [];
   let schemaVersion = 0;
   let kitId = "<unknown>";
-  const kitJsonPath = path23.resolve(kitPath, "kit.json");
-  if (!fs17.existsSync(kitJsonPath)) {
+  const kitJsonPath = path22.resolve(kitPath, "kit.json");
+  if (!fs16.existsSync(kitJsonPath)) {
     errors.push({ field: "kit.json", message: "kit.json not found in kit directory" });
     return { valid: false, schemaVersion, kitId, errors, warnings };
   }
   let raw;
   try {
-    raw = JSON.parse(fs17.readFileSync(kitJsonPath, "utf8"));
+    raw = JSON.parse(fs16.readFileSync(kitJsonPath, "utf8"));
   } catch {
     errors.push({ field: "kit.json", message: "kit.json is not valid JSON" });
     return { valid: false, schemaVersion, kitId, errors, warnings };
@@ -8838,8 +5343,8 @@ function validateKitDirectory(kitPath) {
     if (typeof entrypoint.path !== "string") {
       errors.push({ field: "entrypoint.path", message: "Missing required field 'entrypoint.path'" });
     } else {
-      const fullPath = path23.resolve(kitPath, entrypoint.path);
-      if (!fs17.existsSync(fullPath)) {
+      const fullPath = path22.resolve(kitPath, entrypoint.path);
+      if (!fs16.existsSync(fullPath)) {
         errors.push({ field: "entrypoint.path", message: `Entrypoint file not found: ${entrypoint.path}` });
       }
     }
@@ -8847,16 +5352,16 @@ function validateKitDirectory(kitPath) {
   if (typeof raw.agentContractPath !== "string") {
     errors.push({ field: "agentContractPath", message: "Missing required field 'agentContractPath'" });
   } else {
-    const fullPath = path23.resolve(kitPath, raw.agentContractPath);
-    if (!fs17.existsSync(fullPath)) {
+    const fullPath = path22.resolve(kitPath, raw.agentContractPath);
+    if (!fs16.existsSync(fullPath)) {
       errors.push({ field: "agentContractPath", message: `Agent contract not found: ${raw.agentContractPath}` });
     }
   }
   if (typeof raw.brandTemplatePath !== "string") {
     errors.push({ field: "brandTemplatePath", message: "Missing required field 'brandTemplatePath'" });
   } else {
-    const fullPath = path23.resolve(kitPath, raw.brandTemplatePath);
-    if (!fs17.existsSync(fullPath)) {
+    const fullPath = path22.resolve(kitPath, raw.brandTemplatePath);
+    if (!fs16.existsSync(fullPath)) {
       errors.push({ field: "brandTemplatePath", message: `Brand template not found: ${raw.brandTemplatePath}` });
     }
   }
@@ -8866,8 +5371,8 @@ function validateKitDirectory(kitPath) {
   } else {
     for (const assetPath of frozenAssets) {
       if (typeof assetPath !== "string") continue;
-      const fullPath = path23.resolve(kitPath, assetPath);
-      if (!fs17.existsSync(fullPath)) {
+      const fullPath = path22.resolve(kitPath, assetPath);
+      if (!fs16.existsSync(fullPath)) {
         errors.push({ field: "frozenAssetPaths", message: `Frozen asset not found: ${assetPath}` });
       }
     }
@@ -8885,8 +5390,8 @@ function validateKitDirectory(kitPath) {
     } else {
       for (const reqPath of requiredPaths) {
         if (typeof reqPath !== "string") continue;
-        const fullPath = path23.resolve(kitPath, reqPath);
-        if (!fs17.existsSync(fullPath)) {
+        const fullPath = path22.resolve(kitPath, reqPath);
+        if (!fs16.existsSync(fullPath)) {
           errors.push({ field: "outputStandard.requiredPaths", message: `Required output path not found: ${reqPath}` });
         }
       }
@@ -8902,13 +5407,13 @@ function validateKitDirectory(kitPath) {
         errors.push({ field: "bundles[].path", message: "Bundle ref missing 'path' field" });
         continue;
       }
-      const bundlePath = path23.resolve(kitPath, ref.path);
-      if (!fs17.existsSync(bundlePath)) {
+      const bundlePath = path22.resolve(kitPath, ref.path);
+      if (!fs16.existsSync(bundlePath)) {
         errors.push({ field: "bundles[].path", message: `Bundle manifest not found: ${ref.path}` });
         continue;
       }
       try {
-        const bundleRaw = JSON.parse(fs17.readFileSync(bundlePath, "utf8"));
+        const bundleRaw = JSON.parse(fs16.readFileSync(bundlePath, "utf8"));
         const bundleBlock = bundleRaw.bundle;
         if (!bundleBlock || typeof bundleBlock !== "object") {
           errors.push({ field: `bundle(${ref.id})`, message: "Bundle manifest missing 'bundle' block" });
@@ -8946,7 +5451,7 @@ function loadResolvedBundledKit(assetRoot, catalogEntry) {
 function validateBundledKitAssetRoot(assetRoot, input) {
   const catalogEntry = {
     id: input.kitId,
-    packageDirName: path23.basename(assetRoot),
+    packageDirName: path22.basename(assetRoot),
     defaultBundleId: input.bundleId ?? input.kitId,
     type: "worker",
     executionMode: "export",
@@ -8980,7 +5485,7 @@ Available: ${available}`
     );
   }
   const catalogEntry = BUNDLED_KIT_CATALOG.find((e) => e.id === resolvedId);
-  const assetRoot = path23.resolve(resolveBundledKitAssetsRoot(), catalogEntry.packageDirName);
+  const assetRoot = path22.resolve(resolveBundledKitAssetsRoot(), catalogEntry.packageDirName);
   return loadResolvedBundledKit(assetRoot, catalogEntry);
 }
 function toListItem(resolved) {
@@ -9000,8 +5505,8 @@ function toListItem(resolved) {
 }
 function resolveOutputPaths(resolved, outDir) {
   const outputRoot = resolveRequestedOutputRoot(outDir);
-  const folderPath = path23.resolve(outputRoot, resolved.bundleManifest.export.folderName);
-  const zipPath = path23.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
+  const folderPath = path22.resolve(outputRoot, resolved.bundleManifest.export.folderName);
+  const zipPath = path22.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
   return { outputRoot, folderPath, zipPath };
 }
 function listBundledKits() {
@@ -9043,9 +5548,9 @@ function getBundledKitSourceInfo(kitId) {
 }
 function copyBundledKitSource(kitId, destinationPath) {
   const info = getBundledKitSourceInfo(kitId);
-  fs17.mkdirSync(path23.dirname(destinationPath), { recursive: true });
-  fs17.rmSync(destinationPath, { recursive: true, force: true });
-  fs17.cpSync(info.assetRoot, destinationPath, { recursive: true });
+  fs16.mkdirSync(path22.dirname(destinationPath), { recursive: true });
+  fs16.rmSync(destinationPath, { recursive: true, force: true });
+  fs16.cpSync(info.assetRoot, destinationPath, { recursive: true });
   return info;
 }
 function crc32(buffer) {
@@ -9058,13 +5563,13 @@ function crc32(buffer) {
   }
   return (crc ^ 4294967295) >>> 0;
 }
-function toDosTimeParts(date2) {
-  const year = Math.max(date2.getUTCFullYear(), 1980);
-  const month = date2.getUTCMonth() + 1;
-  const day = date2.getUTCDate();
-  const hours = date2.getUTCHours();
-  const minutes = date2.getUTCMinutes();
-  const seconds = Math.floor(date2.getUTCSeconds() / 2);
+function toDosTimeParts(date) {
+  const year = Math.max(date.getUTCFullYear(), 1980);
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const hours = date.getUTCHours();
+  const minutes = date.getUTCMinutes();
+  const seconds = Math.floor(date.getUTCSeconds() / 2);
   return {
     dosTime: hours << 11 | minutes << 5 | seconds,
     dosDate: year - 1980 << 9 | month << 5 | day
@@ -9133,7 +5638,7 @@ function reportProgress(onProgress, progress) {
 function copyDirectoryWithProgress(sourceRoot, targetRoot, onProgress) {
   const files = listRelativeFiles(sourceRoot);
   const total = Math.max(files.length, 1);
-  fs17.mkdirSync(targetRoot, { recursive: true });
+  fs16.mkdirSync(targetRoot, { recursive: true });
   reportProgress(onProgress, {
     phase: "copying",
     completed: 0,
@@ -9141,12 +5646,12 @@ function copyDirectoryWithProgress(sourceRoot, targetRoot, onProgress) {
     percent: 10,
     detail: "Preparing files"
   });
-  files.forEach((relativePath, index51) => {
-    const sourcePath = path23.resolve(sourceRoot, relativePath);
-    const targetPath = path23.resolve(targetRoot, relativePath);
-    fs17.mkdirSync(path23.dirname(targetPath), { recursive: true });
-    fs17.copyFileSync(sourcePath, targetPath);
-    const completed = index51 + 1;
+  files.forEach((relativePath, index) => {
+    const sourcePath = path22.resolve(sourceRoot, relativePath);
+    const targetPath = path22.resolve(targetRoot, relativePath);
+    fs16.mkdirSync(path22.dirname(targetPath), { recursive: true });
+    fs16.copyFileSync(sourcePath, targetPath);
+    const completed = index + 1;
     const percent = 10 + Math.round(completed / total * 55);
     reportProgress(onProgress, {
       phase: "copying",
@@ -9160,8 +5665,8 @@ function copyDirectoryWithProgress(sourceRoot, targetRoot, onProgress) {
 function buildZipEntriesWithProgress(sourceRoot, exportFolderName, onProgress) {
   const files = listRelativeFiles(sourceRoot);
   const total = Math.max(files.length, 1);
-  return files.map((relativePath, index51) => {
-    const completed = index51 + 1;
+  return files.map((relativePath, index) => {
+    const completed = index + 1;
     const percent = 65 + Math.round(completed / total * 30);
     reportProgress(onProgress, {
       phase: "zipping",
@@ -9171,8 +5676,8 @@ function buildZipEntriesWithProgress(sourceRoot, exportFolderName, onProgress) {
       detail: relativePath
     });
     return {
-      name: path23.posix.join(exportFolderName, relativePath),
-      data: fs17.readFileSync(path23.resolve(sourceRoot, relativePath))
+      name: path22.posix.join(exportFolderName, relativePath),
+      data: fs16.readFileSync(path22.resolve(sourceRoot, relativePath))
     };
   });
 }
@@ -9187,8 +5692,8 @@ function downloadBundledKit(kitId, outDir, options = {}) {
     percent: 0,
     detail: "Resolving export target"
   });
-  fs17.mkdirSync(outputPaths.outputRoot, { recursive: true });
-  fs17.rmSync(outputPaths.folderPath, { recursive: true, force: true });
+  fs16.mkdirSync(outputPaths.outputRoot, { recursive: true });
+  fs16.rmSync(outputPaths.folderPath, { recursive: true, force: true });
   copyDirectoryWithProgress(resolved.assetRoot, outputPaths.folderPath, onProgress);
   const zipBuffer = buildStoredZip(
     buildZipEntriesWithProgress(outputPaths.folderPath, resolved.bundleManifest.export.folderName, onProgress)
@@ -9198,9 +5703,9 @@ function downloadBundledKit(kitId, outDir, options = {}) {
     completed: 1,
     total: 1,
     percent: 98,
-    detail: path23.basename(outputPaths.zipPath)
+    detail: path22.basename(outputPaths.zipPath)
   });
-  fs17.writeFileSync(outputPaths.zipPath, zipBuffer);
+  fs16.writeFileSync(outputPaths.zipPath, zipBuffer);
   reportProgress(onProgress, {
     phase: "done",
     completed: 1,
@@ -9236,26 +5741,26 @@ __export(kit_forks_home_exports, {
   resolveKitForksOrphanJobsDir: () => resolveKitForksOrphanJobsDir
 });
 import os6 from "node:os";
-import path24 from "node:path";
+import path23 from "node:path";
 function resolveKitForksHomeDir() {
   const envHome = process.env.GROWTHUB_KIT_FORKS_HOME?.trim();
-  if (envHome) return path24.resolve(expandHomePrefix(envHome));
-  return path24.resolve(os6.homedir(), ".growthub", "kit-forks");
+  if (envHome) return path23.resolve(expandHomePrefix(envHome));
+  return path23.resolve(os6.homedir(), ".growthub", "kit-forks");
 }
 function resolveKitForksIndexPath() {
-  return path24.resolve(resolveKitForksHomeDir(), "index.json");
+  return path23.resolve(resolveKitForksHomeDir(), "index.json");
 }
 function resolveKitForksJobsDir() {
-  return path24.resolve(resolveKitForksHomeDir(), "jobs");
+  return path23.resolve(resolveKitForksHomeDir(), "jobs");
 }
 function resolveKitForksOrphanJobsDir() {
-  return path24.resolve(resolveKitForksHomeDir(), "orphan-jobs");
+  return path23.resolve(resolveKitForksHomeDir(), "orphan-jobs");
 }
 function resolveInForkStateDir(forkPath) {
-  return path24.resolve(forkPath, IN_FORK_STATE_DIRNAME);
+  return path23.resolve(forkPath, IN_FORK_STATE_DIRNAME);
 }
 function resolveInForkRegistrationPath(forkPath) {
-  return path24.resolve(resolveInForkStateDir(forkPath), "fork.json");
+  return path23.resolve(resolveInForkStateDir(forkPath), "fork.json");
 }
 var IN_FORK_STATE_DIRNAME;
 var init_kit_forks_home = __esm({
@@ -9267,68 +5772,68 @@ var init_kit_forks_home = __esm({
 });
 
 // src/kits/fork-registry.ts
-import fs18 from "node:fs";
-import path25 from "node:path";
+import fs17 from "node:fs";
+import path24 from "node:path";
 function readIndex() {
   const p35 = resolveKitForksIndexPath();
-  if (!fs18.existsSync(p35)) return { version: 1, entries: [] };
+  if (!fs17.existsSync(p35)) return { version: 1, entries: [] };
   try {
-    const parsed = JSON.parse(fs18.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs17.readFileSync(p35, "utf8"));
     if (!parsed || !Array.isArray(parsed.entries)) return { version: 1, entries: [] };
     return parsed;
   } catch {
     return { version: 1, entries: [] };
   }
 }
-function writeIndex(index51) {
+function writeIndex(index) {
   const p35 = resolveKitForksIndexPath();
-  fs18.mkdirSync(path25.dirname(p35), { recursive: true });
-  fs18.writeFileSync(p35, JSON.stringify(index51, null, 2) + "\n", "utf8");
+  fs17.mkdirSync(path24.dirname(p35), { recursive: true });
+  fs17.writeFileSync(p35, JSON.stringify(index, null, 2) + "\n", "utf8");
 }
 function upsertIndexEntry(entry) {
-  const index51 = readIndex();
-  const idx = index51.entries.findIndex(
+  const index = readIndex();
+  const idx = index.entries.findIndex(
     (e) => e.forkId === entry.forkId && e.kitId === entry.kitId
   );
-  if (idx >= 0) index51.entries[idx] = entry;
-  else index51.entries.push(entry);
-  writeIndex(index51);
+  if (idx >= 0) index.entries[idx] = entry;
+  else index.entries.push(entry);
+  writeIndex(index);
 }
 function removeIndexEntry(kitId, forkId) {
-  const index51 = readIndex();
-  const next = index51.entries.filter((e) => !(e.kitId === kitId && e.forkId === forkId));
-  if (next.length !== index51.entries.length) writeIndex({ ...index51, entries: next });
+  const index = readIndex();
+  const next = index.entries.filter((e) => !(e.kitId === kitId && e.forkId === forkId));
+  if (next.length !== index.entries.length) writeIndex({ ...index, entries: next });
 }
 function sanitizeForkId(raw) {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 56);
 }
 function generateForkId(forkPath, kitId) {
-  const dirName = path25.basename(forkPath);
+  const dirName = path24.basename(forkPath);
   const base = sanitizeForkId(`${kitId}-${dirName}`);
   const suffix = Date.now().toString(36).slice(-4);
   return `${base}-${suffix}`;
 }
 function readForkJson(forkPath) {
   const p35 = resolveInForkRegistrationPath(forkPath);
-  if (!fs18.existsSync(p35)) return null;
+  if (!fs17.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs18.readFileSync(p35, "utf8"));
+    return JSON.parse(fs17.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
 }
 function writeForkJson(reg) {
   const stateDir = resolveInForkStateDir(reg.forkPath);
-  fs18.mkdirSync(stateDir, { recursive: true });
-  fs18.writeFileSync(
+  fs17.mkdirSync(stateDir, { recursive: true });
+  fs17.writeFileSync(
     resolveInForkRegistrationPath(reg.forkPath),
     JSON.stringify(reg, null, 2) + "\n",
     "utf8"
   );
 }
 function registerKitFork(opts) {
-  const resolvedPath = path25.resolve(opts.forkPath);
-  if (!fs18.existsSync(resolvedPath)) {
+  const resolvedPath = path24.resolve(opts.forkPath);
+  if (!fs17.existsSync(resolvedPath)) {
     throw new Error(`Fork path does not exist: ${resolvedPath}`);
   }
   const forkId = generateForkId(resolvedPath, opts.kitId);
@@ -9362,15 +5867,15 @@ function updateKitForkRegistration(reg) {
 function loadKitForkRegistration(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
   if (!entry) return null;
-  if (!fs18.existsSync(entry.forkPath)) return null;
+  if (!fs17.existsSync(entry.forkPath)) return null;
   return readForkJson(entry.forkPath);
 }
 function listKitForkRegistrations(filterKitId) {
-  const index51 = readIndex();
+  const index = readIndex();
   const results = [];
-  for (const entry of index51.entries) {
+  for (const entry of index.entries) {
     if (filterKitId && entry.kitId !== filterKitId) continue;
-    if (!fs18.existsSync(entry.forkPath)) continue;
+    if (!fs17.existsSync(entry.forkPath)) continue;
     const reg = readForkJson(entry.forkPath);
     if (reg) results.push(reg);
   }
@@ -9379,9 +5884,9 @@ function listKitForkRegistrations(filterKitId) {
 function deregisterKitFork(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
   if (!entry) return false;
-  if (fs18.existsSync(entry.forkPath)) {
+  if (fs17.existsSync(entry.forkPath)) {
     const stateDir = resolveInForkStateDir(entry.forkPath);
-    fs18.rmSync(stateDir, { recursive: true, force: true });
+    fs17.rmSync(stateDir, { recursive: true, force: true });
   }
   removeIndexEntry(kitId, forkId);
   return true;
@@ -9389,7 +5894,7 @@ function deregisterKitFork(kitId, forkId) {
 function lookupKitForkPath(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
   if (!entry) return null;
-  if (!fs18.existsSync(entry.forkPath)) return null;
+  if (!fs17.existsSync(entry.forkPath)) return null;
   return entry.forkPath;
 }
 var init_fork_registry = __esm({
@@ -9400,8 +5905,8 @@ var init_fork_registry = __esm({
 });
 
 // src/kits/fork-policy.ts
-import fs19 from "node:fs";
-import path26 from "node:path";
+import fs18 from "node:fs";
+import path25 from "node:path";
 function makeDefaultKitForkPolicy() {
   return {
     version: 1,
@@ -9416,13 +5921,13 @@ function makeDefaultKitForkPolicy() {
   };
 }
 function resolvePolicyPath(forkPath) {
-  return path26.resolve(resolveInForkStateDir(forkPath), "policy.json");
+  return path25.resolve(resolveInForkStateDir(forkPath), "policy.json");
 }
 function readKitForkPolicy(forkPath) {
   const p35 = resolvePolicyPath(forkPath);
-  if (!fs19.existsSync(p35)) return makeDefaultKitForkPolicy();
+  if (!fs18.existsSync(p35)) return makeDefaultKitForkPolicy();
   try {
-    const parsed = JSON.parse(fs19.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs18.readFileSync(p35, "utf8"));
     return { ...makeDefaultKitForkPolicy(), ...parsed, version: 1 };
   } catch {
     return makeDefaultKitForkPolicy();
@@ -9430,9 +5935,9 @@ function readKitForkPolicy(forkPath) {
 }
 function writeKitForkPolicy(forkPath, policy) {
   const p35 = resolvePolicyPath(forkPath);
-  fs19.mkdirSync(path26.dirname(p35), { recursive: true });
+  fs18.mkdirSync(path25.dirname(p35), { recursive: true });
   const body = { ...policy, version: 1, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  fs19.writeFileSync(p35, JSON.stringify(body, null, 2) + "\n", "utf8");
+  fs18.writeFileSync(p35, JSON.stringify(body, null, 2) + "\n", "utf8");
 }
 function matchesAnyPrefix(targetPath, patterns) {
   const normalized = targetPath.replace(/^\/+|\/+$/g, "");
@@ -9454,10 +5959,10 @@ var init_fork_policy = __esm({
 });
 
 // src/kits/fork-trace.ts
-import fs20 from "node:fs";
-import path27 from "node:path";
+import fs19 from "node:fs";
+import path26 from "node:path";
 function resolveTracePath(forkPath) {
-  return path27.resolve(resolveInForkStateDir(forkPath), "trace.jsonl");
+  return path26.resolve(resolveInForkStateDir(forkPath), "trace.jsonl");
 }
 function appendKitForkTraceEvent(forkPath, event) {
   const full = {
@@ -9465,14 +5970,14 @@ function appendKitForkTraceEvent(forkPath, event) {
     timestamp: event.timestamp ?? (/* @__PURE__ */ new Date()).toISOString()
   };
   const p35 = resolveTracePath(forkPath);
-  fs20.mkdirSync(path27.dirname(p35), { recursive: true });
-  fs20.appendFileSync(p35, JSON.stringify(full) + "\n", "utf8");
+  fs19.mkdirSync(path26.dirname(p35), { recursive: true });
+  fs19.appendFileSync(p35, JSON.stringify(full) + "\n", "utf8");
   return full;
 }
 function readKitForkTrace(forkPath) {
   const p35 = resolveTracePath(forkPath);
-  if (!fs20.existsSync(p35)) return [];
-  const raw = fs20.readFileSync(p35, "utf8").trim();
+  if (!fs19.existsSync(p35)) return [];
+  const raw = fs19.readFileSync(p35, "utf8").trim();
   if (!raw) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -9498,8 +6003,8 @@ var init_fork_trace = __esm({
 
 // src/kits/fork-remote.ts
 import { execFileSync as execFileSync2, spawnSync } from "node:child_process";
-import fs21 from "node:fs";
-import path28 from "node:path";
+import fs20 from "node:fs";
+import path27 from "node:path";
 function runGit(cwd, args, opts) {
   const res = spawnSync("git", args, {
     cwd,
@@ -9515,7 +6020,7 @@ function runGit(cwd, args, opts) {
   };
 }
 function isGitRepo(forkPath) {
-  if (!fs21.existsSync(path28.resolve(forkPath, ".git"))) return false;
+  if (!fs20.existsSync(path27.resolve(forkPath, ".git"))) return false;
   const res = runGit(forkPath, ["rev-parse", "--is-inside-work-tree"]);
   return res.ok && res.stdout.trim() === "true";
 }
@@ -9582,17 +6087,17 @@ var init_fork_remote = __esm({
 
 // src/config/github-home.ts
 import os7 from "node:os";
-import path30 from "node:path";
+import path29 from "node:path";
 function resolveGithubHomeDir() {
   const envHome = process.env.GROWTHUB_GITHUB_HOME?.trim();
-  if (envHome) return path30.resolve(expandHomePrefix(envHome));
-  return path30.resolve(os7.homedir(), ".growthub", "github");
+  if (envHome) return path29.resolve(expandHomePrefix(envHome));
+  return path29.resolve(os7.homedir(), ".growthub", "github");
 }
 function resolveGithubTokenPath() {
-  return path30.resolve(resolveGithubHomeDir(), "token.json");
+  return path29.resolve(resolveGithubHomeDir(), "token.json");
 }
 function resolveGithubProfilePath() {
-  return path30.resolve(resolveGithubHomeDir(), "profile.json");
+  return path29.resolve(resolveGithubHomeDir(), "profile.json");
 }
 var init_github_home = __esm({
   "src/config/github-home.ts"() {
@@ -9613,24 +6118,24 @@ __export(token_store_exports, {
   writeGithubProfile: () => writeGithubProfile,
   writeGithubToken: () => writeGithubToken
 });
-import fs23 from "node:fs";
+import fs22 from "node:fs";
 function ensureDir(dir) {
-  fs23.mkdirSync(dir, { recursive: true });
+  fs22.mkdirSync(dir, { recursive: true });
 }
 function atomicWrite(filePath, body) {
   const tmp = `${filePath}.tmp`;
-  fs23.writeFileSync(tmp, body, { encoding: "utf8", mode: 384 });
-  fs23.renameSync(tmp, filePath);
+  fs22.writeFileSync(tmp, body, { encoding: "utf8", mode: 384 });
+  fs22.renameSync(tmp, filePath);
   try {
-    fs23.chmodSync(filePath, 384);
+    fs22.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readGithubToken() {
   const p35 = resolveGithubTokenPath();
-  if (!fs23.existsSync(p35)) return null;
+  if (!fs22.existsSync(p35)) return null;
   try {
-    const parsed = JSON.parse(fs23.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs22.readFileSync(p35, "utf8"));
     if (!parsed?.accessToken) return null;
     return parsed;
   } catch {
@@ -9643,7 +6148,7 @@ function writeGithubToken(token) {
 }
 function clearGithubToken() {
   const p35 = resolveGithubTokenPath();
-  if (fs23.existsSync(p35)) fs23.rmSync(p35, { force: true });
+  if (fs22.existsSync(p35)) fs22.rmSync(p35, { force: true });
 }
 function isGithubTokenExpired(token) {
   if (!token) return true;
@@ -9654,9 +6159,9 @@ function isGithubTokenExpired(token) {
 }
 function readGithubProfile() {
   const p35 = resolveGithubProfilePath();
-  if (!fs23.existsSync(p35)) return null;
+  if (!fs22.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs23.readFileSync(p35, "utf8"));
+    return JSON.parse(fs22.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
@@ -9667,7 +6172,7 @@ function writeGithubProfile(profile) {
 }
 function clearGithubProfile() {
   const p35 = resolveGithubProfilePath();
-  if (fs23.existsSync(p35)) fs23.rmSync(p35, { force: true });
+  if (fs22.existsSync(p35)) fs22.rmSync(p35, { force: true });
 }
 function describeGithubTokenPath() {
   return resolveGithubTokenPath();
@@ -10012,7 +6517,7 @@ function parseRepoRef(raw) {
   throw new Error(`Unable to parse GitHub repo reference: ${raw}`);
 }
 var GITHUB_API_BASE, GITHUB_OAUTH_BASE, DEFAULT_GITHUB_CLIENT_ID;
-var init_client2 = __esm({
+var init_client = __esm({
   "src/github/client.ts"() {
     "use strict";
     GITHUB_API_BASE = "https://api.github.com";
@@ -10022,7 +6527,7 @@ var init_client2 = __esm({
 });
 
 // src/utils/table-renderer.ts
-import pc27 from "picocolors";
+import pc20 from "picocolors";
 function stripAnsi(input) {
   return input.replace(ANSI_PATTERN, "");
 }
@@ -10063,7 +6568,7 @@ function computeColumnWidths(columns, cells) {
 function renderTable(opts) {
   const { columns, rows, showHeader = true, emptyText } = opts;
   if (rows.length === 0 && emptyText) {
-    return pc27.dim("  " + emptyText);
+    return pc20.dim("  " + emptyText);
   }
   const rawCells = rows.map(
     (row) => columns.map((col) => {
@@ -10077,10 +6582,10 @@ function renderTable(opts) {
   const lines = [];
   if (showHeader) {
     const header = columns.map(
-      (col, i) => pad(pc27.bold(truncate(col.label, widths[i])), widths[i], col.align ?? "left")
+      (col, i) => pad(pc20.bold(truncate(col.label, widths[i])), widths[i], col.align ?? "left")
     ).join("  ");
     lines.push("  " + header);
-    lines.push("  " + widths.map((w) => pc27.dim("\u2500".repeat(w))).join("  "));
+    lines.push("  " + widths.map((w) => pc20.dim("\u2500".repeat(w))).join("  "));
   }
   for (const cells of rawCells) {
     const line = columns.map(
@@ -10107,7 +6612,7 @@ __export(github_exports, {
   registerGithubCommands: () => registerGithubCommands
 });
 import * as p28 from "@clack/prompts";
-import pc42 from "picocolors";
+import pc35 from "picocolors";
 import open2 from "open";
 async function sleep2(ms) {
   await new Promise((r) => setTimeout(r, ms));
@@ -10130,14 +6635,14 @@ async function githubLogin(opts) {
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", mode: "pat", login: profile.login }, null, 2));
     } else {
-      p28.log.success(`Connected to GitHub as ${pc42.cyan(profile.login)} (PAT).`);
+      p28.log.success(`Connected to GitHub as ${pc35.cyan(profile.login)} (PAT).`);
     }
     return;
   }
-  p28.intro(pc42.cyan("GitHub device flow login"));
+  p28.intro(pc35.cyan("GitHub device flow login"));
   const start = await startDeviceFlow();
   p28.log.step(
-    `Open ${pc42.cyan(start.verificationUri)} and enter code ${pc42.yellow(start.userCode)}`
+    `Open ${pc35.cyan(start.verificationUri)} and enter code ${pc35.yellow(start.userCode)}`
   );
   if (!opts.noBrowser) {
     try {
@@ -10166,7 +6671,7 @@ async function githubLogin(opts) {
       if (opts.json) {
         console.log(JSON.stringify({ status: "ok", mode: "device-flow", login: profile.login }));
       } else {
-        p28.outro(`Connected to GitHub as ${pc42.cyan(profile.login)}.`);
+        p28.outro(`Connected to GitHub as ${pc35.cyan(profile.login)}.`);
       }
       return;
     }
@@ -10230,7 +6735,7 @@ async function githubWhoami(opts = {}) {
     return;
   }
   if (token) {
-    const status = directExpired ? pc42.red("expired") : pc42.green("active");
+    const status = directExpired ? pc35.red("expired") : pc35.green("active");
     p28.log.message(
       `GitHub (direct): ${status}  login=${profile?.login ?? token.login ?? "?"}  mode=${token.authMode}  scopes=[${token.scopes.join(", ")}]`
     );
@@ -10238,7 +6743,7 @@ async function githubWhoami(opts = {}) {
   if (bridge.growthubConnected) {
     if (bridgeGithub) {
       p28.log.message(
-        `GitHub (via Growthub bridge): ${pc42.green("connected")}  handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`
+        `GitHub (via Growthub bridge): ${pc35.green("connected")}  handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`
       );
     } else if (bridge.bridgeAvailable) {
       p28.log.info(
@@ -10246,7 +6751,7 @@ async function githubWhoami(opts = {}) {
       );
     }
   }
-  p28.log.message(`Effective auth source: ${pc42.cyan(effectiveSource)}`);
+  p28.log.message(`Effective auth source: ${pc35.cyan(effectiveSource)}`);
 }
 function githubLogout(opts = {}) {
   clearGithubToken();
@@ -10273,7 +6778,7 @@ var init_github = __esm({
   "src/commands/github.ts"() {
     "use strict";
     init_token_store();
-    init_client2();
+    init_client();
     init_bridge();
   }
 });
@@ -10373,7 +6878,7 @@ var init_init = __esm({
     init_fork_trace();
     init_fork_remote();
     init_github_resolver();
-    init_client2();
+    init_client();
     DEFAULT_STARTER_KIT_ID = "growthub-custom-workspace-starter-v1";
   }
 });
@@ -10567,7 +7072,7 @@ var init_github_source = __esm({
   "src/starter/source-import/github-source.ts"() {
     "use strict";
     init_github_resolver();
-    init_client2();
+    init_client();
     init_fork_remote();
     GITHUB_API_BASE2 = "https://api.github.com";
   }
@@ -11241,9 +7746,9 @@ function inspectSourcePayload(input) {
         return;
       }
       bytesInspected += buf.length;
-      const text69 = buf.toString("utf8");
+      const text18 = buf.toString("utf8");
       for (const matcher of TEXT_PATTERNS) {
-        const match = matcher.regex.exec(text69);
+        const match = matcher.regex.exec(text18);
         if (!match) continue;
         findings.push({
           category: matcher.category,
@@ -12102,7 +8607,7 @@ __export(source_import_discovery_exports, {
   startSourceImportFlow: () => startSourceImportFlow
 });
 import * as p33 from "@clack/prompts";
-import pc47 from "picocolors";
+import pc40 from "picocolors";
 import fs52 from "node:fs";
 import path59 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
@@ -12227,8 +8732,8 @@ async function selectSkillFromCatalog() {
     const choice = await p33.select({
       message: `skills.sh \xB7 ${scopeLabel2(scope)}${query ? ` \xB7 query="${query}"` : ""}`,
       options: [
-        ...result.entries.map((entry, index51) => ({
-          value: `skill:${index51}`,
+        ...result.entries.map((entry, index) => ({
+          value: `skill:${index}`,
           label: entry.title,
           hint: `${entry.repository ?? entry.author} \xB7 ${entry.weeklyInstalls ?? "unknown"} weekly \xB7 ${entry.githubStars ?? "unknown"} stars`
         })),
@@ -12311,14 +8816,14 @@ async function startSkillsSourceImportFlow() {
 function renderSuccess(result, jobId) {
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
   p33.outro(
-    `Imported ${sourceLine} into ${pc47.cyan(result.forkPath)}
-  jobId:       ${pc47.cyan(jobId)}
-  forkId:      ${pc47.cyan(result.forkId)}
+    `Imported ${sourceLine} into ${pc40.cyan(result.forkPath)}
+  jobId:       ${pc40.cyan(jobId)}
+  forkId:      ${pc40.cyan(result.forkId)}
   risk:        ${result.security.riskClass} (${result.security.findings.length} findings)
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager}
   open:        ${folderOpenLabel3(result.forkPath)}
-  summary:     ${pc47.dim(result.summaryPath)}
-  manifest:    ${pc47.dim(result.manifestPath)}`
+  summary:     ${pc40.dim(result.summaryPath)}
+  manifest:    ${pc40.dim(result.manifestPath)}`
   );
 }
 async function confirmTwice(job) {
@@ -12407,11 +8912,11 @@ init_onboard();
 init_doctor();
 import { Command } from "commander";
 import * as p34 from "@clack/prompts";
-import pc48 from "picocolors";
+import pc41 from "picocolors";
 import fs53 from "node:fs";
 import path60 from "node:path";
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { fileURLToPath as fileURLToPath7 } from "node:url";
+import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // src/commands/env.ts
 init_store();
@@ -12895,923 +9400,16 @@ async function addAllowedHostname(host, opts) {
 
 // src/commands/heartbeat-run.ts
 import { setTimeout as delay } from "node:timers/promises";
-import pc18 from "picocolors";
-
-// ../packages/adapters/claude-local/src/cli/format-event.ts
-import pc9 from "picocolors";
-function asErrorText(value) {
-  if (typeof value === "string") return value;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
-  const obj = value;
-  const message = typeof obj.message === "string" && obj.message || typeof obj.error === "string" && obj.error || typeof obj.code === "string" && obj.code || "";
-  if (message) return message;
-  try {
-    return JSON.stringify(obj);
-  } catch {
-    return "";
-  }
-}
-function printClaudeStreamEvent(raw, debug) {
-  const line = raw.trim();
-  if (!line) return;
-  let parsed = null;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    console.log(line);
-    return;
-  }
-  const type = typeof parsed.type === "string" ? parsed.type : "";
-  if (type === "system" && parsed.subtype === "init") {
-    const model = typeof parsed.model === "string" ? parsed.model : "unknown";
-    const sessionId = typeof parsed.session_id === "string" ? parsed.session_id : "";
-    console.log(pc9.blue(`Claude initialized (model: ${model}${sessionId ? `, session: ${sessionId}` : ""})`));
-    return;
-  }
-  if (type === "assistant") {
-    const message = typeof parsed.message === "object" && parsed.message !== null && !Array.isArray(parsed.message) ? parsed.message : {};
-    const content = Array.isArray(message.content) ? message.content : [];
-    for (const blockRaw of content) {
-      if (typeof blockRaw !== "object" || blockRaw === null || Array.isArray(blockRaw)) continue;
-      const block = blockRaw;
-      const blockType = typeof block.type === "string" ? block.type : "";
-      if (blockType === "text") {
-        const text69 = typeof block.text === "string" ? block.text : "";
-        if (text69) console.log(pc9.green(`assistant: ${text69}`));
-      } else if (blockType === "tool_use") {
-        const name = typeof block.name === "string" ? block.name : "unknown";
-        console.log(pc9.yellow(`tool_call: ${name}`));
-        if (block.input !== void 0) {
-          console.log(pc9.gray(JSON.stringify(block.input, null, 2)));
-        }
-      }
-    }
-    return;
-  }
-  if (type === "result") {
-    const usage = typeof parsed.usage === "object" && parsed.usage !== null && !Array.isArray(parsed.usage) ? parsed.usage : {};
-    const input = Number(usage.input_tokens ?? 0);
-    const output = Number(usage.output_tokens ?? 0);
-    const cached = Number(usage.cache_read_input_tokens ?? 0);
-    const cost = Number(parsed.total_cost_usd ?? 0);
-    const subtype = typeof parsed.subtype === "string" ? parsed.subtype : "";
-    const isError = parsed.is_error === true;
-    const resultText = typeof parsed.result === "string" ? parsed.result : "";
-    if (resultText) {
-      console.log(pc9.green("result:"));
-      console.log(resultText);
-    }
-    const errors = Array.isArray(parsed.errors) ? parsed.errors.map(asErrorText).filter(Boolean) : [];
-    if (subtype.startsWith("error") || isError || errors.length > 0) {
-      console.log(pc9.red(`claude_result: subtype=${subtype || "unknown"} is_error=${isError ? "true" : "false"}`));
-      if (errors.length > 0) {
-        console.log(pc9.red(`claude_errors: ${errors.join(" | ")}`));
-      }
-    }
-    console.log(
-      pc9.blue(
-        `tokens: in=${Number.isFinite(input) ? input : 0} out=${Number.isFinite(output) ? output : 0} cached=${Number.isFinite(cached) ? cached : 0} cost=$${Number.isFinite(cost) ? cost.toFixed(6) : "0.000000"}`
-      )
-    );
-    return;
-  }
-  if (debug) {
-    console.log(pc9.gray(line));
-  }
-}
-
-// ../packages/adapters/codex-local/src/cli/format-event.ts
-import pc10 from "picocolors";
-function asRecord(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value;
-}
-function asString(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-function asNumber(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-function errorText(value) {
-  if (typeof value === "string") return value;
-  const rec = asRecord(value);
-  if (!rec) return "";
-  const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
-  try {
-    return JSON.stringify(rec);
-  } catch {
-    return "";
-  }
-}
-function printItemStarted(item) {
-  const itemType = asString(item.type);
-  if (itemType === "command_execution") {
-    const command = asString(item.command);
-    console.log(pc10.yellow("tool_call: command_execution"));
-    if (command) console.log(pc10.gray(command));
-    return true;
-  }
-  if (itemType === "tool_use") {
-    const name = asString(item.name, "unknown");
-    console.log(pc10.yellow(`tool_call: ${name}`));
-    if (item.input !== void 0) {
-      try {
-        console.log(pc10.gray(JSON.stringify(item.input, null, 2)));
-      } catch {
-        console.log(pc10.gray(String(item.input)));
-      }
-    }
-    return true;
-  }
-  return false;
-}
-function printItemCompleted(item) {
-  const itemType = asString(item.type);
-  if (itemType === "agent_message") {
-    const text69 = asString(item.text);
-    if (text69) console.log(pc10.green(`assistant: ${text69}`));
-    return true;
-  }
-  if (itemType === "reasoning") {
-    const text69 = asString(item.text);
-    if (text69) console.log(pc10.gray(`thinking: ${text69}`));
-    return true;
-  }
-  if (itemType === "tool_use") {
-    const name = asString(item.name, "unknown");
-    console.log(pc10.yellow(`tool_call: ${name}`));
-    if (item.input !== void 0) {
-      try {
-        console.log(pc10.gray(JSON.stringify(item.input, null, 2)));
-      } catch {
-        console.log(pc10.gray(String(item.input)));
-      }
-    }
-    return true;
-  }
-  if (itemType === "command_execution") {
-    const command = asString(item.command);
-    const status = asString(item.status);
-    const exitCode = typeof item.exit_code === "number" && Number.isFinite(item.exit_code) ? item.exit_code : null;
-    const output = asString(item.aggregated_output).replace(/\s+$/, "");
-    const isError = exitCode !== null && exitCode !== 0 || status === "failed" || status === "errored" || status === "error" || status === "cancelled";
-    const summaryParts = [
-      "tool_result: command_execution",
-      command ? `command="${command}"` : "",
-      status ? `status=${status}` : "",
-      exitCode !== null ? `exit_code=${exitCode}` : ""
-    ].filter(Boolean);
-    console.log((isError ? pc10.red : pc10.cyan)(summaryParts.join(" ")));
-    if (output) console.log((isError ? pc10.red : pc10.gray)(output));
-    return true;
-  }
-  if (itemType === "file_change") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
-    const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
-      const kind = asString(change.kind, "update");
-      const path61 = asString(change.path, "unknown");
-      return `${kind} ${path61}`;
-    });
-    const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
-    const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
-    console.log(pc10.cyan(`file_change: ${preview}${more}`));
-    return true;
-  }
-  if (itemType === "error") {
-    const message = errorText(item.message ?? item.error ?? item);
-    if (message) console.log(pc10.red(`error: ${message}`));
-    return true;
-  }
-  if (itemType === "tool_result") {
-    const isError = item.is_error === true || asString(item.status) === "error";
-    const text69 = asString(item.content) || asString(item.result) || asString(item.output);
-    console.log((isError ? pc10.red : pc10.cyan)(`tool_result${isError ? " (error)" : ""}`));
-    if (text69) console.log((isError ? pc10.red : pc10.gray)(text69));
-    return true;
-  }
-  return false;
-}
-function printCodexStreamEvent(raw, _debug) {
-  const line = raw.trim();
-  if (!line) return;
-  let parsed = null;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    console.log(line);
-    return;
-  }
-  const type = asString(parsed.type);
-  if (type === "thread.started") {
-    const threadId = asString(parsed.thread_id);
-    const model = asString(parsed.model);
-    const details = [threadId ? `session: ${threadId}` : "", model ? `model: ${model}` : ""].filter(Boolean).join(", ");
-    console.log(pc10.blue(`Codex thread started${details ? ` (${details})` : ""}`));
-    return;
-  }
-  if (type === "turn.started") {
-    console.log(pc10.blue("turn started"));
-    return;
-  }
-  if (type === "item.started" || type === "item.completed") {
-    const item = asRecord(parsed.item);
-    if (item) {
-      const handled = type === "item.started" ? printItemStarted(item) : printItemCompleted(item);
-      if (!handled) {
-        const itemType = asString(item.type, "unknown");
-        const id = asString(item.id);
-        const status = asString(item.status);
-        const meta = [id ? `id=${id}` : "", status ? `status=${status}` : ""].filter(Boolean).join(" ");
-        console.log(pc10.gray(`${type}: ${itemType}${meta ? ` (${meta})` : ""}`));
-      }
-    } else {
-      console.log(pc10.gray(type));
-    }
-    return;
-  }
-  if (type === "turn.completed") {
-    const usage = asRecord(parsed.usage);
-    const input = asNumber(usage?.input_tokens);
-    const output = asNumber(usage?.output_tokens);
-    const cached = asNumber(usage?.cached_input_tokens, asNumber(usage?.cache_read_input_tokens));
-    const cost = asNumber(parsed.total_cost_usd);
-    const isError = parsed.is_error === true;
-    const subtype = asString(parsed.subtype);
-    const errors = Array.isArray(parsed.errors) ? parsed.errors.map(errorText).filter(Boolean) : [];
-    console.log(
-      pc10.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`)
-    );
-    if (subtype || isError || errors.length > 0) {
-      console.log(
-        pc10.red(`result: subtype=${subtype || "unknown"} is_error=${isError ? "true" : "false"}`)
-      );
-      if (errors.length > 0) console.log(pc10.red(`errors: ${errors.join(" | ")}`));
-    }
-    return;
-  }
-  if (type === "turn.failed") {
-    const usage = asRecord(parsed.usage);
-    const input = asNumber(usage?.input_tokens);
-    const output = asNumber(usage?.output_tokens);
-    const cached = asNumber(usage?.cached_input_tokens, asNumber(usage?.cache_read_input_tokens));
-    const message = errorText(parsed.error ?? parsed.message);
-    console.log(pc10.red(`turn failed${message ? `: ${message}` : ""}`));
-    console.log(pc10.blue(`tokens: in=${input} out=${output} cached=${cached}`));
-    return;
-  }
-  if (type === "error") {
-    const message = errorText(parsed.message ?? parsed.error ?? parsed);
-    if (message) console.log(pc10.red(`error: ${message}`));
-    return;
-  }
-  console.log(line);
-}
-
-// ../packages/adapters/cursor-local/src/cli/format-event.ts
 import pc11 from "picocolors";
 
-// ../packages/adapters/cursor-local/src/shared/stream.ts
-function normalizeCursorStreamLine(rawLine) {
-  const trimmed = rawLine.trim();
-  if (!trimmed) return { stream: null, line: "" };
-  const prefixed = trimmed.match(/^(stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
-  if (!prefixed) {
-    return { stream: null, line: trimmed };
-  }
-  const stream = prefixed[1]?.toLowerCase() === "stderr" ? "stderr" : "stdout";
-  const line = (prefixed[2] ?? "").trim();
-  return { stream, line };
-}
-
-// ../packages/adapters/cursor-local/src/cli/format-event.ts
-function asRecord2(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value;
-}
-function asString2(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-function asNumber2(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-function stringifyUnknown(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-function printUserMessage(messageRaw) {
-  if (typeof messageRaw === "string") {
-    const text69 = messageRaw.trim();
-    if (text69) console.log(pc11.gray(`user: ${text69}`));
-    return;
-  }
-  const message = asRecord2(messageRaw);
-  if (!message) return;
-  const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.gray(`user: ${directText}`));
-  const content = Array.isArray(message.content) ? message.content : [];
-  for (const partRaw of content) {
-    const part = asRecord2(partRaw);
-    if (!part) continue;
-    const type = asString2(part.type).trim();
-    if (type !== "output_text" && type !== "text") continue;
-    const text69 = asString2(part.text).trim();
-    if (text69) console.log(pc11.gray(`user: ${text69}`));
-  }
-}
-function printAssistantMessage(messageRaw) {
-  if (typeof messageRaw === "string") {
-    const text69 = messageRaw.trim();
-    if (text69) console.log(pc11.green(`assistant: ${text69}`));
-    return;
-  }
-  const message = asRecord2(messageRaw);
-  if (!message) return;
-  const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.green(`assistant: ${directText}`));
-  const content = Array.isArray(message.content) ? message.content : [];
-  for (const partRaw of content) {
-    const part = asRecord2(partRaw);
-    if (!part) continue;
-    const type = asString2(part.type).trim();
-    if (type === "output_text" || type === "text") {
-      const text69 = asString2(part.text).trim();
-      if (text69) console.log(pc11.green(`assistant: ${text69}`));
-      continue;
-    }
-    if (type === "thinking") {
-      const text69 = asString2(part.text).trim();
-      if (text69) console.log(pc11.gray(`thinking: ${text69}`));
-      continue;
-    }
-    if (type === "tool_call") {
-      const name = asString2(part.name, asString2(part.tool, "tool"));
-      console.log(pc11.yellow(`tool_call: ${name}`));
-      const input = part.input ?? part.arguments ?? part.args;
-      if (input !== void 0) {
-        try {
-          console.log(pc11.gray(JSON.stringify(input, null, 2)));
-        } catch {
-          console.log(pc11.gray(String(input)));
-        }
-      }
-      continue;
-    }
-    if (type === "tool_result") {
-      const isError = part.is_error === true || asString2(part.status).toLowerCase() === "error";
-      const contentText = asString2(part.output) || asString2(part.text) || asString2(part.result) || stringifyUnknown(part.output ?? part.result ?? part.text ?? part);
-      console.log((isError ? pc11.red : pc11.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc11.red : pc11.gray)(contentText));
-    }
-  }
-}
-function printToolCallEventTopLevel(parsed) {
-  const subtype = asString2(parsed.subtype).trim().toLowerCase();
-  const callId = asString2(parsed.call_id, asString2(parsed.callId, asString2(parsed.id, "")));
-  const toolCall = asRecord2(parsed.tool_call ?? parsed.toolCall);
-  if (!toolCall) {
-    console.log(pc11.yellow(`tool_call${subtype ? `: ${subtype}` : ""}`));
-    return;
-  }
-  const [toolName] = Object.keys(toolCall);
-  if (!toolName) {
-    console.log(pc11.yellow(`tool_call${subtype ? `: ${subtype}` : ""}`));
-    return;
-  }
-  const payload = asRecord2(toolCall[toolName]) ?? {};
-  const args = payload.args ?? asRecord2(payload.function)?.arguments;
-  const result = payload.result ?? payload.output ?? payload.error ?? asRecord2(payload.function)?.result ?? asRecord2(payload.function)?.output;
-  const isError = parsed.is_error === true || payload.is_error === true || subtype === "failed" || subtype === "error" || subtype === "cancelled" || payload.error !== void 0;
-  if (subtype === "started" || subtype === "start") {
-    console.log(pc11.yellow(`tool_call: ${toolName}${callId ? ` (${callId})` : ""}`));
-    if (args !== void 0) {
-      console.log(pc11.gray(stringifyUnknown(args)));
-    }
-    return;
-  }
-  if (subtype === "completed" || subtype === "complete" || subtype === "finished") {
-    const header = `tool_result${isError ? " (error)" : ""}${callId ? ` (${callId})` : ""}`;
-    console.log((isError ? pc11.red : pc11.cyan)(header));
-    if (result !== void 0) {
-      console.log((isError ? pc11.red : pc11.gray)(stringifyUnknown(result)));
-    }
-    return;
-  }
-  console.log(pc11.yellow(`tool_call: ${toolName}${subtype ? ` (${subtype})` : ""}`));
-}
-function printLegacyToolEvent(part) {
-  const tool = asString2(part.tool, "tool");
-  const callId = asString2(part.callID, asString2(part.id, ""));
-  const state = asRecord2(part.state);
-  const status = asString2(state?.status);
-  const input = state?.input;
-  const output = asString2(state?.output).replace(/\s+$/, "");
-  const metadata = asRecord2(state?.metadata);
-  const exit = asNumber2(metadata?.exit, NaN);
-  const isError = status === "failed" || status === "error" || status === "cancelled" || Number.isFinite(exit) && exit !== 0;
-  console.log(pc11.yellow(`tool_call: ${tool}${callId ? ` (${callId})` : ""}`));
-  if (input !== void 0) {
-    try {
-      console.log(pc11.gray(JSON.stringify(input, null, 2)));
-    } catch {
-      console.log(pc11.gray(String(input)));
-    }
-  }
-  if (status || output) {
-    const summary = [
-      "tool_result",
-      status ? `status=${status}` : "",
-      Number.isFinite(exit) ? `exit=${exit}` : ""
-    ].filter(Boolean).join(" ");
-    console.log((isError ? pc11.red : pc11.cyan)(summary));
-    if (output) {
-      console.log((isError ? pc11.red : pc11.gray)(output));
-    }
-  }
-}
-function printCursorStreamEvent(raw, _debug) {
-  const line = normalizeCursorStreamLine(raw).line;
-  if (!line) return;
-  let parsed = null;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    console.log(line);
-    return;
-  }
-  const type = asString2(parsed.type);
-  if (type === "system") {
-    const subtype = asString2(parsed.subtype);
-    if (subtype === "init") {
-      const sessionId = asString2(parsed.session_id) || asString2(parsed.sessionId) || asString2(parsed.sessionID);
-      const model = asString2(parsed.model);
-      const details = [sessionId ? `session: ${sessionId}` : "", model ? `model: ${model}` : ""].filter(Boolean).join(", ");
-      console.log(pc11.blue(`Cursor init${details ? ` (${details})` : ""}`));
-      return;
-    }
-    console.log(pc11.blue(`system: ${subtype || "event"}`));
-    return;
-  }
-  if (type === "assistant") {
-    printAssistantMessage(parsed.message);
-    return;
-  }
-  if (type === "user") {
-    printUserMessage(parsed.message);
-    return;
-  }
-  if (type === "thinking") {
-    const text69 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
-    if (text69) console.log(pc11.gray(`thinking: ${text69}`));
-    return;
-  }
-  if (type === "tool_call") {
-    printToolCallEventTopLevel(parsed);
-    return;
-  }
-  if (type === "result") {
-    const usage = asRecord2(parsed.usage);
-    const input = asNumber2(usage?.input_tokens, asNumber2(usage?.inputTokens));
-    const output = asNumber2(usage?.output_tokens, asNumber2(usage?.outputTokens));
-    const cached = asNumber2(
-      usage?.cached_input_tokens,
-      asNumber2(usage?.cachedInputTokens, asNumber2(usage?.cache_read_input_tokens))
-    );
-    const cost = asNumber2(parsed.total_cost_usd, asNumber2(parsed.cost_usd, asNumber2(parsed.cost)));
-    const subtype = asString2(parsed.subtype, "result");
-    const isError = parsed.is_error === true || subtype === "error" || subtype === "failed";
-    console.log(pc11.blue(`result: subtype=${subtype}`));
-    console.log(pc11.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
-    const resultText = asString2(parsed.result).trim();
-    if (resultText) console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
-    const errors = Array.isArray(parsed.errors) ? parsed.errors.map((value) => stringifyUnknown(value)).filter(Boolean) : [];
-    if (errors.length > 0) console.log(pc11.red(`errors: ${errors.join(" | ")}`));
-    return;
-  }
-  if (type === "error") {
-    const message = asString2(parsed.message) || stringifyUnknown(parsed.error ?? parsed.detail) || line;
-    console.log(pc11.red(`error: ${message}`));
-    return;
-  }
-  if (type === "step_start") {
-    const sessionId = asString2(parsed.sessionID);
-    console.log(pc11.blue(`step started${sessionId ? ` (session: ${sessionId})` : ""}`));
-    return;
-  }
-  if (type === "text") {
-    const part = asRecord2(parsed.part);
-    const text69 = asString2(part?.text);
-    if (text69) console.log(pc11.green(`assistant: ${text69}`));
-    return;
-  }
-  if (type === "tool_use") {
-    const part = asRecord2(parsed.part);
-    if (part) {
-      printLegacyToolEvent(part);
-    } else {
-      console.log(pc11.yellow("tool_use"));
-    }
-    return;
-  }
-  if (type === "step_finish") {
-    const part = asRecord2(parsed.part);
-    const tokens = asRecord2(part?.tokens);
-    const cache = asRecord2(tokens?.cache);
-    const reason = asString2(part?.reason, "step_finish");
-    const input = asNumber2(tokens?.input);
-    const output = asNumber2(tokens?.output);
-    const cached = asNumber2(cache?.read);
-    const cost = asNumber2(part?.cost);
-    console.log(pc11.blue(`step finished: reason=${reason}`));
-    console.log(pc11.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
-    return;
-  }
-  console.log(line);
-}
-
-// ../packages/adapters/gemini-local/src/cli/format-event.ts
-import pc12 from "picocolors";
-function asRecord3(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value;
-}
-function asString3(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-function asNumber3(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-function stringifyUnknown2(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-function errorText2(value) {
-  if (typeof value === "string") return value;
-  const rec = asRecord3(value);
-  if (!rec) return "";
-  const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
-  try {
-    return JSON.stringify(rec);
-  } catch {
-    return "";
-  }
-}
-function printTextMessage(prefix, colorize, messageRaw) {
-  if (typeof messageRaw === "string") {
-    const text69 = messageRaw.trim();
-    if (text69) console.log(colorize(`${prefix}: ${text69}`));
-    return;
-  }
-  const message = asRecord3(messageRaw);
-  if (!message) return;
-  const directText = asString3(message.text).trim();
-  if (directText) console.log(colorize(`${prefix}: ${directText}`));
-  const content = Array.isArray(message.content) ? message.content : [];
-  for (const partRaw of content) {
-    const part = asRecord3(partRaw);
-    if (!part) continue;
-    const type = asString3(part.type).trim();
-    if (type === "output_text" || type === "text" || type === "content") {
-      const text69 = asString3(part.text).trim() || asString3(part.content).trim();
-      if (text69) console.log(colorize(`${prefix}: ${text69}`));
-      continue;
-    }
-    if (type === "thinking") {
-      const text69 = asString3(part.text).trim();
-      if (text69) console.log(pc12.gray(`thinking: ${text69}`));
-      continue;
-    }
-    if (type === "tool_call") {
-      const name = asString3(part.name, asString3(part.tool, "tool"));
-      console.log(pc12.yellow(`tool_call: ${name}`));
-      const input = part.input ?? part.arguments ?? part.args;
-      if (input !== void 0) console.log(pc12.gray(stringifyUnknown2(input)));
-      continue;
-    }
-    if (type === "tool_result" || type === "tool_response") {
-      const isError = part.is_error === true || asString3(part.status).toLowerCase() === "error";
-      const contentText = asString3(part.output) || asString3(part.text) || asString3(part.result) || stringifyUnknown2(part.output ?? part.result ?? part.text ?? part.response);
-      console.log((isError ? pc12.red : pc12.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc12.red : pc12.gray)(contentText));
-    }
-  }
-}
-function printUsage(parsed) {
-  const usage = asRecord3(parsed.usage) ?? asRecord3(parsed.usageMetadata);
-  const usageMetadata = asRecord3(usage?.usageMetadata);
-  const source = usageMetadata ?? usage ?? {};
-  const input = asNumber3(source.input_tokens, asNumber3(source.inputTokens, asNumber3(source.promptTokenCount)));
-  const output = asNumber3(source.output_tokens, asNumber3(source.outputTokens, asNumber3(source.candidatesTokenCount)));
-  const cached = asNumber3(
-    source.cached_input_tokens,
-    asNumber3(source.cachedInputTokens, asNumber3(source.cachedContentTokenCount))
-  );
-  const cost = asNumber3(parsed.total_cost_usd, asNumber3(parsed.cost_usd, asNumber3(parsed.cost)));
-  console.log(pc12.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
-}
-function printGeminiStreamEvent(raw, _debug) {
-  const line = raw.trim();
-  if (!line) return;
-  let parsed = null;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    console.log(line);
-    return;
-  }
-  const type = asString3(parsed.type);
-  if (type === "system") {
-    const subtype = asString3(parsed.subtype);
-    if (subtype === "init") {
-      const sessionId = asString3(parsed.session_id) || asString3(parsed.sessionId) || asString3(parsed.sessionID) || asString3(parsed.checkpoint_id);
-      const model = asString3(parsed.model);
-      const details = [sessionId ? `session: ${sessionId}` : "", model ? `model: ${model}` : ""].filter(Boolean).join(", ");
-      console.log(pc12.blue(`Gemini init${details ? ` (${details})` : ""}`));
-      return;
-    }
-    if (subtype === "error") {
-      const text69 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-      if (text69) console.log(pc12.red(`error: ${text69}`));
-      return;
-    }
-    console.log(pc12.blue(`system: ${subtype || "event"}`));
-    return;
-  }
-  if (type === "assistant") {
-    printTextMessage("assistant", pc12.green, parsed.message);
-    return;
-  }
-  if (type === "user") {
-    printTextMessage("user", pc12.gray, parsed.message);
-    return;
-  }
-  if (type === "thinking") {
-    const text69 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
-    if (text69) console.log(pc12.gray(`thinking: ${text69}`));
-    return;
-  }
-  if (type === "tool_call") {
-    const subtype = asString3(parsed.subtype).trim().toLowerCase();
-    const toolCall = asRecord3(parsed.tool_call ?? parsed.toolCall);
-    const [toolName] = toolCall ? Object.keys(toolCall) : [];
-    if (!toolCall || !toolName) {
-      console.log(pc12.yellow(`tool_call${subtype ? `: ${subtype}` : ""}`));
-      return;
-    }
-    const payload = asRecord3(toolCall[toolName]) ?? {};
-    if (subtype === "started" || subtype === "start") {
-      console.log(pc12.yellow(`tool_call: ${toolName}`));
-      console.log(pc12.gray(stringifyUnknown2(payload.args ?? payload.input ?? payload.arguments ?? payload)));
-      return;
-    }
-    if (subtype === "completed" || subtype === "complete" || subtype === "finished") {
-      const isError = parsed.is_error === true || payload.is_error === true || payload.error !== void 0 || asString3(payload.status).toLowerCase() === "error";
-      console.log((isError ? pc12.red : pc12.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      console.log((isError ? pc12.red : pc12.gray)(stringifyUnknown2(payload.result ?? payload.output ?? payload.error)));
-      return;
-    }
-    console.log(pc12.yellow(`tool_call: ${toolName}${subtype ? ` (${subtype})` : ""}`));
-    return;
-  }
-  if (type === "result") {
-    printUsage(parsed);
-    const subtype = asString3(parsed.subtype, "result");
-    const isError = parsed.is_error === true;
-    if (subtype || isError) {
-      console.log((isError ? pc12.red : pc12.blue)(`result: subtype=${subtype} is_error=${isError ? "true" : "false"}`));
-    }
-    return;
-  }
-  if (type === "error") {
-    const text69 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-    if (text69) console.log(pc12.red(`error: ${text69}`));
-    return;
-  }
-  console.log(line);
-}
-
-// ../packages/adapters/opencode-local/src/cli/format-event.ts
-import pc13 from "picocolors";
-function safeJsonParse(text69) {
-  try {
-    return JSON.parse(text69);
-  } catch {
-    return null;
-  }
-}
-function asRecord4(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value;
-}
-function asString4(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-function asNumber4(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-function errorText3(value) {
-  if (typeof value === "string") return value;
-  const rec = asRecord4(value);
-  if (!rec) return "";
-  const data = asRecord4(rec.data);
-  const message = asString4(rec.message) || asString4(data?.message) || asString4(rec.name) || "";
-  if (message) return message;
-  try {
-    return JSON.stringify(rec);
-  } catch {
-    return "";
-  }
-}
-function printOpenCodeStreamEvent(raw, _debug) {
-  const line = raw.trim();
-  if (!line) return;
-  const parsed = asRecord4(safeJsonParse(line));
-  if (!parsed) {
-    console.log(line);
-    return;
-  }
-  const type = asString4(parsed.type);
-  if (type === "step_start") {
-    const sessionId = asString4(parsed.sessionID);
-    console.log(pc13.blue(`step started${sessionId ? ` (session: ${sessionId})` : ""}`));
-    return;
-  }
-  if (type === "text") {
-    const part = asRecord4(parsed.part);
-    const text69 = asString4(part?.text).trim();
-    if (text69) console.log(pc13.green(`assistant: ${text69}`));
-    return;
-  }
-  if (type === "reasoning") {
-    const part = asRecord4(parsed.part);
-    const text69 = asString4(part?.text).trim();
-    if (text69) console.log(pc13.gray(`thinking: ${text69}`));
-    return;
-  }
-  if (type === "tool_use") {
-    const part = asRecord4(parsed.part);
-    const tool = asString4(part?.tool, "tool");
-    const callID = asString4(part?.callID);
-    const state = asRecord4(part?.state);
-    const status = asString4(state?.status);
-    const isError = status === "error";
-    const metadata = asRecord4(state?.metadata);
-    console.log(pc13.yellow(`tool_call: ${tool}${callID ? ` (${callID})` : ""}`));
-    if (status) {
-      const metaParts = [`status=${status}`];
-      if (metadata) {
-        for (const [key, value] of Object.entries(metadata)) {
-          if (value !== void 0 && value !== null) metaParts.push(`${key}=${value}`);
-        }
-      }
-      console.log((isError ? pc13.red : pc13.gray)(`tool_result ${metaParts.join(" ")}`));
-    }
-    const output = (asString4(state?.output) || asString4(state?.error)).trim();
-    if (output) console.log((isError ? pc13.red : pc13.gray)(output));
-    return;
-  }
-  if (type === "step_finish") {
-    const part = asRecord4(parsed.part);
-    const tokens = asRecord4(part?.tokens);
-    const cache = asRecord4(tokens?.cache);
-    const input = asNumber4(tokens?.input, 0);
-    const output = asNumber4(tokens?.output, 0) + asNumber4(tokens?.reasoning, 0);
-    const cached = asNumber4(cache?.read, 0);
-    const cost = asNumber4(part?.cost, 0);
-    const reason = asString4(part?.reason, "step");
-    console.log(pc13.blue(`step finished: reason=${reason}`));
-    console.log(pc13.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
-    return;
-  }
-  if (type === "error") {
-    const message = errorText3(parsed.error ?? parsed.message);
-    if (message) console.log(pc13.red(`error: ${message}`));
-    return;
-  }
-  console.log(line);
-}
-
-// ../packages/adapters/pi-local/src/cli/format-event.ts
-import pc14 from "picocolors";
-function safeJsonParse2(text69) {
-  try {
-    return JSON.parse(text69);
-  } catch {
-    return null;
-  }
-}
-function asRecord5(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value;
-}
-function asString5(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-function extractTextContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.filter((c) => c.type === "text" && c.text).map((c) => c.text).join("");
-}
-function printPiStreamEvent(raw, _debug) {
-  const line = raw.trim();
-  if (!line) return;
-  const parsed = asRecord5(safeJsonParse2(line));
-  if (!parsed) {
-    console.log(line);
-    return;
-  }
-  const type = asString5(parsed.type);
-  if (type === "agent_start") {
-    console.log(pc14.blue("Pi agent started"));
-    return;
-  }
-  if (type === "agent_end") {
-    console.log(pc14.blue("Pi agent finished"));
-    return;
-  }
-  if (type === "turn_start") {
-    console.log(pc14.blue("Turn started"));
-    return;
-  }
-  if (type === "turn_end") {
-    const message = asRecord5(parsed.message);
-    if (message) {
-      const content = message.content;
-      const text69 = extractTextContent(content);
-      if (text69) {
-        console.log(pc14.green(`assistant: ${text69}`));
-      }
-    }
-    return;
-  }
-  if (type === "message_update") {
-    const assistantEvent = asRecord5(parsed.assistantMessageEvent);
-    if (assistantEvent) {
-      const msgType = asString5(assistantEvent.type);
-      if (msgType === "text_delta") {
-        const delta = asString5(assistantEvent.delta);
-        if (delta) {
-          console.log(pc14.green(delta));
-        }
-      }
-    }
-    return;
-  }
-  if (type === "tool_execution_start") {
-    const toolName = asString5(parsed.toolName);
-    const args = parsed.args;
-    console.log(pc14.yellow(`tool_start: ${toolName}`));
-    if (args !== void 0) {
-      try {
-        console.log(pc14.gray(JSON.stringify(args, null, 2)));
-      } catch {
-        console.log(pc14.gray(String(args)));
-      }
-    }
-    return;
-  }
-  if (type === "tool_execution_end") {
-    const result = parsed.result;
-    const isError = parsed.isError === true;
-    const output = typeof result === "string" ? result : JSON.stringify(result);
-    if (output) {
-      console.log((isError ? pc14.red : pc14.gray)(output));
-    }
-    return;
-  }
-  console.log(line);
-}
-
-// ../packages/adapters/openclaw-gateway/src/cli/format-event.ts
-import pc15 from "picocolors";
-function printOpenClawGatewayStreamEvent(raw, debug) {
-  const line = raw.trim();
-  if (!line) return;
-  if (!debug) {
-    console.log(line);
-    return;
-  }
-  if (line.startsWith("[openclaw-gateway:event]")) {
-    console.log(pc15.cyan(line));
-    return;
-  }
-  if (line.startsWith("[openclaw-gateway]")) {
-    console.log(pc15.blue(line));
-    return;
-  }
-  console.log(pc15.gray(line));
-}
+// src/adapters/registry.ts
+import { printClaudeStreamEvent } from "@paperclipai/adapter-claude-local/cli";
+import { printCodexStreamEvent } from "@paperclipai/adapter-codex-local/cli";
+import { printCursorStreamEvent } from "@paperclipai/adapter-cursor-local/cli";
+import { printGeminiStreamEvent } from "@paperclipai/adapter-gemini-local/cli";
+import { printOpenCodeStreamEvent } from "@paperclipai/adapter-opencode-local/cli";
+import { printPiStreamEvent } from "@paperclipai/adapter-pi-local/cli";
+import { printOpenClawGatewayStreamEvent } from "@paperclipai/adapter-openclaw-gateway/cli";
 
 // src/adapters/process/format-event.ts
 function printProcessStdoutEvent(raw, _debug) {
@@ -13838,25 +9436,25 @@ var httpCLIAdapter = {
 };
 
 // src/adapters/open-agents/format-event.ts
-import pc16 from "picocolors";
+import pc9 from "picocolors";
 var EVENT_PREFIXES = {
-  sandbox_create: pc16.cyan("sandbox"),
-  sandbox_resume: pc16.cyan("sandbox"),
-  sandbox_hibernate: pc16.cyan("sandbox"),
-  tool_start: pc16.yellow("tool"),
-  tool_result: pc16.yellow("tool"),
-  file_edit: pc16.green("file"),
-  file_create: pc16.green("file"),
-  shell_exec: pc16.magenta("shell"),
-  search: pc16.blue("search"),
-  git_commit: pc16.green("git"),
-  git_push: pc16.green("git"),
-  git_pr: pc16.green("git"),
-  agent_message: pc16.white("agent"),
-  agent_thinking: pc16.dim("think"),
-  task_delegate: pc16.yellow("delegate"),
-  workflow_step: pc16.blue("workflow"),
-  error: pc16.red("error")
+  sandbox_create: pc9.cyan("sandbox"),
+  sandbox_resume: pc9.cyan("sandbox"),
+  sandbox_hibernate: pc9.cyan("sandbox"),
+  tool_start: pc9.yellow("tool"),
+  tool_result: pc9.yellow("tool"),
+  file_edit: pc9.green("file"),
+  file_create: pc9.green("file"),
+  shell_exec: pc9.magenta("shell"),
+  search: pc9.blue("search"),
+  git_commit: pc9.green("git"),
+  git_push: pc9.green("git"),
+  git_pr: pc9.green("git"),
+  agent_message: pc9.white("agent"),
+  agent_thinking: pc9.dim("think"),
+  task_delegate: pc9.yellow("delegate"),
+  workflow_step: pc9.blue("workflow"),
+  error: pc9.red("error")
 };
 function printOpenAgentsStreamEvent(raw, _debug) {
   const line = raw.trim();
@@ -13864,7 +9462,7 @@ function printOpenAgentsStreamEvent(raw, _debug) {
   try {
     const event = JSON.parse(line);
     if (event.type && event.detail) {
-      const prefix = EVENT_PREFIXES[event.type] ?? pc16.dim(event.type);
+      const prefix = EVENT_PREFIXES[event.type] ?? pc9.dim(event.type);
       console.log(`  ${prefix}  ${event.detail}`);
       return;
     }
@@ -13954,7 +9552,7 @@ function getCLIAdapter(type) {
 
 // src/commands/client/common.ts
 init_store();
-import pc17 from "picocolors";
+import pc10 from "picocolors";
 
 // src/client/context.ts
 init_home();
@@ -14123,11 +9721,11 @@ function printOutput(data, opts = {}) {
     return;
   }
   if (opts.label) {
-    console.log(pc17.bold(opts.label));
+    console.log(pc10.bold(opts.label));
   }
   if (Array.isArray(data)) {
     if (data.length === 0) {
-      console.log(pc17.dim("(empty)"));
+      console.log(pc10.dim("(empty)"));
       return;
     }
     for (const item of data) {
@@ -14144,7 +9742,7 @@ function printOutput(data, opts = {}) {
     return;
   }
   if (data === void 0 || data === null) {
-    console.log(pc17.dim("(null)"));
+    console.log(pc10.dim("(null)"));
     return;
   }
   console.log(String(data));
@@ -14199,11 +9797,11 @@ function readKeyFromProfileEnv(profile) {
 function handleCommandError(error) {
   if (error instanceof ApiRequestError) {
     const detailSuffix = error.details !== void 0 ? ` details=${JSON.stringify(error.details)}` : "";
-    console.error(pc17.red(`API error ${error.status}: ${error.message}${detailSuffix}`));
+    console.error(pc10.red(`API error ${error.status}: ${error.message}${detailSuffix}`));
     process.exit(1);
   }
   const message = error instanceof Error ? error.message : String(error);
-  console.error(pc17.red(message));
+  console.error(pc10.red(message));
   process.exit(1);
 }
 
@@ -14212,12 +9810,12 @@ var HEARTBEAT_SOURCES = ["timer", "assignment", "on_demand", "automation"];
 var HEARTBEAT_TRIGGERS = ["manual", "ping", "callback", "system"];
 var TERMINAL_STATUSES = /* @__PURE__ */ new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 var POLL_INTERVAL_MS = 200;
-function asRecord6(value) {
+function asRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
 }
-function asErrorText2(value) {
+function asErrorText(value) {
   if (typeof value === "string") return value;
-  const obj = asRecord6(value);
+  const obj = asRecord(value);
   if (!obj) return "";
   const message = typeof obj.message === "string" && obj.message || typeof obj.error === "string" && obj.error || typeof obj.code === "string" && obj.code || "";
   if (message) return message;
@@ -14244,7 +9842,7 @@ async function heartbeatRun(opts) {
   const api = ctx.api;
   const agent = await api.get(`/api/agents/${opts.agentId}`);
   if (!agent || typeof agent !== "object" || !agent.id) {
-    console.error(pc18.red(`Agent not found: ${opts.agentId}`));
+    console.error(pc11.red(`Agent not found: ${opts.agentId}`));
     return;
   }
   const invokeRes = await api.post(
@@ -14255,24 +9853,24 @@ async function heartbeatRun(opts) {
     }
   );
   if (!invokeRes) {
-    console.error(pc18.red("Failed to invoke heartbeat"));
+    console.error(pc11.red("Failed to invoke heartbeat"));
     return;
   }
   if (invokeRes.status === "skipped") {
-    console.log(pc18.yellow("Heartbeat invocation was skipped"));
+    console.log(pc11.yellow("Heartbeat invocation was skipped"));
     return;
   }
   const run = invokeRes;
-  console.log(pc18.cyan(`Invoked heartbeat run ${run.id} for agent ${agent.name} (${agent.id})`));
+  console.log(pc11.cyan(`Invoked heartbeat run ${run.id} for agent ${agent.name} (${agent.id})`));
   const runId = run.id;
   let activeRunId = null;
   let lastEventSeq = 0;
   let logOffset = 0;
   let stdoutJsonBuffer = "";
   const printRawChunk = (stream, chunk) => {
-    if (stream === "stdout") process.stdout.write(pc18.green("[stdout] ") + chunk);
-    else if (stream === "stderr") process.stdout.write(pc18.red("[stderr] ") + chunk);
-    else process.stdout.write(pc18.yellow("[system] ") + chunk);
+    if (stream === "stdout") process.stdout.write(pc11.green("[stdout] ") + chunk);
+    else if (stream === "stderr") process.stdout.write(pc11.red("[stderr] ") + chunk);
+    else process.stdout.write(pc11.yellow("[system] ") + chunk);
   };
   const printAdapterInvoke = (payload) => {
     const adapterType2 = typeof payload.adapterType === "string" ? payload.adapterType : "unknown";
@@ -14282,22 +9880,22 @@ async function heartbeatRun(opts) {
     const env = typeof payload.env === "object" && payload.env !== null && !Array.isArray(payload.env) ? payload.env : null;
     const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
     const context = typeof payload.context === "object" && payload.context !== null && !Array.isArray(payload.context) ? payload.context : null;
-    console.log(pc18.cyan(`Adapter: ${adapterType2}`));
-    if (cwd) console.log(pc18.cyan(`Working dir: ${cwd}`));
+    console.log(pc11.cyan(`Adapter: ${adapterType2}`));
+    if (cwd) console.log(pc11.cyan(`Working dir: ${cwd}`));
     if (command) {
       const rendered = args.length > 0 ? `${command} ${args.join(" ")}` : command;
-      console.log(pc18.cyan(`Command: ${rendered}`));
+      console.log(pc11.cyan(`Command: ${rendered}`));
     }
     if (env) {
-      console.log(pc18.cyan("Env:"));
-      console.log(pc18.gray(JSON.stringify(env, null, 2)));
+      console.log(pc11.cyan("Env:"));
+      console.log(pc11.gray(JSON.stringify(env, null, 2)));
     }
     if (context) {
-      console.log(pc18.cyan("Context:"));
-      console.log(pc18.gray(JSON.stringify(context, null, 2)));
+      console.log(pc11.cyan("Context:"));
+      console.log(pc11.gray(JSON.stringify(context, null, 2)));
     }
     if (prompt) {
-      console.log(pc18.cyan("Prompt:"));
+      console.log(pc11.cyan("Prompt:"));
       console.log(prompt);
     }
   };
@@ -14326,7 +9924,7 @@ async function heartbeatRun(opts) {
     if (eventType === "heartbeat.run.status") {
       const status = typeof payload.status === "string" ? payload.status : null;
       if (status) {
-        console.log(pc18.blue(`[status] ${status}`));
+        console.log(pc11.blue(`[status] ${status}`));
       }
     } else if (eventType === "adapter.invoke") {
       printAdapterInvoke(payload);
@@ -14338,7 +9936,7 @@ async function heartbeatRun(opts) {
         handleStreamChunk(stream, chunk);
       }
     } else if (typeof event.message === "string") {
-      console.log(pc18.gray(`[event] ${eventType || "heartbeat.run.event"}: ${event.message}`));
+      console.log(pc11.gray(`[event] ${eventType || "heartbeat.run.event"}: ${event.message}`));
     }
     lastEventSeq = Math.max(lastEventSeq, event.seq ?? 0);
   };
@@ -14348,7 +9946,7 @@ async function heartbeatRun(opts) {
   let finalRun = null;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   if (!activeRunId) {
-    console.error(pc18.red("Failed to capture heartbeat run id"));
+    console.error(pc11.red("Failed to capture heartbeat run id"));
     return;
   }
   while (true) {
@@ -14363,13 +9961,13 @@ async function heartbeatRun(opts) {
     ) || [];
     const currentRun = runList.find((r) => r && r.id === activeRunId) ?? null;
     if (!currentRun) {
-      console.error(pc18.red("Heartbeat run disappeared"));
+      console.error(pc11.red("Heartbeat run disappeared"));
       break;
     }
     const currentStatus = currentRun.status;
     if (currentStatus !== finalStatus && currentStatus) {
       finalStatus = currentStatus;
-      console.log(pc18.blue(`Status: ${currentStatus}`));
+      console.log(pc11.blue(`Status: ${currentStatus}`));
     }
     if (currentStatus && TERMINAL_STATUSES.has(currentStatus)) {
       finalStatus = currentRun.status;
@@ -14380,7 +9978,7 @@ async function heartbeatRun(opts) {
     if (deadline && Date.now() >= deadline) {
       finalError = `CLI timed out after ${timeoutMs}ms`;
       finalStatus = "timed_out";
-      console.error(pc18.yellow(finalError));
+      console.error(pc11.yellow(finalError));
       break;
     }
     const logResult = await api.get(
@@ -14409,43 +10007,43 @@ async function heartbeatRun(opts) {
     }
     const label = `Run ${activeRunId} completed with status ${finalStatus}`;
     if (finalStatus === "succeeded") {
-      console.log(pc18.green(label));
+      console.log(pc11.green(label));
       return;
     }
-    console.log(pc18.red(label));
+    console.log(pc11.red(label));
     if (finalError) {
-      console.log(pc18.red(`Error: ${finalError}`));
+      console.log(pc11.red(`Error: ${finalError}`));
     }
     if (finalRun) {
-      const resultObj = asRecord6(finalRun.resultJson);
+      const resultObj = asRecord(finalRun.resultJson);
       if (resultObj) {
         const subtype = typeof resultObj.subtype === "string" ? resultObj.subtype : "";
         const isError = resultObj.is_error === true;
-        const errors = Array.isArray(resultObj.errors) ? resultObj.errors.map(asErrorText2).filter(Boolean) : [];
+        const errors = Array.isArray(resultObj.errors) ? resultObj.errors.map(asErrorText).filter(Boolean) : [];
         const resultText = typeof resultObj.result === "string" ? resultObj.result.trim() : "";
         if (subtype || isError || errors.length > 0 || resultText) {
-          console.log(pc18.red("Claude result details:"));
-          if (subtype) console.log(pc18.red(`  subtype: ${subtype}`));
-          if (isError) console.log(pc18.red("  is_error: true"));
-          if (errors.length > 0) console.log(pc18.red(`  errors: ${errors.join(" | ")}`));
-          if (resultText) console.log(pc18.red(`  result: ${resultText}`));
+          console.log(pc11.red("Claude result details:"));
+          if (subtype) console.log(pc11.red(`  subtype: ${subtype}`));
+          if (isError) console.log(pc11.red("  is_error: true"));
+          if (errors.length > 0) console.log(pc11.red(`  errors: ${errors.join(" | ")}`));
+          if (resultText) console.log(pc11.red(`  result: ${resultText}`));
         }
       }
       const stderrExcerpt = typeof finalRun.stderrExcerpt === "string" ? finalRun.stderrExcerpt.trim() : "";
       const stdoutExcerpt = typeof finalRun.stdoutExcerpt === "string" ? finalRun.stdoutExcerpt.trim() : "";
       if (stderrExcerpt) {
-        console.log(pc18.red("stderr excerpt:"));
+        console.log(pc11.red("stderr excerpt:"));
         console.log(stderrExcerpt);
       }
       if (stdoutExcerpt && (debug || !stderrExcerpt)) {
-        console.log(pc18.gray("stdout excerpt:"));
+        console.log(pc11.gray("stdout excerpt:"));
         console.log(stdoutExcerpt);
       }
     }
     process.exitCode = 1;
   } else {
     process.exitCode = 1;
-    console.log(pc18.gray("Heartbeat stream ended without terminal status"));
+    console.log(pc11.gray("Heartbeat stream ended without terminal status"));
   }
 }
 function normalizePayload(payload) {
@@ -14472,7 +10070,7 @@ init_store();
 init_env();
 import os3 from "node:os";
 import * as p14 from "@clack/prompts";
-import pc19 from "picocolors";
+import pc12 from "picocolors";
 import open from "open";
 
 // src/auth/login-flow.ts
@@ -14534,7 +10132,7 @@ function renderErrorPage(message) {
 </body></html>`;
 }
 function listenOnEphemeralLoopback(server) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen({ host: "127.0.0.1", port: 0 }, () => {
       server.off("error", reject);
@@ -14543,7 +10141,7 @@ function listenOnEphemeralLoopback(server) {
         reject(new Error("Failed to bind loopback port for CLI auth callback."));
         return;
       }
-      resolve2(address.port);
+      resolve(address.port);
     });
   });
 }
@@ -14563,8 +10161,8 @@ async function startLoginFlow(opts) {
   const timeoutMs = Math.max(3e4, opts.timeoutMs ?? 5 * 6e4);
   let resolver = null;
   let rejecter = null;
-  const waitPromise = new Promise((resolve2, reject) => {
-    resolver = resolve2;
+  const waitPromise = new Promise((resolve, reject) => {
+    resolver = resolve;
     rejecter = reject;
   });
   const server = createServer((req, res) => {
@@ -14952,7 +10550,7 @@ async function authLogin(opts) {
           `Already connected${existingSession.email ? ` as ${existingSession.email}` : ""}.`
         );
         if (existingSession.hostedBaseUrl) {
-          p14.log.message(pc19.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
+          p14.log.message(pc12.dim(`Hosted: ${existingSession.hostedBaseUrl}`));
         }
         return;
       } catch {
@@ -14986,13 +10584,13 @@ async function authLogin(opts) {
       console.log(JSON.stringify({ status: "ok", hostedBaseUrl, mode: "token" }, null, 2));
     } else {
       p14.log.success("Saved hosted session from --token.");
-      p14.log.message(pc19.dim(`Session: ${describeSessionPath()}`));
-      p14.log.message(pc19.dim(`Overlay: ${describeHostedOverlayPath()}`));
+      p14.log.message(pc12.dim(`Session: ${describeSessionPath()}`));
+      p14.log.message(pc12.dim(`Overlay: ${describeHostedOverlayPath()}`));
     }
     return;
   }
-  p14.intro(pc19.bgCyan(pc19.black(" growthub auth login ")));
-  p14.log.message(pc19.dim(`Hosted app: ${hostedBaseUrl}`));
+  p14.intro(pc12.bgCyan(pc12.black(" growthub auth login ")));
+  p14.log.message(pc12.dim(`Hosted app: ${hostedBaseUrl}`));
   const flow = await startLoginFlow({
     hostedBaseUrl,
     machineLabel,
@@ -15005,12 +10603,12 @@ async function authLogin(opts) {
       await open(flow.loginUrl);
     } catch (err) {
       p14.log.warn(`Could not launch browser automatically: ${err instanceof Error ? err.message : String(err)}`);
-      p14.log.message(pc19.dim("Paste this URL into a browser:"));
-      p14.log.message(pc19.cyan(flow.loginUrl));
+      p14.log.message(pc12.dim("Paste this URL into a browser:"));
+      p14.log.message(pc12.cyan(flow.loginUrl));
     }
   } else {
-    p14.log.message(pc19.dim("Paste this URL into a browser:"));
-    p14.log.message(pc19.cyan(flow.loginUrl));
+    p14.log.message(pc12.dim("Paste this URL into a browser:"));
+    p14.log.message(pc12.cyan(flow.loginUrl));
   }
   const spinner13 = p14.spinner();
   spinner13.start("Waiting for hosted app to complete the exchange\u2026");
@@ -15068,7 +10666,7 @@ async function authLogin(opts) {
       );
     } else {
       p14.log.success(`Signed in${result.email ? ` as ${result.email}` : ""}.`);
-      p14.log.message(pc19.dim(`Session: ${describeSessionPath()}`));
+      p14.log.message(pc12.dim(`Session: ${describeSessionPath()}`));
     }
     p14.outro("Done");
   } catch (err) {
@@ -15099,12 +10697,12 @@ async function authLogout(opts) {
     return;
   }
   if (!sessionCleared && !overlayCleared) {
-    console.log(pc19.dim("No hosted session or overlay present. Local workspace profile is untouched."));
+    console.log(pc12.dim("No hosted session or overlay present. Local workspace profile is untouched."));
     return;
   }
-  if (sessionCleared) console.log(pc19.green("Cleared hosted session."));
-  if (overlayCleared) console.log(pc19.green("Cleared hosted overlay."));
-  console.log(pc19.dim("Local workspace profile is untouched."));
+  if (sessionCleared) console.log(pc12.green("Cleared hosted session."));
+  if (overlayCleared) console.log(pc12.green("Cleared hosted overlay."));
+  console.log(pc12.dim("Local workspace profile is untouched."));
 }
 async function authWhoami(opts) {
   const session = readSession();
@@ -15131,28 +10729,28 @@ async function authWhoami(opts) {
     return;
   }
   if (!payload.authenticated) {
-    console.log(pc19.yellow("Not signed in."));
+    console.log(pc12.yellow("Not signed in."));
     if (effective.session.present && effective.session.expired) {
-      console.log(pc19.dim("Hosted session exists but is expired. Run `growthub auth login` to refresh."));
+      console.log(pc12.dim("Hosted session exists but is expired. Run `growthub auth login` to refresh."));
     } else {
-      console.log(pc19.dim("Run `growthub auth login` to connect this CLI to hosted Growthub."));
+      console.log(pc12.dim("Run `growthub auth login` to connect this CLI to hosted Growthub."));
     }
-    console.log(pc19.dim("Local workspace profile continues to work without authentication."));
+    console.log(pc12.dim("Local workspace profile continues to work without authentication."));
     return;
   }
-  console.log(pc19.bold(`Signed in${payload.email ? ` as ${payload.email}` : payload.userId ? ` as ${payload.userId}` : ""}.`));
-  if (payload.hostedBaseUrl) console.log(pc19.dim(`Hosted: ${payload.hostedBaseUrl}`));
+  console.log(pc12.bold(`Signed in${payload.email ? ` as ${payload.email}` : payload.userId ? ` as ${payload.userId}` : ""}.`));
+  if (payload.hostedBaseUrl) console.log(pc12.dim(`Hosted: ${payload.hostedBaseUrl}`));
   if (payload.orgName || payload.orgId) {
-    console.log(pc19.dim(`Org: ${payload.orgName ?? payload.orgId}`));
+    console.log(pc12.dim(`Org: ${payload.orgName ?? payload.orgId}`));
   }
   if (payload.linkedInstanceId) {
-    console.log(pc19.dim(`Linked local instance: ${payload.linkedInstanceId}`));
+    console.log(pc12.dim(`Linked local instance: ${payload.linkedInstanceId}`));
   }
   if (payload.entitlements.length > 0) {
-    console.log(pc19.dim(`Entitlements: ${payload.entitlements.join(", ")}`));
+    console.log(pc12.dim(`Entitlements: ${payload.entitlements.join(", ")}`));
   }
   if (payload.session.expiresAt) {
-    console.log(pc19.dim(`Session expires: ${payload.session.expiresAt}`));
+    console.log(pc12.dim(`Session expires: ${payload.session.expiresAt}`));
   }
 }
 
@@ -15163,29 +10761,29 @@ init_hosted_client();
 init_store();
 init_env();
 init_session_store();
-import pc20 from "picocolors";
+import pc13 from "picocolors";
 init_hosted_client();
 init_home();
 function printEffectiveProfileHuman(effective) {
-  console.log(pc20.bold("Effective profile"));
+  console.log(pc13.bold("Effective profile"));
   console.log(
-    `  Authenticated: ${effective.authenticated ? pc20.green("yes") : pc20.yellow("no")}${effective.session.expired ? pc20.yellow(" (session expired)") : ""}`
+    `  Authenticated: ${effective.authenticated ? pc13.green("yes") : pc13.yellow("no")}${effective.session.expired ? pc13.yellow(" (session expired)") : ""}`
   );
-  console.log(pc20.bold("Local workspace (base layer)"));
+  console.log(pc13.bold("Local workspace (base layer)"));
   console.log(`  Instance: ${effective.local.instanceId}`);
-  console.log(`  Config: ${pc20.dim(effective.local.configPath)}`);
+  console.log(`  Config: ${pc13.dim(effective.local.configPath)}`);
   console.log(
-    `  Surface: ${effective.local.surfaceProfile ?? pc20.dim("(unset)")}  Host: ${effective.local.serverHost ?? pc20.dim("(unset)")}  Port: ${effective.local.serverPort ?? pc20.dim("(unset)")}`
+    `  Surface: ${effective.local.surfaceProfile ?? pc13.dim("(unset)")}  Host: ${effective.local.serverHost ?? pc13.dim("(unset)")}  Port: ${effective.local.serverPort ?? pc13.dim("(unset)")}`
   );
   console.log(
-    `  Local-linked hosted token: ${effective.local.hasConfiguredToken ? pc20.green("set") : pc20.dim("none")}`
+    `  Local-linked hosted token: ${effective.local.hasConfiguredToken ? pc13.green("set") : pc13.dim("none")}`
   );
   if (effective.local.growthubBaseUrl) {
     console.log(`  Growthub base: ${effective.local.growthubBaseUrl}`);
   }
-  console.log(pc20.bold("Hosted overlay"));
+  console.log(pc13.bold("Hosted overlay"));
   if (!effective.hosted.present) {
-    console.log(pc20.dim("  No hosted overlay present. Run `growthub auth login` to attach one."));
+    console.log(pc13.dim("  No hosted overlay present. Run `growthub auth login` to attach one."));
   } else {
     if (effective.hosted.email || effective.hosted.userId) {
       console.log(`  User: ${effective.hosted.email ?? effective.hosted.userId}`);
@@ -15203,10 +10801,10 @@ function printEffectiveProfileHuman(effective) {
     if (effective.hosted.gatedKitSlugs.length > 0) {
       console.log(`  Gated kits: ${effective.hosted.gatedKitSlugs.join(", ")}`);
     }
-    if (effective.hosted.lastPulledAt) console.log(pc20.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
-    if (effective.hosted.lastPushedAt) console.log(pc20.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
+    if (effective.hosted.lastPulledAt) console.log(pc13.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
+    if (effective.hosted.lastPushedAt) console.log(pc13.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
   }
-  console.log(pc20.bold("Execution defaults"));
+  console.log(pc13.bold("Execution defaults"));
   console.log(
     `  preferredMode=${effective.executionDefaults.preferredMode}  serverlessFallback=${effective.executionDefaults.allowServerlessFallback}  browserBridge=${effective.executionDefaults.allowBrowserBridge}`
   );
@@ -15236,11 +10834,11 @@ async function runProfilePull(opts) {
   loadPaperclipEnvFile(configPath);
   const session = readSession();
   if (!session) {
-    console.error(pc20.red("No hosted session. Run `growthub auth login` first."));
+    console.error(pc13.red("No hosted session. Run `growthub auth login` first."));
     process.exit(1);
   }
   if (isSessionExpired(session)) {
-    console.error(pc20.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    console.error(pc13.red("Hosted session is expired. Run `growthub auth login` to refresh."));
     process.exit(1);
   }
   const existingOverlay = readHostedOverlay() ?? seedHostedOverlayFromSession({
@@ -15261,7 +10859,7 @@ async function runProfilePull(opts) {
       usedFallback = true;
       if (!opts.json) {
         console.log(
-          pc20.yellow(
+          pc13.yellow(
             "Hosted profile endpoint not yet available \u2014 keeping current overlay. (This is expected while gh-app is still shipping its CLI API.)"
           )
         );
@@ -15292,21 +10890,21 @@ async function runProfilePull(opts) {
     return;
   }
   if (!usedFallback) {
-    console.log(pc20.green("Hosted profile pulled and overlay updated."));
+    console.log(pc13.green("Hosted profile pulled and overlay updated."));
   }
-  console.log(pc20.dim(`Entitlements: ${merged.entitlements.length === 0 ? "(none)" : merged.entitlements.join(", ")}`));
-  console.log(pc20.dim(`Gated kits: ${merged.gatedKitSlugs.length === 0 ? "(none)" : merged.gatedKitSlugs.join(", ")}`));
+  console.log(pc13.dim(`Entitlements: ${merged.entitlements.length === 0 ? "(none)" : merged.entitlements.join(", ")}`));
+  console.log(pc13.dim(`Gated kits: ${merged.gatedKitSlugs.length === 0 ? "(none)" : merged.gatedKitSlugs.join(", ")}`));
 }
 async function runProfilePush(opts) {
   const configPath = resolveConfigPath(opts.config);
   loadPaperclipEnvFile(configPath);
   const session = readSession();
   if (!session) {
-    console.error(pc20.red("No hosted session. Run `growthub auth login` first."));
+    console.error(pc13.red("No hosted session. Run `growthub auth login` first."));
     process.exit(1);
   }
   if (isSessionExpired(session)) {
-    console.error(pc20.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    console.error(pc13.red("Hosted session is expired. Run `growthub auth login` to refresh."));
     process.exit(1);
   }
   const effective = computeEffectiveProfile({ configPath });
@@ -15349,45 +10947,45 @@ async function runProfilePush(opts) {
   }
   if (usedFallback) {
     console.log(
-      pc20.yellow(
+      pc13.yellow(
         "Hosted push endpoint not yet available \u2014 linkage recorded locally only. (This is expected while gh-app is still shipping its CLI API.)"
       )
     );
     return;
   }
-  console.log(pc20.green("Hosted profile push acknowledged."));
-  console.log(pc20.dim(`Linked instance: ${effective.local.instanceId}`));
+  console.log(pc13.green("Hosted profile push acknowledged."));
+  console.log(pc13.dim(`Linked instance: ${effective.local.instanceId}`));
 }
 async function runProfileCredits(opts) {
   const configPath = resolveConfigPath(opts.config);
   loadPaperclipEnvFile(configPath);
   const session = readSession();
   if (!session) {
-    console.error(pc20.red("No hosted session. Run `growthub auth login` first."));
+    console.error(pc13.red("No hosted session. Run `growthub auth login` first."));
     process.exit(1);
   }
   if (isSessionExpired(session)) {
-    console.error(pc20.red("Hosted session is expired. Run `growthub auth login` to refresh."));
+    console.error(pc13.red("Hosted session is expired. Run `growthub auth login` to refresh."));
     process.exit(1);
   }
   try {
     const credits = await fetchHostedCredits(session);
     if (!credits || typeof credits.totalAvailable !== "number") {
-      console.error(pc20.red("Hosted credits endpoint returned no data."));
+      console.error(pc13.red("Hosted credits endpoint returned no data."));
       process.exit(1);
     }
     if (opts.json) {
       console.log(JSON.stringify(credits, null, 2));
       return;
     }
-    console.log(pc20.bold("Hosted credits"));
+    console.log(pc13.bold("Hosted credits"));
     console.log(`  Available: $${credits.totalAvailable.toFixed(2)}`);
     console.log(`  Used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
     console.log(`  Plan: ${credits.planTier}`);
     console.log(`  Period: ${credits.currentPeriodStart} \u2192 ${credits.currentPeriodEnd}`);
   } catch (err) {
     if (err instanceof HostedEndpointUnavailableError) {
-      console.error(pc20.red("Hosted credits endpoint is not available on this app version."));
+      console.error(pc13.red("Hosted credits endpoint is not available on this app version."));
       process.exit(1);
     }
     throw err;
@@ -15410,13 +11008,13 @@ function registerProfileCommands(program2) {
 }
 
 // src/commands/db-backup.ts
-init_src2();
 init_home();
 init_store();
 init_banner();
 import path14 from "node:path";
 import * as p15 from "@clack/prompts";
-import pc21 from "picocolors";
+import pc14 from "picocolors";
+import { formatDatabaseBackupResult, runDatabaseBackup } from "@paperclipai/db";
 function resolveConnectionString(configPath) {
   const envUrl = process.env.DATABASE_URL?.trim();
   if (envUrl) return { value: envUrl, source: "DATABASE_URL" };
@@ -15442,7 +11040,7 @@ function resolveBackupDir(raw) {
 }
 async function dbBackupCommand(opts) {
   printPaperclipCliBanner();
-  p15.intro(pc21.bgCyan(pc21.black(" paperclip db:backup ")));
+  p15.intro(pc14.bgCyan(pc14.black(" paperclip db:backup ")));
   const configPath = resolveConfigPath(opts.config);
   const config = readConfig(opts.config);
   const connection = resolveConnectionString(opts.config);
@@ -15454,10 +11052,10 @@ async function dbBackupCommand(opts) {
     config?.database.backup.retentionDays ?? 30
   );
   const filenamePrefix = opts.filenamePrefix?.trim() || "paperclip";
-  p15.log.message(pc21.dim(`Config: ${configPath}`));
-  p15.log.message(pc21.dim(`Connection source: ${connection.source}`));
-  p15.log.message(pc21.dim(`Backup dir: ${backupDir}`));
-  p15.log.message(pc21.dim(`Retention: ${retentionDays} day(s)`));
+  p15.log.message(pc14.dim(`Config: ${configPath}`));
+  p15.log.message(pc14.dim(`Connection source: ${connection.source}`));
+  p15.log.message(pc14.dim(`Backup dir: ${backupDir}`));
+  p15.log.message(pc14.dim(`Retention: ${retentionDays} day(s)`));
   const spinner13 = p15.spinner();
   spinner13.start("Creating database backup...");
   try {
@@ -15484,15 +11082,15 @@ async function dbBackupCommand(opts) {
         )
       );
     }
-    p15.outro(pc21.green("Backup completed."));
+    p15.outro(pc14.green("Backup completed."));
   } catch (err) {
-    spinner13.stop(pc21.red("Backup failed."));
+    spinner13.stop(pc14.red("Backup failed."));
     throw err;
   }
 }
 
 // src/commands/client/context.ts
-import pc22 from "picocolors";
+import pc15 from "picocolors";
 function registerContextCommands(program2) {
   const context = program2.command("context").description("Manage CLI client context profiles");
   context.command("show").description("Show current context and active profile").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--context <path>", "Path to CLI context file").option("--profile <name>", "Profile to inspect").option("--json", "Output raw JSON").action((opts) => {
@@ -15521,7 +11119,7 @@ function registerContextCommands(program2) {
   });
   context.command("use").description("Set active context profile").argument("<profile>", "Profile name").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--context <path>", "Path to CLI context file").action((profile, opts) => {
     setCurrentProfile(profile, opts.context);
-    console.log(pc22.green(`Active profile set to '${profile}'.`));
+    console.log(pc15.green(`Active profile set to '${profile}'.`));
   });
   context.command("set").description("Set values on a profile").option("-d, --data-dir <path>", "Growthub data directory root (isolates local instance state)").option("--context <path>", "Path to CLI context file").option("--profile <name>", "Profile name (default: current profile)").option("--api-base <url>", "Default API base URL").option("--company-id <id>", "Default company ID").option("--api-key-env-var-name <name>", "Env var containing API key (recommended)").option("--use", "Set this profile as active").option("--json", "Output raw JSON").action((opts) => {
     const existing = readContext(opts.context);
@@ -15547,9 +11145,9 @@ function registerContextCommands(program2) {
       profile: resolved.profile
     };
     if (!opts.json) {
-      console.log(pc22.green(`Updated profile '${targetProfile}'.`));
+      console.log(pc15.green(`Updated profile '${targetProfile}'.`));
       if (opts.use) {
-        console.log(pc22.green(`Set '${targetProfile}' as active profile.`));
+        console.log(pc15.green(`Set '${targetProfile}' as active profile.`));
       }
     }
     printOutput(payload, { json: opts.json });
@@ -15558,7 +11156,7 @@ function registerContextCommands(program2) {
 
 // src/commands/client/company.ts
 init_http();
-import { mkdir, readFile as readFile3, stat, writeFile as writeFile2 } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path15 from "node:path";
 function isUuidLike2(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -15597,16 +11195,16 @@ async function resolveInlineSourceFromPath(inputPath) {
   const resolvedStat = await stat(resolved);
   const manifestPath = resolvedStat.isDirectory() ? path15.join(resolved, "paperclip.manifest.json") : resolved;
   const manifestBaseDir = path15.dirname(manifestPath);
-  const manifestRaw = await readFile3(manifestPath, "utf8");
+  const manifestRaw = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestRaw);
   const files = {};
   if (manifest.company?.path) {
     const companyPath = manifest.company.path.replace(/\\/g, "/");
-    files[companyPath] = await readFile3(path15.join(manifestBaseDir, companyPath), "utf8");
+    files[companyPath] = await readFile(path15.join(manifestBaseDir, companyPath), "utf8");
   }
   for (const agent of manifest.agents ?? []) {
     const agentPath = agent.path.replace(/\\/g, "/");
-    files[agentPath] = await readFile3(path15.join(manifestBaseDir, agentPath), "utf8");
+    files[agentPath] = await readFile(path15.join(manifestBaseDir, agentPath), "utf8");
   }
   return { manifest, files };
 }
@@ -15614,24 +11212,24 @@ async function writeExportToFolder(outDir, exported) {
   const root = path15.resolve(outDir);
   await mkdir(root, { recursive: true });
   const manifestPath = path15.join(root, "paperclip.manifest.json");
-  await writeFile2(manifestPath, JSON.stringify(exported.manifest, null, 2), "utf8");
+  await writeFile(manifestPath, JSON.stringify(exported.manifest, null, 2), "utf8");
   for (const [relativePath, content] of Object.entries(exported.files)) {
     const normalized = relativePath.replace(/\\/g, "/");
     const filePath = path15.join(root, normalized);
     await mkdir(path15.dirname(filePath), { recursive: true });
-    await writeFile2(filePath, content, "utf8");
+    await writeFile(filePath, content, "utf8");
   }
 }
 function matchesPrefix(company, selector) {
   return company.issuePrefix.toUpperCase() === selector.toUpperCase();
 }
-function resolveCompanyForDeletion(companies2, selectorRaw, by = "auto") {
+function resolveCompanyForDeletion(companies, selectorRaw, by = "auto") {
   const selector = normalizeSelector(selectorRaw);
   if (!selector) {
     throw new Error("Company selector is required.");
   }
-  const idMatch = companies2.find((company) => company.id === selector);
-  const prefixMatch = companies2.find((company) => matchesPrefix(company, selector));
+  const idMatch = companies.find((company) => company.id === selector);
+  const prefixMatch = companies.find((company) => matchesPrefix(company, selector));
   if (by === "id") {
     if (!idMatch) {
       throw new Error(`No company found by ID '${selector}'.`);
@@ -15766,7 +11364,7 @@ function registerCompanyCommands(program2) {
           throw new Error("--from is required");
         }
         const include = parseInclude(opts.include);
-        const agents2 = parseAgents(opts.agents);
+        const agents = parseAgents(opts.agents);
         const collision = (opts.collision ?? "rename").toLowerCase();
         if (!["rename", "skip", "replace"].includes(collision)) {
           throw new Error("Invalid --collision value. Use: rename, skip, replace");
@@ -15802,7 +11400,7 @@ function registerCompanyCommands(program2) {
           source: sourcePayload,
           include,
           target: targetPayload,
-          agents: agents2,
+          agents,
           collisionStrategy: collision
         };
         if (opts.dryRun) {
@@ -15858,8 +11456,8 @@ function registerCompanyCommands(program2) {
         }
         if (!target) {
           try {
-            const companies2 = await ctx.api.get("/api/companies") ?? [];
-            target = resolveCompanyForDeletion(companies2, normalizedSelector, by);
+            const companies = await ctx.api.get("/api/companies") ?? [];
+            target = resolveCompanyForDeletion(companies, normalizedSelector, by);
           } catch (error) {
             if (error instanceof ApiRequestError && error.status === 403 && error.message.includes("Board access required")) {
               throw new Error(
@@ -16060,80 +11658,30 @@ function filterIssueRows(rows, match) {
   if (!match?.trim()) return rows;
   const needle = match.trim().toLowerCase();
   return rows.filter((row) => {
-    const text69 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
-    return text69.includes(needle);
+    const text18 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
+    return text18.includes(needle);
   });
 }
 
-// ../packages/adapter-utils/src/server-utils.ts
-import { constants as fsConstants, promises as fs14 } from "node:fs";
-import path16 from "node:path";
-var MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
-var MAX_EXCERPT_BYTES = 32 * 1024;
-var PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES = [
-  "../../skills",
-  "../../../../../skills"
-];
-function normalizePathSlashes(value) {
-  return value.replaceAll("\\", "/");
-}
-function isMaintainerOnlySkillTarget(candidate) {
-  return normalizePathSlashes(candidate).includes("/.agents/skills/");
-}
-async function resolvePaperclipSkillsDir(moduleDir, additionalCandidates = []) {
-  const candidates = [
-    ...PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES.map((relativePath) => path16.resolve(moduleDir, relativePath)),
-    ...additionalCandidates.map((candidate) => path16.resolve(candidate))
-  ];
-  const seenRoots = /* @__PURE__ */ new Set();
-  for (const root of candidates) {
-    if (seenRoots.has(root)) continue;
-    seenRoots.add(root);
-    const isDirectory = await fs14.stat(root).then((stats) => stats.isDirectory()).catch(() => false);
-    if (isDirectory) return root;
-  }
-  return null;
-}
-async function removeMaintainerOnlySkillSymlinks(skillsHome, allowedSkillNames) {
-  const allowed = new Set(Array.from(allowedSkillNames));
-  try {
-    const entries = await fs14.readdir(skillsHome, { withFileTypes: true });
-    const removed = [];
-    for (const entry of entries) {
-      if (allowed.has(entry.name)) continue;
-      const target = path16.join(skillsHome, entry.name);
-      const existing = await fs14.lstat(target).catch(() => null);
-      if (!existing?.isSymbolicLink()) continue;
-      const linkedPath = await fs14.readlink(target).catch(() => null);
-      if (!linkedPath) continue;
-      const resolvedLinkedPath = path16.isAbsolute(linkedPath) ? linkedPath : path16.resolve(path16.dirname(target), linkedPath);
-      if (!isMaintainerOnlySkillTarget(linkedPath) && !isMaintainerOnlySkillTarget(resolvedLinkedPath)) {
-        continue;
-      }
-      await fs14.unlink(target);
-      removed.push(entry.name);
-    }
-    return removed;
-  } catch {
-    return [];
-  }
-}
-
 // src/commands/client/agent.ts
-import fs15 from "node:fs/promises";
+import {
+  removeMaintainerOnlySkillSymlinks,
+  resolvePaperclipSkillsDir
+} from "@paperclipai/adapter-utils/server-utils";
+import fs14 from "node:fs/promises";
 import os4 from "node:os";
-import path17 from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
-var __moduleDir = path17.dirname(fileURLToPath3(import.meta.url));
+import path16 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var __moduleDir = path16.dirname(fileURLToPath2(import.meta.url));
 function codexSkillsHome() {
   const fromEnv = process.env.CODEX_HOME?.trim();
-  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path17.join(os4.homedir(), ".codex");
-  return path17.join(base, "skills");
+  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path16.join(os4.homedir(), ".codex");
+  return path16.join(base, "skills");
 }
 function claudeSkillsHome() {
   const fromEnv = process.env.CLAUDE_HOME?.trim();
-  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path17.join(os4.homedir(), ".claude");
-  return path17.join(base, "skills");
+  const base = fromEnv && fromEnv.length > 0 ? fromEnv : path16.join(os4.homedir(), ".claude");
+  return path16.join(base, "skills");
 }
 async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
   const summary = {
@@ -16144,26 +11692,26 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
     skipped: [],
     failed: []
   };
-  await fs15.mkdir(targetSkillsDir, { recursive: true });
-  const entries = await fs15.readdir(sourceSkillsDir, { withFileTypes: true });
+  await fs14.mkdir(targetSkillsDir, { recursive: true });
+  const entries = await fs14.readdir(sourceSkillsDir, { withFileTypes: true });
   summary.removed = await removeMaintainerOnlySkillSymlinks(
     targetSkillsDir,
     entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
   );
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const source = path17.join(sourceSkillsDir, entry.name);
-    const target = path17.join(targetSkillsDir, entry.name);
-    const existing = await fs15.lstat(target).catch(() => null);
+    const source = path16.join(sourceSkillsDir, entry.name);
+    const target = path16.join(targetSkillsDir, entry.name);
+    const existing = await fs14.lstat(target).catch(() => null);
     if (existing) {
       if (existing.isSymbolicLink()) {
         let linkedPath = null;
         try {
-          linkedPath = await fs15.readlink(target);
+          linkedPath = await fs14.readlink(target);
         } catch (err) {
-          await fs15.unlink(target);
+          await fs14.unlink(target);
           try {
-            await fs15.symlink(source, target);
+            await fs14.symlink(source, target);
             summary.linked.push(entry.name);
             continue;
           } catch (linkErr) {
@@ -16174,10 +11722,10 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
             continue;
           }
         }
-        const resolvedLinkedPath = path17.isAbsolute(linkedPath) ? linkedPath : path17.resolve(path17.dirname(target), linkedPath);
-        const linkedTargetExists = await fs15.stat(resolvedLinkedPath).then(() => true).catch(() => false);
+        const resolvedLinkedPath = path16.isAbsolute(linkedPath) ? linkedPath : path16.resolve(path16.dirname(target), linkedPath);
+        const linkedTargetExists = await fs14.stat(resolvedLinkedPath).then(() => true).catch(() => false);
         if (!linkedTargetExists) {
-          await fs15.unlink(target);
+          await fs14.unlink(target);
         } else {
           summary.skipped.push(entry.name);
           continue;
@@ -16188,7 +11736,7 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
       }
     }
     try {
-      await fs15.symlink(source, target);
+      await fs14.symlink(source, target);
       summary.linked.push(entry.name);
     } catch (err) {
       summary.failed.push({
@@ -16277,7 +11825,7 @@ function registerAgentCommands(program2) {
         }
         const installSummaries = [];
         if (opts.installSkills !== false) {
-          const skillsDir = await resolvePaperclipSkillsDir(__moduleDir, [path17.resolve(process.cwd(), "skills")]);
+          const skillsDir = await resolvePaperclipSkillsDir(__moduleDir, [path16.resolve(process.cwd(), "skills")]);
           if (!skillsDir) {
             throw new Error(
               "Could not locate local Paperclip skills directory. Expected ./skills in the repo checkout."
@@ -16560,11 +12108,11 @@ function registerDashboardCommands(program2) {
 
 // src/config/data-dir.ts
 init_home();
-import path18 from "node:path";
+import path17 from "node:path";
 function applyDataDirOverride(options, support = {}) {
   const rawDataDir = options.dataDir?.trim();
   if (!rawDataDir) return null;
-  const resolvedDataDir = path18.resolve(expandHomePrefix(rawDataDir));
+  const resolvedDataDir = path17.resolve(expandHomePrefix(rawDataDir));
   process.env.PAPERCLIP_HOME = resolvedDataDir;
   if (support.hasConfigOption) {
     const hasConfigOverride = Boolean(options.config?.trim()) || Boolean(process.env.PAPERCLIP_CONFIG?.trim());
@@ -16591,35 +12139,35 @@ init_store();
 // src/commands/gtm.ts
 init_src();
 init_home();
-import fs16 from "node:fs";
-import path19 from "node:path";
+import fs15 from "node:fs";
+import path18 from "node:path";
 import { spawn } from "node:child_process";
-import pc23 from "picocolors";
+import pc16 from "picocolors";
 function resolveGtmStatePath() {
-  return path19.resolve(resolvePaperclipHomeDir(), "gtm", "state.json");
+  return path18.resolve(resolvePaperclipHomeDir(), "gtm", "state.json");
 }
 function readState() {
   const filePath = resolveGtmStatePath();
-  if (!fs16.existsSync(filePath)) return createDefaultGtmState();
-  return coerceGtmState(JSON.parse(fs16.readFileSync(filePath, "utf-8")));
+  if (!fs15.existsSync(filePath)) return createDefaultGtmState();
+  return coerceGtmState(JSON.parse(fs15.readFileSync(filePath, "utf-8")));
 }
 function writeState(state) {
   const filePath = resolveGtmStatePath();
-  fs16.mkdirSync(path19.dirname(filePath), { recursive: true });
-  fs16.writeFileSync(filePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+  fs15.mkdirSync(path18.dirname(filePath), { recursive: true });
+  fs15.writeFileSync(filePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
 }
 function launchWorkflow(state) {
   const runnerPath = state.workflow.runnerPath?.trim();
   if (!runnerPath) {
     throw new Error("No local SDR runner configured.");
   }
-  if (!fs16.existsSync(runnerPath)) {
+  if (!fs15.existsSync(runnerPath)) {
     throw new Error(`Runner not found at ${runnerPath}`);
   }
   const args = runnerPath.endsWith(".mjs") || runnerPath.endsWith(".js") ? [runnerPath] : [];
   const command = args.length > 0 ? process.execPath : runnerPath;
   const child = spawn(command, args, {
-    cwd: path19.dirname(runnerPath),
+    cwd: path18.dirname(runnerPath),
     detached: true,
     stdio: "ignore"
   });
@@ -16644,7 +12192,7 @@ function printJsonOrMessage(payload, json, message) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
-  if (message) console.log(pc23.green(message));
+  if (message) console.log(pc16.green(message));
   console.log(payload);
 }
 function registerGtmCommands(program2) {
@@ -16657,7 +12205,7 @@ function registerGtmCommands(program2) {
     if (opts.internalSocialsPath) state.workflow.referenceInterfaces.internalSocialsPath = opts.internalSocialsPath.trim();
     if (opts.localSdrPath) {
       state.workflow.referenceInterfaces.localSdrPath = opts.localSdrPath.trim();
-      state.workflow.runnerPath = path19.resolve(opts.localSdrPath.trim(), "sdr-bot.mjs");
+      state.workflow.runnerPath = path18.resolve(opts.localSdrPath.trim(), "sdr-bot.mjs");
     }
     writeState(state);
     const view = toGtmViewModel(state);
@@ -16690,7 +12238,6 @@ function registerGtmCommands(program2) {
 }
 
 // src/commands/worktree.ts
-init_src2();
 init_env();
 init_home();
 init_store();
@@ -16699,28 +12246,37 @@ init_path_resolver();
 import {
   chmodSync,
   copyFileSync,
-  existsSync as existsSync2,
-  mkdirSync as mkdirSync2,
-  readdirSync as readdirSync2,
+  existsSync,
+  mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
-  statSync as statSync2,
+  statSync,
   symlinkSync,
   writeFileSync
 } from "node:fs";
 import os5 from "node:os";
-import path21 from "node:path";
+import path20 from "node:path";
 import { execFileSync } from "node:child_process";
 import { createServer as createServer2 } from "node:net";
 import * as p16 from "@clack/prompts";
-import pc24 from "picocolors";
+import pc17 from "picocolors";
 import { eq as eq2 } from "drizzle-orm";
+import {
+  applyPendingMigrations,
+  createDb as createDb2,
+  ensurePostgresDatabase,
+  formatDatabaseBackupResult as formatDatabaseBackupResult2,
+  projectWorkspaces,
+  runDatabaseBackup as runDatabaseBackup2,
+  runDatabaseRestore
+} from "@paperclipai/db";
 
 // src/commands/worktree-lib.ts
 init_home();
 import { randomInt } from "node:crypto";
-import path20 from "node:path";
+import path19 from "node:path";
 var DEFAULT_WORKTREE_HOME = "~/.paperclip-worktrees";
 var WORKTREE_SEED_MODES = ["minimal", "full"];
 var MINIMAL_WORKTREE_EXCLUDED_TABLES = [
@@ -16768,7 +12324,7 @@ function sanitizeWorktreeInstanceId(rawValue) {
   return normalized || "worktree";
 }
 function resolveSuggestedWorktreeName(cwd, explicitName) {
-  return nonEmpty(explicitName) ?? path20.basename(path20.resolve(cwd));
+  return nonEmpty(explicitName) ?? path19.basename(path19.resolve(cwd));
 }
 function hslComponentToHex(n) {
   return Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, "0");
@@ -16808,24 +12364,24 @@ function generateWorktreeColor() {
   return hslToHex(randomInt(0, 360), 68, 56);
 }
 function resolveWorktreeLocalPaths(opts) {
-  const cwd = path20.resolve(opts.cwd);
-  const homeDir = path20.resolve(expandHomePrefix(opts.homeDir ?? DEFAULT_WORKTREE_HOME));
-  const instanceRoot = path20.resolve(homeDir, "instances", opts.instanceId);
-  const repoConfigDir = path20.resolve(cwd, ".paperclip");
+  const cwd = path19.resolve(opts.cwd);
+  const homeDir = path19.resolve(expandHomePrefix(opts.homeDir ?? DEFAULT_WORKTREE_HOME));
+  const instanceRoot = path19.resolve(homeDir, "instances", opts.instanceId);
+  const repoConfigDir = path19.resolve(cwd, ".paperclip");
   return {
     cwd,
     repoConfigDir,
-    configPath: path20.resolve(repoConfigDir, "config.json"),
-    envPath: path20.resolve(repoConfigDir, ".env"),
+    configPath: path19.resolve(repoConfigDir, "config.json"),
+    envPath: path19.resolve(repoConfigDir, ".env"),
     homeDir,
     instanceId: opts.instanceId,
     instanceRoot,
-    contextPath: path20.resolve(homeDir, "context.json"),
-    embeddedPostgresDataDir: path20.resolve(instanceRoot, "db"),
-    backupDir: path20.resolve(instanceRoot, "data", "backups"),
-    logDir: path20.resolve(instanceRoot, "logs"),
-    secretsKeyFilePath: path20.resolve(instanceRoot, "secrets", "master.key"),
-    storageDir: path20.resolve(instanceRoot, "data", "storage")
+    contextPath: path19.resolve(homeDir, "context.json"),
+    embeddedPostgresDataDir: path19.resolve(instanceRoot, "db"),
+    backupDir: path19.resolve(instanceRoot, "data", "backups"),
+    logDir: path19.resolve(instanceRoot, "logs"),
+    secretsKeyFilePath: path19.resolve(instanceRoot, "secrets", "master.key"),
+    storageDir: path19.resolve(instanceRoot, "data", "storage")
   };
 }
 function rewriteLocalUrlPort(rawUrl, port) {
@@ -16931,7 +12487,7 @@ function isCurrentSourceConfigPath(sourceConfigPath) {
   if (!currentConfigPath || currentConfigPath.trim().length === 0) {
     return false;
   }
-  return path21.resolve(currentConfigPath) === path21.resolve(sourceConfigPath);
+  return path20.resolve(currentConfigPath) === path20.resolve(sourceConfigPath);
 }
 var WORKTREE_NAME_PREFIX = "paperclip-";
 function resolveWorktreeMakeName(name) {
@@ -16953,7 +12509,7 @@ function resolveWorktreeStartPoint(explicit) {
   return explicit ?? nonEmpty2(process.env.PAPERCLIP_WORKTREE_START_POINT) ?? void 0;
 }
 function resolveWorktreeMakeTargetPath(name) {
-  return path21.resolve(os5.homedir(), resolveWorktreeMakeName(name));
+  return path20.resolve(os5.homedir(), resolveWorktreeMakeName(name));
 }
 function extractExecSyncErrorMessage(error) {
   if (!error || typeof error !== "object") {
@@ -16987,7 +12543,7 @@ function resolveGitWorktreeAddArgs(input) {
   return ["worktree", "add", "-b", input.branchName, input.targetPath, commitish];
 }
 function readPidFilePort(postmasterPidFile) {
-  if (!existsSync2(postmasterPidFile)) return null;
+  if (!existsSync(postmasterPidFile)) return null;
   try {
     const lines = readFileSync(postmasterPidFile, "utf8").split("\n");
     const port = Number(lines[3]?.trim());
@@ -16997,7 +12553,7 @@ function readPidFilePort(postmasterPidFile) {
   }
 }
 function readRunningPostmasterPid(postmasterPidFile) {
-  if (!existsSync2(postmasterPidFile)) return null;
+  if (!existsSync(postmasterPidFile)) return null;
   try {
     const pid = Number(readFileSync(postmasterPidFile, "utf8").split("\n")[0]?.trim());
     if (!Number.isInteger(pid) || pid <= 0) return null;
@@ -17008,12 +12564,12 @@ function readRunningPostmasterPid(postmasterPidFile) {
   }
 }
 async function isPortAvailable(port) {
-  return await new Promise((resolve2) => {
+  return await new Promise((resolve) => {
     const server = createServer2();
     server.unref();
-    server.once("error", () => resolve2(false));
+    server.once("error", () => resolve(false));
     server.listen(port, "127.0.0.1", () => {
-      server.close(() => resolve2(true));
+      server.close(() => resolve(true));
     });
   });
 }
@@ -17059,26 +12615,26 @@ function detectGitWorkspaceInfo(cwd) {
       stdio: ["ignore", "pipe", "ignore"]
     }).trim();
     return {
-      root: path21.resolve(root),
-      commonDir: path21.resolve(root, commonDirRaw),
-      gitDir: path21.resolve(root, gitDirRaw),
-      hooksPath: path21.resolve(root, hooksPathRaw)
+      root: path20.resolve(root),
+      commonDir: path20.resolve(root, commonDirRaw),
+      gitDir: path20.resolve(root, gitDirRaw),
+      hooksPath: path20.resolve(root, hooksPathRaw)
     };
   } catch {
     return null;
   }
 }
 function copyDirectoryContents(sourceDir, targetDir) {
-  if (!existsSync2(sourceDir)) return false;
-  const entries = readdirSync2(sourceDir, { withFileTypes: true });
+  if (!existsSync(sourceDir)) return false;
+  const entries = readdirSync(sourceDir, { withFileTypes: true });
   if (entries.length === 0) return false;
-  mkdirSync2(targetDir, { recursive: true });
+  mkdirSync(targetDir, { recursive: true });
   let copied = false;
   for (const entry of entries) {
-    const sourcePath = path21.resolve(sourceDir, entry.name);
-    const targetPath = path21.resolve(targetDir, entry.name);
+    const sourcePath = path20.resolve(sourceDir, entry.name);
+    const targetPath = path20.resolve(targetDir, entry.name);
     if (entry.isDirectory()) {
-      mkdirSync2(targetPath, { recursive: true });
+      mkdirSync(targetPath, { recursive: true });
       copyDirectoryContents(sourcePath, targetPath);
       copied = true;
       continue;
@@ -17091,7 +12647,7 @@ function copyDirectoryContents(sourceDir, targetDir) {
     }
     copyFileSync(sourcePath, targetPath);
     try {
-      chmodSync(targetPath, statSync2(sourcePath).mode & 511);
+      chmodSync(targetPath, statSync(sourcePath).mode & 511);
     } catch {
     }
     copied = true;
@@ -17102,7 +12658,7 @@ function copyGitHooksToWorktreeGitDir(cwd) {
   const workspace = detectGitWorkspaceInfo(cwd);
   if (!workspace) return null;
   const sourceHooksPath = workspace.hooksPath;
-  const targetHooksPath = path21.resolve(workspace.gitDir, "hooks");
+  const targetHooksPath = path20.resolve(workspace.gitDir, "hooks");
   if (sourceHooksPath === targetHooksPath) {
     return {
       sourceHooksPath,
@@ -17117,22 +12673,22 @@ function copyGitHooksToWorktreeGitDir(cwd) {
   };
 }
 function rebindWorkspaceCwd(input) {
-  const sourceRepoRoot = path21.resolve(input.sourceRepoRoot);
-  const targetRepoRoot = path21.resolve(input.targetRepoRoot);
-  const workspaceCwd = path21.resolve(input.workspaceCwd);
-  const relative = path21.relative(sourceRepoRoot, workspaceCwd);
+  const sourceRepoRoot = path20.resolve(input.sourceRepoRoot);
+  const targetRepoRoot = path20.resolve(input.targetRepoRoot);
+  const workspaceCwd = path20.resolve(input.workspaceCwd);
+  const relative = path20.relative(sourceRepoRoot, workspaceCwd);
   if (!relative || relative === "") {
     return targetRepoRoot;
   }
-  if (relative.startsWith("..") || path21.isAbsolute(relative)) {
+  if (relative.startsWith("..") || path20.isAbsolute(relative)) {
     return null;
   }
-  return path21.resolve(targetRepoRoot, relative);
+  return path20.resolve(targetRepoRoot, relative);
 }
 async function rebindSeededProjectWorkspaces(input) {
   const targetRepo = detectGitWorkspaceInfo(input.currentCwd);
   if (!targetRepo) return [];
-  const db = createDb(input.targetConnectionString);
+  const db = createDb2(input.targetConnectionString);
   const closableDb = db;
   try {
     const rows = await db.select({
@@ -17153,9 +12709,9 @@ async function rebindSeededProjectWorkspaces(input) {
         workspaceCwd
       });
       if (!reboundCwd) continue;
-      const normalizedCurrent = path21.resolve(workspaceCwd);
+      const normalizedCurrent = path20.resolve(workspaceCwd);
       if (reboundCwd === normalizedCurrent) continue;
-      if (!existsSync2(reboundCwd)) continue;
+      if (!existsSync(reboundCwd)) continue;
       await db.update(projectWorkspaces).set({
         cwd: reboundCwd,
         updatedAt: /* @__PURE__ */ new Date()
@@ -17172,14 +12728,14 @@ async function rebindSeededProjectWorkspaces(input) {
   }
 }
 function resolveSourceConfigPath(opts) {
-  if (opts.sourceConfigPathOverride) return path21.resolve(opts.sourceConfigPathOverride);
-  if (opts.fromConfig) return path21.resolve(opts.fromConfig);
+  if (opts.sourceConfigPathOverride) return path20.resolve(opts.sourceConfigPathOverride);
+  if (opts.fromConfig) return path20.resolve(opts.fromConfig);
   if (!opts.fromDataDir && !opts.fromInstance) {
     return resolveConfigPath();
   }
-  const sourceHome = path21.resolve(expandHomePrefix(opts.fromDataDir ?? "~/.paperclip"));
+  const sourceHome = path20.resolve(expandHomePrefix(opts.fromDataDir ?? "~/.paperclip"));
   const sourceInstanceId = sanitizeWorktreeInstanceId(opts.fromInstance ?? "default");
-  return path21.resolve(sourceHome, "instances", sourceInstanceId, "config.json");
+  return path20.resolve(sourceHome, "instances", sourceInstanceId, "config.json");
 }
 function resolveSourceConnectionString(config, envEntries, portOverride) {
   if (config.database.mode === "postgres") {
@@ -17198,7 +12754,7 @@ function copySeededSecretsKey(input) {
   if (input.sourceConfig.secrets.provider !== "local_encrypted") {
     return;
   }
-  mkdirSync2(path21.dirname(input.targetKeyFilePath), { recursive: true });
+  mkdirSync(path20.dirname(input.targetKeyFilePath), { recursive: true });
   const allowProcessEnvFallback = isCurrentSourceConfigPath(input.sourceConfigPath);
   const sourceInlineMasterKey = nonEmpty2(input.sourceEnvEntries.PAPERCLIP_SECRETS_MASTER_KEY) ?? (allowProcessEnvFallback ? nonEmpty2(process.env.PAPERCLIP_SECRETS_MASTER_KEY) : null);
   if (sourceInlineMasterKey) {
@@ -17215,7 +12771,7 @@ function copySeededSecretsKey(input) {
   const sourceKeyFileOverride = nonEmpty2(input.sourceEnvEntries.PAPERCLIP_SECRETS_MASTER_KEY_FILE) ?? (allowProcessEnvFallback ? nonEmpty2(process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE) : null);
   const sourceConfiguredKeyPath = sourceKeyFileOverride ?? input.sourceConfig.secrets.localEncrypted.keyFilePath;
   const sourceKeyFilePath = resolveRuntimeLikePath(sourceConfiguredKeyPath, input.sourceConfigPath);
-  if (!existsSync2(sourceKeyFilePath)) {
+  if (!existsSync(sourceKeyFilePath)) {
     throw new Error(
       `Cannot seed worktree database because source local_encrypted secrets key was not found at ${sourceKeyFilePath}.`
     );
@@ -17237,7 +12793,7 @@ async function ensureEmbeddedPostgres(dataDir, preferredPort) {
       "Embedded PostgreSQL support requires dependency `embedded-postgres`. Reinstall dependencies and try again."
     );
   }
-  const postmasterPidFile = path21.resolve(dataDir, "postmaster.pid");
+  const postmasterPidFile = path20.resolve(dataDir, "postmaster.pid");
   const runningPid = readRunningPostmasterPid(postmasterPidFile);
   if (runningPid) {
     return {
@@ -17260,10 +12816,10 @@ async function ensureEmbeddedPostgres(dataDir, preferredPort) {
     onError: () => {
     }
   });
-  if (!existsSync2(path21.resolve(dataDir, "PG_VERSION"))) {
+  if (!existsSync(path20.resolve(dataDir, "PG_VERSION"))) {
     await instance.initialise();
   }
-  if (existsSync2(postmasterPidFile)) {
+  if (existsSync(postmasterPidFile)) {
     rmSync(postmasterPidFile, { force: true });
   }
   await instance.start();
@@ -17299,9 +12855,9 @@ async function seedWorktreeDatabase(input) {
       sourceEnvEntries,
       sourceHandle?.port
     );
-    const backup = await runDatabaseBackup({
+    const backup = await runDatabaseBackup2({
       connectionString: sourceConnectionString,
-      backupDir: path21.resolve(input.targetPaths.backupDir, "seed"),
+      backupDir: path20.resolve(input.targetPaths.backupDir, "seed"),
       retentionDays: 7,
       filenamePrefix: `${input.instanceId}-seed`,
       includeMigrationJournal: true,
@@ -17325,7 +12881,7 @@ async function seedWorktreeDatabase(input) {
       currentCwd: input.targetPaths.cwd
     });
     return {
-      backupSummary: formatDatabaseBackupResult(backup),
+      backupSummary: formatDatabaseBackupResult2(backup),
       reboundWorkspaces
     };
   } finally {
@@ -17358,8 +12914,8 @@ async function runWorktreeInit(opts) {
     color: generateWorktreeColor()
   };
   const sourceConfigPath = resolveSourceConfigPath(opts);
-  const sourceConfig = existsSync2(sourceConfigPath) ? readConfig(sourceConfigPath) : null;
-  if ((existsSync2(paths.configPath) || existsSync2(paths.instanceRoot)) && !opts.force) {
+  const sourceConfig = existsSync(sourceConfigPath) ? readConfig(sourceConfigPath) : null;
+  if ((existsSync(paths.configPath) || existsSync(paths.instanceRoot)) && !opts.force) {
     throw new Error(
       `Worktree config already exists at ${paths.configPath} or instance data exists at ${paths.instanceRoot}. Re-run with --force to replace it.`
     );
@@ -17414,53 +12970,53 @@ async function runWorktreeInit(opts) {
       reboundWorkspaceSummary = seeded.reboundWorkspaces;
       spinner13.stop(`Seeded isolated worktree database (${seedMode}).`);
     } catch (error) {
-      spinner13.stop(pc24.red("Failed to seed worktree database."));
+      spinner13.stop(pc17.red("Failed to seed worktree database."));
       throw error;
     }
   }
-  p16.log.message(pc24.dim(`Repo config: ${paths.configPath}`));
-  p16.log.message(pc24.dim(`Repo env: ${paths.envPath}`));
-  p16.log.message(pc24.dim(`Isolated home: ${paths.homeDir}`));
-  p16.log.message(pc24.dim(`Instance: ${paths.instanceId}`));
-  p16.log.message(pc24.dim(`Worktree badge: ${branding.name} (${branding.color})`));
-  p16.log.message(pc24.dim(`Server port: ${serverPort} | DB port: ${databasePort}`));
+  p16.log.message(pc17.dim(`Repo config: ${paths.configPath}`));
+  p16.log.message(pc17.dim(`Repo env: ${paths.envPath}`));
+  p16.log.message(pc17.dim(`Isolated home: ${paths.homeDir}`));
+  p16.log.message(pc17.dim(`Instance: ${paths.instanceId}`));
+  p16.log.message(pc17.dim(`Worktree badge: ${branding.name} (${branding.color})`));
+  p16.log.message(pc17.dim(`Server port: ${serverPort} | DB port: ${databasePort}`));
   if (copiedGitHooks?.copied) {
     p16.log.message(
-      pc24.dim(`Mirrored git hooks: ${copiedGitHooks.sourceHooksPath} -> ${copiedGitHooks.targetHooksPath}`)
+      pc17.dim(`Mirrored git hooks: ${copiedGitHooks.sourceHooksPath} -> ${copiedGitHooks.targetHooksPath}`)
     );
   }
   if (seedSummary) {
-    p16.log.message(pc24.dim(`Seed mode: ${seedMode}`));
-    p16.log.message(pc24.dim(`Seed snapshot: ${seedSummary}`));
+    p16.log.message(pc17.dim(`Seed mode: ${seedMode}`));
+    p16.log.message(pc17.dim(`Seed snapshot: ${seedSummary}`));
     for (const rebound of reboundWorkspaceSummary) {
       p16.log.message(
-        pc24.dim(`Rebound workspace ${rebound.name}: ${rebound.fromCwd} -> ${rebound.toCwd}`)
+        pc17.dim(`Rebound workspace ${rebound.name}: ${rebound.fromCwd} -> ${rebound.toCwd}`)
       );
     }
   }
   p16.outro(
-    pc24.green(
+    pc17.green(
       `Worktree ready. Run Paperclip inside this repo and the CLI/server will use ${paths.instanceId} automatically.`
     )
   );
 }
 async function worktreeInitCommand(opts) {
   printPaperclipCliBanner();
-  p16.intro(pc24.bgCyan(pc24.black(" paperclipai worktree init ")));
+  p16.intro(pc17.bgCyan(pc17.black(" paperclipai worktree init ")));
   await runWorktreeInit(opts);
 }
 async function worktreeMakeCommand(nameArg, opts) {
   printPaperclipCliBanner();
-  p16.intro(pc24.bgCyan(pc24.black(" paperclipai worktree:make ")));
+  p16.intro(pc17.bgCyan(pc17.black(" paperclipai worktree:make ")));
   const name = resolveWorktreeMakeName(nameArg);
   const startPoint = resolveWorktreeStartPoint(opts.startPoint);
   const sourceCwd = process.cwd();
   const sourceConfigPath = resolveSourceConfigPath(opts);
   const targetPath = resolveWorktreeMakeTargetPath(name);
-  if (existsSync2(targetPath)) {
+  if (existsSync(targetPath)) {
     throw new Error(`Target path already exists: ${targetPath}`);
   }
-  mkdirSync2(path21.dirname(targetPath), { recursive: true });
+  mkdirSync(path20.dirname(targetPath), { recursive: true });
   if (startPoint) {
     const [remote] = startPoint.split("/", 1);
     try {
@@ -17489,7 +13045,7 @@ async function worktreeMakeCommand(nameArg, opts) {
     });
     spinner13.stop(`Created git worktree at ${targetPath}.`);
   } catch (error) {
-    spinner13.stop(pc24.red("Failed to create git worktree."));
+    spinner13.stop(pc17.red("Failed to create git worktree."));
     throw new Error(extractExecSyncErrorMessage(error) ?? String(error));
   }
   const installSpinner = p16.spinner();
@@ -17501,7 +13057,7 @@ async function worktreeMakeCommand(nameArg, opts) {
     });
     installSpinner.stop("Installed dependencies.");
   } catch (error) {
-    installSpinner.stop(pc24.yellow("Failed to install dependencies (continuing anyway)."));
+    installSpinner.stop(pc17.yellow("Failed to install dependencies (continuing anyway)."));
     p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
   }
   const originalCwd = process.cwd();
@@ -17517,9 +13073,9 @@ async function worktreeMakeCommand(nameArg, opts) {
   } finally {
     process.chdir(originalCwd);
   }
-  const bootstrapScript = path21.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
-  if (existsSync2(bootstrapScript)) {
-    p16.log.message(pc24.dim(`Running worktree bootstrap in ${targetPath}...`));
+  const bootstrapScript = path20.resolve(sourceCwd, "scripts/worktree-bootstrap.mjs");
+  if (existsSync(bootstrapScript)) {
+    p16.log.message(pc17.dim(`Running worktree bootstrap in ${targetPath}...`));
     try {
       execFileSync("node", [bootstrapScript], { cwd: targetPath, stdio: "inherit" });
     } catch (error) {
@@ -17602,23 +13158,23 @@ function worktreePathHasUncommittedChanges(worktreePath) {
 }
 async function worktreeCleanupCommand(nameArg, opts) {
   printPaperclipCliBanner();
-  p16.intro(pc24.bgCyan(pc24.black(" paperclipai worktree:cleanup ")));
+  p16.intro(pc17.bgCyan(pc17.black(" paperclipai worktree:cleanup ")));
   const name = resolveWorktreeMakeName(nameArg);
   const sourceCwd = process.cwd();
   const targetPath = resolveWorktreeMakeTargetPath(name);
   const instanceId = sanitizeWorktreeInstanceId(opts.instance ?? name);
-  const homeDir = path21.resolve(expandHomePrefix(resolveWorktreeHome(opts.home)));
-  const instanceRoot = path21.resolve(homeDir, "instances", instanceId);
+  const homeDir = path20.resolve(expandHomePrefix(resolveWorktreeHome(opts.home)));
+  const instanceRoot = path20.resolve(homeDir, "instances", instanceId);
   const hasBranch = localBranchExists(sourceCwd, name);
-  const hasTargetDir = existsSync2(targetPath);
-  const hasInstanceData = existsSync2(instanceRoot);
+  const hasTargetDir = existsSync(targetPath);
+  const hasInstanceData = existsSync(instanceRoot);
   const worktrees = parseGitWorktreeList(sourceCwd);
   const linkedWorktree = worktrees.find(
-    (wt) => wt.branch === `refs/heads/${name}` || path21.resolve(wt.worktree) === path21.resolve(targetPath)
+    (wt) => wt.branch === `refs/heads/${name}` || path20.resolve(wt.worktree) === path20.resolve(targetPath)
   );
   if (!hasBranch && !hasTargetDir && !hasInstanceData && !linkedWorktree) {
     p16.log.info("Nothing to clean up \u2014 no branch, worktree directory, or instance data found.");
-    p16.outro(pc24.green("Already clean."));
+    p16.outro(pc17.green("Already clean."));
     return;
   }
   const problems = [];
@@ -17651,7 +13207,7 @@ async function worktreeCleanupCommand(nameArg, opts) {
     }
   }
   if (linkedWorktree) {
-    const worktreeDirExists = existsSync2(linkedWorktree.worktree);
+    const worktreeDirExists = existsSync(linkedWorktree.worktree);
     const spinner13 = p16.spinner();
     if (worktreeDirExists) {
       spinner13.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
@@ -17664,7 +13220,7 @@ async function worktreeCleanupCommand(nameArg, opts) {
         });
         spinner13.stop(`Removed git worktree at ${linkedWorktree.worktree}.`);
       } catch (error) {
-        spinner13.stop(pc24.yellow(`Could not remove worktree cleanly, will prune instead.`));
+        spinner13.stop(pc17.yellow(`Could not remove worktree cleanly, will prune instead.`));
         p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
       }
     } else {
@@ -17681,7 +13237,7 @@ async function worktreeCleanupCommand(nameArg, opts) {
       stdio: ["ignore", "pipe", "pipe"]
     });
   }
-  if (existsSync2(targetPath)) {
+  if (existsSync(targetPath)) {
     const spinner13 = p16.spinner();
     spinner13.start(`Removing worktree directory ${targetPath}...`);
     rmSync(targetPath, { recursive: true, force: true });
@@ -17698,17 +13254,17 @@ async function worktreeCleanupCommand(nameArg, opts) {
       });
       spinner13.stop(`Deleted local branch "${name}".`);
     } catch (error) {
-      spinner13.stop(pc24.yellow(`Could not delete branch "${name}".`));
+      spinner13.stop(pc17.yellow(`Could not delete branch "${name}".`));
       p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
     }
   }
-  if (existsSync2(instanceRoot)) {
+  if (existsSync(instanceRoot)) {
     const spinner13 = p16.spinner();
     spinner13.start(`Removing instance data at ${instanceRoot}...`);
     rmSync(instanceRoot, { recursive: true, force: true });
     spinner13.stop(`Removed instance data at ${instanceRoot}.`);
   }
-  p16.outro(pc24.green("Cleanup complete."));
+  p16.outro(pc17.green("Cleanup complete."));
 }
 async function worktreeEnvCommand(opts) {
   const configPath = resolveConfigPath(opts.config);
@@ -17736,27 +13292,27 @@ function registerWorktreeCommands(program2) {
 }
 
 // src/commands/client/plugin.ts
-import path22 from "node:path";
-import pc25 from "picocolors";
+import path21 from "node:path";
+import pc18 from "picocolors";
 function resolvePackageArg(packageArg, isLocal) {
   if (!isLocal) return packageArg;
-  if (path22.isAbsolute(packageArg)) return packageArg;
+  if (path21.isAbsolute(packageArg)) return packageArg;
   if (packageArg.startsWith("~")) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-    return path22.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
+    return path21.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
   }
-  return path22.resolve(process.cwd(), packageArg);
+  return path21.resolve(process.cwd(), packageArg);
 }
 function formatPlugin(p35) {
-  const statusColor3 = p35.status === "ready" ? pc25.green(p35.status) : p35.status === "error" ? pc25.red(p35.status) : p35.status === "disabled" ? pc25.dim(p35.status) : pc25.yellow(p35.status);
+  const statusColor3 = p35.status === "ready" ? pc18.green(p35.status) : p35.status === "error" ? pc18.red(p35.status) : p35.status === "disabled" ? pc18.dim(p35.status) : pc18.yellow(p35.status);
   const parts = [
-    `key=${pc25.bold(p35.pluginKey)}`,
+    `key=${pc18.bold(p35.pluginKey)}`,
     `status=${statusColor3}`,
     `version=${p35.version}`,
-    `id=${pc25.dim(p35.id)}`
+    `id=${pc18.dim(p35.id)}`
   ];
   if (p35.lastError) {
-    parts.push(`error=${pc25.red(p35.lastError.slice(0, 80))}`);
+    parts.push(`error=${pc18.red(p35.lastError.slice(0, 80))}`);
   }
   return parts.join("  ");
 }
@@ -17767,14 +13323,14 @@ function registerPluginCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts);
         const qs = opts.status ? `?status=${encodeURIComponent(opts.status)}` : "";
-        const plugins2 = await ctx.api.get(`/api/plugins${qs}`);
+        const plugins = await ctx.api.get(`/api/plugins${qs}`);
         if (ctx.json) {
-          printOutput(plugins2, { json: true });
+          printOutput(plugins, { json: true });
           return;
         }
-        const rows = plugins2 ?? [];
+        const rows = plugins ?? [];
         if (rows.length === 0) {
-          console.log(pc25.dim("No plugins installed."));
+          console.log(pc18.dim("No plugins installed."));
           return;
         }
         for (const p35 of rows) {
@@ -17795,7 +13351,7 @@ function registerPluginCommands(program2) {
         const resolvedPackage = resolvePackageArg(packageArg, isLocal);
         if (!ctx.json) {
           console.log(
-            pc25.dim(
+            pc18.dim(
               isLocal ? `Installing plugin from local path: ${resolvedPackage}` : `Installing plugin: ${resolvedPackage}${opts.version ? `@${opts.version}` : ""}`
             )
           );
@@ -17810,16 +13366,16 @@ function registerPluginCommands(program2) {
           return;
         }
         if (!installedPlugin) {
-          console.log(pc25.dim("Install returned no plugin record."));
+          console.log(pc18.dim("Install returned no plugin record."));
           return;
         }
         console.log(
-          pc25.green(
-            `\u2713 Installed ${pc25.bold(installedPlugin.pluginKey)} v${installedPlugin.version} (${installedPlugin.status})`
+          pc18.green(
+            `\u2713 Installed ${pc18.bold(installedPlugin.pluginKey)} v${installedPlugin.version} (${installedPlugin.status})`
           )
         );
         if (installedPlugin.lastError) {
-          console.log(pc25.red(`  Warning: ${installedPlugin.lastError}`));
+          console.log(pc18.red(`  Warning: ${installedPlugin.lastError}`));
         }
       } catch (err) {
         handleCommandError(err);
@@ -17836,7 +13392,7 @@ function registerPluginCommands(program2) {
         const qs = purge ? "?purge=true" : "";
         if (!ctx.json) {
           console.log(
-            pc25.dim(
+            pc18.dim(
               purge ? `Uninstalling and purging plugin: ${pluginKey}` : `Uninstalling plugin: ${pluginKey}`
             )
           );
@@ -17848,7 +13404,7 @@ function registerPluginCommands(program2) {
           printOutput(result, { json: true });
           return;
         }
-        console.log(pc25.green(`\u2713 Uninstalled ${pc25.bold(pluginKey)}${purge ? " (purged)" : ""}`));
+        console.log(pc18.green(`\u2713 Uninstalled ${pc18.bold(pluginKey)}${purge ? " (purged)" : ""}`));
       } catch (err) {
         handleCommandError(err);
       }
@@ -17865,7 +13421,7 @@ function registerPluginCommands(program2) {
           printOutput(result, { json: true });
           return;
         }
-        console.log(pc25.green(`\u2713 Enabled ${pc25.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
+        console.log(pc18.green(`\u2713 Enabled ${pc18.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
       } catch (err) {
         handleCommandError(err);
       }
@@ -17882,7 +13438,7 @@ function registerPluginCommands(program2) {
           printOutput(result, { json: true });
           return;
         }
-        console.log(pc25.dim(`Disabled ${pc25.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
+        console.log(pc18.dim(`Disabled ${pc18.bold(pluginKey)} \u2014 status: ${result?.status ?? "unknown"}`));
       } catch (err) {
         handleCommandError(err);
       }
@@ -17900,13 +13456,13 @@ function registerPluginCommands(program2) {
           return;
         }
         if (!result) {
-          console.log(pc25.red(`Plugin not found: ${pluginKey}`));
+          console.log(pc18.red(`Plugin not found: ${pluginKey}`));
           process.exit(1);
         }
         console.log(formatPlugin(result));
         if (result.lastError) {
           console.log(`
-${pc25.red("Last error:")}
+${pc18.red("Last error:")}
 ${result.lastError}`);
         }
       } catch (err) {
@@ -17925,14 +13481,14 @@ ${result.lastError}`);
         }
         const rows = examples ?? [];
         if (rows.length === 0) {
-          console.log(pc25.dim("No bundled examples available."));
+          console.log(pc18.dim("No bundled examples available."));
           return;
         }
         for (const ex of rows) {
           console.log(
-            `${pc25.bold(ex.displayName)}  ${pc25.dim(ex.pluginKey)}
+            `${pc18.bold(ex.displayName)}  ${pc18.dim(ex.pluginKey)}
   ${ex.description}
-  ${pc25.cyan(`paperclipai plugin install ${ex.localPath}`)}`
+  ${pc18.cyan(`paperclipai plugin install ${ex.localPath}`)}`
           );
         }
       } catch (err) {
@@ -17945,13 +13501,13 @@ ${result.lastError}`);
 // src/commands/kit.ts
 init_service();
 init_banner();
-import path34 from "node:path";
+import path33 from "node:path";
 import { pathToFileURL as pathToFileURL2 } from "node:url";
 import * as p19 from "@clack/prompts";
-import pc30 from "picocolors";
+import pc23 from "picocolors";
 
 // src/commands/kit-fork.ts
-import fs27 from "node:fs";
+import fs26 from "node:fs";
 import * as p18 from "@clack/prompts";
 
 // src/commands/kit-fork-remote.ts
@@ -17960,51 +13516,51 @@ init_fork_policy();
 init_fork_trace();
 init_fork_remote();
 import * as p17 from "@clack/prompts";
-import pc26 from "picocolors";
-import fs25 from "node:fs";
-import path32 from "node:path";
+import pc19 from "picocolors";
+import fs24 from "node:fs";
+import path31 from "node:path";
 
 // src/kits/fork-sync-agent.ts
 init_kit_forks_home();
 init_fork_registry();
-import fs24 from "node:fs";
-import path31 from "node:path";
+import fs23 from "node:fs";
+import path30 from "node:path";
 
 // src/kits/fork-sync.ts
 init_service();
-import fs22 from "node:fs";
-import path29 from "node:path";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
+import fs21 from "node:fs";
+import path28 from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 function resolveUpstreamAssetRoot(kitId) {
-  const moduleDir = path29.dirname(fileURLToPath5(import.meta.url));
+  const moduleDir = path28.dirname(fileURLToPath4(import.meta.url));
   const candidates = [
-    path29.resolve(moduleDir, "../../assets/worker-kits", kitId),
-    path29.resolve(moduleDir, "../assets/worker-kits", kitId)
+    path28.resolve(moduleDir, "../../assets/worker-kits", kitId),
+    path28.resolve(moduleDir, "../assets/worker-kits", kitId)
   ];
   for (const c of candidates) {
-    if (fs22.existsSync(c)) return c;
+    if (fs21.existsSync(c)) return c;
   }
   throw new Error(`Cannot locate bundled asset root for kit: ${kitId}`);
 }
 function readFileIfExists(p35) {
-  if (!fs22.existsSync(p35)) return null;
+  if (!fs21.existsSync(p35)) return null;
   try {
-    return fs22.readFileSync(p35, "utf8");
+    return fs21.readFileSync(p35, "utf8");
   } catch {
     return null;
   }
 }
 function listRelativeFiles2(rootDir) {
   const files = /* @__PURE__ */ new Set();
-  if (!fs22.existsSync(rootDir)) return files;
+  if (!fs21.existsSync(rootDir)) return files;
   const walk = (cur) => {
-    for (const entry of fs22.readdirSync(cur, { withFileTypes: true })) {
-      const full = path29.join(cur, entry.name);
+    for (const entry of fs21.readdirSync(cur, { withFileTypes: true })) {
+      const full = path28.join(cur, entry.name);
       if (entry.isDirectory()) {
         walk(full);
         continue;
       }
-      files.add(path29.relative(rootDir, full).split(path29.sep).join("/"));
+      files.add(path28.relative(rootDir, full).split(path28.sep).join("/"));
     }
   };
   walk(rootDir);
@@ -18068,7 +13624,7 @@ function getUpstreamFiles(kitId) {
   return files;
 }
 function detectKitForkDrift(reg) {
-  if (!fs22.existsSync(reg.forkPath)) {
+  if (!fs21.existsSync(reg.forkPath)) {
     throw new Error(`Fork path does not exist: ${reg.forkPath}`);
   }
   const allKits = listBundledKits();
@@ -18107,8 +13663,8 @@ function detectKitForkDrift(reg) {
   const AUDIT_PATHS = ["kit.json", "package.json", ".env.example", "QUICKSTART.md"];
   for (const rel of AUDIT_PATHS) {
     if (upstreamFiles.has(rel) && forkFiles.has(rel)) {
-      const upContent = readFileIfExists(path29.resolve(upstreamRoot, rel));
-      const fkContent = readFileIfExists(path29.resolve(reg.forkPath, rel));
+      const upContent = readFileIfExists(path28.resolve(upstreamRoot, rel));
+      const fkContent = readFileIfExists(path28.resolve(reg.forkPath, rel));
       if (upContent !== null && fkContent !== null && upContent !== fkContent) {
         fileDrifts.push({
           relativePath: rel,
@@ -18120,12 +13676,12 @@ function detectKitForkDrift(reg) {
     }
   }
   let packageDrifts = [];
-  const upPkgPath = path29.resolve(upstreamRoot, "package.json");
-  const fkPkgPath = path29.resolve(reg.forkPath, "package.json");
-  if (fs22.existsSync(upPkgPath) && fs22.existsSync(fkPkgPath)) {
+  const upPkgPath = path28.resolve(upstreamRoot, "package.json");
+  const fkPkgPath = path28.resolve(reg.forkPath, "package.json");
+  if (fs21.existsSync(upPkgPath) && fs21.existsSync(fkPkgPath)) {
     try {
-      const upPkg = JSON.parse(fs22.readFileSync(upPkgPath, "utf8"));
-      const fkPkg = JSON.parse(fs22.readFileSync(fkPkgPath, "utf8"));
+      const upPkg = JSON.parse(fs21.readFileSync(upPkgPath, "utf8"));
+      const fkPkg = JSON.parse(fs21.readFileSync(fkPkgPath, "utf8"));
       packageDrifts = detectPackageDrift(upPkg, fkPkg);
     } catch {
     }
@@ -18384,38 +13940,38 @@ function executeHealAction(action, forkPath, kitId, _toVersion) {
   }
 }
 function execAddFile(action, forkPath, kitId) {
-  const targetFull = path29.resolve(forkPath, action.targetPath);
-  if (fs22.existsSync(targetFull)) {
+  const targetFull = path28.resolve(forkPath, action.targetPath);
+  if (fs21.existsSync(targetFull)) {
     return { action, status: "skipped", detail: "File already exists in fork" };
   }
   const upstreamRoot = resolveUpstreamAssetRoot(kitId);
-  const upstreamFull = path29.resolve(upstreamRoot, action.targetPath);
-  if (!fs22.existsSync(upstreamFull)) {
+  const upstreamFull = path28.resolve(upstreamRoot, action.targetPath);
+  if (!fs21.existsSync(upstreamFull)) {
     return { action, status: "skipped", detail: "Upstream file not found \u2014 skipped" };
   }
   const content = readFileIfExists(upstreamFull);
   if (content === null) {
     return { action, status: "skipped", detail: "Could not read upstream file (binary?) \u2014 skipped" };
   }
-  fs22.mkdirSync(path29.dirname(targetFull), { recursive: true });
-  fs22.writeFileSync(targetFull, content, "utf8");
+  fs21.mkdirSync(path28.dirname(targetFull), { recursive: true });
+  fs21.writeFileSync(targetFull, content, "utf8");
   return { action, status: "applied", detail: `Added ${action.targetPath}` };
 }
 function execUpdatePackageDeps(action, forkPath, kitId) {
-  const forkPkgPath = path29.resolve(forkPath, "package.json");
-  if (!fs22.existsSync(forkPkgPath)) {
+  const forkPkgPath = path28.resolve(forkPath, "package.json");
+  if (!fs21.existsSync(forkPkgPath)) {
     return { action, status: "skipped", detail: "No package.json in fork" };
   }
   const upstreamRoot = resolveUpstreamAssetRoot(kitId);
-  const upstreamPkgPath = path29.resolve(upstreamRoot, "package.json");
-  if (!fs22.existsSync(upstreamPkgPath)) {
+  const upstreamPkgPath = path28.resolve(upstreamRoot, "package.json");
+  if (!fs21.existsSync(upstreamPkgPath)) {
     return { action, status: "skipped", detail: "No package.json in upstream kit" };
   }
   let forkPkg;
   let upstreamPkg;
   try {
-    forkPkg = JSON.parse(fs22.readFileSync(forkPkgPath, "utf8"));
-    upstreamPkg = JSON.parse(fs22.readFileSync(upstreamPkgPath, "utf8"));
+    forkPkg = JSON.parse(fs21.readFileSync(forkPkgPath, "utf8"));
+    upstreamPkg = JSON.parse(fs21.readFileSync(upstreamPkgPath, "utf8"));
   } catch {
     return { action, status: "error", detail: "Failed to parse package.json" };
   }
@@ -18433,7 +13989,7 @@ function execUpdatePackageDeps(action, forkPath, kitId) {
   const updated = { ...forkPkg };
   if (mergedDeps) updated.dependencies = mergedDeps;
   if (mergedDevDeps) updated.devDependencies = mergedDevDeps;
-  fs22.writeFileSync(forkPkgPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs21.writeFileSync(forkPkgPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return { action, status: "applied", detail: "Merged upstream dependency additions" };
 }
 function mergeAddOnlyDeps(fork, upstream) {
@@ -18449,20 +14005,20 @@ function mergeAddOnlyDeps(fork, upstream) {
   return changed ? merged : null;
 }
 function execPatchManifest(action, forkPath, kitId) {
-  const forkManifestPath = path29.resolve(forkPath, "kit.json");
-  if (!fs22.existsSync(forkManifestPath)) {
+  const forkManifestPath = path28.resolve(forkPath, "kit.json");
+  if (!fs21.existsSync(forkManifestPath)) {
     return { action, status: "skipped", detail: "No kit.json in fork" };
   }
   const upstreamRoot = resolveUpstreamAssetRoot(kitId);
-  const upstreamManifestPath = path29.resolve(upstreamRoot, "kit.json");
-  if (!fs22.existsSync(upstreamManifestPath)) {
+  const upstreamManifestPath = path28.resolve(upstreamRoot, "kit.json");
+  if (!fs21.existsSync(upstreamManifestPath)) {
     return { action, status: "skipped", detail: "No kit.json in upstream kit" };
   }
   let forkManifest;
   let upstreamManifest;
   try {
-    forkManifest = JSON.parse(fs22.readFileSync(forkManifestPath, "utf8"));
-    upstreamManifest = JSON.parse(fs22.readFileSync(upstreamManifestPath, "utf8"));
+    forkManifest = JSON.parse(fs21.readFileSync(forkManifestPath, "utf8"));
+    upstreamManifest = JSON.parse(fs21.readFileSync(upstreamManifestPath, "utf8"));
   } catch {
     return { action, status: "error", detail: "Failed to parse kit.json" };
   }
@@ -18478,7 +14034,7 @@ function execPatchManifest(action, forkPath, kitId) {
   if (patched.length === 0) {
     return { action, status: "skipped", detail: "kit.json alignment fields already match" };
   }
-  fs22.writeFileSync(forkManifestPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs21.writeFileSync(forkManifestPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return { action, status: "applied", detail: `Patched kit.json fields: ${patched.join(", ")}` };
 }
 
@@ -18487,37 +14043,37 @@ init_fork_policy();
 init_fork_trace();
 init_fork_remote();
 init_github_resolver();
-init_client2();
+init_client();
 function resolveInForkJobsDir(forkPath) {
-  return path31.resolve(resolveInForkStateDir(forkPath), "jobs");
+  return path30.resolve(resolveInForkStateDir(forkPath), "jobs");
 }
 function resolveJobPath(jobId, kitId, forkId) {
   const forkPath = lookupKitForkPath(kitId, forkId);
   if (forkPath) {
-    return path31.resolve(resolveInForkJobsDir(forkPath), `${jobId}.json`);
+    return path30.resolve(resolveInForkJobsDir(forkPath), `${jobId}.json`);
   }
-  return path31.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
+  return path30.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
 }
 function resolveOrphanJobPath(jobId) {
-  return path31.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
+  return path30.resolve(resolveKitForksOrphanJobsDir(), `${jobId}.json`);
 }
 function generateJobId() {
   return `kfj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function parseJobFile(p35) {
-  if (!fs24.existsSync(p35)) return null;
+  if (!fs23.existsSync(p35)) return null;
   try {
-    return JSON.parse(fs24.readFileSync(p35, "utf8"));
+    return JSON.parse(fs23.readFileSync(p35, "utf8"));
   } catch {
     return null;
   }
 }
 function findJobPath(jobId) {
   const orphanPath = resolveOrphanJobPath(jobId);
-  if (fs24.existsSync(orphanPath)) return orphanPath;
+  if (fs23.existsSync(orphanPath)) return orphanPath;
   for (const reg of listKitForkRegistrations()) {
-    const p35 = path31.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
-    if (fs24.existsSync(p35)) return p35;
+    const p35 = path30.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
+    if (fs23.existsSync(p35)) return p35;
   }
   return null;
 }
@@ -18527,8 +14083,8 @@ function readJob(jobId) {
 }
 function writeJob(job) {
   const p35 = resolveJobPath(job.jobId, job.kitId, job.forkId);
-  fs24.mkdirSync(path31.dirname(p35), { recursive: true });
-  fs24.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
+  fs23.mkdirSync(path30.dirname(p35), { recursive: true });
+  fs23.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function patchJob(jobId, status, patch) {
   const existingPath = findJobPath(jobId);
@@ -18537,30 +14093,30 @@ function patchJob(jobId, status, patch) {
   if (!job) return null;
   const updated = { ...job, ...patch, status };
   const targetPath = resolveJobPath(updated.jobId, updated.kitId, updated.forkId);
-  if (path31.resolve(existingPath) !== path31.resolve(targetPath)) {
-    fs24.mkdirSync(path31.dirname(targetPath), { recursive: true });
-    fs24.rmSync(existingPath, { force: true });
+  if (path30.resolve(existingPath) !== path30.resolve(targetPath)) {
+    fs23.mkdirSync(path30.dirname(targetPath), { recursive: true });
+    fs23.rmSync(existingPath, { force: true });
   }
-  fs24.mkdirSync(path31.dirname(targetPath), { recursive: true });
-  fs24.writeFileSync(targetPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs23.mkdirSync(path30.dirname(targetPath), { recursive: true });
+  fs23.writeFileSync(targetPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function collectAllJobFiles() {
   const files = [];
   for (const reg of listKitForkRegistrations()) {
     const dir = resolveInForkJobsDir(reg.forkPath);
-    if (!fs24.existsSync(dir)) continue;
-    for (const entry of fs24.readdirSync(dir, { withFileTypes: true })) {
+    if (!fs23.existsSync(dir)) continue;
+    for (const entry of fs23.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
-        files.push(path31.resolve(dir, entry.name));
+        files.push(path30.resolve(dir, entry.name));
       }
     }
   }
   const orphanDir = resolveKitForksOrphanJobsDir();
-  if (fs24.existsSync(orphanDir)) {
-    for (const entry of fs24.readdirSync(orphanDir, { withFileTypes: true })) {
+  if (fs23.existsSync(orphanDir)) {
+    for (const entry of fs23.readdirSync(orphanDir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
-        files.push(path31.resolve(orphanDir, entry.name));
+        files.push(path30.resolve(orphanDir, entry.name));
       }
     }
   }
@@ -18598,7 +14154,7 @@ function pruneKitForkSyncJobs(retentionMs = 7 * 24 * 60 * 60 * 1e3) {
     if (!terminal.includes(job.status)) continue;
     const ts = new Date(job.completedAt ?? job.createdAt).getTime();
     if (ts < cutoff) {
-      fs24.rmSync(filePath, { force: true });
+      fs23.rmSync(filePath, { force: true });
       pruned++;
     }
   }
@@ -18844,7 +14400,7 @@ function dispatchKitForkSyncJobBackground(forkId, kitId, opts = {}) {
 
 // src/commands/kit-fork-remote.ts
 init_github_resolver();
-init_client2();
+init_client();
 init_service();
 async function requireGithubToken() {
   const resolved = await resolveGithubAccessToken();
@@ -18858,8 +14414,8 @@ async function requireGithubToken() {
 async function kitForkCreate(opts) {
   const accessToken = await requireGithubToken();
   const upstream = parseRepoRef(opts.upstream);
-  const absOut = path32.resolve(opts.out);
-  if (fs25.existsSync(absOut) && fs25.readdirSync(absOut).length > 0) {
+  const absOut = path31.resolve(opts.out);
+  if (fs24.existsSync(absOut) && fs24.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   p17.log.step(`Forking ${upstream.owner}/${upstream.repo} on GitHub...`);
@@ -18918,8 +14474,8 @@ async function kitForkCreate(opts) {
     return;
   }
   p17.outro(
-    `Fork ready at ${pc26.cyan(absOut)} \u2014 remote: ${pc26.cyan(forkResult.htmlUrl)}.
-Next: ${pc26.dim("growthub kit fork status " + reg.forkId)}.`
+    `Fork ready at ${pc19.cyan(absOut)} \u2014 remote: ${pc19.cyan(forkResult.htmlUrl)}.
+Next: ${pc19.dim("growthub kit fork status " + reg.forkId)}.`
   );
 }
 async function kitForkConnect(opts) {
@@ -18947,7 +14503,7 @@ async function kitForkConnect(opts) {
   if (opts.json) {
     console.log(JSON.stringify({ status: "ok", forkId: reg.forkId, remote }, null, 2));
   } else {
-    p17.log.success(`Connected fork ${pc26.cyan(reg.forkId)} to ${pc26.cyan(`${repo.owner}/${repo.repo}`)}.`);
+    p17.log.success(`Connected fork ${pc19.cyan(reg.forkId)} to ${pc19.cyan(`${repo.owner}/${repo.repo}`)}.`);
   }
 }
 async function kitForkPolicyCommand(opts) {
@@ -18992,10 +14548,10 @@ async function kitForkPolicyCommand(opts) {
     return;
   }
   if (opts.dryRun) {
-    p17.log.info(`${pc26.yellow("Dry run \u2014 no changes written.")} Preview below:`);
+    p17.log.info(`${pc19.yellow("Dry run \u2014 no changes written.")} Preview below:`);
   }
   p17.log.message(
-    `Policy for fork ${pc26.cyan(reg.forkId)}:
+    `Policy for fork ${pc19.cyan(reg.forkId)}:
   autoApprove:            ${policy.autoApprove}
   autoApproveDepUpdates:  ${policy.autoApproveDepUpdates}
   remoteSyncMode:         ${policy.remoteSyncMode}
@@ -19031,7 +14587,7 @@ function validateProtectedPath(raw) {
   return void 0;
 }
 async function runInteractivePolicyEditor(forkId, current) {
-  p17.intro(pc26.bold(`Edit policy: ${forkId}`));
+  p17.intro(pc19.bold(`Edit policy: ${forkId}`));
   const autoApprove = await p17.select({
     message: "Auto-approve scaffold additions and modifications:",
     initialValue: current.autoApprove,
@@ -19081,7 +14637,7 @@ async function runInteractivePolicyEditor(forkId, current) {
   }
   let untouchablePaths = [...current.untouchablePaths];
   while (true) {
-    const currentList = untouchablePaths.length > 0 ? untouchablePaths.join(", ") : pc26.dim("(none)");
+    const currentList = untouchablePaths.length > 0 ? untouchablePaths.join(", ") : pc19.dim("(none)");
     const action = await p17.select({
       message: `Protected paths \u2014 never modified by heal  [current: ${currentList}]`,
       options: [
@@ -19198,7 +14754,7 @@ function kitForkTraceCommand(opts) {
   }
   for (const e of events) {
     const ts = e.timestamp.replace("T", " ").replace("Z", "");
-    console.log(`${pc26.dim(ts)}  ${pc26.cyan(e.type)}  ${e.summary}`);
+    console.log(`${pc19.dim(ts)}  ${pc19.cyan(e.type)}  ${e.summary}`);
   }
 }
 async function kitForkConfirmCommand(opts) {
@@ -19214,7 +14770,7 @@ async function kitForkConfirmCommand(opts) {
   if (opts.json) {
     console.log(JSON.stringify({ status: "ok", jobId: opts.jobId, finalStatus: completed.status }, null, 2));
   } else {
-    p17.log.success(`Job ${pc26.cyan(opts.jobId)} resumed \u2014 status=${completed.status}.`);
+    p17.log.success(`Job ${pc19.cyan(opts.jobId)} resumed \u2014 status=${completed.status}.`);
   }
 }
 function findRegistrationOrThrow(forkId) {
@@ -19239,7 +14795,7 @@ Examples:
 `).action(async (forkIdArg, opts) => {
     const forkId = forkIdArg ?? opts.forkId;
     if (!forkId) {
-      console.error(pc26.red("Missing fork-id. Pass it as an argument or with --fork-id."));
+      console.error(pc19.red("Missing fork-id. Pass it as an argument or with --fork-id."));
       process.exitCode = 1;
       return;
     }
@@ -19262,10 +14818,10 @@ Examples:
 // src/commands/kit-fork.ts
 init_banner();
 init_table_renderer();
-import pc29 from "picocolors";
+import pc22 from "picocolors";
 
 // src/utils/progress.ts
-import pc28 from "picocolors";
+import pc21 from "picocolors";
 function renderProgressBar(current, total, opts = {}) {
   const width = opts.width ?? 24;
   const filled = opts.filledChar ?? "\u2588";
@@ -19278,7 +14834,7 @@ function renderProgressBar(current, total, opts = {}) {
   const filledCells = Math.round(ratio * width);
   const bar = filled.repeat(filledCells) + empty.repeat(Math.max(0, width - filledCells));
   const pct = Math.round(ratio * 100);
-  const painted = color ? pct >= 80 ? pc28.green(bar) : pct >= 50 ? pc28.yellow(bar) : pct > 0 ? pc28.red(bar) : pc28.dim(bar) : bar;
+  const painted = color ? pct >= 80 ? pc21.green(bar) : pct >= 50 ? pc21.yellow(bar) : pct > 0 ? pc21.red(bar) : pc21.dim(bar) : bar;
   if (!showCounts) return `[${painted}]`;
   return `[${painted}] ${safeCurrent}/${safeTotal || 0} (${pct}%)`;
 }
@@ -19305,19 +14861,19 @@ init_fork_trace();
 init_home();
 init_kit_forks_home();
 import crypto from "node:crypto";
-import fs26 from "node:fs";
+import fs25 from "node:fs";
 import os8 from "node:os";
-import path33 from "node:path";
+import path32 from "node:path";
 function resolveAuthorityHomeDir() {
   const env = process.env.GROWTHUB_AUTHORITY_HOME?.trim();
-  if (env) return path33.resolve(expandHomePrefix(env));
-  return path33.resolve(os8.homedir(), ".growthub", "authority");
+  if (env) return path32.resolve(expandHomePrefix(env));
+  return path32.resolve(os8.homedir(), ".growthub", "authority");
 }
 function resolveAuthorityIssuersPath() {
-  return path33.resolve(resolveAuthorityHomeDir(), "issuers.json");
+  return path32.resolve(resolveAuthorityHomeDir(), "issuers.json");
 }
 function resolveInForkAuthorityPath(forkPath) {
-  return path33.resolve(resolveInForkStateDir(forkPath), "authority.json");
+  return path32.resolve(resolveInForkStateDir(forkPath), "authority.json");
 }
 function canonicalize(value) {
   if (value === null) return "null";
@@ -19367,9 +14923,9 @@ function computePolicyHash(policy) {
 }
 function readIssuerRegistry() {
   const p35 = resolveAuthorityIssuersPath();
-  if (!fs26.existsSync(p35)) return { version: 1, issuers: [] };
+  if (!fs25.existsSync(p35)) return { version: 1, issuers: [] };
   try {
-    const parsed = JSON.parse(fs26.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs25.readFileSync(p35, "utf8"));
     if (!parsed || !Array.isArray(parsed.issuers)) return { version: 1, issuers: [] };
     return { version: 1, issuers: parsed.issuers.filter(isValidIssuer) };
   } catch {
@@ -19383,8 +14939,8 @@ function isValidIssuer(x) {
 }
 function writeIssuerRegistry(registry) {
   const p35 = resolveAuthorityIssuersPath();
-  fs26.mkdirSync(path33.dirname(p35), { recursive: true });
-  fs26.writeFileSync(p35, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
+  fs25.mkdirSync(path32.dirname(p35), { recursive: true });
+  fs25.writeFileSync(p35, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
 }
 function upsertIssuer(issuer) {
   if (!isValidIssuer(issuer)) {
@@ -19457,11 +15013,11 @@ function isWellFormedEnvelope(x) {
 }
 function readForkAuthorityState(forkPath) {
   const p35 = resolveInForkAuthorityPath(forkPath);
-  if (!fs26.existsSync(p35)) {
+  if (!fs25.existsSync(p35)) {
     return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
   }
   try {
-    const parsed = JSON.parse(fs26.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs25.readFileSync(p35, "utf8"));
     if (!parsed || parsed.version !== 1) {
       return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
     }
@@ -19472,8 +15028,8 @@ function readForkAuthorityState(forkPath) {
 }
 function writeForkAuthorityState(forkPath, state) {
   const p35 = resolveInForkAuthorityPath(forkPath);
-  fs26.mkdirSync(path33.dirname(p35), { recursive: true });
-  fs26.writeFileSync(p35, JSON.stringify(state, null, 2) + "\n", "utf8");
+  fs25.mkdirSync(path32.dirname(p35), { recursive: true });
+  fs25.writeFileSync(p35, JSON.stringify(state, null, 2) + "\n", "utf8");
 }
 function attachAuthorityEnvelope(forkPath, envelope, options = {}) {
   const verification = verifyAuthorityEnvelope(envelope, options);
@@ -19538,69 +15094,69 @@ function describePolicyAttestation(forkPath, policy, options = {}) {
 
 // src/commands/kit-fork.ts
 function hr(width = 72) {
-  return pc29.dim("\u2500".repeat(width));
+  return pc22.dim("\u2500".repeat(width));
 }
 function severityBadge(s) {
   switch (s) {
     case "critical":
-      return pc29.red("\u25CF critical");
+      return pc22.red("\u25CF critical");
     case "warning":
-      return pc29.yellow("\u25CF warning");
+      return pc22.yellow("\u25CF warning");
     case "info":
-      return pc29.cyan("\u25CF info");
+      return pc22.cyan("\u25CF info");
     default:
-      return pc29.green("\u25CF in-sync");
+      return pc22.green("\u25CF in-sync");
   }
 }
 function jobStatusBadge(status) {
   switch (status) {
     case "running":
-      return pc29.cyan("\u27F3 running");
+      return pc22.cyan("\u27F3 running");
     case "completed":
-      return pc29.green("\u2713 completed");
+      return pc22.green("\u2713 completed");
     case "failed":
-      return pc29.red("\u2717 failed");
+      return pc22.red("\u2717 failed");
     case "cancelled":
-      return pc29.dim("\u25CB cancelled");
+      return pc22.dim("\u25CB cancelled");
     default:
-      return pc29.dim("\u2026 pending");
+      return pc22.dim("\u2026 pending");
   }
 }
 function formatDate(iso) {
-  if (!iso) return pc29.dim("\u2014");
+  if (!iso) return pc22.dim("\u2014");
   return new Date(iso).toLocaleString();
 }
 function printDriftReport(report) {
   console.log("");
   console.log(
-    pc29.bold(`Fork: ${report.forkId}`) + "  " + severityBadge(report.overallSeverity)
+    pc22.bold(`Fork: ${report.forkId}`) + "  " + severityBadge(report.overallSeverity)
   );
   console.log(
-    pc29.dim(`Kit: ${report.kitId}`) + "  " + pc29.dim(`fork v${report.forkVersion} \u2192 upstream v${report.upstreamVersion}`)
+    pc22.dim(`Kit: ${report.kitId}`) + "  " + pc22.dim(`fork v${report.forkVersion} \u2192 upstream v${report.upstreamVersion}`)
   );
   console.log(hr());
   if (report.fileDrifts.length === 0 && report.packageDrifts.length === 0) {
-    console.log(pc29.green("  No drift detected \u2014 fork is in sync."));
+    console.log(pc22.green("  No drift detected \u2014 fork is in sync."));
   }
   if (report.fileDrifts.length > 0) {
-    console.log(pc29.bold("\n  File Drift:"));
+    console.log(pc22.bold("\n  File Drift:"));
     for (const d of report.fileDrifts) {
-      const badge2 = d.changeType === "added" ? pc29.cyan("  +") : d.changeType === "modified" ? pc29.yellow("  ~") : pc29.red("  -");
-      console.log(`${badge2} ${d.relativePath}  ${pc29.dim(d.description)}`);
+      const badge2 = d.changeType === "added" ? pc22.cyan("  +") : d.changeType === "modified" ? pc22.yellow("  ~") : pc22.red("  -");
+      console.log(`${badge2} ${d.relativePath}  ${pc22.dim(d.description)}`);
     }
   }
   if (report.packageDrifts.length > 0) {
-    console.log(pc29.bold("\n  Package Drift:"));
+    console.log(pc22.bold("\n  Package Drift:"));
     for (const d of report.packageDrifts) {
-      const badge2 = d.changeType === "added" ? pc29.cyan("  +") : d.changeType === "updated" ? pc29.yellow("  ~") : pc29.red("  -");
+      const badge2 = d.changeType === "added" ? pc22.cyan("  +") : d.changeType === "updated" ? pc22.yellow("  ~") : pc22.red("  -");
       const ver = d.forkVersion ? `${d.forkVersion} \u2192 ${d.upstreamVersion}` : `(new) ${d.upstreamVersion}`;
-      console.log(`${badge2} ${d.packageName}  ${pc29.dim(ver)}`);
+      console.log(`${badge2} ${d.packageName}  ${pc22.dim(ver)}`);
     }
   }
   if (report.customSkillsDetected.length > 0) {
-    console.log(pc29.bold("\n  Custom Skills Detected (always preserved):"));
+    console.log(pc22.bold("\n  Custom Skills Detected (always preserved):"));
     for (const s of report.customSkillsDetected) {
-      console.log(`  ${pc29.magenta("\u2691")} ${s}`);
+      console.log(`  ${pc22.magenta("\u2691")} ${s}`);
     }
   }
   console.log("");
@@ -19609,24 +15165,24 @@ function printDriftReport(report) {
 function printHealPlan(plan) {
   console.log("");
   console.log(
-    pc29.bold(`Heal Plan: ${plan.forkId}`) + pc29.dim(`  v${plan.fromVersion} \u2192 v${plan.toVersion}`)
+    pc22.bold(`Heal Plan: ${plan.forkId}`) + pc22.dim(`  v${plan.fromVersion} \u2192 v${plan.toVersion}`)
   );
-  console.log(pc29.dim("Estimated risk: ") + severityBadge(plan.estimatedRisk));
+  console.log(pc22.dim("Estimated risk: ") + severityBadge(plan.estimatedRisk));
   console.log(hr());
   if (plan.actions.length === 0) {
-    console.log(pc29.green("  No actions needed."));
+    console.log(pc22.green("  No actions needed."));
   } else {
-    console.log(pc29.bold(`  ${plan.actions.length} action(s) planned:`));
+    console.log(pc22.bold(`  ${plan.actions.length} action(s) planned:`));
     for (const a of plan.actions) {
-      const icon = a.actionType === "skip_user_modified" ? pc29.dim("  \u25CB") : pc29.cyan("  \u2192");
+      const icon = a.actionType === "skip_user_modified" ? pc22.dim("  \u25CB") : pc22.cyan("  \u2192");
       console.log(`${icon} ${a.description}`);
     }
   }
   if (plan.preservedPaths.length > 0) {
-    console.log(pc29.bold(`
+    console.log(pc22.bold(`
   ${plan.preservedPaths.length} path(s) preserved (user modifications kept):`));
     for (const pp of plan.preservedPaths) {
-      console.log(pc29.dim(`  \u2691 ${pp}`));
+      console.log(pc22.dim(`  \u2691 ${pp}`));
     }
   }
   console.log("");
@@ -19635,13 +15191,13 @@ function printHealPlan(plan) {
 function statusIconForDrift(severity) {
   switch (severity) {
     case "critical":
-      return pc29.red("\u2717 drift-major");
+      return pc22.red("\u2717 drift-major");
     case "warning":
-      return pc29.yellow("\u26A0 drift-warn");
+      return pc22.yellow("\u26A0 drift-warn");
     case "info":
-      return pc29.cyan("~ drift-minor");
+      return pc22.cyan("~ drift-minor");
     default:
-      return pc29.green("\u2713 synced");
+      return pc22.green("\u2713 synced");
   }
 }
 function summarizeFork(fork, opts = {}) {
@@ -19691,7 +15247,7 @@ function renderForkTable(summaries) {
         key: "forkId",
         label: "Fork ID",
         maxWidth: 26,
-        format: (v, row) => pc29.cyan(row.label ?? String(v))
+        format: (v, row) => pc22.cyan(row.label ?? String(v))
       },
       {
         key: "kitId",
@@ -19706,12 +15262,12 @@ function renderForkTable(summaries) {
       {
         key: "upstreamVersion",
         label: "Upstream",
-        format: (v) => v ? `v${v}` : pc29.dim("\u2014")
+        format: (v) => v ? `v${v}` : pc22.dim("\u2014")
       },
       {
         key: "severity",
         label: "Status",
-        format: (v) => v === "unknown" ? pc29.dim("\u25CB unknown") : statusIconForDrift(v)
+        format: (v) => v === "unknown" ? pc22.dim("\u25CB unknown") : statusIconForDrift(v)
       },
       {
         key: "protectedPaths",
@@ -19719,14 +15275,14 @@ function renderForkTable(summaries) {
         maxWidth: 18,
         format: (v) => {
           const arr = v;
-          if (!arr || arr.length === 0) return pc29.dim("\u2014");
+          if (!arr || arr.length === 0) return pc22.dim("\u2014");
           return arr.join(",");
         }
       },
       {
         key: "lastHealAt",
         label: "Last Heal",
-        format: (v) => v ? formatRelative(v) : pc29.dim("\u2014")
+        format: (v) => v ? formatRelative(v) : pc22.dim("\u2014")
       }
     ],
     rows: summaries,
@@ -19735,12 +15291,12 @@ function renderForkTable(summaries) {
 }
 function printForkList(forks) {
   if (forks.length === 0) {
-    console.log(pc29.dim("  No forks registered yet. Run `growthub kit fork register <path>` to get started."));
+    console.log(pc22.dim("  No forks registered yet. Run `growthub kit fork register <path>` to get started."));
     return;
   }
   const summaries = forks.map((f) => summarizeFork(f, { skipUpstreamCheck: true }));
   console.log("");
-  console.log(pc29.bold("Registered Kit Forks") + pc29.dim(`  ${forks.length} total`));
+  console.log(pc22.bold("Registered Kit Forks") + pc22.dim(`  ${forks.length} total`));
   console.log(hr());
   console.log(renderForkTable(summaries));
   console.log("");
@@ -19772,22 +15328,22 @@ function printRichHealPreview(plan, policy) {
   const g = groupHealActions(plan);
   console.log("");
   console.log(
-    pc29.bold(`Heal Plan: ${plan.forkId}`) + pc29.dim(`  v${plan.fromVersion} \u2192 v${plan.toVersion}`)
+    pc22.bold(`Heal Plan: ${plan.forkId}`) + pc22.dim(`  v${plan.fromVersion} \u2192 v${plan.toVersion}`)
   );
-  console.log(pc29.dim("Estimated risk: ") + severityBadge(plan.estimatedRisk));
+  console.log(pc22.dim("Estimated risk: ") + severityBadge(plan.estimatedRisk));
   console.log(hr());
   if (g.safeAdd.length > 0) {
-    console.log(pc29.bold(`
+    console.log(pc22.bold(`
   SAFE ADDITIONS (${g.safeAdd.length}):`));
     for (const a of g.safeAdd) {
-      console.log(`    ${pc29.green("+")} ${a.targetPath}  ${pc29.dim(a.description)}`);
+      console.log(`    ${pc22.green("+")} ${a.targetPath}  ${pc22.dim(a.description)}`);
     }
   }
   if (g.safeUpdate.length > 0) {
-    console.log(pc29.bold(`
+    console.log(pc22.bold(`
   SAFE UPDATES (${g.safeUpdate.length}):`));
     for (const a of g.safeUpdate) {
-      console.log(`    ${pc29.yellow("~")} ${a.targetPath}  ${pc29.dim(a.description)}`);
+      console.log(`    ${pc22.yellow("~")} ${a.targetPath}  ${pc22.dim(a.description)}`);
     }
   }
   if (g.protected.length > 0 || plan.preservedPaths.length > 0) {
@@ -19795,36 +15351,36 @@ function printRichHealPreview(plan, policy) {
       ...g.protected.map((a) => a.targetPath),
       ...plan.preservedPaths
     ]);
-    console.log(pc29.bold(`
+    console.log(pc22.bold(`
   PROTECTED (${paths.size}):`));
     for (const pth of paths) {
       const reason = policy && isUntouchable(policy, pth) ? "policy.untouchablePaths" : "user-modified";
-      console.log(`    ${pc29.dim("\u25CB")} ${pth}  ${pc29.dim(`(${reason})`)}`);
+      console.log(`    ${pc22.dim("\u25CB")} ${pth}  ${pc22.dim(`(${reason})`)}`);
     }
   }
   if (g.unresolved.length > 0) {
-    console.log(pc29.bold(`
+    console.log(pc22.bold(`
   UNRESOLVED \u2014 needs confirmation (${g.unresolved.length}):`));
     for (const a of g.unresolved) {
-      console.log(`    ${pc29.red("!")} ${a.targetPath}  ${pc29.dim(a.confirmationReason ?? "policy.confirmBeforeChange")}`);
+      console.log(`    ${pc22.red("!")} ${a.targetPath}  ${pc22.dim(a.confirmationReason ?? "policy.confirmBeforeChange")}`);
     }
   }
   console.log("");
-  console.log(pc29.bold("  DECISION:"));
+  console.log(pc22.bold("  DECISION:"));
   const applyCount = g.safeAdd.length + g.safeUpdate.length;
   const skipCount = g.protected.length + plan.preservedPaths.length;
-  console.log(`    ${pc29.green(String(applyCount))} will apply  \xB7  ${pc29.dim(String(skipCount) + " protected")}  \xB7  ${g.unresolved.length > 0 ? pc29.red(String(g.unresolved.length) + " unresolved") : pc29.dim("0 unresolved")}`);
+  console.log(`    ${pc22.green(String(applyCount))} will apply  \xB7  ${pc22.dim(String(skipCount) + " protected")}  \xB7  ${g.unresolved.length > 0 ? pc22.red(String(g.unresolved.length) + " unresolved") : pc22.dim("0 unresolved")}`);
   console.log(hr());
 }
 function printNextStepsAfterStatus(forkId, hasDrift) {
   console.log("");
-  console.log(pc29.bold("  Next steps:"));
+  console.log(pc22.bold("  Next steps:"));
   if (hasDrift) {
-    console.log(`    ${pc29.cyan("growthub kit fork heal " + forkId + " --preview")}   ${pc29.dim("rich heal preview")}`);
-    console.log(`    ${pc29.cyan("growthub kit fork heal " + forkId)}             ${pc29.dim("apply interactively")}`);
+    console.log(`    ${pc22.cyan("growthub kit fork heal " + forkId + " --preview")}   ${pc22.dim("rich heal preview")}`);
+    console.log(`    ${pc22.cyan("growthub kit fork heal " + forkId)}             ${pc22.dim("apply interactively")}`);
   }
-  console.log(`    ${pc29.cyan("growthub kit fork policy " + forkId)}           ${pc29.dim("interactive policy editor")}`);
-  console.log(`    ${pc29.cyan("growthub kit fork history " + forkId)}          ${pc29.dim("audit timeline")}`);
+  console.log(`    ${pc22.cyan("growthub kit fork policy " + forkId)}           ${pc22.dim("interactive policy editor")}`);
+  console.log(`    ${pc22.cyan("growthub kit fork history " + forkId)}          ${pc22.dim("audit timeline")}`);
   console.log("");
 }
 function estimateJobProgress(job) {
@@ -19844,13 +15400,13 @@ function renderJobTable(jobs) {
         key: "jobId",
         label: "Job ID",
         maxWidth: 28,
-        format: (v) => pc29.cyan(String(v))
+        format: (v) => pc22.cyan(String(v))
       },
       {
         key: "forkId",
         label: "Fork ID",
         maxWidth: 22,
-        format: (v) => pc29.dim(String(v))
+        format: (v) => pc22.dim(String(v))
       },
       {
         key: "status",
@@ -19864,9 +15420,9 @@ function renderJobTable(jobs) {
         format: (_v, row) => {
           const prog = estimateJobProgress(row);
           if (!prog) {
-            if (row.status === "completed") return pc29.green("\u2713 100%");
-            if (row.status === "failed") return pc29.red("\u2717");
-            return pc29.dim("\u2014");
+            if (row.status === "completed") return pc22.green("\u2713 100%");
+            if (row.status === "failed") return pc22.red("\u2717");
+            return pc22.dim("\u2014");
           }
           return renderProgressBar(prog.current, prog.total, { width: 14, showCounts: true });
         }
@@ -19882,17 +15438,17 @@ function renderJobTable(jobs) {
   });
 }
 function printJobDetail(job) {
-  console.log(`  ${jobStatusBadge(job.status)}  ${pc29.cyan(job.jobId)}  ${pc29.dim(job.forkId)}`);
+  console.log(`  ${jobStatusBadge(job.status)}  ${pc22.cyan(job.jobId)}  ${pc22.dim(job.forkId)}`);
   const prog = estimateJobProgress(job);
   if (prog) {
-    console.log(`    ${pc29.dim("Progress:")}  ${renderProgressBar(prog.current, prog.total, { width: 24 })}`);
+    console.log(`    ${pc22.dim("Progress:")}  ${renderProgressBar(prog.current, prog.total, { width: 24 })}`);
   }
   if (job.healPlan) {
-    console.log(`    ${pc29.dim("Plan:")}      ${job.healPlan.actions.length} action(s), risk=${job.healPlan.estimatedRisk}`);
+    console.log(`    ${pc22.dim("Plan:")}      ${job.healPlan.actions.length} action(s), risk=${job.healPlan.estimatedRisk}`);
   }
-  if (job.startedAt) console.log(`    ${pc29.dim("Started:")}   ${formatRelative(job.startedAt)}  (${job.startedAt})`);
-  if (job.completedAt) console.log(`    ${pc29.dim("Completed:")} ${formatRelative(job.completedAt)}  (${job.completedAt})`);
-  if (job.error) console.log(`    ${pc29.red("Error:")}     ${job.error}`);
+  if (job.startedAt) console.log(`    ${pc22.dim("Started:")}   ${formatRelative(job.startedAt)}  (${job.startedAt})`);
+  if (job.completedAt) console.log(`    ${pc22.dim("Completed:")} ${formatRelative(job.completedAt)}  (${job.completedAt})`);
+  if (job.error) console.log(`    ${pc22.red("Error:")}     ${job.error}`);
 }
 var TERMINAL_JOB_STATUSES = [
   "completed",
@@ -19902,7 +15458,7 @@ var TERMINAL_JOB_STATUSES = [
 async function watchJob(jobId, jsonMode) {
   const initial = getKitForkSyncJob(jobId);
   if (!initial) {
-    console.error(pc29.red(`Job not found: ${jobId}`));
+    console.error(pc22.red(`Job not found: ${jobId}`));
     process.exitCode = 1;
     return;
   }
@@ -19912,14 +15468,14 @@ async function watchJob(jobId, jsonMode) {
     return;
   }
   console.log("");
-  console.log(pc29.bold(`Watching job ${pc29.cyan(jobId)}`));
+  console.log(pc22.bold(`Watching job ${pc22.cyan(jobId)}`));
   console.log(hr());
   let lastStatus = null;
   let lastProgress = -1;
   while (true) {
     const job = getKitForkSyncJob(jobId);
     if (!job) {
-      console.error(pc29.red(`  Job disappeared: ${jobId}`));
+      console.error(pc22.red(`  Job disappeared: ${jobId}`));
       process.exitCode = 1;
       return;
     }
@@ -19947,18 +15503,18 @@ async function pollUntilTerminal(jobId) {
   }
 }
 function sleep(ms) {
-  return new Promise((resolve2) => setTimeout(resolve2, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function tailJobTrace(jobId, limit, jsonMode) {
   const job = getKitForkSyncJob(jobId);
   if (!job) {
-    console.error(pc29.red(`Job not found: ${jobId}`));
+    console.error(pc22.red(`Job not found: ${jobId}`));
     process.exitCode = 1;
     return;
   }
   const reg = listKitForkRegistrations().find((f) => f.forkId === job.forkId);
   if (!reg) {
-    console.error(pc29.red(`Fork not registered for job ${jobId}: ${job.forkId}`));
+    console.error(pc22.red(`Fork not registered for job ${jobId}: ${job.forkId}`));
     process.exitCode = 1;
     return;
   }
@@ -19968,22 +15524,22 @@ function tailJobTrace(jobId, limit, jsonMode) {
     return;
   }
   console.log("");
-  console.log(pc29.bold(`Trace tail: ${pc29.cyan(jobId)}`) + pc29.dim(`  ${events.length} event(s)`));
+  console.log(pc22.bold(`Trace tail: ${pc22.cyan(jobId)}`) + pc22.dim(`  ${events.length} event(s)`));
   console.log(hr());
   if (events.length === 0) {
-    console.log(pc29.dim(`  No trace events recorded for this job yet.`));
+    console.log(pc22.dim(`  No trace events recorded for this job yet.`));
     console.log("");
     return;
   }
   for (const e of events) {
     const ts = e.timestamp.replace("T", " ").replace(/\..+Z$/, "Z");
-    console.log(`  ${pc29.dim(ts)}  ${pc29.cyan("[" + e.type + "]")}  ${e.summary ?? ""}`);
+    console.log(`  ${pc22.dim(ts)}  ${pc22.cyan("[" + e.type + "]")}  ${e.summary ?? ""}`);
   }
   console.log("");
 }
 async function runKitForkHub(opts = {}) {
   printPaperclipCliBanner();
-  p18.intro(pc29.bold("Kit Fork Sync Agent"));
+  p18.intro(pc22.bold("Kit Fork Sync Agent"));
   while (true) {
     const choice = await p18.select({
       message: "What do you want to do?",
@@ -20061,7 +15617,7 @@ async function runRegisterFlow() {
     options: [
       ...kits.map((k) => ({
         value: k.id,
-        label: k.id + "  " + pc29.dim("v" + k.version),
+        label: k.id + "  " + pc22.dim("v" + k.version),
         hint: k.description
       })),
       { value: "__cancel", label: "\u2190 Cancel" }
@@ -20089,19 +15645,19 @@ async function runRegisterFlow() {
       baseVersion: kitVersion,
       label: labelInput.trim() || void 0
     });
-    spinner13.stop(pc29.green("Fork registered."));
+    spinner13.stop(pc22.green("Fork registered."));
     p18.note(
       [
-        `Fork ID:  ${pc29.cyan(reg.forkId)}`,
+        `Fork ID:  ${pc22.cyan(reg.forkId)}`,
         `Kit:      ${reg.kitId}  v${reg.baseVersion}`,
         `Path:     ${reg.forkPath}`,
         "",
-        `Next: ${pc29.cyan("growthub kit fork status " + reg.forkId)}`
+        `Next: ${pc22.cyan("growthub kit fork status " + reg.forkId)}`
       ].join("\n"),
       "Registration complete"
     );
   } catch (err) {
-    spinner13.stop(pc29.red("Registration failed."));
+    spinner13.stop(pc22.red("Registration failed."));
     p18.log.error(err.message);
   }
 }
@@ -20119,7 +15675,7 @@ async function runStatusFlow() {
     options: [
       ...forks.map((f) => ({
         value: f.forkId,
-        label: (f.label ?? f.forkId) + "  " + pc29.dim("v" + f.baseVersion),
+        label: (f.label ?? f.forkId) + "  " + pc22.dim("v" + f.baseVersion),
         hint: f.kitId
       })),
       { value: "__back", label: "\u2190 Back" }
@@ -20135,10 +15691,10 @@ async function runStatusFlow() {
   spinner13.start("Detecting drift...");
   try {
     const report = detectKitForkDrift(reg);
-    spinner13.stop(pc29.green("Analysis complete."));
+    spinner13.stop(pc22.green("Analysis complete."));
     printDriftReport(report);
   } catch (err) {
-    spinner13.stop(pc29.red("Drift detection failed."));
+    spinner13.stop(pc22.red("Drift detection failed."));
     p18.log.error(err.message);
   }
 }
@@ -20153,7 +15709,7 @@ async function runHealFlow() {
     options: [
       ...forks.map((f) => ({
         value: f.forkId,
-        label: (f.label ?? f.forkId) + "  " + pc29.dim("v" + f.baseVersion),
+        label: (f.label ?? f.forkId) + "  " + pc22.dim("v" + f.baseVersion),
         hint: f.kitId
       })),
       { value: "__back", label: "\u2190 Back" }
@@ -20172,7 +15728,7 @@ async function runHealFlow() {
     driftReport = detectKitForkDrift(reg);
     driftSpinner.stop("Drift analysis complete.");
   } catch (err) {
-    driftSpinner.stop(pc29.red("Drift detection failed."));
+    driftSpinner.stop(pc22.red("Drift detection failed."));
     p18.log.error(err.message);
     return;
   }
@@ -20201,9 +15757,9 @@ async function runHealFlow() {
     const jobId = dispatchKitForkSyncJobBackground(reg.forkId, reg.kitId);
     p18.note(
       [
-        `Job ID: ${pc29.cyan(jobId)}`,
+        `Job ID: ${pc22.cyan(jobId)}`,
         "",
-        `Check: ${pc29.cyan("growthub kit fork jobs")}`
+        `Check: ${pc22.cyan("growthub kit fork jobs")}`
       ].join("\n"),
       "Background sync dispatched"
     );
@@ -20219,16 +15775,16 @@ async function runHealFlow() {
     }
   });
   healSpinner.stop(
-    job.status === "completed" ? pc29.green(isDryRun ? "Dry run complete." : "Heal complete.") : pc29.red("Heal encountered errors.")
+    job.status === "completed" ? pc22.green(isDryRun ? "Dry run complete." : "Heal complete.") : pc22.red("Heal encountered errors.")
   );
   if (job.healResult) {
     const r = job.healResult;
     console.log("");
-    console.log(pc29.bold("Result:"));
-    console.log(`  ${pc29.green("Applied:")} ${r.appliedCount}  ${pc29.dim("Skipped:")} ${r.skippedCount}  ${r.errorCount > 0 ? pc29.red("Errors: " + r.errorCount) : pc29.dim("Errors: 0")}`);
+    console.log(pc22.bold("Result:"));
+    console.log(`  ${pc22.green("Applied:")} ${r.appliedCount}  ${pc22.dim("Skipped:")} ${r.skippedCount}  ${r.errorCount > 0 ? pc22.red("Errors: " + r.errorCount) : pc22.dim("Errors: 0")}`);
     for (const ar of r.actionResults) {
       if (ar.status === "error") {
-        console.log(`  ${pc29.red("  \u2717")} ${ar.action.targetPath}: ${ar.detail}`);
+        console.log(`  ${pc22.red("  \u2717")} ${ar.action.targetPath}: ${ar.detail}`);
       }
     }
     console.log("");
@@ -20245,12 +15801,12 @@ async function runJobsFlow() {
       return;
     }
     console.log("");
-    console.log(pc29.bold("Kit Fork Sync Jobs") + pc29.dim(`  ${jobs.length} total`));
+    console.log(pc22.bold("Kit Fork Sync Jobs") + pc22.dim(`  ${jobs.length} total`));
     console.log(hr());
     for (const job of jobs.slice(-10).reverse()) {
-      console.log(`  ${jobStatusBadge(job.status)}  ${pc29.cyan(job.jobId)}  ${pc29.dim(job.forkId)}`);
-      if (job.completedAt) console.log(`    ${pc29.dim("Completed:")} ${formatDate(job.completedAt)}`);
-      if (job.error) console.log(`    ${pc29.red("Error:")} ${job.error}`);
+      console.log(`  ${jobStatusBadge(job.status)}  ${pc22.cyan(job.jobId)}  ${pc22.dim(job.forkId)}`);
+      if (job.completedAt) console.log(`    ${pc22.dim("Completed:")} ${formatDate(job.completedAt)}`);
+      if (job.error) console.log(`    ${pc22.red("Error:")} ${job.error}`);
     }
     console.log("");
     console.log(hr());
@@ -20367,14 +15923,14 @@ function addForkSubcommands(parentCmd) {
       }
     }
     if (!kitId) {
-      console.error(pc29.yellow("Could not auto-detect kit ID from kit.json.  Use --kit <kit-id>."));
-      console.error(pc29.dim("Available: " + kits.map((k) => k.id).join(", ")));
+      console.error(pc22.yellow("Could not auto-detect kit ID from kit.json.  Use --kit <kit-id>."));
+      console.error(pc22.dim("Available: " + kits.map((k) => k.id).join(", ")));
       process.exitCode = 1;
       return;
     }
     const kit = kits.find((k) => k.id === kitId);
     if (!kit) {
-      console.error(pc29.red(`Unknown kit: ${kitId}`));
+      console.error(pc22.red(`Unknown kit: ${kitId}`));
       process.exitCode = 1;
       return;
     }
@@ -20385,11 +15941,11 @@ function addForkSubcommands(parentCmd) {
         baseVersion: kit.version,
         label: opts.label
       });
-      console.log(pc29.green("Fork registered:"), reg.forkId);
-      console.log(pc29.dim("Kit:  "), reg.kitId, "v" + reg.baseVersion);
-      console.log(pc29.dim("Path: "), reg.forkPath);
+      console.log(pc22.green("Fork registered:"), reg.forkId);
+      console.log(pc22.dim("Kit:  "), reg.kitId, "v" + reg.baseVersion);
+      console.log(pc22.dim("Path: "), reg.forkPath);
     } catch (err) {
-      console.error(pc29.red(err.message));
+      console.error(pc22.red(err.message));
       process.exitCode = 1;
     }
   });
@@ -20400,8 +15956,8 @@ function addForkSubcommands(parentCmd) {
     if (opts.filter) {
       const [key, value] = opts.filter.split("=").map((s) => s.trim());
       if (!key || !value) {
-        console.error(pc29.red(`Invalid --filter expression: ${opts.filter}`));
-        console.error(pc29.dim("Use --filter status=<synced|drift-minor|drift-warn|drift-major|unknown> or kit=<id>"));
+        console.error(pc22.red(`Invalid --filter expression: ${opts.filter}`));
+        console.error(pc22.dim("Use --filter status=<synced|drift-minor|drift-warn|drift-major|unknown> or kit=<id>"));
         process.exitCode = 1;
         return;
       }
@@ -20438,11 +15994,11 @@ function addForkSubcommands(parentCmd) {
       return;
     }
     if (summaries.length === 0) {
-      console.log(pc29.dim("  No forks match the given filters."));
+      console.log(pc22.dim("  No forks match the given filters."));
       return;
     }
     console.log("");
-    console.log(pc29.bold("Registered Kit Forks") + pc29.dim(`  ${summaries.length} total`));
+    console.log(pc22.bold("Registered Kit Forks") + pc22.dim(`  ${summaries.length} total`));
     console.log(hr());
     console.log(renderForkTable(summaries));
     console.log("");
@@ -20451,8 +16007,8 @@ function addForkSubcommands(parentCmd) {
   parentCmd.command("status").description("Detect drift + show policy evaluation + heal plan preview + next steps").argument("<fork-id>", "Fork ID from list").option("--policy-only", "Show only the fork's policy (skip drift detection)").option("--no-upstream-check", "Use cached registration fields; do not query the upstream bundled kit").option("--json", "Output raw JSON drift report").action(async (forkId, opts) => {
     const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
-      console.error(pc29.dim("Hint: run `growthub kit fork list` to see registered forks."));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
+      console.error(pc22.dim("Hint: run `growthub kit fork list` to see registered forks."));
       process.exitCode = 1;
       return;
     }
@@ -20463,15 +16019,15 @@ function addForkSubcommands(parentCmd) {
         return;
       }
       console.log("");
-      console.log(pc29.bold(`Policy: ${reg.forkId}`));
+      console.log(pc22.bold(`Policy: ${reg.forkId}`));
       console.log(hr());
-      console.log(`  ${pc29.dim("autoApprove:")}           ${policy.autoApprove}`);
-      console.log(`  ${pc29.dim("autoApproveDepUpdates:")} ${policy.autoApproveDepUpdates}`);
-      console.log(`  ${pc29.dim("remoteSyncMode:")}        ${policy.remoteSyncMode}`);
-      console.log(`  ${pc29.dim("interactiveConflicts:")}  ${policy.interactiveConflicts}`);
-      console.log(`  ${pc29.dim("untouchablePaths:")}      [${policy.untouchablePaths.join(", ")}]`);
-      console.log(`  ${pc29.dim("confirmBeforeChange:")}   [${policy.confirmBeforeChange.join(", ")}]`);
-      console.log(`  ${pc29.dim("allowedScripts:")}        [${policy.allowedScripts.join(", ")}]`);
+      console.log(`  ${pc22.dim("autoApprove:")}           ${policy.autoApprove}`);
+      console.log(`  ${pc22.dim("autoApproveDepUpdates:")} ${policy.autoApproveDepUpdates}`);
+      console.log(`  ${pc22.dim("remoteSyncMode:")}        ${policy.remoteSyncMode}`);
+      console.log(`  ${pc22.dim("interactiveConflicts:")}  ${policy.interactiveConflicts}`);
+      console.log(`  ${pc22.dim("untouchablePaths:")}      [${policy.untouchablePaths.join(", ")}]`);
+      console.log(`  ${pc22.dim("confirmBeforeChange:")}   [${policy.confirmBeforeChange.join(", ")}]`);
+      console.log(`  ${pc22.dim("allowedScripts:")}        [${policy.allowedScripts.join(", ")}]`);
       console.log("");
       return;
     }
@@ -20481,13 +16037,13 @@ function addForkSubcommands(parentCmd) {
         return;
       }
       console.log("");
-      console.log(pc29.bold(`Fork: ${reg.forkId}`) + "  " + pc29.dim("(no upstream check)"));
-      console.log(pc29.dim(`Kit: ${reg.kitId}  v${reg.baseVersion}`));
+      console.log(pc22.bold(`Fork: ${reg.forkId}`) + "  " + pc22.dim("(no upstream check)"));
+      console.log(pc22.dim(`Kit: ${reg.kitId}  v${reg.baseVersion}`));
       console.log(hr());
-      console.log(`  ${pc29.dim("Path:")}  ${reg.forkPath}`);
-      console.log(`  ${pc29.dim("Policy:")} autoApprove=${policy.autoApprove}, remoteSyncMode=${policy.remoteSyncMode}`);
+      console.log(`  ${pc22.dim("Path:")}  ${reg.forkPath}`);
+      console.log(`  ${pc22.dim("Policy:")} autoApprove=${policy.autoApprove}, remoteSyncMode=${policy.remoteSyncMode}`);
       if (policy.untouchablePaths.length > 0) {
-        console.log(`  ${pc29.dim("Protected paths:")} ${policy.untouchablePaths.join(", ")}`);
+        console.log(`  ${pc22.dim("Protected paths:")} ${policy.untouchablePaths.join(", ")}`);
       }
       console.log("");
       console.log(hr());
@@ -20515,15 +16071,15 @@ function addForkSubcommands(parentCmd) {
       }
       printNextStepsAfterStatus(reg.forkId, hasDrift);
     } catch (err) {
-      console.error(pc29.red(err.message));
+      console.error(pc22.red(err.message));
       process.exitCode = 1;
     }
   });
   parentCmd.command("heal").description("Apply a safe non-destructive heal to bring a fork up to date").argument("<fork-id>", "Fork ID from list").option("--preview", "Rich grouped preview (safe additions / updates / protected / unresolved); does not write").option("--dry-run", "Preview the plan without writing any files").option("--background", "Dispatch as an async background job").option("--skip <paths>", "Comma-separated relative paths to skip").option("--json", "Output heal plan as JSON (implies --dry-run)").action(async (forkId, opts) => {
     const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
-      console.error(pc29.dim("Hint: run `growthub kit fork list` to see registered forks."));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
+      console.error(pc22.dim("Hint: run `growthub kit fork list` to see registered forks."));
       process.exitCode = 1;
       return;
     }
@@ -20546,7 +16102,7 @@ function addForkSubcommands(parentCmd) {
       });
       printRichHealPreview(plan, policy);
       if (plan.actions.length === 0) {
-        console.log(pc29.dim("  No actions needed. Fork is structurally clean."));
+        console.log(pc22.dim("  No actions needed. Fork is structurally clean."));
         return;
       }
       const decision = await p18.select({
@@ -20558,8 +16114,8 @@ function addForkSubcommands(parentCmd) {
         ]
       });
       if (p18.isCancel(decision) || decision === "cancel") {
-        console.log(pc29.dim("  Cancelled. Plan was not applied."));
-        console.log(pc29.dim(`  Next: ${pc29.cyan("growthub kit fork policy " + reg.forkId)}  or  ${pc29.cyan("growthub kit fork heal " + reg.forkId)}`));
+        console.log(pc22.dim("  Cancelled. Plan was not applied."));
+        console.log(pc22.dim(`  Next: ${pc22.cyan("growthub kit fork policy " + reg.forkId)}  or  ${pc22.cyan("growthub kit fork heal " + reg.forkId)}`));
         return;
       }
       if (decision === "background") {
@@ -20567,9 +16123,9 @@ function addForkSubcommands(parentCmd) {
           skipFiles: opts.skip?.split(",").map((s) => s.trim())
         });
         console.log("");
-        console.log(pc29.green("  \u2713 Background heal dispatched"));
-        console.log(`  Job ID:  ${pc29.cyan(jobId)}`);
-        console.log(`  Watch:   ${pc29.cyan("growthub kit fork jobs --watch " + jobId)}`);
+        console.log(pc22.green("  \u2713 Background heal dispatched"));
+        console.log(`  Job ID:  ${pc22.cyan(jobId)}`);
+        console.log(`  Watch:   ${pc22.cyan("growthub kit fork jobs --watch " + jobId)}`);
         return;
       }
       opts.dryRun = false;
@@ -20579,24 +16135,24 @@ function addForkSubcommands(parentCmd) {
         dryRun: opts.dryRun,
         skipFiles: opts.skip?.split(",").map((s) => s.trim())
       });
-      console.log(pc29.green("Background job dispatched:"), jobId);
-      console.log(pc29.dim(`  Watch:  growthub kit fork jobs --watch ${jobId}`));
-      console.log(pc29.dim(`  List:   growthub kit fork jobs`));
+      console.log(pc22.green("Background job dispatched:"), jobId);
+      console.log(pc22.dim(`  Watch:  growthub kit fork jobs --watch ${jobId}`));
+      console.log(pc22.dim(`  List:   growthub kit fork jobs`));
       return;
     }
     const job = await runKitForkSyncJob(reg.forkId, reg.kitId, {
       dryRun: opts.dryRun,
       skipFiles: opts.skip?.split(",").map((s) => s.trim()),
-      onProgress: (step) => process.stderr.write(pc29.dim(step) + "\n")
+      onProgress: (step) => process.stderr.write(pc22.dim(step) + "\n")
     });
     const r = job.healResult;
     if (r) {
-      console.log(pc29.bold("Heal result:"));
-      console.log(`  ${pc29.green("Applied:")} ${r.appliedCount}  ${pc29.dim("Skipped:")} ${r.skippedCount}  ${r.errorCount > 0 ? pc29.red("Errors: " + r.errorCount) : pc29.dim("Errors: 0")}`);
+      console.log(pc22.bold("Heal result:"));
+      console.log(`  ${pc22.green("Applied:")} ${r.appliedCount}  ${pc22.dim("Skipped:")} ${r.skippedCount}  ${r.errorCount > 0 ? pc22.red("Errors: " + r.errorCount) : pc22.dim("Errors: 0")}`);
     }
     if (job.status === "failed") {
-      console.error(pc29.red("Heal failed: " + (job.error ?? "unknown error")));
-      console.error(pc29.dim(`  Review: growthub kit fork history ${reg.forkId}`));
+      console.error(pc22.red("Heal failed: " + (job.error ?? "unknown error")));
+      console.error(pc22.dim(`  Review: growthub kit fork history ${reg.forkId}`));
       process.exitCode = 1;
     }
   });
@@ -20623,24 +16179,24 @@ function addForkSubcommands(parentCmd) {
       return;
     }
     if (jobs.length === 0) {
-      console.log(pc29.dim("  No jobs found."));
+      console.log(pc22.dim("  No jobs found."));
       return;
     }
     console.log("");
-    console.log(pc29.bold("Kit Fork Sync Jobs") + pc29.dim(`  ${jobs.length} total`));
+    console.log(pc22.bold("Kit Fork Sync Jobs") + pc22.dim(`  ${jobs.length} total`));
     console.log(hr());
     console.log(renderJobTable(jobs));
     console.log("");
     console.log(hr());
-    console.log(pc29.dim("  Live progress: growthub kit fork jobs --watch <job-id>"));
-    console.log(pc29.dim("  Trace events:  growthub kit fork jobs --tail <job-id>"));
+    console.log(pc22.dim("  Live progress: growthub kit fork jobs --watch <job-id>"));
+    console.log(pc22.dim("  Trace events:  growthub kit fork jobs --tail <job-id>"));
     console.log("");
   });
   parentCmd.command("history").description("Export fork operation history from trace.jsonl").argument("<fork-id>", "Fork ID from list").option("--since <iso>", "ISO-8601 start date (inclusive)").option("--until <iso>", "ISO-8601 end date (inclusive)").option("--event-type <type>", "Filter by event type (e.g. heal_applied, policy_updated)").option("--limit <n>", "Return at most N events (applied after filters)", (v) => parseInt(v, 10)).option("--json", "Emit machine-readable JSON").option("--csv", "Emit CSV for compliance tools").action((forkId, opts) => {
     const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
-      console.error(pc29.dim("Hint: run `growthub kit fork list` to see registered forks."));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
+      console.error(pc22.dim("Hint: run `growthub kit fork list` to see registered forks."));
       process.exitCode = 1;
       return;
     }
@@ -20670,16 +16226,16 @@ function addForkSubcommands(parentCmd) {
       return;
     }
     console.log("");
-    console.log(pc29.bold(`Fork History: ${reg.forkId}`) + pc29.dim(`  ${events.length} event(s)`));
+    console.log(pc22.bold(`Fork History: ${reg.forkId}`) + pc22.dim(`  ${events.length} event(s)`));
     console.log(hr());
     if (events.length === 0) {
-      console.log(pc29.dim("  No matching events."));
+      console.log(pc22.dim("  No matching events."));
       console.log("");
       return;
     }
     for (const e of events) {
       const ts = e.timestamp.replace("T", " ").replace(/\..+Z$/, "Z");
-      console.log(`  ${pc29.dim(ts)}  ${pc29.cyan("[" + e.type + "]")}  ${e.summary ?? ""}`);
+      console.log(`  ${pc22.dim(ts)}  ${pc22.cyan("[" + e.type + "]")}  ${e.summary ?? ""}`);
     }
     console.log("");
     console.log(hr());
@@ -20690,12 +16246,12 @@ function addForkSubcommands(parentCmd) {
     const allForks = listKitForkRegistrations();
     const reg = allForks.find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
       process.exitCode = 1;
       return;
     }
     const confirmed = await p18.confirm({
-      message: `Remove registration for ${pc29.cyan(forkId)}? (Your fork directory will not be touched)`,
+      message: `Remove registration for ${pc22.cyan(forkId)}? (Your fork directory will not be touched)`,
       initialValue: false
     });
     if (p18.isCancel(confirmed) || !confirmed) {
@@ -20704,9 +16260,9 @@ function addForkSubcommands(parentCmd) {
     }
     const ok = deregisterKitFork(reg.kitId, forkId);
     if (ok) {
-      console.log(pc29.green("Fork deregistered:"), forkId);
+      console.log(pc22.green("Fork deregistered:"), forkId);
     } else {
-      console.error(pc29.red("Deregistration failed."));
+      console.error(pc22.red("Deregistration failed."));
       process.exitCode = 1;
     }
   });
@@ -20716,7 +16272,7 @@ function registerAuthoritySubcommands(parentCmd) {
   authorityCmd.command("status").description("Show current authority attestation state for a fork").argument("<fork-id>", "Fork ID from list").option("--json", "Emit machine-readable JSON").action((forkId, opts) => {
     const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
       process.exitCode = 1;
       return;
     }
@@ -20731,45 +16287,45 @@ function registerAuthoritySubcommands(parentCmd) {
       return;
     }
     console.log("");
-    console.log(pc29.bold(`Authority: ${reg.forkId}`));
+    console.log(pc22.bold(`Authority: ${reg.forkId}`));
     console.log(hr());
-    console.log(`  ${pc29.dim("Origin:")}           ${originLabel(summary.origin)}`);
+    console.log(`  ${pc22.dim("Origin:")}           ${originLabel(summary.origin)}`);
     if (summary.envelope) {
       const env = summary.envelope;
-      console.log(`  ${pc29.dim("Issuer:")}           ${env.issuerId}`);
-      console.log(`  ${pc29.dim("Envelope ID:")}      ${env.envelopeId}`);
-      console.log(`  ${pc29.dim("Issued at:")}        ${env.issuedAt}`);
-      if (env.expiresAt) console.log(`  ${pc29.dim("Expires at:")}       ${env.expiresAt}`);
-      console.log(`  ${pc29.dim("Capabilities:")}     ${env.grants.capabilities.join(", ") || pc29.dim("(none)")}`);
-      console.log(`  ${pc29.dim("Policy attested:")}  ${env.grants.policyAttested ? "yes" : "no"}`);
+      console.log(`  ${pc22.dim("Issuer:")}           ${env.issuerId}`);
+      console.log(`  ${pc22.dim("Envelope ID:")}      ${env.envelopeId}`);
+      console.log(`  ${pc22.dim("Issued at:")}        ${env.issuedAt}`);
+      if (env.expiresAt) console.log(`  ${pc22.dim("Expires at:")}       ${env.expiresAt}`);
+      console.log(`  ${pc22.dim("Capabilities:")}     ${env.grants.capabilities.join(", ") || pc22.dim("(none)")}`);
+      console.log(`  ${pc22.dim("Policy attested:")}  ${env.grants.policyAttested ? "yes" : "no"}`);
       if (summary.policyHashMatches === true) {
-        console.log(`  ${pc29.dim("Policy hash:")}       ${pc29.green("matches on-disk policy")}`);
+        console.log(`  ${pc22.dim("Policy hash:")}       ${pc22.green("matches on-disk policy")}`);
       } else if (summary.policyHashMatches === false) {
-        console.log(`  ${pc29.dim("Policy hash:")}       ${pc29.yellow("MISMATCH \u2014 policy changed since attestation")}`);
+        console.log(`  ${pc22.dim("Policy hash:")}       ${pc22.yellow("MISMATCH \u2014 policy changed since attestation")}`);
       }
       if (summary.verification && !summary.verification.ok) {
-        console.log(`  ${pc29.dim("Verification:")}      ${pc29.red(summary.verification.reason)}${summary.verification.detail ? pc29.dim(` (${summary.verification.detail})`) : ""}`);
+        console.log(`  ${pc22.dim("Verification:")}      ${pc22.red(summary.verification.reason)}${summary.verification.detail ? pc22.dim(` (${summary.verification.detail})`) : ""}`);
       }
       if (summary.origin === "authority-revoked") {
-        console.log(`  ${pc29.dim("Revoked reason:")}   ${summary.revokedReason ?? pc29.dim("(none)")}`);
+        console.log(`  ${pc22.dim("Revoked reason:")}   ${summary.revokedReason ?? pc22.dim("(none)")}`);
       }
     } else {
-      console.log(pc29.dim("  No authority envelope attached. Operator-local policy in effect."));
+      console.log(pc22.dim("  No authority envelope attached. Operator-local policy in effect."));
     }
     console.log("");
   });
   authorityCmd.command("attest").description("Attach a signed authority envelope to a fork").argument("<fork-id>", "Fork ID from list").requiredOption("--file <path>", "Path to a JSON file containing the envelope").action((forkId, opts) => {
     const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
       process.exitCode = 1;
       return;
     }
     let raw;
     try {
-      raw = fs27.readFileSync(opts.file, "utf8");
+      raw = fs26.readFileSync(opts.file, "utf8");
     } catch (err) {
-      console.error(pc29.red(`Cannot read envelope file: ${err.message}`));
+      console.error(pc22.red(`Cannot read envelope file: ${err.message}`));
       process.exitCode = 1;
       return;
     }
@@ -20777,7 +16333,7 @@ function registerAuthoritySubcommands(parentCmd) {
     try {
       envelope = JSON.parse(raw);
     } catch (err) {
-      console.error(pc29.red(`Invalid JSON in envelope file: ${err.message}`));
+      console.error(pc22.red(`Invalid JSON in envelope file: ${err.message}`));
       process.exitCode = 1;
       return;
     }
@@ -20798,20 +16354,20 @@ function registerAuthoritySubcommands(parentCmd) {
           expiresAt: envelope.expiresAt ?? null
         }
       });
-      console.log(pc29.green("Authority envelope attached:"), result.state.state);
+      console.log(pc22.green("Authority envelope attached:"), result.state.state);
       if (result.verification.ok) {
-        console.log(pc29.dim("  Issuer:     "), result.verification.issuer.id);
-        console.log(pc29.dim("  Capabilities:"), envelope.grants.capabilities.join(", ") || pc29.dim("(none)"));
+        console.log(pc22.dim("  Issuer:     "), result.verification.issuer.id);
+        console.log(pc22.dim("  Capabilities:"), envelope.grants.capabilities.join(", ") || pc22.dim("(none)"));
       }
     } catch (err) {
-      console.error(pc29.red(err.message));
+      console.error(pc22.red(err.message));
       process.exitCode = 1;
     }
   });
   authorityCmd.command("revoke").description("Revoke the local authority attestation for a fork").argument("<fork-id>", "Fork ID from list").option("--reason <text>", "Why the attestation is being revoked").action((forkId, opts) => {
     const reg = listKitForkRegistrations().find((f) => f.forkId === forkId);
     if (!reg) {
-      console.error(pc29.red(`Fork not found: ${forkId}`));
+      console.error(pc22.red(`Fork not found: ${forkId}`));
       process.exitCode = 1;
       return;
     }
@@ -20824,10 +16380,10 @@ function registerAuthoritySubcommands(parentCmd) {
         summary: `Authority envelope ${next.state === "revoked" ? next.envelope.envelopeId : ""} revoked`,
         detail: { reason: opts.reason ?? null }
       });
-      console.log(pc29.yellow("Authority attestation revoked."));
-      if (opts.reason) console.log(pc29.dim("  Reason:"), opts.reason);
+      console.log(pc22.yellow("Authority attestation revoked."));
+      if (opts.reason) console.log(pc22.dim("  Reason:"), opts.reason);
     } catch (err) {
-      console.error(pc29.red(err.message));
+      console.error(pc22.red(err.message));
       process.exitCode = 1;
     }
   });
@@ -20839,14 +16395,14 @@ function registerAuthoritySubcommands(parentCmd) {
       return;
     }
     console.log("");
-    console.log(pc29.bold("Trusted Authority Issuers"));
+    console.log(pc22.bold("Trusted Authority Issuers"));
     console.log(hr());
     if (reg.issuers.length === 0) {
-      console.log(pc29.dim("  No issuers trusted. Add one with `growthub kit fork authority issuer add`."));
+      console.log(pc22.dim("  No issuers trusted. Add one with `growthub kit fork authority issuer add`."));
     } else {
       for (const i of reg.issuers) {
-        console.log(`  ${pc29.cyan(i.id)}  ${pc29.dim(`[${i.kind}]`)}${i.label ? `  ${i.label}` : ""}`);
-        if (i.addedAt) console.log(`    ${pc29.dim("added:")} ${i.addedAt}`);
+        console.log(`  ${pc22.cyan(i.id)}  ${pc22.dim(`[${i.kind}]`)}${i.label ? `  ${i.label}` : ""}`);
+        if (i.addedAt) console.log(`    ${pc22.dim("added:")} ${i.addedAt}`);
       }
     }
     console.log("");
@@ -20854,15 +16410,15 @@ function registerAuthoritySubcommands(parentCmd) {
   issuerCmd.command("add").description("Add or replace a trusted issuer in the local registry").requiredOption("--id <id>", "Issuer ID (must match envelope.issuerId)").requiredOption("--kind <kind>", "Issuer kind: growthub-hosted | self-signed | enterprise").requiredOption("--key <path>", "Path to a PEM-encoded ed25519 public key file").option("--label <label>", "Human-readable label").action((opts) => {
     const kinds = ["growthub-hosted", "self-signed", "enterprise"];
     if (!kinds.includes(opts.kind)) {
-      console.error(pc29.red(`Invalid --kind: ${opts.kind}. Expected one of ${kinds.join(", ")}.`));
+      console.error(pc22.red(`Invalid --kind: ${opts.kind}. Expected one of ${kinds.join(", ")}.`));
       process.exitCode = 1;
       return;
     }
     let pem;
     try {
-      pem = fs27.readFileSync(opts.key, "utf8");
+      pem = fs26.readFileSync(opts.key, "utf8");
     } catch (err) {
-      console.error(pc29.red(`Cannot read key file: ${err.message}`));
+      console.error(pc22.red(`Cannot read key file: ${err.message}`));
       process.exitCode = 1;
       return;
     }
@@ -20873,17 +16429,17 @@ function registerAuthoritySubcommands(parentCmd) {
         publicKeyPem: pem,
         label: opts.label
       });
-      console.log(pc29.green("Issuer added:"), opts.id);
+      console.log(pc22.green("Issuer added:"), opts.id);
     } catch (err) {
-      console.error(pc29.red(err.message));
+      console.error(pc22.red(err.message));
       process.exitCode = 1;
     }
   });
   issuerCmd.command("remove").description("Remove a trusted issuer from the local registry").requiredOption("--id <id>", "Issuer ID to remove").action((opts) => {
     const ok = removeIssuer(opts.id);
-    if (ok) console.log(pc29.green("Issuer removed:"), opts.id);
+    if (ok) console.log(pc22.green("Issuer removed:"), opts.id);
     else {
-      console.error(pc29.red(`No issuer with id: ${opts.id}`));
+      console.error(pc22.red(`No issuer with id: ${opts.id}`));
       process.exitCode = 1;
     }
   });
@@ -20891,28 +16447,28 @@ function registerAuthoritySubcommands(parentCmd) {
 function originLabel(origin) {
   switch (origin) {
     case "authority-attested":
-      return pc29.green("authority-attested");
+      return pc22.green("authority-attested");
     case "authority-revoked":
-      return pc29.yellow("authority-revoked");
+      return pc22.yellow("authority-revoked");
     default:
-      return pc29.dim("operator-local");
+      return pc22.dim("operator-local");
   }
 }
 
 // src/commands/kit.ts
 var TYPE_CONFIG = {
-  studio: { color: pc30.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
-  specialized_agents: { color: pc30.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
-  ops: { color: pc30.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
+  studio: { color: pc23.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
+  specialized_agents: { color: pc23.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
+  ops: { color: pc23.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function displayTypeForFamily(family) {
   if (family === "workflow" || family === "operator") return "specialized_agents";
   if (family === "studio" || family === "ops") return family;
   return family;
 }
-function typeColor(family, text69) {
+function typeColor(family, text18) {
   const type = displayTypeForFamily(family);
-  return TYPE_CONFIG[type]?.color(text69) ?? text69;
+  return TYPE_CONFIG[type]?.color(text18) ?? text18;
 }
 function typeBadge(family) {
   const type = displayTypeForFamily(family);
@@ -20928,16 +16484,16 @@ function displayKitName(name) {
   return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
 }
 function hr2(width = 72) {
-  return pc30.dim("\u2500".repeat(width));
+  return pc23.dim("\u2500".repeat(width));
 }
 function box(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi2(l).length)) + 4;
-  const top = pc30.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc30.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc23.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc23.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi2(l).length;
-    return pc30.dim("\u2502") + l + " ".repeat(pad2) + pc30.dim("\u2502");
+    return pc23.dim("\u2502") + l + " ".repeat(pad2) + pc23.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
@@ -20958,7 +16514,7 @@ function renderProgressBar2(progress) {
   const filled = Math.max(0, Math.min(width, Math.round(progress.percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
   const detail = truncate2(progress.detail, 48);
-  const line = `\r${pc30.cyan("Exporting kit")} ${pc30.dim("[")}${pc30.green(bar)}${pc30.dim("]")} ${String(progress.percent).padStart(3)}% ${pc30.dim(detail)}`;
+  const line = `\r${pc23.cyan("Exporting kit")} ${pc23.dim("[")}${pc23.green(bar)}${pc23.dim("]")} ${String(progress.percent).padStart(3)}% ${pc23.dim(detail)}`;
   process.stdout.write(line);
   if (progress.phase === "done") {
     process.stdout.write("\n");
@@ -20968,12 +16524,12 @@ function printKitCard(item) {
   const badge2 = typeBadge(item.family);
   console.log("");
   console.log(box([
-    `${pc30.bold(item.name)}  ${pc30.dim("v" + item.version)}`,
-    `${badge2}  ${pc30.dim(item.id)}`,
+    `${pc23.bold(item.name)}  ${pc23.dim("v" + item.version)}`,
+    `${badge2}  ${pc23.dim(item.id)}`,
     "",
     truncate2(item.description, 62),
     "",
-    `${pc30.dim("Brief:")} ${pc30.dim(item.briefType)}   ${pc30.dim("Mode:")} ${pc30.dim(item.executionMode)}`
+    `${pc23.dim("Brief:")} ${pc23.dim(item.briefType)}   ${pc23.dim("Mode:")} ${pc23.dim(item.executionMode)}`
   ]));
 }
 function getActionLabel(action) {
@@ -20987,10 +16543,10 @@ async function confirmKitActions(input) {
     return getActionLabel(action);
   });
   const summaryLines = [
-    pc30.bold("Selected kits"),
+    pc23.bold("Selected kits"),
     ...input.kits.map((kit) => `${typeBadge(kit.family)}  ${displayKitName(kit.name)}`),
     "",
-    pc30.bold("Selected actions"),
+    pc23.bold("Selected actions"),
     actionLabels.join(", ")
   ];
   console.log("");
@@ -21015,28 +16571,28 @@ function printGroupedList(kits) {
   const totalTypes = types.length;
   console.log("");
   console.log(
-    pc30.bold("Growthub Agent Worker Kits") + pc30.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
+    pc23.bold("Growthub Agent Worker Kits") + pc23.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
   );
   console.log(hr2());
   for (const type of types) {
     const groupKits = byType[type];
     const header = typeBadge(type);
     console.log(`
-${header}  ${pc30.dim("(" + groupKits.length + ")")}`);
+${header}  ${pc23.dim("(" + groupKits.length + ")")}`);
     for (const kit of groupKits) {
-      console.log(`  ${typeColor(kit.family, pc30.bold(kit.id))}  ${pc30.dim("v" + kit.version)}`);
-      console.log(`  ${pc30.dim(truncate2(kit.description, 62))}`);
-      console.log(`  ${pc30.dim("\u2192")} ${pc30.cyan("growthub kit download " + kit.id)}`);
+      console.log(`  ${typeColor(kit.family, pc23.bold(kit.id))}  ${pc23.dim("v" + kit.version)}`);
+      console.log(`  ${pc23.dim(truncate2(kit.description, 62))}`);
+      console.log(`  ${pc23.dim("\u2192")} ${pc23.cyan("growthub kit download " + kit.id)}`);
       console.log("");
     }
   }
   console.log(hr2());
-  console.log(pc30.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
+  console.log(pc23.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
   console.log("");
 }
 async function runInteractivePicker(opts) {
   printPaperclipCliBanner();
-  p19.intro(pc30.bold("Growthub Agent Worker Kits"));
+  p19.intro(pc23.bold("Growthub Agent Worker Kits"));
   let kits;
   try {
     kits = listBundledKits();
@@ -21078,7 +16634,7 @@ async function runInteractivePicker(opts) {
         options: [
           ...filtered.map((k) => ({
             value: k.id,
-            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc30.bold(displayKitName(k.name)) + "  " + pc30.dim("v" + k.version),
+            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc23.bold(displayKitName(k.name)) + "  " + pc23.dim("v" + k.version),
             hint: truncate2(k.description, 55)
           })),
           { value: "__back_to_type", label: "\u2190 Back to type filter" }
@@ -21143,16 +16699,16 @@ async function runInteractivePicker(opts) {
         }
         if (action === "copy-id") {
           console.log(selected.id);
-          p19.outro(pc30.dim("Kit ID printed above."));
+          p19.outro(pc23.dim("Kit ID printed above."));
           return "done";
         }
         if (action === "inspect") {
           runInspect(selected.id, opts.out);
-          p19.outro(pc30.dim("Done."));
+          p19.outro(pc23.dim("Done."));
           return "done";
         }
         await runDownload(selected.id, opts);
-        p19.outro(pc30.green("Kit exported successfully."));
+        p19.outro(pc23.green("Kit exported successfully."));
         return "done";
       }
     }
@@ -21161,17 +16717,17 @@ async function runInteractivePicker(opts) {
 async function runDownload(kitId, opts) {
   const resolvedId = fuzzyResolveKitId(kitId);
   if (!resolvedId) {
-    console.error(pc30.red("Unknown kit '" + kitId + "'.") + pc30.dim(" Run `growthub kit list` to browse."));
+    console.error(pc23.red("Unknown kit '" + kitId + "'.") + pc23.dim(" Run `growthub kit list` to browse."));
     process.exit(1);
   }
   if (resolvedId !== kitId) {
-    console.log(pc30.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
+    console.log(pc23.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
   }
   const kits = listBundledKits();
   const item = kits.find((k) => k.id === resolvedId);
   printKitCard(item);
   if (!opts.yes) {
-    const confirmed = await p19.confirm({ message: "Download " + pc30.bold(displayKitName(item.name)) + "?" });
+    const confirmed = await p19.confirm({ message: "Download " + pc23.bold(displayKitName(item.name)) + "?" });
     if (p19.isCancel(confirmed) || !confirmed) {
       p19.cancel("Cancelled.");
       process.exit(0);
@@ -21181,35 +16737,35 @@ async function runDownload(kitId, opts) {
     onProgress: renderProgressBar2
   });
   console.log("");
-  console.log(pc30.green(pc30.bold("Kit exported successfully.")));
+  console.log(pc23.green(pc23.bold("Kit exported successfully.")));
   console.log("");
   const nextSteps = [
-    pc30.bold("Next steps"),
+    pc23.bold("Next steps"),
     "",
-    pc30.dim("1.") + " Point Working Directory at:",
-    "   " + pc30.cyan(result.folderPath),
+    pc23.dim("1.") + " Point Working Directory at:",
+    "   " + pc23.cyan(result.folderPath),
     "",
-    pc30.dim("2.") + " " + pc30.cyan("cp .env.example .env") + "  \u2192  add your API key",
-    pc30.dim("3.") + " " + pc30.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
-    pc30.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
+    pc23.dim("2.") + " " + pc23.cyan("cp .env.example .env") + "  \u2192  add your API key",
+    pc23.dim("3.") + " " + pc23.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
+    pc23.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
     "",
-    pc30.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
+    pc23.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
   ];
   console.log("");
   console.log(box(nextSteps));
   console.log("");
-  console.log(pc30.bold("Open folder: ") + folderOpenLabel(result.folderPath));
-  console.log(pc30.dim("Folder: ") + result.folderPath);
+  console.log(pc23.bold("Open folder: ") + folderOpenLabel(result.folderPath));
+  console.log(pc23.dim("Folder: ") + result.folderPath);
   console.log("");
-  console.log(pc30.dim("Zip: ") + result.zipPath);
+  console.log(pc23.dim("Zip: ") + result.zipPath);
   console.log("");
 }
 function runInspect(kitId, outDir) {
   const info = inspectBundledKit(kitId, outDir);
-  const kv = (label, value) => console.log("  " + pc30.bold(label.padEnd(24)) + " " + value);
+  const kv = (label, value) => console.log("  " + pc23.bold(label.padEnd(24)) + " " + value);
   console.log("");
-  console.log(pc30.bold("Kit: " + info.id) + pc30.dim("  v" + info.version));
-  console.log(typeBadge(info.family) + pc30.dim("  schema v" + info.schemaVersion));
+  console.log(pc23.bold("Kit: " + info.id) + pc23.dim("  v" + info.version));
+  console.log(typeBadge(info.family) + pc23.dim("  schema v" + info.schemaVersion));
   console.log(hr2());
   kv("Name:", info.name);
   kv("Description:", truncate2(info.description, 55));
@@ -21225,8 +16781,8 @@ function runInspect(kitId, outDir) {
     kv("Compatibility:", JSON.stringify(info.compatibility));
   }
   console.log(hr2());
-  console.log(pc30.bold("  Required Paths:"));
-  for (const rp of info.requiredPaths) console.log("    " + pc30.dim("\xB7") + " " + rp);
+  console.log(pc23.bold("  Required Paths:"));
+  for (const rp of info.requiredPaths) console.log("    " + pc23.dim("\xB7") + " " + rp);
   console.log("");
 }
 function registerKitCommands(program2) {
@@ -21265,8 +16821,8 @@ Examples:
       const wanted = opts.family.split(",").map((f) => f.trim().toLowerCase());
       kits = kits.filter((k) => wanted.includes(k.family));
       if (kits.length === 0) {
-        console.error(pc30.yellow("No kits found for family: " + opts.family));
-        console.error(pc30.dim("Valid families: studio, workflow, operator, ops"));
+        console.error(pc23.yellow("No kits found for family: " + opts.family));
+        console.error(pc23.dim("Valid families: studio, workflow, operator, ops"));
         process.exitCode = 1;
         return;
       }
@@ -21284,7 +16840,7 @@ Examples:
 `).action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc30.red("Unknown kit '" + kitId + "'.") + pc30.dim(" Run `growthub kit list` to browse."));
+      console.error(pc23.red("Unknown kit '" + kitId + "'.") + pc23.dim(" Run `growthub kit list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -21310,7 +16866,7 @@ Examples:
     }
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc30.red("Unknown kit '" + kitId + "'.") + pc30.dim(" Run `growthub kit list` to browse."));
+      console.error(pc23.red("Unknown kit '" + kitId + "'.") + pc23.dim(" Run `growthub kit list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -21319,14 +16875,14 @@ Examples:
         onProgress: renderProgressBar2
       });
       console.log("");
-      console.log(pc30.bold("Exported folder:"), pc30.cyan(result.folderPath));
-      console.log(pc30.bold("Open folder:   "), folderOpenLabel(result.folderPath));
-      console.log(pc30.bold("Zip:           "), pc30.dim(result.zipPath));
+      console.log(pc23.bold("Exported folder:"), pc23.cyan(result.folderPath));
+      console.log(pc23.bold("Open folder:   "), folderOpenLabel(result.folderPath));
+      console.log(pc23.bold("Zip:           "), pc23.dim(result.zipPath));
       console.log("");
-      console.log(pc30.bold("Next steps:"));
-      console.log("  1. Point Working Directory at: " + pc30.cyan(result.folderPath));
-      console.log("  2. " + pc30.cyan("cp .env.example .env") + "  \u2192  add your API key");
-      console.log("  3. " + pc30.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
+      console.log(pc23.bold("Next steps:"));
+      console.log("  1. Point Working Directory at: " + pc23.cyan(result.folderPath));
+      console.log("  2. " + pc23.cyan("cp .env.example .env") + "  \u2192  add your API key");
+      console.log("  3. " + pc23.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
       console.log("  4. Open Growthub local \u2014 the agent loads automatically");
       console.log("");
       return;
@@ -21336,7 +16892,7 @@ Examples:
   kit.command("path").description("Resolve the expected export folder path without exporting").argument("<kit-id>", "Kit id or fuzzy slug").option("--out <path>", "Override the export root").action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc30.red("Unknown kit '" + kitId + "'."));
+      console.error(pc23.red("Unknown kit '" + kitId + "'."));
       process.exitCode = 1;
       return;
     }
@@ -21347,23 +16903,23 @@ Examples:
   $ growthub kit validate ./my-kit
   $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
 `).action((kitPath) => {
-    const resolvedPath = path34.resolve(kitPath);
+    const resolvedPath = path33.resolve(kitPath);
     const result = validateKitDirectory(resolvedPath);
     console.log("");
-    console.log(pc30.bold("Kit: " + result.kitId) + pc30.dim("  schema v" + result.schemaVersion));
+    console.log(pc23.bold("Kit: " + result.kitId) + pc23.dim("  schema v" + result.schemaVersion));
     console.log(hr2());
     for (const w of result.warnings) {
-      console.log(pc30.yellow("  WARN  " + w.field + ": " + w.message));
+      console.log(pc23.yellow("  WARN  " + w.field + ": " + w.message));
     }
     for (const e of result.errors) {
-      console.log(pc30.red("  ERROR " + e.field + ": " + e.message));
+      console.log(pc23.red("  ERROR " + e.field + ": " + e.message));
     }
     if (result.errors.length > 0) {
       console.log("");
-      console.log(pc30.red(pc30.bold("  Result: INVALID")) + pc30.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
+      console.log(pc23.red(pc23.bold("  Result: INVALID")) + pc23.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
       process.exitCode = 1;
     } else {
-      console.log(pc30.green(pc30.bold("  Result: VALID")));
+      console.log(pc23.green(pc23.bold("  Result: VALID")));
     }
     console.log("");
   });
@@ -21375,31 +16931,31 @@ Examples:
       { family: "ops", tagline: "Infrastructure / toolchain operator (provider optional)", surfaces: "local-fork (primary)", example: "(coming soon)" }
     ];
     console.log("");
-    console.log(pc30.bold("Kit Family Taxonomy"));
+    console.log(pc23.bold("Kit Family Taxonomy"));
     console.log(hr2());
     for (const def of defs) {
       console.log("\n  " + typeBadge(def.family));
-      console.log("  " + pc30.dim(def.tagline));
-      console.log("  " + pc30.dim("Surfaces: ") + pc30.dim(def.surfaces));
-      console.log("  " + pc30.dim("Example:  ") + pc30.cyan(def.example));
+      console.log("  " + pc23.dim(def.tagline));
+      console.log("  " + pc23.dim("Surfaces: ") + pc23.dim(def.surfaces));
+      console.log("  " + pc23.dim("Example:  ") + pc23.cyan(def.example));
     }
     console.log("");
     console.log(hr2());
-    console.log(pc30.dim("  growthub kit list --family <family>  to filter by internal family"));
+    console.log(pc23.dim("  growthub kit list --family <family>  to filter by internal family"));
     console.log("");
   });
   registerKitForkSubcommands(kit);
 }
 
 // src/commands/template.ts
-import path36 from "node:path";
+import path35 from "node:path";
 import * as p20 from "@clack/prompts";
-import pc31 from "picocolors";
+import pc24 from "picocolors";
 
 // src/templates/service.ts
-import fs28 from "node:fs";
-import path35 from "node:path";
-import { fileURLToPath as fileURLToPath6 } from "node:url";
+import fs27 from "node:fs";
+import path34 from "node:path";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 
 // src/templates/catalog.ts
 var AD_FORMATS = [
@@ -21720,12 +17276,12 @@ var TEMPLATE_CATALOG = [
 
 // src/templates/service.ts
 function resolveSharedTemplatesRoot() {
-  const moduleDir = path35.dirname(fileURLToPath6(import.meta.url));
+  const moduleDir = path34.dirname(fileURLToPath5(import.meta.url));
   for (const candidate of [
-    path35.resolve(moduleDir, "../../assets/shared-templates"),
-    path35.resolve(moduleDir, "../assets/shared-templates")
+    path34.resolve(moduleDir, "../../assets/shared-templates"),
+    path34.resolve(moduleDir, "../assets/shared-templates")
   ]) {
-    if (fs28.existsSync(candidate)) return candidate;
+    if (fs27.existsSync(candidate)) return candidate;
   }
   throw new Error("Shared template assets not found at cli/assets/shared-templates/");
 }
@@ -21761,15 +17317,15 @@ function getArtifact(slugOrId) {
   const artifact = resolveSlug(slugOrId);
   if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
   const root = resolveSharedTemplatesRoot();
-  const absolutePath = path35.resolve(root, artifact.path);
-  if (!fs28.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
-  return { artifact, content: fs28.readFileSync(absolutePath, "utf8"), absolutePath };
+  const absolutePath = path34.resolve(root, artifact.path);
+  if (!fs27.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  return { artifact, content: fs27.readFileSync(absolutePath, "utf8"), absolutePath };
 }
 function copyArtifact(slugOrId, destDir) {
   const resolved = getArtifact(slugOrId);
-  fs28.mkdirSync(destDir, { recursive: true });
-  const destPath = path35.resolve(destDir, path35.basename(resolved.absolutePath));
-  fs28.copyFileSync(resolved.absolutePath, destPath);
+  fs27.mkdirSync(destDir, { recursive: true });
+  const destPath = path34.resolve(destDir, path34.basename(resolved.absolutePath));
+  fs27.copyFileSync(resolved.absolutePath, destPath);
   return destPath;
 }
 var GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta", "marketing-frameworks"];
@@ -21821,7 +17377,7 @@ function stripAnsi3(s) {
   return s.replace(/\x1B\[[0-9;]*m/g, "");
 }
 function hr3(w = 72) {
-  return pc31.dim("\u2500".repeat(w));
+  return pc24.dim("\u2500".repeat(w));
 }
 function truncate3(s, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + "\u2026";
@@ -21829,32 +17385,32 @@ function truncate3(s, max) {
 function box2(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi3(l).length)) + 4;
-  const top = pc31.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc31.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
-  const body = padded.map((l) => pc31.dim("\u2502") + l + " ".repeat(width - stripAnsi3(l).length) + pc31.dim("\u2502"));
+  const top = pc24.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc24.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => pc24.dim("\u2502") + l + " ".repeat(width - stripAnsi3(l).length) + pc24.dim("\u2502"));
   return [top, ...body, bottom].join("\n");
 }
 function badge(a) {
-  if (a.type === "ad-format") return pc31.cyan("\u{1F3AC} Ad Format");
+  if (a.type === "ad-format") return pc24.cyan("\u{1F3AC} Ad Format");
   if (a.type === "scene-module") {
-    if (a.subtype === "hook") return pc31.yellow("\u{1FA9D} Hook");
-    if (a.subtype === "body") return pc31.blue("\u{1F9E9} Body");
-    if (a.subtype === "cta") return pc31.green("\u{1F3AF} CTA");
+    if (a.subtype === "hook") return pc24.yellow("\u{1FA9D} Hook");
+    if (a.subtype === "body") return pc24.blue("\u{1F9E9} Body");
+    if (a.subtype === "cta") return pc24.green("\u{1F3AF} CTA");
   }
-  return pc31.magenta("\u{1F9E9} Module");
+  return pc24.magenta("\u{1F9E9} Module");
 }
 function printCard(a) {
-  const compat = a.compatibleFormats.length ? pc31.dim("Works with: ") + a.compatibleFormats.map((f) => pc31.cyan(f)).join(", ") : pc31.dim("Works with: any format");
+  const compat = a.compatibleFormats.length ? pc24.dim("Works with: ") + a.compatibleFormats.map((f) => pc24.cyan(f)).join(", ") : pc24.dim("Works with: any format");
   const rows = [
-    pc31.bold(a.name),
-    `${badge(a)}  ${pc31.dim(a.id)}`,
+    pc24.bold(a.name),
+    `${badge(a)}  ${pc24.dim(a.id)}`,
     "",
     truncate3(a.category, 62),
     "",
     compat
   ];
   if (a.type === "ad-format" && a.scenes != null) {
-    rows.push(pc31.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc31.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
+    rows.push(pc24.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc24.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
   }
   console.log("");
   console.log(box2(rows));
@@ -21862,32 +17418,32 @@ function printCard(a) {
 function printSummary2(filter) {
   const artifacts = listArtifacts(filter);
   if (!artifacts.length) {
-    console.log(pc31.yellow("No templates matched. Try: growthub template list"));
+    console.log(pc24.yellow("No templates matched. Try: growthub template list"));
     return;
   }
   const stats = getCatalogStats();
   const groups = groupArtifacts(artifacts);
   console.log("");
-  console.log(pc31.bold("Growthub Shared Template Library") + pc31.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
-  console.log(pc31.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
+  console.log(pc24.bold("Growthub Shared Template Library") + pc24.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
+  console.log(pc24.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
   console.log(hr3());
   for (const g of groups) {
     console.log(`
-${pc31.bold(g.label)}  ${pc31.dim("(" + g.count + ")")}`);
-    console.log(pc31.dim("  " + g.description));
+${pc24.bold(g.label)}  ${pc24.dim("(" + g.count + ")")}`);
+    console.log(pc24.dim("  " + g.description));
     console.log("");
     for (const a of g.artifacts) {
-      const compat = a.compatibleFormats.length ? pc31.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
-      console.log(`  ${pc31.cyan(pc31.bold(a.name))}${compat}`);
-      console.log(`  ${pc31.dim("growthub template get " + a.slug)}`);
+      const compat = a.compatibleFormats.length ? pc24.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
+      console.log(`  ${pc24.cyan(pc24.bold(a.name))}${compat}`);
+      console.log(`  ${pc24.dim("growthub template get " + a.slug)}`);
       console.log("");
     }
   }
   console.log(hr3());
-  console.log(pc31.dim("  growthub template get <slug>"));
-  console.log(pc31.dim("  growthub template list --type ad-formats"));
-  console.log(pc31.dim("  growthub template list --type scene-modules --subtype hooks"));
-  console.log(pc31.dim("  growthub template   (interactive picker)"));
+  console.log(pc24.dim("  growthub template get <slug>"));
+  console.log(pc24.dim("  growthub template list --type ad-formats"));
+  console.log(pc24.dim("  growthub template list --type scene-modules --subtype hooks"));
+  console.log(pc24.dim("  growthub template   (interactive picker)"));
   console.log("");
 }
 var TEMPLATE_FAMILY_META = {
@@ -21913,7 +17469,7 @@ var TEMPLATE_FAMILY_META = {
   }
 };
 async function runTemplatePicker(opts) {
-  p20.intro(pc31.bold("Growthub Shared Template Library"));
+  p20.intro(pc24.bold("Growthub Shared Template Library"));
   let artifacts;
   try {
     artifacts = listArtifacts();
@@ -21965,7 +17521,7 @@ async function runTemplatePicker(opts) {
     message: `Select from: ${group.label}`,
     options: group.artifacts.map((a) => ({
       value: a.id,
-      label: pc31.bold(a.name),
+      label: pc24.bold(a.name),
       hint: truncate3(a.category, 52)
     }))
   });
@@ -21990,7 +17546,7 @@ async function runTemplatePicker(opts) {
   }
   if (action === "slug") {
     console.log(selected.slug);
-    p20.outro(pc31.dim("Use with: growthub template get " + selected.slug));
+    p20.outro(pc24.dim("Use with: growthub template get " + selected.slug));
     return "done";
   }
   if (action === "print") {
@@ -21998,7 +17554,7 @@ async function runTemplatePicker(opts) {
     console.log("\n" + hr3());
     console.log(r.content);
     console.log(hr3());
-    p20.outro(pc31.dim("Source: " + r.absolutePath));
+    p20.outro(pc24.dim("Source: " + r.absolutePath));
     return "done";
   }
   if (action === "copy") {
@@ -22011,9 +17567,9 @@ async function runTemplatePicker(opts) {
       p20.cancel("Cancelled.");
       process.exit(0);
     }
-    const destDir = path36.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
+    const destDir = path35.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
     const destPath = copyArtifact(selected.id, destDir);
-    p20.outro(pc31.green("Copied \u2192 ") + destPath);
+    p20.outro(pc24.green("Copied \u2192 ") + destPath);
     return "done";
   }
   return "done";
@@ -22040,7 +17596,7 @@ Any agent or kit resolves them by slug.
     if (opts.type) {
       const t = opts.type.replace(/s$/, "");
       if (t !== "ad-format" && t !== "scene-module") {
-        console.error(pc31.red(`Unknown --type '${opts.type}'.`) + pc31.dim(" Valid: ad-formats, scene-modules"));
+        console.error(pc24.red(`Unknown --type '${opts.type}'.`) + pc24.dim(" Valid: ad-formats, scene-modules"));
         process.exitCode = 1;
         return;
       }
@@ -22049,7 +17605,7 @@ Any agent or kit resolves them by slug.
     if (opts.subtype) {
       const sub = opts.subtype.replace(/s$/, "");
       if (!["hook", "body", "cta"].includes(sub)) {
-        console.error(pc31.red(`Unknown --subtype '${opts.subtype}'.`) + pc31.dim(" Valid: hooks, body, cta"));
+        console.error(pc24.red(`Unknown --subtype '${opts.subtype}'.`) + pc24.dim(" Valid: hooks, body, cta"));
         process.exitCode = 1;
         return;
       }
@@ -22065,18 +17621,18 @@ Any agent or kit resolves them by slug.
   cmd.command("get").description("Print or copy a template \u2014 fuzzy slug resolution").argument("<slug>", "Artifact slug (e.g. villain-animation, meme-overlay)").option("--out <path>", "Copy to this directory").option("--json", "Artifact metadata + content as JSON").action((slug, opts) => {
     const artifact = resolveSlug(slug);
     if (!artifact) {
-      console.error(pc31.red(`Unknown template '${slug}'.`) + pc31.dim(" Run `growthub template list` to browse."));
+      console.error(pc24.red(`Unknown template '${slug}'.`) + pc24.dim(" Run `growthub template list` to browse."));
       process.exitCode = 1;
       return;
     }
     if (artifact.id !== slug && artifact.slug !== slug) {
-      console.error(pc31.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
+      console.error(pc24.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
     }
     let resolved;
     try {
       resolved = getArtifact(artifact.id);
     } catch (err) {
-      console.error(pc31.red(err.message));
+      console.error(pc24.red(err.message));
       process.exitCode = 1;
       return;
     }
@@ -22085,12 +17641,12 @@ Any agent or kit resolves them by slug.
       return;
     }
     if (opts.out) {
-      const destDir = path36.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
+      const destDir = path35.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
       try {
         const dest = copyArtifact(artifact.id, destDir);
-        console.log(pc31.green("Copied \u2192 ") + dest);
+        console.log(pc24.green("Copied \u2192 ") + dest);
       } catch (err) {
-        console.error(pc31.red(err.message));
+        console.error(pc24.red(err.message));
         process.exitCode = 1;
       }
       return;
@@ -22099,14 +17655,18 @@ Any agent or kit resolves them by slug.
     console.log(hr3());
     console.log(resolved.content);
     console.log(hr3());
-    console.log(pc31.dim("Source: " + resolved.absolutePath));
+    console.log(pc24.dim("Source: " + resolved.absolutePath));
     console.log("");
   });
 }
 
 // src/commands/capability.ts
 import * as p21 from "@clack/prompts";
-import pc32 from "picocolors";
+import pc25 from "picocolors";
+
+// src/runtime/cms-capability-registry/index.ts
+import fs28 from "node:fs";
+import path36 from "node:path";
 
 // src/runtime/hosted-execution-client/index.ts
 init_http();
@@ -22183,10 +17743,10 @@ async function buildExecutionGraph(input, session) {
   if (!userId) {
     throw new HostedExecutionError(401, "Hosted session is missing the authenticated user id.");
   }
-  const cmsNodes = input.nodes.map((node, index51) => ({
+  const cmsNodes = input.nodes.map((node, index) => ({
     id: node.nodeId,
     type: "cmsNode",
-    position: { x: (index51 + 1) * 300, y: 0 },
+    position: { x: (index + 1) * 300, y: 0 },
     data: {
       slug: node.slug,
       inputs: sanitizeBindings(node.bindings)
@@ -22442,6 +18002,35 @@ function collectArtifacts(executionLog) {
         metadata: slideRecord
       });
     }
+    const videos = Array.isArray(record.videos) ? record.videos : [];
+    for (const video of videos) {
+      if (!video || typeof video !== "object") continue;
+      const videoRecord = video;
+      const storagePath = typeof videoRecord.storage_path === "string" ? videoRecord.storage_path : void 0;
+      const url = typeof videoRecord.url === "string" ? videoRecord.url : typeof videoRecord.dataUrl === "string" ? videoRecord.dataUrl : void 0;
+      artifacts.push({
+        artifactId: storagePath ?? `${entry.nodeId}-video-${artifacts.length + 1}`,
+        artifactType: "video",
+        nodeId: entry.nodeId,
+        url,
+        storagePath,
+        metadata: videoRecord
+      });
+    }
+    const refs = Array.isArray(record.refs) ? record.refs : [];
+    for (const ref of refs) {
+      if (!ref || typeof ref !== "object") continue;
+      const refRecord = ref;
+      const url = typeof refRecord.dataUrl === "string" ? refRecord.dataUrl : typeof refRecord.url === "string" ? refRecord.url : void 0;
+      if (!url) continue;
+      artifacts.push({
+        artifactId: `${entry.nodeId}-ref-${artifacts.length + 1}`,
+        artifactType: "video",
+        nodeId: entry.nodeId,
+        url,
+        metadata: refRecord
+      });
+    }
   }
   return artifacts;
 }
@@ -22485,15 +18074,15 @@ function summarizeExecution(executionLog) {
 async function toHostedExecutionError(response) {
   let message = `Request failed with status ${response.status}`;
   try {
-    const text69 = await response.text();
-    if (text69.trim()) {
-      const parsed = JSON.parse(text69);
+    const text18 = await response.text();
+    if (text18.trim()) {
+      const parsed = JSON.parse(text18);
       if (typeof parsed.error === "string" && parsed.error.trim()) {
         message = parsed.error;
       } else if (typeof parsed.message === "string" && parsed.message.trim()) {
         message = parsed.message;
       } else {
-        message = text69;
+        message = text18;
       }
     }
   } catch {
@@ -22600,6 +18189,7 @@ function createHostedExecutionClient() {
 // src/runtime/cms-capability-registry/index.ts
 init_session_store();
 init_hosted_client();
+init_home();
 
 // src/runtime/cms-capability-registry/types.ts
 var CAPABILITY_FAMILIES = [
@@ -22614,6 +18204,67 @@ var CAPABILITY_FAMILIES = [
 ];
 
 // src/runtime/cms-capability-registry/index.ts
+var CACHE_TTL_MS = 5 * 60 * 1e3;
+function resolveCapabilityCachePath() {
+  return path36.resolve(resolvePaperclipHomeDir(), "cache", "capability-registry.json");
+}
+function readCapabilityCache() {
+  try {
+    const cachePath = resolveCapabilityCachePath();
+    if (!fs28.existsSync(cachePath)) return null;
+    const raw = JSON.parse(fs28.readFileSync(cachePath, "utf-8"));
+    if (typeof raw !== "object" || raw === null || !("fetchedAt" in raw) || !("expiresAt" in raw) || !("nodes" in raw) || !Array.isArray(raw.nodes)) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+function writeCapabilityCache(nodes, meta) {
+  try {
+    const cachePath = resolveCapabilityCachePath();
+    fs28.mkdirSync(path36.dirname(cachePath), { recursive: true });
+    const now = Date.now();
+    const entry = {
+      fetchedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + CACHE_TTL_MS).toISOString(),
+      source: meta.source,
+      total: meta.total,
+      enabledCount: meta.enabledCount,
+      nodes
+    };
+    fs28.writeFileSync(cachePath, `${JSON.stringify(entry, null, 2)}
+`, "utf-8");
+  } catch {
+  }
+}
+function isCacheValid(cache) {
+  return new Date(cache.expiresAt).getTime() > Date.now();
+}
+function clearCapabilityCache() {
+  try {
+    const cachePath = resolveCapabilityCachePath();
+    if (fs28.existsSync(cachePath)) {
+      fs28.rmSync(cachePath);
+    }
+  } catch {
+  }
+}
+function getCapabilityCacheStatus() {
+  const cache = readCapabilityCache();
+  if (!cache) return { exists: false, fresh: false };
+  const fresh = isCacheValid(cache);
+  const ageSeconds = Math.floor((Date.now() - new Date(cache.fetchedAt).getTime()) / 1e3);
+  return {
+    exists: true,
+    fresh,
+    fetchedAt: cache.fetchedAt,
+    expiresAt: cache.expiresAt,
+    source: cache.source,
+    total: cache.total,
+    enabledCount: cache.enabledCount,
+    ageSeconds
+  };
+}
 function toCapabilityNode(record) {
   const familyMap = {
     video: "video",
@@ -22643,7 +18294,9 @@ function toCapabilityNode(record) {
     executionTokens: {
       tool_name: toolName,
       input_template: inputTemplate,
-      output_mapping: outputMapping
+      output_mapping: outputMapping,
+      endpoint_config: typeof executionTokens.endpoint_config === "object" && executionTokens.endpoint_config !== null ? executionTokens.endpoint_config : void 0,
+      migration_version: typeof executionTokens.migration_version === "string" ? executionTokens.migration_version : void 0
     },
     requiredBindings: record.requiredBindings,
     outputTypes: record.outputTypes,
@@ -22718,24 +18371,69 @@ function matchesQuery(node, query) {
 function createCmsCapabilityRegistryClient() {
   return {
     async listCapabilities(query) {
+      const forceRefresh = query?.refresh === true;
+      if (!forceRefresh) {
+        const cached = readCapabilityCache();
+        if (cached && isCacheValid(cached)) {
+          const allNodes = cached.nodes.map((n) => n);
+          const filtered2 = query ? allNodes.filter((n) => matchesQuery(n, query)) : allNodes;
+          const ageSeconds = Math.floor((Date.now() - new Date(cached.fetchedAt).getTime()) / 1e3);
+          return {
+            nodes: filtered2,
+            meta: {
+              total: cached.total,
+              enabledCount: cached.enabledCount,
+              fetchedAt: cached.fetchedAt,
+              source: "cache",
+              fromCache: true,
+              expiresAt: cached.expiresAt,
+              cacheAgeSeconds: ageSeconds
+            }
+          };
+        }
+      }
       const executionClient = createHostedExecutionClient();
       let hostedRecords = await executionClient.getHostedCapabilities();
+      let derivedSource = "hosted";
       if (hostedRecords.length === 0) {
         hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
+        derivedSource = "derived";
       }
       if (hostedRecords.length === 0) {
+        const staleCache = readCapabilityCache();
+        if (staleCache) {
+          const allNodes = staleCache.nodes;
+          const filtered2 = query ? allNodes.filter((n) => matchesQuery(n, query)) : allNodes;
+          const ageSeconds = Math.floor((Date.now() - new Date(staleCache.fetchedAt).getTime()) / 1e3);
+          return {
+            nodes: filtered2,
+            meta: {
+              total: staleCache.total,
+              enabledCount: staleCache.enabledCount,
+              fetchedAt: staleCache.fetchedAt,
+              source: "cache",
+              fromCache: true,
+              staleFallback: true,
+              expiresAt: staleCache.expiresAt,
+              cacheAgeSeconds: ageSeconds
+            }
+          };
+        }
         throw new Error("Hosted capability registry returned zero nodes. No local fallback is enabled.");
       }
       const nodes = hostedRecords.map(toCapabilityNode);
       const enabledCount = nodes.filter((n) => n.enabled).length;
+      writeCapabilityCache(nodes, { source: derivedSource, total: nodes.length, enabledCount });
       const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
+      const now = (/* @__PURE__ */ new Date()).toISOString();
       return {
         nodes: filtered,
         meta: {
           total: nodes.length,
           enabledCount,
-          fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          source: "hosted"
+          fetchedAt: now,
+          source: derivedSource,
+          fromCache: false
         }
       };
     },
@@ -22758,10 +18456,24 @@ function buildMachineContext(profile) {
   };
 }
 function resolveBinding(capability, profile) {
+  const notes = [];
+  if (capability.executionBinding.strategy === "async_operation") {
+    notes.push("async_operation strategy \u2014 execution will not be immediate and requires polling.");
+  }
+  if (capability.experimental) {
+    notes.push("Experimental capability \u2014 behavior may be unstable.");
+  }
+  if (capability.outputTypes.length === 0) {
+    notes.push("No output types declared \u2014 output contract is undefined.");
+  }
   const binding = {
     capabilitySlug: capability.slug,
     allowed: false,
-    requiredConnectionCapabilities: capability.requiredBindings
+    requiredConnectionCapabilities: capability.requiredBindings,
+    strategy: capability.executionBinding.strategy,
+    outputTypes: capability.outputTypes,
+    family: capability.family,
+    ...notes.length > 0 ? { notes } : {}
   };
   if (!profile.authenticated) {
     binding.reason = "No active hosted session. Run `growthub auth login`.";
@@ -22787,23 +18499,27 @@ function resolveBinding(capability, profile) {
   if (capability.executionKind === "hosted-execute") {
     const canUseHosted = profile.executionDefaults.preferredMode !== "local" || profile.executionDefaults.allowBrowserBridge;
     if (!canUseHosted && missingEntitlements.length > 0) {
-      binding.reason = `Hosted execution required but execution defaults prefer local. Missing bindings: ${missingEntitlements.join(", ")}.`;
+      const strategyNote = capability.executionBinding.strategy === "async_operation" ? " (async polling required)" : "";
+      binding.reason = `Hosted execution required but execution defaults prefer local${strategyNote}. Missing bindings: ${missingEntitlements.join(", ")}.`;
       return binding;
     }
   }
   if (profile.hosted.entitlements.length === 0) {
     binding.allowed = true;
-    binding.reason = "No entitlement restrictions configured \u2014 allowed by default.";
     binding.machineConnectionId = profile.local.instanceId;
+    const outputNote2 = capability.outputTypes.length > 0 ? ` Produces: ${capability.outputTypes.join(", ")}.` : "";
+    binding.reason = `No entitlement restrictions configured \u2014 allowed by default.${outputNote2}`;
     return binding;
   }
   if (missingEntitlements.length > 0) {
-    binding.reason = `Missing entitlements for required bindings: ${missingEntitlements.join(", ")}.`;
+    const strategyNote = capability.executionBinding.strategy !== "direct" ? ` [strategy: ${capability.executionBinding.strategy}]` : "";
+    binding.reason = `Missing entitlements for required bindings: ${missingEntitlements.join(", ")}${strategyNote}.`;
     return binding;
   }
   binding.allowed = true;
   binding.machineConnectionId = profile.local.instanceId;
-  binding.reason = "All binding requirements satisfied.";
+  const outputNote = capability.outputTypes.length > 0 ? ` Produces: ${capability.outputTypes.join(", ")}.` : "";
+  binding.reason = `All binding requirements satisfied.${outputNote}`;
   return binding;
 }
 function createMachineCapabilityResolver() {
@@ -22812,13 +18528,20 @@ function createMachineCapabilityResolver() {
       const profile = computeEffectiveProfile();
       const machineContext = buildMachineContext(profile);
       const registry = createCmsCapabilityRegistryClient();
-      const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+      const { nodes, meta } = await registry.listCapabilities({ enabledOnly: false });
       const bindings = nodes.map((capability) => resolveBinding(capability, profile));
       return {
         bindings,
         machineContext,
         entitlements: profile.hosted.entitlements,
-        resolvedAt: (/* @__PURE__ */ new Date()).toISOString()
+        resolvedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        registryMeta: {
+          source: meta.source,
+          fromCache: meta.fromCache,
+          staleFallback: meta.staleFallback,
+          fetchedAt: meta.fetchedAt,
+          cacheAgeSeconds: meta.cacheAgeSeconds
+        }
       };
     },
     async resolveCapability(slug) {
@@ -22864,13 +18587,62 @@ function getWorkflowAccess() {
 
 // src/commands/capability.ts
 init_banner();
+function extractInputTemplateFields(template) {
+  return Object.entries(template).map(([key, value]) => ({
+    key,
+    value,
+    valueType: Array.isArray(value) ? "array" : typeof value,
+    isEmpty: value === "" || value === null || value === void 0
+  }));
+}
+function extractOutputMappingEntries(mapping) {
+  return Object.entries(mapping).map(([key, path61]) => ({ key, path: path61 }));
+}
+function printInputTemplateTable(fields) {
+  if (fields.length === 0) {
+    console.log(pc25.dim("  (no input fields defined)"));
+    return;
+  }
+  const keyWidth = Math.max(8, ...fields.map((f) => f.key.length));
+  const typeWidth = Math.max(6, ...fields.map((f) => f.valueType.length));
+  console.log(
+    "  " + pc25.dim("key".padEnd(keyWidth)) + "  " + pc25.dim("type".padEnd(typeWidth)) + "  " + pc25.dim("default")
+  );
+  console.log("  " + pc25.dim("\u2500".repeat(keyWidth + typeWidth + 20)));
+  for (const field of fields) {
+    const defaultStr = field.isEmpty ? pc25.dim("(empty)") : pc25.green(JSON.stringify(field.value).slice(0, 60));
+    console.log("  " + pc25.bold(field.key.padEnd(keyWidth)) + "  " + pc25.dim(field.valueType.padEnd(typeWidth)) + "  " + defaultStr);
+  }
+}
+function printOutputMappingTable(entries) {
+  if (entries.length === 0) {
+    console.log(pc25.dim("  (no output mappings defined)"));
+    return;
+  }
+  const keyWidth = Math.max(8, ...entries.map((e) => e.key.length));
+  console.log("  " + pc25.dim("key".padEnd(keyWidth)) + "  " + pc25.dim("path / value"));
+  console.log("  " + pc25.dim("\u2500".repeat(keyWidth + 40)));
+  for (const entry of entries) {
+    console.log("  " + pc25.bold(entry.key.padEnd(keyWidth)) + "  " + pc25.cyan(JSON.stringify(entry.path).slice(0, 80)));
+  }
+}
+function printCacheFreshnessLine(meta) {
+  if (meta.fromCache) {
+    const age = meta.cacheAgeSeconds !== void 0 ? `${meta.cacheAgeSeconds}s ago` : "?";
+    const expires = meta.expiresAt ? `expires ${meta.expiresAt.slice(11, 19)} UTC` : "";
+    console.log(pc25.dim(`  Cache: warm \xB7 fetched ${age} \xB7 ${expires}`));
+  } else {
+    const ts = meta.fetchedAt ? meta.fetchedAt.slice(0, 19).replace("T", " ") + " UTC" : "just now";
+    console.log(pc25.dim(`  Source: ${meta.source ?? "hosted"} \xB7 fetched ${ts}`));
+  }
+}
 var FAMILY_CONFIG = {
-  video: { color: pc32.magenta, emoji: "\u{1F3AC}", label: "Video" },
-  image: { color: pc32.cyan, emoji: "\u{1F5BC}\uFE0F ", label: "Image" },
-  slides: { color: pc32.yellow, emoji: "\u{1F4CA}", label: "Slides" },
-  text: { color: pc32.green, emoji: "\u{1F4DD}", label: "Text" },
-  data: { color: pc32.blue, emoji: "\u{1F4E6}", label: "Data" },
-  ops: { color: pc32.red, emoji: "\u2699\uFE0F ", label: "Ops" }
+  video: { color: pc25.magenta, emoji: "\u{1F3AC}", label: "Video" },
+  image: { color: pc25.cyan, emoji: "\u{1F5BC}\uFE0F ", label: "Image" },
+  slides: { color: pc25.yellow, emoji: "\u{1F4CA}", label: "Slides" },
+  text: { color: pc25.green, emoji: "\u{1F4DD}", label: "Text" },
+  data: { color: pc25.blue, emoji: "\u{1F4E6}", label: "Data" },
+  ops: { color: pc25.red, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function familyBadge(family) {
   const cfg = FAMILY_CONFIG[family];
@@ -22878,13 +18650,13 @@ function familyBadge(family) {
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 function executionKindLabel(kind) {
-  if (kind === "hosted-execute") return pc32.cyan("hosted");
-  if (kind === "provider-assembly") return pc32.yellow("provider");
-  if (kind === "local-only") return pc32.green("local");
+  if (kind === "hosted-execute") return pc25.cyan("hosted");
+  if (kind === "provider-assembly") return pc25.yellow("provider");
+  if (kind === "local-only") return pc25.green("local");
   return kind;
 }
 function hr4(width = 72) {
-  return pc32.dim("\u2500".repeat(width));
+  return pc25.dim("\u2500".repeat(width));
 }
 function stripAnsi4(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -22892,11 +18664,11 @@ function stripAnsi4(str) {
 function box3(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi4(l).length)) + 4;
-  const top = pc32.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc32.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc25.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc25.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi4(l).length;
-    return pc32.dim("\u2502") + l + " ".repeat(pad2) + pc32.dim("\u2502");
+    return pc25.dim("\u2502") + l + " ".repeat(pad2) + pc25.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
@@ -22909,48 +18681,48 @@ function printGroupedCapabilities(nodes) {
   const totalFamilies = families.length;
   console.log("");
   console.log(
-    pc32.bold("CMS Capability Registry") + pc32.dim(`  ${nodes.length} capabilit${nodes.length !== 1 ? "ies" : "y"}  \xB7  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`)
+    pc25.bold("CMS Capability Registry") + pc25.dim(`  ${nodes.length} capabilit${nodes.length !== 1 ? "ies" : "y"}  \xB7  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`)
   );
   console.log(hr4());
   for (const family of families) {
     const groupNodes = byFamily[family];
     const header = familyBadge(family);
     console.log(`
-${header}  ${pc32.dim("(" + groupNodes.length + ")")}`);
+${header}  ${pc25.dim("(" + groupNodes.length + ")")}`);
     for (const node of groupNodes) {
-      const enabledTag = node.enabled ? pc32.green("enabled") : pc32.red("disabled");
-      console.log(`  ${pc32.bold(node.slug)}  ${pc32.dim(node.displayName)}  ${enabledTag}`);
-      console.log(`  ${pc32.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc32.dim("Outputs:")} ${pc32.dim(node.outputTypes.join(", "))}`);
+      const enabledTag = node.enabled ? pc25.green("enabled") : pc25.red("disabled");
+      console.log(`  ${pc25.bold(node.slug)}  ${pc25.dim(node.displayName)}  ${enabledTag}`);
+      console.log(`  ${pc25.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc25.dim("Outputs:")} ${pc25.dim(node.outputTypes.join(", "))}`);
       if (node.description) {
-        console.log(`  ${pc32.dim(node.description)}`);
+        console.log(`  ${pc25.dim(node.description)}`);
       }
       console.log("");
     }
   }
   console.log(hr4());
-  console.log(pc32.dim("  growthub capability inspect <slug>  \xB7  growthub capability resolve"));
+  console.log(pc25.dim("  growthub capability inspect <slug>  \xB7  growthub capability resolve"));
   console.log("");
 }
 function printCapabilityCard(node) {
   const iconPrefix = node.icon ? `${node.icon}  ` : "";
   const lines = [
-    `${iconPrefix}${pc32.bold(node.displayName)}  ${pc32.dim(node.slug)}`,
-    `${familyBadge(node.family)}  ${node.enabled ? pc32.green("enabled") : pc32.red("disabled")}`,
+    `${iconPrefix}${pc25.bold(node.displayName)}  ${pc25.dim(node.slug)}`,
+    `${familyBadge(node.family)}  ${node.enabled ? pc25.green("enabled") : pc25.red("disabled")}`,
     "",
-    `${pc32.dim("Category:")}          ${node.category}`,
-    `${pc32.dim("Node Type:")}         ${node.nodeType}`,
-    `${pc32.dim("Execution Kind:")}    ${executionKindLabel(node.executionKind)}`,
-    `${pc32.dim("Execution Strategy:")} ${node.executionBinding.strategy}`,
-    `${pc32.dim("Tool Name:")}         ${node.executionTokens.tool_name}`,
-    `${pc32.dim("Output Types:")}      ${node.outputTypes.join(", ")}`,
-    `${pc32.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc32.dim("(none)")}`
+    `${pc25.dim("Category:")}          ${node.category}`,
+    `${pc25.dim("Node Type:")}         ${node.nodeType}`,
+    `${pc25.dim("Execution Kind:")}    ${executionKindLabel(node.executionKind)}`,
+    `${pc25.dim("Execution Strategy:")} ${node.executionBinding.strategy}`,
+    `${pc25.dim("Tool Name:")}         ${node.executionTokens.tool_name}`,
+    `${pc25.dim("Output Types:")}      ${node.outputTypes.join(", ")}`,
+    `${pc25.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc25.dim("(none)")}`
   ];
   if (node.description) {
-    lines.push("", pc32.dim(node.description));
+    lines.push("", pc25.dim(node.description));
   }
   const inputKeys = Object.keys(node.executionTokens.input_template);
   if (inputKeys.length > 0) {
-    lines.push("", `${pc32.dim("Input fields:")} ${inputKeys.join(", ")}`);
+    lines.push("", `${pc25.dim("Input fields:")} ${inputKeys.join(", ")}`);
   }
   console.log("");
   console.log(box3(lines));
@@ -22958,7 +18730,7 @@ function printCapabilityCard(node) {
 }
 async function runCapabilityPicker(opts) {
   printPaperclipCliBanner();
-  p21.intro(pc32.bold("CMS Capability Registry"));
+  p21.intro(pc25.bold("CMS Capability Registry"));
   const access = getWorkflowAccess();
   if (access.state !== "ready") {
     p21.note(
@@ -23009,7 +18781,7 @@ async function runCapabilityPicker(opts) {
         options: [
           ...result.nodes.map((n) => ({
             value: n.slug,
-            label: `${familyBadge(n.family)}  ` + pc32.bold(n.displayName) + "  " + pc32.dim(n.slug),
+            label: `${familyBadge(n.family)}  ` + pc25.bold(n.displayName) + "  " + pc25.dim(n.slug),
             hint: n.description ? n.description.slice(0, 55) : void 0
           })),
           { value: "__back_to_family", label: "\u2190 Back to family filter" }
@@ -23040,13 +18812,13 @@ async function runCapabilityPicker(opts) {
           const resolver = createMachineCapabilityResolver();
           const binding = await resolver.resolveCapability(selected.slug);
           if (binding) {
-            const statusColor3 = binding.allowed ? pc32.green : pc32.red;
+            const statusColor3 = binding.allowed ? pc25.green : pc25.red;
             console.log("");
             console.log(box3([
-              `${pc32.bold("Machine Binding:")} ${selected.slug}`,
-              `${pc32.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
-              `${pc32.dim("Reason:")}   ${binding.reason ?? "\u2014"}`,
-              ...binding.machineConnectionId ? [`${pc32.dim("Connection:")} ${binding.machineConnectionId}`] : []
+              `${pc25.bold("Machine Binding:")} ${selected.slug}`,
+              `${pc25.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+              `${pc25.dim("Reason:")}   ${binding.reason ?? "\u2014"}`,
+              ...binding.machineConnectionId ? [`${pc25.dim("Connection:")} ${binding.machineConnectionId}`] : []
             ]));
             console.log("");
           }
@@ -23070,64 +18842,68 @@ Examples:
   cap.action(async () => {
     await runCapabilityPicker({});
   });
-  cap.command("list").description("List all CMS-backed runtime node capabilities").option("--family <family>", "Filter by family (video, image, slides, text, data, ops)").option("--json", "Output raw JSON for scripting").action(async (opts) => {
+  cap.command("list").description("List all CMS-backed runtime node capabilities").option("--family <family>", "Filter by family (video, image, slides, text, data, ops)").option("--json", "Output raw JSON for scripting").option("--refresh", "Bypass local TTL cache and fetch fresh from hosted").action(async (opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc32.red(`${access.reason}.`));
+      console.error(pc25.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
     const registry = createCmsCapabilityRegistryClient();
-    const query = opts.family ? { family: opts.family } : void 0;
+    const query = {
+      ...opts.family ? { family: opts.family } : {},
+      ...opts.refresh ? { refresh: true } : {}
+    };
     try {
-      const { nodes, meta } = await registry.listCapabilities(query);
+      const { nodes, meta } = await registry.listCapabilities(Object.keys(query).length > 0 ? query : void 0);
       if (opts.json) {
         console.log(JSON.stringify({ nodes, meta }, null, 2));
         return;
       }
       if (nodes.length === 0) {
-        console.error(pc32.yellow("No capabilities found" + (opts.family ? ` for family: ${opts.family}` : "") + "."));
-        console.error(pc32.dim("Valid families: " + CAPABILITY_FAMILIES.join(", ")));
+        console.error(pc25.yellow("No capabilities found" + (opts.family ? ` for family: ${opts.family}` : "") + "."));
+        console.error(pc25.dim("Valid families: " + CAPABILITY_FAMILIES.join(", ")));
         process.exitCode = 1;
         return;
       }
       printGroupedCapabilities(nodes);
-      console.log(pc32.dim(`  Source: ${meta.source}  \xB7  Fetched: ${meta.fetchedAt}`));
+      printCacheFreshnessLine(meta);
       console.log("");
     } catch (err) {
-      console.error(pc32.red("Failed to list capabilities: " + err.message));
+      console.error(pc25.red("Failed to list capabilities: " + err.message));
       process.exitCode = 1;
     }
   });
   cap.command("inspect").description("Inspect a specific CMS capability node").argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')").option("--json", "Output raw JSON").action(async (slug, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc32.red(`${access.reason}.`));
+      console.error(pc25.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
     const registry = createCmsCapabilityRegistryClient();
     try {
-      const node = await registry.getCapability(slug);
+      const { nodes, meta } = await registry.listCapabilities({ slug, enabledOnly: false });
+      const node = nodes.find((n) => n.slug === slug);
       if (!node) {
-        console.error(pc32.red(`Unknown capability: "${slug}".`) + pc32.dim(" Run `growthub capability list` to browse."));
+        console.error(pc25.red(`Unknown capability: "${slug}".`) + pc25.dim(" Run `growthub capability list` to browse."));
         process.exitCode = 1;
         return;
       }
       if (opts.json) {
-        console.log(JSON.stringify(node, null, 2));
+        console.log(JSON.stringify({ ...node, _meta: meta }, null, 2));
         return;
       }
       printCapabilityCard(node);
     } catch (err) {
-      console.error(pc32.red("Failed to inspect capability: " + err.message));
+      console.error(pc25.red("Failed to inspect capability: " + err.message));
       process.exitCode = 1;
     }
   });
   cap.command("resolve").description("Resolve machine-scoped capability bindings for all capabilities").option("--json", "Output raw JSON").action(async (opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc32.red(`${access.reason}.`));
+      console.error(pc25.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -23139,30 +18915,277 @@ Examples:
         return;
       }
       console.log("");
-      console.log(pc32.bold("Machine Capability Resolution"));
+      console.log(pc25.bold("Machine Capability Resolution"));
       console.log(hr4());
-      console.log(`  ${pc32.dim("Hostname:")}  ${result.machineContext.hostname}`);
-      console.log(`  ${pc32.dim("Instance:")}  ${result.machineContext.instanceId}`);
-      console.log(`  ${pc32.dim("Session:")}   ${result.machineContext.hasActiveSession ? pc32.green("active") : pc32.red("none")}`);
+      console.log(`  ${pc25.dim("Hostname:")}  ${result.machineContext.hostname}`);
+      console.log(`  ${pc25.dim("Instance:")}  ${result.machineContext.instanceId}`);
+      console.log(`  ${pc25.dim("Session:")}   ${result.machineContext.hasActiveSession ? pc25.green("active") : pc25.red("none")}`);
       if (result.machineContext.machineLabel) {
-        console.log(`  ${pc32.dim("Machine:")}   ${result.machineContext.machineLabel}`);
+        console.log(`  ${pc25.dim("Machine:")}   ${result.machineContext.machineLabel}`);
       }
-      console.log(`  ${pc32.dim("Entitlements:")} ${result.entitlements.length > 0 ? result.entitlements.join(", ") : pc32.dim("(none)")}`);
+      console.log(`  ${pc25.dim("Entitlements:")} ${result.entitlements.length > 0 ? result.entitlements.join(", ") : pc25.dim("(none)")}`);
       console.log(hr4());
       for (const binding of result.bindings) {
-        const statusColor3 = binding.allowed ? pc32.green : pc32.red;
+        const statusColor3 = binding.allowed ? pc25.green : pc25.red;
         const statusIcon = binding.allowed ? "\u2713" : "\u2717";
+        const tags = [];
+        if (binding.family) tags.push(pc25.dim(binding.family));
+        if (binding.strategy && binding.strategy !== "direct") tags.push(pc25.yellow(binding.strategy));
+        const tagStr = tags.length > 0 ? "  " + tags.join("  ") : "";
         console.log(
-          `  ${statusColor3(statusIcon)} ${pc32.bold(binding.capabilitySlug)}  ${pc32.dim(binding.reason ?? "")}`
+          `  ${statusColor3(statusIcon)} ${pc25.bold(binding.capabilitySlug)}${tagStr}
+     ${pc25.dim(binding.reason ?? "")}`
         );
+        for (const note17 of binding.notes ?? []) {
+          console.log(`     ${pc25.yellow("\u26A0")}  ${pc25.dim(note17)}`);
+        }
       }
       console.log("");
-      console.log(pc32.dim(`  Resolved at: ${result.resolvedAt}`));
+      console.log(pc25.dim(`  Resolved at: ${result.resolvedAt}`));
+      if (result.registryMeta) {
+        const rm = result.registryMeta;
+        const cacheNote = rm.staleFallback ? pc25.yellow("stale fallback") : rm.fromCache ? `cache (${rm.cacheAgeSeconds ?? "?"}s ago)` : rm.source;
+        console.log(pc25.dim(`  Registry:    ${cacheNote}`));
+      }
       console.log("");
     } catch (err) {
-      console.error(pc32.red("Failed to resolve capabilities: " + err.message));
+      console.error(pc25.red("Failed to resolve capabilities: " + err.message));
       process.exitCode = 1;
     }
+  });
+  cap.command("manifest").description("Show normalized hosted manifest metadata and execution tokens for a capability").argument("<slug>", "Capability slug").option("--json", "Output raw JSON").option("--refresh", "Bypass local TTL cache").action(async (slug, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc25.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    const registry = createCmsCapabilityRegistryClient();
+    try {
+      const { nodes, meta } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+      const node = nodes.find((n) => n.slug === slug);
+      if (!node) {
+        console.error(pc25.red(`Unknown capability: "${slug}".`) + pc25.dim(" Run `growthub capability list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({
+          slug: node.slug,
+          displayName: node.displayName,
+          family: node.family,
+          category: node.category,
+          nodeType: node.nodeType,
+          executionKind: node.executionKind,
+          executionBinding: node.executionBinding,
+          executionTokens: node.executionTokens,
+          requiredBindings: node.requiredBindings,
+          outputTypes: node.outputTypes,
+          enabled: node.enabled,
+          experimental: node.experimental,
+          visibility: node.visibility,
+          description: node.description,
+          manifestMetadata: node.manifestMetadata,
+          _meta: meta
+        }, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc25.bold(`Manifest: ${node.displayName}`) + "  " + pc25.dim(node.slug));
+      console.log(hr4());
+      console.log(`  ${pc25.dim("Family:")}             ${node.family}`);
+      console.log(`  ${pc25.dim("Category:")}           ${node.category}`);
+      console.log(`  ${pc25.dim("Node Type:")}          ${node.nodeType}`);
+      console.log(`  ${pc25.dim("Execution Kind:")}     ${node.executionKind}`);
+      console.log(`  ${pc25.dim("Strategy:")}           ${node.executionBinding.strategy}`);
+      console.log(`  ${pc25.dim("Tool Name:")}          ${node.executionTokens.tool_name}`);
+      console.log(`  ${pc25.dim("Required Bindings:")}  ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc25.dim("(none)")}`);
+      console.log(`  ${pc25.dim("Output Types:")}       ${node.outputTypes.length > 0 ? node.outputTypes.join(", ") : pc25.dim("(none)")}`);
+      console.log(`  ${pc25.dim("Visibility:")}         ${node.visibility}`);
+      console.log(`  ${pc25.dim("Enabled:")}            ${node.enabled ? pc25.green("yes") : pc25.red("no")}`);
+      console.log(`  ${pc25.dim("Experimental:")}       ${node.experimental ? pc25.yellow("yes") : "no"}`);
+      if (node.executionTokens.migration_version) {
+        console.log(`  ${pc25.dim("Migration Version:")}  ${node.executionTokens.migration_version}`);
+      }
+      if (node.executionBinding.timeoutMs) {
+        console.log(`  ${pc25.dim("Timeout:")}            ${node.executionBinding.timeoutMs}ms`);
+      }
+      if (node.executionBinding.max_retries !== void 0) {
+        console.log(`  ${pc25.dim("Max Retries:")}        ${node.executionBinding.max_retries}`);
+      }
+      if (node.executionBinding.polling_interval !== void 0) {
+        console.log(`  ${pc25.dim("Poll Interval:")}      ${node.executionBinding.polling_interval}ms`);
+      }
+      if (node.executionTokens.endpoint_config) {
+        const ec = node.executionTokens.endpoint_config;
+        const parts = [];
+        if (ec.env_var) parts.push(`env=${ec.env_var}`);
+        if (ec.endpoint_type) parts.push(`type=${ec.endpoint_type}`);
+        console.log(`  ${pc25.dim("Endpoint Config:")}    ${parts.join("  ")}`);
+      }
+      if (node.description) {
+        console.log("");
+        console.log("  " + pc25.dim(node.description));
+      }
+      console.log(hr4());
+      printCacheFreshnessLine(meta);
+      console.log("");
+    } catch (err) {
+      console.error(pc25.red("Failed to load manifest: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  cap.command("schema").description("Show the input_template (input schema) for a capability").argument("<slug>", "Capability slug").option("--json", "Output raw JSON").option("--refresh", "Bypass local TTL cache").action(async (slug, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc25.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    const registry = createCmsCapabilityRegistryClient();
+    try {
+      const { nodes } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+      const node = nodes.find((n) => n.slug === slug);
+      if (!node) {
+        console.error(pc25.red(`Unknown capability: "${slug}".`) + pc25.dim(" Run `growthub capability list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(node.executionTokens.input_template, null, 2));
+        return;
+      }
+      const fields = extractInputTemplateFields(node.executionTokens.input_template);
+      console.log("");
+      console.log(pc25.bold(`Input Schema: ${node.displayName}`) + "  " + pc25.dim(`${fields.length} field${fields.length !== 1 ? "s" : ""}`));
+      console.log(hr4());
+      printInputTemplateTable(fields);
+      console.log(hr4());
+      console.log(pc25.dim(`  growthub capability manifest ${slug}  \xB7  growthub capability outputs ${slug}`));
+      console.log("");
+    } catch (err) {
+      console.error(pc25.red("Failed to load schema: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  cap.command("outputs").description("Show the output_mapping for a capability").argument("<slug>", "Capability slug").option("--json", "Output raw JSON").option("--refresh", "Bypass local TTL cache").action(async (slug, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc25.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    const registry = createCmsCapabilityRegistryClient();
+    try {
+      const { nodes } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+      const node = nodes.find((n) => n.slug === slug);
+      if (!node) {
+        console.error(pc25.red(`Unknown capability: "${slug}".`) + pc25.dim(" Run `growthub capability list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(node.executionTokens.output_mapping, null, 2));
+        return;
+      }
+      const entries = extractOutputMappingEntries(node.executionTokens.output_mapping);
+      console.log("");
+      console.log(pc25.bold(`Output Mapping: ${node.displayName}`) + "  " + pc25.dim(`${entries.length} entr${entries.length !== 1 ? "ies" : "y"}`));
+      console.log(`  ${pc25.dim("Output Types:")} ${node.outputTypes.length > 0 ? node.outputTypes.join(", ") : pc25.dim("(none)")}`);
+      console.log(hr4());
+      printOutputMappingTable(entries);
+      console.log(hr4());
+      console.log(pc25.dim(`  growthub capability schema ${slug}  \xB7  growthub capability manifest ${slug}`));
+      console.log("");
+    } catch (err) {
+      console.error(pc25.red("Failed to load output mapping: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  cap.command("versions").description("Show version, migration marker, cache source, and hosted revision metadata for a capability").argument("<slug>", "Capability slug").option("--json", "Output raw JSON").option("--refresh", "Bypass local TTL cache").action(async (slug, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc25.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    const registry = createCmsCapabilityRegistryClient();
+    try {
+      const { nodes, meta } = await registry.listCapabilities({ slug, enabledOnly: false, refresh: opts.refresh });
+      const node = nodes.find((n) => n.slug === slug);
+      if (!node) {
+        console.error(pc25.red(`Unknown capability: "${slug}".`) + pc25.dim(" Run `growthub capability list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      const migrationVersion = node.executionTokens.migration_version ?? null;
+      const manifestMeta = node.manifestMetadata ?? {};
+      const hostedRevision = typeof manifestMeta.revision === "string" ? manifestMeta.revision : typeof manifestMeta.version === "string" ? manifestMeta.version : null;
+      if (opts.json) {
+        console.log(JSON.stringify({
+          slug: node.slug,
+          migrationVersion,
+          hostedRevision,
+          cacheSource: meta.source,
+          fromCache: meta.fromCache ?? false,
+          fetchedAt: meta.fetchedAt,
+          expiresAt: meta.expiresAt ?? null,
+          cacheAgeSeconds: meta.cacheAgeSeconds ?? null
+        }, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc25.bold(`Version Info: ${node.displayName}`) + "  " + pc25.dim(node.slug));
+      console.log(hr4());
+      console.log(`  ${pc25.dim("Migration Version:")}  ${migrationVersion ?? pc25.dim("(not set)")}`);
+      console.log(`  ${pc25.dim("Hosted Revision:")}    ${hostedRevision ?? pc25.dim("(not set)")}`);
+      console.log(`  ${pc25.dim("Source:")}             ${meta.source}`);
+      console.log(`  ${pc25.dim("From Cache:")}         ${meta.fromCache ? pc25.yellow("yes") : "no"}`);
+      console.log(`  ${pc25.dim("Fetched At:")}         ${meta.fetchedAt}`);
+      if (meta.expiresAt) {
+        console.log(`  ${pc25.dim("Cache Expires:")}      ${meta.expiresAt}`);
+      }
+      if (meta.cacheAgeSeconds !== void 0) {
+        console.log(`  ${pc25.dim("Cache Age:")}          ${meta.cacheAgeSeconds}s`);
+      }
+      console.log(hr4());
+      console.log(pc25.dim("  Use --refresh to bypass cache and fetch the latest version from hosted."));
+      console.log("");
+    } catch (err) {
+      console.error(pc25.red("Failed to load version info: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  const cacheCmd = cap.command("cache").description("Manage the local capability registry TTL cache");
+  cacheCmd.command("status").description("Show cache freshness, node count, and source metadata").option("--json", "Output raw JSON").action((opts) => {
+    const status = getCapabilityCacheStatus();
+    if (opts.json) {
+      console.log(JSON.stringify(status, null, 2));
+      return;
+    }
+    console.log("");
+    console.log(pc25.bold("Capability Registry Cache"));
+    console.log(hr4());
+    if (!status.exists) {
+      console.log("  " + pc25.yellow("No cache found.") + pc25.dim("  Run `growthub capability list` to populate."));
+      console.log("");
+      return;
+    }
+    const freshLabel = status.fresh ? pc25.green("fresh") : pc25.yellow("stale");
+    console.log(`  ${pc25.dim("Status:")}       ${freshLabel}`);
+    console.log(`  ${pc25.dim("Source:")}       ${status.source ?? "?"}`);
+    console.log(`  ${pc25.dim("Total:")}        ${status.total ?? "?"} capabilities`);
+    console.log(`  ${pc25.dim("Enabled:")}      ${status.enabledCount ?? "?"} capabilities`);
+    console.log(`  ${pc25.dim("Fetched:")}      ${status.fetchedAt ?? "?"}`);
+    console.log(`  ${pc25.dim("Expires:")}      ${status.expiresAt ?? "?"}`);
+    console.log(`  ${pc25.dim("Age:")}          ${status.ageSeconds !== void 0 ? `${status.ageSeconds}s` : "?"}`);
+    console.log(hr4());
+    console.log(pc25.dim("  growthub capability cache clear  \xB7  growthub capability list --refresh"));
+    console.log("");
+  });
+  cacheCmd.command("clear").description("Clear the local capability registry cache").action(() => {
+    clearCapabilityCache();
+    console.log(pc25.green("Capability registry cache cleared.") + pc25.dim("  Next list will fetch fresh from hosted."));
   });
 }
 
@@ -23172,7 +19195,7 @@ init_hosted_client();
 import fs32 from "node:fs";
 import path40 from "node:path";
 import * as p22 from "@clack/prompts";
-import pc34 from "picocolors";
+import pc27 from "picocolors";
 
 // src/runtime/dynamic-registry-pipeline/index.ts
 import { randomBytes as randomBytes6 } from "node:crypto";
@@ -23208,9 +19231,9 @@ function createPipelineBuilder(opts) {
     },
     async validate(registry) {
       const capabilityMap = registry ?? await fetchCapabilityMap();
-      const issues2 = [];
+      const issues = [];
       if (nodes.length === 0) {
-        issues2.push({
+        issues.push({
           severity: "error",
           message: "Pipeline has no nodes."
         });
@@ -23220,7 +19243,7 @@ function createPipelineBuilder(opts) {
       for (const node of nodes) {
         const capability = capabilityMap.get(node.slug);
         if (!capability) {
-          issues2.push({
+          issues.push({
             severity: "error",
             nodeId: node.id,
             field: "slug",
@@ -23229,27 +19252,53 @@ function createPipelineBuilder(opts) {
           continue;
         }
         if (!capability.enabled) {
-          issues2.push({
+          issues.push({
             severity: "warning",
             nodeId: node.id,
             field: "slug",
             message: `Capability "${node.slug}" is disabled for this user/org.`
           });
         }
+        if (capability.executionBinding.strategy === "async_operation") {
+          issues.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "executionBinding.strategy",
+            message: `Capability "${node.slug}" uses async_operation strategy. Execution will be non-blocking and requires polling for results.`
+          });
+        }
+        if (capability.experimental) {
+          issues.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "experimental",
+            message: `Capability "${node.slug}" is marked experimental and may have unstable behavior.`
+          });
+        }
         for (const requiredBinding of capability.requiredBindings) {
           if (!(requiredBinding in node.bindings)) {
-            issues2.push({
+            issues.push({
               severity: "error",
               nodeId: node.id,
               field: `bindings.${requiredBinding}`,
               message: `Missing required binding "${requiredBinding}" for capability "${node.slug}".`
             });
+          } else {
+            const val = node.bindings[requiredBinding];
+            if (val === "" || val === null || val === void 0) {
+              issues.push({
+                severity: "warning",
+                nodeId: node.id,
+                field: `bindings.${requiredBinding}`,
+                message: `Required binding "${requiredBinding}" for capability "${node.slug}" is present but has an empty value.`
+              });
+            }
           }
         }
         if (node.upstreamNodeIds) {
           for (const upId of node.upstreamNodeIds) {
             if (!nodeIds.has(upId)) {
-              issues2.push({
+              issues.push({
                 severity: "error",
                 nodeId: node.id,
                 field: "upstreamNodeIds",
@@ -23262,24 +19311,53 @@ function createPipelineBuilder(opts) {
       }
       const cycleIssue = detectCycle(nodes);
       if (cycleIssue) {
-        issues2.push(cycleIssue);
+        issues.push(cycleIssue);
       }
+      issues.push(...checkCrossNodeCompatibility(nodes, capabilityMap));
       return {
-        valid: issues2.every((i) => i.severity !== "error"),
-        issues: issues2
+        valid: issues.every((i) => i.severity !== "error"),
+        issues
       };
     },
     async package(registry) {
       const capabilityMap = registry ?? await fetchCapabilityMap();
       const pipeline = this.build();
       const nodeRoutes = {};
+      const nodeOutputSummaries = {};
+      const asyncNodeIds = [];
+      const preflightWarnings = [];
       const routeSet = /* @__PURE__ */ new Set();
       for (const node of pipeline.nodes) {
         const capability = capabilityMap.get(node.slug);
         const route = capability?.executionKind ?? "hosted-execute";
         nodeRoutes[node.id] = route;
         routeSet.add(route);
+        const outputKeys = capability ? Object.keys(capability.executionTokens.output_mapping) : [];
+        const outputTypes = capability?.outputTypes ?? [];
+        nodeOutputSummaries[node.id] = { nodeId: node.id, slug: node.slug, outputKeys, outputTypes };
+        if (capability?.executionBinding.strategy === "async_operation") {
+          asyncNodeIds.push(node.id);
+          preflightWarnings.push({
+            severity: "warning",
+            nodeId: node.id,
+            message: `Node "${node.slug}" (${node.id}) uses async polling strategy.`
+          });
+        }
+        for (const requiredBinding of capability?.requiredBindings ?? []) {
+          if (requiredBinding in node.bindings) {
+            const val = node.bindings[requiredBinding];
+            if (val === "" || val === null || val === void 0) {
+              preflightWarnings.push({
+                severity: "warning",
+                nodeId: node.id,
+                field: `bindings.${requiredBinding}`,
+                message: `Required binding "${requiredBinding}" in node "${node.slug}" has an empty value.`
+              });
+            }
+          }
+        }
       }
+      preflightWarnings.push(...checkCrossNodeCompatibility(pipeline.nodes, capabilityMap));
       let executionRoute;
       if (routeSet.size === 1) {
         const single = [...routeSet][0];
@@ -23290,7 +19368,10 @@ function createPipelineBuilder(opts) {
       return {
         pipeline,
         executionRoute,
-        nodeRoutes
+        nodeRoutes,
+        nodeOutputSummaries,
+        asyncNodeIds,
+        preflightWarnings
       };
     }
   };
@@ -23344,6 +19425,47 @@ function detectCycle(nodes) {
     }
   }
   return null;
+}
+var OUTPUT_INCOMPATIBLE_FAMILIES = {
+  video: ["text", "slides", "research", "image"],
+  image: ["text", "research"],
+  slides: ["text", "research", "video", "image"]
+};
+function checkCrossNodeCompatibility(nodes, capabilityMap) {
+  const issues = [];
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  for (const node of nodes) {
+    if (!node.upstreamNodeIds || node.upstreamNodeIds.length === 0) continue;
+    const downstreamCap = capabilityMap.get(node.slug);
+    if (!downstreamCap) continue;
+    for (const upId of node.upstreamNodeIds) {
+      const upNode = nodeById.get(upId);
+      if (!upNode) continue;
+      const upCap = capabilityMap.get(upNode.slug);
+      if (!upCap) continue;
+      if (upCap.outputTypes.length === 0) {
+        issues.push({
+          severity: "warning",
+          nodeId: node.id,
+          field: "upstreamNodeIds",
+          message: `Upstream "${upNode.slug}" (${upId}) declares no output types \u2014 cannot verify type compatibility with downstream "${node.slug}".`
+        });
+        continue;
+      }
+      for (const outputType of upCap.outputTypes) {
+        const incompatibleWith = OUTPUT_INCOMPATIBLE_FAMILIES[outputType];
+        if (incompatibleWith?.includes(downstreamCap.family)) {
+          issues.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "upstreamNodeIds",
+            message: `Upstream "${upNode.slug}" produces "${outputType}" artifacts but downstream "${node.slug}" is a "${downstreamCap.family}" node \u2014 these may not be directly compatible.`
+          });
+        }
+      }
+    }
+  }
+  return issues;
 }
 
 // src/runtime/cms-node-contracts/introspect.ts
@@ -23509,10 +19631,10 @@ function inferWorkflowName(pipeline) {
   return pipeline.pipelineId?.trim() || `${pipeline.nodes[0]?.slug ?? "workflow"} workflow`;
 }
 function compileToHostedWorkflowConfig(pipeline, opts) {
-  const cmsNodes = pipeline.nodes.map((node, index51) => ({
+  const cmsNodes = pipeline.nodes.map((node, index) => ({
     id: node.id,
     type: "cmsNode",
-    position: { x: (index51 + 1) * 300, y: 0 },
+    position: { x: (index + 1) * 300, y: 0 },
     data: {
       slug: node.slug,
       inputs: node.bindings
@@ -23561,10 +19683,10 @@ function compileToHostedWorkflowConfig(pipeline, opts) {
 }
 
 // src/runtime/cms-node-contracts/presenter.ts
-import pc33 from "picocolors";
+import pc26 from "picocolors";
 function renderInputLine(input) {
-  const required = input.required ? pc33.red("required") : pc33.green("optional");
-  return `${pc33.dim("\xB7")} ${input.label} ${pc33.dim(`(${input.type})`)} ${required}`;
+  const required = input.required ? pc26.red("required") : pc26.green("optional");
+  return `${pc26.dim("\xB7")} ${input.label} ${pc26.dim(`(${input.type})`)} ${required}`;
 }
 function countNodeAssets(bindings) {
   let count = 0;
@@ -23577,20 +19699,20 @@ function countNodeAssets(bindings) {
 }
 function renderContractCard(contract) {
   const lines = [
-    `${pc33.bold(contract.displayName)}  ${pc33.dim(contract.slug)}`,
-    `${pc33.dim("Family:")} ${contract.family}  ${pc33.dim("Execution:")} ${contract.executionStrategy}`,
-    `${pc33.dim("Kind:")} ${contract.executionKind}  ${pc33.dim("Node Type:")} ${contract.nodeType}`,
-    `${pc33.dim("Bindings:")} ${contract.requiredBindings.length > 0 ? contract.requiredBindings.join(", ") : "none"}`,
-    `${pc33.dim("Outputs:")} ${contract.outputTypes.length > 0 ? contract.outputTypes.join(", ") : "none"}`
+    `${pc26.bold(contract.displayName)}  ${pc26.dim(contract.slug)}`,
+    `${pc26.dim("Family:")} ${contract.family}  ${pc26.dim("Execution:")} ${contract.executionStrategy}`,
+    `${pc26.dim("Kind:")} ${contract.executionKind}  ${pc26.dim("Node Type:")} ${contract.nodeType}`,
+    `${pc26.dim("Bindings:")} ${contract.requiredBindings.length > 0 ? contract.requiredBindings.join(", ") : "none"}`,
+    `${pc26.dim("Outputs:")} ${contract.outputTypes.length > 0 ? contract.outputTypes.join(", ") : "none"}`
   ];
   if (contract.inputs.length > 0) {
-    lines.push("", pc33.bold("Input Contract"));
+    lines.push("", pc26.bold("Input Contract"));
     lines.push(...contract.inputs.map(renderInputLine));
   }
   if (contract.outputs.length > 0) {
-    lines.push("", pc33.bold("Output Contract"));
+    lines.push("", pc26.bold("Output Contract"));
     lines.push(
-      ...contract.outputs.map((output) => `${pc33.dim("\xB7")} ${output.key} ${pc33.dim(`(${output.type})`)}`)
+      ...contract.outputs.map((output) => `${pc26.dim("\xB7")} ${output.key} ${pc26.dim(`(${output.type})`)}`)
     );
   }
   return lines;
@@ -23647,33 +19769,33 @@ function buildPreExecutionSummary(input) {
 }
 function renderPreExecutionSummary(summary) {
   const lines = [
-    `${pc33.bold("Pre-Execution Contract Summary")} ${pc33.dim(summary.pipelineId)}`,
-    `${pc33.dim("Mode:")} ${summary.executionMode}  ${pc33.dim("Nodes:")} ${summary.nodeCount}`,
-    `${pc33.dim("Compiled:")} ${summary.compiledConfig.nodes.length} nodes / ${summary.compiledConfig.edges.length} edges`,
+    `${pc26.bold("Pre-Execution Contract Summary")} ${pc26.dim(summary.pipelineId)}`,
+    `${pc26.dim("Mode:")} ${summary.executionMode}  ${pc26.dim("Nodes:")} ${summary.nodeCount}`,
+    `${pc26.dim("Compiled:")} ${summary.compiledConfig.nodes.length} nodes / ${summary.compiledConfig.edges.length} edges`,
     ""
   ];
-  for (const [index51, node] of summary.nodes.entries()) {
-    const missing = node.requiredMissing.length > 0 ? pc33.red(`missing: ${node.requiredMissing.join(", ")}`) : pc33.green("ready");
+  for (const [index, node] of summary.nodes.entries()) {
+    const missing = node.requiredMissing.length > 0 ? pc26.red(`missing: ${node.requiredMissing.join(", ")}`) : pc26.green("ready");
     const outputs = node.outputTypes.length > 0 ? node.outputTypes.join(", ") : "none";
     lines.push(
-      `${pc33.dim(`${index51 + 1}.`)} ${pc33.bold(node.slug)} ${pc33.dim(node.nodeId)} \xB7 bindings=${node.bindingCount} \xB7 assets=${node.assetCount} \xB7 outputs=${outputs} \xB7 ${missing}`
+      `${pc26.dim(`${index + 1}.`)} ${pc26.bold(node.slug)} ${pc26.dim(node.nodeId)} \xB7 bindings=${node.bindingCount} \xB7 assets=${node.assetCount} \xB7 outputs=${outputs} \xB7 ${missing}`
     );
   }
   if (summary.warnings.length > 0) {
-    lines.push("", pc33.yellow("Warnings"));
-    lines.push(...summary.warnings.map((warning) => `${pc33.dim("\xB7")} ${warning}`));
+    lines.push("", pc26.yellow("Warnings"));
+    lines.push(...summary.warnings.map((warning) => `${pc26.dim("\xB7")} ${warning}`));
   }
   return lines;
 }
 function renderPreSaveReview(input) {
   const lines = [
-    `${pc33.bold("Pre-Save Workflow Review")} ${pc33.dim(input.workflowName)}`,
-    `${pc33.dim("Pipeline:")} ${input.summary.pipelineId}`,
-    `${pc33.dim("Mode:")} ${input.summary.executionMode}`,
-    `${pc33.dim("Compiled:")} ${input.summary.compiledConfig.nodes.length} nodes / ${input.summary.compiledConfig.edges.length} edges`
+    `${pc26.bold("Pre-Save Workflow Review")} ${pc26.dim(input.workflowName)}`,
+    `${pc26.dim("Pipeline:")} ${input.summary.pipelineId}`,
+    `${pc26.dim("Mode:")} ${input.summary.executionMode}`,
+    `${pc26.dim("Compiled:")} ${input.summary.compiledConfig.nodes.length} nodes / ${input.summary.compiledConfig.edges.length} edges`
   ];
   if (input.summary.warnings.length > 0) {
-    lines.push("", pc33.yellow(`Warnings: ${input.summary.warnings.length}`));
+    lines.push("", pc26.yellow(`Warnings: ${input.summary.warnings.length}`));
   }
   return lines;
 }
@@ -23836,16 +19958,16 @@ function createClaudeBackend(config) {
           signal: controller.signal
         });
         if (!response.ok) {
-          const errorText4 = await response.text().catch(() => "");
+          const errorText = await response.text().catch(() => "");
           throw new NativeIntelligenceBackendError(
             response.status,
-            `Anthropic API responded with ${response.status}: ${errorText4 || response.statusText}`
+            `Anthropic API responded with ${response.status}: ${errorText || response.statusText}`
           );
         }
         const result = await response.json();
-        const text69 = result.content?.find((c) => c.type === "text")?.text ?? "";
+        const text18 = result.content?.find((c) => c.type === "text")?.text ?? "";
         return {
-          text: text69,
+          text: text18,
           usage: result.usage ? {
             promptTokens: result.usage.input_tokens ?? 0,
             completionTokens: result.usage.output_tokens ?? 0,
@@ -23885,16 +20007,16 @@ function createGeminiBackend(config) {
           signal: controller.signal
         });
         if (!response.ok) {
-          const errorText4 = await response.text().catch(() => "");
+          const errorText = await response.text().catch(() => "");
           throw new NativeIntelligenceBackendError(
             response.status,
-            `Gemini API responded with ${response.status}: ${errorText4 || response.statusText}`
+            `Gemini API responded with ${response.status}: ${errorText || response.statusText}`
           );
         }
         const result = await response.json();
-        const text69 = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        const text18 = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
         return {
-          text: text69,
+          text: text18,
           usage: result.usageMetadata ? {
             promptTokens: result.usageMetadata.promptTokenCount ?? 0,
             completionTokens: result.usageMetadata.candidatesTokenCount ?? 0,
@@ -23940,10 +20062,10 @@ function createOpenRouterBackend(config) {
           signal: controller.signal
         });
         if (!response.ok) {
-          const errorText4 = await response.text().catch(() => "");
+          const errorText = await response.text().catch(() => "");
           throw new NativeIntelligenceBackendError(
             response.status,
-            `OpenRouter API responded with ${response.status}: ${errorText4 || response.statusText}`
+            `OpenRouter API responded with ${response.status}: ${errorText || response.statusText}`
           );
         }
         const result = await response.json();
@@ -24016,13 +20138,13 @@ function createNativeIntelligenceBackend(config) {
                 result = await response.json();
                 break;
               }
-              const errorText4 = await response.text().catch(() => "");
+              const errorText = await response.text().catch(() => "");
               const backendError = new NativeIntelligenceBackendError(
                 response.status,
-                `Model backend responded with ${response.status}: ${errorText4 || response.statusText}`
+                `Model backend responded with ${response.status}: ${errorText || response.statusText}`
               );
               lastError = backendError;
-              if (!shouldTryNextModel(response.status, errorText4, model, config, modelCandidates)) {
+              if (!shouldTryNextModel(response.status, errorText, model, config, modelCandidates)) {
                 throw backendError;
               }
             } catch (err) {
@@ -24046,9 +20168,9 @@ function createNativeIntelligenceBackend(config) {
           throw lastError ?? new NativeIntelligenceBackendError(502, "Model backend returned no response.");
         }
         const latencyMs = Date.now() - startMs;
-        const text69 = extractCompletionText(result);
+        const text18 = extractCompletionText(result);
         return {
-          text: text69,
+          text: text18,
           usage: result.usage ? {
             promptTokens: result.usage.prompt_tokens ?? 0,
             completionTokens: result.usage.completion_tokens ?? 0,
@@ -24091,11 +20213,11 @@ function resolveEndpointCandidates(config) {
   }
   return candidates;
 }
-function shouldTryNextModel(status, errorText4, attemptedModel, config, candidates) {
+function shouldTryNextModel(status, errorText, attemptedModel, config, candidates) {
   const hasNextCandidate = candidates[candidates.length - 1] !== attemptedModel;
   if (!hasNextCandidate) return false;
   if (config.backendType !== "local") return false;
-  const normalizedError = errorText4.toLowerCase();
+  const normalizedError = errorText.toLowerCase();
   return status === 404 || normalizedError.includes("model") && normalizedError.includes("not found");
 }
 function extractCompletionText(response) {
@@ -24303,9 +20425,9 @@ function buildSummarizerPrompt(input) {
   }
   return sections.join("\n");
 }
-function parseJsonSafe(text69) {
+function parseJsonSafe(text18) {
   try {
-    const trimmed = text69.trim();
+    const trimmed = text18.trim();
     const jsonStart = trimmed.indexOf("{");
     const jsonEnd = trimmed.lastIndexOf("}");
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
@@ -24557,9 +20679,9 @@ function validateAction(action) {
   }
   return "kept";
 }
-function parseJsonSafe2(text69) {
+function parseJsonSafe2(text18) {
   try {
-    const trimmed = text69.trim();
+    const trimmed = text18.trim();
     const jsonStart = trimmed.indexOf("{");
     const jsonEnd = trimmed.lastIndexOf("}");
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
@@ -24800,9 +20922,9 @@ function validateStrategy(strategy) {
   }
   return "synthesize-new";
 }
-function parseJsonSafe3(text69) {
+function parseJsonSafe3(text18) {
   try {
-    const trimmed = text69.trim();
+    const trimmed = text18.trim();
     const jsonStart = trimmed.indexOf("{");
     const jsonEnd = trimmed.lastIndexOf("}");
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
@@ -25048,9 +21170,9 @@ function validatePlanningResult(raw, input) {
     warnings
   };
 }
-function parseJsonSafe4(text69) {
+function parseJsonSafe4(text18) {
   try {
-    const trimmed = text69.trim();
+    const trimmed = text18.trim();
     const jsonStart = trimmed.indexOf("{");
     const jsonEnd = trimmed.lastIndexOf("}");
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
@@ -25332,16 +21454,16 @@ function buildPromptFromArtifacts(artifacts) {
   }
   return sections.join("\n");
 }
-function extractFirstLine(text69) {
-  if (!text69) return void 0;
-  const lines = text69.split("\n").filter((l) => l.trim().length > 0 && !l.startsWith("#"));
+function extractFirstLine(text18) {
+  if (!text18) return void 0;
+  const lines = text18.split("\n").filter((l) => l.trim().length > 0 && !l.startsWith("#"));
   return lines[0]?.trim();
 }
 function cleanPackageName(name) {
   return name.replace(/^@[^/]+\//, "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
-function cleanMarkdownResponse(text69) {
-  let cleaned = text69.trim();
+function cleanMarkdownResponse(text18) {
+  let cleaned = text18.trim();
   if (cleaned.startsWith("```")) {
     const firstNewline = cleaned.indexOf("\n");
     cleaned = cleaned.slice(firstNewline + 1);
@@ -25410,7 +21532,7 @@ function createNativeIntelligenceProvider(configOverride) {
 // src/commands/pipeline.ts
 init_banner();
 function hr5(width = 72) {
-  return pc34.dim("\u2500".repeat(width));
+  return pc27.dim("\u2500".repeat(width));
 }
 function stripAnsi5(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -25418,17 +21540,17 @@ function stripAnsi5(str) {
 function box4(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi5(l).length)) + 4;
-  const top = pc34.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc34.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc27.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc27.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi5(l).length;
-    return pc34.dim("\u2502") + l + " ".repeat(pad2) + pc34.dim("\u2502");
+    return pc27.dim("\u2502") + l + " ".repeat(pad2) + pc27.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 async function runPipelineAssembler(opts) {
   printPaperclipCliBanner();
-  p22.intro(pc34.bold("Dynamic Registry Pipeline Assembler"));
+  p22.intro(pc27.bold("Dynamic Registry Pipeline Assembler"));
   p22.note(
     [
       "Dynamic pipeline creation flow:",
@@ -25477,7 +21599,7 @@ async function runPipelineAssembler(opts) {
     capabilities = result.nodes;
     capabilitiesSpinner.stop(`Loaded ${capabilities.length} capabilities.`);
   } catch (err) {
-    capabilitiesSpinner.stop(pc34.red("Failed to load capabilities."));
+    capabilitiesSpinner.stop(pc27.red("Failed to load capabilities."));
     p22.log.error("Failed to load capabilities: " + err.message);
     return "done";
   }
@@ -25519,7 +21641,7 @@ async function runPipelineAssembler(opts) {
         options: [
           ...capabilities.map((c) => ({
             value: c.slug,
-            label: `${pc34.bold(c.displayName)}  ${pc34.dim(c.slug)}`,
+            label: `${pc27.bold(c.displayName)}  ${pc27.dim(c.slug)}`,
             hint: `${c.family} \xB7 ${c.executionKind}`
           })),
           { value: "__back", label: "\u2190 Back" }
@@ -25532,10 +21654,11 @@ async function runPipelineAssembler(opts) {
       if (capChoice === "__back") continue;
       const cap = capabilities.find((c) => c.slug === capChoice);
       if (!cap) continue;
+      const contract = introspectNodeContract(cap);
       const bindings = {};
       for (const bindingKey of cap.requiredBindings) {
         const value = await p22.text({
-          message: `Binding "${bindingKey}" for ${cap.slug}`,
+          message: `Connection: "${bindingKey}" for ${cap.slug}`,
           placeholder: `Enter value for ${bindingKey}`
         });
         if (p22.isCancel(value)) {
@@ -25543,6 +21666,21 @@ async function runPipelineAssembler(opts) {
           process.exit(0);
         }
         bindings[bindingKey] = value;
+      }
+      for (const input of contract.inputs) {
+        if (!input.required) continue;
+        if (cap.requiredBindings.includes(input.key)) continue;
+        const value = await p22.text({
+          message: `Input: ${input.label} (${input.type})`,
+          placeholder: `Enter ${input.label.toLowerCase()}`
+        });
+        if (p22.isCancel(value)) {
+          p22.cancel("Cancelled.");
+          process.exit(0);
+        }
+        if (typeof value === "string" && value.trim().length > 0) {
+          bindings[input.key] = value;
+        }
       }
       let upstreamNodeIds;
       if (currentNodes.length > 0) {
@@ -25568,19 +21706,19 @@ async function runPipelineAssembler(opts) {
       }
       const normalizedBindings = normalizeNodeBindings(bindings, cap);
       const nodeId = builder.addNode(capChoice, normalizedBindings.bindings, upstreamNodeIds);
-      p22.log.success(`Added node ${pc34.bold(cap.displayName)} (${pc34.dim(nodeId)})`);
+      p22.log.success(`Added node ${pc27.bold(cap.displayName)} (${pc27.dim(nodeId)})`);
       continue;
     }
     if (action === "preview") {
       const pipeline = builder.build();
       console.log("");
       console.log(box4([
-        `${pc34.bold("Pipeline:")} ${pipeline.pipelineId}`,
-        `${pc34.dim("Mode:")} ${pipeline.executionMode}  ${pc34.dim("Nodes:")} ${pipeline.nodes.length}`,
+        `${pc27.bold("Pipeline:")} ${pipeline.pipelineId}`,
+        `${pc27.dim("Mode:")} ${pipeline.executionMode}  ${pc27.dim("Nodes:")} ${pipeline.nodes.length}`,
         "",
         ...pipeline.nodes.map((n, i) => {
-          const upstream = n.upstreamNodeIds?.length ? pc34.dim(` \u2190 ${n.upstreamNodeIds.join(", ")}`) : "";
-          return `${pc34.dim(String(i + 1) + ".")} ${pc34.bold(n.slug)} ${pc34.dim(n.id)}${upstream}`;
+          const upstream = n.upstreamNodeIds?.length ? pc27.dim(` \u2190 ${n.upstreamNodeIds.join(", ")}`) : "";
+          return `${pc27.dim(String(i + 1) + ".")} ${pc27.bold(n.slug)} ${pc27.dim(n.id)}${upstream}`;
         })
       ]));
       console.log("");
@@ -25595,7 +21733,7 @@ async function runPipelineAssembler(opts) {
           p22.log.error("Pipeline validation failed.");
         }
         for (const issue of result.issues) {
-          const prefix = issue.severity === "error" ? pc34.red("ERROR") : pc34.yellow("WARN");
+          const prefix = issue.severity === "error" ? pc27.red("ERROR") : pc27.yellow("WARN");
           const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
           console.log(`  ${prefix}${nodeRef}: ${issue.message}`);
         }
@@ -25652,7 +21790,7 @@ async function runPipelineAssembler(opts) {
           throw new Error("Hosted workflow save returned no workflow id.");
         }
         p22.log.success(
-          `Saved to workflow registry as ${pc34.bold(workflowName)} (${pc34.dim(saveResult.workflowId)} \xB7 v${saveResult.version}).`
+          `Saved to workflow registry as ${pc27.bold(workflowName)} (${pc27.dim(saveResult.workflowId)} \xB7 v${saveResult.version}).`
         );
       } catch (err) {
         if (err instanceof HostedEndpointUnavailableError) {
@@ -25668,9 +21806,26 @@ async function runPipelineAssembler(opts) {
       if (!validation.valid) {
         p22.log.error("Pipeline is not valid. Fix errors before executing.");
         for (const issue of validation.issues.filter((i) => i.severity === "error")) {
-          console.log(`  ${pc34.red("ERROR")}: ${issue.message}`);
+          console.log(`  ${pc27.red("ERROR")}: ${issue.message}`);
         }
         continue;
+      }
+      const pkg = await builder.package();
+      const validationWarnings = validation.issues.filter((i) => i.severity === "warning");
+      if (validationWarnings.length > 0) {
+        console.log("");
+        for (const w of validationWarnings) {
+          console.log(`  ${pc27.yellow("WARN")} ${w.message}`);
+        }
+      }
+      if (pkg.preflightWarnings.length > 0) {
+        console.log("");
+        for (const w of pkg.preflightWarnings) {
+          console.log(`  ${pc27.yellow("\u26A0")}  ${w.message}`);
+        }
+      }
+      if (pkg.asyncNodeIds.length > 0) {
+        p22.log.warn(`${pkg.asyncNodeIds.length} async node(s) \u2014 execution will not be immediate and will require polling.`);
       }
       const pipeline = builder.build();
       const summary = buildPreExecutionSummary({
@@ -25696,32 +21851,30 @@ async function runPipelineAssembler(opts) {
       if (p22.isCancel(confirmed) || !confirmed) continue;
       try {
         const executionClient = createHostedExecutionClient();
-        const pipeline2 = builder.build();
-        const pkg = await builder.package();
-        p22.log.info(`Executing pipeline ${pc34.bold(pipeline2.pipelineId)} (${pkg.executionRoute})...`);
+        p22.log.info(`Executing pipeline ${pc27.bold(pipeline.pipelineId)} (${pkg.executionRoute})...`);
         const result = await executionClient.executeWorkflow({
-          pipelineId: pipeline2.pipelineId,
-          threadId: pipeline2.threadId,
-          nodes: pipeline2.nodes.map((n) => ({
+          pipelineId: pipeline.pipelineId,
+          threadId: pipeline.threadId,
+          nodes: pipeline.nodes.map((n) => ({
             nodeId: n.id,
             slug: n.slug,
             bindings: n.bindings,
             upstreamNodeIds: n.upstreamNodeIds
           })),
-          executionMode: pipeline2.executionMode,
-          metadata: pipeline2.metadata
+          executionMode: pipeline.executionMode,
+          metadata: pipeline.metadata
         });
-        p22.log.success(`Execution ${pc34.bold(result.executionId)}: ${result.status}`);
+        p22.log.success(`Execution ${pc27.bold(result.executionId)}: ${result.status}`);
         const artifactStore = createArtifactStore();
         for (const artRef of result.artifacts) {
           const nodeResult = result.nodeResults[artRef.nodeId];
           artifactStore.create({
             artifactType: artRef.artifactType,
             sourceNodeSlug: nodeResult?.slug ?? "unknown",
-            executionContext: pipeline2.executionMode === "local" ? "local" : "hosted",
-            pipelineId: pipeline2.pipelineId,
+            executionContext: pipeline.executionMode === "local" ? "local" : "hosted",
+            pipelineId: pipeline.pipelineId,
             nodeId: artRef.nodeId,
-            threadId: pipeline2.threadId,
+            threadId: pipeline.threadId,
             metadata: artRef.metadata ?? {}
           });
         }
@@ -25756,7 +21909,7 @@ function renderExecutionProgress(completed, total, detail) {
   const percent = total <= 0 ? 0 : Math.round(safeCompleted / total * 100);
   const filled = Math.max(0, Math.min(width, Math.round(percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
-  const line = `\r${pc34.cyan("Workflow run")} ${pc34.dim("[")}${pc34.green(bar)}${pc34.dim("]")} ${String(percent).padStart(3)}% ${pc34.dim(detail)}`;
+  const line = `\r${pc27.cyan("Workflow run")} ${pc27.dim("[")}${pc27.green(bar)}${pc27.dim("]")} ${String(percent).padStart(3)}% ${pc27.dim(detail)}`;
   process.stdout.write(line);
   if (safeCompleted >= total) {
     process.stdout.write("\n");
@@ -25829,50 +21982,50 @@ async function executeHostedPipeline(pipeline, opts) {
     return;
   }
   console.log("");
-  console.log(pc34.bold("Pipeline Execution Result"));
+  console.log(pc27.bold("Pipeline Execution Result"));
   console.log(hr5());
-  console.log(`  ${pc34.dim("Execution ID:")} ${result.executionId}`);
-  if (result.threadId) console.log(`  ${pc34.dim("Thread ID:")}    ${result.threadId}`);
-  console.log(`  ${pc34.dim("Status:")}       ${result.status === "succeeded" ? pc34.green(result.status) : pc34.red(result.status)}`);
-  if (result.startedAt) console.log(`  ${pc34.dim("Started:")}      ${result.startedAt}`);
-  if (result.completedAt) console.log(`  ${pc34.dim("Completed:")}    ${result.completedAt}`);
+  console.log(`  ${pc27.dim("Execution ID:")} ${result.executionId}`);
+  if (result.threadId) console.log(`  ${pc27.dim("Thread ID:")}    ${result.threadId}`);
+  console.log(`  ${pc27.dim("Status:")}       ${result.status === "succeeded" ? pc27.green(result.status) : pc27.red(result.status)}`);
+  if (result.startedAt) console.log(`  ${pc27.dim("Started:")}      ${result.startedAt}`);
+  if (result.completedAt) console.log(`  ${pc27.dim("Completed:")}    ${result.completedAt}`);
   console.log(hr5());
   for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
-    const statusColor3 = nodeResult.status === "succeeded" ? pc34.green : pc34.red;
-    console.log(`  ${statusColor3(nodeResult.status)} ${pc34.bold(nodeResult.slug)} (${pc34.dim(nodeId)})`);
+    const statusColor3 = nodeResult.status === "succeeded" ? pc27.green : pc27.red;
+    console.log(`  ${statusColor3(nodeResult.status)} ${pc27.bold(nodeResult.slug)} (${pc27.dim(nodeId)})`);
     if (nodeResult.error) {
-      console.log(`    ${pc34.red(nodeResult.error)}`);
+      console.log(`    ${pc27.red(nodeResult.error)}`);
     }
   }
   if (result.artifacts.length > 0) {
     console.log("");
-    console.log(pc34.bold("  Artifacts:"));
+    console.log(pc27.bold("  Artifacts:"));
     for (const art of result.artifacts) {
-      console.log(`    ${pc34.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
+      console.log(`    ${pc27.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
     }
   }
   if (result.summary) {
     console.log("");
-    console.log(pc34.bold("  Summary:"));
-    if (result.summary.outputText) console.log(`    ${pc34.dim("\xB7")} ${result.summary.outputText}`);
-    if (typeof result.summary.imageCount === "number") console.log(`    ${pc34.dim("\xB7")} images: ${result.summary.imageCount}`);
-    if (typeof result.summary.slideCount === "number") console.log(`    ${pc34.dim("\xB7")} slides: ${result.summary.slideCount}`);
-    if (typeof result.summary.videoCount === "number") console.log(`    ${pc34.dim("\xB7")} videos: ${result.summary.videoCount}`);
-    if (result.summary.workflowRunId) console.log(`    ${pc34.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-    if (result.summary.keyboardShortcutHint) console.log(`    ${pc34.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+    console.log(pc27.bold("  Summary:"));
+    if (result.summary.outputText) console.log(`    ${pc27.dim("\xB7")} ${result.summary.outputText}`);
+    if (typeof result.summary.imageCount === "number") console.log(`    ${pc27.dim("\xB7")} images: ${result.summary.imageCount}`);
+    if (typeof result.summary.slideCount === "number") console.log(`    ${pc27.dim("\xB7")} slides: ${result.summary.slideCount}`);
+    if (typeof result.summary.videoCount === "number") console.log(`    ${pc27.dim("\xB7")} videos: ${result.summary.videoCount}`);
+    if (result.summary.workflowRunId) console.log(`    ${pc27.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+    if (result.summary.keyboardShortcutHint) console.log(`    ${pc27.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
   }
   try {
     const credits = await fetchHostedCredits(session);
     if (credits) {
       console.log("");
-      console.log(pc34.bold("  Credits:"));
-      console.log(`    ${pc34.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
-      console.log(`    ${pc34.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+      console.log(pc27.bold("  Credits:"));
+      console.log(`    ${pc27.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
+      console.log(`    ${pc27.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
     }
   } catch (err) {
     if (err instanceof HostedEndpointUnavailableError) {
       console.log("");
-      console.log(pc34.yellow("  Credits unavailable on this hosted surface."));
+      console.log(pc27.yellow("  Credits unavailable on this hosted surface."));
     } else {
       throw err;
     }
@@ -25930,31 +22083,31 @@ async function renderIntelligenceSummary(pipeline, capabilities, phase) {
     };
     const result = await provider.summarizeExecution(input);
     const lines = [
-      `${pc34.bold("Intelligence Summary")} ${pc34.dim(result.title)}`,
+      `${pc27.bold("Intelligence Summary")} ${pc27.dim(result.title)}`,
       result.explanation
     ];
     if (result.runtimeModeNote) {
-      lines.push(`${pc34.dim("Runtime:")} ${result.runtimeModeNote}`);
+      lines.push(`${pc27.dim("Runtime:")} ${result.runtimeModeNote}`);
     }
     if (result.outputExpectation) {
-      lines.push(`${pc34.dim("Expected:")} ${result.outputExpectation}`);
+      lines.push(`${pc27.dim("Expected:")} ${result.outputExpectation}`);
     }
     if (result.missingBindingGuidance.length > 0) {
-      lines.push("", pc34.yellow("Missing Binding Guidance"));
+      lines.push("", pc27.yellow("Missing Binding Guidance"));
       for (const guidance of result.missingBindingGuidance) {
-        lines.push(`  ${pc34.dim("\xB7")} ${guidance}`);
+        lines.push(`  ${pc27.dim("\xB7")} ${guidance}`);
       }
     }
     if (result.costLatencyCautions.length > 0) {
-      lines.push("", pc34.yellow("Cost/Latency Notes"));
+      lines.push("", pc27.yellow("Cost/Latency Notes"));
       for (const caution of result.costLatencyCautions) {
-        lines.push(`  ${pc34.dim("\xB7")} ${caution}`);
+        lines.push(`  ${pc27.dim("\xB7")} ${caution}`);
       }
     }
     if (result.warnings.length > 0) {
-      lines.push("", pc34.yellow("Warnings"));
+      lines.push("", pc27.yellow("Warnings"));
       for (const warning of result.warnings) {
-        lines.push(`  ${pc34.dim("\xB7")} ${warning}`);
+        lines.push(`  ${pc27.dim("\xB7")} ${warning}`);
       }
     }
     return lines;
@@ -25979,7 +22132,7 @@ Examples:
   pipe.command("validate").description("Validate a pipeline from a JSON file or inline JSON").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc34.red(`${access.reason}.`));
+      console.error(pc27.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -25999,25 +22152,154 @@ Examples:
         return;
       }
       if (result.valid) {
-        console.log(pc34.green(pc34.bold("Pipeline is valid.")));
+        console.log(pc27.green(pc27.bold("Pipeline is valid.")));
       } else {
-        console.log(pc34.red(pc34.bold("Pipeline validation failed.")));
+        console.log(pc27.red(pc27.bold("Pipeline validation failed.")));
       }
       for (const issue of result.issues) {
-        const prefix = issue.severity === "error" ? pc34.red("  ERROR") : pc34.yellow("  WARN");
+        const prefix = issue.severity === "error" ? pc27.red("  ERROR") : pc27.yellow("  WARN");
         const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
         console.log(`${prefix}${nodeRef}: ${issue.message}`);
       }
       if (!result.valid) process.exitCode = 1;
     } catch (err) {
-      console.error(pc34.red("Validation failed: " + err.message));
+      console.error(pc27.red("Validation failed: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  pipe.command("package").description("Show execution package: routes, output summaries, async nodes, preflight warnings").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc27.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const pipeline = loadPipelineFromFileOrJson(input);
+      const builder = createPipelineBuilder({
+        executionMode: pipeline.executionMode,
+        threadId: pipeline.threadId,
+        metadata: pipeline.metadata
+      });
+      for (const node of pipeline.nodes) {
+        builder.addNode(node.slug, node.bindings, node.upstreamNodeIds);
+      }
+      const pkg = await builder.package();
+      if (opts.json) {
+        console.log(JSON.stringify(pkg, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc27.bold("Pipeline Package"));
+      console.log(hr5());
+      console.log(`  ${pc27.dim("Pipeline:")}      ${pkg.pipeline.pipelineId}`);
+      console.log(`  ${pc27.dim("Route:")}         ${pkg.executionRoute}`);
+      console.log(`  ${pc27.dim("Async nodes:")}   ${pkg.asyncNodeIds.length > 0 ? pkg.asyncNodeIds.join(", ") : pc27.dim("(none)")}`);
+      console.log("");
+      console.log(pc27.bold("  Node Output Summaries"));
+      for (const [nodeId, summary] of Object.entries(pkg.nodeOutputSummaries)) {
+        const keys = summary.outputKeys.length > 0 ? summary.outputKeys.join(", ") : pc27.dim("(none)");
+        const types = summary.outputTypes.length > 0 ? summary.outputTypes.join(", ") : pc27.dim("(none)");
+        console.log(`  ${pc27.dim("\xB7")} ${pc27.bold(summary.slug)} ${pc27.dim(nodeId)}`);
+        console.log(`    ${pc27.dim("output keys:")} ${keys}  ${pc27.dim("types:")} ${types}`);
+      }
+      if (pkg.preflightWarnings.length > 0) {
+        console.log("");
+        console.log(pc27.bold("  Preflight Warnings"));
+        for (const w of pkg.preflightWarnings) {
+          console.log(`  ${pc27.yellow("\u26A0")}  ${w.message}`);
+        }
+      }
+      console.log(hr5());
+      console.log("");
+    } catch (err) {
+      console.error(pc27.red("Package failed: " + err.message));
+      process.exitCode = 1;
+    }
+  });
+  pipe.command("preflight").description("Full pre-execution analysis: validate + package + contract summary").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
+    const access = getWorkflowAccess();
+    if (access.state !== "ready") {
+      console.error(pc27.red(`${access.reason}.`));
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const pipeline = loadPipelineFromFileOrJson(input);
+      const builder = createPipelineBuilder({
+        executionMode: pipeline.executionMode,
+        threadId: pipeline.threadId,
+        metadata: pipeline.metadata
+      });
+      for (const node of pipeline.nodes) {
+        builder.addNode(node.slug, node.bindings, node.upstreamNodeIds);
+      }
+      const [validation, pkg] = await Promise.all([builder.validate(), builder.package()]);
+      const registry = createCmsCapabilityRegistryClient();
+      const { nodes: capabilities } = await registry.listCapabilities({ enabledOnly: false });
+      const contractSummary = buildPreExecutionSummary({
+        pipeline,
+        registryBySlug: new Map(capabilities.map((n) => [n.slug, n]))
+      });
+      if (opts.json) {
+        console.log(JSON.stringify({ validation, pkg, contractSummary }, null, 2));
+        return;
+      }
+      const readyLabel = validation.valid ? pc27.green("ready") : pc27.red("not ready");
+      console.log("");
+      console.log(pc27.bold("Pipeline Preflight") + `  ${readyLabel}`);
+      console.log(hr5());
+      const errors = validation.issues.filter((i) => i.severity === "error");
+      const warnings = validation.issues.filter((i) => i.severity === "warning");
+      if (errors.length > 0) {
+        console.log(pc27.red(`  ${errors.length} error(s):`));
+        for (const e of errors) {
+          const ref = e.nodeId ? ` [${e.nodeId}]` : "";
+          console.log(`  ${pc27.red("\u2717")}${ref} ${e.message}`);
+        }
+        console.log("");
+      }
+      if (warnings.length > 0) {
+        console.log(pc27.yellow(`  ${warnings.length} validation warning(s):`));
+        for (const w of warnings) {
+          const ref = w.nodeId ? ` [${w.nodeId}]` : "";
+          console.log(`  ${pc27.yellow("!")}${ref} ${w.message}`);
+        }
+        console.log("");
+      }
+      console.log(box4(renderPreExecutionSummary(contractSummary)));
+      console.log("");
+      if (pkg.asyncNodeIds.length > 0) {
+        console.log(pc27.yellow(`  Async nodes (require polling): `) + pkg.asyncNodeIds.join(", "));
+        console.log("");
+      }
+      console.log(pc27.bold("  Execution Route:") + `  ${pkg.executionRoute}`);
+      console.log("");
+      console.log(pc27.bold("  Node Output Summaries"));
+      for (const summary of Object.values(pkg.nodeOutputSummaries)) {
+        const keys = summary.outputKeys.length > 0 ? summary.outputKeys.join(", ") : pc27.dim("(none defined)");
+        const types = summary.outputTypes.length > 0 ? summary.outputTypes.join(", ") : pc27.dim("(none)");
+        console.log(`  ${pc27.dim("\xB7")} ${pc27.bold(summary.slug)}: output_mapping=[${keys}]  types=[${types}]`);
+      }
+      if (pkg.preflightWarnings.length > 0) {
+        console.log("");
+        console.log(pc27.yellow(`  ${pkg.preflightWarnings.length} preflight warning(s):`));
+        for (const w of pkg.preflightWarnings) {
+          console.log(`  ${pc27.yellow("\u26A0")}  ${w.message}`);
+        }
+      }
+      console.log(hr5());
+      if (!validation.valid) process.exitCode = 1;
+      console.log("");
+    } catch (err) {
+      console.error(pc27.red("Preflight failed: " + err.message));
       process.exitCode = 1;
     }
   });
   pipe.command("execute").description("Execute a pipeline from a JSON file or inline JSON").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc34.red(`${access.reason}.`));
+      console.error(pc27.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -26087,45 +22369,45 @@ Examples:
         return;
       }
       console.log("");
-      console.log(pc34.bold("Pipeline Execution Result"));
+      console.log(pc27.bold("Pipeline Execution Result"));
       console.log(hr5());
-      console.log(`  ${pc34.dim("Execution ID:")} ${result.executionId}`);
-      if (result.threadId) console.log(`  ${pc34.dim("Thread ID:")}    ${result.threadId}`);
-      console.log(`  ${pc34.dim("Status:")}       ${result.status === "succeeded" ? pc34.green(result.status) : pc34.red(result.status)}`);
-      if (result.startedAt) console.log(`  ${pc34.dim("Started:")}      ${result.startedAt}`);
-      if (result.completedAt) console.log(`  ${pc34.dim("Completed:")}    ${result.completedAt}`);
+      console.log(`  ${pc27.dim("Execution ID:")} ${result.executionId}`);
+      if (result.threadId) console.log(`  ${pc27.dim("Thread ID:")}    ${result.threadId}`);
+      console.log(`  ${pc27.dim("Status:")}       ${result.status === "succeeded" ? pc27.green(result.status) : pc27.red(result.status)}`);
+      if (result.startedAt) console.log(`  ${pc27.dim("Started:")}      ${result.startedAt}`);
+      if (result.completedAt) console.log(`  ${pc27.dim("Completed:")}    ${result.completedAt}`);
       console.log(hr5());
       for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
-        const statusColor3 = nodeResult.status === "succeeded" ? pc34.green : pc34.red;
-        console.log(`  ${statusColor3(nodeResult.status)} ${pc34.bold(nodeResult.slug)} (${pc34.dim(nodeId)})`);
+        const statusColor3 = nodeResult.status === "succeeded" ? pc27.green : pc27.red;
+        console.log(`  ${statusColor3(nodeResult.status)} ${pc27.bold(nodeResult.slug)} (${pc27.dim(nodeId)})`);
         if (nodeResult.error) {
-          console.log(`    ${pc34.red(nodeResult.error)}`);
+          console.log(`    ${pc27.red(nodeResult.error)}`);
         }
       }
       if (result.artifacts.length > 0) {
         console.log("");
-        console.log(pc34.bold("  Artifacts:"));
+        console.log(pc27.bold("  Artifacts:"));
         for (const art of result.artifacts) {
-          console.log(`    ${pc34.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
+          console.log(`    ${pc27.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
         }
       }
       if (result.summary) {
         console.log("");
-        console.log(pc34.bold("  Summary:"));
-        if (result.summary.outputText) console.log(`    ${pc34.dim("\xB7")} ${result.summary.outputText}`);
-        if (typeof result.summary.imageCount === "number") console.log(`    ${pc34.dim("\xB7")} images: ${result.summary.imageCount}`);
-        if (typeof result.summary.slideCount === "number") console.log(`    ${pc34.dim("\xB7")} slides: ${result.summary.slideCount}`);
-        if (typeof result.summary.videoCount === "number") console.log(`    ${pc34.dim("\xB7")} videos: ${result.summary.videoCount}`);
-        if (result.summary.workflowRunId) console.log(`    ${pc34.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-        if (result.summary.keyboardShortcutHint) console.log(`    ${pc34.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+        console.log(pc27.bold("  Summary:"));
+        if (result.summary.outputText) console.log(`    ${pc27.dim("\xB7")} ${result.summary.outputText}`);
+        if (typeof result.summary.imageCount === "number") console.log(`    ${pc27.dim("\xB7")} images: ${result.summary.imageCount}`);
+        if (typeof result.summary.slideCount === "number") console.log(`    ${pc27.dim("\xB7")} slides: ${result.summary.slideCount}`);
+        if (typeof result.summary.videoCount === "number") console.log(`    ${pc27.dim("\xB7")} videos: ${result.summary.videoCount}`);
+        if (result.summary.workflowRunId) console.log(`    ${pc27.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+        if (result.summary.keyboardShortcutHint) console.log(`    ${pc27.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
       }
       try {
         const credits = await fetchHostedCredits(session);
         if (credits) {
           console.log("");
-          console.log(pc34.bold("  Credits:"));
-          console.log(`    ${pc34.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
-          console.log(`    ${pc34.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+          console.log(pc27.bold("  Credits:"));
+          console.log(`    ${pc27.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
+          console.log(`    ${pc27.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
         }
       } catch (err) {
         if (!(err instanceof HostedEndpointUnavailableError)) {
@@ -26147,24 +22429,24 @@ Examples:
       }
       console.log("");
     } catch (err) {
-      console.error(pc34.red("Execution failed: " + err.message));
+      console.error(pc27.red("Execution failed: " + err.message));
       process.exitCode = 1;
     }
   });
 }
 
 // src/commands/artifact.ts
-import pc35 from "picocolors";
+import pc28 from "picocolors";
 function hr6(width = 72) {
-  return pc35.dim("\u2500".repeat(width));
+  return pc28.dim("\u2500".repeat(width));
 }
 var ARTIFACT_TYPE_CONFIG = {
-  video: { color: pc35.magenta, emoji: "\u{1F3AC}" },
-  image: { color: pc35.cyan, emoji: "\u{1F5BC}\uFE0F " },
-  slides: { color: pc35.yellow, emoji: "\u{1F4CA}" },
-  text: { color: pc35.green, emoji: "\u{1F4DD}" },
-  report: { color: pc35.blue, emoji: "\u{1F4CB}" },
-  pipeline: { color: pc35.red, emoji: "\u{1F517}" }
+  video: { color: pc28.magenta, emoji: "\u{1F3AC}" },
+  image: { color: pc28.cyan, emoji: "\u{1F5BC}\uFE0F " },
+  slides: { color: pc28.yellow, emoji: "\u{1F4CA}" },
+  text: { color: pc28.green, emoji: "\u{1F4DD}" },
+  report: { color: pc28.blue, emoji: "\u{1F4CB}" },
+  pipeline: { color: pc28.red, emoji: "\u{1F517}" }
 };
 function artifactTypeBadge(type) {
   const cfg = ARTIFACT_TYPE_CONFIG[type];
@@ -26172,21 +22454,21 @@ function artifactTypeBadge(type) {
   return cfg.color(`${cfg.emoji} ${type}`);
 }
 function statusColor(status) {
-  if (status === "ready") return pc35.green(status);
-  if (status === "generating" || status === "pending") return pc35.yellow(status);
-  if (status === "failed") return pc35.red(status);
-  if (status === "archived") return pc35.dim(status);
+  if (status === "ready") return pc28.green(status);
+  if (status === "generating" || status === "pending") return pc28.yellow(status);
+  if (status === "failed") return pc28.red(status);
+  if (status === "archived") return pc28.dim(status);
   return status;
 }
 function printArtifactTable(artifacts) {
   console.log("");
   console.log(
-    pc35.bold("Pipeline Artifacts") + pc35.dim(`  ${artifacts.length} artifact${artifacts.length !== 1 ? "s" : ""}`)
+    pc28.bold("Pipeline Artifacts") + pc28.dim(`  ${artifacts.length} artifact${artifacts.length !== 1 ? "s" : ""}`)
   );
   console.log(hr6());
   if (artifacts.length === 0) {
-    console.log(pc35.dim("  No artifacts found."));
-    console.log(pc35.dim("  Run `growthub pipeline execute` to produce artifacts."));
+    console.log(pc28.dim("  No artifacts found."));
+    console.log(pc28.dim("  Run `growthub pipeline execute` to produce artifacts."));
     console.log("");
     return;
   }
@@ -26194,25 +22476,25 @@ function printArtifactTable(artifacts) {
     const badge2 = artifactTypeBadge(art.artifactType);
     const status = statusColor(art.status);
     console.log(
-      `  ${badge2}  ${pc35.bold(art.id)}  ${status}  ${pc35.dim(art.sourceNodeSlug)}  ${pc35.dim(art.executionContext)}`
+      `  ${badge2}  ${pc28.bold(art.id)}  ${status}  ${pc28.dim(art.sourceNodeSlug)}  ${pc28.dim(art.executionContext)}`
     );
     if (art.pipelineId) {
-      console.log(`    ${pc35.dim("Pipeline:")} ${art.pipelineId}`);
+      console.log(`    ${pc28.dim("Pipeline:")} ${art.pipelineId}`);
     }
-    console.log(`    ${pc35.dim("Created:")} ${art.createdAt}`);
+    console.log(`    ${pc28.dim("Created:")} ${art.createdAt}`);
     console.log("");
   }
   console.log(hr6());
-  console.log(pc35.dim("  growthub artifact inspect <id>  \xB7  growthub artifact list --type <type>"));
+  console.log(pc28.dim("  growthub artifact inspect <id>  \xB7  growthub artifact list --type <type>"));
   console.log("");
 }
 function printArtifactDetail(art) {
   console.log("");
-  console.log(pc35.bold("Artifact: " + art.id));
+  console.log(pc28.bold("Artifact: " + art.id));
   console.log(hr6());
   const kv = (label, value) => {
     if (value === void 0) return;
-    console.log(`  ${pc35.bold(label.padEnd(22))} ${value}`);
+    console.log(`  ${pc28.bold(label.padEnd(22))} ${value}`);
   };
   kv("Type:", artifactTypeBadge(art.artifactType));
   kv("Status:", statusColor(art.status));
@@ -26226,7 +22508,7 @@ function printArtifactDetail(art) {
   kv("Updated:", art.updatedAt);
   if (art.metadata && Object.keys(art.metadata).length > 0) {
     console.log("");
-    console.log(pc35.bold("  Metadata:"));
+    console.log(pc28.bold("  Metadata:"));
     console.log("  " + JSON.stringify(art.metadata, null, 2).split("\n").join("\n  "));
   }
   console.log(hr6());
@@ -26263,14 +22545,14 @@ Examples:
       return;
     }
     printArtifactTable(artifacts);
-    console.log(pc35.dim(`  Store: ${store.getStorePath()}  \xB7  Source: ${meta.source}`));
+    console.log(pc28.dim(`  Store: ${store.getStorePath()}  \xB7  Source: ${meta.source}`));
     console.log("");
   });
   art.command("inspect").description("Inspect a specific pipeline artifact").argument("<id>", "Artifact ID (e.g. art_xxxxxxxxxxxx)").option("--json", "Output raw JSON").action((artifactId, opts) => {
     const store = createArtifactStore();
     const artifact = store.get(artifactId);
     if (!artifact) {
-      console.error(pc35.red(`Artifact not found: "${artifactId}".`) + pc35.dim(" Run `growthub artifact list` to browse."));
+      console.error(pc28.red(`Artifact not found: "${artifactId}".`) + pc28.dim(" Run `growthub artifact list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -26286,7 +22568,7 @@ Examples:
 import fs34 from "node:fs";
 import path42 from "node:path";
 import * as p23 from "@clack/prompts";
-import pc37 from "picocolors";
+import pc30 from "picocolors";
 init_session_store();
 init_hosted_client();
 
@@ -26351,11 +22633,11 @@ function createWorkflowHygieneStore() {
 }
 
 // src/runtime/workflow-hygiene/summaries.ts
-import pc36 from "picocolors";
+import pc29 from "picocolors";
 function renderWorkflowLabel(label) {
-  if (label === "canonical") return pc36.green("canonical");
-  if (label === "archived") return pc36.dim("archived");
-  return pc36.yellow("experimental");
+  if (label === "canonical") return pc29.green("canonical");
+  if (label === "archived") return pc29.dim("archived");
+  return pc29.yellow("experimental");
 }
 function enrichWorkflowSummaries(entries, store) {
   return entries.map((entry) => {
@@ -26369,14 +22651,14 @@ init_banner();
 init_home();
 var PAGE_SIZE = 10;
 var FAMILY_CONFIG2 = {
-  video: { color: pc37.magenta, label: "Video" },
-  image: { color: pc37.cyan, label: "Image" },
-  slides: { color: pc37.yellow, label: "Slides" },
-  text: { color: pc37.green, label: "Text" },
-  data: { color: pc37.blue, label: "Data" },
-  ops: { color: pc37.red, label: "Ops" },
-  research: { color: pc37.blue, label: "Research" },
-  vision: { color: pc37.cyan, label: "Vision" }
+  video: { color: pc30.magenta, label: "Video" },
+  image: { color: pc30.cyan, label: "Image" },
+  slides: { color: pc30.yellow, label: "Slides" },
+  text: { color: pc30.green, label: "Text" },
+  data: { color: pc30.blue, label: "Data" },
+  ops: { color: pc30.red, label: "Ops" },
+  research: { color: pc30.blue, label: "Research" },
+  vision: { color: pc30.cyan, label: "Vision" }
 };
 var FAMILY_EMOJI = {
   video: "\u{1F3AC}",
@@ -26393,7 +22675,7 @@ function familyLabel(family) {
   return cfg ? cfg.color(cfg.label) : family;
 }
 function hr7(width = 72) {
-  return pc37.dim("\u2500".repeat(width));
+  return pc30.dim("\u2500".repeat(width));
 }
 function stripAnsi6(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -26401,11 +22683,11 @@ function stripAnsi6(str) {
 function box5(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi6(l).length)) + 4;
-  const top = pc37.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc37.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc30.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc30.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi6(l).length;
-    return pc37.dim("\u2502") + l + " ".repeat(pad2) + pc37.dim("\u2502");
+    return pc30.dim("\u2502") + l + " ".repeat(pad2) + pc30.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
@@ -26636,7 +22918,7 @@ async function paginatedSelect(message, allOptions, opts) {
     const hasPrev = offset > 0;
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-    const pageInfo = filtered.length > PAGE_SIZE ? pc37.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
+    const pageInfo = filtered.length > PAGE_SIZE ? pc30.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
     const options = [
       ...page.map((o) => ({
         value: o.value,
@@ -26645,13 +22927,13 @@ async function paginatedSelect(message, allOptions, opts) {
       }))
     ];
     if (hasMore) {
-      options.push({ value: "__next_page", label: pc37.dim("\u2192 Next page") });
+      options.push({ value: "__next_page", label: pc30.dim("\u2192 Next page") });
     }
     if (hasPrev) {
-      options.push({ value: "__prev_page", label: pc37.dim("\u2190 Previous page") });
+      options.push({ value: "__prev_page", label: pc30.dim("\u2190 Previous page") });
     }
     if (opts?.searchEnabled) {
-      options.push({ value: "__search", label: pc37.dim("\u{1F50E} Search") });
+      options.push({ value: "__search", label: pc30.dim("\u{1F50E} Search") });
     }
     options.push({
       value: opts?.backValue ?? "__back",
@@ -26699,8 +22981,8 @@ async function paginatedSelect(message, allOptions, opts) {
 function printTemplateCard(node) {
   const contract = introspectNodeContract(node);
   const lines = renderContractCard(contract);
-  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc37.green("enabled") : pc37.red("disabled")}`);
-  if (node.description) lines.push("", pc37.dim(node.description));
+  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc30.green("enabled") : pc30.red("disabled")}`);
+  if (node.description) lines.push("", pc30.dim(node.description));
   console.log("");
   console.log(box5(lines));
   console.log("");
@@ -26714,25 +22996,48 @@ function renderTemplateTree(templates) {
     byFamily.set(key, existing);
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const lines = [pc37.bold("Public CMS Node Tree")];
+  const lines = [pc30.bold("Public CMS Node Tree")];
   for (const [family, nodes] of families) {
-    lines.push(`${pc37.cyan("\u2022")} ${pc37.bold(family)}`);
+    lines.push(`${pc30.cyan("\u2022")} ${pc30.bold(family)}`);
     const sorted = [...nodes].sort((a, b) => a.slug.localeCompare(b.slug));
-    for (const [index51, node] of sorted.entries()) {
-      const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
+    for (const [index, node] of sorted.entries()) {
+      const branch = index === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
       const contract = introspectNodeContract(node);
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
       lines.push(
-        `  ${branch} ${node.slug} ${pc37.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
+        `  ${branch} ${node.slug} ${pc30.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
       );
     }
   }
   lines.push("");
-  lines.push(pc37.dim("Shortcut: growthub workflow saved --json"));
+  lines.push(pc30.dim("Shortcut: growthub workflow saved --json"));
   return lines;
 }
-function renderWorkflowContractDiscoveryTree(nodes) {
+function strategyHint(node) {
+  const strategy = node.executionBinding.strategy;
+  if (strategy === "async_operation") return pc30.yellow("[async]");
+  if (strategy === "sequential-with-persistence") return pc30.cyan("[seq]");
+  return "";
+}
+function providerHint(node) {
+  const meta = node.manifestMetadata ?? {};
+  const isProviderBacked = typeof meta.providerBacked === "boolean" ? meta.providerBacked : typeof meta.source === "string" && meta.source !== "derived-from-hosted-workflows";
+  if (!isProviderBacked) return "";
+  const modelKey = node.executionTokens.input_template.videoModel ?? node.executionTokens.input_template.imageModel ?? node.executionTokens.input_template.model;
+  if (typeof modelKey === "string" && modelKey) return pc30.magenta(`[${modelKey}]`);
+  return pc30.magenta("[provider]");
+}
+function outputMappingSummary(node) {
+  const entries = Object.keys(node.executionTokens.output_mapping);
+  if (entries.length === 0) return "";
+  return pc30.dim(`map:${entries.length}`);
+}
+function migrationVersionHint(node) {
+  const v = node.executionTokens.migration_version;
+  return v ? pc30.dim(`v${v}`) : "";
+}
+function renderWorkflowContractDiscoveryTree(nodes, cacheMeta) {
   const byFamily = /* @__PURE__ */ new Map();
   for (const node of nodes) {
     const key = node.family;
@@ -26741,18 +23046,33 @@ function renderWorkflowContractDiscoveryTree(nodes) {
     byFamily.set(key, group);
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const lines = [pc37.bold("CMS Node Contract Discovery")];
+  const lines = [pc30.bold("CMS Node Contract Discovery")];
+  if (cacheMeta) {
+    if (cacheMeta.fromCache) {
+      const age = cacheMeta.cacheAgeSeconds !== void 0 ? ` \xB7 ${cacheMeta.cacheAgeSeconds}s ago` : "";
+      lines.push(pc30.dim(`Source: cache${age}  (growthub capability cache status)`));
+    } else {
+      lines.push(pc30.dim(`Source: ${cacheMeta.source ?? "hosted"} \xB7 ${cacheMeta.fetchedAt?.slice(0, 19).replace("T", " ") ?? "just now"} UTC`));
+    }
+  }
+  lines.push("");
   for (const [family, familyNodes] of families) {
     const emoji = FAMILY_EMOJI[family] ?? "\u2022";
-    lines.push(`${emoji} ${pc37.bold(familyLabel(family))} ${pc37.dim(`(${familyNodes.length})`)}`);
+    lines.push(`${emoji} ${pc30.bold(familyLabel(family))} ${pc30.dim(`(${familyNodes.length})`)}`);
     const sorted = [...familyNodes].sort((a, b) => a.slug.localeCompare(b.slug));
-    for (const [index51, node] of sorted.entries()) {
-      const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
+    for (const [index, node] of sorted.entries()) {
+      const branch = index === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
       const contract = introspectNodeContract(node);
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
+      const hints = [
+        strategyHint(node),
+        providerHint(node),
+        outputMappingSummary(node),
+        migrationVersionHint(node)
+      ].filter(Boolean).join(" ");
       lines.push(
-        `  ${branch} ${node.slug} ${pc37.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`
+        `  ${branch} ${node.slug} ${pc30.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}${hints ? "  " + hints : ""}`
       );
     }
   }
@@ -26765,7 +23085,7 @@ function buildTemplateOption(template, viewMode) {
   if (viewMode === "expanded") {
     return {
       value: template.slug,
-      label: `${template.icon}  ${template.displayName} ${pc37.dim(template.slug)}`,
+      label: `${template.icon}  ${template.displayName} ${pc30.dim(template.slug)}`,
       hint: `req:${requiredInputs} opt:${optionalInputs} outputs:${contract.outputTypes.join(", ") || "none"} exec:${contract.executionStrategy}`
     };
   }
@@ -26787,11 +23107,11 @@ async function runWorkflowPicker(opts) {
   const hygieneStore = createWorkflowHygieneStore();
   const access = getWorkflowAccess();
   if (access.state === "unauthenticated") {
-    p23.intro(pc37.bold("Workflows") + pc37.dim(" (not connected)"));
+    p23.intro(pc30.bold("Workflows") + pc30.dim(" (not connected)"));
     p23.note(
       [
         "Workflow assembly requires an authenticated Growthub session.",
-        "Run " + pc37.cyan("growthub auth login") + " to connect your account.",
+        "Run " + pc30.cyan("growthub auth login") + " to connect your account.",
         "",
         "Once connected you can:",
         "  - Browse CMS node contracts",
@@ -26803,7 +23123,7 @@ async function runWorkflowPicker(opts) {
     if (opts.allowBackToHub) return "back";
     return "done";
   }
-  p23.intro(pc37.bold("Workflows"));
+  p23.intro(pc30.bold("Workflows"));
   while (true) {
     const refreshedAccess = getWorkflowAccess();
     const topChoice = await p23.select({
@@ -26811,12 +23131,12 @@ async function runWorkflowPicker(opts) {
       options: [
         {
           value: "contracts",
-          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc37.dim("0. CMS Node Contracts (locked)"),
+          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc30.dim("0. CMS Node Contracts (locked)"),
           hint: refreshedAccess.state === "ready" ? "Discovery tree for CMS node primitives" : refreshedAccess.reason
         },
         {
           value: "pipelines",
-          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc37.dim("1. Dynamic Pipelines (locked)"),
+          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc30.dim("1. Dynamic Pipelines (locked)"),
           hint: refreshedAccess.state === "ready" ? "Create new pipelines and route into Saved Workflows" : refreshedAccess.reason
         },
         {
@@ -26847,8 +23167,9 @@ async function runWorkflowPicker(opts) {
       contractsSpinner.start("Loading CMS node contracts...");
       try {
         const registry = createCmsCapabilityRegistryClient();
-        const { nodes } = await registry.listCapabilities({ enabledOnly: false });
-        contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}.`);
+        const { nodes, meta: contractsMeta } = await registry.listCapabilities({ enabledOnly: false });
+        const cacheHint = contractsMeta.fromCache ? pc30.dim(` (cache \xB7 ${contractsMeta.cacheAgeSeconds ?? "?"}s ago)`) : pc30.dim(` (${contractsMeta.source})`);
+        contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}${cacheHint}.`);
         if (nodes.length === 0) {
           p23.note("No CMS node contracts available.", "Nothing found");
           continue;
@@ -26857,7 +23178,7 @@ async function runWorkflowPicker(opts) {
         while (true) {
           if (showDiscoveryTree) {
             console.log("");
-            console.log(box5(renderWorkflowContractDiscoveryTree(nodes)));
+            console.log(box5(renderWorkflowContractDiscoveryTree(nodes, contractsMeta)));
             console.log("");
             showDiscoveryTree = false;
           }
@@ -26883,7 +23204,7 @@ async function runWorkflowPicker(opts) {
             const requiredInputs = contract.inputs.filter((input) => input.required).length;
             return {
               value: node.slug,
-              label: `${node.icon}  ${node.displayName} ${pc37.dim(node.slug)}`,
+              label: `${node.icon}  ${node.displayName} ${pc30.dim(node.slug)}`,
               hint: `${node.family} \xB7 required:${requiredInputs} \xB7 bindings:${contract.requiredBindings.length} \xB7 outputs:${contract.outputTypes.length}`
             };
           });
@@ -26903,10 +23224,18 @@ async function runWorkflowPicker(opts) {
           const selected = nodes.find((node) => node.slug === contractChoice);
           if (!selected) continue;
           printTemplateCard(selected);
+          const strategyTag = selected.executionBinding.strategy === "async_operation" ? pc30.yellow("async_operation") : selected.executionBinding.strategy === "sequential-with-persistence" ? pc30.cyan("sequential-with-persistence") : pc30.green("direct");
+          const outputKeys = Object.keys(selected.executionTokens.output_mapping);
+          const migVer = selected.executionTokens.migration_version;
+          console.log(pc30.dim(
+            `  Strategy: ${strategyTag}  \xB7  Output mapping keys: ${outputKeys.length > 0 ? outputKeys.join(", ") : "(none)"}` + (migVer ? `  \xB7  v${migVer}` : "") + (contractsMeta.fromCache ? `  \xB7  cache ${contractsMeta.cacheAgeSeconds ?? "?"}s ago` : "")
+          ));
+          console.log("");
           const contractAction = await p23.select({
             message: "Contract actions",
             options: [
-              { value: "inspect_json", label: "Inspect raw input template JSON" },
+              { value: "inspect_json", label: "Inspect input_template JSON" },
+              { value: "inspect_output_mapping", label: "Inspect output_mapping JSON" },
               { value: "back_to_contracts_menu", label: "\u2190 Back to CMS contracts menu" },
               { value: "back_to_workflow_menu", label: "\u2190 Back to workflow menu" }
             ]
@@ -26919,12 +23248,16 @@ async function runWorkflowPicker(opts) {
             console.log(JSON.stringify(selected.executionTokens.input_template, null, 2));
             continue;
           }
+          if (contractAction === "inspect_output_mapping") {
+            console.log(JSON.stringify(selected.executionTokens.output_mapping, null, 2));
+            continue;
+          }
           if (contractAction === "back_to_workflow_menu") {
             break;
           }
         }
       } catch (err) {
-        contractsSpinner.stop(pc37.red("Failed to load CMS node contracts."));
+        contractsSpinner.stop(pc30.red("Failed to load CMS node contracts."));
         p23.log.error("Failed to load CMS node contracts: " + err.message);
       }
       continue;
@@ -26959,14 +23292,14 @@ async function runWorkflowPicker(opts) {
           saved = withEffectiveWorkflowLabels(enriched, hygieneStore);
           savedSpinner.stop(`Loaded ${saved.length} saved workflow${saved.length === 1 ? "" : "s"}.`);
         } catch (err) {
-          savedSpinner.stop(pc37.red("Failed to load saved workflows."));
+          savedSpinner.stop(pc30.red("Failed to load saved workflows."));
           throw err;
         }
         if (saved.length === 0) {
           p23.note(
             [
               "No saved workflows found.",
-              "Use " + pc37.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
+              "Use " + pc30.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
             ].join("\n"),
             "Nothing saved"
           );
@@ -26974,7 +23307,7 @@ async function runWorkflowPicker(opts) {
         }
         const allOptions = saved.map((w) => ({
           value: w.workflowId,
-          label: `${w.name} ${pc37.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc37.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
+          label: `${w.name} ${pc30.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc30.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
           hint: `${w.executionMode} \xB7 ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`
         }));
         const choice = await paginatedSelect("Select a saved workflow", allOptions, {
@@ -26995,7 +23328,7 @@ async function runWorkflowPicker(opts) {
             detail = await loadSavedWorkflowDetail(entry);
             detailSpinner.stop(`Loaded ${entry.name}.`);
           } catch (err) {
-            detailSpinner.stop(pc37.red(`Failed to load ${entry.name}.`));
+            detailSpinner.stop(pc30.red(`Failed to load ${entry.name}.`));
             p23.log.error(err.message);
             continue;
           }
@@ -27003,14 +23336,14 @@ async function runWorkflowPicker(opts) {
           const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
           console.log("");
           console.log(box5([
-            `${pc37.bold("Workflow:")} ${entry.name}`,
-            `${pc37.dim("ID:")} ${entry.workflowId}`,
-            `${pc37.dim("Mode:")} hosted  ${pc37.dim("Nodes:")} ${nodes.length}`,
-            `${pc37.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
-            `${pc37.dim("Created:")} ${detail.createdAt || "\u2014"}`,
+            `${pc30.bold("Workflow:")} ${entry.name}`,
+            `${pc30.dim("ID:")} ${entry.workflowId}`,
+            `${pc30.dim("Mode:")} hosted  ${pc30.dim("Nodes:")} ${nodes.length}`,
+            `${pc30.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
+            `${pc30.dim("Created:")} ${detail.createdAt || "\u2014"}`,
             "",
             ...nodes.map(
-              (n, i) => `${pc37.dim(String(i + 1) + ".")} ${pc37.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc37.dim(n.id)}`
+              (n, i) => `${pc30.dim(String(i + 1) + ".")} ${pc30.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc30.dim(n.id)}`
             )
           ]));
           console.log("");
@@ -27021,7 +23354,7 @@ async function runWorkflowPicker(opts) {
               { value: "set_label", label: "Set workflow label" },
               { value: "archive", label: "Archive workflow" },
               { value: "unarchive", label: "Unarchive workflow" },
-              { value: "delete", label: pc37.red("Delete workflow") },
+              { value: "delete", label: pc30.red("Delete workflow") },
               { value: "back_to_saved", label: "\u2190 Back to saved workflows" }
             ]
           });
@@ -27066,7 +23399,7 @@ async function runWorkflowPicker(opts) {
                 console.log("");
               }
               await executeHostedPipeline(executablePipeline);
-              p23.log.success(`Saved workflow execution completed for ${pc37.bold(entry.name)}.`);
+              p23.log.success(`Saved workflow execution completed for ${pc30.bold(entry.name)}.`);
             } catch (err) {
               p23.log.error("Saved workflow execution failed: " + err.message);
             }
@@ -27085,7 +23418,7 @@ async function runWorkflowPicker(opts) {
               continue;
             }
             hygieneStore.setLabel(entry.workflowId, labelChoice);
-            p23.log.success(`Updated label for ${pc37.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
+            p23.log.success(`Updated label for ${pc30.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
             continue;
           }
           if (nextAction === "archive") {
@@ -27099,10 +23432,10 @@ async function runWorkflowPicker(opts) {
             try {
               await archiveSavedWorkflow(entry);
               hygieneStore.setLabel(entry.workflowId, "archived");
-              p23.log.success(`Archived ${pc37.bold(entry.name)}.`);
+              p23.log.success(`Archived ${pc30.bold(entry.name)}.`);
             } catch {
               hygieneStore.setLabel(entry.workflowId, "archived");
-              p23.log.success(`Archived ${pc37.bold(entry.name)} (local fallback).`);
+              p23.log.success(`Archived ${pc30.bold(entry.name)} (local fallback).`);
             }
             continue;
           }
@@ -27124,7 +23457,7 @@ async function runWorkflowPicker(opts) {
             }
             hygieneStore.setLabel(entry.workflowId, restoreChoice);
             p23.log.success(
-              `Unarchived ${pc37.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
+              `Unarchived ${pc30.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
             );
             continue;
           }
@@ -27145,10 +23478,10 @@ async function runWorkflowPicker(opts) {
             }
             try {
               await deleteSavedWorkflow(entry);
-              p23.log.success(`Deleted ${pc37.bold(entry.name)}.`);
+              p23.log.success(`Deleted ${pc30.bold(entry.name)}.`);
             } catch {
               markWorkflowDeletedLocally(entry.workflowId);
-              p23.log.success(`Deleted ${pc37.bold(entry.name)} (local fallback).`);
+              p23.log.success(`Deleted ${pc30.bold(entry.name)} (local fallback).`);
             }
             continue;
           }
@@ -27265,12 +23598,12 @@ async function runWorkflowPicker(opts) {
                 const resolver = createMachineCapabilityResolver();
                 const binding = await resolver.resolveCapability(selected.slug);
                 if (binding) {
-                  const statusColor3 = binding.allowed ? pc37.green : pc37.red;
+                  const statusColor3 = binding.allowed ? pc30.green : pc30.red;
                   console.log("");
                   console.log(box5([
-                    `${pc37.bold("Machine Binding:")} ${selected.slug}`,
-                    `${pc37.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
-                    `${pc37.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
+                    `${pc30.bold("Machine Binding:")} ${selected.slug}`,
+                    `${pc30.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+                    `${pc30.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
                   ]));
                   console.log("");
                 }
@@ -27305,7 +23638,7 @@ async function runWorkflowPicker(opts) {
                 "Input normalization"
               );
               const nodeId = builder.addNode(selected.slug, normalized.bindings);
-              p23.log.success(`Added ${pc37.bold(selected.displayName)} (${pc37.dim(nodeId)})`);
+              p23.log.success(`Added ${pc30.bold(selected.displayName)} (${pc30.dim(nodeId)})`);
               const next = await p23.select({
                 message: "Pipeline has 1 node. What next?",
                 options: [
@@ -27343,7 +23676,7 @@ async function runWorkflowPicker(opts) {
                   throw new Error("Hosted workflow save returned no payload.");
                 }
                 p23.log.success(
-                  `Hosted workflow saved as ${pc37.bold(workflowName)} (${pc37.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
+                  `Hosted workflow saved as ${pc30.bold(workflowName)} (${pc30.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
                 );
               }
               break;
@@ -27393,31 +23726,31 @@ async function renderWorkflowIntelligenceSummary(pipeline, capabilities, phase) 
     };
     const result = await provider.summarizeExecution(input);
     const lines = [
-      `${pc37.bold("Intelligence Summary")} ${pc37.dim(result.title)}`,
+      `${pc30.bold("Intelligence Summary")} ${pc30.dim(result.title)}`,
       result.explanation
     ];
     if (result.runtimeModeNote) {
-      lines.push(`${pc37.dim("Runtime:")} ${result.runtimeModeNote}`);
+      lines.push(`${pc30.dim("Runtime:")} ${result.runtimeModeNote}`);
     }
     if (result.outputExpectation) {
-      lines.push(`${pc37.dim("Expected:")} ${result.outputExpectation}`);
+      lines.push(`${pc30.dim("Expected:")} ${result.outputExpectation}`);
     }
     if (result.missingBindingGuidance.length > 0) {
-      lines.push("", pc37.yellow("Missing Binding Guidance"));
+      lines.push("", pc30.yellow("Missing Binding Guidance"));
       for (const guidance of result.missingBindingGuidance) {
-        lines.push(`  ${pc37.dim("\xB7")} ${guidance}`);
+        lines.push(`  ${pc30.dim("\xB7")} ${guidance}`);
       }
     }
     if (result.costLatencyCautions.length > 0) {
-      lines.push("", pc37.yellow("Cost/Latency Notes"));
+      lines.push("", pc30.yellow("Cost/Latency Notes"));
       for (const caution of result.costLatencyCautions) {
-        lines.push(`  ${pc37.dim("\xB7")} ${caution}`);
+        lines.push(`  ${pc30.dim("\xB7")} ${caution}`);
       }
     }
     if (result.warnings.length > 0) {
-      lines.push("", pc37.yellow("Warnings"));
+      lines.push("", pc30.yellow("Warnings"));
       for (const warning of result.warnings) {
-        lines.push(`  ${pc37.dim("\xB7")} ${warning}`);
+        lines.push(`  ${pc30.dim("\xB7")} ${warning}`);
       }
     }
     return lines;
@@ -27440,7 +23773,7 @@ Examples:
     wf.command("templates").description("List CMS workflow node starter templates").option("--family <family>", "Filter by family").option("--search <term>", "Search templates").option("--view <mode>", "List view mode: condensed | expanded | tree").option("--json", "Output raw JSON").action(async (opts) => {
       const access = getWorkflowAccess();
       if (access.state !== "ready") {
-        console.error(pc37.red(`${access.reason}.`));
+        console.error(pc30.red(`${access.reason}.`));
         process.exitCode = 1;
         return;
       }
@@ -27457,24 +23790,24 @@ Examples:
           return;
         }
         if (nodes.length === 0) {
-          console.error(pc37.yellow("No templates found."));
+          console.error(pc30.yellow("No templates found."));
           process.exitCode = 1;
           return;
         }
         const viewMode = opts.view ?? "condensed";
         console.log("");
         console.log(
-          pc37.bold("Workflow Node Templates") + pc37.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
+          pc30.bold("Workflow Node Templates") + pc30.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
         );
         console.log(hr7());
-        console.log(pc37.bold("Step 1: CMS Node Contract Validation"));
-        console.log(pc37.dim("Validate contract visibility before template selection."));
-        console.log(pc37.dim(`View mode: ${viewMode}`));
+        console.log(pc30.bold("Step 1: CMS Node Contract Validation"));
+        console.log(pc30.dim("Validate contract visibility before template selection."));
+        console.log(pc30.dim(`View mode: ${viewMode}`));
         console.log("");
         if (viewMode === "tree") {
           console.log(box5(renderTemplateTree(nodes)));
           console.log(hr7());
-          console.log(pc37.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+          console.log(pc30.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
           console.log("");
           return;
         }
@@ -27482,24 +23815,24 @@ Examples:
           const contract = introspectNodeContract(node);
           const requiredInputs = contract.inputs.filter((input) => input.required).length;
           const optionalInputs = contract.inputs.length - requiredInputs;
-          const enabledTag = node.enabled ? pc37.green("enabled") : pc37.red("disabled");
-          console.log(`  ${node.icon}  ${pc37.bold(node.displayName)}  ${pc37.dim(node.slug)}  ${enabledTag}`);
+          const enabledTag = node.enabled ? pc30.green("enabled") : pc30.red("disabled");
+          console.log(`  ${node.icon}  ${pc30.bold(node.displayName)}  ${pc30.dim(node.slug)}  ${enabledTag}`);
           console.log(
-            `     ${pc37.dim("Contract:")} ${pc37.dim("required")}=${requiredInputs} ${pc37.dim("optional")}=${optionalInputs} ${pc37.dim("bindings")}=${contract.requiredBindings.length} ${pc37.dim("outputs")}=${contract.outputTypes.length}`
+            `     ${pc30.dim("Contract:")} ${pc30.dim("required")}=${requiredInputs} ${pc30.dim("optional")}=${optionalInputs} ${pc30.dim("bindings")}=${contract.requiredBindings.length} ${pc30.dim("outputs")}=${contract.outputTypes.length}`
           );
           console.log(
-            `     ${pc37.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
+            `     ${pc30.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
           );
           if (node.description) {
-            console.log(`     ${pc37.dim(node.description)}`);
+            console.log(`     ${pc30.dim(node.description)}`);
           }
           console.log("");
         }
         console.log(hr7());
-        console.log(pc37.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+        console.log(pc30.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
         console.log("");
       } catch (err) {
-        console.error(pc37.red("Failed: " + err.message));
+        console.error(pc30.red("Failed: " + err.message));
         process.exitCode = 1;
       }
     });
@@ -27519,34 +23852,34 @@ Examples:
       return;
     }
     if (visibleSaved.length === 0) {
-      console.log(pc37.dim("No saved workflows. Run `growthub workflow` to assemble one."));
+      console.log(pc30.dim("No saved workflows. Run `growthub workflow` to assemble one."));
       return;
     }
     console.log("");
     console.log(
-      pc37.bold("Saved Workflows") + pc37.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
+      pc30.bold("Saved Workflows") + pc30.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
     );
     if (!opts.includeArchived) {
       const hiddenArchivedCount = saved.length - visibleSaved.length;
       if (hiddenArchivedCount > 0) {
-        console.log(pc37.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
+        console.log(pc30.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
       }
     }
     console.log(hr7());
     for (const w of visibleSaved) {
       console.log(
-        `  ${pc37.bold(w.name)}  ` + pc37.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc37.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
+        `  ${pc30.bold(w.name)}  ` + pc30.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc30.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
       );
     }
     console.log("");
-    console.log(pc37.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
+    console.log(pc30.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
     console.log("");
   });
 }
 
 // src/commands/open-agents.ts
 import * as p24 from "@clack/prompts";
-import pc38 from "picocolors";
+import pc31 from "picocolors";
 
 // src/runtime/agent-harness/auth-store.ts
 init_home();
@@ -27744,10 +24077,10 @@ async function createOpenAgentsSession(config, input) {
       signal: controller.signal
     });
     if (!response.ok) {
-      const errorText4 = await response.text().catch(() => "");
+      const errorText = await response.text().catch(() => "");
       throw new OpenAgentsBackendError(
         response.status,
-        `Failed to create session: ${response.status} ${errorText4 || response.statusText}`
+        `Failed to create session: ${response.status} ${errorText || response.statusText}`
       );
     }
     return await response.json();
@@ -27879,21 +24212,21 @@ function validateAuthMode(value) {
 // src/commands/open-agents.ts
 init_banner();
 function statusColor2(status) {
-  if (status === "running") return pc38.green(status);
-  if (status === "completed") return pc38.cyan(status);
-  if (status === "failed" || status === "cancelled") return pc38.red(status);
-  if (status === "waiting" || status === "idle") return pc38.yellow(status);
-  return pc38.dim(status);
+  if (status === "running") return pc31.green(status);
+  if (status === "completed") return pc31.cyan(status);
+  if (status === "failed" || status === "cancelled") return pc31.red(status);
+  if (status === "waiting" || status === "idle") return pc31.yellow(status);
+  return pc31.dim(status);
 }
 function sandboxBadge(state) {
-  if (state === "running") return pc38.green("running");
-  if (state === "hibernating") return pc38.yellow("hibernating");
-  if (state === "stopped") return pc38.dim("stopped");
-  if (state === "error") return pc38.red("error");
-  return pc38.dim(state);
+  if (state === "running") return pc31.green("running");
+  if (state === "hibernating") return pc31.yellow("hibernating");
+  if (state === "stopped") return pc31.dim("stopped");
+  if (state === "error") return pc31.red("error");
+  return pc31.dim(state);
 }
 function hr8(width = 72) {
-  return pc38.dim("\u2500".repeat(width));
+  return pc31.dim("\u2500".repeat(width));
 }
 function stripAnsi7(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -27901,27 +24234,27 @@ function stripAnsi7(str) {
 function box6(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi7(l).length)) + 4;
-  const top = pc38.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc38.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc31.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc31.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi7(l).length;
-    return pc38.dim("\u2502") + l + " ".repeat(pad2) + pc38.dim("\u2502");
+    return pc31.dim("\u2502") + l + " ".repeat(pad2) + pc31.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 function printSessionCard(session) {
   const lines = [
-    `${pc38.bold("Session")}  ${pc38.dim(session.sessionId)}`,
-    `${pc38.dim("Status:")}   ${statusColor2(session.status)}`,
-    `${pc38.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
-    `${pc38.dim("Events:")}   ${session.eventCount}`,
-    `${pc38.dim("Created:")}  ${session.createdAt}`
+    `${pc31.bold("Session")}  ${pc31.dim(session.sessionId)}`,
+    `${pc31.dim("Status:")}   ${statusColor2(session.status)}`,
+    `${pc31.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
+    `${pc31.dim("Events:")}   ${session.eventCount}`,
+    `${pc31.dim("Created:")}  ${session.createdAt}`
   ];
-  if (session.repoUrl) lines.push(`${pc38.dim("Repo:")}     ${session.repoUrl}`);
-  if (session.branch) lines.push(`${pc38.dim("Branch:")}   ${session.branch}`);
+  if (session.repoUrl) lines.push(`${pc31.dim("Repo:")}     ${session.repoUrl}`);
+  if (session.branch) lines.push(`${pc31.dim("Branch:")}   ${session.branch}`);
   if (session.prompt) {
     const truncated = session.prompt.length > 80 ? session.prompt.slice(0, 77) + "..." : session.prompt;
-    lines.push(`${pc38.dim("Prompt:")}   ${truncated}`);
+    lines.push(`${pc31.dim("Prompt:")}   ${truncated}`);
   }
   console.log("");
   console.log(box6(lines));
@@ -27948,12 +24281,12 @@ var EVENT_EMOJI = {
 };
 function printEvent(event) {
   const emoji = EVENT_EMOJI[event.type] ?? "\xB7";
-  const ts = pc38.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
+  const ts = pc31.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
   console.log(`  ${emoji}  ${ts}  ${event.detail}`);
 }
 async function runOpenAgentsHub(opts) {
   printPaperclipCliBanner();
-  p24.intro(pc38.bold("Open Agents"));
+  p24.intro(pc31.bold("Open Agents"));
   while (true) {
     const config = readOpenAgentsConfig();
     const action = await p24.select({
@@ -28120,7 +24453,7 @@ async function runSessionListFlow(config) {
       options: [
         ...sessions.map((s) => ({
           value: s.sessionId,
-          label: `${statusColor2(s.status)}  ${pc38.dim(s.sessionId.slice(0, 12))}`,
+          label: `${statusColor2(s.status)}  ${pc31.dim(s.sessionId.slice(0, 12))}`,
           hint: s.prompt ? s.prompt.slice(0, 50) : void 0
         })),
         { value: "__back", label: "\u2190 Back" }
@@ -28145,7 +24478,7 @@ async function runSessionListFlow(config) {
           p24.note("No events recorded yet.", "Empty");
         } else {
           console.log("");
-          console.log(pc38.bold("Recent Events") + pc38.dim(`  (${events.length})`));
+          console.log(pc31.bold("Recent Events") + pc31.dim(`  (${events.length})`));
           console.log(hr8());
           for (const event of events.slice(-20)) {
             printEvent(event);
@@ -28211,7 +24544,7 @@ async function runResumeSessionFlow(config) {
     printSessionCard(session);
     const events = await pollSessionEvents(config, session.sessionId);
     if (events.length > 0) {
-      console.log(pc38.bold("Latest Events") + pc38.dim(`  (${events.length})`));
+      console.log(pc31.bold("Latest Events") + pc31.dim(`  (${events.length})`));
       console.log(hr8());
       for (const event of events.slice(-20)) {
         printEvent(event);
@@ -28258,7 +24591,7 @@ Examples:
       if (opts.json) {
         console.log(JSON.stringify(updated, null, 2));
       } else {
-        console.log(pc38.green("Configuration updated."));
+        console.log(pc31.green("Configuration updated."));
       }
       return;
     }
@@ -28267,15 +24600,15 @@ Examples:
       return;
     }
     console.log("");
-    console.log(pc38.bold("Open Agents Configuration"));
+    console.log(pc31.bold("Open Agents Configuration"));
     console.log(hr8());
-    console.log(`  ${pc38.dim("Backend:")}   ${config.backendType}`);
-    console.log(`  ${pc38.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
-    console.log(`  ${pc38.dim("Endpoint:")}  ${config.endpoint}`);
-    console.log(`  ${pc38.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc38.dim("(none)")}`);
-    console.log(`  ${pc38.dim("Repo:")}      ${config.defaultRepo ?? pc38.dim("(none)")}`);
-    console.log(`  ${pc38.dim("Branch:")}    ${config.defaultBranch ?? pc38.dim("(none)")}`);
-    console.log(`  ${pc38.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
+    console.log(`  ${pc31.dim("Backend:")}   ${config.backendType}`);
+    console.log(`  ${pc31.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
+    console.log(`  ${pc31.dim("Endpoint:")}  ${config.endpoint}`);
+    console.log(`  ${pc31.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc31.dim("(none)")}`);
+    console.log(`  ${pc31.dim("Repo:")}      ${config.defaultRepo ?? pc31.dim("(none)")}`);
+    console.log(`  ${pc31.dim("Branch:")}    ${config.defaultBranch ?? pc31.dim("(none)")}`);
+    console.log(`  ${pc31.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
     console.log(hr8());
     console.log("");
   });
@@ -28288,12 +24621,12 @@ Examples:
     }
     if (health.available) {
       console.log(
-        pc38.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
+        pc31.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
       );
     } else {
-      console.log(pc38.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
+      console.log(pc31.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
       if (health.error) {
-        console.log(pc38.dim(`  ${health.error}`));
+        console.log(pc31.dim(`  ${health.error}`));
       }
       process.exitCode = 1;
     }
@@ -28307,22 +24640,22 @@ Examples:
         return;
       }
       if (sessions.length === 0) {
-        console.log(pc38.yellow("No sessions found.") + pc38.dim(" Run `growthub open-agents create` to start one."));
+        console.log(pc31.yellow("No sessions found.") + pc31.dim(" Run `growthub open-agents create` to start one."));
         return;
       }
       console.log("");
-      console.log(pc38.bold("Agent Sessions") + pc38.dim(`  (${sessions.length})`));
+      console.log(pc31.bold("Agent Sessions") + pc31.dim(`  (${sessions.length})`));
       console.log(hr8());
       for (const session of sessions) {
-        const truncatedPrompt = session.prompt ? pc38.dim(session.prompt.slice(0, 50)) : "";
+        const truncatedPrompt = session.prompt ? pc31.dim(session.prompt.slice(0, 50)) : "";
         console.log(
-          `  ${statusColor2(session.status)}  ${pc38.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
+          `  ${statusColor2(session.status)}  ${pc31.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
         );
       }
       console.log(hr8());
       console.log("");
     } catch (err) {
-      console.error(pc38.red("Failed to list sessions: " + err.message));
+      console.error(pc31.red("Failed to list sessions: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -28344,7 +24677,7 @@ Examples:
       }
       printSessionCard(session);
     } catch (err) {
-      console.error(pc38.red("Failed to create session: " + err.message));
+      console.error(pc31.red("Failed to create session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -28362,7 +24695,7 @@ Examples:
       }
       printSessionCard(session);
     } catch (err) {
-      console.error(pc38.red("Failed to create session: " + err.message));
+      console.error(pc31.red("Failed to create session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -28377,7 +24710,7 @@ Examples:
       printSessionCard(session);
       const events = await pollSessionEvents(config, session.sessionId);
       if (events.length > 0) {
-        console.log(pc38.bold("Latest Events") + pc38.dim(`  (${events.length})`));
+        console.log(pc31.bold("Latest Events") + pc31.dim(`  (${events.length})`));
         console.log(hr8());
         for (const event of events.slice(-20)) {
           printEvent(event);
@@ -28386,7 +24719,7 @@ Examples:
         console.log("");
       }
     } catch (err) {
-      console.error(pc38.red("Failed to resume session: " + err.message));
+      console.error(pc31.red("Failed to resume session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -28401,7 +24734,7 @@ Examples:
       printSessionCard(session);
       const events = await pollSessionEvents(config, session.sessionId);
       if (events.length > 0) {
-        console.log(pc38.bold("Latest Events") + pc38.dim(`  (${events.length})`));
+        console.log(pc31.bold("Latest Events") + pc31.dim(`  (${events.length})`));
         console.log(hr8());
         for (const event of events.slice(-20)) {
           printEvent(event);
@@ -28410,7 +24743,7 @@ Examples:
         console.log("");
       }
     } catch (err) {
-      console.error(pc38.red("Failed to chat/resume session: " + err.message));
+      console.error(pc31.red("Failed to chat/resume session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -28418,7 +24751,7 @@ Examples:
 
 // src/commands/qwen-code.ts
 import * as p25 from "@clack/prompts";
-import pc39 from "picocolors";
+import pc32 from "picocolors";
 
 // src/runtime/qwen-code/index.ts
 init_home();
@@ -28466,7 +24799,7 @@ async function executeHeadlessPrompt(prompt, configOverride) {
     ...process.env,
     ...config.env
   };
-  return new Promise((resolve2) => {
+  return new Promise((resolve) => {
     const child = spawn2(config.binaryPath, args, {
       cwd: config.cwd,
       env,
@@ -28490,7 +24823,7 @@ async function executeHeadlessPrompt(prompt, configOverride) {
     });
     child.on("close", (exitCode, signal) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve2({
+      resolve({
         exitCode,
         timedOut,
         stdout,
@@ -28501,7 +24834,7 @@ async function executeHeadlessPrompt(prompt, configOverride) {
     });
     child.on("error", (err) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve2({
+      resolve({
         exitCode: null,
         timedOut: false,
         stdout,
@@ -28713,7 +25046,7 @@ async function runQwenCodeHub(opts) {
   while (true) {
     const config = readQwenCodeConfig();
     const health = checkHealth(config.binaryPath, config.env);
-    const statusHint = health.status === "available" ? pc39.green("ready") : health.status === "degraded" ? pc39.yellow("degraded") : pc39.red("unavailable");
+    const statusHint = health.status === "available" ? pc32.green("ready") : health.status === "degraded" ? pc32.yellow("degraded") : pc32.red("unavailable");
     const action = await p25.select({
       message: `Qwen Code CLI (${statusHint})`,
       options: [
@@ -28933,7 +25266,7 @@ function registerQwenCodeCommands(program2) {
 
 // src/commands/t3code.ts
 import * as p27 from "@clack/prompts";
-import pc41 from "picocolors";
+import pc34 from "picocolors";
 
 // src/runtime/t3code/index.ts
 init_home();
@@ -28945,7 +25278,7 @@ init_home();
 import fs38 from "node:fs";
 import path46 from "node:path";
 import * as p26 from "@clack/prompts";
-import pc40 from "picocolors";
+import pc33 from "picocolors";
 function resolveProfileDir(harnessId) {
   return path46.resolve(resolvePaperclipHomeDir(), harnessId);
 }
@@ -28992,20 +25325,20 @@ function clearHarnessProfile(harnessId) {
 function buildProfileStatusLines(harnessId, harnessLabel, profile) {
   if (!profile) {
     return [
-      `${harnessLabel} Growthub Profile: ${pc40.yellow("not linked")}`,
+      `${harnessLabel} Growthub Profile: ${pc33.yellow("not linked")}`,
       "",
       `Link this harness to a Growthub workspace:`,
       `  growthub ${harnessId} profile link`
     ];
   }
   return [
-    `${harnessLabel} Growthub Profile: ${pc40.green("linked")}`,
+    `${harnessLabel} Growthub Profile: ${pc33.green("linked")}`,
     `  Workspace ID : ${profile.workspaceId}`,
     `  Machine      : ${profile.machineLabel}`,
-    `  Fork binary  : ${profile.forkBinaryPath ?? pc40.dim("(using default)")}`,
-    `  Fork kit     : ${profile.forkKitSlug ?? pc40.dim("(none)")}`,
+    `  Fork binary  : ${profile.forkBinaryPath ?? pc33.dim("(using default)")}`,
+    `  Fork kit     : ${profile.forkKitSlug ?? pc33.dim("(none)")}`,
     `  Linked at    : ${profile.linkedAt}`,
-    `  Last sync    : ${profile.lastSyncAt ?? pc40.dim("(never synced)")}`
+    `  Last sync    : ${profile.lastSyncAt ?? pc33.dim("(never synced)")}`
   ];
 }
 async function runProfileLinkFlow(harnessId, harnessLabel, existing) {
@@ -29125,7 +25458,7 @@ async function executeHeadlessPrompt2(prompt, configOverride) {
     ...process.env,
     ...config.env
   };
-  return new Promise((resolve2) => {
+  return new Promise((resolve) => {
     const child = spawn3(config.binaryPath, args, {
       cwd: config.cwd,
       env,
@@ -29149,11 +25482,11 @@ async function executeHeadlessPrompt2(prompt, configOverride) {
     });
     child.on("close", (exitCode, signal) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve2({ exitCode, timedOut, stdout, stderr, durationMs: Date.now() - startMs, signal: signal ?? null });
+      resolve({ exitCode, timedOut, stdout, stderr, durationMs: Date.now() - startMs, signal: signal ?? null });
     });
     child.on("error", (err) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve2({ exitCode: null, timedOut: false, stdout, stderr: stderr + (err.message ?? "spawn error"), durationMs: Date.now() - startMs, signal: null });
+      resolve({ exitCode: null, timedOut: false, stdout, stderr: stderr + (err.message ?? "spawn error"), durationMs: Date.now() - startMs, signal: null });
     });
   });
 }
@@ -29342,8 +25675,8 @@ async function runT3CodeHub(opts) {
     const config = readT3CodeConfig();
     const health = checkHealth2(config.binaryPath, config.env);
     const profile = readT3GrowthubProfile();
-    const statusHint = health.status === "available" ? pc41.green("ready") : health.status === "degraded" ? pc41.yellow("degraded") : pc41.red("unavailable");
-    const profileHint = profile ? pc41.green(`linked \u2192 ${profile.workspaceId}`) : pc41.dim("not linked");
+    const statusHint = health.status === "available" ? pc34.green("ready") : health.status === "degraded" ? pc34.yellow("degraded") : pc34.red("unavailable");
+    const profileHint = profile ? pc34.green(`linked \u2192 ${profile.workspaceId}`) : pc34.dim("not linked");
     const action = await p27.select({
       message: `T3 Code CLI (${statusHint})`,
       options: [
@@ -29614,7 +25947,7 @@ init_github();
 // src/commands/integrations.ts
 init_bridge();
 import * as p29 from "@clack/prompts";
-import pc43 from "picocolors";
+import pc36 from "picocolors";
 async function integrationsStatus(opts = {}) {
   const status = await describeIntegrationBridge();
   if (opts.json) {
@@ -29625,7 +25958,7 @@ async function integrationsStatus(opts = {}) {
     p29.log.warn(status.notice ?? "Not logged into Growthub.");
     return;
   }
-  p29.log.message(`Growthub: ${pc43.green("connected")}  as ${status.growthubLogin ?? "?"}`);
+  p29.log.message(`Growthub: ${pc36.green("connected")}  as ${status.growthubLogin ?? "?"}`);
   if (!status.bridgeAvailable) {
     p29.log.info(status.notice ?? "Hosted integrations endpoint not available.");
     return;
@@ -29635,9 +25968,9 @@ async function integrationsStatus(opts = {}) {
     return;
   }
   for (const i of status.integrations) {
-    const ready = i.ready ? pc43.green("ready") : pc43.yellow("reauth needed");
+    const ready = i.ready ? pc36.green("ready") : pc36.yellow("reauth needed");
     p29.log.message(
-      `  \u2022 ${pc43.cyan(i.provider)}  ${ready}  handle=${i.handle ?? "?"}  scopes=[${(i.scopes ?? []).join(", ")}]`
+      `  \u2022 ${pc36.cyan(i.provider)}  ${ready}  handle=${i.handle ?? "?"}  scopes=[${(i.scopes ?? []).join(", ")}]`
     );
   }
 }
@@ -29652,7 +25985,7 @@ async function integrationsList(opts = {}) {
     return;
   }
   for (const i of integrations) {
-    p29.log.message(`${pc43.cyan(i.provider)}  ${i.handle ?? ""}  (ready=${i.ready})`);
+    p29.log.message(`${pc36.cyan(i.provider)}  ${i.handle ?? ""}  (ready=${i.ready})`);
   }
 }
 async function integrationsProbe(opts) {
@@ -29675,7 +26008,7 @@ async function integrationsProbe(opts) {
     return;
   }
   p29.log.success(
-    `Resolved ${pc43.cyan(opts.provider)} credential via ${cred.source}  handle=${cred.handle ?? "?"}  scopes=[${(cred.scopes ?? []).join(", ")}]`
+    `Resolved ${pc36.cyan(opts.provider)} credential via ${cred.source}  handle=${cred.handle ?? "?"}  scopes=[${(cred.scopes ?? []).join(", ")}]`
   );
 }
 function registerIntegrationsCommands(program2) {
@@ -29693,7 +26026,7 @@ function registerIntegrationsCommands(program2) {
 
 // src/commands/status.ts
 import * as p30 from "@clack/prompts";
-import pc44 from "picocolors";
+import pc37 from "picocolors";
 
 // src/status/probes.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
@@ -30126,25 +26459,25 @@ async function runStatuspageReport(opts = {}) {
 function levelGlyph(level) {
   switch (level) {
     case "operational":
-      return pc44.green("\u25CF");
+      return pc37.green("\u25CF");
     case "degraded":
-      return pc44.yellow("\u25CF");
+      return pc37.yellow("\u25CF");
     case "outage":
-      return pc44.red("\u25CF");
+      return pc37.red("\u25CF");
     default:
-      return pc44.dim("\u25CB");
+      return pc37.dim("\u25CB");
   }
 }
 function overallBanner(report) {
   switch (report.overallLevel) {
     case "operational":
-      return pc44.green("\u2713 All systems operational");
+      return pc37.green("\u2713 All systems operational");
     case "degraded":
-      return pc44.yellow("\u26A0 Degraded \u2014 non-critical issues detected");
+      return pc37.yellow("\u26A0 Degraded \u2014 non-critical issues detected");
     case "outage":
-      return pc44.red("\u2717 Outage \u2014 at least one critical component is down");
+      return pc37.red("\u2717 Outage \u2014 at least one critical component is down");
     default:
-      return pc44.dim("? Status indeterminate");
+      return pc37.dim("? Status indeterminate");
   }
 }
 function renderHuman(report) {
@@ -30154,14 +26487,14 @@ function renderHuman(report) {
     bucket.push(c);
     byCategory.set(c.category, bucket);
   }
-  p30.log.message(`${overallBanner(report)}  ${pc44.dim(`(${report.summary})`)}`);
+  p30.log.message(`${overallBanner(report)}  ${pc37.dim(`(${report.summary})`)}`);
   for (const [category, list] of byCategory) {
-    p30.log.message(pc44.cyan(`
+    p30.log.message(pc37.cyan(`
   ${category}`));
     for (const c of list) {
-      const crit = c.critical ? pc44.red("!") : pc44.dim("\xB7");
-      const lat = c.latencyMs !== void 0 ? pc44.dim(` ${c.latencyMs}ms`) : "";
-      const sa = c.superAdminOnly ? pc44.magenta(" [super-admin]") : "";
+      const crit = c.critical ? pc37.red("!") : pc37.dim("\xB7");
+      const lat = c.latencyMs !== void 0 ? pc37.dim(` ${c.latencyMs}ms`) : "";
+      const sa = c.superAdminOnly ? pc37.magenta(" [super-admin]") : "";
       p30.log.message(`    ${levelGlyph(c.level)} ${crit} ${c.label.padEnd(30)} ${c.summary}${lat}${sa}`);
     }
   }
@@ -30192,7 +26525,7 @@ init_init();
 init_table_renderer();
 init_source_import();
 import * as p31 from "@clack/prompts";
-import pc45 from "picocolors";
+import pc38 from "picocolors";
 import { pathToFileURL as pathToFileURL3 } from "node:url";
 async function runStarterInit(opts) {
   try {
@@ -30202,15 +26535,15 @@ async function runStarterInit(opts) {
       return;
     }
     p31.outro(
-      `Workspace scaffolded at ${pc45.cyan(result.forkPath)}
+      `Workspace scaffolded at ${pc38.cyan(result.forkPath)}
   kitId:       ${result.kitId}
-  forkId:      ${pc45.cyan(result.forkId)}
+  forkId:      ${pc38.cyan(result.forkId)}
   baseVersion: ${result.baseVersion}
   open:        ${folderOpenLabel2(result.forkPath)}
   policyMode:  remoteSyncMode=${result.policyMode}` + (result.remote ? `
-  remote:      ${pc45.cyan(result.remote.htmlUrl)}` : "") + `
+  remote:      ${pc38.cyan(result.remote.htmlUrl)}` : "") + `
 
-Next: ${pc45.dim(`growthub kit fork status ${result.forkId}`)}`
+Next: ${pc38.dim(`growthub kit fork status ${result.forkId}`)}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -30346,19 +26679,19 @@ async function runSourceImportCommand(opts) {
 function finalizeSuccess(result, jobId) {
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
   p31.outro(
-    `Imported ${sourceLine} into ${pc45.cyan(result.forkPath)}
-  jobId:       ${pc45.cyan(jobId)}
+    `Imported ${sourceLine} into ${pc38.cyan(result.forkPath)}
+  jobId:       ${pc38.cyan(jobId)}
   importId:    ${result.importId}
-  forkId:      ${pc45.cyan(result.forkId)}
+  forkId:      ${pc38.cyan(result.forkId)}
   kitId:       ${result.kitId}
   sourceKind:  ${result.sourceKind}
   importMode:  ${result.importMode}
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager} confidence=${result.detection.confidence}
   security:    ${formatSecuritySummary(result)}
-  summary:     ${pc45.dim(result.summaryPath)}
-  manifest:    ${pc45.dim(result.manifestPath)}
+  summary:     ${pc38.dim(result.summaryPath)}
+  manifest:    ${pc38.dim(result.manifestPath)}
 
-Next: ${pc45.dim(`growthub kit fork status ${result.forkId}`)}`
+Next: ${pc38.dim(`growthub kit fork status ${result.forkId}`)}`
   );
 }
 function scopeLabel(scope) {
@@ -30406,7 +26739,7 @@ async function runBrowseSkills(opts) {
       })
     );
     for (const entry of result.entries) {
-      p31.log.message(`${pc45.bold(entry.skillId)}  ${pc45.dim(entry.htmlUrl)}`);
+      p31.log.message(`${pc38.bold(entry.skillId)}  ${pc38.dim(entry.htmlUrl)}`);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -30486,7 +26819,7 @@ function registerStarterCommands(program2) {
 // src/commands/fleet.ts
 init_fork_registry();
 import * as p32 from "@clack/prompts";
-import pc46 from "picocolors";
+import pc39 from "picocolors";
 
 // src/fleet/summary.ts
 init_fork_registry();
@@ -30819,17 +27152,17 @@ init_fork_policy();
 function healthGlyph(level) {
   switch (level) {
     case "clean":
-      return pc46.green("\u25CF");
+      return pc39.green("\u25CF");
     case "drift-minor":
-      return pc46.cyan("\u25CF");
+      return pc39.cyan("\u25CF");
     case "drift-major":
-      return pc46.yellow("\u25CF");
+      return pc39.yellow("\u25CF");
     case "awaiting-confirmation":
-      return pc46.magenta("\u25D0");
+      return pc39.magenta("\u25D0");
     case "error":
-      return pc46.red("\u25CF");
+      return pc39.red("\u25CF");
     default:
-      return pc46.dim("\u25CB");
+      return pc39.dim("\u25CB");
   }
 }
 function truncate4(s, n) {
@@ -30843,7 +27176,7 @@ async function fleetView(opts) {
     return;
   }
   p32.log.message(
-    `Fleet: ${pc46.cyan(String(fleet.totalForks))} fork(s)  |  remote=${fleet.forksWithRemote}  awaiting=${fleet.forksAwaitingConfirmation}  pending-approvals=${fleet.pendingApprovalCount}`
+    `Fleet: ${pc39.cyan(String(fleet.totalForks))} fork(s)  |  remote=${fleet.forksWithRemote}  awaiting=${fleet.forksAwaitingConfirmation}  pending-approvals=${fleet.pendingApprovalCount}`
   );
   p32.log.message(
     `  Health \u2192 clean=${fleet.byHealth.clean}  drift-minor=${fleet.byHealth["drift-minor"]}  drift-major=${fleet.byHealth["drift-major"]}  awaiting=${fleet.byHealth["awaiting-confirmation"]}  error=${fleet.byHealth.error}  unknown=${fleet.byHealth.unknown}`
@@ -30860,10 +27193,10 @@ function renderForkRow(f) {
   const base = f.baseVersion.padEnd(8);
   const upstream = (f.upstreamVersion ?? "?").padEnd(8);
   const driftCounts = `files=${f.fileDriftCount} pkgs=${f.packageDriftCount}`;
-  const pending = f.pendingConfirmationJobs > 0 ? pc46.magenta(` awaits=${f.pendingConfirmationJobs}`) : "";
-  const remote = f.remote ? pc46.dim(` ${f.remote.owner}/${f.remote.repo}`) : "";
+  const pending = f.pendingConfirmationJobs > 0 ? pc39.magenta(` awaits=${f.pendingConfirmationJobs}`) : "";
+  const remote = f.remote ? pc39.dim(` ${f.remote.owner}/${f.remote.repo}`) : "";
   p32.log.message(
-    `  ${healthGlyph(f.health)} ${label}  ${pc46.dim(kit)}  ${base} \u2192 ${upstream}  ${pc46.dim(driftCounts)}${pending}${remote}`
+    `  ${healthGlyph(f.health)} ${label}  ${pc39.dim(kit)}  ${base} \u2192 ${upstream}  ${pc39.dim(driftCounts)}${pending}${remote}`
   );
 }
 async function fleetDrift(opts) {
@@ -30878,7 +27211,7 @@ async function fleetDrift(opts) {
     return;
   }
   p32.log.message(
-    `Fleet drift: ${pc46.cyan(String(withDrift.length))} of ${fleet.totalForks} fork(s) have drift.`
+    `Fleet drift: ${pc39.cyan(String(withDrift.length))} of ${fleet.totalForks} fork(s) have drift.`
   );
   p32.log.message(
     `  By severity \u2192 none=${fleet.bySeverity.none}  info=${fleet.bySeverity.info}  warning=${fleet.bySeverity.warning}  critical=${fleet.bySeverity.critical}`
@@ -30898,7 +27231,7 @@ async function fleetDriftSummary(opts) {
     console.log(JSON.stringify({ summary, narrative }, null, 2));
     return;
   }
-  p32.log.message(pc46.cyan(`Drift summary \u2014 ${reg.forkId}  (${summary.fromVersion} \u2192 ${summary.toVersion})`));
+  p32.log.message(pc39.cyan(`Drift summary \u2014 ${reg.forkId}  (${summary.fromVersion} \u2192 ${summary.toVersion})`));
   for (const line of narrative) p32.log.message(`  ${line}`);
   const sections = [
     ["safe additions", summary.buckets.safeAdditions],
@@ -30911,13 +27244,13 @@ async function fleetDriftSummary(opts) {
   ];
   for (const [label, items] of sections) {
     if (items.length === 0) continue;
-    p32.log.message(pc46.dim(`  \u2014 ${label} (${items.length}) \u2014`));
-    for (const item of items) p32.log.message(`    \xB7 ${item.path}  ${pc46.dim(item.note)}`);
+    p32.log.message(pc39.dim(`  \u2014 ${label} (${items.length}) \u2014`));
+    for (const item of items) p32.log.message(`    \xB7 ${item.path}  ${pc39.dim(item.note)}`);
   }
   if (summary.buckets.packageAdditions.length || summary.buckets.packageUpgrades.length) {
-    p32.log.message(pc46.dim(`  \u2014 dependency drift \u2014`));
+    p32.log.message(pc39.dim(`  \u2014 dependency drift \u2014`));
     for (const d of summary.buckets.packageAdditions) {
-      p32.log.message(`    + ${d.packageName}@${d.toVersion}  ${pc46.dim("(added upstream)")}`);
+      p32.log.message(`    + ${d.packageName}@${d.toVersion}  ${pc39.dim("(added upstream)")}`);
     }
     for (const d of summary.buckets.packageUpgrades) {
       p32.log.message(`    \u2191 ${d.packageName}  ${d.fromVersion ?? "?"} \u2192 ${d.toVersion}`);
@@ -30943,14 +27276,14 @@ async function fleetPolicy(opts) {
     console.log(JSON.stringify({ count: rows.length, rows }, null, 2));
     return;
   }
-  p32.log.message(pc46.cyan(`Fleet policy matrix (${rows.length} fork(s))`));
+  p32.log.message(pc39.cyan(`Fleet policy matrix (${rows.length} fork(s))`));
   for (const r of rows) {
     const label = truncate4(r.label ?? r.forkId, 28).padEnd(28);
     const aa = r.autoApprove.padEnd(9);
     const ad = r.autoApproveDepUpdates.padEnd(9);
     const rs = r.remoteSyncMode.padEnd(6);
     const ut = String(r.untouchableCount).padStart(3);
-    const remote = r.hasRemote ? pc46.green("+") : pc46.dim("\xB7");
+    const remote = r.hasRemote ? pc39.green("+") : pc39.dim("\xB7");
     p32.log.message(
       `  ${label}  autoApprove=${aa}  deps=${ad}  remote=${rs}  untouchable=${ut}  ${remote}`
     );
@@ -30966,19 +27299,19 @@ async function fleetApprovals(opts) {
     p32.log.success("Approval queue is empty.");
     return;
   }
-  p32.log.message(pc46.cyan(`Approval queue: ${queue.length} job(s) awaiting confirmation`));
+  p32.log.message(pc39.cyan(`Approval queue: ${queue.length} job(s) awaiting confirmation`));
   for (const entry of queue) {
     p32.log.message(
-      `  \xB7 ${pc46.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
+      `  \xB7 ${pc39.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
     );
     for (const path61 of entry.pendingPaths.slice(0, 6)) {
-      p32.log.message(`      ${pc46.dim("awaits")} ${path61}`);
+      p32.log.message(`      ${pc39.dim("awaits")} ${path61}`);
     }
     if (entry.pendingPaths.length > 6) {
-      p32.log.message(`      ${pc46.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
+      p32.log.message(`      ${pc39.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
     }
     p32.log.message(
-      `      ${pc46.dim("resume:")} growthub kit fork confirm --job-id ${entry.jobId}`
+      `      ${pc39.dim("resume:")} growthub kit fork confirm --job-id ${entry.jobId}`
     );
   }
 }
@@ -30990,20 +27323,20 @@ async function fleetAgentPlan(opts) {
     console.log(JSON.stringify(doc, null, 2));
     return;
   }
-  p32.log.message(pc46.cyan(`Agent heal plan \u2014 ${reg.forkId}`));
+  p32.log.message(pc39.cyan(`Agent heal plan \u2014 ${reg.forkId}`));
   p32.log.message(`  ${doc.summary}`);
   for (const line of doc.narrative) p32.log.message(`    ${line}`);
   if (doc.awaitsConfirmation.length > 0) {
-    p32.log.message(pc46.magenta(`  Awaiting confirmation on:`));
+    p32.log.message(pc39.magenta(`  Awaiting confirmation on:`));
     for (const p210 of doc.awaitsConfirmation) p32.log.message(`    \xB7 ${p210}`);
     p32.log.message(
-      pc46.dim(
+      pc39.dim(
         `  Next: growthub kit fork heal ${reg.forkId}  (will park in awaiting_confirmation until resumed)`
       )
     );
   } else if (doc.plan.actions.length > 0) {
     p32.log.message(
-      pc46.dim(`  Next: growthub kit fork heal ${reg.forkId}  (${doc.plan.actions.length} safe action(s) ready)`)
+      pc39.dim(`  Next: growthub kit fork heal ${reg.forkId}  (${doc.plan.actions.length} safe action(s) ready)`)
     );
   }
 }
@@ -31238,14 +27571,14 @@ var FIELD_WEIGHTS = {
   concepts: 2.5,
   type: 1
 };
-function tokenize(text69) {
-  return text69.toLowerCase().replace(/[^a-z0-9\s-_]/g, " ").split(/\s+/).filter((t) => t.length > 1);
+function tokenize(text18) {
+  return text18.toLowerCase().replace(/[^a-z0-9\s-_]/g, " ").split(/\s+/).filter((t) => t.length > 1);
 }
 function scoreObservation(observation, queryTokens) {
   let totalScore = 0;
   const matchedFields = [];
-  function scoreField(fieldName, text69) {
-    const fieldTokens = tokenize(text69);
+  function scoreField(fieldName, text18) {
+    const fieldTokens = tokenize(text18);
     const weight = FIELD_WEIGHTS[fieldName] ?? 1;
     let fieldHits = 0;
     for (const queryToken of queryTokens) {
@@ -31311,9 +27644,9 @@ function searchMemory(query) {
     query
   };
 }
-function searchSummaries(project, text69, limit = 10) {
+function searchSummaries(project, text18, limit = 10) {
   const db = loadMemoryDatabase(project);
-  const queryTokens = tokenize(text69);
+  const queryTokens = tokenize(text18);
   if (queryTokens.length === 0) return [];
   const scored = [];
   for (const summary of db.summaries) {
@@ -31345,8 +27678,8 @@ function searchSummaries(project, text69, limit = 10) {
 }
 
 // src/runtime/memory/context-builder.ts
-function estimateTokens(text69) {
-  return Math.ceil(text69.length / 4);
+function estimateTokens(text18) {
+  return Math.ceil(text18.length / 4);
 }
 function renderSummaryCompact(summary) {
   const parts = [];
@@ -31354,18 +27687,18 @@ function renderSummaryCompact(summary) {
   if (summary.completed) parts.push(`Completed: ${summary.completed}`);
   if (summary.learned) parts.push(`Learned: ${summary.learned}`);
   if (summary.nextSteps) parts.push(`Next: ${summary.nextSteps}`);
-  const date2 = summary.createdAt.split("T")[0];
-  return `[${date2}] ${parts.join(" | ")}`;
+  const date = summary.createdAt.split("T")[0];
+  return `[${date}] ${parts.join(" | ")}`;
 }
 function renderObservationCompact(observation) {
-  const date2 = observation.createdAt.split("T")[0];
+  const date = observation.createdAt.split("T")[0];
   const facts = observation.facts.length > 0 ? ` \u2014 ${observation.facts[0]}` : "";
-  return `#${observation.id} [${date2}] ${observation.type}: ${observation.title}${facts}`;
+  return `#${observation.id} [${date}] ${observation.type}: ${observation.title}${facts}`;
 }
 function renderObservationFull(observation) {
   const lines = [];
-  const date2 = observation.createdAt.split("T")[0];
-  lines.push(`#${observation.id} [${date2}] ${observation.type}: ${observation.title}`);
+  const date = observation.createdAt.split("T")[0];
+  lines.push(`#${observation.id} [${date}] ${observation.type}: ${observation.title}`);
   if (observation.subtitle) lines.push(`  ${observation.subtitle}`);
   if (observation.narrative) lines.push(`  ${observation.narrative}`);
   if (observation.facts.length > 0) {
@@ -31443,12 +27776,12 @@ function buildMemoryContext(project, configOverride) {
     }
   }
   sections.push("\n=== End Memory Context ===");
-  const text69 = sections.join("\n");
+  const text18 = sections.join("\n");
   return {
-    text: text69,
+    text: text18,
     observationCount: includedObservations,
     summaryCount: includedSummaries,
-    estimatedTokens: estimateTokens(text69)
+    estimatedTokens: estimateTokens(text18)
   };
 }
 function buildSemanticContext(project, prompt, configOverride) {
@@ -31496,12 +27829,12 @@ function buildSemanticContext(project, prompt, configOverride) {
     }
   }
   sections.push("\n=== End Memory Context ===");
-  const text69 = sections.join("\n");
+  const text18 = sections.join("\n");
   return {
-    text: text69,
+    text: text18,
     observationCount: includedObservations,
     summaryCount: 0,
-    estimatedTokens: estimateTokens(text69)
+    estimatedTokens: estimateTokens(text18)
   };
 }
 
@@ -31598,7 +27931,7 @@ async function syncMemoriesToHosted(project, options) {
 init_llm();
 function resolveCliVersion() {
   try {
-    const moduleDir = path60.dirname(fileURLToPath7(import.meta.url));
+    const moduleDir = path60.dirname(fileURLToPath6(import.meta.url));
     const candidates = [
       path60.resolve(moduleDir, "../package.json"),
       path60.resolve(moduleDir, "../../package.json")
@@ -31623,16 +27956,16 @@ function resolveSurfaceProfile(config) {
 }
 function resolveBootstrapOptions(argv) {
   const options = {};
-  for (let index51 = 0; index51 < argv.length; index51 += 1) {
-    const value = argv[index51];
-    if ((value === "-c" || value === "--config") && argv[index51 + 1]) {
-      options.config = argv[index51 + 1];
-      index51 += 1;
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    if ((value === "-c" || value === "--config") && argv[index + 1]) {
+      options.config = argv[index + 1];
+      index += 1;
       continue;
     }
-    if ((value === "-d" || value === "--data-dir") && argv[index51 + 1]) {
-      options.dataDir = argv[index51 + 1];
-      index51 += 1;
+    if ((value === "-d" || value === "--data-dir") && argv[index + 1]) {
+      options.dataDir = argv[index + 1];
+      index += 1;
     }
   }
   return options;
@@ -31924,15 +28257,15 @@ function buildSetupCommands(osLabel, baseUrl, recommendedModel) {
   ];
 }
 function prioritizeModelOptions(models, favoriteModel, recommendedModel) {
-  const unique3 = [...new Set(models)];
-  if (unique3.length === 0) return unique3;
-  if (favoriteModel && unique3.includes(favoriteModel)) {
-    return [favoriteModel, ...unique3.filter((id) => id !== favoriteModel)];
+  const unique2 = [...new Set(models)];
+  if (unique2.length === 0) return unique2;
+  if (favoriteModel && unique2.includes(favoriteModel)) {
+    return [favoriteModel, ...unique2.filter((id) => id !== favoriteModel)];
   }
-  if (recommendedModel && unique3.includes(recommendedModel)) {
-    return [recommendedModel, ...unique3.filter((id) => id !== recommendedModel)];
+  if (recommendedModel && unique2.includes(recommendedModel)) {
+    return [recommendedModel, ...unique2.filter((id) => id !== recommendedModel)];
   }
-  return unique3;
+  return unique2;
 }
 async function promptForCustomModel(defaultModel) {
   const input = await p34.text({
@@ -32047,8 +28380,8 @@ User: ${prompt}` : prompt,
     }
   }
 }
-function extractFactsFromResponse(text69) {
-  const sentences = text69.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 10);
+function extractFactsFromResponse(text18) {
+  const sentences = text18.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 10);
   return sentences.slice(0, 3);
 }
 function inferConceptsFromPrompt(prompt) {
@@ -32291,7 +28624,7 @@ async function runMemoryKnowledgeHub() {
         },
         {
           value: "sync",
-          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc48.dim(" (unavailable)"),
+          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc41.dim(" (unavailable)"),
           hint: syncStatus.available ? "push memories to hosted account" : syncStatus.reason
         },
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
@@ -32304,29 +28637,29 @@ async function runMemoryKnowledgeHub() {
         placeholder: "what are you looking for?"
       });
       if (p34.isCancel(query)) continue;
-      const text69 = String(query).trim();
-      if (!text69) continue;
-      const results = searchMemory({ text: text69, project, limit: 15 });
+      const text18 = String(query).trim();
+      if (!text18) continue;
+      const results = searchMemory({ text: text18, project, limit: 15 });
       if (results.totalMatched === 0) {
         p34.note("No matching observations found.", "Search Results");
         continue;
       }
       const lines = [`Found ${results.totalMatched} match(es), showing top ${results.results.length}:`, ""];
       for (const r of results.results) {
-        const date2 = r.observation.createdAt.split("T")[0];
-        lines.push(`#${r.observation.id} [${date2}] ${r.observation.type}: ${r.observation.title}`);
+        const date = r.observation.createdAt.split("T")[0];
+        lines.push(`#${r.observation.id} [${date}] ${r.observation.type}: ${r.observation.title}`);
         if (r.observation.facts.length > 0) {
           lines.push(`  \u2022 ${r.observation.facts[0]}`);
         }
         lines.push(`  Score: ${r.score.toFixed(1)} | Matched: ${r.matchedFields.join(", ")}`);
         lines.push("");
       }
-      const summaryResults = searchSummaries(project, text69, 5);
+      const summaryResults = searchSummaries(project, text18, 5);
       if (summaryResults.length > 0) {
         lines.push("--- Related Session Summaries ---");
         for (const s of summaryResults) {
-          const date2 = s.createdAt.split("T")[0];
-          lines.push(`[${date2}] ${s.request ?? "Session"}: ${s.completed ?? s.learned ?? "(no summary)"}`);
+          const date = s.createdAt.split("T")[0];
+          lines.push(`[${date}] ${s.request ?? "Session"}: ${s.completed ?? s.learned ?? "(no summary)"}`);
         }
       }
       p34.note(lines.join("\n"), "Search Results");
@@ -32344,11 +28677,11 @@ async function runMemoryKnowledgeHub() {
       const lines = [];
       let lastDate = "";
       for (const obs of observations) {
-        const date2 = obs.createdAt.split("T")[0];
-        if (date2 !== lastDate) {
+        const date = obs.createdAt.split("T")[0];
+        if (date !== lastDate) {
           if (lastDate) lines.push("");
-          lines.push(`\u2500\u2500 ${date2} \u2500\u2500`);
-          lastDate = date2;
+          lines.push(`\u2500\u2500 ${date} \u2500\u2500`);
+          lastDate = date;
         }
         lines.push(`  #${obs.id} ${obs.type}: ${obs.title}`);
         if (obs.narrative) {
@@ -32359,13 +28692,13 @@ async function runMemoryKnowledgeHub() {
       continue;
     }
     if (action === "projects") {
-      const projects2 = listMemoryProjects();
-      if (projects2.length === 0) {
+      const projects = listMemoryProjects();
+      if (projects.length === 0) {
         p34.note("No memory projects found. Interact with the local prompt chat to start capturing.", "Projects");
         continue;
       }
       const lines = [];
-      for (const proj of projects2) {
+      for (const proj of projects) {
         const s = getMemoryStats(proj);
         lines.push(`${proj}: ${s.observationCount} observations, ${s.summaryCount} summaries`);
       }
@@ -32429,7 +28762,7 @@ async function runDiscoveryHub(opts) {
         },
         {
           value: "workflows",
-          label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc48.dim(" (locked)"),
+          label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc41.dim(" (locked)"),
           hint: workflowAccess.state === "ready" ? "CMS contracts, dynamic pipelines, and saved workflows" : workflowAccess.reason
         },
         {

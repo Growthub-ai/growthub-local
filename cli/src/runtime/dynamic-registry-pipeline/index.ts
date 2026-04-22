@@ -28,6 +28,7 @@ import type {
   PipelineValidationResult,
   PipelineValidationIssue,
   PipelineExecutionPackage,
+  NodeOutputSummary,
   SerializedPipeline,
 } from "./types.js";
 
@@ -221,7 +222,7 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
       const pipeline = this.build();
 
       const nodeRoutes: Record<string, "hosted-execute" | "provider-assembly" | "local-only"> = {};
-      const nodeOutputSummaries: Record<string, import("./types.js").NodeOutputSummary> = {};
+      const nodeOutputSummaries: Record<string, NodeOutputSummary> = {};
       const asyncNodeIds: string[] = [];
       const preflightWarnings: PipelineValidationIssue[] = [];
       const routeSet = new Set<string>();
