@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.888.0",
+    "@growthub/api-contract": "workspace:*",
     "@clack/prompts": "^0.10.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
