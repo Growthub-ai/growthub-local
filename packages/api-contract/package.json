@@ -1,0 +1,83 @@
+{
+  "name": "@growthub/api-contract",
+  "version": "1.0.0-alpha.1",
+  "description": "Growthub CMS SDK v1 — public contract surface. Freezes the existing growthub-local CLI truth (capabilities, manifests, execution payloads, provider assembly, profile, streaming events) into one stable, additive, type-only package.",
+  "license": "MIT",
+  "homepage": "https://github.com/Growthub-ai/growthub-local#readme",
+  "bugs": {
+    "url": "https://github.com/Growthub-ai/growthub-local/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Growthub-ai/growthub-local",
+    "directory": "packages/api-contract"
+  },
+  "keywords": [
+    "growthub",
+    "cms",
+    "sdk",
+    "api-contract",
+    "capabilities",
+    "manifests",
+    "execution",
+    "provider-assembly",
+    "types"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./capabilities": {
+      "types": "./dist/capabilities.d.ts",
+      "import": "./dist/capabilities.js"
+    },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "import": "./dist/providers.js"
+    },
+    "./profile": {
+      "types": "./dist/profile.d.ts",
+      "import": "./dist/profile.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
+    },
+    "./manifests": {
+      "types": "./dist/manifests.d.ts",
+      "import": "./dist/manifests.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
