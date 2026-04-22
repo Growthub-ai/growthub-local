@@ -38,6 +38,7 @@ export type {
   PipelineValidationResult,
   PipelineValidationIssue,
   PipelineExecutionPackage,
+  NodeOutputSummary,
   SerializedPipeline,
 } from "./types.js";
 
@@ -140,6 +141,26 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
           });
         }
 
+        // Strategy-aware warning: async nodes require polling
+        if (capability.executionBinding.strategy === "async_operation") {
+          issues.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "executionBinding.strategy",
+            message: `Capability "${node.slug}" uses async_operation strategy. Execution will be non-blocking and requires polling for results.`,
+          });
+        }
+
+        // Experimental capability warning
+        if (capability.experimental) {
+          issues.push({
+            severity: "warning",
+            nodeId: node.id,
+            field: "experimental",
+            message: `Capability "${node.slug}" is marked experimental and may have unstable behavior.`,
+          });
+        }
+
         // Check required bindings
         for (const requiredBinding of capability.requiredBindings) {
           if (!(requiredBinding in node.bindings)) {
@@ -149,6 +170,17 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
               field: `bindings.${requiredBinding}`,
               message: `Missing required binding "${requiredBinding}" for capability "${node.slug}".`,
             });
+          } else {
+            // Binding is present — warn if value is empty
+            const val = node.bindings[requiredBinding];
+            if (val === "" || val === null || val === undefined) {
+              issues.push({
+                severity: "warning",
+                nodeId: node.id,
+                field: `bindings.${requiredBinding}`,
+                message: `Required binding "${requiredBinding}" for capability "${node.slug}" is present but has an empty value.`,
+              });
+            }
           }
         }
 
@@ -186,6 +218,9 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
       const pipeline = this.build();
 
       const nodeRoutes: Record<string, "hosted-execute" | "provider-assembly" | "local-only"> = {};
+      const nodeOutputSummaries: Record<string, import("./types.js").NodeOutputSummary> = {};
+      const asyncNodeIds: string[] = [];
+      const preflightWarnings: PipelineValidationIssue[] = [];
       const routeSet = new Set<string>();
 
       for (const node of pipeline.nodes) {
@@ -193,6 +228,38 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
         const route = capability?.executionKind ?? "hosted-execute";
         nodeRoutes[node.id] = route;
         routeSet.add(route);
+
+        // Build output summary from capability manifest
+        const outputKeys = capability
+          ? Object.keys(capability.executionTokens.output_mapping)
+          : [];
+        const outputTypes = capability?.outputTypes ?? [];
+        nodeOutputSummaries[node.id] = { nodeId: node.id, slug: node.slug, outputKeys, outputTypes };
+
+        // Track async nodes for caller awareness
+        if (capability?.executionBinding.strategy === "async_operation") {
+          asyncNodeIds.push(node.id);
+          preflightWarnings.push({
+            severity: "warning",
+            nodeId: node.id,
+            message: `Node "${node.slug}" (${node.id}) uses async polling strategy.`,
+          });
+        }
+
+        // Warn on empty required binding values
+        for (const requiredBinding of capability?.requiredBindings ?? []) {
+          if (requiredBinding in node.bindings) {
+            const val = node.bindings[requiredBinding];
+            if (val === "" || val === null || val === undefined) {
+              preflightWarnings.push({
+                severity: "warning",
+                nodeId: node.id,
+                field: `bindings.${requiredBinding}`,
+                message: `Required binding "${requiredBinding}" in node "${node.slug}" has an empty value.`,
+              });
+            }
+          }
+        }
       }
 
       let executionRoute: PipelineExecutionPackage["executionRoute"];
@@ -207,6 +274,9 @@ export function createPipelineBuilder(opts?: PipelineBuilderOptions): DynamicReg
         pipeline,
         executionRoute,
         nodeRoutes,
+        nodeOutputSummaries,
+        asyncNodeIds,
+        preflightWarnings,
       };
     },
   };

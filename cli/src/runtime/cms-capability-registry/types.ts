@@ -157,6 +157,11 @@ export interface CapabilityRegistryMeta {
   expiresAt?: string;
   /** Age of the cache entry in seconds (only present when fromCache=true). */
   cacheAgeSeconds?: number;
+  /**
+   * True when data was served from an expired (stale) cache because the hosted
+   * registry was unreachable. Agents should treat this as degraded-mode data.
+   */
+  staleFallback?: boolean;
 }
 
 // ---------------------------------------------------------------------------

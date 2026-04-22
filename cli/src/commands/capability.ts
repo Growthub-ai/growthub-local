@@ -411,7 +411,8 @@ Examples:
       const registry = createCmsCapabilityRegistryClient();
 
       try {
-        const node = await registry.getCapability(slug);
+        const { nodes, meta } = await registry.listCapabilities({ slug, enabledOnly: false });
+        const node = nodes.find((n) => n.slug === slug);
         if (!node) {
           console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
           process.exitCode = 1;
@@ -419,7 +420,7 @@ Examples:
         }
 
         if (opts.json) {
-          console.log(JSON.stringify(node, null, 2));
+          console.log(JSON.stringify({ ...node, _meta: meta }, null, 2));
           return;
         }
 
@@ -467,14 +468,27 @@ Examples:
         for (const binding of result.bindings) {
           const statusColor = binding.allowed ? pc.green : pc.red;
           const statusIcon = binding.allowed ? "✓" : "✗";
+          const tags: string[] = [];
+          if (binding.family) tags.push(pc.dim(binding.family));
+          if (binding.strategy && binding.strategy !== "direct") tags.push(pc.yellow(binding.strategy));
+          const tagStr = tags.length > 0 ? "  " + tags.join("  ") : "";
           console.log(
-            `  ${statusColor(statusIcon)} ${pc.bold(binding.capabilitySlug)}` +
-            `  ${pc.dim(binding.reason ?? "")}`,
+            `  ${statusColor(statusIcon)} ${pc.bold(binding.capabilitySlug)}${tagStr}` +
+            `\n     ${pc.dim(binding.reason ?? "")}`,
           );
         }
 
         console.log("");
         console.log(pc.dim(`  Resolved at: ${result.resolvedAt}`));
+        if (result.registryMeta) {
+          const rm = result.registryMeta;
+          const cacheNote = rm.staleFallback
+            ? pc.yellow("stale fallback")
+            : rm.fromCache
+              ? `cache (${rm.cacheAgeSeconds ?? "?"}s ago)`
+              : rm.source;
+          console.log(pc.dim(`  Registry:    ${cacheNote}`));
+        }
         console.log("");
       } catch (err) {
         console.error(pc.red("Failed to resolve capabilities: " + (err as Error).message));

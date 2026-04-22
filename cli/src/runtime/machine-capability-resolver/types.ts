@@ -25,6 +25,12 @@ export interface ResolvedCapabilityBinding {
   machineConnectionId?: string;
   /** Human-readable reason for allowed/denied status. */
   reason?: string;
+  /** Execution strategy from the capability manifest (e.g. "direct", "async_operation"). */
+  strategy?: string;
+  /** Output artifact types this capability produces. */
+  outputTypes?: string[];
+  /** Capability family classification. */
+  family?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,4 +63,12 @@ export interface CapabilityResolutionResult {
   entitlements: string[];
   /** ISO timestamp when resolution was performed. */
   resolvedAt: string;
+  /** Registry metadata from the underlying capability fetch (source, freshness, stale fallback). */
+  registryMeta?: {
+    source: string;
+    fromCache?: boolean;
+    staleFallback?: boolean;
+    fetchedAt: string;
+    cacheAgeSeconds?: number;
+  };
 }

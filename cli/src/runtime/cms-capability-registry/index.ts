@@ -335,6 +335,7 @@ export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient
               fetchedAt: staleCache.fetchedAt,
               source: "cache",
               fromCache: true,
+              staleFallback: true,
               expiresAt: staleCache.expiresAt,
               cacheAgeSeconds: ageSeconds,
             },

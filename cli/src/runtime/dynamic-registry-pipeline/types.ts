@@ -67,6 +67,17 @@ export interface PipelineValidationResult {
 // Execution packaging
 // ---------------------------------------------------------------------------
 
+export interface NodeOutputSummary {
+  /** Node instance ID within this pipeline. */
+  nodeId: string;
+  /** CMS capability slug. */
+  slug: string;
+  /** Keys extracted from executionTokens.output_mapping. */
+  outputKeys: string[];
+  /** Output artifact types from the capability registry. */
+  outputTypes: string[];
+}
+
 export interface PipelineExecutionPackage {
   /** The validated pipeline. */
   pipeline: DynamicRegistryPipeline;
@@ -74,6 +85,12 @@ export interface PipelineExecutionPackage {
   executionRoute: "hosted-execute" | "provider-assembly" | "mixed";
   /** Per-node execution route mapping. */
   nodeRoutes: Record<string, "hosted-execute" | "provider-assembly" | "local-only">;
+  /** Per-node expected output keys and types derived from the capability manifest. */
+  nodeOutputSummaries: Record<string, NodeOutputSummary>;
+  /** Node IDs whose capability uses async_operation strategy (callers must poll). */
+  asyncNodeIds: string[];
+  /** Non-blocking preflight warnings emitted during package assembly. */
+  preflightWarnings: PipelineValidationIssue[];
 }
 
 // ---------------------------------------------------------------------------

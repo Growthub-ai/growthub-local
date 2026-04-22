@@ -66,6 +66,9 @@ function resolveBinding(
     capabilitySlug: capability.slug,
     allowed: false,
     requiredConnectionCapabilities: capability.requiredBindings,
+    strategy: capability.executionBinding.strategy,
+    outputTypes: capability.outputTypes,
+    family: capability.family,
   };
 
   // Gate 1: authentication
@@ -82,7 +85,6 @@ function resolveBinding(
 
   // Gate 3: execution kind compatibility
   if (capability.executionKind === "local-only") {
-    // Local-only capabilities are always allowed when authenticated
     binding.allowed = true;
     binding.reason = "Local-only execution — no hosted connection required.";
     return binding;
@@ -93,8 +95,6 @@ function resolveBinding(
   const missingEntitlements: string[] = [];
 
   for (const req of capability.requiredBindings) {
-    // Check if the user has an entitlement that covers this binding.
-    // Entitlements are opaque strings; we do a direct match or prefix match.
     const hasEntitlement =
       entitlements.has(req) ||
       entitlements.has(`capability:${capability.slug}`) ||
@@ -112,8 +112,11 @@ function resolveBinding(
       profile.executionDefaults.allowBrowserBridge;
 
     if (!canUseHosted && missingEntitlements.length > 0) {
+      const strategyNote = capability.executionBinding.strategy === "async_operation"
+        ? " (async polling required)"
+        : "";
       binding.reason =
-        `Hosted execution required but execution defaults prefer local. ` +
+        `Hosted execution required but execution defaults prefer local${strategyNote}. ` +
         `Missing bindings: ${missingEntitlements.join(", ")}.`;
       return binding;
     }
@@ -122,19 +125,29 @@ function resolveBinding(
   // If entitlements are empty (common for new deployments), allow with warning
   if (profile.hosted.entitlements.length === 0) {
     binding.allowed = true;
-    binding.reason = "No entitlement restrictions configured — allowed by default.";
     binding.machineConnectionId = profile.local.instanceId;
+    const outputNote = capability.outputTypes.length > 0
+      ? ` Produces: ${capability.outputTypes.join(", ")}.`
+      : "";
+    binding.reason = `No entitlement restrictions configured — allowed by default.${outputNote}`;
     return binding;
   }
 
   if (missingEntitlements.length > 0) {
-    binding.reason = `Missing entitlements for required bindings: ${missingEntitlements.join(", ")}.`;
+    const strategyNote = capability.executionBinding.strategy !== "direct"
+      ? ` [strategy: ${capability.executionBinding.strategy}]`
+      : "";
+    binding.reason =
+      `Missing entitlements for required bindings: ${missingEntitlements.join(", ")}${strategyNote}.`;
     return binding;
   }
 
   binding.allowed = true;
   binding.machineConnectionId = profile.local.instanceId;
-  binding.reason = "All binding requirements satisfied.";
+  const outputNote = capability.outputTypes.length > 0
+    ? ` Produces: ${capability.outputTypes.join(", ")}.`
+    : "";
+  binding.reason = `All binding requirements satisfied.${outputNote}`;
   return binding;
 }
 
@@ -157,7 +170,7 @@ export function createMachineCapabilityResolver(): MachineCapabilityResolver {
       const profile = computeEffectiveProfile();
       const machineContext = buildMachineContext(profile);
       const registry = createCmsCapabilityRegistryClient();
-      const { nodes } = await registry.listCapabilities({ enabledOnly: false });
+      const { nodes, meta } = await registry.listCapabilities({ enabledOnly: false });
 
       const bindings = nodes.map((capability) => resolveBinding(capability, profile));
 
@@ -166,6 +179,13 @@ export function createMachineCapabilityResolver(): MachineCapabilityResolver {
         machineContext,
         entitlements: profile.hosted.entitlements,
         resolvedAt: new Date().toISOString(),
+        registryMeta: {
+          source: meta.source,
+          fromCache: meta.fromCache,
+          staleFallback: meta.staleFallback,
+          fetchedAt: meta.fetchedAt,
+          cacheAgeSeconds: meta.cacheAgeSeconds,
+        },
       };
     },
 
