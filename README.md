@@ -486,7 +486,6 @@ This keeps the mental model intact:
 
 - [Contributing](./CONTRIBUTING.md)
 - [CLI README](./cli/README.md)
-- Runtime control script: `scripts/runtime-control.sh`
 
 ---
 
