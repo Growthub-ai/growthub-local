@@ -34,7 +34,13 @@ export type KitForkTraceEventType =
   | "script_executed"
   | "agent_checkpoint"
   | "authority_attested"
-  | "authority_revoked";
+  | "authority_revoked"
+  | "manifest_snapshot"
+  | "manifest_imported"
+  | "manifest_drift_observed"
+  | "bindings_saved"
+  | "bindings_loaded"
+  | "bindings_deleted";
 
 export interface KitForkTraceEvent {
   timestamp: string;
@@ -86,4 +92,35 @@ export function readKitForkTrace(forkPath: string): KitForkTraceEvent[] {
 export function tailKitForkTrace(forkPath: string, n: number): KitForkTraceEvent[] {
   const events = readKitForkTrace(forkPath);
   return events.slice(Math.max(0, events.length - n));
+}
+
+/**
+ * Append a trace event when the caller may not know the fork's identity
+ * (e.g. ad-hoc manifest snapshots against a non-registered directory).
+ * Reads the fork's registration for forkId/kitId when available; falls back
+ * to empty strings so the append is never a blocker for lifecycle operations.
+ */
+export function appendForkLifecycleEvent(
+  forkPath: string,
+  type: KitForkTraceEventType,
+  summary: string,
+  detail?: Record<string, unknown>,
+): KitForkTraceEvent | null {
+  try {
+    const regPath = path.resolve(resolveInForkStateDir(forkPath), "fork.json");
+    let forkId = "";
+    let kitId = "";
+    if (fs.existsSync(regPath)) {
+      try {
+        const reg = JSON.parse(fs.readFileSync(regPath, "utf8")) as { forkId?: string; kitId?: string };
+        forkId = reg.forkId ?? "";
+        kitId = reg.kitId ?? "";
+      } catch {
+        // best-effort
+      }
+    }
+    return appendKitForkTraceEvent(forkPath, { forkId, kitId, type, summary, detail });
+  } catch {
+    return null;
+  }
 }

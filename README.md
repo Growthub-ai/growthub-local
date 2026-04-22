@@ -305,6 +305,8 @@ growthub discover
 growthub kit
 growthub template
 growthub workflow
+growthub workflow manifest
+growthub workflow schema
 growthub pipeline assemble
 
 growthub open-agents
@@ -467,6 +469,8 @@ This keeps the mental model intact:
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
+- [CMS SDK v1 — Manifest Registry (Phase 2)](./docs/CMS_SDK_V1_MANIFEST_REGISTRY.md)
+- [CMS SDK v1 — Schema-Driven Node Contracts (Phase 3)](./docs/CMS_SDK_V1_SCHEMA_CONTRACTS.md)
 
 ### Architecture and protocol
 

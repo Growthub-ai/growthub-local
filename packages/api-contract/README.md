@@ -16,6 +16,15 @@ v1 is narrowly scoped by design. See `docs/CMS_SDK_V1.md` in the repo root for t
 - Additive-only. Existing fields do not change.
 - Reads directly from the shapes the CLI already ships today.
 
+**Phase 2 + Phase 3 adoption (CLI runtime):**
+
+- Phase 2 — Manifest Registry (discovery spine): `docs/CMS_SDK_V1_MANIFEST_REGISTRY.md`
+- Phase 3 — Schema-Driven Node Contracts on the Wire: `docs/CMS_SDK_V1_SCHEMA_CONTRACTS.md`
+
+The contract package itself remains narrow and stable — Phase 2 and Phase 3
+consume `CapabilityManifestEnvelope`, `NodeInputSchema`, and
+`NodeOutputSchema` without widening the v1 surface.
+
 ## Install
 
 ```bash

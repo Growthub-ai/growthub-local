@@ -54,7 +54,29 @@ import {
   renderContractCard,
   renderPreExecutionSummary,
   renderPreSaveReview,
+  validateAgainstSchema,
+  renderSchema,
+  liftAttachments,
+  saveBindings,
+  loadBindings,
+  listBindings,
+  deleteBindings,
+  compareRecordToSchema,
 } from "../runtime/cms-node-contracts/index.js";
+import {
+  pullEnvelope,
+  resolveEnvelope,
+  loadCachedEnvelope,
+  loadPrevEnvelope,
+  compareEnvelopes,
+  snapshotToFork,
+  exportEnvelope,
+  importEnvelopeFromFile,
+  getCapabilityManifest,
+  listCachedHosts,
+} from "../runtime/manifest-registry/index.js";
+import type { NodeInputField } from "@growthub/api-contract";
+import { appendForkLifecycleEvent } from "../kits/fork-trace.js";
 import {
   createWorkflowHygieneStore,
   enrichWorkflowSummaries,
@@ -1596,5 +1618,652 @@ Examples:
       console.log("");
       console.log(pc.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
       console.log("");
+    });
+
+  // ── manifest (Phase 2 — discovery spine) ────────────────────────────────
+  const manifest = wf
+    .command("manifest")
+    .description("Inspect, cache, and share capability manifest envelopes");
+
+  manifest
+    .command("pull")
+    .description("Fetch a fresh CapabilityManifestEnvelope and cache it")
+    .option("--host <url>", "Override the hosted base URL")
+    .option("--workspace <path>", "Override workspace path for local extensions")
+    .option("--json", "Emit the envelope as JSON")
+    .action(async (opts: { host?: string; workspace?: string; json?: boolean }) => {
+      try {
+        const { envelope, drift } = await pullEnvelope({
+          host: opts.host,
+          workspacePath: opts.workspace,
+        });
+        if (opts.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+          return;
+        }
+        console.log("");
+        console.log(pc.bold("Capability Manifest Envelope"));
+        console.log(hr());
+        console.log(`  ${pc.dim("Host:")}       ${envelope.host}`);
+        console.log(`  ${pc.dim("Source:")}     ${envelope.source}`);
+        console.log(`  ${pc.dim("Fetched:")}    ${envelope.fetchedAt}`);
+        console.log(`  ${pc.dim("Count:")}      ${envelope.capabilities.length}`);
+        console.log(`  ${pc.dim("Drift:")}      ${drift.markers.length} marker${drift.markers.length === 1 ? "" : "s"}`);
+        console.log(hr());
+        for (const entry of envelope.capabilities.slice(0, 20)) {
+          console.log(`  ${pc.bold(entry.slug)}  ${pc.dim(entry.family)}  ${pc.dim(entry.provenance.originType)}`);
+        }
+        if (envelope.capabilities.length > 20) {
+          console.log(pc.dim(`  ... and ${envelope.capabilities.length - 20} more`));
+        }
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to pull envelope: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  manifest
+    .command("show")
+    .description("Show a cached capability manifest (by slug) or the full envelope")
+    .option("--slug <slug>", "Show a single capability manifest")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit JSON")
+    .action(async (opts: { slug?: string; host?: string; json?: boolean }) => {
+      try {
+        if (opts.slug) {
+          const m = await getCapabilityManifest(opts.slug, { host: opts.host });
+          if (!m) {
+            console.error(pc.red(`No manifest found for slug: ${opts.slug}`));
+            process.exitCode = 1;
+            return;
+          }
+          if (opts.json) {
+            console.log(JSON.stringify(m, null, 2));
+            return;
+          }
+          console.log("");
+          console.log(pc.bold(m.displayName) + pc.dim(`  ${m.slug}`));
+          console.log(hr());
+          console.log(`  ${pc.dim("Family:")}         ${m.family}`);
+          console.log(`  ${pc.dim("Execution:")}      ${m.executionKind}`);
+          console.log(`  ${pc.dim("Provenance:")}     ${m.provenance.originType}`);
+          console.log(`  ${pc.dim("Inputs:")}         ${m.inputSchema?.fields.length ?? 0}`);
+          console.log(`  ${pc.dim("Outputs:")}        ${m.outputSchema?.outputs.length ?? 0}`);
+          console.log(`  ${pc.dim("Required binds:")} ${m.requiredBindings.join(", ") || pc.dim("(none)")}`);
+          console.log("");
+          return;
+        }
+        const envelope = await resolveEnvelope({ host: opts.host });
+        if (opts.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+          return;
+        }
+        console.log("");
+        console.log(pc.bold("Manifest Envelope") + pc.dim(`  ${envelope.host}`));
+        console.log(hr());
+        console.log(`  ${pc.dim("Source:")}  ${envelope.source}`);
+        console.log(`  ${pc.dim("Count:")}   ${envelope.capabilities.length}`);
+        console.log(`  ${pc.dim("Fetched:")} ${envelope.fetchedAt}`);
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Failed to show manifest: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  manifest
+    .command("drift")
+    .description("Compare the cached envelope to its prior snapshot")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit JSON")
+    .action(async (opts: { host?: string; json?: boolean }) => {
+      const host = opts.host ?? (readSession()?.hostedBaseUrl ?? "hosted");
+      const current = loadCachedEnvelope(host);
+      const prev = loadPrevEnvelope(host);
+      if (!current) {
+        console.error(pc.red(`No cached envelope for ${host}. Run 'growthub workflow manifest pull' first.`));
+        process.exitCode = 1;
+        return;
+      }
+      const drift = compareEnvelopes(prev, current);
+      if (opts.json) {
+        console.log(JSON.stringify(drift, null, 2));
+        return;
+      }
+      console.log("");
+      console.log(pc.bold("Manifest Drift") + pc.dim(`  ${host}`));
+      console.log(hr());
+      if (drift.markers.length === 0) {
+        console.log(pc.dim("  No drift detected."));
+      } else {
+        for (const marker of drift.markers) {
+          console.log(`  ${pc.yellow(marker.change)}  ${pc.bold(marker.slug)}  ${pc.dim(marker.description ?? "")}`);
+        }
+      }
+      console.log("");
+    });
+
+  manifest
+    .command("hosts")
+    .description("List cached manifest hosts on this machine")
+    .option("--json", "Emit JSON")
+    .action((opts: { json?: boolean }) => {
+      const hosts = listCachedHosts();
+      if (opts.json) {
+        console.log(JSON.stringify(hosts, null, 2));
+        return;
+      }
+      if (hosts.length === 0) {
+        console.log(pc.dim("No manifest hosts cached yet."));
+        return;
+      }
+      console.log("");
+      console.log(pc.bold("Cached Manifest Hosts"));
+      console.log(hr());
+      for (const h of hosts) {
+        console.log(`  ${pc.bold(h.host)}  ${pc.dim(h.fetchedAt)}  ${pc.dim(`${h.capabilityCount} capabilities`)}`);
+      }
+      console.log("");
+    });
+
+  manifest
+    .command("snapshot")
+    .description("Write the current envelope into a fork's .growthub-fork/manifest.json")
+    .requiredOption("--fork <path>", "Path to the fork workspace")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit JSON result")
+    .action(async (opts: { fork: string; host?: string; json?: boolean }) => {
+      try {
+        const { manifestPath, envelope } = await snapshotToFork(opts.fork, { host: opts.host });
+        appendForkLifecycleEvent(opts.fork, "manifest_snapshot", `Snapshotted ${envelope.capabilities.length} capabilities from ${envelope.host}`, {
+          host: envelope.host,
+          fetchedAt: envelope.fetchedAt,
+          capabilityCount: envelope.capabilities.length,
+        });
+        if (opts.json) {
+          console.log(JSON.stringify({ manifestPath, capabilityCount: envelope.capabilities.length }, null, 2));
+          return;
+        }
+        console.log(pc.green(`✓ Wrote ${envelope.capabilities.length} capabilities to ${manifestPath}`));
+      } catch (err) {
+        console.error(pc.red("Snapshot failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  manifest
+    .command("export")
+    .description("Export the envelope to a portable JSON file for cross-team share")
+    .requiredOption("--out <path>", "Destination file")
+    .option("--host <url>", "Override host")
+    .action(async (opts: { out: string; host?: string }) => {
+      try {
+        const out = await exportEnvelope(opts.out, { host: opts.host });
+        console.log(pc.green(`✓ Exported envelope to ${out}`));
+      } catch (err) {
+        console.error(pc.red("Export failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  manifest
+    .command("import")
+    .description("Load a peer-exported envelope as a local-extension manifest")
+    .argument("<path>", "Envelope JSON file")
+    .option("--fork <path>", "Fork workspace to write the imported envelope into")
+    .option("--json", "Emit JSON")
+    .action(async (filePath: string, opts: { fork?: string; json?: boolean }) => {
+      try {
+        const envelope = importEnvelopeFromFile(filePath);
+        if (opts.fork) {
+          const { writeForkEnvelope } = await import("../runtime/manifest-registry/index.js");
+          const written = writeForkEnvelope(opts.fork, envelope);
+          appendForkLifecycleEvent(opts.fork, "manifest_imported", `Imported ${envelope.capabilities.length} capabilities from ${filePath}`, {
+            sourcePath: filePath,
+            capabilityCount: envelope.capabilities.length,
+            host: envelope.host,
+          });
+          if (opts.json) {
+            console.log(JSON.stringify({ written, capabilityCount: envelope.capabilities.length }, null, 2));
+            return;
+          }
+          console.log(pc.green(`✓ Imported ${envelope.capabilities.length} capabilities to ${written}`));
+          return;
+        }
+        if (opts.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+          return;
+        }
+        console.log(pc.green(`✓ Loaded envelope: ${envelope.capabilities.length} capabilities from ${filePath}`));
+      } catch (err) {
+        console.error(pc.red("Import failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── schema (Phase 3 — schema-driven node contracts on the wire) ─────────
+  const schema = wf
+    .command("schema")
+    .description("Schema-driven node contracts: show, fill, validate, run, save, load, export, import");
+
+  schema
+    .command("show")
+    .description("Render the NodeInputSchema for a capability slug")
+    .argument("<slug>", "Capability slug")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit schema as JSON (agent-native)")
+    .action(async (slug: string, opts: { host?: string; json?: boolean }) => {
+      try {
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        if (!m) {
+          console.error(pc.red(`No manifest found for slug: ${slug}`));
+          process.exitCode = 1;
+          return;
+        }
+        if (opts.json) {
+          console.log(JSON.stringify({
+            slug: m.slug,
+            inputSchema: m.inputSchema,
+            outputSchema: m.outputSchema,
+            requiredBindings: m.requiredBindings,
+          }, null, 2));
+          return;
+        }
+        console.log("");
+        console.log(pc.bold(`Schema: ${m.displayName}`) + pc.dim(`  ${m.slug}`));
+        console.log(hr());
+        for (const field of m.inputSchema?.fields ?? []) {
+          const req = field.required ? pc.red("required") : pc.dim("optional");
+          console.log(`  ${pc.bold(field.key)}  ${pc.dim(field.fieldType)}  ${req}`);
+          if (field.description) console.log(`    ${pc.dim(field.description)}`);
+          if (field.providerNeutralIntent && field.providerNeutralIntent !== "unspecified") {
+            console.log(`    ${pc.dim("intent:")} ${field.providerNeutralIntent}`);
+          }
+        }
+        console.log("");
+      } catch (err) {
+        console.error(pc.red("Schema show failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("validate")
+    .description("Validate a bindings JSON file against a capability schema")
+    .argument("<slug>", "Capability slug")
+    .requiredOption("--bindings-file <path>", "Bindings JSON file")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit validation result as JSON")
+    .action(async (slug: string, opts: { bindingsFile: string; host?: string; json?: boolean }) => {
+      try {
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        if (!m || !m.inputSchema) {
+          console.error(pc.red(`No schema for slug: ${slug}`));
+          process.exitCode = 1;
+          return;
+        }
+        const bindings = JSON.parse(fs.readFileSync(path.resolve(opts.bindingsFile), "utf8")) as Record<string, unknown>;
+        const result = validateAgainstSchema(m.inputSchema, bindings, {
+          requiredBindings: m.requiredBindings,
+        });
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          process.exitCode = result.valid ? 0 : 1;
+          return;
+        }
+        console.log("");
+        console.log(pc.bold("Validation") + pc.dim(`  ${slug}`));
+        console.log(hr());
+        console.log(`  ${result.valid ? pc.green("valid") : pc.red("invalid")}`);
+        for (const w of result.warnings) console.log(`  ${pc.yellow("•")} ${w}`);
+        console.log("");
+        process.exitCode = result.valid ? 0 : 1;
+      } catch (err) {
+        console.error(pc.red("Validate failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("fill")
+    .description("Fill a capability schema interactively or from JSON (human + agent parity)")
+    .argument("<slug>", "Capability slug")
+    .option("--bindings-file <path>", "Pre-supplied bindings JSON (non-interactive mode)")
+    .option("--stdin", "Read bindings JSON from stdin (non-interactive mode)")
+    .option("--agent-json", "Emit schema as JSON for agent planning, do not dispatch")
+    .option("--host <url>", "Override host")
+    .option("--out <path>", "Write the resolved bindings to this path")
+    .action(async (slug: string, opts: {
+      bindingsFile?: string;
+      stdin?: boolean;
+      agentJson?: boolean;
+      host?: string;
+      out?: string;
+    }) => {
+      try {
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        if (!m || !m.inputSchema) {
+          console.error(pc.red(`No schema for slug: ${slug}`));
+          process.exitCode = 1;
+          return;
+        }
+
+        const mode = opts.agentJson ? "agent-json"
+          : (opts.bindingsFile || opts.stdin) ? "non-interactive"
+          : "interactive";
+
+        let payload: Record<string, unknown> | undefined;
+        if (mode === "non-interactive") {
+          if (opts.bindingsFile) {
+            payload = JSON.parse(fs.readFileSync(path.resolve(opts.bindingsFile), "utf8")) as Record<string, unknown>;
+          } else if (opts.stdin) {
+            const raw = fs.readFileSync(0, "utf8");
+            payload = JSON.parse(raw) as Record<string, unknown>;
+          }
+        }
+
+        const result = await renderSchema(m.inputSchema, {
+          mode,
+          nonInteractivePayload: payload,
+          interactivePrompt: async (field: NodeInputField) => {
+            const answer = await p.text({
+              message: `${field.label} (${field.fieldType})${field.required ? "*" : ""}`,
+              defaultValue: typeof field.defaultValue === "string" ? field.defaultValue : undefined,
+            });
+            if (p.isCancel(answer)) {
+              throw new Error("cancelled");
+            }
+            return answer;
+          },
+        });
+
+        if (mode === "agent-json") {
+          console.log(JSON.stringify({
+            slug: m.slug,
+            schema: result.schema,
+            requiredBindings: m.requiredBindings,
+            seedBindings: result.bindings,
+          }, null, 2));
+          return;
+        }
+
+        const validation = validateAgainstSchema(m.inputSchema, result.bindings, {
+          requiredBindings: m.requiredBindings,
+        });
+
+        if (opts.out) {
+          fs.mkdirSync(path.dirname(path.resolve(opts.out)), { recursive: true });
+          fs.writeFileSync(path.resolve(opts.out), JSON.stringify(result.bindings, null, 2) + "\n", "utf8");
+        }
+
+        console.log(JSON.stringify({
+          slug: m.slug,
+          bindings: result.bindings,
+          valid: validation.valid,
+          warnings: validation.warnings,
+        }, null, 2));
+      } catch (err) {
+        console.error(pc.red("Fill failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("run")
+    .description("Validate + lift attachments + dispatch a single-node workflow through hosted execution")
+    .argument("<slug>", "Capability slug")
+    .option("--bindings-file <path>", "Bindings JSON file")
+    .option("--stdin", "Read bindings JSON from stdin")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit execution result as JSON (NDJSON events via execution client)")
+    .action(async (slug: string, opts: {
+      bindingsFile?: string;
+      stdin?: boolean;
+      host?: string;
+      json?: boolean;
+    }) => {
+      try {
+        const access = getWorkflowAccess();
+        if (access.state !== "ready") {
+          console.error(pc.red(`${access.reason}.`));
+          process.exitCode = 1;
+          return;
+        }
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        if (!m || !m.inputSchema) {
+          console.error(pc.red(`No schema for slug: ${slug}`));
+          process.exitCode = 1;
+          return;
+        }
+        let bindings: Record<string, unknown> = {};
+        if (opts.bindingsFile) {
+          bindings = JSON.parse(fs.readFileSync(path.resolve(opts.bindingsFile), "utf8")) as Record<string, unknown>;
+        } else if (opts.stdin) {
+          bindings = JSON.parse(fs.readFileSync(0, "utf8")) as Record<string, unknown>;
+        } else {
+          console.error(pc.red("schema run requires --bindings-file or --stdin"));
+          process.exitCode = 1;
+          return;
+        }
+        const validation = validateAgainstSchema(m.inputSchema, bindings, {
+          requiredBindings: m.requiredBindings,
+        });
+        if (!validation.valid) {
+          if (opts.json) {
+            console.log(JSON.stringify({ valid: false, warnings: validation.warnings }, null, 2));
+          } else {
+            for (const w of validation.warnings) console.error(pc.red("• " + w));
+          }
+          process.exitCode = 1;
+          return;
+        }
+
+        const lifted = liftAttachments(m.inputSchema, bindings);
+        const builder = createPipelineBuilder({ executionMode: "hosted", metadata: { source: "schema-run" } });
+        builder.addNode(m.slug, lifted.bindings);
+        const pipeline = builder.build();
+        await executeHostedPipeline(pipeline, { json: opts.json });
+      } catch (err) {
+        console.error(pc.red("Schema run failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("save")
+    .description("Save current bindings inside a fork for reuse across machines/teams")
+    .argument("<slug>", "Capability slug")
+    .requiredOption("--name <name>", "Saved-binding name")
+    .requiredOption("--fork <path>", "Fork workspace path")
+    .option("--bindings-file <path>", "Bindings JSON file (defaults to stdin)")
+    .option("--note <note>", "Free-form note recorded with the binding set")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit JSON")
+    .action(async (slug: string, opts: {
+      name: string;
+      fork: string;
+      bindingsFile?: string;
+      note?: string;
+      host?: string;
+      json?: boolean;
+    }) => {
+      try {
+        let bindings: Record<string, unknown>;
+        if (opts.bindingsFile) {
+          bindings = JSON.parse(fs.readFileSync(path.resolve(opts.bindingsFile), "utf8")) as Record<string, unknown>;
+        } else {
+          bindings = JSON.parse(fs.readFileSync(0, "utf8")) as Record<string, unknown>;
+        }
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        const record = saveBindings(opts.fork, slug, opts.name, bindings, {
+          manifestFetchedAt: m?.provenance.recordedAt,
+          note: opts.note,
+        });
+        appendForkLifecycleEvent(opts.fork, "bindings_saved", `Saved bindings ${slug}/${record.name}`, {
+          slug,
+          name: record.name,
+        });
+        if (opts.json) {
+          console.log(JSON.stringify(record, null, 2));
+          return;
+        }
+        console.log(pc.green(`✓ Saved bindings: ${slug}/${record.name} in ${opts.fork}`));
+      } catch (err) {
+        console.error(pc.red("Save failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("load")
+    .description("Load saved bindings from a fork; previews drift vs current schema")
+    .argument("<slug>", "Capability slug")
+    .requiredOption("--name <name>", "Saved-binding name")
+    .requiredOption("--fork <path>", "Fork workspace path")
+    .option("--host <url>", "Override host")
+    .option("--json", "Emit JSON (includes drift)")
+    .action(async (slug: string, opts: { name: string; fork: string; host?: string; json?: boolean }) => {
+      try {
+        const record = loadBindings(opts.fork, slug, opts.name);
+        if (!record) {
+          console.error(pc.red(`No saved bindings: ${slug}/${opts.name}`));
+          process.exitCode = 1;
+          return;
+        }
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        const drift = m?.inputSchema ? compareRecordToSchema(record, m.inputSchema, m) : undefined;
+        if (opts.json) {
+          console.log(JSON.stringify({ record, drift }, null, 2));
+          return;
+        }
+        console.log(pc.bold(`${slug}/${record.name}`));
+        console.log(pc.dim(`  savedAt: ${record.savedAt}`));
+        if (drift) {
+          if (drift.missingKeys.length > 0) {
+            console.log(pc.yellow(`  missing keys: ${drift.missingKeys.join(", ")}`));
+          }
+          if (drift.extraKeys.length > 0) {
+            console.log(pc.dim(`  extra keys:   ${drift.extraKeys.join(", ")}`));
+          }
+          if (drift.schemaVersionChanged) {
+            console.log(pc.yellow("  schema version has changed since save"));
+          }
+        }
+        console.log(JSON.stringify(record.bindings, null, 2));
+      } catch (err) {
+        console.error(pc.red("Load failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("list")
+    .description("List saved bindings inside a fork")
+    .requiredOption("--fork <path>", "Fork workspace path")
+    .option("--slug <slug>", "Filter by capability slug")
+    .option("--json", "Emit JSON")
+    .action((opts: { fork: string; slug?: string; json?: boolean }) => {
+      const records = listBindings(opts.fork, opts.slug);
+      if (opts.json) {
+        console.log(JSON.stringify(records, null, 2));
+        return;
+      }
+      if (records.length === 0) {
+        console.log(pc.dim("No saved bindings."));
+        return;
+      }
+      for (const r of records) {
+        console.log(`  ${pc.bold(r.slug)}/${r.name}  ${pc.dim(r.savedAt)}`);
+      }
+    });
+
+  schema
+    .command("delete")
+    .description("Delete a saved binding inside a fork")
+    .argument("<slug>", "Capability slug")
+    .requiredOption("--name <name>", "Saved-binding name")
+    .requiredOption("--fork <path>", "Fork workspace path")
+    .action((slug: string, opts: { name: string; fork: string }) => {
+      const ok = deleteBindings(opts.fork, slug, opts.name);
+      if (!ok) {
+        console.error(pc.red(`No saved bindings: ${slug}/${opts.name}`));
+        process.exitCode = 1;
+        return;
+      }
+      appendForkLifecycleEvent(opts.fork, "bindings_deleted", `Deleted bindings ${slug}/${opts.name}`, {
+        slug,
+        name: opts.name,
+      });
+      console.log(pc.green(`✓ Deleted ${slug}/${opts.name}`));
+    });
+
+  schema
+    .command("export")
+    .description("Export manifest entry + saved bindings as a portable JSON bundle")
+    .argument("<slug>", "Capability slug")
+    .requiredOption("--out <path>", "Destination file")
+    .option("--fork <path>", "Fork workspace path (include saved bindings)")
+    .option("--host <url>", "Override host")
+    .action(async (slug: string, opts: { out: string; fork?: string; host?: string }) => {
+      try {
+        const m = await getCapabilityManifest(slug, { host: opts.host });
+        if (!m) {
+          console.error(pc.red(`No manifest found for slug: ${slug}`));
+          process.exitCode = 1;
+          return;
+        }
+        const bindings = opts.fork ? listBindings(opts.fork, slug) : [];
+        const bundle = {
+          version: 1,
+          kind: "growthub.schema-bundle",
+          manifest: m,
+          savedBindings: bindings,
+          exportedAt: new Date().toISOString(),
+        };
+        fs.mkdirSync(path.dirname(path.resolve(opts.out)), { recursive: true });
+        fs.writeFileSync(path.resolve(opts.out), JSON.stringify(bundle, null, 2) + "\n", "utf8");
+        console.log(pc.green(`✓ Exported ${slug} bundle (${bindings.length} saved bindings) to ${opts.out}`));
+      } catch (err) {
+        console.error(pc.red("Export failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
+    });
+
+  schema
+    .command("import")
+    .description("Import a schema bundle into a fork (manifest becomes local-extension, bindings restored)")
+    .argument("<path>", "Bundle JSON file")
+    .requiredOption("--fork <path>", "Fork workspace path")
+    .option("--json", "Emit JSON")
+    .action((filePath: string, opts: { fork: string; json?: boolean }) => {
+      try {
+        const bundle = JSON.parse(fs.readFileSync(path.resolve(filePath), "utf8")) as {
+          version: number;
+          kind: string;
+          manifest: { slug: string };
+          savedBindings?: Array<{ name: string; bindings: Record<string, unknown>; note?: string; manifestFetchedAt?: string }>;
+        };
+        if (!bundle || bundle.kind !== "growthub.schema-bundle" || bundle.version !== 1) {
+          throw new Error("Invalid schema bundle");
+        }
+        const slug = bundle.manifest.slug;
+        const restored: string[] = [];
+        for (const b of bundle.savedBindings ?? []) {
+          const rec = saveBindings(opts.fork, slug, b.name, b.bindings, {
+            manifestFetchedAt: b.manifestFetchedAt,
+            note: b.note,
+          });
+          restored.push(`${slug}/${rec.name}`);
+        }
+        if (opts.json) {
+          console.log(JSON.stringify({ slug, restored }, null, 2));
+          return;
+        }
+        console.log(pc.green(`✓ Imported ${slug} bundle — restored ${restored.length} bindings`));
+      } catch (err) {
+        console.error(pc.red("Import failed: " + (err as Error).message));
+        process.exitCode = 1;
+      }
     });
 }

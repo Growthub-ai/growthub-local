@@ -25,6 +25,9 @@ export {
 export {
   inferWorkflowName,
   compileToHostedWorkflowConfig,
+  validatePipelineAgainstSchemas,
+  type PipelineSchemaValidationIssue,
+  type PipelineSchemaValidationResult,
 } from "./compile.js";
 
 export {
@@ -33,3 +36,35 @@ export {
   renderPreExecutionSummary,
   renderPreSaveReview,
 } from "./presenter.js";
+
+export {
+  enrichInputSchema,
+  enrichOutputSchema,
+} from "./schema-enrich.js";
+
+export {
+  validateAgainstSchema,
+  type ValidateSchemaOptions,
+} from "./schema-validator.js";
+
+export {
+  renderSchema,
+  type RenderMode,
+  type RenderSchemaOptions,
+  type RenderedSchemaResult,
+} from "./schema-renderer.js";
+
+export {
+  liftAttachments,
+  type LiftedAttachments,
+} from "./attachment-lift.js";
+
+export {
+  saveBindings,
+  loadBindings,
+  listBindings,
+  deleteBindings,
+  compareRecordToSchema,
+  type SavedBindingsRecord,
+  type SavedBindingsDrift,
+} from "./bindings-store.js";

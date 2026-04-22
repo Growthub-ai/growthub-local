@@ -282,6 +282,37 @@ This usually removes unstable behavior from missing defaults.
 
 ---
 
+## 14) Phase 2 + Phase 3 command quick reference
+
+Phase 2 and Phase 3 added two sub-branches under `growthub workflow`. Both work
+for humans (interactive prompts, pretty-printed cards) and for agents (`--json`
+on every subcommand). See `docs/CMS_SDK_V1_MANIFEST_REGISTRY.md` and
+`docs/CMS_SDK_V1_SCHEMA_CONTRACTS.md` for details.
+
+Manifest discovery spine:
+
+```bash
+growthub workflow manifest pull                  # fetch + cache + stamp drift
+growthub workflow manifest show --slug <slug>    # inspect one capability
+growthub workflow manifest drift                 # preview drift since last pull
+growthub workflow manifest snapshot --fork <path>  # freeze into a fork
+growthub workflow manifest export --out <path>   # portable JSON for handoff
+growthub workflow manifest import <path> --fork <path>
+```
+
+Schema-driven node contracts:
+
+```bash
+growthub workflow schema show <slug>             # inspect the schema
+growthub workflow schema validate <slug> --bindings-file <path>
+growthub workflow schema fill <slug> [--stdin | --bindings-file <path> | --agent-json]
+growthub workflow schema run <slug> --bindings-file <path>
+growthub workflow schema save <slug> --name <name> --fork <path>
+growthub workflow schema load <slug> --name <name> --fork <path>
+growthub workflow schema export <slug> --out <path> --fork <path>
+growthub workflow schema import <path> --fork <path>
+```
+
 ## 16) Short plain summary
 
 CMS SDK v1 is validated when image, video, and text all run successfully through real hosted execution, bad inputs fail clearly, corrected reruns pass, and sync remains stable after execution.

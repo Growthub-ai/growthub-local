@@ -47,3 +47,27 @@ export function resolveInForkStateDir(forkPath: string): string {
 export function resolveInForkRegistrationPath(forkPath: string): string {
   return path.resolve(resolveInForkStateDir(forkPath), "fork.json");
 }
+
+/**
+ * In-fork capability manifest snapshot.
+ *
+ * Co-located with fork.json / policy.json / trace.jsonl / authority.json so
+ * the fork artifact carries a frozen CapabilityManifestEnvelope alongside
+ * its identity, policy, history, and attestation state.
+ */
+export function resolveInForkManifestPath(forkPath: string): string {
+  return path.resolve(resolveInForkStateDir(forkPath), "manifest.json");
+}
+
+/**
+ * In-fork saved bindings directory.
+ *
+ *   <forkPath>/.growthub-fork/bindings/<slug>/<name>.json
+ *
+ * Saved bindings ride the same additive, drift-aware, trace-backed fork
+ * substrate as the manifest snapshot. Cross-machine propagation is handled
+ * by the existing fork-sync agent — not a second transport.
+ */
+export function resolveInForkBindingsDir(forkPath: string): string {
+  return path.resolve(resolveInForkStateDir(forkPath), "bindings");
+}
