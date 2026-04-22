@@ -20,6 +20,24 @@ import {
 import {
   createMachineCapabilityResolver,
 } from "../runtime/machine-capability-resolver/index.js";
+import {
+  fetchCapabilityManifest,
+  ManifestClientError,
+  ManifestContractMismatchError,
+  ManifestEndpointUnavailableError,
+  ManifestMalformedError,
+  ManifestUnauthenticatedError,
+} from "../runtime/cms-manifest-client/index.js";
+import {
+  describeManifestCachePath,
+  readManifestCache,
+  resolveManifestCachePath,
+  writeManifestCache,
+} from "../runtime/cms-manifest-cache/index.js";
+import {
+  diffManifestEnvelopes,
+  type ManifestDriftSummary,
+} from "../runtime/cms-manifest-diff/index.js";
 import { getWorkflowAccess } from "../auth/workflow-access.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
@@ -279,6 +297,7 @@ Examples:
   $ growthub capability list --json         # machine-readable output
   $ growthub capability inspect video-gen   # inspect a specific capability
   $ growthub capability resolve             # resolve machine bindings for all
+  $ growthub capability refresh             # sync hosted CMS manifest and diff
 `);
 
   cap.action(async () => {
@@ -415,4 +434,246 @@ Examples:
         process.exitCode = 1;
       }
     });
+
+  // ── refresh ─────────────────────────────────────────────────────────────
+  cap
+    .command("refresh")
+    .description("Sync the canonical hosted CMS capability manifest and diff against the local cache")
+    .option("--base-url <url>", "Hosted Growthub base URL (defaults to session / env / config / https://www.growthub.ai)")
+    .option("--json", "Output raw JSON for scripting")
+    .option("--include-experimental", "Include experimental capabilities in the summary rendering")
+    .option("--include-disabled", "Include disabled capabilities in the summary rendering")
+    .action(async (opts: {
+      baseUrl?: string;
+      json?: boolean;
+      includeExperimental?: boolean;
+      includeDisabled?: boolean;
+    }) => {
+      const startedAt = new Date().toISOString();
+      const cachePath = resolveManifestCachePath();
+      const describedCachePath = describeManifestCachePath();
+
+      let fetchResult;
+      try {
+        fetchResult = await fetchCapabilityManifest({ explicit: opts.baseUrl });
+      } catch (err) {
+        const prior = readManifestCache();
+        if (err instanceof ManifestContractMismatchError) {
+          if (prior) {
+            if (opts.json) {
+              console.log(JSON.stringify({
+                status: "contract_mismatch_using_cache",
+                error: { code: err.code, message: err.message },
+                cache: {
+                  host: prior.host,
+                  fetchedAt: prior.fetchedAt,
+                  total: prior.capabilities.length,
+                  path: cachePath,
+                },
+              }, null, 2));
+            } else {
+              console.error(pc.yellow(`⚠ Contract version mismatch: ${err.message}`));
+              console.error(pc.dim(`  Using cached manifest from ${prior.fetchedAt} (${prior.capabilities.length} capabilities).`));
+              console.error(pc.dim(`  Cache: ${describedCachePath}`));
+              console.error(pc.dim("  Hosted manifest was NOT overwritten. Run `growthub upgrade` or re-login if the contract version is supposed to match."));
+            }
+            process.exitCode = 0;
+            return;
+          }
+          reportRefreshError(err, opts.json, describedCachePath);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (err instanceof ManifestMalformedError) {
+          if (prior) {
+            if (opts.json) {
+              console.log(JSON.stringify({
+                status: "malformed_using_cache",
+                error: { code: err.code, message: err.message },
+                cache: {
+                  host: prior.host,
+                  fetchedAt: prior.fetchedAt,
+                  total: prior.capabilities.length,
+                  path: cachePath,
+                },
+              }, null, 2));
+            } else {
+              console.error(pc.yellow(`⚠ Hosted manifest was malformed: ${err.message}`));
+              console.error(pc.dim(`  Using cached manifest from ${prior.fetchedAt} (${prior.capabilities.length} capabilities).`));
+              console.error(pc.dim(`  Cache: ${describedCachePath}`));
+            }
+            process.exitCode = 0;
+            return;
+          }
+          reportRefreshError(err, opts.json, describedCachePath);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (
+          err instanceof ManifestEndpointUnavailableError ||
+          err instanceof ManifestUnauthenticatedError
+        ) {
+          reportRefreshError(err, opts.json, describedCachePath);
+          process.exitCode = 1;
+          return;
+        }
+
+        reportRefreshError(err, opts.json, describedCachePath);
+        process.exitCode = 1;
+        return;
+      }
+
+      const { envelope, resolvedBaseUrl, serverContractVersion } = fetchResult;
+      const prior = readManifestCache();
+      const diffSummary = diffManifestEnvelopes(prior, envelope, { comparedAt: startedAt });
+
+      try {
+        writeManifestCache(envelope);
+      } catch (writeErr) {
+        const message = writeErr instanceof Error ? writeErr.message : String(writeErr);
+        if (opts.json) {
+          console.log(JSON.stringify({
+            status: "fetched_but_cache_write_failed",
+            error: message,
+            host: envelope.host,
+            fetchedAt: envelope.fetchedAt,
+            total: envelope.capabilities.length,
+            cachePath,
+          }, null, 2));
+        } else {
+          console.error(pc.yellow(`⚠ Manifest fetched but cache write failed: ${message}`));
+          console.error(pc.dim(`  Cache path: ${describedCachePath}`));
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({
+          status: "ok",
+          host: envelope.host,
+          resolvedBaseUrl: resolvedBaseUrl.baseUrl,
+          resolvedBaseUrlSource: resolvedBaseUrl.source,
+          fetchedAt: envelope.fetchedAt,
+          contractVersion: serverContractVersion,
+          total: envelope.capabilities.length,
+          added: diffSummary.added,
+          removed: diffSummary.removed,
+          changed: diffSummary.changed,
+          changeDetails: diffSummary.changeDetails,
+          drift: diffSummary.report,
+          cachePath,
+        }, null, 2));
+        return;
+      }
+
+      printRefreshSummary({
+        envelope,
+        diff: diffSummary,
+        resolvedBaseUrl: resolvedBaseUrl.baseUrl,
+        resolvedBaseUrlSource: resolvedBaseUrl.source,
+        cachePath: describedCachePath,
+        serverContractVersion,
+        includeExperimental: opts.includeExperimental === true,
+        includeDisabled: opts.includeDisabled === true,
+      });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Refresh summary renderer
+// ---------------------------------------------------------------------------
+
+function reportRefreshError(err: unknown, json: boolean | undefined, describedCachePath: string): void {
+  if (json) {
+    const payload = err instanceof ManifestClientError
+      ? { status: "error", code: err.code, message: err.message }
+      : { status: "error", code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
+    console.log(JSON.stringify({ ...payload, cachePath: describedCachePath }, null, 2));
+    return;
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof ManifestUnauthenticatedError) {
+    console.error(pc.red("✗ Not authenticated: ") + message);
+  } else if (err instanceof ManifestEndpointUnavailableError) {
+    console.error(pc.red("✗ Hosted manifest endpoint unavailable: ") + message);
+  } else if (err instanceof ManifestContractMismatchError) {
+    console.error(pc.red("✗ Contract version mismatch: ") + message);
+    console.error(pc.dim("  No local cache is present to fall back on."));
+  } else if (err instanceof ManifestMalformedError) {
+    console.error(pc.red("✗ Hosted manifest malformed: ") + message);
+    console.error(pc.dim("  No local cache is present to fall back on."));
+  } else {
+    console.error(pc.red("✗ Failed to refresh manifest: ") + message);
+  }
+  console.error(pc.dim(`  Cache path: ${describedCachePath}`));
+}
+
+function printRefreshSummary(args: {
+  envelope: import("@growthub/api-contract").CapabilityManifestEnvelope;
+  diff: ManifestDriftSummary;
+  resolvedBaseUrl: string;
+  resolvedBaseUrlSource: string;
+  cachePath: string;
+  serverContractVersion: string | null;
+  includeExperimental: boolean;
+  includeDisabled: boolean;
+}): void {
+  const { envelope, diff, resolvedBaseUrl, resolvedBaseUrlSource, cachePath, serverContractVersion } = args;
+  const { added, removed, changed, changeDetails } = diff;
+
+  console.log("");
+  console.log(pc.bold("CMS Capability Manifest — Refresh"));
+  console.log(hr());
+  console.log(`  ${pc.dim("Host:")}            ${envelope.host}`);
+  console.log(`  ${pc.dim("Resolved base:")}   ${resolvedBaseUrl} ${pc.dim(`(${resolvedBaseUrlSource})`)}`);
+  console.log(`  ${pc.dim("Fetched at:")}      ${envelope.fetchedAt}`);
+  if (serverContractVersion !== null) {
+    console.log(`  ${pc.dim("Contract version:")} ${serverContractVersion}`);
+  }
+  console.log(`  ${pc.dim("Source:")}          ${envelope.source}`);
+  console.log(`  ${pc.dim("Total:")}           ${envelope.capabilities.length}`);
+  console.log(`  ${pc.dim("Added:")}           ${added.length > 0 ? pc.green(String(added.length)) : pc.dim("0")}`);
+  console.log(`  ${pc.dim("Removed:")}         ${removed.length > 0 ? pc.red(String(removed.length)) : pc.dim("0")}`);
+  console.log(`  ${pc.dim("Changed:")}         ${changed.length > 0 ? pc.yellow(String(changed.length)) : pc.dim("0")}`);
+  console.log(`  ${pc.dim("Cache:")}           ${cachePath}`);
+  console.log(hr());
+
+  if (added.length > 0) {
+    console.log(pc.green("\n  + Added"));
+    for (const slug of added) {
+      const entry = envelope.capabilities.find((c) => c.slug === slug);
+      const label = entry?.displayName ? pc.dim(`  ${entry.displayName}`) : "";
+      console.log(`    ${pc.bold(slug)}${label}`);
+    }
+  }
+
+  if (removed.length > 0) {
+    console.log(pc.red("\n  − Removed"));
+    for (const slug of removed) {
+      console.log(`    ${pc.bold(slug)}`);
+    }
+  }
+
+  if (changed.length > 0) {
+    console.log(pc.yellow("\n  ~ Changed"));
+    for (const slug of changed) {
+      console.log(`    ${pc.bold(slug)}`);
+      for (const detail of changeDetails[slug] ?? []) {
+        console.log(`      ${pc.dim("·")} ${pc.dim(detail)}`);
+      }
+    }
+  }
+
+  if (added.length === 0 && removed.length === 0 && changed.length === 0) {
+    console.log(pc.dim("\n  No drift detected since the last cached manifest."));
+  }
+
+  console.log("");
+  console.log(pc.dim("  growthub capability list     # browse refreshed registry"));
+  console.log(pc.dim("  growthub capability inspect <slug>"));
+  console.log("");
 }

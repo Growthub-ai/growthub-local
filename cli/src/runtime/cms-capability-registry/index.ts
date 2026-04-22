@@ -8,17 +8,35 @@
  *   - how they bind into pipelines
  *   - what execution shape they require
  *
- * Data source:
- *   - Hosted registry endpoint via HostedExecutionClient
+ * Phase B source-precedence (locked):
+ *   1. Hosted `CapabilityManifestEnvelope` from `/api/cms/capabilities`
+ *      (primary — canonical truth per S141).
+ *   2. Local manifest cache — used only when the hosted fetch FAILS
+ *      (transport / 404 / 501 / auth) OR when the contract version
+ *      mismatches and a cached envelope exists.
+ *   3. Legacy derivation from hosted workflows — emergency-only fallback
+ *      for cold-start environments with no hosted manifest and no cache.
  *
  * The registry does NOT reimplement CMS semantics — it exposes them as
- * CLI/runtime-friendly node records.
+ * CLI/runtime-friendly node records projected from the public contract.
  */
 
 import {
   createHostedExecutionClient,
   type HostedCapabilityRecord,
 } from "../hosted-execution-client/index.js";
+import {
+  fetchCapabilityManifest,
+  ManifestContractMismatchError,
+  ManifestEndpointUnavailableError,
+  ManifestMalformedError,
+  ManifestUnauthenticatedError,
+} from "../cms-manifest-client/index.js";
+import {
+  readManifestCache,
+  writeManifestCache,
+} from "../cms-manifest-cache/index.js";
+import { projectManifestEnvelope } from "../cms-manifest-projection/index.js";
 import { readSession, isSessionExpired } from "../../auth/session-store.js";
 import { listHostedWorkflows, fetchHostedWorkflow } from "../../auth/hosted-client.js";
 import type {
@@ -44,7 +62,7 @@ export type {
 export { CAPABILITY_FAMILIES } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Normalize hosted records to CmsCapabilityNode
+// Normalize hosted records to CmsCapabilityNode (legacy fallback path)
 // ---------------------------------------------------------------------------
 
 function toCapabilityNode(record: HostedCapabilityRecord): CmsCapabilityNode {
@@ -173,6 +191,97 @@ function matchesQuery(node: CmsCapabilityNode, query: CapabilityQuery): boolean 
 }
 
 // ---------------------------------------------------------------------------
+// Internal source resolution
+// ---------------------------------------------------------------------------
+
+type RegistrySourceOutcome =
+  | {
+      kind: "manifest";
+      nodes: CmsCapabilityNode[];
+      fetchedAt: string;
+      stale: boolean;
+      stalenessReason?: string;
+    }
+  | {
+      kind: "legacy";
+      nodes: CmsCapabilityNode[];
+      fetchedAt: string;
+    };
+
+async function resolveFromManifest(): Promise<RegistrySourceOutcome> {
+  try {
+    const { envelope } = await fetchCapabilityManifest();
+    writeManifestCache(envelope);
+    const projected = projectManifestEnvelope(envelope);
+    return {
+      kind: "manifest",
+      nodes: projected.nodes,
+      fetchedAt: projected.fetchedAt,
+      stale: false,
+    };
+  } catch (err) {
+    // Contract mismatch OR malformed body MUST NOT fall through to
+    // legacy derivation. Stale cache is the only legal fallback.
+    if (err instanceof ManifestContractMismatchError || err instanceof ManifestMalformedError) {
+      const cached = readManifestCache();
+      if (cached) {
+        const projected = projectManifestEnvelope(cached);
+        return {
+          kind: "manifest",
+          nodes: projected.nodes,
+          fetchedAt: projected.fetchedAt,
+          stale: true,
+          stalenessReason:
+            err instanceof ManifestContractMismatchError
+              ? `Contract version mismatch (${err.message}); using cached manifest from ${projected.fetchedAt}.`
+              : `Hosted manifest malformed (${err.message}); using cached manifest from ${projected.fetchedAt}.`,
+        };
+      }
+      throw err;
+    }
+
+    // Transport / endpoint / auth failures — try cache, then legacy.
+    if (
+      err instanceof ManifestEndpointUnavailableError ||
+      err instanceof ManifestUnauthenticatedError
+    ) {
+      const cached = readManifestCache();
+      if (cached) {
+        const projected = projectManifestEnvelope(cached);
+        return {
+          kind: "manifest",
+          nodes: projected.nodes,
+          fetchedAt: projected.fetchedAt,
+          stale: true,
+          stalenessReason: `Hosted manifest unavailable (${err.message}); using cached manifest from ${projected.fetchedAt}.`,
+        };
+      }
+      return resolveFromLegacy();
+    }
+
+    throw err;
+  }
+}
+
+async function resolveFromLegacy(): Promise<RegistrySourceOutcome> {
+  const executionClient = createHostedExecutionClient();
+  let hostedRecords = await executionClient.getHostedCapabilities();
+  if (hostedRecords.length === 0) {
+    hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
+  }
+  if (hostedRecords.length === 0) {
+    throw new Error(
+      "Hosted capability registry returned zero nodes, cache is empty, and derivation produced nothing.",
+    );
+  }
+  return {
+    kind: "legacy",
+    nodes: hostedRecords.map(toCapabilityNode),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry client
 // ---------------------------------------------------------------------------
 
@@ -186,34 +295,25 @@ export interface CmsCapabilityRegistryClient {
 export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient {
   return {
     async listCapabilities(query) {
-      const executionClient = createHostedExecutionClient();
-      let hostedRecords = await executionClient.getHostedCapabilities();
-      if (hostedRecords.length === 0) {
-        hostedRecords = await deriveCapabilitiesFromHostedWorkflows();
-      }
-      if (hostedRecords.length === 0) {
-        throw new Error("Hosted capability registry returned zero nodes. No local fallback is enabled.");
-      }
-      const nodes = hostedRecords.map(toCapabilityNode);
+      const outcome = await resolveFromManifest();
+      const nodes = outcome.nodes;
 
       const enabledCount = nodes.filter((n) => n.enabled).length;
       const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
 
-      return {
-        nodes: filtered,
-        meta: {
-          total: nodes.length,
-          enabledCount,
-          fetchedAt: new Date().toISOString(),
-          source: "hosted",
-        },
+      const meta: CapabilityRegistryMeta = {
+        total: nodes.length,
+        enabledCount,
+        fetchedAt: outcome.fetchedAt,
+        source: "hosted",
       };
+
+      return { nodes: filtered, meta };
     },
 
     async getCapability(slug) {
       const { nodes } = await this.listCapabilities({ slug, enabledOnly: false });
       return nodes.find((n) => n.slug === slug) ?? null;
     },
-
   };
 }
