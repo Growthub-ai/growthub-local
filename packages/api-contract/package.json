@@ -1,7 +1,7 @@
 {
   "name": "@growthub/api-contract",
-  "version": "1.0.0-alpha.1",
-  "description": "Growthub CMS SDK v1 — public contract surface. Freezes the existing growthub-local CLI truth (capabilities, manifests, execution payloads, provider assembly, profile, streaming events) into one stable, additive, type-only package.",
+  "version": "1.2.0-alpha.1",
+  "description": "Growthub CMS SDK v1 — public contract surface. Freezes the existing growthub-local CLI truth (capabilities, manifests, execution payloads, provider assembly, profile, streaming events, skills) into one stable, additive, type-only package.",
   "license": "MIT",
   "homepage": "https://github.com/Growthub-ai/growthub-local#readme",
   "bugs": {
@@ -21,6 +21,9 @@
     "manifests",
     "execution",
     "provider-assembly",
+    "skills",
+    "skill-manifest",
+    "mcp",
     "types"
   ],
   "type": "module",
@@ -57,6 +60,10 @@
     "./schemas": {
       "types": "./dist/schemas.d.ts",
       "import": "./dist/schemas.js"
+    },
+    "./skills": {
+      "types": "./dist/skills.d.ts",
+      "import": "./dist/skills.js"
     }
   },
   "main": "./dist/index.js",

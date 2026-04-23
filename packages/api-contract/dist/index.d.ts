@@ -30,5 +30,7 @@ export type { ExecutionEventType, NodeStartEvent, NodeCompleteEvent, NodeErrorEv
 export { isExecutionEvent } from "./events.js";
 export type { ManifestOriginType, ManifestProvenance, CapabilityExecutionHints, CapabilityManifest, ManifestDriftMarker, ManifestDriftReport, CapabilityManifestEnvelope, } from "./manifests.js";
 export type { NodeInputUiHint, NodeInputProviderNeutralIntent, NodeInputExecutionModeHints, TextField, LongTextField, NumberField, BooleanField, SelectOption, SelectField, ArrayField, JsonField, UrlField, FileField, UrlOrFileField, NodeInputField, NodeOutputFieldType, NodeOutputField, NodeInputSchema, NodeOutputSchema, NodeInputAttachment, } from "./schemas.js";
+export type { SkillHelperRef, SkillSubSkillRef, SkillSelfEval, SkillSessionMemory, SkillSource, SkillManifest, SkillNode, SkillCatalog, } from "./skills.js";
+export { SKILL_MANIFEST_VERSION } from "./skills.js";
 export declare const API_CONTRACT_VERSION: 1;
 //# sourceMappingURL=index.d.ts.map

@@ -120,6 +120,20 @@ export type {
   NodeInputAttachment,
 } from "./schemas.js";
 
+// Skills (primitive discovery surface — SKILL.md manifest, helpers,
+// sub-skills, self-eval, session memory, MCP routing vocabulary)
+export type {
+  SkillHelperRef,
+  SkillSubSkillRef,
+  SkillSelfEval,
+  SkillSessionMemory,
+  SkillSource,
+  SkillManifest,
+  SkillNode,
+  SkillCatalog,
+} from "./skills.js";
+export { SKILL_MANIFEST_VERSION } from "./skills.js";
+
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1 as const;
