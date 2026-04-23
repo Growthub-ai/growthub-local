@@ -36,7 +36,7 @@ Then choose one of these six paths:
 5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
 
-[![Watch the demo](https://img.youtube.com/vi/3wUyHsUePpY/maxresdefault.jpg)](https://youtu.be/3wUyHsUePpY)
+[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/6d389d991fe84284804d7155411357d5-with-play.gif)](https://www.loom.com/share/6d389d991fe84284804d7155411357d5)
 
 ---
 
