@@ -24,7 +24,7 @@ Growthub Local is a **local control plane for portable agent environments**.
 If you only do one thing, do this:
 
 ```bash
-npx create-growthub-local@latest
+npm create @growthub/growthub-local@latest
 ```
 
 Then choose one of these six paths:
@@ -94,7 +94,7 @@ Keep the open-source substrate useful by default, then add hosted identity, capa
 ### Guided installer
 
 ```bash
-npm create growthub-local@latest
+npm create @growthub/growthub-local@latest
 ```
 
 The guided installer is **profile-first**:
@@ -105,9 +105,9 @@ The guided installer is **profile-first**:
 ### Direct profile install
 
 ```bash
-npm create growthub-local@latest -- --profile gtm
-npm create growthub-local@latest -- --profile dx
-npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile gtm
+npm create @growthub/growthub-local@latest -- --profile dx
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
 Use profile selection to choose the initial environment shape before deeper workflow and harness configuration.
@@ -144,7 +144,7 @@ Use this when you want to turn a portable skill into a governed environment you 
 ### 3) Start from a workspace starter
 
 ```bash
-npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
 Use this when you want the cleanest path to a custom workspace without importing an external source first.
