@@ -31,6 +31,7 @@ const CUSTOM_WORKSPACE_KIT_IDS = [
   "growthub-twenty-crm-v1",
   "growthub-zernio-social-v1",
   "growthub-hyperframes-studio-v1",
+  "growthub-free-claude-code-v1",
 ] as const;
 
 function makeTempDir(prefix: string): string {
@@ -117,7 +118,9 @@ describe("worker kit service", () => {
       "growthub-twenty-crm-v1",
       "growthub-custom-workspace-starter-v1",
       "growthub-zernio-social-v1",
+      "growthub-marketing-skills-v1",
       "growthub-hyperframes-studio-v1",
+      "growthub-free-claude-code-v1",
     ]);
     expect(kits.find((kit) => kit.id === "creative-strategist-v1")).toMatchObject({
       bundleId: "creative-strategist-v1",

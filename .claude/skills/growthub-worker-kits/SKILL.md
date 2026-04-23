@@ -1,11 +1,11 @@
 ---
 name: growthub-worker-kits
-description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, zernio, email-marketing, marketing-skills, custom-workspace).
+description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, zernio, email-marketing, marketing-skills, custom-workspace, free-claude-code).
 ---
 
 # Growthub Worker Kits — Uniform Operating Pattern
 
-This skill is the umbrella guidance for working inside any of the 12 worker kits shipped under `cli/assets/worker-kits/`. Use it to resolve workspace paths, pick the right per-kit operator skill, and run QUICKSTART steps without guessing.
+This skill is the umbrella guidance for working inside any of the 13 worker kits shipped under `cli/assets/worker-kits/`. Use it to resolve workspace paths, pick the right per-kit operator skill, and run QUICKSTART steps without guessing.
 
 Every kit is agent-agnostic — Claude is first-party (this is what Claude Code loads), but Cursor / Codex / Gemini / any harness can operate the same kit identically.
 
@@ -31,6 +31,7 @@ Never hardcode absolute paths in new work. Always resolve through the kit's env 
 | `growthub-email-marketing-v1` | *(no workspace — pure skill library)* | — | *(none)* | Kit-local |
 | `growthub-marketing-skills-v1` | *(no workspace — pure skill library)* | — | *(none)* | Kit-local, derived from coreyhaines31/marketingskills |
 | `growthub-custom-workspace-starter-v1` | `GROWTHUB_KIT_FORKS_HOME` | — | `$HOME/.growthub/kit-forks` (user-chosen) | Starter for user-defined workspaces |
+| `growthub-free-claude-code-v1` | `FREE_CLAUDE_CODE_HOME` | — | `$HOME/free-claude-code` | [Alishahryar1/free-claude-code](https://github.com/Alishahryar1/free-claude-code) (FastAPI Anthropic-compatible proxy) |
 
 Kit exports (from `scripts/export-worker-kit.mjs`): `$GROWTHUB_KIT_EXPORTS_HOME` → fallback `$HOME/growthub-worker-kit-exports`.
 
@@ -74,6 +75,7 @@ When the user's task maps to one of these kits, use the umbrella resolution abov
 | `growthub-ai-website-cloner-v1` | `workers/ai-website-cloner-operator/CLAUDE.md` | `skills.md` |
 | `growthub-hyperframes-studio-v1` | `workers/hyperframes-studio-operator/CLAUDE.md` | `skills.md` |
 | `growthub-custom-workspace-starter-v1` | `workers/custom-workspace-operator/CLAUDE.md` | `skills.md` |
+| `growthub-free-claude-code-v1` | `workers/free-claude-code-operator/CLAUDE.md` | `skills.md` |
 
 Paths above are relative to the kit directory: `cli/assets/worker-kits/<kit-id>/…`.
 
