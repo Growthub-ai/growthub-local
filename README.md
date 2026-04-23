@@ -15,7 +15,7 @@ Growthub Local is a **local control plane for portable agent environments**.
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 
-**Quick links:** [Start here](#start-here) · [Why this exists](#why-this-exists) · [What you can do](#what-you-can-do) · [Install](#install) · [First-run paths](#first-run-paths) · [How it works](#how-it-works) · [CLI surfaces](#cli-surfaces) · [Docs](#docs)
+**Quick links:** [Start here](#start-here) · [Why this exists](#why-this-exists) · [What you can do](#what-you-can-do) · [Install](#install) · [First-run paths](./docs/FIRST_RUN_PATHS.md) · [How it works](#how-it-works) · [CLI surfaces](#cli-surfaces) · [Docs](#docs)
 
 ---
 
@@ -29,12 +29,12 @@ npm create @growthub/growthub-local@latest
 
 Then choose one of these six paths:
 
-1. [**Import a GitHub repo into a governed workspace**](#1-import-a-repo)
-2. [**Import a skills.sh skill into a governed workspace**](#2-import-a-skill)
-3. [**Start from a custom workspace starter**](#3-start-from-a-workspace-starter)
-4. [**Download a worker kit**](#4-download-a-worker-kit)
-5. [**Connect your Growthub account after local value is clear**](#5-connect-your-growthub-account)
-6. [**Unlock hosted workflows and enterprise customization (optional)**](#6-unlock-hosted-workflows-and-enterprise-customization-optional)
+1. [**Import a GitHub repo into a governed workspace**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
+2. [**Import a skills.sh skill into a governed workspace**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
+3. [**Start from a custom workspace starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
+4. [**Download a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
+5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
+6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
 
 [![Watch the demo](https://img.youtube.com/vi/3wUyHsUePpY/maxresdefault.jpg)](https://youtu.be/3wUyHsUePpY)
 
@@ -122,74 +122,7 @@ Growthub Local currently ships `@growthub/cli@0.8.0` and the guided installer `@
 
 ---
 
-## First-run paths
-
-### 1) Import a repo
-
-```bash
-growthub starter import-repo octocat/hello-world --out ./ws-repo
-```
-
-Use this when you want to turn an open-source repository into a governed local environment with starter shell, policy, trace, and fork registration.
-
-### 2) Import a skill
-
-```bash
-growthub starter import-skill anthropics/skills/frontend-design --out ./ws-skill
-growthub starter browse-skills --scope trending --query marketing
-```
-
-Use this when you want to turn a portable skill into a governed environment you can continue to evolve locally.
-
-### 3) Start from a workspace starter
-
-```bash
-npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
-```
-
-Use this when you want the cleanest path to a custom workspace without importing an external source first.
-
-### 4) Download a worker kit
-
-```bash
-growthub kit
-growthub kit list
-growthub kit inspect <kit-id>
-growthub kit download <kit-id>
-```
-
-Use this when you want a prepackaged environment with runtime assumptions, templates, setup files, and agent contract already in place.
-
-### 5) Connect your Growthub account
-
-```bash
-growthub auth login
-growthub auth whoami
-```
-
-Use this after local value is clear, when you want hosted identity, connection authority, workflow access, or premium activation flows.
-
-### 6) Unlock hosted workflows and enterprise customization (optional)
-
-This is intentionally **after** immediate local value discovery.
-
-If you want full hosted activation lanes and enterprise customization support, activate on Growthub:
-
-- [Open Growthub Activation](https://www.growthub.ai/)
-- [Plans and pricing](https://www.growthub.ai/)
-- [Start with first-month $1 path](https://www.growthub.ai/)
-
-#### Why Upgrade?
-
-Keep free local CLI value first. Upgrade when you want more scale, coordination, and governance.
-
-- Fork anything, keep customizations, stay current
-- Turn repos and skills into agent-operable environments
-- Portable local environments with policy, trace, and authority
-- Open-source freedom with enterprise-grade governance
-- A CLI both humans and agents can operate
-
-**Features**
+## Features
 
 <table>
   <tr>
@@ -204,7 +137,7 @@ Keep free local CLI value first. Upgrade when you want more scale, coordination,
   </tr>
   <tr>
     <td align="center"><strong>🤖 Human + Agent Operable CLI</strong><br>The CLI is legible to both humans and agents, with discovery flows, structured commands, and reusable primitives that work through Claude Code, Cursor, Codex, and similar tools.</td>
-    <td align="center"><strong>🧠 Local Intelligence</strong><br>Run local model flows, memory-aware reasoning, planning, normalization, summarization, and provider-flexible intelligence directly on the operator's machine.</td>
+    <td align="center"><strong>🧠 Local Intelligence</strong><br>Run local model flows, memory-aware reasoning, planning, normalization, summarization, and provider-flexible intelligence directly on the operator’s machine.</td>
     <td align="center"><strong>🔌 Agent Harnesses</strong><br>Use first-class harness surfaces like Open Agents, Qwen Code, and T3 Code with secure auth storage, profile binding, and workspace-aware execution.</td>
   </tr>
   <tr>
@@ -213,7 +146,6 @@ Keep free local CLI value first. Upgrade when you want more scale, coordination,
     <td align="center"><strong>📈 Fleet + Operations Ready</strong><br>Manage multiple forks and environments with service status, job surfaces, health checks, background jobs, and operator-friendly lifecycle controls.</td>
   </tr>
 </table>
-
 
 **Problems Growthub Local solves**
 
@@ -470,6 +402,7 @@ This keeps the mental model intact:
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
 - [**Governed Workspace Primitives (user-facing)**](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — how the six architectural primitives (SKILL.md, AGENTS.md pointer, session memory, self-evaluation, sub-skills, helpers) coordinate agents inside every exported workspace
+- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — six concrete starting points: import a repo, import a skill, workspace starter, worker kit, connect account, unlock hosted workflows
 
 ### Architecture and protocol
 
