@@ -69,11 +69,24 @@ Catalog:
 - `growthub-auth` — hosted auth flow (`login` / `whoami` / `logout` + token scripting); pre-flight for every auth-gated skill
 - `growthub-pipeline-execute` — headless `growthub pipeline {assemble,validate,execute}` typed by CMS SDK v1
 - `growthub-video-generation` — one-true `video-generation` node with correct `refs[].dataUrl` bindings
-- `growthub-cms-sdk-v1` — public `@growthub/api-contract` package usage (types, events, manifests, schemas)
+- `growthub-cms-sdk-v1` — public `@growthub/api-contract` package usage (types, events, manifests, schemas, skills)
 - `growthub-kit-fork-authority` — `growthub kit fork` + ed25519-signed authority attestations
 - `growthub-t3code-harness` — T3 Code CLI health / prompt / session / profile
 - `growthub-marketing-operator` — dispatch marketing intent to the correct skill + framework + template in `growthub-marketing-skills-v1`
 - `growthub-worker-kits` — umbrella skill for operating any worker kit: uniform `${<KIT>_HOME}` workspace resolution, QUICKSTART pattern, cross-kit CLI entries
+
+## Governed-workspace primitives (v1.2)
+
+Every worker kit and every governed fork now ships the six architectural primitives declared by `@growthub/api-contract/skills::SkillManifest`:
+
+1. `SKILL.md` — discovery entry (capability-agnostic)
+2. Root `AGENTS.md` pointer (this file) with `CLAUDE.md` / `.cursorrules` as pointer stubs
+3. `.growthub-fork/project.md` — session memory, seeded at init/import time from the kit's `templates/project.md`
+4. `selfEval.criteria[]` + `maxRetries` — bounded generate → apply → evaluate → record loop; every attempt writes to both `project.md` and `trace.jsonl`
+5. Nested `skills/<slug>/SKILL.md` — sub-skill lanes for parallel sub-agents
+6. `helpers/<verb>.{sh,mjs,py}` — safe shell tool layer
+
+Protocol reference: [`docs/SKILLS_MCP_DISCOVERY.md`](./docs/SKILLS_MCP_DISCOVERY.md). User-facing narrative: [`cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md`](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — this file ships into every exported workspace. CLI entry: `growthub skills {list,validate,session {init,show}}`.
 
 ## Worker-kit workspace convention
 
@@ -106,9 +119,12 @@ Cloud agents blocked on `Cannot find name 'process'` or `Cannot find module 'vit
 ## Contribution Guardrails
 
 - Work in a feature branch or worktree; do not work directly on `main`.
+- Branch names must follow: `fix/`, `feat/`, `chore/`, `refactor/`, `docs/`, `ci/`, `test/`, `perf/`, `adapter/`, `sync/`.
 - Read files before editing.
 - Replace stale guidance directly; do not stack corrective notes on top of wrong text.
+- Do not improvise raw `pnpm --dir server` + `pnpm --dir ui` as the default path — use `scripts/runtime-control.sh`.
 - Do not run `node scripts/worktree-bootstrap.mjs` unless explicitly assigned by a maintainer.
+- Use `growthub worktree:make` when you need an isolated DB + port + instance.
 - Before push, run `bash scripts/pr-ready.sh`.
 
 Before destructive git commands, run:
@@ -116,3 +132,21 @@ Before destructive git commands, run:
 ```bash
 bash scripts/guard.sh check-command "<command>"
 ```
+
+## Version grounding
+
+- Never cite semver from memory — read `docs/ARTIFACT_VERSIONS.md` and `cli/package.json` on your branch.
+- Version bumps (only when source changes ship to npm):
+  - `cli/package.json` version +1
+  - `packages/create-growthub-local/package.json` version +1
+  - dependency pin in `create-growthub-local` must match `cli` version exactly
+
+## CI gates
+
+- `smoke`, `validate`, `verify` — all three must pass on CI.
+- `node scripts/release-check.mjs` must pass locally before merge.
+- After merge: run `release.yml`, confirm npm versions updated.
+
+## Root agent-contract pointer (primitive #2)
+
+`AGENTS.md` (this file) is the single source of truth for agent behaviour in this repo. `CLAUDE.md` and `.cursorrules` are deterministic pointers to it — when you change agent rules, edit `AGENTS.md` and nothing else. The pointer files are plain-text stubs (not OS-level symlinks) so Windows clones work unchanged; their only job is to route every agent (Claude, Cursor, Codex, Hermes, custom harnesses) to the same authoritative content.

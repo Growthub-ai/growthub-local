@@ -1,6 +1,24 @@
 ---
 name: growthub-discover
 description: Enter the Growthub Local discovery hub through the real CLI (`growthub discover`) with sandbox-safe fallbacks to the demo script and built dist. Use when the user asks to "open discover", "start discovery", run the discovery menu, or reach any Growthub lane (Worker Kits, Templates, Workflows, Local Intelligence, Agent Harness, Settings, Memory & Knowledge).
+triggers:
+  - open discover
+  - start discovery
+  - discovery hub
+  - growthub lanes
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Discovery menu matches the runDiscoveryHub shape in cli/src/index.ts.
+    - Auth state is resolved before entering Workflows lanes.
+    - Template surface used (never hand-built hosted JSON).
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools: []
 ---
 
 # Growthub Discover — Primary Entry

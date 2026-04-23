@@ -67,7 +67,12 @@
     "templates/broadcast-formats/lead-magnet-traffic.md",
     "templates/broadcast-formats/showcase-proof.md",
     "templates/broadcast-formats/engagement-nudge.md",
-    "templates/broadcast-formats/activation-booking.md"
+    "templates/broadcast-formats/activation-booking.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "outputStandard": {
     "type": "working-directory",
@@ -80,7 +85,14 @@
       "brands/_template/brand-kit.md",
       "brands/growthub/brand-kit.md",
       "templates",
-      "growthub-meta"
+      "growthub-meta",
+      "SKILL.md",
+      "templates/project.md",
+      "templates/self-eval.md",
+      "helpers",
+      "helpers/README.md",
+      "skills",
+      "skills/README.md"
     ]
   },
   "bundles": [

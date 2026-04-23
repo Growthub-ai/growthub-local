@@ -42,12 +42,19 @@
     "docs/parallel-builder-dispatch.md",
     "docs/design-token-system.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-ai-website-cloner-v1",
     "zipFileName": "growthub-agent-worker-kit-ai-website-cloner-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

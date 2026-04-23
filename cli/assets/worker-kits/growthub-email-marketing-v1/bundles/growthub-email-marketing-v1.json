@@ -55,12 +55,19 @@
     "templates/broadcast-formats/lead-magnet-traffic.md",
     "templates/broadcast-formats/showcase-proof.md",
     "templates/broadcast-formats/engagement-nudge.md",
-    "templates/broadcast-formats/activation-booking.md"
+    "templates/broadcast-formats/activation-booking.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-email-marketing-v1",
     "zipFileName": "growthub-agent-worker-kit-email-marketing-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

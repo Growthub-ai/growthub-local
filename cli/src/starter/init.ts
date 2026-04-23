@@ -39,6 +39,7 @@ import { resolveGithubAccessToken } from "../integrations/github-resolver.js";
 import { createFork, parseRepoRef } from "../github/client.js";
 import type { KitForkRemoteBinding } from "../kits/fork-types.js";
 import type { StarterInitOptions, StarterInitResult } from "./types.js";
+import { scaffoldSessionMemory } from "./scaffold-session-memory.js";
 
 export const DEFAULT_STARTER_KIT_ID = "growthub-custom-workspace-starter-v1";
 
@@ -81,6 +82,24 @@ export async function initStarterWorkspace(
     forkId: reg.forkId, kitId: reg.kitId, type: "policy_updated",
     summary: `Initial policy seeded (remoteSyncMode=${policy.remoteSyncMode})`,
   });
+
+  // 4a. Seed session memory (.growthub-fork/project.md) from the kit's
+  //     templates/project.md — primitive #3. No-op on older kits that do
+  //     not ship the template.
+  const sessionSeed = scaffoldSessionMemory({
+    forkPath: absOut,
+    kitId: info.id,
+    forkId: reg.forkId,
+    source: "greenfield",
+    sourceRef: "",
+  });
+  if (sessionSeed.written) {
+    appendKitForkTraceEvent(absOut, {
+      forkId: reg.forkId, kitId: reg.kitId, type: "skills_scaffolded",
+      summary: "Seeded .growthub-fork/project.md from templates/project.md",
+      detail: { projectMd: sessionSeed.projectMdPath },
+    });
+  }
 
   let remote: KitForkRemoteBinding | undefined;
 

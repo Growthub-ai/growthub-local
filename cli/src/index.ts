@@ -68,6 +68,7 @@ import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
+import { registerSkillsCommands } from "./commands/skills.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
@@ -1250,6 +1251,11 @@ async function runDiscoveryHub(opts?: {
           hint: "persistent memory, search, multi-provider config, Growthub sync",
         },
         {
+          value: "skills-catalog",
+          label: "📇 Skills Catalog",
+          hint: "enumerate SKILL.md across this tree + inspect .growthub-fork/project.md",
+        },
+        {
           value: "hosted-auth",
           label: "🔐 Connect Growthub Account",
           hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow",
@@ -1654,6 +1660,28 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
+    if (surfaceChoice === "skills-catalog") {
+      const { readSkillCatalog } = await import("./skills/catalog.js");
+      const catalog = readSkillCatalog({ root: process.cwd() });
+      p.note(
+        [
+          `Root: ${pc.cyan(catalog.catalog.root ?? process.cwd())}`,
+          `Skills discovered: ${pc.bold(String(catalog.entries.length))}`,
+          catalog.warnings.length > 0
+            ? `Warnings: ${pc.yellow(String(catalog.warnings.length))}`
+            : `Warnings: 0`,
+          "",
+          "Invoke directly:",
+          "  growthub skills list --json",
+          "  growthub skills validate",
+          "  growthub skills session show",
+          "  growthub skills session init --kit <kit-id>",
+        ].join("\n"),
+        "Skills Catalog",
+      );
+      continue;
+    }
+
     if (surfaceChoice === "hosted-auth") {
       await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
       continue;
@@ -1874,6 +1902,7 @@ registerGithubCommands(program);
 registerIntegrationsCommands(program);
 registerStatusCommands(program);
 registerStarterCommands(program);
+registerSkillsCommands(program);
 registerFleetCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);

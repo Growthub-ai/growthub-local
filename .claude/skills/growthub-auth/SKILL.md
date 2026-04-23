@@ -1,6 +1,28 @@
 ---
 name: growthub-auth
 description: Sign in, confirm identity, and sign out of hosted Growthub via `growthub auth login` / `whoami` / `logout`. Use when the user needs to authenticate before Workflows / Saved Workflows / Pipeline execution, verify the active session, script auth with a pre-issued token, or opt out of telemetry.
+triggers:
+  - auth login
+  - auth whoami
+  - auth logout
+  - authenticate
+  - connect growthub
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - growthub auth whoami --json returns authenticated:true before any auth-gated action.
+    - No raw tokens, cookies, or session JSON printed or logged.
+    - Base URL + machine/workspace labels match the target environment.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools:
+  - growthub.auth.login
+  - growthub.auth.whoami
+  - growthub.auth.logout
 ---
 
 # Growthub Auth — Hosted Session Guard

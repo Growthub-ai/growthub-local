@@ -36,12 +36,22 @@
     "templates/scene-modules/hooks/tiktok-comment.md",
     "templates/scene-modules/hooks/villain-hook.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md",
+    "helpers/grep-hooks.sh",
+    "helpers/extract-muse-frames.sh",
+    "skills/frame-analysis/SKILL.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-creative-strategist-v1",
     "zipFileName": "growthub-agent-worker-kit-creative-strategist-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

@@ -23,6 +23,7 @@
  */
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
 export { isExecutionEvent } from "./events.js";
+export { SKILL_MANIFEST_VERSION } from "./skills.js";
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1;

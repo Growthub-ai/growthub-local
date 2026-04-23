@@ -1,6 +1,25 @@
 ---
 name: growthub-worker-kits
 description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, video-use, zernio, email-marketing, marketing-skills, custom-workspace).
+triggers:
+  - worker kit
+  - kit run
+  - kit inspect
+  - kit install
+  - kit fork
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Workspace resolved via ${<KIT>_HOME} env var with documented default.
+    - QUICKSTART pattern followed before interactive operation.
+    - Per-kit operator runbook (skills.md) is the source of truth for kit-internal behaviour.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools: []
 ---
 
 # Growthub Worker Kits — Uniform Operating Pattern

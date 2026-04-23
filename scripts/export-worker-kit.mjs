@@ -249,13 +249,77 @@ function exportKit(kitRoot, bundle, outDir) {
   return { folderPath, zipPath };
 }
 
-function runQa(folderPath, manifest, bundle) {
+/**
+ * Capability-agnostic QA — asserts every exported kit carries both (a) the
+ * historical contract (kit.json, bundles/, entrypoint, runtime assumptions)
+ * and (b) the v1.2 six-primitive contract (SKILL.md, templates/project.md,
+ * templates/self-eval.md, helpers/, skills/). Any kit that skips the
+ * primitives cannot ship.
+ */
+function runQa(folderPath, manifest) {
+  // Historical (legacy) invariants — unchanged behaviour.
   assert(fs.existsSync(path.join(folderPath, "kit.json")), "Exported folder is missing kit.json");
-  assert(fs.existsSync(path.join(folderPath, bundle.bundle ? "bundles" : "bundles")), "Exported folder is missing bundles directory");
+  assert(fs.existsSync(path.join(folderPath, "bundles")), "Exported folder is missing bundles directory");
   assert(fs.existsSync(path.join(folderPath, manifest.entrypoint.path)), "Exported folder is missing entrypoint");
-  assert(fs.existsSync(path.join(folderPath, "runtime-assumptions.md")), "Exported folder is missing runtime assumptions");
-  assert(fs.existsSync(path.join(folderPath, "docs", "provider-adapter-layer.md")), "Exported folder is missing provider adapter notes");
-  assert(fs.existsSync(path.join(folderPath, "workers", "open-higgsfield-studio-operator", "CLAUDE.md")), "Exported folder is missing worker entrypoint");
+  // runtime-assumptions.md is required only when declared by the kit manifest.
+  const declaresRuntimeAssumptions = (manifest.frozenAssetPaths ?? []).includes("runtime-assumptions.md");
+  if (declaresRuntimeAssumptions) {
+    assert(
+      fs.existsSync(path.join(folderPath, "runtime-assumptions.md")),
+      "Exported folder is missing runtime-assumptions.md declared in kit.json.frozenAssetPaths",
+    );
+  }
+
+  // v1.2 primitive contract — one assertion per primitive.
+  // Primitive #1: SKILL.md
+  const skillMdPath = path.join(folderPath, "SKILL.md");
+  assert(fs.existsSync(skillMdPath), "Exported folder is missing SKILL.md (primitive #1 — discovery entry)");
+  const skillBody = fs.readFileSync(skillMdPath, "utf8");
+  assert(skillBody.startsWith("---\n"), "SKILL.md must begin with YAML frontmatter fence");
+  assert(/\n---\n/.test(skillBody), "SKILL.md frontmatter fence not terminated");
+  assert(/^name:\s*\S/m.test(skillBody), "SKILL.md frontmatter missing required field 'name'");
+  assert(/^description:\s*\S/m.test(skillBody), "SKILL.md frontmatter missing required field 'description'");
+
+  // Primitive #3: session-memory template
+  assert(
+    fs.existsSync(path.join(folderPath, "templates", "project.md")),
+    "Exported folder is missing templates/project.md (primitive #3 — session memory template)",
+  );
+
+  // Primitive #4: self-evaluation template
+  assert(
+    fs.existsSync(path.join(folderPath, "templates", "self-eval.md")),
+    "Exported folder is missing templates/self-eval.md (primitive #4 — self-evaluation)",
+  );
+
+  // Primitive #5: sub-skill convention
+  assert(
+    fs.existsSync(path.join(folderPath, "skills", "README.md")),
+    "Exported folder is missing skills/README.md (primitive #5 — sub-skill convention)",
+  );
+
+  // Primitive #6: helpers convention
+  assert(
+    fs.existsSync(path.join(folderPath, "helpers", "README.md")),
+    "Exported folder is missing helpers/README.md (primitive #6 — safe shell tool layer)",
+  );
+
+  // Manifest contract sync — kit.json.frozenAssetPaths and
+  // outputStandard.requiredPaths must declare the primitive paths so future
+  // changes cannot silently drop them.
+  const primitiveFrozen = [
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md",
+  ];
+  for (const p of primitiveFrozen) {
+    assert(
+      (manifest.frozenAssetPaths ?? []).includes(p),
+      `kit.json.frozenAssetPaths is missing primitive path '${p}'`,
+    );
+  }
 }
 
 try {
@@ -269,7 +333,7 @@ try {
   const { folderPath, zipPath } = exportKit(kitRoot, bundle, outDir);
 
   if (qa) {
-    runQa(folderPath, manifest, bundle);
+    runQa(folderPath, manifest);
   }
 
   console.log(`Kit: ${kitId}`);
@@ -279,8 +343,11 @@ try {
   console.log("");
   console.log("Next steps:");
   console.log(`1. Open a separate agent session and set Working Directory to: ${folderPath}`);
-  console.log("2. In the Open Higgsfield browser or desktop app, enter your Muapi key from https://muapi.ai when prompted.");
-  console.log("3. The exported kit already includes runtime and adapter docs for Muapi BYOK, browser/desktop flow, and local-fork inspection.");
+  console.log(`2. Read SKILL.md, then skills.md, then templates/project.md — the v1.2 primitives are already in place.`);
+  console.log(`3. Run 'growthub skills validate --root ${folderPath}' to confirm the discovery shape.`);
+  if (kitId === "growthub-open-higgsfield-studio-v1") {
+    console.log("4. In the Open Higgsfield browser/desktop app, enter your Muapi key from https://muapi.ai when prompted.");
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

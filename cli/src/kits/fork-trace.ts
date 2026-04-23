@@ -34,7 +34,9 @@ export type KitForkTraceEventType =
   | "script_executed"
   | "agent_checkpoint"
   | "authority_attested"
-  | "authority_revoked";
+  | "authority_revoked"
+  | "skills_scaffolded"
+  | "self_eval_recorded";
 
 export interface KitForkTraceEvent {
   timestamp: string;

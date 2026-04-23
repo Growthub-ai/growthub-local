@@ -25,6 +25,7 @@
   "frozenAssetPaths": [
     "QUICKSTART.md",
     ".env.example",
+    "SKILL.md",
     "skills.md",
     "output-standards.md",
     "runtime-assumptions.md",
@@ -39,6 +40,10 @@
     "templates/workspace-brief.md",
     "templates/agent-contract.md",
     "templates/deployment-plan.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md",
     "examples/workspace-sample.md",
     "docs/starter-kit-overview.md",
     "docs/fork-sync-integration.md",
@@ -51,7 +56,8 @@
     "studio/src/App.jsx",
     "studio/src/app.css",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "docs/governed-workspace-primitives.md"
   ],
   "setupPaths": {
     "quickstart": "QUICKSTART.md",
@@ -66,6 +72,7 @@
       "kit.json",
       ".env.example",
       "bundles/growthub-custom-workspace-starter-v1.json",
+      "SKILL.md",
       "skills.md",
       "workers/custom-workspace-operator/CLAUDE.md",
       "brands/_template/brand-kit.md",
@@ -76,8 +83,15 @@
       "output/README.md",
       "studio",
       "templates",
+      "templates/project.md",
+      "templates/self-eval.md",
+      "helpers",
+      "helpers/README.md",
+      "skills",
+      "skills/README.md",
       "docs",
-      "growthub-meta"
+      "growthub-meta",
+      "docs/governed-workspace-primitives.md"
     ]
   },
   "bundles": [

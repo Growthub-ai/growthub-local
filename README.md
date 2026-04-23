@@ -116,7 +116,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.7.3` and the guided installer `@growthub/create-growthub-local@0.4.2`, with the installer pin aligned to the CLI version.
+Growthub Local currently ships `@growthub/cli@0.8.0` and the guided installer `@growthub/create-growthub-local@0.4.9`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.2.0-alpha.1` (adds the v1.2 Skills primitive surface additively — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
 
 ---
 
@@ -467,9 +467,11 @@ This keeps the mental model intact:
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
+- [**Governed Workspace Primitives (user-facing)**](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — how the six architectural primitives (SKILL.md, AGENTS.md pointer, session memory, self-evaluation, sub-skills, helpers) coordinate agents inside every exported workspace
 
 ### Architecture and protocol
 
+- [Skills + MCP Discovery (v1 reference)](./docs/SKILLS_MCP_DISCOVERY.md)
 - [Kernel Packet Registry](./docs/kernel-packets/README.md)
 - [Fork Sync Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_FORK_SYNC_AGENT.md)
 - [Source Import Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_SOURCE_IMPORT_AGENT.md)

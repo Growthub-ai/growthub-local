@@ -46,12 +46,19 @@
     "docs/open-higgsfield-fork-integration.md",
     "docs/provider-adapter-layer.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-open-higgsfield-studio-v1",
     "zipFileName": "growthub-agent-worker-kit-open-higgsfield-studio-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

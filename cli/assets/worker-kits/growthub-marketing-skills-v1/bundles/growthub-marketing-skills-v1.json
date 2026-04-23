@@ -7,7 +7,9 @@
     "workerId": "marketing-operator"
   },
   "briefType": "marketing-operator",
-  "publicExampleBrandPaths": ["brands/growthub/product-marketing-context.md"],
+  "publicExampleBrandPaths": [
+    "brands/growthub/product-marketing-context.md"
+  ],
   "requiredFrozenAssets": [
     "QUICKSTART.md",
     ".env.example",
@@ -32,12 +34,19 @@
     "setup/verify-env.mjs",
     "output/README.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-marketing-skills-v1",
     "zipFileName": "growthub-agent-worker-kit-marketing-skills-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

@@ -1,6 +1,29 @@
 ---
 name: growthub-kit-fork-authority
 description: Register, inspect, heal, and attach hosted-authority attestations to forked worker kits via `growthub kit fork` and `growthub kit fork authority`. Use when the user asks to register a fork, check drift, heal a fork, or manage ed25519-signed authority envelopes and trusted issuers.
+triggers:
+  - kit fork
+  - fork authority
+  - authority attested
+  - fork register
+  - fork heal
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Fork state under <forkPath>/.growthub-fork/ remains the source of truth.
+    - Authority envelope ed25519-signed and verifiable offline.
+    - Every material action appends a typed event to trace.jsonl AND a dated entry to project.md.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools:
+  - growthub.kit.fork.register
+  - growthub.kit.fork.status
+  - growthub.kit.fork.heal
+  - growthub.kit.fork.authority.attest
 ---
 
 # Growthub Kit Fork + Fork Authority Protocol

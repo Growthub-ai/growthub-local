@@ -44,12 +44,19 @@
     "docs/cms-node-bridge.md",
     "docs/pipeline-reference.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-open-montage-studio-v1",
     "zipFileName": "growthub-agent-worker-kit-open-montage-studio-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

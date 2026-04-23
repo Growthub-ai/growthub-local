@@ -14,10 +14,14 @@
     "workerId": "geo-seo-operator",
     "path": "workers/geo-seo-operator/CLAUDE.md"
   },
-  "workerIds": ["geo-seo-operator"],
+  "workerIds": [
+    "geo-seo-operator"
+  ],
   "agentContractPath": "workers/geo-seo-operator/CLAUDE.md",
   "brandTemplatePath": "brands/_template/brand-kit.md",
-  "publicExampleBrandPaths": ["brands/growthub/brand-kit.md"],
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
   "frozenAssetPaths": [
     "QUICKSTART.md",
     ".env.example",
@@ -53,7 +57,12 @@
     "docs/scoring-methodology.md",
     "docs/pdf-report-layer.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "setupPaths": {
     "quickstart": "QUICKSTART.md",
@@ -80,7 +89,14 @@
       "output/README.md",
       "templates",
       "docs",
-      "growthub-meta"
+      "growthub-meta",
+      "SKILL.md",
+      "templates/project.md",
+      "templates/self-eval.md",
+      "helpers",
+      "helpers/README.md",
+      "skills",
+      "skills/README.md"
     ]
   },
   "bundles": [
@@ -91,7 +107,9 @@
     }
   ],
   "executionMode": "export",
-  "activationModes": ["export"],
+  "activationModes": [
+    "export"
+  ],
   "compatibility": {
     "cliMinVersion": "0.3.50"
   },
