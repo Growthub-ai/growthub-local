@@ -61,6 +61,29 @@ If multiple skills could apply, prefer the one that is the narrowest match for t
 
 Every worker kit that has a local fork / tool clone uses a single canonical env var: `${<KIT>_HOME:-$HOME/<default>}`. This is the pattern every agent should emit in any guidance it gives the user. Legacy env-var names (e.g. `<KIT>_FORK_PATH`) are still accepted by the setup scripts but are documented only as aliases. The full kit → env var → default table is maintained in `.claude/skills/growthub-worker-kits/SKILL.md` and must not drift between kits. Kit exports (`scripts/export-worker-kit.mjs`) use the same shape: `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}`.
 
+## v1.2 primitive frontmatter fields (optional, additive)
+
+Every skill here and every worker-kit `SKILL.md` now parses under a shared capability-agnostic contract: `@growthub/api-contract/skills::SkillManifest`. Beyond `name` and `description` (required), these optional fields are honoured by `growthub skills list` and `growthub skills validate`:
+
+- `triggers[]` — plain-language phrases the user would say
+- `progressiveDisclosure` — boolean (default true)
+- `sessionMemory.path` — where the fork writes its cross-session journal (default `.growthub-fork/project.md`)
+- `selfEval.{criteria[], maxRetries, traceTo}` — bounded generate → apply → evaluate → record loop; `maxRetries` defaults to 3
+- `helpers[].{path, description}` — safe-shell tool layer, kit-relative paths
+- `subSkills[].{name, path}` — nested `skills/<slug>/SKILL.md` lanes
+- `mcpTools[]` — declarative MCP tool IDs for auth-heavy actions (vocabulary only at v1)
+
+These fields are capability-agnostic — they apply equally to code, content, CRM, social, audit, and video work. Kit-specific specialisation (including EDL-per-cut for video kits) lives inside the kit's own `skills.md` operator runbook.
+
+## Worker-kit SKILL.md vs. operator skills.md
+
+Inside a worker kit (`cli/assets/worker-kits/<kit>/`) two files share the word "skill":
+
+- `SKILL.md` (capital) — the **routing menu / discovery entry**. YAML frontmatter for Claude / Cursor / Codex catalogs, progressive-disclosure body. Part of the v1.2 primitive contract.
+- `skills.md` (lowercase) — the **operator runbook** for humans and agents actually operating inside the kit. Unchanged from v1.
+
+They are **different primitives**, not aliases. Never symlink one to the other.
+
 ## Authoring rules (if you add a new skill here)
 
 1. **One file per skill.** Path: `.claude/skills/<slug>/SKILL.md`. Slug is kebab-case; prefix with `growthub-` for repo-specific skills.

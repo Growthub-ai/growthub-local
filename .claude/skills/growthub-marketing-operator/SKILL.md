@@ -1,6 +1,26 @@
 ---
 name: growthub-marketing-operator
 description: Dispatch marketing intents (CRO, SEO, content, email, launch, pricing, competitor, ASO, etc.) to the correct `growthub-marketing-skills-v1` kit skill, framework, and template. Use when the user asks for marketing help grounded in the repo's operator kit (page-cro, seo-audit, content-strategy, email-sequence, launch-strategy, competitor analysis, etc.).
+triggers:
+  - marketing operator
+  - page cro
+  - seo audit
+  - content strategy
+  - launch strategy
+  - competitor analysis
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Intent dispatched to the correct kit skill + framework + template.
+    - Deliverable shape matches the chosen output-standards.md.
+    - Brand constraints (tone, approved phrases, do-not list) honoured.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools: []
 ---
 
 # Growthub Marketing Operator — Skill Dispatch

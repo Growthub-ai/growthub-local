@@ -9,13 +9,20 @@
   "briefType": "custom-workspace-starter",
   "capabilityType": "worker",
   "executionMode": "export",
-  "activationModes": ["export"],
+  "activationModes": [
+    "export"
+  ],
+  "export": {
+    "folderName": "growthub-custom-workspace-starter-v1",
+    "zipFileName": "growthub-custom-workspace-starter-v1.zip"
+  },
   "publicExampleBrandPaths": [
     "brands/growthub/brand-kit.md"
   ],
   "requiredFrozenAssets": [
     "QUICKSTART.md",
     ".env.example",
+    "SKILL.md",
     "skills.md",
     "output-standards.md",
     "runtime-assumptions.md",
@@ -30,6 +37,10 @@
     "templates/workspace-brief.md",
     "templates/agent-contract.md",
     "templates/deployment-plan.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md",
     "examples/workspace-sample.md",
     "docs/starter-kit-overview.md",
     "docs/fork-sync-integration.md",
@@ -42,6 +53,7 @@
     "studio/src/App.jsx",
     "studio/src/app.css",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "docs/governed-workspace-primitives.md"
   ]
 }

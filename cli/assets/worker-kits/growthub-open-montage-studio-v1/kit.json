@@ -56,7 +56,12 @@
     "docs/cms-node-bridge.md",
     "docs/pipeline-reference.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "setupPaths": {
     "quickstart": "QUICKSTART.md",
@@ -83,7 +88,14 @@
       "output/README.md",
       "templates",
       "docs",
-      "growthub-meta"
+      "growthub-meta",
+      "SKILL.md",
+      "templates/project.md",
+      "templates/self-eval.md",
+      "helpers",
+      "helpers/README.md",
+      "skills",
+      "skills/README.md"
     ]
   },
   "bundles": [

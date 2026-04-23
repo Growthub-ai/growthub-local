@@ -1,6 +1,27 @@
 ---
 name: growthub-pipeline-execute
 description: Headlessly assemble, validate, and execute a Growthub pipeline via `growthub pipeline {assemble,validate,execute}` against the hosted runtime, typed by CMS SDK v1 `ExecuteWorkflowInput` / `DynamicRegistryPipeline`. Use when the user wants a scripted (non-interactive) workflow execution with JSON input, streaming NDJSON events, or an artifact URL returned from a one-liner.
+triggers:
+  - pipeline execute
+  - pipeline assemble
+  - pipeline validate
+  - headless workflow
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Pipeline assembled from capability templates — no hand-built hosted JSON.
+    - ExecuteWorkflowInput typed by @growthub/api-contract/execution.
+    - NDJSON events parsed via isExecutionEvent from @growthub/api-contract/events.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools:
+  - growthub.pipeline.assemble
+  - growthub.pipeline.validate
+  - growthub.pipeline.execute
 ---
 
 # Growthub Pipeline Execute — Headless Scripting Path

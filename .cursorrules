@@ -1,35 +1,13 @@
-# growthub-local — Agent Workflow
+# .cursorrules — pointer to AGENTS.md
 
-## Before any work
-- Work in a worktree or feature branch, never directly on main.
-- Branch must follow: `fix/`, `feat/`, `chore/`, `refactor/`, `docs/`, `ci/`, `test/`, `perf/`, `adapter/`, `sync/`
-- Read source files before editing.
+This repository's agent-contract single source of truth is **AGENTS.md**.
 
-## Canonical runtime
-Use **`scripts/runtime-control.sh`** from repo root: `up-main`, `up-branch <name>`, `up-pr <n>`, `stop`, `status`, `url`. Set `GH_SERVER_PORT` to match the API if it is not the script default; set `GH_LOCAL_ROOT` / `GH_CONFIG` when needed.
+Cursor, Claude Code, Codex, Hermes, and every other agent harness read the same contract from that one file. `.cursorrules` and `CLAUDE.md` exist as plain-text pointers (not symlinks) so cross-OS clones stay deterministic.
 
-## Anti-patterns
-- Do not improvise raw `pnpm --dir server` + `pnpm --dir ui` as the default path — use **`scripts/runtime-control.sh`**.
-- Do not run **`worktree-bootstrap.mjs`** or manually sync into **growthub-core** unless a maintainer explicitly assigned that automation.
+Do not add Cursor rules here. Edit `AGENTS.md` instead.
 
-## Before pushing
-Run `bash scripts/pr-ready.sh` — validates all pre-push contracts in one shot.
-
-## Command guardrails
-Run `bash scripts/guard.sh check-command "<command>"` before destructive git operations.
-
-## Isolation
-Use `growthub worktree:make` when you need a separate DB + port + instance.
-
-## Version / grounding
-Never cite semver from memory — see **`docs/ARTIFACT_VERSIONS.md`** and `cli/package.json` on your branch.
-
-## Version bumps (only when source changes ship to npm)
-- `cli/package.json` version +1
-- `packages/create-growthub-local/package.json` version +1
-- dep pin in create-growthub-local must match cli version exactly
-
-## CI gates
-- smoke, validate, verify — all 3 must pass
-- `node scripts/release-check.mjs` must pass locally before merge
-- After merge: run release.yml, confirm npm versions updated
+See also:
+- `AGENTS.md` — authoritative agent contract
+- `CLAUDE.md` — Claude pointer (same target)
+- `.claude/skills/README.md` — Claude Code skill catalog authoring rules
+- `docs/SKILLS_MCP_DISCOVERY.md` — skills + MCP primitive reference

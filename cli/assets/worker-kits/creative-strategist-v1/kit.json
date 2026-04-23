@@ -48,7 +48,15 @@
     "templates/scene-modules/hooks/tiktok-comment.md",
     "templates/scene-modules/hooks/villain-hook.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md",
+    "helpers/grep-hooks.sh",
+    "helpers/extract-muse-frames.sh",
+    "skills/frame-analysis/SKILL.md"
   ],
   "outputStandard": {
     "type": "working-directory",
@@ -61,7 +69,17 @@
       "brands/_template/brand-kit.md",
       "brands/solawave/brand-kit.md",
       "templates",
-      "growthub-meta"
+      "growthub-meta",
+      "SKILL.md",
+      "templates/project.md",
+      "templates/self-eval.md",
+      "helpers",
+      "helpers/README.md",
+      "skills",
+      "skills/README.md",
+      "helpers/grep-hooks.sh",
+      "helpers/extract-muse-frames.sh",
+      "skills/frame-analysis/SKILL.md"
     ]
   },
   "bundles": [

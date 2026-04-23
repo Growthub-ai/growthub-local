@@ -7,7 +7,9 @@
     "workerId": "geo-seo-operator"
   },
   "briefType": "geo-seo-audit",
-  "publicExampleBrandPaths": ["brands/growthub/brand-kit.md"],
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
   "requiredFrozenAssets": [
     "QUICKSTART.md",
     ".env.example",
@@ -43,12 +45,19 @@
     "docs/scoring-methodology.md",
     "docs/pdf-report-layer.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "optionalPresets": [],
   "export": {
     "folderName": "growthub-agent-worker-kit-geo-seo-v1",
     "zipFileName": "growthub-agent-worker-kit-geo-seo-v1.zip"
   },
-  "activationModes": ["export"]
+  "activationModes": [
+    "export"
+  ]
 }

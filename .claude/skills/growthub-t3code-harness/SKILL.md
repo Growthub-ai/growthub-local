@@ -1,6 +1,23 @@
 ---
 name: growthub-t3code-harness
 description: Run the T3 Code CLI agent harness — health, headless prompts, interactive session, and the generic Growthub profile primitive. Use when the user asks to run a T3 Code prompt, start a T3 session, check T3 health, or manage the T3 harness profile.
+triggers:
+  - t3 code
+  - t3code
+  - t3 harness
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Harness profile resolved via agent-harness/harness-profile primitive.
+    - Health check passes before interactive session.
+    - Prompt + session flows never leak harness credentials to stdout.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools: []
 ---
 
 # Growthub T3 Code Harness

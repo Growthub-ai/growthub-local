@@ -1,6 +1,25 @@
 ---
 name: growthub-video-generation
 description: Execute the one-true `video-generation` CMS node with correct reference-image bindings (typed data URLs via `refs[].dataUrl`, not URL-only `referenceImages`). Use when the user asks to generate video, use Veo / Vertex video generation, or execute a video workflow with a local reference image.
+triggers:
+  - video generation
+  - veo
+  - vertex video
+  - generate video
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Reference image bound as typed data URL via refs[].dataUrl (not URL-only).
+    - Node slug matches the one-true video-generation node.
+    - Execution routed through growthub-pipeline-execute, not raw fetch.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools:
+  - growthub.pipeline.execute
 ---
 
 # Growthub Video Generation — Adapter Rules

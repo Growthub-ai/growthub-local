@@ -1,6 +1,25 @@
 ---
 name: growthub-cms-sdk-v1
 description: Use the public CMS SDK v1 contract (`@growthub/api-contract`) to type workflow payloads, parse NDJSON execution events, read capability manifests, and validate node schemas. Use when the user asks about the api-contract package, CMS SDK, ExecutionEvent streams, CapabilityManifestEnvelope, NodeInputSchema, or types for hosted execution.
+triggers:
+  - api-contract
+  - cms sdk
+  - CapabilityManifestEnvelope
+  - ExecutionEvent
+  - NodeInputSchema
+progressiveDisclosure: true
+sessionMemory:
+  path: .growthub-fork/project.md
+selfEval:
+  criteria:
+    - Types imported from @growthub/api-contract subpath exports, not private CLI paths.
+    - isExecutionEvent used to narrow NDJSON streams.
+    - Surfaces honour API_CONTRACT_VERSION = 1 sentinel.
+  maxRetries: 3
+  traceTo: .growthub-fork/trace.jsonl
+helpers: []
+subSkills: []
+mcpTools: []
 ---
 
 # Growthub CMS SDK v1 — Public Contract Usage

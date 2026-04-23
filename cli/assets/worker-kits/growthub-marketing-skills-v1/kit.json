@@ -14,10 +14,14 @@
     "workerId": "marketing-operator",
     "path": "workers/marketing-operator/CLAUDE.md"
   },
-  "workerIds": ["marketing-operator"],
+  "workerIds": [
+    "marketing-operator"
+  ],
   "agentContractPath": "workers/marketing-operator/CLAUDE.md",
   "brandTemplatePath": "brands/_template/product-marketing-context.md",
-  "publicExampleBrandPaths": ["brands/growthub/product-marketing-context.md"],
+  "publicExampleBrandPaths": [
+    "brands/growthub/product-marketing-context.md"
+  ],
   "frozenAssetPaths": [
     "QUICKSTART.md",
     ".env.example",
@@ -42,7 +46,12 @@
     "setup/verify-env.mjs",
     "output/README.md",
     "growthub-meta/README.md",
-    "growthub-meta/kit-standard.md"
+    "growthub-meta/kit-standard.md",
+    "SKILL.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md"
   ],
   "setupPaths": {
     "quickstart": "QUICKSTART.md",
@@ -64,7 +73,14 @@
       "brands/growthub/product-marketing-context.md",
       "templates",
       "docs",
-      "growthub-meta"
+      "growthub-meta",
+      "SKILL.md",
+      "templates/project.md",
+      "templates/self-eval.md",
+      "helpers",
+      "helpers/README.md",
+      "skills",
+      "skills/README.md"
     ]
   },
   "bundles": [
@@ -75,7 +91,9 @@
     }
   ],
   "executionMode": "export",
-  "activationModes": ["export"],
+  "activationModes": [
+    "export"
+  ],
   "compatibility": {
     "cliMinVersion": "0.3.53"
   },

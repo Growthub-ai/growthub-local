@@ -1,66 +1,14 @@
-# growthub-local — Repo Agent Rules
+# CLAUDE.md — pointer to AGENTS.md
 
-This is the repo-specific instruction contract for agents working in `growthub-local`.
+This repository's agent-contract single source of truth is **[AGENTS.md](./AGENTS.md)**.
 
-## Canonical Mental Model
+Claude Code, Cursor, Codex, Hermes, and every other agent harness read the same contract from that one file. `CLAUDE.md` and `.cursorrules` exist as plain-text pointers (not symlinks) so cross-OS clones stay deterministic.
 
-Anchor all docs and guidance to the same user journey described in `README.md`:
+Do not add agent rules here. Edit `AGENTS.md` instead.
 
-`repo / skill / starter / kit -> governed local workspace -> safe customization -> safe sync -> optional hosted authority`
+See also:
 
-If instructions drift from this model, update or remove them.
-
-## Required Grounding Before Edits
-
-Read, in order:
-
-1. `README.md`
-2. `AGENTS.md`
-3. `cli/src/index.ts`
-4. `cli/src/commands/`
-5. `scripts/runtime-control.sh`
-
-Do not preserve conflicting historical instructions in active docs.
-
-## Runtime Contract
-
-Use the canonical runtime script:
-
-```bash
-scripts/runtime-control.sh up-main
-scripts/runtime-control.sh up-branch <branch>
-scripts/runtime-control.sh up-pr <pr-number>
-scripts/runtime-control.sh stop
-scripts/runtime-control.sh status
-scripts/runtime-control.sh url
-```
-
-Use `GH_SERVER_PORT` override when needed.
-
-## Discovery Contract
-
-Primary command surfaces:
-
-- `growthub`
-- `growthub discover`
-
-Preview parity command:
-
-```bash
-bash scripts/demo-cli.sh cli discover
-```
-
-Preview docs must match shipped CLI behavior, not speculative or stale menu trees.
-
-## Non-Negotiables
-
-- Work in a feature branch or worktree, not directly on `main`.
-- Replace stale instructions directly; avoid additive "correction layers."
-- Do not run `node scripts/worktree-bootstrap.mjs` unless explicitly assigned.
-- Before push, run `bash scripts/pr-ready.sh`.
-
-Before destructive git operations:
-
-```bash
-bash scripts/guard.sh check-command "<command>"
-```
+- [`AGENTS.md`](./AGENTS.md) — authoritative agent contract
+- [`.cursorrules`](./.cursorrules) — Cursor pointer (same target)
+- [`.claude/skills/README.md`](./.claude/skills/README.md) — Claude Code skill catalog authoring rules
+- [`docs/SKILLS_MCP_DISCOVERY.md`](./docs/SKILLS_MCP_DISCOVERY.md) — skills + MCP primitive reference
