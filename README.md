@@ -24,7 +24,7 @@ Growthub Local is a **local control plane for portable agent environments**.
 If you only do one thing, do this:
 
 ```bash
-npm create growthub-local@latest
+npx create-growthub-local@latest
 ```
 
 Then choose one of these six paths:
@@ -35,6 +35,8 @@ Then choose one of these six paths:
 4. [**Download a worker kit**](#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](#6-unlock-hosted-workflows-and-enterprise-customization-optional)
+
+[![Watch the demo](https://img.youtube.com/vi/3wUyHsUePpY/maxresdefault.jpg)](https://youtu.be/3wUyHsUePpY)
 
 ---
 
