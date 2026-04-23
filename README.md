@@ -21,13 +21,7 @@ Growthub Local is a **local control plane for portable agent environments**.
 
 ## Start here
 
-If you only do one thing, do this:
-
-```bash
-npm create @growthub/growthub-local@latest
-```
-
-Then choose one of these six paths:
+Six paths to get started:
 
 1. [**Import a GitHub repo into a governed workspace**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
 2. [**Import a skills.sh skill into a governed workspace**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
