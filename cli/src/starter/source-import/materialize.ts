@@ -44,6 +44,7 @@ import { fetchSkillPayload } from "./skills-source.js";
 import { detectSourceShape } from "./detect.js";
 import { inspectSourcePayload } from "./security.js";
 import { writeImportSummary } from "./summarize.js";
+import { scaffoldSessionMemory } from "../scaffold-session-memory.js";
 import type {
   GithubRepoAccessProbe,
   SkillsSkillAccessProbe,
@@ -334,6 +335,30 @@ export async function materializeImportPlan(
       type: "agent_checkpoint",
       summary: `source-import/payload gitSha=${fetchResult.gitSha}`,
       detail: { gitSha: fetchResult.gitSha },
+    });
+  }
+
+  // 9a. Seed session memory (.growthub-fork/project.md) from the kit's
+  //     templates/project.md — primitive #3. Tags the seed with the source
+  //     kind + ref so agents returning to the fork know where the payload
+  //     originated. No-op on older kits that do not ship the template.
+  const sessionSeed = scaffoldSessionMemory({
+    forkPath,
+    kitId: kitInfo.id,
+    forkId: reg.forkId,
+    source: sourceKind,
+    sourceRef:
+      plan.source.kind === "github-repo"
+        ? `${plan.source.repo.owner}/${plan.source.repo.repo}${fetchResult.gitSha ? `@${fetchResult.gitSha.slice(0, 7)}` : ""}`
+        : `${plan.source.skillId}@${plan.source.version}`,
+  });
+  if (sessionSeed.written) {
+    appendKitForkTraceEvent(forkPath, {
+      forkId: reg.forkId,
+      kitId: reg.kitId,
+      type: "skills_scaffolded",
+      summary: "Seeded .growthub-fork/project.md from templates/project.md",
+      detail: { projectMd: sessionSeed.projectMdPath },
     });
   }
 
