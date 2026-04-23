@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-video-use-studio-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-video-use-studio-v1",
+    "workerId": "video-use-studio-operator"
+  },
+  "briefType": "video-use-conversational-edit",
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/video-use-studio-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/clone-fork.sh",
+    "setup/install-skill.sh",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/video-brief.md",
+    "templates/edit-strategy.md",
+    "templates/edit-decision-list.md",
+    "templates/render-plan.md",
+    "templates/qa-checklist.md",
+    "examples/video-brief-sample.md",
+    "docs/video-use-fork-integration.md",
+    "docs/provider-adapter-layer.md",
+    "docs/video-use-discovery-path.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "optionalPresets": [],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-video-use-studio-v1",
+    "zipFileName": "growthub-agent-worker-kit-video-use-studio-v1.zip"
+  },
+  "activationModes": [
+    "export"
+  ]
+}
