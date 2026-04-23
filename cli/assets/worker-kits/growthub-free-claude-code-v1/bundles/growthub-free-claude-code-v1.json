@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-free-claude-code-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-free-claude-code-v1",
+    "workerId": "free-claude-code-operator"
+  },
+  "briefType": "free-claude-code-proxy-project",
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/free-claude-code-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/clone-fork.sh",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/provider-selection.md",
+    "templates/model-matrix.md",
+    "templates/routing-config.md",
+    "templates/proxy-runbook.md",
+    "templates/claude-code-handoff.md",
+    "examples/provider-selection-sample.md",
+    "examples/model-matrix-sample.md",
+    "examples/claude-code-handoff-sample.md",
+    "docs/free-claude-code-fork-integration.md",
+    "docs/proxy-architecture.md",
+    "docs/provider-routing.md",
+    "docs/security-and-isolation.md",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ],
+  "optionalPresets": [],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-free-claude-code-v1",
+    "zipFileName": "growthub-agent-worker-kit-free-claude-code-v1.zip"
+  },
+  "activationModes": ["export"]
+}
