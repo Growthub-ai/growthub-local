@@ -119,4 +119,13 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     activationModes: ["export"],
     family: "studio",
   },
+  {
+    id: "growthub-video-use-studio-v1",
+    packageDirName: "growthub-video-use-studio-v1",
+    defaultBundleId: "growthub-video-use-studio-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
 ];

@@ -1,11 +1,11 @@
 ---
 name: growthub-worker-kits
-description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, zernio, email-marketing, marketing-skills, custom-workspace).
+description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, video-use, zernio, email-marketing, marketing-skills, custom-workspace).
 ---
 
 # Growthub Worker Kits — Uniform Operating Pattern
 
-This skill is the umbrella guidance for working inside any of the 12 worker kits shipped under `cli/assets/worker-kits/`. Use it to resolve workspace paths, pick the right per-kit operator skill, and run QUICKSTART steps without guessing.
+This skill is the umbrella guidance for working inside any of the 13 worker kits shipped under `cli/assets/worker-kits/`. Use it to resolve workspace paths, pick the right per-kit operator skill, and run QUICKSTART steps without guessing.
 
 Every kit is agent-agnostic — Claude is first-party (this is what Claude Code loads), but Cursor / Codex / Gemini / any harness can operate the same kit identically.
 
@@ -27,6 +27,7 @@ Never hardcode absolute paths in new work. Always resolve through the kit's env 
 | `growthub-open-montage-studio-v1` | `OPEN_MONTAGE_HOME` | `OPENMONTAGE_PATH` | `$HOME/OpenMontage` | OpenMontage upstream |
 | `growthub-ai-website-cloner-v1` | `AI_WEBSITE_CLONER_HOME` | `AI_CLONER_FORK_PATH` | `$HOME/ai-website-cloner-template` | [JCodesMore/ai-website-cloner-template](https://github.com/JCodesMore/ai-website-cloner-template) |
 | `growthub-hyperframes-studio-v1` | `HYPERFRAMES_HOME` | `HYPERFRAMES_LOCAL_PATH` | `$HOME/hyperframes` | Custom workspace |
+| `growthub-video-use-studio-v1` | `VIDEO_USE_HOME` | `VIDEO_USE_FORK_PATH` | `$HOME/video-use` | [browser-use/video-use](https://github.com/browser-use/video-use) |
 | `growthub-zernio-social-v1` | *(no workspace — hosted API)* | — | *(none — uses `ZERNIO_API_KEY`)* | [zernio.com](https://zernio.com) (hosted) |
 | `growthub-email-marketing-v1` | *(no workspace — pure skill library)* | — | *(none)* | Kit-local |
 | `growthub-marketing-skills-v1` | *(no workspace — pure skill library)* | — | *(none)* | Kit-local, derived from coreyhaines31/marketingskills |
@@ -73,6 +74,7 @@ When the user's task maps to one of these kits, use the umbrella resolution abov
 | `growthub-open-montage-studio-v1` | `workers/open-montage-studio-operator/CLAUDE.md` | `skills.md` |
 | `growthub-ai-website-cloner-v1` | `workers/ai-website-cloner-operator/CLAUDE.md` | `skills.md` |
 | `growthub-hyperframes-studio-v1` | `workers/hyperframes-studio-operator/CLAUDE.md` | `skills.md` |
+| `growthub-video-use-studio-v1` | `workers/video-use-studio-operator/CLAUDE.md` | `skills.md` |
 | `growthub-custom-workspace-starter-v1` | `workers/custom-workspace-operator/CLAUDE.md` | `skills.md` |
 
 Paths above are relative to the kit directory: `cli/assets/worker-kits/<kit-id>/…`.

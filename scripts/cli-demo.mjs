@@ -354,6 +354,11 @@ async function runInteractive() {
         hint: "Inspect Hyperframes worker kit discovery on this branch",
       },
       {
+        value: "video-use-custom-workspace",
+        label: "🎬 Video Use Custom Workspace Preview",
+        hint: "Inspect browser-use/video-use worker kit discovery on this branch",
+      },
+      {
         value: "fleet-ops",
         label: "🚢 Fleet Operations Preview",
         hint: "Invoke `growthub fleet view` against this branch CLI binary",
@@ -434,6 +439,10 @@ async function runInteractive() {
 
   if (choice === "hyperframes-custom-workspace") {
     runCli(["kit", "inspect", "hyperframes"]);
+  }
+
+  if (choice === "video-use-custom-workspace") {
+    runCli(["kit", "inspect", "video-use"]);
   }
 
   if (choice === "fleet-ops") {
