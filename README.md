@@ -21,16 +21,19 @@ Growthub Local is a **local control plane for portable agent environments**.
 
 ## Start here
 
-Six paths to get started:
-
 1. [**Import a GitHub repo into a governed workspace**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
 2. [**Import a skills.sh skill into a governed workspace**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
 3. [**Start from a custom workspace starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
 4. [**Download a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
+&nbsp;
 
-[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/6d389d991fe84284804d7155411357d5-with-play.gif)](https://www.loom.com/share/6d389d991fe84284804d7155411357d5)
+**▶️ [Watch on YouTube](https://youtu.be/3wUyHsUePpY)**
+
+<a href="https://youtu.be/3wUyHsUePpY"><img src="https://img.youtube.com/vi/3wUyHsUePpY/maxresdefault.jpg" alt="Watch the video" width="600"></a>
+
+&nbsp;
 
 ---
 
