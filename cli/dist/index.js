@@ -34194,16 +34194,6 @@ async function runDiscoveryHub(opts) {
           hint: "persistent memory, search, multi-provider config, Growthub sync"
         },
         {
-          value: "skills-catalog",
-          label: "\u{1F4C7} Skills Catalog",
-          hint: "enumerate SKILL.md across this tree + inspect .growthub-fork/project.md"
-        },
-        {
-          value: "hosted-auth",
-          label: "\u{1F510} Connect Growthub Account",
-          hint: "Attach this CLI to the hosted Growthub user through the canonical browser flow"
-        },
-        {
           value: "help",
           label: "\u2753 Help CLI",
           hint: "See the main commands and what each path does"
@@ -34440,6 +34430,11 @@ async function runDiscoveryHub(opts) {
               hint: "Fleet-level fork view \xB7 drift \xB7 policy matrix \xB7 approvals \xB7 agent-led plans"
             },
             {
+              value: "skills-catalog",
+              label: "\u{1F4C7} Skills Catalog",
+              hint: "enumerate SKILL.md across this tree + inspect .growthub-fork/project.md"
+            },
+            {
               value: "__back_to_hub",
               label: "\u2190 Back to main menu"
             }
@@ -34546,6 +34541,25 @@ async function runDiscoveryHub(opts) {
           await fleetView({});
           continue;
         }
+        if (surfaceChoice2 === "skills-catalog") {
+          const { readSkillCatalog: readSkillCatalog2 } = await Promise.resolve().then(() => (init_catalog2(), catalog_exports));
+          const catalog = readSkillCatalog2({ root: process.cwd() });
+          p34.note(
+            [
+              `Root: ${pc49.cyan(catalog.catalog.root ?? process.cwd())}`,
+              `Skills discovered: ${pc49.bold(String(catalog.entries.length))}`,
+              catalog.warnings.length > 0 ? `Warnings: ${pc49.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
+              "",
+              "Invoke directly:",
+              "  growthub skills list --json",
+              "  growthub skills validate",
+              "  growthub skills session show",
+              "  growthub skills session init --kit <kit-id>"
+            ].join("\n"),
+            "Skills Catalog"
+          );
+          continue;
+        }
       }
       continue;
     }
@@ -34568,29 +34582,6 @@ async function runDiscoveryHub(opts) {
       const result2 = await runMemoryKnowledgeHub();
       if (result2 === "back") continue;
       return;
-    }
-    if (surfaceChoice === "skills-catalog") {
-      const { readSkillCatalog: readSkillCatalog2 } = await Promise.resolve().then(() => (init_catalog2(), catalog_exports));
-      const catalog = readSkillCatalog2({ root: process.cwd() });
-      p34.note(
-        [
-          `Root: ${pc49.cyan(catalog.catalog.root ?? process.cwd())}`,
-          `Skills discovered: ${pc49.bold(String(catalog.entries.length))}`,
-          catalog.warnings.length > 0 ? `Warnings: ${pc49.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
-          "",
-          "Invoke directly:",
-          "  growthub skills list --json",
-          "  growthub skills validate",
-          "  growthub skills session show",
-          "  growthub skills session init --kit <kit-id>"
-        ].join("\n"),
-        "Skills Catalog"
-      );
-      continue;
-    }
-    if (surfaceChoice === "hosted-auth") {
-      await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
-      continue;
     }
     const result = await runTemplatePicker({ allowBackToHub: true });
     if (result === "back") continue;
