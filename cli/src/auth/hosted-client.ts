@@ -20,6 +20,7 @@ const DEFAULT_WORKFLOW_SAVE_PATH = "/api/cli/profile?action=save-workflow";
 const DEFAULT_WORKFLOW_ARCHIVE_PATH = "/api/cli/profile?action=archive-workflow";
 const DEFAULT_WORKFLOW_DELETE_PATH = "/api/cli/profile?action=delete-workflow";
 const DEFAULT_CREDITS_PATH = "/api/cli/profile?view=credits";
+const DEFAULT_COMPOSITION_DEPLOY_PATH = "/api/cli/profile?action=deploy-composition";
 
 export interface PullProfileResponse {
   userId?: string;
@@ -97,6 +98,18 @@ export interface HostedWorkflowSaveResponse {
   versionId: string;
   version: number;
   created: boolean;
+}
+
+export interface HostedCompositionDeployPayload {
+  name?: string;
+  manifest: Record<string, unknown>;
+}
+
+export interface HostedCompositionDeployResponse {
+  ok: boolean;
+  compositionId?: string;
+  version?: number;
+  url?: string;
 }
 
 export interface HostedWorkflowLifecyclePayload {
@@ -215,6 +228,25 @@ export async function saveHostedWorkflow(
   const client = toApiClient(session);
   try {
     return await client.post<HostedWorkflowSaveResponse>(DEFAULT_WORKFLOW_SAVE_PATH, payload, { ignoreNotFound: true });
+  } catch (err) {
+    if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
+      throw new HostedEndpointUnavailableError(err.status, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function deployHostedComposition(
+  session: CliAuthSession,
+  payload: HostedCompositionDeployPayload,
+): Promise<HostedCompositionDeployResponse | null> {
+  const client = toApiClient(session);
+  try {
+    return await client.post<HostedCompositionDeployResponse>(
+      DEFAULT_COMPOSITION_DEPLOY_PATH,
+      payload,
+      { ignoreNotFound: true },
+    );
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);

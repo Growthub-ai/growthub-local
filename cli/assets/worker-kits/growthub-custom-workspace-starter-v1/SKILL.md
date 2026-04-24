@@ -35,6 +35,8 @@ Every Growthub governed workspace is materialised from this kit. The kit ships t
 5. **`helpers/`** — safe shell tool layer. Scripts an agent calls via one shell invocation instead of reconstructing raw commands. Populated per fork; the baseline ships conventions only.
 6. **`skills/`** — nested sub-skill convention. Each sub-directory is a full `SKILL.md`-addressable sub-skill that a parent agent can spawn in parallel for heavy or narrow tasks.
 
+The kit also ships `growthub.config.json`, the additive composition manifest used by `growthub compose`. It declares the same chat, canvas, workflow, and artifact widget primitives as the Agency Portal starter so agents can read or edit one portable config shape across both greenfield surfaces.
+
 ## When to use this skill
 
 - User says: "start a new custom workspace", "scaffold a fork", "import this repo into a workspace", "bring this skill into a fork".
@@ -107,6 +109,9 @@ If a concrete MCP server is available for this fork, list its tool IDs in `mcpTo
 - `growthub skills list [--json]` — enumerate every SKILL.md (this fork + nested)
 - `growthub skills validate` — check SKILL.md frontmatter + helper/sub-skill paths
 - `growthub skills session show` — print the current `.growthub-fork/project.md`
+- `growthub compose validate growthub.config.json` — validate the canvas/widget composition
+- `growthub compose preview growthub.config.json` — preview the chat/canvas/workflow/artifact grid
+- `growthub compose deploy growthub.config.json` — deploy through the hosted profile bridge when authenticated
 
 ## Related files
 

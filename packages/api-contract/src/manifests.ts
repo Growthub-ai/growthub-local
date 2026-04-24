@@ -22,6 +22,8 @@ import type {
 import type { NodeInputSchema, NodeOutputSchema } from "./schemas.js";
 import type { ProviderAssemblyHints } from "./providers.js";
 import type { ExecutionMode } from "./execution.js";
+import type { Composition } from "./compositions.js";
+import type { GridLayout, WidgetDefinition } from "./widgets.js";
 
 // ---------------------------------------------------------------------------
 // Provenance
@@ -111,6 +113,10 @@ export interface CapabilityManifest {
   executionHints?: CapabilityExecutionHints;
   /** Provenance for this manifest entry. */
   provenance: ManifestProvenance;
+  /** Optional canvas/composition affordance for surfaces that can render it. */
+  composition?: Composition;
+  /** Optional named binding defaults used by widgets, canvases, or pipelines. */
+  bindings?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,4 +171,11 @@ export interface CapabilityManifestEnvelope {
   provenance?: ManifestProvenance;
   /** Optional drift report vs. a prior cached envelope. */
   drift?: ManifestDriftReport;
+  /** Optional manifest-defined canvases rendered by local/hosted surfaces. */
+  canvas?: {
+    widgets: WidgetDefinition[];
+    layout: GridLayout;
+  };
+  /** Optional top-level compositions composed from capabilities and workflows. */
+  compositions?: Composition[];
 }

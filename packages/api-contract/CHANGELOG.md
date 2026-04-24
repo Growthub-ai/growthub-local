@@ -1,5 +1,23 @@
 # @growthub/api-contract
 
+## 1.3.0-alpha.0
+
+Additive minor. Introduces manifest-first composition and widget primitives
+for governed workspace canvases. Pure type-only helpers return plain objects.
+
+### Added
+
+- `widgets`: `WidgetDefinition`, `WidgetBinding`, `WidgetMetricHook`,
+  `WidgetMediaPreview`, `GridLayout`, `GridLayoutItem`, `defineWidget`.
+- `compositions`: `Composition`, `CompositionManifestEnvelope`,
+  `PipelineDefinition`, `ArtifactDefinition`, navigation/binding types,
+  `defineCapability`, `definePipeline`, `defineArtifact`,
+  `defineComposition`.
+- Optional `composition` and `bindings` fields on `CapabilityManifest`.
+- Optional `canvas` and `compositions` fields on
+  `CapabilityManifestEnvelope`.
+- `./widgets` and `./compositions` subpath exports.
+
 ## 1.2.0-alpha.1
 
 Additive minor. Introduces the public Skill manifest surface used by the

@@ -18,6 +18,7 @@ The installer offers profile selection before command/harness depth:
 npm create growthub-local@latest -- --profile gtm
 npm create growthub-local@latest -- --profile dx
 npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create growthub-local@latest -- --profile workspace --out ./my-workspace --with canvas,chat,workflow,artifacts
 ```
 
 ## First-run outcomes
@@ -46,6 +47,7 @@ After install, users typically choose one of these six outcomes:
 | `--destination-org <org>` | `workspace` | Create fork under org |
 | `--fork-name <name>` | `workspace` | Override GitHub fork name |
 | `--remote-sync-mode <mode>` | `workspace` | Initial policy mode: `off`, `branch`, `pr` |
+| `--with <features>` | `workspace` | Composition primitives to mark active in the scaffold: `canvas`, `chat`, `workflow`, `artifacts` |
 | `--json` | `workspace` | Emit machine-readable output |
 
 ## Post-install examples

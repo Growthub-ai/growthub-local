@@ -37,6 +37,7 @@ This kit is built from the custom workspace starter primitive. It preserves the 
 
 - `studio/` — Vite + React local operator shell for Growthub Local.
 - `apps/agency-portal/` — Vercel-ready serverless app payload.
+- `growthub.config.json` — manifest-defined composition scaffold using the same widget/pipeline/artifact primitives as the Discovery Starter Worker Kit.
 - `lib/adapters/*` inside the app — thin persistence/auth/payment/integration contracts.
 - `apps/agency-portal/app/api/settings/integrations/route.js` — normalized Settings lanes for data sources and workspace integrations.
 - `apps/agency-portal/app/settings/integrations/page.jsx` — dedicated integrations UI modeled after the GH app integration page primitive.
@@ -82,6 +83,9 @@ MCP connection integrations:
 - `growthub kit download growthub-agency-portal-starter-v1 --out <path>`
 - `growthub kit fork register <path>`
 - `growthub kit fork status <fork-id>`
+- `growthub compose validate growthub.config.json`
+- `growthub compose preview growthub.config.json`
+- `growthub compose deploy growthub.config.json`
 - `growthub skills validate --root <path>`
 - `bash setup/check-deps.sh`
 - `node setup/verify-env.mjs`

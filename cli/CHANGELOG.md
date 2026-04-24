@@ -1,5 +1,13 @@
 # @growthub/cli
 
+## 0.8.2
+
+### Minor Changes
+
+- Adds `growthub compose new|validate|preview|deploy` for manifest-defined canvas compositions.
+- Adds `growthub starter init --with canvas,chat,workflow,artifacts` and forwards it from the guided installer workspace profile.
+- Pins `@growthub/api-contract@1.3.0-alpha.0` for additive widget/composition SDK primitives.
+
 ## 0.8.0
 
 ### Minor Changes

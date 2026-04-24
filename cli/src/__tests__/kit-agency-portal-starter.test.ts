@@ -79,6 +79,7 @@ describe("growthub-agency-portal-starter-v1 — manifests and primitives", () =>
         "SKILL.md",
         "templates/project.md",
         "templates/self-eval.md",
+        "growthub.config.json",
         "templates/portal-brief.md",
         "templates/deployment-handoff.md",
         "examples/portal-brief-sample.md",
@@ -115,9 +116,25 @@ describe("growthub-agency-portal-starter-v1 — manifests and primitives", () =>
     expect(skill).toContain("sessionMemory:");
     expect(skill).toContain("selfEval:");
     expect(skill).toContain("traceTo: .growthub-fork/trace.jsonl");
+    expect(skill).toContain("growthub.config.json");
     expect(skill).toContain("AGENCY_PORTAL_DATA_ADAPTER");
     expect(skill).toContain("studio/");
     expect(skill).toContain("apps/agency-portal/");
+  });
+
+  it("ships the same composition primitive scaffold as the custom workspace starter", () => {
+    const agencyConfig = JSON.parse(readText("growthub.config.json"));
+    const starterConfig = JSON.parse(fs.readFileSync(
+      path.resolve(KIT_ROOT, "../growthub-custom-workspace-starter-v1/growthub.config.json"),
+      "utf8",
+    ));
+    expect(agencyConfig).toEqual(starterConfig);
+    expect(agencyConfig.compositions[0].widgets.map((widget: { type: string }) => widget.type)).toEqual([
+      "chat-session",
+      "workflow-runner",
+      "artifact-viewer",
+    ]);
+    expect(agencyConfig.compositions[0].canvas.layout.items).toHaveLength(3);
   });
 });
 

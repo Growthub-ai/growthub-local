@@ -158,7 +158,19 @@ growthub skills session show [--body]
 
 # (Re-)seed the session memory if it is missing
 growthub skills session init [--kit <id>]
+
+# Validate and preview the manifest-defined canvas/composition scaffold
+growthub compose validate growthub.config.json
+growthub compose preview growthub.config.json
 ```
+
+## Composition primitive overlay
+
+This kit also ships `growthub.config.json`, the additive composition scaffold shared
+by the Discovery Starter and Agency Portal starter. It declares the same
+chat-session, workflow-runner, and artifact-viewer widget grid in both kits so
+agents can edit one manifest shape and use `growthub compose deploy` when the
+hosted bridge supports composition upload.
 
 ## What this substrate is NOT
 

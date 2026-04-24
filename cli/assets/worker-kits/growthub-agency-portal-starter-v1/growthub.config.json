@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "source": "local-extension",
+  "composedAt": "2026-04-24T00:00:00.000Z",
+  "compositions": [
+    {
+      "slug": "growthub-workspace-canvas",
+      "name": "Growthub Workspace Canvas",
+      "description": "Manifest-defined canvas tying chat, workflow, and artifact primitives together.",
+      "widgets": [
+        {
+          "slug": "workspace-chat",
+          "type": "chat-session",
+          "title": "Workspace Chat",
+          "bindings": [
+            {
+              "key": "threadId",
+              "source": "trace"
+            }
+          ],
+          "navigation": {
+            "openChatThreadId": "current"
+          }
+        },
+        {
+          "slug": "workflow-runner",
+          "type": "workflow-runner",
+          "title": "Workflow Runner",
+          "pipelineId": "starter-pipeline",
+          "bindings": [
+            {
+              "key": "pipelineId",
+              "value": "starter-pipeline"
+            }
+          ],
+          "navigation": {
+            "openWorkflowId": "starter-pipeline"
+          }
+        },
+        {
+          "slug": "artifact-gallery",
+          "type": "artifact-viewer",
+          "title": "Artifact Gallery",
+          "artifactTypes": [
+            "image",
+            "video",
+            "report"
+          ],
+          "bindings": [
+            {
+              "key": "artifactScope",
+              "value": "workspace"
+            }
+          ]
+        }
+      ],
+      "canvas": {
+        "widgets": [
+          {
+            "slug": "workspace-chat",
+            "type": "chat-session",
+            "title": "Workspace Chat",
+            "bindings": [
+              {
+                "key": "threadId",
+                "source": "trace"
+              }
+            ],
+            "navigation": {
+              "openChatThreadId": "current"
+            }
+          },
+          {
+            "slug": "workflow-runner",
+            "type": "workflow-runner",
+            "title": "Workflow Runner",
+            "pipelineId": "starter-pipeline",
+            "bindings": [
+              {
+                "key": "pipelineId",
+                "value": "starter-pipeline"
+              }
+            ],
+            "navigation": {
+              "openWorkflowId": "starter-pipeline"
+            }
+          },
+          {
+            "slug": "artifact-gallery",
+            "type": "artifact-viewer",
+            "title": "Artifact Gallery",
+            "artifactTypes": [
+              "image",
+              "video",
+              "report"
+            ],
+            "bindings": [
+              {
+                "key": "artifactScope",
+                "value": "workspace"
+              }
+            ]
+          }
+        ],
+        "layout": {
+          "columns": 12,
+          "rowHeight": 32,
+          "gap": 16,
+          "items": [
+            {
+              "widgetSlug": "workspace-chat",
+              "x": 0,
+              "y": 0,
+              "w": 4,
+              "h": 8
+            },
+            {
+              "widgetSlug": "workflow-runner",
+              "x": 4,
+              "y": 0,
+              "w": 4,
+              "h": 8
+            },
+            {
+              "widgetSlug": "artifact-gallery",
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 8
+            }
+          ]
+        }
+      },
+      "pipelines": [
+        {
+          "slug": "starter-pipeline",
+          "name": "Starter Pipeline",
+          "workflow": {
+            "pipelineId": "starter-pipeline",
+            "nodes": [],
+            "executionMode": "hosted",
+            "metadata": {
+              "source": "growthub compose"
+            }
+          }
+        }
+      ],
+      "artifacts": [
+        {
+          "slug": "workspace-output",
+          "name": "Workspace Output",
+          "artifactType": "report"
+        }
+      ],
+      "bindings": [
+        {
+          "kind": "chat-to-canvas",
+          "from": "workspace-chat",
+          "to": "growthub-workspace-canvas"
+        },
+        {
+          "kind": "workflow-outputs-to-artifacts",
+          "from": "starter-pipeline",
+          "to": "artifact-gallery"
+        }
+      ],
+      "navigation": [
+        {
+          "id": "open-canvas",
+          "label": "Open canvas",
+          "target": "canvas",
+          "ref": "growthub-workspace-canvas"
+        },
+        {
+          "id": "run-workflow",
+          "label": "Run workflow",
+          "target": "workflow",
+          "ref": "starter-pipeline"
+        }
+      ],
+      "metadata": {
+        "slashCommands": [
+          "/canvas open",
+          "/workflow run",
+          "/artifact attach"
+        ],
+        "tracePath": ".growthub-fork/trace.jsonl"
+      }
+    }
+  ]
+}

@@ -25,6 +25,7 @@
   "frozenAssetPaths": [
     "QUICKSTART.md",
     ".env.example",
+    "growthub.config.json",
     "SKILL.md",
     "skills.md",
     "output-standards.md",
@@ -103,6 +104,7 @@
       "QUICKSTART.md",
       "kit.json",
       ".env.example",
+      "growthub.config.json",
       "bundles/growthub-agency-portal-starter-v1.json",
       "SKILL.md",
       "skills.md",

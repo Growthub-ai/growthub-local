@@ -18,7 +18,7 @@ function printUsage() {
       "Usage:",
       "  create-growthub-local [--profile <dx|gtm|workspace>] [--out <path>]",
       "                        [--data-dir <path>] [--config <path>]",
-      "                        [--run]",
+      "                        [--run] [--with <features>]",
       "",
       "Paperclip Local App profiles (dx | gtm):",
       "  create-growthub-local --profile gtm",
@@ -26,6 +26,7 @@ function printUsage() {
       "",
       "Custom Workspace Starter profile (workspace):",
       "  create-growthub-local --profile workspace --out ./my-workspace",
+      "  create-growthub-local --profile workspace --out ./my-workspace --with canvas,chat,workflow,artifacts",
       "  create-growthub-local --profile workspace --out ./my-workspace --name \"My Workspace\"",
       "  create-growthub-local --profile workspace --out ./my-workspace \\",
       "    --upstream Growthub-ai/growthub-custom-workspace-starter-v1 --remote-sync-mode off",
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     destinationOrg: null,
     forkName: null,
     remoteSyncMode: null,
+    with: null,
     json: false,
   };
 
@@ -109,6 +111,11 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (value === "--with" && argv[index + 1]) {
+      opts.with = String(argv[index + 1]).trim();
+      index += 1;
+      continue;
+    }
     if (value === "--json") {
       opts.json = true;
       continue;
@@ -146,6 +153,7 @@ function parseArgs(argv) {
     ["--destination-org", opts.destinationOrg],
     ["--fork-name", opts.forkName],
     ["--remote-sync-mode", opts.remoteSyncMode],
+    ["--with", opts.with],
   ];
   if (opts.profile !== "workspace") {
     for (const [flag, value] of workspaceOnlyFlags) {
@@ -200,6 +208,7 @@ function buildCliArgs(opts, effectiveDataDir, growthubCli) {
     if (opts.destinationOrg) args.push("--destination-org", opts.destinationOrg);
     if (opts.forkName) args.push("--fork-name", opts.forkName);
     if (opts.remoteSyncMode) args.push("--remote-sync-mode", opts.remoteSyncMode);
+    if (opts.with) args.push("--with", opts.with);
     if (opts.json) args.push("--json");
     return args;
   }

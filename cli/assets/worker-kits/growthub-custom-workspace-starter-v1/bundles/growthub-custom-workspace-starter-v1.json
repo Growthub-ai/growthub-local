@@ -23,6 +23,7 @@
     "QUICKSTART.md",
     ".env.example",
     "SKILL.md",
+    "growthub.config.json",
     "skills.md",
     "output-standards.md",
     "runtime-assumptions.md",

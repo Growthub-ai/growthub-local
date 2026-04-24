@@ -344,6 +344,7 @@ export function registerStarterCommands(program: Command): void {
     .option("--destination-org <org>", "Create the GitHub fork under an org")
     .option("--fork-name <name>", "Override the GitHub fork name")
     .option("--remote-sync-mode <mode>", "Initial policy.remoteSyncMode — off|branch|pr (default: off)")
+    .option("--with <features>", "Comma-separated composition scaffold features: canvas,chat,workflow,artifacts")
     .option("--json", "Emit machine-readable output")
     .action(async (opts) => {
       await runStarterInit({
@@ -354,6 +355,7 @@ export function registerStarterCommands(program: Command): void {
         destinationOrg: opts.destinationOrg,
         forkName: opts.forkName,
         remoteSyncMode: opts.remoteSyncMode,
+        with: typeof opts.with === "string" ? [opts.with] : undefined,
         json: opts.json,
       });
     });

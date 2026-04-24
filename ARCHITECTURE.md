@@ -55,6 +55,7 @@ Primary command surfaces:
 - `growthub template`
 - `growthub workflow`
 - `growthub pipeline assemble`
+- `growthub compose`
 - `growthub starter import-repo`
 - `growthub starter import-skill`
 - `growthub open-agents`
@@ -163,8 +164,26 @@ Workflow orchestration supports:
 - saved workflows
 - templates
 - dynamic pipelines
+- manifest-defined compositions
 
 Use workflow/pipeline lanes for typed orchestration over capability graphs. Use repo/skill/starter/kit lanes for fast environment creation.
+
+---
+
+## Composition Model
+
+`@growthub/api-contract` exposes additive widget and composition primitives:
+
+- `defineWidget`, `WidgetDefinition`, `GridLayout`
+- `definePipeline`
+- `defineArtifact`
+- `defineComposition`, `Composition`
+
+The Custom Workspace Starter and Agency Portal Starter both ship an identical
+`growthub.config.json` seed. `growthub compose validate|preview|deploy`
+operates on that manifest so chat, canvas, workflow, and artifacts can be
+assembled as a governed workspace without replacing fork state, auth, trace, or
+workflow execution.
 
 ---
 

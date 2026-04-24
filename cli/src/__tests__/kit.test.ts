@@ -140,6 +140,20 @@ describe("worker kit service", () => {
     });
   });
 
+  it("ships identical composition primitives in the starter and agency portal kits", () => {
+    const readKitConfig = (kitId: string) => {
+      const sourceRoot = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        `../../assets/worker-kits/${kitId}`,
+      );
+      return JSON.parse(fs.readFileSync(path.join(sourceRoot, "growthub.config.json"), "utf8"));
+    };
+
+    expect(readKitConfig("growthub-custom-workspace-starter-v1")).toEqual(
+      readKitConfig("growthub-agency-portal-starter-v1"),
+    );
+  });
+
   it.each(CUSTOM_WORKSPACE_KIT_IDS)(
     "inspects custom workspace %s with required env and quickstart paths",
     (kitId) => {
@@ -161,10 +175,22 @@ describe("worker kit service", () => {
       const folderFiles = listRelativeFiles(result.folderPath);
       expect(folderFiles).toContain(".env.example");
       expect(folderFiles).toContain("QUICKSTART.md");
+      if (
+        kitId === "growthub-agency-portal-starter-v1" ||
+        kitId === "growthub-custom-workspace-starter-v1"
+      ) {
+        expect(folderFiles).toContain("growthub.config.json");
+      }
 
       const zipEntries = readZipEntryNames(result.zipPath);
       expect(zipEntries.some((entry) => entry.endsWith("/.env.example"))).toBe(true);
       expect(zipEntries.some((entry) => entry.endsWith("/QUICKSTART.md"))).toBe(true);
+      if (
+        kitId === "growthub-agency-portal-starter-v1" ||
+        kitId === "growthub-custom-workspace-starter-v1"
+      ) {
+        expect(zipEntries.some((entry) => entry.endsWith("/growthub.config.json"))).toBe(true);
+      }
     },
   );
 

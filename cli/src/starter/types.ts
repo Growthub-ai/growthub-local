@@ -11,6 +11,8 @@
 export interface StarterInitOptions {
   /** Source kit id to scaffold from. Defaults to `growthub-custom-workspace-starter-v1`. */
   kitId?: string;
+  /** Optional composition primitives to enable in the scaffolded workspace. */
+  with?: string[] | string;
   /** Destination directory. Will be created if it does not exist. */
   out: string;
   /** Human label for the resulting fork (defaults to basename of `out`). */
@@ -38,6 +40,7 @@ export interface StarterInitResult {
   forkPath: string;
   baseVersion: string;
   policyMode: "off" | "branch" | "pr";
+  with: string[];
   remote?: {
     owner: string;
     repo: string;

@@ -76,6 +76,10 @@ Download complete, validated agent environments instead of starting from a blank
 
 Use saved workflows, templates, and dynamic pipelines through the CLI, backed by hosted execution where needed.
 
+### Compose chat, canvas, workflows, and artifacts
+
+Use `growthub compose new|validate|preview|deploy` with `growthub.config.json` to declare widget-grid canvases that bind chat sessions, workflow runners, and artifact viewers. The custom workspace starter and agency portal starter both ship the same baseline composition scaffold.
+
 ### Use local intelligence and harnesses
 
 Run local model flows and external harnesses like Open Agents and Qwen Code through the same CLI ecosystem.
@@ -105,9 +109,10 @@ The guided installer is **profile-first**:
 npm create @growthub/growthub-local@latest -- --profile gtm
 npm create @growthub/growthub-local@latest -- --profile dx
 npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace --with canvas,chat,workflow,artifacts
 ```
 
-Use profile selection to choose the initial environment shape before deeper workflow and harness configuration.
+Use profile selection to choose the initial environment shape before deeper workflow and harness configuration. The `workspace` profile can preselect manifest composition primitives with `--with canvas,chat,workflow,artifacts`; the exported kit already includes `growthub.config.json`, and the selection is recorded under `.growthub-fork/` for agents.
 
 ### CLI-only install
 
@@ -115,7 +120,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.8.0` and the guided installer `@growthub/create-growthub-local@0.4.9`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.2.0-alpha.1` (adds the v1.2 Skills primitive surface additively — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+Growthub Local currently ships `@growthub/cli@0.8.2` and the guided installer `@growthub/create-growthub-local@0.4.11`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.3.0-alpha.0` (adds the v1.3 composition/widget primitive surface additively — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
 
 ---
 

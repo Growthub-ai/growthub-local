@@ -42,12 +42,47 @@ import type { StarterInitOptions, StarterInitResult } from "./types.js";
 import { scaffoldSessionMemory } from "./scaffold-session-memory.js";
 
 export const DEFAULT_STARTER_KIT_ID = "growthub-custom-workspace-starter-v1";
+const SUPPORTED_COMPOSITION_PRIMITIVES = new Set(["canvas", "chat", "workflow", "artifacts"]);
+
+function normalizeCompositionPrimitives(values?: string | string[]): string[] {
+  const rawValues = Array.isArray(values) ? values : values ? [values] : [];
+  const requested = rawValues.length > 0
+    ? rawValues.flatMap((value) => value.split(","))
+    : [];
+  const normalized = requested
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0);
+  for (const primitive of normalized) {
+    if (!SUPPORTED_COMPOSITION_PRIMITIVES.has(primitive)) {
+      throw new Error(
+        `Unsupported --with primitive "${primitive}". Expected one of canvas, chat, workflow, artifacts.`,
+      );
+    }
+  }
+  return Array.from(new Set(normalized));
+}
+
+function writeCompositionSelection(forkPath: string, primitives: string[]): string | undefined {
+  if (primitives.length === 0) return undefined;
+  const markerPath = path.join(forkPath, ".growthub-fork", "composition-primitives.json");
+  fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+  fs.writeFileSync(
+    markerPath,
+    `${JSON.stringify({
+      version: 1,
+      selected: primitives,
+      configPath: "growthub.config.json",
+    }, null, 2)}\n`,
+  );
+  return markerPath;
+}
 
 export async function initStarterWorkspace(
   opts: StarterInitOptions,
 ): Promise<StarterInitResult> {
   const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
   const absOut = path.resolve(opts.out);
+  const compositionPrimitives = normalizeCompositionPrimitives(opts.with);
 
   if (fs.existsSync(absOut) && fs.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
@@ -101,6 +136,15 @@ export async function initStarterWorkspace(
     });
   }
 
+  const compositionMarker = writeCompositionSelection(absOut, compositionPrimitives);
+  if (compositionMarker) {
+    appendKitForkTraceEvent(absOut, {
+      forkId: reg.forkId, kitId: reg.kitId, type: "skills_scaffolded",
+      summary: `Selected composition primitives: ${compositionPrimitives.join(", ")}`,
+      detail: { markerPath: compositionMarker, configPath: path.join(absOut, "growthub.config.json") },
+    });
+  }
+
   let remote: KitForkRemoteBinding | undefined;
 
   // 5. Optional: one-click GitHub fork + wire as origin
@@ -146,6 +190,7 @@ export async function initStarterWorkspace(
     forkPath: absOut,
     baseVersion: info.version,
     policyMode: policy.remoteSyncMode,
+    with: compositionPrimitives,
     remote: remote
       ? {
           owner: remote.owner,

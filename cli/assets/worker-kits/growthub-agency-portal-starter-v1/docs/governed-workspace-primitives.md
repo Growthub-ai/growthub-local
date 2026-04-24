@@ -141,6 +141,7 @@ A kit that forgets any of these **cannot ship** — the export script refuses to
 3. **On retry.** Every attempt goes to both surfaces. At `attempt === maxRetries`, park with a `needs_confirmation` note and stop.
 4. **On heavy work.** Spawn a sub-skill from `skills/<slug>/` when context isolation helps. The sub-skill shares this fork's `project.md` — no separate journal.
 5. **On side effects.** Use a helper from `helpers/`. If you're about to write raw shell for the third time, promote it to a helper first.
+6. **On composition work.** Edit `growthub.config.json`, then run `growthub compose validate` and `growthub compose preview`. Deploy with `growthub compose deploy` only after `growthub auth login` has connected the hosted bridge.
 
 ---
 
@@ -158,6 +159,11 @@ growthub skills session show [--body]
 
 # (Re-)seed the session memory if it is missing
 growthub skills session init [--kit <id>]
+
+# Canvas/chat/workflow/artifact composition manifest
+growthub compose validate [growthub.config.json]
+growthub compose preview [growthub.config.json]
+growthub compose deploy [growthub.config.json]
 ```
 
 ## What this substrate is NOT

@@ -20,6 +20,8 @@
  *   - `@growthub/api-contract/events`
  *   - `@growthub/api-contract/manifests`
  *   - `@growthub/api-contract/schemas`
+ *   - `@growthub/api-contract/widgets`
+ *   - `@growthub/api-contract/compositions`
  */
 
 // Capabilities
@@ -133,6 +135,37 @@ export type {
   SkillCatalog,
 } from "./skills.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
+
+// Widgets (canvas/dashboard cells)
+export type {
+  WidgetType,
+  WidgetMetricSource,
+  WidgetMediaPreview,
+  WidgetBinding,
+  WidgetMetricHook,
+  WidgetDefinition,
+  GridLayoutItem,
+  GridLayout,
+} from "./widgets.js";
+export { defineWidget } from "./widgets.js";
+
+// Compositions (workspace/canvas assemblies)
+export type {
+  CompositionBindingKind,
+  CompositionBinding,
+  CompositionNavigationTarget,
+  CompositionNavigationAction,
+  PipelineDefinition,
+  ArtifactDefinition,
+  Composition,
+  CompositionManifestEnvelope,
+} from "./compositions.js";
+export {
+  defineCapability,
+  definePipeline,
+  defineArtifact,
+  defineComposition,
+} from "./compositions.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.

@@ -134,6 +134,8 @@ describe("create-growthub-local — --profile workspace", () => {
       "my-fork",
       "--remote-sync-mode",
       "pr",
+      "--with",
+      "canvas,chat,workflow,artifacts",
       "--json",
     ]);
 
@@ -152,6 +154,8 @@ describe("create-growthub-local — --profile workspace", () => {
     expect(argv[argv.indexOf("--fork-name") + 1]).toBe("my-fork");
     expect(argv).toContain("--remote-sync-mode");
     expect(argv[argv.indexOf("--remote-sync-mode") + 1]).toBe("pr");
+    expect(argv).toContain("--with");
+    expect(argv[argv.indexOf("--with") + 1]).toBe("canvas,chat,workflow,artifacts");
     expect(argv).toContain("--json");
   });
 
