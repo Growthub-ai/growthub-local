@@ -1,6 +1,6 @@
 ---
 name: growthub-worker-kits
-description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, video-use, zernio, email-marketing, marketing-skills, custom-workspace).
+description: Operate any Growthub worker kit safely using a uniform agent-agnostic workspace convention — resolve `${<KIT>_HOME}` env vars, run the kit's QUICKSTART, and invoke its operator skills. Use when the user asks to run, inspect, install, or work inside any worker kit (creative-strategist, geo-seo, postiz, twenty-crm, open-higgsfield, open-montage, ai-website-cloner, hyperframes, video-use, zernio, email-marketing, marketing-skills, custom-workspace, agency-portal).
 triggers:
   - worker kit
   - kit run
@@ -51,6 +51,7 @@ Never hardcode absolute paths in new work. Always resolve through the kit's env 
 | `growthub-email-marketing-v1` | *(no workspace — pure skill library)* | — | *(none)* | Kit-local |
 | `growthub-marketing-skills-v1` | *(no workspace — pure skill library)* | — | *(none)* | Kit-local, derived from coreyhaines31/marketingskills |
 | `growthub-custom-workspace-starter-v1` | `GROWTHUB_KIT_FORKS_HOME` | — | `$HOME/.growthub/kit-forks` (user-chosen) | Starter for user-defined workspaces |
+| `growthub-agency-portal-starter-v1` | `AGENCY_PORTAL_HOME` | — | `$HOME/agency-portal-workspace` | Governed agency portal starter |
 
 Kit exports (from `scripts/export-worker-kit.mjs`): `$GROWTHUB_KIT_EXPORTS_HOME` → fallback `$HOME/growthub-worker-kit-exports`.
 
@@ -95,6 +96,7 @@ When the user's task maps to one of these kits, use the umbrella resolution abov
 | `growthub-hyperframes-studio-v1` | `workers/hyperframes-studio-operator/CLAUDE.md` | `skills.md` |
 | `growthub-video-use-studio-v1` | `workers/video-use-studio-operator/CLAUDE.md` | `skills.md` |
 | `growthub-custom-workspace-starter-v1` | `workers/custom-workspace-operator/CLAUDE.md` | `skills.md` |
+| `growthub-agency-portal-starter-v1` | `workers/agency-portal-operator/CLAUDE.md` | `skills.md` |
 
 Paths above are relative to the kit directory: `cli/assets/worker-kits/<kit-id>/…`.
 

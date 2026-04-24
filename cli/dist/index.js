@@ -8520,6 +8520,15 @@ var init_catalog = __esm({
         family: "studio"
       },
       {
+        id: "growthub-agency-portal-starter-v1",
+        packageDirName: "growthub-agency-portal-starter-v1",
+        defaultBundleId: "growthub-agency-portal-starter-v1",
+        type: "worker",
+        executionMode: "export",
+        activationModes: ["export"],
+        family: "studio"
+      },
+      {
         id: "growthub-twenty-crm-v1",
         packageDirName: "growthub-twenty-crm-v1",
         defaultBundleId: "growthub-twenty-crm-v1",

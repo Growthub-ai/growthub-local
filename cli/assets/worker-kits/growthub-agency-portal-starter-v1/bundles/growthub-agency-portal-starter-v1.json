@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "bundle": {
+    "id": "growthub-agency-portal-starter-v1",
+    "version": "1.0.0",
+    "kitId": "growthub-agency-portal-starter-v1",
+    "workerId": "agency-portal-operator"
+  },
+  "briefType": "agency-portal-workspace",
+  "capabilityType": "worker",
+  "executionMode": "export",
+  "activationModes": [
+    "export"
+  ],
+  "export": {
+    "folderName": "growthub-agent-worker-kit-agency-portal-starter-v1",
+    "zipFileName": "growthub-agent-worker-kit-agency-portal-starter-v1.zip"
+  },
+  "publicExampleBrandPaths": [
+    "brands/growthub/brand-kit.md"
+  ],
+  "requiredFrozenAssets": [
+    "QUICKSTART.md",
+    ".env.example",
+    "SKILL.md",
+    "skills.md",
+    "output-standards.md",
+    "runtime-assumptions.md",
+    "validation-checklist.md",
+    "workers/agency-portal-operator/CLAUDE.md",
+    "brands/_template/brand-kit.md",
+    "brands/growthub/brand-kit.md",
+    "brands/NEW-CLIENT.md",
+    "setup/verify-env.mjs",
+    "setup/check-deps.sh",
+    "output/README.md",
+    "templates/workspace-brief.md",
+    "templates/portal-brief.md",
+    "templates/client-onboarding-plan.md",
+    "templates/agent-contract.md",
+    "templates/deployment-plan.md",
+    "templates/deployment-handoff.md",
+    "templates/supabase-setup-plan.md",
+    "templates/project.md",
+    "templates/self-eval.md",
+    "helpers/README.md",
+    "skills/README.md",
+    "examples/portal-brief-sample.md",
+    "docs/governed-workspace-primitives.md",
+    "docs/adapter-contracts.md",
+    "docs/vercel-serverless-deployment.md",
+    "studio/package.json",
+    "studio/package-lock.json",
+    "apps/agency-portal/package.json",
+    "apps/agency-portal/package-lock.json",
+    "apps/agency-portal/next-env.d.ts",
+    "apps/agency-portal/app/settings/integrations/page.tsx",
+    "apps/agency-portal/lib/adapters/env.ts",
+    "apps/agency-portal/lib/adapters/integrations/index.ts",
+    "apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.ts",
+    "apps/agency-portal/lib/domain/integrations.ts",
+    "growthub-meta/README.md",
+    "growthub-meta/kit-standard.md"
+  ]
+}
