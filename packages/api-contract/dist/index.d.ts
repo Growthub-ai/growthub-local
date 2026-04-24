@@ -20,6 +20,8 @@
  *   - `@growthub/api-contract/events`
  *   - `@growthub/api-contract/manifests`
  *   - `@growthub/api-contract/schemas`
+ *   - `@growthub/api-contract/widgets`
+ *   - `@growthub/api-contract/compositions`
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -30,6 +32,10 @@ export type { ExecutionEventType, NodeStartEvent, NodeCompleteEvent, NodeErrorEv
 export { isExecutionEvent } from "./events.js";
 export type { ManifestOriginType, ManifestProvenance, CapabilityExecutionHints, CapabilityManifest, ManifestDriftMarker, ManifestDriftReport, CapabilityManifestEnvelope, } from "./manifests.js";
 export type { NodeInputUiHint, NodeInputProviderNeutralIntent, NodeInputExecutionModeHints, TextField, LongTextField, NumberField, BooleanField, SelectOption, SelectField, ArrayField, JsonField, UrlField, FileField, UrlOrFileField, NodeInputField, NodeOutputFieldType, NodeOutputField, NodeInputSchema, NodeOutputSchema, NodeInputAttachment, } from "./schemas.js";
+export type { WidgetKind, GridLayout, WidgetBindings, WidgetDefinition, } from "./widgets.js";
+export { defineWidget } from "./widgets.js";
+export type { CanvasLayout, PipelineReference, ArtifactReference, Composition, } from "./compositions.js";
+export { defineComposition, definePipeline, defineArtifact, defineCapability, } from "./compositions.js";
 export type { SkillHelperRef, SkillSubSkillRef, SkillSelfEval, SkillSessionMemory, SkillSource, SkillManifest, SkillNode, SkillCatalog, } from "./skills.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
 export declare const API_CONTRACT_VERSION: 1;
