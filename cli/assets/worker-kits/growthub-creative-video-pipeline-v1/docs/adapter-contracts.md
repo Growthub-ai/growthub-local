@@ -1,38 +1,29 @@
 # Adapter Contracts
 
-## GenerativeArtifact
+## Execution — growthub-pipeline (primary)
 
-Both adapters must produce `GenerativeArtifact[]` objects. This is a kit-internal type — it is NOT exported from `@growthub/api-contract`:
+The official CLI + SDK is the execution layer. No custom wrapper.
 
-```ts
-interface GenerativeArtifact {
-  id: string;            // video.id | video.storage_path | uuid fallback
-  type: "video" | "image";
-  url: string | null;    // remote URL if available
-  localPath: string | null;
-  mimeType: string | null;  // "video/mp4" | "image/jpeg" etc.
-  metadata: { nodeId: string } & Record<string, unknown>;
-  stage: "generative";
-  createdAt: string;     // ISO 8601
-}
+```bash
+growthub pipeline execute '<DynamicRegistryPipeline JSON>'
 ```
 
----
-
-## growthub-pipeline Adapter
+**SDK types:** `@growthub/api-contract`
+- Input: `DynamicRegistryPipeline` — pipelineId, executionMode, nodes[].{nodeId, slug, bindings}
+- Events: `ExecutionEvent` — validated with `isExecutionEvent()`
+- Event types: `node_start`, `node_complete`, `node_error`, `progress`, `credit_warning`, `complete`, `error`
 
 **Required env:**
 - `GROWTHUB_BRIDGE_ACCESS_TOKEN`
 - `GROWTHUB_BRIDGE_BASE_URL`
-- Valid `growthub auth login` session in `~/.claude/config/session.json`
+- Valid session from `growthub auth login` (`~/.claude/config/session.json`)
 
-**CLI invocation:**
+**Auth pre-flight:**
 ```bash
-growthub pipeline execute '<DynamicRegistryPipeline JSON>'
+growthub auth whoami --json
 ```
-Single positional argument — JSON string or path to a JSON file. No `--workflow` or `--input` flags.
 
-**Payload shape (DynamicRegistryPipeline):**
+**Payload (DynamicRegistryPipeline):**
 ```json
 {
   "pipelineId": "<uuid>",
@@ -43,72 +34,40 @@ Single positional argument — JSON string or path to a JSON file. No `--workflo
       "slug": "video-generation",
       "bindings": {
         "videoModel": "veo-3.1-generate-001",
-        "prompt": "<scene prompt from brief>",
+        "prompt": "<scene prompt>",
         "seconds": 8,
         "aspectRatio": "9:16",
         "creativeCount": 1,
-        "refs": [
-          { "name": "brand_reference", "dataUrl": "data:image/jpeg;base64,<base64>" }
-        ]
+        "refs": [{ "name": "brand_reference", "dataUrl": "data:image/jpeg;base64,<b64>" }]
       }
     }
   ]
 }
 ```
 
-**NDJSON ExecutionEvent types** (from `@growthub/api-contract`):
-```
-node_start     { type, nodeId, slug, at }
-node_complete  { type, nodeId, slug, output?, at }   ← .output may contain .videos[], .images[]
-node_error     { type, nodeId, slug, error, at }
-progress       { type, stage, message?, at }
-credit_warning { type, availableCredits?, message?, at }
-complete       { type, executionId, summary?, at }   ← summary.executionLog may have full artifact list
-error          { type, message, at }
-```
-
-**There is no `artifact` event type.** Artifacts are extracted from:
-1. `node_complete.output.videos[]` / `.images[]` during streaming
-2. `complete.summary.executionLog[].output.videos[]` / `.images[]` at termination
-
-**Normaliser:** `lib/adapters/generative/growthub-pipeline-normalizer.js`
-
 ---
 
-## byo-api-key Adapter
+## Execution — byo-api-key (secondary)
 
 **Required env:**
-- `VIDEO_MODEL_PROVIDER` — one of `veo`, `fal`, `runway`
+- `VIDEO_MODEL_PROVIDER` — `veo` | `fal` | `runway`
 - Provider key: `GOOGLE_AI_API_KEY` / `FAL_API_KEY` / `RUNWAY_API_KEY`
 
-Each provider SDK call must normalise output to the same `GenerativeArtifact[]` contract before writing `manifest.json`.
+Call the provider SDK directly. No CLI wrapper.
 
 ---
 
-## Manifest
+## Manifest (output contract)
 
 `output/<client>/<project>/generative/manifest.json`:
 ```json
 {
   "kitId": "growthub-creative-video-pipeline-v1",
   "adapter": "growthub-pipeline",
+  "executionId": "<from complete event>",
   "createdAt": "<iso>",
-  "artifacts": [/* GenerativeArtifact[] */]
+  "artifacts": [{ "url": "<artifact url>", "type": "video", "nodeId": "..." }]
 }
 ```
 
----
-
-## Auth Pre-flight
-
-Before any growthub-pipeline execution:
-```bash
-growthub auth whoami --json
-```
-
-If the session is expired or absent:
-```bash
-growthub auth login
-```
-
-Session is stored at `~/.claude/config/session.json` by the growthub CLI.
+This is the Stage 2 → Stage 3 handoff artifact. Stage 3 reads this to locate source clips.

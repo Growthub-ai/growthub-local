@@ -8,10 +8,10 @@ triggers:
   - "execute pipeline generation"
 selfEval:
   criteria:
-    - "Adapter selected based on CREATIVE_VIDEO_PIPELINE_GENERATIVE_ADAPTER env var"
-    - "growthub-pipeline path: DynamicRegistryPipeline JSON formed correctly, growthub pipeline execute called with payload as positional arg"
-    - "byo-api-key path: VIDEO_MODEL_PROVIDER resolved, provider SDK called directly"
-    - "Output normalised to GenerativeArtifact[] via node_complete output fields (.videos, .images)"
+    - "Adapter selected from CREATIVE_VIDEO_PIPELINE_GENERATIVE_ADAPTER env var"
+    - "growthub-pipeline path: DynamicRegistryPipeline JSON assembled from brief, growthub pipeline execute called directly"
+    - "byo-api-key path: VIDEO_MODEL_PROVIDER resolved, provider SDK called"
+    - "manifest.json written to output/<client>/<project>/generative/ with execution results"
     - "project.md and trace.jsonl updated with Stage 2 completion"
   maxRetries: 3
 helpers:
@@ -22,19 +22,19 @@ helpers:
 # Generative Execution Sub-Skill
 
 ## Role
-Execute Stage 2: route through the configured generative adapter and normalise output to `GenerativeArtifact[]`.
+Execute Stage 2 via the official growthub CLI + `@growthub/api-contract` SDK. No custom execution layer.
 
 ## Adapter: growthub-pipeline (primary)
 
 ```bash
 # Auth pre-flight
-growthub auth whoami --json || { echo "Not authenticated. Run: growthub auth login"; exit 1; }
+growthub auth whoami --json || { echo "Run: growthub auth login"; exit 1; }
 
-# Execute — payload is the sole positional argument (JSON string or file path)
+# Assemble DynamicRegistryPipeline from the Stage 1 brief, then execute:
 growthub pipeline execute '<DynamicRegistryPipeline JSON>'
 ```
 
-**Payload shape (`DynamicRegistryPipeline`):**
+**`DynamicRegistryPipeline` shape (from `@growthub/api-contract`):**
 ```json
 {
   "pipelineId": "<uuid>",
@@ -58,34 +58,27 @@ growthub pipeline execute '<DynamicRegistryPipeline JSON>'
 }
 ```
 
-**NDJSON event types (from `@growthub/api-contract`):**
-- `node_start` — node execution began
-- `node_complete` — node finished; `output` may contain `.videos[]` and `.images[]`
-- `node_error` — node failed; `error` contains the message
-- `progress` — intermediate status
-- `credit_warning` — credits low
-- `complete` — pipeline finished; `summary.executionLog` may contain full artifact list
-- `error` — pipeline-level failure
-
-Pipe NDJSON stream through `growthub-pipeline-normalizer.js`:
-- Collects `node_complete` outputs (.videos[], .images[])
-- Extracts from `summary.executionLog` in the `complete` event (fallback)
-- Normalises to `GenerativeArtifact[]`
+The CLI streams NDJSON `ExecutionEvent` objects typed by `@growthub/api-contract`. Use `isExecutionEvent()` to validate each line. The `complete` event signals success; the `error` event signals failure.
 
 ## Adapter: byo-api-key (secondary)
-Resolve `VIDEO_MODEL_PROVIDER` (veo | fal | runway), call provider SDK directly.
-Normalise to the same `GenerativeArtifact[]` contract.
+Resolve `VIDEO_MODEL_PROVIDER` (veo | fal | runway), call the provider SDK directly.
 
-## Output Contract
-All adapters must produce:
-- `GenerativeArtifact[]` — id, type, url/localPath, mimeType, metadata (includes nodeId), stage, createdAt
-- `output/<client>/<project>/generative/manifest.json`
+## Output
+Write `output/<client>/<project>/generative/manifest.json`:
+```json
+{
+  "kitId": "growthub-creative-video-pipeline-v1",
+  "adapter": "growthub-pipeline",
+  "executionId": "<from complete event>",
+  "createdAt": "<iso>",
+  "artifacts": [/* urls/paths from execution output */]
+}
+```
 
 ## Process
 1. Read `CREATIVE_VIDEO_PIPELINE_GENERATIVE_ADAPTER`
-2. Run `helpers/check-generative-adapter.sh` to validate env
-3. Build `DynamicRegistryPipeline` JSON from Stage 1 brief prompts + reference images
-4. Execute via `bash helpers/run-pipeline.sh '<payload>'` or direct CLI call
-5. Run `growthub-pipeline-normalizer.js` over the NDJSON trace
-6. Write `manifest.json` to generative output dir
-7. Append Stage 2 completion to `project.md` and `trace.jsonl`
+2. Run `helpers/check-generative-adapter.sh`
+3. Assemble `DynamicRegistryPipeline` JSON from Stage 1 brief prompts and reference images
+4. Execute: `bash helpers/run-pipeline.sh '<payload>'`
+5. Write `manifest.json` from the execution result
+6. Append Stage 2 completion to `project.md` and `trace.jsonl`
