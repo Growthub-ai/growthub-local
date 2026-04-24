@@ -14,6 +14,7 @@ export const portalCapabilities: PortalCapability[] = [
   { id: "finance", label: "Finance", metric: "Invoices and expenses", description: "Billing state, expenses, payment status, and retainer visibility." },
   { id: "reports", label: "Reports", metric: "Performance reviews", description: "Ad and campaign reporting through a pluggable reporting adapter." },
   { id: "metrics", label: "Metrics", metric: "Agency health", description: "Period-over-period MRR, churn, pipeline, and workload indicators." },
+  { id: "client-results", label: "Client Results", metric: "Windsor reporting", description: "Blended data pipelines for Meta, Shopify, GA4, and Google Sheets-backed reports." },
   { id: "operations", label: "Operations", metric: "SOP library", description: "Internal documentation, quick links, workflows, and process memory." },
   { id: "settings", label: "Settings", metric: "Workspace control", description: "Branding, adapter selections, deployment metadata, and user preferences." },
 ];
