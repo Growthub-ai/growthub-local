@@ -20,9 +20,13 @@
  *   - `@growthub/api-contract/events`
  *   - `@growthub/api-contract/manifests`
  *   - `@growthub/api-contract/schemas`
+ *   - `@growthub/api-contract/widgets`
+ *   - `@growthub/api-contract/compositions`
  */
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
 export { isExecutionEvent } from "./events.js";
+export { defineWidget } from "./widgets.js";
+export { defineComposition, definePipeline, defineArtifact, defineCapability, } from "./compositions.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.

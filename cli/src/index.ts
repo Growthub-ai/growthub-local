@@ -58,6 +58,7 @@ import { registerKitCommands, runInteractivePicker } from "./commands/kit.js";
 import { registerTemplateCommands, runTemplatePicker } from "./commands/template.js";
 import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capability.js";
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
+import { registerComposeCommands } from "./commands/compose.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
@@ -223,6 +224,7 @@ function registerSharedCommands(target: Command) {
   registerTemplateCommands(target);
   registerCapabilityCommands(target);
   registerPipelineCommands(target);
+  registerComposeCommands(target);
   registerArtifactCommands(target);
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);

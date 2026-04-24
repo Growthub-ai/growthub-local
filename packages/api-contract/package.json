@@ -64,6 +64,14 @@
     "./skills": {
       "types": "./dist/skills.d.ts",
       "import": "./dist/skills.js"
+    },
+    "./widgets": {
+      "types": "./dist/widgets.d.ts",
+      "import": "./dist/widgets.js"
+    },
+    "./compositions": {
+      "types": "./dist/compositions.d.ts",
+      "import": "./dist/compositions.js"
     }
   },
   "main": "./dist/index.js",

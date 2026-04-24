@@ -17,6 +17,7 @@ import type { CapabilityExecutionKind, CapabilityFamily, CapabilityNode } from "
 import type { NodeInputSchema, NodeOutputSchema } from "./schemas.js";
 import type { ProviderAssemblyHints } from "./providers.js";
 import type { ExecutionMode } from "./execution.js";
+import type { Composition, CanvasLayout } from "./compositions.js";
 /**
  * Where a capability manifest was sourced from.
  *
@@ -123,5 +124,16 @@ export interface CapabilityManifestEnvelope {
     provenance?: ManifestProvenance;
     /** Optional drift report vs. a prior cached envelope. */
     drift?: ManifestDriftReport;
+    /**
+     * Optional compositions shipped alongside the capabilities. Additive
+     * since envelope v1; consumers that do not understand compositions
+     * MUST ignore this field.
+     */
+    compositions?: Composition[];
+    /**
+     * Optional default canvas layout for consumers that render a single
+     * composition per envelope. Additive since envelope v1.
+     */
+    canvas?: CanvasLayout;
 }
 //# sourceMappingURL=manifests.d.ts.map

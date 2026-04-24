@@ -20,6 +20,8 @@
  *   - `@growthub/api-contract/events`
  *   - `@growthub/api-contract/manifests`
  *   - `@growthub/api-contract/schemas`
+ *   - `@growthub/api-contract/widgets`
+ *   - `@growthub/api-contract/compositions`
  */
 
 // Capabilities
@@ -119,6 +121,30 @@ export type {
   NodeOutputSchema,
   NodeInputAttachment,
 } from "./schemas.js";
+
+// Widgets (composability primitive — canvas-placed widget definitions)
+export type {
+  WidgetKind,
+  GridLayout,
+  WidgetBindings,
+  WidgetDefinition,
+} from "./widgets.js";
+export { defineWidget } from "./widgets.js";
+
+// Compositions (composability primitive — top-level canvas/dashboard
+// manifest assembling widgets, pipelines, artifacts, and capabilities)
+export type {
+  CanvasLayout,
+  PipelineReference,
+  ArtifactReference,
+  Composition,
+} from "./compositions.js";
+export {
+  defineComposition,
+  definePipeline,
+  defineArtifact,
+  defineCapability,
+} from "./compositions.js";
 
 // Skills (primitive discovery surface — SKILL.md manifest, helpers,
 // sub-skills, self-eval, session memory, MCP routing vocabulary)
