@@ -75,6 +75,15 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     family: "studio",
   },
   {
+    id: "growthub-agency-portal-starter-v1",
+    packageDirName: "growthub-agency-portal-starter-v1",
+    defaultBundleId: "growthub-agency-portal-starter-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
+  {
     id: "growthub-twenty-crm-v1",
     packageDirName: "growthub-twenty-crm-v1",
     defaultBundleId: "growthub-twenty-crm-v1",
