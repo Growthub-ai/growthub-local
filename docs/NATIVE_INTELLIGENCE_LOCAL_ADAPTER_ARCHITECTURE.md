@@ -109,8 +109,10 @@ The architecture is adapter-ready and not limited to one model id.
 The config stores:
 - `modelId` canonical family id.
 - `localModel` concrete adapter model id.
-Canonical values remain bounded (`gemma3`, `gemma3n`, `codegemma`).
+Canonical values are the bounded set of first-class families:
+`gemma3`, `gemma3n`, `codegemma`, `qwen-coder`, `minimax`, `kimi`, `deepseek`, `glm`.
 Concrete values are open and can include arbitrary local adapter tags.
+The static registry `cli/src/runtime/native-intelligence/model-catalog.ts` is the single source of truth for first-class concrete ids; adding a model is a one-line edit to that array — nothing else changes.
 This enables scaling to many model variants without enum churn.
 
 ## 9. Candidate Resolution Logic
@@ -311,6 +313,8 @@ Users can enter arbitrary custom model ids.
 Config persists selected custom model without requiring enum edits.
 This is foundational for future adapter expansion.
 
+The static catalog `cli/src/runtime/native-intelligence/model-catalog.ts` enumerates the first-class supported models and their metadata (display name, context window, quantization, hardware hint, default endpoint env var). Detected models that are not in the catalog are still fully supported as custom adapter tags; the catalog only controls presentation and per-family endpoint routing.
+
 ## 30. Training Workflow
 CLI does not train models.
 Training or fine-tuning occurs in external model tooling.
@@ -328,14 +332,25 @@ Future adapters should implement equivalent backend interface:
 Keep planner/normalizer/recommender/summarizer contract stable.
 Transport and mapping should be adapter-specific.
 
+Per-family endpoint routing is handled by `getBackendConfig(modelId)` in `provider.ts`. Precedence:
+1. Env var named by the catalog entry's `defaultEndpointEnv`
+   (e.g. `QWEN_BASE_URL`, `MINIMAX_BASE_URL`, `KIMI_BASE_URL`, `DEEPSEEK_BASE_URL`, `GLM_BASE_URL`).
+2. The catalog entry's `defaultEndpointUrl`.
+3. `OPENAI_COMPATIBLE_URL` (generic escape hatch).
+4. `OLLAMA_BASE_URL`.
+5. Built-in Ollama default (`http://127.0.0.1:11434/v1`).
+
+All first-class models use the OpenAI-compatible `/v1/chat/completions` request body, so the existing transport covers every family without touching planner/normalizer/recommender/summarizer.
+
 ## 32. Coming Soon Areas
 Planned expansions:
-- additional local adapter providers.
 - richer health diagnostics.
-- model metadata routing hints.
 - per-project model profiles.
 - adapter failover preferences.
 - structured output confidence metadata.
+Delivered in v1 catalog:
+- additional first-class local models (Qwen Coder, MiniMax, Kimi, DeepSeek, GLM, Gemma 4).
+- model metadata routing hints (per-family env vars + endpoint defaults).
 
 ## 33. CLI Extensions Added
 User-visible additions:
@@ -494,15 +509,19 @@ Local intelligence lane additions:
 Command-layer improvements:
 - workflow and pipeline summary paths now route through native provider.
 
-## 48. Future CLI Extension Candidates
+## 48. CLI Extensions — Current And Future
+Shipped in v1 catalog:
+- `growthub local-intelligence list-variants` (with `--json`)
+- `growthub local-intelligence active` (with `--json`)
+- `growthub local-intelligence use <model-id>`
+- `growthub local-intelligence health` (with `--json`)
+- `growthub local-intelligence setup [model-id]`
+- `growthub local-intelligence serve [model-id]` (shells out to `ollama run`)
+
 Possible future command surface:
-- `growthub intelligence`
-- `growthub intelligence status`
-- `growthub intelligence model list`
-- `growthub intelligence model set`
-- `growthub intelligence prompt`
-- `growthub intelligence flow run`
-These are optional future additions; discovery remains canonical now.
+- `growthub local-intelligence prompt "..."`
+- `growthub local-intelligence flow run`
+Discovery remains canonical for interactive use; the command surface exists for scripting.
 
 ## 49. Quality Gates For Outputs
 Good output:
@@ -537,4 +556,18 @@ Local native-intelligence is now a first-class CLI discovery lane.
 It supports real prompt chat, local custom model selection, runtime-informed flow reasoning, and resilient fallback.
 It is ready for branch-level release hardening and future multi-adapter expansion.
 For machine setup and quick validation commands, use [Gemma Setup and Validation](./native-intelligence-gemma-setup.md).
+
+## Appendix A. Supported Models — v1 Catalog
+
+| id                 | family      | context | quant   | hardware hint                  | endpoint env var        |
+| ------------------ | ----------- | ------: | ------- | ------------------------------ | ----------------------- |
+| `gemma3:4b`        | gemma3      | 128k    | q4_k_m  | CPU or any consumer GPU         | `OLLAMA_BASE_URL`       |
+| `gemma-4-9b-it`    | gemma3      | 128k    | q4_k_m  | 1x consumer GPU (12GB+)         | `OLLAMA_BASE_URL`       |
+| `qwen3.5-coder-32b`| qwen-coder  | 128k    | awq     | 1x RTX 4090 / 2x consumer GPU   | `QWEN_BASE_URL`         |
+| `minimax-m1-80k`   | minimax     |  80k    | awq     | 2x RTX 4090 / datacenter GPU    | `MINIMAX_BASE_URL`      |
+| `kimi-k2.5`        | kimi        | 200k    | awq     | datacenter GPU (80GB+)          | `KIMI_BASE_URL`         |
+| `deepseek-v3.2`    | deepseek    | 128k    | awq     | datacenter GPU (80GB+)          | `DEEPSEEK_BASE_URL`     |
+| `glm-5-32b`        | glm         | 128k    | awq     | 1x RTX 4090 / 2x consumer GPU   | `GLM_BASE_URL`          |
+
+Source of truth: `cli/src/runtime/native-intelligence/model-catalog.ts`. Add an entry there to register a new first-class model.
 

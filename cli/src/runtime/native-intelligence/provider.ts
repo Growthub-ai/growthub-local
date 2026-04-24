@@ -20,6 +20,7 @@ import type {
   ModelCompletionInput,
   ModelCompletionResult,
 } from "./contract.js";
+import { getLocalModelVariant, inferFamilyFromModelId } from "./model-catalog.js";
 
 // ---------------------------------------------------------------------------
 // OpenAI-compatible response shape (local Gemma / vLLM / Ollama / etc.)
@@ -425,6 +426,14 @@ function resolveEndpointCandidates(config: NativeIntelligenceConfig): string[] {
 
   if (config.backendType !== "local") return candidates;
 
+  // If the configured model maps to a family with a distinct endpoint, try
+  // it before the hardcoded 11434 fallback. This is what lets the same
+  // local-mode code path serve Qwen / MiniMax / Kimi / DeepSeek / GLM.
+  const familyEndpoint = getFamilyEndpoint(resolveActiveModelId(config));
+  if (familyEndpoint && !candidates.includes(familyEndpoint)) {
+    candidates.push(familyEndpoint);
+  }
+
   const normalized = primary.toLowerCase();
   if (
     (normalized.includes("localhost:8080") || normalized.includes("127.0.0.1:8080"))
@@ -434,6 +443,89 @@ function resolveEndpointCandidates(config: NativeIntelligenceConfig): string[] {
   }
 
   return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// Per-family backend routing (catalog-driven)
+// ---------------------------------------------------------------------------
+
+export interface BackendEndpointConfig {
+  baseUrl: string;
+  chatCompletionsUrl: string;
+  family: import("./contract.js").LocalModelFamily;
+  source: "catalog-env" | "catalog-default" | "ollama-default";
+}
+
+const OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
+
+/**
+ * Resolve the preferred base URL + chat-completions URL for a given model id.
+ *
+ * Precedence:
+ *   1. Env var named by the catalog entry's `defaultEndpointEnv`
+ *      (e.g. QWEN_BASE_URL, MINIMAX_BASE_URL, …).
+ *   2. The catalog entry's `defaultEndpointUrl`.
+ *   3. `OPENAI_COMPATIBLE_URL` (generic escape hatch).
+ *   4. `OLLAMA_BASE_URL`.
+ *   5. Built-in Ollama default.
+ */
+export function getBackendConfig(modelId: string): BackendEndpointConfig {
+  const variant = getLocalModelVariant(modelId);
+  const family = variant?.family ?? inferFamilyFromModelId(modelId);
+
+  const envFamilyUrl = variant?.defaultEndpointEnv
+    ? process.env[variant.defaultEndpointEnv]?.trim()
+    : undefined;
+  if (envFamilyUrl) {
+    return buildEndpointConfig(envFamilyUrl, family, "catalog-env");
+  }
+
+  if (variant?.defaultEndpointUrl) {
+    return buildEndpointConfig(variant.defaultEndpointUrl, family, "catalog-default");
+  }
+
+  const genericEnv = process.env.OPENAI_COMPATIBLE_URL?.trim();
+  if (genericEnv) {
+    return buildEndpointConfig(genericEnv, family, "catalog-env");
+  }
+
+  const ollamaEnv = process.env.OLLAMA_BASE_URL?.trim();
+  if (ollamaEnv) {
+    return buildEndpointConfig(ollamaEnv, family, "catalog-env");
+  }
+
+  return buildEndpointConfig(OLLAMA_DEFAULT_BASE_URL, family, "ollama-default");
+}
+
+function buildEndpointConfig(
+  baseUrl: string,
+  family: import("./contract.js").LocalModelFamily,
+  source: BackendEndpointConfig["source"],
+): BackendEndpointConfig {
+  const normalized = baseUrl.replace(/\/$/, "");
+  const chat = normalized.endsWith("/chat/completions")
+    ? normalized
+    : `${normalized}/chat/completions`;
+  return { baseUrl: normalized, chatCompletionsUrl: chat, family, source };
+}
+
+function resolveActiveModelId(config: NativeIntelligenceConfig): string {
+  const fromLocal = typeof config.localModel === "string" ? config.localModel.trim() : "";
+  if (fromLocal) return fromLocal;
+  const fromEnv = process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim()
+    || process.env.OLLAMA_MODEL?.trim();
+  if (fromEnv) return fromEnv;
+  return config.modelId;
+}
+
+function getFamilyEndpoint(modelId: string): string | undefined {
+  const variant = getLocalModelVariant(modelId);
+  if (!variant) return undefined;
+  const envName = variant.defaultEndpointEnv;
+  const envValue = envName ? process.env[envName]?.trim() : undefined;
+  const baseUrl = envValue || variant.defaultEndpointUrl;
+  if (!baseUrl) return undefined;
+  return buildEndpointConfig(baseUrl, variant.family, envValue ? "catalog-env" : "catalog-default").chatCompletionsUrl;
 }
 
 function shouldTryNextModel(
