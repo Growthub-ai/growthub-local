@@ -38,8 +38,8 @@ This kit is built from the custom workspace starter primitive. It preserves the 
 - `studio/` — Vite + React local operator shell for Growthub Local.
 - `apps/agency-portal/` — Vercel-ready serverless app payload.
 - `lib/adapters/*` inside the app — thin persistence/auth/payment/integration contracts.
-- `apps/agency-portal/app/api/settings/integrations/route.ts` — normalized Settings lanes for data sources and workspace integrations.
-- `apps/agency-portal/app/settings/integrations/page.tsx` — dedicated integrations UI modeled after the GH app integration page primitive.
+- `apps/agency-portal/app/api/settings/integrations/route.js` — normalized Settings lanes for data sources and workspace integrations.
+- `apps/agency-portal/app/settings/integrations/page.jsx` — dedicated integrations UI modeled after the GH app integration page primitive.
 - `.growthub-fork/` in exported forks — identity, policy, session memory, trace, and optional authority.
 
 ## Integration primitives

@@ -1,6 +1,4 @@
-import type { PersistenceAdapterDescriptor } from "./index";
-
-export function describePostgresAdapter(): PersistenceAdapterDescriptor {
+function describePostgresAdapter() {
   return {
     id: "postgres",
     label: "Postgres",
@@ -9,7 +7,10 @@ export function describePostgresAdapter(): PersistenceAdapterDescriptor {
     notes: [
       "Use any Postgres-compatible provider.",
       "Keep provider-specific pooling, SSL, and migration tooling outside the kit contract.",
-      "Application repositories should depend on this descriptor, not a provider SDK directly.",
-    ],
+      "Application repositories should depend on this descriptor, not a provider SDK directly."
+    ]
   };
 }
+export {
+  describePostgresAdapter
+};

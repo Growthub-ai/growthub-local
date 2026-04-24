@@ -1,6 +1,4 @@
-import type { PersistenceAdapterDescriptor } from "./index";
-
-export function describeQstashKvAdapter(): PersistenceAdapterDescriptor {
+function describeQstashKvAdapter() {
   return {
     id: "qstash-kv",
     label: "Qstash KV",
@@ -9,7 +7,10 @@ export function describeQstashKvAdapter(): PersistenceAdapterDescriptor {
     notes: [
       "Use HTTP-first KV for serverless-friendly deployments.",
       "Model relational portal records as namespaced documents and secondary indexes.",
-      "Keep queue and storage concerns separated from the domain capability map.",
-    ],
+      "Keep queue and storage concerns separated from the domain capability map."
+    ]
   };
 }
+export {
+  describeQstashKvAdapter
+};

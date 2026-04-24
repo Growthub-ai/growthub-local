@@ -1,18 +1,11 @@
 import { readAdapterConfig } from "../env";
-
-export type AuthAdapterDescriptor = {
-  id: string;
-  requiredEnv: string[];
-  notes: string[];
-};
-
-export function describeAuthAdapter(): AuthAdapterDescriptor {
+function describeAuthAdapter() {
   const { authAdapter } = readAdapterConfig();
   if (authAdapter === "oidc") {
     return {
       id: "oidc",
       requiredEnv: ["AUTH_SECRET", "AUTH_ISSUER", "AUTH_CLIENT_ID", "AUTH_CLIENT_SECRET"],
-      notes: ["Default portable auth contract for Vercel and local serverless use."],
+      notes: ["Default portable auth contract for Vercel and local serverless use."]
     };
   }
   if (authAdapter === "clerk") {
@@ -23,3 +16,6 @@ export function describeAuthAdapter(): AuthAdapterDescriptor {
   }
   return { id: "provider-managed", requiredEnv: [], notes: ["Auth is managed outside the kit contract."] };
 }
+export {
+  describeAuthAdapter
+};

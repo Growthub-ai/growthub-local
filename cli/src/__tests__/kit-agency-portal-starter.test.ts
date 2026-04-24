@@ -88,12 +88,12 @@ describe("growthub-agency-portal-starter-v1 — manifests and primitives", () =>
         "studio/package-lock.json",
         "apps/agency-portal/package.json",
         "apps/agency-portal/package-lock.json",
-        "apps/agency-portal/next-env.d.ts",
-        "apps/agency-portal/app/settings/integrations/page.tsx",
-        "apps/agency-portal/lib/adapters/env.ts",
-        "apps/agency-portal/lib/adapters/integrations/index.ts",
-        "apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.ts",
-        "apps/agency-portal/lib/domain/integrations.ts",
+        "apps/agency-portal/next.config.js",
+        "apps/agency-portal/app/settings/integrations/page.jsx",
+        "apps/agency-portal/lib/adapters/env.js",
+        "apps/agency-portal/lib/adapters/integrations/index.js",
+        "apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.js",
+        "apps/agency-portal/lib/domain/integrations.js",
         "docs/adapter-contracts.md",
       ]),
     );
@@ -156,7 +156,7 @@ describe("growthub-agency-portal-starter-v1 — adapter-first app payload", () =
     expect(adapterDoc).toContain("WINDSOR_API_KEY");
     expect(adapterDoc).toContain("Google Sheets blended data");
     expect(adapterDoc).toContain("mcp_connections");
-    expect(adapterDoc).toContain("growthub-connection-normalizer.ts");
+    expect(adapterDoc).toContain("growthub-connection-normalizer.js");
     expect(adapterDoc).toContain("\"accounts\"");
   });
 });

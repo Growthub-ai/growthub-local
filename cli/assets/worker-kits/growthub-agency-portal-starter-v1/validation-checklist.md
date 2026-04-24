@@ -14,7 +14,7 @@
 - [ ] Data pipeline objects are explicit: Windsor AI, Google Sheets blended data, Google Analytics, Shopify, Meta Facebook/Instagram.
 - [ ] MCP connection integrations are explicit: Asana, Slack, GoHighLevel, Google Drive, Notion.
 - [ ] Growthub bridge mode shows active/connected status when normalized MCP account rows are returned by the bridge.
-- [ ] `growthub-connection-normalizer.ts` accepts both SDK/profile-style `integrations[]` and GH app MCP `accounts[]` payloads.
+- [ ] `growthub-connection-normalizer.js` accepts both SDK/profile-style `integrations[]` and GH app MCP `accounts[]` payloads.
 - [ ] Unknown active MCP providers are preserved as discovered workspace integrations instead of being dropped.
 - [ ] BYO API key mode works from `AGENCY_PORTAL_BYO_CONNECTIONS_JSON` using the same object shape.
 - [ ] Windsor BYO mode works with `WINDSOR_API_KEY` alone and renders Windsor AI as connected.

@@ -62,7 +62,7 @@ The bridge adapter is intentionally thin. It expects a JSON endpoint configured 
 
 The GH app authority pattern observed in `/Users/antonio/gh-app` is CMS catalog rows plus active `mcp_connections` rows. The starter does not query that database directly. It consumes the bridge API so the hosted app keeps ownership of user auth, tokens, verification, account IDs, scopes, and provider metadata.
 
-The kit-local primitive for this is `apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.ts`. It accepts the SDK/profile-style integration shape:
+The kit-local primitive for this is `apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.js`. It accepts the SDK/profile-style integration shape:
 
 ```json
 { "integrations": [{ "provider": "slack", "label": "Slack", "connectedAt": "...", "scopes": [], "handle": "...", "ready": true }] }

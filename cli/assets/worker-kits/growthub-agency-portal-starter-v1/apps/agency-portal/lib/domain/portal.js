@@ -1,11 +1,4 @@
-export type PortalCapability = {
-  id: string;
-  label: string;
-  metric: string;
-  description: string;
-};
-
-export const portalCapabilities: PortalCapability[] = [
+const portalCapabilities = [
   { id: "dashboard", label: "Dashboard", metric: "Live agency snapshot", description: "Revenue, client health, overdue work, and next actions." },
   { id: "clients", label: "Clients", metric: "Profiles and onboarding", description: "Client records, notes, KPIs, lifecycle state, and contacts." },
   { id: "pipeline", label: "Pipeline", metric: "Opportunities", description: "Lead stages, potential value, won/lost state, and follow-up ownership." },
@@ -16,5 +9,8 @@ export const portalCapabilities: PortalCapability[] = [
   { id: "metrics", label: "Metrics", metric: "Agency health", description: "Period-over-period MRR, churn, pipeline, and workload indicators." },
   { id: "client-results", label: "Client Results", metric: "Windsor reporting", description: "Blended data pipelines for Meta, Shopify, GA4, and Google Sheets-backed reports." },
   { id: "operations", label: "Operations", metric: "SOP library", description: "Internal documentation, quick links, workflows, and process memory." },
-  { id: "settings", label: "Settings", metric: "Workspace control", description: "Branding, adapter selections, deployment metadata, and user preferences." },
+  { id: "settings", label: "Settings", metric: "Workspace control", description: "Branding, adapter selections, deployment metadata, and user preferences." }
 ];
+export {
+  portalCapabilities
+};

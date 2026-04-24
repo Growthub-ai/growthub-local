@@ -53,12 +53,12 @@
     "studio/package-lock.json",
     "apps/agency-portal/package.json",
     "apps/agency-portal/package-lock.json",
-    "apps/agency-portal/next-env.d.ts",
-    "apps/agency-portal/app/settings/integrations/page.tsx",
-    "apps/agency-portal/lib/adapters/env.ts",
-    "apps/agency-portal/lib/adapters/integrations/index.ts",
-    "apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.ts",
-    "apps/agency-portal/lib/domain/integrations.ts",
+    "apps/agency-portal/next.config.js",
+    "apps/agency-portal/app/settings/integrations/page.jsx",
+    "apps/agency-portal/lib/adapters/env.js",
+    "apps/agency-portal/lib/adapters/integrations/index.js",
+    "apps/agency-portal/lib/adapters/integrations/growthub-connection-normalizer.js",
+    "apps/agency-portal/lib/domain/integrations.js",
     "growthub-meta/README.md",
     "growthub-meta/kit-standard.md"
   ]

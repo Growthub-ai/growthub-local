@@ -1,89 +1,67 @@
 import { readAdapterConfig } from "@/lib/adapters/env";
 import {
-  agencyPortalIntegrationCatalog,
-  type AgencyPortalIntegration,
+  agencyPortalIntegrationCatalog
 } from "@/lib/domain/integrations";
 import {
-  normalizeGrowthubBridgePayload,
-  type BridgeIntegrationRow,
-  type GrowthubBridgePayload,
+  normalizeGrowthubBridgePayload
 } from "./growthub-connection-normalizer";
-
-export type IntegrationAdapterDescription = {
-  id: "growthub-bridge" | "byo-api-key" | "static";
-  label: string;
-  requiredEnv: string[];
-  authority: "growthub-gh-app" | "workspace-env" | "local-catalog";
-};
-
-export function describeIntegrationAdapter(): IntegrationAdapterDescription {
+function describeIntegrationAdapter() {
   const config = readAdapterConfig();
   if (config.integrationAdapter === "growthub-bridge") {
     return {
       id: "growthub-bridge",
       label: "Growthub MCP bridge",
       requiredEnv: ["GROWTHUB_BRIDGE_BASE_URL", "GROWTHUB_BRIDGE_ACCESS_TOKEN"],
-      authority: "growthub-gh-app",
+      authority: "growthub-gh-app"
     };
   }
-
   if (config.integrationAdapter === "byo-api-key") {
     return {
       id: "byo-api-key",
       label: "Bring your own API key",
       requiredEnv: ["AGENCY_PORTAL_BYO_CONNECTIONS_JSON"],
-      authority: "workspace-env",
+      authority: "workspace-env"
     };
   }
-
   return {
     id: "static",
     label: "Static starter catalog",
     requiredEnv: [],
-    authority: "local-catalog",
+    authority: "local-catalog"
   };
 }
-
-export async function listAgencyPortalIntegrations(): Promise<AgencyPortalIntegration[]> {
+async function listAgencyPortalIntegrations() {
   const config = readAdapterConfig();
-
   if (config.integrationAdapter !== "growthub-bridge") {
     if (config.integrationAdapter === "byo-api-key") {
       return mergeBringYourOwnRows(readBringYourOwnRows());
     }
     return agencyPortalIntegrationCatalog;
   }
-
   if (!config.growthubBridge.baseUrl || !process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN) {
     return agencyPortalIntegrationCatalog;
   }
-
   const url = new URL(config.growthubBridge.integrationsPath, config.growthubBridge.baseUrl);
-  const headers: Record<string, string> = {
+  const headers = {
     accept: "application/json",
-    authorization: `Bearer ${process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN}`,
+    authorization: `Bearer ${process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN}`
   };
   if (config.growthubBridge.userId) {
     headers["x-user-id"] = config.growthubBridge.userId;
   }
-
   const response = await fetch(url, {
     headers,
-    next: { revalidate: 30 },
+    next: { revalidate: 30 }
   });
-
   if (!response.ok) {
     return agencyPortalIntegrationCatalog;
   }
-
-  const payload = (await response.json()) as GrowthubBridgePayload;
+  const payload = await response.json();
   return mergeBridgeRows(normalizeGrowthubBridgePayload(payload));
 }
-
-function readBringYourOwnRows(): BridgeIntegrationRow[] {
+function readBringYourOwnRows() {
   const raw = process.env.AGENCY_PORTAL_BYO_CONNECTIONS_JSON;
-  const rows: BridgeIntegrationRow[] = [];
-
+  const rows = [];
   if (process.env.WINDSOR_API_KEY) {
     rows.push({
       id: "windsor-ai",
@@ -100,52 +78,44 @@ function readBringYourOwnRows(): BridgeIntegrationRow[] {
       secretEnvName: "WINDSOR_API_KEY",
       connectionMetadata: {
         source: "workspace-env",
-        secretEnvName: "WINDSOR_API_KEY",
-      },
+        secretEnvName: "WINDSOR_API_KEY"
+      }
     });
   }
-
   if (!raw) return rows;
-
   try {
-    const parsed = JSON.parse(raw) as GrowthubBridgePayload;
+    const parsed = JSON.parse(raw);
     return [...rows, ...normalizeGrowthubBridgePayload(parsed)];
   } catch {
     return rows;
   }
 }
-
-function mergeBringYourOwnRows(rows: BridgeIntegrationRow[]): AgencyPortalIntegration[] {
+function mergeBringYourOwnRows(rows) {
   const merged = mergeBridgeRows(rows);
   return merged.map((item) => {
     const row = rows.find((candidate) => {
       const provider = candidate.provider || candidate.id;
       return provider === item.provider || candidate.id === item.id;
     });
-
     if (!row) return item;
-
     return {
       ...item,
       authPath: "byo-api-key",
       setupMode: "bring-your-own-key",
-      secretEnvName: typeof row.secretEnvName === "string" ? row.secretEnvName : undefined,
-      status: row.status || "connected",
+      secretEnvName: typeof row.secretEnvName === "string" ? row.secretEnvName : void 0,
+      status: row.status || "connected"
     };
   });
 }
-
-function mergeBridgeRows(rows: BridgeIntegrationRow[]): AgencyPortalIntegration[] {
-  const seenProviders = new Set<string>();
+function mergeBridgeRows(rows) {
+  const seenProviders = /* @__PURE__ */ new Set();
   const merged = agencyPortalIntegrationCatalog.map((catalogItem) => {
     const row = rows.find((item) => {
       const provider = item.provider || item.id;
       return provider === catalogItem.provider || item.id === catalogItem.id;
     });
-
     if (!row) return catalogItem;
     seenProviders.add(row.provider || row.id || catalogItem.provider);
-
     return {
       ...catalogItem,
       label: row.label || row.name || catalogItem.label,
@@ -163,26 +133,22 @@ function mergeBridgeRows(rows: BridgeIntegrationRow[]): AgencyPortalIntegration[
       accountId: row.accountId,
       secretEnvName: row.secretEnvName,
       connectionMetadata: row.connectionMetadata || row.metadata,
-      metadata: row.metadata || row.connectionMetadata,
+      metadata: row.metadata || row.connectionMetadata
     };
   });
-
   const discoveredRows = rows.filter((row) => {
     const provider = row.provider || row.id;
     if (!provider) return false;
     if (seenProviders.has(provider)) return false;
     return !agencyPortalIntegrationCatalog.some((item) => item.provider === provider || item.id === row.id);
   });
-
   return [...merged, ...discoveredRows.map(toDiscoveredIntegration)];
 }
-
-function toDiscoveredIntegration(row: BridgeIntegrationRow): AgencyPortalIntegration {
+function toDiscoveredIntegration(row) {
   const provider = row.provider || row.id || "unknown-provider";
   const label = row.label || row.name || provider;
   const isDataPipeline = ["windsor-ai", "google-sheets", "google-analytics", "shopify", "meta-ads"].includes(provider);
   const isConnected = row.isConnected ?? row.status === "connected";
-
   return {
     id: row.id || provider,
     label,
@@ -203,6 +169,10 @@ function toDiscoveredIntegration(row: BridgeIntegrationRow): AgencyPortalIntegra
     accountId: row.accountId,
     secretEnvName: row.secretEnvName,
     connectionMetadata: row.connectionMetadata || row.metadata,
-    metadata: row.metadata || row.connectionMetadata,
+    metadata: row.metadata || row.connectionMetadata
   };
 }
+export {
+  describeIntegrationAdapter,
+  listAgencyPortalIntegrations
+};

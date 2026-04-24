@@ -2,31 +2,25 @@ import { describeIntegrationAdapter, listAgencyPortalIntegrations } from "@/lib/
 import { portalCapabilities } from "@/lib/domain/portal";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
 import Link from "next/link";
-
 const nav = [
   ...portalCapabilities.map((item) => ({ href: `/#${item.id}`, label: item.label })),
-  { href: "/settings/integrations", label: "Integrations" },
+  { href: "/settings/integrations", label: "Integrations" }
 ];
-
-export default async function IntegrationsSettingsPage() {
+async function IntegrationsSettingsPage() {
   const adapter = describeIntegrationAdapter();
   const grouped = groupIntegrationsByLane(await listAgencyPortalIntegrations());
   const allIntegrations = [...grouped.dataSources, ...grouped.workspaceIntegrations];
   const connectedCount = allIntegrations.filter((item) => item.isConnected).length;
-
-  return (
-    <main className="shell">
+  return <main className="shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">GH</span>
           <span>Agency Portal</span>
         </div>
         <nav className="nav">
-          {nav.map((item) => (
-            <Link className={item.href === "/settings/integrations" ? "active" : ""} key={item.href} href={item.href}>
+          {nav.map((item) => <Link className={item.href === "/settings/integrations" ? "active" : ""} key={item.href} href={item.href}>
               {item.label}
-            </Link>
-          ))}
+            </Link>)}
         </nav>
         <div className="sidebar-footer">
           <span className="status-dot" />
@@ -87,34 +81,26 @@ export default async function IntegrationsSettingsPage() {
           </div>
 
           <IntegrationPanel
-            title="Data pipeline objects"
-            intro="Meta, Shopify, GA4, Windsor AI, and Google Sheets blended data feed reporting and analytics workflows."
-            items={grouped.dataSources}
-          />
+    title="Data pipeline objects"
+    intro="Meta, Shopify, GA4, Windsor AI, and Google Sheets blended data feed reporting and analytics workflows."
+    items={grouped.dataSources}
+  />
           <IntegrationPanel
-            title="MCP connection integrations"
-            intro="Asana, Slack, GHL, Google Drive, and Notion are operational integrations resolved through MCP connection authority or explicit BYO setup."
-            items={grouped.workspaceIntegrations}
-          />
+    title="MCP connection integrations"
+    intro="Asana, Slack, GHL, Google Drive, and Notion are operational integrations resolved through MCP connection authority or explicit BYO setup."
+    items={grouped.workspaceIntegrations}
+  />
         </section>
       </section>
-    </main>
-  );
+    </main>;
 }
-
 function IntegrationPanel({
   title,
   intro,
-  items,
-}: {
-  title: string;
-  intro: string;
-  items: Awaited<ReturnType<typeof listAgencyPortalIntegrations>>;
+  items
 }) {
   const connected = items.filter((item) => item.isConnected).length;
-
-  return (
-    <article className="integration-section">
+  return <article className="integration-section">
       <div className="section-heading">
         <div>
           <h2>{title}</h2>
@@ -123,8 +109,7 @@ function IntegrationPanel({
         <span className="badge">{connected}/{items.length} connected</span>
       </div>
       <div className="integration-list">
-        {items.map((item) => (
-          <article className="integration-card" key={item.id}>
+        {items.map((item) => <article className="integration-card" key={item.id}>
             <div className="integration-card-top">
               <div className="provider-mark">{item.label.slice(0, 1)}</div>
               <div>
@@ -140,9 +125,10 @@ function IntegrationPanel({
               <span>{item.setupMode}</span>
               {item.secretEnvName ? <span>{item.secretEnvName}</span> : null}
             </div>
-          </article>
-        ))}
+          </article>)}
       </div>
-    </article>
-  );
+    </article>;
 }
+export {
+  IntegrationsSettingsPage as default
+};

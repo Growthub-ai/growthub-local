@@ -4,36 +4,29 @@ import { describePaymentAdapter } from "@/lib/adapters/payments";
 import { describePersistenceAdapter } from "@/lib/adapters/persistence";
 import { portalCapabilities } from "@/lib/domain/portal";
 import Link from "next/link";
-
 const nav = [
   ...portalCapabilities.map((item) => ({ href: `#${item.id}`, label: item.label })),
-  { href: "/settings/integrations", label: "Integrations" },
+  { href: "/settings/integrations", label: "Integrations" }
 ];
-
 const quickActions = [
   "Client onboarding",
   "Publish report",
   "Sync Windsor data",
-  "Review open tasks",
+  "Review open tasks"
 ];
-
-export default function Home() {
+function Home() {
   const config = readAdapterConfig();
   const persistence = describePersistenceAdapter();
   const auth = describeAuthAdapter();
   const payments = describePaymentAdapter();
-
-  return (
-    <main className="shell">
+  return <main className="shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">GH</span>
           <span>Agency Portal</span>
         </div>
         <nav className="nav">
-          {nav.map((item, index) => (
-            <Link className={index === 0 ? "active" : ""} href={item.href} key={item.href}>{item.label}</Link>
-          ))}
+          {nav.map((item, index) => <Link className={index === 0 ? "active" : ""} href={item.href} key={item.href}>{item.label}</Link>)}
         </nav>
         <div className="sidebar-footer">
           <span className="status-dot" />
@@ -109,13 +102,11 @@ export default function Home() {
         </section>
 
         <section className="grid compact-grid">
-          {portalCapabilities.map((capability) => (
-            <article className="card" id={capability.id} key={capability.id}>
+          {portalCapabilities.map((capability) => <article className="card" id={capability.id} key={capability.id}>
               <h3>{capability.label}</h3>
               <div className="metric">{capability.metric}</div>
               <p>{capability.description}</p>
-            </article>
-          ))}
+            </article>)}
         </section>
 
         <section className="adapter" aria-label="Adapter contracts">
@@ -165,10 +156,10 @@ export default function Home() {
       </section>
 
       <aside className="quick-actions" aria-label="Quick actions">
-        {quickActions.map((action) => (
-          <button type="button" key={action}>{action}</button>
-        ))}
+        {quickActions.map((action) => <button type="button" key={action}>{action}</button>)}
       </aside>
-    </main>
-  );
+    </main>;
 }
+export {
+  Home as default
+};

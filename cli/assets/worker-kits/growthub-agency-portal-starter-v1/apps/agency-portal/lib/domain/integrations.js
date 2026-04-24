@@ -1,33 +1,4 @@
-export type IntegrationLane = "data-source" | "workspace-integration";
-export type IntegrationStatus = "available" | "connected" | "needs-connection";
-export type IntegrationObjectType = "data-pipeline" | "mcp-connection";
-export type IntegrationCategory = "mcp_connector" | "api_key" | "custom";
-export type IntegrationAuthType = "oauth_pipedream" | "oauth_first_party" | "api_token" | "webhook";
-
-export type AgencyPortalIntegration = {
-  id: string;
-  label: string;
-  name: string;
-  icon: string;
-  provider: string;
-  description: string;
-  category: IntegrationCategory;
-  authType: IntegrationAuthType;
-  isConnected: boolean;
-  isActive: boolean;
-  connectionId?: string;
-  connectionMetadata?: Record<string, unknown>;
-  lane: IntegrationLane;
-  objectType: IntegrationObjectType;
-  status: IntegrationStatus;
-  authPath: "growthub-mcp-bridge" | "byo-api-key" | "adapter-api" | "manual";
-  setupMode: "hosted-authority" | "bring-your-own-key" | "local-catalog";
-  accountId?: string;
-  secretEnvName?: string;
-  metadata?: Record<string, unknown>;
-};
-
-const dataSources: AgencyPortalIntegration[] = [
+const dataSources = [
   {
     id: "windsor-ai",
     label: "Windsor AI",
@@ -43,7 +14,7 @@ const dataSources: AgencyPortalIntegration[] = [
     objectType: "data-pipeline",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "google-sheets-blended-data",
@@ -60,7 +31,7 @@ const dataSources: AgencyPortalIntegration[] = [
     objectType: "data-pipeline",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "google-analytics",
@@ -77,7 +48,7 @@ const dataSources: AgencyPortalIntegration[] = [
     objectType: "data-pipeline",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "shopify",
@@ -94,7 +65,7 @@ const dataSources: AgencyPortalIntegration[] = [
     objectType: "data-pipeline",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "meta-ads",
@@ -111,11 +82,10 @@ const dataSources: AgencyPortalIntegration[] = [
     objectType: "data-pipeline",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
-  },
+    setupMode: "hosted-authority"
+  }
 ];
-
-const workspaceIntegrations: AgencyPortalIntegration[] = [
+const workspaceIntegrations = [
   {
     id: "asana",
     label: "Asana",
@@ -131,7 +101,7 @@ const workspaceIntegrations: AgencyPortalIntegration[] = [
     objectType: "mcp-connection",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "slack",
@@ -148,7 +118,7 @@ const workspaceIntegrations: AgencyPortalIntegration[] = [
     objectType: "mcp-connection",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "go-high-level",
@@ -165,7 +135,7 @@ const workspaceIntegrations: AgencyPortalIntegration[] = [
     objectType: "mcp-connection",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "google-drive",
@@ -182,7 +152,7 @@ const workspaceIntegrations: AgencyPortalIntegration[] = [
     objectType: "mcp-connection",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
+    setupMode: "hosted-authority"
   },
   {
     id: "notion",
@@ -199,15 +169,17 @@ const workspaceIntegrations: AgencyPortalIntegration[] = [
     objectType: "mcp-connection",
     status: "needs-connection",
     authPath: "growthub-mcp-bridge",
-    setupMode: "hosted-authority",
-  },
+    setupMode: "hosted-authority"
+  }
 ];
-
-export const agencyPortalIntegrationCatalog = [...dataSources, ...workspaceIntegrations];
-
-export function groupIntegrationsByLane(integrations: AgencyPortalIntegration[]) {
+const agencyPortalIntegrationCatalog = [...dataSources, ...workspaceIntegrations];
+function groupIntegrationsByLane(integrations) {
   return {
     dataSources: integrations.filter((item) => item.lane === "data-source"),
-    workspaceIntegrations: integrations.filter((item) => item.lane === "workspace-integration"),
+    workspaceIntegrations: integrations.filter((item) => item.lane === "workspace-integration")
   };
 }
+export {
+  agencyPortalIntegrationCatalog,
+  groupIntegrationsByLane
+};

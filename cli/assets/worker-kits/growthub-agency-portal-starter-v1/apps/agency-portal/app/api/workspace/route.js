@@ -6,21 +6,22 @@ import { describePaymentAdapter } from "@/lib/adapters/payments";
 import { describePersistenceAdapter } from "@/lib/adapters/persistence";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
 import { portalCapabilities } from "@/lib/domain/portal";
-
-export async function GET() {
+async function GET() {
   const integrations = await listAgencyPortalIntegrations();
-
   return NextResponse.json({
     config: readAdapterConfig(),
     adapters: {
       persistence: describePersistenceAdapter(),
       auth: describeAuthAdapter(),
       payments: describePaymentAdapter(),
-      integrations: describeIntegrationAdapter(),
+      integrations: describeIntegrationAdapter()
     },
     capabilities: portalCapabilities,
     settings: {
-      integrations: groupIntegrationsByLane(integrations),
-    },
+      integrations: groupIntegrationsByLane(integrations)
+    }
   });
 }
+export {
+  GET
+};
