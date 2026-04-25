@@ -84,6 +84,15 @@ export const BUNDLED_KIT_CATALOG: BundledKitCatalogEntry[] = [
     family: "studio",
   },
   {
+    id: "growthub-creative-video-pipeline-v1",
+    packageDirName: "growthub-creative-video-pipeline-v1",
+    defaultBundleId: "growthub-creative-video-pipeline-v1",
+    type: "worker",
+    executionMode: "export",
+    activationModes: ["export"],
+    family: "studio",
+  },
+  {
     id: "growthub-twenty-crm-v1",
     packageDirName: "growthub-twenty-crm-v1",
     defaultBundleId: "growthub-twenty-crm-v1",
