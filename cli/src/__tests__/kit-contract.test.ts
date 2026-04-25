@@ -26,6 +26,12 @@ import {
   readWorkspaceDependencies,
 } from "../runtime/workspace-dependencies/index.js";
 import { computeKitHealthReport } from "../runtime/kit-health/index.js";
+import {
+  resolveKitTarget,
+  runPipelineInspect,
+  runDependenciesInspect,
+  runKitHealth,
+} from "../commands/kit-contract.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
@@ -135,5 +141,129 @@ describe("kit-health runtime composer", () => {
     expect(report.overall).toBe("fail");
     const kitJsonCheck = report.checks.find((c) => c.id === "kit-json-missing");
     expect(kitJsonCheck?.severity).toBe("fail");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared agent-facing JSON envelope — same shape across every command,
+// across both v1 single-file and v2 multi-application Worker Kits.
+// ---------------------------------------------------------------------------
+
+describe("shared JSON envelope (no contradictions across surfaces)", () => {
+  function captureJson<T>(fn: () => void): T {
+    const original = process.stdout.write.bind(process.stdout);
+    let buffer = "";
+    (process.stdout as { write: (chunk: string | Uint8Array) => boolean }).write = (
+      chunk: string | Uint8Array,
+    ): boolean => {
+      buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    };
+    try {
+      fn();
+    } finally {
+      process.stdout.write = original;
+    }
+    return JSON.parse(buffer.trim()) as T;
+  }
+
+  function assertEnvelopeShape(envelope: Record<string, unknown>): void {
+    expect(envelope).toHaveProperty("kind");
+    expect(envelope).toHaveProperty("conventionSpec");
+    expect(envelope).toHaveProperty("sdkType");
+    expect(envelope).toHaveProperty("sdkVersion", 1);
+    expect(envelope).toHaveProperty("target");
+    const target = envelope.target as Record<string, unknown>;
+    expect(target).toHaveProperty("input");
+    expect(target).toHaveProperty("kitRoot");
+    expect(target).toHaveProperty("resolvedFrom");
+    expect(target).toHaveProperty("kitId");
+    expect(target).toHaveProperty("forkId");
+    expect(target).toHaveProperty("schemaVersion");
+    expect(target).toHaveProperty("family");
+    expect(target).toHaveProperty("capabilityType");
+    expect(target).toHaveProperty("isAppKit");
+    expect(target).toHaveProperty("kitVersion");
+    expect(target).toHaveProperty("specializations");
+    const specs = target.specializations as Record<string, unknown>;
+    expect(specs).toHaveProperty("pipelineManifest");
+    expect(specs).toHaveProperty("workspaceDependencies");
+    expect(specs).toHaveProperty("adapterContractsDoc");
+    expect(specs).toHaveProperty("kitLocalHealthHelper");
+  }
+
+  it("pipeline inspect emits the shared envelope", () => {
+    const out = captureJson<Record<string, unknown>>(() =>
+      runPipelineInspect(REFERENCE_KIT_ROOT, { json: true }),
+    );
+    assertEnvelopeShape(out);
+    expect(out.kind).toBe("pipeline-inspect");
+    expect(out).toHaveProperty("manifest");
+    const manifest = out.manifest as Record<string, unknown>;
+    expect(manifest).toHaveProperty("pipelineManifestVersion");
+    // Reference kit is v2 schema, studio family.
+    const target = out.target as Record<string, unknown>;
+    expect(target.schemaVersion).toBe(2);
+    expect(target.family).toBe("studio");
+    expect(target.specializations).toMatchObject({
+      pipelineManifest: true,
+      workspaceDependencies: true,
+    });
+  });
+
+  it("dependencies inspect emits the shared envelope", () => {
+    const out = captureJson<Record<string, unknown>>(() =>
+      runDependenciesInspect(REFERENCE_KIT_ROOT, { json: true }),
+    );
+    assertEnvelopeShape(out);
+    expect(out.kind).toBe("dependencies-inspect");
+    expect(out).toHaveProperty("manifest");
+    const manifest = out.manifest as Record<string, unknown>;
+    expect(manifest).toHaveProperty("workspaceManifestVersion");
+  });
+
+  it("health emits the shared envelope", () => {
+    const out = captureJson<Record<string, unknown>>(() =>
+      runKitHealth(REFERENCE_KIT_ROOT, { json: true, noLocalHelper: true }),
+    );
+    assertEnvelopeShape(out);
+    expect(out.kind).toBe("kit-health");
+    expect(out).toHaveProperty("report");
+    const report = out.report as Record<string, unknown>;
+    expect(report).toHaveProperty("overall");
+    expect(report).toHaveProperty("checks");
+  });
+
+  it("envelope shape is identical across v1-single-file and v2-multi-app kits", () => {
+    // SIMPLE_KIT_ROOT does not adopt any specialization → still emits
+    // the same envelope (specializations.* are all false).
+    const pipelineOut = captureJson<Record<string, unknown>>(() =>
+      runPipelineInspect(SIMPLE_KIT_ROOT, { json: true }),
+    );
+    const depsOut = captureJson<Record<string, unknown>>(() =>
+      runDependenciesInspect(SIMPLE_KIT_ROOT, { json: true }),
+    );
+    const healthOut = captureJson<Record<string, unknown>>(() =>
+      runKitHealth(SIMPLE_KIT_ROOT, { json: true, noLocalHelper: true }),
+    );
+    for (const out of [pipelineOut, depsOut, healthOut]) {
+      assertEnvelopeShape(out);
+      const target = out.target as Record<string, unknown>;
+      expect(target.kitId).toBe("growthub-marketing-skills-v1");
+      const specs = target.specializations as Record<string, unknown>;
+      expect(specs.pipelineManifest).toBe(false);
+      expect(specs.workspaceDependencies).toBe(false);
+    }
+  });
+
+  it("resolveKitTarget accepts a filesystem path", () => {
+    const target = resolveKitTarget(REFERENCE_KIT_ROOT);
+    expect(target).not.toBeNull();
+    expect(target!.resolvedFrom).toBe("path");
+    expect(target!.kitRoot).toBe(REFERENCE_KIT_ROOT);
+  });
+
+  it("resolveKitTarget returns null for unresolvable input", () => {
+    expect(resolveKitTarget("definitely-not-a-real-kit-id-xyz")).toBeNull();
   });
 });

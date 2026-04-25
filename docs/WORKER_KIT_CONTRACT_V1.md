@@ -222,6 +222,77 @@ That is the entire point of the orthogonal-companion design.
 
 ---
 
+## Shared JSON envelope (single source of truth for agents)
+
+Every contract-surface CLI command emits the **same** outer envelope
+when invoked with `--json`. This is true regardless of whether the
+kit is a v1 single-file Worker Kit or a v2 multi-application Worker
+Kit with a full UI surface inside the governed workspace.
+
+```jsonc
+{
+  // Discriminator for the command that produced this envelope.
+  "kind": "pipeline-inspect" | "pipeline-list"
+        | "dependencies-inspect" | "dependencies-list"
+        | "kit-health",
+
+  // Doc + SDK pointers — let agents resolve the canonical schema.
+  "conventionSpec": "docs/<DOC>.md",
+  "sdkType": "@growthub/api-contract/<module>#<TypeName>",
+  "sdkVersion": 1,
+
+  // Universal target envelope. ALWAYS present (except on -list outputs,
+  // which list multiple targets). Same shape across every command.
+  "target": {
+    "input": "<what the user typed>",
+    "kitRoot": "<absolute path>",
+    "resolvedFrom": "path" | "kit-id-bundled"
+                  | "kit-id-exported" | "fork-id",
+    "kitId":         "<from kit.json#kit.id>" | null,
+    "forkId":        "<fork id when resolved via fork registry>" | null,
+    "schemaVersion": 1 | 2 | null,
+    "family":        "studio" | "workflow" | "operator" | "ops" | null,
+    "capabilityType": "worker" | "workflow" | "output" | "ui" | null,
+    "isAppKit":      <boolean — true iff schemaVersion === 2 && capabilityType === "ui">,
+    "kitVersion":    "<from kit.json#kit.version>" | null,
+    "specializations": {
+      "pipelineManifest":      <bool>,
+      "workspaceDependencies": <bool>,
+      "adapterContractsDoc":   <bool>,
+      "kitLocalHealthHelper":  <bool>
+    }
+  },
+
+  // Command-specific payload. Always under a single keyed sub-object,
+  // never spread at the top level — so the envelope shape stays stable.
+  "manifest" | "report" | "kits": { ... }
+}
+```
+
+### Why this matters
+
+- **No contradictions across kit complexity.** A v1 single-file
+  Worker Kit and a v2 multi-application Worker Kit produce the same
+  envelope shape. The difference shows up inside the envelope
+  (`schemaVersion`, `capabilityType`, `isAppKit`,
+  `specializations.*`), not in the envelope's structure.
+- **No contradictions across commands.** `growthub kit pipeline
+  inspect`, `growthub kit dependencies inspect`, and `growthub kit
+  health` all surface the same `target` block; an agent that has
+  read one knows what to expect from the others.
+- **No ambiguity in version fields.** Each manifest's schema version
+  is named after its source — `pipelineManifestVersion`,
+  `workspaceManifestVersion`, `report.version` — never the bare
+  `manifestVersion` (which would conflict across surfaces).
+- **Kit identity is canonical.** `target.kitId` is always read from
+  `kit.json#kit.id`. The kit-local manifests carry their own
+  `kitId` field for self-sufficiency (`manifest.kitId` in the
+  inspect outputs); when those disagree with the canonical
+  `target.kitId`, the agent has both values and can choose how to
+  reconcile.
+
+---
+
 ## What this contract does NOT do
 
 - It does **not** force every kit to adopt every specialization.

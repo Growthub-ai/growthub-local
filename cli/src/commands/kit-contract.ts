@@ -145,6 +145,116 @@ function describeSource(target: ResolvedTarget): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Shared agent-facing envelope — one source of truth across every JSON output
+// ---------------------------------------------------------------------------
+
+/**
+ * The universal envelope every `--json` output starts with. Agents
+ * receive the same `target` shape from `growthub kit pipeline inspect`,
+ * `growthub kit dependencies inspect`, `growthub kit health`, and
+ * future contract surfaces — regardless of whether the kit is a v1
+ * single-file Worker Kit or a v2 multi-application Worker Kit with a
+ * full UI surface inside the governed workspace.
+ */
+export interface TargetEnvelope {
+  /** Original input string (kit id, path, or fork id). */
+  input: string;
+  /** Absolute kit root path. */
+  kitRoot: string;
+  /** How the input was resolved. */
+  resolvedFrom: ResolvedTargetSource;
+  /** Canonical kit id (always resolved from `kit.json#kit.id`). */
+  kitId: string | null;
+  /** Fork id when resolved via fork registry, else null. */
+  forkId: string | null;
+  /** kit.json schema version (1 or 2). */
+  schemaVersion: 1 | 2 | null;
+  /** kit.json#kit.family (`studio / workflow / operator / ops`). v1 + v2. */
+  family: string | null;
+  /** kit.json#kit.type (`worker / workflow / output / ui`). v2 only; null on v1. */
+  capabilityType: string | null;
+  /** True iff the kit is a v2 app kit (`kit.type === "ui"`). */
+  isAppKit: boolean;
+  /** kit.json#kit.version. */
+  kitVersion: string | null;
+  /** Which optional orthogonal specializations are present on this kit. */
+  specializations: {
+    pipelineManifest: boolean;
+    workspaceDependencies: boolean;
+    adapterContractsDoc: boolean;
+    kitLocalHealthHelper: boolean;
+  };
+}
+
+/**
+ * Read `kit.json` once and project onto the universal envelope.
+ * Tolerant — missing or malformed `kit.json` returns null fields.
+ */
+function buildTargetEnvelope(target: ResolvedTarget): TargetEnvelope {
+  const kitJsonPath = path.resolve(target.kitRoot, "kit.json");
+  let manifest:
+    | {
+        schemaVersion?: unknown;
+        kit?: { id?: unknown; version?: unknown; family?: unknown; type?: unknown };
+      }
+    | null = null;
+  try {
+    if (fs.existsSync(kitJsonPath)) {
+      manifest = JSON.parse(fs.readFileSync(kitJsonPath, "utf8")) as typeof manifest;
+    }
+  } catch {
+    manifest = null;
+  }
+
+  const schemaVersion =
+    manifest?.schemaVersion === 1
+      ? 1
+      : manifest?.schemaVersion === 2
+        ? 2
+        : null;
+
+  const kitId =
+    typeof manifest?.kit?.id === "string"
+      ? manifest.kit.id
+      : target.kitId ?? null;
+
+  const family =
+    typeof manifest?.kit?.family === "string" ? manifest.kit.family : null;
+
+  const capabilityType =
+    typeof manifest?.kit?.type === "string" ? manifest.kit.type : null;
+
+  const kitVersion =
+    typeof manifest?.kit?.version === "string" ? manifest.kit.version : null;
+
+  return {
+    input: target.input,
+    kitRoot: target.kitRoot,
+    resolvedFrom: target.resolvedFrom,
+    kitId,
+    forkId: target.forkId ?? null,
+    schemaVersion: schemaVersion as 1 | 2 | null,
+    family,
+    capabilityType,
+    isAppKit: schemaVersion === 2 && capabilityType === "ui",
+    kitVersion,
+    specializations: {
+      pipelineManifest: fs.existsSync(path.resolve(target.kitRoot, "pipeline.manifest.json")),
+      workspaceDependencies: fs.existsSync(
+        path.resolve(target.kitRoot, "workspace.dependencies.json"),
+      ),
+      adapterContractsDoc: fs.existsSync(
+        path.resolve(target.kitRoot, "docs", "adapter-contracts.md"),
+      ),
+      kitLocalHealthHelper:
+        fs.existsSync(path.resolve(target.kitRoot, "helpers", "check-pipeline-health.sh")) ||
+        fs.existsSync(path.resolve(target.kitRoot, "helpers", "check-health.sh")) ||
+        fs.existsSync(path.resolve(target.kitRoot, "helpers", "check-kit-health.sh")),
+    },
+  };
+}
+
 function resolveBundledAssetRoot(kitId: string): string | null {
   // The bundled asset root mirrors the repo layout under the CLI's
   // `assets/worker-kits/<kit-id>/` (in dev: cli/assets/worker-kits/...).
@@ -278,7 +388,25 @@ export function runPipelineInspect(input: string, opts: { json?: boolean; out?: 
   }
   const projection = inspectPipelineManifest(target.kitRoot);
   if (opts.json) {
-    emitJson({ ...projection, target });
+    emitJson({
+      kind: "pipeline-inspect",
+      conventionSpec: "docs/PIPELINE_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/pipeline-kits#PipelineKitManifest",
+      sdkVersion: 1,
+      target: buildTargetEnvelope(target),
+      manifest: {
+        exists: projection.exists,
+        manifestPath: projection.manifestPath,
+        kitId: projection.kitId,
+        pipelineId: projection.pipelineId,
+        pipelineManifestVersion: projection.manifestVersion,
+        outputTopology: projection.outputTopology,
+        stageCount: projection.stageCount,
+        stages: projection.stages,
+      },
+      issues: projection.issues,
+      status: projection.status,
+    });
     return;
   }
   renderPipelineInspect(target, projection);
@@ -354,7 +482,23 @@ export function runDependenciesInspect(input: string, opts: { json?: boolean; ou
   }
   const projection = inspectWorkspaceDependencies(target.kitRoot);
   if (opts.json) {
-    emitJson({ ...projection, target });
+    emitJson({
+      kind: "dependencies-inspect",
+      conventionSpec: "docs/WORKER_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/workspaces#WorkspaceDependencyManifest",
+      sdkVersion: 1,
+      target: buildTargetEnvelope(target),
+      manifest: {
+        exists: projection.exists,
+        manifestPath: projection.manifestPath,
+        kitId: projection.kitId,
+        workspaceManifestVersion: projection.manifestVersion,
+        dependencyCount: projection.dependencyCount,
+        dependencies: projection.dependencies,
+      },
+      issues: projection.issues,
+      status: projection.status,
+    });
     return;
   }
   renderDependenciesInspect(target, projection);
@@ -413,7 +557,21 @@ export function runKitHealth(
     runLocalHelper: !opts.noLocalHelper,
   });
   if (opts.json) {
-    emitJson({ ...report, target });
+    emitJson({
+      kind: "kit-health",
+      conventionSpec: "docs/WORKER_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/health#KitHealthReport",
+      sdkVersion: 1,
+      target: buildTargetEnvelope(target),
+      report: {
+        version: report.version,
+        kitId: report.kitId,
+        generatedAt: report.generatedAt,
+        overall: report.overall,
+        checks: report.checks,
+        convention: report.convention,
+      },
+    });
   } else {
     renderHealth(target, report);
   }
@@ -521,8 +679,10 @@ export function runPipelineList(opts: { json?: boolean; filter?: string }): void
   const filtered = applyFilter(all, opts.filter, "pipeline");
   if (opts.json) {
     emitJson({
-      convention: "docs/PIPELINE_KIT_CONTRACT_V1.md",
-      kind: "pipeline",
+      kind: "pipeline-list",
+      conventionSpec: "docs/PIPELINE_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/pipeline-kits#PipelineKitManifest",
+      sdkVersion: 1,
       filter: opts.filter ?? null,
       total: filtered.length,
       kits: filtered,
@@ -539,8 +699,10 @@ export function runDependenciesList(opts: { json?: boolean; filter?: string }): 
   const filtered = applyFilter(all, opts.filter, "dependencies");
   if (opts.json) {
     emitJson({
-      convention: "docs/WORKER_KIT_CONTRACT_V1.md",
-      kind: "dependencies",
+      kind: "dependencies-list",
+      conventionSpec: "docs/WORKER_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/workspaces#WorkspaceDependencyManifest",
+      sdkVersion: 1,
       filter: opts.filter ?? null,
       total: filtered.length,
       kits: filtered,
