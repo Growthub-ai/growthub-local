@@ -18,7 +18,7 @@ Two adapter paths with identical output contracts:
 ### growthub-pipeline (primary)
 ```
 DynamicRegistryPipeline JSON → growthub pipeline execute → NDJSON stream
-→ growthub-pipeline-normalizer.js → GenerativeArtifact[]
+→ official CLI/SDK ExecutionEvent handling → GenerativeArtifact[]
 ```
 Node: `video-generation` / Model: `veo-3.1-generate-001`
 

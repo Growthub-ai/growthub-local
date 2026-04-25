@@ -45,7 +45,7 @@ Required: `output/<client>/<project>/generative/manifest.json`
 ]
 ```
 
-The `growthub-pipeline-normalizer.js` adapter writes this manifest from the CMS `ExecutionEvent` stream. The BYOK path writes the same shape from provider SDK responses.
+The growthub-pipeline adapter writes this manifest from official CLI/SDK `ExecutionEvent` data. The BYOK path writes the same shape from provider SDK responses.
 
 ## Stage 3 — Edit
 

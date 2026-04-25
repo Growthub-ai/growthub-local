@@ -59,7 +59,7 @@ output/<client-slug>/<project-slug>/
 - Check adapter (`bash helpers/check-generative-adapter.sh`)
 - Growthub-pipeline path: `bash helpers/run-pipeline.sh` with `video-generation` CMS node
 - BYOK path: `lib/adapters/generative/index.js` routes to provider SDK
-- Both paths write `manifest.json` via `growthub-pipeline-normalizer.js` contract
+- Both paths write `manifest.json` through the adapter contract using official CLI/SDK execution events
 - Spawn sub-skill: `skills/generative-execution/SKILL.md`
 - Self-eval: manifest.json has one artifact URL per scene; no secrets in artifacts
 

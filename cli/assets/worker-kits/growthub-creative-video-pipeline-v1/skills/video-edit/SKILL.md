@@ -1,5 +1,7 @@
 ---
 id: creative-video-pipeline/video-edit
+name: creative-video-pipeline-video-edit
+description: Prepare the Stage 3 edit handoff for the VIDEO_USE_HOME fork and collect final video output.
 version: 1.0.0
 triggers:
   - "run edit stage"

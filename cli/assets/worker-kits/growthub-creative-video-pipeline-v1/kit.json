@@ -81,7 +81,6 @@
     "apps/creative-video-pipeline/app/api/pipeline/route.js",
     "apps/creative-video-pipeline/lib/adapters/env.js",
     "apps/creative-video-pipeline/lib/adapters/generative/index.js",
-    "apps/creative-video-pipeline/lib/adapters/generative/growthub-pipeline-normalizer.js",
     "apps/creative-video-pipeline/lib/domain/pipeline.js"
   ],
   "setupPaths": {

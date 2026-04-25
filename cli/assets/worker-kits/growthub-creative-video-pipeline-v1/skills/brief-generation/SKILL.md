@@ -1,5 +1,7 @@
 ---
 id: creative-video-pipeline/brief-generation
+name: creative-video-pipeline-brief-generation
+description: Generate the Stage 1 brand-grounded pipeline brief from the worker kit brand kit and write output artifacts.
 version: 1.0.0
 triggers:
   - "generate creative brief"

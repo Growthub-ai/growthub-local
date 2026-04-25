@@ -1,5 +1,7 @@
 ---
 id: creative-video-pipeline/generative-execution
+name: creative-video-pipeline-generative-execution
+description: Run Stage 2 generative execution through the selected adapter and write the generative manifest.
 version: 1.0.0
 triggers:
   - "run generative stage"
