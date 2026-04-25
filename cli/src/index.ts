@@ -62,6 +62,7 @@ import { registerArtifactCommands } from "./commands/artifact.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
+import { registerLocalIntelligenceCommands } from "./commands/local-intelligence.js";
 import { registerT3CodeCommands, runT3CodeHub } from "./commands/t3code.js";
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
 import { registerGithubCommands } from "./commands/github.js";
@@ -80,7 +81,15 @@ import {
   writeIntelligenceConfig,
   buildMarketingContext,
   buildDeterministicContext,
+  getActiveModel,
+  getBackendConfig,
+  getDefaultLocalModel,
+  getLocalModelVariant,
+  inferFamilyFromModelId,
+  listAvailableModels,
+  listLocalModelVariants,
 } from "./runtime/native-intelligence/index.js";
+import type { LocalModelVariant, LocalModelFamily } from "./runtime/native-intelligence/index.js";
 import type { NodeContractSummary } from "./runtime/cms-node-contracts/types.js";
 import { createCmsCapabilityRegistryClient } from "./runtime/cms-capability-registry/index.js";
 import { introspectNodeContract } from "./runtime/cms-node-contracts/index.js";
@@ -228,6 +237,7 @@ function registerSharedCommands(target: Command) {
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
   registerT3CodeCommands(target);
+  registerLocalIntelligenceCommands(target);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -304,12 +314,10 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
   while (true) {
     const baseUrl = (process.env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1").replace(/\/$/, "");
     const currentConfig = readIntelligenceConfig();
-    const recommendedModel = "gemma3:4b";
+    const recommendedModel = getDefaultLocalModel().id;
     const favoriteModel = currentConfig.localModel?.trim() || undefined;
-    const defaultModel = currentConfig.localModel?.trim()
-      || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim()
-      || process.env.OLLAMA_MODEL?.trim()
-      || recommendedModel;
+    const active = getActiveModel(currentConfig);
+    const defaultModel = active.id;
     const status = await detectLocalIntelligenceStatus(baseUrl, defaultModel);
 
     const action = await p.select({
@@ -328,30 +336,36 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
     if (p.isCancel(action) || action === "__back_to_hub") return "back";
 
     if (action === "setup") {
+      const activeVariant = getLocalModelVariant(defaultModel);
+      const backend = getBackendConfig(defaultModel);
       const setupLines: string[] = [
         `OS: ${status.osLabel}`,
         `Ollama CLI: ${status.ollamaInstalled ? "detected" : "not detected"}`,
         `Ollama server: ${status.serverReachable ? "reachable" : "not reachable"} (${baseUrl})`,
-        `Configured local model: ${defaultModel}`,
+        `Active model: ${defaultModel}${activeVariant ? ` (${activeVariant.family}, ${(activeVariant.contextLength / 1000).toFixed(0)}k ctx)` : " (custom)"}`,
+        `Backend endpoint: ${backend.chatCompletionsUrl} (${backend.source})`,
         `Model availability: ${status.modelAvailable ? "present" : "missing"}`,
         `Detected models: ${status.availableModels.length}`,
+        `Catalog variants: ${listLocalModelVariants().length}`,
         "",
-        ...buildSetupCommands(status.osLabel, baseUrl, recommendedModel),
+        ...buildSetupCommands(status.osLabel, baseUrl, recommendedModel, activeVariant),
       ];
       p.note(setupLines.join("\n"), "Local Intelligence Setup Helper");
       continue;
     }
 
     if (action === "models") {
+      const merged = listAvailableModels(status.availableModels);
+      const prioritized = prioritizeModelVariants(merged, favoriteModel, recommendedModel);
       const modelOptions = [
-        ...prioritizeModelOptions(status.availableModels, favoriteModel, recommendedModel).map((modelId) => ({
-          value: modelId,
-          label: modelId === favoriteModel ? `⭐ ${modelId}` : modelId,
-          hint: modelId === favoriteModel
-            ? "favorite local model"
-            : modelId === recommendedModel
-              ? "recommended (validated locally)"
-              : "detected local model",
+        ...prioritized.map((variant) => ({
+          value: variant.id,
+          label: variant.id === favoriteModel ? `⭐ ${variant.displayName}` : variant.displayName,
+          hint: buildVariantHint(variant, {
+            favoriteModel,
+            recommendedModel,
+            detectedIds: status.availableModels,
+          }),
         })),
         { value: "__custom_model", label: "Enter custom local model id", hint: "for any other local adapter model" },
         { value: "__back_to_local_intel", label: "← Back to Local Intelligence" },
@@ -375,12 +389,14 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
 
       const applySpinner = p.spinner();
       applySpinner.start(`Applying model config (${chosenModel})...`);
+      const backend = getBackendConfig(chosenModel);
       writeIntelligenceConfig({
         ...currentConfig,
         backendType: "local",
         modelId: inferCanonicalModelId(chosenModel),
         localModel: chosenModel,
-        endpoint: `${baseUrl}/chat/completions`,
+        endpoint: backend.chatCompletionsUrl,
+        providerType: "local",
       });
 
       const health = await checkBackendHealth(readIntelligenceConfig());
@@ -565,16 +581,29 @@ async function detectLocalIntelligenceStatus(baseUrl: string, model: string): Pr
   }
 }
 
-function buildSetupCommands(osLabel: string, baseUrl: string, recommendedModel: string): string[] {
+function buildSetupCommands(
+  osLabel: string,
+  baseUrl: string,
+  recommendedModel: string,
+  activeVariant?: LocalModelVariant,
+): string[] {
+  const pullTag = activeVariant?.ollamaTag ?? activeVariant?.id ?? recommendedModel;
+  const familyEnv = activeVariant?.defaultEndpointEnv;
+  const extras: string[] = [];
+  if (familyEnv && familyEnv !== "OLLAMA_BASE_URL") {
+    extras.push(`Family endpoint override: ${familyEnv}=${activeVariant?.defaultEndpointUrl ?? baseUrl}`);
+  }
+
   if (osLabel === "Windows") {
     return [
       "Quick setup (Windows):",
       "  1) Install Ollama from https://ollama.com/download/windows",
       "  2) Start Ollama app/service",
-      `  3) Run: ollama pull ${recommendedModel}`,
+      `  3) Run: ollama pull ${pullTag}`,
       "  4) Optional env (PowerShell):",
       `     $env:OLLAMA_BASE_URL=\"${baseUrl}\"`,
       "     $env:NATIVE_INTELLIGENCE_LOCAL_MODEL=\"<your-model-id>\"",
+      ...extras.map((line) => `     ${line}`),
     ];
   }
 
@@ -582,9 +611,10 @@ function buildSetupCommands(osLabel: string, baseUrl: string, recommendedModel: 
     "Quick setup (macOS/Linux):",
     "  1) brew install ollama",
     "  2) ollama serve &",
-    `  3) ollama pull ${recommendedModel}`,
+    `  3) ollama pull ${pullTag}`,
     `  4) export OLLAMA_BASE_URL=${baseUrl}`,
     "  5) export NATIVE_INTELLIGENCE_LOCAL_MODEL=<your-model-id>",
+    ...extras.map((line) => `  ${line}`),
   ];
 }
 
@@ -605,6 +635,39 @@ function prioritizeModelOptions(
   return unique;
 }
 
+function prioritizeModelVariants(
+  variants: LocalModelVariant[],
+  favoriteModel?: string,
+  recommendedModel?: string,
+): LocalModelVariant[] {
+  if (variants.length === 0) return variants;
+  const match = (id: string) => variants.find((v) => v.id === id);
+  const favorite = favoriteModel ? match(favoriteModel) : undefined;
+  const recommended = recommendedModel ? match(recommendedModel) : undefined;
+  const leaders: LocalModelVariant[] = [];
+  const skip = new Set<string>();
+  if (favorite) { leaders.push(favorite); skip.add(favorite.id); }
+  if (recommended && !skip.has(recommended.id)) { leaders.push(recommended); skip.add(recommended.id); }
+  return [...leaders, ...variants.filter((v) => !skip.has(v.id))];
+}
+
+function buildVariantHint(
+  variant: LocalModelVariant,
+  ctx: { favoriteModel?: string; recommendedModel?: string; detectedIds: string[] },
+): string {
+  const parts: string[] = [];
+  if (variant.id === ctx.favoriteModel) parts.push("favorite");
+  else if (variant.recommended || variant.id === ctx.recommendedModel) parts.push("recommended");
+  else if (ctx.detectedIds.includes(variant.id) || (variant.ollamaTag && ctx.detectedIds.includes(variant.ollamaTag))) {
+    parts.push("detected");
+  } else {
+    parts.push(`family=${variant.family}`);
+  }
+  if (variant.contextLength > 0) parts.push(`${(variant.contextLength / 1000).toFixed(0)}k ctx`);
+  if (variant.hardwareHint) parts.push(variant.hardwareHint);
+  return parts.join(" · ");
+}
+
 async function promptForCustomModel(defaultModel: string): Promise<string | null> {
   const input = await p.text({
     message: "Enter local model id",
@@ -616,11 +679,8 @@ async function promptForCustomModel(defaultModel: string): Promise<string | null
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function inferCanonicalModelId(modelId: string): "gemma3" | "gemma3n" | "codegemma" {
-  const lower = modelId.toLowerCase();
-  if (lower.includes("gemma3n")) return "gemma3n";
-  if (lower.includes("codegemma")) return "codegemma";
-  return "gemma3";
+function inferCanonicalModelId(modelId: string): LocalModelFamily {
+  return inferFamilyFromModelId(modelId);
 }
 
 async function runLocalPromptChat(baseUrl: string, defaultModel: string): Promise<void> {
@@ -843,7 +903,7 @@ async function completeWithRetry(
   backend: ReturnType<typeof createNativeIntelligenceBackend>,
   baseConfig: {
     backendType: "local";
-    modelId: "gemma3" | "gemma3n" | "codegemma";
+    modelId: LocalModelFamily;
     localModel: string;
     endpoint: string;
     timeoutMs: number;
@@ -1285,6 +1345,11 @@ async function runDiscoveryHub(opts?: {
           "growthub qwen-code",
           "growthub qwen-code health",
           "growthub qwen-code prompt \"...\"",
+          "growthub local-intelligence list-variants",
+          "growthub local-intelligence active",
+          "growthub local-intelligence use <model-id>",
+          "growthub local-intelligence health",
+          "growthub local-intelligence setup [model-id]",
           "growthub capability list",
           "growthub pipeline assemble",
           "growthub artifact list",

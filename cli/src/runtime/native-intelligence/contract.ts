@@ -25,7 +25,67 @@ type NodeContractSummary = _NodeContractSummary;
 // Model provider identity
 // ---------------------------------------------------------------------------
 
-export type NativeIntelligenceModelId = "gemma3" | "gemma3n" | "codegemma";
+/**
+ * Canonical model family id. Bounded on purpose — concrete adapter tags
+ * (e.g. "gemma3:4b", "qwen2.5-coder:32b", "minimax-m1-80k") live on
+ * `NativeIntelligenceConfig.localModel` and in `MODEL_CATALOG`.
+ *
+ * When adding a new family:
+ *   1. Add the family id here.
+ *   2. Add one or more entries to `MODEL_CATALOG` with that family.
+ *   3. If the family has a distinct default endpoint, extend
+ *      `getBackendConfig` in `provider.ts`.
+ */
+export type NativeIntelligenceModelId =
+  | "gemma3"
+  | "gemma3n"
+  | "codegemma"
+  | "qwen-coder"
+  | "minimax"
+  | "kimi"
+  | "deepseek"
+  | "glm";
+
+export type LocalModelFamily = NativeIntelligenceModelId;
+
+// ---------------------------------------------------------------------------
+// Local model variant (catalog entry shape)
+// ---------------------------------------------------------------------------
+
+/**
+ * Single entry in the static local-model catalog.
+ *
+ * All concrete model tags that Growthub Local treats as "first-class"
+ * live here. The catalog is pure typed data — no FS, no imports from other
+ * CLI modules — mirroring `cli/src/templates/catalog.ts` and
+ * `cli/src/kits/catalog.ts`.
+ */
+export interface LocalModelVariant {
+  /** Concrete adapter tag (e.g. "gemma3:4b", "qwen2.5-coder:32b"). Unique. */
+  id: string;
+  /** Canonical family id used by the intelligence layer. */
+  family: LocalModelFamily;
+  /** Human display label. */
+  displayName: string;
+  /** Hugging Face repo id, when the model originates there. */
+  hfRepoId?: string;
+  /** Typical Ollama pull tag, if distinct from `id`. */
+  ollamaTag?: string;
+  /** Advertised context window (tokens). */
+  contextLength: number;
+  /** Recommended quantization for local inference. */
+  recommendedQuant: string;
+  /** Short capability tags — free-form strings used for UI hints. */
+  strengths: string[];
+  /** Free-form hardware hint shown in the picker. */
+  hardwareHint: string;
+  /** Env var name that, when set, overrides the per-family base URL. */
+  defaultEndpointEnv?: string;
+  /** Fallback base URL when the env var is unset. */
+  defaultEndpointUrl?: string;
+  /** If true, this variant is the recommended/validated default. */
+  recommended?: boolean;
+}
 
 /**
  * Extended provider types for multi-provider intelligence routing.

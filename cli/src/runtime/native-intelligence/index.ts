@@ -42,12 +42,21 @@ import type {
   ExecutionSummaryResult,
 } from "./contract.js";
 import { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
-import { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth } from "./provider.js";
+import { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth, getBackendConfig } from "./provider.js";
 import { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 import { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 import { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";
 import { planWorkflow, buildDeterministicPlan } from "./planner.js";
 import { buildMarketingContext, buildDeterministicContext } from "./marketing-context-builder.js";
+import type { LocalModelVariant } from "./contract.js";
+import {
+  MODEL_CATALOG,
+  DEFAULT_LOCAL_MODEL_ID,
+  listLocalModelVariants,
+  getLocalModelVariant,
+  getDefaultLocalModel,
+  inferFamilyFromModelId,
+} from "./model-catalog.js";
 
 // ---------------------------------------------------------------------------
 // Re-exports
@@ -58,6 +67,8 @@ export type {
   NativeIntelligenceBackend,
   NativeIntelligenceConfig,
   NativeIntelligenceModelId,
+  LocalModelFamily,
+  LocalModelVariant,
   IntelligenceProviderType,
   ModelCompletionInput,
   ModelCompletionResult,
@@ -81,7 +92,16 @@ export type {
 } from "./contract.js";
 
 export { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
-export { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth, NativeIntelligenceBackendError } from "./provider.js";
+export { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth, getBackendConfig, NativeIntelligenceBackendError } from "./provider.js";
+export type { BackendEndpointConfig } from "./provider.js";
+export {
+  MODEL_CATALOG,
+  DEFAULT_LOCAL_MODEL_ID,
+  listLocalModelVariants,
+  getLocalModelVariant,
+  getDefaultLocalModel,
+  inferFamilyFromModelId,
+} from "./model-catalog.js";
 export { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 export { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 export { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";
@@ -113,6 +133,8 @@ export function readIntelligenceConfig(): NativeIntelligenceConfig {
       defaultTemperature: typeof raw.defaultTemperature === "number" ? raw.defaultTemperature : DEFAULT_INTELLIGENCE_CONFIG.defaultTemperature,
       defaultMaxTokens: typeof raw.defaultMaxTokens === "number" ? raw.defaultMaxTokens : DEFAULT_INTELLIGENCE_CONFIG.defaultMaxTokens,
       timeoutMs: typeof raw.timeoutMs === "number" ? raw.timeoutMs : DEFAULT_INTELLIGENCE_CONFIG.timeoutMs,
+      providerType: validateProviderType(raw.providerType),
+      providerModelId: typeof raw.providerModelId === "string" ? raw.providerModelId : undefined,
     };
   } catch {
     return { ...DEFAULT_INTELLIGENCE_CONFIG };
@@ -125,9 +147,84 @@ export function writeIntelligenceConfig(config: NativeIntelligenceConfig): void 
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
 
+const VALID_MODEL_IDS: readonly NativeIntelligenceModelId[] = [
+  "gemma3",
+  "gemma3n",
+  "codegemma",
+  "qwen-coder",
+  "minimax",
+  "kimi",
+  "deepseek",
+  "glm",
+];
+
 function validateModelId(id: unknown): NativeIntelligenceModelId {
-  if (id === "gemma3" || id === "gemma3n" || id === "codegemma") return id;
+  if (typeof id === "string" && (VALID_MODEL_IDS as readonly string[]).includes(id)) {
+    return id as NativeIntelligenceModelId;
+  }
   return "gemma3";
+}
+
+function validateProviderType(value: unknown): NativeIntelligenceConfig["providerType"] {
+  if (value === "local" || value === "claude" || value === "openai" || value === "gemini" || value === "openrouter") {
+    return value;
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Active-model resolution (config → env → catalog default)
+// ---------------------------------------------------------------------------
+
+export interface ActiveLocalModel {
+  id: string;
+  variant: LocalModelVariant | undefined;
+  source: "config" | "env" | "catalog-default";
+}
+
+/**
+ * Resolve the currently-active local model id and its catalog entry.
+ * Used by discovery lane, setup helper, and commander surface.
+ */
+export function getActiveModel(configOverride?: Partial<NativeIntelligenceConfig>): ActiveLocalModel {
+  const config = { ...readIntelligenceConfig(), ...configOverride };
+  const fromLocal = typeof config.localModel === "string" ? config.localModel.trim() : "";
+  if (fromLocal) {
+    return { id: fromLocal, variant: getLocalModelVariant(fromLocal), source: "config" };
+  }
+  const fromEnv = process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim()
+    || process.env.OLLAMA_MODEL?.trim();
+  if (fromEnv) {
+    return { id: fromEnv, variant: getLocalModelVariant(fromEnv), source: "env" };
+  }
+  const fallback = getDefaultLocalModel();
+  return { id: fallback.id, variant: fallback, source: "catalog-default" };
+}
+
+/**
+ * Catalog entries merged with live `/v1/models` ids (when the caller passes
+ * them in). Catalog entries come first, then any detected-but-not-cataloged
+ * models are surfaced as "unknown" variants for custom-tag support.
+ */
+export function listAvailableModels(detectedIds: string[] = []): LocalModelVariant[] {
+  const catalog = listLocalModelVariants();
+  const seen = new Set(catalog.flatMap((entry) => [entry.id, entry.ollamaTag].filter(Boolean) as string[]));
+  const extras: LocalModelVariant[] = [];
+  for (const id of detectedIds) {
+    const trimmed = id.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    extras.push({
+      id: trimmed,
+      family: inferFamilyFromModelId(trimmed),
+      displayName: trimmed,
+      contextLength: 0,
+      recommendedQuant: "unknown",
+      strengths: ["custom"],
+      hardwareHint: "custom local adapter",
+    });
+  }
+  return [...catalog, ...extras];
 }
 
 // ---------------------------------------------------------------------------

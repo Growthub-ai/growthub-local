@@ -57,10 +57,35 @@ growthub pipeline assemble
 growthub open-agents
 growthub qwen-code
 
+growthub local-intelligence list-variants
+growthub local-intelligence active
+growthub local-intelligence use <model-id>
+growthub local-intelligence health
+growthub local-intelligence setup [model-id]
+
 growthub auth login
 growthub auth whoami
 growthub auth logout
 ```
+
+### Local Intelligence — supported models
+
+The Local Intelligence lane is backed by a static catalog at
+`cli/src/runtime/native-intelligence/model-catalog.ts`. First-class variants in v1:
+
+| id                  | family      | context | endpoint env var     |
+| ------------------- | ----------- | ------: | -------------------- |
+| `gemma3:4b`         | gemma3      | 128k    | `OLLAMA_BASE_URL`    |
+| `gemma-4-9b-it`     | gemma3      | 128k    | `OLLAMA_BASE_URL`    |
+| `qwen3.5-coder-32b` | qwen-coder  | 128k    | `QWEN_BASE_URL`      |
+| `minimax-m1-80k`    | minimax     |  80k    | `MINIMAX_BASE_URL`   |
+| `kimi-k2.5`         | kimi        | 200k    | `KIMI_BASE_URL`      |
+| `deepseek-v3.2`     | deepseek    | 128k    | `DEEPSEEK_BASE_URL`  |
+| `glm-5-32b`         | glm         | 128k    | `GLM_BASE_URL`       |
+
+Any other local adapter tag still works as a custom model — the catalog only
+controls first-class presentation and per-family endpoint routing. To register
+a new first-class model, add one entry to the catalog — nothing else changes.
 
 <details>
 <summary><strong>Command examples</strong></summary>
