@@ -21,11 +21,12 @@
  *   - `@growthub/api-contract/manifests`
  *   - `@growthub/api-contract/schemas`
  *   - `@growthub/api-contract/skills`
- *   - `@growthub/api-contract/pipeline-kits`
- *   - `@growthub/api-contract/workspaces`
- *   - `@growthub/api-contract/adapters`
- *   - `@growthub/api-contract/pipeline-trace`
- *   - `@growthub/api-contract/health`
+ *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
+ *   - `@growthub/api-contract/pipeline-kits`   — multi-stage specialization
+ *   - `@growthub/api-contract/workspaces`      — external-dep specialization
+ *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
+ *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
+ *   - `@growthub/api-contract/health`          — universal kit health
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -38,6 +39,8 @@ export type { ManifestOriginType, ManifestProvenance, CapabilityExecutionHints, 
 export type { NodeInputUiHint, NodeInputProviderNeutralIntent, NodeInputExecutionModeHints, TextField, LongTextField, NumberField, BooleanField, SelectOption, SelectField, ArrayField, JsonField, UrlField, FileField, UrlOrFileField, NodeInputField, NodeOutputFieldType, NodeOutputField, NodeInputSchema, NodeOutputSchema, NodeInputAttachment, } from "./schemas.js";
 export type { SkillHelperRef, SkillSubSkillRef, SkillSelfEval, SkillSessionMemory, SkillSource, SkillManifest, SkillNode, SkillCatalog, } from "./skills.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
+export type { WorkerKitCapabilityType, WorkerKitExecutionMode, WorkerKitActivationMode, WorkerKitFamily, WorkerKitVisibility, WorkerKitCompatibility, WorkerKitInstallMetadata, WorkerKitUIMetadata, WorkerKitProvenance, WorkerKitIdentityV1, WorkerKitIdentityV2, WorkerKitEntrypoint, WorkerKitBundleRef, WorkerKitOutputType, WorkerKitOutputStandard, WorkerKitManifestV1, WorkerKitManifestV2, WorkerKitManifest, WorkerKitBundleIdentity, WorkerKitBundleExportSpec, WorkerKitBundleManifestV1, WorkerKitBundleManifestV2, WorkerKitBundleManifest, } from "./worker-kits.js";
+export { WORKER_KIT_FAMILIES, WORKER_KIT_SUPPORTED_SCHEMA_VERSIONS, WORKER_KIT_LATEST_SCHEMA_VERSION, isWorkerKitManifestV1, isWorkerKitManifestV2, isWorkerKitBundleManifestV1, isWorkerKitBundleManifestV2, isAppKit, } from "./worker-kits.js";
 export type { PipelineArtifactRef, PipelineAdapterModeRef, PipelineTraceExpectation, PipelineStageRef, PipelineOutputTopology, PipelineTracePolicy, PipelineSessionMemoryPolicy, PipelineConventionEnvelope, PipelineKitManifest, } from "./pipeline-kits.js";
 export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
 export type { WorkspaceDependencyKind, WorkspaceSurfaceRef, WorkspaceOutputTopology, WorkspaceDependencyRef, WorkspaceConventionEnvelope, WorkspaceDependencyManifest, } from "./workspaces.js";

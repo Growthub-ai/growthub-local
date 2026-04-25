@@ -1,92 +1,67 @@
-# Pipeline Kit Contract — v1 (convention)
+# Pipeline Kit Contract — v1 (specialization)
 
-This document **describes a repeatable pattern** observed in shipped worker
-kits. It does not introduce SDK types, CLI behavior, or runtime gates. It is a
-convention so that agents and humans can read any complex multi-stage worker
-kit with the same mental model.
+A **Pipeline Kit** is an *optional specialization* of a Worker Kit
+([`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md)). It applies
+when a kit coordinates **two or more sequential stages**, each with a
+typed input and output artifact.
 
-**Reference implementation:** `cli/assets/worker-kits/growthub-creative-video-pipeline-v1/`
-shipped in commit `7eb832d` (`feat: ship creative video pipeline worker kit`).
+A Pipeline Kit:
 
-**Status:** Frozen as v1 convention. Promotion to `@growthub/api-contract`
-types is **deferred** until at least two pipeline-style kits validate the
-shape end-to-end (per the
-[`AGENTS.md`](../AGENTS.md) source-of-truth order).
+- still satisfies every Worker Kit primitive (kit.json, SKILL.md,
+  templates, frozen-asset list, output topology)
+- additionally ships `pipeline.manifest.json` to declare its stage
+  topology in machine-readable form
+- (commonly) also adopts orthogonal specializations
+  ([workspace dependencies](./WORKER_KIT_CONTRACT_V1.md#optional-orthogonal-specializations),
+  [adapter contracts](./ADAPTER_CONTRACTS_V1.md))
 
----
-
-## Why this exists
-
-The creative-video-pipeline kit composes:
-
-- a brand-driven brief stage
-- a hosted Growthub CMS node OR a BYOK provider stage
-- an external-repo (`video-use`) edit stage
-- a Vite operator shell + a Next.js app surface
-- per-stage sub-skills + helpers
-- artifact output topology + project memory + trace appends
-
-That pattern is repeatable. Capturing it now — **before** SDK promotion —
-prevents the wrong abstraction from being frozen too early.
+A single-skill kit is **not** a pipeline kit — it does not need this
+specialization. The contract is opt-in.
 
 ---
 
-## What a Pipeline Kit is
+## SDK source of truth
 
-A Pipeline Kit is any Growthub worker kit whose `kit.json` payload coordinates
-**two or more sequential stages**, each of which:
+```ts
+import type {
+  PipelineKitManifest,       // top-level pipeline.manifest.json shape
+  PipelineStageRef,          // one stage of execution
+  PipelineArtifactRef,       // typed input/output artifact path
+  PipelineAdapterModeRef,    // provider-mode declaration on a stage
+  PipelineTraceExpectation,  // trace policy declared per stage
+  PipelineOutputTopology,    // root + buckets layout
+  PipelineTracePolicy,       // trace-file + project-memory paths
+  PipelineSessionMemoryPolicy, // when to append to project.md
+} from "@growthub/api-contract/pipeline-kits";
+import { PIPELINE_KIT_MANIFEST_VERSION } from "@growthub/api-contract/pipeline-kits";
+```
 
-1. has its own sub-skill SKILL.md under `skills/<stage-id>/`
-2. consumes a typed input artifact and produces a typed output artifact on
-   disk under `output/<client>/<project>/`
-3. records its boundary in `.growthub-fork/project.md` and `trace.jsonl`
+CLI consumer:
 
-A single-stage kit is **not** a pipeline kit — it does not need this contract.
+```bash
+growthub kit pipeline inspect <kit-id-or-path> [--json]
+```
 
----
-
-## The seven surfaces
-
-A Pipeline Kit declares the following surfaces. Names are conventions, not
-SDK types yet.
-
-| Surface | What it answers | Lives at |
-|---|---|---|
-| `id` | Stable kit identifier | `kit.json#kit.id` |
-| `stages[]` | Ordered execution lanes | `pipeline.manifest.json#stages` |
-| `adapters[]` | Provider-boundary contracts | `docs/adapter-contracts.md` (kit-local) |
-| `externalDependencies[]` | Repos / forks the kit delegates to | `workspace.dependencies.json` |
-| `outputTopology` | Disk layout for artifacts | `output-standards.md` |
-| `tracePolicy` | Stage-boundary event names + shape | `docs/PIPELINE_TRACE_CONVENTION_V1.md` |
-| `sessionMemoryPolicy` | Where `project.md` lives + when it is appended | `templates/project.md` |
+The interactive `growthub kit` picker exposes this as a sub-action on
+each kit's detail menu. Backwards compatible: kits without a
+`pipeline.manifest.json` render an info message, not an error.
 
 ---
 
 ## Stage contract
 
-Each entry under `pipeline.manifest.json#stages[]` follows this shape.
-All paths are **relative to the kit root** in source, and to the
-exported workspace root at runtime.
+Each `pipeline.manifest.json#stages[]` entry follows this shape:
 
 ```json
 {
-  "id": "generative-execution",
-  "label": "Generate",
-  "subSkillPath": "skills/generative-execution/SKILL.md",
-  "inputArtifacts": [
-    "output/<client>/<project>/brief/pipeline-brief.md"
-  ],
-  "outputArtifacts": [
-    "output/<client>/<project>/generative/manifest.json"
-  ],
-  "helperPaths": [
-    "helpers/run-pipeline.sh",
-    "helpers/check-generative-adapter.sh"
-  ],
-  "adapterModes": [
-    "growthub-pipeline",
-    "byo-api-key"
-  ],
+  "id": "<stage-id>",
+  "label": "<short human label>",
+  "subSkillPath": "skills/<stage-id>/SKILL.md",
+  "inputArtifacts":  ["output/<client>/<project>/<bucket>/<input-file>"],
+  "outputArtifacts": ["output/<client>/<project>/<bucket>/<output-file>"],
+  "helperPaths":     ["helpers/<helper>.sh"],
+  "adapterModes":    ["<mode-a>", "<mode-b>"],
+  "externalDependencies": ["<dep-id>"],
   "traceRequired": true,
   "projectMemoryRequired": true
 }
@@ -94,66 +69,34 @@ exported workspace root at runtime.
 
 ### Hard rules
 
-- **Sub-skill = stage boundary.** A stage is the unit at which a parallel
-  sub-agent can execute under
-  [`SkillSubSkillRef`](../packages/api-contract/src/skills.ts).
-- **Artifacts are paths, not opaque blobs.** The handoff between stages is
-  always a file under `output/<client>/<project>/`.
-- **Adapter modes are explicit.** Stages with multiple provider paths declare
-  every mode they support; selection happens via env or config, never via
-  branching on provider internals inside domain code.
-- **External systems are reached through adapters or handoff artifacts only.**
-  No inlined logic from external repos (e.g. the kit MUST NOT inline
-  `video-use` editing logic — `edit-plan.md` is the only interface).
-- **Trace + project-memory append at every stage boundary.** No silent stages.
-
----
-
-## External dependency contract
-
-`workspace.dependencies.json` is the kit-local manifest of external repos /
-forks. Each entry follows:
-
-```json
-{
-  "id": "video-use",
-  "kind": "git-fork",
-  "env": "VIDEO_USE_HOME",
-  "setup": "setup/clone-fork.sh",
-  "install": "setup/install-skill.sh",
-  "health": "setup/verify-env.mjs",
-  "usedByStages": ["video-edit"],
-  "interfaceArtifact": "output/<client>/<project>/generative/manifest.json",
-  "handoffArtifact": "output/<client>/<project>/final/final.mp4"
-}
-```
-
-### Hard rules
-
-- **Every external repo a stage depends on must appear here.** No hidden
-  clones, no implicit fork URLs in shell scripts.
-- **`env` is the only contract for locating the dependency at runtime.** Kits
-  must not hardcode absolute paths.
-- **`interfaceArtifact` is the upstream stage's output.** The dependency
-  reads it.
-- **`handoffArtifact` is the dependency's output.** A downstream stage (or
-  the workspace consumer) reads it.
+- **Sub-skill is the stage boundary.** Each stage `id` matches a
+  `skills/<id>/SKILL.md` (Worker Kit primitive #5).
+- **Artifacts are paths, not opaque blobs.** The handoff between
+  stages is always a file under `output/<client>/<project>/`.
+- **Adapter modes are explicit.** Stages with provider variability
+  declare every supported mode; selection happens via env or kit
+  config, never by branching on provider internals inside domain code.
+- **External dependencies are reached only through workspace
+  dependencies.** Stages MUST NOT inline logic from external repos;
+  they handoff via a file written under `output/`.
+- **Trace + project-memory append at every stage boundary.** No
+  silent stages.
 
 ---
 
 ## Output topology
 
-Pipeline Kits use a fixed three-tier output layout:
+Pipeline Kits use a fixed three-tier layout:
 
 ```
-output/<client>/<project>/<stage-bucket>/<artifact>
+output/<client>/<project>/<bucket>/<artifact>
 ```
 
-Where `<stage-bucket>` is one of `brief/`, `generative/`, `final/`, or any
-additional bucket the kit declares in `output-standards.md`.
+`buckets[]` enumerates the per-stage subdirectories (`brief`,
+`generative`, `final`, etc., per the kit's choice).
 
-This is the **pipeline state contract**: an agent (or operator) can resume
-mid-pipeline by inspecting the topology alone.
+The disk topology IS the pipeline state contract: an agent can resume
+mid-pipeline from `output/` alone.
 
 ---
 
@@ -161,16 +104,16 @@ mid-pipeline by inspecting the topology alone.
 
 See [`PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md).
 
-Every stage MUST emit at least:
+Pipeline Kits emit (at minimum):
 
 - `pipeline_stage_started`
-- `pipeline_stage_completed` (or `pipeline_stage_failed`)
-- `pipeline_artifact_written` for each artifact produced
-- `pipeline_handoff_created` when the artifact crosses a stage boundary
+- `pipeline_stage_completed` or `pipeline_stage_failed`
+- `pipeline_artifact_written` per artifact
+- `pipeline_handoff_created` when an artifact crosses a stage boundary
+  or hands off to an external dependency
 
-Existing kit-local event names (`stage-complete`, `adapter-selected`,
-`artifact-written`, `self-eval-pass`, `self-eval-retry`, `auth-preflight`)
-remain valid; the v1 convention does not require renaming.
+These events are **additive** on top of any kit-local trace events the
+kit was already emitting (the v1 contract does not require renaming).
 
 ---
 
@@ -178,8 +121,8 @@ remain valid; the v1 convention does not require renaming.
 
 See [`ADAPTER_CONTRACTS_V1.md`](./ADAPTER_CONTRACTS_V1.md).
 
-A stage that has provider variability MUST express it as an adapter, never
-as branching inside domain code. Each adapter mode has:
+A stage that has provider variability MUST express it as an adapter,
+never as branching inside domain code. Each adapter mode has:
 
 - an env or config selector
 - a provider-specific implementation
@@ -187,55 +130,38 @@ as branching inside domain code. Each adapter mode has:
 
 ---
 
-## Session-memory policy
+## Reference adoption
 
-`.growthub-fork/project.md` is seeded from `templates/project.md` at fork
-register time and appended at every stage boundary. The append format is
-free-form prose; the machine-readable counterpart is `trace.jsonl`.
+| Kit | Stages | External deps | Adapter modes |
+|---|---|---|---|
+| `growthub-creative-video-pipeline-v1` | 3 (brief → generate → edit) | 1 (`video-use`) | `growthub-pipeline`, `byo-api-key` |
 
----
-
-## What this contract does NOT do
-
-- It does **not** add types to `@growthub/api-contract`.
-- It does **not** change CLI runtime behavior.
-- It does **not** introduce a global `growthub kit health` command.
-- It does **not** require non-pipeline kits to add a `pipeline.manifest.json`.
-- It does **not** privilege the hosted Growthub adapter over BYOK.
+Other kits in the catalog are eligible to adopt this specialization
+when they grow into multi-stage workflows. The
+[`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md) catalog
+table tracks adoption.
 
 ---
 
-## Promotion criteria (deferred work)
+## What this specialization does NOT do
 
-Promote any of the seven surfaces into `@growthub/api-contract` only when:
-
-1. At least **two** pipeline-style kits ship with both
-   `pipeline.manifest.json` and `workspace.dependencies.json`.
-2. Independent agents (Claude Code, Cursor, Codex) can read both manifests
-   and successfully resume a pipeline mid-flight without reading the kit's
-   prose docs.
-3. The trace event union has been used by both kits without divergence.
-
-When all three are true, the proposed SDK landing zones are:
-
-- `packages/api-contract/src/pipelines.ts` — `PipelineKitManifest`,
-  `PipelineStageRef`, `ArtifactRef`
-- `packages/api-contract/src/workspaces.ts` — `WorkspaceDependencyRef`
-- `packages/api-contract/src/adapters.ts` — `AdapterContractRef`
-
-Until then, the source of truth is **this document plus the kit-local
-manifests**.
+- It does **not** require any kit to adopt it. Single-skill kits
+  remain valid Worker Kits without a `pipeline.manifest.json`.
+- It does **not** privilege any adapter mode. Multiple modes are
+  peers and must produce identical normalized outputs.
+- It does **not** mandate runtime enforcement: today the CLI inspects
+  and reports; it does not block kit downloads or executions on
+  contract failures. `runtimeEnforcement: "none"` in every manifest
+  envelope.
+- It does **not** absorb implementation details into the SDK. The
+  manifest declares stage shape; each kit owns its stage logic.
 
 ---
 
 ## Cross-references
 
-- [`AGENTS.md`](../AGENTS.md) — repository agent contract
-- [`docs/WORKER_KIT_ARCHITECTURE.md`](./WORKER_KIT_ARCHITECTURE.md) — kit
-  architecture baseline
-- [`docs/ADAPTER_CONTRACTS_V1.md`](./ADAPTER_CONTRACTS_V1.md) — adapter
-  generic rule
-- [`docs/PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md)
-  — stage trace events
-- [`cli/assets/worker-kits/growthub-creative-video-pipeline-v1/docs/pipeline-architecture.md`](../cli/assets/worker-kits/growthub-creative-video-pipeline-v1/docs/pipeline-architecture.md)
-  — kit-local architecture (reference implementation)
+- [`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md) — foundation contract
+- [`ADAPTER_CONTRACTS_V1.md`](./ADAPTER_CONTRACTS_V1.md) — adapter rule
+- [`PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md) — trace events
+- [`packages/api-contract/src/pipeline-kits.ts`](../packages/api-contract/src/pipeline-kits.ts) — SDK types
+- [`cli/src/runtime/pipeline-kits/`](../cli/src/runtime/pipeline-kits/) — CLI runtime reader

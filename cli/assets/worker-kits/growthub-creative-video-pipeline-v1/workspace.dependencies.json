@@ -16,9 +16,11 @@
     }
   ],
   "convention": {
-    "spec": "docs/PIPELINE_KIT_CONTRACT_V1.md",
+    "spec": "docs/WORKER_KIT_CONTRACT_V1.md",
+    "sdkType": "@growthub/api-contract/workspaces#WorkspaceDependencyManifest",
+    "sdkVersion": 1,
     "version": 1,
-    "interpretedBy": "agents-and-operators-only",
+    "interpretedBy": ["growthub kit dependencies inspect", "agents", "operators"],
     "runtimeEnforcement": "none"
   }
 }

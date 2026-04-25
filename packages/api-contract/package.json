@@ -65,6 +65,10 @@
       "types": "./dist/skills.d.ts",
       "import": "./dist/skills.js"
     },
+    "./worker-kits": {
+      "types": "./dist/worker-kits.d.ts",
+      "import": "./dist/worker-kits.js"
+    },
     "./pipeline-kits": {
       "types": "./dist/pipeline-kits.d.ts",
       "import": "./dist/pipeline-kits.js"

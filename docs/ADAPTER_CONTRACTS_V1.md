@@ -1,15 +1,25 @@
-# Adapter Contracts — v1 (convention)
+# Adapter Contracts — v1 (specialization)
 
-This document **freezes the generic adapter rule** that has been validated
-across at least two shipped worker kits. It does not introduce SDK types or
-runtime gates.
+This document explains the **generic adapter rule**. It is an *optional
+specialization* of the Worker Kit contract
+([`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md)) — any kit
+in any family may declare adapter contracts when it has provider
+variability.
 
-**Reference implementations:**
+The SDK source of truth is
+[`@growthub/api-contract/adapters`](../packages/api-contract/src/adapters.ts):
 
-- `cli/assets/worker-kits/growthub-creative-video-pipeline-v1/docs/adapter-contracts.md`
-  — generative + external-repo handoff
-- `cli/assets/worker-kits/growthub-agency-portal-starter-v1/docs/adapter-contracts.md`
-  — persistence, auth, payment, reporting, integration
+```ts
+import type {
+  AdapterContractRef,
+  AdapterKind,
+  AdapterMode,
+  AdapterInputRef,
+  AdapterOutputRef,
+  NormalizedConnectionRef,
+} from "@growthub/api-contract/adapters";
+import { ADAPTER_CONTRACT_VERSION } from "@growthub/api-contract/adapters";
+```
 
 ---
 
@@ -21,64 +31,51 @@ adapter = env-or-config selector
         + normalized output shape
 ```
 
-Domain code (skills, helpers, app routes, pipeline stages) consumes the
-**normalized output**. It MUST NOT branch on provider internals.
+Domain code (skills, helpers, app routes, pipeline stages) consumes
+the **normalized output**. It MUST NOT branch on provider internals.
 
 ---
 
 ## Hard rules
 
-1. **Selection is explicit.** Adapter mode is chosen by an env var or a
-   value in `kit.json` / `pipeline.manifest.json`. Never by feature
+1. **Selection is explicit.** Adapter mode is chosen by an env var or
+   a value in `kit.json` / `pipeline.manifest.json`. Never by feature
    detection in domain code.
-2. **Output is normalized.** Two adapter modes for the same stage produce
-   the same output shape on disk (e.g. `manifest.json` from both
-   `growthub-pipeline` and `byo-api-key` paths in creative-video-pipeline).
-3. **Provider SDKs live behind the adapter.** A skill, helper, or route
-   never imports a provider SDK directly when an adapter exists.
-4. **Handoff artifacts are part of the boundary.** When a stage delegates
-   to an external repo, the artifact written at the boundary
-   (`edit-plan.md`, `manifest.json`, `final.mp4`) IS the adapter contract.
+2. **Output is normalized.** Two adapter modes for the same boundary
+   produce the same output shape on disk or in memory.
+3. **Provider SDKs live behind the adapter.** A skill, helper, or
+   route never imports a provider SDK directly when an adapter
+   exists.
+4. **Handoff artifacts are part of the boundary.** When a stage or
+   skill delegates to an external repo, the artifact written at the
+   boundary IS the adapter contract.
 5. **SDK types are preferred where they exist.** When
-   `@growthub/api-contract` defines a type for the input or event stream
-   (`DynamicRegistryPipeline`, `ExecutionEvent`,
-   `CapabilityManifestEnvelope`), the adapter uses that type rather than
-   re-declaring its own.
+   `@growthub/api-contract` defines a type for the input or event
+   stream (`DynamicRegistryPipeline`, `ExecutionEvent`,
+   `CapabilityManifestEnvelope`), the adapter uses that type rather
+   than re-declaring its own.
 6. **BYOK is first-class.** A `byo-api-key` adapter mode is never a
-   second-tier code path; it must produce the same normalized output as
-   the hosted-bridge mode.
+   second-tier code path; it must produce the same normalized output
+   as a hosted-bridge mode.
 
 ---
 
 ## Adapter families
 
-Different surfaces formalize different kinds of adapters. The generic rule
-is the same; the env-var prefix is namespaced per kit.
+These families are the standard buckets. Each kit MAY declare any
+combination; none is required.
 
-### Generative adapter
-
-Selects the path used to call image / video / text generation models.
-
-| Mode | Env selector | Required env | Normalized output |
-|---|---|---|---|
-| `growthub-pipeline` | `<KIT>_GENERATIVE_ADAPTER=growthub-pipeline` | `GROWTHUB_BRIDGE_ACCESS_TOKEN`, `GROWTHUB_BRIDGE_BASE_URL`, valid `growthub auth` session | `manifest.json` with `kitId`, `adapter`, `executionId`, `createdAt`, `artifacts[]` |
-| `byo-api-key` | `<KIT>_GENERATIVE_ADAPTER=byo-api-key` | provider key (e.g. `GOOGLE_AI_API_KEY`, `FAL_API_KEY`, `RUNWAY_API_KEY`) + `<KIT>_MODEL_PROVIDER` | same `manifest.json` shape |
-
-Reference: creative-video-pipeline kit's `docs/adapter-contracts.md`.
-
-### Persistence adapter
+### Persistence
 
 Selects the database / KV / managed-storage layer.
 
-| Mode | Required env |
-|---|---|
-| `postgres` | `DATABASE_URL` |
-| `qstash-kv` | `QSTASH_KV_REST_URL`, `QSTASH_KV_REST_TOKEN` |
-| `provider-managed` | provider-specific |
+| Mode | Required env | Runtime target |
+|---|---|---|
+| `postgres` | `DATABASE_URL` | Any Postgres-compatible database |
+| `qstash-kv` | `QSTASH_KV_REST_URL`, `QSTASH_KV_REST_TOKEN` | Qstash / Vercel KV |
+| `provider-managed` | provider-specific | Hosted DB managed outside the kit |
 
-Reference: agency-portal kit's `docs/adapter-contracts.md`.
-
-### Auth adapter
+### Auth
 
 Selects the identity provider for app surfaces.
 
@@ -89,7 +86,7 @@ Selects the identity provider for app surfaces.
 | `authjs` | Auth.js env |
 | `provider-managed` | provider-specific |
 
-### Payment adapter
+### Payment
 
 | Mode | Required env |
 |---|---|
@@ -97,7 +94,7 @@ Selects the identity provider for app surfaces.
 | `stripe` | `PAYMENT_SECRET_KEY`, optional `PAYMENT_WEBHOOK_SECRET` |
 | `polar` | `PAYMENT_SECRET_KEY`, optional `PAYMENT_WEBHOOK_SECRET` |
 
-### Integration adapter
+### Integration
 
 Selects how the kit resolves data sources and workspace integrations.
 
@@ -107,29 +104,56 @@ Selects how the kit resolves data sources and workspace integrations.
 | `byo-api-key` | provider-specific or `<KIT>_BYO_CONNECTIONS_JSON` | Workspace-owned |
 | `static` | none | Local catalog for dev / exported workspaces |
 
-### Hosted-bridge adapter
+### Reporting
+
+Optional reporting / data-source layer (e.g. Windsor AI, Google Sheets).
+
+### Hosted-bridge
 
 A specialization of the integration adapter for kits that consume the
 Growthub bridge:
 
 - input: `DynamicRegistryPipeline` from `@growthub/api-contract`
 - events: NDJSON `ExecutionEvent` validated by `isExecutionEvent()`
-- normalized output: per-stage manifest (e.g. `generative/manifest.json`)
+- normalized output: a kit-specific manifest (typed by the kit itself)
 
-### External-repo handoff adapter
+### Generative
 
-When a stage delegates to an external repo or fork, the adapter is the
-**handoff artifact** itself.
+Selects the path used to call image / video / text generation models.
 
-| Field | Example (creative-video-pipeline / video-use) |
+| Mode | Env selector pattern | Required env | Normalized output |
+|---|---|---|---|
+| `growthub-pipeline` | `<KIT>_GENERATIVE_ADAPTER=growthub-pipeline` | hosted bridge env + valid `growthub auth` session | kit-specific `manifest.json` (kitId, adapter, executionId, createdAt, artifacts[]) |
+| `byo-api-key` | `<KIT>_GENERATIVE_ADAPTER=byo-api-key` | provider key + `<KIT>_MODEL_PROVIDER` | same `manifest.json` shape |
+
+### External-repo handoff
+
+When a stage or skill delegates to an external repo or fork, the
+adapter is the **handoff artifact** itself.
+
+| Field | Meaning |
 |---|---|
-| upstream stage output (interface artifact) | `output/<client>/<project>/generative/manifest.json` |
-| handoff artifact written by external repo | `output/<client>/<project>/final/final.mp4` |
-| env locator | `VIDEO_USE_HOME` |
-| declared in | `workspace.dependencies.json` |
+| upstream artifact (interface) | The on-disk file the external repo reads. |
+| handoff artifact | The on-disk file the external repo writes back. |
+| env locator | The env var that points at the external repo. |
+| declared in | `workspace.dependencies.json` (typed by `WorkspaceDependencyRef`). |
 
-The kit MUST NOT inline external-repo logic. The artifact pair is the
-entire contract.
+The kit MUST NOT inline external-repo logic. The artifact pair is
+the entire contract.
+
+---
+
+## Reference adoption
+
+| Kit | Family | Adapter families adopted |
+|---|---|---|
+| `growthub-agency-portal-starter-v1` | studio | persistence, auth, payment, reporting, integration |
+| `growthub-creative-video-pipeline-v1` | studio | generative, external-repo handoff |
+
+The repetition across two unrelated kit families is what justified
+promoting `AdapterContractRef` into the SDK. Other kits in the catalog
+are eligible to adopt this specialization when they grow provider
+variability.
 
 ---
 
@@ -140,26 +164,28 @@ entire contract.
   `AGENCY_PORTAL_DATA_ADAPTER`).
 - **This document** is the generic rule that every kit's adapter doc
   conforms to.
-- **SDK types** in `@growthub/api-contract` are preferred for any shape
-  that already exists there (e.g. `DynamicRegistryPipeline`,
-  `ExecutionEvent`).
+- **SDK types** in `@growthub/api-contract/adapters` give a typed
+  shape for `AdapterContractRef`, `AdapterMode`, `AdapterInputRef`,
+  `AdapterOutputRef`, `NormalizedConnectionRef`.
 
 ---
 
-## What this convention does NOT do
+## What this specialization does NOT do
 
 - It does **not** require every kit to expose every adapter family.
-- It does **not** introduce SDK types for adapter selection.
 - It does **not** rename existing kit-local env vars.
-- It does **not** privilege hosted Growthub over BYOK in any code path.
+- It does **not** privilege hosted Growthub over BYOK in any code
+  path.
+- It does **not** mandate runtime enforcement: today the SDK types
+  describe the boundary; the kit owns the implementation behind it.
 
 ---
 
 ## Cross-references
 
-- [`PIPELINE_KIT_CONTRACT_V1.md`](./PIPELINE_KIT_CONTRACT_V1.md) — pipeline
-  kit convention (uses adapters at stage boundaries)
-- [`PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md) —
-  stage trace events including `adapter-selected`
-- [`packages/api-contract/src/execution.ts`](../packages/api-contract/src/execution.ts)
-  — `DynamicRegistryPipeline`, `ExecutionEvent`
+- [`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md) — foundation contract
+- [`PIPELINE_KIT_CONTRACT_V1.md`](./PIPELINE_KIT_CONTRACT_V1.md) — pipeline kit specialization (uses adapters at stage boundaries)
+- [`PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md) — trace events including `adapter-selected`
+- [`packages/api-contract/src/adapters.ts`](../packages/api-contract/src/adapters.ts) — SDK types
+- [`packages/api-contract/src/execution.ts`](../packages/api-contract/src/execution.ts) — `DynamicRegistryPipeline`
+- [`packages/api-contract/src/events.ts`](../packages/api-contract/src/events.ts) — `ExecutionEvent`

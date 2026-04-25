@@ -62,6 +62,25 @@ Fork exists (.growthub-fork/fork.json)?
           8. .growthub-fork/trace.jsonl (tail 20) — recent machine history
 ```
 
+## Agent operating loop (deterministic, no Markdown inference)
+
+For agents (Claude Code, Cursor, Codex), the canonical readiness +
+inspection loop uses the CLI's typed JSON outputs — read these BEFORE
+falling back to Markdown:
+
+```bash
+growthub kit health       <fork-id-or-path> --json   # KitHealthReport
+growthub kit pipeline     inspect <fork-id-or-path> --json   # PipelineKitManifest
+growthub kit dependencies inspect <fork-id-or-path> --json   # WorkspaceDependencyManifest
+growthub kit inspect      <fork-id-or-path> --json   # WorkerKitManifest (kit.json)
+```
+
+Each command accepts a kit id, filesystem path, OR a registered fork
+id. Both `--json` (agent) and interactive sub-branch (human) surfaces
+share the same primitives.
+
+Markdown explains the contract; the SDK + CLI are the source of truth.
+
 ## Three-stage pipeline
 
 ```

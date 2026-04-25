@@ -74,8 +74,10 @@
   ],
   "convention": {
     "spec": "docs/PIPELINE_KIT_CONTRACT_V1.md",
+    "sdkType": "@growthub/api-contract/pipeline-kits#PipelineKitManifest",
+    "sdkVersion": 1,
     "version": 1,
-    "interpretedBy": "agents-and-operators-only",
+    "interpretedBy": ["growthub kit pipeline inspect", "agents", "operators"],
     "runtimeEnforcement": "none"
   }
 }
