@@ -6,3 +6,4 @@ Safe shell helpers for the creative-video-pipeline operator. These wrap external
 |--------|---------|
 | `run-pipeline.sh` | Wraps `growthub pipeline execute` for Stage 2 |
 | `check-generative-adapter.sh` | Validates env for the selected generative adapter |
+| `check-pipeline-health.sh` | End-to-end readiness check across all three stages (composes the two above + Stage-3 deps + sub-skill / helper presence). Supports `--json`. |

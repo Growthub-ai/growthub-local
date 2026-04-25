@@ -24,6 +24,8 @@ helpers:
     description: Auth pre-flight + growthub pipeline execute passthrough
   - path: helpers/check-generative-adapter.sh
     description: Print current adapter mode and which provider keys are set
+  - path: helpers/check-pipeline-health.sh
+    description: Composable end-to-end readiness check (env + adapter + sub-skills + Stage 3 deps); supports --json
 subSkills:
   - name: brief-generation
     path: skills/brief-generation/SKILL.md
@@ -89,7 +91,7 @@ Both normalize to the same `GenerativeArtifact[]` object. The UI shell renders w
 3. **`.growthub-fork/project.md`** — session memory, seeded at init from `templates/project.md`.
 4. **Self-evaluation** — generate → apply → evaluate → record; retry up to `maxRetries` (3); mirrors the Fork Sync Agent loop.
 5. **`skills/`** — sub-skill lanes: `brief-generation`, `generative-execution`, `video-edit`.
-6. **`helpers/`** — `run-pipeline.sh`, `check-generative-adapter.sh`.
+6. **`helpers/`** — `run-pipeline.sh`, `check-generative-adapter.sh`, `check-pipeline-health.sh`.
 
 ## Related files
 

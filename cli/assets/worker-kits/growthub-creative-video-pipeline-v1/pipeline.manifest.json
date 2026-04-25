@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "kitId": "growthub-creative-video-pipeline-v1",
+  "pipelineId": "creative-video-pipeline",
+  "outputTopology": {
+    "root": "output/<client>/<project>",
+    "buckets": ["brief", "generative", "final"]
+  },
+  "tracePolicy": {
+    "convention": "docs/PIPELINE_TRACE_CONVENTION_V1.md",
+    "traceFile": ".growthub-fork/trace.jsonl",
+    "projectMemoryFile": ".growthub-fork/project.md"
+  },
+  "sessionMemoryPolicy": {
+    "seedTemplate": "templates/project.md",
+    "appendOn": ["stage-completed", "stage-failed", "self-eval"]
+  },
+  "stages": [
+    {
+      "id": "brief-generation",
+      "label": "Brief",
+      "subSkillPath": "skills/brief-generation/SKILL.md",
+      "inputArtifacts": [
+        "brands/<client>/brand-kit.md"
+      ],
+      "outputArtifacts": [
+        "output/<client>/<project>/brief/pipeline-brief.md"
+      ],
+      "helperPaths": [],
+      "adapterModes": [],
+      "externalDependencies": [],
+      "traceRequired": true,
+      "projectMemoryRequired": true
+    },
+    {
+      "id": "generative-execution",
+      "label": "Generate",
+      "subSkillPath": "skills/generative-execution/SKILL.md",
+      "inputArtifacts": [
+        "output/<client>/<project>/brief/pipeline-brief.md"
+      ],
+      "outputArtifacts": [
+        "output/<client>/<project>/generative/manifest.json"
+      ],
+      "helperPaths": [
+        "helpers/run-pipeline.sh",
+        "helpers/check-generative-adapter.sh"
+      ],
+      "adapterModes": [
+        "growthub-pipeline",
+        "byo-api-key"
+      ],
+      "externalDependencies": [],
+      "traceRequired": true,
+      "projectMemoryRequired": true
+    },
+    {
+      "id": "video-edit",
+      "label": "Edit",
+      "subSkillPath": "skills/video-edit/SKILL.md",
+      "inputArtifacts": [
+        "output/<client>/<project>/generative/manifest.json",
+        "output/<client>/<project>/brief/pipeline-brief.md"
+      ],
+      "outputArtifacts": [
+        "output/<client>/<project>/final/final.mp4"
+      ],
+      "helperPaths": [],
+      "adapterModes": [],
+      "externalDependencies": ["video-use"],
+      "traceRequired": true,
+      "projectMemoryRequired": true
+    }
+  ],
+  "convention": {
+    "spec": "docs/PIPELINE_KIT_CONTRACT_V1.md",
+    "version": 1,
+    "interpretedBy": "agents-and-operators-only",
+    "runtimeEnforcement": "none"
+  }
+}

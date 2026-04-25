@@ -2,11 +2,15 @@
 
 Run before calling the kit v1-ready or before a Vercel deployment.
 
+For the **reproducible end-to-end run** (Stages 1–3 against real provider
+keys), follow [`validation/e2e-reference.md`](./validation/e2e-reference.md).
+
 ## Environment
 
 - [ ] `bash setup/check-deps.sh` passes (FFmpeg, Python 3, pip, git, node)
 - [ ] `node setup/verify-env.mjs` passes
 - [ ] `bash helpers/check-generative-adapter.sh` shows expected adapter and keys
+- [ ] `bash helpers/check-pipeline-health.sh` exits 0 (composes all of the above)
 - [ ] `VIDEO_USE_HOME` resolves to an existing `video-use` clone
 
 ## Growthub CLI (growthub-pipeline adapter)
