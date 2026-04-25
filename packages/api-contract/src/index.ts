@@ -20,6 +20,12 @@
  *   - `@growthub/api-contract/events`
  *   - `@growthub/api-contract/manifests`
  *   - `@growthub/api-contract/schemas`
+ *   - `@growthub/api-contract/skills`
+ *   - `@growthub/api-contract/pipeline-kits`
+ *   - `@growthub/api-contract/workspaces`
+ *   - `@growthub/api-contract/adapters`
+ *   - `@growthub/api-contract/pipeline-trace`
+ *   - `@growthub/api-contract/health`
  */
 
 // Capabilities
@@ -133,6 +139,70 @@ export type {
   SkillCatalog,
 } from "./skills.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
+
+// Pipeline Kits (multi-stage governed-workspace pipeline contract —
+// docs/PIPELINE_KIT_CONTRACT_V1.md)
+export type {
+  PipelineArtifactRef,
+  PipelineAdapterModeRef,
+  PipelineTraceExpectation,
+  PipelineStageRef,
+  PipelineOutputTopology,
+  PipelineTracePolicy,
+  PipelineSessionMemoryPolicy,
+  PipelineConventionEnvelope,
+  PipelineKitManifest,
+} from "./pipeline-kits.js";
+export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
+
+// Workspaces (external dependencies + surfaces + output topology —
+// docs/PIPELINE_KIT_CONTRACT_V1.md § external dependency contract)
+export type {
+  WorkspaceDependencyKind,
+  WorkspaceSurfaceRef,
+  WorkspaceOutputTopology,
+  WorkspaceDependencyRef,
+  WorkspaceConventionEnvelope,
+  WorkspaceDependencyManifest,
+} from "./workspaces.js";
+export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
+
+// Adapters (generic provider-boundary contract — docs/ADAPTER_CONTRACTS_V1.md)
+export type {
+  AdapterKind,
+  AdapterMode,
+  AdapterInputRef,
+  AdapterOutputRef,
+  NormalizedConnectionRef,
+  AdapterContractRef,
+} from "./adapters.js";
+export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
+
+// Pipeline trace (additive stage-boundary event shapes —
+// docs/PIPELINE_TRACE_CONVENTION_V1.md). Distinct from `./events.ts`,
+// which types hosted CLI/SDK ExecutionEvent NDJSON streams.
+export type {
+  PipelineTraceEventType,
+  PipelineTraceEnvelope,
+  PipelineStageStartedEvent,
+  PipelineStageCompletedEvent,
+  PipelineStageFailedEvent,
+  PipelineArtifactWrittenEvent,
+  PipelineHandoffCreatedEvent,
+  PipelineTraceEvent,
+} from "./pipeline-trace.js";
+export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
+
+// Kit health (health reports + maturity scores —
+// docs/PIPELINE_KIT_CONTRACT_V1.md § validation)
+export type {
+  KitHealthSeverity,
+  KitHealthCheck,
+  KitHealthReport,
+  KitMaturityDimension,
+  KitMaturityScore,
+} from "./health.js";
+export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.

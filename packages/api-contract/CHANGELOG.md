@@ -1,5 +1,57 @@
 # @growthub/api-contract
 
+## 1.3.0-alpha.1
+
+Additive minor. Promotes the validated Pipeline Kit + Workspace
+Dependency + Adapter + Trace + Health primitives shipped under
+`docs/PIPELINE_KIT_CONTRACT_V1.md`, `docs/ADAPTER_CONTRACTS_V1.md`, and
+`docs/PIPELINE_TRACE_CONVENTION_V1.md` (and proven by
+`growthub-creative-video-pipeline-v1`) into the public type surface.
+
+Pure type-only; no existing export shape changes. The CLI does not yet
+consume these contracts at runtime — Phase 3 of the transition model.
+
+### Added
+
+- `pipeline-kits`: `PipelineKitManifest`, `PipelineStageRef`,
+  `PipelineArtifactRef`, `PipelineAdapterModeRef`,
+  `PipelineTraceExpectation`, `PipelineOutputTopology`,
+  `PipelineTracePolicy`, `PipelineSessionMemoryPolicy`,
+  `PipelineConventionEnvelope`. Sentinel
+  `PIPELINE_KIT_MANIFEST_VERSION = 1`.
+- `workspaces`: `WorkspaceDependencyManifest`, `WorkspaceDependencyRef`,
+  `WorkspaceDependencyKind`, `WorkspaceSurfaceRef`,
+  `WorkspaceOutputTopology`, `WorkspaceConventionEnvelope`. Sentinel
+  `WORKSPACE_DEPENDENCY_MANIFEST_VERSION = 1`.
+- `adapters`: `AdapterContractRef`, `AdapterKind`, `AdapterMode`,
+  `AdapterInputRef`, `AdapterOutputRef`, `NormalizedConnectionRef`.
+  Sentinel `ADAPTER_CONTRACT_VERSION = 1`.
+- `pipeline-trace`: `PipelineTraceEvent` discriminated union over
+  `pipeline_stage_started` / `pipeline_stage_completed` /
+  `pipeline_stage_failed` / `pipeline_artifact_written` /
+  `pipeline_handoff_created`, plus `isPipelineTraceEvent` guard and
+  `PIPELINE_TRACE_VERSION = 1`. **Distinct from** `./events.ts`
+  (`ExecutionEvent` for hosted CLI/SDK NDJSON streams).
+- `health`: `KitHealthReport`, `KitHealthCheck`, `KitHealthSeverity`,
+  `KitMaturityScore`, `KitMaturityDimension`. Sentinel
+  `KIT_HEALTH_REPORT_VERSION = 1`.
+- Subpath exports for all five new modules in `package.json`.
+
+### Architectural anchor
+
+The SDK describes what must be true, not how it is done. None of these
+types reference provider SDKs, model identifiers, or kit-specific
+implementation. The shapes mirror exactly what already ships under
+`cli/assets/worker-kits/growthub-creative-video-pipeline-v1/pipeline.manifest.json`
+and `workspace.dependencies.json`, so Phase 3 (CLI consumers) can adopt
+these contracts without any kit-side change.
+
+Promotion gate respected: this only landed because the kit-local
+manifests, the docs, and the report-only scorecard already shipped
+(commit on `claude/formalize-pipeline-primitives-fvkhW`). Phase 4 (CLI
+commands `growthub kit pipeline inspect`, `growthub kit dependencies
+inspect`, `growthub kit health`) is the next consumer.
+
 ## 1.2.0-alpha.1
 
 Additive minor. Introduces the public Skill manifest surface used by the
