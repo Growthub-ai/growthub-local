@@ -6436,9 +6436,9 @@ async function runDatabaseBackup(opts) {
         WHERE n.nspname = ${schema_name} AND t.relname = ${tablename} AND c.contype = 'p'
         GROUP BY c.conname
       `;
-      for (const p35 of pk) {
-        const cols = p35.column_names.map((c) => `"${c}"`).join(", ");
-        colDefs.push(`  CONSTRAINT "${p35.constraint_name}" PRIMARY KEY (${cols})`);
+      for (const p36 of pk) {
+        const cols = p36.column_names.map((c) => `"${c}"`).join(", ");
+        colDefs.push(`  CONSTRAINT "${p36.constraint_name}" PRIMARY KEY (${cols})`);
       }
       emit(`CREATE TABLE ${qualifiedTableName} (`);
       emit(colDefs.join(",\n"));
@@ -8182,8 +8182,8 @@ var init_onboard = __esm({
 
 // src/client/http.ts
 import { URL as URL2 } from "node:url";
-function buildUrl(apiBase, path67) {
-  const normalizedPath = path67.startsWith("/") ? path67 : `/${path67}`;
+function buildUrl(apiBase, path71) {
+  const normalizedPath = path71.startsWith("/") ? path71 : `/${path71}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
@@ -8245,26 +8245,26 @@ var init_http = __esm({
         this.runId = opts.runId?.trim() || void 0;
         this.userId = opts.userId?.trim() || void 0;
       }
-      get(path67, opts) {
-        return this.request(path67, { method: "GET" }, opts);
+      get(path71, opts) {
+        return this.request(path71, { method: "GET" }, opts);
       }
-      post(path67, body, opts) {
-        return this.request(path67, {
+      post(path71, body, opts) {
+        return this.request(path71, {
           method: "POST",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      patch(path67, body, opts) {
-        return this.request(path67, {
+      patch(path71, body, opts) {
+        return this.request(path71, {
           method: "PATCH",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      delete(path67, opts) {
-        return this.request(path67, { method: "DELETE" }, opts);
+      delete(path71, opts) {
+        return this.request(path71, { method: "DELETE" }, opts);
       }
-      async request(path67, init, opts) {
-        const url = buildUrl(this.apiBase, path67);
+      async request(path71, init, opts) {
+        const url = buildUrl(this.apiBase, path71);
         const headers = {
           accept: "application/json",
           ...toStringRecord(init.headers)
@@ -9297,10 +9297,10 @@ var init_kit_forks_home = __esm({
 import fs19 from "node:fs";
 import path26 from "node:path";
 function readIndex() {
-  const p35 = resolveKitForksIndexPath();
-  if (!fs19.existsSync(p35)) return { version: 1, entries: [] };
+  const p36 = resolveKitForksIndexPath();
+  if (!fs19.existsSync(p36)) return { version: 1, entries: [] };
   try {
-    const parsed = JSON.parse(fs19.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs19.readFileSync(p36, "utf8"));
     if (!parsed || !Array.isArray(parsed.entries)) return { version: 1, entries: [] };
     return parsed;
   } catch {
@@ -9308,9 +9308,9 @@ function readIndex() {
   }
 }
 function writeIndex(index51) {
-  const p35 = resolveKitForksIndexPath();
-  fs19.mkdirSync(path26.dirname(p35), { recursive: true });
-  fs19.writeFileSync(p35, JSON.stringify(index51, null, 2) + "\n", "utf8");
+  const p36 = resolveKitForksIndexPath();
+  fs19.mkdirSync(path26.dirname(p36), { recursive: true });
+  fs19.writeFileSync(p36, JSON.stringify(index51, null, 2) + "\n", "utf8");
 }
 function upsertIndexEntry(entry) {
   const index51 = readIndex();
@@ -9336,10 +9336,10 @@ function generateForkId(forkPath, kitId) {
   return `${base}-${suffix}`;
 }
 function readForkJson(forkPath) {
-  const p35 = resolveInForkRegistrationPath(forkPath);
-  if (!fs19.existsSync(p35)) return null;
+  const p36 = resolveInForkRegistrationPath(forkPath);
+  if (!fs19.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs19.readFileSync(p35, "utf8"));
+    return JSON.parse(fs19.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -9446,20 +9446,20 @@ function resolvePolicyPath(forkPath) {
   return path27.resolve(resolveInForkStateDir(forkPath), "policy.json");
 }
 function readKitForkPolicy(forkPath) {
-  const p35 = resolvePolicyPath(forkPath);
-  if (!fs20.existsSync(p35)) return makeDefaultKitForkPolicy();
+  const p36 = resolvePolicyPath(forkPath);
+  if (!fs20.existsSync(p36)) return makeDefaultKitForkPolicy();
   try {
-    const parsed = JSON.parse(fs20.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs20.readFileSync(p36, "utf8"));
     return { ...makeDefaultKitForkPolicy(), ...parsed, version: 1 };
   } catch {
     return makeDefaultKitForkPolicy();
   }
 }
 function writeKitForkPolicy(forkPath, policy) {
-  const p35 = resolvePolicyPath(forkPath);
-  fs20.mkdirSync(path27.dirname(p35), { recursive: true });
+  const p36 = resolvePolicyPath(forkPath);
+  fs20.mkdirSync(path27.dirname(p36), { recursive: true });
   const body = { ...policy, version: 1, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  fs20.writeFileSync(p35, JSON.stringify(body, null, 2) + "\n", "utf8");
+  fs20.writeFileSync(p36, JSON.stringify(body, null, 2) + "\n", "utf8");
 }
 function matchesAnyPrefix(targetPath, patterns) {
   const normalized = targetPath.replace(/^\/+|\/+$/g, "");
@@ -9491,15 +9491,15 @@ function appendKitForkTraceEvent(forkPath, event) {
     ...event,
     timestamp: event.timestamp ?? (/* @__PURE__ */ new Date()).toISOString()
   };
-  const p35 = resolveTracePath(forkPath);
-  fs21.mkdirSync(path28.dirname(p35), { recursive: true });
-  fs21.appendFileSync(p35, JSON.stringify(full) + "\n", "utf8");
+  const p36 = resolveTracePath(forkPath);
+  fs21.mkdirSync(path28.dirname(p36), { recursive: true });
+  fs21.appendFileSync(p36, JSON.stringify(full) + "\n", "utf8");
   return full;
 }
 function readKitForkTrace(forkPath) {
-  const p35 = resolveTracePath(forkPath);
-  if (!fs21.existsSync(p35)) return [];
-  const raw = fs21.readFileSync(p35, "utf8").trim();
+  const p36 = resolveTracePath(forkPath);
+  if (!fs21.existsSync(p36)) return [];
+  const raw = fs21.readFileSync(p36, "utf8").trim();
   if (!raw) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -9654,10 +9654,10 @@ function atomicWrite(filePath, body) {
   }
 }
 function readGithubToken() {
-  const p35 = resolveGithubTokenPath();
-  if (!fs24.existsSync(p35)) return null;
+  const p36 = resolveGithubTokenPath();
+  if (!fs24.existsSync(p36)) return null;
   try {
-    const parsed = JSON.parse(fs24.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs24.readFileSync(p36, "utf8"));
     if (!parsed?.accessToken) return null;
     return parsed;
   } catch {
@@ -9669,8 +9669,8 @@ function writeGithubToken(token) {
   atomicWrite(resolveGithubTokenPath(), JSON.stringify(token, null, 2) + "\n");
 }
 function clearGithubToken() {
-  const p35 = resolveGithubTokenPath();
-  if (fs24.existsSync(p35)) fs24.rmSync(p35, { force: true });
+  const p36 = resolveGithubTokenPath();
+  if (fs24.existsSync(p36)) fs24.rmSync(p36, { force: true });
 }
 function isGithubTokenExpired(token) {
   if (!token) return true;
@@ -9680,10 +9680,10 @@ function isGithubTokenExpired(token) {
   return Date.now() >= expiresAtMs;
 }
 function readGithubProfile() {
-  const p35 = resolveGithubProfilePath();
-  if (!fs24.existsSync(p35)) return null;
+  const p36 = resolveGithubProfilePath();
+  if (!fs24.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs24.readFileSync(p35, "utf8"));
+    return JSON.parse(fs24.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -9693,8 +9693,8 @@ function writeGithubProfile(profile) {
   atomicWrite(resolveGithubProfilePath(), JSON.stringify(profile, null, 2) + "\n");
 }
 function clearGithubProfile() {
-  const p35 = resolveGithubProfilePath();
-  if (fs24.existsSync(p35)) fs24.rmSync(p35, { force: true });
+  const p36 = resolveGithubProfilePath();
+  if (fs24.existsSync(p36)) fs24.rmSync(p36, { force: true });
 }
 function describeGithubTokenPath() {
   return resolveGithubTokenPath();
@@ -9729,9 +9729,9 @@ async function fetchHostedIntegrations(session) {
 }
 async function fetchHostedIntegrationCredential(session, providerId) {
   const client = toApiClient2(session);
-  const path67 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
+  const path71 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
   try {
-    return await client.get(path67, { ignoreNotFound: true });
+    return await client.get(path71, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);
@@ -10133,8 +10133,8 @@ __export(github_exports, {
   githubWhoami: () => githubWhoami,
   registerGithubCommands: () => registerGithubCommands
 });
-import * as p28 from "@clack/prompts";
-import pc42 from "picocolors";
+import * as p29 from "@clack/prompts";
+import pc43 from "picocolors";
 import open2 from "open";
 async function sleep2(ms) {
   await new Promise((r) => setTimeout(r, ms));
@@ -10157,14 +10157,14 @@ async function githubLogin(opts) {
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", mode: "pat", login: profile.login }, null, 2));
     } else {
-      p28.log.success(`Connected to GitHub as ${pc42.cyan(profile.login)} (PAT).`);
+      p29.log.success(`Connected to GitHub as ${pc43.cyan(profile.login)} (PAT).`);
     }
     return;
   }
-  p28.intro(pc42.cyan("GitHub device flow login"));
+  p29.intro(pc43.cyan("GitHub device flow login"));
   const start = await startDeviceFlow();
-  p28.log.step(
-    `Open ${pc42.cyan(start.verificationUri)} and enter code ${pc42.yellow(start.userCode)}`
+  p29.log.step(
+    `Open ${pc43.cyan(start.verificationUri)} and enter code ${pc43.yellow(start.userCode)}`
   );
   if (!opts.noBrowser) {
     try {
@@ -10175,7 +10175,7 @@ async function githubLogin(opts) {
   const startedAt = Date.now();
   const maxMs = opts.timeoutMs ?? start.expiresInSec * 1e3;
   let interval = start.pollIntervalSec;
-  const spinner13 = p28.spinner();
+  const spinner13 = p29.spinner();
   spinner13.start("Waiting for GitHub authorization...");
   while (Date.now() - startedAt < maxMs) {
     await sleep2(interval * 1e3);
@@ -10193,7 +10193,7 @@ async function githubLogin(opts) {
       if (opts.json) {
         console.log(JSON.stringify({ status: "ok", mode: "device-flow", login: profile.login }));
       } else {
-        p28.outro(`Connected to GitHub as ${pc42.cyan(profile.login)}.`);
+        p29.outro(`Connected to GitHub as ${pc43.cyan(profile.login)}.`);
       }
       return;
     }
@@ -10225,10 +10225,10 @@ async function githubWhoami(opts = {}) {
         bridge: { growthubConnected: bridge.growthubConnected, bridgeAvailable: bridge.bridgeAvailable }
       }, null, 2));
     } else {
-      p28.log.warn(
+      p29.log.warn(
         "Not connected to GitHub. Either run `growthub github login` or connect GitHub inside your Growthub account."
       );
-      if (bridge.notice) p28.log.info(bridge.notice);
+      if (bridge.notice) p29.log.info(bridge.notice);
     }
     return;
   }
@@ -10257,29 +10257,29 @@ async function githubWhoami(opts = {}) {
     return;
   }
   if (token) {
-    const status = directExpired ? pc42.red("expired") : pc42.green("active");
-    p28.log.message(
+    const status = directExpired ? pc43.red("expired") : pc43.green("active");
+    p29.log.message(
       `GitHub (direct): ${status}  login=${profile?.login ?? token.login ?? "?"}  mode=${token.authMode}  scopes=[${token.scopes.join(", ")}]`
     );
   }
   if (bridge.growthubConnected) {
     if (bridgeGithub) {
-      p28.log.message(
-        `GitHub (via Growthub bridge): ${pc42.green("connected")}  handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`
+      p29.log.message(
+        `GitHub (via Growthub bridge): ${pc43.green("connected")}  handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`
       );
     } else if (bridge.bridgeAvailable) {
-      p28.log.info(
+      p29.log.info(
         `Growthub account connected (${bridge.growthubLogin ?? "?"}) but no GitHub integration attached in gh-app.`
       );
     }
   }
-  p28.log.message(`Effective auth source: ${pc42.cyan(effectiveSource)}`);
+  p29.log.message(`Effective auth source: ${pc43.cyan(effectiveSource)}`);
 }
 function githubLogout(opts = {}) {
   clearGithubToken();
   clearGithubProfile();
   if (opts.json) console.log(JSON.stringify({ status: "ok" }));
-  else p28.log.success("Disconnected from GitHub.");
+  else p29.log.success("Disconnected from GitHub.");
 }
 function registerGithubCommands(program2) {
   const github = program2.command("github").description("Manage first-party native GitHub authentication + fork operations.");
@@ -10306,24 +10306,24 @@ var init_github = __esm({
 });
 
 // src/starter/scaffold-session-memory.ts
-import fs43 from "node:fs";
-import path51 from "node:path";
+import fs47 from "node:fs";
+import path55 from "node:path";
 function scaffoldSessionMemory(input) {
-  const forkPath = path51.resolve(input.forkPath);
-  const templatePath = path51.join(forkPath, TEMPLATE_RELATIVE);
-  const projectMdPath = path51.join(forkPath, PROJECT_MD_RELATIVE);
-  if (!fs43.existsSync(templatePath)) {
+  const forkPath = path55.resolve(input.forkPath);
+  const templatePath = path55.join(forkPath, TEMPLATE_RELATIVE);
+  const projectMdPath = path55.join(forkPath, PROJECT_MD_RELATIVE);
+  if (!fs47.existsSync(templatePath)) {
     return { written: false, projectMdPath, templatePath: null };
   }
-  if (fs43.existsSync(projectMdPath)) {
+  if (fs47.existsSync(projectMdPath)) {
     return { written: false, projectMdPath, templatePath };
   }
-  const template = fs43.readFileSync(templatePath, "utf8");
+  const template = fs47.readFileSync(templatePath, "utf8");
   const startedAt = input.startedAt ?? (/* @__PURE__ */ new Date()).toISOString();
   const sourceRef = input.sourceRef ?? "";
   const seeded = template.replaceAll("{{KIT_ID}}", input.kitId).replaceAll("{{FORK_ID}}", input.forkId).replaceAll("{{STARTED_AT}}", startedAt).replaceAll("{{SOURCE}}", input.source).replaceAll("{{SOURCE_REF}}", sourceRef);
-  fs43.mkdirSync(path51.dirname(projectMdPath), { recursive: true });
-  fs43.writeFileSync(projectMdPath, seeded, "utf8");
+  fs47.mkdirSync(path55.dirname(projectMdPath), { recursive: true });
+  fs47.writeFileSync(projectMdPath, seeded, "utf8");
   return { written: true, projectMdPath, templatePath };
 }
 var PROJECT_MD_RELATIVE, TEMPLATE_RELATIVE;
@@ -10336,12 +10336,12 @@ var init_scaffold_session_memory = __esm({
 });
 
 // src/starter/init.ts
-import fs44 from "node:fs";
-import path52 from "node:path";
+import fs48 from "node:fs";
+import path56 from "node:path";
 async function initStarterWorkspace(opts) {
   const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
-  const absOut = path52.resolve(opts.out);
-  if (fs44.existsSync(absOut) && fs44.readdirSync(absOut).length > 0) {
+  const absOut = path56.resolve(opts.out);
+  if (fs48.existsSync(absOut) && fs48.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   const info = getBundledKitSourceInfo(kitId);
@@ -10350,7 +10350,7 @@ async function initStarterWorkspace(opts) {
     forkPath: absOut,
     kitId: info.id,
     baseVersion: info.version,
-    label: opts.name?.trim() || path52.basename(absOut)
+    label: opts.name?.trim() || path56.basename(absOut)
   });
   const policy = {
     ...makeDefaultKitForkPolicy(),
@@ -10460,9 +10460,9 @@ var init_types2 = __esm({
 });
 
 // src/starter/source-import/github-source.ts
-import fs45 from "node:fs";
-import path53 from "node:path";
-import { spawnSync as spawnSync5 } from "node:child_process";
+import fs49 from "node:fs";
+import path57 from "node:path";
+import { spawnSync as spawnSync6 } from "node:child_process";
 function baseHeaders() {
   return {
     "User-Agent": "growthub-cli",
@@ -10576,7 +10576,7 @@ async function resolveGithubCloneToken(probe) {
   return { token: resolved.accessToken, source: resolved.source };
 }
 function runGit2(cwd, args) {
-  const res = spawnSync5("git", args, {
+  const res = spawnSync6("git", args, {
     cwd,
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024
@@ -10592,12 +10592,12 @@ function cloneGithubRepo(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot clone.");
   }
-  if (fs45.existsSync(input.destination)) {
+  if (fs49.existsSync(input.destination)) {
     throw new Error(`Clone destination already exists: ${input.destination}`);
   }
   const cloneUrl = input.token ? buildTokenCloneUrl(input.probe.repo, input.token) : input.probe.cloneUrl;
-  const parent = path53.dirname(input.destination);
-  fs45.mkdirSync(parent, { recursive: true });
+  const parent = path57.dirname(input.destination);
+  fs49.mkdirSync(parent, { recursive: true });
   const depth = input.depth ?? 1;
   const branch = input.branch ?? input.probe.defaultBranch;
   const args = ["clone"];
@@ -10624,17 +10624,17 @@ function cloneGithubRepo(input) {
 function narrowToSubdirectory(rootDir, subdirectory) {
   const normalizedSub = subdirectory.replace(/^\/+|\/+$/g, "");
   if (!normalizedSub) return;
-  const abs = path53.resolve(rootDir, normalizedSub);
-  if (!fs45.existsSync(abs) || !fs45.statSync(abs).isDirectory()) {
+  const abs = path57.resolve(rootDir, normalizedSub);
+  if (!fs49.existsSync(abs) || !fs49.statSync(abs).isDirectory()) {
     throw new Error(`Subdirectory not found in cloned repo: ${subdirectory}`);
   }
-  const tmp = path53.resolve(
-    path53.dirname(rootDir),
-    `.${path53.basename(rootDir)}-narrow-${Date.now().toString(36)}`
+  const tmp = path57.resolve(
+    path57.dirname(rootDir),
+    `.${path57.basename(rootDir)}-narrow-${Date.now().toString(36)}`
   );
-  fs45.renameSync(abs, tmp);
-  fs45.rmSync(rootDir, { recursive: true, force: true });
-  fs45.renameSync(tmp, rootDir);
+  fs49.renameSync(abs, tmp);
+  fs49.rmSync(rootDir, { recursive: true, force: true });
+  fs49.renameSync(tmp, rootDir);
 }
 var GITHUB_API_BASE2;
 var init_github_source = __esm({
@@ -10648,10 +10648,10 @@ var init_github_source = __esm({
 });
 
 // src/starter/source-import/skills-source.ts
-import fs46 from "node:fs";
+import fs50 from "node:fs";
 import os11 from "node:os";
-import path54 from "node:path";
-import { spawnSync as spawnSync6 } from "node:child_process";
+import path58 from "node:path";
+import { spawnSync as spawnSync7 } from "node:child_process";
 function resolveBase() {
   const raw = process.env.SKILLS_SH_BASE?.trim();
   if (!raw) return DEFAULT_BASE;
@@ -10916,14 +10916,14 @@ async function probeSkillsSource(input) {
   };
 }
 function assertInsidePayloadRoot(root, candidate) {
-  const abs = path54.resolve(candidate);
-  const rootAbs = path54.resolve(root);
-  if (!abs.startsWith(rootAbs + path54.sep) && abs !== rootAbs) {
+  const abs = path58.resolve(candidate);
+  const rootAbs = path58.resolve(root);
+  if (!abs.startsWith(rootAbs + path58.sep) && abs !== rootAbs) {
     throw new Error(`Refusing to write outside payload root: ${candidate}`);
   }
 }
 function runGit3(args, cwd) {
-  const res = spawnSync6("git", args, {
+  const res = spawnSync7("git", args, {
     cwd,
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024
@@ -10934,24 +10934,24 @@ function runGit3(args, cwd) {
   };
 }
 function skillDirectoryMatches(dir, skillSlug) {
-  const skillFile = path54.resolve(dir, "SKILL.md");
-  if (!fs46.existsSync(skillFile) || !fs46.statSync(skillFile).isFile()) {
+  const skillFile = path58.resolve(dir, "SKILL.md");
+  if (!fs50.existsSync(skillFile) || !fs50.statSync(skillFile).isFile()) {
     return false;
   }
-  if (path54.basename(dir) === skillSlug) {
+  if (path58.basename(dir) === skillSlug) {
     return true;
   }
-  const content = fs46.readFileSync(skillFile, "utf8");
+  const content = fs50.readFileSync(skillFile, "utf8");
   const nameMatch = content.match(/(?:^|\n)name:\s*["']?([A-Za-z0-9._:-]+)["']?\s*(?:\n|$)/i);
   return nameMatch?.[1] === skillSlug;
 }
 function locateSkillDirectory(root, skillSlug) {
   const preferred = [
-    path54.resolve(root, "skills", skillSlug),
-    path54.resolve(root, skillSlug)
+    path58.resolve(root, "skills", skillSlug),
+    path58.resolve(root, skillSlug)
   ];
   for (const candidate of preferred) {
-    if (fs46.existsSync(candidate) && fs46.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
+    if (fs50.existsSync(candidate) && fs50.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
       return candidate;
     }
   }
@@ -10961,12 +10961,12 @@ function locateSkillDirectory(root, skillSlug) {
     if (skillDirectoryMatches(current, skillSlug)) {
       return current;
     }
-    for (const entry of fs46.readdirSync(current, { withFileTypes: true })) {
+    for (const entry of fs50.readdirSync(current, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if ([".git", "node_modules", ".next", "dist", "build", "coverage"].includes(entry.name)) {
         continue;
       }
-      queue.push(path54.resolve(current, entry.name));
+      queue.push(path58.resolve(current, entry.name));
     }
   }
   return null;
@@ -10976,18 +10976,18 @@ function copySkillTree(sourceDir, destination) {
   const stack = [{ from: sourceDir, to: destination }];
   while (stack.length > 0) {
     const current = stack.pop();
-    fs46.mkdirSync(current.to, { recursive: true });
-    for (const entry of fs46.readdirSync(current.from, { withFileTypes: true })) {
-      const fromPath = path54.resolve(current.from, entry.name);
-      const toPath = path54.resolve(current.to, entry.name);
+    fs50.mkdirSync(current.to, { recursive: true });
+    for (const entry of fs50.readdirSync(current.from, { withFileTypes: true })) {
+      const fromPath = path58.resolve(current.from, entry.name);
+      const toPath = path58.resolve(current.to, entry.name);
       assertInsidePayloadRoot(destination, toPath);
       if (entry.isDirectory()) {
         stack.push({ from: fromPath, to: toPath });
         continue;
       }
-      const data = fs46.readFileSync(fromPath);
-      fs46.mkdirSync(path54.dirname(toPath), { recursive: true });
-      fs46.writeFileSync(toPath, data, { mode: 420 });
+      const data = fs50.readFileSync(fromPath);
+      fs50.mkdirSync(path58.dirname(toPath), { recursive: true });
+      fs50.writeFileSync(toPath, data, { mode: 420 });
       written += 1;
     }
   }
@@ -10998,7 +10998,7 @@ async function fetchSkillPayload(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot materialize a skills.sh payload.");
   }
-  if (fs46.existsSync(destination)) {
+  if (fs50.existsSync(destination)) {
     throw new Error(`Skill payload destination already exists: ${destination}`);
   }
   const repoSource = probe.repoUrl ?? (probe.repository ? `https://github.com/${probe.repository}` : void 0);
@@ -11006,11 +11006,11 @@ async function fetchSkillPayload(input) {
   if (!repoSource || !skillSlug) {
     throw new Error(`Skill '${probe.skillId}' is missing repository metadata \u2014 cannot materialize payload.`);
   }
-  const cloneRoot = fs46.mkdtempSync(
-    path54.join(os11.tmpdir(), "growthub-skills-source-")
+  const cloneRoot = fs50.mkdtempSync(
+    path58.join(os11.tmpdir(), "growthub-skills-source-")
   );
   try {
-    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path54.dirname(cloneRoot));
+    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path58.dirname(cloneRoot));
     if (!cloneRes.ok) {
       throw new Error(`git clone failed: ${cloneRes.stderr || "unable to clone skill repository"}`);
     }
@@ -11023,7 +11023,7 @@ async function fetchSkillPayload(input) {
     const fileCount = copySkillTree(skillDir, destination);
     return { destination, fileCount };
   } finally {
-    fs46.rmSync(cloneRoot, { recursive: true, force: true });
+    fs50.rmSync(cloneRoot, { recursive: true, force: true });
   }
 }
 var DEFAULT_BASE, COMMENT_PATTERN;
@@ -11037,13 +11037,13 @@ var init_skills_source = __esm({
 });
 
 // src/starter/source-import/detect.ts
-import fs47 from "node:fs";
-import path55 from "node:path";
+import fs51 from "node:fs";
+import path59 from "node:path";
 function safeReadPackageJson(dir) {
-  const p35 = path55.resolve(dir, "package.json");
-  if (!fs47.existsSync(p35)) return null;
+  const p36 = path59.resolve(dir, "package.json");
+  if (!fs51.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs47.readFileSync(p35, "utf8"));
+    return JSON.parse(fs51.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -11053,10 +11053,10 @@ function detectPackageManager(dir, pkg) {
   if (pkg?.packageManager?.startsWith("yarn")) return "yarn";
   if (pkg?.packageManager?.startsWith("npm")) return "npm";
   if (pkg?.packageManager?.startsWith("bun")) return "bun";
-  if (fs47.existsSync(path55.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs47.existsSync(path55.resolve(dir, "yarn.lock"))) return "yarn";
-  if (fs47.existsSync(path55.resolve(dir, "bun.lockb"))) return "bun";
-  if (fs47.existsSync(path55.resolve(dir, "package-lock.json"))) return "npm";
+  if (fs51.existsSync(path59.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs51.existsSync(path59.resolve(dir, "yarn.lock"))) return "yarn";
+  if (fs51.existsSync(path59.resolve(dir, "bun.lockb"))) return "bun";
+  if (fs51.existsSync(path59.resolve(dir, "package-lock.json"))) return "npm";
   return "unknown";
 }
 function collectDeps(pkg) {
@@ -11070,12 +11070,12 @@ function collectDeps(pkg) {
 }
 function looksLikeSkillPayload(rootDir) {
   const markers = ["SKILL.md", "skill.md", "skill.json", "skill.yml", "skill.yaml", "prompt.md"];
-  return markers.some((name) => fs47.existsSync(path55.resolve(rootDir, name)));
+  return markers.some((name) => fs51.existsSync(path59.resolve(rootDir, name)));
 }
 function detectFramework(rootDir, pkg) {
   if (!pkg) {
     if (looksLikeSkillPayload(rootDir)) return "skill";
-    if (fs47.existsSync(path55.resolve(rootDir, "docs"))) return "docs";
+    if (fs51.existsSync(path59.resolve(rootDir, "docs"))) return "docs";
     return "unknown";
   }
   const deps = collectDeps(pkg);
@@ -11084,8 +11084,8 @@ function detectFramework(rootDir, pkg) {
     "vite.config.ts",
     "vite.config.mjs",
     "vite.config.cjs"
-  ].some((name) => fs47.existsSync(path55.resolve(rootDir, name)));
-  if (deps.has("next") || fs47.existsSync(path55.resolve(rootDir, "next.config.js")) || fs47.existsSync(path55.resolve(rootDir, "next.config.mjs"))) {
+  ].some((name) => fs51.existsSync(path59.resolve(rootDir, name)));
+  if (deps.has("next") || fs51.existsSync(path59.resolve(rootDir, "next.config.js")) || fs51.existsSync(path59.resolve(rootDir, "next.config.mjs"))) {
     return "next";
   }
   if (deps.has("vite") || hasViteConfig) return "vite";
@@ -11111,15 +11111,15 @@ function pickScripts(pkg) {
   return out;
 }
 function listEnvFiles(dir) {
-  if (!fs47.existsSync(dir)) return [];
-  return fs47.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
+  if (!fs51.existsSync(dir)) return [];
+  return fs51.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
 }
 function findAppRoot(rootDir, pkg) {
   if (pkg) return ".";
   const candidates = ["app", "src", "apps", "packages"];
   for (const candidate of candidates) {
-    const abs = path55.resolve(rootDir, candidate);
-    if (fs47.existsSync(abs) && fs47.statSync(abs).isDirectory()) {
+    const abs = path59.resolve(rootDir, candidate);
+    if (fs51.existsSync(abs) && fs51.statSync(abs).isDirectory()) {
       const child = safeReadPackageJson(abs);
       if (child) return candidate;
     }
@@ -11135,12 +11135,12 @@ function computeConfidence(framework, manager, pkg) {
   return Math.min(1, Number(score.toFixed(2)));
 }
 function detectSourceShape(rootDir) {
-  if (!fs47.existsSync(rootDir) || !fs47.statSync(rootDir).isDirectory()) {
+  if (!fs51.existsSync(rootDir) || !fs51.statSync(rootDir).isDirectory()) {
     throw new Error(`Detection target is not a directory: ${rootDir}`);
   }
   const rootPkg = safeReadPackageJson(rootDir);
   const appRootRel = findAppRoot(rootDir, rootPkg);
-  const appRootAbs = path55.resolve(rootDir, appRootRel);
+  const appRootAbs = path59.resolve(rootDir, appRootRel);
   const appPkg = appRootRel === "." ? rootPkg : safeReadPackageJson(appRootAbs);
   const framework = detectFramework(appRootAbs, appPkg ?? rootPkg);
   const packageManager = detectPackageManager(rootDir, rootPkg ?? appPkg);
@@ -11180,18 +11180,18 @@ var init_detect = __esm({
 });
 
 // src/starter/source-import/security.ts
-import fs48 from "node:fs";
-import path56 from "node:path";
+import fs52 from "node:fs";
+import path60 from "node:path";
 function isLikelyTextFile(filename) {
-  const ext = path56.extname(filename).toLowerCase();
+  const ext = path60.extname(filename).toLowerCase();
   if (!ext) return true;
   return TEXT_EXTENSIONS.has(ext);
 }
 function isSuspiciousBinary(filename) {
-  return SUSPICIOUS_BINARY_EXTENSIONS.has(path56.extname(filename).toLowerCase());
+  return SUSPICIOUS_BINARY_EXTENSIONS.has(path60.extname(filename).toLowerCase());
 }
 function isUnexpectedArchive(filename) {
-  const ext = path56.extname(filename).toLowerCase();
+  const ext = path60.extname(filename).toLowerCase();
   return ARCHIVE_EXTENSIONS.has(ext) || filename.toLowerCase().endsWith(".tar.gz");
 }
 function shortExcerpt(line) {
@@ -11204,7 +11204,7 @@ function classify(findings) {
   if (findings.some((f) => f.severity === "caution")) return "caution";
   return "safe";
 }
-function severityRank(sev) {
+function severityRank2(sev) {
   switch (sev) {
     case "info":
       return 0;
@@ -11231,7 +11231,7 @@ function summarise(findings, riskClass) {
   for (const [cat, count] of ordered) {
     lines.push(`  \u2022 ${cat}: ${count}`);
   }
-  const top = [...findings].sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 3);
+  const top = [...findings].sort((a, b) => severityRank2(b.severity) - severityRank2(a.severity)).slice(0, 3);
   for (const f of top) {
     lines.push(`  [${f.severity}] ${f.path} \u2014 ${f.message}`);
   }
@@ -11246,19 +11246,19 @@ function walkPayload(root, onFile, limits) {
     if (!current) break;
     let entries;
     try {
-      entries = fs48.readdirSync(current, { withFileTypes: true });
+      entries = fs52.readdirSync(current, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
-      const abs = path56.resolve(current, entry.name);
+      const abs = path60.resolve(current, entry.name);
       if (entry.isDirectory()) {
         if (entry.name === ".git" || entry.name === "node_modules") continue;
         stack.push(abs);
         continue;
       }
       if (!entry.isFile()) continue;
-      const rel = path56.relative(root, abs);
+      const rel = path60.relative(root, abs);
       onFile(abs, rel);
       visited += 1;
       if (visited >= limits.maxFiles) break;
@@ -11268,7 +11268,7 @@ function walkPayload(root, onFile, limits) {
 }
 function inspectSourcePayload(input) {
   const { payloadRoot } = input;
-  if (!fs48.existsSync(payloadRoot) || !fs48.statSync(payloadRoot).isDirectory()) {
+  if (!fs52.existsSync(payloadRoot) || !fs52.statSync(payloadRoot).isDirectory()) {
     throw new Error(`Inspection target is not a directory: ${payloadRoot}`);
   }
   const findings = [];
@@ -11278,7 +11278,7 @@ function inspectSourcePayload(input) {
     (abs, rel) => {
       let size = 0;
       try {
-        size = fs48.statSync(abs).size;
+        size = fs52.statSync(abs).size;
       } catch {
         return;
       }
@@ -11287,7 +11287,7 @@ function inspectSourcePayload(input) {
           category: "suspicious-binary",
           severity: "high-risk",
           path: rel,
-          message: `Payload ships a precompiled binary (${path56.extname(rel)}). Review provenance before use.`
+          message: `Payload ships a precompiled binary (${path60.extname(rel)}). Review provenance before use.`
         });
         return;
       }
@@ -11296,7 +11296,7 @@ function inspectSourcePayload(input) {
           category: "unexpected-archive",
           severity: "caution",
           path: rel,
-          message: `Payload ships an archive (${path56.extname(rel)}) \u2014 expand and review contents before use.`
+          message: `Payload ships an archive (${path60.extname(rel)}) \u2014 expand and review contents before use.`
         });
         return;
       }
@@ -11304,12 +11304,12 @@ function inspectSourcePayload(input) {
       if (bytesInspected + Math.min(size, MAX_BYTES_PER_FILE) > MAX_TOTAL_BYTES) return;
       let buf;
       try {
-        const handle = fs48.openSync(abs, "r");
+        const handle = fs52.openSync(abs, "r");
         try {
           buf = Buffer.alloc(Math.min(size, MAX_BYTES_PER_FILE));
-          fs48.readSync(handle, buf, 0, buf.length, 0);
+          fs52.readSync(handle, buf, 0, buf.length, 0);
         } finally {
-          fs48.closeSync(handle);
+          fs52.closeSync(handle);
         }
       } catch {
         return;
@@ -11518,28 +11518,28 @@ var init_security = __esm({
 });
 
 // src/starter/source-import/plan.ts
-import fs49 from "node:fs";
-import path57 from "node:path";
+import fs53 from "node:fs";
+import path61 from "node:path";
 function generateImportId() {
   return `si-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function destinationState(absDest) {
-  if (!fs49.existsSync(absDest)) return { exists: false, nonEmpty: false };
-  const stats = fs49.statSync(absDest);
+  if (!fs53.existsSync(absDest)) return { exists: false, nonEmpty: false };
+  const stats = fs53.statSync(absDest);
   if (!stats.isDirectory()) {
     throw new Error(`Destination is not a directory: ${absDest}`);
   }
-  const entries = fs49.readdirSync(absDest);
+  const entries = fs53.readdirSync(absDest);
   return { exists: true, nonEmpty: entries.length > 0 };
 }
-function describeSource(probe) {
+function describeSource2(probe) {
   if (probe.kind === "github-repo") {
     return `${probe.repo.owner}/${probe.repo.repo} via ${probe.mode} auth`;
   }
   return `skill ${probe.skillId}@${probe.version} (skills.sh)`;
 }
 function buildSourceImportPlan(input) {
-  const absDest = path57.resolve(input.destination);
+  const absDest = path61.resolve(input.destination);
   const state = destinationState(absDest);
   const payloadPath = "imported";
   const warnings = [...input.probe.warnings];
@@ -11555,7 +11555,7 @@ function buildSourceImportPlan(input) {
   actions.push({
     actionType: "fetch_source",
     targetPath: ".source-staging",
-    description: `Fetch ${describeSource(input.probe)}`,
+    description: `Fetch ${describeSource2(input.probe)}`,
     detail: input.probe.kind === "github-repo" ? {
       repo: input.probe.repo,
       defaultBranch: input.probe.defaultBranch,
@@ -11652,8 +11652,8 @@ var init_plan = __esm({
 });
 
 // src/starter/source-import/summarize.ts
-import fs50 from "node:fs";
-import path58 from "node:path";
+import fs54 from "node:fs";
+import path62 from "node:path";
 function sourceHeading(manifest) {
   const src = manifest.source;
   if (src.kind === "github-repo") {
@@ -11708,7 +11708,7 @@ function nextStepsSection(manifest) {
 }
 function writeImportSummary(input) {
   const { forkPath, summaryRelativePath, manifest } = input;
-  const summaryPath = path58.resolve(forkPath, summaryRelativePath);
+  const summaryPath = path62.resolve(forkPath, summaryRelativePath);
   const body = [
     `# Source Import Summary`,
     ``,
@@ -11738,8 +11738,8 @@ function writeImportSummary(input) {
     `Generated by the Growthub Source Import Agent. Canonical manifest lives at \`.growthub-fork/source-import.json\`.`,
     ``
   ].join("\n");
-  fs50.mkdirSync(path58.dirname(summaryPath), { recursive: true });
-  fs50.writeFileSync(summaryPath, body, "utf8");
+  fs54.mkdirSync(path62.dirname(summaryPath), { recursive: true });
+  fs54.writeFileSync(summaryPath, body, "utf8");
   return summaryPath;
 }
 var init_summarize = __esm({
@@ -11749,16 +11749,16 @@ var init_summarize = __esm({
 });
 
 // src/starter/source-import/materialize.ts
-import fs51 from "node:fs";
+import fs55 from "node:fs";
 import os12 from "node:os";
-import path59 from "node:path";
+import path63 from "node:path";
 function resolveSourceKind(probe) {
   return probe.kind === "github-repo" ? "github-repo" : "skills-skill";
 }
 function stagingDirFor(forkPath) {
-  return path59.join(
+  return path63.join(
     os12.tmpdir(),
-    `growthub-source-import-${path59.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    `growthub-source-import-${path63.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   );
 }
 async function fetchPayload(probe, stagingDir, opts) {
@@ -11790,19 +11790,19 @@ async function fetchPayload(probe, stagingDir, opts) {
   return { payloadRoot: stagingDir };
 }
 function movePayloadIntoFork(payloadRoot, forkPath, payloadRelativePath) {
-  const target = path59.resolve(forkPath, payloadRelativePath);
-  if (fs51.existsSync(target)) {
-    fs51.rmSync(target, { recursive: true, force: true });
+  const target = path63.resolve(forkPath, payloadRelativePath);
+  if (fs55.existsSync(target)) {
+    fs55.rmSync(target, { recursive: true, force: true });
   }
-  fs51.mkdirSync(path59.dirname(target), { recursive: true });
-  fs51.renameSync(payloadRoot, target);
+  fs55.mkdirSync(path63.dirname(target), { recursive: true });
+  fs55.renameSync(payloadRoot, target);
   return target;
 }
 function writeManifest(forkPath, manifest) {
-  const p35 = path59.resolve(forkPath, MANIFEST_RELATIVE_PATH);
-  fs51.mkdirSync(path59.dirname(p35), { recursive: true });
-  fs51.writeFileSync(p35, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-  return p35;
+  const p36 = path63.resolve(forkPath, MANIFEST_RELATIVE_PATH);
+  fs55.mkdirSync(path63.dirname(p36), { recursive: true });
+  fs55.writeFileSync(p36, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  return p36;
 }
 function assertConfirmationsSatisfied(plan, confirmations) {
   const confirmed = new Set(confirmations);
@@ -11841,7 +11841,7 @@ async function materializeImportPlan(input) {
     requireSkillAcknowledgement: sourceKind === "skills-skill"
   });
   if (security.blocked) {
-    fs51.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
+    fs55.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
     throw new Error(
       `Security inspection blocked the fetched payload: ${security.summaryLines[0] ?? "blocking finding"}`
     );
@@ -11989,36 +11989,36 @@ var init_materialize = __esm({
 });
 
 // src/starter/source-import/agent.ts
-import fs52 from "node:fs";
-import path60 from "node:path";
+import fs56 from "node:fs";
+import path64 from "node:path";
 function resolveJobsDir() {
-  return path60.resolve(resolveKitForksHomeDir(), "source-import-jobs");
+  return path64.resolve(resolveKitForksHomeDir(), "source-import-jobs");
 }
 function resolveJobPath2(jobId) {
-  return path60.resolve(resolveJobsDir(), `${jobId}.json`);
+  return path64.resolve(resolveJobsDir(), `${jobId}.json`);
 }
 function generateJobId2() {
   return `sij-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function writeJob2(job) {
-  const p35 = resolveJobPath2(job.jobId);
-  fs52.mkdirSync(path60.dirname(p35), { recursive: true });
-  fs52.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
+  const p36 = resolveJobPath2(job.jobId);
+  fs56.mkdirSync(path64.dirname(p36), { recursive: true });
+  fs56.writeFileSync(p36, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
-function readJobFile(p35) {
-  if (!fs52.existsSync(p35)) return null;
+function readJobFile(p36) {
+  if (!fs56.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs52.readFileSync(p35, "utf8"));
+    return JSON.parse(fs56.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
 }
 function patchJob2(jobId, status, patch = {}) {
-  const p35 = resolveJobPath2(jobId);
-  const job = readJobFile(p35);
+  const p36 = resolveJobPath2(jobId);
+  const job = readJobFile(p36);
   if (!job) return null;
   const updated = { ...job, ...patch, status };
-  fs52.writeFileSync(p35, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs56.writeFileSync(p36, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function getSourceImportJob(jobId) {
@@ -12037,7 +12037,7 @@ async function probeAndPlan(input, destination) {
 }
 async function runSourceImportJob(input) {
   const jobId = generateJobId2();
-  const destination = path60.resolve(input.out);
+  const destination = path64.resolve(input.out);
   const sourceKind = input.source.kind;
   const initial = {
     jobId,
@@ -12347,26 +12347,26 @@ var catalog_exports = {};
 __export(catalog_exports, {
   readSkillCatalog: () => readSkillCatalog
 });
-import fs53 from "node:fs";
-import path61 from "node:path";
-function exists(p35) {
+import fs57 from "node:fs";
+import path65 from "node:path";
+function exists(p36) {
   try {
-    fs53.accessSync(p35);
+    fs57.accessSync(p36);
     return true;
   } catch {
     return false;
   }
 }
-function isDir(p35) {
+function isDir2(p36) {
   try {
-    return fs53.statSync(p35).isDirectory();
+    return fs57.statSync(p36).isDirectory();
   } catch {
     return false;
   }
 }
-function safeRead(p35) {
+function safeRead(p36) {
   try {
-    return fs53.readFileSync(p35, "utf8");
+    return fs57.readFileSync(p36, "utf8");
   } catch {
     return null;
   }
@@ -12450,11 +12450,11 @@ function readOne(skillPath, source) {
   return { entry: { manifest: coerced.manifest, skillPath, source } };
 }
 function readSkillDirs(baseDir, source, out, warnings) {
-  if (!isDir(baseDir)) return;
-  for (const child of fs53.readdirSync(baseDir).sort()) {
-    const dir = path61.join(baseDir, child);
-    if (!isDir(dir)) continue;
-    const skill = path61.join(dir, "SKILL.md");
+  if (!isDir2(baseDir)) return;
+  for (const child of fs57.readdirSync(baseDir).sort()) {
+    const dir = path65.join(baseDir, child);
+    if (!isDir2(dir)) continue;
+    const skill = path65.join(dir, "SKILL.md");
     if (!exists(skill)) continue;
     const res = readOne(skill, source);
     if ("entry" in res) out.push(res.entry);
@@ -12462,16 +12462,16 @@ function readSkillDirs(baseDir, source, out, warnings) {
   }
 }
 function readKitSubSkills(kitDir, out, warnings, depth = 0) {
-  const base = path61.join(kitDir, "skills");
-  if (!isDir(base)) return;
+  const base = path65.join(kitDir, "skills");
+  if (!isDir2(base)) return;
   const walk = (dir, d) => {
     if (d > MAX_DEPTH) return;
-    for (const entry of fs53.readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of fs57.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name)) continue;
-        walk(path61.join(dir, entry.name), d + 1);
+        walk(path65.join(dir, entry.name), d + 1);
       } else if (entry.isFile() && entry.name === "SKILL.md") {
-        const res = readOne(path61.join(dir, entry.name), "worker-kit-sub");
+        const res = readOne(path65.join(dir, entry.name), "worker-kit-sub");
         if ("entry" in res) out.push(res.entry);
         else warnings.push(res.warning);
       }
@@ -12480,11 +12480,11 @@ function readKitSubSkills(kitDir, out, warnings, depth = 0) {
   walk(base, depth);
 }
 function readSkillCatalog(opts) {
-  const root = path61.resolve(opts.root);
+  const root = path65.resolve(opts.root);
   const entries = [];
   const warnings = [];
   if (opts.includeProjectRoot !== false) {
-    const rootSkill = path61.join(root, "SKILL.md");
+    const rootSkill = path65.join(root, "SKILL.md");
     if (exists(rootSkill)) {
       const res = readOne(rootSkill, "project-root");
       if ("entry" in res) entries.push(res.entry);
@@ -12492,15 +12492,15 @@ function readSkillCatalog(opts) {
     }
   }
   if (opts.includeClaudeSkills !== false) {
-    readSkillDirs(path61.join(root, ".claude/skills"), "claude-skills", entries, warnings);
+    readSkillDirs(path65.join(root, ".claude/skills"), "claude-skills", entries, warnings);
   }
   if (opts.includeWorkerKits !== false) {
-    const kitsDir = path61.join(root, "cli/assets/worker-kits");
+    const kitsDir = path65.join(root, "cli/assets/worker-kits");
     readSkillDirs(kitsDir, "worker-kit", entries, warnings);
-    if (isDir(kitsDir)) {
-      for (const kit of fs53.readdirSync(kitsDir).sort()) {
-        const kitPath = path61.join(kitsDir, kit);
-        if (!isDir(kitPath)) continue;
+    if (isDir2(kitsDir)) {
+      for (const kit of fs57.readdirSync(kitsDir).sort()) {
+        const kitPath = path65.join(kitsDir, kit);
+        if (!isDir2(kitPath)) continue;
         readKitSubSkills(kitPath, entries, warnings);
       }
     }
@@ -12543,10 +12543,10 @@ __export(source_import_discovery_exports, {
   startSkillsSourceImportFlow: () => startSkillsSourceImportFlow,
   startSourceImportFlow: () => startSourceImportFlow
 });
-import * as p33 from "@clack/prompts";
-import pc48 from "picocolors";
-import fs58 from "node:fs";
-import path65 from "node:path";
+import * as p34 from "@clack/prompts";
+import pc49 from "picocolors";
+import fs62 from "node:fs";
+import path69 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 function slugifyWorkspaceName(input) {
   const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -12568,17 +12568,17 @@ function defaultWorkspaceFolderName(input) {
 }
 async function promptForInteractiveWorkspacePath(input) {
   const suggestedName = defaultWorkspaceFolderName(input);
-  const raw = await p33.text({
+  const raw = await p34.text({
     message: "Where should we create the custom workspace?",
     placeholder: `~/Desktop/${suggestedName}`
   });
-  if (p33.isCancel(raw) || !raw) return null;
+  if (p34.isCancel(raw) || !raw) return null;
   const trimmed = String(raw).trim();
-  const expanded = trimmed.startsWith("~/") ? path65.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
-  const resolved = path65.resolve(expanded);
-  if (fs58.existsSync(resolved) && fs58.statSync(resolved).isDirectory()) {
-    const finalPath = path65.join(resolved, suggestedName);
-    p33.note(
+  const expanded = trimmed.startsWith("~/") ? path69.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
+  const resolved = path69.resolve(expanded);
+  if (fs62.existsSync(resolved) && fs62.statSync(resolved).isDirectory()) {
+    const finalPath = path69.join(resolved, suggestedName);
+    p34.note(
       [
         `You selected an existing folder: ${resolved}`,
         `Growthub will create the workspace inside it as:`,
@@ -12596,7 +12596,7 @@ function scopeLabel2(scope) {
   return "All Time";
 }
 async function chooseSkillsScope(current) {
-  const choice = await p33.select({
+  const choice = await p34.select({
     message: "Leaderboard scope",
     options: [
       { value: "all", label: "All Time", hint: current === "all" ? "current" : "most trusted by install rank" },
@@ -12604,7 +12604,7 @@ async function chooseSkillsScope(current) {
       { value: "hot", label: "Hot", hint: current === "hot" ? "current" : "currently active picks" }
     ]
   });
-  if (p33.isCancel(choice)) return null;
+  if (p34.isCancel(choice)) return null;
   return choice;
 }
 async function previewSkillSelection(skillRef) {
@@ -12613,7 +12613,7 @@ async function previewSkillSelection(skillRef) {
     skillRef
   });
   const audits = skill.audits?.length ? skill.audits.map((audit) => `${audit.name}:${audit.status}`).join(", ") : "none";
-  p33.note(
+  p34.note(
     [
       `Skill: ${skill.skillId}`,
       `Repo: ${skill.repository ?? "unknown"}`,
@@ -12626,11 +12626,11 @@ async function previewSkillSelection(skillRef) {
     ].join("\n"),
     skill.title
   );
-  const confirmed = await p33.confirm({
+  const confirmed = await p34.confirm({
     message: `Use ${skill.title} to build a starter-derived workspace?`,
     initialValue: true
   });
-  return !p33.isCancel(confirmed) && confirmed === true;
+  return !p34.isCancel(confirmed) && confirmed === true;
 }
 async function selectSkillFromCatalog() {
   let query = "";
@@ -12666,7 +12666,7 @@ async function selectSkillFromCatalog() {
     );
     const hasNext = (result.total ?? 0) > page * pageSize;
     const hasPrev = page > 1;
-    const choice = await p33.select({
+    const choice = await p34.select({
       message: `skills.sh \xB7 ${scopeLabel2(scope)}${query ? ` \xB7 query="${query}"` : ""}`,
       options: [
         ...result.entries.map((entry, index51) => ({
@@ -12682,7 +12682,7 @@ async function selectSkillFromCatalog() {
         { value: "back", label: "\u2190 Back to Starter" }
       ]
     });
-    if (p33.isCancel(choice) || choice === "back") return null;
+    if (p34.isCancel(choice) || choice === "back") return null;
     if (choice === "prev") {
       page = Math.max(1, page - 1);
       continue;
@@ -12700,23 +12700,23 @@ async function selectSkillFromCatalog() {
       continue;
     }
     if (choice === "search") {
-      const nextQuery = await p33.text({
+      const nextQuery = await p34.text({
         message: "Search the live leaderboard",
         placeholder: "marketing, frontend design, firecrawl, seo",
         defaultValue: query
       });
-      if (!p33.isCancel(nextQuery)) {
+      if (!p34.isCancel(nextQuery)) {
         query = String(nextQuery).trim();
         page = 1;
       }
       continue;
     }
     if (choice === "manual") {
-      const manual = await p33.text({
+      const manual = await p34.text({
         message: "skills.sh URL or canonical skill id",
         placeholder: "https://skills.sh/anthropics/skills/frontend-design"
       });
-      if (!p33.isCancel(manual) && String(manual).trim()) {
+      if (!p34.isCancel(manual) && String(manual).trim()) {
         const skillRef = String(manual).trim();
         if (await previewSkillSelection(skillRef)) {
           return skillRef;
@@ -12747,20 +12747,20 @@ async function startSkillsSourceImportFlow() {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    p33.log.error(msg);
+    p34.log.error(msg);
   }
 }
 function renderSuccess(result, jobId) {
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
-  p33.outro(
-    `Imported ${sourceLine} into ${pc48.cyan(result.forkPath)}
-  jobId:       ${pc48.cyan(jobId)}
-  forkId:      ${pc48.cyan(result.forkId)}
+  p34.outro(
+    `Imported ${sourceLine} into ${pc49.cyan(result.forkPath)}
+  jobId:       ${pc49.cyan(jobId)}
+  forkId:      ${pc49.cyan(result.forkId)}
   risk:        ${result.security.riskClass} (${result.security.findings.length} findings)
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager}
   open:        ${folderOpenLabel3(result.forkPath)}
-  summary:     ${pc48.dim(result.summaryPath)}
-  manifest:    ${pc48.dim(result.manifestPath)}`
+  summary:     ${pc49.dim(result.summaryPath)}
+  manifest:    ${pc49.dim(result.manifestPath)}`
   );
 }
 async function confirmTwice(job) {
@@ -12768,26 +12768,26 @@ async function confirmTwice(job) {
   if (pending.length === 0) return [];
   const sec = job.plan?.security;
   if (sec) {
-    p33.log.warn(`Security report \u2014 risk: ${sec.riskClass}`);
+    p34.log.warn(`Security report \u2014 risk: ${sec.riskClass}`);
     for (const line of sec.summaryLines.slice(0, 6)) {
-      p33.log.message(`  ${line}`);
+      p34.log.message(`  ${line}`);
     }
     if (sec.blocked) {
-      p33.log.error("Security inspection BLOCKED this payload \u2014 import cannot continue.");
+      p34.log.error("Security inspection BLOCKED this payload \u2014 import cannot continue.");
       return null;
     }
   }
-  p33.log.info(`Pending confirmations: ${pending.join(", ")}`);
-  const ack = await p33.confirm({
+  p34.log.info(`Pending confirmations: ${pending.join(", ")}`);
+  const ack = await p34.confirm({
     message: "Acknowledge the security report?",
     initialValue: false
   });
-  if (p33.isCancel(ack) || ack !== true) return null;
-  const go = await p33.confirm({
+  if (p34.isCancel(ack) || ack !== true) return null;
+  const go = await p34.confirm({
     message: "Second confirmation \u2014 materialize the workspace now?",
     initialValue: false
   });
-  if (p33.isCancel(go) || go !== true) return null;
+  if (p34.isCancel(go) || go !== true) return null;
   return pending;
 }
 async function startSourceImportFlow(input) {
@@ -12795,12 +12795,12 @@ async function startSourceImportFlow(input) {
     source: { kind: "github-repo", repo: input.repo },
     out: input.out,
     importMode: "wrap",
-    onProgress: (step) => p33.log.step(step)
+    onProgress: (step) => p34.log.step(step)
   } : {
     source: { kind: "skills-skill", skillRef: input.skillRef },
     out: input.out,
     importMode: "wrap",
-    onProgress: (step) => p33.log.step(step)
+    onProgress: (step) => p34.log.step(step)
   };
   try {
     const { job, result } = await importSourceAsWorkspace(importInput);
@@ -12809,31 +12809,31 @@ async function startSourceImportFlow(input) {
       return;
     }
     if (job.status === "failed") {
-      p33.log.error(job.error ?? "Source import failed.");
+      p34.log.error(job.error ?? "Source import failed.");
       return;
     }
     if (job.status !== "awaiting_confirmation") {
-      p33.log.warn(`Unexpected job status: ${job.status}`);
+      p34.log.warn(`Unexpected job status: ${job.status}`);
       return;
     }
     const acked = await confirmTwice(job);
     if (!acked) {
-      p33.log.warn("Import aborted \u2014 confirmations not provided.");
+      p34.log.warn("Import aborted \u2014 confirmations not provided.");
       return;
     }
     const resumed = await confirmAndResumeSourceImportJob({
       jobId: job.jobId,
       confirmations: acked,
-      onProgress: (step) => p33.log.step(step)
+      onProgress: (step) => p34.log.step(step)
     });
     if (!resumed || resumed.status !== "completed" || !resumed.result) {
-      p33.log.error(resumed?.error ?? "Import did not complete after confirmation.");
+      p34.log.error(resumed?.error ?? "Import did not complete after confirmation.");
       return;
     }
     renderSuccess(resumed.result, resumed.jobId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    p33.log.error(msg);
+    p34.log.error(msg);
   }
 }
 var init_source_import_discovery = __esm({
@@ -12846,11 +12846,11 @@ var init_source_import_discovery = __esm({
 
 // src/index.ts
 import { Command } from "commander";
-import * as p34 from "@clack/prompts";
-import pc49 from "picocolors";
-import fs59 from "node:fs";
-import path66 from "node:path";
-import { spawnSync as spawnSync7 } from "node:child_process";
+import * as p35 from "@clack/prompts";
+import pc50 from "picocolors";
+import fs63 from "node:fs";
+import path70 from "node:path";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
 
 // src/analytics/posthog.ts
@@ -13650,8 +13650,8 @@ function printItemCompleted(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path67 = asString(change.path, "unknown");
-      return `${kind} ${path67}`;
+      const path71 = asString(change.path, "unknown");
+      return `${kind} ${path71}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -16485,8 +16485,8 @@ function registerIssueCommands(program2) {
         if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
         if (opts.projectId) params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path67 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path67) ?? [];
+        const path71 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path71) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -17092,8 +17092,8 @@ function registerActivityCommands(program2) {
         if (opts.entityType) params.set("entityType", opts.entityType);
         if (opts.entityId) params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path67 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path67) ?? [];
+        const path71 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path71) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -18329,16 +18329,16 @@ function resolvePackageArg(packageArg, isLocal) {
   }
   return path23.resolve(process.cwd(), packageArg);
 }
-function formatPlugin(p35) {
-  const statusColor3 = p35.status === "ready" ? pc25.green(p35.status) : p35.status === "error" ? pc25.red(p35.status) : p35.status === "disabled" ? pc25.dim(p35.status) : pc25.yellow(p35.status);
+function formatPlugin(p36) {
+  const statusColor3 = p36.status === "ready" ? pc25.green(p36.status) : p36.status === "error" ? pc25.red(p36.status) : p36.status === "disabled" ? pc25.dim(p36.status) : pc25.yellow(p36.status);
   const parts = [
-    `key=${pc25.bold(p35.pluginKey)}`,
+    `key=${pc25.bold(p36.pluginKey)}`,
     `status=${statusColor3}`,
-    `version=${p35.version}`,
-    `id=${pc25.dim(p35.id)}`
+    `version=${p36.version}`,
+    `id=${pc25.dim(p36.id)}`
   ];
-  if (p35.lastError) {
-    parts.push(`error=${pc25.red(p35.lastError.slice(0, 80))}`);
+  if (p36.lastError) {
+    parts.push(`error=${pc25.red(p36.lastError.slice(0, 80))}`);
   }
   return parts.join("  ");
 }
@@ -18359,8 +18359,8 @@ function registerPluginCommands(program2) {
           console.log(pc25.dim("No plugins installed."));
           return;
         }
-        for (const p35 of rows) {
-          console.log(formatPlugin(p35));
+        for (const p36 of rows) {
+          console.log(formatPlugin(p36));
         }
       } catch (err) {
         handleCommandError(err);
@@ -18525,10 +18525,10 @@ ${result.lastError}`);
 }
 
 // src/commands/kit.ts
-import path35 from "node:path";
+import path39 from "node:path";
 import { pathToFileURL as pathToFileURL2 } from "node:url";
-import * as p19 from "@clack/prompts";
-import pc30 from "picocolors";
+import * as p20 from "@clack/prompts";
+import pc31 from "picocolors";
 init_service();
 init_banner();
 
@@ -18568,10 +18568,10 @@ function resolveUpstreamAssetRoot(kitId) {
   }
   throw new Error(`Cannot locate bundled asset root for kit: ${kitId}`);
 }
-function readFileIfExists(p35) {
-  if (!fs23.existsSync(p35)) return null;
+function readFileIfExists(p36) {
+  if (!fs23.existsSync(p36)) return null;
   try {
-    return fs23.readFileSync(p35, "utf8");
+    return fs23.readFileSync(p36, "utf8");
   } catch {
     return null;
   }
@@ -19086,10 +19086,10 @@ function resolveOrphanJobPath(jobId) {
 function generateJobId() {
   return `kfj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
-function parseJobFile(p35) {
-  if (!fs25.existsSync(p35)) return null;
+function parseJobFile(p36) {
+  if (!fs25.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs25.readFileSync(p35, "utf8"));
+    return JSON.parse(fs25.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -19098,19 +19098,19 @@ function findJobPath(jobId) {
   const orphanPath = resolveOrphanJobPath(jobId);
   if (fs25.existsSync(orphanPath)) return orphanPath;
   for (const reg of listKitForkRegistrations()) {
-    const p35 = path32.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
-    if (fs25.existsSync(p35)) return p35;
+    const p36 = path32.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
+    if (fs25.existsSync(p36)) return p36;
   }
   return null;
 }
 function readJob(jobId) {
-  const p35 = findJobPath(jobId);
-  return p35 ? parseJobFile(p35) : null;
+  const p36 = findJobPath(jobId);
+  return p36 ? parseJobFile(p36) : null;
 }
 function writeJob(job) {
-  const p35 = resolveJobPath(job.jobId, job.kitId, job.forkId);
-  fs25.mkdirSync(path32.dirname(p35), { recursive: true });
-  fs25.writeFileSync(p35, JSON.stringify(job, null, 2) + "\n", "utf8");
+  const p36 = resolveJobPath(job.jobId, job.kitId, job.forkId);
+  fs25.mkdirSync(path32.dirname(p36), { recursive: true });
+  fs25.writeFileSync(p36, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function patchJob(jobId, status, patch) {
   const existingPath = findJobPath(jobId);
@@ -19948,10 +19948,10 @@ function computePolicyHash(policy) {
   return crypto2.createHash("sha256").update(canonicalize(shape), "utf8").digest("hex");
 }
 function readIssuerRegistry() {
-  const p35 = resolveAuthorityIssuersPath();
-  if (!fs27.existsSync(p35)) return { version: 1, issuers: [] };
+  const p36 = resolveAuthorityIssuersPath();
+  if (!fs27.existsSync(p36)) return { version: 1, issuers: [] };
   try {
-    const parsed = JSON.parse(fs27.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs27.readFileSync(p36, "utf8"));
     if (!parsed || !Array.isArray(parsed.issuers)) return { version: 1, issuers: [] };
     return { version: 1, issuers: parsed.issuers.filter(isValidIssuer) };
   } catch {
@@ -19964,9 +19964,9 @@ function isValidIssuer(x) {
   return typeof o.id === "string" && typeof o.publicKeyPem === "string" && (o.kind === "growthub-hosted" || o.kind === "self-signed" || o.kind === "enterprise");
 }
 function writeIssuerRegistry(registry) {
-  const p35 = resolveAuthorityIssuersPath();
-  fs27.mkdirSync(path34.dirname(p35), { recursive: true });
-  fs27.writeFileSync(p35, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
+  const p36 = resolveAuthorityIssuersPath();
+  fs27.mkdirSync(path34.dirname(p36), { recursive: true });
+  fs27.writeFileSync(p36, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
 }
 function upsertIssuer(issuer) {
   if (!isValidIssuer(issuer)) {
@@ -20038,12 +20038,12 @@ function isWellFormedEnvelope(x) {
   return e.version === 1 && typeof e.envelopeId === "string" && typeof e.issuerId === "string" && e.algorithm === "ed25519" && typeof e.signature === "string" && typeof e.issuedAt === "string" && typeof e.nonce === "string" && !!e.subject && typeof e.subject.kitId === "string" && typeof e.subject.forkId === "string" && !!e.grants && Array.isArray(e.grants.capabilities) && typeof e.grants.policyAttested === "boolean";
 }
 function readForkAuthorityState(forkPath) {
-  const p35 = resolveInForkAuthorityPath(forkPath);
-  if (!fs27.existsSync(p35)) {
+  const p36 = resolveInForkAuthorityPath(forkPath);
+  if (!fs27.existsSync(p36)) {
     return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
   }
   try {
-    const parsed = JSON.parse(fs27.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs27.readFileSync(p36, "utf8"));
     if (!parsed || parsed.version !== 1) {
       return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
     }
@@ -20053,9 +20053,9 @@ function readForkAuthorityState(forkPath) {
   }
 }
 function writeForkAuthorityState(forkPath, state) {
-  const p35 = resolveInForkAuthorityPath(forkPath);
-  fs27.mkdirSync(path34.dirname(p35), { recursive: true });
-  fs27.writeFileSync(p35, JSON.stringify(state, null, 2) + "\n", "utf8");
+  const p36 = resolveInForkAuthorityPath(forkPath);
+  fs27.mkdirSync(path34.dirname(p36), { recursive: true });
+  fs27.writeFileSync(p36, JSON.stringify(state, null, 2) + "\n", "utf8");
 }
 function attachAuthorityEnvelope(forkPath, envelope, options = {}) {
   const verification = verifyAuthorityEnvelope(envelope, options);
@@ -21490,11 +21490,1333 @@ function originLabel(origin) {
   }
 }
 
+// src/commands/kit-contract.ts
+init_service();
+init_fork_registry();
+import path38 from "node:path";
+import fs32 from "node:fs";
+import * as p19 from "@clack/prompts";
+import pc30 from "picocolors";
+
+// src/runtime/pipeline-kits/index.ts
+import fs29 from "node:fs";
+import path35 from "node:path";
+
+// ../packages/api-contract/src/pipeline-kits.ts
+var PIPELINE_KIT_MANIFEST_VERSION = 1;
+
+// src/runtime/pipeline-kits/index.ts
+var PIPELINE_MANIFEST_FILENAME = "pipeline.manifest.json";
+function resolvePipelineManifestPath(kitRoot) {
+  return path35.resolve(kitRoot, PIPELINE_MANIFEST_FILENAME);
+}
+function pipelineManifestExists(kitRoot) {
+  return fs29.existsSync(resolvePipelineManifestPath(kitRoot));
+}
+function safeReadJson(absolutePath) {
+  try {
+    const text69 = fs29.readFileSync(absolutePath, "utf8");
+    return { value: JSON.parse(text69) };
+  } catch (err) {
+    return { value: null, error: err.message };
+  }
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function asStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => typeof entry === "string");
+}
+function parseStage(raw, index51, issues2) {
+  if (!isObject(raw)) {
+    issues2.push({
+      severity: "error",
+      code: "stage-not-object",
+      message: `Stage ${index51} is not an object`,
+      field: `stages[${index51}]`
+    });
+    return null;
+  }
+  const id = typeof raw.id === "string" ? raw.id : null;
+  const subSkillPath = typeof raw.subSkillPath === "string" ? raw.subSkillPath : null;
+  if (!id) {
+    issues2.push({
+      severity: "error",
+      code: "stage-missing-id",
+      message: `Stage ${index51} is missing 'id'`,
+      field: `stages[${index51}].id`
+    });
+    return null;
+  }
+  if (!subSkillPath) {
+    issues2.push({
+      severity: "error",
+      code: "stage-missing-subskill",
+      message: `Stage '${id}' is missing 'subSkillPath'`,
+      field: `stages[${index51}].subSkillPath`
+    });
+    return null;
+  }
+  const stage = {
+    id,
+    subSkillPath,
+    inputArtifacts: asStringArray(raw.inputArtifacts),
+    outputArtifacts: asStringArray(raw.outputArtifacts)
+  };
+  if (typeof raw.label === "string") stage.label = raw.label;
+  if (Array.isArray(raw.helperPaths)) stage.helperPaths = asStringArray(raw.helperPaths);
+  if (Array.isArray(raw.adapterModes)) stage.adapterModes = asStringArray(raw.adapterModes);
+  if (Array.isArray(raw.externalDependencies)) {
+    stage.externalDependencies = asStringArray(raw.externalDependencies);
+  }
+  if (typeof raw.traceRequired === "boolean") stage.traceRequired = raw.traceRequired;
+  if (typeof raw.projectMemoryRequired === "boolean") {
+    stage.projectMemoryRequired = raw.projectMemoryRequired;
+  }
+  return stage;
+}
+function readPipelineManifest(kitRoot) {
+  const manifestPath = resolvePipelineManifestPath(kitRoot);
+  const exists2 = fs29.existsSync(manifestPath);
+  const issues2 = [];
+  if (!exists2) {
+    return { manifestPath, exists: false, manifest: null, issues: issues2 };
+  }
+  const parsed = safeReadJson(manifestPath);
+  if (parsed.error || !isObject(parsed.value)) {
+    issues2.push({
+      severity: "error",
+      code: "manifest-unparsable",
+      message: parsed.error ?? "Manifest is not a JSON object"
+    });
+    return { manifestPath, exists: true, manifest: null, issues: issues2 };
+  }
+  const raw = parsed.value;
+  const version = typeof raw.version === "number" ? raw.version : null;
+  const kitId = typeof raw.kitId === "string" ? raw.kitId : null;
+  const pipelineId = typeof raw.pipelineId === "string" ? raw.pipelineId : null;
+  if (version !== PIPELINE_KIT_MANIFEST_VERSION) {
+    issues2.push({
+      severity: version === null ? "error" : "warn",
+      code: "manifest-version-mismatch",
+      message: version === null ? "Manifest is missing 'version'" : `Manifest version ${version} does not match SDK PIPELINE_KIT_MANIFEST_VERSION ${PIPELINE_KIT_MANIFEST_VERSION}`,
+      field: "version"
+    });
+  }
+  if (!kitId) {
+    issues2.push({
+      severity: "error",
+      code: "manifest-missing-kit-id",
+      message: "Manifest is missing 'kitId'",
+      field: "kitId"
+    });
+  }
+  if (!pipelineId) {
+    issues2.push({
+      severity: "error",
+      code: "manifest-missing-pipeline-id",
+      message: "Manifest is missing 'pipelineId'",
+      field: "pipelineId"
+    });
+  }
+  const stagesRaw = Array.isArray(raw.stages) ? raw.stages : [];
+  if (stagesRaw.length === 0) {
+    issues2.push({
+      severity: "error",
+      code: "manifest-no-stages",
+      message: "Manifest has no stages",
+      field: "stages"
+    });
+  }
+  const stages = [];
+  const seenStageIds = /* @__PURE__ */ new Set();
+  for (let i = 0; i < stagesRaw.length; i += 1) {
+    const stage = parseStage(stagesRaw[i], i, issues2);
+    if (!stage) continue;
+    if (seenStageIds.has(stage.id)) {
+      issues2.push({
+        severity: "error",
+        code: "stage-duplicate-id",
+        message: `Duplicate stage id '${stage.id}'`,
+        field: `stages[${i}].id`
+      });
+      continue;
+    }
+    seenStageIds.add(stage.id);
+    stages.push(stage);
+  }
+  if (!kitId || !pipelineId) {
+    return { manifestPath, exists: true, manifest: null, issues: issues2 };
+  }
+  const manifest = {
+    version: version ?? PIPELINE_KIT_MANIFEST_VERSION,
+    kitId,
+    pipelineId,
+    stages
+  };
+  if (isObject(raw.outputTopology)) {
+    const root = typeof raw.outputTopology.root === "string" ? raw.outputTopology.root : "";
+    const buckets = asStringArray(raw.outputTopology.buckets);
+    manifest.outputTopology = { root, buckets };
+  }
+  if (isObject(raw.tracePolicy)) {
+    manifest.tracePolicy = {
+      ...typeof raw.tracePolicy.convention === "string" ? { convention: raw.tracePolicy.convention } : {},
+      ...typeof raw.tracePolicy.traceFile === "string" ? { traceFile: raw.tracePolicy.traceFile } : {},
+      ...typeof raw.tracePolicy.projectMemoryFile === "string" ? { projectMemoryFile: raw.tracePolicy.projectMemoryFile } : {}
+    };
+  }
+  if (isObject(raw.sessionMemoryPolicy)) {
+    manifest.sessionMemoryPolicy = {
+      ...typeof raw.sessionMemoryPolicy.seedTemplate === "string" ? { seedTemplate: raw.sessionMemoryPolicy.seedTemplate } : {},
+      appendOn: asStringArray(raw.sessionMemoryPolicy.appendOn)
+    };
+  }
+  if (isObject(raw.convention)) {
+    manifest.convention = {
+      ...typeof raw.convention.spec === "string" ? { spec: raw.convention.spec } : {},
+      ...typeof raw.convention.version === "number" ? { version: raw.convention.version } : {},
+      ...typeof raw.convention.interpretedBy === "string" ? { interpretedBy: raw.convention.interpretedBy } : {},
+      ...raw.convention.runtimeEnforcement === "none" || raw.convention.runtimeEnforcement === "warn" || raw.convention.runtimeEnforcement === "error" ? { runtimeEnforcement: raw.convention.runtimeEnforcement } : {}
+    };
+  }
+  for (let i = 0; i < manifest.stages.length; i += 1) {
+    const stage = manifest.stages[i];
+    const subSkillFullPath = path35.resolve(kitRoot, stage.subSkillPath);
+    if (!fs29.existsSync(subSkillFullPath)) {
+      issues2.push({
+        severity: "error",
+        code: "stage-subskill-missing",
+        message: `Stage '${stage.id}' references missing sub-skill at ${stage.subSkillPath}`,
+        field: `stages[${i}].subSkillPath`
+      });
+    }
+  }
+  return { manifestPath, exists: true, manifest, issues: issues2 };
+}
+function statusFromIssues(issues2) {
+  if (issues2.some((i) => i.severity === "error")) return "error";
+  if (issues2.some((i) => i.severity === "warn")) return "warn";
+  return "pass";
+}
+function asStringArrayLoose(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => {
+    if (typeof entry === "string") return entry;
+    if (entry && typeof entry === "object") {
+      if ("path" in entry && typeof entry.path === "string") return entry.path;
+      if ("id" in entry && typeof entry.id === "string") return entry.id;
+    }
+    return null;
+  }).filter((s) => s !== null);
+}
+function inspectPipelineManifest(kitRoot) {
+  const result = readPipelineManifest(kitRoot);
+  const stages = (result.manifest?.stages ?? []).map((stage) => ({
+    id: stage.id,
+    label: stage.label,
+    subSkillPath: stage.subSkillPath,
+    inputArtifacts: asStringArrayLoose(stage.inputArtifacts),
+    outputArtifacts: asStringArrayLoose(stage.outputArtifacts),
+    helperPaths: stage.helperPaths ?? [],
+    adapterModes: asStringArrayLoose(stage.adapterModes),
+    externalDependencies: stage.externalDependencies ?? []
+  }));
+  return {
+    kitRoot,
+    manifestPath: result.manifestPath,
+    exists: result.exists,
+    kitId: result.manifest?.kitId ?? null,
+    pipelineId: result.manifest?.pipelineId ?? null,
+    manifestVersion: result.manifest?.version ?? null,
+    stageCount: stages.length,
+    stages,
+    outputTopology: result.manifest?.outputTopology ? {
+      root: result.manifest.outputTopology.root,
+      buckets: result.manifest.outputTopology.buckets ?? []
+    } : null,
+    issues: result.issues,
+    status: statusFromIssues(result.issues)
+  };
+}
+
+// src/runtime/workspace-dependencies/index.ts
+import fs30 from "node:fs";
+import path36 from "node:path";
+
+// ../packages/api-contract/src/workspaces.ts
+var WORKSPACE_DEPENDENCY_MANIFEST_VERSION = 1;
+
+// src/runtime/workspace-dependencies/index.ts
+var WORKSPACE_DEPENDENCIES_FILENAME = "workspace.dependencies.json";
+function resolveWorkspaceDependenciesPath(kitRoot) {
+  return path36.resolve(kitRoot, WORKSPACE_DEPENDENCIES_FILENAME);
+}
+function workspaceDependenciesExists(kitRoot) {
+  return fs30.existsSync(resolveWorkspaceDependenciesPath(kitRoot));
+}
+function safeReadJson2(absolutePath) {
+  try {
+    const text69 = fs30.readFileSync(absolutePath, "utf8");
+    return { value: JSON.parse(text69) };
+  } catch (err) {
+    return { value: null, error: err.message };
+  }
+}
+function isObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function asStringArray2(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => typeof entry === "string");
+}
+function parseDependency(raw, index51, issues2) {
+  if (!isObject2(raw)) {
+    issues2.push({
+      severity: "error",
+      code: "dep-not-object",
+      message: `Dependency ${index51} is not an object`,
+      field: `dependencies[${index51}]`
+    });
+    return null;
+  }
+  const id = typeof raw.id === "string" ? raw.id : null;
+  const env = typeof raw.env === "string" ? raw.env : null;
+  const kind = typeof raw.kind === "string" ? raw.kind : null;
+  if (!id) {
+    issues2.push({
+      severity: "error",
+      code: "dep-missing-id",
+      message: `Dependency ${index51} is missing 'id'`,
+      field: `dependencies[${index51}].id`
+    });
+    return null;
+  }
+  if (!env) {
+    issues2.push({
+      severity: "error",
+      code: "dep-missing-env",
+      message: `Dependency '${id}' is missing 'env' (env-var locator)`,
+      field: `dependencies[${index51}].env`
+    });
+    return null;
+  }
+  if (!kind) {
+    issues2.push({
+      severity: "warn",
+      code: "dep-missing-kind",
+      message: `Dependency '${id}' is missing 'kind'`,
+      field: `dependencies[${index51}].kind`
+    });
+  }
+  const dep = {
+    id,
+    env,
+    kind: kind ?? "external-service"
+  };
+  if (typeof raw.setup === "string") dep.setup = raw.setup;
+  if (typeof raw.install === "string") dep.install = raw.install;
+  if (typeof raw.health === "string") dep.health = raw.health;
+  if (Array.isArray(raw.usedByStages)) dep.usedByStages = asStringArray2(raw.usedByStages);
+  if (typeof raw.interfaceArtifact === "string") dep.interfaceArtifact = raw.interfaceArtifact;
+  if (typeof raw.handoffArtifact === "string") dep.handoffArtifact = raw.handoffArtifact;
+  if (typeof raw.description === "string") dep.description = raw.description;
+  return dep;
+}
+function readWorkspaceDependencies(kitRoot) {
+  const manifestPath = resolveWorkspaceDependenciesPath(kitRoot);
+  const exists2 = fs30.existsSync(manifestPath);
+  const issues2 = [];
+  if (!exists2) {
+    return { manifestPath, exists: false, manifest: null, issues: issues2 };
+  }
+  const parsed = safeReadJson2(manifestPath);
+  if (parsed.error || !isObject2(parsed.value)) {
+    issues2.push({
+      severity: "error",
+      code: "manifest-unparsable",
+      message: parsed.error ?? "Manifest is not a JSON object"
+    });
+    return { manifestPath, exists: true, manifest: null, issues: issues2 };
+  }
+  const raw = parsed.value;
+  const version = typeof raw.version === "number" ? raw.version : null;
+  const kitId = typeof raw.kitId === "string" ? raw.kitId : null;
+  if (version !== WORKSPACE_DEPENDENCY_MANIFEST_VERSION) {
+    issues2.push({
+      severity: version === null ? "error" : "warn",
+      code: "manifest-version-mismatch",
+      message: version === null ? "Manifest is missing 'version'" : `Manifest version ${version} does not match SDK WORKSPACE_DEPENDENCY_MANIFEST_VERSION ${WORKSPACE_DEPENDENCY_MANIFEST_VERSION}`,
+      field: "version"
+    });
+  }
+  if (!kitId) {
+    issues2.push({
+      severity: "error",
+      code: "manifest-missing-kit-id",
+      message: "Manifest is missing 'kitId'",
+      field: "kitId"
+    });
+  }
+  const dependenciesRaw = Array.isArray(raw.dependencies) ? raw.dependencies : [];
+  const dependencies = [];
+  const seenIds = /* @__PURE__ */ new Set();
+  for (let i = 0; i < dependenciesRaw.length; i += 1) {
+    const dep = parseDependency(dependenciesRaw[i], i, issues2);
+    if (!dep) continue;
+    if (seenIds.has(dep.id)) {
+      issues2.push({
+        severity: "error",
+        code: "dep-duplicate-id",
+        message: `Duplicate dependency id '${dep.id}'`,
+        field: `dependencies[${i}].id`
+      });
+      continue;
+    }
+    seenIds.add(dep.id);
+    dependencies.push(dep);
+  }
+  if (!kitId) {
+    return { manifestPath, exists: true, manifest: null, issues: issues2 };
+  }
+  const manifest = {
+    version: version ?? WORKSPACE_DEPENDENCY_MANIFEST_VERSION,
+    kitId,
+    dependencies
+  };
+  return { manifestPath, exists: true, manifest, issues: issues2 };
+}
+function statusFromIssues2(issues2) {
+  if (issues2.some((i) => i.severity === "error")) return "error";
+  if (issues2.some((i) => i.severity === "warn")) return "warn";
+  return "pass";
+}
+function inspectWorkspaceDependencies(kitRoot) {
+  const result = readWorkspaceDependencies(kitRoot);
+  return {
+    kitRoot,
+    manifestPath: result.manifestPath,
+    exists: result.exists,
+    kitId: result.manifest?.kitId ?? null,
+    manifestVersion: result.manifest?.version ?? null,
+    dependencyCount: result.manifest?.dependencies.length ?? 0,
+    dependencies: result.manifest?.dependencies ?? [],
+    issues: result.issues,
+    status: statusFromIssues2(result.issues)
+  };
+}
+
+// src/runtime/kit-health/index.ts
+import fs31 from "node:fs";
+import path37 from "node:path";
+import { spawnSync as spawnSync2 } from "node:child_process";
+
+// ../packages/api-contract/src/health.ts
+var KIT_HEALTH_REPORT_VERSION = 1;
+
+// src/runtime/kit-health/index.ts
+function isFile(p36) {
+  try {
+    return fs31.statSync(p36).isFile();
+  } catch {
+    return false;
+  }
+}
+function isDir(p36) {
+  try {
+    return fs31.statSync(p36).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function readKitId(kitRoot) {
+  const kitJsonPath = path37.resolve(kitRoot, "kit.json");
+  if (!isFile(kitJsonPath)) return null;
+  try {
+    const parsed = JSON.parse(fs31.readFileSync(kitJsonPath, "utf8"));
+    return typeof parsed.kit?.id === "string" ? parsed.kit.id : null;
+  } catch {
+    return null;
+  }
+}
+function severityRank(severity) {
+  switch (severity) {
+    case "fail":
+      return 3;
+    case "warn":
+      return 2;
+    case "info":
+      return 1;
+    case "pass":
+      return 0;
+  }
+}
+function rankSeverity(checks) {
+  let worst = "pass";
+  for (const c of checks) {
+    if (severityRank(c.severity) > severityRank(worst)) worst = c.severity;
+  }
+  return worst;
+}
+function check(id, severity, label, options = {}) {
+  const out = { id, severity, label };
+  if (options.message !== void 0) out.message = options.message;
+  if (options.remediation !== void 0) out.remediation = options.remediation;
+  if (options.category !== void 0) out.category = options.category;
+  if (options.stageId !== void 0) out.stageId = options.stageId;
+  if (options.evidence !== void 0) out.evidence = options.evidence;
+  return out;
+}
+function runLocalHealthHelper(kitRoot) {
+  const helperPath = path37.resolve(kitRoot, "helpers", "check-pipeline-health.sh");
+  if (!isFile(helperPath)) return { ran: false, exitCode: null, parsed: null, raw: "" };
+  try {
+    const result = spawnSync2("bash", [helperPath, "--json"], {
+      cwd: kitRoot,
+      encoding: "utf8",
+      timeout: 3e4,
+      env: { ...process.env, NO_COLOR: "1" }
+    });
+    const raw = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    let parsed = null;
+    try {
+      const last = (result.stdout ?? "").trim().split("\n").filter(Boolean).pop() ?? "";
+      const value = JSON.parse(last);
+      parsed = {
+        pass: Array.isArray(value.pass) ? value.pass.filter((s) => typeof s === "string") : [],
+        warn: Array.isArray(value.warn) ? value.warn.filter((s) => typeof s === "string") : [],
+        fail: Array.isArray(value.fail) ? value.fail.filter((s) => typeof s === "string") : []
+      };
+    } catch {
+      parsed = null;
+    }
+    return { ran: true, exitCode: result.status, parsed, raw };
+  } catch {
+    return { ran: false, exitCode: null, parsed: null, raw: "" };
+  }
+}
+function computeKitHealthReport(kitRoot, options = {}) {
+  const checks = [];
+  const kitIdFromManifest = readKitId(kitRoot);
+  const kitId = kitIdFromManifest ?? path37.basename(kitRoot);
+  if (!kitIdFromManifest) {
+    checks.push(check("kit-json-missing", "fail", "kit.json not readable", {
+      message: `kit.json missing or unparsable at ${path37.resolve(kitRoot, "kit.json")}`,
+      category: "kit-manifest",
+      remediation: "Confirm the path points to a Growthub worker kit root."
+    }));
+  } else {
+    checks.push(check("kit-json", "pass", "kit.json present and parseable", {
+      category: "kit-manifest"
+    }));
+  }
+  checks.push(
+    check(
+      "primitive-1-skill-md",
+      isFile(path37.resolve(kitRoot, "SKILL.md")) ? "pass" : "fail",
+      "Top-level SKILL.md (primitive #1)",
+      { category: "primitive", remediation: "Add SKILL.md with v1.2 frontmatter." }
+    ),
+    check(
+      "primitive-3-project-template",
+      isFile(path37.resolve(kitRoot, "templates", "project.md")) ? "pass" : "warn",
+      "templates/project.md (primitive #3)",
+      { category: "primitive" }
+    ),
+    check(
+      "primitive-4-self-eval",
+      isFile(path37.resolve(kitRoot, "templates", "self-eval.md")) ? "pass" : "warn",
+      "templates/self-eval.md (primitive #4)",
+      { category: "primitive" }
+    ),
+    check(
+      "primitive-5-sub-skills",
+      isDir(path37.resolve(kitRoot, "skills")) ? "pass" : "info",
+      "skills/ directory (primitive #5)",
+      { category: "primitive" }
+    ),
+    check(
+      "primitive-6-helpers",
+      isDir(path37.resolve(kitRoot, "helpers")) ? "pass" : "info",
+      "helpers/ directory (primitive #6)",
+      { category: "primitive" }
+    )
+  );
+  const pipelineRead = readPipelineManifest(kitRoot);
+  if (!pipelineRead.exists) {
+    checks.push(
+      check("pipeline-manifest", "info", "pipeline.manifest.json", {
+        category: "pipeline",
+        message: "Kit does not declare a pipeline.manifest.json (only required for multi-stage pipeline kits)."
+      })
+    );
+  } else if (!pipelineRead.manifest) {
+    checks.push(
+      check("pipeline-manifest", "fail", "pipeline.manifest.json", {
+        category: "pipeline",
+        message: pipelineRead.issues.find((i) => i.severity === "error")?.message ?? "Manifest could not be parsed.",
+        evidence: { issues: pipelineRead.issues }
+      })
+    );
+  } else {
+    const errs = pipelineRead.issues.filter((i) => i.severity === "error");
+    const warns = pipelineRead.issues.filter((i) => i.severity === "warn");
+    checks.push(
+      check(
+        "pipeline-manifest",
+        errs.length > 0 ? "fail" : warns.length > 0 ? "warn" : "pass",
+        "pipeline.manifest.json",
+        {
+          category: "pipeline",
+          message: errs.length > 0 ? errs.map((e) => e.message).join("; ") : warns.length > 0 ? warns.map((w) => w.message).join("; ") : `${pipelineRead.manifest.stages.length} stages declared.`,
+          evidence: { stageIds: pipelineRead.manifest.stages.map((s) => s.id) }
+        }
+      )
+    );
+    for (const stage of pipelineRead.manifest.stages) {
+      const subSkill = path37.resolve(kitRoot, stage.subSkillPath);
+      checks.push(
+        check(
+          `pipeline-stage-${stage.id}-subskill`,
+          isFile(subSkill) ? "pass" : "fail",
+          `Stage '${stage.id}' sub-skill exists`,
+          {
+            category: "pipeline",
+            stageId: stage.id,
+            message: isFile(subSkill) ? void 0 : `Missing sub-skill at ${stage.subSkillPath}`
+          }
+        )
+      );
+    }
+  }
+  const depsRead = readWorkspaceDependencies(kitRoot);
+  if (!depsRead.exists) {
+    checks.push(
+      check("workspace-dependencies", "info", "workspace.dependencies.json", {
+        category: "dependencies",
+        message: "Kit does not declare workspace.dependencies.json (only required when external repos / forks are used)."
+      })
+    );
+  } else if (!depsRead.manifest) {
+    checks.push(
+      check("workspace-dependencies", "fail", "workspace.dependencies.json", {
+        category: "dependencies",
+        message: depsRead.issues.find((i) => i.severity === "error")?.message ?? "Manifest could not be parsed.",
+        evidence: { issues: depsRead.issues }
+      })
+    );
+  } else {
+    const errs = depsRead.issues.filter((i) => i.severity === "error");
+    const warns = depsRead.issues.filter((i) => i.severity === "warn");
+    checks.push(
+      check(
+        "workspace-dependencies",
+        errs.length > 0 ? "fail" : warns.length > 0 ? "warn" : "pass",
+        "workspace.dependencies.json",
+        {
+          category: "dependencies",
+          message: errs.length > 0 ? errs.map((e) => e.message).join("; ") : warns.length > 0 ? warns.map((w) => w.message).join("; ") : `${depsRead.manifest.dependencies.length} dependencies declared.`,
+          evidence: { dependencyIds: depsRead.manifest.dependencies.map((d) => d.id) }
+        }
+      )
+    );
+    for (const dep of depsRead.manifest.dependencies) {
+      const envValue = process.env[dep.env];
+      const envPresent = typeof envValue === "string" && envValue.length > 0;
+      checks.push(
+        check(
+          `dependency-${dep.id}-env`,
+          envPresent ? "pass" : "warn",
+          `Dependency '${dep.id}' env (${dep.env})`,
+          {
+            category: "dependencies",
+            message: envPresent ? void 0 : `Env var ${dep.env} is not set in the current shell.`,
+            remediation: envPresent ? void 0 : `export ${dep.env}=<path-or-value>`
+          }
+        )
+      );
+      if (envPresent && dep.kind === "git-fork") {
+        const dirOk = isDir(envValue);
+        checks.push(
+          check(
+            `dependency-${dep.id}-target`,
+            dirOk ? "pass" : "fail",
+            `Dependency '${dep.id}' target directory exists`,
+            {
+              category: "dependencies",
+              message: dirOk ? void 0 : `${dep.env}=${envValue} does not point to an existing directory.`,
+              remediation: dep.setup ? `bash ${dep.setup}` : void 0
+            }
+          )
+        );
+      }
+    }
+  }
+  if (options.runLocalHelper !== false) {
+    const helper = runLocalHealthHelper(kitRoot);
+    if (helper.ran) {
+      checks.push(
+        check(
+          "kit-local-health-helper",
+          helper.exitCode === 0 ? "pass" : "fail",
+          "helpers/check-pipeline-health.sh",
+          {
+            category: "kit-helper",
+            message: helper.exitCode === 0 ? `Helper passed. ${helper.parsed?.pass?.length ?? 0} checks ok.` : `Helper exited ${helper.exitCode}. ${helper.parsed?.fail?.join(", ") ?? "see raw output"}`,
+            evidence: helper.parsed ? {
+              pass: helper.parsed.pass,
+              warn: helper.parsed.warn,
+              fail: helper.parsed.fail
+            } : { rawTail: helper.raw.slice(-500) }
+          }
+        )
+      );
+    }
+  }
+  const overall = rankSeverity(checks);
+  return {
+    version: KIT_HEALTH_REPORT_VERSION,
+    kitId,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    overall,
+    checks,
+    convention: {
+      spec: "docs/PIPELINE_KIT_CONTRACT_V1.md",
+      version: 1,
+      runtimeEnforcement: "none"
+    }
+  };
+}
+
+// src/commands/kit-contract.ts
+function resolveKitTarget(input, outDir) {
+  const asPath = path38.resolve(input);
+  if (fs32.existsSync(asPath) && fs32.statSync(asPath).isDirectory() && fs32.existsSync(path38.resolve(asPath, "kit.json"))) {
+    return { kitRoot: asPath, resolvedFrom: "path", input };
+  }
+  try {
+    const forks = listKitForkRegistrations();
+    const fork = forks.find((f) => f.forkId === input);
+    if (fork && fs32.existsSync(fork.forkPath) && fs32.existsSync(path38.resolve(fork.forkPath, "kit.json"))) {
+      return {
+        kitRoot: fork.forkPath,
+        resolvedFrom: "fork-id",
+        input,
+        forkId: fork.forkId,
+        kitId: fork.kitId
+      };
+    }
+  } catch {
+  }
+  const resolvedId = fuzzyResolveKitId(input);
+  if (resolvedId) {
+    const assetRoot = resolveBundledAssetRoot(resolvedId);
+    if (assetRoot) {
+      return {
+        kitRoot: assetRoot,
+        resolvedFrom: "kit-id-bundled",
+        input,
+        kitId: resolvedId
+      };
+    }
+    const exportedPath = resolveKitPath(resolvedId, outDir);
+    if (fs32.existsSync(exportedPath) && fs32.existsSync(path38.resolve(exportedPath, "kit.json"))) {
+      return {
+        kitRoot: exportedPath,
+        resolvedFrom: "kit-id-exported",
+        input,
+        kitId: resolvedId
+      };
+    }
+  }
+  return null;
+}
+function describeSource(target) {
+  switch (target.resolvedFrom) {
+    case "path":
+      return "path";
+    case "kit-id-bundled":
+      return `kit-id (bundled: ${target.kitId})`;
+    case "kit-id-exported":
+      return `kit-id (exported workspace: ${target.kitId})`;
+    case "fork-id":
+      return `fork-id (${target.forkId} \u2192 ${target.kitId})`;
+  }
+}
+function buildTargetEnvelope(target) {
+  const kitJsonPath = path38.resolve(target.kitRoot, "kit.json");
+  let manifest = null;
+  try {
+    if (fs32.existsSync(kitJsonPath)) {
+      manifest = JSON.parse(fs32.readFileSync(kitJsonPath, "utf8"));
+    }
+  } catch {
+    manifest = null;
+  }
+  const schemaVersion = manifest?.schemaVersion === 1 ? 1 : manifest?.schemaVersion === 2 ? 2 : null;
+  const kitId = typeof manifest?.kit?.id === "string" ? manifest.kit.id : target.kitId ?? null;
+  const family = typeof manifest?.kit?.family === "string" ? manifest.kit.family : null;
+  const capabilityType = typeof manifest?.kit?.type === "string" ? manifest.kit.type : null;
+  const kitVersion = typeof manifest?.kit?.version === "string" ? manifest.kit.version : null;
+  return {
+    input: target.input,
+    kitRoot: target.kitRoot,
+    resolvedFrom: target.resolvedFrom,
+    kitId,
+    forkId: target.forkId ?? null,
+    schemaVersion,
+    family,
+    capabilityType,
+    isAppKit: schemaVersion === 2 && capabilityType === "ui",
+    kitVersion,
+    specializations: {
+      pipelineManifest: fs32.existsSync(path38.resolve(target.kitRoot, "pipeline.manifest.json")),
+      workspaceDependencies: fs32.existsSync(
+        path38.resolve(target.kitRoot, "workspace.dependencies.json")
+      ),
+      adapterContractsDoc: fs32.existsSync(
+        path38.resolve(target.kitRoot, "docs", "adapter-contracts.md")
+      ),
+      kitLocalHealthHelper: fs32.existsSync(path38.resolve(target.kitRoot, "helpers", "check-pipeline-health.sh")) || fs32.existsSync(path38.resolve(target.kitRoot, "helpers", "check-health.sh")) || fs32.existsSync(path38.resolve(target.kitRoot, "helpers", "check-kit-health.sh"))
+    }
+  };
+}
+function resolveBundledAssetRoot(kitId) {
+  const candidates = [];
+  const here = path38.dirname(new URL(import.meta.url).pathname);
+  candidates.push(path38.resolve(here, "../../assets/worker-kits", kitId));
+  candidates.push(path38.resolve(here, "../../../cli/assets/worker-kits", kitId));
+  for (const candidate of candidates) {
+    if (fs32.existsSync(candidate) && fs32.existsSync(path38.resolve(candidate, "kit.json"))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+function hr2(width = 72) {
+  return pc30.dim("\u2500".repeat(width));
+}
+function emitJson(value) {
+  process.stdout.write(JSON.stringify(value, null, 2) + "\n");
+}
+function emitNotFound(input, json) {
+  if (json) {
+    emitJson({
+      error: "kit-not-found",
+      message: `Could not resolve '${input}' as a kit id or kit directory.`,
+      input
+    });
+  } else {
+    console.error(pc30.red(`Could not resolve '${input}' as a kit id or kit directory.`));
+    console.error(
+      pc30.dim("  Try: growthub kit list   or   growthub kit pipeline inspect <path-to-kit>")
+    );
+  }
+  process.exitCode = 1;
+}
+function renderPipelineInspect(target, projection) {
+  console.log("");
+  console.log(pc30.bold(`Pipeline: ${projection.pipelineId ?? "(none)"}`));
+  console.log(pc30.dim(`  kit:    ${projection.kitId ?? "(unknown)"}`));
+  console.log(pc30.dim(`  source: ${describeSource(target)}  \u2192  ${target.kitRoot}`));
+  console.log(pc30.dim(`  manifest: ${projection.manifestPath}`));
+  console.log(hr2());
+  if (!projection.exists) {
+    console.log(pc30.yellow("  No pipeline.manifest.json declared (only required for multi-stage pipeline kits)."));
+    console.log(pc30.dim("  See docs/PIPELINE_KIT_CONTRACT_V1.md to opt in."));
+    console.log("");
+    return;
+  }
+  if (projection.outputTopology) {
+    console.log(`  ${pc30.bold("Output topology:")} ${pc30.cyan(projection.outputTopology.root)}`);
+    if (projection.outputTopology.buckets.length > 0) {
+      console.log(pc30.dim(`  buckets: ${projection.outputTopology.buckets.join(", ")}`));
+    }
+    console.log("");
+  }
+  console.log(pc30.bold(`  Stages (${projection.stageCount})`));
+  for (let i = 0; i < projection.stages.length; i += 1) {
+    const stage = projection.stages[i];
+    renderStage(i + 1, stage);
+  }
+  if (projection.issues.length > 0) {
+    console.log("");
+    console.log(pc30.bold("  Issues"));
+    for (const issue of projection.issues) {
+      const tag = issue.severity === "error" ? pc30.red("ERROR") : pc30.yellow("WARN ");
+      const field = issue.field ? pc30.dim(` [${issue.field}]`) : "";
+      console.log(`    ${tag} ${issue.message}${field}`);
+    }
+  }
+  console.log("");
+  const status = projection.status;
+  const statusLine = status === "error" ? pc30.red(pc30.bold("  Status: ERROR")) : status === "warn" ? pc30.yellow(pc30.bold("  Status: WARN")) : pc30.green(pc30.bold("  Status: OK"));
+  console.log(statusLine);
+  console.log("");
+}
+function renderStage(index51, stage) {
+  const prefix = pc30.cyan(`  ${index51}. ${stage.id}`);
+  const label = stage.label ? pc30.dim(`  (${stage.label})`) : "";
+  console.log("");
+  console.log(prefix + label);
+  console.log(pc30.dim(`     sub-skill: ${stage.subSkillPath}`));
+  if (stage.adapterModes.length > 0) {
+    console.log(pc30.dim(`     adapters:  ${stage.adapterModes.join(", ")}`));
+  }
+  if (stage.helperPaths.length > 0) {
+    console.log(pc30.dim(`     helpers:   ${stage.helperPaths.join(", ")}`));
+  }
+  if (stage.externalDependencies.length > 0) {
+    console.log(pc30.dim(`     external:  ${stage.externalDependencies.join(", ")}`));
+  }
+  if (stage.inputArtifacts.length > 0) {
+    console.log(pc30.dim(`     inputs:`));
+    for (const a of stage.inputArtifacts) console.log(pc30.dim(`       \xB7 ${a}`));
+  }
+  if (stage.outputArtifacts.length > 0) {
+    console.log(pc30.dim(`     outputs:`));
+    for (const a of stage.outputArtifacts) console.log(pc30.dim(`       \xB7 ${a}`));
+  }
+}
+function runPipelineInspect(input, opts) {
+  const target = resolveKitTarget(input, opts.out);
+  if (!target) {
+    emitNotFound(input, !!opts.json);
+    return;
+  }
+  const projection = inspectPipelineManifest(target.kitRoot);
+  if (opts.json) {
+    emitJson({
+      kind: "pipeline-inspect",
+      conventionSpec: "docs/PIPELINE_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/pipeline-kits#PipelineKitManifest",
+      sdkVersion: 1,
+      target: buildTargetEnvelope(target),
+      manifest: {
+        exists: projection.exists,
+        manifestPath: projection.manifestPath,
+        kitId: projection.kitId,
+        pipelineId: projection.pipelineId,
+        pipelineManifestVersion: projection.manifestVersion,
+        outputTopology: projection.outputTopology,
+        stageCount: projection.stageCount,
+        stages: projection.stages
+      },
+      issues: projection.issues,
+      status: projection.status
+    });
+    return;
+  }
+  renderPipelineInspect(target, projection);
+}
+function renderDependenciesInspect(target, projection) {
+  console.log("");
+  console.log(pc30.bold(`Workspace dependencies \u2014 ${projection.kitId ?? "(unknown)"}`));
+  console.log(pc30.dim(`  source: ${describeSource(target)}  \u2192  ${target.kitRoot}`));
+  console.log(pc30.dim(`  manifest: ${projection.manifestPath}`));
+  console.log(hr2());
+  if (!projection.exists) {
+    console.log(pc30.yellow("  No workspace.dependencies.json declared."));
+    console.log(pc30.dim("  This is only required when the kit delegates to external repos / forks."));
+    console.log(pc30.dim("  See docs/PIPELINE_KIT_CONTRACT_V1.md \xA7 external dependency contract."));
+    console.log("");
+    return;
+  }
+  if (projection.dependencies.length === 0) {
+    console.log(pc30.dim("  No dependencies declared."));
+  }
+  for (const dep of projection.dependencies) {
+    console.log("");
+    console.log(`  ${pc30.cyan(dep.id)}  ${pc30.dim(`(${dep.kind})`)}`);
+    console.log(pc30.dim(`     env:      ${dep.env}`));
+    if (dep.setup) console.log(pc30.dim(`     setup:    ${dep.setup}`));
+    if (dep.install) console.log(pc30.dim(`     install:  ${dep.install}`));
+    if (dep.health) console.log(pc30.dim(`     health:   ${dep.health}`));
+    if (dep.usedByStages?.length) {
+      console.log(pc30.dim(`     stages:   ${dep.usedByStages.join(", ")}`));
+    }
+    if (dep.interfaceArtifact) {
+      console.log(pc30.dim(`     in  \u2190     ${dep.interfaceArtifact}`));
+    }
+    if (dep.handoffArtifact) {
+      console.log(pc30.dim(`     out \u2192     ${dep.handoffArtifact}`));
+    }
+  }
+  if (projection.issues.length > 0) {
+    console.log("");
+    console.log(pc30.bold("  Issues"));
+    for (const issue of projection.issues) {
+      const tag = issue.severity === "error" ? pc30.red("ERROR") : pc30.yellow("WARN ");
+      const field = issue.field ? pc30.dim(` [${issue.field}]`) : "";
+      console.log(`    ${tag} ${issue.message}${field}`);
+    }
+  }
+  console.log("");
+  const statusLine = projection.status === "error" ? pc30.red(pc30.bold("  Status: ERROR")) : projection.status === "warn" ? pc30.yellow(pc30.bold("  Status: WARN")) : pc30.green(pc30.bold("  Status: OK"));
+  console.log(statusLine);
+  console.log("");
+}
+function runDependenciesInspect(input, opts) {
+  const target = resolveKitTarget(input, opts.out);
+  if (!target) {
+    emitNotFound(input, !!opts.json);
+    return;
+  }
+  const projection = inspectWorkspaceDependencies(target.kitRoot);
+  if (opts.json) {
+    emitJson({
+      kind: "dependencies-inspect",
+      conventionSpec: "docs/WORKER_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/workspaces#WorkspaceDependencyManifest",
+      sdkVersion: 1,
+      target: buildTargetEnvelope(target),
+      manifest: {
+        exists: projection.exists,
+        manifestPath: projection.manifestPath,
+        kitId: projection.kitId,
+        workspaceManifestVersion: projection.manifestVersion,
+        dependencyCount: projection.dependencyCount,
+        dependencies: projection.dependencies
+      },
+      issues: projection.issues,
+      status: projection.status
+    });
+    return;
+  }
+  renderDependenciesInspect(target, projection);
+}
+function renderHealth(target, report) {
+  console.log("");
+  console.log(pc30.bold(`Kit health \u2014 ${report.kitId}`));
+  console.log(pc30.dim(`  source: ${describeSource(target)}  \u2192  ${target.kitRoot}`));
+  console.log(pc30.dim(`  generated: ${report.generatedAt}`));
+  console.log(pc30.dim(`  convention: ${report.convention?.spec ?? "(none)"} v${report.convention?.version ?? "?"}`));
+  console.log(hr2());
+  for (const c of report.checks) {
+    const tag = c.severity === "fail" ? pc30.red("FAIL ") : c.severity === "warn" ? pc30.yellow("WARN ") : c.severity === "info" ? pc30.dim("INFO ") : pc30.green("PASS ");
+    const label = c.label ?? c.id;
+    const message = c.message ? pc30.dim(` \u2014 ${c.message}`) : "";
+    console.log(`  ${tag} ${label}${message}`);
+    if (c.severity !== "pass" && c.remediation) {
+      console.log(pc30.dim(`         \u21B3 ${c.remediation}`));
+    }
+  }
+  console.log("");
+  const overallLine = report.overall === "fail" ? pc30.red(pc30.bold("  Overall: FAIL")) : report.overall === "warn" ? pc30.yellow(pc30.bold("  Overall: WARN")) : pc30.green(pc30.bold("  Overall: OK"));
+  console.log(overallLine);
+  console.log("");
+}
+function runKitHealth(input, opts) {
+  const target = resolveKitTarget(input, opts.out);
+  if (!target) {
+    emitNotFound(input, !!opts.json);
+    return;
+  }
+  const report = computeKitHealthReport(target.kitRoot, {
+    runLocalHelper: !opts.noLocalHelper
+  });
+  if (opts.json) {
+    emitJson({
+      kind: "kit-health",
+      conventionSpec: "docs/WORKER_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/health#KitHealthReport",
+      sdkVersion: 1,
+      target: buildTargetEnvelope(target),
+      report: {
+        version: report.version,
+        kitId: report.kitId,
+        generatedAt: report.generatedAt,
+        overall: report.overall,
+        checks: report.checks,
+        convention: report.convention
+      }
+    });
+  } else {
+    renderHealth(target, report);
+  }
+  if (report.overall === "fail") {
+    process.exitCode = 1;
+  }
+}
+function buildCatalogList() {
+  const entries = [];
+  for (const kit of listBundledKits()) {
+    const root = resolveBundledAssetRoot(kit.id);
+    if (!root) continue;
+    const pipelineExists = pipelineManifestExists(root);
+    const depsExists = workspaceDependenciesExists(root);
+    let stageCount = 0;
+    let depCount = 0;
+    if (pipelineExists) {
+      const projection = inspectPipelineManifest(root);
+      stageCount = projection.stageCount;
+    }
+    if (depsExists) {
+      const projection = inspectWorkspaceDependencies(root);
+      depCount = projection.dependencyCount;
+    }
+    entries.push({
+      kitId: kit.id,
+      family: kit.family,
+      hasPipelineManifest: pipelineExists,
+      hasWorkspaceDependencies: depsExists,
+      pipelineStageCount: stageCount,
+      dependencyCount: depCount,
+      kitRoot: root
+    });
+  }
+  return entries;
+}
+function applyFilter(entries, filter, kind) {
+  let filtered = kind === "pipeline" ? entries.filter((e) => e.hasPipelineManifest) : entries.filter((e) => e.hasWorkspaceDependencies);
+  if (!filter) return filtered;
+  for (const clause of filter.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [key, value] = clause.split("=").map((s) => s.trim());
+    if (key === "family" && value) {
+      const wanted = value.split("|").map((f) => f.trim().toLowerCase());
+      filtered = filtered.filter((e) => wanted.includes(e.family.toLowerCase()));
+    } else if (key === "has-external-deps" && value === "true") {
+      filtered = filtered.filter((e) => e.hasWorkspaceDependencies);
+    } else if (key === "min-stages" && value) {
+      const min = parseInt(value, 10);
+      if (!Number.isNaN(min)) filtered = filtered.filter((e) => e.pipelineStageCount >= min);
+    }
+  }
+  return filtered;
+}
+function renderCatalogList(entries, kind) {
+  const headers = kind === "pipeline" ? ["Kit", "Family", "Stages", "External deps"] : ["Kit", "Family", "Dependencies", "Pipeline?"];
+  const rows = entries.map(
+    (e) => kind === "pipeline" ? [e.kitId, e.family, String(e.pipelineStageCount), e.hasWorkspaceDependencies ? "yes" : "\u2014"] : [e.kitId, e.family, String(e.dependencyCount), e.hasPipelineManifest ? "yes" : "\u2014"]
+  );
+  console.log("");
+  if (entries.length === 0) {
+    console.log(pc30.dim(`  No kits currently adopt the ${kind === "pipeline" ? "Pipeline Kit" : "Workspace Dependency"} specialization.`));
+    console.log("");
+    return;
+  }
+  const widths = headers.map(
+    (h, i) => Math.max(h.length, ...rows.map((row) => String(row[i]).length))
+  );
+  const fmt = (cells) => "  " + cells.map((c, i) => c.padEnd(widths[i])).join("  ");
+  console.log(pc30.bold(fmt(headers)));
+  console.log(pc30.dim(fmt(widths.map((w) => "-".repeat(w)))));
+  for (const row of rows) console.log(fmt(row));
+  console.log("");
+}
+function runPipelineList(opts) {
+  const all = buildCatalogList();
+  const filtered = applyFilter(all, opts.filter, "pipeline");
+  if (opts.json) {
+    emitJson({
+      kind: "pipeline-list",
+      conventionSpec: "docs/PIPELINE_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/pipeline-kits#PipelineKitManifest",
+      sdkVersion: 1,
+      filter: opts.filter ?? null,
+      total: filtered.length,
+      kits: filtered
+    });
+    return;
+  }
+  console.log(pc30.bold("Pipeline Kits across the catalog"));
+  console.log(pc30.dim("  (kits that ship pipeline.manifest.json)"));
+  renderCatalogList(filtered, "pipeline");
+}
+function runDependenciesList(opts) {
+  const all = buildCatalogList();
+  const filtered = applyFilter(all, opts.filter, "dependencies");
+  if (opts.json) {
+    emitJson({
+      kind: "dependencies-list",
+      conventionSpec: "docs/WORKER_KIT_CONTRACT_V1.md",
+      sdkType: "@growthub/api-contract/workspaces#WorkspaceDependencyManifest",
+      sdkVersion: 1,
+      filter: opts.filter ?? null,
+      total: filtered.length,
+      kits: filtered
+    });
+    return;
+  }
+  console.log(pc30.bold("Kits with workspace dependencies"));
+  console.log(pc30.dim("  (kits that ship workspace.dependencies.json)"));
+  renderCatalogList(filtered, "dependencies");
+}
+async function pickAdoptingKit(kind) {
+  const entries = applyFilter(buildCatalogList(), void 0, kind);
+  if (entries.length === 0) {
+    p19.note(
+      `No kits currently adopt the ${kind === "pipeline" ? "Pipeline Kit" : "Workspace Dependency"} specialization.
+See docs/${kind === "pipeline" ? "PIPELINE_KIT_CONTRACT_V1" : "WORKER_KIT_CONTRACT_V1"}.md to opt in.`,
+      "Empty"
+    );
+    return null;
+  }
+  const choice = await p19.select({
+    message: "Pick a kit",
+    options: entries.map((e) => ({
+      value: e.kitId,
+      label: e.kitId,
+      hint: kind === "pipeline" ? `${e.pipelineStageCount} stages${e.hasWorkspaceDependencies ? " + external deps" : ""}` : `${e.dependencyCount} deps${e.hasPipelineManifest ? " + pipeline" : ""}`
+    }))
+  });
+  if (p19.isCancel(choice)) {
+    p19.cancel("Cancelled.");
+    return null;
+  }
+  const picked = entries.find((e) => e.kitId === choice);
+  return picked ? { kitId: picked.kitId, kitRoot: picked.kitRoot } : null;
+}
+async function runPipelineHub() {
+  p19.intro("Pipeline Kit inspector");
+  while (true) {
+    const action = await p19.select({
+      message: "What do you want to do?",
+      options: [
+        { value: "list", label: "\u{1F4CB} List pipeline kits across the catalog", hint: "growthub kit pipeline list" },
+        { value: "inspect", label: "\u{1F50D} Inspect a kit's pipeline.manifest.json", hint: "growthub kit pipeline inspect <id>" },
+        { value: "exit", label: "\u2190 Exit" }
+      ]
+    });
+    if (p19.isCancel(action) || action === "exit") {
+      p19.outro("Done.");
+      return;
+    }
+    if (action === "list") {
+      runPipelineList({});
+      continue;
+    }
+    const picked = await pickAdoptingKit("pipeline");
+    if (!picked) continue;
+    runPipelineInspect(picked.kitId, {});
+  }
+}
+async function runDependenciesHub() {
+  p19.intro("Workspace Dependencies inspector");
+  while (true) {
+    const action = await p19.select({
+      message: "What do you want to do?",
+      options: [
+        { value: "list", label: "\u{1F4CB} List kits with workspace dependencies", hint: "growthub kit dependencies list" },
+        { value: "inspect", label: "\u{1F50D} Inspect a kit's workspace.dependencies.json", hint: "growthub kit dependencies inspect <id>" },
+        { value: "exit", label: "\u2190 Exit" }
+      ]
+    });
+    if (p19.isCancel(action) || action === "exit") {
+      p19.outro("Done.");
+      return;
+    }
+    if (action === "list") {
+      runDependenciesList({});
+      continue;
+    }
+    const picked = await pickAdoptingKit("dependencies");
+    if (!picked) continue;
+    runDependenciesInspect(picked.kitId, {});
+  }
+}
+function registerKitContractSubcommands(kit) {
+  const pipeline = kit.command("pipeline").description("Pipeline Kit specialization \u2014 list / inspect kits with pipeline.manifest.json").addHelpText(
+    "after",
+    `
+Examples:
+  # Interactive hub
+  $ growthub kit pipeline                              # interactive picker
+
+  # List all pipeline kits across the catalog
+  $ growthub kit pipeline list
+  $ growthub kit pipeline list --json
+  $ growthub kit pipeline list --filter family=studio
+  $ growthub kit pipeline list --filter has-external-deps=true
+  $ growthub kit pipeline list --filter min-stages=3
+
+  # Inspect a specific kit (dual local / remote: path / kit-id / fork-id)
+  $ growthub kit pipeline inspect creative-video-pipeline
+  $ growthub kit pipeline inspect ./my-fork
+  $ growthub kit pipeline inspect <fork-id>            # via fork registry
+  $ growthub kit pipeline inspect <id> --json | jq '.stages[].id'
+
+Convention: docs/PIPELINE_KIT_CONTRACT_V1.md
+SDK type:   @growthub/api-contract/pipeline-kits#PipelineKitManifest
+`
+  );
+  pipeline.action(async () => {
+    await runPipelineHub();
+  });
+  pipeline.command("list").description("List all pipeline kits across the catalog").option("--json", "Output raw JSON for agent consumption").option(
+    "--filter <expr>",
+    "Comma-separated filters (e.g. 'family=studio', 'has-external-deps=true', 'min-stages=2')"
+  ).action((opts) => {
+    runPipelineList(opts);
+  });
+  pipeline.command("inspect").description("Inspect a kit's pipeline.manifest.json (stages, adapters, output topology)").argument(
+    "<kit-id-or-path>",
+    "Kit id (bundled or exported), filesystem path, or fork id (registered via fork-sync)"
+  ).option("--json", "Output raw JSON for agent consumption").option("--out <path>", "Override the export root when resolving a kit id").action((input, opts) => {
+    runPipelineInspect(input, opts);
+  });
+  const deps = kit.command("dependencies").alias("deps").description("Workspace Dependency specialization \u2014 list / inspect external repos & forks").addHelpText(
+    "after",
+    `
+Examples:
+  # Interactive hub
+  $ growthub kit dependencies                           # interactive picker
+  $ growthub kit deps                                   # alias
+
+  # List all kits with workspace.dependencies.json
+  $ growthub kit dependencies list
+  $ growthub kit dependencies list --json
+  $ growthub kit dependencies list --filter family=studio
+
+  # Inspect a specific kit (dual local / remote: path / kit-id / fork-id)
+  $ growthub kit dependencies inspect creative-video-pipeline
+  $ growthub kit deps inspect ./my-fork
+  $ growthub kit deps inspect <fork-id> --json
+
+Convention: docs/WORKER_KIT_CONTRACT_V1.md (\xA7 workspace dependencies)
+SDK type:   @growthub/api-contract/workspaces#WorkspaceDependencyManifest
+`
+  );
+  deps.action(async () => {
+    await runDependenciesHub();
+  });
+  deps.command("list").description("List all kits that ship workspace.dependencies.json").option("--json", "Output raw JSON for agent consumption").option("--filter <expr>", "Comma-separated filters (e.g. 'family=studio')").action((opts) => {
+    runDependenciesList(opts);
+  });
+  deps.command("inspect").description("Inspect a kit's workspace.dependencies.json").argument(
+    "<kit-id-or-path>",
+    "Kit id (bundled or exported), filesystem path, or fork id (registered via fork-sync)"
+  ).option("--json", "Output raw JSON for agent consumption").option("--out <path>", "Override the export root when resolving a kit id").action((input, opts) => {
+    runDependenciesInspect(input, opts);
+  });
+  kit.command("health").description("Compute a KitHealthReport for any kit (universal \u2014 applies to every kit)").argument(
+    "<kit-id-or-path>",
+    "Kit id (bundled or exported), filesystem path, or fork id (registered via fork-sync)"
+  ).option("--json", "Output raw JSON for agent consumption").option("--out <path>", "Override the export root when resolving a kit id").option("--no-local-helper", "Skip invoking helpers/check-*-health.sh even if present").addHelpText(
+    "after",
+    `
+Examples:
+  $ growthub kit health creative-video-pipeline
+  $ growthub kit health ./my-fork --json
+  $ growthub kit health <fork-id>                        # via fork registry
+  $ growthub kit health <id> --json | jq '.overall'
+
+The exit code is 1 when overall severity is FAIL, otherwise 0.
+
+Convention: docs/WORKER_KIT_CONTRACT_V1.md (\xA7 how agents should read a worker kit)
+SDK type:   @growthub/api-contract/health#KitHealthReport
+`
+  ).action((input, opts) => {
+    runKitHealth(input, opts);
+  });
+}
+
 // src/commands/kit.ts
 var TYPE_CONFIG = {
-  studio: { color: pc30.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
-  specialized_agents: { color: pc30.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
-  ops: { color: pc30.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
+  studio: { color: pc31.cyan, emoji: "\u{1F6E0}\uFE0F", label: "Custom Workspaces" },
+  specialized_agents: { color: pc31.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
+  ops: { color: pc31.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function displayTypeForFamily(family) {
   if (family === "workflow" || family === "operator") return "specialized_agents";
@@ -21518,17 +22840,17 @@ function truncate2(str, max) {
 function displayKitName(name) {
   return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
 }
-function hr2(width = 72) {
-  return pc30.dim("\u2500".repeat(width));
+function hr3(width = 72) {
+  return pc31.dim("\u2500".repeat(width));
 }
 function box(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi2(l).length)) + 4;
-  const top = pc30.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc30.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc31.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc31.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi2(l).length;
-    return pc30.dim("\u2502") + l + " ".repeat(pad2) + pc30.dim("\u2502");
+    return pc31.dim("\u2502") + l + " ".repeat(pad2) + pc31.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
@@ -21549,7 +22871,7 @@ function renderProgressBar2(progress) {
   const filled = Math.max(0, Math.min(width, Math.round(progress.percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
   const detail = truncate2(progress.detail, 48);
-  const line = `\r${pc30.cyan("Exporting kit")} ${pc30.dim("[")}${pc30.green(bar)}${pc30.dim("]")} ${String(progress.percent).padStart(3)}% ${pc30.dim(detail)}`;
+  const line = `\r${pc31.cyan("Exporting kit")} ${pc31.dim("[")}${pc31.green(bar)}${pc31.dim("]")} ${String(progress.percent).padStart(3)}% ${pc31.dim(detail)}`;
   process.stdout.write(line);
   if (progress.phase === "done") {
     process.stdout.write("\n");
@@ -21559,12 +22881,12 @@ function printKitCard(item) {
   const badge2 = typeBadge(item.family);
   console.log("");
   console.log(box([
-    `${pc30.bold(item.name)}  ${pc30.dim("v" + item.version)}`,
-    `${badge2}  ${pc30.dim(item.id)}`,
+    `${pc31.bold(item.name)}  ${pc31.dim("v" + item.version)}`,
+    `${badge2}  ${pc31.dim(item.id)}`,
     "",
     truncate2(item.description, 62),
     "",
-    `${pc30.dim("Brief:")} ${pc30.dim(item.briefType)}   ${pc30.dim("Mode:")} ${pc30.dim(item.executionMode)}`
+    `${pc31.dim("Brief:")} ${pc31.dim(item.briefType)}   ${pc31.dim("Mode:")} ${pc31.dim(item.executionMode)}`
   ]));
 }
 function getActionLabel(action) {
@@ -21578,20 +22900,20 @@ async function confirmKitActions(input) {
     return getActionLabel(action);
   });
   const summaryLines = [
-    pc30.bold("Selected kits"),
+    pc31.bold("Selected kits"),
     ...input.kits.map((kit) => `${typeBadge(kit.family)}  ${displayKitName(kit.name)}`),
     "",
-    pc30.bold("Selected actions"),
+    pc31.bold("Selected actions"),
     actionLabels.join(", ")
   ];
   console.log("");
   console.log(box(summaryLines));
-  const confirmed = await p19.confirm({
+  const confirmed = await p20.confirm({
     message: "Continue with these worker kit actions?",
     initialValue: false
   });
-  if (p19.isCancel(confirmed)) {
-    p19.cancel("Cancelled.");
+  if (p20.isCancel(confirmed)) {
+    p20.cancel("Cancelled.");
     process.exit(0);
   }
   return Boolean(confirmed);
@@ -21606,39 +22928,39 @@ function printGroupedList(kits) {
   const totalTypes = types.length;
   console.log("");
   console.log(
-    pc30.bold("Growthub Agent Worker Kits") + pc30.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
+    pc31.bold("Growthub Agent Worker Kits") + pc31.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
   );
-  console.log(hr2());
+  console.log(hr3());
   for (const type of types) {
     const groupKits = byType[type];
     const header = typeBadge(type);
     console.log(`
-${header}  ${pc30.dim("(" + groupKits.length + ")")}`);
+${header}  ${pc31.dim("(" + groupKits.length + ")")}`);
     for (const kit of groupKits) {
-      console.log(`  ${typeColor(kit.family, pc30.bold(kit.id))}  ${pc30.dim("v" + kit.version)}`);
-      console.log(`  ${pc30.dim(truncate2(kit.description, 62))}`);
-      console.log(`  ${pc30.dim("\u2192")} ${pc30.cyan("growthub kit download " + kit.id)}`);
+      console.log(`  ${typeColor(kit.family, pc31.bold(kit.id))}  ${pc31.dim("v" + kit.version)}`);
+      console.log(`  ${pc31.dim(truncate2(kit.description, 62))}`);
+      console.log(`  ${pc31.dim("\u2192")} ${pc31.cyan("growthub kit download " + kit.id)}`);
       console.log("");
     }
   }
-  console.log(hr2());
-  console.log(pc30.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
+  console.log(hr3());
+  console.log(pc31.dim("  growthub kit download <id>  \xB7  growthub kit inspect <id>  \xB7  growthub kit families"));
   console.log("");
 }
 async function runInteractivePicker(opts) {
   printPaperclipCliBanner();
-  p19.intro(pc30.bold("Growthub Agent Worker Kits"));
+  p20.intro(pc31.bold("Growthub Agent Worker Kits"));
   let kits;
   try {
     kits = listBundledKits();
   } catch (err) {
-    p19.log.error("Failed to load kits: " + err.message);
+    p20.log.error("Failed to load kits: " + err.message);
     process.exit(1);
   }
   const familiesAvailable = [...new Set(kits.map((k) => k.family))].sort();
   const typeOptions = Array.from(new Set(familiesAvailable.map((family) => displayTypeForFamily(family))));
   while (true) {
-    const typeChoice = await p19.select({
+    const typeChoice = await p20.select({
       message: "Filter by type",
       options: [
         { value: "all", label: "All Types" },
@@ -21652,81 +22974,99 @@ async function runInteractivePicker(opts) {
         ...opts.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
       ]
     });
-    if (p19.isCancel(typeChoice)) {
-      p19.cancel("Cancelled.");
+    if (p20.isCancel(typeChoice)) {
+      p20.cancel("Cancelled.");
       process.exit(0);
     }
     if (typeChoice === "__back_to_hub") return "back";
     const filtered = typeChoice === "all" ? kits : kits.filter((k) => displayTypeForFamily(k.family) === typeChoice);
     const showTypeBadgeInKitChoices = typeChoice === "all";
     if (filtered.length === 0) {
-      p19.note("No kits are available for that type yet.", "Nothing found");
+      p20.note("No kits are available for that type yet.", "Nothing found");
       continue;
     }
     while (true) {
-      const kitChoice = await p19.select({
+      const kitChoice = await p20.select({
         message: "Select kit",
         options: [
           ...filtered.map((k) => ({
             value: k.id,
-            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc30.bold(displayKitName(k.name)) + "  " + pc30.dim("v" + k.version),
+            label: (showTypeBadgeInKitChoices ? typeBadge(k.family) + "  " : "") + pc31.bold(displayKitName(k.name)) + "  " + pc31.dim("v" + k.version),
             hint: truncate2(k.description, 55)
           })),
           { value: "__back_to_type", label: "\u2190 Back to type filter" }
         ]
       });
-      if (p19.isCancel(kitChoice)) {
-        p19.cancel("Cancelled.");
+      if (p20.isCancel(kitChoice)) {
+        p20.cancel("Cancelled.");
         process.exit(0);
       }
       if (kitChoice === "__back_to_type") break;
       const selected = filtered.find((kit) => kit.id === kitChoice);
       if (!selected) {
-        p19.cancel("Selected kit was not found.");
+        p20.cancel("Selected kit was not found.");
         process.exit(1);
       }
       printKitCard(selected);
-      const nextStep = await p19.select({
+      const nextStep = await p20.select({
         message: "Next step",
         options: [
           { value: "actions", label: "Choose action(s)" },
           { value: "back_to_kits", label: "\u2190 Back to kit list" }
         ]
       });
-      if (p19.isCancel(nextStep)) {
-        p19.cancel("Cancelled.");
+      if (p20.isCancel(nextStep)) {
+        p20.cancel("Cancelled.");
         process.exit(0);
       }
       if (nextStep === "back_to_kits") continue;
       while (true) {
-        const action = await p19.select({
+        const action = await p20.select({
           message: "What would you like to do?",
           options: [
             { value: "download", label: "\u2B07\uFE0F  Download kit", hint: "growthub kit download <id>" },
             { value: "inspect", label: "\u{1F50D} Inspect manifest", hint: "growthub kit inspect <id>" },
+            { value: "pipeline", label: "\u{1F517} Inspect pipeline contract", hint: "growthub kit pipeline inspect <id>" },
+            { value: "dependencies", label: "\u{1F4E6} Inspect external dependencies", hint: "growthub kit dependencies inspect <id>" },
+            { value: "health", label: "\u{1FA7A} Run health report", hint: "growthub kit health <id>" },
             { value: "copy-id", label: "\u{1F4CB} Print ID to stdout", hint: "echo <kit-id>" },
             { value: "back_to_kits", label: "\u2190 Back to kit list" }
           ]
         });
-        if (p19.isCancel(action)) {
-          p19.cancel("Cancelled.");
+        if (p20.isCancel(action)) {
+          p20.cancel("Cancelled.");
           process.exit(0);
         }
         if (action === "back_to_kits") break;
+        if (action === "pipeline") {
+          runPipelineInspect(selected.id, { out: opts.out });
+          p20.outro(pc31.dim("Done."));
+          return "done";
+        }
+        if (action === "dependencies") {
+          runDependenciesInspect(selected.id, { out: opts.out });
+          p20.outro(pc31.dim("Done."));
+          return "done";
+        }
+        if (action === "health") {
+          runKitHealth(selected.id, { out: opts.out });
+          p20.outro(pc31.dim("Done."));
+          return "done";
+        }
         const confirmed = await confirmKitActions({
           kits: [selected],
           actions: [action]
         });
         if (!confirmed) {
-          const reviewChoice = await p19.select({
+          const reviewChoice = await p20.select({
             message: "Review selection",
             options: [
               { value: "actions", label: `Choose ${getActionLabel(action)} again` },
               { value: "back_to_kits", label: "\u2190 Back to kit list" }
             ]
           });
-          if (p19.isCancel(reviewChoice)) {
-            p19.cancel("Cancelled.");
+          if (p20.isCancel(reviewChoice)) {
+            p20.cancel("Cancelled.");
             process.exit(0);
           }
           if (reviewChoice === "back_to_kits") break;
@@ -21734,16 +23074,16 @@ async function runInteractivePicker(opts) {
         }
         if (action === "copy-id") {
           console.log(selected.id);
-          p19.outro(pc30.dim("Kit ID printed above."));
+          p20.outro(pc31.dim("Kit ID printed above."));
           return "done";
         }
         if (action === "inspect") {
           runInspect(selected.id, opts.out);
-          p19.outro(pc30.dim("Done."));
+          p20.outro(pc31.dim("Done."));
           return "done";
         }
         await runDownload(selected.id, opts);
-        p19.outro(pc30.green("Kit exported successfully."));
+        p20.outro(pc31.green("Kit exported successfully."));
         return "done";
       }
     }
@@ -21752,19 +23092,19 @@ async function runInteractivePicker(opts) {
 async function runDownload(kitId, opts) {
   const resolvedId = fuzzyResolveKitId(kitId);
   if (!resolvedId) {
-    console.error(pc30.red("Unknown kit '" + kitId + "'.") + pc30.dim(" Run `growthub kit list` to browse."));
+    console.error(pc31.red("Unknown kit '" + kitId + "'.") + pc31.dim(" Run `growthub kit list` to browse."));
     process.exit(1);
   }
   if (resolvedId !== kitId) {
-    console.log(pc30.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
+    console.log(pc31.dim("Resolved '" + kitId + "' \u2192 " + resolvedId));
   }
   const kits = listBundledKits();
   const item = kits.find((k) => k.id === resolvedId);
   printKitCard(item);
   if (!opts.yes) {
-    const confirmed = await p19.confirm({ message: "Download " + pc30.bold(displayKitName(item.name)) + "?" });
-    if (p19.isCancel(confirmed) || !confirmed) {
-      p19.cancel("Cancelled.");
+    const confirmed = await p20.confirm({ message: "Download " + pc31.bold(displayKitName(item.name)) + "?" });
+    if (p20.isCancel(confirmed) || !confirmed) {
+      p20.cancel("Cancelled.");
       process.exit(0);
     }
   }
@@ -21774,36 +23114,36 @@ async function runDownload(kitId, opts) {
   track("kit_download_completed", { kit_id: resolvedId });
   printActivationNudge("kit_download");
   console.log("");
-  console.log(pc30.green(pc30.bold("Kit exported successfully.")));
+  console.log(pc31.green(pc31.bold("Kit exported successfully.")));
   console.log("");
   const nextSteps = [
-    pc30.bold("Next steps"),
+    pc31.bold("Next steps"),
     "",
-    pc30.dim("1.") + " Point Working Directory at:",
-    "   " + pc30.cyan(result.folderPath),
+    pc31.dim("1.") + " Point Working Directory at:",
+    "   " + pc31.cyan(result.folderPath),
     "",
-    pc30.dim("2.") + " " + pc30.cyan("cp .env.example .env") + "  \u2192  add your API key",
-    pc30.dim("3.") + " " + pc30.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
-    pc30.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
+    pc31.dim("2.") + " " + pc31.cyan("cp .env.example .env") + "  \u2192  add your API key",
+    pc31.dim("3.") + " " + pc31.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio",
+    pc31.dim("4.") + " Open Growthub local \u2014 the agent loads automatically",
     "",
-    pc30.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
+    pc31.dim("Docs: QUICKSTART.md \xB7 validation-checklist.md")
   ];
   console.log("");
   console.log(box(nextSteps));
   console.log("");
-  console.log(pc30.bold("Open folder: ") + folderOpenLabel(result.folderPath));
-  console.log(pc30.dim("Folder: ") + result.folderPath);
+  console.log(pc31.bold("Open folder: ") + folderOpenLabel(result.folderPath));
+  console.log(pc31.dim("Folder: ") + result.folderPath);
   console.log("");
-  console.log(pc30.dim("Zip: ") + result.zipPath);
+  console.log(pc31.dim("Zip: ") + result.zipPath);
   console.log("");
 }
 function runInspect(kitId, outDir) {
   const info = inspectBundledKit(kitId, outDir);
-  const kv = (label, value) => console.log("  " + pc30.bold(label.padEnd(24)) + " " + value);
+  const kv = (label, value) => console.log("  " + pc31.bold(label.padEnd(24)) + " " + value);
   console.log("");
-  console.log(pc30.bold("Kit: " + info.id) + pc30.dim("  v" + info.version));
-  console.log(typeBadge(info.family) + pc30.dim("  schema v" + info.schemaVersion));
-  console.log(hr2());
+  console.log(pc31.bold("Kit: " + info.id) + pc31.dim("  v" + info.version));
+  console.log(typeBadge(info.family) + pc31.dim("  schema v" + info.schemaVersion));
+  console.log(hr3());
   kv("Name:", info.name);
   kv("Description:", truncate2(info.description, 55));
   kv("Entrypoint:", info.entrypointPath);
@@ -21817,9 +23157,9 @@ function runInspect(kitId, outDir) {
   if (Object.keys(info.compatibility).length > 0) {
     kv("Compatibility:", JSON.stringify(info.compatibility));
   }
-  console.log(hr2());
-  console.log(pc30.bold("  Required Paths:"));
-  for (const rp of info.requiredPaths) console.log("    " + pc30.dim("\xB7") + " " + rp);
+  console.log(hr3());
+  console.log(pc31.bold("  Required Paths:"));
+  for (const rp of info.requiredPaths) console.log("    " + pc31.dim("\xB7") + " " + rp);
   console.log("");
 }
 function registerKitCommands(program2) {
@@ -21839,6 +23179,12 @@ Examples:
   $ growthub kit inspect hyperframes
   $ growthub kit inspect video-use
   $ growthub kit families                 # show family taxonomy
+
+Pipeline Kit Contract v1 (PIPELINE_KIT_CONTRACT_V1):
+  $ growthub kit pipeline inspect <id>          # stages, adapters, output topology
+  $ growthub kit dependencies inspect <id>      # external repos / forks
+  $ growthub kit health <id>                    # full health report
+  $ growthub kit pipeline inspect <id> --json   # agent-first JSON output
 
 Fork Sync Agent:
   $ growthub kit fork                     # interactive fork-sync hub
@@ -21861,8 +23207,8 @@ Examples:
       const wanted = opts.family.split(",").map((f) => f.trim().toLowerCase());
       kits = kits.filter((k) => wanted.includes(k.family));
       if (kits.length === 0) {
-        console.error(pc30.yellow("No kits found for family: " + opts.family));
-        console.error(pc30.dim("Valid families: studio, workflow, operator, ops"));
+        console.error(pc31.yellow("No kits found for family: " + opts.family));
+        console.error(pc31.dim("Valid families: studio, workflow, operator, ops"));
         process.exitCode = 1;
         return;
       }
@@ -21880,7 +23226,7 @@ Examples:
 `).action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc30.red("Unknown kit '" + kitId + "'.") + pc30.dim(" Run `growthub kit list` to browse."));
+      console.error(pc31.red("Unknown kit '" + kitId + "'.") + pc31.dim(" Run `growthub kit list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -21906,7 +23252,7 @@ Examples:
     }
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc30.red("Unknown kit '" + kitId + "'.") + pc30.dim(" Run `growthub kit list` to browse."));
+      console.error(pc31.red("Unknown kit '" + kitId + "'.") + pc31.dim(" Run `growthub kit list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -21916,14 +23262,14 @@ Examples:
       });
       track("kit_download_completed", { kit_id: resolvedId });
       console.log("");
-      console.log(pc30.bold("Exported folder:"), pc30.cyan(result.folderPath));
-      console.log(pc30.bold("Open folder:   "), folderOpenLabel(result.folderPath));
-      console.log(pc30.bold("Zip:           "), pc30.dim(result.zipPath));
+      console.log(pc31.bold("Exported folder:"), pc31.cyan(result.folderPath));
+      console.log(pc31.bold("Open folder:   "), folderOpenLabel(result.folderPath));
+      console.log(pc31.bold("Zip:           "), pc31.dim(result.zipPath));
       console.log("");
-      console.log(pc30.bold("Next steps:"));
-      console.log("  1. Point Working Directory at: " + pc30.cyan(result.folderPath));
-      console.log("  2. " + pc30.cyan("cp .env.example .env") + "  \u2192  add your API key");
-      console.log("  3. " + pc30.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
+      console.log(pc31.bold("Next steps:"));
+      console.log("  1. Point Working Directory at: " + pc31.cyan(result.folderPath));
+      console.log("  2. " + pc31.cyan("cp .env.example .env") + "  \u2192  add your API key");
+      console.log("  3. " + pc31.cyan("bash setup/clone-fork.sh") + "  \u2192  boot local studio");
       console.log("  4. Open Growthub local \u2014 the agent loads automatically");
       console.log("");
       return;
@@ -21933,7 +23279,7 @@ Examples:
   kit.command("path").description("Resolve the expected export folder path without exporting").argument("<kit-id>", "Kit id or fuzzy slug").option("--out <path>", "Override the export root").action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
     if (!resolvedId) {
-      console.error(pc30.red("Unknown kit '" + kitId + "'."));
+      console.error(pc31.red("Unknown kit '" + kitId + "'."));
       process.exitCode = 1;
       return;
     }
@@ -21944,23 +23290,23 @@ Examples:
   $ growthub kit validate ./my-kit
   $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
 `).action((kitPath) => {
-    const resolvedPath = path35.resolve(kitPath);
+    const resolvedPath = path39.resolve(kitPath);
     const result = validateKitDirectory(resolvedPath);
     console.log("");
-    console.log(pc30.bold("Kit: " + result.kitId) + pc30.dim("  schema v" + result.schemaVersion));
-    console.log(hr2());
+    console.log(pc31.bold("Kit: " + result.kitId) + pc31.dim("  schema v" + result.schemaVersion));
+    console.log(hr3());
     for (const w of result.warnings) {
-      console.log(pc30.yellow("  WARN  " + w.field + ": " + w.message));
+      console.log(pc31.yellow("  WARN  " + w.field + ": " + w.message));
     }
     for (const e of result.errors) {
-      console.log(pc30.red("  ERROR " + e.field + ": " + e.message));
+      console.log(pc31.red("  ERROR " + e.field + ": " + e.message));
     }
     if (result.errors.length > 0) {
       console.log("");
-      console.log(pc30.red(pc30.bold("  Result: INVALID")) + pc30.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
+      console.log(pc31.red(pc31.bold("  Result: INVALID")) + pc31.dim("  (" + result.errors.length + " error" + (result.errors.length !== 1 ? "s" : "") + ")"));
       process.exitCode = 1;
     } else {
-      console.log(pc30.green(pc30.bold("  Result: VALID")));
+      console.log(pc31.green(pc31.bold("  Result: VALID")));
     }
     console.log("");
   });
@@ -21972,30 +23318,31 @@ Examples:
       { family: "ops", tagline: "Infrastructure / toolchain operator (provider optional)", surfaces: "local-fork (primary)", example: "(coming soon)" }
     ];
     console.log("");
-    console.log(pc30.bold("Kit Family Taxonomy"));
-    console.log(hr2());
+    console.log(pc31.bold("Kit Family Taxonomy"));
+    console.log(hr3());
     for (const def of defs) {
       console.log("\n  " + typeBadge(def.family));
-      console.log("  " + pc30.dim(def.tagline));
-      console.log("  " + pc30.dim("Surfaces: ") + pc30.dim(def.surfaces));
-      console.log("  " + pc30.dim("Example:  ") + pc30.cyan(def.example));
+      console.log("  " + pc31.dim(def.tagline));
+      console.log("  " + pc31.dim("Surfaces: ") + pc31.dim(def.surfaces));
+      console.log("  " + pc31.dim("Example:  ") + pc31.cyan(def.example));
     }
     console.log("");
-    console.log(hr2());
-    console.log(pc30.dim("  growthub kit list --family <family>  to filter by internal family"));
+    console.log(hr3());
+    console.log(pc31.dim("  growthub kit list --family <family>  to filter by internal family"));
     console.log("");
   });
+  registerKitContractSubcommands(kit);
   registerKitForkSubcommands(kit);
 }
 
 // src/commands/template.ts
-import path37 from "node:path";
-import * as p20 from "@clack/prompts";
-import pc31 from "picocolors";
+import path41 from "node:path";
+import * as p21 from "@clack/prompts";
+import pc32 from "picocolors";
 
 // src/templates/service.ts
-import fs29 from "node:fs";
-import path36 from "node:path";
+import fs33 from "node:fs";
+import path40 from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // src/templates/catalog.ts
@@ -22317,12 +23664,12 @@ var TEMPLATE_CATALOG = [
 
 // src/templates/service.ts
 function resolveSharedTemplatesRoot() {
-  const moduleDir = path36.dirname(fileURLToPath6(import.meta.url));
+  const moduleDir = path40.dirname(fileURLToPath6(import.meta.url));
   for (const candidate of [
-    path36.resolve(moduleDir, "../../assets/shared-templates"),
-    path36.resolve(moduleDir, "../assets/shared-templates")
+    path40.resolve(moduleDir, "../../assets/shared-templates"),
+    path40.resolve(moduleDir, "../assets/shared-templates")
   ]) {
-    if (fs29.existsSync(candidate)) return candidate;
+    if (fs33.existsSync(candidate)) return candidate;
   }
   throw new Error("Shared template assets not found at cli/assets/shared-templates/");
 }
@@ -22358,15 +23705,15 @@ function getArtifact(slugOrId) {
   const artifact = resolveSlug(slugOrId);
   if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
   const root = resolveSharedTemplatesRoot();
-  const absolutePath = path36.resolve(root, artifact.path);
-  if (!fs29.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
-  return { artifact, content: fs29.readFileSync(absolutePath, "utf8"), absolutePath };
+  const absolutePath = path40.resolve(root, artifact.path);
+  if (!fs33.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  return { artifact, content: fs33.readFileSync(absolutePath, "utf8"), absolutePath };
 }
 function copyArtifact(slugOrId, destDir) {
   const resolved = getArtifact(slugOrId);
-  fs29.mkdirSync(destDir, { recursive: true });
-  const destPath = path36.resolve(destDir, path36.basename(resolved.absolutePath));
-  fs29.copyFileSync(resolved.absolutePath, destPath);
+  fs33.mkdirSync(destDir, { recursive: true });
+  const destPath = path40.resolve(destDir, path40.basename(resolved.absolutePath));
+  fs33.copyFileSync(resolved.absolutePath, destPath);
   return destPath;
 }
 var GROUP_ORDER = ["ad-formats", "scene-modules/hooks", "scene-modules/body", "scene-modules/cta", "marketing-frameworks"];
@@ -22417,8 +23764,8 @@ function getCatalogStats() {
 function stripAnsi3(s) {
   return s.replace(/\x1B\[[0-9;]*m/g, "");
 }
-function hr3(w = 72) {
-  return pc31.dim("\u2500".repeat(w));
+function hr4(w = 72) {
+  return pc32.dim("\u2500".repeat(w));
 }
 function truncate3(s, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + "\u2026";
@@ -22426,32 +23773,32 @@ function truncate3(s, max) {
 function box2(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi3(l).length)) + 4;
-  const top = pc31.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc31.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
-  const body = padded.map((l) => pc31.dim("\u2502") + l + " ".repeat(width - stripAnsi3(l).length) + pc31.dim("\u2502"));
+  const top = pc32.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc32.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const body = padded.map((l) => pc32.dim("\u2502") + l + " ".repeat(width - stripAnsi3(l).length) + pc32.dim("\u2502"));
   return [top, ...body, bottom].join("\n");
 }
 function badge(a) {
-  if (a.type === "ad-format") return pc31.cyan("\u{1F3AC} Ad Format");
+  if (a.type === "ad-format") return pc32.cyan("\u{1F3AC} Ad Format");
   if (a.type === "scene-module") {
-    if (a.subtype === "hook") return pc31.yellow("\u{1FA9D} Hook");
-    if (a.subtype === "body") return pc31.blue("\u{1F9E9} Body");
-    if (a.subtype === "cta") return pc31.green("\u{1F3AF} CTA");
+    if (a.subtype === "hook") return pc32.yellow("\u{1FA9D} Hook");
+    if (a.subtype === "body") return pc32.blue("\u{1F9E9} Body");
+    if (a.subtype === "cta") return pc32.green("\u{1F3AF} CTA");
   }
-  return pc31.magenta("\u{1F9E9} Module");
+  return pc32.magenta("\u{1F9E9} Module");
 }
 function printCard(a) {
-  const compat = a.compatibleFormats.length ? pc31.dim("Works with: ") + a.compatibleFormats.map((f) => pc31.cyan(f)).join(", ") : pc31.dim("Works with: any format");
+  const compat = a.compatibleFormats.length ? pc32.dim("Works with: ") + a.compatibleFormats.map((f) => pc32.cyan(f)).join(", ") : pc32.dim("Works with: any format");
   const rows = [
-    pc31.bold(a.name),
-    `${badge(a)}  ${pc31.dim(a.id)}`,
+    pc32.bold(a.name),
+    `${badge(a)}  ${pc32.dim(a.id)}`,
     "",
     truncate3(a.category, 62),
     "",
     compat
   ];
   if (a.type === "ad-format" && a.scenes != null) {
-    rows.push(pc31.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc31.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
+    rows.push(pc32.dim("Scenes: ") + a.scenes + (a.hookVariations ? pc32.dim("  \xB7 Hook variations: ") + a.hookVariations : ""));
   }
   console.log("");
   console.log(box2(rows));
@@ -22459,32 +23806,32 @@ function printCard(a) {
 function printSummary2(filter) {
   const artifacts = listArtifacts(filter);
   if (!artifacts.length) {
-    console.log(pc31.yellow("No templates matched. Try: growthub template list"));
+    console.log(pc32.yellow("No templates matched. Try: growthub template list"));
     return;
   }
   const stats = getCatalogStats();
   const groups = groupArtifacts(artifacts);
   console.log("");
-  console.log(pc31.bold("Growthub Shared Template Library") + pc31.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
-  console.log(pc31.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
-  console.log(hr3());
+  console.log(pc32.bold("Growthub Shared Template Library") + pc32.dim(`  ${artifacts.length} of ${stats.total} artifacts`));
+  console.log(pc32.dim("  " + Object.entries(stats.byFamily).map(([f, n]) => `${f} (${n})`).join(" \xB7 ")));
+  console.log(hr4());
   for (const g of groups) {
     console.log(`
-${pc31.bold(g.label)}  ${pc31.dim("(" + g.count + ")")}`);
-    console.log(pc31.dim("  " + g.description));
+${pc32.bold(g.label)}  ${pc32.dim("(" + g.count + ")")}`);
+    console.log(pc32.dim("  " + g.description));
     console.log("");
     for (const a of g.artifacts) {
-      const compat = a.compatibleFormats.length ? pc31.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
-      console.log(`  ${pc31.cyan(pc31.bold(a.name))}${compat}`);
-      console.log(`  ${pc31.dim("growthub template get " + a.slug)}`);
+      const compat = a.compatibleFormats.length ? pc32.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
+      console.log(`  ${pc32.cyan(pc32.bold(a.name))}${compat}`);
+      console.log(`  ${pc32.dim("growthub template get " + a.slug)}`);
       console.log("");
     }
   }
-  console.log(hr3());
-  console.log(pc31.dim("  growthub template get <slug>"));
-  console.log(pc31.dim("  growthub template list --type ad-formats"));
-  console.log(pc31.dim("  growthub template list --type scene-modules --subtype hooks"));
-  console.log(pc31.dim("  growthub template   (interactive picker)"));
+  console.log(hr4());
+  console.log(pc32.dim("  growthub template get <slug>"));
+  console.log(pc32.dim("  growthub template list --type ad-formats"));
+  console.log(pc32.dim("  growthub template list --type scene-modules --subtype hooks"));
+  console.log(pc32.dim("  growthub template   (interactive picker)"));
   console.log("");
 }
 var TEMPLATE_FAMILY_META = {
@@ -22510,16 +23857,16 @@ var TEMPLATE_FAMILY_META = {
   }
 };
 async function runTemplatePicker(opts) {
-  p20.intro(pc31.bold("Growthub Shared Template Library"));
+  p21.intro(pc32.bold("Growthub Shared Template Library"));
   let artifacts;
   try {
     artifacts = listArtifacts();
   } catch (err) {
-    p20.log.error(err.message);
+    p21.log.error(err.message);
     process.exit(1);
   }
   const families = [...new Set(artifacts.map((artifact) => artifact.family))];
-  const familyChoice = await p20.select({
+  const familyChoice = await p21.select({
     message: "What template type do you want to browse?",
     options: [
       ...families.map((family) => {
@@ -22538,14 +23885,14 @@ async function runTemplatePicker(opts) {
       ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
     ]
   });
-  if (p20.isCancel(familyChoice)) {
-    p20.cancel("Cancelled.");
+  if (p21.isCancel(familyChoice)) {
+    p21.cancel("Cancelled.");
     process.exit(0);
   }
   if (familyChoice === "__back_to_hub") return "back";
   const filteredArtifacts = artifacts.filter((artifact) => artifact.family === familyChoice);
   const groups = groupArtifacts(filteredArtifacts);
-  const groupChoice = await p20.select({
+  const groupChoice = await p21.select({
     message: "What kind of template?",
     options: groups.map((g) => ({
       value: g.key,
@@ -22553,26 +23900,26 @@ async function runTemplatePicker(opts) {
       hint: `${g.count} available \xB7 ${g.description}`
     }))
   });
-  if (p20.isCancel(groupChoice)) {
-    p20.cancel("Cancelled.");
+  if (p21.isCancel(groupChoice)) {
+    p21.cancel("Cancelled.");
     process.exit(0);
   }
   const group = groups.find((g) => g.key === groupChoice);
-  const artifactChoice = await p20.select({
+  const artifactChoice = await p21.select({
     message: `Select from: ${group.label}`,
     options: group.artifacts.map((a) => ({
       value: a.id,
-      label: pc31.bold(a.name),
+      label: pc32.bold(a.name),
       hint: truncate3(a.category, 52)
     }))
   });
-  if (p20.isCancel(artifactChoice)) {
-    p20.cancel("Cancelled.");
+  if (p21.isCancel(artifactChoice)) {
+    p21.cancel("Cancelled.");
     process.exit(0);
   }
   const selected = filteredArtifacts.find((a) => a.id === artifactChoice);
   printCard(selected);
-  const action = await p20.select({
+  const action = await p21.select({
     message: "What would you like to do?",
     options: [
       { value: "print", label: "\u{1F4C4} Print to terminal" },
@@ -22581,36 +23928,36 @@ async function runTemplatePicker(opts) {
       { value: "cancel", label: "Cancel" }
     ]
   });
-  if (p20.isCancel(action) || action === "cancel") {
-    p20.cancel("Cancelled.");
+  if (p21.isCancel(action) || action === "cancel") {
+    p21.cancel("Cancelled.");
     process.exit(0);
   }
   if (action === "slug") {
     console.log(selected.slug);
-    p20.outro(pc31.dim("Use with: growthub template get " + selected.slug));
+    p21.outro(pc32.dim("Use with: growthub template get " + selected.slug));
     return "done";
   }
   if (action === "print") {
     const r = getArtifact(selected.id);
-    console.log("\n" + hr3());
+    console.log("\n" + hr4());
     console.log(r.content);
-    console.log(hr3());
-    p20.outro(pc31.dim("Source: " + r.absolutePath));
+    console.log(hr4());
+    p21.outro(pc32.dim("Source: " + r.absolutePath));
     return "done";
   }
   if (action === "copy") {
-    const destInput = await p20.text({
+    const destInput = await p21.text({
       message: "Output directory:",
       placeholder: "~/Downloads/templates",
       validate: (v) => !v?.trim() ? "Path is required" : void 0
     });
-    if (p20.isCancel(destInput)) {
-      p20.cancel("Cancelled.");
+    if (p21.isCancel(destInput)) {
+      p21.cancel("Cancelled.");
       process.exit(0);
     }
-    const destDir = path37.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
+    const destDir = path41.resolve(destInput.replace(/^~/, process.env["HOME"] ?? ""));
     const destPath = copyArtifact(selected.id, destDir);
-    p20.outro(pc31.green("Copied \u2192 ") + destPath);
+    p21.outro(pc32.green("Copied \u2192 ") + destPath);
     return "done";
   }
   return "done";
@@ -22637,7 +23984,7 @@ Any agent or kit resolves them by slug.
     if (opts.type) {
       const t = opts.type.replace(/s$/, "");
       if (t !== "ad-format" && t !== "scene-module") {
-        console.error(pc31.red(`Unknown --type '${opts.type}'.`) + pc31.dim(" Valid: ad-formats, scene-modules"));
+        console.error(pc32.red(`Unknown --type '${opts.type}'.`) + pc32.dim(" Valid: ad-formats, scene-modules"));
         process.exitCode = 1;
         return;
       }
@@ -22646,7 +23993,7 @@ Any agent or kit resolves them by slug.
     if (opts.subtype) {
       const sub = opts.subtype.replace(/s$/, "");
       if (!["hook", "body", "cta"].includes(sub)) {
-        console.error(pc31.red(`Unknown --subtype '${opts.subtype}'.`) + pc31.dim(" Valid: hooks, body, cta"));
+        console.error(pc32.red(`Unknown --subtype '${opts.subtype}'.`) + pc32.dim(" Valid: hooks, body, cta"));
         process.exitCode = 1;
         return;
       }
@@ -22662,18 +24009,18 @@ Any agent or kit resolves them by slug.
   cmd.command("get").description("Print or copy a template \u2014 fuzzy slug resolution").argument("<slug>", "Artifact slug (e.g. villain-animation, meme-overlay)").option("--out <path>", "Copy to this directory").option("--json", "Artifact metadata + content as JSON").action((slug, opts) => {
     const artifact = resolveSlug(slug);
     if (!artifact) {
-      console.error(pc31.red(`Unknown template '${slug}'.`) + pc31.dim(" Run `growthub template list` to browse."));
+      console.error(pc32.red(`Unknown template '${slug}'.`) + pc32.dim(" Run `growthub template list` to browse."));
       process.exitCode = 1;
       return;
     }
     if (artifact.id !== slug && artifact.slug !== slug) {
-      console.error(pc31.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
+      console.error(pc32.dim(`Resolved '${slug}' \u2192 ${artifact.slug}`));
     }
     let resolved;
     try {
       resolved = getArtifact(artifact.id);
     } catch (err) {
-      console.error(pc31.red(err.message));
+      console.error(pc32.red(err.message));
       process.exitCode = 1;
       return;
     }
@@ -22682,28 +24029,28 @@ Any agent or kit resolves them by slug.
       return;
     }
     if (opts.out) {
-      const destDir = path37.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
+      const destDir = path41.resolve(opts.out.replace(/^~/, process.env["HOME"] ?? ""));
       try {
         const dest = copyArtifact(artifact.id, destDir);
-        console.log(pc31.green("Copied \u2192 ") + dest);
+        console.log(pc32.green("Copied \u2192 ") + dest);
       } catch (err) {
-        console.error(pc31.red(err.message));
+        console.error(pc32.red(err.message));
         process.exitCode = 1;
       }
       return;
     }
     printCard(resolved.artifact);
-    console.log(hr3());
+    console.log(hr4());
     console.log(resolved.content);
-    console.log(hr3());
-    console.log(pc31.dim("Source: " + resolved.absolutePath));
+    console.log(hr4());
+    console.log(pc32.dim("Source: " + resolved.absolutePath));
     console.log("");
   });
 }
 
 // src/commands/capability.ts
-import * as p21 from "@clack/prompts";
-import pc32 from "picocolors";
+import * as p22 from "@clack/prompts";
+import pc33 from "picocolors";
 
 // src/runtime/hosted-execution-client/index.ts
 init_http();
@@ -23194,12 +24541,12 @@ function createHostedExecutionClient() {
   };
 }
 
+// ../packages/api-contract/src/index.ts
+var API_CONTRACT_VERSION = 1;
+
 // src/runtime/cms-manifest-client/index.ts
 init_store();
 init_session_store();
-import {
-  API_CONTRACT_VERSION
-} from "@growthub/api-contract";
 var MANIFEST_PATH = "/api/cms/capabilities";
 var CONTRACT_VERSION_HEADER = "x-growthub-api-contract-version";
 var DEFAULT_HOSTED_BASE_URL2 = "https://www.growthub.ai";
@@ -23269,31 +24616,31 @@ function resolveManifestBaseUrl(opts = {}) {
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function assertRecord(value, path67) {
+function assertRecord(value, path71) {
   if (!isRecord(value)) {
-    throw new ManifestMalformedError(`Expected object at \`${path67}\`.`);
+    throw new ManifestMalformedError(`Expected object at \`${path71}\`.`);
   }
   return value;
 }
-function assertArray(value, path67) {
+function assertArray(value, path71) {
   if (!Array.isArray(value)) {
-    throw new ManifestMalformedError(`Expected array at \`${path67}\`.`);
+    throw new ManifestMalformedError(`Expected array at \`${path71}\`.`);
   }
   return value;
 }
-function assertString(value, path67) {
+function assertString(value, path71) {
   if (typeof value !== "string" || value.length === 0) {
-    throw new ManifestMalformedError(`Expected non-empty string at \`${path67}\`.`);
+    throw new ManifestMalformedError(`Expected non-empty string at \`${path71}\`.`);
   }
   return value;
 }
-function normalizeProvenance(value, path67) {
-  const record = assertRecord(value, path67);
-  const originType = assertString(record.originType, `${path67}.originType`);
+function normalizeProvenance(value, path71) {
+  const record = assertRecord(value, path71);
+  const originType = assertString(record.originType, `${path71}.originType`);
   const allowed = ["hosted", "local-extension", "derived-from-workflow"];
   if (!allowed.includes(originType)) {
     throw new ManifestMalformedError(
-      `Unknown provenance originType at \`${path67}.originType\`: ${originType}`
+      `Unknown provenance originType at \`${path71}.originType\`: ${originType}`
     );
   }
   return {
@@ -23449,14 +24796,14 @@ async function fetchCapabilityManifest(opts = {}) {
 
 // src/runtime/cms-manifest-cache/index.ts
 init_home();
-import fs30 from "node:fs";
-import path38 from "node:path";
+import fs34 from "node:fs";
+import path42 from "node:path";
 import os9 from "node:os";
 function resolveManifestCacheDir() {
-  return path38.resolve(resolvePaperclipHomeDir(), "manifests");
+  return path42.resolve(resolvePaperclipHomeDir(), "manifests");
 }
 function resolveManifestCachePath() {
-  return path38.resolve(resolveManifestCacheDir(), "capabilities.json");
+  return path42.resolve(resolveManifestCacheDir(), "capabilities.json");
 }
 function parseJsonSafe(text69) {
   try {
@@ -23472,10 +24819,10 @@ function isValidEnvelopeShape(value) {
 }
 function readManifestCache() {
   const filePath = resolveManifestCachePath();
-  if (!fs30.existsSync(filePath)) return null;
+  if (!fs34.existsSync(filePath)) return null;
   let text69;
   try {
-    text69 = fs30.readFileSync(filePath, "utf-8");
+    text69 = fs34.readFileSync(filePath, "utf-8");
   } catch {
     return null;
   }
@@ -23485,18 +24832,18 @@ function readManifestCache() {
 }
 function writeManifestCache(envelope) {
   const dir = resolveManifestCacheDir();
-  fs30.mkdirSync(dir, { recursive: true });
+  fs34.mkdirSync(dir, { recursive: true });
   const filePath = resolveManifestCachePath();
-  const tmpPath = path38.join(dir, `.capabilities.${process.pid}.${Date.now()}.tmp`);
+  const tmpPath = path42.join(dir, `.capabilities.${process.pid}.${Date.now()}.tmp`);
   const body = `${JSON.stringify(envelope, null, 2)}
 `;
-  fs30.writeFileSync(tmpPath, body, { mode: 420 });
+  fs34.writeFileSync(tmpPath, body, { mode: 420 });
   try {
-    fs30.renameSync(tmpPath, filePath);
+    fs34.renameSync(tmpPath, filePath);
   } catch (err) {
     try {
-      fs30.copyFileSync(tmpPath, filePath);
-      fs30.unlinkSync(tmpPath);
+      fs34.copyFileSync(tmpPath, filePath);
+      fs34.unlinkSync(tmpPath);
     } catch {
       throw err;
     }
@@ -24075,12 +25422,12 @@ function getWorkflowAccess() {
 // src/commands/capability.ts
 init_banner();
 var FAMILY_CONFIG = {
-  video: { color: pc32.magenta, emoji: "\u{1F3AC}", label: "Video" },
-  image: { color: pc32.cyan, emoji: "\u{1F5BC}\uFE0F ", label: "Image" },
-  slides: { color: pc32.yellow, emoji: "\u{1F4CA}", label: "Slides" },
-  text: { color: pc32.green, emoji: "\u{1F4DD}", label: "Text" },
-  data: { color: pc32.blue, emoji: "\u{1F4E6}", label: "Data" },
-  ops: { color: pc32.red, emoji: "\u2699\uFE0F ", label: "Ops" }
+  video: { color: pc33.magenta, emoji: "\u{1F3AC}", label: "Video" },
+  image: { color: pc33.cyan, emoji: "\u{1F5BC}\uFE0F ", label: "Image" },
+  slides: { color: pc33.yellow, emoji: "\u{1F4CA}", label: "Slides" },
+  text: { color: pc33.green, emoji: "\u{1F4DD}", label: "Text" },
+  data: { color: pc33.blue, emoji: "\u{1F4E6}", label: "Data" },
+  ops: { color: pc33.red, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function familyBadge(family) {
   const cfg = FAMILY_CONFIG[family];
@@ -24088,13 +25435,13 @@ function familyBadge(family) {
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 function executionKindLabel(kind) {
-  if (kind === "hosted-execute") return pc32.cyan("hosted");
-  if (kind === "provider-assembly") return pc32.yellow("provider");
-  if (kind === "local-only") return pc32.green("local");
+  if (kind === "hosted-execute") return pc33.cyan("hosted");
+  if (kind === "provider-assembly") return pc33.yellow("provider");
+  if (kind === "local-only") return pc33.green("local");
   return kind;
 }
-function hr4(width = 72) {
-  return pc32.dim("\u2500".repeat(width));
+function hr5(width = 72) {
+  return pc33.dim("\u2500".repeat(width));
 }
 function stripAnsi4(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -24102,11 +25449,11 @@ function stripAnsi4(str) {
 function box3(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi4(l).length)) + 4;
-  const top = pc32.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc32.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc33.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc33.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi4(l).length;
-    return pc32.dim("\u2502") + l + " ".repeat(pad2) + pc32.dim("\u2502");
+    return pc33.dim("\u2502") + l + " ".repeat(pad2) + pc33.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
@@ -24119,48 +25466,48 @@ function printGroupedCapabilities(nodes) {
   const totalFamilies = families.length;
   console.log("");
   console.log(
-    pc32.bold("CMS Capability Registry") + pc32.dim(`  ${nodes.length} capabilit${nodes.length !== 1 ? "ies" : "y"}  \xB7  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`)
+    pc33.bold("CMS Capability Registry") + pc33.dim(`  ${nodes.length} capabilit${nodes.length !== 1 ? "ies" : "y"}  \xB7  ${totalFamilies} ${totalFamilies !== 1 ? "families" : "family"}`)
   );
-  console.log(hr4());
+  console.log(hr5());
   for (const family of families) {
     const groupNodes = byFamily[family];
     const header = familyBadge(family);
     console.log(`
-${header}  ${pc32.dim("(" + groupNodes.length + ")")}`);
+${header}  ${pc33.dim("(" + groupNodes.length + ")")}`);
     for (const node of groupNodes) {
-      const enabledTag = node.enabled ? pc32.green("enabled") : pc32.red("disabled");
-      console.log(`  ${pc32.bold(node.slug)}  ${pc32.dim(node.displayName)}  ${enabledTag}`);
-      console.log(`  ${pc32.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc32.dim("Outputs:")} ${pc32.dim(node.outputTypes.join(", "))}`);
+      const enabledTag = node.enabled ? pc33.green("enabled") : pc33.red("disabled");
+      console.log(`  ${pc33.bold(node.slug)}  ${pc33.dim(node.displayName)}  ${enabledTag}`);
+      console.log(`  ${pc33.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc33.dim("Outputs:")} ${pc33.dim(node.outputTypes.join(", "))}`);
       if (node.description) {
-        console.log(`  ${pc32.dim(node.description)}`);
+        console.log(`  ${pc33.dim(node.description)}`);
       }
       console.log("");
     }
   }
-  console.log(hr4());
-  console.log(pc32.dim("  growthub capability inspect <slug>  \xB7  growthub capability resolve"));
+  console.log(hr5());
+  console.log(pc33.dim("  growthub capability inspect <slug>  \xB7  growthub capability resolve"));
   console.log("");
 }
 function printCapabilityCard(node) {
   const iconPrefix = node.icon ? `${node.icon}  ` : "";
   const lines = [
-    `${iconPrefix}${pc32.bold(node.displayName)}  ${pc32.dim(node.slug)}`,
-    `${familyBadge(node.family)}  ${node.enabled ? pc32.green("enabled") : pc32.red("disabled")}`,
+    `${iconPrefix}${pc33.bold(node.displayName)}  ${pc33.dim(node.slug)}`,
+    `${familyBadge(node.family)}  ${node.enabled ? pc33.green("enabled") : pc33.red("disabled")}`,
     "",
-    `${pc32.dim("Category:")}          ${node.category}`,
-    `${pc32.dim("Node Type:")}         ${node.nodeType}`,
-    `${pc32.dim("Execution Kind:")}    ${executionKindLabel(node.executionKind)}`,
-    `${pc32.dim("Execution Strategy:")} ${node.executionBinding.strategy}`,
-    `${pc32.dim("Tool Name:")}         ${node.executionTokens.tool_name}`,
-    `${pc32.dim("Output Types:")}      ${node.outputTypes.join(", ")}`,
-    `${pc32.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc32.dim("(none)")}`
+    `${pc33.dim("Category:")}          ${node.category}`,
+    `${pc33.dim("Node Type:")}         ${node.nodeType}`,
+    `${pc33.dim("Execution Kind:")}    ${executionKindLabel(node.executionKind)}`,
+    `${pc33.dim("Execution Strategy:")} ${node.executionBinding.strategy}`,
+    `${pc33.dim("Tool Name:")}         ${node.executionTokens.tool_name}`,
+    `${pc33.dim("Output Types:")}      ${node.outputTypes.join(", ")}`,
+    `${pc33.dim("Required Bindings:")} ${node.requiredBindings.length > 0 ? node.requiredBindings.join(", ") : pc33.dim("(none)")}`
   ];
   if (node.description) {
-    lines.push("", pc32.dim(node.description));
+    lines.push("", pc33.dim(node.description));
   }
   const inputKeys = Object.keys(node.executionTokens.input_template);
   if (inputKeys.length > 0) {
-    lines.push("", `${pc32.dim("Input fields:")} ${inputKeys.join(", ")}`);
+    lines.push("", `${pc33.dim("Input fields:")} ${inputKeys.join(", ")}`);
   }
   console.log("");
   console.log(box3(lines));
@@ -24168,10 +25515,10 @@ function printCapabilityCard(node) {
 }
 async function runCapabilityPicker(opts) {
   printPaperclipCliBanner();
-  p21.intro(pc32.bold("CMS Capability Registry"));
+  p22.intro(pc33.bold("CMS Capability Registry"));
   const access = getWorkflowAccess();
   if (access.state !== "ready") {
-    p21.note(
+    p22.note(
       [
         "Capabilities are unavailable until the hosted user is linked to this local machine.",
         access.reason
@@ -24182,7 +25529,7 @@ async function runCapabilityPicker(opts) {
   }
   const registry = createCmsCapabilityRegistryClient();
   while (true) {
-    const familyChoice = await p21.select({
+    const familyChoice = await p22.select({
       message: "Filter by capability family",
       options: [
         { value: "all", label: "All Families" },
@@ -24196,8 +25543,8 @@ async function runCapabilityPicker(opts) {
         ...opts.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
       ]
     });
-    if (p21.isCancel(familyChoice)) {
-      p21.cancel("Cancelled.");
+    if (p22.isCancel(familyChoice)) {
+      p22.cancel("Cancelled.");
       process.exit(0);
     }
     if (familyChoice === "__back_to_hub") return "back";
@@ -24206,42 +25553,42 @@ async function runCapabilityPicker(opts) {
     try {
       result = await registry.listCapabilities(query);
     } catch (err) {
-      p21.log.error("Failed to load capabilities: " + err.message);
+      p22.log.error("Failed to load capabilities: " + err.message);
       continue;
     }
     if (result.nodes.length === 0) {
-      p21.note("No capabilities available for that family.", "Nothing found");
+      p22.note("No capabilities available for that family.", "Nothing found");
       continue;
     }
     while (true) {
-      const capChoice = await p21.select({
+      const capChoice = await p22.select({
         message: "Select capability",
         options: [
           ...result.nodes.map((n) => ({
             value: n.slug,
-            label: `${familyBadge(n.family)}  ` + pc32.bold(n.displayName) + "  " + pc32.dim(n.slug),
+            label: `${familyBadge(n.family)}  ` + pc33.bold(n.displayName) + "  " + pc33.dim(n.slug),
             hint: n.description ? n.description.slice(0, 55) : void 0
           })),
           { value: "__back_to_family", label: "\u2190 Back to family filter" }
         ]
       });
-      if (p21.isCancel(capChoice)) {
-        p21.cancel("Cancelled.");
+      if (p22.isCancel(capChoice)) {
+        p22.cancel("Cancelled.");
         process.exit(0);
       }
       if (capChoice === "__back_to_family") break;
       const selected = result.nodes.find((n) => n.slug === capChoice);
       if (!selected) continue;
       printCapabilityCard(selected);
-      const nextStep = await p21.select({
+      const nextStep = await p22.select({
         message: "Next step",
         options: [
           { value: "resolve", label: "\u{1F50D} Check machine binding" },
           { value: "back_to_caps", label: "\u2190 Back to capability list" }
         ]
       });
-      if (p21.isCancel(nextStep)) {
-        p21.cancel("Cancelled.");
+      if (p22.isCancel(nextStep)) {
+        p22.cancel("Cancelled.");
         process.exit(0);
       }
       if (nextStep === "back_to_caps") continue;
@@ -24250,18 +25597,18 @@ async function runCapabilityPicker(opts) {
           const resolver = createMachineCapabilityResolver();
           const binding = await resolver.resolveCapability(selected.slug);
           if (binding) {
-            const statusColor3 = binding.allowed ? pc32.green : pc32.red;
+            const statusColor3 = binding.allowed ? pc33.green : pc33.red;
             console.log("");
             console.log(box3([
-              `${pc32.bold("Machine Binding:")} ${selected.slug}`,
-              `${pc32.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
-              `${pc32.dim("Reason:")}   ${binding.reason ?? "\u2014"}`,
-              ...binding.machineConnectionId ? [`${pc32.dim("Connection:")} ${binding.machineConnectionId}`] : []
+              `${pc33.bold("Machine Binding:")} ${selected.slug}`,
+              `${pc33.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+              `${pc33.dim("Reason:")}   ${binding.reason ?? "\u2014"}`,
+              ...binding.machineConnectionId ? [`${pc33.dim("Connection:")} ${binding.machineConnectionId}`] : []
             ]));
             console.log("");
           }
         } catch (err) {
-          p21.log.error("Resolution failed: " + err.message);
+          p22.log.error("Resolution failed: " + err.message);
         }
       }
     }
@@ -24284,7 +25631,7 @@ Examples:
   cap.command("list").description("List all CMS-backed runtime node capabilities").option("--family <family>", "Filter by family (video, image, slides, text, data, ops)").option("--json", "Output raw JSON for scripting").action(async (opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc32.red(`${access.reason}.`));
+      console.error(pc33.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -24297,23 +25644,23 @@ Examples:
         return;
       }
       if (nodes.length === 0) {
-        console.error(pc32.yellow("No capabilities found" + (opts.family ? ` for family: ${opts.family}` : "") + "."));
-        console.error(pc32.dim("Valid families: " + CAPABILITY_FAMILIES.join(", ")));
+        console.error(pc33.yellow("No capabilities found" + (opts.family ? ` for family: ${opts.family}` : "") + "."));
+        console.error(pc33.dim("Valid families: " + CAPABILITY_FAMILIES.join(", ")));
         process.exitCode = 1;
         return;
       }
       printGroupedCapabilities(nodes);
-      console.log(pc32.dim(`  Source: ${meta.source}  \xB7  Fetched: ${meta.fetchedAt}`));
+      console.log(pc33.dim(`  Source: ${meta.source}  \xB7  Fetched: ${meta.fetchedAt}`));
       console.log("");
     } catch (err) {
-      console.error(pc32.red("Failed to list capabilities: " + err.message));
+      console.error(pc33.red("Failed to list capabilities: " + err.message));
       process.exitCode = 1;
     }
   });
   cap.command("inspect").description("Inspect a specific CMS capability node").argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')").option("--json", "Output raw JSON").action(async (slug, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc32.red(`${access.reason}.`));
+      console.error(pc33.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -24321,7 +25668,7 @@ Examples:
     try {
       const node = await registry.getCapability(slug);
       if (!node) {
-        console.error(pc32.red(`Unknown capability: "${slug}".`) + pc32.dim(" Run `growthub capability list` to browse."));
+        console.error(pc33.red(`Unknown capability: "${slug}".`) + pc33.dim(" Run `growthub capability list` to browse."));
         process.exitCode = 1;
         return;
       }
@@ -24331,14 +25678,14 @@ Examples:
       }
       printCapabilityCard(node);
     } catch (err) {
-      console.error(pc32.red("Failed to inspect capability: " + err.message));
+      console.error(pc33.red("Failed to inspect capability: " + err.message));
       process.exitCode = 1;
     }
   });
   cap.command("resolve").description("Resolve machine-scoped capability bindings for all capabilities").option("--json", "Output raw JSON").action(async (opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc32.red(`${access.reason}.`));
+      console.error(pc33.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -24350,28 +25697,28 @@ Examples:
         return;
       }
       console.log("");
-      console.log(pc32.bold("Machine Capability Resolution"));
-      console.log(hr4());
-      console.log(`  ${pc32.dim("Hostname:")}  ${result.machineContext.hostname}`);
-      console.log(`  ${pc32.dim("Instance:")}  ${result.machineContext.instanceId}`);
-      console.log(`  ${pc32.dim("Session:")}   ${result.machineContext.hasActiveSession ? pc32.green("active") : pc32.red("none")}`);
+      console.log(pc33.bold("Machine Capability Resolution"));
+      console.log(hr5());
+      console.log(`  ${pc33.dim("Hostname:")}  ${result.machineContext.hostname}`);
+      console.log(`  ${pc33.dim("Instance:")}  ${result.machineContext.instanceId}`);
+      console.log(`  ${pc33.dim("Session:")}   ${result.machineContext.hasActiveSession ? pc33.green("active") : pc33.red("none")}`);
       if (result.machineContext.machineLabel) {
-        console.log(`  ${pc32.dim("Machine:")}   ${result.machineContext.machineLabel}`);
+        console.log(`  ${pc33.dim("Machine:")}   ${result.machineContext.machineLabel}`);
       }
-      console.log(`  ${pc32.dim("Entitlements:")} ${result.entitlements.length > 0 ? result.entitlements.join(", ") : pc32.dim("(none)")}`);
-      console.log(hr4());
+      console.log(`  ${pc33.dim("Entitlements:")} ${result.entitlements.length > 0 ? result.entitlements.join(", ") : pc33.dim("(none)")}`);
+      console.log(hr5());
       for (const binding of result.bindings) {
-        const statusColor3 = binding.allowed ? pc32.green : pc32.red;
+        const statusColor3 = binding.allowed ? pc33.green : pc33.red;
         const statusIcon = binding.allowed ? "\u2713" : "\u2717";
         console.log(
-          `  ${statusColor3(statusIcon)} ${pc32.bold(binding.capabilitySlug)}  ${pc32.dim(binding.reason ?? "")}`
+          `  ${statusColor3(statusIcon)} ${pc33.bold(binding.capabilitySlug)}  ${pc33.dim(binding.reason ?? "")}`
         );
       }
       console.log("");
-      console.log(pc32.dim(`  Resolved at: ${result.resolvedAt}`));
+      console.log(pc33.dim(`  Resolved at: ${result.resolvedAt}`));
       console.log("");
     } catch (err) {
-      console.error(pc32.red("Failed to resolve capabilities: " + err.message));
+      console.error(pc33.red("Failed to resolve capabilities: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -24398,10 +25745,10 @@ Examples:
               }
             }, null, 2));
           } else {
-            console.error(pc32.yellow(`\u26A0 Contract version mismatch: ${err.message}`));
-            console.error(pc32.dim(`  Using cached manifest from ${prior2.fetchedAt} (${prior2.capabilities.length} capabilities).`));
-            console.error(pc32.dim(`  Cache: ${describedCachePath}`));
-            console.error(pc32.dim("  Hosted manifest was NOT overwritten. Run `growthub upgrade` or re-login if the contract version is supposed to match."));
+            console.error(pc33.yellow(`\u26A0 Contract version mismatch: ${err.message}`));
+            console.error(pc33.dim(`  Using cached manifest from ${prior2.fetchedAt} (${prior2.capabilities.length} capabilities).`));
+            console.error(pc33.dim(`  Cache: ${describedCachePath}`));
+            console.error(pc33.dim("  Hosted manifest was NOT overwritten. Run `growthub upgrade` or re-login if the contract version is supposed to match."));
           }
           process.exitCode = 0;
           return;
@@ -24424,9 +25771,9 @@ Examples:
               }
             }, null, 2));
           } else {
-            console.error(pc32.yellow(`\u26A0 Hosted manifest was malformed: ${err.message}`));
-            console.error(pc32.dim(`  Using cached manifest from ${prior2.fetchedAt} (${prior2.capabilities.length} capabilities).`));
-            console.error(pc32.dim(`  Cache: ${describedCachePath}`));
+            console.error(pc33.yellow(`\u26A0 Hosted manifest was malformed: ${err.message}`));
+            console.error(pc33.dim(`  Using cached manifest from ${prior2.fetchedAt} (${prior2.capabilities.length} capabilities).`));
+            console.error(pc33.dim(`  Cache: ${describedCachePath}`));
           }
           process.exitCode = 0;
           return;
@@ -24461,8 +25808,8 @@ Examples:
           cachePath
         }, null, 2));
       } else {
-        console.error(pc32.yellow(`\u26A0 Manifest fetched but cache write failed: ${message}`));
-        console.error(pc32.dim(`  Cache path: ${describedCachePath}`));
+        console.error(pc33.yellow(`\u26A0 Manifest fetched but cache write failed: ${message}`));
+        console.error(pc33.dim(`  Cache path: ${describedCachePath}`));
       }
       process.exitCode = 1;
       return;
@@ -24505,78 +25852,78 @@ function reportRefreshError(err, json, describedCachePath) {
   }
   const message = err instanceof Error ? err.message : String(err);
   if (err instanceof ManifestUnauthenticatedError) {
-    console.error(pc32.red("\u2717 Not authenticated: ") + message);
+    console.error(pc33.red("\u2717 Not authenticated: ") + message);
   } else if (err instanceof ManifestEndpointUnavailableError) {
-    console.error(pc32.red("\u2717 Hosted manifest endpoint unavailable: ") + message);
+    console.error(pc33.red("\u2717 Hosted manifest endpoint unavailable: ") + message);
   } else if (err instanceof ManifestContractMismatchError) {
-    console.error(pc32.red("\u2717 Contract version mismatch: ") + message);
-    console.error(pc32.dim("  No local cache is present to fall back on."));
+    console.error(pc33.red("\u2717 Contract version mismatch: ") + message);
+    console.error(pc33.dim("  No local cache is present to fall back on."));
   } else if (err instanceof ManifestMalformedError) {
-    console.error(pc32.red("\u2717 Hosted manifest malformed: ") + message);
-    console.error(pc32.dim("  No local cache is present to fall back on."));
+    console.error(pc33.red("\u2717 Hosted manifest malformed: ") + message);
+    console.error(pc33.dim("  No local cache is present to fall back on."));
   } else {
-    console.error(pc32.red("\u2717 Failed to refresh manifest: ") + message);
+    console.error(pc33.red("\u2717 Failed to refresh manifest: ") + message);
   }
-  console.error(pc32.dim(`  Cache path: ${describedCachePath}`));
+  console.error(pc33.dim(`  Cache path: ${describedCachePath}`));
 }
 function printRefreshSummary(args) {
   const { envelope, diff, resolvedBaseUrl, resolvedBaseUrlSource, cachePath, serverContractVersion } = args;
   const { added, removed, changed, changeDetails } = diff;
   console.log("");
-  console.log(pc32.bold("CMS Capability Manifest \u2014 Refresh"));
-  console.log(hr4());
-  console.log(`  ${pc32.dim("Host:")}            ${envelope.host}`);
-  console.log(`  ${pc32.dim("Resolved base:")}   ${resolvedBaseUrl} ${pc32.dim(`(${resolvedBaseUrlSource})`)}`);
-  console.log(`  ${pc32.dim("Fetched at:")}      ${envelope.fetchedAt}`);
+  console.log(pc33.bold("CMS Capability Manifest \u2014 Refresh"));
+  console.log(hr5());
+  console.log(`  ${pc33.dim("Host:")}            ${envelope.host}`);
+  console.log(`  ${pc33.dim("Resolved base:")}   ${resolvedBaseUrl} ${pc33.dim(`(${resolvedBaseUrlSource})`)}`);
+  console.log(`  ${pc33.dim("Fetched at:")}      ${envelope.fetchedAt}`);
   if (serverContractVersion !== null) {
-    console.log(`  ${pc32.dim("Contract version:")} ${serverContractVersion}`);
+    console.log(`  ${pc33.dim("Contract version:")} ${serverContractVersion}`);
   }
-  console.log(`  ${pc32.dim("Source:")}          ${envelope.source}`);
-  console.log(`  ${pc32.dim("Total:")}           ${envelope.capabilities.length}`);
-  console.log(`  ${pc32.dim("Added:")}           ${added.length > 0 ? pc32.green(String(added.length)) : pc32.dim("0")}`);
-  console.log(`  ${pc32.dim("Removed:")}         ${removed.length > 0 ? pc32.red(String(removed.length)) : pc32.dim("0")}`);
-  console.log(`  ${pc32.dim("Changed:")}         ${changed.length > 0 ? pc32.yellow(String(changed.length)) : pc32.dim("0")}`);
-  console.log(`  ${pc32.dim("Cache:")}           ${cachePath}`);
-  console.log(hr4());
+  console.log(`  ${pc33.dim("Source:")}          ${envelope.source}`);
+  console.log(`  ${pc33.dim("Total:")}           ${envelope.capabilities.length}`);
+  console.log(`  ${pc33.dim("Added:")}           ${added.length > 0 ? pc33.green(String(added.length)) : pc33.dim("0")}`);
+  console.log(`  ${pc33.dim("Removed:")}         ${removed.length > 0 ? pc33.red(String(removed.length)) : pc33.dim("0")}`);
+  console.log(`  ${pc33.dim("Changed:")}         ${changed.length > 0 ? pc33.yellow(String(changed.length)) : pc33.dim("0")}`);
+  console.log(`  ${pc33.dim("Cache:")}           ${cachePath}`);
+  console.log(hr5());
   if (added.length > 0) {
-    console.log(pc32.green("\n  + Added"));
+    console.log(pc33.green("\n  + Added"));
     for (const slug of added) {
       const entry = envelope.capabilities.find((c) => c.slug === slug);
-      const label = entry?.displayName ? pc32.dim(`  ${entry.displayName}`) : "";
-      console.log(`    ${pc32.bold(slug)}${label}`);
+      const label = entry?.displayName ? pc33.dim(`  ${entry.displayName}`) : "";
+      console.log(`    ${pc33.bold(slug)}${label}`);
     }
   }
   if (removed.length > 0) {
-    console.log(pc32.red("\n  \u2212 Removed"));
+    console.log(pc33.red("\n  \u2212 Removed"));
     for (const slug of removed) {
-      console.log(`    ${pc32.bold(slug)}`);
+      console.log(`    ${pc33.bold(slug)}`);
     }
   }
   if (changed.length > 0) {
-    console.log(pc32.yellow("\n  ~ Changed"));
+    console.log(pc33.yellow("\n  ~ Changed"));
     for (const slug of changed) {
-      console.log(`    ${pc32.bold(slug)}`);
+      console.log(`    ${pc33.bold(slug)}`);
       for (const detail of changeDetails[slug] ?? []) {
-        console.log(`      ${pc32.dim("\xB7")} ${pc32.dim(detail)}`);
+        console.log(`      ${pc33.dim("\xB7")} ${pc33.dim(detail)}`);
       }
     }
   }
   if (added.length === 0 && removed.length === 0 && changed.length === 0) {
-    console.log(pc32.dim("\n  No drift detected since the last cached manifest."));
+    console.log(pc33.dim("\n  No drift detected since the last cached manifest."));
   }
   console.log("");
-  console.log(pc32.dim("  growthub capability list     # browse refreshed registry"));
-  console.log(pc32.dim("  growthub capability inspect <slug>"));
+  console.log(pc33.dim("  growthub capability list     # browse refreshed registry"));
+  console.log(pc33.dim("  growthub capability inspect <slug>"));
   console.log("");
 }
 
 // src/commands/pipeline.ts
 init_session_store();
 init_hosted_client();
-import fs34 from "node:fs";
-import path42 from "node:path";
-import * as p22 from "@clack/prompts";
-import pc34 from "picocolors";
+import fs38 from "node:fs";
+import path46 from "node:path";
+import * as p23 from "@clack/prompts";
+import pc35 from "picocolors";
 
 // src/runtime/dynamic-registry-pipeline/index.ts
 import { randomBytes as randomBytes6 } from "node:crypto";
@@ -25009,10 +26356,10 @@ function compileToHostedWorkflowConfig(pipeline, opts) {
 }
 
 // src/runtime/cms-node-contracts/presenter.ts
-import pc33 from "picocolors";
+import pc34 from "picocolors";
 function renderInputLine(input) {
-  const required = input.required ? pc33.red("required") : pc33.green("optional");
-  return `${pc33.dim("\xB7")} ${input.label} ${pc33.dim(`(${input.type})`)} ${required}`;
+  const required = input.required ? pc34.red("required") : pc34.green("optional");
+  return `${pc34.dim("\xB7")} ${input.label} ${pc34.dim(`(${input.type})`)} ${required}`;
 }
 function countNodeAssets(bindings) {
   let count = 0;
@@ -25025,20 +26372,20 @@ function countNodeAssets(bindings) {
 }
 function renderContractCard(contract) {
   const lines = [
-    `${pc33.bold(contract.displayName)}  ${pc33.dim(contract.slug)}`,
-    `${pc33.dim("Family:")} ${contract.family}  ${pc33.dim("Execution:")} ${contract.executionStrategy}`,
-    `${pc33.dim("Kind:")} ${contract.executionKind}  ${pc33.dim("Node Type:")} ${contract.nodeType}`,
-    `${pc33.dim("Bindings:")} ${contract.requiredBindings.length > 0 ? contract.requiredBindings.join(", ") : "none"}`,
-    `${pc33.dim("Outputs:")} ${contract.outputTypes.length > 0 ? contract.outputTypes.join(", ") : "none"}`
+    `${pc34.bold(contract.displayName)}  ${pc34.dim(contract.slug)}`,
+    `${pc34.dim("Family:")} ${contract.family}  ${pc34.dim("Execution:")} ${contract.executionStrategy}`,
+    `${pc34.dim("Kind:")} ${contract.executionKind}  ${pc34.dim("Node Type:")} ${contract.nodeType}`,
+    `${pc34.dim("Bindings:")} ${contract.requiredBindings.length > 0 ? contract.requiredBindings.join(", ") : "none"}`,
+    `${pc34.dim("Outputs:")} ${contract.outputTypes.length > 0 ? contract.outputTypes.join(", ") : "none"}`
   ];
   if (contract.inputs.length > 0) {
-    lines.push("", pc33.bold("Input Contract"));
+    lines.push("", pc34.bold("Input Contract"));
     lines.push(...contract.inputs.map(renderInputLine));
   }
   if (contract.outputs.length > 0) {
-    lines.push("", pc33.bold("Output Contract"));
+    lines.push("", pc34.bold("Output Contract"));
     lines.push(
-      ...contract.outputs.map((output) => `${pc33.dim("\xB7")} ${output.key} ${pc33.dim(`(${output.type})`)}`)
+      ...contract.outputs.map((output) => `${pc34.dim("\xB7")} ${output.key} ${pc34.dim(`(${output.type})`)}`)
     );
   }
   return lines;
@@ -25095,73 +26442,73 @@ function buildPreExecutionSummary(input) {
 }
 function renderPreExecutionSummary(summary) {
   const lines = [
-    `${pc33.bold("Pre-Execution Contract Summary")} ${pc33.dim(summary.pipelineId)}`,
-    `${pc33.dim("Mode:")} ${summary.executionMode}  ${pc33.dim("Nodes:")} ${summary.nodeCount}`,
-    `${pc33.dim("Compiled:")} ${summary.compiledConfig.nodes.length} nodes / ${summary.compiledConfig.edges.length} edges`,
+    `${pc34.bold("Pre-Execution Contract Summary")} ${pc34.dim(summary.pipelineId)}`,
+    `${pc34.dim("Mode:")} ${summary.executionMode}  ${pc34.dim("Nodes:")} ${summary.nodeCount}`,
+    `${pc34.dim("Compiled:")} ${summary.compiledConfig.nodes.length} nodes / ${summary.compiledConfig.edges.length} edges`,
     ""
   ];
   for (const [index51, node] of summary.nodes.entries()) {
-    const missing = node.requiredMissing.length > 0 ? pc33.red(`missing: ${node.requiredMissing.join(", ")}`) : pc33.green("ready");
+    const missing = node.requiredMissing.length > 0 ? pc34.red(`missing: ${node.requiredMissing.join(", ")}`) : pc34.green("ready");
     const outputs = node.outputTypes.length > 0 ? node.outputTypes.join(", ") : "none";
     lines.push(
-      `${pc33.dim(`${index51 + 1}.`)} ${pc33.bold(node.slug)} ${pc33.dim(node.nodeId)} \xB7 bindings=${node.bindingCount} \xB7 assets=${node.assetCount} \xB7 outputs=${outputs} \xB7 ${missing}`
+      `${pc34.dim(`${index51 + 1}.`)} ${pc34.bold(node.slug)} ${pc34.dim(node.nodeId)} \xB7 bindings=${node.bindingCount} \xB7 assets=${node.assetCount} \xB7 outputs=${outputs} \xB7 ${missing}`
     );
   }
   if (summary.warnings.length > 0) {
-    lines.push("", pc33.yellow("Warnings"));
-    lines.push(...summary.warnings.map((warning) => `${pc33.dim("\xB7")} ${warning}`));
+    lines.push("", pc34.yellow("Warnings"));
+    lines.push(...summary.warnings.map((warning) => `${pc34.dim("\xB7")} ${warning}`));
   }
   return lines;
 }
 function renderPreSaveReview(input) {
   const lines = [
-    `${pc33.bold("Pre-Save Workflow Review")} ${pc33.dim(input.workflowName)}`,
-    `${pc33.dim("Pipeline:")} ${input.summary.pipelineId}`,
-    `${pc33.dim("Mode:")} ${input.summary.executionMode}`,
-    `${pc33.dim("Compiled:")} ${input.summary.compiledConfig.nodes.length} nodes / ${input.summary.compiledConfig.edges.length} edges`
+    `${pc34.bold("Pre-Save Workflow Review")} ${pc34.dim(input.workflowName)}`,
+    `${pc34.dim("Pipeline:")} ${input.summary.pipelineId}`,
+    `${pc34.dim("Mode:")} ${input.summary.executionMode}`,
+    `${pc34.dim("Compiled:")} ${input.summary.compiledConfig.nodes.length} nodes / ${input.summary.compiledConfig.edges.length} edges`
   ];
   if (input.summary.warnings.length > 0) {
-    lines.push("", pc33.yellow(`Warnings: ${input.summary.warnings.length}`));
+    lines.push("", pc34.yellow(`Warnings: ${input.summary.warnings.length}`));
   }
   return lines;
 }
 
 // src/runtime/artifact-contracts/index.ts
 init_home();
-import fs31 from "node:fs";
-import path39 from "node:path";
+import fs35 from "node:fs";
+import path43 from "node:path";
 import { randomBytes as randomBytes7 } from "node:crypto";
 function generateArtifactId() {
   return `art_${randomBytes7(8).toString("hex")}`;
 }
 function resolveArtifactsDir() {
-  return path39.resolve(resolvePaperclipHomeDir(), "artifacts");
+  return path43.resolve(resolvePaperclipHomeDir(), "artifacts");
 }
 function resolveArtifactManifestPath(artifactId) {
-  return path39.resolve(resolveArtifactsDir(), `${artifactId}.json`);
+  return path43.resolve(resolveArtifactsDir(), `${artifactId}.json`);
 }
 function readLocalManifest(artifactId) {
   const filePath = resolveArtifactManifestPath(artifactId);
-  if (!fs31.existsSync(filePath)) return null;
+  if (!fs35.existsSync(filePath)) return null;
   try {
-    return JSON.parse(fs31.readFileSync(filePath, "utf-8"));
+    return JSON.parse(fs35.readFileSync(filePath, "utf-8"));
   } catch {
     return null;
   }
 }
 function writeLocalManifest(manifest) {
   const dir = resolveArtifactsDir();
-  fs31.mkdirSync(dir, { recursive: true });
+  fs35.mkdirSync(dir, { recursive: true });
   const filePath = resolveArtifactManifestPath(manifest.id);
-  fs31.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
+  fs35.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}
 `, { mode: 384 });
 }
 function listLocalManifests() {
   const dir = resolveArtifactsDir();
-  if (!fs31.existsSync(dir)) return [];
-  return fs31.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
+  if (!fs35.existsSync(dir)) return [];
+  return fs35.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
     try {
-      const content = fs31.readFileSync(path39.resolve(dir, entry.name), "utf-8");
+      const content = fs35.readFileSync(path43.resolve(dir, entry.name), "utf-8");
       return JSON.parse(content);
     } catch {
       return null;
@@ -25239,8 +26586,8 @@ function createArtifactStore() {
 
 // src/runtime/native-intelligence/index.ts
 init_home();
-import fs33 from "node:fs";
-import path41 from "node:path";
+import fs37 from "node:fs";
+import path45 from "node:path";
 
 // src/runtime/native-intelligence/contract.ts
 var DEFAULT_INTELLIGENCE_CONFIG = {
@@ -26511,8 +27858,8 @@ function parseJsonSafe5(text69) {
 }
 
 // src/runtime/native-intelligence/marketing-context-builder.ts
-import fs32 from "node:fs";
-import path40 from "node:path";
+import fs36 from "node:fs";
+import path44 from "node:path";
 var CONTEXT_BUILDER_SYSTEM_PROMPT = `You are a marketing strategist drafting a product-marketing-context document.
 
 You receive project artifacts (README content, package.json metadata, any landing page content) and produce a structured product-marketing-context.md with 12 sections.
@@ -26531,17 +27878,17 @@ var MAX_ARTIFACT_LENGTH = 8e3;
 function scanProjectArtifacts(projectDir, existingContext) {
   const artifacts = { otherFiles: [] };
   for (const name of ["README.md", "readme.md", "Readme.md", "README"]) {
-    const readmePath = path40.join(projectDir, name);
-    if (fs32.existsSync(readmePath)) {
-      const content = fs32.readFileSync(readmePath, "utf-8");
+    const readmePath = path44.join(projectDir, name);
+    if (fs36.existsSync(readmePath)) {
+      const content = fs36.readFileSync(readmePath, "utf-8");
       artifacts.readme = content.slice(0, MAX_ARTIFACT_LENGTH);
       break;
     }
   }
-  const pkgPath = path40.join(projectDir, "package.json");
-  if (fs32.existsSync(pkgPath)) {
+  const pkgPath = path44.join(projectDir, "package.json");
+  if (fs36.existsSync(pkgPath)) {
     try {
-      artifacts.packageJson = JSON.parse(fs32.readFileSync(pkgPath, "utf-8"));
+      artifacts.packageJson = JSON.parse(fs36.readFileSync(pkgPath, "utf-8"));
     } catch {
     }
   }
@@ -26553,15 +27900,15 @@ function scanProjectArtifacts(projectDir, existingContext) {
       ".claude/product-marketing-context.md",
       "brands/_template/product-marketing-context.md"
     ]) {
-      const ctxPath = path40.join(projectDir, candidate);
-      if (fs32.existsSync(ctxPath)) {
-        artifacts.existingContext = fs32.readFileSync(ctxPath, "utf-8");
+      const ctxPath = path44.join(projectDir, candidate);
+      if (fs36.existsSync(ctxPath)) {
+        artifacts.existingContext = fs36.readFileSync(ctxPath, "utf-8");
         break;
       }
     }
   }
   for (const name of ["CONTRIBUTING.md", "AGENTS.md", "landing-page.md", "about.md"]) {
-    if (fs32.existsSync(path40.join(projectDir, name))) {
+    if (fs36.existsSync(path44.join(projectDir, name))) {
       artifacts.otherFiles.push(name);
     }
   }
@@ -26802,15 +28149,15 @@ function cleanMarkdownResponse(text69) {
 
 // src/runtime/native-intelligence/index.ts
 function resolveConfigPath2() {
-  return path41.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
+  return path45.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
 }
 function readIntelligenceConfig() {
   const configPath = resolveConfigPath2();
-  if (!fs33.existsSync(configPath)) {
+  if (!fs37.existsSync(configPath)) {
     return { ...DEFAULT_INTELLIGENCE_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs33.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs37.readFileSync(configPath, "utf-8"));
     return {
       modelId: validateModelId(raw.modelId),
       backendType: raw.backendType === "hosted" ? "hosted" : "local",
@@ -26827,8 +28174,8 @@ function readIntelligenceConfig() {
 }
 function writeIntelligenceConfig(config) {
   const configPath = resolveConfigPath2();
-  fs33.mkdirSync(path41.dirname(configPath), { recursive: true });
-  fs33.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
+  fs37.mkdirSync(path45.dirname(configPath), { recursive: true });
+  fs37.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
 `, "utf-8");
 }
 function validateModelId(id) {
@@ -26857,8 +28204,8 @@ function createNativeIntelligenceProvider(configOverride) {
 
 // src/commands/pipeline.ts
 init_banner();
-function hr5(width = 72) {
-  return pc34.dim("\u2500".repeat(width));
+function hr6(width = 72) {
+  return pc35.dim("\u2500".repeat(width));
 }
 function stripAnsi5(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -26866,18 +28213,18 @@ function stripAnsi5(str) {
 function box4(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi5(l).length)) + 4;
-  const top = pc34.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc34.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc35.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc35.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi5(l).length;
-    return pc34.dim("\u2502") + l + " ".repeat(pad2) + pc34.dim("\u2502");
+    return pc35.dim("\u2502") + l + " ".repeat(pad2) + pc35.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 async function runPipelineAssembler(opts) {
   printPaperclipCliBanner();
-  p22.intro(pc34.bold("Dynamic Registry Pipeline Assembler"));
-  p22.note(
+  p23.intro(pc35.bold("Dynamic Registry Pipeline Assembler"));
+  p23.note(
     [
       "Dynamic pipeline creation flow:",
       "  1) Select capability nodes",
@@ -26891,7 +28238,7 @@ async function runPipelineAssembler(opts) {
   );
   const access = getWorkflowAccess();
   if (access.state !== "ready") {
-    p22.note(
+    p23.note(
       [
         "Dynamic Pipelines are unavailable until the hosted user is linked to this local machine.",
         access.reason
@@ -26901,36 +28248,36 @@ async function runPipelineAssembler(opts) {
     return opts.allowBackToHub ? "back" : "done";
   }
   if (opts.allowBackToHub) {
-    const entryChoice = await p22.select({
+    const entryChoice = await p23.select({
       message: "Dynamic Pipelines (hosted-only)",
       options: [
         { value: "start", label: "Start interactive assembler" },
         { value: "__back_to_hub", label: "\u2190 Back to workflow menu" }
       ]
     });
-    if (p22.isCancel(entryChoice)) {
-      p22.cancel("Cancelled.");
+    if (p23.isCancel(entryChoice)) {
+      p23.cancel("Cancelled.");
       process.exit(0);
     }
     if (entryChoice === "__back_to_hub") return "back";
   } else {
-    p22.note("Execution mode is fixed to hosted for Dynamic Pipelines.", "Hosted only");
+    p23.note("Execution mode is fixed to hosted for Dynamic Pipelines.", "Hosted only");
   }
   const registry = createCmsCapabilityRegistryClient();
   let capabilities;
-  const capabilitiesSpinner = p22.spinner();
+  const capabilitiesSpinner = p23.spinner();
   capabilitiesSpinner.start("Loading capability list...");
   try {
     const result = await registry.listCapabilities();
     capabilities = result.nodes;
     capabilitiesSpinner.stop(`Loaded ${capabilities.length} capabilities.`);
   } catch (err) {
-    capabilitiesSpinner.stop(pc34.red("Failed to load capabilities."));
-    p22.log.error("Failed to load capabilities: " + err.message);
+    capabilitiesSpinner.stop(pc35.red("Failed to load capabilities."));
+    p23.log.error("Failed to load capabilities: " + err.message);
     return "done";
   }
   if (capabilities.length === 0) {
-    p22.note("No capabilities available. Ensure you are authenticated.", "Nothing found");
+    p23.note("No capabilities available. Ensure you are authenticated.", "Nothing found");
     return "done";
   }
   const builder = createPipelineBuilder({
@@ -26938,7 +28285,7 @@ async function runPipelineAssembler(opts) {
   });
   while (true) {
     const currentNodes = builder.getNodes();
-    const action = await p22.select({
+    const action = await p23.select({
       message: `Pipeline has ${currentNodes.length} node${currentNodes.length !== 1 ? "s" : ""}. What next?`,
       options: [
         { value: "add", label: "\u2795 Add a node", hint: "Select a capability to add" },
@@ -26954,27 +28301,27 @@ async function runPipelineAssembler(opts) {
         }
       ]
     });
-    if (p22.isCancel(action)) {
-      p22.cancel("Cancelled.");
+    if (p23.isCancel(action)) {
+      p23.cancel("Cancelled.");
       process.exit(0);
     }
     if (action === "cancel") {
       return opts.allowBackToHub ? "back" : "done";
     }
     if (action === "add") {
-      const capChoice = await p22.select({
+      const capChoice = await p23.select({
         message: "Select capability to add as pipeline node",
         options: [
           ...capabilities.map((c) => ({
             value: c.slug,
-            label: `${pc34.bold(c.displayName)}  ${pc34.dim(c.slug)}`,
+            label: `${pc35.bold(c.displayName)}  ${pc35.dim(c.slug)}`,
             hint: `${c.family} \xB7 ${c.executionKind}`
           })),
           { value: "__back", label: "\u2190 Back" }
         ]
       });
-      if (p22.isCancel(capChoice)) {
-        p22.cancel("Cancelled.");
+      if (p23.isCancel(capChoice)) {
+        p23.cancel("Cancelled.");
         process.exit(0);
       }
       if (capChoice === "__back") continue;
@@ -26982,19 +28329,19 @@ async function runPipelineAssembler(opts) {
       if (!cap) continue;
       const bindings = {};
       for (const bindingKey of cap.requiredBindings) {
-        const value = await p22.text({
+        const value = await p23.text({
           message: `Binding "${bindingKey}" for ${cap.slug}`,
           placeholder: `Enter value for ${bindingKey}`
         });
-        if (p22.isCancel(value)) {
-          p22.cancel("Cancelled.");
+        if (p23.isCancel(value)) {
+          p23.cancel("Cancelled.");
           process.exit(0);
         }
         bindings[bindingKey] = value;
       }
       let upstreamNodeIds;
       if (currentNodes.length > 0) {
-        const upstreamChoice = await p22.multiselect({
+        const upstreamChoice = await p23.multiselect({
           message: "Select upstream nodes (outputs feed into this node)",
           options: [
             { value: "__none", label: "(no upstream)" },
@@ -27005,8 +28352,8 @@ async function runPipelineAssembler(opts) {
           ],
           required: false
         });
-        if (p22.isCancel(upstreamChoice)) {
-          p22.cancel("Cancelled.");
+        if (p23.isCancel(upstreamChoice)) {
+          p23.cancel("Cancelled.");
           process.exit(0);
         }
         const selected = upstreamChoice.filter((v) => v !== "__none");
@@ -27016,19 +28363,19 @@ async function runPipelineAssembler(opts) {
       }
       const normalizedBindings = normalizeNodeBindings(bindings, cap);
       const nodeId = builder.addNode(capChoice, normalizedBindings.bindings, upstreamNodeIds);
-      p22.log.success(`Added node ${pc34.bold(cap.displayName)} (${pc34.dim(nodeId)})`);
+      p23.log.success(`Added node ${pc35.bold(cap.displayName)} (${pc35.dim(nodeId)})`);
       continue;
     }
     if (action === "preview") {
       const pipeline = builder.build();
       console.log("");
       console.log(box4([
-        `${pc34.bold("Pipeline:")} ${pipeline.pipelineId}`,
-        `${pc34.dim("Mode:")} ${pipeline.executionMode}  ${pc34.dim("Nodes:")} ${pipeline.nodes.length}`,
+        `${pc35.bold("Pipeline:")} ${pipeline.pipelineId}`,
+        `${pc35.dim("Mode:")} ${pipeline.executionMode}  ${pc35.dim("Nodes:")} ${pipeline.nodes.length}`,
         "",
         ...pipeline.nodes.map((n, i) => {
-          const upstream = n.upstreamNodeIds?.length ? pc34.dim(` \u2190 ${n.upstreamNodeIds.join(", ")}`) : "";
-          return `${pc34.dim(String(i + 1) + ".")} ${pc34.bold(n.slug)} ${pc34.dim(n.id)}${upstream}`;
+          const upstream = n.upstreamNodeIds?.length ? pc35.dim(` \u2190 ${n.upstreamNodeIds.join(", ")}`) : "";
+          return `${pc35.dim(String(i + 1) + ".")} ${pc35.bold(n.slug)} ${pc35.dim(n.id)}${upstream}`;
         })
       ]));
       console.log("");
@@ -27038,35 +28385,35 @@ async function runPipelineAssembler(opts) {
       try {
         const result = await builder.validate();
         if (result.valid) {
-          p22.log.success("Pipeline is valid.");
+          p23.log.success("Pipeline is valid.");
         } else {
-          p22.log.error("Pipeline validation failed.");
+          p23.log.error("Pipeline validation failed.");
         }
         for (const issue of result.issues) {
-          const prefix = issue.severity === "error" ? pc34.red("ERROR") : pc34.yellow("WARN");
+          const prefix = issue.severity === "error" ? pc35.red("ERROR") : pc35.yellow("WARN");
           const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
           console.log(`  ${prefix}${nodeRef}: ${issue.message}`);
         }
       } catch (err) {
-        p22.log.error("Validation failed: " + err.message);
+        p23.log.error("Validation failed: " + err.message);
       }
       continue;
     }
     if (action === "save") {
       const session = readSession();
       if (!session || isSessionExpired(session)) {
-        p22.log.error("Hosted session expired. Run `growthub auth login` again.");
+        p23.log.error("Hosted session expired. Run `growthub auth login` again.");
         continue;
       }
       const pipeline = builder.build();
       const defaultName = inferWorkflowName(pipeline);
-      const workflowName = await p22.text({
+      const workflowName = await p23.text({
         message: "Saved workflow name",
         placeholder: defaultName,
         defaultValue: defaultName
       });
-      if (p22.isCancel(workflowName)) {
-        p22.cancel("Cancelled.");
+      if (p23.isCancel(workflowName)) {
+        p23.cancel("Cancelled.");
         process.exit(0);
       }
       const summary = buildPreExecutionSummary({
@@ -27085,11 +28432,11 @@ async function runPipelineAssembler(opts) {
         console.log(box4(intelligenceSummary));
         console.log("");
       }
-      const confirmed = await p22.confirm({
+      const confirmed = await p23.confirm({
         message: `Save hosted workflow "${workflowName}"?`,
         initialValue: true
       });
-      if (p22.isCancel(confirmed) || !confirmed) continue;
+      if (p23.isCancel(confirmed) || !confirmed) continue;
       try {
         const saveResult = await saveHostedWorkflow(session, {
           name: workflowName,
@@ -27099,14 +28446,14 @@ async function runPipelineAssembler(opts) {
         if (!saveResult?.workflowId) {
           throw new Error("Hosted workflow save returned no workflow id.");
         }
-        p22.log.success(
-          `Saved to workflow registry as ${pc34.bold(workflowName)} (${pc34.dim(saveResult.workflowId)} \xB7 v${saveResult.version}).`
+        p23.log.success(
+          `Saved to workflow registry as ${pc35.bold(workflowName)} (${pc35.dim(saveResult.workflowId)} \xB7 v${saveResult.version}).`
         );
       } catch (err) {
         if (err instanceof HostedEndpointUnavailableError) {
-          p22.log.error("Hosted save endpoint is unavailable on this GH app surface.");
+          p23.log.error("Hosted save endpoint is unavailable on this GH app surface.");
         } else {
-          p22.log.error("Save failed: " + err.message);
+          p23.log.error("Save failed: " + err.message);
         }
       }
       continue;
@@ -27114,9 +28461,9 @@ async function runPipelineAssembler(opts) {
     if (action === "execute") {
       const validation = await builder.validate();
       if (!validation.valid) {
-        p22.log.error("Pipeline is not valid. Fix errors before executing.");
+        p23.log.error("Pipeline is not valid. Fix errors before executing.");
         for (const issue of validation.issues.filter((i) => i.severity === "error")) {
-          console.log(`  ${pc34.red("ERROR")}: ${issue.message}`);
+          console.log(`  ${pc35.red("ERROR")}: ${issue.message}`);
         }
         continue;
       }
@@ -27137,16 +28484,16 @@ async function runPipelineAssembler(opts) {
         console.log(box4(intelligenceSummary));
         console.log("");
       }
-      const confirmed = await p22.confirm({
+      const confirmed = await p23.confirm({
         message: "Execute this pipeline through the hosted runtime?",
         initialValue: false
       });
-      if (p22.isCancel(confirmed) || !confirmed) continue;
+      if (p23.isCancel(confirmed) || !confirmed) continue;
       try {
         const executionClient = createHostedExecutionClient();
         const pipeline2 = builder.build();
         const pkg = await builder.package();
-        p22.log.info(`Executing pipeline ${pc34.bold(pipeline2.pipelineId)} (${pkg.executionRoute})...`);
+        p23.log.info(`Executing pipeline ${pc35.bold(pipeline2.pipelineId)} (${pkg.executionRoute})...`);
         const result = await executionClient.executeWorkflow({
           pipelineId: pipeline2.pipelineId,
           threadId: pipeline2.threadId,
@@ -27159,7 +28506,7 @@ async function runPipelineAssembler(opts) {
           executionMode: pipeline2.executionMode,
           metadata: pipeline2.metadata
         });
-        p22.log.success(`Execution ${pc34.bold(result.executionId)}: ${result.status}`);
+        p23.log.success(`Execution ${pc35.bold(result.executionId)}: ${result.status}`);
         const artifactStore = createArtifactStore();
         for (const artRef of result.artifacts) {
           const nodeResult = result.nodeResults[artRef.nodeId];
@@ -27174,19 +28521,19 @@ async function runPipelineAssembler(opts) {
           });
         }
         if (result.artifacts.length > 0) {
-          p22.log.info(`${result.artifacts.length} artifact(s) recorded.`);
+          p23.log.info(`${result.artifacts.length} artifact(s) recorded.`);
         }
       } catch (err) {
-        p22.log.error("Execution failed: " + err.message);
+        p23.log.error("Execution failed: " + err.message);
       }
       continue;
     }
   }
 }
 function loadPipelineFromFileOrJson(input) {
-  const resolvedPath = path42.resolve(input);
-  if (fs34.existsSync(resolvedPath)) {
-    const content = fs34.readFileSync(resolvedPath, "utf-8");
+  const resolvedPath = path46.resolve(input);
+  if (fs38.existsSync(resolvedPath)) {
+    const content = fs38.readFileSync(resolvedPath, "utf-8");
     return deserializePipeline(JSON.parse(content));
   }
   try {
@@ -27204,7 +28551,7 @@ function renderExecutionProgress(completed, total, detail) {
   const percent = total <= 0 ? 0 : Math.round(safeCompleted / total * 100);
   const filled = Math.max(0, Math.min(width, Math.round(percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
-  const line = `\r${pc34.cyan("Workflow run")} ${pc34.dim("[")}${pc34.green(bar)}${pc34.dim("]")} ${String(percent).padStart(3)}% ${pc34.dim(detail)}`;
+  const line = `\r${pc35.cyan("Workflow run")} ${pc35.dim("[")}${pc35.green(bar)}${pc35.dim("]")} ${String(percent).padStart(3)}% ${pc35.dim(detail)}`;
   process.stdout.write(line);
   if (safeCompleted >= total) {
     process.stdout.write("\n");
@@ -27234,7 +28581,7 @@ async function executeHostedPipeline(pipeline, opts) {
   const totalNodes = Math.max(1, pipeline.nodes.length);
   const completed = /* @__PURE__ */ new Set();
   const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
-  const startupSpinner = opts?.json ? null : p22.spinner();
+  const startupSpinner = opts?.json ? null : p23.spinner();
   let startupSettled = false;
   startupSpinner?.start("Preparing hosted workflow execution...");
   const settleStartup = (message) => {
@@ -27277,50 +28624,50 @@ async function executeHostedPipeline(pipeline, opts) {
     return;
   }
   console.log("");
-  console.log(pc34.bold("Pipeline Execution Result"));
-  console.log(hr5());
-  console.log(`  ${pc34.dim("Execution ID:")} ${result.executionId}`);
-  if (result.threadId) console.log(`  ${pc34.dim("Thread ID:")}    ${result.threadId}`);
-  console.log(`  ${pc34.dim("Status:")}       ${result.status === "succeeded" ? pc34.green(result.status) : pc34.red(result.status)}`);
-  if (result.startedAt) console.log(`  ${pc34.dim("Started:")}      ${result.startedAt}`);
-  if (result.completedAt) console.log(`  ${pc34.dim("Completed:")}    ${result.completedAt}`);
-  console.log(hr5());
+  console.log(pc35.bold("Pipeline Execution Result"));
+  console.log(hr6());
+  console.log(`  ${pc35.dim("Execution ID:")} ${result.executionId}`);
+  if (result.threadId) console.log(`  ${pc35.dim("Thread ID:")}    ${result.threadId}`);
+  console.log(`  ${pc35.dim("Status:")}       ${result.status === "succeeded" ? pc35.green(result.status) : pc35.red(result.status)}`);
+  if (result.startedAt) console.log(`  ${pc35.dim("Started:")}      ${result.startedAt}`);
+  if (result.completedAt) console.log(`  ${pc35.dim("Completed:")}    ${result.completedAt}`);
+  console.log(hr6());
   for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
-    const statusColor3 = nodeResult.status === "succeeded" ? pc34.green : pc34.red;
-    console.log(`  ${statusColor3(nodeResult.status)} ${pc34.bold(nodeResult.slug)} (${pc34.dim(nodeId)})`);
+    const statusColor3 = nodeResult.status === "succeeded" ? pc35.green : pc35.red;
+    console.log(`  ${statusColor3(nodeResult.status)} ${pc35.bold(nodeResult.slug)} (${pc35.dim(nodeId)})`);
     if (nodeResult.error) {
-      console.log(`    ${pc34.red(nodeResult.error)}`);
+      console.log(`    ${pc35.red(nodeResult.error)}`);
     }
   }
   if (result.artifacts.length > 0) {
     console.log("");
-    console.log(pc34.bold("  Artifacts:"));
+    console.log(pc35.bold("  Artifacts:"));
     for (const art of result.artifacts) {
-      console.log(`    ${pc34.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
+      console.log(`    ${pc35.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
     }
   }
   if (result.summary) {
     console.log("");
-    console.log(pc34.bold("  Summary:"));
-    if (result.summary.outputText) console.log(`    ${pc34.dim("\xB7")} ${result.summary.outputText}`);
-    if (typeof result.summary.imageCount === "number") console.log(`    ${pc34.dim("\xB7")} images: ${result.summary.imageCount}`);
-    if (typeof result.summary.slideCount === "number") console.log(`    ${pc34.dim("\xB7")} slides: ${result.summary.slideCount}`);
-    if (typeof result.summary.videoCount === "number") console.log(`    ${pc34.dim("\xB7")} videos: ${result.summary.videoCount}`);
-    if (result.summary.workflowRunId) console.log(`    ${pc34.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-    if (result.summary.keyboardShortcutHint) console.log(`    ${pc34.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+    console.log(pc35.bold("  Summary:"));
+    if (result.summary.outputText) console.log(`    ${pc35.dim("\xB7")} ${result.summary.outputText}`);
+    if (typeof result.summary.imageCount === "number") console.log(`    ${pc35.dim("\xB7")} images: ${result.summary.imageCount}`);
+    if (typeof result.summary.slideCount === "number") console.log(`    ${pc35.dim("\xB7")} slides: ${result.summary.slideCount}`);
+    if (typeof result.summary.videoCount === "number") console.log(`    ${pc35.dim("\xB7")} videos: ${result.summary.videoCount}`);
+    if (result.summary.workflowRunId) console.log(`    ${pc35.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+    if (result.summary.keyboardShortcutHint) console.log(`    ${pc35.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
   }
   try {
     const credits = await fetchHostedCredits(session);
     if (credits) {
       console.log("");
-      console.log(pc34.bold("  Credits:"));
-      console.log(`    ${pc34.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
-      console.log(`    ${pc34.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+      console.log(pc35.bold("  Credits:"));
+      console.log(`    ${pc35.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
+      console.log(`    ${pc35.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
     }
   } catch (err) {
     if (err instanceof HostedEndpointUnavailableError) {
       console.log("");
-      console.log(pc34.yellow("  Credits unavailable on this hosted surface."));
+      console.log(pc35.yellow("  Credits unavailable on this hosted surface."));
     } else {
       throw err;
     }
@@ -27378,31 +28725,31 @@ async function renderIntelligenceSummary(pipeline, capabilities, phase) {
     };
     const result = await provider.summarizeExecution(input);
     const lines = [
-      `${pc34.bold("Intelligence Summary")} ${pc34.dim(result.title)}`,
+      `${pc35.bold("Intelligence Summary")} ${pc35.dim(result.title)}`,
       result.explanation
     ];
     if (result.runtimeModeNote) {
-      lines.push(`${pc34.dim("Runtime:")} ${result.runtimeModeNote}`);
+      lines.push(`${pc35.dim("Runtime:")} ${result.runtimeModeNote}`);
     }
     if (result.outputExpectation) {
-      lines.push(`${pc34.dim("Expected:")} ${result.outputExpectation}`);
+      lines.push(`${pc35.dim("Expected:")} ${result.outputExpectation}`);
     }
     if (result.missingBindingGuidance.length > 0) {
-      lines.push("", pc34.yellow("Missing Binding Guidance"));
+      lines.push("", pc35.yellow("Missing Binding Guidance"));
       for (const guidance of result.missingBindingGuidance) {
-        lines.push(`  ${pc34.dim("\xB7")} ${guidance}`);
+        lines.push(`  ${pc35.dim("\xB7")} ${guidance}`);
       }
     }
     if (result.costLatencyCautions.length > 0) {
-      lines.push("", pc34.yellow("Cost/Latency Notes"));
+      lines.push("", pc35.yellow("Cost/Latency Notes"));
       for (const caution of result.costLatencyCautions) {
-        lines.push(`  ${pc34.dim("\xB7")} ${caution}`);
+        lines.push(`  ${pc35.dim("\xB7")} ${caution}`);
       }
     }
     if (result.warnings.length > 0) {
-      lines.push("", pc34.yellow("Warnings"));
+      lines.push("", pc35.yellow("Warnings"));
       for (const warning of result.warnings) {
-        lines.push(`  ${pc34.dim("\xB7")} ${warning}`);
+        lines.push(`  ${pc35.dim("\xB7")} ${warning}`);
       }
     }
     return lines;
@@ -27427,7 +28774,7 @@ Examples:
   pipe.command("validate").description("Validate a pipeline from a JSON file or inline JSON").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc34.red(`${access.reason}.`));
+      console.error(pc35.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -27447,25 +28794,25 @@ Examples:
         return;
       }
       if (result.valid) {
-        console.log(pc34.green(pc34.bold("Pipeline is valid.")));
+        console.log(pc35.green(pc35.bold("Pipeline is valid.")));
       } else {
-        console.log(pc34.red(pc34.bold("Pipeline validation failed.")));
+        console.log(pc35.red(pc35.bold("Pipeline validation failed.")));
       }
       for (const issue of result.issues) {
-        const prefix = issue.severity === "error" ? pc34.red("  ERROR") : pc34.yellow("  WARN");
+        const prefix = issue.severity === "error" ? pc35.red("  ERROR") : pc35.yellow("  WARN");
         const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
         console.log(`${prefix}${nodeRef}: ${issue.message}`);
       }
       if (!result.valid) process.exitCode = 1;
     } catch (err) {
-      console.error(pc34.red("Validation failed: " + err.message));
+      console.error(pc35.red("Validation failed: " + err.message));
       process.exitCode = 1;
     }
   });
   pipe.command("execute").description("Execute a pipeline from a JSON file or inline JSON").argument("<file-or-json>", "Path to pipeline JSON file or inline JSON string").option("--json", "Output raw JSON").action(async (input, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
-      console.error(pc34.red(`${access.reason}.`));
+      console.error(pc35.red(`${access.reason}.`));
       process.exitCode = 1;
       return;
     }
@@ -27535,45 +28882,45 @@ Examples:
         return;
       }
       console.log("");
-      console.log(pc34.bold("Pipeline Execution Result"));
-      console.log(hr5());
-      console.log(`  ${pc34.dim("Execution ID:")} ${result.executionId}`);
-      if (result.threadId) console.log(`  ${pc34.dim("Thread ID:")}    ${result.threadId}`);
-      console.log(`  ${pc34.dim("Status:")}       ${result.status === "succeeded" ? pc34.green(result.status) : pc34.red(result.status)}`);
-      if (result.startedAt) console.log(`  ${pc34.dim("Started:")}      ${result.startedAt}`);
-      if (result.completedAt) console.log(`  ${pc34.dim("Completed:")}    ${result.completedAt}`);
-      console.log(hr5());
+      console.log(pc35.bold("Pipeline Execution Result"));
+      console.log(hr6());
+      console.log(`  ${pc35.dim("Execution ID:")} ${result.executionId}`);
+      if (result.threadId) console.log(`  ${pc35.dim("Thread ID:")}    ${result.threadId}`);
+      console.log(`  ${pc35.dim("Status:")}       ${result.status === "succeeded" ? pc35.green(result.status) : pc35.red(result.status)}`);
+      if (result.startedAt) console.log(`  ${pc35.dim("Started:")}      ${result.startedAt}`);
+      if (result.completedAt) console.log(`  ${pc35.dim("Completed:")}    ${result.completedAt}`);
+      console.log(hr6());
       for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
-        const statusColor3 = nodeResult.status === "succeeded" ? pc34.green : pc34.red;
-        console.log(`  ${statusColor3(nodeResult.status)} ${pc34.bold(nodeResult.slug)} (${pc34.dim(nodeId)})`);
+        const statusColor3 = nodeResult.status === "succeeded" ? pc35.green : pc35.red;
+        console.log(`  ${statusColor3(nodeResult.status)} ${pc35.bold(nodeResult.slug)} (${pc35.dim(nodeId)})`);
         if (nodeResult.error) {
-          console.log(`    ${pc34.red(nodeResult.error)}`);
+          console.log(`    ${pc35.red(nodeResult.error)}`);
         }
       }
       if (result.artifacts.length > 0) {
         console.log("");
-        console.log(pc34.bold("  Artifacts:"));
+        console.log(pc35.bold("  Artifacts:"));
         for (const art of result.artifacts) {
-          console.log(`    ${pc34.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
+          console.log(`    ${pc35.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
         }
       }
       if (result.summary) {
         console.log("");
-        console.log(pc34.bold("  Summary:"));
-        if (result.summary.outputText) console.log(`    ${pc34.dim("\xB7")} ${result.summary.outputText}`);
-        if (typeof result.summary.imageCount === "number") console.log(`    ${pc34.dim("\xB7")} images: ${result.summary.imageCount}`);
-        if (typeof result.summary.slideCount === "number") console.log(`    ${pc34.dim("\xB7")} slides: ${result.summary.slideCount}`);
-        if (typeof result.summary.videoCount === "number") console.log(`    ${pc34.dim("\xB7")} videos: ${result.summary.videoCount}`);
-        if (result.summary.workflowRunId) console.log(`    ${pc34.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-        if (result.summary.keyboardShortcutHint) console.log(`    ${pc34.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+        console.log(pc35.bold("  Summary:"));
+        if (result.summary.outputText) console.log(`    ${pc35.dim("\xB7")} ${result.summary.outputText}`);
+        if (typeof result.summary.imageCount === "number") console.log(`    ${pc35.dim("\xB7")} images: ${result.summary.imageCount}`);
+        if (typeof result.summary.slideCount === "number") console.log(`    ${pc35.dim("\xB7")} slides: ${result.summary.slideCount}`);
+        if (typeof result.summary.videoCount === "number") console.log(`    ${pc35.dim("\xB7")} videos: ${result.summary.videoCount}`);
+        if (result.summary.workflowRunId) console.log(`    ${pc35.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+        if (result.summary.keyboardShortcutHint) console.log(`    ${pc35.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
       }
       try {
         const credits = await fetchHostedCredits(session);
         if (credits) {
           console.log("");
-          console.log(pc34.bold("  Credits:"));
-          console.log(`    ${pc34.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
-          console.log(`    ${pc34.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
+          console.log(pc35.bold("  Credits:"));
+          console.log(`    ${pc35.dim("\xB7")} available: $${credits.totalAvailable.toFixed(2)}`);
+          console.log(`    ${pc35.dim("\xB7")} used this period: $${credits.creditsUsedThisPeriod.toFixed(2)} / $${credits.creditsPerMonth.toFixed(2)}`);
         }
       } catch (err) {
         if (!(err instanceof HostedEndpointUnavailableError)) {
@@ -27595,24 +28942,24 @@ Examples:
       }
       console.log("");
     } catch (err) {
-      console.error(pc34.red("Execution failed: " + err.message));
+      console.error(pc35.red("Execution failed: " + err.message));
       process.exitCode = 1;
     }
   });
 }
 
 // src/commands/artifact.ts
-import pc35 from "picocolors";
-function hr6(width = 72) {
-  return pc35.dim("\u2500".repeat(width));
+import pc36 from "picocolors";
+function hr7(width = 72) {
+  return pc36.dim("\u2500".repeat(width));
 }
 var ARTIFACT_TYPE_CONFIG = {
-  video: { color: pc35.magenta, emoji: "\u{1F3AC}" },
-  image: { color: pc35.cyan, emoji: "\u{1F5BC}\uFE0F " },
-  slides: { color: pc35.yellow, emoji: "\u{1F4CA}" },
-  text: { color: pc35.green, emoji: "\u{1F4DD}" },
-  report: { color: pc35.blue, emoji: "\u{1F4CB}" },
-  pipeline: { color: pc35.red, emoji: "\u{1F517}" }
+  video: { color: pc36.magenta, emoji: "\u{1F3AC}" },
+  image: { color: pc36.cyan, emoji: "\u{1F5BC}\uFE0F " },
+  slides: { color: pc36.yellow, emoji: "\u{1F4CA}" },
+  text: { color: pc36.green, emoji: "\u{1F4DD}" },
+  report: { color: pc36.blue, emoji: "\u{1F4CB}" },
+  pipeline: { color: pc36.red, emoji: "\u{1F517}" }
 };
 function artifactTypeBadge(type) {
   const cfg = ARTIFACT_TYPE_CONFIG[type];
@@ -27620,21 +28967,21 @@ function artifactTypeBadge(type) {
   return cfg.color(`${cfg.emoji} ${type}`);
 }
 function statusColor(status) {
-  if (status === "ready") return pc35.green(status);
-  if (status === "generating" || status === "pending") return pc35.yellow(status);
-  if (status === "failed") return pc35.red(status);
-  if (status === "archived") return pc35.dim(status);
+  if (status === "ready") return pc36.green(status);
+  if (status === "generating" || status === "pending") return pc36.yellow(status);
+  if (status === "failed") return pc36.red(status);
+  if (status === "archived") return pc36.dim(status);
   return status;
 }
 function printArtifactTable(artifacts) {
   console.log("");
   console.log(
-    pc35.bold("Pipeline Artifacts") + pc35.dim(`  ${artifacts.length} artifact${artifacts.length !== 1 ? "s" : ""}`)
+    pc36.bold("Pipeline Artifacts") + pc36.dim(`  ${artifacts.length} artifact${artifacts.length !== 1 ? "s" : ""}`)
   );
-  console.log(hr6());
+  console.log(hr7());
   if (artifacts.length === 0) {
-    console.log(pc35.dim("  No artifacts found."));
-    console.log(pc35.dim("  Run `growthub pipeline execute` to produce artifacts."));
+    console.log(pc36.dim("  No artifacts found."));
+    console.log(pc36.dim("  Run `growthub pipeline execute` to produce artifacts."));
     console.log("");
     return;
   }
@@ -27642,25 +28989,25 @@ function printArtifactTable(artifacts) {
     const badge2 = artifactTypeBadge(art.artifactType);
     const status = statusColor(art.status);
     console.log(
-      `  ${badge2}  ${pc35.bold(art.id)}  ${status}  ${pc35.dim(art.sourceNodeSlug)}  ${pc35.dim(art.executionContext)}`
+      `  ${badge2}  ${pc36.bold(art.id)}  ${status}  ${pc36.dim(art.sourceNodeSlug)}  ${pc36.dim(art.executionContext)}`
     );
     if (art.pipelineId) {
-      console.log(`    ${pc35.dim("Pipeline:")} ${art.pipelineId}`);
+      console.log(`    ${pc36.dim("Pipeline:")} ${art.pipelineId}`);
     }
-    console.log(`    ${pc35.dim("Created:")} ${art.createdAt}`);
+    console.log(`    ${pc36.dim("Created:")} ${art.createdAt}`);
     console.log("");
   }
-  console.log(hr6());
-  console.log(pc35.dim("  growthub artifact inspect <id>  \xB7  growthub artifact list --type <type>"));
+  console.log(hr7());
+  console.log(pc36.dim("  growthub artifact inspect <id>  \xB7  growthub artifact list --type <type>"));
   console.log("");
 }
 function printArtifactDetail(art) {
   console.log("");
-  console.log(pc35.bold("Artifact: " + art.id));
-  console.log(hr6());
+  console.log(pc36.bold("Artifact: " + art.id));
+  console.log(hr7());
   const kv = (label, value) => {
     if (value === void 0) return;
-    console.log(`  ${pc35.bold(label.padEnd(22))} ${value}`);
+    console.log(`  ${pc36.bold(label.padEnd(22))} ${value}`);
   };
   kv("Type:", artifactTypeBadge(art.artifactType));
   kv("Status:", statusColor(art.status));
@@ -27674,10 +29021,10 @@ function printArtifactDetail(art) {
   kv("Updated:", art.updatedAt);
   if (art.metadata && Object.keys(art.metadata).length > 0) {
     console.log("");
-    console.log(pc35.bold("  Metadata:"));
+    console.log(pc36.bold("  Metadata:"));
     console.log("  " + JSON.stringify(art.metadata, null, 2).split("\n").join("\n  "));
   }
-  console.log(hr6());
+  console.log(hr7());
   console.log("");
 }
 function registerArtifactCommands(program2) {
@@ -27711,14 +29058,14 @@ Examples:
       return;
     }
     printArtifactTable(artifacts);
-    console.log(pc35.dim(`  Store: ${store.getStorePath()}  \xB7  Source: ${meta.source}`));
+    console.log(pc36.dim(`  Store: ${store.getStorePath()}  \xB7  Source: ${meta.source}`));
     console.log("");
   });
   art.command("inspect").description("Inspect a specific pipeline artifact").argument("<id>", "Artifact ID (e.g. art_xxxxxxxxxxxx)").option("--json", "Output raw JSON").action((artifactId, opts) => {
     const store = createArtifactStore();
     const artifact = store.get(artifactId);
     if (!artifact) {
-      console.error(pc35.red(`Artifact not found: "${artifactId}".`) + pc35.dim(" Run `growthub artifact list` to browse."));
+      console.error(pc36.red(`Artifact not found: "${artifactId}".`) + pc36.dim(" Run `growthub artifact list` to browse."));
       process.exitCode = 1;
       return;
     }
@@ -27731,24 +29078,24 @@ Examples:
 }
 
 // src/commands/workflow.ts
-import fs36 from "node:fs";
-import path44 from "node:path";
-import * as p23 from "@clack/prompts";
-import pc37 from "picocolors";
+import fs40 from "node:fs";
+import path48 from "node:path";
+import * as p24 from "@clack/prompts";
+import pc38 from "picocolors";
 init_session_store();
 init_hosted_client();
 
 // src/runtime/workflow-hygiene/labels.ts
 init_home();
-import fs35 from "node:fs";
-import path43 from "node:path";
+import fs39 from "node:fs";
+import path47 from "node:path";
 function resolveStorePath() {
-  return path43.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
+  return path47.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
 }
 function readStoreFile(filePath) {
-  if (!fs35.existsSync(filePath)) return { records: [] };
+  if (!fs39.existsSync(filePath)) return { records: [] };
   try {
-    const raw = JSON.parse(fs35.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs39.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw.records)) return { records: [] };
     return raw;
   } catch {
@@ -27756,8 +29103,8 @@ function readStoreFile(filePath) {
   }
 }
 function writeStoreFile(filePath, data) {
-  fs35.mkdirSync(path43.dirname(filePath), { recursive: true });
-  fs35.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
+  fs39.mkdirSync(path47.dirname(filePath), { recursive: true });
+  fs39.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
 `, "utf-8");
 }
 function inferDefaultLabel(name, createdAt, versionCount) {
@@ -27799,11 +29146,11 @@ function createWorkflowHygieneStore() {
 }
 
 // src/runtime/workflow-hygiene/summaries.ts
-import pc36 from "picocolors";
+import pc37 from "picocolors";
 function renderWorkflowLabel(label) {
-  if (label === "canonical") return pc36.green("canonical");
-  if (label === "archived") return pc36.dim("archived");
-  return pc36.yellow("experimental");
+  if (label === "canonical") return pc37.green("canonical");
+  if (label === "archived") return pc37.dim("archived");
+  return pc37.yellow("experimental");
 }
 function enrichWorkflowSummaries(entries, store) {
   return entries.map((entry) => {
@@ -27817,14 +29164,14 @@ init_banner();
 init_home();
 var PAGE_SIZE = 10;
 var FAMILY_CONFIG2 = {
-  video: { color: pc37.magenta, label: "Video" },
-  image: { color: pc37.cyan, label: "Image" },
-  slides: { color: pc37.yellow, label: "Slides" },
-  text: { color: pc37.green, label: "Text" },
-  data: { color: pc37.blue, label: "Data" },
-  ops: { color: pc37.red, label: "Ops" },
-  research: { color: pc37.blue, label: "Research" },
-  vision: { color: pc37.cyan, label: "Vision" }
+  video: { color: pc38.magenta, label: "Video" },
+  image: { color: pc38.cyan, label: "Image" },
+  slides: { color: pc38.yellow, label: "Slides" },
+  text: { color: pc38.green, label: "Text" },
+  data: { color: pc38.blue, label: "Data" },
+  ops: { color: pc38.red, label: "Ops" },
+  research: { color: pc38.blue, label: "Research" },
+  vision: { color: pc38.cyan, label: "Vision" }
 };
 var FAMILY_EMOJI = {
   video: "\u{1F3AC}",
@@ -27840,8 +29187,8 @@ function familyLabel(family) {
   const cfg = FAMILY_CONFIG2[family];
   return cfg ? cfg.color(cfg.label) : family;
 }
-function hr7(width = 72) {
-  return pc37.dim("\u2500".repeat(width));
+function hr8(width = 72) {
+  return pc38.dim("\u2500".repeat(width));
 }
 function stripAnsi6(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -27849,25 +29196,25 @@ function stripAnsi6(str) {
 function box5(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi6(l).length)) + 4;
-  const top = pc37.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc37.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc38.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc38.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi6(l).length;
-    return pc37.dim("\u2502") + l + " ".repeat(pad2) + pc37.dim("\u2502");
+    return pc38.dim("\u2502") + l + " ".repeat(pad2) + pc38.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 function resolveSavedWorkflowsDir() {
-  return path44.resolve(resolvePaperclipHomeDir(), "workflows");
+  return path48.resolve(resolvePaperclipHomeDir(), "workflows");
 }
 function resolveDeletedWorkflowIdsPath() {
-  return path44.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
+  return path48.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
 }
 function readDeletedWorkflowIds() {
   const filePath = resolveDeletedWorkflowIdsPath();
-  if (!fs36.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  if (!fs40.existsSync(filePath)) return /* @__PURE__ */ new Set();
   try {
-    const raw = JSON.parse(fs36.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs40.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
     return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
   } catch {
@@ -27876,8 +29223,8 @@ function readDeletedWorkflowIds() {
 }
 function writeDeletedWorkflowIds(ids) {
   const filePath = resolveDeletedWorkflowIdsPath();
-  fs36.mkdirSync(path44.dirname(filePath), { recursive: true });
-  fs36.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
+  fs40.mkdirSync(path48.dirname(filePath), { recursive: true });
+  fs40.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
 `, "utf-8");
 }
 function markWorkflowDeletedLocally(workflowId) {
@@ -27903,10 +29250,10 @@ function filterLocallyDeletedWorkflows(entries) {
 }
 function listLocalSavedWorkflows() {
   const dir = resolveSavedWorkflowsDir();
-  if (!fs36.existsSync(dir)) return [];
-  const entries = fs36.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
+  if (!fs40.existsSync(dir)) return [];
+  const entries = fs40.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
     try {
-      const raw = JSON.parse(fs36.readFileSync(path44.resolve(dir, e.name), "utf-8"));
+      const raw = JSON.parse(fs40.readFileSync(path48.resolve(dir, e.name), "utf-8"));
       const pipeline = raw.pipeline ?? raw;
       return {
         filename: e.name,
@@ -27967,11 +29314,11 @@ async function archiveSavedWorkflow(entry) {
     throw new Error("Local workflow entry is missing filename.");
   }
   const dir = resolveSavedWorkflowsDir();
-  const archiveDir = path44.resolve(dir, "archived");
-  fs36.mkdirSync(archiveDir, { recursive: true });
-  fs36.renameSync(
-    path44.resolve(dir, entry.filename),
-    path44.resolve(archiveDir, entry.filename)
+  const archiveDir = path48.resolve(dir, "archived");
+  fs40.mkdirSync(archiveDir, { recursive: true });
+  fs40.renameSync(
+    path48.resolve(dir, entry.filename),
+    path48.resolve(archiveDir, entry.filename)
   );
 }
 async function deleteSavedWorkflow(entry) {
@@ -27995,7 +29342,7 @@ async function deleteSavedWorkflow(entry) {
   if (!entry.filename) {
     throw new Error("Local workflow entry is missing filename.");
   }
-  fs36.rmSync(path44.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  fs40.rmSync(path48.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
   markWorkflowDeletedLocally(entry.workflowId);
 }
 async function loadSavedWorkflowDetail(entry) {
@@ -28014,7 +29361,7 @@ async function loadSavedWorkflowDetail(entry) {
     };
   }
   const dir = resolveSavedWorkflowsDir();
-  const content = fs36.readFileSync(path44.resolve(dir, entry.filename), "utf-8");
+  const content = fs40.readFileSync(path48.resolve(dir, entry.filename), "utf-8");
   const raw = JSON.parse(content);
   return {
     pipeline: raw.pipeline ?? raw,
@@ -28084,7 +29431,7 @@ async function paginatedSelect(message, allOptions, opts) {
     const hasPrev = offset > 0;
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-    const pageInfo = filtered.length > PAGE_SIZE ? pc37.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
+    const pageInfo = filtered.length > PAGE_SIZE ? pc38.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
     const options = [
       ...page.map((o) => ({
         value: o.value,
@@ -28093,23 +29440,23 @@ async function paginatedSelect(message, allOptions, opts) {
       }))
     ];
     if (hasMore) {
-      options.push({ value: "__next_page", label: pc37.dim("\u2192 Next page") });
+      options.push({ value: "__next_page", label: pc38.dim("\u2192 Next page") });
     }
     if (hasPrev) {
-      options.push({ value: "__prev_page", label: pc37.dim("\u2190 Previous page") });
+      options.push({ value: "__prev_page", label: pc38.dim("\u2190 Previous page") });
     }
     if (opts?.searchEnabled) {
-      options.push({ value: "__search", label: pc37.dim("\u{1F50E} Search") });
+      options.push({ value: "__search", label: pc38.dim("\u{1F50E} Search") });
     }
     options.push({
       value: opts?.backValue ?? "__back",
       label: opts?.backLabel ?? "\u2190 Back"
     });
-    const choice = await p23.select({
+    const choice = await p24.select({
       message: message + pageInfo,
       options
     });
-    if (p23.isCancel(choice)) return choice;
+    if (p24.isCancel(choice)) return choice;
     if (choice === "__next_page") {
       offset += PAGE_SIZE;
       continue;
@@ -28119,11 +29466,11 @@ async function paginatedSelect(message, allOptions, opts) {
       continue;
     }
     if (choice === "__search") {
-      const term = await p23.text({
+      const term = await p24.text({
         message: "Search items",
         placeholder: "Type to filter..."
       });
-      if (p23.isCancel(term)) return term;
+      if (p24.isCancel(term)) return term;
       const searchStr = term.toLowerCase().trim();
       if (searchStr) {
         filtered = allOptions.filter((o) => {
@@ -28132,7 +29479,7 @@ async function paginatedSelect(message, allOptions, opts) {
         });
         offset = 0;
         if (filtered.length === 0) {
-          p23.note(`No results for "${term}".`, "No matches");
+          p24.note(`No results for "${term}".`, "No matches");
           filtered = allOptions;
         }
       } else {
@@ -28147,8 +29494,8 @@ async function paginatedSelect(message, allOptions, opts) {
 function printTemplateCard(node) {
   const contract = introspectNodeContract(node);
   const lines = renderContractCard(contract);
-  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc37.green("enabled") : pc37.red("disabled")}`);
-  if (node.description) lines.push("", pc37.dim(node.description));
+  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc38.green("enabled") : pc38.red("disabled")}`);
+  if (node.description) lines.push("", pc38.dim(node.description));
   console.log("");
   console.log(box5(lines));
   console.log("");
@@ -28162,9 +29509,9 @@ function renderTemplateTree(templates) {
     byFamily.set(key, existing);
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const lines = [pc37.bold("Public CMS Node Tree")];
+  const lines = [pc38.bold("Public CMS Node Tree")];
   for (const [family, nodes] of families) {
-    lines.push(`${pc37.cyan("\u2022")} ${pc37.bold(family)}`);
+    lines.push(`${pc38.cyan("\u2022")} ${pc38.bold(family)}`);
     const sorted = [...nodes].sort((a, b) => a.slug.localeCompare(b.slug));
     for (const [index51, node] of sorted.entries()) {
       const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
@@ -28172,12 +29519,12 @@ function renderTemplateTree(templates) {
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
       lines.push(
-        `  ${branch} ${node.slug} ${pc37.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
+        `  ${branch} ${node.slug} ${pc38.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
       );
     }
   }
   lines.push("");
-  lines.push(pc37.dim("Shortcut: growthub workflow saved --json"));
+  lines.push(pc38.dim("Shortcut: growthub workflow saved --json"));
   return lines;
 }
 function renderWorkflowContractDiscoveryTree(nodes) {
@@ -28189,10 +29536,10 @@ function renderWorkflowContractDiscoveryTree(nodes) {
     byFamily.set(key, group);
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const lines = [pc37.bold("CMS Node Contract Discovery")];
+  const lines = [pc38.bold("CMS Node Contract Discovery")];
   for (const [family, familyNodes] of families) {
     const emoji = FAMILY_EMOJI[family] ?? "\u2022";
-    lines.push(`${emoji} ${pc37.bold(familyLabel(family))} ${pc37.dim(`(${familyNodes.length})`)}`);
+    lines.push(`${emoji} ${pc38.bold(familyLabel(family))} ${pc38.dim(`(${familyNodes.length})`)}`);
     const sorted = [...familyNodes].sort((a, b) => a.slug.localeCompare(b.slug));
     for (const [index51, node] of sorted.entries()) {
       const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
@@ -28200,7 +29547,7 @@ function renderWorkflowContractDiscoveryTree(nodes) {
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
       lines.push(
-        `  ${branch} ${node.slug} ${pc37.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`
+        `  ${branch} ${node.slug} ${pc38.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`
       );
     }
   }
@@ -28213,7 +29560,7 @@ function buildTemplateOption(template, viewMode) {
   if (viewMode === "expanded") {
     return {
       value: template.slug,
-      label: `${template.icon}  ${template.displayName} ${pc37.dim(template.slug)}`,
+      label: `${template.icon}  ${template.displayName} ${pc38.dim(template.slug)}`,
       hint: `req:${requiredInputs} opt:${optionalInputs} outputs:${contract.outputTypes.join(", ") || "none"} exec:${contract.executionStrategy}`
     };
   }
@@ -28235,11 +29582,11 @@ async function runWorkflowPicker(opts) {
   const hygieneStore = createWorkflowHygieneStore();
   const access = getWorkflowAccess();
   if (access.state === "unauthenticated") {
-    p23.intro(pc37.bold("Workflows") + pc37.dim(" (not connected)"));
-    p23.note(
+    p24.intro(pc38.bold("Workflows") + pc38.dim(" (not connected)"));
+    p24.note(
       [
         "Workflow assembly requires an authenticated Growthub session.",
-        "Run " + pc37.cyan("growthub auth login") + " to connect your account.",
+        "Run " + pc38.cyan("growthub auth login") + " to connect your account.",
         "",
         "Once connected you can:",
         "  - Browse CMS node contracts",
@@ -28251,20 +29598,20 @@ async function runWorkflowPicker(opts) {
     if (opts.allowBackToHub) return "back";
     return "done";
   }
-  p23.intro(pc37.bold("Workflows"));
+  p24.intro(pc38.bold("Workflows"));
   while (true) {
     const refreshedAccess = getWorkflowAccess();
-    const topChoice = await p23.select({
+    const topChoice = await p24.select({
       message: "What would you like to do?",
       options: [
         {
           value: "contracts",
-          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc37.dim("0. CMS Node Contracts (locked)"),
+          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc38.dim("0. CMS Node Contracts (locked)"),
           hint: refreshedAccess.state === "ready" ? "Discovery tree for CMS node primitives" : refreshedAccess.reason
         },
         {
           value: "pipelines",
-          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc37.dim("1. Dynamic Pipelines (locked)"),
+          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc38.dim("1. Dynamic Pipelines (locked)"),
           hint: refreshedAccess.state === "ready" ? "Create new pipelines and route into Saved Workflows" : refreshedAccess.reason
         },
         {
@@ -28275,13 +29622,13 @@ async function runWorkflowPicker(opts) {
         ...opts.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to main menu" }] : []
       ]
     });
-    if (p23.isCancel(topChoice)) {
-      p23.cancel("Cancelled.");
+    if (p24.isCancel(topChoice)) {
+      p24.cancel("Cancelled.");
       process.exit(0);
     }
     if (topChoice === "__back_to_hub") return "back";
     if (topChoice === "contracts" && refreshedAccess.state !== "ready") {
-      p23.note(
+      p24.note(
         [
           "CMS Node Contracts are only available when the hosted user is linked to this local machine.",
           refreshedAccess.reason
@@ -28291,14 +29638,14 @@ async function runWorkflowPicker(opts) {
       continue;
     }
     if (topChoice === "contracts") {
-      const contractsSpinner = p23.spinner();
+      const contractsSpinner = p24.spinner();
       contractsSpinner.start("Loading CMS node contracts...");
       try {
         const registry = createCmsCapabilityRegistryClient();
         const { nodes } = await registry.listCapabilities({ enabledOnly: false });
         contractsSpinner.stop(`Loaded ${nodes.length} CMS node contract${nodes.length === 1 ? "" : "s"}.`);
         if (nodes.length === 0) {
-          p23.note("No CMS node contracts available.", "Nothing found");
+          p24.note("No CMS node contracts available.", "Nothing found");
           continue;
         }
         let showDiscoveryTree = false;
@@ -28309,7 +29656,7 @@ async function runWorkflowPicker(opts) {
             console.log("");
             showDiscoveryTree = false;
           }
-          const contractsMenuChoice = await p23.select({
+          const contractsMenuChoice = await p24.select({
             message: "CMS Node Contracts",
             options: [
               { value: "browse", label: "Browse contract list", hint: "Select a node and view full contract" },
@@ -28317,8 +29664,8 @@ async function runWorkflowPicker(opts) {
               { value: "__back_to_workflow", label: "\u2190 Back to workflow menu" }
             ]
           });
-          if (p23.isCancel(contractsMenuChoice)) {
-            p23.cancel("Cancelled.");
+          if (p24.isCancel(contractsMenuChoice)) {
+            p24.cancel("Cancelled.");
             process.exit(0);
           }
           if (contractsMenuChoice === "__back_to_workflow") break;
@@ -28331,7 +29678,7 @@ async function runWorkflowPicker(opts) {
             const requiredInputs = contract.inputs.filter((input) => input.required).length;
             return {
               value: node.slug,
-              label: `${node.icon}  ${node.displayName} ${pc37.dim(node.slug)}`,
+              label: `${node.icon}  ${node.displayName} ${pc38.dim(node.slug)}`,
               hint: `${node.family} \xB7 required:${requiredInputs} \xB7 bindings:${contract.requiredBindings.length} \xB7 outputs:${contract.outputTypes.length}`
             };
           });
@@ -28343,15 +29690,15 @@ async function runWorkflowPicker(opts) {
               searchEnabled: true
             }
           );
-          if (p23.isCancel(contractChoice)) {
-            p23.cancel("Cancelled.");
+          if (p24.isCancel(contractChoice)) {
+            p24.cancel("Cancelled.");
             process.exit(0);
           }
           if (contractChoice === "__back") continue;
           const selected = nodes.find((node) => node.slug === contractChoice);
           if (!selected) continue;
           printTemplateCard(selected);
-          const contractAction = await p23.select({
+          const contractAction = await p24.select({
             message: "Contract actions",
             options: [
               { value: "inspect_json", label: "Inspect raw input template JSON" },
@@ -28359,8 +29706,8 @@ async function runWorkflowPicker(opts) {
               { value: "back_to_workflow_menu", label: "\u2190 Back to workflow menu" }
             ]
           });
-          if (p23.isCancel(contractAction)) {
-            p23.cancel("Cancelled.");
+          if (p24.isCancel(contractAction)) {
+            p24.cancel("Cancelled.");
             process.exit(0);
           }
           if (contractAction === "inspect_json") {
@@ -28372,14 +29719,14 @@ async function runWorkflowPicker(opts) {
           }
         }
       } catch (err) {
-        contractsSpinner.stop(pc37.red("Failed to load CMS node contracts."));
-        p23.log.error("Failed to load CMS node contracts: " + err.message);
+        contractsSpinner.stop(pc38.red("Failed to load CMS node contracts."));
+        p24.log.error("Failed to load CMS node contracts: " + err.message);
       }
       continue;
     }
     if (topChoice === "pipelines") {
       if (refreshedAccess.state !== "ready") {
-        p23.note(
+        p24.note(
           [
             "Dynamic Pipelines are only available when the hosted user is linked to this local machine.",
             refreshedAccess.reason
@@ -28396,7 +29743,7 @@ async function runWorkflowPicker(opts) {
     }
     if (topChoice === "saved") {
       while (true) {
-        const savedSpinner = p23.spinner();
+        const savedSpinner = p24.spinner();
         savedSpinner.start("Loading saved workflows...");
         let saved;
         try {
@@ -28407,14 +29754,14 @@ async function runWorkflowPicker(opts) {
           saved = withEffectiveWorkflowLabels(enriched, hygieneStore);
           savedSpinner.stop(`Loaded ${saved.length} saved workflow${saved.length === 1 ? "" : "s"}.`);
         } catch (err) {
-          savedSpinner.stop(pc37.red("Failed to load saved workflows."));
+          savedSpinner.stop(pc38.red("Failed to load saved workflows."));
           throw err;
         }
         if (saved.length === 0) {
-          p23.note(
+          p24.note(
             [
               "No saved workflows found.",
-              "Use " + pc37.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
+              "Use " + pc38.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
             ].join("\n"),
             "Nothing saved"
           );
@@ -28422,74 +29769,74 @@ async function runWorkflowPicker(opts) {
         }
         const allOptions = saved.map((w) => ({
           value: w.workflowId,
-          label: `${w.name} ${pc37.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc37.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
+          label: `${w.name} ${pc38.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc38.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
           hint: `${w.executionMode} \xB7 ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`
         }));
         const choice = await paginatedSelect("Select a saved workflow", allOptions, {
           backLabel: "\u2190 Back to workflow menu",
           searchEnabled: true
         });
-        if (p23.isCancel(choice)) {
-          p23.cancel("Cancelled.");
+        if (p24.isCancel(choice)) {
+          p24.cancel("Cancelled.");
           process.exit(0);
         }
         if (choice === "__back") break;
         const entry = saved.find((w) => w.workflowId === choice);
         if (entry) {
-          const detailSpinner = p23.spinner();
+          const detailSpinner = p24.spinner();
           detailSpinner.start(`Loading ${entry.name}...`);
           let detail;
           try {
             detail = await loadSavedWorkflowDetail(entry);
             detailSpinner.stop(`Loaded ${entry.name}.`);
           } catch (err) {
-            detailSpinner.stop(pc37.red(`Failed to load ${entry.name}.`));
-            p23.log.error(err.message);
+            detailSpinner.stop(pc38.red(`Failed to load ${entry.name}.`));
+            p24.log.error(err.message);
             continue;
           }
           const pipeline = detail.pipeline;
           const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
           console.log("");
           console.log(box5([
-            `${pc37.bold("Workflow:")} ${entry.name}`,
-            `${pc37.dim("ID:")} ${entry.workflowId}`,
-            `${pc37.dim("Mode:")} hosted  ${pc37.dim("Nodes:")} ${nodes.length}`,
-            `${pc37.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
-            `${pc37.dim("Created:")} ${detail.createdAt || "\u2014"}`,
+            `${pc38.bold("Workflow:")} ${entry.name}`,
+            `${pc38.dim("ID:")} ${entry.workflowId}`,
+            `${pc38.dim("Mode:")} hosted  ${pc38.dim("Nodes:")} ${nodes.length}`,
+            `${pc38.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
+            `${pc38.dim("Created:")} ${detail.createdAt || "\u2014"}`,
             "",
             ...nodes.map(
-              (n, i) => `${pc37.dim(String(i + 1) + ".")} ${pc37.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc37.dim(n.id)}`
+              (n, i) => `${pc38.dim(String(i + 1) + ".")} ${pc38.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc38.dim(n.id)}`
             )
           ]));
           console.log("");
-          const nextAction = await p23.select({
+          const nextAction = await p24.select({
             message: "Action",
             options: [
               { value: "execute", label: "Execute saved workflow" },
               { value: "set_label", label: "Set workflow label" },
               { value: "archive", label: "Archive workflow" },
               { value: "unarchive", label: "Unarchive workflow" },
-              { value: "delete", label: pc37.red("Delete workflow") },
+              { value: "delete", label: pc38.red("Delete workflow") },
               { value: "back_to_saved", label: "\u2190 Back to saved workflows" }
             ]
           });
-          if (p23.isCancel(nextAction)) {
-            p23.cancel("Cancelled.");
+          if (p24.isCancel(nextAction)) {
+            p24.cancel("Cancelled.");
             process.exit(0);
           }
           if (nextAction === "execute") {
-            const confirmed = await p23.confirm({
+            const confirmed = await p24.confirm({
               message: `Execute ${entry.name} now?`,
               initialValue: false
             });
-            if (p23.isCancel(confirmed) || !confirmed) {
+            if (p24.isCancel(confirmed) || !confirmed) {
               continue;
             }
-            const finalConfirmed = await p23.confirm({
+            const finalConfirmed = await p24.confirm({
               message: "This will run the hosted workflow and may spend credits. Continue?",
               initialValue: false
             });
-            if (p23.isCancel(finalConfirmed) || !finalConfirmed) {
+            if (p24.isCancel(finalConfirmed) || !finalConfirmed) {
               continue;
             }
             try {
@@ -28514,13 +29861,13 @@ async function runWorkflowPicker(opts) {
                 console.log("");
               }
               await executeHostedPipeline(executablePipeline);
-              p23.log.success(`Saved workflow execution completed for ${pc37.bold(entry.name)}.`);
+              p24.log.success(`Saved workflow execution completed for ${pc38.bold(entry.name)}.`);
             } catch (err) {
-              p23.log.error("Saved workflow execution failed: " + err.message);
+              p24.log.error("Saved workflow execution failed: " + err.message);
             }
           }
           if (nextAction === "set_label") {
-            const labelChoice = await p23.select({
+            const labelChoice = await p24.select({
               message: `Set label for ${entry.name}`,
               options: [
                 { value: "canonical", label: "Canonical" },
@@ -28529,37 +29876,37 @@ async function runWorkflowPicker(opts) {
                 { value: "__back", label: "\u2190 Back" }
               ]
             });
-            if (p23.isCancel(labelChoice) || labelChoice === "__back") {
+            if (p24.isCancel(labelChoice) || labelChoice === "__back") {
               continue;
             }
             hygieneStore.setLabel(entry.workflowId, labelChoice);
-            p23.log.success(`Updated label for ${pc37.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
+            p24.log.success(`Updated label for ${pc38.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
             continue;
           }
           if (nextAction === "archive") {
-            const confirmed = await p23.confirm({
+            const confirmed = await p24.confirm({
               message: `Archive ${entry.name}?`,
               initialValue: false
             });
-            if (p23.isCancel(confirmed) || !confirmed) {
+            if (p24.isCancel(confirmed) || !confirmed) {
               continue;
             }
             try {
               await archiveSavedWorkflow(entry);
               hygieneStore.setLabel(entry.workflowId, "archived");
-              p23.log.success(`Archived ${pc37.bold(entry.name)}.`);
+              p24.log.success(`Archived ${pc38.bold(entry.name)}.`);
             } catch {
               hygieneStore.setLabel(entry.workflowId, "archived");
-              p23.log.success(`Archived ${pc37.bold(entry.name)} (local fallback).`);
+              p24.log.success(`Archived ${pc38.bold(entry.name)} (local fallback).`);
             }
             continue;
           }
           if (nextAction === "unarchive") {
             if ((entry.workflowLabel ?? "experimental") !== "archived") {
-              p23.note("Workflow is already live.", "Unarchive skipped");
+              p24.note("Workflow is already live.", "Unarchive skipped");
               continue;
             }
-            const restoreChoice = await p23.select({
+            const restoreChoice = await p24.select({
               message: `Set label after unarchive for ${entry.name}`,
               options: [
                 { value: "experimental", label: "Experimental" },
@@ -28567,36 +29914,36 @@ async function runWorkflowPicker(opts) {
                 { value: "__back", label: "\u2190 Back" }
               ]
             });
-            if (p23.isCancel(restoreChoice) || restoreChoice === "__back") {
+            if (p24.isCancel(restoreChoice) || restoreChoice === "__back") {
               continue;
             }
             hygieneStore.setLabel(entry.workflowId, restoreChoice);
-            p23.log.success(
-              `Unarchived ${pc37.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
+            p24.log.success(
+              `Unarchived ${pc38.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
             );
             continue;
           }
           if (nextAction === "delete") {
-            const confirmed = await p23.confirm({
+            const confirmed = await p24.confirm({
               message: `Delete ${entry.name}? This cannot be undone.`,
               initialValue: false
             });
-            if (p23.isCancel(confirmed) || !confirmed) {
+            if (p24.isCancel(confirmed) || !confirmed) {
               continue;
             }
-            const finalConfirmed = await p23.confirm({
+            const finalConfirmed = await p24.confirm({
               message: "Final confirmation: permanently delete this workflow?",
               initialValue: false
             });
-            if (p23.isCancel(finalConfirmed) || !finalConfirmed) {
+            if (p24.isCancel(finalConfirmed) || !finalConfirmed) {
               continue;
             }
             try {
               await deleteSavedWorkflow(entry);
-              p23.log.success(`Deleted ${pc37.bold(entry.name)}.`);
+              p24.log.success(`Deleted ${pc38.bold(entry.name)}.`);
             } catch {
               markWorkflowDeletedLocally(entry.workflowId);
-              p23.log.success(`Deleted ${pc37.bold(entry.name)} (local fallback).`);
+              p24.log.success(`Deleted ${pc38.bold(entry.name)} (local fallback).`);
             }
             continue;
           }
@@ -28612,7 +29959,7 @@ async function runWorkflowPicker(opts) {
         const hosted = await registry.listCapabilities({ enabledOnly: false });
         hostedTemplates = hosted.nodes;
       } catch (err) {
-        p23.log.error("Hosted capability registry unavailable: " + err.message);
+        p24.log.error("Hosted capability registry unavailable: " + err.message);
         continue;
       }
       while (true) {
@@ -28620,7 +29967,7 @@ async function runWorkflowPicker(opts) {
           const nodes = hostedTemplates.filter((node) => node.family === f);
           return nodes.length > 0;
         });
-        const familyChoice = await p23.select({
+        const familyChoice = await p24.select({
           message: "Filter by family",
           options: [
             { value: "all", label: "All Templates" },
@@ -28636,13 +29983,13 @@ async function runWorkflowPicker(opts) {
             { value: "__back_to_workflow_menu", label: "\u2190 Back to workflow menu" }
           ]
         });
-        if (p23.isCancel(familyChoice)) {
-          p23.cancel("Cancelled.");
+        if (p24.isCancel(familyChoice)) {
+          p24.cancel("Cancelled.");
           process.exit(0);
         }
         if (familyChoice === "__back_to_workflow_menu") break;
         if (familyChoice === "__toggle_view_mode") {
-          const viewChoice = await p23.select({
+          const viewChoice = await p24.select({
             message: "Select template view mode",
             options: [
               { value: "condensed", label: "Condensed", hint: "Fast scan" },
@@ -28650,8 +29997,8 @@ async function runWorkflowPicker(opts) {
               { value: "tree", label: "Tree", hint: "Family/tree style list" }
             ]
           });
-          if (p23.isCancel(viewChoice)) {
-            p23.cancel("Cancelled.");
+          if (p24.isCancel(viewChoice)) {
+            p24.cancel("Cancelled.");
             process.exit(0);
           }
           templateViewMode = viewChoice;
@@ -28668,11 +30015,11 @@ async function runWorkflowPicker(opts) {
         try {
           templates = query ? hostedTemplates.filter((node) => node.family === query.family) : hostedTemplates;
         } catch (err) {
-          p23.log.error("Failed to load templates: " + err.message);
+          p24.log.error("Failed to load templates: " + err.message);
           continue;
         }
         if (templates.length === 0) {
-          p23.note("No templates for that family.", "Nothing found");
+          p24.note("No templates for that family.", "Nothing found");
           continue;
         }
         while (true) {
@@ -28685,8 +30032,8 @@ async function runWorkflowPicker(opts) {
               searchEnabled: true
             }
           );
-          if (p23.isCancel(templateChoice)) {
-            p23.cancel("Cancelled.");
+          if (p24.isCancel(templateChoice)) {
+            p24.cancel("Cancelled.");
             process.exit(0);
           }
           if (templateChoice === "__back") break;
@@ -28694,7 +30041,7 @@ async function runWorkflowPicker(opts) {
           if (!selected) continue;
           printTemplateCard(selected);
           while (true) {
-            const action = await p23.select({
+            const action = await p24.select({
               message: "What would you like to do with this template?",
               options: [
                 { value: "assemble", label: "Assemble a pipeline from this template" },
@@ -28703,8 +30050,8 @@ async function runWorkflowPicker(opts) {
                 { value: "back_to_templates", label: "\u2190 Back to template list" }
               ]
             });
-            if (p23.isCancel(action)) {
-              p23.cancel("Cancelled.");
+            if (p24.isCancel(action)) {
+              p24.cancel("Cancelled.");
               process.exit(0);
             }
             if (action === "back_to_templates") break;
@@ -28713,17 +30060,17 @@ async function runWorkflowPicker(opts) {
                 const resolver = createMachineCapabilityResolver();
                 const binding = await resolver.resolveCapability(selected.slug);
                 if (binding) {
-                  const statusColor3 = binding.allowed ? pc37.green : pc37.red;
+                  const statusColor3 = binding.allowed ? pc38.green : pc38.red;
                   console.log("");
                   console.log(box5([
-                    `${pc37.bold("Machine Binding:")} ${selected.slug}`,
-                    `${pc37.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
-                    `${pc37.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
+                    `${pc38.bold("Machine Binding:")} ${selected.slug}`,
+                    `${pc38.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+                    `${pc38.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
                   ]));
                   console.log("");
                 }
               } catch (err) {
-                p23.log.error("Resolution failed: " + err.message);
+                p24.log.error("Resolution failed: " + err.message);
               }
               continue;
             }
@@ -28737,32 +30084,32 @@ async function runWorkflowPicker(opts) {
               const rawBindings = {};
               for (const input of contract.inputs) {
                 if (!input.required) continue;
-                const value = await p23.text({
+                const value = await p24.text({
                   message: `${selected.displayName} \u2192 ${input.key}`,
                   placeholder: `Enter ${input.key}`
                 });
-                if (p23.isCancel(value)) {
-                  p23.cancel("Cancelled.");
+                if (p24.isCancel(value)) {
+                  p24.cancel("Cancelled.");
                   process.exit(0);
                 }
                 rawBindings[input.key] = value;
               }
               const normalized = normalizeNodeBindings(rawBindings, selected);
-              p23.note(
+              p24.note(
                 `Provided ${normalized.providedCount}, defaulted ${normalized.defaultedCount}, normalized ${normalized.normalizedCount}.`,
                 "Input normalization"
               );
               const nodeId = builder.addNode(selected.slug, normalized.bindings);
-              p23.log.success(`Added ${pc37.bold(selected.displayName)} (${pc37.dim(nodeId)})`);
-              const next = await p23.select({
+              p24.log.success(`Added ${pc38.bold(selected.displayName)} (${pc38.dim(nodeId)})`);
+              const next = await p24.select({
                 message: "Pipeline has 1 node. What next?",
                 options: [
                   { value: "save", label: "Save pipeline" },
                   { value: "back_to_templates", label: "\u2190 Back to templates" }
                 ]
               });
-              if (p23.isCancel(next)) {
-                p23.cancel("Cancelled.");
+              if (p24.isCancel(next)) {
+                p24.cancel("Cancelled.");
                 process.exit(0);
               }
               if (next === "save") {
@@ -28790,8 +30137,8 @@ async function runWorkflowPicker(opts) {
                 if (!saveResult || typeof saveResult.workflowId !== "string") {
                   throw new Error("Hosted workflow save returned no payload.");
                 }
-                p23.log.success(
-                  `Hosted workflow saved as ${pc37.bold(workflowName)} (${pc37.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
+                p24.log.success(
+                  `Hosted workflow saved as ${pc38.bold(workflowName)} (${pc38.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
                 );
               }
               break;
@@ -28841,31 +30188,31 @@ async function renderWorkflowIntelligenceSummary(pipeline, capabilities, phase) 
     };
     const result = await provider.summarizeExecution(input);
     const lines = [
-      `${pc37.bold("Intelligence Summary")} ${pc37.dim(result.title)}`,
+      `${pc38.bold("Intelligence Summary")} ${pc38.dim(result.title)}`,
       result.explanation
     ];
     if (result.runtimeModeNote) {
-      lines.push(`${pc37.dim("Runtime:")} ${result.runtimeModeNote}`);
+      lines.push(`${pc38.dim("Runtime:")} ${result.runtimeModeNote}`);
     }
     if (result.outputExpectation) {
-      lines.push(`${pc37.dim("Expected:")} ${result.outputExpectation}`);
+      lines.push(`${pc38.dim("Expected:")} ${result.outputExpectation}`);
     }
     if (result.missingBindingGuidance.length > 0) {
-      lines.push("", pc37.yellow("Missing Binding Guidance"));
+      lines.push("", pc38.yellow("Missing Binding Guidance"));
       for (const guidance of result.missingBindingGuidance) {
-        lines.push(`  ${pc37.dim("\xB7")} ${guidance}`);
+        lines.push(`  ${pc38.dim("\xB7")} ${guidance}`);
       }
     }
     if (result.costLatencyCautions.length > 0) {
-      lines.push("", pc37.yellow("Cost/Latency Notes"));
+      lines.push("", pc38.yellow("Cost/Latency Notes"));
       for (const caution of result.costLatencyCautions) {
-        lines.push(`  ${pc37.dim("\xB7")} ${caution}`);
+        lines.push(`  ${pc38.dim("\xB7")} ${caution}`);
       }
     }
     if (result.warnings.length > 0) {
-      lines.push("", pc37.yellow("Warnings"));
+      lines.push("", pc38.yellow("Warnings"));
       for (const warning of result.warnings) {
-        lines.push(`  ${pc37.dim("\xB7")} ${warning}`);
+        lines.push(`  ${pc38.dim("\xB7")} ${warning}`);
       }
     }
     return lines;
@@ -28888,7 +30235,7 @@ Examples:
     wf.command("templates").description("List CMS workflow node starter templates").option("--family <family>", "Filter by family").option("--search <term>", "Search templates").option("--view <mode>", "List view mode: condensed | expanded | tree").option("--json", "Output raw JSON").action(async (opts) => {
       const access = getWorkflowAccess();
       if (access.state !== "ready") {
-        console.error(pc37.red(`${access.reason}.`));
+        console.error(pc38.red(`${access.reason}.`));
         process.exitCode = 1;
         return;
       }
@@ -28905,24 +30252,24 @@ Examples:
           return;
         }
         if (nodes.length === 0) {
-          console.error(pc37.yellow("No templates found."));
+          console.error(pc38.yellow("No templates found."));
           process.exitCode = 1;
           return;
         }
         const viewMode = opts.view ?? "condensed";
         console.log("");
         console.log(
-          pc37.bold("Workflow Node Templates") + pc37.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
+          pc38.bold("Workflow Node Templates") + pc38.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
         );
-        console.log(hr7());
-        console.log(pc37.bold("Step 1: CMS Node Contract Validation"));
-        console.log(pc37.dim("Validate contract visibility before template selection."));
-        console.log(pc37.dim(`View mode: ${viewMode}`));
+        console.log(hr8());
+        console.log(pc38.bold("Step 1: CMS Node Contract Validation"));
+        console.log(pc38.dim("Validate contract visibility before template selection."));
+        console.log(pc38.dim(`View mode: ${viewMode}`));
         console.log("");
         if (viewMode === "tree") {
           console.log(box5(renderTemplateTree(nodes)));
-          console.log(hr7());
-          console.log(pc37.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+          console.log(hr8());
+          console.log(pc38.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
           console.log("");
           return;
         }
@@ -28930,24 +30277,24 @@ Examples:
           const contract = introspectNodeContract(node);
           const requiredInputs = contract.inputs.filter((input) => input.required).length;
           const optionalInputs = contract.inputs.length - requiredInputs;
-          const enabledTag = node.enabled ? pc37.green("enabled") : pc37.red("disabled");
-          console.log(`  ${node.icon}  ${pc37.bold(node.displayName)}  ${pc37.dim(node.slug)}  ${enabledTag}`);
+          const enabledTag = node.enabled ? pc38.green("enabled") : pc38.red("disabled");
+          console.log(`  ${node.icon}  ${pc38.bold(node.displayName)}  ${pc38.dim(node.slug)}  ${enabledTag}`);
           console.log(
-            `     ${pc37.dim("Contract:")} ${pc37.dim("required")}=${requiredInputs} ${pc37.dim("optional")}=${optionalInputs} ${pc37.dim("bindings")}=${contract.requiredBindings.length} ${pc37.dim("outputs")}=${contract.outputTypes.length}`
+            `     ${pc38.dim("Contract:")} ${pc38.dim("required")}=${requiredInputs} ${pc38.dim("optional")}=${optionalInputs} ${pc38.dim("bindings")}=${contract.requiredBindings.length} ${pc38.dim("outputs")}=${contract.outputTypes.length}`
           );
           console.log(
-            `     ${pc37.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
+            `     ${pc38.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
           );
           if (node.description) {
-            console.log(`     ${pc37.dim(node.description)}`);
+            console.log(`     ${pc38.dim(node.description)}`);
           }
           console.log("");
         }
-        console.log(hr7());
-        console.log(pc37.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+        console.log(hr8());
+        console.log(pc38.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
         console.log("");
       } catch (err) {
-        console.error(pc37.red("Failed: " + err.message));
+        console.error(pc38.red("Failed: " + err.message));
         process.exitCode = 1;
       }
     });
@@ -28967,67 +30314,67 @@ Examples:
       return;
     }
     if (visibleSaved.length === 0) {
-      console.log(pc37.dim("No saved workflows. Run `growthub workflow` to assemble one."));
+      console.log(pc38.dim("No saved workflows. Run `growthub workflow` to assemble one."));
       return;
     }
     console.log("");
     console.log(
-      pc37.bold("Saved Workflows") + pc37.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
+      pc38.bold("Saved Workflows") + pc38.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
     );
     if (!opts.includeArchived) {
       const hiddenArchivedCount = saved.length - visibleSaved.length;
       if (hiddenArchivedCount > 0) {
-        console.log(pc37.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
+        console.log(pc38.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
       }
     }
-    console.log(hr7());
+    console.log(hr8());
     for (const w of visibleSaved) {
       console.log(
-        `  ${pc37.bold(w.name)}  ` + pc37.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc37.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
+        `  ${pc38.bold(w.name)}  ` + pc38.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc38.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
       );
     }
     console.log("");
-    console.log(pc37.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
+    console.log(pc38.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
     console.log("");
   });
 }
 
 // src/commands/open-agents.ts
-import * as p24 from "@clack/prompts";
-import pc38 from "picocolors";
+import * as p25 from "@clack/prompts";
+import pc39 from "picocolors";
 
 // src/runtime/agent-harness/auth-store.ts
 init_home();
-import fs37 from "node:fs";
-import path45 from "node:path";
+import fs41 from "node:fs";
+import path49 from "node:path";
 function resolveHarnessAuthDir() {
-  return path45.resolve(resolvePaperclipHomeDir(), "harness-auth");
+  return path49.resolve(resolvePaperclipHomeDir(), "harness-auth");
 }
 function resolveHarnessAuthFile(harnessId) {
-  return path45.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
+  return path49.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
 }
 function normalizeSecret(value) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : void 0;
 }
 function ensureSecureDir(dirPath) {
-  fs37.mkdirSync(dirPath, { recursive: true });
+  fs41.mkdirSync(dirPath, { recursive: true });
   try {
-    fs37.chmodSync(dirPath, 448);
+    fs41.chmodSync(dirPath, 448);
   } catch {
   }
 }
 function ensureSecureFile(filePath) {
   try {
-    fs37.chmodSync(filePath, 384);
+    fs41.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessCredentials(harnessId) {
   const filePath = resolveHarnessAuthFile(harnessId);
-  if (!fs37.existsSync(filePath)) return {};
+  if (!fs41.existsSync(filePath)) return {};
   try {
-    const parsed = JSON.parse(fs37.readFileSync(filePath, "utf-8"));
+    const parsed = JSON.parse(fs41.readFileSync(filePath, "utf-8"));
     const creds = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value.trim().length > 0) {
@@ -29054,7 +30401,7 @@ function setHarnessCredential(harnessId, key, value) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs37.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs41.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -29071,7 +30418,7 @@ function setHarnessCredentials(harnessId, updates) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs37.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs41.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -29083,8 +30430,8 @@ function maskSecret(value) {
 
 // src/runtime/open-agents/index.ts
 init_home();
-import fs38 from "node:fs";
-import path46 from "node:path";
+import fs42 from "node:fs";
+import path50 from "node:path";
 
 // src/runtime/open-agents/contract.ts
 var DEFAULT_OPEN_AGENTS_CONFIG = {
@@ -29271,18 +30618,18 @@ var OpenAgentsBackendError = class extends Error {
 
 // src/runtime/open-agents/index.ts
 function resolveConfigPath3() {
-  return path46.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
+  return path50.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
 }
 function readOpenAgentsConfig() {
   const configPath = resolveConfigPath3();
-  if (!fs38.existsSync(configPath)) {
+  if (!fs42.existsSync(configPath)) {
     return {
       ...DEFAULT_OPEN_AGENTS_CONFIG,
       apiKey: getHarnessCredential("open-agents", "apiKey")
     };
   }
   try {
-    const raw = JSON.parse(fs38.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs42.readFileSync(configPath, "utf-8"));
     const storedApiKey = getHarnessCredential("open-agents", "apiKey");
     return {
       backendType: validateBackendType(raw.backendType),
@@ -29303,13 +30650,13 @@ function readOpenAgentsConfig() {
 }
 function writeOpenAgentsConfig(config) {
   const configPath = resolveConfigPath3();
-  fs38.mkdirSync(path46.dirname(configPath), { recursive: true });
+  fs42.mkdirSync(path50.dirname(configPath), { recursive: true });
   const persisted = {
     ...config,
     authMode: validateAuthMode(config.authMode),
     apiKey: void 0
   };
-  fs38.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
+  fs42.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
 `, "utf-8");
   setHarnessCredential("open-agents", "apiKey", config.apiKey);
 }
@@ -29327,21 +30674,21 @@ function validateAuthMode(value) {
 // src/commands/open-agents.ts
 init_banner();
 function statusColor2(status) {
-  if (status === "running") return pc38.green(status);
-  if (status === "completed") return pc38.cyan(status);
-  if (status === "failed" || status === "cancelled") return pc38.red(status);
-  if (status === "waiting" || status === "idle") return pc38.yellow(status);
-  return pc38.dim(status);
+  if (status === "running") return pc39.green(status);
+  if (status === "completed") return pc39.cyan(status);
+  if (status === "failed" || status === "cancelled") return pc39.red(status);
+  if (status === "waiting" || status === "idle") return pc39.yellow(status);
+  return pc39.dim(status);
 }
 function sandboxBadge(state) {
-  if (state === "running") return pc38.green("running");
-  if (state === "hibernating") return pc38.yellow("hibernating");
-  if (state === "stopped") return pc38.dim("stopped");
-  if (state === "error") return pc38.red("error");
-  return pc38.dim(state);
+  if (state === "running") return pc39.green("running");
+  if (state === "hibernating") return pc39.yellow("hibernating");
+  if (state === "stopped") return pc39.dim("stopped");
+  if (state === "error") return pc39.red("error");
+  return pc39.dim(state);
 }
-function hr8(width = 72) {
-  return pc38.dim("\u2500".repeat(width));
+function hr9(width = 72) {
+  return pc39.dim("\u2500".repeat(width));
 }
 function stripAnsi7(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -29349,27 +30696,27 @@ function stripAnsi7(str) {
 function box6(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi7(l).length)) + 4;
-  const top = pc38.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc38.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc39.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc39.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi7(l).length;
-    return pc38.dim("\u2502") + l + " ".repeat(pad2) + pc38.dim("\u2502");
+    return pc39.dim("\u2502") + l + " ".repeat(pad2) + pc39.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 function printSessionCard(session) {
   const lines = [
-    `${pc38.bold("Session")}  ${pc38.dim(session.sessionId)}`,
-    `${pc38.dim("Status:")}   ${statusColor2(session.status)}`,
-    `${pc38.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
-    `${pc38.dim("Events:")}   ${session.eventCount}`,
-    `${pc38.dim("Created:")}  ${session.createdAt}`
+    `${pc39.bold("Session")}  ${pc39.dim(session.sessionId)}`,
+    `${pc39.dim("Status:")}   ${statusColor2(session.status)}`,
+    `${pc39.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
+    `${pc39.dim("Events:")}   ${session.eventCount}`,
+    `${pc39.dim("Created:")}  ${session.createdAt}`
   ];
-  if (session.repoUrl) lines.push(`${pc38.dim("Repo:")}     ${session.repoUrl}`);
-  if (session.branch) lines.push(`${pc38.dim("Branch:")}   ${session.branch}`);
+  if (session.repoUrl) lines.push(`${pc39.dim("Repo:")}     ${session.repoUrl}`);
+  if (session.branch) lines.push(`${pc39.dim("Branch:")}   ${session.branch}`);
   if (session.prompt) {
     const truncated = session.prompt.length > 80 ? session.prompt.slice(0, 77) + "..." : session.prompt;
-    lines.push(`${pc38.dim("Prompt:")}   ${truncated}`);
+    lines.push(`${pc39.dim("Prompt:")}   ${truncated}`);
   }
   console.log("");
   console.log(box6(lines));
@@ -29396,15 +30743,15 @@ var EVENT_EMOJI = {
 };
 function printEvent(event) {
   const emoji = EVENT_EMOJI[event.type] ?? "\xB7";
-  const ts = pc38.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
+  const ts = pc39.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
   console.log(`  ${emoji}  ${ts}  ${event.detail}`);
 }
 async function runOpenAgentsHub(opts) {
   printPaperclipCliBanner();
-  p24.intro(pc38.bold("Open Agents"));
+  p25.intro(pc39.bold("Open Agents"));
   while (true) {
     const config = readOpenAgentsConfig();
-    const action = await p24.select({
+    const action = await p25.select({
       message: "Open Agents",
       options: [
         { value: "setup", label: "Setup & Configure", hint: "backend endpoint, API key, defaults" },
@@ -29415,13 +30762,13 @@ async function runOpenAgentsHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p24.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p25.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "setup") {
       await runSetupFlow(config);
       continue;
     }
     if (action === "health") {
-      const spinner13 = p24.spinner();
+      const spinner13 = p25.spinner();
       spinner13.start(`Checking ${config.endpoint}...`);
       const health = await checkOpenAgentsHealth(config);
       if (health.available) {
@@ -29430,7 +30777,7 @@ async function runOpenAgentsHub(opts) {
         );
       } else {
         spinner13.stop(`Backend unavailable (${health.latencyMs}ms)`);
-        p24.note(
+        p25.note(
           [
             health.error ? `Error: ${health.error}` : "",
             "",
@@ -29465,7 +30812,7 @@ async function runOpenAgentsHub(opts) {
   }
 }
 async function runSetupFlow(currentConfig) {
-  const backendChoice = await p24.select({
+  const backendChoice = await p25.select({
     message: "Backend type",
     options: [
       { value: "local", label: "Local", hint: "open-agents dev server on this machine" },
@@ -29473,8 +30820,8 @@ async function runSetupFlow(currentConfig) {
     ],
     initialValue: currentConfig.backendType
   });
-  if (p24.isCancel(backendChoice)) return;
-  const authMode = backendChoice === "hosted" ? await p24.select({
+  if (p25.isCancel(backendChoice)) return;
+  const authMode = backendChoice === "hosted" ? await p25.select({
     message: "Hosted authentication strategy",
     options: [
       {
@@ -29490,17 +30837,17 @@ async function runSetupFlow(currentConfig) {
     ],
     initialValue: currentConfig.authMode === "api-key" || currentConfig.authMode === "vercel-managed" ? currentConfig.authMode : "api-key"
   }) : "none";
-  if (p24.isCancel(authMode)) return;
-  const endpoint = await p24.text({
+  if (p25.isCancel(authMode)) return;
+  const endpoint = await p25.text({
     message: "Backend endpoint",
     placeholder: currentConfig.endpoint,
     initialValue: currentConfig.endpoint
   });
-  if (p24.isCancel(endpoint)) return;
+  if (p25.isCancel(endpoint)) return;
   let apiKeyValue;
   if (authMode === "api-key") {
     const existingKeyMasked = maskSecret(currentConfig.apiKey);
-    const apiKeyMode = await p24.select({
+    const apiKeyMode = await p25.select({
       message: `API key (${existingKeyMasked})`,
       options: [
         { value: "keep", label: "Keep existing key", hint: "No change to currently stored key" },
@@ -29509,12 +30856,12 @@ async function runSetupFlow(currentConfig) {
       ],
       initialValue: currentConfig.apiKey ? "keep" : "replace"
     });
-    if (p24.isCancel(apiKeyMode)) return;
+    if (p25.isCancel(apiKeyMode)) return;
     if (apiKeyMode === "replace") {
-      const entered = await p24.password({
+      const entered = await p25.password({
         message: "Open Agents API key"
       });
-      if (p24.isCancel(entered)) return;
+      if (p25.isCancel(entered)) return;
       apiKeyValue = String(entered).trim() || void 0;
     } else if (apiKeyMode === "keep") {
       apiKeyValue = currentConfig.apiKey;
@@ -29524,17 +30871,17 @@ async function runSetupFlow(currentConfig) {
   } else {
     apiKeyValue = void 0;
   }
-  const defaultRepo = await p24.text({
+  const defaultRepo = await p25.text({
     message: "Default repository URL (optional)",
     placeholder: currentConfig.defaultRepo ?? "",
     initialValue: currentConfig.defaultRepo ?? ""
   });
-  if (p24.isCancel(defaultRepo)) return;
-  const confirmed = await p24.confirm({
+  if (p25.isCancel(defaultRepo)) return;
+  const confirmed = await p25.confirm({
     message: "Save Open Agents configuration?",
     initialValue: true
   });
-  if (p24.isCancel(confirmed) || !confirmed) return;
+  if (p25.isCancel(confirmed) || !confirmed) return;
   const newConfig = {
     ...currentConfig,
     backendType: backendChoice,
@@ -29544,93 +30891,93 @@ async function runSetupFlow(currentConfig) {
     defaultRepo: String(defaultRepo).trim() || void 0
   };
   writeOpenAgentsConfig(newConfig);
-  p24.log.success("Configuration saved.");
+  p25.log.success("Configuration saved.");
 }
 async function runSessionListFlow(config) {
-  const spinner13 = p24.spinner();
+  const spinner13 = p25.spinner();
   spinner13.start("Loading sessions...");
   let sessions;
   try {
     sessions = await listOpenAgentsSessions(config);
   } catch (err) {
     spinner13.stop("Failed to load sessions.");
-    p24.log.error(err.message);
+    p25.log.error(err.message);
     return "back";
   }
   spinner13.stop(`${sessions.length} session${sessions.length !== 1 ? "s" : ""} found.`);
   if (sessions.length === 0) {
-    p24.note("No agent sessions found. Create one to get started.", "Nothing found");
+    p25.note("No agent sessions found. Create one to get started.", "Nothing found");
     return "back";
   }
   while (true) {
-    const sessionChoice = await p24.select({
+    const sessionChoice = await p25.select({
       message: "Select a session",
       options: [
         ...sessions.map((s) => ({
           value: s.sessionId,
-          label: `${statusColor2(s.status)}  ${pc38.dim(s.sessionId.slice(0, 12))}`,
+          label: `${statusColor2(s.status)}  ${pc39.dim(s.sessionId.slice(0, 12))}`,
           hint: s.prompt ? s.prompt.slice(0, 50) : void 0
         })),
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p24.isCancel(sessionChoice) || sessionChoice === "__back") return "back";
+    if (p25.isCancel(sessionChoice) || sessionChoice === "__back") return "back";
     const selected = sessions.find((s) => s.sessionId === sessionChoice);
     if (!selected) continue;
     printSessionCard(selected);
-    const nextStep = await p24.select({
+    const nextStep = await p25.select({
       message: "What next?",
       options: [
         { value: "events", label: "\u{1F4DC} View recent events" },
         { value: "back_to_list", label: "\u2190 Back to session list" }
       ]
     });
-    if (p24.isCancel(nextStep) || nextStep === "back_to_list") continue;
+    if (p25.isCancel(nextStep) || nextStep === "back_to_list") continue;
     if (nextStep === "events") {
       try {
         const events = await pollSessionEvents(config, selected.sessionId);
         if (events.length === 0) {
-          p24.note("No events recorded yet.", "Empty");
+          p25.note("No events recorded yet.", "Empty");
         } else {
           console.log("");
-          console.log(pc38.bold("Recent Events") + pc38.dim(`  (${events.length})`));
-          console.log(hr8());
+          console.log(pc39.bold("Recent Events") + pc39.dim(`  (${events.length})`));
+          console.log(hr9());
           for (const event of events.slice(-20)) {
             printEvent(event);
           }
-          console.log(hr8());
+          console.log(hr9());
           console.log("");
         }
       } catch (err) {
-        p24.log.error("Failed to load events: " + err.message);
+        p25.log.error("Failed to load events: " + err.message);
       }
     }
   }
 }
 async function runCreateSessionFlow(config) {
-  const prompt = await p24.text({
+  const prompt = await p25.text({
     message: "What should the agent do?",
     placeholder: "Describe the task for the agent"
   });
-  if (p24.isCancel(prompt) || !String(prompt).trim()) return;
-  const repoUrl = await p24.text({
+  if (p25.isCancel(prompt) || !String(prompt).trim()) return;
+  const repoUrl = await p25.text({
     message: "Repository URL (optional)",
     placeholder: config.defaultRepo ?? "https://github.com/org/repo",
     initialValue: config.defaultRepo ?? ""
   });
-  if (p24.isCancel(repoUrl)) return;
-  const branch = await p24.text({
+  if (p25.isCancel(repoUrl)) return;
+  const branch = await p25.text({
     message: "Branch (optional)",
     placeholder: config.defaultBranch ?? "main",
     initialValue: config.defaultBranch ?? ""
   });
-  if (p24.isCancel(branch)) return;
-  const confirmed = await p24.confirm({
+  if (p25.isCancel(branch)) return;
+  const confirmed = await p25.confirm({
     message: "Create agent session?",
     initialValue: true
   });
-  if (p24.isCancel(confirmed) || !confirmed) return;
-  const spinner13 = p24.spinner();
+  if (p25.isCancel(confirmed) || !confirmed) return;
+  const spinner13 = p25.spinner();
   spinner13.start("Creating session...");
   try {
     const session = await createOpenAgentsSession(config, {
@@ -29642,16 +30989,16 @@ async function runCreateSessionFlow(config) {
     printSessionCard(session);
   } catch (err) {
     spinner13.stop("Failed to create session.");
-    p24.log.error(err.message);
+    p25.log.error(err.message);
   }
 }
 async function runResumeSessionFlow(config) {
-  const sessionId = await p24.text({
+  const sessionId = await p25.text({
     message: "Session ID",
     placeholder: "Paste the session ID to resume"
   });
-  if (p24.isCancel(sessionId) || !String(sessionId).trim()) return;
-  const spinner13 = p24.spinner();
+  if (p25.isCancel(sessionId) || !String(sessionId).trim()) return;
+  const spinner13 = p25.spinner();
   spinner13.start("Resuming session...");
   try {
     const session = await resumeOpenAgentsSession(config, String(sessionId).trim());
@@ -29659,17 +31006,17 @@ async function runResumeSessionFlow(config) {
     printSessionCard(session);
     const events = await pollSessionEvents(config, session.sessionId);
     if (events.length > 0) {
-      console.log(pc38.bold("Latest Events") + pc38.dim(`  (${events.length})`));
-      console.log(hr8());
+      console.log(pc39.bold("Latest Events") + pc39.dim(`  (${events.length})`));
+      console.log(hr9());
       for (const event of events.slice(-20)) {
         printEvent(event);
       }
-      console.log(hr8());
+      console.log(hr9());
       console.log("");
     }
   } catch (err) {
     spinner13.stop("Failed to resume session.");
-    p24.log.error(err.message);
+    p25.log.error(err.message);
   }
 }
 function registerOpenAgentsCommands(program2) {
@@ -29706,7 +31053,7 @@ Examples:
       if (opts.json) {
         console.log(JSON.stringify(updated, null, 2));
       } else {
-        console.log(pc38.green("Configuration updated."));
+        console.log(pc39.green("Configuration updated."));
       }
       return;
     }
@@ -29715,16 +31062,16 @@ Examples:
       return;
     }
     console.log("");
-    console.log(pc38.bold("Open Agents Configuration"));
-    console.log(hr8());
-    console.log(`  ${pc38.dim("Backend:")}   ${config.backendType}`);
-    console.log(`  ${pc38.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
-    console.log(`  ${pc38.dim("Endpoint:")}  ${config.endpoint}`);
-    console.log(`  ${pc38.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc38.dim("(none)")}`);
-    console.log(`  ${pc38.dim("Repo:")}      ${config.defaultRepo ?? pc38.dim("(none)")}`);
-    console.log(`  ${pc38.dim("Branch:")}    ${config.defaultBranch ?? pc38.dim("(none)")}`);
-    console.log(`  ${pc38.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
-    console.log(hr8());
+    console.log(pc39.bold("Open Agents Configuration"));
+    console.log(hr9());
+    console.log(`  ${pc39.dim("Backend:")}   ${config.backendType}`);
+    console.log(`  ${pc39.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
+    console.log(`  ${pc39.dim("Endpoint:")}  ${config.endpoint}`);
+    console.log(`  ${pc39.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc39.dim("(none)")}`);
+    console.log(`  ${pc39.dim("Repo:")}      ${config.defaultRepo ?? pc39.dim("(none)")}`);
+    console.log(`  ${pc39.dim("Branch:")}    ${config.defaultBranch ?? pc39.dim("(none)")}`);
+    console.log(`  ${pc39.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
+    console.log(hr9());
     console.log("");
   });
   oa.command("status").description("Check Open Agents backend health").option("--json", "Output raw JSON").action(async (opts) => {
@@ -29736,12 +31083,12 @@ Examples:
     }
     if (health.available) {
       console.log(
-        pc38.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
+        pc39.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
       );
     } else {
-      console.log(pc38.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
+      console.log(pc39.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
       if (health.error) {
-        console.log(pc38.dim(`  ${health.error}`));
+        console.log(pc39.dim(`  ${health.error}`));
       }
       process.exitCode = 1;
     }
@@ -29755,22 +31102,22 @@ Examples:
         return;
       }
       if (sessions.length === 0) {
-        console.log(pc38.yellow("No sessions found.") + pc38.dim(" Run `growthub open-agents create` to start one."));
+        console.log(pc39.yellow("No sessions found.") + pc39.dim(" Run `growthub open-agents create` to start one."));
         return;
       }
       console.log("");
-      console.log(pc38.bold("Agent Sessions") + pc38.dim(`  (${sessions.length})`));
-      console.log(hr8());
+      console.log(pc39.bold("Agent Sessions") + pc39.dim(`  (${sessions.length})`));
+      console.log(hr9());
       for (const session of sessions) {
-        const truncatedPrompt = session.prompt ? pc38.dim(session.prompt.slice(0, 50)) : "";
+        const truncatedPrompt = session.prompt ? pc39.dim(session.prompt.slice(0, 50)) : "";
         console.log(
-          `  ${statusColor2(session.status)}  ${pc38.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
+          `  ${statusColor2(session.status)}  ${pc39.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
         );
       }
-      console.log(hr8());
+      console.log(hr9());
       console.log("");
     } catch (err) {
-      console.error(pc38.red("Failed to list sessions: " + err.message));
+      console.error(pc39.red("Failed to list sessions: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -29792,7 +31139,7 @@ Examples:
       }
       printSessionCard(session);
     } catch (err) {
-      console.error(pc38.red("Failed to create session: " + err.message));
+      console.error(pc39.red("Failed to create session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -29810,7 +31157,7 @@ Examples:
       }
       printSessionCard(session);
     } catch (err) {
-      console.error(pc38.red("Failed to create session: " + err.message));
+      console.error(pc39.red("Failed to create session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -29825,16 +31172,16 @@ Examples:
       printSessionCard(session);
       const events = await pollSessionEvents(config, session.sessionId);
       if (events.length > 0) {
-        console.log(pc38.bold("Latest Events") + pc38.dim(`  (${events.length})`));
-        console.log(hr8());
+        console.log(pc39.bold("Latest Events") + pc39.dim(`  (${events.length})`));
+        console.log(hr9());
         for (const event of events.slice(-20)) {
           printEvent(event);
         }
-        console.log(hr8());
+        console.log(hr9());
         console.log("");
       }
     } catch (err) {
-      console.error(pc38.red("Failed to resume session: " + err.message));
+      console.error(pc39.red("Failed to resume session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -29849,29 +31196,29 @@ Examples:
       printSessionCard(session);
       const events = await pollSessionEvents(config, session.sessionId);
       if (events.length > 0) {
-        console.log(pc38.bold("Latest Events") + pc38.dim(`  (${events.length})`));
-        console.log(hr8());
+        console.log(pc39.bold("Latest Events") + pc39.dim(`  (${events.length})`));
+        console.log(hr9());
         for (const event of events.slice(-20)) {
           printEvent(event);
         }
-        console.log(hr8());
+        console.log(hr9());
         console.log("");
       }
     } catch (err) {
-      console.error(pc38.red("Failed to chat/resume session: " + err.message));
+      console.error(pc39.red("Failed to chat/resume session: " + err.message));
       process.exitCode = 1;
     }
   });
 }
 
 // src/commands/qwen-code.ts
-import * as p25 from "@clack/prompts";
-import pc39 from "picocolors";
+import * as p26 from "@clack/prompts";
+import pc40 from "picocolors";
 
 // src/runtime/qwen-code/index.ts
 init_home();
-import fs39 from "node:fs";
-import path47 from "node:path";
+import fs43 from "node:fs";
+import path51 from "node:path";
 
 // src/runtime/qwen-code/contract.ts
 var QWEN_CODE_APPROVAL_MODES = [
@@ -29896,7 +31243,7 @@ var DEFAULT_QWEN_CODE_CONFIG = {
 };
 
 // src/runtime/qwen-code/provider.ts
-import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
+import { spawn as spawn2, spawnSync as spawnSync3 } from "node:child_process";
 async function executeHeadlessPrompt(prompt, configOverride) {
   const config = { ...DEFAULT_QWEN_CODE_CONFIG, ...configOverride };
   const startMs = Date.now();
@@ -29973,7 +31320,7 @@ function launchInteractiveSession(configOverride) {
     ...process.env,
     ...config.env
   };
-  const result = spawnSync2(config.binaryPath, args, {
+  const result = spawnSync3(config.binaryPath, args, {
     cwd: config.cwd,
     env,
     stdio: "inherit"
@@ -29982,7 +31329,7 @@ function launchInteractiveSession(configOverride) {
 }
 function detectQwenVersion(binaryPath = "qwen") {
   try {
-    const result = spawnSync2(binaryPath, ["--version"], {
+    const result = spawnSync3(binaryPath, ["--version"], {
       timeout: 1e4,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -30089,19 +31436,19 @@ function buildSetupGuidance(env) {
 
 // src/runtime/qwen-code/index.ts
 function resolveConfigPath4() {
-  return path47.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
+  return path51.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
 }
 function readQwenCodeConfig() {
   const configPath = resolveConfigPath4();
   const storedCredentials = readHarnessCredentials("qwen-code");
-  if (!fs39.existsSync(configPath)) {
+  if (!fs43.existsSync(configPath)) {
     return {
       ...DEFAULT_QWEN_CODE_CONFIG,
       env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs39.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs43.readFileSync(configPath, "utf-8"));
     return {
       binaryPath: typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_QWEN_CODE_CONFIG.binaryPath,
       defaultModel: typeof raw.defaultModel === "string" ? raw.defaultModel : DEFAULT_QWEN_CODE_CONFIG.defaultModel,
@@ -30123,7 +31470,7 @@ function readQwenCodeConfig() {
 }
 function writeQwenCodeConfig(config) {
   const configPath = resolveConfigPath4();
-  fs39.mkdirSync(path47.dirname(configPath), { recursive: true });
+  fs43.mkdirSync(path51.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -30135,7 +31482,7 @@ function writeQwenCodeConfig(config) {
     publicEnv[key] = value;
   }
   setHarnessCredentials("qwen-code", credentialUpdates);
-  fs39.writeFileSync(
+  fs43.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -30161,8 +31508,8 @@ async function runQwenCodeHub(opts) {
   while (true) {
     const config = readQwenCodeConfig();
     const health = checkHealth(config.binaryPath, config.env);
-    const statusHint = health.status === "available" ? pc39.green("ready") : health.status === "degraded" ? pc39.yellow("degraded") : pc39.red("unavailable");
-    const action = await p25.select({
+    const statusHint = health.status === "available" ? pc40.green("ready") : health.status === "degraded" ? pc40.yellow("degraded") : pc40.red("unavailable");
+    const action = await p26.select({
       message: `Qwen Code CLI (${statusHint})`,
       options: [
         { value: "health", label: "Setup & Health", hint: "environment detection + install guidance" },
@@ -30172,37 +31519,37 @@ async function runQwenCodeHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p25.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p26.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "health") {
       const env = detectEnvironment(config.binaryPath, config.env);
       const guidance = buildSetupGuidance(env);
-      p25.note(guidance.join("\n"), "Qwen Code CLI \u2014 Setup Helper");
+      p26.note(guidance.join("\n"), "Qwen Code CLI \u2014 Setup Helper");
       continue;
     }
     if (action === "prompt") {
       if (health.status === "unavailable") {
-        p25.note(health.summary, "Qwen Code CLI unavailable");
+        p26.note(health.summary, "Qwen Code CLI unavailable");
         continue;
       }
-      const rawPrompt = await p25.text({
+      const rawPrompt = await p26.text({
         message: "Enter prompt for Qwen Code",
         placeholder: "Describe what you want to build or analyze..."
       });
-      if (p25.isCancel(rawPrompt)) continue;
+      if (p26.isCancel(rawPrompt)) continue;
       const prompt = String(rawPrompt).trim();
       if (!prompt) continue;
-      const runSpinner = p25.spinner();
+      const runSpinner = p26.spinner();
       runSpinner.start(`Running qwen -p (model: ${config.defaultModel})...`);
       const result = await executeHeadlessPrompt(prompt, config);
       if (result.timedOut) {
         runSpinner.stop("Timed out.");
-        p25.note(`Process timed out after ${config.timeoutMs}ms.`, "Execution timeout");
+        p26.note(`Process timed out after ${config.timeoutMs}ms.`, "Execution timeout");
         continue;
       }
       if (result.exitCode !== 0) {
         runSpinner.stop(`Exited with code ${result.exitCode ?? "null"}.`);
         if (result.stderr.trim()) {
-          p25.note(result.stderr.trim().slice(0, 2e3), "stderr");
+          p26.note(result.stderr.trim().slice(0, 2e3), "stderr");
         }
         continue;
       }
@@ -30216,10 +31563,10 @@ async function runQwenCodeHub(opts) {
     }
     if (action === "session") {
       if (health.status === "unavailable") {
-        p25.note(health.summary, "Qwen Code CLI unavailable");
+        p26.note(health.summary, "Qwen Code CLI unavailable");
         continue;
       }
-      p25.note(
+      p26.note(
         [
           `Binary: ${config.binaryPath}`,
           `Model: ${config.defaultModel}`,
@@ -30240,13 +31587,13 @@ async function runQwenCodeHub(opts) {
   }
 }
 async function runConfigureFlow(currentConfig) {
-  const modelInput = await p25.text({
+  const modelInput = await p26.text({
     message: "Default model",
     placeholder: "qwen3-coder",
     defaultValue: currentConfig.defaultModel
   });
-  if (p25.isCancel(modelInput)) return;
-  const modeInput = await p25.select({
+  if (p26.isCancel(modelInput)) return;
+  const modeInput = await p26.select({
     message: "Approval mode",
     options: QWEN_CODE_APPROVAL_MODES.map((mode) => ({
       value: mode,
@@ -30255,14 +31602,14 @@ async function runConfigureFlow(currentConfig) {
     })),
     initialValue: currentConfig.approvalMode
   });
-  if (p25.isCancel(modeInput)) return;
-  const binaryInput = await p25.text({
+  if (p26.isCancel(modeInput)) return;
+  const binaryInput = await p26.text({
     message: "Binary path",
     placeholder: "qwen",
     defaultValue: currentConfig.binaryPath
   });
-  if (p25.isCancel(binaryInput)) return;
-  const authAction = await p25.select({
+  if (p26.isCancel(binaryInput)) return;
+  const authAction = await p26.select({
     message: "Authentication setup",
     options: [
       {
@@ -30283,10 +31630,10 @@ async function runConfigureFlow(currentConfig) {
     ],
     initialValue: "skip"
   });
-  if (p25.isCancel(authAction)) return;
+  if (p26.isCancel(authAction)) return;
   const nextEnv = { ...currentConfig.env };
   if (authAction === "set-key") {
-    const providerKey = await p25.select({
+    const providerKey = await p26.select({
       message: "Provider key variable",
       options: [
         ...QWEN_CODE_SUPPORTED_ENV_KEYS.map((key) => ({
@@ -30300,26 +31647,26 @@ async function runConfigureFlow(currentConfig) {
         }
       ]
     });
-    if (p25.isCancel(providerKey)) return;
+    if (p26.isCancel(providerKey)) return;
     if (providerKey === "__back_to_auth_setup") return;
-    const keyValue = await p25.password({
+    const keyValue = await p26.password({
       message: `${providerKey} value`,
       validate: (value) => {
         if (!value || String(value).trim().length === 0) return "Key value is required.";
       }
     });
-    if (p25.isCancel(keyValue)) return;
+    if (p26.isCancel(keyValue)) return;
     nextEnv[providerKey] = String(keyValue).trim();
   } else if (authAction === "clear-keys") {
     for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
       delete nextEnv[key];
     }
   }
-  const confirmed = await p25.confirm({
+  const confirmed = await p26.confirm({
     message: `Save Qwen Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
     initialValue: true
   });
-  if (p25.isCancel(confirmed) || !confirmed) return;
+  if (p26.isCancel(confirmed) || !confirmed) return;
   writeQwenCodeConfig({
     ...currentConfig,
     defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
@@ -30327,7 +31674,7 @@ async function runConfigureFlow(currentConfig) {
     binaryPath: String(binaryInput).trim() || currentConfig.binaryPath,
     env: nextEnv
   });
-  p25.log.success("Qwen Code config saved (including local auth storage updates).");
+  p26.log.success("Qwen Code config saved (including local auth storage updates).");
 }
 function registerQwenCodeCommands(program2) {
   const qwenCode = program2.command("qwen-code").description("Qwen Code CLI agent integration \u2014 health, prompt, interactive session");
@@ -30380,37 +31727,37 @@ function registerQwenCodeCommands(program2) {
 }
 
 // src/commands/t3code.ts
-import * as p27 from "@clack/prompts";
-import pc41 from "picocolors";
+import * as p28 from "@clack/prompts";
+import pc42 from "picocolors";
 
 // src/runtime/t3code/index.ts
 init_home();
-import fs41 from "node:fs";
-import path49 from "node:path";
+import fs45 from "node:fs";
+import path53 from "node:path";
 
 // src/runtime/agent-harness/harness-profile.ts
 init_home();
-import fs40 from "node:fs";
-import path48 from "node:path";
-import * as p26 from "@clack/prompts";
-import pc40 from "picocolors";
+import fs44 from "node:fs";
+import path52 from "node:path";
+import * as p27 from "@clack/prompts";
+import pc41 from "picocolors";
 function resolveProfileDir(harnessId) {
-  return path48.resolve(resolvePaperclipHomeDir(), harnessId);
+  return path52.resolve(resolvePaperclipHomeDir(), harnessId);
 }
 function resolveProfilePath(harnessId) {
-  return path48.resolve(resolveProfileDir(harnessId), "growthub-profile.json");
+  return path52.resolve(resolveProfileDir(harnessId), "growthub-profile.json");
 }
 function ensureSecureFile2(filePath) {
   try {
-    fs40.chmodSync(filePath, 384);
+    fs44.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (!fs40.existsSync(filePath)) return null;
+  if (!fs44.existsSync(filePath)) return null;
   try {
-    const raw = JSON.parse(fs40.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs44.readFileSync(filePath, "utf-8"));
     if (typeof raw.workspaceId !== "string" || typeof raw.machineLabel !== "string") return null;
     return {
       profileVersion: 1,
@@ -30428,67 +31775,67 @@ function readHarnessProfile(harnessId) {
 function writeHarnessProfile(harnessId, profile) {
   const dirPath = resolveProfileDir(harnessId);
   const filePath = resolveProfilePath(harnessId);
-  fs40.mkdirSync(dirPath, { recursive: true });
-  fs40.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
+  fs44.mkdirSync(dirPath, { recursive: true });
+  fs44.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
 `, "utf-8");
   ensureSecureFile2(filePath);
 }
 function clearHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (fs40.existsSync(filePath)) fs40.rmSync(filePath);
+  if (fs44.existsSync(filePath)) fs44.rmSync(filePath);
 }
 function buildProfileStatusLines(harnessId, harnessLabel, profile) {
   if (!profile) {
     return [
-      `${harnessLabel} Growthub Profile: ${pc40.yellow("not linked")}`,
+      `${harnessLabel} Growthub Profile: ${pc41.yellow("not linked")}`,
       "",
       `Link this harness to a Growthub workspace:`,
       `  growthub ${harnessId} profile link`
     ];
   }
   return [
-    `${harnessLabel} Growthub Profile: ${pc40.green("linked")}`,
+    `${harnessLabel} Growthub Profile: ${pc41.green("linked")}`,
     `  Workspace ID : ${profile.workspaceId}`,
     `  Machine      : ${profile.machineLabel}`,
-    `  Fork binary  : ${profile.forkBinaryPath ?? pc40.dim("(using default)")}`,
-    `  Fork kit     : ${profile.forkKitSlug ?? pc40.dim("(none)")}`,
+    `  Fork binary  : ${profile.forkBinaryPath ?? pc41.dim("(using default)")}`,
+    `  Fork kit     : ${profile.forkKitSlug ?? pc41.dim("(none)")}`,
     `  Linked at    : ${profile.linkedAt}`,
-    `  Last sync    : ${profile.lastSyncAt ?? pc40.dim("(never synced)")}`
+    `  Last sync    : ${profile.lastSyncAt ?? pc41.dim("(never synced)")}`
   ];
 }
 async function runProfileLinkFlow(harnessId, harnessLabel, existing) {
-  p26.intro(`${harnessLabel} \u2014 Link Growthub Profile`);
-  const workspaceId = await p26.text({
+  p27.intro(`${harnessLabel} \u2014 Link Growthub Profile`);
+  const workspaceId = await p27.text({
     message: "Growthub Workspace ID",
     placeholder: "ws_xxxxxxxxxxxxxxxx",
     defaultValue: existing?.workspaceId ?? "",
     validate: (v) => !v?.trim() ? "Workspace ID is required." : void 0
   });
-  if (p26.isCancel(workspaceId)) return null;
-  const machineLabel = await p26.text({
+  if (p27.isCancel(workspaceId)) return null;
+  const machineLabel = await p27.text({
     message: "Machine label (human-readable name for this machine)",
     placeholder: "my-macbook-pro",
     defaultValue: existing?.machineLabel ?? "",
     validate: (v) => !v?.trim() ? "Machine label is required." : void 0
   });
-  if (p26.isCancel(machineLabel)) return null;
-  const forkBinaryPath = await p26.text({
+  if (p27.isCancel(machineLabel)) return null;
+  const forkBinaryPath = await p27.text({
     message: "Fork binary path (optional \u2014 leave blank to use system default)",
     placeholder: "/path/to/fork/bin/t3",
     defaultValue: existing?.forkBinaryPath ?? ""
   });
-  if (p26.isCancel(forkBinaryPath)) return null;
-  const forkKitSlug = await p26.text({
+  if (p27.isCancel(forkBinaryPath)) return null;
+  const forkKitSlug = await p27.text({
     message: "Fork kit slug (optional \u2014 e.g. growthub-t3-v1)",
     placeholder: "growthub-t3-v1",
     defaultValue: existing?.forkKitSlug ?? ""
   });
-  if (p26.isCancel(forkKitSlug)) return null;
-  const confirmed = await p26.confirm({
+  if (p27.isCancel(forkKitSlug)) return null;
+  const confirmed = await p27.confirm({
     message: `Save profile? (workspace: ${String(workspaceId).trim()}, machine: ${String(machineLabel).trim()})`,
     initialValue: true
   });
-  if (p26.isCancel(confirmed) || !confirmed) return null;
+  if (p27.isCancel(confirmed) || !confirmed) return null;
   const profile = {
     profileVersion: 1,
     workspaceId: String(workspaceId).trim(),
@@ -30511,11 +31858,11 @@ function registerHarnessProfileCommands(harnessCommand, harnessId, harnessLabel)
     const existing = readHarnessProfile(harnessId);
     const profile = await runProfileLinkFlow(harnessId, harnessLabel, existing);
     if (!profile) {
-      p26.cancel("Profile link cancelled.");
+      p27.cancel("Profile link cancelled.");
       return;
     }
     writeHarnessProfile(harnessId, profile);
-    p26.log.success(`${harnessLabel} profile linked to workspace ${profile.workspaceId}.`);
+    p27.log.success(`${harnessLabel} profile linked to workspace ${profile.workspaceId}.`);
   });
   profileCmd.command("unlink").description("Remove the Growthub profile from this harness").action(async () => {
     const existing = readHarnessProfile(harnessId);
@@ -30523,16 +31870,16 @@ function registerHarnessProfileCommands(harnessCommand, harnessId, harnessLabel)
       console.log("No profile linked.");
       return;
     }
-    const confirmed = await p26.confirm({
+    const confirmed = await p27.confirm({
       message: `Remove Growthub profile for ${harnessLabel}? (workspace: ${existing.workspaceId})`,
       initialValue: false
     });
-    if (p26.isCancel(confirmed) || !confirmed) {
-      p26.cancel("Unlink cancelled.");
+    if (p27.isCancel(confirmed) || !confirmed) {
+      p27.cancel("Unlink cancelled.");
       return;
     }
     clearHarnessProfile(harnessId);
-    p26.log.success(`${harnessLabel} Growthub profile removed.`);
+    p27.log.success(`${harnessLabel} Growthub profile removed.`);
   });
   profileCmd.action(() => {
     const profile = readHarnessProfile(harnessId);
@@ -30562,7 +31909,7 @@ var DEFAULT_T3_CODE_CONFIG = {
 };
 
 // src/runtime/t3code/provider.ts
-import { spawn as spawn3, spawnSync as spawnSync3 } from "node:child_process";
+import { spawn as spawn3, spawnSync as spawnSync4 } from "node:child_process";
 async function executeHeadlessPrompt2(prompt, configOverride) {
   const config = { ...DEFAULT_T3_CODE_CONFIG, ...configOverride };
   const startMs = Date.now();
@@ -30614,12 +31961,12 @@ function launchInteractiveSession2(configOverride) {
     ...process.env,
     ...config.env
   };
-  const result = spawnSync3(config.binaryPath, args, { cwd: config.cwd, env, stdio: "inherit" });
+  const result = spawnSync4(config.binaryPath, args, { cwd: config.cwd, env, stdio: "inherit" });
   return { exitCode: result.status };
 }
 function detectT3Version(binaryPath = "t3") {
   try {
-    const result = spawnSync3(binaryPath, ["--version"], {
+    const result = spawnSync4(binaryPath, ["--version"], {
       timeout: 1e4,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -30716,19 +32063,19 @@ function writeT3GrowthubProfile(profile) {
   writeHarnessProfile(T3_HARNESS_ID, profile);
 }
 function resolveConfigPath5() {
-  return path49.resolve(resolvePaperclipHomeDir(), "t3code", "config.json");
+  return path53.resolve(resolvePaperclipHomeDir(), "t3code", "config.json");
 }
 function readT3CodeConfig() {
   const configPath = resolveConfigPath5();
   const storedCredentials = readHarnessCredentials(T3_HARNESS_ID);
-  if (!fs41.existsSync(configPath)) {
+  if (!fs45.existsSync(configPath)) {
     return {
       ...DEFAULT_T3_CODE_CONFIG,
       env: mergeHarnessEnv2(DEFAULT_T3_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs41.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs45.readFileSync(configPath, "utf-8"));
     const profile = readHarnessProfile(T3_HARNESS_ID);
     const resolvedBinaryPath = profile?.forkBinaryPath ?? (typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_T3_CODE_CONFIG.binaryPath);
     return {
@@ -30751,7 +32098,7 @@ function readT3CodeConfig() {
 }
 function writeT3CodeConfig(config) {
   const configPath = resolveConfigPath5();
-  fs41.mkdirSync(path49.dirname(configPath), { recursive: true });
+  fs45.mkdirSync(path53.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -30763,7 +32110,7 @@ function writeT3CodeConfig(config) {
     }
   }
   setHarnessCredentials(T3_HARNESS_ID, credentialUpdates);
-  fs41.writeFileSync(
+  fs45.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -30790,9 +32137,9 @@ async function runT3CodeHub(opts) {
     const config = readT3CodeConfig();
     const health = checkHealth2(config.binaryPath, config.env);
     const profile = readT3GrowthubProfile();
-    const statusHint = health.status === "available" ? pc41.green("ready") : health.status === "degraded" ? pc41.yellow("degraded") : pc41.red("unavailable");
-    const profileHint = profile ? pc41.green(`linked \u2192 ${profile.workspaceId}`) : pc41.dim("not linked");
-    const action = await p27.select({
+    const statusHint = health.status === "available" ? pc42.green("ready") : health.status === "degraded" ? pc42.yellow("degraded") : pc42.red("unavailable");
+    const profileHint = profile ? pc42.green(`linked \u2192 ${profile.workspaceId}`) : pc42.dim("not linked");
+    const action = await p28.select({
       message: `T3 Code CLI (${statusHint})`,
       options: [
         {
@@ -30823,36 +32170,36 @@ async function runT3CodeHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p27.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p28.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "health") {
       const env = detectEnvironment2(config.binaryPath, config.env);
       const guidance = buildSetupGuidance2(env);
-      p27.note(guidance.join("\n"), "T3 Code CLI \u2014 Setup Helper");
+      p28.note(guidance.join("\n"), "T3 Code CLI \u2014 Setup Helper");
       continue;
     }
     if (action === "prompt") {
       if (health.status === "unavailable") {
-        p27.note(health.summary, "T3 Code CLI unavailable");
+        p28.note(health.summary, "T3 Code CLI unavailable");
         continue;
       }
-      const rawPrompt = await p27.text({
+      const rawPrompt = await p28.text({
         message: "Enter prompt for T3 Code",
         placeholder: "Describe what you want to build or analyze..."
       });
-      if (p27.isCancel(rawPrompt)) continue;
+      if (p28.isCancel(rawPrompt)) continue;
       const prompt = String(rawPrompt).trim();
       if (!prompt) continue;
-      const runSpinner = p27.spinner();
+      const runSpinner = p28.spinner();
       runSpinner.start(`Running t3 -p (model: ${config.defaultModel})...`);
       const result = await executeHeadlessPrompt2(prompt, config);
       if (result.timedOut) {
         runSpinner.stop("Timed out.");
-        p27.note(`Process timed out after ${config.timeoutMs}ms.`, "Execution timeout");
+        p28.note(`Process timed out after ${config.timeoutMs}ms.`, "Execution timeout");
         continue;
       }
       if (result.exitCode !== 0) {
         runSpinner.stop(`Exited with code ${result.exitCode ?? "null"}.`);
-        if (result.stderr.trim()) p27.note(result.stderr.trim().slice(0, 2e3), "stderr");
+        if (result.stderr.trim()) p28.note(result.stderr.trim().slice(0, 2e3), "stderr");
         continue;
       }
       runSpinner.stop(`Completed (${result.durationMs}ms).`);
@@ -30865,10 +32212,10 @@ async function runT3CodeHub(opts) {
     }
     if (action === "session") {
       if (health.status === "unavailable") {
-        p27.note(health.summary, "T3 Code CLI unavailable");
+        p28.note(health.summary, "T3 Code CLI unavailable");
         continue;
       }
-      p27.note(
+      p28.note(
         [
           `Binary : ${config.binaryPath}`,
           `Model  : ${config.defaultModel}`,
@@ -30897,8 +32244,8 @@ async function runProfileHubFlow() {
   while (true) {
     const profile = readT3GrowthubProfile();
     const statusLines = buildProfileStatusLines(T3_HARNESS_ID, T3_HARNESS_LABEL, profile);
-    p27.note(statusLines.join("\n"), "T3 Code \u2014 Growthub Profile");
-    const action = await p27.select({
+    p28.note(statusLines.join("\n"), "T3 Code \u2014 Growthub Profile");
+    const action = await p28.select({
       message: "Profile actions",
       options: [
         {
@@ -30915,40 +32262,40 @@ async function runProfileHubFlow() {
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p27.isCancel(action) || action === "__back") return;
+    if (p28.isCancel(action) || action === "__back") return;
     if (action === "link") {
       const newProfile = await runProfileLinkFlow(T3_HARNESS_ID, T3_HARNESS_LABEL, profile);
       if (newProfile) {
         writeT3GrowthubProfile(newProfile);
-        p27.log.success(`T3 Code profile linked to workspace ${newProfile.workspaceId}.`);
+        p28.log.success(`T3 Code profile linked to workspace ${newProfile.workspaceId}.`);
       }
       continue;
     }
     if (action === "unlink") {
       if (!profile) {
-        p27.log.warn("No profile is currently linked.");
+        p28.log.warn("No profile is currently linked.");
         continue;
       }
-      const confirmed = await p27.confirm({
+      const confirmed = await p28.confirm({
         message: `Remove Growthub profile? (workspace: ${profile.workspaceId})`,
         initialValue: false
       });
-      if (!p27.isCancel(confirmed) && confirmed) {
+      if (!p28.isCancel(confirmed) && confirmed) {
         clearHarnessProfile(T3_HARNESS_ID);
-        p27.log.success("T3 Code Growthub profile removed.");
+        p28.log.success("T3 Code Growthub profile removed.");
       }
       continue;
     }
   }
 }
 async function runConfigureFlow2(currentConfig) {
-  const modelInput = await p27.text({
+  const modelInput = await p28.text({
     message: "Default model",
     placeholder: "claude-sonnet-4-6",
     defaultValue: currentConfig.defaultModel
   });
-  if (p27.isCancel(modelInput)) return;
-  const modeInput = await p27.select({
+  if (p28.isCancel(modelInput)) return;
+  const modeInput = await p28.select({
     message: "Approval mode",
     options: T3_CODE_APPROVAL_MODES.map((mode) => ({
       value: mode,
@@ -30957,14 +32304,14 @@ async function runConfigureFlow2(currentConfig) {
     })),
     initialValue: currentConfig.approvalMode
   });
-  if (p27.isCancel(modeInput)) return;
-  const binaryInput = await p27.text({
+  if (p28.isCancel(modeInput)) return;
+  const binaryInput = await p28.text({
     message: "Binary path",
     placeholder: "t3",
     defaultValue: currentConfig.binaryPath
   });
-  if (p27.isCancel(binaryInput)) return;
-  const authAction = await p27.select({
+  if (p28.isCancel(binaryInput)) return;
+  const authAction = await p28.select({
     message: "Authentication setup",
     options: [
       { value: "skip", label: "Skip auth changes", hint: "keep current key setup" },
@@ -30973,10 +32320,10 @@ async function runConfigureFlow2(currentConfig) {
     ],
     initialValue: "skip"
   });
-  if (p27.isCancel(authAction)) return;
+  if (p28.isCancel(authAction)) return;
   const nextEnv = { ...currentConfig.env };
   if (authAction === "set-key") {
-    const providerKey = await p27.select({
+    const providerKey = await p28.select({
       message: "Provider key variable",
       options: [
         ...T3_CODE_SUPPORTED_ENV_KEYS.map((key) => ({
@@ -30987,21 +32334,21 @@ async function runConfigureFlow2(currentConfig) {
         { value: "__back_to_auth_setup", label: "\u2190 Back to authentication setup" }
       ]
     });
-    if (p27.isCancel(providerKey) || providerKey === "__back_to_auth_setup") return;
-    const keyValue = await p27.password({
+    if (p28.isCancel(providerKey) || providerKey === "__back_to_auth_setup") return;
+    const keyValue = await p28.password({
       message: `${providerKey} value`,
       validate: (v) => !v?.trim() ? "Key value is required." : void 0
     });
-    if (p27.isCancel(keyValue)) return;
+    if (p28.isCancel(keyValue)) return;
     nextEnv[providerKey] = String(keyValue).trim();
   } else if (authAction === "clear-keys") {
     for (const key of T3_CODE_SUPPORTED_ENV_KEYS) delete nextEnv[key];
   }
-  const confirmed = await p27.confirm({
+  const confirmed = await p28.confirm({
     message: `Save T3 Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
     initialValue: true
   });
-  if (p27.isCancel(confirmed) || !confirmed) return;
+  if (p28.isCancel(confirmed) || !confirmed) return;
   writeT3CodeConfig({
     ...currentConfig,
     defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
@@ -31009,7 +32356,7 @@ async function runConfigureFlow2(currentConfig) {
     binaryPath: String(binaryInput).trim() || currentConfig.binaryPath,
     env: nextEnv
   });
-  p27.log.success("T3 Code config saved.");
+  p28.log.success("T3 Code config saved.");
 }
 function registerT3CodeCommands(program2) {
   const t3code = program2.command("t3code").description("T3 Code CLI agent harness \u2014 health, prompt, session, configure, profile");
@@ -31061,8 +32408,8 @@ init_github();
 
 // src/commands/integrations.ts
 init_bridge();
-import * as p29 from "@clack/prompts";
-import pc43 from "picocolors";
+import * as p30 from "@clack/prompts";
+import pc44 from "picocolors";
 async function integrationsStatus(opts = {}) {
   const status = await describeIntegrationBridge();
   if (opts.json) {
@@ -31070,22 +32417,22 @@ async function integrationsStatus(opts = {}) {
     return;
   }
   if (!status.growthubConnected) {
-    p29.log.warn(status.notice ?? "Not logged into Growthub.");
+    p30.log.warn(status.notice ?? "Not logged into Growthub.");
     return;
   }
-  p29.log.message(`Growthub: ${pc43.green("connected")}  as ${status.growthubLogin ?? "?"}`);
+  p30.log.message(`Growthub: ${pc44.green("connected")}  as ${status.growthubLogin ?? "?"}`);
   if (!status.bridgeAvailable) {
-    p29.log.info(status.notice ?? "Hosted integrations endpoint not available.");
+    p30.log.info(status.notice ?? "Hosted integrations endpoint not available.");
     return;
   }
   if (status.integrations.length === 0) {
-    p29.log.info("No first-party integrations connected in your Growthub account.");
+    p30.log.info("No first-party integrations connected in your Growthub account.");
     return;
   }
   for (const i of status.integrations) {
-    const ready = i.ready ? pc43.green("ready") : pc43.yellow("reauth needed");
-    p29.log.message(
-      `  \u2022 ${pc43.cyan(i.provider)}  ${ready}  handle=${i.handle ?? "?"}  scopes=[${(i.scopes ?? []).join(", ")}]`
+    const ready = i.ready ? pc44.green("ready") : pc44.yellow("reauth needed");
+    p30.log.message(
+      `  \u2022 ${pc44.cyan(i.provider)}  ${ready}  handle=${i.handle ?? "?"}  scopes=[${(i.scopes ?? []).join(", ")}]`
     );
   }
 }
@@ -31096,11 +32443,11 @@ async function integrationsList(opts = {}) {
     return;
   }
   if (integrations.length === 0) {
-    p29.log.info("No first-party integrations connected in your Growthub account.");
+    p30.log.info("No first-party integrations connected in your Growthub account.");
     return;
   }
   for (const i of integrations) {
-    p29.log.message(`${pc43.cyan(i.provider)}  ${i.handle ?? ""}  (ready=${i.ready})`);
+    p30.log.message(`${pc44.cyan(i.provider)}  ${i.handle ?? ""}  (ready=${i.ready})`);
   }
 }
 async function integrationsProbe(opts) {
@@ -31117,13 +32464,13 @@ async function integrationsProbe(opts) {
     return;
   }
   if (!cred) {
-    p29.log.warn(
+    p30.log.warn(
       `Unable to resolve a credential for '${opts.provider}' via the Growthub bridge. Ensure you are logged into Growthub and the integration is connected in gh-app.`
     );
     return;
   }
-  p29.log.success(
-    `Resolved ${pc43.cyan(opts.provider)} credential via ${cred.source}  handle=${cred.handle ?? "?"}  scopes=[${(cred.scopes ?? []).join(", ")}]`
+  p30.log.success(
+    `Resolved ${pc44.cyan(opts.provider)} credential via ${cred.source}  handle=${cred.handle ?? "?"}  scopes=[${(cred.scopes ?? []).join(", ")}]`
   );
 }
 function registerIntegrationsCommands(program2) {
@@ -31140,21 +32487,21 @@ function registerIntegrationsCommands(program2) {
 }
 
 // src/commands/status.ts
-import * as p30 from "@clack/prompts";
-import pc44 from "picocolors";
+import * as p31 from "@clack/prompts";
+import pc45 from "picocolors";
 
 // src/status/probes.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
-import fs42 from "node:fs";
-import path50 from "node:path";
+import { spawnSync as spawnSync5 } from "node:child_process";
+import fs46 from "node:fs";
+import path54 from "node:path";
 var GITHUB_API = "https://api.github.com";
 var NPM_REGISTRY = "https://registry.npmjs.org";
 function isoNow() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
-async function withTimeout(p35, ms, label) {
+async function withTimeout(p36, ms, label) {
   return await Promise.race([
-    p35,
+    p36,
     new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timeout`)), ms))
   ]);
 }
@@ -31310,8 +32657,8 @@ async function probeGithubDirectAuth(_timeoutMs) {
 async function probeKitForksIndex(_timeoutMs) {
   try {
     const { resolveKitForksIndexPath: resolveKitForksIndexPath2 } = await Promise.resolve().then(() => (init_kit_forks_home(), kit_forks_home_exports));
-    const p35 = resolveKitForksIndexPath2();
-    if (!fs42.existsSync(p35)) {
+    const p36 = resolveKitForksIndexPath2();
+    if (!fs46.existsSync(p36)) {
       return {
         componentId: "kit-forks-index",
         level: "operational",
@@ -31319,14 +32666,14 @@ async function probeKitForksIndex(_timeoutMs) {
         lastCheckedAt: isoNow()
       };
     }
-    const parsed = JSON.parse(fs42.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs46.readFileSync(p36, "utf8"));
     const count = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
     return {
       componentId: "kit-forks-index",
       level: "operational",
       summary: `${count} fork(s) registered locally.`,
       lastCheckedAt: isoNow(),
-      detail: { indexPath: p35, count }
+      detail: { indexPath: p36, count }
     };
   } catch (err) {
     return {
@@ -31359,7 +32706,7 @@ async function probeBundledKits(_timeoutMs) {
 }
 async function probeGit(_timeoutMs) {
   try {
-    const res = spawnSync4("git", ["--version"], { encoding: "utf8" });
+    const res = spawnSync5("git", ["--version"], { encoding: "utf8" });
     const ok = res.status === 0 && (res.stdout ?? "").includes("git version");
     return {
       componentId: "local-git",
@@ -31388,10 +32735,10 @@ async function probeNode(_timeoutMs) {
   };
 }
 async function probeReleaseBundleArtifacts(_timeoutMs) {
-  const distPath = path50.resolve(process.cwd(), "cli/dist/index.js");
-  const installerPath = path50.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
-  const distOk = fs42.existsSync(distPath);
-  const installerOk = fs42.existsSync(installerPath);
+  const distPath = path54.resolve(process.cwd(), "cli/dist/index.js");
+  const installerPath = path54.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
+  const distOk = fs46.existsSync(distPath);
+  const installerOk = fs46.existsSync(installerPath);
   const ok = distOk && installerOk;
   return {
     componentId: "release-bundle",
@@ -31574,25 +32921,25 @@ async function runStatuspageReport(opts = {}) {
 function levelGlyph(level) {
   switch (level) {
     case "operational":
-      return pc44.green("\u25CF");
+      return pc45.green("\u25CF");
     case "degraded":
-      return pc44.yellow("\u25CF");
+      return pc45.yellow("\u25CF");
     case "outage":
-      return pc44.red("\u25CF");
+      return pc45.red("\u25CF");
     default:
-      return pc44.dim("\u25CB");
+      return pc45.dim("\u25CB");
   }
 }
 function overallBanner(report) {
   switch (report.overallLevel) {
     case "operational":
-      return pc44.green("\u2713 All systems operational");
+      return pc45.green("\u2713 All systems operational");
     case "degraded":
-      return pc44.yellow("\u26A0 Degraded \u2014 non-critical issues detected");
+      return pc45.yellow("\u26A0 Degraded \u2014 non-critical issues detected");
     case "outage":
-      return pc44.red("\u2717 Outage \u2014 at least one critical component is down");
+      return pc45.red("\u2717 Outage \u2014 at least one critical component is down");
     default:
-      return pc44.dim("? Status indeterminate");
+      return pc45.dim("? Status indeterminate");
   }
 }
 function renderHuman(report) {
@@ -31602,15 +32949,15 @@ function renderHuman(report) {
     bucket.push(c);
     byCategory.set(c.category, bucket);
   }
-  p30.log.message(`${overallBanner(report)}  ${pc44.dim(`(${report.summary})`)}`);
+  p31.log.message(`${overallBanner(report)}  ${pc45.dim(`(${report.summary})`)}`);
   for (const [category, list] of byCategory) {
-    p30.log.message(pc44.cyan(`
+    p31.log.message(pc45.cyan(`
   ${category}`));
     for (const c of list) {
-      const crit = c.critical ? pc44.red("!") : pc44.dim("\xB7");
-      const lat = c.latencyMs !== void 0 ? pc44.dim(` ${c.latencyMs}ms`) : "";
-      const sa = c.superAdminOnly ? pc44.magenta(" [super-admin]") : "";
-      p30.log.message(`    ${levelGlyph(c.level)} ${crit} ${c.label.padEnd(30)} ${c.summary}${lat}${sa}`);
+      const crit = c.critical ? pc45.red("!") : pc45.dim("\xB7");
+      const lat = c.latencyMs !== void 0 ? pc45.dim(` ${c.latencyMs}ms`) : "";
+      const sa = c.superAdminOnly ? pc45.magenta(" [super-admin]") : "";
+      p31.log.message(`    ${levelGlyph(c.level)} ${crit} ${c.label.padEnd(30)} ${c.summary}${lat}${sa}`);
     }
   }
 }
@@ -31636,8 +32983,8 @@ function registerStatusCommands(program2) {
 }
 
 // src/commands/starter.ts
-import * as p31 from "@clack/prompts";
-import pc45 from "picocolors";
+import * as p32 from "@clack/prompts";
+import pc46 from "picocolors";
 import { pathToFileURL as pathToFileURL3 } from "node:url";
 init_init();
 init_table_renderer();
@@ -31651,16 +32998,16 @@ async function runStarterInit(opts) {
       console.log(JSON.stringify({ status: "ok", ...result }, null, 2));
       return;
     }
-    p31.outro(
-      `Workspace scaffolded at ${pc45.cyan(result.forkPath)}
+    p32.outro(
+      `Workspace scaffolded at ${pc46.cyan(result.forkPath)}
   kitId:       ${result.kitId}
-  forkId:      ${pc45.cyan(result.forkId)}
+  forkId:      ${pc46.cyan(result.forkId)}
   baseVersion: ${result.baseVersion}
   open:        ${folderOpenLabel2(result.forkPath)}
   policyMode:  remoteSyncMode=${result.policyMode}` + (result.remote ? `
-  remote:      ${pc45.cyan(result.remote.htmlUrl)}` : "") + `
+  remote:      ${pc46.cyan(result.remote.htmlUrl)}` : "") + `
 
-Next: ${pc45.dim(`growthub kit fork status ${result.forkId}`)}`
+Next: ${pc46.dim(`growthub kit fork status ${result.forkId}`)}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -31669,7 +33016,7 @@ Next: ${pc45.dim(`growthub kit fork status ${result.forkId}`)}`
       process.exitCode = 1;
       return;
     }
-    p31.log.error(msg);
+    p32.log.error(msg);
     process.exitCode = 1;
   }
 }
@@ -31701,21 +33048,21 @@ function renderJob(job) {
 }
 async function promptConfirmations(pending, securitySummary) {
   if (securitySummary) {
-    p31.log.warn(`Security report: ${securitySummary}`);
+    p32.log.warn(`Security report: ${securitySummary}`);
   }
-  p31.log.info(
+  p32.log.info(
     `Agent parked on ${pending.length} confirmation(s): ${pending.join(", ")}`
   );
-  const first = await p31.confirm({
+  const first = await p32.confirm({
     message: "Acknowledge the security report and proceed?",
     initialValue: false
   });
-  if (p31.isCancel(first) || first !== true) return null;
-  const second = await p31.confirm({
+  if (p32.isCancel(first) || first !== true) return null;
+  const second = await p32.confirm({
     message: "Second confirmation \u2014 materialize the workspace now?",
     initialValue: false
   });
-  if (p31.isCancel(second) || second !== true) return null;
+  if (p32.isCancel(second) || second !== true) return null;
   return pending;
 }
 async function runSourceImportCommand(opts) {
@@ -31726,7 +33073,7 @@ async function runSourceImportCommand(opts) {
   try {
     const onProgressFromInput = input.onProgress;
     const onProgress = (step) => {
-      if (!json) p31.log.step(step);
+      if (!json) p32.log.step(step);
       onProgressFromInput?.(step);
     };
     const { job, result } = await importSourceAsWorkspace({
@@ -31749,7 +33096,7 @@ async function runSourceImportCommand(opts) {
       const summary = job.plan?.security ? job.plan.security.summaryLines.join(" | ") : void 0;
       const acked = await promptConfirmations(pending, summary);
       if (!acked) {
-        p31.log.warn("Import aborted \u2014 confirmations not provided.");
+        p32.log.warn("Import aborted \u2014 confirmations not provided.");
         return;
       }
       const resumed = await confirmAndResumeSourceImportJob({
@@ -31763,7 +33110,7 @@ async function runSourceImportCommand(opts) {
       });
       if (!resumed || resumed.status !== "completed" || !resumed.result) {
         const msg = resumed?.error ?? "Import did not complete.";
-        p31.log.error(msg);
+        p32.log.error(msg);
         process.exitCode = 1;
         return;
       }
@@ -31776,7 +33123,7 @@ async function runSourceImportCommand(opts) {
       if (json) {
         console.log(JSON.stringify({ status: "error", error: msg, job: renderJob(job) }, null, 2));
       } else {
-        p31.log.error(msg);
+        p32.log.error(msg);
       }
       process.exitCode = 1;
       return;
@@ -31793,7 +33140,7 @@ async function runSourceImportCommand(opts) {
     if (json) {
       console.log(JSON.stringify({ status: "error", error: msg }));
     } else {
-      p31.log.error(msg);
+      p32.log.error(msg);
     }
     process.exitCode = 1;
   }
@@ -31805,20 +33152,20 @@ function finalizeSuccess(result, jobId) {
   );
   printActivationNudge("import_completed");
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
-  p31.outro(
-    `Imported ${sourceLine} into ${pc45.cyan(result.forkPath)}
-  jobId:       ${pc45.cyan(jobId)}
+  p32.outro(
+    `Imported ${sourceLine} into ${pc46.cyan(result.forkPath)}
+  jobId:       ${pc46.cyan(jobId)}
   importId:    ${result.importId}
-  forkId:      ${pc45.cyan(result.forkId)}
+  forkId:      ${pc46.cyan(result.forkId)}
   kitId:       ${result.kitId}
   sourceKind:  ${result.sourceKind}
   importMode:  ${result.importMode}
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager} confidence=${result.detection.confidence}
   security:    ${formatSecuritySummary(result)}
-  summary:     ${pc45.dim(result.summaryPath)}
-  manifest:    ${pc45.dim(result.manifestPath)}
+  summary:     ${pc46.dim(result.summaryPath)}
+  manifest:    ${pc46.dim(result.manifestPath)}
 
-Next: ${pc45.dim(`growthub kit fork status ${result.forkId}`)}`
+Next: ${pc46.dim(`growthub kit fork status ${result.forkId}`)}`
   );
 }
 function scopeLabel(scope) {
@@ -31839,12 +33186,12 @@ async function runBrowseSkills(opts) {
       return;
     }
     if (result.entries.length === 0) {
-      p31.log.info(
+      p32.log.info(
         `No skills matched in ${scopeLabel(result.scope)} (page ${result.page}, pageSize ${result.pageSize}).`
       );
       return;
     }
-    p31.log.info(
+    p32.log.info(
       `skills.sh \u2014 ${scopeLabel(result.scope)} \xB7 page ${result.page} \xB7 ${result.total ?? "?"} matching result(s)`
     );
     console.log(
@@ -31866,14 +33213,14 @@ async function runBrowseSkills(opts) {
       })
     );
     for (const entry of result.entries) {
-      p31.log.message(`${pc45.bold(entry.skillId)}  ${pc45.dim(entry.htmlUrl)}`);
+      p32.log.message(`${pc46.bold(entry.skillId)}  ${pc46.dim(entry.htmlUrl)}`);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (opts.json) {
       console.log(JSON.stringify({ status: "error", error: msg }));
     } else {
-      p31.log.error(msg);
+      p32.log.error(msg);
     }
     process.exitCode = 1;
   }
@@ -31945,22 +33292,22 @@ function registerStarterCommands(program2) {
 
 // src/commands/skills.ts
 init_catalog2();
-import fs55 from "node:fs";
-import path63 from "node:path";
-import pc46 from "picocolors";
+import fs59 from "node:fs";
+import path67 from "node:path";
+import pc47 from "picocolors";
 
 // src/skills/session-memory.ts
 init_frontmatter();
-import fs54 from "node:fs";
-import path62 from "node:path";
+import fs58 from "node:fs";
+import path66 from "node:path";
 var PROJECT_MD_RELATIVE2 = ".growthub-fork/project.md";
 function resolveProjectMdPath(forkPath) {
-  return path62.resolve(forkPath, PROJECT_MD_RELATIVE2);
+  return path66.resolve(forkPath, PROJECT_MD_RELATIVE2);
 }
 function readSessionMemory(forkPath) {
   const projectMdPath = resolveProjectMdPath(forkPath);
-  if (!fs54.existsSync(projectMdPath)) return null;
-  const raw = fs54.readFileSync(projectMdPath, "utf8");
+  if (!fs58.existsSync(projectMdPath)) return null;
+  const raw = fs58.readFileSync(projectMdPath, "utf8");
   const sizeBytes = Buffer.byteLength(raw, "utf8");
   try {
     const { frontmatter, body } = readFrontmatter(raw);
@@ -31977,10 +33324,10 @@ init_fork_trace();
 init_kit_forks_home();
 init_table_renderer();
 function readLocalForkHead(forkPath) {
-  const p35 = resolveInForkRegistrationPath(forkPath);
-  if (!fs55.existsSync(p35)) return null;
+  const p36 = resolveInForkRegistrationPath(forkPath);
+  if (!fs59.existsSync(p36)) return null;
   try {
-    const parsed = JSON.parse(fs55.readFileSync(p35, "utf8"));
+    const parsed = JSON.parse(fs59.readFileSync(p36, "utf8"));
     if (typeof parsed.forkId !== "string" || typeof parsed.kitId !== "string") return null;
     return { forkId: parsed.forkId, kitId: parsed.kitId };
   } catch {
@@ -31988,7 +33335,7 @@ function readLocalForkHead(forkPath) {
   }
 }
 function resolveRoot(optRoot) {
-  if (optRoot) return path63.resolve(optRoot);
+  if (optRoot) return path67.resolve(optRoot);
   return process.cwd();
 }
 function runList(opts) {
@@ -32010,13 +33357,13 @@ function runList(opts) {
     return;
   }
   if (result.entries.length === 0) {
-    console.log(pc46.dim(`No SKILL.md found under ${result.catalog.root}`));
+    console.log(pc47.dim(`No SKILL.md found under ${result.catalog.root}`));
     return;
   }
   const rows = result.entries.map((e) => ({
     name: e.manifest.name,
     source: e.source,
-    skillPath: path63.relative(result.catalog.root ?? "", e.skillPath),
+    skillPath: path67.relative(result.catalog.root ?? "", e.skillPath),
     triggers: e.manifest.triggers?.length ?? 0,
     helpers: e.manifest.helpers?.length ?? 0,
     subSkills: e.manifest.subSkills?.length ?? 0,
@@ -32036,9 +33383,9 @@ function runList(opts) {
   }));
   if (result.warnings.length > 0) {
     console.log("");
-    console.log(pc46.yellow(`${result.warnings.length} warning(s):`));
+    console.log(pc47.yellow(`${result.warnings.length} warning(s):`));
     for (const w of result.warnings) {
-      console.log(pc46.yellow(`  - ${path63.relative(result.catalog.root ?? "", w.skillPath)}: ${w.reason}`));
+      console.log(pc47.yellow(`  - ${path67.relative(result.catalog.root ?? "", w.skillPath)}: ${w.reason}`));
     }
   }
 }
@@ -32065,10 +33412,10 @@ function runValidate(opts) {
         severity: "error"
       });
     }
-    const skillDir = path63.dirname(entry.skillPath);
+    const skillDir = path67.dirname(entry.skillPath);
     for (const helper of m.helpers ?? []) {
-      const helperPath = path63.resolve(skillDir, helper.path);
-      if (!fs55.existsSync(helperPath)) {
+      const helperPath = path67.resolve(skillDir, helper.path);
+      if (!fs59.existsSync(helperPath)) {
         issues2.push({
           skillPath: entry.skillPath,
           reason: `helpers[].path missing on disk: ${helper.path}`,
@@ -32077,8 +33424,8 @@ function runValidate(opts) {
       }
     }
     for (const sub of m.subSkills ?? []) {
-      const subPath = path63.resolve(skillDir, sub.path);
-      if (!fs55.existsSync(subPath)) {
+      const subPath = path67.resolve(skillDir, sub.path);
+      if (!fs59.existsSync(subPath)) {
         issues2.push({
           skillPath: entry.skillPath,
           reason: `subSkills[].path missing on disk: ${sub.path}`,
@@ -32108,14 +33455,14 @@ function runValidate(opts) {
     process.exitCode = issues2.filter((i) => i.severity === "error").length === 0 ? 0 : 1;
     return;
   }
-  console.log(pc46.bold(`Validated ${result.entries.length} skill(s) under ${root}`));
+  console.log(pc47.bold(`Validated ${result.entries.length} skill(s) under ${root}`));
   if (issues2.length === 0) {
-    console.log(pc46.green("OK \u2014 no issues."));
+    console.log(pc47.green("OK \u2014 no issues."));
     return;
   }
   for (const issue of issues2) {
-    const rel = path63.relative(root, issue.skillPath);
-    const tag = issue.severity === "error" ? pc46.red("[error]  ") : pc46.yellow("[warning]");
+    const rel = path67.relative(root, issue.skillPath);
+    const tag = issue.severity === "error" ? pc47.red("[error]  ") : pc47.yellow("[warning]");
     console.log(`${tag} ${rel}: ${issue.reason}`);
   }
   const errors = issues2.filter((i) => i.severity === "error").length;
@@ -32136,7 +33483,7 @@ function runSessionInit(opts) {
       console.log(JSON.stringify({ status: "error", error: err }));
       process.exitCode = 1;
     } else {
-      console.error(pc46.red(err));
+      console.error(pc47.red(err));
       process.exitCode = 1;
     }
     return;
@@ -32166,13 +33513,13 @@ function runSessionInit(opts) {
     return;
   }
   if (result.written) {
-    console.log(pc46.green(`Seeded ${path63.relative(forkPath, result.projectMdPath)}`));
+    console.log(pc47.green(`Seeded ${path67.relative(forkPath, result.projectMdPath)}`));
   } else if (!result.templatePath) {
-    console.log(pc46.yellow(
+    console.log(pc47.yellow(
       `Kit tree does not ship templates/project.md \u2014 this kit has not been upgraded to the v1.2 primitives yet. No seed written; session memory can still be maintained manually.`
     ));
   } else {
-    console.log(pc46.dim(`${path63.relative(forkPath, result.projectMdPath)} already present; left untouched.`));
+    console.log(pc47.dim(`${path67.relative(forkPath, result.projectMdPath)} already present; left untouched.`));
   }
 }
 function runSessionShow(opts) {
@@ -32185,7 +33532,7 @@ function runSessionShow(opts) {
       process.exitCode = 1;
       return;
     }
-    console.error(pc46.yellow(err));
+    console.error(pc47.yellow(err));
     process.exitCode = 1;
     return;
   }
@@ -32202,8 +33549,8 @@ function runSessionShow(opts) {
     ));
     return;
   }
-  console.log(pc46.bold(head.path));
-  console.log(pc46.dim(`${head.sizeBytes} bytes`));
+  console.log(pc47.bold(head.path));
+  console.log(pc47.dim(`${head.sizeBytes} bytes`));
   if (head.frontmatter) {
     for (const [k, v] of Object.entries(head.frontmatter)) {
       if (Array.isArray(v)) {
@@ -32220,7 +33567,7 @@ function runSessionShow(opts) {
     console.log(head.body);
   } else {
     console.log("");
-    console.log(pc46.dim("(pass --body to print the markdown body)"));
+    console.log(pc47.dim("(pass --body to print the markdown body)"));
   }
 }
 function registerSkillsCommands(program2) {
@@ -32234,12 +33581,12 @@ function registerSkillsCommands(program2) {
 
 // src/commands/fleet.ts
 init_fork_registry();
-import * as p32 from "@clack/prompts";
-import pc47 from "picocolors";
+import * as p33 from "@clack/prompts";
+import pc48 from "picocolors";
 
 // src/fleet/summary.ts
 init_fork_registry();
-import fs56 from "node:fs";
+import fs60 from "node:fs";
 init_fork_policy();
 init_fork_trace();
 function classifyHealth(drift, pendingConfirmationJobs, lastJobStatus) {
@@ -32259,7 +33606,7 @@ var REMOTE_EVENT_TYPES = /* @__PURE__ */ new Set([
   "conflict_encountered"
 ]);
 function buildForkSummary(reg) {
-  if (!fs56.existsSync(reg.forkPath)) {
+  if (!fs60.existsSync(reg.forkPath)) {
     return {
       forkId: reg.forkId,
       kitId: reg.kitId,
@@ -32402,33 +33749,33 @@ function buildDriftArtifactSummary(report, plan, policy) {
     }
   }
   for (const action of plan.actions) {
-    const p35 = action.targetPath;
-    if (isUntouchable(policy, p35)) {
-      skippedUntouchable.push({ path: p35, note: "Untouchable per policy.untouchablePaths." });
+    const p36 = action.targetPath;
+    if (isUntouchable(policy, p36)) {
+      skippedUntouchable.push({ path: p36, note: "Untouchable per policy.untouchablePaths." });
       continue;
     }
     if (action.needsConfirmation) {
       needsConfirmation.push({
-        path: p35,
+        path: p36,
         note: action.confirmationReason ?? "Policy requires explicit confirmation."
       });
       continue;
     }
     switch (action.actionType) {
       case "add_file":
-        safeAdditions.push({ path: p35, note: "Upstream scaffold absent from fork \u2014 safe to add." });
+        safeAdditions.push({ path: p36, note: "Upstream scaffold absent from fork \u2014 safe to add." });
         break;
       case "update_package_json_deps":
-        safeUpdates.push({ path: p35, note: "Dependency merge (additive-only)." });
+        safeUpdates.push({ path: p36, note: "Dependency merge (additive-only)." });
         break;
       case "patch_manifest":
-        safeUpdates.push({ path: p35, note: "kit.json alignment field patch (safe allow-list)." });
+        safeUpdates.push({ path: p36, note: "kit.json alignment field patch (safe allow-list)." });
         break;
       case "skip_user_modified":
-        skippedUserModified.push({ path: p35, note: "Preserved \u2014 user has modified this file." });
+        skippedUserModified.push({ path: p36, note: "Preserved \u2014 user has modified this file." });
         break;
       case "add_custom_skill":
-        customSkills.push({ path: p35, note: "User-authored custom skill \u2014 preserved unchanged." });
+        customSkills.push({ path: p36, note: "User-authored custom skill \u2014 preserved unchanged." });
         break;
     }
   }
@@ -32568,17 +33915,17 @@ init_fork_policy();
 function healthGlyph(level) {
   switch (level) {
     case "clean":
-      return pc47.green("\u25CF");
+      return pc48.green("\u25CF");
     case "drift-minor":
-      return pc47.cyan("\u25CF");
+      return pc48.cyan("\u25CF");
     case "drift-major":
-      return pc47.yellow("\u25CF");
+      return pc48.yellow("\u25CF");
     case "awaiting-confirmation":
-      return pc47.magenta("\u25D0");
+      return pc48.magenta("\u25D0");
     case "error":
-      return pc47.red("\u25CF");
+      return pc48.red("\u25CF");
     default:
-      return pc47.dim("\u25CB");
+      return pc48.dim("\u25CB");
   }
 }
 function truncate4(s, n) {
@@ -32591,14 +33938,14 @@ async function fleetView(opts) {
     console.log(JSON.stringify(fleet, null, 2));
     return;
   }
-  p32.log.message(
-    `Fleet: ${pc47.cyan(String(fleet.totalForks))} fork(s)  |  remote=${fleet.forksWithRemote}  awaiting=${fleet.forksAwaitingConfirmation}  pending-approvals=${fleet.pendingApprovalCount}`
+  p33.log.message(
+    `Fleet: ${pc48.cyan(String(fleet.totalForks))} fork(s)  |  remote=${fleet.forksWithRemote}  awaiting=${fleet.forksAwaitingConfirmation}  pending-approvals=${fleet.pendingApprovalCount}`
   );
-  p32.log.message(
+  p33.log.message(
     `  Health \u2192 clean=${fleet.byHealth.clean}  drift-minor=${fleet.byHealth["drift-minor"]}  drift-major=${fleet.byHealth["drift-major"]}  awaiting=${fleet.byHealth["awaiting-confirmation"]}  error=${fleet.byHealth.error}  unknown=${fleet.byHealth.unknown}`
   );
   if (fleet.forks.length === 0) {
-    p32.log.info("No forks registered yet. Run `growthub kit fork register` or `growthub starter init`.");
+    p33.log.info("No forks registered yet. Run `growthub kit fork register` or `growthub starter init`.");
     return;
   }
   for (const f of fleet.forks) renderForkRow(f);
@@ -32609,10 +33956,10 @@ function renderForkRow(f) {
   const base = f.baseVersion.padEnd(8);
   const upstream = (f.upstreamVersion ?? "?").padEnd(8);
   const driftCounts = `files=${f.fileDriftCount} pkgs=${f.packageDriftCount}`;
-  const pending = f.pendingConfirmationJobs > 0 ? pc47.magenta(` awaits=${f.pendingConfirmationJobs}`) : "";
-  const remote = f.remote ? pc47.dim(` ${f.remote.owner}/${f.remote.repo}`) : "";
-  p32.log.message(
-    `  ${healthGlyph(f.health)} ${label}  ${pc47.dim(kit)}  ${base} \u2192 ${upstream}  ${pc47.dim(driftCounts)}${pending}${remote}`
+  const pending = f.pendingConfirmationJobs > 0 ? pc48.magenta(` awaits=${f.pendingConfirmationJobs}`) : "";
+  const remote = f.remote ? pc48.dim(` ${f.remote.owner}/${f.remote.repo}`) : "";
+  p33.log.message(
+    `  ${healthGlyph(f.health)} ${label}  ${pc48.dim(kit)}  ${base} \u2192 ${upstream}  ${pc48.dim(driftCounts)}${pending}${remote}`
   );
 }
 async function fleetDrift(opts) {
@@ -32626,14 +33973,14 @@ async function fleetDrift(opts) {
     }, null, 2));
     return;
   }
-  p32.log.message(
-    `Fleet drift: ${pc47.cyan(String(withDrift.length))} of ${fleet.totalForks} fork(s) have drift.`
+  p33.log.message(
+    `Fleet drift: ${pc48.cyan(String(withDrift.length))} of ${fleet.totalForks} fork(s) have drift.`
   );
-  p32.log.message(
+  p33.log.message(
     `  By severity \u2192 none=${fleet.bySeverity.none}  info=${fleet.bySeverity.info}  warning=${fleet.bySeverity.warning}  critical=${fleet.bySeverity.critical}`
   );
   for (const f of withDrift) renderForkRow(f);
-  if (withDrift.length === 0) p32.log.success("No drift detected across the fleet.");
+  if (withDrift.length === 0) p33.log.success("No drift detected across the fleet.");
 }
 async function fleetDriftSummary(opts) {
   const reg = listKitForkRegistrations().find((r) => r.forkId === opts.forkId);
@@ -32647,8 +33994,8 @@ async function fleetDriftSummary(opts) {
     console.log(JSON.stringify({ summary, narrative }, null, 2));
     return;
   }
-  p32.log.message(pc47.cyan(`Drift summary \u2014 ${reg.forkId}  (${summary.fromVersion} \u2192 ${summary.toVersion})`));
-  for (const line of narrative) p32.log.message(`  ${line}`);
+  p33.log.message(pc48.cyan(`Drift summary \u2014 ${reg.forkId}  (${summary.fromVersion} \u2192 ${summary.toVersion})`));
+  for (const line of narrative) p33.log.message(`  ${line}`);
   const sections = [
     ["safe additions", summary.buckets.safeAdditions],
     ["safe updates", summary.buckets.safeUpdates],
@@ -32660,16 +34007,16 @@ async function fleetDriftSummary(opts) {
   ];
   for (const [label, items] of sections) {
     if (items.length === 0) continue;
-    p32.log.message(pc47.dim(`  \u2014 ${label} (${items.length}) \u2014`));
-    for (const item of items) p32.log.message(`    \xB7 ${item.path}  ${pc47.dim(item.note)}`);
+    p33.log.message(pc48.dim(`  \u2014 ${label} (${items.length}) \u2014`));
+    for (const item of items) p33.log.message(`    \xB7 ${item.path}  ${pc48.dim(item.note)}`);
   }
   if (summary.buckets.packageAdditions.length || summary.buckets.packageUpgrades.length) {
-    p32.log.message(pc47.dim(`  \u2014 dependency drift \u2014`));
+    p33.log.message(pc48.dim(`  \u2014 dependency drift \u2014`));
     for (const d of summary.buckets.packageAdditions) {
-      p32.log.message(`    + ${d.packageName}@${d.toVersion}  ${pc47.dim("(added upstream)")}`);
+      p33.log.message(`    + ${d.packageName}@${d.toVersion}  ${pc48.dim("(added upstream)")}`);
     }
     for (const d of summary.buckets.packageUpgrades) {
-      p32.log.message(`    \u2191 ${d.packageName}  ${d.fromVersion ?? "?"} \u2192 ${d.toVersion}`);
+      p33.log.message(`    \u2191 ${d.packageName}  ${d.fromVersion ?? "?"} \u2192 ${d.toVersion}`);
     }
   }
 }
@@ -32692,15 +34039,15 @@ async function fleetPolicy(opts) {
     console.log(JSON.stringify({ count: rows.length, rows }, null, 2));
     return;
   }
-  p32.log.message(pc47.cyan(`Fleet policy matrix (${rows.length} fork(s))`));
+  p33.log.message(pc48.cyan(`Fleet policy matrix (${rows.length} fork(s))`));
   for (const r of rows) {
     const label = truncate4(r.label ?? r.forkId, 28).padEnd(28);
     const aa = r.autoApprove.padEnd(9);
     const ad = r.autoApproveDepUpdates.padEnd(9);
     const rs = r.remoteSyncMode.padEnd(6);
     const ut = String(r.untouchableCount).padStart(3);
-    const remote = r.hasRemote ? pc47.green("+") : pc47.dim("\xB7");
-    p32.log.message(
+    const remote = r.hasRemote ? pc48.green("+") : pc48.dim("\xB7");
+    p33.log.message(
       `  ${label}  autoApprove=${aa}  deps=${ad}  remote=${rs}  untouchable=${ut}  ${remote}`
     );
   }
@@ -32712,22 +34059,22 @@ async function fleetApprovals(opts) {
     return;
   }
   if (queue.length === 0) {
-    p32.log.success("Approval queue is empty.");
+    p33.log.success("Approval queue is empty.");
     return;
   }
-  p32.log.message(pc47.cyan(`Approval queue: ${queue.length} job(s) awaiting confirmation`));
+  p33.log.message(pc48.cyan(`Approval queue: ${queue.length} job(s) awaiting confirmation`));
   for (const entry of queue) {
-    p32.log.message(
-      `  \xB7 ${pc47.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
+    p33.log.message(
+      `  \xB7 ${pc48.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
     );
-    for (const path67 of entry.pendingPaths.slice(0, 6)) {
-      p32.log.message(`      ${pc47.dim("awaits")} ${path67}`);
+    for (const path71 of entry.pendingPaths.slice(0, 6)) {
+      p33.log.message(`      ${pc48.dim("awaits")} ${path71}`);
     }
     if (entry.pendingPaths.length > 6) {
-      p32.log.message(`      ${pc47.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
+      p33.log.message(`      ${pc48.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
     }
-    p32.log.message(
-      `      ${pc47.dim("resume:")} growthub kit fork confirm --job-id ${entry.jobId}`
+    p33.log.message(
+      `      ${pc48.dim("resume:")} growthub kit fork confirm --job-id ${entry.jobId}`
     );
   }
 }
@@ -32739,20 +34086,20 @@ async function fleetAgentPlan(opts) {
     console.log(JSON.stringify(doc, null, 2));
     return;
   }
-  p32.log.message(pc47.cyan(`Agent heal plan \u2014 ${reg.forkId}`));
-  p32.log.message(`  ${doc.summary}`);
-  for (const line of doc.narrative) p32.log.message(`    ${line}`);
+  p33.log.message(pc48.cyan(`Agent heal plan \u2014 ${reg.forkId}`));
+  p33.log.message(`  ${doc.summary}`);
+  for (const line of doc.narrative) p33.log.message(`    ${line}`);
   if (doc.awaitsConfirmation.length > 0) {
-    p32.log.message(pc47.magenta(`  Awaiting confirmation on:`));
-    for (const p210 of doc.awaitsConfirmation) p32.log.message(`    \xB7 ${p210}`);
-    p32.log.message(
-      pc47.dim(
+    p33.log.message(pc48.magenta(`  Awaiting confirmation on:`));
+    for (const p210 of doc.awaitsConfirmation) p33.log.message(`    \xB7 ${p210}`);
+    p33.log.message(
+      pc48.dim(
         `  Next: growthub kit fork heal ${reg.forkId}  (will park in awaiting_confirmation until resumed)`
       )
     );
   } else if (doc.plan.actions.length > 0) {
-    p32.log.message(
-      pc47.dim(`  Next: growthub kit fork heal ${reg.forkId}  (${doc.plan.actions.length} safe action(s) ready)`)
+    p33.log.message(
+      pc48.dim(`  Next: growthub kit fork heal ${reg.forkId}  (${doc.plan.actions.length} safe action(s) ready)`)
     );
   }
 }
@@ -32807,21 +34154,21 @@ var DEFAULT_MEMORY_PROVIDER_CONFIG = {
 
 // src/runtime/memory/store.ts
 init_home();
-import fs57 from "node:fs";
-import path64 from "node:path";
+import fs61 from "node:fs";
+import path68 from "node:path";
 function toProjectSlug(project) {
   return project.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "default";
 }
 function resolveProjectPath(project) {
-  return path64.resolve(resolveMemoryProjectsDir(), `${toProjectSlug(project)}.json`);
+  return path68.resolve(resolveMemoryProjectsDir(), `${toProjectSlug(project)}.json`);
 }
 function loadMemoryDatabase(project) {
   const filePath = resolveProjectPath(project);
-  if (!fs57.existsSync(filePath)) {
+  if (!fs61.existsSync(filePath)) {
     return { version: 1, project, observations: [], summaries: [], nextObservationId: 1, nextSummaryId: 1 };
   }
   try {
-    const raw = JSON.parse(fs57.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs61.readFileSync(filePath, "utf-8"));
     return {
       version: 1,
       project,
@@ -32836,9 +34183,9 @@ function loadMemoryDatabase(project) {
 }
 function saveMemoryDatabase(db) {
   const dir = resolveMemoryProjectsDir();
-  fs57.mkdirSync(dir, { recursive: true });
+  fs61.mkdirSync(dir, { recursive: true });
   const filePath = resolveProjectPath(db.project);
-  fs57.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
+  fs61.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
 `, "utf-8");
 }
 function addObservation(project, input) {
@@ -32932,8 +34279,8 @@ function incrementRelevanceCount(project, observationId) {
 }
 function listMemoryProjects() {
   const dir = resolveMemoryProjectsDir();
-  if (!fs57.existsSync(dir)) return [];
-  return fs57.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+  if (!fs61.existsSync(dir)) return [];
+  return fs61.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
 }
 function getMemoryStats(project) {
   const db = loadMemoryDatabase(project);
@@ -32945,15 +34292,15 @@ function getMemoryStats(project) {
   };
 }
 function resolveProviderConfigPath() {
-  return path64.resolve(resolveMemoryDir(), "provider-config.json");
+  return path68.resolve(resolveMemoryDir(), "provider-config.json");
 }
 function readProviderConfig() {
   const filePath = resolveProviderConfigPath();
-  if (!fs57.existsSync(filePath)) {
+  if (!fs61.existsSync(filePath)) {
     return { ...DEFAULT_MEMORY_PROVIDER_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs57.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs61.readFileSync(filePath, "utf-8"));
     return {
       provider: validateProvider(raw.provider),
       apiKey: typeof raw.apiKey === "string" ? raw.apiKey : void 0,
@@ -32966,9 +34313,9 @@ function readProviderConfig() {
 }
 function writeProviderConfig(config) {
   const dir = resolveMemoryDir();
-  fs57.mkdirSync(dir, { recursive: true });
+  fs61.mkdirSync(dir, { recursive: true });
   const filePath = resolveProviderConfigPath();
-  fs57.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
+  fs61.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
 `, { mode: 384 });
 }
 function validateProvider(value) {
@@ -33347,14 +34694,14 @@ async function syncMemoriesToHosted(project, options) {
 init_llm();
 function resolveCliVersion() {
   try {
-    const moduleDir = path66.dirname(fileURLToPath7(import.meta.url));
+    const moduleDir = path70.dirname(fileURLToPath7(import.meta.url));
     const candidates = [
-      path66.resolve(moduleDir, "../package.json"),
-      path66.resolve(moduleDir, "../../package.json")
+      path70.resolve(moduleDir, "../package.json"),
+      path70.resolve(moduleDir, "../../package.json")
     ];
     for (const candidate of candidates) {
-      if (!fs59.existsSync(candidate)) continue;
-      const parsed = JSON.parse(fs59.readFileSync(candidate, "utf8"));
+      if (!fs63.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs63.readFileSync(candidate, "utf8"));
       if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
     }
   } catch {
@@ -33440,7 +34787,7 @@ async function runNativeIntelligenceHub() {
     const favoriteModel = currentConfig.localModel?.trim() || void 0;
     const defaultModel = currentConfig.localModel?.trim() || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim() || process.env.OLLAMA_MODEL?.trim() || recommendedModel;
     const status = await detectLocalIntelligenceStatus(baseUrl, defaultModel);
-    const action = await p34.select({
+    const action = await p35.select({
       message: "Local Intelligence",
       options: [
         { value: "setup", label: "Setup helper", hint: "machine detection + install/env guidance" },
@@ -33452,7 +34799,7 @@ async function runNativeIntelligenceHub() {
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p34.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p35.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "setup") {
       const setupLines = [
         `OS: ${status.osLabel}`,
@@ -33464,7 +34811,7 @@ async function runNativeIntelligenceHub() {
         "",
         ...buildSetupCommands(status.osLabel, baseUrl, recommendedModel)
       ];
-      p34.note(setupLines.join("\n"), "Local Intelligence Setup Helper");
+      p35.note(setupLines.join("\n"), "Local Intelligence Setup Helper");
       continue;
     }
     if (action === "models") {
@@ -33477,19 +34824,19 @@ async function runNativeIntelligenceHub() {
         { value: "__custom_model", label: "Enter custom local model id", hint: "for any other local adapter model" },
         { value: "__back_to_local_intel", label: "\u2190 Back to Local Intelligence" }
       ];
-      const adapterChoice = await p34.select({
+      const adapterChoice = await p35.select({
         message: "Choose local custom model adapter",
         options: modelOptions
       });
-      if (p34.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
+      if (p35.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
       const chosenModel = adapterChoice === "__custom_model" ? await promptForCustomModel(defaultModel) : adapterChoice;
       if (!chosenModel) continue;
-      const applyConfirmed = await p34.confirm({
+      const applyConfirmed = await p35.confirm({
         message: `Apply Local Intelligence config for model "${chosenModel}"?`,
         initialValue: true
       });
-      if (p34.isCancel(applyConfirmed) || !applyConfirmed) continue;
-      const applySpinner = p34.spinner();
+      if (p35.isCancel(applyConfirmed) || !applyConfirmed) continue;
+      const applySpinner = p35.spinner();
       applySpinner.start(`Applying model config (${chosenModel})...`);
       writeIntelligenceConfig({
         ...currentConfig,
@@ -33501,7 +34848,7 @@ async function runNativeIntelligenceHub() {
       const health = await checkBackendHealth(readIntelligenceConfig());
       if (!health.available) {
         applySpinner.stop(`Config saved, backend unavailable (${health.latencyMs}ms).`);
-        p34.note(
+        p35.note(
           [...health.error ? [`Error: ${health.error}`] : [], "You can still run prompt flow and retry health later."].join("\n"),
           "Local model status"
         );
@@ -33548,7 +34895,7 @@ async function runNativeIntelligenceHub() {
         modelId: result.modelId,
         endpoint: result.endpoint
       });
-      p34.note(
+      p35.note(
         `Provider: ${result.provider}
 Model: ${result.modelId ?? "default"}
 API key: ${result.apiKey ? "configured" : "not needed"}`,
@@ -33560,32 +34907,32 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
       await runMarketingContextBuilder(baseUrl, defaultModel);
       continue;
     }
-    const customPrompt = await p34.text({
+    const customPrompt = await p35.text({
       message: "Enter your local intelligence prompt",
       placeholder: "Describe what you want to create/analyze"
     });
-    if (p34.isCancel(customPrompt)) continue;
+    if (p35.isCancel(customPrompt)) continue;
     const prompt = String(customPrompt).trim();
     if (!prompt) {
-      p34.note("Prompt was empty. Nothing was run.", "Local Intelligence");
+      p35.note("Prompt was empty. Nothing was run.", "Local Intelligence");
       continue;
     }
     await runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt);
   }
 }
 async function runMarketingContextBuilder(baseUrl, model) {
-  const projectDir = await p34.text({
+  const projectDir = await p35.text({
     message: "Project directory to scan",
     placeholder: process.cwd(),
     defaultValue: process.cwd()
   });
-  if (p34.isCancel(projectDir)) return;
+  if (p35.isCancel(projectDir)) return;
   const dir = String(projectDir).trim() || process.cwd();
-  if (!fs59.existsSync(dir)) {
-    p34.note(`Directory not found: ${dir}`, "Marketing Context Builder");
+  if (!fs63.existsSync(dir)) {
+    p35.note(`Directory not found: ${dir}`, "Marketing Context Builder");
     return;
   }
-  const spinner13 = p34.spinner();
+  const spinner13 = p35.spinner();
   spinner13.start("Scanning project artifacts and drafting product-marketing context...");
   try {
     const config = readIntelligenceConfig();
@@ -33609,29 +34956,29 @@ async function runMarketingContextBuilder(baseUrl, model) {
       `Sources used: ${result.sourcesUsed.join(", ") || "none"}`,
       `Sources missing: ${result.sourcesMissing.join(", ") || "none"}`
     ];
-    p34.note(summaryLines.join("\n"), "Marketing Context Builder");
-    const saveChoice = await p34.confirm({
+    p35.note(summaryLines.join("\n"), "Marketing Context Builder");
+    const saveChoice = await p35.confirm({
       message: "Save the drafted context to .agents/product-marketing-context.md?"
     });
-    if (p34.isCancel(saveChoice) || !saveChoice) {
-      p34.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
+    if (p35.isCancel(saveChoice) || !saveChoice) {
+      p35.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
       return;
     }
-    const outDir = path66.resolve(dir, ".agents");
-    fs59.mkdirSync(outDir, { recursive: true });
-    const outPath = path66.resolve(outDir, "product-marketing-context.md");
-    fs59.writeFileSync(outPath, result.contextMarkdown, "utf-8");
-    p34.note(`Saved to: ${outPath}
+    const outDir = path70.resolve(dir, ".agents");
+    fs63.mkdirSync(outDir, { recursive: true });
+    const outPath = path70.resolve(outDir, "product-marketing-context.md");
+    fs63.writeFileSync(outPath, result.contextMarkdown, "utf-8");
+    p35.note(`Saved to: ${outPath}
 
 Review the file and replace [NEEDS INPUT] placeholders with real data.`, "Marketing Context Builder");
   } catch (err) {
     spinner13.stop("Failed to build marketing context.");
-    p34.note(String(err), "Marketing Context Builder \u2014 Error");
+    p35.note(String(err), "Marketing Context Builder \u2014 Error");
   }
 }
 async function detectLocalIntelligenceStatus(baseUrl, model) {
   const osLabel = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux";
-  const ollamaInstalled = spawnSync7("ollama", ["--version"], { stdio: "ignore" }).status === 0;
+  const ollamaInstalled = spawnSync8("ollama", ["--version"], { stdio: "ignore" }).status === 0;
   const modelsUrl = `${baseUrl}/models`;
   try {
     const response = await fetch(modelsUrl, { method: "GET" });
@@ -33684,12 +35031,12 @@ function prioritizeModelOptions(models, favoriteModel, recommendedModel) {
   return unique3;
 }
 async function promptForCustomModel(defaultModel) {
-  const input = await p34.text({
+  const input = await p35.text({
     message: "Enter local model id",
     placeholder: "example: gemma3:4b",
     defaultValue: defaultModel
   });
-  if (p34.isCancel(input)) return null;
+  if (p35.isCancel(input)) return null;
   const trimmed = String(input).trim();
   return trimmed.length > 0 ? trimmed : null;
 }
@@ -33730,13 +35077,13 @@ async function runLocalPromptChat(baseUrl, defaultModel) {
   }
   infoLines.push("Type your prompt and press Enter.");
   infoLines.push("Use '/back' to return to Local Intelligence menu.");
-  p34.note(infoLines.join("\n"), "Local Prompt Flow");
+  p35.note(infoLines.join("\n"), "Local Prompt Flow");
   while (true) {
-    const rawPrompt = await p34.text({
+    const rawPrompt = await p35.text({
       message: `Prompt (${activeModel})`,
       placeholder: "Ask anything..."
     });
-    if (p34.isCancel(rawPrompt)) {
+    if (p35.isCancel(rawPrompt)) {
       captureSessionSummary(currentProject, sessionId, thread.messages);
       return;
     }
@@ -33757,7 +35104,7 @@ async function runLocalPromptChat(baseUrl, defaultModel) {
     if (semanticCtx.text) {
       systemParts.push(semanticCtx.text);
     }
-    const runSpinner = p34.spinner();
+    const runSpinner = p35.spinner();
     runSpinner.start("Invoking local model...");
     try {
       const out = await completeWithRetry(
@@ -33792,7 +35139,7 @@ User: ${prompt}` : prompt,
       }
     } catch (err) {
       runSpinner.stop("Invocation failed.");
-      p34.note(err instanceof Error ? err.message : String(err), "Local model error");
+      p35.note(err instanceof Error ? err.message : String(err), "Local model error");
     }
   }
 }
@@ -33829,39 +35176,39 @@ function captureSessionSummary(project, sessionId, messages) {
   }
 }
 function resolveLocalThreadsDir() {
-  return path66.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
+  return path70.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
 }
 function loadOrCreateLocalThread() {
   const dir = resolveLocalThreadsDir();
-  fs59.mkdirSync(dir, { recursive: true });
-  const activePath = path66.resolve(dir, "active-thread.json");
-  if (fs59.existsSync(activePath)) {
+  fs63.mkdirSync(dir, { recursive: true });
+  const activePath = path70.resolve(dir, "active-thread.json");
+  if (fs63.existsSync(activePath)) {
     try {
-      const parsed = JSON.parse(fs59.readFileSync(activePath, "utf-8"));
+      const parsed = JSON.parse(fs63.readFileSync(activePath, "utf-8"));
       const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
-      const threadFile = path66.resolve(dir, `${id2}.json`);
+      const threadFile = path70.resolve(dir, `${id2}.json`);
       const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
       return { id: id2, filePath: threadFile, messages };
     } catch {
     }
   }
   const id = `thread-${Date.now()}`;
-  const filePath = path66.resolve(dir, `${id}.json`);
+  const filePath = path70.resolve(dir, `${id}.json`);
   const thread = { id, filePath, messages: [] };
   saveLocalThread(thread);
   return thread;
 }
 function saveLocalThread(thread) {
   const dir = resolveLocalThreadsDir();
-  fs59.mkdirSync(dir, { recursive: true });
-  fs59.writeFileSync(
+  fs63.mkdirSync(dir, { recursive: true });
+  fs63.writeFileSync(
     thread.filePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
     "utf-8"
   );
-  const activePath = path66.resolve(dir, "active-thread.json");
-  fs59.writeFileSync(
+  const activePath = path70.resolve(dir, "active-thread.json");
+  fs63.writeFileSync(
     activePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
@@ -33900,7 +35247,7 @@ async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
     const primaryContract = contracts.find((contract) => contract.inputs.length > 0) ?? contracts[0];
     const rawBindings = await collectBindingsFromContract(primaryContract, prompt);
     const requiredOutputTypes = primaryContract.outputTypes.length > 0 ? [primaryContract.outputTypes[0]] : void 0;
-    const flowSpinner = p34.spinner();
+    const flowSpinner = p35.spinner();
     flowSpinner.start("Running planner/normalizer/recommender/summarizer with your prompt...");
     const plan = await provider.planWorkflow({
       userIntent: prompt,
@@ -33947,7 +35294,7 @@ async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
       phase: "pre-execution"
     });
     flowSpinner.stop("Flow suite completed.");
-    p34.note(
+    p35.note(
       [
         `Prompt: ${prompt}`,
         `Planner nodes: ${plan.proposedNodes.map((n) => n.slug).join(", ")}`,
@@ -33958,7 +35305,7 @@ async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
       "Native Intelligence Flow Results"
     );
   } catch (err) {
-    p34.note(err instanceof Error ? err.message : String(err), "Flow error");
+    p35.note(err instanceof Error ? err.message : String(err), "Flow error");
   }
 }
 async function loadRuntimeContracts() {
@@ -33987,12 +35334,12 @@ async function collectBindingsFromContract(contract, promptSeed) {
   const bindings = {};
   for (const input of contract.inputs) {
     const defaultValue = input.key === "prompt" ? promptSeed : input.defaultValue !== void 0 ? String(input.defaultValue) : "";
-    const raw = await p34.text({
+    const raw = await p35.text({
       message: `${contract.slug} \u2192 ${input.key} (${input.type}${input.required ? ", required" : ""})`,
       placeholder: input.required ? `Enter ${input.key}` : `Optional: press Enter to skip ${input.key}`,
       defaultValue
     });
-    if (p34.isCancel(raw)) {
+    if (p35.isCancel(raw)) {
       throw new Error("Cancelled while collecting contract input bindings.");
     }
     const value = String(raw).trim();
@@ -34007,7 +35354,7 @@ async function collectBindingsFromContract(contract, promptSeed) {
   return bindings;
 }
 function resolveCurrentProject() {
-  return path66.basename(process.cwd());
+  return path70.basename(process.cwd());
 }
 async function runMemoryKnowledgeHub() {
   const project = resolveCurrentProject();
@@ -34015,7 +35362,7 @@ async function runMemoryKnowledgeHub() {
     const stats = getMemoryStats(project);
     const syncStatus = canSync();
     const providerConfig = readProviderConfig();
-    const action = await p34.select({
+    const action = await p35.select({
       message: "Memory & Knowledge",
       options: [
         {
@@ -34040,24 +35387,24 @@ async function runMemoryKnowledgeHub() {
         },
         {
           value: "sync",
-          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc49.dim(" (unavailable)"),
+          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc50.dim(" (unavailable)"),
           hint: syncStatus.available ? "push memories to hosted account" : syncStatus.reason
         },
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p34.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p35.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "search") {
-      const query = await p34.text({
+      const query = await p35.text({
         message: "Search query",
         placeholder: "what are you looking for?"
       });
-      if (p34.isCancel(query)) continue;
+      if (p35.isCancel(query)) continue;
       const text69 = String(query).trim();
       if (!text69) continue;
       const results = searchMemory({ text: text69, project, limit: 15 });
       if (results.totalMatched === 0) {
-        p34.note("No matching observations found.", "Search Results");
+        p35.note("No matching observations found.", "Search Results");
         continue;
       }
       const lines = [`Found ${results.totalMatched} match(es), showing top ${results.results.length}:`, ""];
@@ -34078,13 +35425,13 @@ async function runMemoryKnowledgeHub() {
           lines.push(`[${date2}] ${s.request ?? "Session"}: ${s.completed ?? s.learned ?? "(no summary)"}`);
         }
       }
-      p34.note(lines.join("\n"), "Search Results");
+      p35.note(lines.join("\n"), "Search Results");
       continue;
     }
     if (action === "timeline") {
       const observations = getObservations(project, { limit: 20 });
       if (observations.length === 0) {
-        p34.note(
+        p35.note(
           "No observations stored yet. Start a local prompt chat to begin capturing memories.",
           "Timeline"
         );
@@ -34104,13 +35451,13 @@ async function runMemoryKnowledgeHub() {
           lines.push(`    ${obs.narrative.slice(0, 120)}${obs.narrative.length > 120 ? "..." : ""}`);
         }
       }
-      p34.note(lines.join("\n"), `Timeline \u2014 ${project} (${observations.length} recent)`);
+      p35.note(lines.join("\n"), `Timeline \u2014 ${project} (${observations.length} recent)`);
       continue;
     }
     if (action === "projects") {
       const projects2 = listMemoryProjects();
       if (projects2.length === 0) {
-        p34.note("No memory projects found. Interact with the local prompt chat to start capturing.", "Projects");
+        p35.note("No memory projects found. Interact with the local prompt chat to start capturing.", "Projects");
         continue;
       }
       const lines = [];
@@ -34118,7 +35465,7 @@ async function runMemoryKnowledgeHub() {
         const s = getMemoryStats(proj);
         lines.push(`${proj}: ${s.observationCount} observations, ${s.summaryCount} summaries`);
       }
-      p34.note(lines.join("\n"), "Memory Projects");
+      p35.note(lines.join("\n"), "Memory Projects");
       continue;
     }
     if (action === "provider") {
@@ -34130,7 +35477,7 @@ async function runMemoryKnowledgeHub() {
         modelId: result.modelId,
         endpoint: result.endpoint
       });
-      p34.note(
+      p35.note(
         `Provider: ${result.provider}
 Model: ${result.modelId ?? "default"}
 API key: ${result.apiKey ? "configured" : "not needed"}`,
@@ -34140,10 +35487,10 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
     }
     if (action === "sync") {
       if (!syncStatus.available) {
-        p34.note(syncStatus.reason ?? "Sync unavailable", "Sync");
+        p35.note(syncStatus.reason ?? "Sync unavailable", "Sync");
         continue;
       }
-      const syncSpinner = p34.spinner();
+      const syncSpinner = p35.spinner();
       syncSpinner.start("Syncing memories to Growthub...");
       const syncResult = await syncMemoriesToHosted(project);
       if (syncResult.success) {
@@ -34152,7 +35499,7 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
         );
       } else {
         syncSpinner.stop("Sync failed.");
-        p34.note(syncResult.error ?? "Unknown error", "Sync Error");
+        p35.note(syncResult.error ?? "Unknown error", "Sync Error");
       }
       continue;
     }
@@ -34161,10 +35508,10 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
 async function runDiscoveryHub(opts) {
   track("discover_opened");
   printPaperclipCliBanner();
-  p34.intro("Growthub Local");
+  p35.intro("Growthub Local");
   while (true) {
     const workflowAccess = getWorkflowAccess();
-    const surfaceChoice = await p34.select({
+    const surfaceChoice = await p35.select({
       message: "What do you want to do first?",
       options: [
         {
@@ -34179,7 +35526,7 @@ async function runDiscoveryHub(opts) {
         },
         {
           value: "workflows",
-          label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc49.dim(" (locked)"),
+          label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc50.dim(" (locked)"),
           hint: workflowAccess.state === "ready" ? "CMS contracts, dynamic pipelines, and saved workflows" : workflowAccess.reason
         },
         {
@@ -34209,12 +35556,12 @@ async function runDiscoveryHub(opts) {
         }
       ]
     });
-    if (p34.isCancel(surfaceChoice)) {
-      p34.cancel("Cancelled.");
+    if (p35.isCancel(surfaceChoice)) {
+      p35.cancel("Cancelled.");
       process.exit(0);
     }
     if (surfaceChoice === "help") {
-      p34.note(
+      p35.note(
         [
           "\u{1F916} Agent Harness: filter by type \u2014 Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "\u{1F9F0} Worker Kits: browse specialized agents and custom workspaces.",
@@ -34250,7 +35597,7 @@ async function runDiscoveryHub(opts) {
     }
     if (surfaceChoice === "agent-harness") {
       while (true) {
-        const harnessType = await p34.select({
+        const harnessType = await p35.select({
           message: "Filter by type",
           options: [
             {
@@ -34279,15 +35626,15 @@ async function runDiscoveryHub(opts) {
             }
           ]
         });
-        if (p34.isCancel(harnessType)) {
-          p34.cancel("Cancelled.");
+        if (p35.isCancel(harnessType)) {
+          p35.cancel("Cancelled.");
           process.exit(0);
         }
         if (harnessType === "__back_to_hub") break;
         if (harnessType === "paperclip") {
           let paperclipDone = false;
           while (!paperclipDone) {
-            const appModeChoice = await p34.select({
+            const appModeChoice = await p35.select({
               message: "How do you want to open Growthub Local?",
               options: [
                 {
@@ -34306,18 +35653,18 @@ async function runDiscoveryHub(opts) {
                 }
               ]
             });
-            if (p34.isCancel(appModeChoice)) {
-              p34.cancel("Cancelled.");
+            if (p35.isCancel(appModeChoice)) {
+              p35.cancel("Cancelled.");
               process.exit(0);
             }
             if (appModeChoice === "__back_to_harness") break;
             if (appModeChoice === "load") {
               const existingSurfaces = listLocalSurfaces();
               if (existingSurfaces.length === 0) {
-                p34.note("No existing local app profiles were found on this machine.", "Nothing found");
+                p35.note("No existing local app profiles were found on this machine.", "Nothing found");
                 continue;
               }
-              const existingChoice = await p34.select({
+              const existingChoice = await p35.select({
                 message: "Select an existing app surface",
                 options: [
                   ...existingSurfaces.map((surface) => ({
@@ -34328,8 +35675,8 @@ async function runDiscoveryHub(opts) {
                   { value: "__back_to_app_mode", label: "\u2190 Back to app options" }
                 ]
               });
-              if (p34.isCancel(existingChoice)) {
-                p34.cancel("Cancelled.");
+              if (p35.isCancel(existingChoice)) {
+                p35.cancel("Cancelled.");
                 process.exit(0);
               }
               if (existingChoice === "__back_to_app_mode") {
@@ -34337,7 +35684,7 @@ async function runDiscoveryHub(opts) {
               }
               const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
               if (!selectedSurface) {
-                p34.cancel("Selected profile not found.");
+                p35.cancel("Selected profile not found.");
                 process.exit(1);
               }
               process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
@@ -34349,7 +35696,7 @@ async function runDiscoveryHub(opts) {
               });
               return;
             }
-            const profileChoice = await p34.select({
+            const profileChoice = await p35.select({
               message: "Which new app surface do you want to create?",
               options: [
                 {
@@ -34368,8 +35715,8 @@ async function runDiscoveryHub(opts) {
                 }
               ]
             });
-            if (p34.isCancel(profileChoice)) {
-              p34.cancel("Cancelled.");
+            if (p35.isCancel(profileChoice)) {
+              p35.cancel("Cancelled.");
               process.exit(0);
             }
             if (profileChoice === "__back_to_app_mode") {
@@ -34405,7 +35752,7 @@ async function runDiscoveryHub(opts) {
     }
     if (surfaceChoice === "settings") {
       while (true) {
-        const settingsChoice = await p34.select({
+        const settingsChoice = await p35.select({
           message: "Settings",
           options: [
             {
@@ -34449,8 +35796,8 @@ async function runDiscoveryHub(opts) {
             }
           ]
         });
-        if (p34.isCancel(settingsChoice)) {
-          p34.cancel("Cancelled.");
+        if (p35.isCancel(settingsChoice)) {
+          p35.cancel("Cancelled.");
           process.exit(0);
         }
         if (settingsChoice === "__back_to_hub") break;
@@ -34475,7 +35822,7 @@ async function runDiscoveryHub(opts) {
         }
         if (surfaceChoice2 === "custom-workspace-starter") {
           starterLoop: while (true) {
-            const starterChoice = await p34.select({
+            const starterChoice = await p35.select({
               message: "Custom Workspace Starter",
               options: [
                 {
@@ -34496,31 +35843,31 @@ async function runDiscoveryHub(opts) {
                 { value: "__back", label: "\u2190 Back to Settings" }
               ]
             });
-            if (p34.isCancel(starterChoice)) {
-              p34.cancel("Cancelled.");
+            if (p35.isCancel(starterChoice)) {
+              p35.cancel("Cancelled.");
               process.exit(0);
             }
             if (starterChoice === "__back") break starterLoop;
             if (starterChoice === "new-greenfield") {
-              const outRaw = await p34.text({
+              const outRaw = await p35.text({
                 message: "Destination path for the new workspace (will be created if missing):",
                 placeholder: "./my-workspace"
               });
-              if (p34.isCancel(outRaw) || !outRaw) continue starterLoop;
-              const nameRaw = await p34.text({
+              if (p35.isCancel(outRaw) || !outRaw) continue starterLoop;
+              const nameRaw = await p35.text({
                 message: "Optional label (leave blank to use directory basename):",
                 placeholder: ""
               });
-              if (p34.isCancel(nameRaw)) continue starterLoop;
+              if (p35.isCancel(nameRaw)) continue starterLoop;
               await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : void 0 });
               continue starterLoop;
             }
             if (starterChoice === "import-github") {
-              const repoRaw = await p34.text({
+              const repoRaw = await p35.text({
                 message: "GitHub repo (owner/repo or https URL):",
                 placeholder: "octocat/Hello-World"
               });
-              if (p34.isCancel(repoRaw) || !repoRaw) continue starterLoop;
+              if (p35.isCancel(repoRaw) || !repoRaw) continue starterLoop;
               const {
                 promptForInteractiveWorkspacePath: promptForInteractiveWorkspacePath2,
                 startSourceImportFlow: startSourceImportFlow2
@@ -34553,11 +35900,11 @@ async function runDiscoveryHub(opts) {
         if (surfaceChoice2 === "skills-catalog") {
           const { readSkillCatalog: readSkillCatalog2 } = await Promise.resolve().then(() => (init_catalog2(), catalog_exports));
           const catalog = readSkillCatalog2({ root: process.cwd() });
-          p34.note(
+          p35.note(
             [
-              `Root: ${pc49.cyan(catalog.catalog.root ?? process.cwd())}`,
-              `Skills discovered: ${pc49.bold(String(catalog.entries.length))}`,
-              catalog.warnings.length > 0 ? `Warnings: ${pc49.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
+              `Root: ${pc50.cyan(catalog.catalog.root ?? process.cwd())}`,
+              `Skills discovered: ${pc50.bold(String(catalog.entries.length))}`,
+              catalog.warnings.length > 0 ? `Warnings: ${pc50.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
               "",
               "Invoke directly:",
               "  growthub skills list --json",
@@ -34602,12 +35949,12 @@ function isInstallerMode() {
 }
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
-  const instancesDir = path66.resolve(homeDir, "instances");
-  if (!fs59.existsSync(instancesDir)) return [];
-  return fs59.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  const instancesDir = path70.resolve(homeDir, "instances");
+  if (!fs63.existsSync(instancesDir)) return [];
+  return fs63.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
-    const configPath = path66.resolve(instancesDir, instanceId, "config.json");
-    if (!fs59.existsSync(configPath)) return null;
+    const configPath = path70.resolve(instancesDir, instanceId, "config.json");
+    if (!fs63.existsSync(configPath)) return null;
     try {
       const config = readConfig(configPath);
       if (!config) return null;

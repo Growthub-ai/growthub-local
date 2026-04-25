@@ -16,6 +16,12 @@ import {
 } from "../kits/service.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { registerKitForkSubcommands } from "./kit-fork.js";
+import {
+  registerKitContractSubcommands,
+  runPipelineInspect,
+  runDependenciesInspect,
+  runKitHealth,
+} from "./kit-contract.js";
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -296,6 +302,9 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
           options: [
             { value: "download", label: "⬇️  Download kit", hint: "growthub kit download <id>" },
             { value: "inspect", label: "🔍 Inspect manifest", hint: "growthub kit inspect <id>" },
+            { value: "pipeline", label: "🔗 Inspect pipeline contract", hint: "growthub kit pipeline inspect <id>" },
+            { value: "dependencies", label: "📦 Inspect external dependencies", hint: "growthub kit dependencies inspect <id>" },
+            { value: "health", label: "🩺 Run health report", hint: "growthub kit health <id>" },
             { value: "copy-id", label: "📋 Print ID to stdout", hint: "echo <kit-id>" },
             { value: "back_to_kits", label: "← Back to kit list" },
           ],
@@ -303,6 +312,23 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
 
         if (p.isCancel(action)) { p.cancel("Cancelled."); process.exit(0); }
         if (action === "back_to_kits") break;
+
+        // Read-only inspections — no destructive confirmation needed.
+        if (action === "pipeline") {
+          runPipelineInspect(selected.id, { out: opts.out });
+          p.outro(pc.dim("Done."));
+          return "done";
+        }
+        if (action === "dependencies") {
+          runDependenciesInspect(selected.id, { out: opts.out });
+          p.outro(pc.dim("Done."));
+          return "done";
+        }
+        if (action === "health") {
+          runKitHealth(selected.id, { out: opts.out });
+          p.outro(pc.dim("Done."));
+          return "done";
+        }
 
         const confirmed = await confirmKitActions({
           kits: [selected],
@@ -455,6 +481,12 @@ Examples:
   $ growthub kit inspect hyperframes
   $ growthub kit inspect video-use
   $ growthub kit families                 # show family taxonomy
+
+Pipeline Kit Contract v1 (PIPELINE_KIT_CONTRACT_V1):
+  $ growthub kit pipeline inspect <id>          # stages, adapters, output topology
+  $ growthub kit dependencies inspect <id>      # external repos / forks
+  $ growthub kit health <id>                    # full health report
+  $ growthub kit pipeline inspect <id> --json   # agent-first JSON output
 
 Fork Sync Agent:
   $ growthub kit fork                     # interactive fork-sync hub
@@ -661,6 +693,9 @@ Examples:
       console.log(pc.dim("  growthub kit list --family <family>  to filter by internal family"));
       console.log("");
     });
+
+  // ── pipeline / dependencies / health (Pipeline Kit Contract v1) ──────────
+  registerKitContractSubcommands(kit);
 
   // ── fork (Fork Sync Agent sub-tree) ──────────────────────────────────────
   registerKitForkSubcommands(kit);

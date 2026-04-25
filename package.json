@@ -7,6 +7,7 @@
     "check:cli-package": "node ./scripts/check-cli-package.mjs",
     "check:version-sync": "node ./scripts/check-version-sync.mjs",
     "check:worker-kits": "node ./scripts/check-worker-kits.mjs",
+    "score:worker-kits": "node ./scripts/score-worker-kits.mjs",
     "check:kernel:custom-workspaces": "bash ./scripts/check-custom-workspace-kernel.sh",
     "sync:monorepo": "bash ./scripts/sync-from-monorepo.sh",
     "freeze:check": "bash ./scripts/freeze-check.sh",

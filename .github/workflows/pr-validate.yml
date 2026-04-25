@@ -25,16 +25,16 @@ jobs:
       - name: Validate branch name
         run: |
           branch="${{ github.head_ref }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync)/.+'
+          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude)/.+'
           if ! echo "$branch" | grep -Eq "$pattern"; then
-            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync/<name>"
+            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude/<name>"
             exit 1
           fi
 
       - name: Validate PR title (conventional commits)
         run: |
           title="${{ github.event.pull_request.title }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync)(\(.+\))?: .{10,}'
+          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude)(\(.+\))?: .{10,}'
           if ! echo "$title" | grep -Eq "$pattern"; then
             echo "❌ PR title must follow conventional commits: type(scope): description"
             echo "   Examples: feat(server): add health endpoint"
@@ -82,6 +82,7 @@ jobs:
             if (branch.startsWith('ci/'))       labels.push('ci');
             if (branch.startsWith('refactor/')) labels.push('refactor');
             if (branch.startsWith('sync/'))     labels.push('sync');
+            if (branch.startsWith('claude/'))   labels.push('agent-pr');
             // Detect agent PRs
             const actor = context.payload.pull_request.user.login;
             const agentActors = ['github-actions[bot]', 'copilot[bot]', 'codex-bot'];

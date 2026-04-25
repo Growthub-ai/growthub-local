@@ -63,10 +63,41 @@ const workspaceAliases = {
   "@paperclipai/adapter-openclaw-gateway/cli": resolve(repoRoot, "packages/adapters/openclaw-gateway/src/cli/index.ts"),
 };
 
+// @growthub/api-contract is bundled directly from the workspace source so
+// the shipped CLI dist is self-contained for the v1 contract surfaces
+// (capabilities, execution, manifests, pipeline-kits, workspaces, adapters,
+// pipeline-trace, health). The npm-published api-contract still serves
+// downstream SDK consumers; the CLI just stops needing it at runtime.
+const apiContractRoot = resolve(repoRoot, "packages/api-contract/src");
+const apiContractAliases = {
+  "@growthub/api-contract": resolve(apiContractRoot, "index.ts"),
+  "@growthub/api-contract/capabilities": resolve(apiContractRoot, "capabilities.ts"),
+  "@growthub/api-contract/execution": resolve(apiContractRoot, "execution.ts"),
+  "@growthub/api-contract/providers": resolve(apiContractRoot, "providers.ts"),
+  "@growthub/api-contract/profile": resolve(apiContractRoot, "profile.ts"),
+  "@growthub/api-contract/events": resolve(apiContractRoot, "events.ts"),
+  "@growthub/api-contract/manifests": resolve(apiContractRoot, "manifests.ts"),
+  "@growthub/api-contract/schemas": resolve(apiContractRoot, "schemas.ts"),
+  "@growthub/api-contract/skills": resolve(apiContractRoot, "skills.ts"),
+  "@growthub/api-contract/worker-kits": resolve(apiContractRoot, "worker-kits.ts"),
+  "@growthub/api-contract/pipeline-kits": resolve(apiContractRoot, "pipeline-kits.ts"),
+  "@growthub/api-contract/workspaces": resolve(apiContractRoot, "workspaces.ts"),
+  "@growthub/api-contract/adapters": resolve(apiContractRoot, "adapters.ts"),
+  "@growthub/api-contract/pipeline-trace": resolve(apiContractRoot, "pipeline-trace.ts"),
+  "@growthub/api-contract/health": resolve(apiContractRoot, "health.ts"),
+};
+
 // Workspace packages that should NOT be bundled — they'll be published
 // to npm and resolved at runtime (e.g. @paperclipai/server uses dynamic import).
 const externalWorkspacePackages = new Set([
   "@paperclipai/server",
+]);
+
+// Workspace packages that ARE bundled directly via aliases — keep these
+// out of the externals list even though they appear in package.json
+// dependencies.
+const bundledWorkspacePackages = new Set([
+  "@growthub/api-contract",
 ]);
 
 // Collect all external (non-workspace) npm package names
@@ -76,6 +107,8 @@ for (const p of workspacePaths) {
   for (const name of Object.keys(pkg.dependencies || {})) {
     if (externalWorkspacePackages.has(name)) {
       externals.add(name);
+    } else if (bundledWorkspacePackages.has(name)) {
+      // skip — bundled via alias
     } else if (!name.startsWith("@paperclipai/")) {
       externals.add(name);
     }
@@ -99,7 +132,7 @@ export default {
   outfile: "dist/index.js",
   banner: {},
   external: [...externals].sort(),
-  alias: workspaceAliases,
+  alias: { ...workspaceAliases, ...apiContractAliases },
   treeShaking: true,
   sourcemap: false,
 };

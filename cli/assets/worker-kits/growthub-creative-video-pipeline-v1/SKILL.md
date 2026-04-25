@@ -24,6 +24,8 @@ helpers:
     description: Auth pre-flight + growthub pipeline execute passthrough
   - path: helpers/check-generative-adapter.sh
     description: Print current adapter mode and which provider keys are set
+  - path: helpers/check-pipeline-health.sh
+    description: Composable end-to-end readiness check (env + adapter + sub-skills + Stage 3 deps); supports --json
 subSkills:
   - name: brief-generation
     path: skills/brief-generation/SKILL.md
@@ -60,6 +62,25 @@ Fork exists (.growthub-fork/fork.json)?
           8. .growthub-fork/trace.jsonl (tail 20) — recent machine history
 ```
 
+## Agent operating loop (deterministic, no Markdown inference)
+
+For agents (Claude Code, Cursor, Codex), the canonical readiness +
+inspection loop uses the CLI's typed JSON outputs — read these BEFORE
+falling back to Markdown:
+
+```bash
+growthub kit health       <fork-id-or-path> --json   # KitHealthReport
+growthub kit pipeline     inspect <fork-id-or-path> --json   # PipelineKitManifest
+growthub kit dependencies inspect <fork-id-or-path> --json   # WorkspaceDependencyManifest
+growthub kit inspect      <fork-id-or-path> --json   # WorkerKitManifest (kit.json)
+```
+
+Each command accepts a kit id, filesystem path, OR a registered fork
+id. Both `--json` (agent) and interactive sub-branch (human) surfaces
+share the same primitives.
+
+Markdown explains the contract; the SDK + CLI are the source of truth.
+
 ## Three-stage pipeline
 
 ```
@@ -89,7 +110,7 @@ Both normalize to the same `GenerativeArtifact[]` object. The UI shell renders w
 3. **`.growthub-fork/project.md`** — session memory, seeded at init from `templates/project.md`.
 4. **Self-evaluation** — generate → apply → evaluate → record; retry up to `maxRetries` (3); mirrors the Fork Sync Agent loop.
 5. **`skills/`** — sub-skill lanes: `brief-generation`, `generative-execution`, `video-edit`.
-6. **`helpers/`** — `run-pipeline.sh`, `check-generative-adapter.sh`.
+6. **`helpers/`** — `run-pipeline.sh`, `check-generative-adapter.sh`, `check-pipeline-health.sh`.
 
 ## Related files
 

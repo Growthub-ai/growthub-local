@@ -44,6 +44,13 @@ The following internal modules are the source material for the public contract s
 | `cli/src/runtime/cms-capability-registry/` | `@growthub/api-contract/capabilities`, `@growthub/api-contract/manifests` |
 | `cli/src/runtime/hosted-execution-client/` | `@growthub/api-contract/execution`, `@growthub/api-contract/providers`, `@growthub/api-contract/profile`, `@growthub/api-contract/events` |
 | `cli/src/runtime/cms-node-contracts/` | `@growthub/api-contract/schemas` |
+| `cli/src/kits/contract.ts`, `cli/src/kits/service.ts` | `@growthub/api-contract/worker-kits` |
+| `.claude/skills/`, kit `SKILL.md` parsers | `@growthub/api-contract/skills` |
+| `cli/src/runtime/pipeline-kits/` | `@growthub/api-contract/pipeline-kits` |
+| `cli/src/runtime/workspace-dependencies/` | `@growthub/api-contract/workspaces` |
+| kit-local `docs/adapter-contracts.md` | `@growthub/api-contract/adapters` |
+| `cli/src/runtime/kit-health/` | `@growthub/api-contract/health` |
+| stage-boundary `trace.jsonl` writers | `@growthub/api-contract/pipeline-trace` |
 
 The public package freezes the shape. It does **not** own the runtime.
 
@@ -61,6 +68,13 @@ packages/api-contract/
     events.ts
     manifests.ts
     schemas.ts
+    skills.ts
+    worker-kits.ts        # universal kit.json contract (v1 + v2 union)
+    pipeline-kits.ts      # multi-stage specialization
+    workspaces.ts         # external-dependency specialization
+    adapters.ts           # provider-boundary specialization
+    pipeline-trace.ts     # additive stage-boundary trace events
+    health.ts             # universal kit health + maturity
     index.ts
   package.json
   tsconfig.json
@@ -68,8 +82,11 @@ packages/api-contract/
   CHANGELOG.md
 ```
 
-Package name: `@growthub/api-contract`.
-Version: starts at `1.0.0-alpha.1`; stabilizes to `1.0.0` once the CLI has migrated imports onto the contract package (Phase 1 completion).
+Package name: `@growthub/api-contract`. Versions:
+
+- `1.0.0-alpha.1` — Phase 1 baseline (capabilities, execution, providers, profile, events, manifests, schemas).
+- `1.2.0-alpha.1` — adds `skills` (SkillManifest + sub-skills + helpers + self-eval + session-memory).
+- `1.3.0-alpha.1` — adds `worker-kits` (universal v1+v2 base), `pipeline-kits`, `workspaces`, `adapters`, `pipeline-trace`, `health`.
 
 ---
 
@@ -131,6 +148,51 @@ type ExecutionEvent =
 - `ManifestProvenance` — `hosted | local-extension | derived-from-workflow`, with `sourceHost`, `sourceWorkflowId`, `sourceManifestId`, `localExtensionPath`.
 - `ManifestDriftReport`, `ManifestDriftMarker` — drift between cached and fresh envelopes.
 - `CapabilityExecutionHints` — non-authoritative execution hints.
+
+### Worker Kits (`./worker-kits`)
+
+The universal kit.json contract — v1 and v2 schemas as a discriminated
+union. **Both are variations of the same Worker Kit primitive.**
+
+- v1 = Worker Kit core primitive (baseline, localized, open-source agent environment, no UI surface).
+- v2 = same primitive extended to package full applications (`kit.type: "ui"`) inside the governed workspace.
+
+Exports: `WorkerKitManifest` (`= WorkerKitManifestV1 | WorkerKitManifestV2`), `WorkerKitBundleManifest`, `WorkerKitCapabilityType` (`worker / workflow / output / ui`), `WorkerKitExecutionMode` (`export / install / mount / run`), `WorkerKitFamily`, `WorkerKitCompatibility`, `WorkerKitInstallMetadata`, `WorkerKitUIMetadata`, `WorkerKitProvenance`, type guards `isWorkerKitManifestV1 / V2`, `isAppKit`, sentinels `WORKER_KIT_LATEST_SCHEMA_VERSION = 2`, `WORKER_KIT_FAMILIES`. See [`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md).
+
+### Pipeline Kits (`./pipeline-kits`)
+
+OPTIONAL specialization for multi-stage worker kits. Declared in
+`pipeline.manifest.json` alongside `kit.json`.
+
+Exports: `PipelineKitManifest`, `PipelineStageRef`, `PipelineArtifactRef`, `PipelineAdapterModeRef`, `PipelineTraceExpectation`, `PipelineOutputTopology`, `PipelineTracePolicy`, `PipelineSessionMemoryPolicy`, `PipelineConventionEnvelope`, sentinel `PIPELINE_KIT_MANIFEST_VERSION = 1`. See [`PIPELINE_KIT_CONTRACT_V1.md`](./PIPELINE_KIT_CONTRACT_V1.md).
+
+### Workspaces (`./workspaces`)
+
+OPTIONAL specialization for kits that delegate to external repos / forks /
+system binaries. Orthogonal to pipeline-kits — applies across any family.
+
+Exports: `WorkspaceDependencyManifest`, `WorkspaceDependencyRef`, `WorkspaceDependencyKind` (open union: `git-fork / git-repo / npm-package / system-binary / external-service / …`), `WorkspaceSurfaceRef`, `WorkspaceOutputTopology`, sentinel `WORKSPACE_DEPENDENCY_MANIFEST_VERSION = 1`.
+
+### Adapters (`./adapters`)
+
+OPTIONAL specialization — generic provider-boundary contract. Orthogonal,
+applies across any kit family. Standard families: `generative`, `persistence`, `auth`, `payment`, `integration`, `reporting`, `hosted-bridge`, `byo-api-key`, `external-repo-handoff`.
+
+Exports: `AdapterContractRef`, `AdapterKind`, `AdapterMode`, `AdapterInputRef`, `AdapterOutputRef`, `NormalizedConnectionRef`, sentinel `ADAPTER_CONTRACT_VERSION = 1`. See [`ADAPTER_CONTRACTS_V1.md`](./ADAPTER_CONTRACTS_V1.md).
+
+### Pipeline Trace (`./pipeline-trace`)
+
+OPTIONAL additive trace events for multi-stage kits. Distinct from
+`./events` (`ExecutionEvent` NDJSON for hosted CLI/SDK streams).
+
+Exports: `PipelineTraceEvent` discriminated union (`pipeline_stage_started / completed / failed`, `pipeline_artifact_written`, `pipeline_handoff_created`), `isPipelineTraceEvent` guard, sentinel `PIPELINE_TRACE_VERSION = 1`. See [`PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md).
+
+### Kit Health (`./health`)
+
+UNIVERSAL — applies to every kit (not just pipeline kits). Standardizes
+the readiness-report shape across CLI, agents, and hosted surfaces.
+
+Exports: `KitHealthReport`, `KitHealthCheck`, `KitHealthSeverity` (`pass / info / warn / fail`), `KitMaturityScore`, `KitMaturityDimension`, sentinel `KIT_HEALTH_REPORT_VERSION = 1`. Consumed by `cli/src/runtime/kit-health/` and surfaced via `growthub kit health <kit-id-or-path> [--json]`.
 
 ### Schemas (`./schemas`)
 
