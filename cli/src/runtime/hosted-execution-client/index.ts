@@ -470,6 +470,19 @@ function collectArtifacts(
     if (typeof output !== "object" || output === null) continue;
     const record = output as Record<string, unknown>;
 
+    const directStoragePath = stringValue(record.storagePath) ?? stringValue(record.storage_path);
+    const directVideoUrl = stringValue(record.videoUrl);
+    if (directStoragePath || directVideoUrl) {
+      artifacts.push({
+        artifactId: directStoragePath ?? `${entry.nodeId}-video-${artifacts.length + 1}`,
+        artifactType: directVideoUrl || isVideoPath(directStoragePath) ? "video" : "file",
+        nodeId: entry.nodeId,
+        url: directVideoUrl,
+        storagePath: directStoragePath,
+        metadata: record,
+      });
+    }
+
     const images = Array.isArray(record.images) ? record.images : [];
     for (const image of images) {
       if (!image || typeof image !== "object") continue;
@@ -499,9 +512,45 @@ function collectArtifacts(
         metadata: slideRecord,
       });
     }
+
+    const videos = Array.isArray(record.videos) ? record.videos : [];
+    for (const video of videos) {
+      if (!video || typeof video !== "object") continue;
+      const videoRecord = video as Record<string, unknown>;
+      const storagePath = stringValue(videoRecord.storagePath) ?? stringValue(videoRecord.storage_path);
+      const videoUrl = stringValue(videoRecord.videoUrl) ?? stringValue(videoRecord.url);
+      artifacts.push({
+        artifactId: storagePath ?? `${entry.nodeId}-video-${artifacts.length + 1}`,
+        artifactType: "video",
+        nodeId: entry.nodeId,
+        url: videoUrl,
+        storagePath,
+        metadata: videoRecord,
+      });
+    }
   }
 
-  return artifacts;
+  return dedupeArtifacts(artifacts);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function isVideoPath(value: string | undefined): boolean {
+  return Boolean(value?.toLowerCase().match(/\.(mp4|mov|webm|mkv|m4v)(\?|$)/));
+}
+
+function dedupeArtifacts(artifacts: HostedExecutionArtifactRef[]): HostedExecutionArtifactRef[] {
+  const seen = new Set<string>();
+  const deduped: HostedExecutionArtifactRef[] = [];
+  for (const artifact of artifacts) {
+    const key = artifact.storagePath ?? artifact.url ?? artifact.artifactId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(artifact);
+  }
+  return deduped;
 }
 
 function resolveNodeSlug(
@@ -539,6 +588,7 @@ function summarizeExecution(
     if (Array.isArray(record.images)) imageCount += record.images.length;
     if (Array.isArray(record.slides)) slideCount += record.slides.length;
     if (Array.isArray(record.videos)) videoCount += record.videos.length;
+    if (typeof record.videoUrl === "string" && record.videoUrl.trim().length > 0) videoCount += 1;
   }
 
   return {

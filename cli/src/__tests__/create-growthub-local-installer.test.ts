@@ -198,11 +198,12 @@ describe("create-growthub-local — backwards-compatible profiles", () => {
     expect(stub!.env.PAPERCLIP_SURFACE_PROFILE).toBe("dx");
   });
 
-  it("routes no profile to `growthub discover` (discovery hub)", () => {
+  it("routes no profile to the governed workspace first-run discovery path", () => {
     const { status, stub } = runInstaller(tmpRoot, []);
 
     expect(status).toBe(0);
     expect(stub!.argv[0]).toBe("discover");
+    expect(stub!.argv.slice(1, 3)).toEqual(["--start", "create-workspace"]);
     expect(stub!.env.PAPERCLIP_SURFACE_PROFILE).toBeNull();
   });
 

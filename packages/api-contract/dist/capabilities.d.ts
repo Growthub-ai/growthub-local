@@ -132,6 +132,8 @@ export interface CapabilityQuery {
     outputType?: string;
     /** If `false`, include disabled capabilities. Defaults to `true`. */
     enabledOnly?: boolean;
+    /** If `true`, include experimental/admin-hidden capabilities. Defaults to `false`. */
+    includeExperimental?: boolean;
     /** Free-text search across slug, display name, description, category. */
     search?: string;
 }

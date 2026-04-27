@@ -85,6 +85,7 @@ const apiContractAliases = {
   "@growthub/api-contract/adapters": resolve(apiContractRoot, "adapters.ts"),
   "@growthub/api-contract/pipeline-trace": resolve(apiContractRoot, "pipeline-trace.ts"),
   "@growthub/api-contract/health": resolve(apiContractRoot, "health.ts"),
+  "@growthub/api-contract/bridge": resolve(apiContractRoot, "bridge.ts"),
 };
 
 // Workspace packages that should NOT be bundled — they'll be published

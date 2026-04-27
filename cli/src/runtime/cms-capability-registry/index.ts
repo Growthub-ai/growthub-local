@@ -89,7 +89,6 @@ function toCapabilityNode(record: HostedCapabilityRecord): CmsCapabilityNode {
   const executionStrategy = typeof (metadata.executionStrategy ?? metadata.execution_strategy) === "string"
     ? (metadata.executionStrategy ?? metadata.execution_strategy) as "direct" | "sequential-with-persistence" | "async_operation"
     : "direct";
-
   return {
     slug: record.slug,
     displayName: record.displayName,
@@ -178,6 +177,7 @@ async function deriveCapabilitiesFromHostedWorkflows(): Promise<HostedCapability
 
 function matchesQuery(node: CmsCapabilityNode, query: CapabilityQuery): boolean {
   if (query.enabledOnly !== false && !node.enabled) return false;
+  if (query.includeExperimental !== true && node.experimental) return false;
   if (query.family && node.family !== query.family) return false;
   if (query.executionKind && node.executionKind !== query.executionKind) return false;
   if (query.outputType && !node.outputTypes.includes(query.outputType)) return false;
@@ -208,9 +208,12 @@ type RegistrySourceOutcome =
       fetchedAt: string;
     };
 
-async function resolveFromManifest(): Promise<RegistrySourceOutcome> {
+async function resolveFromManifest(query?: CapabilityQuery): Promise<RegistrySourceOutcome> {
   try {
-    const { envelope } = await fetchCapabilityManifest();
+    const { envelope } = await fetchCapabilityManifest({
+      includeExperimental: query?.includeExperimental === true,
+      includeDisabled: query?.enabledOnly === false,
+    });
     writeManifestCache(envelope);
     const projected = projectManifestEnvelope(envelope);
     return {
@@ -295,7 +298,7 @@ export interface CmsCapabilityRegistryClient {
 export function createCmsCapabilityRegistryClient(): CmsCapabilityRegistryClient {
   return {
     async listCapabilities(query) {
-      const outcome = await resolveFromManifest();
+      const outcome = await resolveFromManifest(query);
       const nodes = outcome.nodes;
 
       const enabledCount = nodes.filter((n) => n.enabled).length;

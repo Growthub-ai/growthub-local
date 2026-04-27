@@ -3,11 +3,14 @@
  *
  * growthub artifact list         — List standardized artifacts
  * growthub artifact inspect      — Inspect a specific artifact
+ * growthub artifact download     — Download a hosted artifact through Growthub auth
  *
  * Artifacts are produced by dynamic registry pipeline executions and
  * persisted locally under ~/.paperclip/artifacts/.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import pc from "picocolors";
 import { Command } from "commander";
 import {
@@ -15,6 +18,10 @@ import {
   type GrowthubArtifactManifest,
   type GrowthubArtifactType,
 } from "../runtime/artifact-contracts/index.js";
+import {
+  readExecutionResult,
+} from "../runtime/execution-results/index.js";
+import { readSession, isSessionExpired } from "../auth/session-store.js";
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -113,6 +120,81 @@ function printArtifactDetail(art: GrowthubArtifactManifest): void {
   console.log("");
 }
 
+function stringMetadata(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function inferOutPath(storagePath: string, out?: string): string {
+  if (out?.trim()) return path.resolve(out);
+  return path.resolve(process.cwd(), path.basename(storagePath));
+}
+
+async function downloadStoragePath(storagePath: string, outPath: string, bucket = "node_documents"): Promise<number> {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    throw new Error("Hosted session expired. Run `growthub auth login` again.");
+  }
+
+  const url = new URL("/api/secure-image", `${session.hostedBaseUrl.replace(/\/+$/, "")}/`);
+  url.searchParams.set("bucket", bucket);
+  url.searchParams.set("path", storagePath);
+
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${session.accessToken}`,
+      ...(session.userId ? { "x-user-id": session.userId } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Authenticated artifact download failed (${response.status}).`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, buffer);
+  return buffer.length;
+}
+
+function resolveStorageRef(id: string | undefined, artifactSelector?: string, direct?: { storagePath?: string; bucket?: string }): {
+  storagePath: string;
+  bucket: string;
+  artifactId: string;
+} | null {
+  if (direct?.storagePath?.trim()) {
+    return {
+      storagePath: direct.storagePath.trim(),
+      bucket: direct.bucket?.trim() || "node_documents",
+      artifactId: direct.storagePath.trim(),
+    };
+  }
+
+  if (!id) return null;
+
+  const execution = readExecutionResult(id);
+  if (execution) {
+    const artifacts = execution.artifacts.filter((artifact) => artifact.storagePath);
+    const selected = artifactSelector
+      ? artifacts.find((artifact) => artifact.artifactId === artifactSelector || artifact.nodeId === artifactSelector)
+      : artifacts[0];
+    if (!selected?.storagePath) return null;
+    return {
+      storagePath: selected.storagePath,
+      bucket: stringMetadata(selected.metadata?.bucket) ?? "node_documents",
+      artifactId: selected.artifactId,
+    };
+  }
+
+  const artifact = createArtifactStore().get(id);
+  const storagePath = stringMetadata(artifact?.metadata?.storagePath) ?? stringMetadata(artifact?.metadata?.storage_path);
+  if (!artifact || !storagePath) return null;
+  return {
+    storagePath,
+    bucket: stringMetadata(artifact.metadata?.bucket) ?? "node_documents",
+    artifactId: artifact.id,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Command registration
 // ---------------------------------------------------------------------------
@@ -128,6 +210,8 @@ Examples:
   $ growthub artifact list --pipeline <id>  # filter by pipeline
   $ growthub artifact list --json           # machine-readable output
   $ growthub artifact inspect <id>          # inspect a specific artifact
+  $ growthub artifact download <executionId>
+  $ growthub artifact download --storage-path workflow_videos/<user>/<thread>/<file>.mp4
 `);
 
   // Default — list
@@ -193,5 +277,69 @@ Examples:
       }
 
       printArtifactDetail(artifact);
+    });
+
+  // ── download ────────────────────────────────────────────────────────────
+  art
+    .command("download")
+    .description("Download a hosted execution artifact through the authenticated Growthub proxy")
+    .argument("[id]", "Execution ID from pipeline execute, or local artifact ID")
+    .option("--artifact <id>", "Artifact ID or node ID when an execution has multiple artifacts")
+    .option("--storage-path <path>", "Download this Growthub storage path directly with the active auth session")
+    .option("--bucket <bucket>", "Storage bucket for --storage-path", "node_documents")
+    .option("--out <path>", "Output file path")
+    .option("--json", "Output raw JSON")
+    .action(async (id: string | undefined, opts: {
+      artifact?: string;
+      storagePath?: string;
+      bucket?: string;
+      out?: string;
+      json?: boolean;
+    }) => {
+      try {
+        const ref = resolveStorageRef(id, opts.artifact, {
+          storagePath: opts.storagePath,
+          bucket: opts.bucket,
+        });
+        if (!ref) {
+          throw new Error(
+            id
+              ? `No downloadable storagePath found for "${id}".`
+              : "Provide an execution ID, local artifact ID, or --storage-path.",
+          );
+        }
+        const outPath = inferOutPath(ref.storagePath, opts.out);
+        const bytes = await downloadStoragePath(ref.storagePath, outPath, ref.bucket);
+        const payload = {
+          status: "ok",
+          id,
+          artifactId: ref.artifactId,
+          bucket: ref.bucket,
+          storagePath: ref.storagePath,
+          outPath,
+          bytes,
+        };
+
+        if (opts.json) {
+          console.log(JSON.stringify(payload, null, 2));
+          return;
+        }
+
+        console.log(pc.green("Downloaded artifact"));
+        console.log(`  ${pc.dim("Artifact:")} ${payload.artifactId}`);
+        console.log(`  ${pc.dim("Storage:")}  ${payload.bucket}/${payload.storagePath}`);
+        console.log(`  ${pc.dim("Output:")}   ${payload.outPath}`);
+        console.log(`  ${pc.dim("Bytes:")}    ${payload.bytes}`);
+      } catch (err) {
+        if (opts.json) {
+          console.log(JSON.stringify({
+            status: "error",
+            message: err instanceof Error ? err.message : String(err),
+          }, null, 2));
+        } else {
+          console.error(pc.red("Download failed: " + (err instanceof Error ? err.message : String(err))));
+        }
+        process.exitCode = 1;
+      }
     });
 }

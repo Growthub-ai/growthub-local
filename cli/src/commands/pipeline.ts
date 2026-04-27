@@ -44,6 +44,9 @@ import {
   createArtifactStore,
 } from "../runtime/artifact-contracts/index.js";
 import {
+  createExecutionResultCache,
+} from "../runtime/execution-results/index.js";
+import {
   createNativeIntelligenceProvider,
   type ExecutionSummaryInput,
   type PipelineSummaryForIntelligence,
@@ -377,7 +380,7 @@ export async function runPipelineAssembler(opts: {
 
         p.log.info(`Executing pipeline ${pc.bold(pipeline.pipelineId)} (${pkg.executionRoute})...`);
 
-        const result = await executionClient.executeWorkflow({
+        const executionInput = {
           pipelineId: pipeline.pipelineId,
           threadId: pipeline.threadId,
           nodes: pipeline.nodes.map((n) => ({
@@ -388,14 +391,22 @@ export async function runPipelineAssembler(opts: {
           })),
           executionMode: pipeline.executionMode,
           metadata: pipeline.metadata,
+        };
+        const resultCache = createExecutionResultCache(executionInput);
+        const result = await executionClient.executeWorkflow(executionInput, {
+          onEvent: async (event) => {
+            resultCache.handleEvent(event);
+          },
         });
+        const cachedResult = resultCache.saveFinal(result);
 
-        p.log.success(`Execution ${pc.bold(result.executionId)}: ${result.status}`);
+        p.log.success(`Execution ${pc.bold(cachedResult.executionId)}: ${cachedResult.status}`);
+        p.log.info(`Result cache: ${resultCache.getPath()}`);
 
         // Create artifact records for each result artifact
         const artifactStore = createArtifactStore();
-        for (const artRef of result.artifacts) {
-          const nodeResult = result.nodeResults[artRef.nodeId];
+        for (const artRef of cachedResult.artifacts) {
+          const nodeResult = cachedResult.nodeResults[artRef.nodeId];
           artifactStore.create({
             artifactType: artRef.artifactType as "video" | "image" | "slides" | "text" | "report" | "pipeline",
             sourceNodeSlug: nodeResult?.slug ?? "unknown",
@@ -403,12 +414,16 @@ export async function runPipelineAssembler(opts: {
             pipelineId: pipeline.pipelineId,
             nodeId: artRef.nodeId,
             threadId: pipeline.threadId,
-            metadata: artRef.metadata ?? {},
+            metadata: {
+              ...(artRef.metadata ?? {}),
+              ...(artRef.url ? { url: artRef.url } : {}),
+              ...(artRef.storagePath ? { storagePath: artRef.storagePath } : {}),
+            },
           });
         }
 
-        if (result.artifacts.length > 0) {
-          p.log.info(`${result.artifacts.length} artifact(s) recorded.`);
+        if (cachedResult.artifacts.length > 0) {
+          p.log.info(`${cachedResult.artifacts.length} artifact(s) recorded.`);
         }
       } catch (err) {
         p.log.error("Execution failed: " + (err as Error).message);
@@ -511,7 +526,7 @@ async function executeHostedPipeline(
     startupSpinner.stop(message ?? "Hosted workflow execution started.");
   };
 
-  const result = await executionClient.executeWorkflow({
+  const executionInput = {
     pipelineId: pipeline.pipelineId,
     workflowId: hostedWorkflowId,
     threadId: hostedWorkflowId ?? pipeline.threadId,
@@ -523,8 +538,13 @@ async function executeHostedPipeline(
     })),
     executionMode: pipeline.executionMode,
     metadata: pipeline.metadata,
-  }, opts?.json ? undefined : {
+  };
+  const resultCache = createExecutionResultCache(executionInput);
+
+  const result = await executionClient.executeWorkflow(executionInput, {
     onEvent: async (event) => {
+      resultCache.handleEvent(event);
+      if (opts?.json) return;
       if (event.type === "node_start" || event.type === "node_complete") {
         settleStartup("Hosted workflow execution started.");
       }
@@ -545,25 +565,27 @@ async function executeHostedPipeline(
       }
     },
   });
+  const cachedResult = resultCache.saveFinal(result);
 
   settleStartup("Hosted workflow execution started.");
 
   if (opts?.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(cachedResult, null, 2));
     return;
   }
 
   console.log("");
   console.log(pc.bold("Pipeline Execution Result"));
   console.log(hr());
-  console.log(`  ${pc.dim("Execution ID:")} ${result.executionId}`);
+  console.log(`  ${pc.dim("Execution ID:")} ${cachedResult.executionId}`);
+  console.log(`  ${pc.dim("Result Cache:")}  ${resultCache.getPath()}`);
   if (result.threadId) console.log(`  ${pc.dim("Thread ID:")}    ${result.threadId}`);
   console.log(`  ${pc.dim("Status:")}       ${result.status === "succeeded" ? pc.green(result.status) : pc.red(result.status)}`);
   if (result.startedAt) console.log(`  ${pc.dim("Started:")}      ${result.startedAt}`);
   if (result.completedAt) console.log(`  ${pc.dim("Completed:")}    ${result.completedAt}`);
   console.log(hr());
 
-  for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+  for (const [nodeId, nodeResult] of Object.entries(cachedResult.nodeResults)) {
     const statusColor = nodeResult.status === "succeeded" ? pc.green : pc.red;
     console.log(`  ${statusColor(nodeResult.status)} ${pc.bold(nodeResult.slug)} (${pc.dim(nodeId)})`);
     if (nodeResult.error) {
@@ -571,10 +593,10 @@ async function executeHostedPipeline(
     }
   }
 
-  if (result.artifacts.length > 0) {
+  if (cachedResult.artifacts.length > 0) {
     console.log("");
     console.log(pc.bold("  Artifacts:"));
-    for (const art of result.artifacts) {
+    for (const art of cachedResult.artifacts) {
       console.log(`    ${pc.dim("·")} ${art.artifactType} (${art.artifactId})`);
     }
   }
@@ -608,8 +630,8 @@ async function executeHostedPipeline(
   }
 
   const artifactStore = createArtifactStore();
-  for (const artRef of result.artifacts) {
-    const nodeResult = result.nodeResults[artRef.nodeId];
+  for (const artRef of cachedResult.artifacts) {
+    const nodeResult = cachedResult.nodeResults[artRef.nodeId];
     artifactStore.create({
       artifactType: artRef.artifactType as "video" | "image" | "slides" | "text" | "report" | "pipeline",
       sourceNodeSlug: nodeResult?.slug ?? "unknown",
@@ -617,7 +639,11 @@ async function executeHostedPipeline(
       pipelineId: pipeline.pipelineId,
       nodeId: artRef.nodeId,
       threadId: result.threadId ?? pipeline.threadId,
-      metadata: artRef.metadata ?? {},
+      metadata: {
+        ...(artRef.metadata ?? {}),
+        ...(artRef.url ? { url: artRef.url } : {}),
+        ...(artRef.storagePath ? { storagePath: artRef.storagePath } : {}),
+      },
     });
   }
 
@@ -858,7 +884,7 @@ Examples:
         const completed = new Set<string>();
         const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
 
-        const result = await executionClient.executeWorkflow({
+        const executionInput = {
           pipelineId: pipeline.pipelineId,
           workflowId: hostedWorkflowId,
           threadId: hostedWorkflowId ?? pipeline.threadId,
@@ -870,8 +896,12 @@ Examples:
           })),
           executionMode: pipeline.executionMode,
           metadata: pipeline.metadata,
-        }, opts.json ? undefined : {
+        };
+        const resultCache = createExecutionResultCache(executionInput);
+        const result = await executionClient.executeWorkflow(executionInput, {
           onEvent: async (event) => {
+            resultCache.handleEvent(event);
+            if (opts.json) return;
             if (
               event.type === "node_complete" &&
               event.nodeId &&
@@ -888,23 +918,25 @@ Examples:
             }
           },
         });
+        const cachedResult = resultCache.saveFinal(result);
 
         if (opts.json) {
-          console.log(JSON.stringify(result, null, 2));
+          console.log(JSON.stringify(cachedResult, null, 2));
           return;
         }
 
         console.log("");
         console.log(pc.bold("Pipeline Execution Result"));
         console.log(hr());
-        console.log(`  ${pc.dim("Execution ID:")} ${result.executionId}`);
-        if (result.threadId) console.log(`  ${pc.dim("Thread ID:")}    ${result.threadId}`);
-        console.log(`  ${pc.dim("Status:")}       ${result.status === "succeeded" ? pc.green(result.status) : pc.red(result.status)}`);
-        if (result.startedAt) console.log(`  ${pc.dim("Started:")}      ${result.startedAt}`);
-        if (result.completedAt) console.log(`  ${pc.dim("Completed:")}    ${result.completedAt}`);
+        console.log(`  ${pc.dim("Execution ID:")} ${cachedResult.executionId}`);
+        console.log(`  ${pc.dim("Result Cache:")}  ${resultCache.getPath()}`);
+        if (cachedResult.threadId) console.log(`  ${pc.dim("Thread ID:")}    ${cachedResult.threadId}`);
+        console.log(`  ${pc.dim("Status:")}       ${cachedResult.status === "succeeded" ? pc.green(cachedResult.status) : pc.red(cachedResult.status)}`);
+        if (cachedResult.startedAt) console.log(`  ${pc.dim("Started:")}      ${cachedResult.startedAt}`);
+        if (cachedResult.completedAt) console.log(`  ${pc.dim("Completed:")}    ${cachedResult.completedAt}`);
         console.log(hr());
 
-        for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+        for (const [nodeId, nodeResult] of Object.entries(cachedResult.nodeResults)) {
           const statusColor = nodeResult.status === "succeeded" ? pc.green : pc.red;
           console.log(`  ${statusColor(nodeResult.status)} ${pc.bold(nodeResult.slug)} (${pc.dim(nodeId)})`);
           if (nodeResult.error) {
@@ -912,23 +944,23 @@ Examples:
           }
         }
 
-        if (result.artifacts.length > 0) {
+        if (cachedResult.artifacts.length > 0) {
           console.log("");
           console.log(pc.bold("  Artifacts:"));
-          for (const art of result.artifacts) {
+          for (const art of cachedResult.artifacts) {
             console.log(`    ${pc.dim("·")} ${art.artifactType} (${art.artifactId})`);
           }
         }
 
-        if (result.summary) {
+        if (cachedResult.summary) {
           console.log("");
           console.log(pc.bold("  Summary:"));
-          if (result.summary.outputText) console.log(`    ${pc.dim("·")} ${result.summary.outputText}`);
-          if (typeof result.summary.imageCount === "number") console.log(`    ${pc.dim("·")} images: ${result.summary.imageCount}`);
-          if (typeof result.summary.slideCount === "number") console.log(`    ${pc.dim("·")} slides: ${result.summary.slideCount}`);
-          if (typeof result.summary.videoCount === "number") console.log(`    ${pc.dim("·")} videos: ${result.summary.videoCount}`);
-          if (result.summary.workflowRunId) console.log(`    ${pc.dim("·")} workflow_run_id: ${result.summary.workflowRunId}`);
-          if (result.summary.keyboardShortcutHint) console.log(`    ${pc.dim("·")} ${result.summary.keyboardShortcutHint}`);
+          if (cachedResult.summary.outputText) console.log(`    ${pc.dim("·")} ${cachedResult.summary.outputText}`);
+          if (typeof cachedResult.summary.imageCount === "number") console.log(`    ${pc.dim("·")} images: ${cachedResult.summary.imageCount}`);
+          if (typeof cachedResult.summary.slideCount === "number") console.log(`    ${pc.dim("·")} slides: ${cachedResult.summary.slideCount}`);
+          if (typeof cachedResult.summary.videoCount === "number") console.log(`    ${pc.dim("·")} videos: ${cachedResult.summary.videoCount}`);
+          if (cachedResult.summary.workflowRunId) console.log(`    ${pc.dim("·")} workflow_run_id: ${cachedResult.summary.workflowRunId}`);
+          if (cachedResult.summary.keyboardShortcutHint) console.log(`    ${pc.dim("·")} ${cachedResult.summary.keyboardShortcutHint}`);
         }
 
         try {
@@ -947,8 +979,8 @@ Examples:
 
         // Record artifacts locally
         const artifactStore = createArtifactStore();
-        for (const artRef of result.artifacts) {
-          const nodeResult = result.nodeResults[artRef.nodeId];
+        for (const artRef of cachedResult.artifacts) {
+          const nodeResult = cachedResult.nodeResults[artRef.nodeId];
           artifactStore.create({
             artifactType: artRef.artifactType as "video" | "image" | "slides" | "text" | "report" | "pipeline",
             sourceNodeSlug: nodeResult?.slug ?? "unknown",
@@ -956,7 +988,11 @@ Examples:
             pipelineId: pipeline.pipelineId,
             nodeId: artRef.nodeId,
             threadId: pipeline.threadId,
-            metadata: artRef.metadata ?? {},
+            metadata: {
+              ...(artRef.metadata ?? {}),
+              ...(artRef.url ? { url: artRef.url } : {}),
+              ...(artRef.storagePath ? { storagePath: artRef.storagePath } : {}),
+            },
           });
         }
 

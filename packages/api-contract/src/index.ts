@@ -27,6 +27,7 @@
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
+ *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  */
 
 // Capabilities
@@ -45,6 +46,29 @@ export type {
   CapabilityRegistryMeta,
 } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
+
+// Growthub Bridge
+export type {
+  BridgeAssetType,
+  BridgeAssetSource,
+  BridgeAssetItem,
+  BridgePagination,
+  BridgeAssetListResponse,
+  BridgeBrandKit,
+  BridgeBrandAsset,
+  BridgeBrandKitListResponse,
+  BridgeBrandAssetListResponse,
+  BridgeKnowledgeItem,
+  BridgeKnowledgeTable,
+  BridgeKnowledgeListResponse,
+  BridgeKnowledgeTableListResponse,
+  BridgeKnowledgeSaveInput,
+  BridgeKnowledgeSaveResponse,
+  BridgeKnowledgeMetadataPatchInput,
+  BridgeRunOutputSyncInput,
+  BridgeMcpAccount,
+  BridgeMcpAccountsResponse,
+} from "./bridge.js";
 
 // Execution
 export type {

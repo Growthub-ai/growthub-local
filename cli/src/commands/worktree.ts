@@ -412,7 +412,7 @@ async function rebindSeededProjectWorkspaces(input: {
           cwd: reboundCwd,
           updatedAt: new Date(),
         })
-        .where(eq(projectWorkspaces.id, row.id));
+        .where(eq(projectWorkspaces.id as any, row.id) as any);
 
       rebound.push({
         name: row.name,

@@ -102,6 +102,20 @@ Package name: `@growthub/api-contract`. Versions:
 - `CapabilityQuery`
 - `CapabilityRegistrySource`, `CapabilityRegistryMeta`
 
+Experimental CMS rows are not a separate model class. They use the existing
+`CapabilityNode.experimental` boolean. Default discovery should hide them;
+callers that intentionally need Atlas/admin-hidden rows set
+`CapabilityQuery.includeExperimental = true` or use:
+
+```bash
+growthub capability list --family video --include-experimental --json
+growthub capability inspect atlas-video-generation --include-experimental --json
+```
+
+Machine consumers must read `experimental: true` from the JSON output and
+decide whether to expose, warn, or hide the row. Do not add a parallel
+`stability` field.
+
 ### Execution (`./execution`)
 
 - `ExecutionMode`
@@ -110,6 +124,125 @@ Package name: `@growthub/api-contract`. Versions:
 - `WorkflowExecutionStatus`, `NodeExecutionStatus`
 - `NodeResult`, `ExecutionArtifactRef`
 - `WorkflowExecutionSummary`
+
+Execution results are the canonical artifact handoff. Media-producing nodes may
+return direct fields such as:
+
+```json
+{
+  "videoUrl": "https://...",
+  "storagePath": "workflow_videos/{userId}/{threadId}/{videoId}.mp4",
+  "bucket": "node_documents"
+}
+```
+
+The secure SDK pattern is:
+
+1. capture the execution JSON at run time;
+2. read `nodeResults[*].output.storagePath` and `artifacts[*].storagePath`;
+3. download through the Growthub session and `/api/secure-image`;
+4. never download private workflow media by scraping Supabase keys from hosted
+   JavaScript bundles.
+
+Authenticated download URL:
+
+```text
+{hostedBaseUrl}/api/secure-image?bucket=node_documents&path={encodeURIComponent(storagePath)}
+```
+
+Required headers:
+
+```http
+Authorization: Bearer <growthub session access token>
+```
+
+The CLI exposes the same bridge primitive for agents and humans:
+
+```bash
+growthub bridge assets list --limit 20 --json
+growthub bridge assets download --storage-path <storage_path> --out ./asset.bin --json
+growthub bridge brand kits --include-assets --json
+growthub bridge brand assets --brand-kit-id <brandKitId> --json
+growthub bridge brand download --storage-path <storage_path> --out ./brand-asset.bin --json
+growthub bridge knowledge list --json
+growthub bridge knowledge write --title notes --content "# Notes" --json
+growthub bridge knowledge download <knowledgeItemId> --out ./item.md --json
+growthub bridge mcp accounts --json
+```
+
+SDK consumers should import the stable bridge contracts from
+`@growthub/api-contract/bridge`: `BridgeAssetItem`,
+`BridgeBrandKit`, `BridgeBrandAsset`, `BridgeKnowledgeItem`,
+`BridgeKnowledgeSaveInput`, and `BridgeMcpAccount`. The local CLI
+implementation uses the same bearer session as `growthub auth whoami`; it does
+not use raw Supabase anon-key extraction.
+
+Brand kits and brand assets are read/download bridge primitives. They expose
+the user's existing remote `brand_kits` and `brand_assets` records, including
+Shopify-CDN-backed CMS media URLs and secure `storage_path` values, so agents
+can bind hosted brand context into local CMS executions. They do not introduce a
+new arbitrary Asset Gallery upload path.
+
+For brand-kit resources specifically, the CLI bridge resolves against the
+existing hosted GH app routes:
+
+```text
+GET /api/brand-settings
+GET /api/brand-settings/assets
+```
+
+Those routes are authenticated by the hosted Supabase session cookie shape that
+the CLI derives from the active Growthub session, not by the undeployed
+`/api/cli/profile?view=brand-kits` bridge view.
+
+Representative JSON output:
+
+```json
+{
+  "success": true,
+  "userId": "20d81c2e-c440-4f93-afe2-1c45f39abd81",
+  "brandKits": [
+    {
+      "id": "174299f8-5045-415a-99b2-a9e4b33aa4d1",
+      "user_id": "20d81c2e-c440-4f93-afe2-1c45f39abd81",
+      "brand_name": "Dr. Robert Whitfield",
+      "visibility": "private",
+      "colors": { "primary": "#000000" },
+      "fonts": { "primary": "Inter" },
+      "messaging": "...",
+      "share_config": { "collaborators": [] }
+    }
+  ],
+  "count": 21
+}
+```
+
+```json
+{
+  "success": true,
+  "userId": "20d81c2e-c440-4f93-afe2-1c45f39abd81",
+  "brandKitId": "174299f8-5045-415a-99b2-a9e4b33aa4d1",
+  "assets": [
+    {
+      "id": "6bbb47de-7aa4-4cfc-aaff-e3409800837d",
+      "brand_kit_id": "174299f8-5045-415a-99b2-a9e4b33aa4d1",
+      "asset_type": "product_photo",
+      "asset_url": "https://...shopifycdn-or-storage-url...",
+      "storage_path": "public/.../brand_assets/.../winner1.jpeg",
+      "metadata": {
+        "file_name": "winner1.jpeg",
+        "file_size": 546061,
+        "file_type": "image/jpeg"
+      }
+    }
+  ],
+  "count": 2
+}
+```
+
+The gh-app route must enforce ownership for workflow media paths by comparing
+the authenticated session user id with the `{userId}` segment in
+`workflow_videos/{userId}/{threadId}/...` before service-role storage download.
 
 ### Provider assembly (`./providers`)
 
@@ -219,6 +352,7 @@ Always:
 - keep this package narrow and stable
 - separate provider assembly from execution
 - keep manifests portable and provenance-aware
+- keep media download behind Growthub auth, not raw Supabase bundle keys
 
 Never:
 
@@ -227,6 +361,7 @@ Never:
 - force local extensions into imperative runtime hooks
 - mix enterprise management concerns into this package
 - widen hosted routes to fit the SDK
+- document raw Supabase anon-key extraction as an SDK download pattern
 
 ---
 

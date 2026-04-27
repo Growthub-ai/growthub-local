@@ -27,9 +27,11 @@
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
+ *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
+export type { BridgeAssetType, BridgeAssetSource, BridgeAssetItem, BridgePagination, BridgeAssetListResponse, BridgeBrandKit, BridgeBrandAsset, BridgeBrandKitListResponse, BridgeBrandAssetListResponse, BridgeKnowledgeItem, BridgeKnowledgeTable, BridgeKnowledgeListResponse, BridgeKnowledgeTableListResponse, BridgeKnowledgeSaveInput, BridgeKnowledgeSaveResponse, BridgeKnowledgeMetadataPatchInput, BridgeRunOutputSyncInput, BridgeMcpAccount, BridgeMcpAccountsResponse, } from "./bridge.js";
 export type { ExecutionMode, ExecuteNodePayload, ExecuteWorkflowInput, ExecuteWorkflowResult, WorkflowExecutionStatus, NodeExecutionStatus, NodeResult, ExecutionArtifactRef, WorkflowExecutionSummary, } from "./execution.js";
 export type { ProviderStatus, ProviderRecord, ProviderAssemblyInput, ProviderAssemblyStatus, ProviderAssemblyResult, ProviderAssemblyHints, } from "./providers.js";
 export type { PreferredExecutionMode, ExecutionDefaults, Entitlement, GatedCapabilityRef, Profile, } from "./profile.js";

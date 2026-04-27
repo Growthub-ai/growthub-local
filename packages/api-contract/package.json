@@ -88,6 +88,10 @@
     "./health": {
       "types": "./dist/health.d.ts",
       "import": "./dist/health.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js"
     }
   },
   "main": "./dist/index.js",
