@@ -546,7 +546,7 @@ checkFileContains("cli/src/commands/starter.ts",
 );
 checkFileContains("cli/src/index.ts",
   "registerStarterCommands",
-  "🧪 Custom Workspace Starter",
+  "🚀 Create Governed Workspace",
   "surfaceChoice === \"custom-workspace-starter\"",
 );
 checkFileContains("packages/create-growthub-local/bin/create-growthub-local.mjs",
