@@ -27,6 +27,7 @@
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
+ *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  */
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
 export { isExecutionEvent } from "./events.js";

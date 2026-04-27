@@ -116,7 +116,8 @@ function printGroupedCapabilities(nodes: CmsCapabilityNode[]): void {
 
     for (const node of groupNodes) {
       const enabledTag = node.enabled ? pc.green("enabled") : pc.red("disabled");
-      console.log(`  ${pc.bold(node.slug)}  ${pc.dim(node.displayName)}  ${enabledTag}`);
+      const experimentalTag = node.experimental ? `  ${pc.yellow("experimental")}` : "";
+      console.log(`  ${pc.bold(node.slug)}  ${pc.dim(node.displayName)}  ${enabledTag}${experimentalTag}`);
       console.log(`  ${pc.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc.dim("Outputs:")} ${pc.dim(node.outputTypes.join(", "))}`);
       if (node.description) {
         console.log(`  ${pc.dim(node.description)}`);
@@ -139,6 +140,7 @@ function printCapabilityCard(node: CmsCapabilityNode): void {
   const lines = [
     `${iconPrefix}${pc.bold(node.displayName)}  ${pc.dim(node.slug)}`,
     `${familyBadge(node.family)}  ${node.enabled ? pc.green("enabled") : pc.red("disabled")}`,
+    `${pc.dim("Experimental:")}     ${node.experimental ? pc.yellow("true") : pc.green("false")}`,
     "",
     `${pc.dim("Category:")}          ${node.category}`,
     `${pc.dim("Node Type:")}         ${node.nodeType}`,
@@ -294,6 +296,7 @@ Examples:
   $ growthub capability                     # interactive browser
   $ growthub capability list                # all capabilities grouped by family
   $ growthub capability list --family video # filter by family
+  $ growthub capability list --family video --include-experimental
   $ growthub capability list --json         # machine-readable output
   $ growthub capability inspect video-gen   # inspect a specific capability
   $ growthub capability resolve             # resolve machine bindings for all
@@ -309,8 +312,9 @@ Examples:
     .command("list")
     .description("List all CMS-backed runtime node capabilities")
     .option("--family <family>", "Filter by family (video, image, slides, text, data, ops)")
+    .option("--include-experimental", "Include experimental/admin-hidden capabilities")
     .option("--json", "Output raw JSON for scripting")
-    .action(async (opts: { family?: string; json?: boolean }) => {
+    .action(async (opts: { family?: string; includeExperimental?: boolean; json?: boolean }) => {
       const access = getWorkflowAccess();
       if (access.state !== "ready") {
         console.error(pc.red(`${access.reason}.`));
@@ -320,8 +324,8 @@ Examples:
 
       const registry = createCmsCapabilityRegistryClient();
       const query = opts.family
-        ? { family: opts.family as CapabilityFamily }
-        : undefined;
+        ? { family: opts.family as CapabilityFamily, includeExperimental: opts.includeExperimental === true }
+        : { includeExperimental: opts.includeExperimental === true };
 
       try {
         const { nodes, meta } = await registry.listCapabilities(query);
@@ -352,8 +356,9 @@ Examples:
     .command("inspect")
     .description("Inspect a specific CMS capability node")
     .argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')")
+    .option("--include-experimental", "Include experimental/admin-hidden capabilities")
     .option("--json", "Output raw JSON")
-    .action(async (slug: string, opts: { json?: boolean }) => {
+    .action(async (slug: string, opts: { includeExperimental?: boolean; json?: boolean }) => {
       const access = getWorkflowAccess();
       if (access.state !== "ready") {
         console.error(pc.red(`${access.reason}.`));
@@ -364,7 +369,12 @@ Examples:
       const registry = createCmsCapabilityRegistryClient();
 
       try {
-        const node = await registry.getCapability(slug);
+        const { nodes } = await registry.listCapabilities({
+          slug,
+          enabledOnly: false,
+          includeExperimental: opts.includeExperimental === true,
+        });
+        const node = nodes.find((candidate) => candidate.slug === slug) ?? null;
         if (!node) {
           console.error(pc.red(`Unknown capability: "${slug}".`) + pc.dim(" Run `growthub capability list` to browse."));
           process.exitCode = 1;

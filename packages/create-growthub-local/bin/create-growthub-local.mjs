@@ -217,11 +217,12 @@ function buildCliArgs(opts, effectiveDataDir, growthubCli) {
     ];
   }
 
-  // No profile → open the shared discovery hub (kits / templates /
-  // workflows / agent harness / settings).
+  // No profile → open the shared discovery hub at the core first-run path.
   return [
     growthubCli,
     "discover",
+    "--start",
+    "create-workspace",
     ...(opts.run ? ["--run"] : []),
     "--data-dir",
     effectiveDataDir,

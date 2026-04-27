@@ -56,8 +56,11 @@ function badge(a: TemplateArtifact): string {
 }
 
 function printCard(a: TemplateArtifact): void {
-  const compat = a.compatibleFormats.length
-    ? pc.dim("Works with: ") + a.compatibleFormats.map((f) => pc.cyan(f)).join(", ")
+  const compatibleFormats = "compatibleFormats" in a && Array.isArray(a.compatibleFormats)
+    ? a.compatibleFormats
+    : [];
+  const compat = compatibleFormats.length
+    ? pc.dim("Works with: ") + compatibleFormats.map((f: string) => pc.cyan(f)).join(", ")
     : pc.dim("Works with: any format");
   const rows = [
     pc.bold(a.name),
@@ -95,7 +98,10 @@ function printSummary(filter: ArtifactFilter): void {
     console.log(pc.dim("  " + g.description));
     console.log("");
     for (const a of g.artifacts) {
-      const compat = a.compatibleFormats.length ? pc.dim(" · " + a.compatibleFormats.join(", ")) : "";
+      const compatibleFormats = "compatibleFormats" in a && Array.isArray(a.compatibleFormats)
+        ? a.compatibleFormats
+        : [];
+      const compat = compatibleFormats.length ? pc.dim(" · " + compatibleFormats.join(", ")) : "";
       console.log(`  ${pc.cyan(pc.bold(a.name))}${compat}`);
       console.log(`  ${pc.dim("growthub template get " + a.slug)}`);
       console.log("");

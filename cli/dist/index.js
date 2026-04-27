@@ -14,7 +14,8 @@ import os from "node:os";
 import path from "node:path";
 function resolvePaperclipHomeDir() {
   const envHome = process.env.PAPERCLIP_HOME?.trim();
-  if (envHome) return path.resolve(expandHomePrefix(envHome));
+  if (envHome)
+    return path.resolve(expandHomePrefix(envHome));
   return path.resolve(os.homedir(), ".paperclip");
 }
 function resolvePaperclipInstanceId(override) {
@@ -58,8 +59,10 @@ function resolveMemoryProjectsDir() {
   return path.resolve(resolveMemoryDir(), "projects");
 }
 function expandHomePrefix(value) {
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
+  if (value === "~")
+    return os.homedir();
+  if (value.startsWith("~/"))
+    return path.resolve(os.homedir(), value.slice(2));
   return value;
 }
 function describeLocalInstancePaths(instanceId) {
@@ -134,11 +137,13 @@ function toStringOrUndefined(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function normalizeSession(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return null;
   const record = raw;
   const accessToken = toStringOrUndefined(record.accessToken);
   const hostedBaseUrl = toStringOrUndefined(record.hostedBaseUrl);
-  if (!accessToken || !hostedBaseUrl) return null;
+  if (!accessToken || !hostedBaseUrl)
+    return null;
   const issuedAt = toStringOrUndefined(record.issuedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
   return {
     version: 1,
@@ -155,7 +160,8 @@ function normalizeSession(raw) {
 }
 function readSession() {
   const filePath = resolveSessionPath();
-  if (!fs.existsSync(filePath)) return null;
+  if (!fs.existsSync(filePath))
+    return null;
   const raw = parseJson(filePath);
   return normalizeSession(raw);
 }
@@ -171,14 +177,17 @@ function writeSession(session) {
 }
 function clearSession() {
   const filePath = resolveSessionPath();
-  if (!fs.existsSync(filePath)) return false;
+  if (!fs.existsSync(filePath))
+    return false;
   fs.rmSync(filePath, { force: true });
   return true;
 }
 function isSessionExpired(session, now = /* @__PURE__ */ new Date()) {
-  if (!session.expiresAt) return false;
+  if (!session.expiresAt)
+    return false;
   const expires = Date.parse(session.expiresAt);
-  if (Number.isNaN(expires)) return false;
+  if (Number.isNaN(expires))
+    return false;
   return expires <= now.getTime();
 }
 function describeSessionPath() {
@@ -765,7 +774,8 @@ var init_agent = __esm({
     });
     adapterConfigSchema = z6.record(z6.unknown()).superRefine((value, ctx) => {
       const envValue = value.env;
-      if (envValue === void 0) return;
+      if (envValue === void 0)
+        return;
       const parsed = envConfigSchema.safeParse(envValue);
       if (!parsed.success) {
         ctx.addIssue({
@@ -1353,9 +1363,11 @@ var init_access = __esm({
 import { z as z18 } from "zod";
 function isValidCronExpression(expression) {
   const trimmed = expression.trim();
-  if (!trimmed) return false;
+  if (!trimmed)
+    return false;
   const fields = trimmed.split(/\s+/);
-  if (fields.length !== 5) return false;
+  if (fields.length !== 5)
+    return false;
   return fields.every((f) => CRON_FIELD_PATTERN.test(f));
 }
 var jsonSchemaSchema, CRON_FIELD_PATTERN, pluginJobDeclarationSchema, pluginWebhookDeclarationSchema, pluginToolDeclarationSchema, pluginUiSlotDeclarationSchema, entityScopedLauncherPlacementZones, launcherBoundsByEnvironment, pluginLauncherActionDeclarationSchema, pluginLauncherRenderDeclarationSchema, pluginLauncherDeclarationSchema, pluginManifestV1Schema, installPluginSchema, upsertPluginConfigSchema, patchPluginConfigSchema, updatePluginStatusSchema, uninstallPluginSchema, pluginStateScopeKeySchema, setPluginStateSchema, listPluginStateSchema;
@@ -1365,7 +1377,8 @@ var init_plugin = __esm({
     init_constants();
     jsonSchemaSchema = z18.record(z18.unknown()).refine(
       (val) => {
-        if (Object.keys(val).length === 0) return true;
+        if (Object.keys(val).length === 0)
+          return true;
         return typeof val.type === "string" || val.$ref !== void 0 || val.oneOf !== void 0 || val.anyOf !== void 0 || val.allOf !== void 0;
       },
       { message: "Must be a valid JSON Schema object (requires at least a 'type', '$ref', or composition keyword)" }
@@ -2001,7 +2014,8 @@ function buildSurfaceRuntimeContract(profile = "dx") {
   });
 }
 function initializeSurfaceRuntimeContract(profile = "dx") {
-  if (runtimeContract && runtimeContract.profile === profile) return runtimeContract;
+  if (runtimeContract && runtimeContract.profile === profile)
+    return runtimeContract;
   runtimeContract = buildSurfaceRuntimeContract(profile);
   return runtimeContract;
 }
@@ -2028,7 +2042,8 @@ function mapGtmKnowledgeKind(sourceType) {
   return sourceType === "table" ? "table" : "item";
 }
 function formatConnectorLabel(type) {
-  if (!type?.trim()) return "Manual";
+  if (!type?.trim())
+    return "Manual";
   return humanizeToken(type);
 }
 function formatKnowledgeGroupLabel(table) {
@@ -2085,7 +2100,8 @@ function createDefaultGtmState(now = (/* @__PURE__ */ new Date()).toISOString())
 }
 function coerceGtmState(raw) {
   const fallback = createDefaultGtmState();
-  if (!raw || typeof raw !== "object") return fallback;
+  if (!raw || typeof raw !== "object")
+    return fallback;
   const candidate = raw;
   const fallbackItemTemplate = fallback.knowledge.table;
   const fallbackConnectorTemplate = fallback.connectors[0] ?? {
@@ -2278,14 +2294,17 @@ function findConfigFileFromAncestors(startDir) {
       return candidate;
     }
     const nextDir = path5.resolve(currentDir, "..");
-    if (nextDir === currentDir) break;
+    if (nextDir === currentDir)
+      break;
     currentDir = nextDir;
   }
   return null;
 }
 function resolveConfigPath(overridePath) {
-  if (overridePath) return path5.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONFIG) return path5.resolve(process.env.PAPERCLIP_CONFIG);
+  if (overridePath)
+    return path5.resolve(overridePath);
+  if (process.env.PAPERCLIP_CONFIG)
+    return path5.resolve(process.env.PAPERCLIP_CONFIG);
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath(resolvePaperclipInstanceId());
 }
 function parseJson2(filePath) {
@@ -2296,7 +2315,8 @@ function parseJson2(filePath) {
   }
 }
 function migrateLegacyConfig(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return raw;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return raw;
   const config = { ...raw };
   const databaseRaw = config.database;
   if (typeof databaseRaw !== "object" || databaseRaw === null || Array.isArray(databaseRaw)) {
@@ -2329,7 +2349,8 @@ function formatValidationError(err) {
 }
 function readConfig(configPath) {
   const filePath = resolveConfigPath(configPath);
-  if (!fs3.existsSync(filePath)) return null;
+  if (!fs3.existsSync(filePath))
+    return null;
   const raw = parseJson2(filePath);
   const migrated = migrateLegacyConfig(raw);
   const parsed = paperclipConfigSchema.safeParse(migrated);
@@ -2407,8 +2428,10 @@ function loadPaperclipEnvFile(configPath) {
   loadAgentJwtEnvFile(resolveEnvFilePath(configPath));
 }
 function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()) {
-  if (loadedEnvFiles.has(filePath)) return;
-  if (!fs4.existsSync(filePath)) return;
+  if (loadedEnvFiles.has(filePath))
+    return;
+  if (!fs4.existsSync(filePath))
+    return;
   loadedEnvFiles.add(filePath);
   loadDotenv({ path: filePath, override: false, quiet: true });
 }
@@ -2418,7 +2441,8 @@ function readAgentJwtSecretFromEnv(configPath) {
   return isNonEmpty(raw) ? raw.trim() : null;
 }
 function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()) {
-  if (!fs4.existsSync(filePath)) return null;
+  if (!fs4.existsSync(filePath))
+    return null;
   const raw = fs4.readFileSync(filePath, "utf-8");
   const values = parseEnvFile(raw);
   const value = values[JWT_SECRET_ENV_KEY];
@@ -2442,7 +2466,8 @@ function writeAgentJwtEnv(secret, filePath = resolveEnvFilePath()) {
   mergePaperclipEnvEntries({ [JWT_SECRET_ENV_KEY]: secret }, filePath);
 }
 function readPaperclipEnvEntries(filePath = resolveEnvFilePath()) {
-  if (!fs4.existsSync(filePath)) return {};
+  if (!fs4.existsSync(filePath))
+    return {};
   return parseEnvFile(fs4.readFileSync(filePath, "utf-8"));
 }
 function writePaperclipEnvEntries(entries, filePath = resolveEnvFilePath()) {
@@ -2481,7 +2506,8 @@ function unique(items) {
 }
 function resolveRuntimeLikePath(value, configPath) {
   const expanded = expandHomePrefix(value);
-  if (path7.isAbsolute(expanded)) return path7.resolve(expanded);
+  if (path7.isAbsolute(expanded))
+    return path7.resolve(expanded);
   const cwd = process.cwd();
   const configDir = configPath ? path7.dirname(configPath) : null;
   const workspaceRoot = configDir ? path7.resolve(configDir, "..") : cwd;
@@ -2574,8 +2600,10 @@ async function promptDatabase(current) {
       defaultValue: base.connectionString ?? "",
       placeholder: "postgres://user:pass@localhost:5432/paperclip",
       validate: (val) => {
-        if (!val) return "Connection string is required for PostgreSQL mode";
-        if (!val.startsWith("postgres")) return "Must be a postgres:// or postgresql:// URL";
+        if (!val)
+          return "Connection string is required for PostgreSQL mode";
+        if (!val.startsWith("postgres"))
+          return "Must be a postgres:// or postgresql:// URL";
       }
     });
     if (p.isCancel(value)) {
@@ -2600,7 +2628,8 @@ async function promptDatabase(current) {
       placeholder: "54329",
       validate: (val) => {
         const n = Number(val);
-        if (!Number.isInteger(n) || n < 1 || n > 65535) return "Port must be an integer between 1 and 65535";
+        if (!Number.isInteger(n) || n < 1 || n > 65535)
+          return "Port must be an integer between 1 and 65535";
       }
     });
     if (p.isCancel(portValue)) {
@@ -2634,8 +2663,10 @@ async function promptDatabase(current) {
     placeholder: "60",
     validate: (val) => {
       const n = Number(val);
-      if (!Number.isInteger(n) || n < 1) return "Interval must be a positive integer";
-      if (n > 10080) return "Interval must be 10080 minutes (7 days) or less";
+      if (!Number.isInteger(n) || n < 1)
+        return "Interval must be a positive integer";
+      if (n > 10080)
+        return "Interval must be 10080 minutes (7 days) or less";
       return void 0;
     }
   });
@@ -2649,8 +2680,10 @@ async function promptDatabase(current) {
     placeholder: "30",
     validate: (val) => {
       const n = Number(val);
-      if (!Number.isInteger(n) || n < 1) return "Retention must be a positive integer";
-      if (n > 3650) return "Retention must be 3650 days or less";
+      if (!Number.isInteger(n) || n < 1)
+        return "Retention must be a positive integer";
+      if (n > 3650)
+        return "Retention must be 3650 days or less";
       return void 0;
     }
   });
@@ -2689,7 +2722,8 @@ async function promptLlm() {
     p2.cancel("Setup cancelled.");
     process.exit(0);
   }
-  if (!configureLlm) return void 0;
+  if (!configureLlm)
+    return void 0;
   const provider = await p2.select({
     message: "LLM provider",
     options: [
@@ -2704,7 +2738,8 @@ async function promptLlm() {
   const apiKey2 = await p2.password({
     message: `${provider === "claude" ? "Anthropic" : "OpenAI"} API key`,
     validate: (val) => {
-      if (!val) return "API key is required";
+      if (!val)
+        return "API key is required";
     }
   });
   if (p2.isCancel(apiKey2)) {
@@ -2721,7 +2756,8 @@ async function promptExtendedProvider(context) {
       label: PROVIDER_LABELS[key]
     }))
   });
-  if (p2.isCancel(provider)) return null;
+  if (p2.isCancel(provider))
+    return null;
   const selectedProvider = provider;
   if (selectedProvider === "local") {
     const modelId2 = await p2.text({
@@ -2729,7 +2765,8 @@ async function promptExtendedProvider(context) {
       placeholder: DEFAULT_MODELS.local,
       defaultValue: DEFAULT_MODELS.local
     });
-    if (p2.isCancel(modelId2)) return null;
+    if (p2.isCancel(modelId2))
+      return null;
     return {
       provider: "local",
       modelId: String(modelId2).trim() || DEFAULT_MODELS.local
@@ -2738,16 +2775,19 @@ async function promptExtendedProvider(context) {
   const apiKey2 = await p2.password({
     message: `${PROVIDER_LABELS[selectedProvider]} API key`,
     validate: (val) => {
-      if (!val) return "API key is required for this provider";
+      if (!val)
+        return "API key is required for this provider";
     }
   });
-  if (p2.isCancel(apiKey2)) return null;
+  if (p2.isCancel(apiKey2))
+    return null;
   const modelId = await p2.text({
     message: "Model id",
     placeholder: DEFAULT_MODELS[selectedProvider],
     defaultValue: DEFAULT_MODELS[selectedProvider]
   });
-  if (p2.isCancel(modelId)) return null;
+  if (p2.isCancel(modelId))
+    return null;
   return {
     provider: selectedProvider,
     apiKey: String(apiKey2),
@@ -2875,7 +2915,8 @@ async function promptSecrets(current) {
       defaultValue: keyFilePath,
       placeholder: fallbackDefault,
       validate: (value) => {
-        if (!value || value.trim().length === 0) return "Key file path is required";
+        if (!value || value.trim().length === 0)
+          return "Key file path is required";
       }
     });
     if (p4.isCancel(keyPath)) {
@@ -2953,7 +2994,8 @@ async function promptStorage(current) {
       defaultValue: base.localDisk.baseDir || defaultStorageBaseDir(),
       placeholder: defaultStorageBaseDir(),
       validate: (value) => {
-        if (!value || value.trim().length === 0) return "Storage base directory is required";
+        if (!value || value.trim().length === 0)
+          return "Storage base directory is required";
       }
     });
     if (p5.isCancel(baseDir)) {
@@ -2973,7 +3015,8 @@ async function promptStorage(current) {
     defaultValue: base.s3.bucket || "paperclip",
     placeholder: "paperclip",
     validate: (value) => {
-      if (!value || value.trim().length === 0) return "Bucket is required";
+      if (!value || value.trim().length === 0)
+        return "Bucket is required";
     }
   });
   if (p5.isCancel(bucket)) {
@@ -2985,7 +3028,8 @@ async function promptStorage(current) {
     defaultValue: base.s3.region || "us-east-1",
     placeholder: "us-east-1",
     validate: (value) => {
-      if (!value || value.trim().length === 0) return "Region is required";
+      if (!value || value.trim().length === 0)
+        return "Region is required";
     }
   });
   if (p5.isCancel(region)) {
@@ -3046,14 +3090,16 @@ function normalizeHostnameInput(raw) {
   try {
     const url = input.includes("://") ? new URL(input) : new URL(`http://${input}`);
     const hostname = url.hostname.trim().toLowerCase();
-    if (!hostname) throw new Error("Hostname is required");
+    if (!hostname)
+      throw new Error("Hostname is required");
     return hostname;
   } catch {
     throw new Error(`Invalid hostname: ${raw}`);
   }
 }
 function parseHostnameCsv(raw) {
-  if (!raw.trim()) return [];
+  if (!raw.trim())
+    return [];
   const unique3 = /* @__PURE__ */ new Set();
   for (const part of raw.split(",")) {
     const hostname = normalizeHostnameInput(part);
@@ -3123,7 +3169,8 @@ async function promptServer(opts) {
     defaultValue: currentServer?.host ?? hostDefault,
     placeholder: hostDefault,
     validate: (val) => {
-      if (!val.trim()) return "Host is required";
+      if (!val.trim())
+        return "Host is required";
     }
   });
   if (p6.isCancel(hostStr)) {
@@ -3175,7 +3222,8 @@ async function promptServer(opts) {
       placeholder: "https://paperclip.example.com",
       validate: (val) => {
         const candidate = val.trim();
-        if (!candidate) return "Public base URL is required for public exposure";
+        if (!candidate)
+          return "Public base URL is required for public exposure";
         try {
           const url = new URL(candidate);
           if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -5669,7 +5717,8 @@ function isSafeIdentifier(value) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 function quoteIdentifier(value) {
-  if (!isSafeIdentifier(value)) throw new Error(`Unsafe SQL identifier: ${value}`);
+  if (!isSafeIdentifier(value))
+    throw new Error(`Unsafe SQL identifier: ${value}`);
   return `"${value.replaceAll('"', '""')}"`;
 }
 function quoteLiteral(value) {
@@ -5704,10 +5753,13 @@ async function listJournalMigrationEntries() {
   try {
     const raw = await readFile(MIGRATIONS_JOURNAL_JSON, "utf8");
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.entries)) return [];
+    if (!Array.isArray(parsed.entries))
+      return [];
     return parsed.entries.map((entry, entryIndex) => {
-      if (typeof entry?.tag !== "string") return null;
-      if (typeof entry?.when !== "number" || !Number.isFinite(entry.when)) return null;
+      if (typeof entry?.tag !== "string")
+        return null;
+      if (typeof entry?.when !== "number" || !Number.isFinite(entry.when))
+        return null;
       const order = Number.isInteger(entry.idx) ? Number(entry.idx) : entryIndex;
       return { fileName: `${entry.tag}.sql`, folderMillis: entry.when, order };
     }).filter((entry) => entry !== null);
@@ -5728,10 +5780,14 @@ async function orderMigrationsByJournal(migrationFiles) {
   return [...migrationFiles].sort((left, right) => {
     const leftOrder = orderByFileName.get(left);
     const rightOrder = orderByFileName.get(right);
-    if (leftOrder === void 0 && rightOrder === void 0) return left.localeCompare(right);
-    if (leftOrder === void 0) return 1;
-    if (rightOrder === void 0) return -1;
-    if (leftOrder === rightOrder) return left.localeCompare(right);
+    if (leftOrder === void 0 && rightOrder === void 0)
+      return left.localeCompare(right);
+    if (leftOrder === void 0)
+      return 1;
+    if (rightOrder === void 0)
+      return -1;
+    if (leftOrder === rightOrder)
+      return left.localeCompare(right);
     return leftOrder - rightOrder;
   });
 }
@@ -5777,9 +5833,12 @@ async function ensureMigrationJournalTable(sql2) {
 }
 async function migrationHistoryEntryExists(sql2, qualifiedTable, columnNames, migrationFile, hash) {
   const predicates = [];
-  if (columnNames.has("hash")) predicates.push(`hash = ${quoteLiteral(hash)}`);
-  if (columnNames.has("name")) predicates.push(`name = ${quoteLiteral(migrationFile)}`);
-  if (predicates.length === 0) return false;
+  if (columnNames.has("hash"))
+    predicates.push(`hash = ${quoteLiteral(hash)}`);
+  if (columnNames.has("name"))
+    predicates.push(`name = ${quoteLiteral(migrationFile)}`);
+  if (predicates.length === 0)
+    return false;
   const rows = await sql2.unsafe(
     `SELECT 1 AS one FROM ${qualifiedTable} WHERE ${predicates.join(" OR ")} LIMIT 1`
   );
@@ -5802,13 +5861,15 @@ async function recordMigrationHistoryEntry(sql2, qualifiedTable, columnNames, mi
     insertColumns.push(quoteIdentifier("created_at"));
     insertValues.push(quoteLiteral(String(createdAt)));
   }
-  if (insertColumns.length === 0) return;
+  if (insertColumns.length === 0)
+    return;
   await sql2.unsafe(
     `INSERT INTO ${qualifiedTable} (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`
   );
 }
 async function applyPendingMigrationsManually(url, pendingMigrations) {
-  if (pendingMigrations.length === 0) return;
+  if (pendingMigrations.length === 0)
+    return;
   const orderedPendingMigrations = await orderMigrationsByJournal(pendingMigrations);
   const journalEntries = await listJournalMigrationEntries();
   const folderMillisByFileName = new Map(
@@ -5828,7 +5889,8 @@ async function applyPendingMigrationsManually(url, pendingMigrations) {
         migrationFile,
         hash
       );
-      if (existingEntry) continue;
+      if (existingEntry)
+        continue;
       await runInTransaction(sql2, async () => {
         for (const statement of splitMigrationStatements(migrationContent)) {
           await sql2.unsafe(statement);
@@ -5941,10 +6003,12 @@ async function migrationStatementAlreadyApplied(sql2, statement) {
 }
 async function migrationContentAlreadyApplied(sql2, migrationContent) {
   const statements = splitMigrationStatements(migrationContent);
-  if (statements.length === 0) return false;
+  if (statements.length === 0)
+    return false;
   for (const statement of statements) {
     const applied = await migrationStatementAlreadyApplied(sql2, statement);
-    if (!applied) return false;
+    if (!applied)
+      return false;
   }
   return true;
 }
@@ -5961,7 +6025,8 @@ async function loadAppliedMigrations(sql2, migrationTableSchema, availableMigrat
     const hashesToMigrationFiles = await mapHashesToMigrationFiles(availableMigrations);
     const appliedFromHashes = rows2.map((row) => hashesToMigrationFiles.get(row.hash)).filter((name) => Boolean(name));
     if (appliedFromHashes.length > 0) {
-      if (appliedFromHashes.length === rows2.length) return appliedFromHashes;
+      if (appliedFromHashes.length === rows2.length)
+        return appliedFromHashes;
       return appliedFromHashes;
     }
     if (columnNames.has("created_at")) {
@@ -5980,7 +6045,8 @@ async function loadAppliedMigrations(sql2, migrationTableSchema, availableMigrat
   const rows = await sql2.unsafe(`SELECT id FROM ${qualifiedTable} ORDER BY id`);
   const journalMigrationFiles = await listJournalMigrationFiles();
   const appliedFromIds = rows.map((row) => journalMigrationFiles[row.id - 1]).filter((name) => Boolean(name));
-  if (appliedFromIds.length > 0) return appliedFromIds;
+  if (appliedFromIds.length > 0)
+    return appliedFromIds;
   return availableMigrations.slice(0, Math.max(0, rows.length));
 }
 async function reconcilePendingMigrationHistory(url) {
@@ -6002,7 +6068,8 @@ async function reconcilePendingMigrationHistory(url) {
     for (const migrationFile of state.pendingMigrations) {
       const migrationContent = await readMigrationFileContent(migrationFile);
       const alreadyApplied = await migrationContentAlreadyApplied(sql2, migrationContent);
-      if (!alreadyApplied) break;
+      if (!alreadyApplied)
+        break;
       const hash = createHash("sha256").update(migrationContent).digest("hex");
       const folderMillis = folderMillisByFile.get(migrationFile) ?? Date.now();
       const existingByHash = columnNames.has("hash") ? await sql2.unsafe(
@@ -6043,7 +6110,8 @@ async function reconcilePendingMigrationHistory(url) {
         insertColumns.push(quoteIdentifier("created_at"));
         insertValues.push(quoteLiteral(String(folderMillis)));
       }
-      if (insertColumns.length === 0) break;
+      if (insertColumns.length === 0)
+        break;
       await sql2.unsafe(
         `INSERT INTO ${qualifiedTable} (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`
       );
@@ -6065,11 +6133,14 @@ async function discoverMigrationTableSchema(sql2) {
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE c.relname = ${DRIZZLE_MIGRATIONS_TABLE} AND c.relkind = 'r'
   `;
-  if (rows.length === 0) return null;
+  if (rows.length === 0)
+    return null;
   const drizzleSchema = rows.find(({ schemaName }) => schemaName === "drizzle");
-  if (drizzleSchema) return drizzleSchema.schemaName;
+  if (drizzleSchema)
+    return drizzleSchema.schemaName;
   const publicSchema = rows.find(({ schemaName }) => schemaName === "public");
-  if (publicSchema) return publicSchema.schemaName;
+  if (publicSchema)
+    return publicSchema.schemaName;
   return rows[0]?.schemaName ?? null;
 }
 async function inspectMigrations(url) {
@@ -6128,7 +6199,8 @@ async function inspectMigrations(url) {
 }
 async function applyPendingMigrations(url) {
   const initialState = await inspectMigrations(url);
-  if (initialState.status === "upToDate") return;
+  if (initialState.status === "upToDate")
+    return;
   if (initialState.reason === "no-migration-journal-empty-db") {
     const sql2 = createUtilitySql(url);
     try {
@@ -6138,7 +6210,8 @@ async function applyPendingMigrations(url) {
       await sql2.end();
     }
     const bootstrappedState = await inspectMigrations(url);
-    if (bootstrappedState.status === "upToDate") return;
+    if (bootstrappedState.status === "upToDate")
+      return;
     throw new Error(
       `Failed to bootstrap migrations: ${bootstrappedState.pendingMigrations.join(", ")}`
     );
@@ -6149,11 +6222,13 @@ async function applyPendingMigrations(url) {
     );
   }
   let state = await inspectMigrations(url);
-  if (state.status === "upToDate") return;
+  if (state.status === "upToDate")
+    return;
   const repair = await reconcilePendingMigrationHistory(url);
   if (repair.repairedMigrations.length > 0) {
     state = await inspectMigrations(url);
-    if (state.status === "upToDate") return;
+    if (state.status === "upToDate")
+      return;
   }
   if (state.status !== "needsMigrations" || state.reason !== "pending-migrations") {
     throw new Error("Migrations are still pending after migration-history reconciliation; run inspectMigrations for details.");
@@ -6199,7 +6274,8 @@ async function ensurePostgresDatabase(url, databaseName) {
     const existing = await sql2`
       select 1 as one from pg_database where datname = ${databaseName} limit 1
     `;
-    if (existing.length > 0) return "exists";
+    if (existing.length > 0)
+      return "exists";
     await sql2.unsafe(`create database "${databaseName}" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0`);
     return "created";
   } finally {
@@ -6238,12 +6314,14 @@ function timestamp56(date2 = /* @__PURE__ */ new Date()) {
   return `${date2.getFullYear()}${pad2(date2.getMonth() + 1)}${pad2(date2.getDate())}-${pad2(date2.getHours())}${pad2(date2.getMinutes())}${pad2(date2.getSeconds())}`;
 }
 function pruneOldBackups(backupDir, retentionDays, filenamePrefix) {
-  if (!existsSync(backupDir)) return 0;
+  if (!existsSync(backupDir))
+    return 0;
   const safeRetention = Math.max(1, Math.trunc(retentionDays));
   const cutoff = Date.now() - safeRetention * 24 * 60 * 60 * 1e3;
   let pruned = 0;
   for (const name of readdirSync(backupDir)) {
-    if (!name.startsWith(`${filenamePrefix}-`) || !name.endsWith(".sql")) continue;
+    if (!name.startsWith(`${filenamePrefix}-`) || !name.endsWith(".sql"))
+      continue;
     const fullPath = resolve(backupDir, name);
     const stat2 = statSync(fullPath);
     if (stat2.mtimeMs < cutoff) {
@@ -6254,8 +6332,10 @@ function pruneOldBackups(backupDir, retentionDays, filenamePrefix) {
   return pruned;
 }
 function formatBackupSize(sizeBytes) {
-  if (sizeBytes < 1024) return `${sizeBytes}B`;
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)}K`;
+  if (sizeBytes < 1024)
+    return `${sizeBytes}B`;
+  if (sizeBytes < 1024 * 1024)
+    return `${(sizeBytes / 1024).toFixed(1)}K`;
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)}M`;
 }
 function formatSqlLiteral(value) {
@@ -6273,10 +6353,12 @@ function normalizeTableNameSet(values) {
 }
 function normalizeNullifyColumnMap(values) {
   const out = /* @__PURE__ */ new Map();
-  if (!values) return out;
+  if (!values)
+    return out;
   for (const [tableName, columns] of Object.entries(values)) {
     const normalizedTable = tableName.trim();
-    if (normalizedTable.length === 0) continue;
+    if (normalizedTable.length === 0)
+      continue;
     const normalizedColumns = new Set(
       columns.map((column) => column.trim()).filter((column) => column.length > 0)
     );
@@ -6346,7 +6428,8 @@ async function runDatabaseBackup(opts) {
       const labels2 = e.labels.map((l) => `'${l.replace(/'/g, "''")}'`).join(", ");
       emitStatement(`CREATE TYPE "public"."${e.typname}" AS ENUM (${labels2});`);
     }
-    if (enums.length > 0) emit("");
+    if (enums.length > 0)
+      emit("");
     const allSequences = await sql2`
       SELECT
         s.sequence_schema,
@@ -6375,8 +6458,10 @@ async function runDatabaseBackup(opts) {
       (seq) => !seq.owner_table || includedTableNames.has(tableKey(seq.owner_schema ?? "public", seq.owner_table))
     );
     const schemas = /* @__PURE__ */ new Set();
-    for (const table of tables) schemas.add(table.schema_name);
-    for (const seq of sequences) schemas.add(seq.sequence_schema);
+    for (const table of tables)
+      schemas.add(table.schema_name);
+    for (const seq of sequences)
+      schemas.add(seq.sequence_schema);
     const extraSchemas = [...schemas].filter((schemaName) => schemaName !== "public");
     if (extraSchemas.length > 0) {
       emit("-- Schemas");
@@ -6422,8 +6507,10 @@ async function runDatabaseBackup(opts) {
           typeStr = col.data_type;
         }
         let def = `  "${col.column_name}" ${typeStr}`;
-        if (col.column_default != null) def += ` DEFAULT ${col.column_default}`;
-        if (col.is_nullable === "NO") def += " NOT NULL";
+        if (col.column_default != null)
+          def += ` DEFAULT ${col.column_default}`;
+        if (col.is_nullable === "NO")
+          def += " NOT NULL";
         colDefs.push(def);
       }
       const pk = await sql2`
@@ -6545,7 +6632,8 @@ async function runDatabaseBackup(opts) {
     for (const { schema_name, tablename } of tables) {
       const qualifiedTableName = quoteQualifiedName(schema_name, tablename);
       const count = await sql2.unsafe(`SELECT count(*)::int AS n FROM ${qualifiedTableName}`);
-      if (excludedTableNames.has(tablename) || (count[0]?.n ?? 0) === 0) continue;
+      if (excludedTableNames.has(tablename) || (count[0]?.n ?? 0) === 0)
+        continue;
       const cols = await sql2`
         SELECT column_name, data_type
         FROM information_schema.columns
@@ -6560,11 +6648,16 @@ async function runDatabaseBackup(opts) {
         const values = row.map((rawValue, index51) => {
           const columnName = cols[index51]?.column_name;
           const val = columnName && nullifiedColumns.has(columnName) ? null : rawValue;
-          if (val === null || val === void 0) return "NULL";
-          if (typeof val === "boolean") return val ? "true" : "false";
-          if (typeof val === "number") return String(val);
-          if (val instanceof Date) return formatSqlLiteral(val.toISOString());
-          if (typeof val === "object") return formatSqlLiteral(JSON.stringify(val));
+          if (val === null || val === void 0)
+            return "NULL";
+          if (typeof val === "boolean")
+            return val ? "true" : "false";
+          if (typeof val === "number")
+            return String(val);
+          if (val instanceof Date)
+            return formatSqlLiteral(val.toISOString());
+          if (typeof val === "object")
+            return formatSqlLiteral(JSON.stringify(val));
           return formatSqlLiteral(String(val));
         });
         emitStatement(`INSERT INTO ${qualifiedTableName} (${colNames}) VALUES (${values.join(", ")});`);
@@ -6729,9 +6822,11 @@ function createInviteToken() {
   return `pcp_bootstrap_${randomBytes3(24).toString("hex")}`;
 }
 function resolveDbUrl(configPath, explicitDbUrl) {
-  if (explicitDbUrl) return explicitDbUrl;
+  if (explicitDbUrl)
+    return explicitDbUrl;
   const config = readConfig(configPath);
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  if (process.env.DATABASE_URL)
+    return process.env.DATABASE_URL;
   if (config?.database.mode === "postgres" && config.database.connectionString) {
     return config.database.connectionString;
   }
@@ -6742,9 +6837,11 @@ function resolveDbUrl(configPath, explicitDbUrl) {
   return null;
 }
 function resolveBaseUrl(configPath, explicitBaseUrl) {
-  if (explicitBaseUrl) return explicitBaseUrl.replace(/\/+$/, "");
+  if (explicitBaseUrl)
+    return explicitBaseUrl.replace(/\/+$/, "");
   const fromEnv = process.env.PAPERCLIP_PUBLIC_URL ?? process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ?? process.env.BETTER_AUTH_URL ?? process.env.BETTER_AUTH_BASE_URL;
-  if (fromEnv?.trim()) return fromEnv.trim().replace(/\/+$/, "");
+  if (fromEnv?.trim())
+    return fromEnv.trim().replace(/\/+$/, "");
   const config = readConfig(configPath);
   if (config?.auth.baseUrlMode === "explicit" && config.auth.publicBaseUrl) {
     return config.auth.publicBaseUrl.replace(/\/+$/, "");
@@ -7247,13 +7344,15 @@ import fs9 from "node:fs";
 import path9 from "node:path";
 function decodeMasterKey(raw) {
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed)
+    return null;
   if (/^[A-Fa-f0-9]{64}$/.test(trimmed)) {
     return Buffer.from(trimmed, "hex");
   }
   try {
     const decoded = Buffer.from(trimmed, "base64");
-    if (decoded.length === 32) return decoded;
+    if (decoded.length === 32)
+      return decoded;
   } catch {
   }
   if (Buffer.byteLength(trimmed, "utf8") === 32) {
@@ -7263,8 +7362,10 @@ function decodeMasterKey(raw) {
 }
 function withStrictModeNote(base, config) {
   const strictModeDisabledInDeployedSetup = config.database.mode === "postgres" && config.secrets.strictMode === false;
-  if (!strictModeDisabledInDeployedSetup) return base;
-  if (base.status === "fail") return base;
+  if (!strictModeDisabledInDeployedSetup)
+    return base;
+  if (base.status === "fail")
+    return base;
   return {
     ...base,
     status: "warn",
@@ -7517,15 +7618,18 @@ function printResult(result) {
   }
 }
 async function maybeRepair(result, opts) {
-  if (result.status === "pass" || !result.canRepair || !result.repair) return false;
-  if (!opts.repair) return false;
+  if (result.status === "pass" || !result.canRepair || !result.repair)
+    return false;
+  if (!opts.repair)
+    return false;
   let shouldRepair = opts.yes;
   if (!shouldRepair) {
     const answer = await p8.confirm({
       message: `Repair "${result.name}"?`,
       initialValue: true
     });
-    if (p8.isCancel(answer)) return false;
+    if (p8.isCancel(answer))
+      return false;
     shouldRepair = answer;
   }
   if (shouldRepair) {
@@ -7543,7 +7647,8 @@ async function runRepairableCheck(input) {
   let result = await input.run();
   printResult(result);
   const repaired = await maybeRepair(result, input.opts);
-  if (!repaired) return result;
+  if (!repaired)
+    return result;
   loadPaperclipEnvFile(input.configPath);
   result = await input.run();
   printResult(result);
@@ -7555,8 +7660,10 @@ function printSummary(results) {
   const failed = results.filter((r) => r.status === "fail").length;
   const parts = [];
   parts.push(pc3.green(`${passed} passed`));
-  if (warned) parts.push(pc3.yellow(`${warned} warnings`));
-  if (failed) parts.push(pc3.red(`${failed} failed`));
+  if (warned)
+    parts.push(pc3.yellow(`${warned} warnings`));
+  if (failed)
+    parts.push(pc3.red(`${failed} failed`));
   p8.note(parts.join(", "), "Summary");
   if (failed > 0) {
     p8.outro(pc3.red("Some checks failed. Fix the issues above and re-run doctor."));
@@ -7651,10 +7758,12 @@ function resolveBootstrapInviteBaseUrl(config, startedServer) {
 }
 function formatError(err) {
   if (err instanceof Error) {
-    if (err.message && err.message.trim().length > 0) return err.message;
+    if (err.message && err.message.trim().length > 0)
+      return err.message;
     return err.name;
   }
-  if (typeof err === "string") return err;
+  if (typeof err === "string")
+    return err;
   try {
     return JSON.stringify(err);
   } catch {
@@ -7662,21 +7771,27 @@ function formatError(err) {
   }
 }
 function isModuleNotFoundError(err) {
-  if (!(err instanceof Error)) return false;
+  if (!(err instanceof Error))
+    return false;
   const code = err.code;
-  if (code === "ERR_MODULE_NOT_FOUND") return true;
+  if (code === "ERR_MODULE_NOT_FOUND")
+    return true;
   return err.message.includes("Cannot find module");
 }
 function getMissingModuleSpecifier(err) {
-  if (!(err instanceof Error)) return null;
+  if (!(err instanceof Error))
+    return null;
   const packageMatch = err.message.match(/Cannot find package '([^']+)' imported from/);
-  if (packageMatch?.[1]) return packageMatch[1];
+  if (packageMatch?.[1])
+    return packageMatch[1];
   const moduleMatch = err.message.match(/Cannot find module '([^']+)'/);
-  if (moduleMatch?.[1]) return moduleMatch[1];
+  if (moduleMatch?.[1])
+    return moduleMatch[1];
   return null;
 }
 function maybeEnableUiDevMiddleware(entrypoint) {
-  if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== void 0) return;
+  if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== void 0)
+    return;
   const normalized = entrypoint.replaceAll("\\", "/");
   if (normalized.endsWith("/server/src/index.ts") || normalized.endsWith("@paperclipai/server/src/index.ts")) {
     process.env.PAPERCLIP_UI_DEV_MIDDLEWARE = "true";
@@ -7745,24 +7860,31 @@ import * as p10 from "@clack/prompts";
 import path11 from "node:path";
 import pc5 from "picocolors";
 function parseBooleanFromEnv(rawValue) {
-  if (rawValue === void 0) return null;
+  if (rawValue === void 0)
+    return null;
   const lower = rawValue.trim().toLowerCase();
-  if (lower === "true" || lower === "1" || lower === "yes") return true;
-  if (lower === "false" || lower === "0" || lower === "no") return false;
+  if (lower === "true" || lower === "1" || lower === "yes")
+    return true;
+  if (lower === "false" || lower === "0" || lower === "no")
+    return false;
   return null;
 }
 function parseNumberFromEnv(rawValue) {
-  if (!rawValue) return null;
+  if (!rawValue)
+    return null;
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return null;
+  if (!Number.isFinite(parsed))
+    return null;
   return parsed;
 }
 function parseEnumFromEnv(rawValue, allowedValues) {
-  if (!rawValue) return null;
+  if (!rawValue)
+    return null;
   return allowedValues.includes(rawValue) ? rawValue : null;
 }
 function resolvePathFromEnv(rawValue) {
-  if (!rawValue || rawValue.trim().length === 0) return null;
+  if (!rawValue || rawValue.trim().length === 0)
+    return null;
   return path11.resolve(expandHomePrefix(rawValue.trim()));
 }
 function quickstartDefaultsFromEnv() {
@@ -8182,12 +8304,13 @@ var init_onboard = __esm({
 
 // src/client/http.ts
 import { URL as URL2 } from "node:url";
-function buildUrl(apiBase, path71) {
-  const normalizedPath = path71.startsWith("/") ? path71 : `/${path71}`;
+function buildUrl(apiBase, path75) {
+  const normalizedPath = path75.startsWith("/") ? path75 : `/${path75}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
-  if (query) url.search = query;
+  if (query)
+    url.search = query;
   return url.toString();
 }
 function safeParseJson(text69) {
@@ -8208,7 +8331,8 @@ async function toApiError(response) {
   return new ApiRequestError(response.status, `Request failed with status ${response.status}`, void 0, parsed);
 }
 function toStringRecord(headers) {
-  if (!headers) return {};
+  if (!headers)
+    return {};
   if (Array.isArray(headers)) {
     return Object.fromEntries(headers.map(([key, value]) => [key, String(value)]));
   }
@@ -8245,26 +8369,26 @@ var init_http = __esm({
         this.runId = opts.runId?.trim() || void 0;
         this.userId = opts.userId?.trim() || void 0;
       }
-      get(path71, opts) {
-        return this.request(path71, { method: "GET" }, opts);
+      get(path75, opts) {
+        return this.request(path75, { method: "GET" }, opts);
       }
-      post(path71, body, opts) {
-        return this.request(path71, {
+      post(path75, body, opts) {
+        return this.request(path75, {
           method: "POST",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      patch(path71, body, opts) {
-        return this.request(path71, {
+      patch(path75, body, opts) {
+        return this.request(path75, {
           method: "PATCH",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      delete(path71, opts) {
-        return this.request(path71, { method: "DELETE" }, opts);
+      delete(path75, opts) {
+        return this.request(path75, { method: "DELETE" }, opts);
       }
-      async request(path71, init, opts) {
-        const url = buildUrl(this.apiBase, path71);
+      async request(path75, init, opts) {
+        const url = buildUrl(this.apiBase, path75);
         const headers = {
           accept: "application/json",
           ...toStringRecord(init.headers)
@@ -8603,7 +8727,8 @@ function isBundleManifestV2(manifest) {
   return manifest.schemaVersion === 2;
 }
 function normalizeManifest(manifest) {
-  if (isManifestV2(manifest)) return manifest;
+  if (isManifestV2(manifest))
+    return manifest;
   return {
     schemaVersion: 2,
     kit: {
@@ -8625,7 +8750,8 @@ function normalizeManifest(manifest) {
   };
 }
 function normalizeBundleManifest(manifest) {
-  if (isBundleManifestV2(manifest)) return manifest;
+  if (isBundleManifestV2(manifest))
+    return manifest;
   return {
     schemaVersion: 2,
     bundle: manifest.bundle,
@@ -8680,7 +8806,8 @@ function resolveBundledKitAssetsRoot() {
     path24.resolve(moduleDir, "../assets/worker-kits")
   ];
   for (const candidate of candidates) {
-    if (fs18.existsSync(candidate)) return candidate;
+    if (fs18.existsSync(candidate))
+      return candidate;
   }
   throw new Error("Could not locate bundled worker kit assets.");
 }
@@ -8892,7 +9019,8 @@ function validateKitDirectory(kitPath) {
     errors.push({ field: "frozenAssetPaths", message: "Missing required 'frozenAssetPaths' array" });
   } else {
     for (const assetPath of frozenAssets) {
-      if (typeof assetPath !== "string") continue;
+      if (typeof assetPath !== "string")
+        continue;
       const fullPath = path24.resolve(kitPath, assetPath);
       if (!fs18.existsSync(fullPath)) {
         errors.push({ field: "frozenAssetPaths", message: `Frozen asset not found: ${assetPath}` });
@@ -8911,7 +9039,8 @@ function validateKitDirectory(kitPath) {
       errors.push({ field: "outputStandard.requiredPaths", message: "Missing required 'outputStandard.requiredPaths' array" });
     } else {
       for (const reqPath of requiredPaths) {
-        if (typeof reqPath !== "string") continue;
+        if (typeof reqPath !== "string")
+          continue;
         const fullPath = path24.resolve(kitPath, reqPath);
         if (!fs18.existsSync(fullPath)) {
           errors.push({ field: "outputStandard.requiredPaths", message: `Required output path not found: ${reqPath}` });
@@ -8985,15 +9114,19 @@ function validateBundledKitAssetRoot(assetRoot, input) {
 function fuzzyResolveKitId(input) {
   const needle = input.toLowerCase().trim();
   const exact = BUNDLED_KIT_CATALOG.find((e) => e.id === needle);
-  if (exact) return exact.id;
+  if (exact)
+    return exact.id;
   const suffix = BUNDLED_KIT_CATALOG.find((e) => e.id.endsWith(needle));
-  if (suffix) return suffix.id;
+  if (suffix)
+    return suffix.id;
   const contains = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(needle));
-  if (contains) return contains.id;
+  if (contains)
+    return contains.id;
   const tokens = needle.split(/[-\s]+/).filter((t) => t.length > 2);
   for (const token of tokens) {
     const tokenMatch = BUNDLED_KIT_CATALOG.find((e) => e.id.includes(token));
-    if (tokenMatch) return tokenMatch.id;
+    if (tokenMatch)
+      return tokenMatch.id;
   }
   return null;
 }
@@ -9266,7 +9399,8 @@ import os6 from "node:os";
 import path25 from "node:path";
 function resolveKitForksHomeDir() {
   const envHome = process.env.GROWTHUB_KIT_FORKS_HOME?.trim();
-  if (envHome) return path25.resolve(expandHomePrefix(envHome));
+  if (envHome)
+    return path25.resolve(expandHomePrefix(envHome));
   return path25.resolve(os6.homedir(), ".growthub", "kit-forks");
 }
 function resolveKitForksIndexPath() {
@@ -9298,10 +9432,12 @@ import fs19 from "node:fs";
 import path26 from "node:path";
 function readIndex() {
   const p36 = resolveKitForksIndexPath();
-  if (!fs19.existsSync(p36)) return { version: 1, entries: [] };
+  if (!fs19.existsSync(p36))
+    return { version: 1, entries: [] };
   try {
     const parsed = JSON.parse(fs19.readFileSync(p36, "utf8"));
-    if (!parsed || !Array.isArray(parsed.entries)) return { version: 1, entries: [] };
+    if (!parsed || !Array.isArray(parsed.entries))
+      return { version: 1, entries: [] };
     return parsed;
   } catch {
     return { version: 1, entries: [] };
@@ -9317,14 +9453,17 @@ function upsertIndexEntry(entry) {
   const idx = index51.entries.findIndex(
     (e) => e.forkId === entry.forkId && e.kitId === entry.kitId
   );
-  if (idx >= 0) index51.entries[idx] = entry;
-  else index51.entries.push(entry);
+  if (idx >= 0)
+    index51.entries[idx] = entry;
+  else
+    index51.entries.push(entry);
   writeIndex(index51);
 }
 function removeIndexEntry(kitId, forkId) {
   const index51 = readIndex();
   const next = index51.entries.filter((e) => !(e.kitId === kitId && e.forkId === forkId));
-  if (next.length !== index51.entries.length) writeIndex({ ...index51, entries: next });
+  if (next.length !== index51.entries.length)
+    writeIndex({ ...index51, entries: next });
 }
 function sanitizeForkId(raw) {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 56);
@@ -9337,7 +9476,8 @@ function generateForkId(forkPath, kitId) {
 }
 function readForkJson(forkPath) {
   const p36 = resolveInForkRegistrationPath(forkPath);
-  if (!fs19.existsSync(p36)) return null;
+  if (!fs19.existsSync(p36))
+    return null;
   try {
     return JSON.parse(fs19.readFileSync(p36, "utf8"));
   } catch {
@@ -9388,24 +9528,30 @@ function updateKitForkRegistration(reg) {
 }
 function loadKitForkRegistration(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
-  if (!entry) return null;
-  if (!fs19.existsSync(entry.forkPath)) return null;
+  if (!entry)
+    return null;
+  if (!fs19.existsSync(entry.forkPath))
+    return null;
   return readForkJson(entry.forkPath);
 }
 function listKitForkRegistrations(filterKitId) {
   const index51 = readIndex();
   const results = [];
   for (const entry of index51.entries) {
-    if (filterKitId && entry.kitId !== filterKitId) continue;
-    if (!fs19.existsSync(entry.forkPath)) continue;
+    if (filterKitId && entry.kitId !== filterKitId)
+      continue;
+    if (!fs19.existsSync(entry.forkPath))
+      continue;
     const reg = readForkJson(entry.forkPath);
-    if (reg) results.push(reg);
+    if (reg)
+      results.push(reg);
   }
   return results.sort((a, b) => a.registeredAt.localeCompare(b.registeredAt));
 }
 function deregisterKitFork(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
-  if (!entry) return false;
+  if (!entry)
+    return false;
   if (fs19.existsSync(entry.forkPath)) {
     const stateDir = resolveInForkStateDir(entry.forkPath);
     fs19.rmSync(stateDir, { recursive: true, force: true });
@@ -9415,8 +9561,10 @@ function deregisterKitFork(kitId, forkId) {
 }
 function lookupKitForkPath(kitId, forkId) {
   const entry = readIndex().entries.find((e) => e.kitId === kitId && e.forkId === forkId);
-  if (!entry) return null;
-  if (!fs19.existsSync(entry.forkPath)) return null;
+  if (!entry)
+    return null;
+  if (!fs19.existsSync(entry.forkPath))
+    return null;
   return entry.forkPath;
 }
 var init_fork_registry = __esm({
@@ -9447,7 +9595,8 @@ function resolvePolicyPath(forkPath) {
 }
 function readKitForkPolicy(forkPath) {
   const p36 = resolvePolicyPath(forkPath);
-  if (!fs20.existsSync(p36)) return makeDefaultKitForkPolicy();
+  if (!fs20.existsSync(p36))
+    return makeDefaultKitForkPolicy();
   try {
     const parsed = JSON.parse(fs20.readFileSync(p36, "utf8"));
     return { ...makeDefaultKitForkPolicy(), ...parsed, version: 1 };
@@ -9465,8 +9614,10 @@ function matchesAnyPrefix(targetPath, patterns) {
   const normalized = targetPath.replace(/^\/+|\/+$/g, "");
   return patterns.some((pat) => {
     const normPat = pat.replace(/^\/+|\/+$/g, "");
-    if (!normPat) return false;
-    if (normalized === normPat) return true;
+    if (!normPat)
+      return false;
+    if (normalized === normPat)
+      return true;
     return normalized.startsWith(`${normPat}/`);
   });
 }
@@ -9498,13 +9649,16 @@ function appendKitForkTraceEvent(forkPath, event) {
 }
 function readKitForkTrace(forkPath) {
   const p36 = resolveTracePath(forkPath);
-  if (!fs21.existsSync(p36)) return [];
+  if (!fs21.existsSync(p36))
+    return [];
   const raw = fs21.readFileSync(p36, "utf8").trim();
-  if (!raw) return [];
+  if (!raw)
+    return [];
   const events = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed)
+      continue;
     try {
       events.push(JSON.parse(trimmed));
     } catch {
@@ -9542,7 +9696,8 @@ function runGit(cwd, args, opts) {
   };
 }
 function isGitRepo(forkPath) {
-  if (!fs22.existsSync(path29.resolve(forkPath, ".git"))) return false;
+  if (!fs22.existsSync(path29.resolve(forkPath, ".git")))
+    return false;
   const res = runGit(forkPath, ["rev-parse", "--is-inside-work-tree"]);
   return res.ok && res.stdout.trim() === "true";
 }
@@ -9551,13 +9706,15 @@ function initGitRepo(forkPath) {
 }
 function getOriginUrl(forkPath) {
   const res = runGit(forkPath, ["remote", "get-url", "origin"]);
-  if (!res.ok) return null;
+  if (!res.ok)
+    return null;
   const url = res.stdout.trim();
   return url || null;
 }
 function setOrigin(forkPath, cloneUrl) {
   const has = getOriginUrl(forkPath);
-  if (has) return runGit(forkPath, ["remote", "set-url", "origin", cloneUrl]);
+  if (has)
+    return runGit(forkPath, ["remote", "set-url", "origin", cloneUrl]);
   return runGit(forkPath, ["remote", "add", "origin", cloneUrl]);
 }
 function createBranch(forkPath, branchName, from) {
@@ -9583,9 +9740,11 @@ function pushHealCommit(opts) {
     return { branch: branchName, pushed: false, detail: create.stderr || "createBranch failed" };
   }
   const stage = stageAll(forkPath);
-  if (!stage.ok) return { branch: branchName, pushed: false, detail: stage.stderr };
+  if (!stage.ok)
+    return { branch: branchName, pushed: false, detail: stage.stderr };
   const c = commit(forkPath, commitMessage);
-  if (!c.ok) return { branch: branchName, pushed: false, detail: c.stderr };
+  if (!c.ok)
+    return { branch: branchName, pushed: false, detail: c.stderr };
   const pushed = pushBranch(forkPath, branchName);
   return {
     branch: branchName,
@@ -9612,7 +9771,8 @@ import os7 from "node:os";
 import path31 from "node:path";
 function resolveGithubHomeDir() {
   const envHome = process.env.GROWTHUB_GITHUB_HOME?.trim();
-  if (envHome) return path31.resolve(expandHomePrefix(envHome));
+  if (envHome)
+    return path31.resolve(expandHomePrefix(envHome));
   return path31.resolve(os7.homedir(), ".growthub", "github");
 }
 function resolveGithubTokenPath() {
@@ -9655,10 +9815,12 @@ function atomicWrite(filePath, body) {
 }
 function readGithubToken() {
   const p36 = resolveGithubTokenPath();
-  if (!fs24.existsSync(p36)) return null;
+  if (!fs24.existsSync(p36))
+    return null;
   try {
     const parsed = JSON.parse(fs24.readFileSync(p36, "utf8"));
-    if (!parsed?.accessToken) return null;
+    if (!parsed?.accessToken)
+      return null;
     return parsed;
   } catch {
     return null;
@@ -9670,18 +9832,23 @@ function writeGithubToken(token) {
 }
 function clearGithubToken() {
   const p36 = resolveGithubTokenPath();
-  if (fs24.existsSync(p36)) fs24.rmSync(p36, { force: true });
+  if (fs24.existsSync(p36))
+    fs24.rmSync(p36, { force: true });
 }
 function isGithubTokenExpired(token) {
-  if (!token) return true;
-  if (!token.expiresAt) return false;
+  if (!token)
+    return true;
+  if (!token.expiresAt)
+    return false;
   const expiresAtMs = new Date(token.expiresAt).getTime();
-  if (!Number.isFinite(expiresAtMs)) return false;
+  if (!Number.isFinite(expiresAtMs))
+    return false;
   return Date.now() >= expiresAtMs;
 }
 function readGithubProfile() {
   const p36 = resolveGithubProfilePath();
-  if (!fs24.existsSync(p36)) return null;
+  if (!fs24.existsSync(p36))
+    return null;
   try {
     return JSON.parse(fs24.readFileSync(p36, "utf8"));
   } catch {
@@ -9694,7 +9861,8 @@ function writeGithubProfile(profile) {
 }
 function clearGithubProfile() {
   const p36 = resolveGithubProfilePath();
-  if (fs24.existsSync(p36)) fs24.rmSync(p36, { force: true });
+  if (fs24.existsSync(p36))
+    fs24.rmSync(p36, { force: true });
 }
 function describeGithubTokenPath() {
   return resolveGithubTokenPath();
@@ -9729,9 +9897,9 @@ async function fetchHostedIntegrations(session) {
 }
 async function fetchHostedIntegrationCredential(session, providerId) {
   const client = toApiClient2(session);
-  const path71 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
+  const path75 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
   try {
-    return await client.get(path71, { ignoreNotFound: true });
+    return await client.get(path75, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);
@@ -9759,9 +9927,11 @@ __export(bridge_exports, {
   resolveIntegrationCredential: () => resolveIntegrationCredential
 });
 function cacheTtlFromExpiresAt(expiresAt) {
-  if (!expiresAt) return Date.now() + DEFAULT_CACHE_TTL_MS;
+  if (!expiresAt)
+    return Date.now() + DEFAULT_CACHE_TTL_MS;
   const ms = new Date(expiresAt).getTime();
-  if (!Number.isFinite(ms)) return Date.now() + DEFAULT_CACHE_TTL_MS;
+  if (!Number.isFinite(ms))
+    return Date.now() + DEFAULT_CACHE_TTL_MS;
   return Math.min(ms, Date.now() + DEFAULT_CACHE_TTL_MS);
 }
 function clearIntegrationBridgeCache() {
@@ -9769,8 +9939,10 @@ function clearIntegrationBridgeCache() {
 }
 function readActiveGrowthubSession() {
   const session = readSession();
-  if (!session) return null;
-  if (isSessionExpired(session)) return null;
+  if (!session)
+    return null;
+  if (isSessionExpired(session))
+    return null;
   return session;
 }
 async function describeIntegrationBridge() {
@@ -9823,13 +9995,16 @@ async function listConnectedIntegrations() {
 }
 async function resolveIntegrationCredential(providerId) {
   const cached = credentialCache.get(providerId);
-  if (cached && cached.expiresAtMs > Date.now()) return cached.credential;
+  if (cached && cached.expiresAtMs > Date.now())
+    return cached.credential;
   credentialCache.delete(providerId);
   const session = readActiveGrowthubSession();
-  if (!session) return null;
+  if (!session)
+    return null;
   try {
     const res = await fetchHostedIntegrationCredential(session, providerId);
-    if (!res?.accessToken) return null;
+    if (!res?.accessToken)
+      return null;
     const credential = {
       provider: res.provider ?? providerId,
       accessToken: res.accessToken,
@@ -9947,14 +10122,18 @@ async function pollDeviceFlow(deviceCode, opts) {
   }
   const body = await res.json();
   const error = typeof body.error === "string" ? body.error : null;
-  if (error === "authorization_pending") return { status: "pending" };
+  if (error === "authorization_pending")
+    return { status: "pending" };
   if (error === "slow_down") {
     return { status: "slow_down", nextPollIntervalSec: Number(body.interval ?? 10) };
   }
-  if (error === "expired_token") return { status: "expired" };
-  if (error === "access_denied") return { status: "denied" };
+  if (error === "expired_token")
+    return { status: "expired" };
+  if (error === "access_denied")
+    return { status: "denied" };
   const accessToken = typeof body.access_token === "string" ? body.access_token : null;
-  if (!accessToken) return { status: "pending" };
+  if (!accessToken)
+    return { status: "pending" };
   const scopes = typeof body.scope === "string" ? body.scope.split(/[,\s]+/).filter(Boolean) : [];
   const token = {
     version: 1,
@@ -9982,9 +10161,12 @@ async function fetchAuthenticatedUser(accessToken) {
 }
 async function createFork(accessToken, opts) {
   const body = {};
-  if (opts.destinationOrg) body.organization = opts.destinationOrg;
-  if (opts.forkName) body.name = opts.forkName;
-  if (opts.defaultBranchOnly) body.default_branch_only = true;
+  if (opts.destinationOrg)
+    body.organization = opts.destinationOrg;
+  if (opts.forkName)
+    body.name = opts.forkName;
+  if (opts.defaultBranchOnly)
+    body.default_branch_only = true;
   const res = await fetch(
     `${GITHUB_API_BASE}/repos/${opts.upstream.owner}/${opts.upstream.repo}/forks`,
     {
@@ -10033,9 +10215,11 @@ async function openPullRequest(accessToken, opts) {
 function parseRepoRef(raw) {
   const s = raw.trim();
   const urlMatch = s.match(/github\.com[\/:]([^\/]+)\/([^\/\.]+)(?:\.git)?$/i);
-  if (urlMatch) return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/, "") };
+  if (urlMatch)
+    return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/, "") };
   const slashMatch = s.match(/^([^\/\s]+)\/([^\/\s]+)$/);
-  if (slashMatch) return { owner: slashMatch[1], repo: slashMatch[2].replace(/\.git$/, "") };
+  if (slashMatch)
+    return { owner: slashMatch[1], repo: slashMatch[2].replace(/\.git$/, "") };
   throw new Error(`Unable to parse GitHub repo reference: ${raw}`);
 }
 var GITHUB_API_BASE, GITHUB_OAUTH_BASE, DEFAULT_GITHUB_CLIENT_ID;
@@ -10057,18 +10241,23 @@ function visibleLength(input) {
   return stripAnsi(input).length;
 }
 function truncate(value, max) {
-  if (max <= 0) return "";
-  if (visibleLength(value) <= max) return value;
-  if (max <= 1) return value.slice(0, max);
+  if (max <= 0)
+    return "";
+  if (visibleLength(value) <= max)
+    return value;
+  if (max <= 1)
+    return value.slice(0, max);
   const plain = stripAnsi(value);
   const keep = Math.max(0, max - 1);
   return plain.slice(0, keep) + "\u2026";
 }
 function pad(value, width, align) {
   const vw = visibleLength(value);
-  if (vw >= width) return value;
+  if (vw >= width)
+    return value;
   const delta = width - vw;
-  if (align === "right") return " ".repeat(delta) + value;
+  if (align === "right")
+    return " ".repeat(delta) + value;
   if (align === "center") {
     const left = Math.floor(delta / 2);
     const right = delta - left;
@@ -10078,12 +10267,14 @@ function pad(value, width, align) {
 }
 function computeColumnWidths(columns, cells) {
   return columns.map((col, colIdx) => {
-    if (col.width && col.width > 0) return col.width;
+    if (col.width && col.width > 0)
+      return col.width;
     const contentMax = cells.reduce(
       (acc, row) => Math.max(acc, visibleLength(row[colIdx] ?? "")),
       visibleLength(col.label)
     );
-    if (col.maxWidth && contentMax > col.maxWidth) return col.maxWidth;
+    if (col.maxWidth && contentMax > col.maxWidth)
+      return col.maxWidth;
     return contentMax;
   });
 }
@@ -10095,8 +10286,10 @@ function renderTable(opts) {
   const rawCells = rows.map(
     (row) => columns.map((col) => {
       const raw = row[col.key];
-      if (col.format) return col.format(raw, row);
-      if (raw === void 0 || raw === null) return "";
+      if (col.format)
+        return col.format(raw, row);
+      if (raw === void 0 || raw === null)
+        return "";
       return String(raw);
     })
   );
@@ -10134,7 +10327,7 @@ __export(github_exports, {
   registerGithubCommands: () => registerGithubCommands
 });
 import * as p29 from "@clack/prompts";
-import pc43 from "picocolors";
+import pc44 from "picocolors";
 import open2 from "open";
 async function sleep2(ms) {
   await new Promise((r) => setTimeout(r, ms));
@@ -10157,14 +10350,14 @@ async function githubLogin(opts) {
     if (opts.json) {
       console.log(JSON.stringify({ status: "ok", mode: "pat", login: profile.login }, null, 2));
     } else {
-      p29.log.success(`Connected to GitHub as ${pc43.cyan(profile.login)} (PAT).`);
+      p29.log.success(`Connected to GitHub as ${pc44.cyan(profile.login)} (PAT).`);
     }
     return;
   }
-  p29.intro(pc43.cyan("GitHub device flow login"));
+  p29.intro(pc44.cyan("GitHub device flow login"));
   const start = await startDeviceFlow();
   p29.log.step(
-    `Open ${pc43.cyan(start.verificationUri)} and enter code ${pc43.yellow(start.userCode)}`
+    `Open ${pc44.cyan(start.verificationUri)} and enter code ${pc44.yellow(start.userCode)}`
   );
   if (!opts.noBrowser) {
     try {
@@ -10193,7 +10386,7 @@ async function githubLogin(opts) {
       if (opts.json) {
         console.log(JSON.stringify({ status: "ok", mode: "device-flow", login: profile.login }));
       } else {
-        p29.outro(`Connected to GitHub as ${pc43.cyan(profile.login)}.`);
+        p29.outro(`Connected to GitHub as ${pc44.cyan(profile.login)}.`);
       }
       return;
     }
@@ -10228,7 +10421,8 @@ async function githubWhoami(opts = {}) {
       p29.log.warn(
         "Not connected to GitHub. Either run `growthub github login` or connect GitHub inside your Growthub account."
       );
-      if (bridge.notice) p29.log.info(bridge.notice);
+      if (bridge.notice)
+        p29.log.info(bridge.notice);
     }
     return;
   }
@@ -10257,7 +10451,7 @@ async function githubWhoami(opts = {}) {
     return;
   }
   if (token) {
-    const status = directExpired ? pc43.red("expired") : pc43.green("active");
+    const status = directExpired ? pc44.red("expired") : pc44.green("active");
     p29.log.message(
       `GitHub (direct): ${status}  login=${profile?.login ?? token.login ?? "?"}  mode=${token.authMode}  scopes=[${token.scopes.join(", ")}]`
     );
@@ -10265,7 +10459,7 @@ async function githubWhoami(opts = {}) {
   if (bridge.growthubConnected) {
     if (bridgeGithub) {
       p29.log.message(
-        `GitHub (via Growthub bridge): ${pc43.green("connected")}  handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`
+        `GitHub (via Growthub bridge): ${pc44.green("connected")}  handle=${bridgeGithub.handle ?? "?"}  growthub=${bridge.growthubLogin ?? "?"}  scopes=[${(bridgeGithub.scopes ?? []).join(", ")}]`
       );
     } else if (bridge.bridgeAvailable) {
       p29.log.info(
@@ -10273,13 +10467,15 @@ async function githubWhoami(opts = {}) {
       );
     }
   }
-  p29.log.message(`Effective auth source: ${pc43.cyan(effectiveSource)}`);
+  p29.log.message(`Effective auth source: ${pc44.cyan(effectiveSource)}`);
 }
 function githubLogout(opts = {}) {
   clearGithubToken();
   clearGithubProfile();
-  if (opts.json) console.log(JSON.stringify({ status: "ok" }));
-  else p29.log.success("Disconnected from GitHub.");
+  if (opts.json)
+    console.log(JSON.stringify({ status: "ok" }));
+  else
+    p29.log.success("Disconnected from GitHub.");
 }
 function registerGithubCommands(program2) {
   const github = program2.command("github").description("Manage first-party native GitHub authentication + fork operations.");
@@ -10306,24 +10502,24 @@ var init_github = __esm({
 });
 
 // src/starter/scaffold-session-memory.ts
-import fs47 from "node:fs";
-import path55 from "node:path";
+import fs50 from "node:fs";
+import path59 from "node:path";
 function scaffoldSessionMemory(input) {
-  const forkPath = path55.resolve(input.forkPath);
-  const templatePath = path55.join(forkPath, TEMPLATE_RELATIVE);
-  const projectMdPath = path55.join(forkPath, PROJECT_MD_RELATIVE);
-  if (!fs47.existsSync(templatePath)) {
+  const forkPath = path59.resolve(input.forkPath);
+  const templatePath = path59.join(forkPath, TEMPLATE_RELATIVE);
+  const projectMdPath = path59.join(forkPath, PROJECT_MD_RELATIVE);
+  if (!fs50.existsSync(templatePath)) {
     return { written: false, projectMdPath, templatePath: null };
   }
-  if (fs47.existsSync(projectMdPath)) {
+  if (fs50.existsSync(projectMdPath)) {
     return { written: false, projectMdPath, templatePath };
   }
-  const template = fs47.readFileSync(templatePath, "utf8");
+  const template = fs50.readFileSync(templatePath, "utf8");
   const startedAt = input.startedAt ?? (/* @__PURE__ */ new Date()).toISOString();
   const sourceRef = input.sourceRef ?? "";
   const seeded = template.replaceAll("{{KIT_ID}}", input.kitId).replaceAll("{{FORK_ID}}", input.forkId).replaceAll("{{STARTED_AT}}", startedAt).replaceAll("{{SOURCE}}", input.source).replaceAll("{{SOURCE_REF}}", sourceRef);
-  fs47.mkdirSync(path55.dirname(projectMdPath), { recursive: true });
-  fs47.writeFileSync(projectMdPath, seeded, "utf8");
+  fs50.mkdirSync(path59.dirname(projectMdPath), { recursive: true });
+  fs50.writeFileSync(projectMdPath, seeded, "utf8");
   return { written: true, projectMdPath, templatePath };
 }
 var PROJECT_MD_RELATIVE, TEMPLATE_RELATIVE;
@@ -10336,12 +10532,12 @@ var init_scaffold_session_memory = __esm({
 });
 
 // src/starter/init.ts
-import fs48 from "node:fs";
-import path56 from "node:path";
+import fs51 from "node:fs";
+import path60 from "node:path";
 async function initStarterWorkspace(opts) {
   const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
-  const absOut = path56.resolve(opts.out);
-  if (fs48.existsSync(absOut) && fs48.readdirSync(absOut).length > 0) {
+  const absOut = path60.resolve(opts.out);
+  if (fs51.existsSync(absOut) && fs51.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   const info = getBundledKitSourceInfo(kitId);
@@ -10350,7 +10546,7 @@ async function initStarterWorkspace(opts) {
     forkPath: absOut,
     kitId: info.id,
     baseVersion: info.version,
-    label: opts.name?.trim() || path56.basename(absOut)
+    label: opts.name?.trim() || path60.basename(absOut)
   });
   const policy = {
     ...makeDefaultKitForkPolicy(),
@@ -10403,7 +10599,8 @@ async function initStarterWorkspace(opts) {
     if (!gitAvailable()) {
       throw new Error("git is not available on PATH \u2014 cannot wire remote origin.");
     }
-    if (!isGitRepo(absOut)) initGitRepo(absOut);
+    if (!isGitRepo(absOut))
+      initGitRepo(absOut);
     setOrigin(absOut, buildTokenCloneUrl(forkResult.fork, resolved.accessToken));
     remote = {
       provider: "github",
@@ -10460,8 +10657,8 @@ var init_types2 = __esm({
 });
 
 // src/starter/source-import/github-source.ts
-import fs49 from "node:fs";
-import path57 from "node:path";
+import fs52 from "node:fs";
+import path61 from "node:path";
 import { spawnSync as spawnSync6 } from "node:child_process";
 function baseHeaders() {
   return {
@@ -10475,9 +10672,12 @@ function withToken(token) {
 }
 function pickVisibility(raw) {
   const v = raw.visibility;
-  if (v === "public" || v === "private" || v === "internal") return v;
-  if (raw.private === true) return "private";
-  if (raw.private === false) return "public";
+  if (v === "public" || v === "private" || v === "internal")
+    return v;
+  if (raw.private === true)
+    return "private";
+  if (raw.private === false)
+    return "public";
   return "unknown";
 }
 async function fetchRepoMetadata(ref, authHeaders) {
@@ -10570,9 +10770,11 @@ async function probeGithubRepoSource(input) {
   };
 }
 async function resolveGithubCloneToken(probe) {
-  if (probe.mode === "public") return null;
+  if (probe.mode === "public")
+    return null;
   const resolved = await resolveGithubAccessToken();
-  if (!resolved) return null;
+  if (!resolved)
+    return null;
   return { token: resolved.accessToken, source: resolved.source };
 }
 function runGit2(cwd, args) {
@@ -10592,16 +10794,17 @@ function cloneGithubRepo(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot clone.");
   }
-  if (fs49.existsSync(input.destination)) {
+  if (fs52.existsSync(input.destination)) {
     throw new Error(`Clone destination already exists: ${input.destination}`);
   }
   const cloneUrl = input.token ? buildTokenCloneUrl(input.probe.repo, input.token) : input.probe.cloneUrl;
-  const parent = path57.dirname(input.destination);
-  fs49.mkdirSync(parent, { recursive: true });
+  const parent = path61.dirname(input.destination);
+  fs52.mkdirSync(parent, { recursive: true });
   const depth = input.depth ?? 1;
   const branch = input.branch ?? input.probe.defaultBranch;
   const args = ["clone"];
-  if (depth > 0) args.push("--depth", String(depth));
+  if (depth > 0)
+    args.push("--depth", String(depth));
   args.push("--single-branch", "--branch", branch, cloneUrl, input.destination);
   const cloneRes = runGit2(parent, args);
   if (!cloneRes.ok) {
@@ -10623,18 +10826,19 @@ function cloneGithubRepo(input) {
 }
 function narrowToSubdirectory(rootDir, subdirectory) {
   const normalizedSub = subdirectory.replace(/^\/+|\/+$/g, "");
-  if (!normalizedSub) return;
-  const abs = path57.resolve(rootDir, normalizedSub);
-  if (!fs49.existsSync(abs) || !fs49.statSync(abs).isDirectory()) {
+  if (!normalizedSub)
+    return;
+  const abs = path61.resolve(rootDir, normalizedSub);
+  if (!fs52.existsSync(abs) || !fs52.statSync(abs).isDirectory()) {
     throw new Error(`Subdirectory not found in cloned repo: ${subdirectory}`);
   }
-  const tmp = path57.resolve(
-    path57.dirname(rootDir),
-    `.${path57.basename(rootDir)}-narrow-${Date.now().toString(36)}`
+  const tmp = path61.resolve(
+    path61.dirname(rootDir),
+    `.${path61.basename(rootDir)}-narrow-${Date.now().toString(36)}`
   );
-  fs49.renameSync(abs, tmp);
-  fs49.rmSync(rootDir, { recursive: true, force: true });
-  fs49.renameSync(tmp, rootDir);
+  fs52.renameSync(abs, tmp);
+  fs52.rmSync(rootDir, { recursive: true, force: true });
+  fs52.renameSync(tmp, rootDir);
 }
 var GITHUB_API_BASE2;
 var init_github_source = __esm({
@@ -10648,13 +10852,14 @@ var init_github_source = __esm({
 });
 
 // src/starter/source-import/skills-source.ts
-import fs50 from "node:fs";
+import fs53 from "node:fs";
 import os11 from "node:os";
-import path58 from "node:path";
+import path62 from "node:path";
 import { spawnSync as spawnSync7 } from "node:child_process";
 function resolveBase() {
   const raw = process.env.SKILLS_SH_BASE?.trim();
-  if (!raw) return DEFAULT_BASE;
+  if (!raw)
+    return DEFAULT_BASE;
   return raw.replace(/\/+$/, "");
 }
 function baseHeaders2(accept = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8") {
@@ -10683,8 +10888,10 @@ async function fetchHtml(url) {
   return normalizeHtml(await res.text());
 }
 function scopePath(scope) {
-  if (scope === "trending") return "/trending";
-  if (scope === "hot") return "/hot";
+  if (scope === "trending")
+    return "/trending";
+  if (scope === "hot")
+    return "/hot";
   return "/";
 }
 function buildBrowseUrl(base, query) {
@@ -10696,9 +10903,11 @@ function buildBrowseUrl(base, query) {
 }
 function parseSkillRef(raw) {
   let working = raw.trim();
-  if (!working) throw new Error("Skill reference is empty.");
+  if (!working)
+    throw new Error("Skill reference is empty.");
   const urlMatch = working.match(/^https?:\/\/[^/]+\/(.*)$/i);
-  if (urlMatch) working = urlMatch[1];
+  if (urlMatch)
+    working = urlMatch[1];
   working = working.replace(/^\/+|\/+$/g, "");
   const atIndex = working.lastIndexOf("@");
   let version;
@@ -10729,7 +10938,8 @@ function parseLeaderboardRows(html, base) {
     const titleMatch = block.match(/<h3[^>]*>([^<]+)<\/h3>/);
     const repositoryMatch = block.match(/<p[^>]*font-mono[^>]*>([^<]+)<\/p>/);
     const installsMatch = block.match(/<span class="font-mono text-sm text-foreground">([^<]+)<\/span>/);
-    if (!skillId || !titleMatch?.[1] || !repositoryMatch?.[1]) continue;
+    if (!skillId || !titleMatch?.[1] || !repositoryMatch?.[1])
+      continue;
     const title = cleanText(titleMatch[1]);
     const repository = cleanText(repositoryMatch[1]);
     const skillSlug = skillId.split("/").at(-1) ?? title;
@@ -10748,7 +10958,8 @@ function parseLeaderboardRows(html, base) {
 }
 function matchesQuery3(entry, rawQuery) {
   const query = rawQuery?.trim().toLowerCase();
-  if (!query) return true;
+  if (!query)
+    return true;
   const haystack = [
     entry.title,
     entry.skillId,
@@ -10762,7 +10973,8 @@ function sortByPopularity(entries) {
   return [...entries].sort((left, right) => {
     const leftRank = left.rank ?? Number.MAX_SAFE_INTEGER;
     const rightRank = right.rank ?? Number.MAX_SAFE_INTEGER;
-    if (leftRank !== rightRank) return leftRank - rightRank;
+    if (leftRank !== rightRank)
+      return leftRank - rightRank;
     return left.title.localeCompare(right.title);
   });
 }
@@ -10804,7 +11016,8 @@ async function browseSkills(query = {}) {
 }
 function parseInstallCommand(html) {
   const match = html.match(/npx skills add\s+([^\s<]+)\s+--skill\s+([A-Za-z0-9._:-]+)/);
-  if (!match) return {};
+  if (!match)
+    return {};
   const repoUrl = cleanText(match[1] ?? "");
   const skillSlug = cleanText(match[2] ?? "");
   const repoMatch = repoUrl.match(/github\.com\/([^/\s]+\/[^/\s]+?)(?:\.git)?$/i);
@@ -10828,14 +11041,16 @@ function parseSectionValue(html, label) {
 }
 function parseSummary(html) {
   const summaryIdx = html.indexOf("Summary</div>");
-  if (summaryIdx === -1) return void 0;
+  if (summaryIdx === -1)
+    return void 0;
   const slice = html.slice(summaryIdx, summaryIdx + 4e3);
   const match = slice.match(/<p>([\s\S]*?)<\/p>/);
   return match?.[1] ? cleanText(match[1]) : void 0;
 }
 function parseAudits(html, skillId, base) {
   const sectionIdx = html.indexOf("Security Audits");
-  if (sectionIdx === -1) return [];
+  if (sectionIdx === -1)
+    return [];
   const endIdx = html.indexOf("Installed on", sectionIdx);
   const section = html.slice(sectionIdx, endIdx === -1 ? sectionIdx + 4e3 : endIdx);
   const audits = [];
@@ -10916,9 +11131,9 @@ async function probeSkillsSource(input) {
   };
 }
 function assertInsidePayloadRoot(root, candidate) {
-  const abs = path58.resolve(candidate);
-  const rootAbs = path58.resolve(root);
-  if (!abs.startsWith(rootAbs + path58.sep) && abs !== rootAbs) {
+  const abs = path62.resolve(candidate);
+  const rootAbs = path62.resolve(root);
+  if (!abs.startsWith(rootAbs + path62.sep) && abs !== rootAbs) {
     throw new Error(`Refusing to write outside payload root: ${candidate}`);
   }
 }
@@ -10934,24 +11149,24 @@ function runGit3(args, cwd) {
   };
 }
 function skillDirectoryMatches(dir, skillSlug) {
-  const skillFile = path58.resolve(dir, "SKILL.md");
-  if (!fs50.existsSync(skillFile) || !fs50.statSync(skillFile).isFile()) {
+  const skillFile = path62.resolve(dir, "SKILL.md");
+  if (!fs53.existsSync(skillFile) || !fs53.statSync(skillFile).isFile()) {
     return false;
   }
-  if (path58.basename(dir) === skillSlug) {
+  if (path62.basename(dir) === skillSlug) {
     return true;
   }
-  const content = fs50.readFileSync(skillFile, "utf8");
+  const content = fs53.readFileSync(skillFile, "utf8");
   const nameMatch = content.match(/(?:^|\n)name:\s*["']?([A-Za-z0-9._:-]+)["']?\s*(?:\n|$)/i);
   return nameMatch?.[1] === skillSlug;
 }
 function locateSkillDirectory(root, skillSlug) {
   const preferred = [
-    path58.resolve(root, "skills", skillSlug),
-    path58.resolve(root, skillSlug)
+    path62.resolve(root, "skills", skillSlug),
+    path62.resolve(root, skillSlug)
   ];
   for (const candidate of preferred) {
-    if (fs50.existsSync(candidate) && fs50.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
+    if (fs53.existsSync(candidate) && fs53.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
       return candidate;
     }
   }
@@ -10961,12 +11176,13 @@ function locateSkillDirectory(root, skillSlug) {
     if (skillDirectoryMatches(current, skillSlug)) {
       return current;
     }
-    for (const entry of fs50.readdirSync(current, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
+    for (const entry of fs53.readdirSync(current, { withFileTypes: true })) {
+      if (!entry.isDirectory())
+        continue;
       if ([".git", "node_modules", ".next", "dist", "build", "coverage"].includes(entry.name)) {
         continue;
       }
-      queue.push(path58.resolve(current, entry.name));
+      queue.push(path62.resolve(current, entry.name));
     }
   }
   return null;
@@ -10976,18 +11192,18 @@ function copySkillTree(sourceDir, destination) {
   const stack = [{ from: sourceDir, to: destination }];
   while (stack.length > 0) {
     const current = stack.pop();
-    fs50.mkdirSync(current.to, { recursive: true });
-    for (const entry of fs50.readdirSync(current.from, { withFileTypes: true })) {
-      const fromPath = path58.resolve(current.from, entry.name);
-      const toPath = path58.resolve(current.to, entry.name);
+    fs53.mkdirSync(current.to, { recursive: true });
+    for (const entry of fs53.readdirSync(current.from, { withFileTypes: true })) {
+      const fromPath = path62.resolve(current.from, entry.name);
+      const toPath = path62.resolve(current.to, entry.name);
       assertInsidePayloadRoot(destination, toPath);
       if (entry.isDirectory()) {
         stack.push({ from: fromPath, to: toPath });
         continue;
       }
-      const data = fs50.readFileSync(fromPath);
-      fs50.mkdirSync(path58.dirname(toPath), { recursive: true });
-      fs50.writeFileSync(toPath, data, { mode: 420 });
+      const data = fs53.readFileSync(fromPath);
+      fs53.mkdirSync(path62.dirname(toPath), { recursive: true });
+      fs53.writeFileSync(toPath, data, { mode: 420 });
       written += 1;
     }
   }
@@ -10998,7 +11214,7 @@ async function fetchSkillPayload(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot materialize a skills.sh payload.");
   }
-  if (fs50.existsSync(destination)) {
+  if (fs53.existsSync(destination)) {
     throw new Error(`Skill payload destination already exists: ${destination}`);
   }
   const repoSource = probe.repoUrl ?? (probe.repository ? `https://github.com/${probe.repository}` : void 0);
@@ -11006,11 +11222,11 @@ async function fetchSkillPayload(input) {
   if (!repoSource || !skillSlug) {
     throw new Error(`Skill '${probe.skillId}' is missing repository metadata \u2014 cannot materialize payload.`);
   }
-  const cloneRoot = fs50.mkdtempSync(
-    path58.join(os11.tmpdir(), "growthub-skills-source-")
+  const cloneRoot = fs53.mkdtempSync(
+    path62.join(os11.tmpdir(), "growthub-skills-source-")
   );
   try {
-    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path58.dirname(cloneRoot));
+    const cloneRes = runGit3(["clone", "--depth", "1", repoSource, cloneRoot], path62.dirname(cloneRoot));
     if (!cloneRes.ok) {
       throw new Error(`git clone failed: ${cloneRes.stderr || "unable to clone skill repository"}`);
     }
@@ -11023,7 +11239,7 @@ async function fetchSkillPayload(input) {
     const fileCount = copySkillTree(skillDir, destination);
     return { destination, fileCount };
   } finally {
-    fs50.rmSync(cloneRoot, { recursive: true, force: true });
+    fs53.rmSync(cloneRoot, { recursive: true, force: true });
   }
 }
 var DEFAULT_BASE, COMMENT_PATTERN;
@@ -11037,45 +11253,59 @@ var init_skills_source = __esm({
 });
 
 // src/starter/source-import/detect.ts
-import fs51 from "node:fs";
-import path59 from "node:path";
+import fs54 from "node:fs";
+import path63 from "node:path";
 function safeReadPackageJson(dir) {
-  const p36 = path59.resolve(dir, "package.json");
-  if (!fs51.existsSync(p36)) return null;
+  const p36 = path63.resolve(dir, "package.json");
+  if (!fs54.existsSync(p36))
+    return null;
   try {
-    return JSON.parse(fs51.readFileSync(p36, "utf8"));
+    return JSON.parse(fs54.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
 }
 function detectPackageManager(dir, pkg) {
-  if (pkg?.packageManager?.startsWith("pnpm")) return "pnpm";
-  if (pkg?.packageManager?.startsWith("yarn")) return "yarn";
-  if (pkg?.packageManager?.startsWith("npm")) return "npm";
-  if (pkg?.packageManager?.startsWith("bun")) return "bun";
-  if (fs51.existsSync(path59.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs51.existsSync(path59.resolve(dir, "yarn.lock"))) return "yarn";
-  if (fs51.existsSync(path59.resolve(dir, "bun.lockb"))) return "bun";
-  if (fs51.existsSync(path59.resolve(dir, "package-lock.json"))) return "npm";
+  if (pkg?.packageManager?.startsWith("pnpm"))
+    return "pnpm";
+  if (pkg?.packageManager?.startsWith("yarn"))
+    return "yarn";
+  if (pkg?.packageManager?.startsWith("npm"))
+    return "npm";
+  if (pkg?.packageManager?.startsWith("bun"))
+    return "bun";
+  if (fs54.existsSync(path63.resolve(dir, "pnpm-lock.yaml")))
+    return "pnpm";
+  if (fs54.existsSync(path63.resolve(dir, "yarn.lock")))
+    return "yarn";
+  if (fs54.existsSync(path63.resolve(dir, "bun.lockb")))
+    return "bun";
+  if (fs54.existsSync(path63.resolve(dir, "package-lock.json")))
+    return "npm";
   return "unknown";
 }
 function collectDeps(pkg) {
   const deps = /* @__PURE__ */ new Set();
-  if (!pkg) return deps;
+  if (!pkg)
+    return deps;
   for (const map of [pkg.dependencies, pkg.devDependencies, pkg.peerDependencies]) {
-    if (!map) continue;
-    for (const k of Object.keys(map)) deps.add(k);
+    if (!map)
+      continue;
+    for (const k of Object.keys(map))
+      deps.add(k);
   }
   return deps;
 }
 function looksLikeSkillPayload(rootDir) {
   const markers = ["SKILL.md", "skill.md", "skill.json", "skill.yml", "skill.yaml", "prompt.md"];
-  return markers.some((name) => fs51.existsSync(path59.resolve(rootDir, name)));
+  return markers.some((name) => fs54.existsSync(path63.resolve(rootDir, name)));
 }
 function detectFramework(rootDir, pkg) {
   if (!pkg) {
-    if (looksLikeSkillPayload(rootDir)) return "skill";
-    if (fs51.existsSync(path59.resolve(rootDir, "docs"))) return "docs";
+    if (looksLikeSkillPayload(rootDir))
+      return "skill";
+    if (fs54.existsSync(path63.resolve(rootDir, "docs")))
+      return "docs";
     return "unknown";
   }
   const deps = collectDeps(pkg);
@@ -11084,13 +11314,16 @@ function detectFramework(rootDir, pkg) {
     "vite.config.ts",
     "vite.config.mjs",
     "vite.config.cjs"
-  ].some((name) => fs51.existsSync(path59.resolve(rootDir, name)));
-  if (deps.has("next") || fs51.existsSync(path59.resolve(rootDir, "next.config.js")) || fs51.existsSync(path59.resolve(rootDir, "next.config.mjs"))) {
+  ].some((name) => fs54.existsSync(path63.resolve(rootDir, name)));
+  if (deps.has("next") || fs54.existsSync(path63.resolve(rootDir, "next.config.js")) || fs54.existsSync(path63.resolve(rootDir, "next.config.mjs"))) {
     return "next";
   }
-  if (deps.has("vite") || hasViteConfig) return "vite";
-  if (deps.has("react") || deps.has("react-dom")) return "react";
-  if (pkg.workspaces) return "monorepo";
+  if (deps.has("vite") || hasViteConfig)
+    return "vite";
+  if (deps.has("react") || deps.has("react-dom"))
+    return "react";
+  if (pkg.workspaces)
+    return "monorepo";
   const scripts = pkg.scripts ?? {};
   if (scripts.start || scripts.dev) {
     if (deps.has("express") || deps.has("fastify") || deps.has("koa") || deps.has("@fastify/autoload")) {
@@ -11098,49 +11331,62 @@ function detectFramework(rootDir, pkg) {
     }
     return "node-service";
   }
-  if (pkg.bin) return "cli-tool";
+  if (pkg.bin)
+    return "cli-tool";
   return "unknown";
 }
 function pickScripts(pkg) {
-  if (!pkg?.scripts) return {};
+  if (!pkg?.scripts)
+    return {};
   const out = {};
-  if (pkg.scripts.build) out.build = pkg.scripts.build;
-  if (pkg.scripts.dev) out.dev = pkg.scripts.dev;
-  if (pkg.scripts.start) out.start = pkg.scripts.start;
-  if (pkg.scripts.test) out.test = pkg.scripts.test;
+  if (pkg.scripts.build)
+    out.build = pkg.scripts.build;
+  if (pkg.scripts.dev)
+    out.dev = pkg.scripts.dev;
+  if (pkg.scripts.start)
+    out.start = pkg.scripts.start;
+  if (pkg.scripts.test)
+    out.test = pkg.scripts.test;
   return out;
 }
 function listEnvFiles(dir) {
-  if (!fs51.existsSync(dir)) return [];
-  return fs51.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
+  if (!fs54.existsSync(dir))
+    return [];
+  return fs54.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
 }
 function findAppRoot(rootDir, pkg) {
-  if (pkg) return ".";
+  if (pkg)
+    return ".";
   const candidates = ["app", "src", "apps", "packages"];
   for (const candidate of candidates) {
-    const abs = path59.resolve(rootDir, candidate);
-    if (fs51.existsSync(abs) && fs51.statSync(abs).isDirectory()) {
+    const abs = path63.resolve(rootDir, candidate);
+    if (fs54.existsSync(abs) && fs54.statSync(abs).isDirectory()) {
       const child = safeReadPackageJson(abs);
-      if (child) return candidate;
+      if (child)
+        return candidate;
     }
   }
   return ".";
 }
 function computeConfidence(framework, manager, pkg) {
   let score = 0;
-  if (pkg) score += 0.4;
-  if (framework !== "unknown") score += 0.3;
-  if (manager !== "unknown") score += 0.2;
-  if (pkg?.scripts) score += 0.1;
+  if (pkg)
+    score += 0.4;
+  if (framework !== "unknown")
+    score += 0.3;
+  if (manager !== "unknown")
+    score += 0.2;
+  if (pkg?.scripts)
+    score += 0.1;
   return Math.min(1, Number(score.toFixed(2)));
 }
 function detectSourceShape(rootDir) {
-  if (!fs51.existsSync(rootDir) || !fs51.statSync(rootDir).isDirectory()) {
+  if (!fs54.existsSync(rootDir) || !fs54.statSync(rootDir).isDirectory()) {
     throw new Error(`Detection target is not a directory: ${rootDir}`);
   }
   const rootPkg = safeReadPackageJson(rootDir);
   const appRootRel = findAppRoot(rootDir, rootPkg);
-  const appRootAbs = path59.resolve(rootDir, appRootRel);
+  const appRootAbs = path63.resolve(rootDir, appRootRel);
   const appPkg = appRootRel === "." ? rootPkg : safeReadPackageJson(appRootAbs);
   const framework = detectFramework(appRootAbs, appPkg ?? rootPkg);
   const packageManager = detectPackageManager(rootDir, rootPkg ?? appPkg);
@@ -11180,18 +11426,19 @@ var init_detect = __esm({
 });
 
 // src/starter/source-import/security.ts
-import fs52 from "node:fs";
-import path60 from "node:path";
+import fs55 from "node:fs";
+import path64 from "node:path";
 function isLikelyTextFile(filename) {
-  const ext = path60.extname(filename).toLowerCase();
-  if (!ext) return true;
+  const ext = path64.extname(filename).toLowerCase();
+  if (!ext)
+    return true;
   return TEXT_EXTENSIONS.has(ext);
 }
 function isSuspiciousBinary(filename) {
-  return SUSPICIOUS_BINARY_EXTENSIONS.has(path60.extname(filename).toLowerCase());
+  return SUSPICIOUS_BINARY_EXTENSIONS.has(path64.extname(filename).toLowerCase());
 }
 function isUnexpectedArchive(filename) {
-  const ext = path60.extname(filename).toLowerCase();
+  const ext = path64.extname(filename).toLowerCase();
   return ARCHIVE_EXTENSIONS.has(ext) || filename.toLowerCase().endsWith(".tar.gz");
 }
 function shortExcerpt(line) {
@@ -11199,9 +11446,12 @@ function shortExcerpt(line) {
   return trimmed.length <= 120 ? trimmed : `${trimmed.slice(0, 117)}...`;
 }
 function classify(findings) {
-  if (findings.some((f) => f.severity === "blocking")) return "blocked";
-  if (findings.some((f) => f.severity === "high-risk")) return "high-risk";
-  if (findings.some((f) => f.severity === "caution")) return "caution";
+  if (findings.some((f) => f.severity === "blocking"))
+    return "blocked";
+  if (findings.some((f) => f.severity === "high-risk"))
+    return "high-risk";
+  if (findings.some((f) => f.severity === "caution"))
+    return "caution";
   return "safe";
 }
 function severityRank2(sev) {
@@ -11241,34 +11491,39 @@ function walkPayload(root, onFile, limits) {
   let visited = 0;
   const stack = [root];
   while (stack.length > 0) {
-    if (visited >= limits.maxFiles) break;
+    if (visited >= limits.maxFiles)
+      break;
     const current = stack.pop();
-    if (!current) break;
+    if (!current)
+      break;
     let entries;
     try {
-      entries = fs52.readdirSync(current, { withFileTypes: true });
+      entries = fs55.readdirSync(current, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
-      const abs = path60.resolve(current, entry.name);
+      const abs = path64.resolve(current, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === ".git" || entry.name === "node_modules") continue;
+        if (entry.name === ".git" || entry.name === "node_modules")
+          continue;
         stack.push(abs);
         continue;
       }
-      if (!entry.isFile()) continue;
-      const rel = path60.relative(root, abs);
+      if (!entry.isFile())
+        continue;
+      const rel = path64.relative(root, abs);
       onFile(abs, rel);
       visited += 1;
-      if (visited >= limits.maxFiles) break;
+      if (visited >= limits.maxFiles)
+        break;
     }
   }
   return visited;
 }
 function inspectSourcePayload(input) {
   const { payloadRoot } = input;
-  if (!fs52.existsSync(payloadRoot) || !fs52.statSync(payloadRoot).isDirectory()) {
+  if (!fs55.existsSync(payloadRoot) || !fs55.statSync(payloadRoot).isDirectory()) {
     throw new Error(`Inspection target is not a directory: ${payloadRoot}`);
   }
   const findings = [];
@@ -11278,7 +11533,7 @@ function inspectSourcePayload(input) {
     (abs, rel) => {
       let size = 0;
       try {
-        size = fs52.statSync(abs).size;
+        size = fs55.statSync(abs).size;
       } catch {
         return;
       }
@@ -11287,7 +11542,7 @@ function inspectSourcePayload(input) {
           category: "suspicious-binary",
           severity: "high-risk",
           path: rel,
-          message: `Payload ships a precompiled binary (${path60.extname(rel)}). Review provenance before use.`
+          message: `Payload ships a precompiled binary (${path64.extname(rel)}). Review provenance before use.`
         });
         return;
       }
@@ -11296,20 +11551,22 @@ function inspectSourcePayload(input) {
           category: "unexpected-archive",
           severity: "caution",
           path: rel,
-          message: `Payload ships an archive (${path60.extname(rel)}) \u2014 expand and review contents before use.`
+          message: `Payload ships an archive (${path64.extname(rel)}) \u2014 expand and review contents before use.`
         });
         return;
       }
-      if (!isLikelyTextFile(rel)) return;
-      if (bytesInspected + Math.min(size, MAX_BYTES_PER_FILE) > MAX_TOTAL_BYTES) return;
+      if (!isLikelyTextFile(rel))
+        return;
+      if (bytesInspected + Math.min(size, MAX_BYTES_PER_FILE) > MAX_TOTAL_BYTES)
+        return;
       let buf;
       try {
-        const handle = fs52.openSync(abs, "r");
+        const handle = fs55.openSync(abs, "r");
         try {
           buf = Buffer.alloc(Math.min(size, MAX_BYTES_PER_FILE));
-          fs52.readSync(handle, buf, 0, buf.length, 0);
+          fs55.readSync(handle, buf, 0, buf.length, 0);
         } finally {
-          fs52.closeSync(handle);
+          fs55.closeSync(handle);
         }
       } catch {
         return;
@@ -11318,7 +11575,8 @@ function inspectSourcePayload(input) {
       const text69 = buf.toString("utf8");
       for (const matcher of TEXT_PATTERNS) {
         const match = matcher.regex.exec(text69);
-        if (!match) continue;
+        if (!match)
+          continue;
         findings.push({
           category: matcher.category,
           severity: matcher.severity,
@@ -11518,18 +11776,19 @@ var init_security = __esm({
 });
 
 // src/starter/source-import/plan.ts
-import fs53 from "node:fs";
-import path61 from "node:path";
+import fs56 from "node:fs";
+import path65 from "node:path";
 function generateImportId() {
   return `si-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function destinationState(absDest) {
-  if (!fs53.existsSync(absDest)) return { exists: false, nonEmpty: false };
-  const stats = fs53.statSync(absDest);
+  if (!fs56.existsSync(absDest))
+    return { exists: false, nonEmpty: false };
+  const stats = fs56.statSync(absDest);
   if (!stats.isDirectory()) {
     throw new Error(`Destination is not a directory: ${absDest}`);
   }
-  const entries = fs53.readdirSync(absDest);
+  const entries = fs56.readdirSync(absDest);
   return { exists: true, nonEmpty: entries.length > 0 };
 }
 function describeSource2(probe) {
@@ -11539,11 +11798,12 @@ function describeSource2(probe) {
   return `skill ${probe.skillId}@${probe.version} (skills.sh)`;
 }
 function buildSourceImportPlan(input) {
-  const absDest = path61.resolve(input.destination);
+  const absDest = path65.resolve(input.destination);
   const state = destinationState(absDest);
   const payloadPath = "imported";
   const warnings = [...input.probe.warnings];
-  if (input.detection) warnings.push(...input.detection.warnings);
+  if (input.detection)
+    warnings.push(...input.detection.warnings);
   if (state.nonEmpty) {
     warnings.push(
       `Destination ${absDest} is not empty \u2014 import requires operator confirmation.`
@@ -11652,8 +11912,8 @@ var init_plan = __esm({
 });
 
 // src/starter/source-import/summarize.ts
-import fs54 from "node:fs";
-import path62 from "node:path";
+import fs57 from "node:fs";
+import path66 from "node:path";
 function sourceHeading(manifest) {
   const src = manifest.source;
   if (src.kind === "github-repo") {
@@ -11708,7 +11968,7 @@ function nextStepsSection(manifest) {
 }
 function writeImportSummary(input) {
   const { forkPath, summaryRelativePath, manifest } = input;
-  const summaryPath = path62.resolve(forkPath, summaryRelativePath);
+  const summaryPath = path66.resolve(forkPath, summaryRelativePath);
   const body = [
     `# Source Import Summary`,
     ``,
@@ -11738,8 +11998,8 @@ function writeImportSummary(input) {
     `Generated by the Growthub Source Import Agent. Canonical manifest lives at \`.growthub-fork/source-import.json\`.`,
     ``
   ].join("\n");
-  fs54.mkdirSync(path62.dirname(summaryPath), { recursive: true });
-  fs54.writeFileSync(summaryPath, body, "utf8");
+  fs57.mkdirSync(path66.dirname(summaryPath), { recursive: true });
+  fs57.writeFileSync(summaryPath, body, "utf8");
   return summaryPath;
 }
 var init_summarize = __esm({
@@ -11749,16 +12009,16 @@ var init_summarize = __esm({
 });
 
 // src/starter/source-import/materialize.ts
-import fs55 from "node:fs";
+import fs58 from "node:fs";
 import os12 from "node:os";
-import path63 from "node:path";
+import path67 from "node:path";
 function resolveSourceKind(probe) {
   return probe.kind === "github-repo" ? "github-repo" : "skills-skill";
 }
 function stagingDirFor(forkPath) {
-  return path63.join(
+  return path67.join(
     os12.tmpdir(),
-    `growthub-source-import-${path63.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    `growthub-source-import-${path67.basename(forkPath)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   );
 }
 async function fetchPayload(probe, stagingDir, opts) {
@@ -11790,24 +12050,25 @@ async function fetchPayload(probe, stagingDir, opts) {
   return { payloadRoot: stagingDir };
 }
 function movePayloadIntoFork(payloadRoot, forkPath, payloadRelativePath) {
-  const target = path63.resolve(forkPath, payloadRelativePath);
-  if (fs55.existsSync(target)) {
-    fs55.rmSync(target, { recursive: true, force: true });
+  const target = path67.resolve(forkPath, payloadRelativePath);
+  if (fs58.existsSync(target)) {
+    fs58.rmSync(target, { recursive: true, force: true });
   }
-  fs55.mkdirSync(path63.dirname(target), { recursive: true });
-  fs55.renameSync(payloadRoot, target);
+  fs58.mkdirSync(path67.dirname(target), { recursive: true });
+  fs58.renameSync(payloadRoot, target);
   return target;
 }
 function writeManifest(forkPath, manifest) {
-  const p36 = path63.resolve(forkPath, MANIFEST_RELATIVE_PATH);
-  fs55.mkdirSync(path63.dirname(p36), { recursive: true });
-  fs55.writeFileSync(p36, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  const p36 = path67.resolve(forkPath, MANIFEST_RELATIVE_PATH);
+  fs58.mkdirSync(path67.dirname(p36), { recursive: true });
+  fs58.writeFileSync(p36, JSON.stringify(manifest, null, 2) + "\n", "utf8");
   return p36;
 }
 function assertConfirmationsSatisfied(plan, confirmations) {
   const confirmed = new Set(confirmations);
   const pending = plan.actions.filter((a) => {
-    if (!a.needsConfirmation) return false;
+    if (!a.needsConfirmation)
+      return false;
     const token = a.confirmationLabel ?? a.targetPath;
     return !confirmed.has(token);
   }).map((a) => a.confirmationLabel ?? a.targetPath);
@@ -11841,7 +12102,7 @@ async function materializeImportPlan(input) {
     requireSkillAcknowledgement: sourceKind === "skills-skill"
   });
   if (security.blocked) {
-    fs55.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
+    fs58.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
     throw new Error(
       `Security inspection blocked the fetched payload: ${security.summaryLines[0] ?? "blocking finding"}`
     );
@@ -11989,26 +12250,27 @@ var init_materialize = __esm({
 });
 
 // src/starter/source-import/agent.ts
-import fs56 from "node:fs";
-import path64 from "node:path";
+import fs59 from "node:fs";
+import path68 from "node:path";
 function resolveJobsDir() {
-  return path64.resolve(resolveKitForksHomeDir(), "source-import-jobs");
+  return path68.resolve(resolveKitForksHomeDir(), "source-import-jobs");
 }
 function resolveJobPath2(jobId) {
-  return path64.resolve(resolveJobsDir(), `${jobId}.json`);
+  return path68.resolve(resolveJobsDir(), `${jobId}.json`);
 }
 function generateJobId2() {
   return `sij-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function writeJob2(job) {
   const p36 = resolveJobPath2(job.jobId);
-  fs56.mkdirSync(path64.dirname(p36), { recursive: true });
-  fs56.writeFileSync(p36, JSON.stringify(job, null, 2) + "\n", "utf8");
+  fs59.mkdirSync(path68.dirname(p36), { recursive: true });
+  fs59.writeFileSync(p36, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function readJobFile(p36) {
-  if (!fs56.existsSync(p36)) return null;
+  if (!fs59.existsSync(p36))
+    return null;
   try {
-    return JSON.parse(fs56.readFileSync(p36, "utf8"));
+    return JSON.parse(fs59.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -12016,9 +12278,10 @@ function readJobFile(p36) {
 function patchJob2(jobId, status, patch = {}) {
   const p36 = resolveJobPath2(jobId);
   const job = readJobFile(p36);
-  if (!job) return null;
+  if (!job)
+    return null;
   const updated = { ...job, ...patch, status };
-  fs56.writeFileSync(p36, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs59.writeFileSync(p36, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function getSourceImportJob(jobId) {
@@ -12037,7 +12300,7 @@ async function probeAndPlan(input, destination) {
 }
 async function runSourceImportJob(input) {
   const jobId = generateJobId2();
-  const destination = path64.resolve(input.out);
+  const destination = path68.resolve(input.out);
   const sourceKind = input.source.kind;
   const initial = {
     jobId,
@@ -12108,7 +12371,8 @@ async function runSourceImportJob(input) {
 }
 async function confirmAndResumeSourceImportJob(input) {
   const job = getSourceImportJob(input.jobId);
-  if (!job || job.status !== "awaiting_confirmation" || !job.plan) return null;
+  if (!job || job.status !== "awaiting_confirmation" || !job.plan)
+    return null;
   const confirmedSet = new Set(input.confirmations);
   const pending = pendingConfirmations(job.plan).filter(
     (target) => !confirmedSet.has(target)
@@ -12202,12 +12466,18 @@ function splitFrontmatter(text69) {
 }
 function parseScalar(raw) {
   const trimmed = raw.trim();
-  if (trimmed === "") return "";
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (trimmed === "null" || trimmed === "~") return null;
-  if (/^-?\d+$/.test(trimmed)) return Number(trimmed);
-  if (/^-?\d*\.\d+$/.test(trimmed)) return Number(trimmed);
+  if (trimmed === "")
+    return "";
+  if (trimmed === "true")
+    return true;
+  if (trimmed === "false")
+    return false;
+  if (trimmed === "null" || trimmed === "~")
+    return null;
+  if (/^-?\d+$/.test(trimmed))
+    return Number(trimmed);
+  if (/^-?\d*\.\d+$/.test(trimmed))
+    return Number(trimmed);
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
   }
@@ -12235,7 +12505,8 @@ function parseFrontmatter(text69) {
         continue;
       }
       const indent = indentWidth(line);
-      if (indent < baseIndent) break;
+      if (indent < baseIndent)
+        break;
       if (indent > baseIndent) {
         i++;
         continue;
@@ -12266,8 +12537,10 @@ function parseFrontmatter(text69) {
               continue;
             }
             const pInd = indentWidth(peek);
-            if (pInd < baseIndent + 2) break;
-            if (peek.slice(baseIndent).startsWith("- ")) break;
+            if (pInd < baseIndent + 2)
+              break;
+            if (peek.slice(baseIndent).startsWith("- "))
+              break;
             const cTrimmed = peek.slice(baseIndent + 2);
             const cColon = findTopLevelColon(cTrimmed);
             if (cColon === -1) {
@@ -12307,7 +12580,8 @@ function parseFrontmatter(text69) {
         i++;
       }
     }
-    if (mode === "array") return arr;
+    if (mode === "array")
+      return arr;
     return out;
   }
   const parsed = readBlock(0);
@@ -12323,17 +12597,21 @@ function findTopLevelColon(s) {
   for (let idx = 0; idx < s.length; idx++) {
     const ch = s[idx];
     const prev = idx > 0 ? s[idx - 1] : "";
-    if (ch === '"' && prev !== "\\" && !inSingle) inDouble = !inDouble;
-    if (ch === "'" && !inDouble) inSingle = !inSingle;
+    if (ch === '"' && prev !== "\\" && !inSingle)
+      inDouble = !inDouble;
+    if (ch === "'" && !inDouble)
+      inSingle = !inSingle;
     if (ch === ":" && !inDouble && !inSingle) {
-      if (idx + 1 >= s.length || s[idx + 1] === " " || s[idx + 1] === "	") return idx;
+      if (idx + 1 >= s.length || s[idx + 1] === " " || s[idx + 1] === "	")
+        return idx;
     }
   }
   return -1;
 }
 function readFrontmatter(text69) {
   const split = splitFrontmatter(text69);
-  if (split.frontmatter === null) return { frontmatter: null, body: split.body };
+  if (split.frontmatter === null)
+    return { frontmatter: null, body: split.body };
   return { frontmatter: parseFrontmatter(split.frontmatter), body: split.body };
 }
 var init_frontmatter = __esm({
@@ -12347,11 +12625,11 @@ var catalog_exports = {};
 __export(catalog_exports, {
   readSkillCatalog: () => readSkillCatalog
 });
-import fs57 from "node:fs";
-import path65 from "node:path";
+import fs60 from "node:fs";
+import path69 from "node:path";
 function exists(p36) {
   try {
-    fs57.accessSync(p36);
+    fs60.accessSync(p36);
     return true;
   } catch {
     return false;
@@ -12359,14 +12637,14 @@ function exists(p36) {
 }
 function isDir2(p36) {
   try {
-    return fs57.statSync(p36).isDirectory();
+    return fs60.statSync(p36).isDirectory();
   } catch {
     return false;
   }
 }
 function safeRead(p36) {
   try {
-    return fs57.readFileSync(p36, "utf8");
+    return fs60.readFileSync(p36, "utf8");
   } catch {
     return null;
   }
@@ -12450,57 +12728,70 @@ function readOne(skillPath, source) {
   return { entry: { manifest: coerced.manifest, skillPath, source } };
 }
 function readSkillDirs(baseDir, source, out, warnings) {
-  if (!isDir2(baseDir)) return;
-  for (const child of fs57.readdirSync(baseDir).sort()) {
-    const dir = path65.join(baseDir, child);
-    if (!isDir2(dir)) continue;
-    const skill = path65.join(dir, "SKILL.md");
-    if (!exists(skill)) continue;
+  if (!isDir2(baseDir))
+    return;
+  for (const child of fs60.readdirSync(baseDir).sort()) {
+    const dir = path69.join(baseDir, child);
+    if (!isDir2(dir))
+      continue;
+    const skill = path69.join(dir, "SKILL.md");
+    if (!exists(skill))
+      continue;
     const res = readOne(skill, source);
-    if ("entry" in res) out.push(res.entry);
-    else warnings.push(res.warning);
+    if ("entry" in res)
+      out.push(res.entry);
+    else
+      warnings.push(res.warning);
   }
 }
 function readKitSubSkills(kitDir, out, warnings, depth = 0) {
-  const base = path65.join(kitDir, "skills");
-  if (!isDir2(base)) return;
+  const base = path69.join(kitDir, "skills");
+  if (!isDir2(base))
+    return;
   const walk = (dir, d) => {
-    if (d > MAX_DEPTH) return;
-    for (const entry of fs57.readdirSync(dir, { withFileTypes: true })) {
+    if (d > MAX_DEPTH)
+      return;
+    for (const entry of fs60.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        walk(path65.join(dir, entry.name), d + 1);
+        if (SKIP_DIRS.has(entry.name))
+          continue;
+        walk(path69.join(dir, entry.name), d + 1);
       } else if (entry.isFile() && entry.name === "SKILL.md") {
-        const res = readOne(path65.join(dir, entry.name), "worker-kit-sub");
-        if ("entry" in res) out.push(res.entry);
-        else warnings.push(res.warning);
+        const res = readOne(path69.join(dir, entry.name), "worker-kit-sub");
+        if ("entry" in res)
+          out.push(res.entry);
+        else
+          warnings.push(res.warning);
       }
     }
   };
   walk(base, depth);
 }
 function readSkillCatalog(opts) {
-  const root = path65.resolve(opts.root);
+  const root = path69.resolve(opts.root);
   const entries = [];
   const warnings = [];
   if (opts.includeProjectRoot !== false) {
-    const rootSkill = path65.join(root, "SKILL.md");
+    const rootSkill = path69.join(root, "SKILL.md");
     if (exists(rootSkill)) {
       const res = readOne(rootSkill, "project-root");
-      if ("entry" in res) entries.push(res.entry);
-      else warnings.push(res.warning);
+      if ("entry" in res)
+        entries.push(res.entry);
+      else
+        warnings.push(res.warning);
     }
   }
   if (opts.includeClaudeSkills !== false) {
-    readSkillDirs(path65.join(root, ".claude/skills"), "claude-skills", entries, warnings);
+    readSkillDirs(path69.join(root, ".claude/skills"), "claude-skills", entries, warnings);
   }
   if (opts.includeWorkerKits !== false) {
-    const kitsDir = path65.join(root, "cli/assets/worker-kits");
+    const kitsDir = path69.join(root, "cli/assets/worker-kits");
     readSkillDirs(kitsDir, "worker-kit", entries, warnings);
     if (isDir2(kitsDir)) {
-      for (const kit of fs57.readdirSync(kitsDir).sort()) {
-        const kitPath = path65.join(kitsDir, kit);
-        if (!isDir2(kitPath)) continue;
+      for (const kit of fs60.readdirSync(kitsDir).sort()) {
+        const kitPath = path69.join(kitsDir, kit);
+        if (!isDir2(kitPath))
+          continue;
         readKitSubSkills(kitPath, entries, warnings);
       }
     }
@@ -12544,9 +12835,9 @@ __export(source_import_discovery_exports, {
   startSourceImportFlow: () => startSourceImportFlow
 });
 import * as p34 from "@clack/prompts";
-import pc49 from "picocolors";
-import fs62 from "node:fs";
-import path69 from "node:path";
+import pc50 from "picocolors";
+import fs65 from "node:fs";
+import path73 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 function slugifyWorkspaceName(input) {
   const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -12572,12 +12863,13 @@ async function promptForInteractiveWorkspacePath(input) {
     message: "Where should we create the custom workspace?",
     placeholder: `~/Desktop/${suggestedName}`
   });
-  if (p34.isCancel(raw) || !raw) return null;
+  if (p34.isCancel(raw) || !raw)
+    return null;
   const trimmed = String(raw).trim();
-  const expanded = trimmed.startsWith("~/") ? path69.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
-  const resolved = path69.resolve(expanded);
-  if (fs62.existsSync(resolved) && fs62.statSync(resolved).isDirectory()) {
-    const finalPath = path69.join(resolved, suggestedName);
+  const expanded = trimmed.startsWith("~/") ? path73.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
+  const resolved = path73.resolve(expanded);
+  if (fs65.existsSync(resolved) && fs65.statSync(resolved).isDirectory()) {
+    const finalPath = path73.join(resolved, suggestedName);
     p34.note(
       [
         `You selected an existing folder: ${resolved}`,
@@ -12591,8 +12883,10 @@ async function promptForInteractiveWorkspacePath(input) {
   return resolved;
 }
 function scopeLabel2(scope) {
-  if (scope === "trending") return "Trending (24h)";
-  if (scope === "hot") return "Hot";
+  if (scope === "trending")
+    return "Trending (24h)";
+  if (scope === "hot")
+    return "Hot";
   return "All Time";
 }
 async function chooseSkillsScope(current) {
@@ -12604,7 +12898,8 @@ async function chooseSkillsScope(current) {
       { value: "hot", label: "Hot", hint: current === "hot" ? "current" : "currently active picks" }
     ]
   });
-  if (p34.isCancel(choice)) return null;
+  if (p34.isCancel(choice))
+    return null;
   return choice;
 }
 async function previewSkillSelection(skillRef) {
@@ -12682,7 +12977,8 @@ async function selectSkillFromCatalog() {
         { value: "back", label: "\u2190 Back to Starter" }
       ]
     });
-    if (p34.isCancel(choice) || choice === "back") return null;
+    if (p34.isCancel(choice) || choice === "back")
+      return null;
     if (choice === "prev") {
       page = Math.max(1, page - 1);
       continue;
@@ -12733,13 +13029,15 @@ async function selectSkillFromCatalog() {
 async function startSkillsSourceImportFlow() {
   try {
     const selectedSkill = await selectSkillFromCatalog();
-    if (!selectedSkill) return;
+    if (!selectedSkill)
+      return;
     const outPath = await promptForInteractiveWorkspacePath({
       kind: "skills-skill",
       skillRef: selectedSkill,
       out: ""
     });
-    if (!outPath) return;
+    if (!outPath)
+      return;
     await startSourceImportFlow({
       kind: "skills-skill",
       skillRef: selectedSkill,
@@ -12753,19 +13051,20 @@ async function startSkillsSourceImportFlow() {
 function renderSuccess(result, jobId) {
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
   p34.outro(
-    `Imported ${sourceLine} into ${pc49.cyan(result.forkPath)}
-  jobId:       ${pc49.cyan(jobId)}
-  forkId:      ${pc49.cyan(result.forkId)}
+    `Imported ${sourceLine} into ${pc50.cyan(result.forkPath)}
+  jobId:       ${pc50.cyan(jobId)}
+  forkId:      ${pc50.cyan(result.forkId)}
   risk:        ${result.security.riskClass} (${result.security.findings.length} findings)
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager}
   open:        ${folderOpenLabel3(result.forkPath)}
-  summary:     ${pc49.dim(result.summaryPath)}
-  manifest:    ${pc49.dim(result.manifestPath)}`
+  summary:     ${pc50.dim(result.summaryPath)}
+  manifest:    ${pc50.dim(result.manifestPath)}`
   );
 }
 async function confirmTwice(job) {
   const pending = job.pendingConfirmations ?? [];
-  if (pending.length === 0) return [];
+  if (pending.length === 0)
+    return [];
   const sec = job.plan?.security;
   if (sec) {
     p34.log.warn(`Security report \u2014 risk: ${sec.riskClass}`);
@@ -12782,12 +13081,14 @@ async function confirmTwice(job) {
     message: "Acknowledge the security report?",
     initialValue: false
   });
-  if (p34.isCancel(ack) || ack !== true) return null;
+  if (p34.isCancel(ack) || ack !== true)
+    return null;
   const go = await p34.confirm({
     message: "Second confirmation \u2014 materialize the workspace now?",
     initialValue: false
   });
-  if (p34.isCancel(go) || go !== true) return null;
+  if (p34.isCancel(go) || go !== true)
+    return null;
   return pending;
 }
 async function startSourceImportFlow(input) {
@@ -12847,9 +13148,9 @@ var init_source_import_discovery = __esm({
 // src/index.ts
 import { Command } from "commander";
 import * as p35 from "@clack/prompts";
-import pc50 from "picocolors";
-import fs63 from "node:fs";
-import path70 from "node:path";
+import pc51 from "picocolors";
+import fs66 from "node:fs";
+import path74 from "node:path";
 import { spawnSync as spawnSync8 } from "node:child_process";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
 
@@ -12894,7 +13195,8 @@ function analyticsIdPath() {
   return path4.resolve(resolvePaperclipHomeDir(), "analytics-machine-id");
 }
 function ensureMachineId() {
-  if (_machineId !== null) return _machineId;
+  if (_machineId !== null)
+    return _machineId;
   const idPath = analyticsIdPath();
   let resolved = "anon";
   try {
@@ -12920,7 +13222,8 @@ function setHostedUserId(userId) {
   _hostedUserId = userId;
 }
 function track(event, properties) {
-  if (isDisabled()) return;
+  if (isDisabled())
+    return;
   const distinctId = ensureMachineId();
   const key = apiKey();
   const host = resolveHost();
@@ -12971,14 +13274,16 @@ function trackCliStart() {
 var ACTIVATION_URL = "https://www.growthub.ai/";
 function isAlreadyConnected() {
   const session = readSession();
-  if (!session) return false;
+  if (!session)
+    return false;
   return !isSessionExpired(session);
 }
 function terminalLink(label, href) {
   return `\x1B]8;;${href}\x07${label}\x1B]8;;\x07`;
 }
 function printActivationNudge(trigger) {
-  if (isAlreadyConnected()) return;
+  if (isAlreadyConnected())
+    return;
   track("email_capture_shown", { trigger });
   const link = terminalLink("growthub.ai \u2014 first month $1", ACTIVATION_URL);
   console.log("");
@@ -13033,7 +13338,8 @@ async function envCommand(opts) {
   const requiredRows = sortedRows.filter((row) => row.required);
   const optionalRows = sortedRows.filter((row) => !row.required);
   const formatSection = (title, entries) => {
-    if (entries.length === 0) return;
+    if (entries.length === 0)
+      return;
     p11.log.message(pc6.bold(title));
     for (const entry of entries) {
       const status = entry.source === "missing" ? pc6.red("missing") : entry.source === "default" ? pc6.yellow("default") : pc6.green("set");
@@ -13260,14 +13566,16 @@ function uniqueByKey(rows) {
   const seen = /* @__PURE__ */ new Set();
   const result = [];
   for (const row of rows) {
-    if (seen.has(row.key)) continue;
+    if (seen.has(row.key))
+      continue;
     seen.add(row.key);
     result.push(row);
   }
   return result;
 }
 function quoteShellValue(value) {
-  if (value === "") return '""';
+  if (value === "")
+    return '""';
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
@@ -13480,11 +13788,14 @@ import pc18 from "picocolors";
 // ../packages/adapters/claude-local/src/cli/format-event.ts
 import pc9 from "picocolors";
 function asErrorText(value) {
-  if (typeof value === "string") return value;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
+  if (typeof value === "string")
+    return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return "";
   const obj = value;
   const message = typeof obj.message === "string" && obj.message || typeof obj.error === "string" && obj.error || typeof obj.code === "string" && obj.code || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(obj);
   } catch {
@@ -13493,7 +13804,8 @@ function asErrorText(value) {
 }
 function printClaudeStreamEvent(raw, debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -13512,12 +13824,14 @@ function printClaudeStreamEvent(raw, debug) {
     const message = typeof parsed.message === "object" && parsed.message !== null && !Array.isArray(parsed.message) ? parsed.message : {};
     const content = Array.isArray(message.content) ? message.content : [];
     for (const blockRaw of content) {
-      if (typeof blockRaw !== "object" || blockRaw === null || Array.isArray(blockRaw)) continue;
+      if (typeof blockRaw !== "object" || blockRaw === null || Array.isArray(blockRaw))
+        continue;
       const block = blockRaw;
       const blockType = typeof block.type === "string" ? block.type : "";
       if (blockType === "text") {
         const text69 = typeof block.text === "string" ? block.text : "";
-        if (text69) console.log(pc9.green(`assistant: ${text69}`));
+        if (text69)
+          console.log(pc9.green(`assistant: ${text69}`));
       } else if (blockType === "tool_use") {
         const name = typeof block.name === "string" ? block.name : "unknown";
         console.log(pc9.yellow(`tool_call: ${name}`));
@@ -13563,7 +13877,8 @@ function printClaudeStreamEvent(raw, debug) {
 // ../packages/adapters/codex-local/src/cli/format-event.ts
 import pc10 from "picocolors";
 function asRecord(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString(value, fallback = "") {
@@ -13573,11 +13888,14 @@ function asNumber(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function errorText(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
+  if (msg)
+    return msg;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -13589,7 +13907,8 @@ function printItemStarted(item) {
   if (itemType === "command_execution") {
     const command = asString(item.command);
     console.log(pc10.yellow("tool_call: command_execution"));
-    if (command) console.log(pc10.gray(command));
+    if (command)
+      console.log(pc10.gray(command));
     return true;
   }
   if (itemType === "tool_use") {
@@ -13610,12 +13929,14 @@ function printItemCompleted(item) {
   const itemType = asString(item.type);
   if (itemType === "agent_message") {
     const text69 = asString(item.text);
-    if (text69) console.log(pc10.green(`assistant: ${text69}`));
+    if (text69)
+      console.log(pc10.green(`assistant: ${text69}`));
     return true;
   }
   if (itemType === "reasoning") {
     const text69 = asString(item.text);
-    if (text69) console.log(pc10.gray(`thinking: ${text69}`));
+    if (text69)
+      console.log(pc10.gray(`thinking: ${text69}`));
     return true;
   }
   if (itemType === "tool_use") {
@@ -13643,15 +13964,16 @@ function printItemCompleted(item) {
       exitCode !== null ? `exit_code=${exitCode}` : ""
     ].filter(Boolean);
     console.log((isError ? pc10.red : pc10.cyan)(summaryParts.join(" ")));
-    if (output) console.log((isError ? pc10.red : pc10.gray)(output));
+    if (output)
+      console.log((isError ? pc10.red : pc10.gray)(output));
     return true;
   }
   if (itemType === "file_change") {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path71 = asString(change.path, "unknown");
-      return `${kind} ${path71}`;
+      const path75 = asString(change.path, "unknown");
+      return `${kind} ${path75}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -13660,21 +13982,24 @@ function printItemCompleted(item) {
   }
   if (itemType === "error") {
     const message = errorText(item.message ?? item.error ?? item);
-    if (message) console.log(pc10.red(`error: ${message}`));
+    if (message)
+      console.log(pc10.red(`error: ${message}`));
     return true;
   }
   if (itemType === "tool_result") {
     const isError = item.is_error === true || asString(item.status) === "error";
     const text69 = asString(item.content) || asString(item.result) || asString(item.output);
     console.log((isError ? pc10.red : pc10.cyan)(`tool_result${isError ? " (error)" : ""}`));
-    if (text69) console.log((isError ? pc10.red : pc10.gray)(text69));
+    if (text69)
+      console.log((isError ? pc10.red : pc10.gray)(text69));
     return true;
   }
   return false;
 }
 function printCodexStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -13726,7 +14051,8 @@ function printCodexStreamEvent(raw, _debug) {
       console.log(
         pc10.red(`result: subtype=${subtype || "unknown"} is_error=${isError ? "true" : "false"}`)
       );
-      if (errors.length > 0) console.log(pc10.red(`errors: ${errors.join(" | ")}`));
+      if (errors.length > 0)
+        console.log(pc10.red(`errors: ${errors.join(" | ")}`));
     }
     return;
   }
@@ -13742,7 +14068,8 @@ function printCodexStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const message = errorText(parsed.message ?? parsed.error ?? parsed);
-    if (message) console.log(pc10.red(`error: ${message}`));
+    if (message)
+      console.log(pc10.red(`error: ${message}`));
     return;
   }
   console.log(line);
@@ -13754,7 +14081,8 @@ import pc11 from "picocolors";
 // ../packages/adapters/cursor-local/src/shared/stream.ts
 function normalizeCursorStreamLine(rawLine) {
   const trimmed = rawLine.trim();
-  if (!trimmed) return { stream: null, line: "" };
+  if (!trimmed)
+    return { stream: null, line: "" };
   const prefixed = trimmed.match(/^(stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
   if (!prefixed) {
     return { stream: null, line: trimmed };
@@ -13766,7 +14094,8 @@ function normalizeCursorStreamLine(rawLine) {
 
 // ../packages/adapters/cursor-local/src/cli/format-event.ts
 function asRecord2(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString2(value, fallback = "") {
@@ -13776,8 +14105,10 @@ function asNumber2(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
+  if (typeof value === "string")
+    return value;
+  if (value === null || value === void 0)
+    return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -13787,46 +14118,58 @@ function stringifyUnknown(value) {
 function printUserMessage(messageRaw) {
   if (typeof messageRaw === "string") {
     const text69 = messageRaw.trim();
-    if (text69) console.log(pc11.gray(`user: ${text69}`));
+    if (text69)
+      console.log(pc11.gray(`user: ${text69}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.gray(`user: ${directText}`));
+  if (directText)
+    console.log(pc11.gray(`user: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString2(part.type).trim();
-    if (type !== "output_text" && type !== "text") continue;
+    if (type !== "output_text" && type !== "text")
+      continue;
     const text69 = asString2(part.text).trim();
-    if (text69) console.log(pc11.gray(`user: ${text69}`));
+    if (text69)
+      console.log(pc11.gray(`user: ${text69}`));
   }
 }
 function printAssistantMessage(messageRaw) {
   if (typeof messageRaw === "string") {
     const text69 = messageRaw.trim();
-    if (text69) console.log(pc11.green(`assistant: ${text69}`));
+    if (text69)
+      console.log(pc11.green(`assistant: ${text69}`));
     return;
   }
   const message = asRecord2(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString2(message.text).trim();
-  if (directText) console.log(pc11.green(`assistant: ${directText}`));
+  if (directText)
+    console.log(pc11.green(`assistant: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord2(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString2(part.type).trim();
     if (type === "output_text" || type === "text") {
       const text69 = asString2(part.text).trim();
-      if (text69) console.log(pc11.green(`assistant: ${text69}`));
+      if (text69)
+        console.log(pc11.green(`assistant: ${text69}`));
       continue;
     }
     if (type === "thinking") {
       const text69 = asString2(part.text).trim();
-      if (text69) console.log(pc11.gray(`thinking: ${text69}`));
+      if (text69)
+        console.log(pc11.gray(`thinking: ${text69}`));
       continue;
     }
     if (type === "tool_call") {
@@ -13846,7 +14189,8 @@ function printAssistantMessage(messageRaw) {
       const isError = part.is_error === true || asString2(part.status).toLowerCase() === "error";
       const contentText = asString2(part.output) || asString2(part.text) || asString2(part.result) || stringifyUnknown(part.output ?? part.result ?? part.text ?? part);
       console.log((isError ? pc11.red : pc11.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc11.red : pc11.gray)(contentText));
+      if (contentText)
+        console.log((isError ? pc11.red : pc11.gray)(contentText));
     }
   }
 }
@@ -13916,7 +14260,8 @@ function printLegacyToolEvent(part) {
 }
 function printCursorStreamEvent(raw, _debug) {
   const line = normalizeCursorStreamLine(raw).line;
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -13947,7 +14292,8 @@ function printCursorStreamEvent(raw, _debug) {
   }
   if (type === "thinking") {
     const text69 = asString2(parsed.text).trim() || asString2(asRecord2(parsed.delta)?.text).trim();
-    if (text69) console.log(pc11.gray(`thinking: ${text69}`));
+    if (text69)
+      console.log(pc11.gray(`thinking: ${text69}`));
     return;
   }
   if (type === "tool_call") {
@@ -13968,9 +14314,11 @@ function printCursorStreamEvent(raw, _debug) {
     console.log(pc11.blue(`result: subtype=${subtype}`));
     console.log(pc11.blue(`tokens: in=${input} out=${output} cached=${cached} cost=$${cost.toFixed(6)}`));
     const resultText = asString2(parsed.result).trim();
-    if (resultText) console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
+    if (resultText)
+      console.log((isError ? pc11.red : pc11.green)(`assistant: ${resultText}`));
     const errors = Array.isArray(parsed.errors) ? parsed.errors.map((value) => stringifyUnknown(value)).filter(Boolean) : [];
-    if (errors.length > 0) console.log(pc11.red(`errors: ${errors.join(" | ")}`));
+    if (errors.length > 0)
+      console.log(pc11.red(`errors: ${errors.join(" | ")}`));
     return;
   }
   if (type === "error") {
@@ -13986,7 +14334,8 @@ function printCursorStreamEvent(raw, _debug) {
   if (type === "text") {
     const part = asRecord2(parsed.part);
     const text69 = asString2(part?.text);
-    if (text69) console.log(pc11.green(`assistant: ${text69}`));
+    if (text69)
+      console.log(pc11.green(`assistant: ${text69}`));
     return;
   }
   if (type === "tool_use") {
@@ -14017,7 +14366,8 @@ function printCursorStreamEvent(raw, _debug) {
 // ../packages/adapters/gemini-local/src/cli/format-event.ts
 import pc12 from "picocolors";
 function asRecord3(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString3(value, fallback = "") {
@@ -14027,8 +14377,10 @@ function asNumber3(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function stringifyUnknown2(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === void 0) return "";
+  if (typeof value === "string")
+    return value;
+  if (value === null || value === void 0)
+    return "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -14036,11 +14388,14 @@ function stringifyUnknown2(value) {
   }
 }
 function errorText2(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord3(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const msg = typeof rec.message === "string" && rec.message || typeof rec.error === "string" && rec.error || typeof rec.code === "string" && rec.code || "";
-  if (msg) return msg;
+  if (msg)
+    return msg;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -14050,40 +14405,48 @@ function errorText2(value) {
 function printTextMessage(prefix, colorize, messageRaw) {
   if (typeof messageRaw === "string") {
     const text69 = messageRaw.trim();
-    if (text69) console.log(colorize(`${prefix}: ${text69}`));
+    if (text69)
+      console.log(colorize(`${prefix}: ${text69}`));
     return;
   }
   const message = asRecord3(messageRaw);
-  if (!message) return;
+  if (!message)
+    return;
   const directText = asString3(message.text).trim();
-  if (directText) console.log(colorize(`${prefix}: ${directText}`));
+  if (directText)
+    console.log(colorize(`${prefix}: ${directText}`));
   const content = Array.isArray(message.content) ? message.content : [];
   for (const partRaw of content) {
     const part = asRecord3(partRaw);
-    if (!part) continue;
+    if (!part)
+      continue;
     const type = asString3(part.type).trim();
     if (type === "output_text" || type === "text" || type === "content") {
       const text69 = asString3(part.text).trim() || asString3(part.content).trim();
-      if (text69) console.log(colorize(`${prefix}: ${text69}`));
+      if (text69)
+        console.log(colorize(`${prefix}: ${text69}`));
       continue;
     }
     if (type === "thinking") {
       const text69 = asString3(part.text).trim();
-      if (text69) console.log(pc12.gray(`thinking: ${text69}`));
+      if (text69)
+        console.log(pc12.gray(`thinking: ${text69}`));
       continue;
     }
     if (type === "tool_call") {
       const name = asString3(part.name, asString3(part.tool, "tool"));
       console.log(pc12.yellow(`tool_call: ${name}`));
       const input = part.input ?? part.arguments ?? part.args;
-      if (input !== void 0) console.log(pc12.gray(stringifyUnknown2(input)));
+      if (input !== void 0)
+        console.log(pc12.gray(stringifyUnknown2(input)));
       continue;
     }
     if (type === "tool_result" || type === "tool_response") {
       const isError = part.is_error === true || asString3(part.status).toLowerCase() === "error";
       const contentText = asString3(part.output) || asString3(part.text) || asString3(part.result) || stringifyUnknown2(part.output ?? part.result ?? part.text ?? part.response);
       console.log((isError ? pc12.red : pc12.cyan)(`tool_result${isError ? " (error)" : ""}`));
-      if (contentText) console.log((isError ? pc12.red : pc12.gray)(contentText));
+      if (contentText)
+        console.log((isError ? pc12.red : pc12.gray)(contentText));
     }
   }
 }
@@ -14102,7 +14465,8 @@ function printUsage(parsed) {
 }
 function printGeminiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   let parsed = null;
   try {
     parsed = JSON.parse(line);
@@ -14122,7 +14486,8 @@ function printGeminiStreamEvent(raw, _debug) {
     }
     if (subtype === "error") {
       const text69 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-      if (text69) console.log(pc12.red(`error: ${text69}`));
+      if (text69)
+        console.log(pc12.red(`error: ${text69}`));
       return;
     }
     console.log(pc12.blue(`system: ${subtype || "event"}`));
@@ -14138,7 +14503,8 @@ function printGeminiStreamEvent(raw, _debug) {
   }
   if (type === "thinking") {
     const text69 = asString3(parsed.text).trim() || asString3(asRecord3(parsed.delta)?.text).trim();
-    if (text69) console.log(pc12.gray(`thinking: ${text69}`));
+    if (text69)
+      console.log(pc12.gray(`thinking: ${text69}`));
     return;
   }
   if (type === "tool_call") {
@@ -14175,7 +14541,8 @@ function printGeminiStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const text69 = errorText2(parsed.error ?? parsed.message ?? parsed.detail);
-    if (text69) console.log(pc12.red(`error: ${text69}`));
+    if (text69)
+      console.log(pc12.red(`error: ${text69}`));
     return;
   }
   console.log(line);
@@ -14191,7 +14558,8 @@ function safeJsonParse(text69) {
   }
 }
 function asRecord4(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString4(value, fallback = "") {
@@ -14201,12 +14569,15 @@ function asNumber4(value, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 function errorText3(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const rec = asRecord4(value);
-  if (!rec) return "";
+  if (!rec)
+    return "";
   const data = asRecord4(rec.data);
   const message = asString4(rec.message) || asString4(data?.message) || asString4(rec.name) || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(rec);
   } catch {
@@ -14215,7 +14586,8 @@ function errorText3(value) {
 }
 function printOpenCodeStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   const parsed = asRecord4(safeJsonParse(line));
   if (!parsed) {
     console.log(line);
@@ -14230,13 +14602,15 @@ function printOpenCodeStreamEvent(raw, _debug) {
   if (type === "text") {
     const part = asRecord4(parsed.part);
     const text69 = asString4(part?.text).trim();
-    if (text69) console.log(pc13.green(`assistant: ${text69}`));
+    if (text69)
+      console.log(pc13.green(`assistant: ${text69}`));
     return;
   }
   if (type === "reasoning") {
     const part = asRecord4(parsed.part);
     const text69 = asString4(part?.text).trim();
-    if (text69) console.log(pc13.gray(`thinking: ${text69}`));
+    if (text69)
+      console.log(pc13.gray(`thinking: ${text69}`));
     return;
   }
   if (type === "tool_use") {
@@ -14252,13 +14626,15 @@ function printOpenCodeStreamEvent(raw, _debug) {
       const metaParts = [`status=${status}`];
       if (metadata) {
         for (const [key, value] of Object.entries(metadata)) {
-          if (value !== void 0 && value !== null) metaParts.push(`${key}=${value}`);
+          if (value !== void 0 && value !== null)
+            metaParts.push(`${key}=${value}`);
         }
       }
       console.log((isError ? pc13.red : pc13.gray)(`tool_result ${metaParts.join(" ")}`));
     }
     const output = (asString4(state?.output) || asString4(state?.error)).trim();
-    if (output) console.log((isError ? pc13.red : pc13.gray)(output));
+    if (output)
+      console.log((isError ? pc13.red : pc13.gray)(output));
     return;
   }
   if (type === "step_finish") {
@@ -14276,7 +14652,8 @@ function printOpenCodeStreamEvent(raw, _debug) {
   }
   if (type === "error") {
     const message = errorText3(parsed.error ?? parsed.message);
-    if (message) console.log(pc13.red(`error: ${message}`));
+    if (message)
+      console.log(pc13.red(`error: ${message}`));
     return;
   }
   console.log(line);
@@ -14292,20 +14669,24 @@ function safeJsonParse2(text69) {
   }
 }
 function asRecord5(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value;
 }
 function asString5(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 function extractTextContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return "";
   return content.filter((c) => c.type === "text" && c.text).map((c) => c.text).join("");
 }
 function printPiStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   const parsed = asRecord5(safeJsonParse2(line));
   if (!parsed) {
     console.log(line);
@@ -14377,7 +14758,8 @@ function printPiStreamEvent(raw, _debug) {
 import pc15 from "picocolors";
 function printOpenClawGatewayStreamEvent(raw, debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   if (!debug) {
     console.log(line);
     return;
@@ -14396,7 +14778,8 @@ function printOpenClawGatewayStreamEvent(raw, debug) {
 // src/adapters/process/format-event.ts
 function printProcessStdoutEvent(raw, _debug) {
   const line = raw.trim();
-  if (line) console.log(line);
+  if (line)
+    console.log(line);
 }
 
 // src/adapters/process/index.ts
@@ -14408,7 +14791,8 @@ var processCLIAdapter = {
 // src/adapters/http/format-event.ts
 function printHttpStdoutEvent(raw, _debug) {
   const line = raw.trim();
-  if (line) console.log(line);
+  if (line)
+    console.log(line);
 }
 
 // src/adapters/http/index.ts
@@ -14440,7 +14824,8 @@ var EVENT_PREFIXES = {
 };
 function printOpenAgentsStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   try {
     const event = JSON.parse(line);
     if (event.type && event.detail) {
@@ -14462,7 +14847,8 @@ var openAgentsCLIAdapter = {
 // src/adapters/qwen/format-event.ts
 function printQwenStreamEvent(raw, _debug) {
   const line = raw.trim();
-  if (!line) return;
+  if (!line)
+    return;
   try {
     const parsed = JSON.parse(line);
     if (parsed.type === "result" && typeof parsed.text === "string") {
@@ -14551,14 +14937,17 @@ function findContextFileFromAncestors(startDir) {
       return candidate;
     }
     const nextDir = path12.resolve(currentDir, "..");
-    if (nextDir === currentDir) break;
+    if (nextDir === currentDir)
+      break;
     currentDir = nextDir;
   }
   return null;
 }
 function resolveContextPath(overridePath) {
-  if (overridePath) return path12.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONTEXT) return path12.resolve(process.env.PAPERCLIP_CONTEXT);
+  if (overridePath)
+    return path12.resolve(overridePath);
+  if (process.env.PAPERCLIP_CONTEXT)
+    return path12.resolve(process.env.PAPERCLIP_CONTEXT);
   return findContextFileFromAncestors(process.cwd()) ?? resolveDefaultContextPath();
 }
 function defaultClientContext() {
@@ -14581,7 +14970,8 @@ function toStringOrUndefined2(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function normalizeProfile(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return {};
   const profile = value;
   return {
     apiBase: toStringOrUndefined2(profile.apiBase),
@@ -14600,7 +14990,8 @@ function normalizeContext(raw) {
   const profiles = {};
   if (typeof rawProfiles === "object" && rawProfiles !== null && !Array.isArray(rawProfiles)) {
     for (const [name, profile] of Object.entries(rawProfiles)) {
-      if (!name.trim()) continue;
+      if (!name.trim())
+        continue;
       profiles[name] = normalizeProfile(profile);
     }
   }
@@ -14734,19 +15125,23 @@ function formatInlineRecord(record) {
   const seen = /* @__PURE__ */ new Set();
   const parts = [];
   for (const key of keyOrder) {
-    if (!(key in record)) continue;
+    if (!(key in record))
+      continue;
     parts.push(`${key}=${renderValue(record[key])}`);
     seen.add(key);
   }
   for (const [key, value] of Object.entries(record)) {
-    if (seen.has(key)) continue;
-    if (typeof value === "object") continue;
+    if (seen.has(key))
+      continue;
+    if (typeof value === "object")
+      continue;
     parts.push(`${key}=${renderValue(value)}`);
   }
   return parts.join(" ");
 }
 function renderValue(value) {
-  if (value === null || value === void 0) return "-";
+  if (value === null || value === void 0)
+    return "-";
   if (typeof value === "string") {
     const compact = value.replace(/\s+/g, " ").trim();
     return compact.length > 90 ? `${compact.slice(0, 87)}...` : compact;
@@ -14773,7 +15168,8 @@ function inferApiBaseFromConfig(configPath) {
   return `http://${envHost}:${port}`;
 }
 function readKeyFromProfileEnv(profile) {
-  if (!profile.apiKeyEnvVarName) return void 0;
+  if (!profile.apiKeyEnvVarName)
+    return void 0;
   return process.env[profile.apiKeyEnvVarName]?.trim() || void 0;
 }
 function handleCommandError(error) {
@@ -14796,11 +15192,14 @@ function asRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
 }
 function asErrorText2(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   const obj = asRecord6(value);
-  if (!obj) return "";
+  if (!obj)
+    return "";
   const message = typeof obj.message === "string" && obj.message || typeof obj.error === "string" && obj.error || typeof obj.code === "string" && obj.code || "";
-  if (message) return message;
+  if (message)
+    return message;
   try {
     return JSON.stringify(obj);
   } catch {
@@ -14850,9 +15249,12 @@ async function heartbeatRun(opts) {
   let logOffset = 0;
   let stdoutJsonBuffer = "";
   const printRawChunk = (stream, chunk) => {
-    if (stream === "stdout") process.stdout.write(pc18.green("[stdout] ") + chunk);
-    else if (stream === "stderr") process.stdout.write(pc18.red("[stderr] ") + chunk);
-    else process.stdout.write(pc18.yellow("[system] ") + chunk);
+    if (stream === "stdout")
+      process.stdout.write(pc18.green("[stdout] ") + chunk);
+    else if (stream === "stderr")
+      process.stdout.write(pc18.red("[stderr] ") + chunk);
+    else
+      process.stdout.write(pc18.yellow("[system] ") + chunk);
   };
   const printAdapterInvoke = (payload) => {
     const adapterType2 = typeof payload.adapterType === "string" ? payload.adapterType : "unknown";
@@ -14863,7 +15265,8 @@ async function heartbeatRun(opts) {
     const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
     const context = typeof payload.context === "object" && payload.context !== null && !Array.isArray(payload.context) ? payload.context : null;
     console.log(pc18.cyan(`Adapter: ${adapterType2}`));
-    if (cwd) console.log(pc18.cyan(`Working dir: ${cwd}`));
+    if (cwd)
+      console.log(pc18.cyan(`Working dir: ${cwd}`));
     if (command) {
       const rendered = args.length > 0 ? `${command} ${args.join(" ")}` : command;
       console.log(pc18.cyan(`Command: ${rendered}`));
@@ -14901,7 +15304,8 @@ async function heartbeatRun(opts) {
   };
   const handleEvent = (event) => {
     const payload = normalizePayload(event.payload);
-    if (event.runId !== runId) return;
+    if (event.runId !== runId)
+      return;
     const eventType = typeof event.eventType === "string" ? event.eventType : typeof event.type === "string" ? event.type : "";
     if (eventType === "heartbeat.run.status") {
       const status = typeof payload.status === "string" ? payload.status : null;
@@ -14913,7 +15317,8 @@ async function heartbeatRun(opts) {
     } else if (eventType === "heartbeat.run.log") {
       const stream = typeof payload.stream === "string" ? payload.stream : "system";
       const chunk = typeof payload.chunk === "string" ? payload.chunk : "";
-      if (!chunk) return;
+      if (!chunk)
+        return;
       if (stream === "stdout" || stream === "stderr" || stream === "system") {
         handleStreamChunk(stream, chunk);
       }
@@ -14969,9 +15374,11 @@ async function heartbeatRun(opts) {
     );
     if (logResult && logResult.content) {
       for (const chunk of logResult.content.split(/\r?\n/)) {
-        if (!chunk) continue;
+        if (!chunk)
+          continue;
         const parsed = safeParseLogLine(chunk);
-        if (!parsed) continue;
+        if (!parsed)
+          continue;
         handleStreamChunk(parsed.stream, parsed.chunk);
       }
       if (typeof logResult.nextOffset === "number") {
@@ -15005,10 +15412,14 @@ async function heartbeatRun(opts) {
         const resultText = typeof resultObj.result === "string" ? resultObj.result.trim() : "";
         if (subtype || isError || errors.length > 0 || resultText) {
           console.log(pc18.red("Claude result details:"));
-          if (subtype) console.log(pc18.red(`  subtype: ${subtype}`));
-          if (isError) console.log(pc18.red("  is_error: true"));
-          if (errors.length > 0) console.log(pc18.red(`  errors: ${errors.join(" | ")}`));
-          if (resultText) console.log(pc18.red(`  result: ${resultText}`));
+          if (subtype)
+            console.log(pc18.red(`  subtype: ${subtype}`));
+          if (isError)
+            console.log(pc18.red("  is_error: true"));
+          if (errors.length > 0)
+            console.log(pc18.red(`  errors: ${errors.join(" | ")}`));
+          if (resultText)
+            console.log(pc18.red(`  result: ${resultText}`));
         }
       }
       const stderrExcerpt = typeof finalRun.stderrExcerpt === "string" ? finalRun.stderrExcerpt.trim() : "";
@@ -15036,7 +15447,8 @@ function safeParseLogLine(line) {
     const parsed = JSON.parse(line);
     const stream = parsed.stream === "stdout" || parsed.stream === "stderr" || parsed.stream === "system" ? parsed.stream : "system";
     const chunk = typeof parsed.chunk === "string" ? parsed.chunk : "";
-    if (!chunk) return null;
+    if (!chunk)
+      return null;
     return { stream, chunk };
   } catch {
     return null;
@@ -15070,7 +15482,8 @@ function trimSlashes(value) {
 }
 function pickParam(url, name) {
   const value = url.searchParams.get(name);
-  if (value === null) return void 0;
+  if (value === null)
+    return void 0;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : void 0;
 }
@@ -15210,14 +15623,16 @@ async function startLoginFlow(opts) {
     url.searchParams.set("state", state);
     url.searchParams.set("callback", callbackUrl);
     url.searchParams.set("machineLabel", machineLabel);
-    if (workspaceLabel) url.searchParams.set("workspaceLabel", workspaceLabel);
+    if (workspaceLabel)
+      url.searchParams.set("workspaceLabel", workspaceLabel);
     url.searchParams.set("source", "cli");
     return url.toString();
   })();
   let timeoutHandle = setTimeout(() => {
     rejecter?.(new Error(`CLI login timed out after ${Math.round(timeoutMs / 1e3)}s.`));
   }, timeoutMs);
-  if (typeof timeoutHandle.unref === "function") timeoutHandle.unref();
+  if (typeof timeoutHandle.unref === "function")
+    timeoutHandle.unref();
   const close = () => {
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
@@ -15262,16 +15677,19 @@ function toStringOrUndefined3(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
 }
 function toStringArray(value) {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value))
+    return [];
   const out = [];
   for (const item of value) {
     const normalized = toStringOrUndefined3(item);
-    if (normalized && !out.includes(normalized)) out.push(normalized);
+    if (normalized && !out.includes(normalized))
+      out.push(normalized);
   }
   return out;
 }
 function toRecord(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return void 0;
   return value;
 }
 function normalizeExecutionDefaults(value) {
@@ -15292,10 +15710,12 @@ function defaultExecutionPreferences() {
   };
 }
 function normalizeOverlay(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return null;
   const record = raw;
   const hostedBaseUrl = toStringOrUndefined3(record.hostedBaseUrl);
-  if (!hostedBaseUrl) return null;
+  if (!hostedBaseUrl)
+    return null;
   return {
     version: 1,
     hostedBaseUrl,
@@ -15315,7 +15735,8 @@ function normalizeOverlay(raw) {
 }
 function readHostedOverlay() {
   const filePath = resolveHostedOverlayPath();
-  if (!fs13.existsSync(filePath)) return null;
+  if (!fs13.existsSync(filePath))
+    return null;
   return normalizeOverlay(parseJson4(filePath));
 }
 function writeHostedOverlay(overlay) {
@@ -15330,7 +15751,8 @@ function writeHostedOverlay(overlay) {
 }
 function clearHostedOverlay() {
   const filePath = resolveHostedOverlayPath();
-  if (!fs13.existsSync(filePath)) return false;
+  if (!fs13.existsSync(filePath))
+    return false;
   fs13.rmSync(filePath, { force: true });
   return true;
 }
@@ -15486,15 +15908,19 @@ function trimSlashes2(value) {
 }
 function resolveHostedBaseUrl(opts) {
   const explicit = opts.baseUrl?.trim();
-  if (explicit) return trimSlashes2(explicit);
+  if (explicit)
+    return trimSlashes2(explicit);
   const envBase = process.env.GROWTHUB_BASE_URL?.trim();
-  if (envBase) return trimSlashes2(envBase);
+  if (envBase)
+    return trimSlashes2(envBase);
   try {
     const config = readConfig(opts.configPath);
     const configuredBase = config?.auth?.growthubBaseUrl?.trim();
-    if (configuredBase) return trimSlashes2(configuredBase);
+    if (configuredBase)
+      return trimSlashes2(configuredBase);
     const portalBase = config?.auth?.growthubPortalBaseUrl?.trim();
-    if (portalBase) return trimSlashes2(portalBase);
+    if (portalBase)
+      return trimSlashes2(portalBase);
   } catch {
   }
   return DEFAULT_HOSTED_BASE_URL;
@@ -15632,7 +16058,8 @@ async function authLogin(opts) {
     writeHostedOverlay(overlay);
     const effective = computeEffectiveProfile({ configPath });
     writeEffectiveProfileSnapshot(effective);
-    if (result.userId) setHostedUserId(result.userId);
+    if (result.userId)
+      setHostedUserId(result.userId);
     track("growthub_auth_connected", { has_org: Boolean(result.orgId) });
     if (opts.json) {
       console.log(
@@ -15684,8 +16111,10 @@ async function authLogout(opts) {
     console.log(pc19.dim("No hosted session or overlay present. Local workspace profile is untouched."));
     return;
   }
-  if (sessionCleared) console.log(pc19.green("Cleared hosted session."));
-  if (overlayCleared) console.log(pc19.green("Cleared hosted overlay."));
+  if (sessionCleared)
+    console.log(pc19.green("Cleared hosted session."));
+  if (overlayCleared)
+    console.log(pc19.green("Cleared hosted overlay."));
   console.log(pc19.dim("Local workspace profile is untouched."));
 }
 async function authWhoami(opts) {
@@ -15723,7 +16152,8 @@ async function authWhoami(opts) {
     return;
   }
   console.log(pc19.bold(`Signed in${payload.email ? ` as ${payload.email}` : payload.userId ? ` as ${payload.userId}` : ""}.`));
-  if (payload.hostedBaseUrl) console.log(pc19.dim(`Hosted: ${payload.hostedBaseUrl}`));
+  if (payload.hostedBaseUrl)
+    console.log(pc19.dim(`Hosted: ${payload.hostedBaseUrl}`));
   if (payload.orgName || payload.orgId) {
     console.log(pc19.dim(`Org: ${payload.orgName ?? payload.orgId}`));
   }
@@ -15775,7 +16205,8 @@ function printEffectiveProfileHuman(effective) {
     if (effective.hosted.orgName || effective.hosted.orgId) {
       console.log(`  Org: ${effective.hosted.orgName ?? effective.hosted.orgId}`);
     }
-    if (effective.hosted.hostedBaseUrl) console.log(`  Hosted: ${effective.hosted.hostedBaseUrl}`);
+    if (effective.hosted.hostedBaseUrl)
+      console.log(`  Hosted: ${effective.hosted.hostedBaseUrl}`);
     if (effective.hosted.linkedInstanceId) {
       console.log(`  Linked instance: ${effective.hosted.linkedInstanceId}`);
     }
@@ -15785,8 +16216,10 @@ function printEffectiveProfileHuman(effective) {
     if (effective.hosted.gatedKitSlugs.length > 0) {
       console.log(`  Gated kits: ${effective.hosted.gatedKitSlugs.join(", ")}`);
     }
-    if (effective.hosted.lastPulledAt) console.log(pc20.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
-    if (effective.hosted.lastPushedAt) console.log(pc20.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
+    if (effective.hosted.lastPulledAt)
+      console.log(pc20.dim(`  Last pulled: ${effective.hosted.lastPulledAt}`));
+    if (effective.hosted.lastPushedAt)
+      console.log(pc20.dim(`  Last pushed: ${effective.hosted.lastPushedAt}`));
   }
   console.log(pc20.bold("Execution defaults"));
   console.log(
@@ -15805,7 +16238,8 @@ async function runProfileStatus(opts) {
   printEffectiveProfileHuman(effective);
 }
 function normalizeExecutionPrefs(value, fallback) {
-  if (!value) return fallback;
+  if (!value)
+    return fallback;
   const preferredMode = value.preferredMode === "local" || value.preferredMode === "serverless" || value.preferredMode === "browser" || value.preferredMode === "auto" ? value.preferredMode : fallback.preferredMode;
   return {
     preferredMode,
@@ -16001,7 +16435,8 @@ import * as p15 from "@clack/prompts";
 import pc21 from "picocolors";
 function resolveConnectionString(configPath) {
   const envUrl = process.env.DATABASE_URL?.trim();
-  if (envUrl) return { value: envUrl, source: "DATABASE_URL" };
+  if (envUrl)
+    return { value: envUrl, source: "DATABASE_URL" };
   const config = readConfig(configPath);
   if (config?.database.mode === "postgres" && config.database.connectionString?.trim()) {
     return { value: config.database.connectionString.trim(), source: "config.database.connectionString" };
@@ -16149,7 +16584,8 @@ function normalizeSelector(input) {
   return input.trim();
 }
 function parseInclude(input) {
-  if (!input || !input.trim()) return { company: true, agents: true };
+  if (!input || !input.trim())
+    return { company: true, agents: true };
   const values = input.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
   const include = {
     company: values.includes("company"),
@@ -16161,11 +16597,14 @@ function parseInclude(input) {
   return include;
 }
 function parseAgents(input) {
-  if (!input || !input.trim()) return "all";
+  if (!input || !input.trim())
+    return "all";
   const normalized = input.trim().toLowerCase();
-  if (normalized === "all") return "all";
+  if (normalized === "all")
+    return "all";
   const values = input.split(",").map((part) => part.trim()).filter(Boolean);
-  if (values.length === 0) return "all";
+  if (values.length === 0)
+    return "all";
   return Array.from(new Set(values));
 }
 function isHttpUrl(input) {
@@ -16231,8 +16670,10 @@ function resolveCompanyForDeletion(companies2, selectorRaw, by = "auto") {
       `Selector '${selector}' is ambiguous (matches both an ID and a shortname). Re-run with --by id or --by prefix.`
     );
   }
-  if (idMatch) return idMatch;
-  if (prefixMatch) return prefixMatch;
+  if (idMatch)
+    return idMatch;
+  if (prefixMatch)
+    return prefixMatch;
   throw new Error(
     `No company found for selector '${selector}'. Use company ID or issue prefix (for example PAP).`
   );
@@ -16481,12 +16922,15 @@ function registerIssueCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
         const params = new URLSearchParams();
-        if (opts.status) params.set("status", opts.status);
-        if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
-        if (opts.projectId) params.set("projectId", opts.projectId);
+        if (opts.status)
+          params.set("status", opts.status);
+        if (opts.assigneeAgentId)
+          params.set("assigneeAgentId", opts.assigneeAgentId);
+        if (opts.projectId)
+          params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path71 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path71) ?? [];
+        const path75 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path75) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -16622,11 +17066,13 @@ function registerIssueCommands(program2) {
   );
 }
 function parseCsv(value) {
-  if (!value) return [];
+  if (!value)
+    return [];
   return value.split(",").map((v) => v.trim()).filter(Boolean);
 }
 function parseOptionalInt(value) {
-  if (value === void 0) return void 0;
+  if (value === void 0)
+    return void 0;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) {
     throw new Error(`Invalid integer value: ${value}`);
@@ -16634,12 +17080,15 @@ function parseOptionalInt(value) {
   return parsed;
 }
 function parseHiddenAt(value) {
-  if (value === void 0) return void 0;
-  if (value.trim().toLowerCase() === "null") return null;
+  if (value === void 0)
+    return void 0;
+  if (value.trim().toLowerCase() === "null")
+    return null;
   return value;
 }
 function filterIssueRows(rows, match) {
-  if (!match?.trim()) return rows;
+  if (!match?.trim())
+    return rows;
   const needle = match.trim().toLowerCase();
   return rows.filter((row) => {
     const text69 = [row.identifier, row.title, row.description].filter((part) => Boolean(part)).join("\n").toLowerCase();
@@ -16669,10 +17118,12 @@ async function resolvePaperclipSkillsDir(moduleDir, additionalCandidates = []) {
   ];
   const seenRoots = /* @__PURE__ */ new Set();
   for (const root of candidates) {
-    if (seenRoots.has(root)) continue;
+    if (seenRoots.has(root))
+      continue;
     seenRoots.add(root);
     const isDirectory = await fs15.stat(root).then((stats) => stats.isDirectory()).catch(() => false);
-    if (isDirectory) return root;
+    if (isDirectory)
+      return root;
   }
   return null;
 }
@@ -16682,12 +17133,15 @@ async function removeMaintainerOnlySkillSymlinks(skillsHome, allowedSkillNames) 
     const entries = await fs15.readdir(skillsHome, { withFileTypes: true });
     const removed = [];
     for (const entry of entries) {
-      if (allowed.has(entry.name)) continue;
+      if (allowed.has(entry.name))
+        continue;
       const target = path17.join(skillsHome, entry.name);
       const existing = await fs15.lstat(target).catch(() => null);
-      if (!existing?.isSymbolicLink()) continue;
+      if (!existing?.isSymbolicLink())
+        continue;
       const linkedPath = await fs15.readlink(target).catch(() => null);
-      if (!linkedPath) continue;
+      if (!linkedPath)
+        continue;
       const resolvedLinkedPath = path17.isAbsolute(linkedPath) ? linkedPath : path17.resolve(path17.dirname(target), linkedPath);
       if (!isMaintainerOnlySkillTarget(linkedPath) && !isMaintainerOnlySkillTarget(resolvedLinkedPath)) {
         continue;
@@ -16733,7 +17187,8 @@ async function installSkillsForTarget(sourceSkillsDir, targetSkillsDir, tool) {
     entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
   );
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory())
+      continue;
     const source = path18.join(sourceSkillsDir, entry.name);
     const target = path18.join(targetSkillsDir, entry.name);
     const existing = await fs16.lstat(target).catch(() => null);
@@ -16930,7 +17385,8 @@ function registerApprovalCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
         const params = new URLSearchParams();
-        if (opts.status) params.set("status", opts.status);
+        if (opts.status)
+          params.set("status", opts.status);
         const query = params.toString();
         const rows = await ctx.api.get(
           `/api/companies/${ctx.companyId}/approvals${query ? `?${query}` : ""}`
@@ -17064,7 +17520,8 @@ function registerApprovalCommands(program2) {
   );
 }
 function parseCsv2(value) {
-  if (!value) return void 0;
+  if (!value)
+    return void 0;
   const rows = value.split(",").map((v) => v.trim()).filter(Boolean);
   return rows.length > 0 ? rows : void 0;
 }
@@ -17088,12 +17545,15 @@ function registerActivityCommands(program2) {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
         const params = new URLSearchParams();
-        if (opts.agentId) params.set("agentId", opts.agentId);
-        if (opts.entityType) params.set("entityType", opts.entityType);
-        if (opts.entityId) params.set("entityId", opts.entityId);
+        if (opts.agentId)
+          params.set("agentId", opts.agentId);
+        if (opts.entityType)
+          params.set("entityType", opts.entityType);
+        if (opts.entityId)
+          params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path71 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path71) ?? [];
+        const path75 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path75) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -17145,7 +17605,8 @@ init_home();
 import path19 from "node:path";
 function applyDataDirOverride(options, support = {}) {
   const rawDataDir = options.dataDir?.trim();
-  if (!rawDataDir) return null;
+  if (!rawDataDir)
+    return null;
   const resolvedDataDir = path19.resolve(expandHomePrefix(rawDataDir));
   process.env.PAPERCLIP_HOME = resolvedDataDir;
   if (support.hasConfigOption) {
@@ -17182,7 +17643,8 @@ function resolveGtmStatePath() {
 }
 function readState() {
   const filePath = resolveGtmStatePath();
-  if (!fs17.existsSync(filePath)) return createDefaultGtmState();
+  if (!fs17.existsSync(filePath))
+    return createDefaultGtmState();
   return coerceGtmState(JSON.parse(fs17.readFileSync(filePath, "utf-8")));
 }
 function writeState(state) {
@@ -17226,17 +17688,22 @@ function printJsonOrMessage(payload, json, message) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
-  if (message) console.log(pc23.green(message));
+  if (message)
+    console.log(pc23.green(message));
   console.log(payload);
 }
 function registerGtmCommands(program2) {
   const gtm = program2.command("gtm").description("Growthub GTM substrate on the local machine");
   gtm.command("init").description("Initialize the local GTM substrate state").option("--account-email <email>", "Growthub account email").option("--workspace <name>", "Workspace label").option("--gh-app-path <path>", "Path to gh-app").option("--internal-socials-path <path>", "Reference UI path for internal-socials").option("--local-sdr-path <path>", "Reference/local runner path for growthub-sdr").option("--json", "Output raw JSON").action((opts) => {
     const state = createDefaultGtmState();
-    if (opts.accountEmail) state.profile.growthubAccountEmail = opts.accountEmail.trim();
-    if (opts.workspace) state.profile.workspaceName = opts.workspace.trim();
-    if (opts.ghAppPath) state.profile.ghAppPath = opts.ghAppPath.trim();
-    if (opts.internalSocialsPath) state.workflow.referenceInterfaces.internalSocialsPath = opts.internalSocialsPath.trim();
+    if (opts.accountEmail)
+      state.profile.growthubAccountEmail = opts.accountEmail.trim();
+    if (opts.workspace)
+      state.profile.workspaceName = opts.workspace.trim();
+    if (opts.ghAppPath)
+      state.profile.ghAppPath = opts.ghAppPath.trim();
+    if (opts.internalSocialsPath)
+      state.workflow.referenceInterfaces.internalSocialsPath = opts.internalSocialsPath.trim();
     if (opts.localSdrPath) {
       state.workflow.referenceInterfaces.localSdrPath = opts.localSdrPath.trim();
       state.workflow.runnerPath = path20.resolve(opts.localSdrPath.trim(), "sdr-bot.mjs");
@@ -17411,10 +17878,12 @@ function resolveWorktreeLocalPaths(opts) {
   };
 }
 function rewriteLocalUrlPort(rawUrl, port) {
-  if (!rawUrl) return void 0;
+  if (!rawUrl)
+    return void 0;
   try {
     const parsed = new URL(rawUrl);
-    if (!isLoopbackHost2(parsed.hostname)) return rawUrl;
+    if (!isLoopbackHost2(parsed.hostname))
+      return rawUrl;
     parsed.port = String(port);
     return parsed.toString();
   } catch {
@@ -17569,7 +18038,8 @@ function resolveGitWorktreeAddArgs(input) {
   return ["worktree", "add", "-b", input.branchName, input.targetPath, commitish];
 }
 function readPidFilePort(postmasterPidFile) {
-  if (!existsSync2(postmasterPidFile)) return null;
+  if (!existsSync2(postmasterPidFile))
+    return null;
   try {
     const lines = readFileSync(postmasterPidFile, "utf8").split("\n");
     const port = Number(lines[3]?.trim());
@@ -17579,10 +18049,12 @@ function readPidFilePort(postmasterPidFile) {
   }
 }
 function readRunningPostmasterPid(postmasterPidFile) {
-  if (!existsSync2(postmasterPidFile)) return null;
+  if (!existsSync2(postmasterPidFile))
+    return null;
   try {
     const pid = Number(readFileSync(postmasterPidFile, "utf8").split("\n")[0]?.trim());
-    if (!Number.isInteger(pid) || pid <= 0) return null;
+    if (!Number.isInteger(pid) || pid <= 0)
+      return null;
     process.kill(pid, 0);
     return pid;
   } catch {
@@ -17651,9 +18123,11 @@ function detectGitWorkspaceInfo(cwd) {
   }
 }
 function copyDirectoryContents(sourceDir, targetDir) {
-  if (!existsSync2(sourceDir)) return false;
+  if (!existsSync2(sourceDir))
+    return false;
   const entries = readdirSync2(sourceDir, { withFileTypes: true });
-  if (entries.length === 0) return false;
+  if (entries.length === 0)
+    return false;
   mkdirSync2(targetDir, { recursive: true });
   let copied = false;
   for (const entry of entries) {
@@ -17682,7 +18156,8 @@ function copyDirectoryContents(sourceDir, targetDir) {
 }
 function copyGitHooksToWorktreeGitDir(cwd) {
   const workspace = detectGitWorkspaceInfo(cwd);
-  if (!workspace) return null;
+  if (!workspace)
+    return null;
   const sourceHooksPath = workspace.hooksPath;
   const targetHooksPath = path22.resolve(workspace.gitDir, "hooks");
   if (sourceHooksPath === targetHooksPath) {
@@ -17713,7 +18188,8 @@ function rebindWorkspaceCwd(input) {
 }
 async function rebindSeededProjectWorkspaces(input) {
   const targetRepo = detectGitWorkspaceInfo(input.currentCwd);
-  if (!targetRepo) return [];
+  if (!targetRepo)
+    return [];
   const db = createDb(input.targetConnectionString);
   const closableDb = db;
   try {
@@ -17725,19 +18201,25 @@ async function rebindSeededProjectWorkspaces(input) {
     const rebound = [];
     for (const row of rows) {
       const workspaceCwd = nonEmpty2(row.cwd);
-      if (!workspaceCwd) continue;
+      if (!workspaceCwd)
+        continue;
       const sourceRepo = detectGitWorkspaceInfo(workspaceCwd);
-      if (!sourceRepo) continue;
-      if (sourceRepo.commonDir !== targetRepo.commonDir) continue;
+      if (!sourceRepo)
+        continue;
+      if (sourceRepo.commonDir !== targetRepo.commonDir)
+        continue;
       const reboundCwd = rebindWorkspaceCwd({
         sourceRepoRoot: sourceRepo.root,
         targetRepoRoot: targetRepo.root,
         workspaceCwd
       });
-      if (!reboundCwd) continue;
+      if (!reboundCwd)
+        continue;
       const normalizedCurrent = path22.resolve(workspaceCwd);
-      if (reboundCwd === normalizedCurrent) continue;
-      if (!existsSync2(reboundCwd)) continue;
+      if (reboundCwd === normalizedCurrent)
+        continue;
+      if (!existsSync2(reboundCwd))
+        continue;
       await db.update(projectWorkspaces).set({
         cwd: reboundCwd,
         updatedAt: /* @__PURE__ */ new Date()
@@ -17754,8 +18236,10 @@ async function rebindSeededProjectWorkspaces(input) {
   }
 }
 function resolveSourceConfigPath(opts) {
-  if (opts.sourceConfigPathOverride) return path22.resolve(opts.sourceConfigPathOverride);
-  if (opts.fromConfig) return path22.resolve(opts.fromConfig);
+  if (opts.sourceConfigPathOverride)
+    return path22.resolve(opts.sourceConfigPathOverride);
+  if (opts.fromConfig)
+    return path22.resolve(opts.fromConfig);
   if (!opts.fromDataDir && !opts.fromInstance) {
     return resolveConfigPath();
   }
@@ -18239,7 +18723,8 @@ async function worktreeCleanupCommand(nameArg, opts) {
       spinner13.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
       try {
         const removeArgs = ["worktree", "remove", linkedWorktree.worktree];
-        if (opts.force) removeArgs.push("--force");
+        if (opts.force)
+          removeArgs.push("--force");
         execFileSync("git", removeArgs, {
           cwd: sourceCwd,
           stdio: ["ignore", "pipe", "pipe"]
@@ -18321,8 +18806,10 @@ function registerWorktreeCommands(program2) {
 import path23 from "node:path";
 import pc25 from "picocolors";
 function resolvePackageArg(packageArg, isLocal) {
-  if (!isLocal) return packageArg;
-  if (path23.isAbsolute(packageArg)) return packageArg;
+  if (!isLocal)
+    return packageArg;
+  if (path23.isAbsolute(packageArg))
+    return packageArg;
   if (packageArg.startsWith("~")) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     return path23.resolve(home, packageArg.slice(1).replace(/^[\\/]/, ""));
@@ -18564,12 +19051,14 @@ function resolveUpstreamAssetRoot(kitId) {
     path30.resolve(moduleDir, "../assets/worker-kits", kitId)
   ];
   for (const c of candidates) {
-    if (fs23.existsSync(c)) return c;
+    if (fs23.existsSync(c))
+      return c;
   }
   throw new Error(`Cannot locate bundled asset root for kit: ${kitId}`);
 }
 function readFileIfExists(p36) {
-  if (!fs23.existsSync(p36)) return null;
+  if (!fs23.existsSync(p36))
+    return null;
   try {
     return fs23.readFileSync(p36, "utf8");
   } catch {
@@ -18578,7 +19067,8 @@ function readFileIfExists(p36) {
 }
 function listRelativeFiles2(rootDir) {
   const files = /* @__PURE__ */ new Set();
-  if (!fs23.existsSync(rootDir)) return files;
+  if (!fs23.existsSync(rootDir))
+    return files;
   const walk = (cur) => {
     for (const entry of fs23.readdirSync(cur, { withFileTypes: true })) {
       const full = path30.join(cur, entry.name);
@@ -18595,9 +19085,12 @@ function listRelativeFiles2(rootDir) {
 var CRITICAL_PATHS = /* @__PURE__ */ new Set(["kit.json", "package.json", ".env.example"]);
 var WARNING_PATH_PATTERNS = [/^workers\//, /^bundles\//, /^QUICKSTART\.md$/];
 function classifySeverity(rel, changeType) {
-  if (CRITICAL_PATHS.has(rel)) return "critical";
-  if (changeType === "deleted") return "warning";
-  if (WARNING_PATH_PATTERNS.some((rx) => rx.test(rel))) return "warning";
+  if (CRITICAL_PATHS.has(rel))
+    return "critical";
+  if (changeType === "deleted")
+    return "warning";
+  if (WARNING_PATH_PATTERNS.some((rx) => rx.test(rel)))
+    return "warning";
   return "info";
 }
 function maxSeverity(a, b) {
@@ -18621,8 +19114,10 @@ function parseSemver(v) {
 function isStrictlyNewer(upstream, fork) {
   const [ua, ub, uc] = parseSemver(upstream);
   const [fa, fb, fc] = parseSemver(fork);
-  if (ua !== fa) return ua > fa;
-  if (ub !== fb) return ub > fb;
+  if (ua !== fa)
+    return ua > fa;
+  if (ub !== fb)
+    return ub > fb;
   return uc > fc;
 }
 function detectPackageDrift(upstreamPkg, forkPkg) {
@@ -18643,7 +19138,8 @@ function detectPackageDrift(upstreamPkg, forkPkg) {
 var _upstreamFileCache = /* @__PURE__ */ new Map();
 function getUpstreamFiles(kitId) {
   const cached = _upstreamFileCache.get(kitId);
-  if (cached) return cached;
+  if (cached)
+    return cached;
   const root = resolveUpstreamAssetRoot(kitId);
   const files = listRelativeFiles2(root);
   _upstreamFileCache.set(kitId, files);
@@ -18714,8 +19210,10 @@ function detectKitForkDrift(reg) {
   }
   const customSkillsDetected = detectCustomSkills(forkFiles, upstreamFiles);
   let overallSeverity = "none";
-  for (const d of fileDrifts) overallSeverity = maxSeverity(overallSeverity, d.severity);
-  if (packageDrifts.length > 0 && overallSeverity === "none") overallSeverity = "info";
+  for (const d of fileDrifts)
+    overallSeverity = maxSeverity(overallSeverity, d.severity);
+  if (packageDrifts.length > 0 && overallSeverity === "none")
+    overallSeverity = "info";
   return {
     forkId: reg.forkId,
     kitId: reg.kitId,
@@ -18746,19 +19244,22 @@ function buildKitForkHealPlan(report, opts = {}) {
   const isPolicyUntouchable = (rel) => policy ? policy.untouchablePaths.some((pat) => {
     const normRel = rel.replace(/^\/+|\/+$/g, "");
     const normPat = pat.replace(/^\/+|\/+$/g, "");
-    if (!normPat) return false;
+    if (!normPat)
+      return false;
     return normRel === normPat || normRel.startsWith(`${normPat}/`);
   }) : false;
   const policyRequiresConfirm = (rel) => policy ? policy.confirmBeforeChange.some((pat) => {
     const normRel = rel.replace(/^\/+|\/+$/g, "");
     const normPat = pat.replace(/^\/+|\/+$/g, "");
-    if (!normPat) return false;
+    if (!normPat)
+      return false;
     return normRel === normPat || normRel.startsWith(`${normPat}/`);
   }) : false;
   const severityOrder = ["none", "info", "warning", "critical"];
   let estimatedRisk = "none";
   const raiseTo = (s) => {
-    if (severityOrder.indexOf(s) > severityOrder.indexOf(estimatedRisk)) estimatedRisk = s;
+    if (severityOrder.indexOf(s) > severityOrder.indexOf(estimatedRisk))
+      estimatedRisk = s;
   };
   for (const drift of report.fileDrifts) {
     if (drift.changeType === "added") {
@@ -18924,9 +19425,12 @@ function applyKitForkHealPlan(plan, opts) {
       result = { action, status: "error", detail: err instanceof Error ? err.message : String(err) };
     }
     actionResults.push(result);
-    if (result.status === "applied") appliedCount++;
-    else if (result.status === "skipped") skippedCount++;
-    else errorCount++;
+    if (result.status === "applied")
+      appliedCount++;
+    else if (result.status === "skipped")
+      skippedCount++;
+    else
+      errorCount++;
   }
   let updatedRegistration;
   if (!dryRun && errorCount === 0) {
@@ -19013,13 +19517,16 @@ function execUpdatePackageDeps(action, forkPath, kitId) {
     return { action, status: "skipped", detail: "No new upstream dependencies to add" };
   }
   const updated = { ...forkPkg };
-  if (mergedDeps) updated.dependencies = mergedDeps;
-  if (mergedDevDeps) updated.devDependencies = mergedDevDeps;
+  if (mergedDeps)
+    updated.dependencies = mergedDeps;
+  if (mergedDevDeps)
+    updated.devDependencies = mergedDevDeps;
   fs23.writeFileSync(forkPkgPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return { action, status: "applied", detail: "Merged upstream dependency additions" };
 }
 function mergeAddOnlyDeps(fork, upstream) {
-  if (!upstream) return null;
+  if (!upstream)
+    return null;
   const merged = { ...fork ?? {} };
   let changed = false;
   for (const [name, ver] of Object.entries(upstream)) {
@@ -19087,7 +19594,8 @@ function generateJobId() {
   return `kfj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function parseJobFile(p36) {
-  if (!fs25.existsSync(p36)) return null;
+  if (!fs25.existsSync(p36))
+    return null;
   try {
     return JSON.parse(fs25.readFileSync(p36, "utf8"));
   } catch {
@@ -19096,10 +19604,12 @@ function parseJobFile(p36) {
 }
 function findJobPath(jobId) {
   const orphanPath = resolveOrphanJobPath(jobId);
-  if (fs25.existsSync(orphanPath)) return orphanPath;
+  if (fs25.existsSync(orphanPath))
+    return orphanPath;
   for (const reg of listKitForkRegistrations()) {
     const p36 = path32.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
-    if (fs25.existsSync(p36)) return p36;
+    if (fs25.existsSync(p36))
+      return p36;
   }
   return null;
 }
@@ -19114,9 +19624,11 @@ function writeJob(job) {
 }
 function patchJob(jobId, status, patch) {
   const existingPath = findJobPath(jobId);
-  if (!existingPath) return null;
+  if (!existingPath)
+    return null;
   const job = parseJobFile(existingPath);
-  if (!job) return null;
+  if (!job)
+    return null;
   const updated = { ...job, ...patch, status };
   const targetPath = resolveJobPath(updated.jobId, updated.kitId, updated.forkId);
   if (path32.resolve(existingPath) !== path32.resolve(targetPath)) {
@@ -19131,7 +19643,8 @@ function collectAllJobFiles() {
   const files = [];
   for (const reg of listKitForkRegistrations()) {
     const dir = resolveInForkJobsDir(reg.forkPath);
-    if (!fs25.existsSync(dir)) continue;
+    if (!fs25.existsSync(dir))
+      continue;
     for (const entry of fs25.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
         files.push(path32.resolve(dir, entry.name));
@@ -19155,18 +19668,23 @@ function listKitForkSyncJobs(filter) {
   const jobs = [];
   for (const filePath of collectAllJobFiles()) {
     const job = parseJobFile(filePath);
-    if (!job) continue;
-    if (filter?.forkId && job.forkId !== filter.forkId) continue;
-    if (filter?.status && job.status !== filter.status) continue;
+    if (!job)
+      continue;
+    if (filter?.forkId && job.forkId !== filter.forkId)
+      continue;
+    if (filter?.status && job.status !== filter.status)
+      continue;
     jobs.push(job);
   }
   return jobs.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 function cancelKitForkSyncJob(jobId) {
   const job = readJob(jobId);
-  if (!job) return false;
+  if (!job)
+    return false;
   const terminal = ["completed", "failed", "cancelled"];
-  if (terminal.includes(job.status)) return false;
+  if (terminal.includes(job.status))
+    return false;
   patchJob(jobId, "cancelled");
   return true;
 }
@@ -19175,9 +19693,11 @@ function pruneKitForkSyncJobs(retentionMs = 7 * 24 * 60 * 60 * 1e3) {
   let pruned = 0;
   for (const filePath of collectAllJobFiles()) {
     const job = parseJobFile(filePath);
-    if (!job) continue;
+    if (!job)
+      continue;
     const terminal = ["completed", "failed", "cancelled"];
-    if (!terminal.includes(job.status)) continue;
+    if (!terminal.includes(job.status))
+      continue;
     const ts = new Date(job.completedAt ?? job.createdAt).getTime();
     if (ts < cutoff) {
       fs25.rmSync(filePath, { force: true });
@@ -19197,7 +19717,8 @@ async function runKitForkSyncJob(forkId, kitId, opts = {}) {
   };
   writeJob(job);
   const running = patchJob(jobId, "running", { startedAt: (/* @__PURE__ */ new Date()).toISOString() });
-  if (!running) throw new Error(`Job ${jobId} disappeared immediately after creation`);
+  if (!running)
+    throw new Error(`Job ${jobId} disappeared immediately after creation`);
   try {
     opts.onProgress?.(`[kit-fork-agent] Starting drift detection for fork: ${forkId}`);
     const reg = loadKitForkRegistration(kitId, forkId);
@@ -19305,11 +19826,13 @@ async function runKitForkSyncJob(forkId, kitId, opts = {}) {
 }
 function summarizeByType(types) {
   const out = {};
-  for (const t of types) out[t] = (out[t] ?? 0) + 1;
+  for (const t of types)
+    out[t] = (out[t] ?? 0) + 1;
   return out;
 }
 async function maybePushRemote(reg, policy, healPlan, onProgress, jobId) {
-  if (policy.remoteSyncMode === "off") return void 0;
+  if (policy.remoteSyncMode === "off")
+    return void 0;
   if (!reg.remote) {
     onProgress?.(`[kit-fork-agent] Policy requests remote sync but no remote is bound.`);
     return { pushed: false, detail: "No remote binding; run `growthub kit fork connect` first." };
@@ -19375,10 +19898,13 @@ async function maybePushRemote(reg, policy, healPlan, onProgress, jobId) {
 }
 async function confirmAndResumeJob(jobId, confirmedTargetPaths) {
   const existing = readJob(jobId);
-  if (!existing || existing.status !== "awaiting_confirmation") return null;
-  if (!existing.healPlan) return null;
+  if (!existing || existing.status !== "awaiting_confirmation")
+    return null;
+  if (!existing.healPlan)
+    return null;
   const reg = loadKitForkRegistration(existing.kitId, existing.forkId);
-  if (!reg) return null;
+  if (!reg)
+    return null;
   const policy = readKitForkPolicy(reg.forkPath);
   appendKitForkTraceEvent(reg.forkPath, {
     forkId: reg.forkId,
@@ -19508,8 +20034,10 @@ async function kitForkConnect(opts) {
   const token = await requireGithubToken();
   const repo = parseRepoRef(opts.remote);
   const reg = findRegistrationOrThrow(opts.forkId);
-  if (!gitAvailable()) throw new Error("git is not available on PATH.");
-  if (!isGitRepo(reg.forkPath)) initGitRepo(reg.forkPath);
+  if (!gitAvailable())
+    throw new Error("git is not available on PATH.");
+  if (!isGitRepo(reg.forkPath))
+    initGitRepo(reg.forkPath);
   setOrigin(reg.forkPath, buildTokenCloneUrl(repo, token));
   const remote = {
     provider: "github",
@@ -19601,15 +20129,19 @@ function diffPolicyFields(before, after) {
   for (const f of fields) {
     const a = JSON.stringify(before[f]);
     const b = JSON.stringify(after[f]);
-    if (a !== b) changed.push(String(f));
+    if (a !== b)
+      changed.push(String(f));
   }
   return changed;
 }
 function validateProtectedPath(raw) {
   const v = raw.trim();
-  if (!v) return "Path cannot be empty.";
-  if (v.startsWith("/")) return "Use a relative path (no leading slash).";
-  if (v.includes("\0")) return "Path contains an invalid character.";
+  if (!v)
+    return "Path cannot be empty.";
+  if (v.startsWith("/"))
+    return "Use a relative path (no leading slash).";
+  if (v.includes("\0"))
+    return "Path contains an invalid character.";
   return void 0;
 }
 async function runInteractivePolicyEditor(forkId, current) {
@@ -19676,7 +20208,8 @@ async function runInteractivePolicyEditor(forkId, current) {
       p17.cancel("Cancelled.");
       return null;
     }
-    if (action === "__done") break;
+    if (action === "__done")
+      break;
     if (action === "__add") {
       const next = await p17.text({
         message: "New protected path (glob prefix, relative):",
@@ -19785,14 +20318,16 @@ function kitForkTraceCommand(opts) {
 }
 async function kitForkConfirmCommand(opts) {
   const job = getKitForkSyncJob(opts.jobId);
-  if (!job) throw new Error(`Job not found: ${opts.jobId}`);
+  if (!job)
+    throw new Error(`Job not found: ${opts.jobId}`);
   if (job.status !== "awaiting_confirmation") {
     throw new Error(`Job ${opts.jobId} is not awaiting confirmation (status=${job.status}).`);
   }
   const pending = job.pendingConfirmations ?? [];
   const approve = opts.approve && opts.approve.length > 0 ? opts.approve : pending;
   const completed = await confirmAndResumeJob(opts.jobId, approve);
-  if (!completed) throw new Error(`Failed to resume job ${opts.jobId}.`);
+  if (!completed)
+    throw new Error(`Failed to resume job ${opts.jobId}.`);
   if (opts.json) {
     console.log(JSON.stringify({ status: "ok", jobId: opts.jobId, finalStatus: completed.status }, null, 2));
   } else {
@@ -19801,7 +20336,8 @@ async function kitForkConfirmCommand(opts) {
 }
 function findRegistrationOrThrow(forkId) {
   for (const reg of listKitForkRegistrations()) {
-    if (reg.forkId === forkId) return reg;
+    if (reg.forkId === forkId)
+      return reg;
   }
   throw new Error(`Fork not found: ${forkId}. Run \`growthub kit fork list\` to see registered forks.`);
 }
@@ -19861,19 +20397,27 @@ function renderProgressBar(current, total, opts = {}) {
   const bar = filled.repeat(filledCells) + empty.repeat(Math.max(0, width - filledCells));
   const pct = Math.round(ratio * 100);
   const painted = color ? pct >= 80 ? pc28.green(bar) : pct >= 50 ? pc28.yellow(bar) : pct > 0 ? pc28.red(bar) : pc28.dim(bar) : bar;
-  if (!showCounts) return `[${painted}]`;
+  if (!showCounts)
+    return `[${painted}]`;
   return `[${painted}] ${safeCurrent}/${safeTotal || 0} (${pct}%)`;
 }
 function formatRelative(iso, nowMs = Date.now()) {
-  if (!iso) return "\u2014";
+  if (!iso)
+    return "\u2014";
   const ts = new Date(iso).getTime();
-  if (!Number.isFinite(ts)) return "\u2014";
+  if (!Number.isFinite(ts))
+    return "\u2014";
   const diff = Math.max(0, nowMs - ts);
-  if (diff < 1e4) return "just now";
-  if (diff < 6e4) return `${Math.floor(diff / 1e3)}s ago`;
-  if (diff < 36e5) return `${Math.floor(diff / 6e4)}m ago`;
-  if (diff < 864e5) return `${Math.floor(diff / 36e5)}h ago`;
-  if (diff < 30 * 864e5) return `${Math.floor(diff / 864e5)}d ago`;
+  if (diff < 1e4)
+    return "just now";
+  if (diff < 6e4)
+    return `${Math.floor(diff / 1e3)}s ago`;
+  if (diff < 36e5)
+    return `${Math.floor(diff / 6e4)}m ago`;
+  if (diff < 864e5)
+    return `${Math.floor(diff / 36e5)}h ago`;
+  if (diff < 30 * 864e5)
+    return `${Math.floor(diff / 864e5)}d ago`;
   return new Date(iso).toISOString().slice(0, 10);
 }
 
@@ -19892,7 +20436,8 @@ import os8 from "node:os";
 import path34 from "node:path";
 function resolveAuthorityHomeDir() {
   const env = process.env.GROWTHUB_AUTHORITY_HOME?.trim();
-  if (env) return path34.resolve(expandHomePrefix(env));
+  if (env)
+    return path34.resolve(expandHomePrefix(env));
   return path34.resolve(os8.homedir(), ".growthub", "authority");
 }
 function resolveAuthorityIssuersPath() {
@@ -19902,7 +20447,8 @@ function resolveInForkAuthorityPath(forkPath) {
   return path34.resolve(resolveInForkStateDir(forkPath), "authority.json");
 }
 function canonicalize(value) {
-  if (value === null) return "null";
+  if (value === null)
+    return "null";
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw new Error("Cannot canonicalize non-finite number");
@@ -19949,17 +20495,20 @@ function computePolicyHash(policy) {
 }
 function readIssuerRegistry() {
   const p36 = resolveAuthorityIssuersPath();
-  if (!fs27.existsSync(p36)) return { version: 1, issuers: [] };
+  if (!fs27.existsSync(p36))
+    return { version: 1, issuers: [] };
   try {
     const parsed = JSON.parse(fs27.readFileSync(p36, "utf8"));
-    if (!parsed || !Array.isArray(parsed.issuers)) return { version: 1, issuers: [] };
+    if (!parsed || !Array.isArray(parsed.issuers))
+      return { version: 1, issuers: [] };
     return { version: 1, issuers: parsed.issuers.filter(isValidIssuer) };
   } catch {
     return { version: 1, issuers: [] };
   }
 }
 function isValidIssuer(x) {
-  if (!x || typeof x !== "object") return false;
+  if (!x || typeof x !== "object")
+    return false;
   const o = x;
   return typeof o.id === "string" && typeof o.publicKeyPem === "string" && (o.kind === "growthub-hosted" || o.kind === "self-signed" || o.kind === "enterprise");
 }
@@ -19975,15 +20524,18 @@ function upsertIssuer(issuer) {
   const reg = readIssuerRegistry();
   const idx = reg.issuers.findIndex((i) => i.id === issuer.id);
   const stamped = { ...issuer, addedAt: issuer.addedAt ?? (/* @__PURE__ */ new Date()).toISOString() };
-  if (idx >= 0) reg.issuers[idx] = stamped;
-  else reg.issuers.push(stamped);
+  if (idx >= 0)
+    reg.issuers[idx] = stamped;
+  else
+    reg.issuers.push(stamped);
   writeIssuerRegistry(reg);
   return reg;
 }
 function removeIssuer(issuerId) {
   const reg = readIssuerRegistry();
   const next = reg.issuers.filter((i) => i.id !== issuerId);
-  if (next.length === reg.issuers.length) return false;
+  if (next.length === reg.issuers.length)
+    return false;
   writeIssuerRegistry({ version: 1, issuers: next });
   return true;
 }
@@ -20029,11 +20581,13 @@ function verifyAuthorityEnvelope(envelope, options = {}) {
   } catch (err) {
     return { ok: false, reason: "bad-signature", detail: err.message };
   }
-  if (!ok) return { ok: false, reason: "bad-signature" };
+  if (!ok)
+    return { ok: false, reason: "bad-signature" };
   return { ok: true, issuer };
 }
 function isWellFormedEnvelope(x) {
-  if (!x || typeof x !== "object") return false;
+  if (!x || typeof x !== "object")
+    return false;
   const e = x;
   return e.version === 1 && typeof e.envelopeId === "string" && typeof e.issuerId === "string" && e.algorithm === "ed25519" && typeof e.signature === "string" && typeof e.issuedAt === "string" && typeof e.nonce === "string" && !!e.subject && typeof e.subject.kitId === "string" && typeof e.subject.forkId === "string" && !!e.grants && Array.isArray(e.grants.capabilities) && typeof e.grants.policyAttested === "boolean";
 }
@@ -20149,7 +20703,8 @@ function jobStatusBadge(status) {
   }
 }
 function formatDate(iso) {
-  if (!iso) return pc29.dim("\u2014");
+  if (!iso)
+    return pc29.dim("\u2014");
   return new Date(iso).toLocaleString();
 }
 function printDriftReport(report) {
@@ -20249,7 +20804,8 @@ function summarizeFork(fork, opts = {}) {
     try {
       const events = readKitForkTrace(fork.forkPath);
       const last = [...events].reverse().find((e) => e.type === "heal_applied");
-      if (last) lastHealAt = last.timestamp;
+      if (last)
+        lastHealAt = last.timestamp;
     } catch {
     }
   }
@@ -20301,7 +20857,8 @@ function renderForkTable(summaries) {
         maxWidth: 18,
         format: (v) => {
           const arr = v;
-          if (!arr || arr.length === 0) return pc29.dim("\u2014");
+          if (!arr || arr.length === 0)
+            return pc29.dim("\u2014");
           return arr.join(",");
         }
       },
@@ -20410,9 +20967,11 @@ function printNextStepsAfterStatus(forkId, hasDrift) {
   console.log("");
 }
 function estimateJobProgress(job) {
-  if (!job.healPlan) return null;
+  if (!job.healPlan)
+    return null;
   const total = job.healPlan.actions.length;
-  if (total === 0) return null;
+  if (total === 0)
+    return null;
   if (job.healResult) {
     const done = job.healResult.appliedCount + job.healResult.skippedCount;
     return { current: Math.min(done, total), total };
@@ -20446,8 +21005,10 @@ function renderJobTable(jobs) {
         format: (_v, row) => {
           const prog = estimateJobProgress(row);
           if (!prog) {
-            if (row.status === "completed") return pc29.green("\u2713 100%");
-            if (row.status === "failed") return pc29.red("\u2717");
+            if (row.status === "completed")
+              return pc29.green("\u2713 100%");
+            if (row.status === "failed")
+              return pc29.red("\u2717");
             return pc29.dim("\u2014");
           }
           return renderProgressBar(prog.current, prog.total, { width: 14, showCounts: true });
@@ -20472,9 +21033,12 @@ function printJobDetail(job) {
   if (job.healPlan) {
     console.log(`    ${pc29.dim("Plan:")}      ${job.healPlan.actions.length} action(s), risk=${job.healPlan.estimatedRisk}`);
   }
-  if (job.startedAt) console.log(`    ${pc29.dim("Started:")}   ${formatRelative(job.startedAt)}  (${job.startedAt})`);
-  if (job.completedAt) console.log(`    ${pc29.dim("Completed:")} ${formatRelative(job.completedAt)}  (${job.completedAt})`);
-  if (job.error) console.log(`    ${pc29.red("Error:")}     ${job.error}`);
+  if (job.startedAt)
+    console.log(`    ${pc29.dim("Started:")}   ${formatRelative(job.startedAt)}  (${job.startedAt})`);
+  if (job.completedAt)
+    console.log(`    ${pc29.dim("Completed:")} ${formatRelative(job.completedAt)}  (${job.completedAt})`);
+  if (job.error)
+    console.log(`    ${pc29.red("Error:")}     ${job.error}`);
 }
 var TERMINAL_JOB_STATUSES = [
   "completed",
@@ -20514,7 +21078,8 @@ async function watchJob(jobId, jsonMode) {
     }
     if (TERMINAL_JOB_STATUSES.includes(job.status)) {
       console.log("");
-      if (job.status === "failed") process.exitCode = 1;
+      if (job.status === "failed")
+        process.exitCode = 1;
       return;
     }
     await sleep(500);
@@ -20523,8 +21088,10 @@ async function watchJob(jobId, jsonMode) {
 async function pollUntilTerminal(jobId) {
   while (true) {
     const job = getKitForkSyncJob(jobId);
-    if (!job) throw new Error(`Job disappeared: ${jobId}`);
-    if (TERMINAL_JOB_STATUSES.includes(job.status)) return job;
+    if (!job)
+      throw new Error(`Job disappeared: ${jobId}`);
+    if (TERMINAL_JOB_STATUSES.includes(job.status))
+      return job;
     await sleep(500);
   }
 }
@@ -20602,7 +21169,8 @@ async function runKitForkHub(opts = {}) {
       p18.cancel("Cancelled.");
       process.exit(0);
     }
-    if (choice === "__back_to_hub") return "back";
+    if (choice === "__back_to_hub")
+      return "back";
     if (choice === "register") {
       await runRegisterFlow();
       continue;
@@ -20630,7 +21198,8 @@ async function runRegisterFlow() {
     message: "Enter the path to your fork directory",
     placeholder: "/Users/you/kits/my-higgsfield-fork",
     validate(v) {
-      if (!v.trim()) return "Path is required";
+      if (!v.trim())
+        return "Path is required";
     }
   });
   if (p18.isCancel(rawPath)) {
@@ -20708,7 +21277,8 @@ async function runStatusFlow() {
       { value: "__back", label: "\u2190 Back" }
     ]
   });
-  if (p18.isCancel(choice) || choice === "__back") return;
+  if (p18.isCancel(choice) || choice === "__back")
+    return;
   const reg = forks.find((f) => f.forkId === choice);
   if (!reg) {
     p18.cancel("Fork not found.");
@@ -20743,7 +21313,8 @@ async function runHealFlow() {
       { value: "__back", label: "\u2190 Back" }
     ]
   });
-  if (p18.isCancel(choice) || choice === "__back") return;
+  if (p18.isCancel(choice) || choice === "__back")
+    return;
   const reg = forks.find((f) => f.forkId === choice);
   if (!reg) {
     p18.cancel("Fork not found.");
@@ -20780,7 +21351,8 @@ async function runHealFlow() {
       { value: "__cancel", label: "\u2190 Cancel" }
     ]
   });
-  if (p18.isCancel(mode) || mode === "__cancel") return;
+  if (p18.isCancel(mode) || mode === "__cancel")
+    return;
   if (mode === "background") {
     const jobId = dispatchKitForkSyncJobBackground(reg.forkId, reg.kitId);
     p18.note(
@@ -20840,8 +21412,10 @@ async function runJobsFlow() {
     console.log(hr());
     for (const job of jobs.slice(-10).reverse()) {
       console.log(`  ${jobStatusBadge(job.status)}  ${pc29.cyan(job.jobId)}  ${pc29.dim(job.forkId)}`);
-      if (job.completedAt) console.log(`    ${pc29.dim("Completed:")} ${formatDate(job.completedAt)}`);
-      if (job.error) console.log(`    ${pc29.red("Error:")} ${job.error}`);
+      if (job.completedAt)
+        console.log(`    ${pc29.dim("Completed:")} ${formatDate(job.completedAt)}`);
+      if (job.error)
+        console.log(`    ${pc29.red("Error:")} ${job.error}`);
     }
     console.log("");
     console.log(hr());
@@ -20853,7 +21427,8 @@ async function runJobsFlow() {
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p18.isCancel(action) || action === "__back") return;
+    if (p18.isCancel(action) || action === "__back")
+      return;
     if (action === "cancel") {
       const active = jobs.filter((j) => j.status === "running" || j.status === "pending");
       if (active.length === 0) {
@@ -20997,7 +21572,8 @@ function addForkSubcommands(parentCmd) {
         return;
       }
       summaries = summaries.filter((s) => {
-        if (key === "kit") return s.kitId === value;
+        if (key === "kit")
+          return s.kitId === value;
         if (key === "status") {
           const mapping = {
             synced: "none",
@@ -21014,7 +21590,8 @@ function addForkSubcommands(parentCmd) {
     }
     const sortKey = opts.sortBy ?? "id";
     summaries.sort((a, b) => {
-      if (sortKey === "kit") return a.kitId.localeCompare(b.kitId);
+      if (sortKey === "kit")
+        return a.kitId.localeCompare(b.kitId);
       if (sortKey === "status") {
         const order = ["none", "info", "warning", "critical", "unknown"];
         return order.indexOf(a.severity) - order.indexOf(b.severity);
@@ -21203,7 +21780,8 @@ function addForkSubcommands(parentCmd) {
     let effectiveStatus = opts.status;
     if (!effectiveStatus && opts.filter) {
       const [key, value] = opts.filter.split("=").map((s) => s.trim());
-      if (key === "status" && value) effectiveStatus = value;
+      if (key === "status" && value)
+        effectiveStatus = value;
     }
     const jobs = listKitForkSyncJobs({
       forkId: opts.fork,
@@ -21240,9 +21818,12 @@ function addForkSubcommands(parentCmd) {
     const untilMs = opts.until ? new Date(opts.until).getTime() : void 0;
     let events = all.filter((e) => {
       const ts = new Date(e.timestamp).getTime();
-      if (sinceMs !== void 0 && ts < sinceMs) return false;
-      if (untilMs !== void 0 && ts > untilMs) return false;
-      if (opts.eventType && e.type !== opts.eventType) return false;
+      if (sinceMs !== void 0 && ts < sinceMs)
+        return false;
+      if (untilMs !== void 0 && ts > untilMs)
+        return false;
+      if (opts.eventType && e.type !== opts.eventType)
+        return false;
       return true;
     });
     if (opts.limit && opts.limit > 0) {
@@ -21330,7 +21911,8 @@ function registerAuthoritySubcommands(parentCmd) {
       console.log(`  ${pc29.dim("Issuer:")}           ${env.issuerId}`);
       console.log(`  ${pc29.dim("Envelope ID:")}      ${env.envelopeId}`);
       console.log(`  ${pc29.dim("Issued at:")}        ${env.issuedAt}`);
-      if (env.expiresAt) console.log(`  ${pc29.dim("Expires at:")}       ${env.expiresAt}`);
+      if (env.expiresAt)
+        console.log(`  ${pc29.dim("Expires at:")}       ${env.expiresAt}`);
       console.log(`  ${pc29.dim("Capabilities:")}     ${env.grants.capabilities.join(", ") || pc29.dim("(none)")}`);
       console.log(`  ${pc29.dim("Policy attested:")}  ${env.grants.policyAttested ? "yes" : "no"}`);
       if (summary.policyHashMatches === true) {
@@ -21416,7 +21998,8 @@ function registerAuthoritySubcommands(parentCmd) {
         detail: { reason: opts.reason ?? null }
       });
       console.log(pc29.yellow("Authority attestation revoked."));
-      if (opts.reason) console.log(pc29.dim("  Reason:"), opts.reason);
+      if (opts.reason)
+        console.log(pc29.dim("  Reason:"), opts.reason);
     } catch (err) {
       console.error(pc29.red(err.message));
       process.exitCode = 1;
@@ -21437,7 +22020,8 @@ function registerAuthoritySubcommands(parentCmd) {
     } else {
       for (const i of reg.issuers) {
         console.log(`  ${pc29.cyan(i.id)}  ${pc29.dim(`[${i.kind}]`)}${i.label ? `  ${i.label}` : ""}`);
-        if (i.addedAt) console.log(`    ${pc29.dim("added:")} ${i.addedAt}`);
+        if (i.addedAt)
+          console.log(`    ${pc29.dim("added:")} ${i.addedAt}`);
       }
     }
     console.log("");
@@ -21472,7 +22056,8 @@ function registerAuthoritySubcommands(parentCmd) {
   });
   issuerCmd.command("remove").description("Remove a trusted issuer from the local registry").requiredOption("--id <id>", "Issuer ID to remove").action((opts) => {
     const ok = removeIssuer(opts.id);
-    if (ok) console.log(pc29.green("Issuer removed:"), opts.id);
+    if (ok)
+      console.log(pc29.green("Issuer removed:"), opts.id);
     else {
       console.error(pc29.red(`No issuer with id: ${opts.id}`));
       process.exitCode = 1;
@@ -21525,7 +22110,8 @@ function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function asStringArray(value) {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value))
+    return [];
   return value.filter((entry) => typeof entry === "string");
 }
 function parseStage(raw, index51, issues2) {
@@ -21564,13 +22150,17 @@ function parseStage(raw, index51, issues2) {
     inputArtifacts: asStringArray(raw.inputArtifacts),
     outputArtifacts: asStringArray(raw.outputArtifacts)
   };
-  if (typeof raw.label === "string") stage.label = raw.label;
-  if (Array.isArray(raw.helperPaths)) stage.helperPaths = asStringArray(raw.helperPaths);
-  if (Array.isArray(raw.adapterModes)) stage.adapterModes = asStringArray(raw.adapterModes);
+  if (typeof raw.label === "string")
+    stage.label = raw.label;
+  if (Array.isArray(raw.helperPaths))
+    stage.helperPaths = asStringArray(raw.helperPaths);
+  if (Array.isArray(raw.adapterModes))
+    stage.adapterModes = asStringArray(raw.adapterModes);
   if (Array.isArray(raw.externalDependencies)) {
     stage.externalDependencies = asStringArray(raw.externalDependencies);
   }
-  if (typeof raw.traceRequired === "boolean") stage.traceRequired = raw.traceRequired;
+  if (typeof raw.traceRequired === "boolean")
+    stage.traceRequired = raw.traceRequired;
   if (typeof raw.projectMemoryRequired === "boolean") {
     stage.projectMemoryRequired = raw.projectMemoryRequired;
   }
@@ -21633,7 +22223,8 @@ function readPipelineManifest(kitRoot) {
   const seenStageIds = /* @__PURE__ */ new Set();
   for (let i = 0; i < stagesRaw.length; i += 1) {
     const stage = parseStage(stagesRaw[i], i, issues2);
-    if (!stage) continue;
+    if (!stage)
+      continue;
     if (seenStageIds.has(stage.id)) {
       issues2.push({
         severity: "error",
@@ -21696,17 +22287,23 @@ function readPipelineManifest(kitRoot) {
   return { manifestPath, exists: true, manifest, issues: issues2 };
 }
 function statusFromIssues(issues2) {
-  if (issues2.some((i) => i.severity === "error")) return "error";
-  if (issues2.some((i) => i.severity === "warn")) return "warn";
+  if (issues2.some((i) => i.severity === "error"))
+    return "error";
+  if (issues2.some((i) => i.severity === "warn"))
+    return "warn";
   return "pass";
 }
 function asStringArrayLoose(value) {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value))
+    return [];
   return value.map((entry) => {
-    if (typeof entry === "string") return entry;
+    if (typeof entry === "string")
+      return entry;
     if (entry && typeof entry === "object") {
-      if ("path" in entry && typeof entry.path === "string") return entry.path;
-      if ("id" in entry && typeof entry.id === "string") return entry.id;
+      if ("path" in entry && typeof entry.path === "string")
+        return entry.path;
+      if ("id" in entry && typeof entry.id === "string")
+        return entry.id;
     }
     return null;
   }).filter((s) => s !== null);
@@ -21768,7 +22365,8 @@ function isObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function asStringArray2(value) {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value))
+    return [];
   return value.filter((entry) => typeof entry === "string");
 }
 function parseDependency(raw, index51, issues2) {
@@ -21815,13 +22413,20 @@ function parseDependency(raw, index51, issues2) {
     env,
     kind: kind ?? "external-service"
   };
-  if (typeof raw.setup === "string") dep.setup = raw.setup;
-  if (typeof raw.install === "string") dep.install = raw.install;
-  if (typeof raw.health === "string") dep.health = raw.health;
-  if (Array.isArray(raw.usedByStages)) dep.usedByStages = asStringArray2(raw.usedByStages);
-  if (typeof raw.interfaceArtifact === "string") dep.interfaceArtifact = raw.interfaceArtifact;
-  if (typeof raw.handoffArtifact === "string") dep.handoffArtifact = raw.handoffArtifact;
-  if (typeof raw.description === "string") dep.description = raw.description;
+  if (typeof raw.setup === "string")
+    dep.setup = raw.setup;
+  if (typeof raw.install === "string")
+    dep.install = raw.install;
+  if (typeof raw.health === "string")
+    dep.health = raw.health;
+  if (Array.isArray(raw.usedByStages))
+    dep.usedByStages = asStringArray2(raw.usedByStages);
+  if (typeof raw.interfaceArtifact === "string")
+    dep.interfaceArtifact = raw.interfaceArtifact;
+  if (typeof raw.handoffArtifact === "string")
+    dep.handoffArtifact = raw.handoffArtifact;
+  if (typeof raw.description === "string")
+    dep.description = raw.description;
   return dep;
 }
 function readWorkspaceDependencies(kitRoot) {
@@ -21864,7 +22469,8 @@ function readWorkspaceDependencies(kitRoot) {
   const seenIds = /* @__PURE__ */ new Set();
   for (let i = 0; i < dependenciesRaw.length; i += 1) {
     const dep = parseDependency(dependenciesRaw[i], i, issues2);
-    if (!dep) continue;
+    if (!dep)
+      continue;
     if (seenIds.has(dep.id)) {
       issues2.push({
         severity: "error",
@@ -21888,8 +22494,10 @@ function readWorkspaceDependencies(kitRoot) {
   return { manifestPath, exists: true, manifest, issues: issues2 };
 }
 function statusFromIssues2(issues2) {
-  if (issues2.some((i) => i.severity === "error")) return "error";
-  if (issues2.some((i) => i.severity === "warn")) return "warn";
+  if (issues2.some((i) => i.severity === "error"))
+    return "error";
+  if (issues2.some((i) => i.severity === "warn"))
+    return "warn";
   return "pass";
 }
 function inspectWorkspaceDependencies(kitRoot) {
@@ -21932,7 +22540,8 @@ function isDir(p36) {
 }
 function readKitId(kitRoot) {
   const kitJsonPath = path37.resolve(kitRoot, "kit.json");
-  if (!isFile(kitJsonPath)) return null;
+  if (!isFile(kitJsonPath))
+    return null;
   try {
     const parsed = JSON.parse(fs31.readFileSync(kitJsonPath, "utf8"));
     return typeof parsed.kit?.id === "string" ? parsed.kit.id : null;
@@ -21955,22 +22564,29 @@ function severityRank(severity) {
 function rankSeverity(checks) {
   let worst = "pass";
   for (const c of checks) {
-    if (severityRank(c.severity) > severityRank(worst)) worst = c.severity;
+    if (severityRank(c.severity) > severityRank(worst))
+      worst = c.severity;
   }
   return worst;
 }
 function check(id, severity, label, options = {}) {
   const out = { id, severity, label };
-  if (options.message !== void 0) out.message = options.message;
-  if (options.remediation !== void 0) out.remediation = options.remediation;
-  if (options.category !== void 0) out.category = options.category;
-  if (options.stageId !== void 0) out.stageId = options.stageId;
-  if (options.evidence !== void 0) out.evidence = options.evidence;
+  if (options.message !== void 0)
+    out.message = options.message;
+  if (options.remediation !== void 0)
+    out.remediation = options.remediation;
+  if (options.category !== void 0)
+    out.category = options.category;
+  if (options.stageId !== void 0)
+    out.stageId = options.stageId;
+  if (options.evidence !== void 0)
+    out.evidence = options.evidence;
   return out;
 }
 function runLocalHealthHelper(kitRoot) {
   const helperPath = path37.resolve(kitRoot, "helpers", "check-pipeline-health.sh");
-  if (!isFile(helperPath)) return { ran: false, exitCode: null, parsed: null, raw: "" };
+  if (!isFile(helperPath))
+    return { ran: false, exitCode: null, parsed: null, raw: "" };
   try {
     const result = spawnSync2("bash", [helperPath, "--json"], {
       cwd: kitRoot,
@@ -22372,11 +22988,13 @@ function renderStage(index51, stage) {
   }
   if (stage.inputArtifacts.length > 0) {
     console.log(pc30.dim(`     inputs:`));
-    for (const a of stage.inputArtifacts) console.log(pc30.dim(`       \xB7 ${a}`));
+    for (const a of stage.inputArtifacts)
+      console.log(pc30.dim(`       \xB7 ${a}`));
   }
   if (stage.outputArtifacts.length > 0) {
     console.log(pc30.dim(`     outputs:`));
-    for (const a of stage.outputArtifacts) console.log(pc30.dim(`       \xB7 ${a}`));
+    for (const a of stage.outputArtifacts)
+      console.log(pc30.dim(`       \xB7 ${a}`));
   }
 }
 function runPipelineInspect(input, opts) {
@@ -22430,9 +23048,12 @@ function renderDependenciesInspect(target, projection) {
     console.log("");
     console.log(`  ${pc30.cyan(dep.id)}  ${pc30.dim(`(${dep.kind})`)}`);
     console.log(pc30.dim(`     env:      ${dep.env}`));
-    if (dep.setup) console.log(pc30.dim(`     setup:    ${dep.setup}`));
-    if (dep.install) console.log(pc30.dim(`     install:  ${dep.install}`));
-    if (dep.health) console.log(pc30.dim(`     health:   ${dep.health}`));
+    if (dep.setup)
+      console.log(pc30.dim(`     setup:    ${dep.setup}`));
+    if (dep.install)
+      console.log(pc30.dim(`     install:  ${dep.install}`));
+    if (dep.health)
+      console.log(pc30.dim(`     health:   ${dep.health}`));
     if (dep.usedByStages?.length) {
       console.log(pc30.dim(`     stages:   ${dep.usedByStages.join(", ")}`));
     }
@@ -22543,7 +23164,8 @@ function buildCatalogList() {
   const entries = [];
   for (const kit of listBundledKits()) {
     const root = resolveBundledAssetRoot(kit.id);
-    if (!root) continue;
+    if (!root)
+      continue;
     const pipelineExists = pipelineManifestExists(root);
     const depsExists = workspaceDependenciesExists(root);
     let stageCount = 0;
@@ -22570,7 +23192,8 @@ function buildCatalogList() {
 }
 function applyFilter(entries, filter, kind) {
   let filtered = kind === "pipeline" ? entries.filter((e) => e.hasPipelineManifest) : entries.filter((e) => e.hasWorkspaceDependencies);
-  if (!filter) return filtered;
+  if (!filter)
+    return filtered;
   for (const clause of filter.split(",").map((s) => s.trim()).filter(Boolean)) {
     const [key, value] = clause.split("=").map((s) => s.trim());
     if (key === "family" && value) {
@@ -22580,7 +23203,8 @@ function applyFilter(entries, filter, kind) {
       filtered = filtered.filter((e) => e.hasWorkspaceDependencies);
     } else if (key === "min-stages" && value) {
       const min = parseInt(value, 10);
-      if (!Number.isNaN(min)) filtered = filtered.filter((e) => e.pipelineStageCount >= min);
+      if (!Number.isNaN(min))
+        filtered = filtered.filter((e) => e.pipelineStageCount >= min);
     }
   }
   return filtered;
@@ -22602,7 +23226,8 @@ function renderCatalogList(entries, kind) {
   const fmt = (cells) => "  " + cells.map((c, i) => c.padEnd(widths[i])).join("  ");
   console.log(pc30.bold(fmt(headers)));
   console.log(pc30.dim(fmt(widths.map((w) => "-".repeat(w)))));
-  for (const row of rows) console.log(fmt(row));
+  for (const row of rows)
+    console.log(fmt(row));
   console.log("");
 }
 function runPipelineList(opts) {
@@ -22688,7 +23313,8 @@ async function runPipelineHub() {
       continue;
     }
     const picked = await pickAdoptingKit("pipeline");
-    if (!picked) continue;
+    if (!picked)
+      continue;
     runPipelineInspect(picked.kitId, {});
   }
 }
@@ -22712,7 +23338,8 @@ async function runDependenciesHub() {
       continue;
     }
     const picked = await pickAdoptingKit("dependencies");
-    if (!picked) continue;
+    if (!picked)
+      continue;
     runDependenciesInspect(picked.kitId, {});
   }
 }
@@ -22819,8 +23446,10 @@ var TYPE_CONFIG = {
   ops: { color: pc31.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
 function displayTypeForFamily(family) {
-  if (family === "workflow" || family === "operator") return "specialized_agents";
-  if (family === "studio" || family === "ops") return family;
+  if (family === "workflow" || family === "operator")
+    return "specialized_agents";
+  if (family === "studio" || family === "ops")
+    return family;
   return family;
 }
 function typeColor(family, text69) {
@@ -22830,11 +23459,13 @@ function typeColor(family, text69) {
 function typeBadge(family) {
   const type = displayTypeForFamily(family);
   const cfg = TYPE_CONFIG[type];
-  if (!cfg) return String(type);
+  if (!cfg)
+    return String(type);
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 function truncate2(str, max) {
-  if (str.length <= max) return str;
+  if (str.length <= max)
+    return str;
   return str.slice(0, max - 1) + "\u2026";
 }
 function displayKitName(name) {
@@ -22866,7 +23497,8 @@ function folderOpenLabel(folderPath) {
   return terminalLink2(label, href);
 }
 function renderProgressBar2(progress) {
-  if (!process.stdout.isTTY) return;
+  if (!process.stdout.isTTY)
+    return;
   const width = 24;
   const filled = Math.max(0, Math.min(width, Math.round(progress.percent / 100 * width)));
   const bar = `${"=".repeat(filled)}${"-".repeat(width - filled)}`;
@@ -22890,9 +23522,12 @@ function printKitCard(item) {
   ]));
 }
 function getActionLabel(action) {
-  if (action === "download") return "download";
-  if (action === "inspect") return "inspect";
-  if (action === "copy-id") return "print id";
+  if (action === "download")
+    return "download";
+  if (action === "inspect")
+    return "inspect";
+  if (action === "copy-id")
+    return "print id";
   return action;
 }
 async function confirmKitActions(input) {
@@ -22978,7 +23613,8 @@ async function runInteractivePicker(opts) {
       p20.cancel("Cancelled.");
       process.exit(0);
     }
-    if (typeChoice === "__back_to_hub") return "back";
+    if (typeChoice === "__back_to_hub")
+      return "back";
     const filtered = typeChoice === "all" ? kits : kits.filter((k) => displayTypeForFamily(k.family) === typeChoice);
     const showTypeBadgeInKitChoices = typeChoice === "all";
     if (filtered.length === 0) {
@@ -23001,7 +23637,8 @@ async function runInteractivePicker(opts) {
         p20.cancel("Cancelled.");
         process.exit(0);
       }
-      if (kitChoice === "__back_to_type") break;
+      if (kitChoice === "__back_to_type")
+        break;
       const selected = filtered.find((kit) => kit.id === kitChoice);
       if (!selected) {
         p20.cancel("Selected kit was not found.");
@@ -23019,7 +23656,8 @@ async function runInteractivePicker(opts) {
         p20.cancel("Cancelled.");
         process.exit(0);
       }
-      if (nextStep === "back_to_kits") continue;
+      if (nextStep === "back_to_kits")
+        continue;
       while (true) {
         const action = await p20.select({
           message: "What would you like to do?",
@@ -23037,7 +23675,8 @@ async function runInteractivePicker(opts) {
           p20.cancel("Cancelled.");
           process.exit(0);
         }
-        if (action === "back_to_kits") break;
+        if (action === "back_to_kits")
+          break;
         if (action === "pipeline") {
           runPipelineInspect(selected.id, { out: opts.out });
           p20.outro(pc31.dim("Done."));
@@ -23069,7 +23708,8 @@ async function runInteractivePicker(opts) {
             p20.cancel("Cancelled.");
             process.exit(0);
           }
-          if (reviewChoice === "back_to_kits") break;
+          if (reviewChoice === "back_to_kits")
+            break;
           continue;
         }
         if (action === "copy-id") {
@@ -23159,7 +23799,8 @@ function runInspect(kitId, outDir) {
   }
   console.log(hr3());
   console.log(pc31.bold("  Required Paths:"));
-  for (const rp of info.requiredPaths) console.log("    " + pc31.dim("\xB7") + " " + rp);
+  for (const rp of info.requiredPaths)
+    console.log("    " + pc31.dim("\xB7") + " " + rp);
   console.log("");
 }
 function registerKitCommands(program2) {
@@ -23669,7 +24310,8 @@ function resolveSharedTemplatesRoot() {
     path40.resolve(moduleDir, "../../assets/shared-templates"),
     path40.resolve(moduleDir, "../assets/shared-templates")
   ]) {
-    if (fs33.existsSync(candidate)) return candidate;
+    if (fs33.existsSync(candidate))
+      return candidate;
   }
   throw new Error("Shared template assets not found at cli/assets/shared-templates/");
 }
@@ -23679,20 +24321,25 @@ function resolveSlug(input) {
     const tokens = needle.split(/[-_/\s]+/).filter((t) => t.length > 2);
     for (const token of tokens) {
       const match = TEMPLATE_CATALOG.find((a) => a.slug.includes(token) || a.id.includes(token));
-      if (match) return match;
+      if (match)
+        return match;
     }
     return null;
   })();
 }
 function listArtifacts(filter = {}) {
   let results = [...TEMPLATE_CATALOG];
-  if (filter.type) results = results.filter((a) => a.type === filter.type);
-  if (filter.subtype) results = results.filter((a) => a.type === "scene-module" && a.subtype === filter.subtype);
-  if (filter.family) results = results.filter((a) => a.family === filter.family);
+  if (filter.type)
+    results = results.filter((a) => a.type === filter.type);
+  if (filter.subtype)
+    results = results.filter((a) => a.type === "scene-module" && a.subtype === filter.subtype);
+  if (filter.family)
+    results = results.filter((a) => a.family === filter.family);
   if (filter.format) {
     const fmt = filter.format.toLowerCase();
     results = results.filter((a) => {
-      if (!("compatibleFormats" in a)) return true;
+      if (!("compatibleFormats" in a))
+        return true;
       return a.compatibleFormats.length === 0 || a.compatibleFormats.some((f) => f.includes(fmt));
     });
   }
@@ -23703,10 +24350,12 @@ function listArtifacts(filter = {}) {
 }
 function getArtifact(slugOrId) {
   const artifact = resolveSlug(slugOrId);
-  if (!artifact) throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
+  if (!artifact)
+    throw new Error(`Unknown template '${slugOrId}'. Run 'growthub template list' to browse.`);
   const root = resolveSharedTemplatesRoot();
   const absolutePath = path40.resolve(root, artifact.path);
-  if (!fs33.existsSync(absolutePath)) throw new Error(`Template file missing: ${absolutePath}`);
+  if (!fs33.existsSync(absolutePath))
+    throw new Error(`Template file missing: ${absolutePath}`);
   return { artifact, content: fs33.readFileSync(absolutePath, "utf8"), absolutePath };
 }
 function copyArtifact(slugOrId, destDir) {
@@ -23725,26 +24374,31 @@ var GROUP_META = {
   "marketing-frameworks": { label: "Marketing Frameworks", description: "Evaluation frameworks for CRO, SEO, email, content, launch, and competitive analysis" }
 };
 function groupKey(a) {
-  if (a.type === "ad-format") return "ad-formats";
-  if (a.type === "marketing-framework") return "marketing-frameworks";
+  if (a.type === "ad-format")
+    return "ad-formats";
+  if (a.type === "marketing-framework")
+    return "marketing-frameworks";
   return `scene-modules/${a.subtype}`;
 }
 function groupArtifacts(artifacts) {
   const map = /* @__PURE__ */ new Map();
   for (const a of artifacts) {
     const key = groupKey(a);
-    if (!map.has(key)) map.set(key, []);
+    if (!map.has(key))
+      map.set(key, []);
     map.get(key).push(a);
   }
   const ordered = [];
   for (const key of GROUP_ORDER) {
-    if (!map.has(key)) continue;
+    if (!map.has(key))
+      continue;
     const items = map.get(key);
     const meta = GROUP_META[key] ?? { label: key, description: "" };
     ordered.push({ key, label: meta.label, description: meta.description, count: items.length, artifacts: items });
   }
   for (const [key, items] of map) {
-    if (GROUP_ORDER.includes(key)) continue;
+    if (GROUP_ORDER.includes(key))
+      continue;
     ordered.push({ key, label: key, description: "", count: items.length, artifacts: items });
   }
   return ordered;
@@ -23779,16 +24433,21 @@ function box2(lines) {
   return [top, ...body, bottom].join("\n");
 }
 function badge(a) {
-  if (a.type === "ad-format") return pc32.cyan("\u{1F3AC} Ad Format");
+  if (a.type === "ad-format")
+    return pc32.cyan("\u{1F3AC} Ad Format");
   if (a.type === "scene-module") {
-    if (a.subtype === "hook") return pc32.yellow("\u{1FA9D} Hook");
-    if (a.subtype === "body") return pc32.blue("\u{1F9E9} Body");
-    if (a.subtype === "cta") return pc32.green("\u{1F3AF} CTA");
+    if (a.subtype === "hook")
+      return pc32.yellow("\u{1FA9D} Hook");
+    if (a.subtype === "body")
+      return pc32.blue("\u{1F9E9} Body");
+    if (a.subtype === "cta")
+      return pc32.green("\u{1F3AF} CTA");
   }
   return pc32.magenta("\u{1F9E9} Module");
 }
 function printCard(a) {
-  const compat = a.compatibleFormats.length ? pc32.dim("Works with: ") + a.compatibleFormats.map((f) => pc32.cyan(f)).join(", ") : pc32.dim("Works with: any format");
+  const compatibleFormats = "compatibleFormats" in a && Array.isArray(a.compatibleFormats) ? a.compatibleFormats : [];
+  const compat = compatibleFormats.length ? pc32.dim("Works with: ") + compatibleFormats.map((f) => pc32.cyan(f)).join(", ") : pc32.dim("Works with: any format");
   const rows = [
     pc32.bold(a.name),
     `${badge(a)}  ${pc32.dim(a.id)}`,
@@ -23821,7 +24480,8 @@ ${pc32.bold(g.label)}  ${pc32.dim("(" + g.count + ")")}`);
     console.log(pc32.dim("  " + g.description));
     console.log("");
     for (const a of g.artifacts) {
-      const compat = a.compatibleFormats.length ? pc32.dim(" \xB7 " + a.compatibleFormats.join(", ")) : "";
+      const compatibleFormats = "compatibleFormats" in a && Array.isArray(a.compatibleFormats) ? a.compatibleFormats : [];
+      const compat = compatibleFormats.length ? pc32.dim(" \xB7 " + compatibleFormats.join(", ")) : "";
       console.log(`  ${pc32.cyan(pc32.bold(a.name))}${compat}`);
       console.log(`  ${pc32.dim("growthub template get " + a.slug)}`);
       console.log("");
@@ -23889,7 +24549,8 @@ async function runTemplatePicker(opts) {
     p21.cancel("Cancelled.");
     process.exit(0);
   }
-  if (familyChoice === "__back_to_hub") return "back";
+  if (familyChoice === "__back_to_hub")
+    return "back";
   const filteredArtifacts = artifacts.filter((artifact) => artifact.family === familyChoice);
   const groups = groupArtifacts(filteredArtifacts);
   const groupChoice = await p21.select({
@@ -23999,7 +24660,8 @@ Any agent or kit resolves them by slug.
       }
       filter.subtype = sub;
     }
-    if (opts.format) filter.format = opts.format;
+    if (opts.format)
+      filter.format = opts.format;
     if (opts.json) {
       console.log(JSON.stringify(listArtifacts(filter), null, 2));
       return;
@@ -24077,7 +24739,8 @@ var NoActiveSessionError = class extends Error {
 };
 function requireSession() {
   const session = readSession();
-  if (!session) throw new NoActiveSessionError();
+  if (!session)
+    throw new NoActiveSessionError();
   if (isSessionExpired(session)) {
     throw new HostedExecutionError(
       401,
@@ -24098,7 +24761,8 @@ function isUnavailable(err) {
 }
 function isPlaceholderString(value) {
   const normalized = value.trim().toLowerCase();
-  if (!normalized) return true;
+  if (!normalized)
+    return true;
   return normalized.startsWith("enter ") || normalized.startsWith("select ") || normalized === "placeholder";
 }
 function sanitizeBindingValue(value) {
@@ -24274,7 +24938,8 @@ async function executeWorkflowStream(request, session, opts) {
   const nodeResults = /* @__PURE__ */ new Map();
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
+    if (done)
+      break;
     buffer += decoder.decode(value, { stream: true });
     let newlineIndex = buffer.indexOf("\n");
     while (newlineIndex >= 0) {
@@ -24333,7 +24998,8 @@ async function executeWorkflowStream(request, session, opts) {
   };
 }
 function applyWorkflowEvent(event, nodeResults, request) {
-  if (!event.nodeId) return;
+  if (!event.nodeId)
+    return;
   const current = nodeResults.get(event.nodeId);
   const next = current ?? {
     nodeId: event.nodeId,
@@ -24354,13 +25020,28 @@ function applyWorkflowEvent(event, nodeResults, request) {
 function collectArtifacts(executionLog) {
   const artifacts = [];
   for (const entry of executionLog) {
-    if (entry.type !== "cmsNode" || typeof entry.nodeId !== "string") continue;
+    if (entry.type !== "cmsNode" || typeof entry.nodeId !== "string")
+      continue;
     const output = entry.output;
-    if (typeof output !== "object" || output === null) continue;
+    if (typeof output !== "object" || output === null)
+      continue;
     const record = output;
+    const directStoragePath = stringValue(record.storagePath) ?? stringValue(record.storage_path);
+    const directVideoUrl = stringValue(record.videoUrl);
+    if (directStoragePath || directVideoUrl) {
+      artifacts.push({
+        artifactId: directStoragePath ?? `${entry.nodeId}-video-${artifacts.length + 1}`,
+        artifactType: directVideoUrl || isVideoPath(directStoragePath) ? "video" : "file",
+        nodeId: entry.nodeId,
+        url: directVideoUrl,
+        storagePath: directStoragePath,
+        metadata: record
+      });
+    }
     const images = Array.isArray(record.images) ? record.images : [];
     for (const image of images) {
-      if (!image || typeof image !== "object") continue;
+      if (!image || typeof image !== "object")
+        continue;
       const imageRecord = image;
       const storagePath = typeof imageRecord.storage_path === "string" ? imageRecord.storage_path : void 0;
       artifacts.push({
@@ -24374,7 +25055,8 @@ function collectArtifacts(executionLog) {
     }
     const slides = Array.isArray(record.slides) ? record.slides : [];
     for (const slide of slides) {
-      if (!slide || typeof slide !== "object") continue;
+      if (!slide || typeof slide !== "object")
+        continue;
       const slideRecord = slide;
       const storagePath = typeof slideRecord.storage_path === "string" ? slideRecord.storage_path : void 0;
       artifacts.push({
@@ -24386,8 +25068,42 @@ function collectArtifacts(executionLog) {
         metadata: slideRecord
       });
     }
+    const videos = Array.isArray(record.videos) ? record.videos : [];
+    for (const video of videos) {
+      if (!video || typeof video !== "object")
+        continue;
+      const videoRecord = video;
+      const storagePath = stringValue(videoRecord.storagePath) ?? stringValue(videoRecord.storage_path);
+      const videoUrl = stringValue(videoRecord.videoUrl) ?? stringValue(videoRecord.url);
+      artifacts.push({
+        artifactId: storagePath ?? `${entry.nodeId}-video-${artifacts.length + 1}`,
+        artifactType: "video",
+        nodeId: entry.nodeId,
+        url: videoUrl,
+        storagePath,
+        metadata: videoRecord
+      });
+    }
   }
-  return artifacts;
+  return dedupeArtifacts(artifacts);
+}
+function stringValue(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
+}
+function isVideoPath(value) {
+  return Boolean(value?.toLowerCase().match(/\.(mp4|mov|webm|mkv|m4v)(\?|$)/));
+}
+function dedupeArtifacts(artifacts) {
+  const seen = /* @__PURE__ */ new Set();
+  const deduped = [];
+  for (const artifact of artifacts) {
+    const key = artifact.storagePath ?? artifact.url ?? artifact.artifactId;
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    deduped.push(artifact);
+  }
+  return deduped;
 }
 function resolveNodeSlug(request, nodeId) {
   const match = request.nodes.find((node) => node.id === nodeId);
@@ -24408,14 +25124,20 @@ function summarizeExecution(executionLog) {
       workflowRunId = entry.workflowRunId;
     }
     const output = entry.output;
-    if (typeof output !== "object" || output === null) continue;
+    if (typeof output !== "object" || output === null)
+      continue;
     const record = output;
     if (!outputText && typeof record.text === "string" && record.text.trim().length > 0) {
       outputText = record.text.trim();
     }
-    if (Array.isArray(record.images)) imageCount += record.images.length;
-    if (Array.isArray(record.slides)) slideCount += record.slides.length;
-    if (Array.isArray(record.videos)) videoCount += record.videos.length;
+    if (Array.isArray(record.images))
+      imageCount += record.images.length;
+    if (Array.isArray(record.slides))
+      slideCount += record.slides.length;
+    if (Array.isArray(record.videos))
+      videoCount += record.videos.length;
+    if (typeof record.videoUrl === "string" && record.videoUrl.trim().length > 0)
+      videoCount += 1;
   }
   return {
     ...outputText ? { outputText } : {},
@@ -24597,18 +25319,23 @@ function trimSlashes3(value) {
 }
 function resolveManifestBaseUrl(opts = {}) {
   const explicit = opts.explicit?.trim();
-  if (explicit) return { baseUrl: trimSlashes3(explicit), source: "explicit" };
+  if (explicit)
+    return { baseUrl: trimSlashes3(explicit), source: "explicit" };
   const sessionBase = (opts.sessionHostedBaseUrl ?? readSession()?.hostedBaseUrl)?.trim();
-  if (sessionBase) return { baseUrl: trimSlashes3(sessionBase), source: "session" };
+  if (sessionBase)
+    return { baseUrl: trimSlashes3(sessionBase), source: "session" };
   const envBase = process.env.GROWTHUB_BASE_URL?.trim();
-  if (envBase) return { baseUrl: trimSlashes3(envBase), source: "env" };
+  if (envBase)
+    return { baseUrl: trimSlashes3(envBase), source: "env" };
   try {
     const config = readConfig(opts.configPath);
     const authNode = config?.auth;
     const configuredBase = authNode?.growthubBaseUrl?.trim();
-    if (configuredBase) return { baseUrl: trimSlashes3(configuredBase), source: "config.growthubBaseUrl" };
+    if (configuredBase)
+      return { baseUrl: trimSlashes3(configuredBase), source: "config.growthubBaseUrl" };
     const portalBase = authNode?.growthubPortalBaseUrl?.trim();
-    if (portalBase) return { baseUrl: trimSlashes3(portalBase), source: "config.growthubPortalBaseUrl" };
+    if (portalBase)
+      return { baseUrl: trimSlashes3(portalBase), source: "config.growthubPortalBaseUrl" };
   } catch {
   }
   return { baseUrl: DEFAULT_HOSTED_BASE_URL2, source: "default" };
@@ -24616,31 +25343,31 @@ function resolveManifestBaseUrl(opts = {}) {
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function assertRecord(value, path71) {
+function assertRecord(value, path75) {
   if (!isRecord(value)) {
-    throw new ManifestMalformedError(`Expected object at \`${path71}\`.`);
+    throw new ManifestMalformedError(`Expected object at \`${path75}\`.`);
   }
   return value;
 }
-function assertArray(value, path71) {
+function assertArray(value, path75) {
   if (!Array.isArray(value)) {
-    throw new ManifestMalformedError(`Expected array at \`${path71}\`.`);
+    throw new ManifestMalformedError(`Expected array at \`${path75}\`.`);
   }
   return value;
 }
-function assertString(value, path71) {
+function assertString(value, path75) {
   if (typeof value !== "string" || value.length === 0) {
-    throw new ManifestMalformedError(`Expected non-empty string at \`${path71}\`.`);
+    throw new ManifestMalformedError(`Expected non-empty string at \`${path75}\`.`);
   }
   return value;
 }
-function normalizeProvenance(value, path71) {
-  const record = assertRecord(value, path71);
-  const originType = assertString(record.originType, `${path71}.originType`);
+function normalizeProvenance(value, path75) {
+  const record = assertRecord(value, path75);
+  const originType = assertString(record.originType, `${path75}.originType`);
   const allowed = ["hosted", "local-extension", "derived-from-workflow"];
   if (!allowed.includes(originType)) {
     throw new ManifestMalformedError(
-      `Unknown provenance originType at \`${path71}.originType\`: ${originType}`
+      `Unknown provenance originType at \`${path75}.originType\`: ${originType}`
     );
   }
   return {
@@ -24704,15 +25431,22 @@ function normalizeEnvelope(raw) {
   };
 }
 function parseContractVersionHeader(raw) {
-  if (raw === null) return null;
+  if (raw === null)
+    return null;
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed)
+    return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 async function fetchCapabilityManifest(opts = {}) {
   const resolvedBaseUrl = resolveManifestBaseUrl(opts);
-  const url = new URL(MANIFEST_PATH, `${resolvedBaseUrl.baseUrl}/`).toString();
+  const url = new URL(MANIFEST_PATH, `${resolvedBaseUrl.baseUrl}/`);
+  if (opts.includeExperimental)
+    url.searchParams.set("include_experimental", "true");
+  if (opts.includeDisabled)
+    url.searchParams.set("include_disabled", "true");
+  const manifestUrl = url.toString();
   const headers = {
     accept: "application/json"
   };
@@ -24725,14 +25459,15 @@ async function fetchCapabilityManifest(opts = {}) {
     }
     if (session) {
       headers.authorization = `Bearer ${session.accessToken}`;
-      if (session.userId) headers["x-user-id"] = session.userId;
+      if (session.userId)
+        headers["x-user-id"] = session.userId;
     }
   }
   const controller = opts.timeoutMs && opts.timeoutMs > 0 ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs) : null;
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetch(manifestUrl, {
       method: "GET",
       headers,
       signal: controller?.signal
@@ -24740,10 +25475,11 @@ async function fetchCapabilityManifest(opts = {}) {
   } catch (err) {
     throw new ManifestEndpointUnavailableError(
       void 0,
-      `Hosted manifest endpoint unreachable (${url}): ${err instanceof Error ? err.message : String(err)}`
+      `Hosted manifest endpoint unreachable (${manifestUrl}): ${err instanceof Error ? err.message : String(err)}`
     );
   } finally {
-    if (timer) clearTimeout(timer);
+    if (timer)
+      clearTimeout(timer);
   }
   if (response.status === 401 || response.status === 403) {
     throw new ManifestUnauthenticatedError(
@@ -24813,13 +25549,15 @@ function parseJsonSafe(text69) {
   }
 }
 function isValidEnvelopeShape(value) {
-  if (typeof value !== "object" || value === null) return false;
+  if (typeof value !== "object" || value === null)
+    return false;
   const record = value;
   return record.version === 1 && typeof record.host === "string" && typeof record.fetchedAt === "string" && typeof record.source === "string" && Array.isArray(record.capabilities);
 }
 function readManifestCache() {
   const filePath = resolveManifestCachePath();
-  if (!fs34.existsSync(filePath)) return null;
+  if (!fs34.existsSync(filePath))
+    return null;
   let text69;
   try {
     text69 = fs34.readFileSync(filePath, "utf-8");
@@ -24827,7 +25565,8 @@ function readManifestCache() {
     return null;
   }
   const parsed = parseJsonSafe(text69);
-  if (!isValidEnvelopeShape(parsed)) return null;
+  if (!isValidEnvelopeShape(parsed))
+    return null;
   return parsed;
 }
 function writeManifestCache(envelope) {
@@ -24871,10 +25610,14 @@ function buildManifestMetadata(baseMetadata, entry) {
   const merged = {
     ...baseMetadata ?? {}
   };
-  if (entry.inputSchema) merged.inputSchema = entry.inputSchema;
-  if (entry.outputSchema) merged.outputSchema = entry.outputSchema;
-  if (entry.providerHints) merged.providerHints = entry.providerHints;
-  if (entry.executionHints) merged.executionHints = entry.executionHints;
+  if (entry.inputSchema)
+    merged.inputSchema = entry.inputSchema;
+  if (entry.outputSchema)
+    merged.outputSchema = entry.outputSchema;
+  if (entry.providerHints)
+    merged.providerHints = entry.providerHints;
+  if (entry.executionHints)
+    merged.executionHints = entry.executionHints;
   merged.__provenance = entry.provenance;
   return merged;
 }
@@ -24911,7 +25654,8 @@ function projectManifestEnvelope(envelope) {
   const seen = /* @__PURE__ */ new Set();
   const nodes = [];
   for (const entry of envelope.capabilities) {
-    if (seen.has(entry.slug)) continue;
+    if (seen.has(entry.slug))
+      continue;
     seen.add(entry.slug);
     nodes.push(projectEntry(entry));
   }
@@ -24982,30 +25726,41 @@ function toCapabilityNode(record) {
 }
 function inferFamilyFromSlug(slug) {
   const normalized = slug.toLowerCase();
-  if (normalized.includes("video")) return "video";
-  if (normalized.includes("image")) return "image";
-  if (normalized.includes("slide")) return "slides";
-  if (normalized.includes("research")) return "research";
-  if (normalized.includes("vision")) return "vision";
-  if (normalized.includes("text") || normalized.includes("llm")) return "text";
-  if (normalized.includes("data")) return "data";
+  if (normalized.includes("video"))
+    return "video";
+  if (normalized.includes("image"))
+    return "image";
+  if (normalized.includes("slide"))
+    return "slides";
+  if (normalized.includes("research"))
+    return "research";
+  if (normalized.includes("vision"))
+    return "vision";
+  if (normalized.includes("text") || normalized.includes("llm"))
+    return "text";
+  if (normalized.includes("data"))
+    return "data";
   return "ops";
 }
 async function deriveCapabilitiesFromHostedWorkflows() {
   const session = readSession();
-  if (!session || isSessionExpired(session)) return [];
+  if (!session || isSessionExpired(session))
+    return [];
   const list = await listHostedWorkflows(session);
   const workflows = list?.workflows ?? [];
-  if (workflows.length === 0) return [];
+  if (workflows.length === 0)
+    return [];
   const bySlug = /* @__PURE__ */ new Map();
   for (const workflow of workflows.slice(0, 50)) {
     const detail = await fetchHostedWorkflow(session, workflow.workflowId);
     const nodes = Array.isArray(detail?.latestVersion?.config?.nodes) ? detail?.latestVersion?.config?.nodes : [];
     for (const node of nodes) {
-      if (node.type !== "cmsNode") continue;
+      if (node.type !== "cmsNode")
+        continue;
       const data = node.data ?? {};
       const slug = typeof data.slug === "string" ? data.slug : null;
-      if (!slug) continue;
+      if (!slug)
+        continue;
       const inputs = data.inputs ?? {};
       if (!bySlug.has(slug)) {
         bySlug.set(slug, {
@@ -25029,21 +25784,32 @@ async function deriveCapabilitiesFromHostedWorkflows() {
   return [...bySlug.values()];
 }
 function matchesQuery(node, query) {
-  if (query.enabledOnly !== false && !node.enabled) return false;
-  if (query.family && node.family !== query.family) return false;
-  if (query.executionKind && node.executionKind !== query.executionKind) return false;
-  if (query.outputType && !node.outputTypes.includes(query.outputType)) return false;
-  if (query.slug && !node.slug.includes(query.slug)) return false;
+  if (query.enabledOnly !== false && !node.enabled)
+    return false;
+  if (query.includeExperimental !== true && node.experimental)
+    return false;
+  if (query.family && node.family !== query.family)
+    return false;
+  if (query.executionKind && node.executionKind !== query.executionKind)
+    return false;
+  if (query.outputType && !node.outputTypes.includes(query.outputType))
+    return false;
+  if (query.slug && !node.slug.includes(query.slug))
+    return false;
   if (query.search) {
     const term = query.search.toLowerCase();
     const haystack = `${node.slug} ${node.displayName} ${node.description ?? ""} ${node.category}`.toLowerCase();
-    if (!haystack.includes(term)) return false;
+    if (!haystack.includes(term))
+      return false;
   }
   return true;
 }
-async function resolveFromManifest() {
+async function resolveFromManifest(query) {
   try {
-    const { envelope } = await fetchCapabilityManifest();
+    const { envelope } = await fetchCapabilityManifest({
+      includeExperimental: query?.includeExperimental === true,
+      includeDisabled: query?.enabledOnly === false
+    });
     writeManifestCache(envelope);
     const projected = projectManifestEnvelope(envelope);
     return {
@@ -25104,7 +25870,7 @@ async function resolveFromLegacy() {
 function createCmsCapabilityRegistryClient() {
   return {
     async listCapabilities(query) {
-      const outcome = await resolveFromManifest();
+      const outcome = await resolveFromManifest(query);
       const nodes = outcome.nodes;
       const enabledCount = nodes.filter((n) => n.enabled).length;
       const filtered = query ? nodes.filter((n) => matchesQuery(n, query)) : nodes;
@@ -25202,7 +25968,8 @@ function createMachineCapabilityResolver() {
       const profile = computeEffectiveProfile();
       const registry = createCmsCapabilityRegistryClient();
       const capability = await registry.getCapability(slug);
-      if (!capability) return null;
+      if (!capability)
+        return null;
       return resolveBinding(capability, profile);
     },
     getMachineContext() {
@@ -25214,7 +25981,8 @@ function createMachineCapabilityResolver() {
 
 // src/runtime/cms-manifest-diff/index.ts
 function stableStringify(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value);
   if (Array.isArray(value)) {
     return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
   }
@@ -25223,18 +25991,21 @@ function stableStringify(value) {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
 }
 function arraysEqual(a, b) {
-  if (a.length !== b.length) return false;
+  if (a.length !== b.length)
+    return false;
   const aSorted = [...a].sort();
   const bSorted = [...b].sort();
   for (let i = 0; i < aSorted.length; i++) {
-    if (aSorted[i] !== bSorted[i]) return false;
+    if (aSorted[i] !== bSorted[i])
+      return false;
   }
   return true;
 }
 function diffInputSchema(prev, next) {
   const prevFields = prev.inputSchema?.fields ?? null;
   const nextFields = next.inputSchema?.fields ?? null;
-  if (prevFields === null && nextFields === null) return null;
+  if (prevFields === null && nextFields === null)
+    return null;
   if (prevFields === null && nextFields !== null) {
     return `input schema introduced (${nextFields.length} field${nextFields.length === 1 ? "" : "s"})`;
   }
@@ -25244,43 +26015,63 @@ function diffInputSchema(prev, next) {
   const prevKeys = new Set((prevFields ?? []).map((f) => f.key));
   const nextKeys = new Set((nextFields ?? []).map((f) => f.key));
   const added = [];
-  for (const key of nextKeys) if (!prevKeys.has(key)) added.push(key);
+  for (const key of nextKeys)
+    if (!prevKeys.has(key))
+      added.push(key);
   const removed = [];
-  for (const key of prevKeys) if (!nextKeys.has(key)) removed.push(key);
+  for (const key of prevKeys)
+    if (!nextKeys.has(key))
+      removed.push(key);
   const changed = [];
   for (const field of nextFields ?? []) {
     const prior = (prevFields ?? []).find((f) => f.key === field.key);
-    if (!prior) continue;
-    if (stableStringify(prior) !== stableStringify(field)) changed.push(field.key);
+    if (!prior)
+      continue;
+    if (stableStringify(prior) !== stableStringify(field))
+      changed.push(field.key);
   }
-  if (added.length === 0 && removed.length === 0 && changed.length === 0) return null;
+  if (added.length === 0 && removed.length === 0 && changed.length === 0)
+    return null;
   const parts = [];
-  if (added.length > 0) parts.push(`+${added.join(", +")}`);
-  if (removed.length > 0) parts.push(`-${removed.join(", -")}`);
-  if (changed.length > 0) parts.push(`~${changed.join(", ~")}`);
+  if (added.length > 0)
+    parts.push(`+${added.join(", +")}`);
+  if (removed.length > 0)
+    parts.push(`-${removed.join(", -")}`);
+  if (changed.length > 0)
+    parts.push(`~${changed.join(", ~")}`);
   return `input schema fields ${parts.join(" ")}`;
 }
 function diffOutputSchema(prev, next) {
   const prevFields = prev.outputSchema?.outputs ?? null;
   const nextFields = next.outputSchema?.outputs ?? null;
-  if (prevFields === null && nextFields === null) return null;
-  if (stableStringify(prevFields) === stableStringify(nextFields)) return null;
+  if (prevFields === null && nextFields === null)
+    return null;
+  if (stableStringify(prevFields) === stableStringify(nextFields))
+    return null;
   const prevKeys = new Set((prevFields ?? []).map((f) => f.key));
   const nextKeys = new Set((nextFields ?? []).map((f) => f.key));
   const added = [];
-  for (const key of nextKeys) if (!prevKeys.has(key)) added.push(key);
+  for (const key of nextKeys)
+    if (!prevKeys.has(key))
+      added.push(key);
   const removed = [];
-  for (const key of prevKeys) if (!nextKeys.has(key)) removed.push(key);
+  for (const key of prevKeys)
+    if (!nextKeys.has(key))
+      removed.push(key);
   const parts = [];
-  if (added.length > 0) parts.push(`+${added.join(", +")}`);
-  if (removed.length > 0) parts.push(`-${removed.join(", -")}`);
-  if (parts.length === 0) parts.push("reshuffled");
+  if (added.length > 0)
+    parts.push(`+${added.join(", +")}`);
+  if (removed.length > 0)
+    parts.push(`-${removed.join(", -")}`);
+  if (parts.length === 0)
+    parts.push("reshuffled");
   return `output schema ${parts.join(" ")}`;
 }
 function diffExecutionTokens(prev, next) {
   const prevTokens = prev.node?.executionTokens;
   const nextTokens = next.node?.executionTokens;
-  if (!prevTokens && !nextTokens) return null;
+  if (!prevTokens && !nextTokens)
+    return null;
   const diffs = [];
   if (prevTokens?.tool_name !== nextTokens?.tool_name) {
     diffs.push(`tool_name ${prevTokens?.tool_name ?? "\u2205"} \u2192 ${nextTokens?.tool_name ?? "\u2205"}`);
@@ -25291,13 +26082,15 @@ function diffExecutionTokens(prev, next) {
   if (stableStringify(prevTokens?.output_mapping ?? {}) !== stableStringify(nextTokens?.output_mapping ?? {})) {
     diffs.push("output_mapping changed");
   }
-  if (diffs.length === 0) return null;
+  if (diffs.length === 0)
+    return null;
   return `execution tokens: ${diffs.join("; ")}`;
 }
 function diffProvenance(prev, next) {
   const prevOrigin = prev.provenance?.originType;
   const nextOrigin = next.provenance?.originType;
-  if (prevOrigin === nextOrigin) return null;
+  if (prevOrigin === nextOrigin)
+    return null;
   return `provenance.originType ${prevOrigin ?? "\u2205"} \u2192 ${nextOrigin ?? "\u2205"}`;
 }
 function diffManifestEnvelopes(prev, next, opts = {}) {
@@ -25306,10 +26099,12 @@ function diffManifestEnvelopes(prev, next, opts = {}) {
   const changeDetails = {};
   const prevBySlug = /* @__PURE__ */ new Map();
   if (prev) {
-    for (const entry of prev.capabilities) prevBySlug.set(entry.slug, entry);
+    for (const entry of prev.capabilities)
+      prevBySlug.set(entry.slug, entry);
   }
   const nextBySlug = /* @__PURE__ */ new Map();
-  for (const entry of next.capabilities) nextBySlug.set(entry.slug, entry);
+  for (const entry of next.capabilities)
+    nextBySlug.set(entry.slug, entry);
   const added = [];
   const removed = [];
   const changed = [];
@@ -25327,7 +26122,8 @@ function diffManifestEnvelopes(prev, next, opts = {}) {
   }
   for (const [slug, nextEntry] of nextBySlug) {
     const prevEntry = prevBySlug.get(slug);
-    if (!prevEntry) continue;
+    if (!prevEntry)
+      continue;
     const slugChanges = [];
     if (prevEntry.family !== nextEntry.family) {
       const description = `family ${prevEntry.family} \u2192 ${nextEntry.family}`;
@@ -25431,13 +26227,17 @@ var FAMILY_CONFIG = {
 };
 function familyBadge(family) {
   const cfg = FAMILY_CONFIG[family];
-  if (!cfg) return family;
+  if (!cfg)
+    return family;
   return cfg.color(`${cfg.emoji} ${cfg.label}`);
 }
 function executionKindLabel(kind) {
-  if (kind === "hosted-execute") return pc33.cyan("hosted");
-  if (kind === "provider-assembly") return pc33.yellow("provider");
-  if (kind === "local-only") return pc33.green("local");
+  if (kind === "hosted-execute")
+    return pc33.cyan("hosted");
+  if (kind === "provider-assembly")
+    return pc33.yellow("provider");
+  if (kind === "local-only")
+    return pc33.green("local");
   return kind;
 }
 function hr5(width = 72) {
@@ -25476,7 +26276,8 @@ function printGroupedCapabilities(nodes) {
 ${header}  ${pc33.dim("(" + groupNodes.length + ")")}`);
     for (const node of groupNodes) {
       const enabledTag = node.enabled ? pc33.green("enabled") : pc33.red("disabled");
-      console.log(`  ${pc33.bold(node.slug)}  ${pc33.dim(node.displayName)}  ${enabledTag}`);
+      const experimentalTag = node.experimental ? `  ${pc33.yellow("experimental")}` : "";
+      console.log(`  ${pc33.bold(node.slug)}  ${pc33.dim(node.displayName)}  ${enabledTag}${experimentalTag}`);
       console.log(`  ${pc33.dim("Execution:")} ${executionKindLabel(node.executionKind)}  ${pc33.dim("Outputs:")} ${pc33.dim(node.outputTypes.join(", "))}`);
       if (node.description) {
         console.log(`  ${pc33.dim(node.description)}`);
@@ -25493,6 +26294,7 @@ function printCapabilityCard(node) {
   const lines = [
     `${iconPrefix}${pc33.bold(node.displayName)}  ${pc33.dim(node.slug)}`,
     `${familyBadge(node.family)}  ${node.enabled ? pc33.green("enabled") : pc33.red("disabled")}`,
+    `${pc33.dim("Experimental:")}     ${node.experimental ? pc33.yellow("true") : pc33.green("false")}`,
     "",
     `${pc33.dim("Category:")}          ${node.category}`,
     `${pc33.dim("Node Type:")}         ${node.nodeType}`,
@@ -25547,7 +26349,8 @@ async function runCapabilityPicker(opts) {
       p22.cancel("Cancelled.");
       process.exit(0);
     }
-    if (familyChoice === "__back_to_hub") return "back";
+    if (familyChoice === "__back_to_hub")
+      return "back";
     const query = familyChoice === "all" ? void 0 : { family: familyChoice };
     let result;
     try {
@@ -25576,9 +26379,11 @@ async function runCapabilityPicker(opts) {
         p22.cancel("Cancelled.");
         process.exit(0);
       }
-      if (capChoice === "__back_to_family") break;
+      if (capChoice === "__back_to_family")
+        break;
       const selected = result.nodes.find((n) => n.slug === capChoice);
-      if (!selected) continue;
+      if (!selected)
+        continue;
       printCapabilityCard(selected);
       const nextStep = await p22.select({
         message: "Next step",
@@ -25591,7 +26396,8 @@ async function runCapabilityPicker(opts) {
         p22.cancel("Cancelled.");
         process.exit(0);
       }
-      if (nextStep === "back_to_caps") continue;
+      if (nextStep === "back_to_caps")
+        continue;
       if (nextStep === "resolve") {
         try {
           const resolver = createMachineCapabilityResolver();
@@ -25620,6 +26426,7 @@ Examples:
   $ growthub capability                     # interactive browser
   $ growthub capability list                # all capabilities grouped by family
   $ growthub capability list --family video # filter by family
+  $ growthub capability list --family video --include-experimental
   $ growthub capability list --json         # machine-readable output
   $ growthub capability inspect video-gen   # inspect a specific capability
   $ growthub capability resolve             # resolve machine bindings for all
@@ -25628,7 +26435,7 @@ Examples:
   cap.action(async () => {
     await runCapabilityPicker({});
   });
-  cap.command("list").description("List all CMS-backed runtime node capabilities").option("--family <family>", "Filter by family (video, image, slides, text, data, ops)").option("--json", "Output raw JSON for scripting").action(async (opts) => {
+  cap.command("list").description("List all CMS-backed runtime node capabilities").option("--family <family>", "Filter by family (video, image, slides, text, data, ops)").option("--include-experimental", "Include experimental/admin-hidden capabilities").option("--json", "Output raw JSON for scripting").action(async (opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
       console.error(pc33.red(`${access.reason}.`));
@@ -25636,7 +26443,7 @@ Examples:
       return;
     }
     const registry = createCmsCapabilityRegistryClient();
-    const query = opts.family ? { family: opts.family } : void 0;
+    const query = opts.family ? { family: opts.family, includeExperimental: opts.includeExperimental === true } : { includeExperimental: opts.includeExperimental === true };
     try {
       const { nodes, meta } = await registry.listCapabilities(query);
       if (opts.json) {
@@ -25657,7 +26464,7 @@ Examples:
       process.exitCode = 1;
     }
   });
-  cap.command("inspect").description("Inspect a specific CMS capability node").argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')").option("--json", "Output raw JSON").action(async (slug, opts) => {
+  cap.command("inspect").description("Inspect a specific CMS capability node").argument("<slug>", "Capability slug (e.g. 'video-gen', 'text-gen')").option("--include-experimental", "Include experimental/admin-hidden capabilities").option("--json", "Output raw JSON").action(async (slug, opts) => {
     const access = getWorkflowAccess();
     if (access.state !== "ready") {
       console.error(pc33.red(`${access.reason}.`));
@@ -25666,7 +26473,12 @@ Examples:
     }
     const registry = createCmsCapabilityRegistryClient();
     try {
-      const node = await registry.getCapability(slug);
+      const { nodes } = await registry.listCapabilities({
+        slug,
+        enabledOnly: false,
+        includeExperimental: opts.includeExperimental === true
+      });
+      const node = nodes.find((candidate) => candidate.slug === slug) ?? null;
       if (!node) {
         console.error(pc33.red(`Unknown capability: "${slug}".`) + pc33.dim(" Run `growthub capability list` to browse."));
         process.exitCode = 1;
@@ -25920,8 +26732,8 @@ function printRefreshSummary(args) {
 // src/commands/pipeline.ts
 init_session_store();
 init_hosted_client();
-import fs38 from "node:fs";
-import path46 from "node:path";
+import fs39 from "node:fs";
+import path47 from "node:path";
 import * as p23 from "@clack/prompts";
 import pc35 from "picocolors";
 
@@ -26076,12 +26888,15 @@ function detectCycle(nodes) {
   const visited = /* @__PURE__ */ new Set();
   const inStack = /* @__PURE__ */ new Set();
   function dfs(nodeId) {
-    if (inStack.has(nodeId)) return true;
-    if (visited.has(nodeId)) return false;
+    if (inStack.has(nodeId))
+      return true;
+    if (visited.has(nodeId))
+      return false;
     visited.add(nodeId);
     inStack.add(nodeId);
     for (const upstream of adjacency.get(nodeId) ?? []) {
-      if (dfs(upstream)) return true;
+      if (dfs(upstream))
+        return true;
     }
     inStack.delete(nodeId);
     return false;
@@ -26099,15 +26914,21 @@ function detectCycle(nodes) {
 
 // src/runtime/cms-node-contracts/introspect.ts
 function toFieldType(value) {
-  if (Array.isArray(value)) return "array";
-  if (typeof value === "string") return "string";
-  if (typeof value === "number") return "number";
-  if (typeof value === "boolean") return "boolean";
-  if (value && typeof value === "object") return "object";
+  if (Array.isArray(value))
+    return "array";
+  if (typeof value === "string")
+    return "string";
+  if (typeof value === "number")
+    return "number";
+  if (typeof value === "boolean")
+    return "boolean";
+  if (value && typeof value === "object")
+    return "object";
   return "unknown";
 }
 function outputTypeFromSchema(value) {
-  if (typeof value === "string") return value;
+  if (typeof value === "string")
+    return value;
   if (value && typeof value === "object" && typeof value.type === "string") {
     return value.type;
   }
@@ -26148,9 +26969,11 @@ function projectHostedInputField(field) {
 }
 function extractHostedInputSchema(node) {
   const schema = node.manifestMetadata?.inputSchema;
-  if (!schema || typeof schema !== "object") return null;
+  if (!schema || typeof schema !== "object")
+    return null;
   const fields = schema.fields;
-  if (!Array.isArray(fields)) return null;
+  if (!Array.isArray(fields))
+    return null;
   return schema;
 }
 function introspectNodeContract(node) {
@@ -26208,19 +27031,24 @@ function sanitizeValue(value) {
   return value;
 }
 function coerceValue(value, templateValue) {
-  if (templateValue === void 0) return value;
+  if (templateValue === void 0)
+    return value;
   if (typeof templateValue === "number") {
-    if (typeof value === "number") return value;
+    if (typeof value === "number")
+      return value;
     if (typeof value === "string" && value.trim().length > 0 && !Number.isNaN(Number(value))) {
       return Number(value);
     }
     return templateValue;
   }
   if (typeof templateValue === "boolean") {
-    if (typeof value === "boolean") return value;
+    if (typeof value === "boolean")
+      return value;
     if (typeof value === "string") {
-      if (value.toLowerCase() === "true") return true;
-      if (value.toLowerCase() === "false") return false;
+      if (value.toLowerCase() === "true")
+        return true;
+      if (value.toLowerCase() === "false")
+        return false;
     }
     return templateValue;
   }
@@ -26228,7 +27056,8 @@ function coerceValue(value, templateValue) {
     return Array.isArray(value) ? value : templateValue;
   }
   if (templateValue && typeof templateValue === "object") {
-    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    if (value && typeof value === "object" && !Array.isArray(value))
+      return value;
     return templateValue;
   }
   return value;
@@ -26246,9 +27075,12 @@ function normalizeNodeBindings(rawBindings, node) {
     const sanitized = sanitizeValue(rawValue);
     const coerced = coerceValue(sanitized, templateValue);
     merged[key] = coerced;
-    if (hasIncoming) providedCount += 1;
-    if (!hasIncoming) defaultedCount += 1;
-    if (sanitized !== rawValue || coerced !== sanitized) normalizedCount += 1;
+    if (hasIncoming)
+      providedCount += 1;
+    if (!hasIncoming)
+      defaultedCount += 1;
+    if (sanitized !== rawValue || coerced !== sanitized)
+      normalizedCount += 1;
   }
   for (const [key, value] of Object.entries(incoming)) {
     if (!(key in merged)) {
@@ -26268,7 +27100,8 @@ function validateNodeBindings(normalizedBindings, node) {
   const missingRequiredInputs = [];
   const missingRequiredBindings = [];
   for (const input of contract.inputs) {
-    if (!input.required) continue;
+    if (!input.required)
+      continue;
     const value = normalizedBindings[input.key];
     if (value === void 0 || value === null || value === "") {
       missingRequiredInputs.push(input.key);
@@ -26426,7 +27259,8 @@ function buildPreExecutionSummary(input) {
     ...input.pipeline,
     nodes: input.pipeline.nodes.map((node) => {
       const capability = input.registryBySlug.get(node.slug);
-      if (!capability) return node;
+      if (!capability)
+        return node;
       const normalized = normalizeNodeBindings(node.bindings, capability);
       return { ...node, bindings: normalized.bindings };
     })
@@ -26489,7 +27323,8 @@ function resolveArtifactManifestPath(artifactId) {
 }
 function readLocalManifest(artifactId) {
   const filePath = resolveArtifactManifestPath(artifactId);
-  if (!fs35.existsSync(filePath)) return null;
+  if (!fs35.existsSync(filePath))
+    return null;
   try {
     return JSON.parse(fs35.readFileSync(filePath, "utf-8"));
   } catch {
@@ -26505,7 +27340,8 @@ function writeLocalManifest(manifest) {
 }
 function listLocalManifests() {
   const dir = resolveArtifactsDir();
-  if (!fs35.existsSync(dir)) return [];
+  if (!fs35.existsSync(dir))
+    return [];
   return fs35.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => {
     try {
       const content = fs35.readFileSync(path43.resolve(dir, entry.name), "utf-8");
@@ -26516,12 +27352,18 @@ function listLocalManifests() {
   }).filter((m) => m !== null).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 }
 function matchesQuery2(manifest, query) {
-  if (query.artifactType && manifest.artifactType !== query.artifactType) return false;
-  if (query.pipelineId && manifest.pipelineId !== query.pipelineId) return false;
-  if (query.sourceNodeSlug && manifest.sourceNodeSlug !== query.sourceNodeSlug) return false;
-  if (query.executionContext && manifest.executionContext !== query.executionContext) return false;
-  if (query.status && manifest.status !== query.status) return false;
-  if (query.threadId && manifest.threadId !== query.threadId) return false;
+  if (query.artifactType && manifest.artifactType !== query.artifactType)
+    return false;
+  if (query.pipelineId && manifest.pipelineId !== query.pipelineId)
+    return false;
+  if (query.sourceNodeSlug && manifest.sourceNodeSlug !== query.sourceNodeSlug)
+    return false;
+  if (query.executionContext && manifest.executionContext !== query.executionContext)
+    return false;
+  if (query.status && manifest.status !== query.status)
+    return false;
+  if (query.threadId && manifest.threadId !== query.threadId)
+    return false;
   return true;
 }
 function createArtifactManifest(input) {
@@ -26568,7 +27410,8 @@ function createArtifactStore() {
     },
     update(artifactId, patch) {
       const existing = readLocalManifest(artifactId);
-      if (!existing) return null;
+      if (!existing)
+        return null;
       const updated = {
         ...existing,
         ...patch.status !== void 0 ? { status: patch.status } : {},
@@ -26584,10 +27427,196 @@ function createArtifactStore() {
   };
 }
 
+// src/runtime/execution-results/index.ts
+init_home();
+import fs36 from "node:fs";
+import path44 from "node:path";
+function resolveExecutionResultsDir() {
+  return path44.resolve(resolvePaperclipHomeDir(), "execution-results");
+}
+function resolveExecutionResultPath(executionId) {
+  return path44.resolve(resolveExecutionResultsDir(), `${sanitizeCacheKey(executionId)}.json`);
+}
+function sanitizeCacheKey(value) {
+  return value.replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
+function writeJsonAtomic(filePath, value) {
+  fs36.mkdirSync(path44.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.${process.pid}.tmp`;
+  fs36.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}
+`, { mode: 384 });
+  fs36.renameSync(tempPath, filePath);
+}
+function readJson(filePath) {
+  if (!fs36.existsSync(filePath))
+    return null;
+  try {
+    return JSON.parse(fs36.readFileSync(filePath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function initialResult(input) {
+  const cacheKey = input.workflowId?.trim() || input.threadId?.trim() || input.pipelineId;
+  return {
+    executionId: cacheKey,
+    threadId: input.threadId,
+    pipelineId: input.pipelineId,
+    status: "running",
+    nodeResults: Object.fromEntries(
+      input.nodes.map((node) => [
+        node.nodeId,
+        {
+          nodeId: node.nodeId,
+          slug: node.slug,
+          status: "pending"
+        }
+      ])
+    ),
+    artifacts: [],
+    startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    cacheKey,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function artifactRefsFromNodeResult(nodeResult) {
+  const output = nodeResult.output;
+  if (!output || typeof output !== "object")
+    return [];
+  const refs = [];
+  const directStoragePath = stringValue2(output.storagePath) ?? stringValue2(output.storage_path);
+  const directUrl = stringValue2(output.videoUrl) ?? stringValue2(output.url);
+  if (directStoragePath || directUrl) {
+    refs.push({
+      artifactId: directStoragePath ?? `${nodeResult.nodeId}-artifact`,
+      artifactType: inferArtifactType(output, directStoragePath, directUrl),
+      nodeId: nodeResult.nodeId,
+      url: directUrl,
+      storagePath: directStoragePath,
+      metadata: output
+    });
+  }
+  const videos = Array.isArray(output.videos) ? output.videos : [];
+  for (const video of videos) {
+    if (!video || typeof video !== "object")
+      continue;
+    const record = video;
+    const storagePath = stringValue2(record.storagePath) ?? stringValue2(record.storage_path);
+    const url = stringValue2(record.videoUrl) ?? stringValue2(record.url);
+    refs.push({
+      artifactId: storagePath ?? `${nodeResult.nodeId}-video-${refs.length + 1}`,
+      artifactType: "video",
+      nodeId: nodeResult.nodeId,
+      url,
+      storagePath,
+      metadata: record
+    });
+  }
+  return dedupeArtifactRefs(refs);
+}
+function stringValue2(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
+}
+function inferArtifactType(output, storagePath, url) {
+  const hinted = stringValue2(output.type) ?? stringValue2(output.artifactType);
+  if (hinted)
+    return hinted;
+  const candidate = `${storagePath ?? ""} ${url ?? ""}`.toLowerCase();
+  if (candidate.match(/\.(mp4|mov|webm|mkv|m4v)(\?|$)/) || output.videoUrl)
+    return "video";
+  if (candidate.match(/\.(png|jpg|jpeg|gif|webp)(\?|$)/))
+    return "image";
+  return "file";
+}
+function dedupeArtifactRefs(refs) {
+  const seen = /* @__PURE__ */ new Set();
+  const deduped = [];
+  for (const ref of refs) {
+    const key = ref.storagePath ?? ref.url ?? ref.artifactId;
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    deduped.push(ref);
+  }
+  return deduped;
+}
+function mergeArtifactRefs(result) {
+  return dedupeArtifactRefs([
+    ...result.artifacts,
+    ...Object.values(result.nodeResults).flatMap((nodeResult) => artifactRefsFromNodeResult(nodeResult))
+  ]);
+}
+function createExecutionResultCache(input) {
+  let result = initialResult(input);
+  let currentPath = resolveExecutionResultPath(result.executionId);
+  writeJsonAtomic(currentPath, result);
+  const persist = () => {
+    result.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    result.artifacts = mergeArtifactRefs(result);
+    currentPath = resolveExecutionResultPath(result.executionId);
+    writeJsonAtomic(currentPath, result);
+  };
+  return {
+    handleEvent(event) {
+      if (typeof event.executionId === "string" && event.executionId.trim()) {
+        result.executionId = event.executionId.trim();
+      }
+      if (event.nodeId) {
+        const current = result.nodeResults[event.nodeId] ?? {
+          nodeId: event.nodeId,
+          slug: event.nodeId,
+          status: "pending"
+        };
+        if (event.type === "node_start") {
+          current.status = "running";
+        } else if (event.type === "node_complete") {
+          current.status = "succeeded";
+          current.output = event.output;
+        } else if (event.type === "node_error") {
+          current.status = "failed";
+          current.error = event.error;
+        }
+        result.nodeResults[event.nodeId] = current;
+      }
+      if (event.type === "complete" && Array.isArray(event.executionLog)) {
+        result.executionLog = event.executionLog;
+        result.status = "succeeded";
+        result.completedAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
+      if (event.type === "error") {
+        result.status = "failed";
+        result.completedAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
+      persist();
+    },
+    saveFinal(finalResult) {
+      result = {
+        ...finalResult,
+        pipelineId: input.pipelineId,
+        artifacts: dedupeArtifactRefs([...finalResult.artifacts, ...mergeArtifactRefs(result)]),
+        cacheKey: result.cacheKey,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      currentPath = resolveExecutionResultPath(result.executionId);
+      writeJsonAtomic(currentPath, result);
+      return result;
+    },
+    getPath() {
+      return currentPath;
+    }
+  };
+}
+function readExecutionResult(executionId) {
+  const raw = readJson(resolveExecutionResultPath(executionId));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return null;
+  return raw;
+}
+
 // src/runtime/native-intelligence/index.ts
 init_home();
-import fs37 from "node:fs";
-import path45 from "node:path";
+import fs38 from "node:fs";
+import path46 from "node:path";
 
 // src/runtime/native-intelligence/contract.ts
 var DEFAULT_INTELLIGENCE_CONFIG = {
@@ -26601,8 +27630,10 @@ var DEFAULT_INTELLIGENCE_CONFIG = {
 
 // src/runtime/native-intelligence/provider.ts
 function resolveProviderType(config) {
-  if (config.providerType) return config.providerType;
-  if (config.backendType === "local") return "local";
+  if (config.providerType)
+    return config.providerType;
+  if (config.backendType === "local")
+    return "local";
   return "local";
 }
 function createClaudeBackend(config) {
@@ -26760,9 +27791,12 @@ function createOpenRouterBackend(config) {
 }
 function createNativeIntelligenceBackend(config) {
   const providerType = resolveProviderType(config);
-  if (providerType === "claude") return createClaudeBackend(config);
-  if (providerType === "gemini") return createGeminiBackend(config);
-  if (providerType === "openrouter") return createOpenRouterBackend(config);
+  if (providerType === "claude")
+    return createClaudeBackend(config);
+  if (providerType === "gemini")
+    return createGeminiBackend(config);
+  if (providerType === "openrouter")
+    return createOpenRouterBackend(config);
   return {
     async complete(input) {
       const startMs = Date.now();
@@ -26835,7 +27869,8 @@ function createNativeIntelligenceBackend(config) {
               break;
             }
           }
-          if (result) break;
+          if (result)
+            break;
         }
         if (!result) {
           throw lastError ?? new NativeIntelligenceBackendError(502, "Model backend returned no response.");
@@ -26879,7 +27914,8 @@ function resolveModelCandidates(config) {
 function resolveEndpointCandidates(config) {
   const primary = config.endpoint;
   const candidates = [primary];
-  if (config.backendType !== "local") return candidates;
+  if (config.backendType !== "local")
+    return candidates;
   const normalized = primary.toLowerCase();
   if ((normalized.includes("localhost:8080") || normalized.includes("127.0.0.1:8080")) && !candidates.includes("http://127.0.0.1:11434/v1/chat/completions")) {
     candidates.push("http://127.0.0.1:11434/v1/chat/completions");
@@ -26888,16 +27924,20 @@ function resolveEndpointCandidates(config) {
 }
 function shouldTryNextModel(status, errorText4, attemptedModel, config, candidates) {
   const hasNextCandidate = candidates[candidates.length - 1] !== attemptedModel;
-  if (!hasNextCandidate) return false;
-  if (config.backendType !== "local") return false;
+  if (!hasNextCandidate)
+    return false;
+  if (config.backendType !== "local")
+    return false;
   const normalizedError = errorText4.toLowerCase();
   return status === 404 || normalizedError.includes("model") && normalizedError.includes("not found");
 }
 function extractCompletionText(response) {
   if (response.choices && response.choices.length > 0) {
     const choice = response.choices[0];
-    if (choice.message?.content) return choice.message.content;
-    if (choice.text) return choice.text;
+    if (choice.message?.content)
+      return choice.message.content;
+    if (choice.text)
+      return choice.text;
   }
   throw new NativeIntelligenceBackendError(
     502,
@@ -27242,7 +28282,8 @@ function buildDeterministicNormalization(input) {
     }
   }
   for (const [key, value] of Object.entries(rawBindings)) {
-    if (contract.inputs.some((i) => i.key === key)) continue;
+    if (contract.inputs.some((i) => i.key === key))
+      continue;
     normalizedBindings[key] = value;
     fields.push({
       key,
@@ -27261,9 +28302,11 @@ function buildDeterministicNormalization(input) {
   };
 }
 function isPlaceholderValue(value) {
-  if (typeof value !== "string") return false;
+  if (typeof value !== "string")
+    return false;
   const normalized = value.trim().toLowerCase();
-  if (!normalized) return true;
+  if (!normalized)
+    return true;
   return normalized.startsWith("enter ") || normalized.startsWith("select ") || normalized === "placeholder" || normalized === "todo" || normalized === "tbd" || normalized === "n/a" || normalized === "none" || normalized === "your_" || normalized.startsWith("your_") || normalized.startsWith("<") && normalized.endsWith(">");
 }
 function coerceToFieldType(value, targetType) {
@@ -27275,20 +28318,24 @@ function coerceToFieldType(value, targetType) {
   }
   if (targetType === "boolean" && typeof value === "string") {
     const lower = value.trim().toLowerCase();
-    if (lower === "true" || lower === "yes" || lower === "1") return true;
-    if (lower === "false" || lower === "no" || lower === "0") return false;
+    if (lower === "true" || lower === "yes" || lower === "1")
+      return true;
+    if (lower === "false" || lower === "no" || lower === "0")
+      return false;
   }
   if (targetType === "array" && typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed))
+        return parsed;
     } catch {
     }
   }
   if (targetType === "object" && typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        return parsed;
     } catch {
     }
   }
@@ -27320,7 +28367,8 @@ function toNormalizationResult(raw, input) {
   const fields = [];
   if (Array.isArray(raw.fields)) {
     for (const f of raw.fields) {
-      if (typeof f.key !== "string") continue;
+      if (typeof f.key !== "string")
+        continue;
       const action = validateAction(f.action);
       normalizedBindings[f.key] = f.normalizedValue ?? f.originalValue ?? input.rawBindings[f.key];
       fields.push({
@@ -27517,19 +28565,26 @@ function scoreWorkflowMatch(workflow, intentTokens, intentLower) {
   const descLower = (workflow.description ?? "").toLowerCase();
   const slugsLower = workflow.nodeSlugs.map((s) => s.toLowerCase()).join(" ");
   for (const token of intentTokens) {
-    if (nameLower.includes(token)) score += 2;
-    if (descLower.includes(token)) score += 1;
-    if (slugsLower.includes(token)) score += 1.5;
+    if (nameLower.includes(token))
+      score += 2;
+    if (descLower.includes(token))
+      score += 1;
+    if (slugsLower.includes(token))
+      score += 1.5;
   }
   for (const slug of workflow.nodeSlugs) {
     if (intentLower.includes(slug.toLowerCase())) {
       score += 2;
     }
   }
-  if (workflow.label === "canonical") score += 2;
-  if (workflow.label === "experimental") score += 0.5;
-  if (workflow.label === "archived") score -= 3;
-  if (workflow.versionCount >= 3) score += 1;
+  if (workflow.label === "canonical")
+    score += 2;
+  if (workflow.label === "experimental")
+    score += 0.5;
+  if (workflow.label === "archived")
+    score -= 3;
+  if (workflow.versionCount >= 3)
+    score += 1;
   return score;
 }
 function scoreContractMatch(contract, intentTokens, intentLower) {
@@ -27538,9 +28593,12 @@ function scoreContractMatch(contract, intentTokens, intentLower) {
   const nameLower = contract.displayName.toLowerCase();
   const familyLower = contract.family.toLowerCase();
   for (const token of intentTokens) {
-    if (slugLower.includes(token)) score += 2;
-    if (nameLower.includes(token)) score += 2;
-    if (familyLower.includes(token)) score += 1;
+    if (slugLower.includes(token))
+      score += 2;
+    if (nameLower.includes(token))
+      score += 2;
+    if (familyLower.includes(token))
+      score += 1;
   }
   for (const outputType of contract.outputTypes) {
     if (intentLower.includes(outputType.toLowerCase())) {
@@ -27674,10 +28732,14 @@ function buildDeterministicPlan(input) {
   const usedSlugs = /* @__PURE__ */ new Set();
   const warnings = [];
   for (const { contract, score } of scoredContracts) {
-    if (selectedNodes.length >= maxNodes) break;
-    if (score <= 0) break;
-    if (usedSlugs.has(contract.slug)) continue;
-    if (constraints?.avoidSlugs?.includes(contract.slug)) continue;
+    if (selectedNodes.length >= maxNodes)
+      break;
+    if (score <= 0)
+      break;
+    if (usedSlugs.has(contract.slug))
+      continue;
+    if (constraints?.avoidSlugs?.includes(contract.slug))
+      continue;
     const suggestedBindings = {};
     for (const field of contract.inputs) {
       suggestedBindings[field.key] = field.defaultValue ?? "";
@@ -27729,20 +28791,26 @@ function scoreContract(contract, intentTokens, intentLower, constraints) {
   const nameLower = contract.displayName.toLowerCase();
   const familyLower = contract.family.toLowerCase();
   for (const token of intentTokens) {
-    if (slugLower.includes(token)) score += 2;
-    if (nameLower.includes(token)) score += 2;
-    if (familyLower.includes(token)) score += 1;
+    if (slugLower.includes(token))
+      score += 2;
+    if (nameLower.includes(token))
+      score += 2;
+    if (familyLower.includes(token))
+      score += 1;
   }
   if (constraints?.requiredOutputTypes) {
     for (const requiredType of constraints.requiredOutputTypes) {
-      if (contract.outputTypes.includes(requiredType)) score += 3;
+      if (contract.outputTypes.includes(requiredType))
+        score += 3;
     }
   }
   if (constraints?.preferredFamilies) {
-    if (constraints.preferredFamilies.includes(contract.family)) score += 2;
+    if (constraints.preferredFamilies.includes(contract.family))
+      score += 2;
   }
   for (const outType of contract.outputTypes) {
-    if (intentLower.includes(outType.toLowerCase())) score += 1.5;
+    if (intentLower.includes(outType.toLowerCase()))
+      score += 1.5;
   }
   return score;
 }
@@ -27750,15 +28818,19 @@ function findBestExistingWorkflow(workflows, intentTokens, intentLower) {
   let best = null;
   let bestScore = 0;
   for (const wf of workflows) {
-    if (wf.label === "archived") continue;
+    if (wf.label === "archived")
+      continue;
     let score = 0;
     const nameLower = wf.name.toLowerCase();
     const slugsLower = wf.nodeSlugs.join(" ").toLowerCase();
     for (const token of intentTokens) {
-      if (nameLower.includes(token)) score += 2;
-      if (slugsLower.includes(token)) score += 1.5;
+      if (nameLower.includes(token))
+        score += 2;
+      if (slugsLower.includes(token))
+        score += 1.5;
     }
-    if (wf.label === "canonical") score += 1;
+    if (wf.label === "canonical")
+      score += 1;
     if (score > bestScore) {
       bestScore = score;
       best = wf;
@@ -27786,7 +28858,8 @@ function buildPlannerPrompt(input) {
   ];
   if (constraints) {
     sections.push("", "Constraints:");
-    if (constraints.maxNodes) sections.push(`  Max Nodes: ${constraints.maxNodes}`);
+    if (constraints.maxNodes)
+      sections.push(`  Max Nodes: ${constraints.maxNodes}`);
     if (constraints.requiredOutputTypes?.length) {
       sections.push(`  Required Output Types: ${constraints.requiredOutputTypes.join(", ")}`);
     }
@@ -27820,7 +28893,8 @@ function validatePlanningResult(raw, input) {
   const warnings = Array.isArray(raw.warnings) ? [...raw.warnings] : [];
   if (Array.isArray(raw.proposedNodes)) {
     for (const node of raw.proposedNodes) {
-      if (typeof node.slug !== "string") continue;
+      if (typeof node.slug !== "string")
+        continue;
       if (!availableSlugs.has(node.slug)) {
         warnings.push(`Proposed node slug "${node.slug}" is not in the available contracts \u2014 skipped.`);
         continue;
@@ -27858,8 +28932,8 @@ function parseJsonSafe5(text69) {
 }
 
 // src/runtime/native-intelligence/marketing-context-builder.ts
-import fs36 from "node:fs";
-import path44 from "node:path";
+import fs37 from "node:fs";
+import path45 from "node:path";
 var CONTEXT_BUILDER_SYSTEM_PROMPT = `You are a marketing strategist drafting a product-marketing-context document.
 
 You receive project artifacts (README content, package.json metadata, any landing page content) and produce a structured product-marketing-context.md with 12 sections.
@@ -27878,17 +28952,17 @@ var MAX_ARTIFACT_LENGTH = 8e3;
 function scanProjectArtifacts(projectDir, existingContext) {
   const artifacts = { otherFiles: [] };
   for (const name of ["README.md", "readme.md", "Readme.md", "README"]) {
-    const readmePath = path44.join(projectDir, name);
-    if (fs36.existsSync(readmePath)) {
-      const content = fs36.readFileSync(readmePath, "utf-8");
+    const readmePath = path45.join(projectDir, name);
+    if (fs37.existsSync(readmePath)) {
+      const content = fs37.readFileSync(readmePath, "utf-8");
       artifacts.readme = content.slice(0, MAX_ARTIFACT_LENGTH);
       break;
     }
   }
-  const pkgPath = path44.join(projectDir, "package.json");
-  if (fs36.existsSync(pkgPath)) {
+  const pkgPath = path45.join(projectDir, "package.json");
+  if (fs37.existsSync(pkgPath)) {
     try {
-      artifacts.packageJson = JSON.parse(fs36.readFileSync(pkgPath, "utf-8"));
+      artifacts.packageJson = JSON.parse(fs37.readFileSync(pkgPath, "utf-8"));
     } catch {
     }
   }
@@ -27900,15 +28974,15 @@ function scanProjectArtifacts(projectDir, existingContext) {
       ".claude/product-marketing-context.md",
       "brands/_template/product-marketing-context.md"
     ]) {
-      const ctxPath = path44.join(projectDir, candidate);
-      if (fs36.existsSync(ctxPath)) {
-        artifacts.existingContext = fs36.readFileSync(ctxPath, "utf-8");
+      const ctxPath = path45.join(projectDir, candidate);
+      if (fs37.existsSync(ctxPath)) {
+        artifacts.existingContext = fs37.readFileSync(ctxPath, "utf-8");
         break;
       }
     }
   }
   for (const name of ["CONTRIBUTING.md", "AGENTS.md", "landing-page.md", "about.md"]) {
-    if (fs36.existsSync(path44.join(projectDir, name))) {
+    if (fs37.existsSync(path45.join(projectDir, name))) {
       artifacts.otherFiles.push(name);
     }
   }
@@ -27919,11 +28993,16 @@ async function buildMarketingContext(input, backend) {
   const userPrompt = buildPromptFromArtifacts(artifacts);
   const sourcesUsed = [];
   const sourcesMissing = [];
-  if (artifacts.readme) sourcesUsed.push("README.md");
-  else sourcesMissing.push("README.md");
-  if (artifacts.packageJson) sourcesUsed.push("package.json");
-  else sourcesMissing.push("package.json");
-  if (artifacts.existingContext) sourcesUsed.push("existing product-marketing-context");
+  if (artifacts.readme)
+    sourcesUsed.push("README.md");
+  else
+    sourcesMissing.push("README.md");
+  if (artifacts.packageJson)
+    sourcesUsed.push("package.json");
+  else
+    sourcesMissing.push("package.json");
+  if (artifacts.existingContext)
+    sourcesUsed.push("existing product-marketing-context");
   try {
     const completion = await backend.complete({
       systemPrompt: CONTEXT_BUILDER_SYSTEM_PROMPT,
@@ -27950,10 +29029,14 @@ function buildDeterministicContext(input) {
   const artifacts = scanProjectArtifacts(input.projectDir, input.existingContext);
   const sourcesUsed = [];
   const sourcesMissing = [];
-  if (artifacts.readme) sourcesUsed.push("README.md");
-  else sourcesMissing.push("README.md");
-  if (artifacts.packageJson) sourcesUsed.push("package.json");
-  else sourcesMissing.push("package.json");
+  if (artifacts.readme)
+    sourcesUsed.push("README.md");
+  else
+    sourcesMissing.push("README.md");
+  if (artifacts.packageJson)
+    sourcesUsed.push("package.json");
+  else
+    sourcesMissing.push("package.json");
   const pkg = artifacts.packageJson ?? {};
   const name = pkg.name ?? "[NEEDS INPUT]";
   const description = pkg.description ?? extractFirstLine(artifacts.readme) ?? "[NEEDS INPUT]";
@@ -28128,7 +29211,8 @@ function buildPromptFromArtifacts(artifacts) {
   return sections.join("\n");
 }
 function extractFirstLine(text69) {
-  if (!text69) return void 0;
+  if (!text69)
+    return void 0;
   const lines = text69.split("\n").filter((l) => l.trim().length > 0 && !l.startsWith("#"));
   return lines[0]?.trim();
 }
@@ -28149,15 +29233,15 @@ function cleanMarkdownResponse(text69) {
 
 // src/runtime/native-intelligence/index.ts
 function resolveConfigPath2() {
-  return path45.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
+  return path46.resolve(resolvePaperclipHomeDir(), "native-intelligence", "config.json");
 }
 function readIntelligenceConfig() {
   const configPath = resolveConfigPath2();
-  if (!fs37.existsSync(configPath)) {
+  if (!fs38.existsSync(configPath)) {
     return { ...DEFAULT_INTELLIGENCE_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs37.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs38.readFileSync(configPath, "utf-8"));
     return {
       modelId: validateModelId(raw.modelId),
       backendType: raw.backendType === "hosted" ? "hosted" : "local",
@@ -28174,12 +29258,13 @@ function readIntelligenceConfig() {
 }
 function writeIntelligenceConfig(config) {
   const configPath = resolveConfigPath2();
-  fs37.mkdirSync(path45.dirname(configPath), { recursive: true });
-  fs37.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
+  fs38.mkdirSync(path46.dirname(configPath), { recursive: true });
+  fs38.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
 `, "utf-8");
 }
 function validateModelId(id) {
-  if (id === "gemma3" || id === "gemma3n" || id === "codegemma") return id;
+  if (id === "gemma3" || id === "gemma3n" || id === "codegemma")
+    return id;
   return "gemma3";
 }
 function createNativeIntelligenceProvider(configOverride) {
@@ -28259,7 +29344,8 @@ async function runPipelineAssembler(opts) {
       p23.cancel("Cancelled.");
       process.exit(0);
     }
-    if (entryChoice === "__back_to_hub") return "back";
+    if (entryChoice === "__back_to_hub")
+      return "back";
   } else {
     p23.note("Execution mode is fixed to hosted for Dynamic Pipelines.", "Hosted only");
   }
@@ -28324,9 +29410,11 @@ async function runPipelineAssembler(opts) {
         p23.cancel("Cancelled.");
         process.exit(0);
       }
-      if (capChoice === "__back") continue;
+      if (capChoice === "__back")
+        continue;
       const cap = capabilities.find((c) => c.slug === capChoice);
-      if (!cap) continue;
+      if (!cap)
+        continue;
       const bindings = {};
       for (const bindingKey of cap.requiredBindings) {
         const value = await p23.text({
@@ -28436,7 +29524,8 @@ async function runPipelineAssembler(opts) {
         message: `Save hosted workflow "${workflowName}"?`,
         initialValue: true
       });
-      if (p23.isCancel(confirmed) || !confirmed) continue;
+      if (p23.isCancel(confirmed) || !confirmed)
+        continue;
       try {
         const saveResult = await saveHostedWorkflow(session, {
           name: workflowName,
@@ -28488,13 +29577,14 @@ async function runPipelineAssembler(opts) {
         message: "Execute this pipeline through the hosted runtime?",
         initialValue: false
       });
-      if (p23.isCancel(confirmed) || !confirmed) continue;
+      if (p23.isCancel(confirmed) || !confirmed)
+        continue;
       try {
         const executionClient = createHostedExecutionClient();
         const pipeline2 = builder.build();
         const pkg = await builder.package();
         p23.log.info(`Executing pipeline ${pc35.bold(pipeline2.pipelineId)} (${pkg.executionRoute})...`);
-        const result = await executionClient.executeWorkflow({
+        const executionInput = {
           pipelineId: pipeline2.pipelineId,
           threadId: pipeline2.threadId,
           nodes: pipeline2.nodes.map((n) => ({
@@ -28505,11 +29595,19 @@ async function runPipelineAssembler(opts) {
           })),
           executionMode: pipeline2.executionMode,
           metadata: pipeline2.metadata
+        };
+        const resultCache = createExecutionResultCache(executionInput);
+        const result = await executionClient.executeWorkflow(executionInput, {
+          onEvent: async (event) => {
+            resultCache.handleEvent(event);
+          }
         });
-        p23.log.success(`Execution ${pc35.bold(result.executionId)}: ${result.status}`);
+        const cachedResult = resultCache.saveFinal(result);
+        p23.log.success(`Execution ${pc35.bold(cachedResult.executionId)}: ${cachedResult.status}`);
+        p23.log.info(`Result cache: ${resultCache.getPath()}`);
         const artifactStore = createArtifactStore();
-        for (const artRef of result.artifacts) {
-          const nodeResult = result.nodeResults[artRef.nodeId];
+        for (const artRef of cachedResult.artifacts) {
+          const nodeResult = cachedResult.nodeResults[artRef.nodeId];
           artifactStore.create({
             artifactType: artRef.artifactType,
             sourceNodeSlug: nodeResult?.slug ?? "unknown",
@@ -28517,11 +29615,15 @@ async function runPipelineAssembler(opts) {
             pipelineId: pipeline2.pipelineId,
             nodeId: artRef.nodeId,
             threadId: pipeline2.threadId,
-            metadata: artRef.metadata ?? {}
+            metadata: {
+              ...artRef.metadata ?? {},
+              ...artRef.url ? { url: artRef.url } : {},
+              ...artRef.storagePath ? { storagePath: artRef.storagePath } : {}
+            }
           });
         }
-        if (result.artifacts.length > 0) {
-          p23.log.info(`${result.artifacts.length} artifact(s) recorded.`);
+        if (cachedResult.artifacts.length > 0) {
+          p23.log.info(`${cachedResult.artifacts.length} artifact(s) recorded.`);
         }
       } catch (err) {
         p23.log.error("Execution failed: " + err.message);
@@ -28531,9 +29633,9 @@ async function runPipelineAssembler(opts) {
   }
 }
 function loadPipelineFromFileOrJson(input) {
-  const resolvedPath = path46.resolve(input);
-  if (fs38.existsSync(resolvedPath)) {
-    const content = fs38.readFileSync(resolvedPath, "utf-8");
+  const resolvedPath = path47.resolve(input);
+  if (fs39.existsSync(resolvedPath)) {
+    const content = fs39.readFileSync(resolvedPath, "utf-8");
     return deserializePipeline(JSON.parse(content));
   }
   try {
@@ -28545,7 +29647,8 @@ function loadPipelineFromFileOrJson(input) {
   }
 }
 function renderExecutionProgress(completed, total, detail) {
-  if (!process.stdout.isTTY) return;
+  if (!process.stdout.isTTY)
+    return;
   const width = 24;
   const safeCompleted = Math.max(0, Math.min(completed, total));
   const percent = total <= 0 ? 0 : Math.round(safeCompleted / total * 100);
@@ -28585,11 +29688,12 @@ async function executeHostedPipeline(pipeline, opts) {
   let startupSettled = false;
   startupSpinner?.start("Preparing hosted workflow execution...");
   const settleStartup = (message) => {
-    if (!startupSpinner || startupSettled) return;
+    if (!startupSpinner || startupSettled)
+      return;
     startupSettled = true;
     startupSpinner.stop(message ?? "Hosted workflow execution started.");
   };
-  const result = await executionClient.executeWorkflow({
+  const executionInput = {
     pipelineId: pipeline.pipelineId,
     workflowId: hostedWorkflowId,
     threadId: hostedWorkflowId ?? pipeline.threadId,
@@ -28601,8 +29705,13 @@ async function executeHostedPipeline(pipeline, opts) {
     })),
     executionMode: pipeline.executionMode,
     metadata: pipeline.metadata
-  }, opts?.json ? void 0 : {
+  };
+  const resultCache = createExecutionResultCache(executionInput);
+  const result = await executionClient.executeWorkflow(executionInput, {
     onEvent: async (event) => {
+      resultCache.handleEvent(event);
+      if (opts?.json)
+        return;
       if (event.type === "node_start" || event.type === "node_complete") {
         settleStartup("Hosted workflow execution started.");
       }
@@ -28618,43 +29727,54 @@ async function executeHostedPipeline(pipeline, opts) {
       }
     }
   });
+  const cachedResult = resultCache.saveFinal(result);
   settleStartup("Hosted workflow execution started.");
   if (opts?.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(cachedResult, null, 2));
     return;
   }
   console.log("");
   console.log(pc35.bold("Pipeline Execution Result"));
   console.log(hr6());
-  console.log(`  ${pc35.dim("Execution ID:")} ${result.executionId}`);
-  if (result.threadId) console.log(`  ${pc35.dim("Thread ID:")}    ${result.threadId}`);
+  console.log(`  ${pc35.dim("Execution ID:")} ${cachedResult.executionId}`);
+  console.log(`  ${pc35.dim("Result Cache:")}  ${resultCache.getPath()}`);
+  if (result.threadId)
+    console.log(`  ${pc35.dim("Thread ID:")}    ${result.threadId}`);
   console.log(`  ${pc35.dim("Status:")}       ${result.status === "succeeded" ? pc35.green(result.status) : pc35.red(result.status)}`);
-  if (result.startedAt) console.log(`  ${pc35.dim("Started:")}      ${result.startedAt}`);
-  if (result.completedAt) console.log(`  ${pc35.dim("Completed:")}    ${result.completedAt}`);
+  if (result.startedAt)
+    console.log(`  ${pc35.dim("Started:")}      ${result.startedAt}`);
+  if (result.completedAt)
+    console.log(`  ${pc35.dim("Completed:")}    ${result.completedAt}`);
   console.log(hr6());
-  for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+  for (const [nodeId, nodeResult] of Object.entries(cachedResult.nodeResults)) {
     const statusColor3 = nodeResult.status === "succeeded" ? pc35.green : pc35.red;
     console.log(`  ${statusColor3(nodeResult.status)} ${pc35.bold(nodeResult.slug)} (${pc35.dim(nodeId)})`);
     if (nodeResult.error) {
       console.log(`    ${pc35.red(nodeResult.error)}`);
     }
   }
-  if (result.artifacts.length > 0) {
+  if (cachedResult.artifacts.length > 0) {
     console.log("");
     console.log(pc35.bold("  Artifacts:"));
-    for (const art of result.artifacts) {
+    for (const art of cachedResult.artifacts) {
       console.log(`    ${pc35.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
     }
   }
   if (result.summary) {
     console.log("");
     console.log(pc35.bold("  Summary:"));
-    if (result.summary.outputText) console.log(`    ${pc35.dim("\xB7")} ${result.summary.outputText}`);
-    if (typeof result.summary.imageCount === "number") console.log(`    ${pc35.dim("\xB7")} images: ${result.summary.imageCount}`);
-    if (typeof result.summary.slideCount === "number") console.log(`    ${pc35.dim("\xB7")} slides: ${result.summary.slideCount}`);
-    if (typeof result.summary.videoCount === "number") console.log(`    ${pc35.dim("\xB7")} videos: ${result.summary.videoCount}`);
-    if (result.summary.workflowRunId) console.log(`    ${pc35.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-    if (result.summary.keyboardShortcutHint) console.log(`    ${pc35.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+    if (result.summary.outputText)
+      console.log(`    ${pc35.dim("\xB7")} ${result.summary.outputText}`);
+    if (typeof result.summary.imageCount === "number")
+      console.log(`    ${pc35.dim("\xB7")} images: ${result.summary.imageCount}`);
+    if (typeof result.summary.slideCount === "number")
+      console.log(`    ${pc35.dim("\xB7")} slides: ${result.summary.slideCount}`);
+    if (typeof result.summary.videoCount === "number")
+      console.log(`    ${pc35.dim("\xB7")} videos: ${result.summary.videoCount}`);
+    if (result.summary.workflowRunId)
+      console.log(`    ${pc35.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
+    if (result.summary.keyboardShortcutHint)
+      console.log(`    ${pc35.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
   }
   try {
     const credits = await fetchHostedCredits(session);
@@ -28673,8 +29793,8 @@ async function executeHostedPipeline(pipeline, opts) {
     }
   }
   const artifactStore = createArtifactStore();
-  for (const artRef of result.artifacts) {
-    const nodeResult = result.nodeResults[artRef.nodeId];
+  for (const artRef of cachedResult.artifacts) {
+    const nodeResult = cachedResult.nodeResults[artRef.nodeId];
     artifactStore.create({
       artifactType: artRef.artifactType,
       sourceNodeSlug: nodeResult?.slug ?? "unknown",
@@ -28682,7 +29802,11 @@ async function executeHostedPipeline(pipeline, opts) {
       pipelineId: pipeline.pipelineId,
       nodeId: artRef.nodeId,
       threadId: result.threadId ?? pipeline.threadId,
-      metadata: artRef.metadata ?? {}
+      metadata: {
+        ...artRef.metadata ?? {},
+        ...artRef.url ? { url: artRef.url } : {},
+        ...artRef.storagePath ? { storagePath: artRef.storagePath } : {}
+      }
     });
   }
   console.log("");
@@ -28701,7 +29825,8 @@ async function renderIntelligenceSummary(pipeline, capabilities, phase) {
         const missingRequired = [];
         if (contract) {
           for (const input2 of contract.inputs) {
-            if (!input2.required) continue;
+            if (!input2.required)
+              continue;
             const value = node.bindings[input2.key];
             if (value === void 0 || value === null || value === "") {
               missingRequired.push(input2.key);
@@ -28803,7 +29928,8 @@ Examples:
         const nodeRef = issue.nodeId ? ` [${issue.nodeId}]` : "";
         console.log(`${prefix}${nodeRef}: ${issue.message}`);
       }
-      if (!result.valid) process.exitCode = 1;
+      if (!result.valid)
+        process.exitCode = 1;
     } catch (err) {
       console.error(pc35.red("Validation failed: " + err.message));
       process.exitCode = 1;
@@ -28852,7 +29978,7 @@ Examples:
       const totalNodes = Math.max(1, pipeline.nodes.length);
       const completed = /* @__PURE__ */ new Set();
       const trackableNodeIds = new Set(pipeline.nodes.map((node) => node.id));
-      const result = await executionClient.executeWorkflow({
+      const executionInput = {
         pipelineId: pipeline.pipelineId,
         workflowId: hostedWorkflowId,
         threadId: hostedWorkflowId ?? pipeline.threadId,
@@ -28864,8 +29990,13 @@ Examples:
         })),
         executionMode: pipeline.executionMode,
         metadata: pipeline.metadata
-      }, opts.json ? void 0 : {
+      };
+      const resultCache = createExecutionResultCache(executionInput);
+      const result = await executionClient.executeWorkflow(executionInput, {
         onEvent: async (event) => {
+          resultCache.handleEvent(event);
+          if (opts.json)
+            return;
           if (event.type === "node_complete" && event.nodeId && trackableNodeIds.has(event.nodeId) && !completed.has(event.nodeId)) {
             completed.add(event.nodeId);
             completedNodes = completed.size;
@@ -28877,42 +30008,53 @@ Examples:
           }
         }
       });
+      const cachedResult = resultCache.saveFinal(result);
       if (opts.json) {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(JSON.stringify(cachedResult, null, 2));
         return;
       }
       console.log("");
       console.log(pc35.bold("Pipeline Execution Result"));
       console.log(hr6());
-      console.log(`  ${pc35.dim("Execution ID:")} ${result.executionId}`);
-      if (result.threadId) console.log(`  ${pc35.dim("Thread ID:")}    ${result.threadId}`);
-      console.log(`  ${pc35.dim("Status:")}       ${result.status === "succeeded" ? pc35.green(result.status) : pc35.red(result.status)}`);
-      if (result.startedAt) console.log(`  ${pc35.dim("Started:")}      ${result.startedAt}`);
-      if (result.completedAt) console.log(`  ${pc35.dim("Completed:")}    ${result.completedAt}`);
+      console.log(`  ${pc35.dim("Execution ID:")} ${cachedResult.executionId}`);
+      console.log(`  ${pc35.dim("Result Cache:")}  ${resultCache.getPath()}`);
+      if (cachedResult.threadId)
+        console.log(`  ${pc35.dim("Thread ID:")}    ${cachedResult.threadId}`);
+      console.log(`  ${pc35.dim("Status:")}       ${cachedResult.status === "succeeded" ? pc35.green(cachedResult.status) : pc35.red(cachedResult.status)}`);
+      if (cachedResult.startedAt)
+        console.log(`  ${pc35.dim("Started:")}      ${cachedResult.startedAt}`);
+      if (cachedResult.completedAt)
+        console.log(`  ${pc35.dim("Completed:")}    ${cachedResult.completedAt}`);
       console.log(hr6());
-      for (const [nodeId, nodeResult] of Object.entries(result.nodeResults)) {
+      for (const [nodeId, nodeResult] of Object.entries(cachedResult.nodeResults)) {
         const statusColor3 = nodeResult.status === "succeeded" ? pc35.green : pc35.red;
         console.log(`  ${statusColor3(nodeResult.status)} ${pc35.bold(nodeResult.slug)} (${pc35.dim(nodeId)})`);
         if (nodeResult.error) {
           console.log(`    ${pc35.red(nodeResult.error)}`);
         }
       }
-      if (result.artifacts.length > 0) {
+      if (cachedResult.artifacts.length > 0) {
         console.log("");
         console.log(pc35.bold("  Artifacts:"));
-        for (const art of result.artifacts) {
+        for (const art of cachedResult.artifacts) {
           console.log(`    ${pc35.dim("\xB7")} ${art.artifactType} (${art.artifactId})`);
         }
       }
-      if (result.summary) {
+      if (cachedResult.summary) {
         console.log("");
         console.log(pc35.bold("  Summary:"));
-        if (result.summary.outputText) console.log(`    ${pc35.dim("\xB7")} ${result.summary.outputText}`);
-        if (typeof result.summary.imageCount === "number") console.log(`    ${pc35.dim("\xB7")} images: ${result.summary.imageCount}`);
-        if (typeof result.summary.slideCount === "number") console.log(`    ${pc35.dim("\xB7")} slides: ${result.summary.slideCount}`);
-        if (typeof result.summary.videoCount === "number") console.log(`    ${pc35.dim("\xB7")} videos: ${result.summary.videoCount}`);
-        if (result.summary.workflowRunId) console.log(`    ${pc35.dim("\xB7")} workflow_run_id: ${result.summary.workflowRunId}`);
-        if (result.summary.keyboardShortcutHint) console.log(`    ${pc35.dim("\xB7")} ${result.summary.keyboardShortcutHint}`);
+        if (cachedResult.summary.outputText)
+          console.log(`    ${pc35.dim("\xB7")} ${cachedResult.summary.outputText}`);
+        if (typeof cachedResult.summary.imageCount === "number")
+          console.log(`    ${pc35.dim("\xB7")} images: ${cachedResult.summary.imageCount}`);
+        if (typeof cachedResult.summary.slideCount === "number")
+          console.log(`    ${pc35.dim("\xB7")} slides: ${cachedResult.summary.slideCount}`);
+        if (typeof cachedResult.summary.videoCount === "number")
+          console.log(`    ${pc35.dim("\xB7")} videos: ${cachedResult.summary.videoCount}`);
+        if (cachedResult.summary.workflowRunId)
+          console.log(`    ${pc35.dim("\xB7")} workflow_run_id: ${cachedResult.summary.workflowRunId}`);
+        if (cachedResult.summary.keyboardShortcutHint)
+          console.log(`    ${pc35.dim("\xB7")} ${cachedResult.summary.keyboardShortcutHint}`);
       }
       try {
         const credits = await fetchHostedCredits(session);
@@ -28928,8 +30070,8 @@ Examples:
         }
       }
       const artifactStore = createArtifactStore();
-      for (const artRef of result.artifacts) {
-        const nodeResult = result.nodeResults[artRef.nodeId];
+      for (const artRef of cachedResult.artifacts) {
+        const nodeResult = cachedResult.nodeResults[artRef.nodeId];
         artifactStore.create({
           artifactType: artRef.artifactType,
           sourceNodeSlug: nodeResult?.slug ?? "unknown",
@@ -28937,7 +30079,11 @@ Examples:
           pipelineId: pipeline.pipelineId,
           nodeId: artRef.nodeId,
           threadId: pipeline.threadId,
-          metadata: artRef.metadata ?? {}
+          metadata: {
+            ...artRef.metadata ?? {},
+            ...artRef.url ? { url: artRef.url } : {},
+            ...artRef.storagePath ? { storagePath: artRef.storagePath } : {}
+          }
         });
       }
       console.log("");
@@ -28949,7 +30095,10 @@ Examples:
 }
 
 // src/commands/artifact.ts
+import fs40 from "node:fs";
+import path48 from "node:path";
 import pc36 from "picocolors";
+init_session_store();
 function hr7(width = 72) {
   return pc36.dim("\u2500".repeat(width));
 }
@@ -28963,14 +30112,19 @@ var ARTIFACT_TYPE_CONFIG = {
 };
 function artifactTypeBadge(type) {
   const cfg = ARTIFACT_TYPE_CONFIG[type];
-  if (!cfg) return type;
+  if (!cfg)
+    return type;
   return cfg.color(`${cfg.emoji} ${type}`);
 }
 function statusColor(status) {
-  if (status === "ready") return pc36.green(status);
-  if (status === "generating" || status === "pending") return pc36.yellow(status);
-  if (status === "failed") return pc36.red(status);
-  if (status === "archived") return pc36.dim(status);
+  if (status === "ready")
+    return pc36.green(status);
+  if (status === "generating" || status === "pending")
+    return pc36.yellow(status);
+  if (status === "failed")
+    return pc36.red(status);
+  if (status === "archived")
+    return pc36.dim(status);
   return status;
 }
 function printArtifactTable(artifacts) {
@@ -29006,7 +30160,8 @@ function printArtifactDetail(art) {
   console.log(pc36.bold("Artifact: " + art.id));
   console.log(hr7());
   const kv = (label, value) => {
-    if (value === void 0) return;
+    if (value === void 0)
+      return;
     console.log(`  ${pc36.bold(label.padEnd(22))} ${value}`);
   };
   kv("Type:", artifactTypeBadge(art.artifactType));
@@ -29027,6 +30182,68 @@ function printArtifactDetail(art) {
   console.log(hr7());
   console.log("");
 }
+function stringMetadata(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
+}
+function inferOutPath(storagePath, out) {
+  if (out?.trim())
+    return path48.resolve(out);
+  return path48.resolve(process.cwd(), path48.basename(storagePath));
+}
+async function downloadStoragePath(storagePath, outPath, bucket = "node_documents") {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    throw new Error("Hosted session expired. Run `growthub auth login` again.");
+  }
+  const url = new URL("/api/secure-image", `${session.hostedBaseUrl.replace(/\/+$/, "")}/`);
+  url.searchParams.set("bucket", bucket);
+  url.searchParams.set("path", storagePath);
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${session.accessToken}`,
+      ...session.userId ? { "x-user-id": session.userId } : {}
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Authenticated artifact download failed (${response.status}).`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs40.mkdirSync(path48.dirname(outPath), { recursive: true });
+  fs40.writeFileSync(outPath, buffer);
+  return buffer.length;
+}
+function resolveStorageRef(id, artifactSelector, direct) {
+  if (direct?.storagePath?.trim()) {
+    return {
+      storagePath: direct.storagePath.trim(),
+      bucket: direct.bucket?.trim() || "node_documents",
+      artifactId: direct.storagePath.trim()
+    };
+  }
+  if (!id)
+    return null;
+  const execution = readExecutionResult(id);
+  if (execution) {
+    const artifacts = execution.artifacts.filter((artifact2) => artifact2.storagePath);
+    const selected = artifactSelector ? artifacts.find((artifact2) => artifact2.artifactId === artifactSelector || artifact2.nodeId === artifactSelector) : artifacts[0];
+    if (!selected?.storagePath)
+      return null;
+    return {
+      storagePath: selected.storagePath,
+      bucket: stringMetadata(selected.metadata?.bucket) ?? "node_documents",
+      artifactId: selected.artifactId
+    };
+  }
+  const artifact = createArtifactStore().get(id);
+  const storagePath = stringMetadata(artifact?.metadata?.storagePath) ?? stringMetadata(artifact?.metadata?.storage_path);
+  if (!artifact || !storagePath)
+    return null;
+  return {
+    storagePath,
+    bucket: stringMetadata(artifact.metadata?.bucket) ?? "node_documents",
+    artifactId: artifact.id
+  };
+}
 function registerArtifactCommands(program2) {
   const art = program2.command("artifact").description("List and inspect pipeline execution artifacts").addHelpText("after", `
 Examples:
@@ -29035,6 +30252,8 @@ Examples:
   $ growthub artifact list --pipeline <id>  # filter by pipeline
   $ growthub artifact list --json           # machine-readable output
   $ growthub artifact inspect <id>          # inspect a specific artifact
+  $ growthub artifact download <executionId>
+  $ growthub artifact download --storage-path workflow_videos/<user>/<thread>/<file>.mp4
 `);
   art.action(async (opts) => {
     const store = createArtifactStore();
@@ -29075,41 +30294,581 @@ Examples:
     }
     printArtifactDetail(artifact);
   });
+  art.command("download").description("Download a hosted execution artifact through the authenticated Growthub proxy").argument("[id]", "Execution ID from pipeline execute, or local artifact ID").option("--artifact <id>", "Artifact ID or node ID when an execution has multiple artifacts").option("--storage-path <path>", "Download this Growthub storage path directly with the active auth session").option("--bucket <bucket>", "Storage bucket for --storage-path", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (id, opts) => {
+    try {
+      const ref = resolveStorageRef(id, opts.artifact, {
+        storagePath: opts.storagePath,
+        bucket: opts.bucket
+      });
+      if (!ref) {
+        throw new Error(
+          id ? `No downloadable storagePath found for "${id}".` : "Provide an execution ID, local artifact ID, or --storage-path."
+        );
+      }
+      const outPath = inferOutPath(ref.storagePath, opts.out);
+      const bytes = await downloadStoragePath(ref.storagePath, outPath, ref.bucket);
+      const payload = {
+        status: "ok",
+        id,
+        artifactId: ref.artifactId,
+        bucket: ref.bucket,
+        storagePath: ref.storagePath,
+        outPath,
+        bytes
+      };
+      if (opts.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return;
+      }
+      console.log(pc36.green("Downloaded artifact"));
+      console.log(`  ${pc36.dim("Artifact:")} ${payload.artifactId}`);
+      console.log(`  ${pc36.dim("Storage:")}  ${payload.bucket}/${payload.storagePath}`);
+      console.log(`  ${pc36.dim("Output:")}   ${payload.outPath}`);
+      console.log(`  ${pc36.dim("Bytes:")}    ${payload.bytes}`);
+    } catch (err) {
+      if (opts.json) {
+        console.log(JSON.stringify({
+          status: "error",
+          message: err instanceof Error ? err.message : String(err)
+        }, null, 2));
+      } else {
+        console.error(pc36.red("Download failed: " + (err instanceof Error ? err.message : String(err))));
+      }
+      process.exitCode = 1;
+    }
+  });
+}
+
+// src/commands/bridge.ts
+import path50 from "node:path";
+import pc37 from "picocolors";
+
+// src/runtime/growthub-bridge-client/index.ts
+init_session_store();
+import fs41 from "node:fs";
+import path49 from "node:path";
+function readActiveSession() {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    throw new Error("Hosted session expired. Run `growthub auth login` again.");
+  }
+  if (!session.userId) {
+    throw new Error("Hosted session is missing userId. Run `growthub auth login` again.");
+  }
+  return session;
+}
+function bridgeUrl(session, pathname, params) {
+  const baseUrl = process.env.GROWTHUB_BRIDGE_BASE_URL?.trim() || session.hostedBaseUrl;
+  const url = new URL(pathname, `${baseUrl.replace(/\/+$/, "")}/`);
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value === void 0 || value === "")
+      continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+function buildSupabaseSessionCookie(session) {
+  const payload = {
+    access_token: session.accessToken,
+    user: {
+      id: session.userId,
+      email: session.email
+    }
+  };
+  return `sb-growthub-auth-token=${encodeURIComponent(JSON.stringify(payload))}`;
+}
+async function requestJson(session, url, init = {}) {
+  const headers = {
+    accept: "application/json",
+    authorization: `Bearer ${session.accessToken}`,
+    "x-user-id": session.userId ?? "",
+    ...Object.fromEntries(new Headers(init.headers).entries())
+  };
+  if (init.body !== void 0 && !headers["content-type"]) {
+    headers["content-type"] = "application/json";
+  }
+  const response = await fetch(url, { ...init, headers });
+  const text69 = await response.text();
+  const parsed = text69.trim() ? safeJson(text69) : null;
+  if (!response.ok) {
+    const message = typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : `Growthub bridge request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return parsed;
+}
+async function requestJsonWithSessionCookie(session, url, init = {}) {
+  const headers = {
+    accept: "application/json",
+    cookie: buildSupabaseSessionCookie(session),
+    ...Object.fromEntries(new Headers(init.headers).entries())
+  };
+  if (init.body !== void 0 && !headers["content-type"]) {
+    headers["content-type"] = "application/json";
+  }
+  const response = await fetch(url, { ...init, headers });
+  const text69 = await response.text();
+  const parsed = text69.trim() ? safeJson(text69) : null;
+  if (!response.ok) {
+    const message = typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : `Growthub session-backed request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return parsed;
+}
+function safeJson(text69) {
+  try {
+    return JSON.parse(text69);
+  } catch {
+    return text69;
+  }
+}
+var GrowthubBridgeClient = class {
+  constructor(session = readActiveSession()) {
+    this.session = session;
+  }
+  async listAssets(query = {}) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "gallery-assets",
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      source: query.source,
+      mediaType: query.mediaType,
+      search: query.search
+    });
+    const bridgeResult = await requestJson(this.session, url);
+    if (isAssetListResponse(bridgeResult))
+      return bridgeResult;
+    const fallback = bridgeUrl(this.session, "/api/gallery/assets", {
+      userId: this.session.userId,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      source: query.source,
+      mediaType: query.mediaType,
+      search: query.search
+    });
+    const fallbackResult = await requestJson(this.session, fallback);
+    if (isAssetListResponse(fallbackResult))
+      return fallbackResult;
+    throw new Error("Growthub bridge asset list did not return the asset contract.");
+  }
+  async listBrandKits(query = {}) {
+    const url = bridgeUrl(this.session, "/api/brand-settings");
+    const directResult = await requestJsonWithSessionCookie(this.session, url);
+    if (!isRemoteBrandKitArray(directResult)) {
+      throw new Error("Growthub brand settings endpoint did not return brand kits.");
+    }
+    const brandKits = directResult.brandKits;
+    if (!query.includeAssets || brandKits.length === 0) {
+      return {
+        success: true,
+        userId: this.session.userId,
+        brandKits,
+        count: brandKits.length
+      };
+    }
+    const assetsResult = await this.listBrandAssets();
+    const assetsByKitId = /* @__PURE__ */ new Map();
+    for (const asset of assetsResult.assets) {
+      const key = String(asset.brand_kit_id);
+      assetsByKitId.set(key, [...assetsByKitId.get(key) ?? [], asset]);
+    }
+    return {
+      success: true,
+      userId: this.session.userId,
+      brandKits: brandKits.map((kit) => ({
+        ...kit,
+        assets: assetsByKitId.get(String(kit.id)) ?? []
+      })),
+      count: brandKits.length
+    };
+  }
+  async listBrandAssets(query = {}) {
+    const url = bridgeUrl(this.session, "/api/brand-settings/assets", {
+      brandKitId: query.brandKitId
+    });
+    const result = await requestJsonWithSessionCookie(this.session, url);
+    if (!isRemoteBrandAssetArray(result)) {
+      throw new Error("Growthub brand assets endpoint did not return brand assets.");
+    }
+    const assets2 = query.assetType ? result.assets.filter((asset) => asset.asset_type === query.assetType) : result.assets;
+    return {
+      success: true,
+      userId: this.session.userId,
+      brandKitId: query.brandKitId,
+      assets: assets2,
+      count: assets2.length
+    };
+  }
+  async listKnowledge(query = {}) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "knowledge",
+      type: query.type,
+      agentSlug: query.agentSlug,
+      tableId: query.tableId
+    });
+    const result = await requestJson(this.session, url);
+    if (isKnowledgeListResponse(result))
+      return result;
+    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items", {
+      type: query.type,
+      agentSlug: query.agentSlug,
+      tableId: query.tableId
+    });
+    const providerResult = await requestJson(this.session, providerUrl);
+    if (isKnowledgeListResponse(providerResult))
+      return providerResult;
+    throw new Error("Growthub bridge knowledge list did not return the knowledge contract.");
+  }
+  async listKnowledgeTables(query = {}) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "knowledge-tables",
+      origin: query.origin,
+      connectorType: query.connectorType
+    });
+    const result = await requestJson(this.session, url);
+    if (isKnowledgeTableListResponse(result))
+      return result;
+    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/tables", {
+      origin: query.origin,
+      connectorType: query.connectorType
+    });
+    const providerResult = await requestJson(this.session, providerUrl);
+    if (isKnowledgeTableListResponse(providerResult))
+      return providerResult;
+    throw new Error("Growthub bridge knowledge table list did not return the knowledge table contract.");
+  }
+  async saveKnowledge(input) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", { action: "save-knowledge" });
+    const result = await requestJson(this.session, url, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+    if (result && typeof result === "object" && "success" in result) {
+      return result;
+    }
+    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items");
+    const providerResult = await requestJson(this.session, providerUrl, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+    if (providerResult && typeof providerResult === "object" && "success" in providerResult) {
+      return providerResult;
+    }
+    throw new Error("Growthub bridge knowledge save did not return the knowledge save contract.");
+  }
+  deleteKnowledge(id) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", { action: "delete-knowledge" });
+    return requestJson(this.session, url, {
+      method: "POST",
+      body: JSON.stringify({ id })
+    });
+  }
+  updateKnowledgeMetadata(input) {
+    const url = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items/metadata");
+    return requestJson(this.session, url, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  }
+  syncRunOutput(input) {
+    const url = bridgeUrl(this.session, "/api/providers/growthub-local/runs/sync");
+    return requestJson(this.session, url, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+  listMcpAccounts() {
+    const url = bridgeUrl(this.session, "/api/mcp/accounts");
+    return requestJson(this.session, url);
+  }
+  async downloadStoragePath(storagePath, outPath, bucket = "node_documents") {
+    const url = bridgeUrl(this.session, "/api/secure-image", { bucket, path: storagePath });
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${this.session.accessToken}`,
+        "x-user-id": this.session.userId ?? ""
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Authenticated artifact download failed (${response.status}).`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs41.mkdirSync(path49.dirname(path49.resolve(outPath)), { recursive: true });
+    fs41.writeFileSync(path49.resolve(outPath), buffer);
+    return buffer.length;
+  }
+  async downloadKnowledge(id, outPath) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", { view: "knowledge-download", id });
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${this.session.accessToken}`,
+        "x-user-id": this.session.userId ?? ""
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Knowledge download failed (${response.status}).`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs41.mkdirSync(path49.dirname(path49.resolve(outPath)), { recursive: true });
+    fs41.writeFileSync(path49.resolve(outPath), buffer);
+    return buffer.length;
+  }
+};
+function isAssetListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.assets) && typeof value.pagination?.total === "number"
+  );
+}
+function isRemoteBrandKitArray(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.brandKits)
+  );
+}
+function isRemoteBrandAssetArray(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.assets)
+  );
+}
+function isKnowledgeListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.items) && typeof value.count === "number"
+  );
+}
+function isKnowledgeTableListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.tables) && typeof value.count === "number"
+  );
+}
+function createGrowthubBridgeClient() {
+  return new GrowthubBridgeClient();
+}
+
+// src/commands/bridge.ts
+function printRows(rows, keys) {
+  for (const row of rows) {
+    console.log(keys.map((key) => `${pc37.dim(`${key}:`)} ${String(row[key] ?? "")}`).join("  "));
+  }
+}
+function outPathFromStorage(storagePath, out) {
+  return path50.resolve(out?.trim() || path50.basename(storagePath));
+}
+function registerBridgeCommands(program2) {
+  const bridge = program2.command("bridge").description("Authenticated Growthub bridge resources: assets, knowledge, and MCP accounts.");
+  const assets2 = bridge.command("assets").description("User asset gallery through the Growthub bridge.");
+  assets2.command("list").description("List user-owned gallery assets.").option("--page <page>", "Page number", (value) => Number(value), 1).option("--limit <limit>", "Page size", (value) => Number(value), 20).option("--source <source>", "Source filter").option("--media-type <type>", "Media type filter").option("--search <query>", "Filename/source search").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listAssets({
+      page: opts.page,
+      limit: opts.limit,
+      source: opts.source,
+      mediaType: opts.mediaType,
+      search: opts.search
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub assets (${result.assets.length}/${result.pagination.total})`));
+    printRows(result.assets.map((asset) => ({
+      id: asset.id,
+      type: asset.type,
+      source: asset.source,
+      storage: asset.storage_path
+    })), ["id", "type", "source", "storage"]);
+  });
+  assets2.command("download").description("Download a user-owned gallery asset by storage path.").requiredOption("--storage-path <path>", "Asset storage path from bridge assets list").option("--bucket <bucket>", "Storage bucket", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const outPath = outPathFromStorage(opts.storagePath, opts.out);
+    const bytes = await client.downloadStoragePath(opts.storagePath, outPath, opts.bucket);
+    const payload = { success: true, storagePath: opts.storagePath, bucket: opts.bucket, outPath, bytes };
+    if (opts.json)
+      console.log(JSON.stringify(payload, null, 2));
+    else
+      console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
+  });
+  const brand = bridge.command("brand").description("User brand kits and brand assets through the Growthub bridge.");
+  brand.command("kits").description("List accessible remote brand kits.").option("--include-assets", "Include each brand kit's assets").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listBrandKits({ includeAssets: opts.includeAssets === true });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub brand kits (${result.count})`));
+    printRows(result.brandKits.map((kit) => ({
+      id: kit.id,
+      name: kit.brand_name,
+      visibility: kit.visibility,
+      assets: kit.assets?.length ?? ""
+    })), ["id", "name", "visibility", "assets"]);
+  });
+  brand.command("assets").description("List remote brand assets from accessible brand kits.").option("--brand-kit-id <id>", "Filter by brand kit id").option("--asset-type <type>", "Filter by asset type").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listBrandAssets({ brandKitId: opts.brandKitId, assetType: opts.assetType });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub brand assets (${result.count})`));
+    printRows(result.assets.map((asset) => ({
+      id: asset.id,
+      kit: asset.brand_kit_id,
+      type: asset.asset_type,
+      storage: asset.storage_path
+    })), ["id", "kit", "type", "storage"]);
+  });
+  brand.command("download").description("Download a remote brand asset by storage path.").requiredOption("--storage-path <path>", "Brand asset storage path from bridge brand assets").option("--bucket <bucket>", "Storage bucket", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const outPath = outPathFromStorage(opts.storagePath, opts.out);
+    const bytes = await client.downloadStoragePath(opts.storagePath, outPath, opts.bucket);
+    const payload = { success: true, storagePath: opts.storagePath, bucket: opts.bucket, outPath, bytes };
+    if (opts.json)
+      console.log(JSON.stringify(payload, null, 2));
+    else
+      console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
+  });
+  const knowledge = bridge.command("knowledge").description("User knowledge items through the Growthub bridge.");
+  knowledge.command("tables").description("List user-owned knowledge tables, the custom groupings for knowledge items.").option("--origin <origin>", "Filter by metadata.origin").option("--connector-type <type>", "Filter by metadata.connector_type").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listKnowledgeTables({ origin: opts.origin, connectorType: opts.connectorType });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub knowledge tables (${result.count})`));
+    printRows(result.tables.map((table) => ({
+      id: table.id,
+      file: table.file_name,
+      origin: table.metadata?.origin,
+      children: table.child_count ?? 0
+    })), ["id", "file", "origin", "children"]);
+  });
+  knowledge.command("list").description("List user-owned knowledge items.").option("--type <type>", "Knowledge source type").option("--agent-slug <slug>", "Agent slug filter").option("--table-id <id>", "Filter by metadata.table_id knowledge table grouping").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listKnowledge({ type: opts.type, agentSlug: opts.agentSlug, tableId: opts.tableId });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub knowledge (${result.count})`));
+    printRows(result.items.map((item) => ({
+      id: item.id,
+      file: item.file_name,
+      type: item.source_type,
+      storage: item.storage_path
+    })), ["id", "file", "type", "storage"]);
+  });
+  knowledge.command("write").description("Create or update a markdown knowledge item.").option("--id <id>", "Existing knowledge item id to update").option("--title <title>", "Title for a new item").option("--file-name <name>", "File name for an update").option("--content <content>", "Markdown content for a new item").option("--table-id <id>", "Attach new item to metadata.table_id knowledge table grouping").option("--notes <notes>", "Notes metadata").option("--agent-slug <slug>", "Agent slug", "growthub-cli").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.saveKnowledge({
+      id: opts.id,
+      title: opts.title,
+      fileName: opts.fileName,
+      content: opts.content,
+      tableId: opts.tableId,
+      notes: opts.notes,
+      agentSlug: opts.agentSlug
+    });
+    if (opts.json)
+      console.log(JSON.stringify(result, null, 2));
+    else
+      console.log(result.success ? pc37.green("Knowledge saved") : pc37.red(result.error ?? "Knowledge save failed"));
+  });
+  knowledge.command("download").description("Download a knowledge item by id.").argument("<id>", "Knowledge item id").requiredOption("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (id, opts) => {
+    const client = createGrowthubBridgeClient();
+    const outPath = path50.resolve(opts.out);
+    const bytes = await client.downloadKnowledge(id, outPath);
+    const payload = { success: true, id, outPath, bytes };
+    if (opts.json)
+      console.log(JSON.stringify(payload, null, 2));
+    else
+      console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
+  });
+  knowledge.command("delete").description("Delete a knowledge item by id.").argument("<id>", "Knowledge item id").option("--json", "Output raw JSON").action(async (id, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.deleteKnowledge(id);
+    if (opts.json)
+      console.log(JSON.stringify(result, null, 2));
+    else
+      console.log(result.success ? pc37.green("Knowledge deleted") : pc37.red(result.error ?? "Knowledge delete failed"));
+  });
+  knowledge.command("metadata").description("Patch metadata for an existing knowledge item.").argument("<id>", "Knowledge item id").option("--table-id <id>", "Set metadata.table_id").option("--notes <notes>", "Set metadata.notes").option("--json", "Output raw JSON").action(async (id, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.updateKnowledgeMetadata({ id, tableId: opts.tableId, notes: opts.notes });
+    if (opts.json)
+      console.log(JSON.stringify(result, null, 2));
+    else
+      console.log(result.success ? pc37.green("Knowledge metadata updated") : pc37.red(result.error ?? "Knowledge metadata update failed"));
+  });
+  bridge.command("run-sync").description("Persist a local run output into the remote Growthub knowledge substrate.").option("--run-id <id>", "Run id").option("--title <title>", "Knowledge item title").option("--output <json>", "JSON output payload").option("--table-id <id>", "Attach to metadata.table_id").option("--agent-slug <slug>", "Agent slug", "growthub_local_bridge").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const parsedOutput = opts.output ? JSON.parse(opts.output) : {};
+    const result = await client.syncRunOutput({
+      runId: opts.runId,
+      title: opts.title,
+      output: parsedOutput,
+      tableId: opts.tableId,
+      agentSlug: opts.agentSlug
+    });
+    if (opts.json)
+      console.log(JSON.stringify(result, null, 2));
+    else
+      console.log(result.success ? pc37.green("Run output synced") : pc37.red(result.error ?? "Run output sync failed"));
+  });
+  const mcp = bridge.command("mcp").description("MCP bridge accounts.");
+  mcp.command("accounts").description("List connected MCP accounts.").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listMcpAccounts();
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub MCP accounts (${result.accounts.length})`));
+    printRows(result.accounts.map((account) => ({
+      id: account.id,
+      provider: account.provider,
+      app: account.appSlug,
+      active: account.isActive
+    })), ["id", "provider", "app", "active"]);
+  });
 }
 
 // src/commands/workflow.ts
-import fs40 from "node:fs";
-import path48 from "node:path";
+import fs43 from "node:fs";
+import path52 from "node:path";
 import * as p24 from "@clack/prompts";
-import pc38 from "picocolors";
+import pc39 from "picocolors";
 init_session_store();
 init_hosted_client();
 
 // src/runtime/workflow-hygiene/labels.ts
 init_home();
-import fs39 from "node:fs";
-import path47 from "node:path";
+import fs42 from "node:fs";
+import path51 from "node:path";
 function resolveStorePath() {
-  return path47.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
+  return path51.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
 }
 function readStoreFile(filePath) {
-  if (!fs39.existsSync(filePath)) return { records: [] };
+  if (!fs42.existsSync(filePath))
+    return { records: [] };
   try {
-    const raw = JSON.parse(fs39.readFileSync(filePath, "utf-8"));
-    if (!Array.isArray(raw.records)) return { records: [] };
+    const raw = JSON.parse(fs42.readFileSync(filePath, "utf-8"));
+    if (!Array.isArray(raw.records))
+      return { records: [] };
     return raw;
   } catch {
     return { records: [] };
   }
 }
 function writeStoreFile(filePath, data) {
-  fs39.mkdirSync(path47.dirname(filePath), { recursive: true });
-  fs39.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
+  fs42.mkdirSync(path51.dirname(filePath), { recursive: true });
+  fs42.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
 `, "utf-8");
 }
 function inferDefaultLabel(name, createdAt, versionCount) {
-  if (versionCount >= 3) return "canonical";
-  if (name.toLowerCase().includes("experiment")) return "experimental";
+  if (versionCount >= 3)
+    return "canonical";
+  if (name.toLowerCase().includes("experiment"))
+    return "experimental";
   if (createdAt && Date.now() - Date.parse(createdAt) > 1e3 * 60 * 60 * 24 * 90) {
     return "archived";
   }
@@ -29146,11 +30905,13 @@ function createWorkflowHygieneStore() {
 }
 
 // src/runtime/workflow-hygiene/summaries.ts
-import pc37 from "picocolors";
+import pc38 from "picocolors";
 function renderWorkflowLabel(label) {
-  if (label === "canonical") return pc37.green("canonical");
-  if (label === "archived") return pc37.dim("archived");
-  return pc37.yellow("experimental");
+  if (label === "canonical")
+    return pc38.green("canonical");
+  if (label === "archived")
+    return pc38.dim("archived");
+  return pc38.yellow("experimental");
 }
 function enrichWorkflowSummaries(entries, store) {
   return entries.map((entry) => {
@@ -29164,14 +30925,14 @@ init_banner();
 init_home();
 var PAGE_SIZE = 10;
 var FAMILY_CONFIG2 = {
-  video: { color: pc38.magenta, label: "Video" },
-  image: { color: pc38.cyan, label: "Image" },
-  slides: { color: pc38.yellow, label: "Slides" },
-  text: { color: pc38.green, label: "Text" },
-  data: { color: pc38.blue, label: "Data" },
-  ops: { color: pc38.red, label: "Ops" },
-  research: { color: pc38.blue, label: "Research" },
-  vision: { color: pc38.cyan, label: "Vision" }
+  video: { color: pc39.magenta, label: "Video" },
+  image: { color: pc39.cyan, label: "Image" },
+  slides: { color: pc39.yellow, label: "Slides" },
+  text: { color: pc39.green, label: "Text" },
+  data: { color: pc39.blue, label: "Data" },
+  ops: { color: pc39.red, label: "Ops" },
+  research: { color: pc39.blue, label: "Research" },
+  vision: { color: pc39.cyan, label: "Vision" }
 };
 var FAMILY_EMOJI = {
   video: "\u{1F3AC}",
@@ -29188,7 +30949,7 @@ function familyLabel(family) {
   return cfg ? cfg.color(cfg.label) : family;
 }
 function hr8(width = 72) {
-  return pc38.dim("\u2500".repeat(width));
+  return pc39.dim("\u2500".repeat(width));
 }
 function stripAnsi6(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -29196,26 +30957,28 @@ function stripAnsi6(str) {
 function box5(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi6(l).length)) + 4;
-  const top = pc38.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc38.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc39.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc39.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi6(l).length;
-    return pc38.dim("\u2502") + l + " ".repeat(pad2) + pc38.dim("\u2502");
+    return pc39.dim("\u2502") + l + " ".repeat(pad2) + pc39.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 function resolveSavedWorkflowsDir() {
-  return path48.resolve(resolvePaperclipHomeDir(), "workflows");
+  return path52.resolve(resolvePaperclipHomeDir(), "workflows");
 }
 function resolveDeletedWorkflowIdsPath() {
-  return path48.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
+  return path52.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
 }
 function readDeletedWorkflowIds() {
   const filePath = resolveDeletedWorkflowIdsPath();
-  if (!fs40.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  if (!fs43.existsSync(filePath))
+    return /* @__PURE__ */ new Set();
   try {
-    const raw = JSON.parse(fs40.readFileSync(filePath, "utf-8"));
-    if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
+    const raw = JSON.parse(fs43.readFileSync(filePath, "utf-8"));
+    if (!Array.isArray(raw?.workflowIds))
+      return /* @__PURE__ */ new Set();
     return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
   } catch {
     return /* @__PURE__ */ new Set();
@@ -29223,8 +30986,8 @@ function readDeletedWorkflowIds() {
 }
 function writeDeletedWorkflowIds(ids) {
   const filePath = resolveDeletedWorkflowIdsPath();
-  fs40.mkdirSync(path48.dirname(filePath), { recursive: true });
-  fs40.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
+  fs43.mkdirSync(path52.dirname(filePath), { recursive: true });
+  fs43.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
 `, "utf-8");
 }
 function markWorkflowDeletedLocally(workflowId) {
@@ -29234,8 +30997,10 @@ function markWorkflowDeletedLocally(workflowId) {
 }
 function effectiveWorkflowLabel(entry, hygieneStore) {
   const explicitLabel = hygieneStore.getLabel(entry.workflowId);
-  if (explicitLabel) return explicitLabel;
-  if (entry.isActive === false) return "archived";
+  if (explicitLabel)
+    return explicitLabel;
+  if (entry.isActive === false)
+    return "archived";
   return entry.workflowLabel ?? "experimental";
 }
 function withEffectiveWorkflowLabels(entries, hygieneStore) {
@@ -29250,10 +31015,11 @@ function filterLocallyDeletedWorkflows(entries) {
 }
 function listLocalSavedWorkflows() {
   const dir = resolveSavedWorkflowsDir();
-  if (!fs40.existsSync(dir)) return [];
-  const entries = fs40.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
+  if (!fs43.existsSync(dir))
+    return [];
+  const entries = fs43.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
     try {
-      const raw = JSON.parse(fs40.readFileSync(path48.resolve(dir, e.name), "utf-8"));
+      const raw = JSON.parse(fs43.readFileSync(path52.resolve(dir, e.name), "utf-8"));
       const pipeline = raw.pipeline ?? raw;
       return {
         filename: e.name,
@@ -29278,7 +31044,8 @@ async function listSavedWorkflows() {
   }
   try {
     const response = await listHostedWorkflows(session);
-    if (!response || !Array.isArray(response.workflows)) return listLocalSavedWorkflows();
+    if (!response || !Array.isArray(response.workflows))
+      return listLocalSavedWorkflows();
     return response.workflows.map((workflow) => ({
       workflowId: workflow.workflowId,
       pipelineId: workflow.workflowId,
@@ -29314,11 +31081,11 @@ async function archiveSavedWorkflow(entry) {
     throw new Error("Local workflow entry is missing filename.");
   }
   const dir = resolveSavedWorkflowsDir();
-  const archiveDir = path48.resolve(dir, "archived");
-  fs40.mkdirSync(archiveDir, { recursive: true });
-  fs40.renameSync(
-    path48.resolve(dir, entry.filename),
-    path48.resolve(archiveDir, entry.filename)
+  const archiveDir = path52.resolve(dir, "archived");
+  fs43.mkdirSync(archiveDir, { recursive: true });
+  fs43.renameSync(
+    path52.resolve(dir, entry.filename),
+    path52.resolve(archiveDir, entry.filename)
   );
 }
 async function deleteSavedWorkflow(entry) {
@@ -29342,7 +31109,7 @@ async function deleteSavedWorkflow(entry) {
   if (!entry.filename) {
     throw new Error("Local workflow entry is missing filename.");
   }
-  fs40.rmSync(path48.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  fs43.rmSync(path52.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
   markWorkflowDeletedLocally(entry.workflowId);
 }
 async function loadSavedWorkflowDetail(entry) {
@@ -29361,7 +31128,7 @@ async function loadSavedWorkflowDetail(entry) {
     };
   }
   const dir = resolveSavedWorkflowsDir();
-  const content = fs40.readFileSync(path48.resolve(dir, entry.filename), "utf-8");
+  const content = fs43.readFileSync(path52.resolve(dir, entry.filename), "utf-8");
   const raw = JSON.parse(content);
   return {
     pipeline: raw.pipeline ?? raw,
@@ -29376,10 +31143,12 @@ function toDynamicPipelineFromHostedWorkflow(entry, pipeline) {
   });
   const upstreamNodeIdsByTarget = /* @__PURE__ */ new Map();
   for (const edge of rawEdges) {
-    if (typeof edge !== "object" || edge === null) continue;
+    if (typeof edge !== "object" || edge === null)
+      continue;
     const source = typeof edge.source === "string" ? edge.source : null;
     const target = typeof edge.target === "string" ? edge.target : null;
-    if (!source || !target || source === "start-1" || target === "end-1") continue;
+    if (!source || !target || source === "start-1" || target === "end-1")
+      continue;
     const existing = upstreamNodeIdsByTarget.get(target) ?? [];
     existing.push(source);
     upstreamNodeIdsByTarget.set(target, existing);
@@ -29405,7 +31174,8 @@ function toDynamicPipelineFromHostedWorkflow(entry, pipeline) {
 }
 function toExecutableSavedWorkflowPipeline(entry, pipeline) {
   const looksLikeDynamicPipeline = Array.isArray(pipeline.nodes) && pipeline.nodes.every((node) => {
-    if (typeof node !== "object" || node === null) return false;
+    if (typeof node !== "object" || node === null)
+      return false;
     const record = node;
     return typeof record.id === "string" && typeof record.slug === "string";
   });
@@ -29431,7 +31201,7 @@ async function paginatedSelect(message, allOptions, opts) {
     const hasPrev = offset > 0;
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-    const pageInfo = filtered.length > PAGE_SIZE ? pc38.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
+    const pageInfo = filtered.length > PAGE_SIZE ? pc39.dim(` (${currentPage}/${totalPages} \xB7 ${filtered.length} total)`) : "";
     const options = [
       ...page.map((o) => ({
         value: o.value,
@@ -29440,13 +31210,13 @@ async function paginatedSelect(message, allOptions, opts) {
       }))
     ];
     if (hasMore) {
-      options.push({ value: "__next_page", label: pc38.dim("\u2192 Next page") });
+      options.push({ value: "__next_page", label: pc39.dim("\u2192 Next page") });
     }
     if (hasPrev) {
-      options.push({ value: "__prev_page", label: pc38.dim("\u2190 Previous page") });
+      options.push({ value: "__prev_page", label: pc39.dim("\u2190 Previous page") });
     }
     if (opts?.searchEnabled) {
-      options.push({ value: "__search", label: pc38.dim("\u{1F50E} Search") });
+      options.push({ value: "__search", label: pc39.dim("\u{1F50E} Search") });
     }
     options.push({
       value: opts?.backValue ?? "__back",
@@ -29456,7 +31226,8 @@ async function paginatedSelect(message, allOptions, opts) {
       message: message + pageInfo,
       options
     });
-    if (p24.isCancel(choice)) return choice;
+    if (p24.isCancel(choice))
+      return choice;
     if (choice === "__next_page") {
       offset += PAGE_SIZE;
       continue;
@@ -29470,7 +31241,8 @@ async function paginatedSelect(message, allOptions, opts) {
         message: "Search items",
         placeholder: "Type to filter..."
       });
-      if (p24.isCancel(term)) return term;
+      if (p24.isCancel(term))
+        return term;
       const searchStr = term.toLowerCase().trim();
       if (searchStr) {
         filtered = allOptions.filter((o) => {
@@ -29494,8 +31266,9 @@ async function paginatedSelect(message, allOptions, opts) {
 function printTemplateCard(node) {
   const contract = introspectNodeContract(node);
   const lines = renderContractCard(contract);
-  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc38.green("enabled") : pc38.red("disabled")}`);
-  if (node.description) lines.push("", pc38.dim(node.description));
+  lines.splice(1, 0, `${familyLabel(node.family)}  ${node.enabled ? pc39.green("enabled") : pc39.red("disabled")}`);
+  if (node.description)
+    lines.push("", pc39.dim(node.description));
   console.log("");
   console.log(box5(lines));
   console.log("");
@@ -29509,9 +31282,9 @@ function renderTemplateTree(templates) {
     byFamily.set(key, existing);
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const lines = [pc38.bold("Public CMS Node Tree")];
+  const lines = [pc39.bold("Public CMS Node Tree")];
   for (const [family, nodes] of families) {
-    lines.push(`${pc38.cyan("\u2022")} ${pc38.bold(family)}`);
+    lines.push(`${pc39.cyan("\u2022")} ${pc39.bold(family)}`);
     const sorted = [...nodes].sort((a, b) => a.slug.localeCompare(b.slug));
     for (const [index51, node] of sorted.entries()) {
       const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
@@ -29519,12 +31292,12 @@ function renderTemplateTree(templates) {
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
       lines.push(
-        `  ${branch} ${node.slug} ${pc38.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
+        `  ${branch} ${node.slug} ${pc39.dim(`(req:${requiredInputs} opt:${optionalInputs} out:${contract.outputTypes.length})`)}`
       );
     }
   }
   lines.push("");
-  lines.push(pc38.dim("Shortcut: growthub workflow saved --json"));
+  lines.push(pc39.dim("Shortcut: growthub workflow saved --json"));
   return lines;
 }
 function renderWorkflowContractDiscoveryTree(nodes) {
@@ -29536,10 +31309,10 @@ function renderWorkflowContractDiscoveryTree(nodes) {
     byFamily.set(key, group);
   }
   const families = [...byFamily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const lines = [pc38.bold("CMS Node Contract Discovery")];
+  const lines = [pc39.bold("CMS Node Contract Discovery")];
   for (const [family, familyNodes] of families) {
     const emoji = FAMILY_EMOJI[family] ?? "\u2022";
-    lines.push(`${emoji} ${pc38.bold(familyLabel(family))} ${pc38.dim(`(${familyNodes.length})`)}`);
+    lines.push(`${emoji} ${pc39.bold(familyLabel(family))} ${pc39.dim(`(${familyNodes.length})`)}`);
     const sorted = [...familyNodes].sort((a, b) => a.slug.localeCompare(b.slug));
     for (const [index51, node] of sorted.entries()) {
       const branch = index51 === sorted.length - 1 ? "\u2514\u2500" : "\u251C\u2500";
@@ -29547,7 +31320,7 @@ function renderWorkflowContractDiscoveryTree(nodes) {
       const requiredInputs = contract.inputs.filter((input) => input.required).length;
       const optionalInputs = contract.inputs.length - requiredInputs;
       lines.push(
-        `  ${branch} ${node.slug} ${pc38.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`
+        `  ${branch} ${node.slug} ${pc39.dim(`req:${requiredInputs} opt:${optionalInputs} bindings:${contract.requiredBindings.length} outputs:${contract.outputTypes.length}`)}`
       );
     }
   }
@@ -29560,7 +31333,7 @@ function buildTemplateOption(template, viewMode) {
   if (viewMode === "expanded") {
     return {
       value: template.slug,
-      label: `${template.icon}  ${template.displayName} ${pc38.dim(template.slug)}`,
+      label: `${template.icon}  ${template.displayName} ${pc39.dim(template.slug)}`,
       hint: `req:${requiredInputs} opt:${optionalInputs} outputs:${contract.outputTypes.join(", ") || "none"} exec:${contract.executionStrategy}`
     };
   }
@@ -29582,11 +31355,11 @@ async function runWorkflowPicker(opts) {
   const hygieneStore = createWorkflowHygieneStore();
   const access = getWorkflowAccess();
   if (access.state === "unauthenticated") {
-    p24.intro(pc38.bold("Workflows") + pc38.dim(" (not connected)"));
+    p24.intro(pc39.bold("Workflows") + pc39.dim(" (not connected)"));
     p24.note(
       [
         "Workflow assembly requires an authenticated Growthub session.",
-        "Run " + pc38.cyan("growthub auth login") + " to connect your account.",
+        "Run " + pc39.cyan("growthub auth login") + " to connect your account.",
         "",
         "Once connected you can:",
         "  - Browse CMS node contracts",
@@ -29595,10 +31368,11 @@ async function runWorkflowPicker(opts) {
       ].join("\n"),
       "Authentication Required"
     );
-    if (opts.allowBackToHub) return "back";
+    if (opts.allowBackToHub)
+      return "back";
     return "done";
   }
-  p24.intro(pc38.bold("Workflows"));
+  p24.intro(pc39.bold("Workflows"));
   while (true) {
     const refreshedAccess = getWorkflowAccess();
     const topChoice = await p24.select({
@@ -29606,12 +31380,12 @@ async function runWorkflowPicker(opts) {
       options: [
         {
           value: "contracts",
-          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc38.dim("0. CMS Node Contracts (locked)"),
+          label: refreshedAccess.state === "ready" ? "0. CMS Node Contracts" : pc39.dim("0. CMS Node Contracts (locked)"),
           hint: refreshedAccess.state === "ready" ? "Discovery tree for CMS node primitives" : refreshedAccess.reason
         },
         {
           value: "pipelines",
-          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc38.dim("1. Dynamic Pipelines (locked)"),
+          label: refreshedAccess.state === "ready" ? "1. Dynamic Pipelines" : pc39.dim("1. Dynamic Pipelines (locked)"),
           hint: refreshedAccess.state === "ready" ? "Create new pipelines and route into Saved Workflows" : refreshedAccess.reason
         },
         {
@@ -29626,7 +31400,8 @@ async function runWorkflowPicker(opts) {
       p24.cancel("Cancelled.");
       process.exit(0);
     }
-    if (topChoice === "__back_to_hub") return "back";
+    if (topChoice === "__back_to_hub")
+      return "back";
     if (topChoice === "contracts" && refreshedAccess.state !== "ready") {
       p24.note(
         [
@@ -29668,7 +31443,8 @@ async function runWorkflowPicker(opts) {
             p24.cancel("Cancelled.");
             process.exit(0);
           }
-          if (contractsMenuChoice === "__back_to_workflow") break;
+          if (contractsMenuChoice === "__back_to_workflow")
+            break;
           if (contractsMenuChoice === "show_tree") {
             showDiscoveryTree = true;
             continue;
@@ -29678,7 +31454,7 @@ async function runWorkflowPicker(opts) {
             const requiredInputs = contract.inputs.filter((input) => input.required).length;
             return {
               value: node.slug,
-              label: `${node.icon}  ${node.displayName} ${pc38.dim(node.slug)}`,
+              label: `${node.icon}  ${node.displayName} ${pc39.dim(node.slug)}`,
               hint: `${node.family} \xB7 required:${requiredInputs} \xB7 bindings:${contract.requiredBindings.length} \xB7 outputs:${contract.outputTypes.length}`
             };
           });
@@ -29694,9 +31470,11 @@ async function runWorkflowPicker(opts) {
             p24.cancel("Cancelled.");
             process.exit(0);
           }
-          if (contractChoice === "__back") continue;
+          if (contractChoice === "__back")
+            continue;
           const selected = nodes.find((node) => node.slug === contractChoice);
-          if (!selected) continue;
+          if (!selected)
+            continue;
           printTemplateCard(selected);
           const contractAction = await p24.select({
             message: "Contract actions",
@@ -29719,7 +31497,7 @@ async function runWorkflowPicker(opts) {
           }
         }
       } catch (err) {
-        contractsSpinner.stop(pc38.red("Failed to load CMS node contracts."));
+        contractsSpinner.stop(pc39.red("Failed to load CMS node contracts."));
         p24.log.error("Failed to load CMS node contracts: " + err.message);
       }
       continue;
@@ -29754,14 +31532,14 @@ async function runWorkflowPicker(opts) {
           saved = withEffectiveWorkflowLabels(enriched, hygieneStore);
           savedSpinner.stop(`Loaded ${saved.length} saved workflow${saved.length === 1 ? "" : "s"}.`);
         } catch (err) {
-          savedSpinner.stop(pc38.red("Failed to load saved workflows."));
+          savedSpinner.stop(pc39.red("Failed to load saved workflows."));
           throw err;
         }
         if (saved.length === 0) {
           p24.note(
             [
               "No saved workflows found.",
-              "Use " + pc38.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
+              "Use " + pc39.cyan("growthub pipeline assemble") + " to create a new workflow pipeline."
             ].join("\n"),
             "Nothing saved"
           );
@@ -29769,7 +31547,7 @@ async function runWorkflowPicker(opts) {
         }
         const allOptions = saved.map((w) => ({
           value: w.workflowId,
-          label: `${w.name} ${pc38.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc38.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
+          label: `${w.name} ${pc39.dim(`[${renderWorkflowLabel(w.workflowLabel)}]`)}  ${pc39.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}`)}`,
           hint: `${w.executionMode} \xB7 ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`
         }));
         const choice = await paginatedSelect("Select a saved workflow", allOptions, {
@@ -29780,7 +31558,8 @@ async function runWorkflowPicker(opts) {
           p24.cancel("Cancelled.");
           process.exit(0);
         }
-        if (choice === "__back") break;
+        if (choice === "__back")
+          break;
         const entry = saved.find((w) => w.workflowId === choice);
         if (entry) {
           const detailSpinner = p24.spinner();
@@ -29790,7 +31569,7 @@ async function runWorkflowPicker(opts) {
             detail = await loadSavedWorkflowDetail(entry);
             detailSpinner.stop(`Loaded ${entry.name}.`);
           } catch (err) {
-            detailSpinner.stop(pc38.red(`Failed to load ${entry.name}.`));
+            detailSpinner.stop(pc39.red(`Failed to load ${entry.name}.`));
             p24.log.error(err.message);
             continue;
           }
@@ -29798,14 +31577,14 @@ async function runWorkflowPicker(opts) {
           const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
           console.log("");
           console.log(box5([
-            `${pc38.bold("Workflow:")} ${entry.name}`,
-            `${pc38.dim("ID:")} ${entry.workflowId}`,
-            `${pc38.dim("Mode:")} hosted  ${pc38.dim("Nodes:")} ${nodes.length}`,
-            `${pc38.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
-            `${pc38.dim("Created:")} ${detail.createdAt || "\u2014"}`,
+            `${pc39.bold("Workflow:")} ${entry.name}`,
+            `${pc39.dim("ID:")} ${entry.workflowId}`,
+            `${pc39.dim("Mode:")} hosted  ${pc39.dim("Nodes:")} ${nodes.length}`,
+            `${pc39.dim("Label:")} ${renderWorkflowLabel(entry.workflowLabel ?? "experimental")}`,
+            `${pc39.dim("Created:")} ${detail.createdAt || "\u2014"}`,
             "",
             ...nodes.map(
-              (n, i) => `${pc38.dim(String(i + 1) + ".")} ${pc38.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc38.dim(n.id)}`
+              (n, i) => `${pc39.dim(String(i + 1) + ".")} ${pc39.bold(n.data?.slug ?? n.slug ?? n.id)} ${pc39.dim(n.id)}`
             )
           ]));
           console.log("");
@@ -29816,7 +31595,7 @@ async function runWorkflowPicker(opts) {
               { value: "set_label", label: "Set workflow label" },
               { value: "archive", label: "Archive workflow" },
               { value: "unarchive", label: "Unarchive workflow" },
-              { value: "delete", label: pc38.red("Delete workflow") },
+              { value: "delete", label: pc39.red("Delete workflow") },
               { value: "back_to_saved", label: "\u2190 Back to saved workflows" }
             ]
           });
@@ -29861,7 +31640,7 @@ async function runWorkflowPicker(opts) {
                 console.log("");
               }
               await executeHostedPipeline(executablePipeline);
-              p24.log.success(`Saved workflow execution completed for ${pc38.bold(entry.name)}.`);
+              p24.log.success(`Saved workflow execution completed for ${pc39.bold(entry.name)}.`);
             } catch (err) {
               p24.log.error("Saved workflow execution failed: " + err.message);
             }
@@ -29880,7 +31659,7 @@ async function runWorkflowPicker(opts) {
               continue;
             }
             hygieneStore.setLabel(entry.workflowId, labelChoice);
-            p24.log.success(`Updated label for ${pc38.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
+            p24.log.success(`Updated label for ${pc39.bold(entry.name)} to ${renderWorkflowLabel(labelChoice)}.`);
             continue;
           }
           if (nextAction === "archive") {
@@ -29894,10 +31673,10 @@ async function runWorkflowPicker(opts) {
             try {
               await archiveSavedWorkflow(entry);
               hygieneStore.setLabel(entry.workflowId, "archived");
-              p24.log.success(`Archived ${pc38.bold(entry.name)}.`);
+              p24.log.success(`Archived ${pc39.bold(entry.name)}.`);
             } catch {
               hygieneStore.setLabel(entry.workflowId, "archived");
-              p24.log.success(`Archived ${pc38.bold(entry.name)} (local fallback).`);
+              p24.log.success(`Archived ${pc39.bold(entry.name)} (local fallback).`);
             }
             continue;
           }
@@ -29919,7 +31698,7 @@ async function runWorkflowPicker(opts) {
             }
             hygieneStore.setLabel(entry.workflowId, restoreChoice);
             p24.log.success(
-              `Unarchived ${pc38.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
+              `Unarchived ${pc39.bold(entry.name)} to ${renderWorkflowLabel(restoreChoice)}.`
             );
             continue;
           }
@@ -29940,10 +31719,10 @@ async function runWorkflowPicker(opts) {
             }
             try {
               await deleteSavedWorkflow(entry);
-              p24.log.success(`Deleted ${pc38.bold(entry.name)}.`);
+              p24.log.success(`Deleted ${pc39.bold(entry.name)}.`);
             } catch {
               markWorkflowDeletedLocally(entry.workflowId);
-              p24.log.success(`Deleted ${pc38.bold(entry.name)} (local fallback).`);
+              p24.log.success(`Deleted ${pc39.bold(entry.name)} (local fallback).`);
             }
             continue;
           }
@@ -29987,7 +31766,8 @@ async function runWorkflowPicker(opts) {
           p24.cancel("Cancelled.");
           process.exit(0);
         }
-        if (familyChoice === "__back_to_workflow_menu") break;
+        if (familyChoice === "__back_to_workflow_menu")
+          break;
         if (familyChoice === "__toggle_view_mode") {
           const viewChoice = await p24.select({
             message: "Select template view mode",
@@ -30036,9 +31816,11 @@ async function runWorkflowPicker(opts) {
             p24.cancel("Cancelled.");
             process.exit(0);
           }
-          if (templateChoice === "__back") break;
+          if (templateChoice === "__back")
+            break;
           const selected = templates.find((t) => t.slug === templateChoice);
-          if (!selected) continue;
+          if (!selected)
+            continue;
           printTemplateCard(selected);
           while (true) {
             const action = await p24.select({
@@ -30054,18 +31836,19 @@ async function runWorkflowPicker(opts) {
               p24.cancel("Cancelled.");
               process.exit(0);
             }
-            if (action === "back_to_templates") break;
+            if (action === "back_to_templates")
+              break;
             if (action === "resolve") {
               try {
                 const resolver = createMachineCapabilityResolver();
                 const binding = await resolver.resolveCapability(selected.slug);
                 if (binding) {
-                  const statusColor3 = binding.allowed ? pc38.green : pc38.red;
+                  const statusColor3 = binding.allowed ? pc39.green : pc39.red;
                   console.log("");
                   console.log(box5([
-                    `${pc38.bold("Machine Binding:")} ${selected.slug}`,
-                    `${pc38.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
-                    `${pc38.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
+                    `${pc39.bold("Machine Binding:")} ${selected.slug}`,
+                    `${pc39.dim("Allowed:")}  ${statusColor3(String(binding.allowed))}`,
+                    `${pc39.dim("Reason:")}   ${binding.reason ?? "\u2014"}`
                   ]));
                   console.log("");
                 }
@@ -30083,7 +31866,8 @@ async function runWorkflowPicker(opts) {
               const contract = introspectNodeContract(selected);
               const rawBindings = {};
               for (const input of contract.inputs) {
-                if (!input.required) continue;
+                if (!input.required)
+                  continue;
                 const value = await p24.text({
                   message: `${selected.displayName} \u2192 ${input.key}`,
                   placeholder: `Enter ${input.key}`
@@ -30100,7 +31884,7 @@ async function runWorkflowPicker(opts) {
                 "Input normalization"
               );
               const nodeId = builder.addNode(selected.slug, normalized.bindings);
-              p24.log.success(`Added ${pc38.bold(selected.displayName)} (${pc38.dim(nodeId)})`);
+              p24.log.success(`Added ${pc39.bold(selected.displayName)} (${pc39.dim(nodeId)})`);
               const next = await p24.select({
                 message: "Pipeline has 1 node. What next?",
                 options: [
@@ -30138,7 +31922,7 @@ async function runWorkflowPicker(opts) {
                   throw new Error("Hosted workflow save returned no payload.");
                 }
                 p24.log.success(
-                  `Hosted workflow saved as ${pc38.bold(workflowName)} (${pc38.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
+                  `Hosted workflow saved as ${pc39.bold(workflowName)} (${pc39.dim(saveResult.workflowId)} \xB7 v${saveResult.version})`
                 );
               }
               break;
@@ -30164,7 +31948,8 @@ async function renderWorkflowIntelligenceSummary(pipeline, capabilities, phase) 
         const missingRequired = [];
         if (contract) {
           for (const input2 of contract.inputs) {
-            if (!input2.required) continue;
+            if (!input2.required)
+              continue;
             const value = node.bindings[input2.key];
             if (value === void 0 || value === null || value === "") {
               missingRequired.push(input2.key);
@@ -30188,31 +31973,31 @@ async function renderWorkflowIntelligenceSummary(pipeline, capabilities, phase) 
     };
     const result = await provider.summarizeExecution(input);
     const lines = [
-      `${pc38.bold("Intelligence Summary")} ${pc38.dim(result.title)}`,
+      `${pc39.bold("Intelligence Summary")} ${pc39.dim(result.title)}`,
       result.explanation
     ];
     if (result.runtimeModeNote) {
-      lines.push(`${pc38.dim("Runtime:")} ${result.runtimeModeNote}`);
+      lines.push(`${pc39.dim("Runtime:")} ${result.runtimeModeNote}`);
     }
     if (result.outputExpectation) {
-      lines.push(`${pc38.dim("Expected:")} ${result.outputExpectation}`);
+      lines.push(`${pc39.dim("Expected:")} ${result.outputExpectation}`);
     }
     if (result.missingBindingGuidance.length > 0) {
-      lines.push("", pc38.yellow("Missing Binding Guidance"));
+      lines.push("", pc39.yellow("Missing Binding Guidance"));
       for (const guidance of result.missingBindingGuidance) {
-        lines.push(`  ${pc38.dim("\xB7")} ${guidance}`);
+        lines.push(`  ${pc39.dim("\xB7")} ${guidance}`);
       }
     }
     if (result.costLatencyCautions.length > 0) {
-      lines.push("", pc38.yellow("Cost/Latency Notes"));
+      lines.push("", pc39.yellow("Cost/Latency Notes"));
       for (const caution of result.costLatencyCautions) {
-        lines.push(`  ${pc38.dim("\xB7")} ${caution}`);
+        lines.push(`  ${pc39.dim("\xB7")} ${caution}`);
       }
     }
     if (result.warnings.length > 0) {
-      lines.push("", pc38.yellow("Warnings"));
+      lines.push("", pc39.yellow("Warnings"));
       for (const warning of result.warnings) {
-        lines.push(`  ${pc38.dim("\xB7")} ${warning}`);
+        lines.push(`  ${pc39.dim("\xB7")} ${warning}`);
       }
     }
     return lines;
@@ -30235,14 +32020,16 @@ Examples:
     wf.command("templates").description("List CMS workflow node starter templates").option("--family <family>", "Filter by family").option("--search <term>", "Search templates").option("--view <mode>", "List view mode: condensed | expanded | tree").option("--json", "Output raw JSON").action(async (opts) => {
       const access = getWorkflowAccess();
       if (access.state !== "ready") {
-        console.error(pc38.red(`${access.reason}.`));
+        console.error(pc39.red(`${access.reason}.`));
         process.exitCode = 1;
         return;
       }
       const registry = createCmsCapabilityRegistryClient();
       const query = {};
-      if (opts.family) query.family = opts.family;
-      if (opts.search) query.search = opts.search;
+      if (opts.family)
+        query.family = opts.family;
+      if (opts.search)
+        query.search = opts.search;
       try {
         const { nodes, meta } = await registry.listCapabilities(
           Object.keys(query).length > 0 ? query : void 0
@@ -30252,24 +32039,24 @@ Examples:
           return;
         }
         if (nodes.length === 0) {
-          console.error(pc38.yellow("No templates found."));
+          console.error(pc39.yellow("No templates found."));
           process.exitCode = 1;
           return;
         }
         const viewMode = opts.view ?? "condensed";
         console.log("");
         console.log(
-          pc38.bold("Workflow Node Templates") + pc38.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
+          pc39.bold("Workflow Node Templates") + pc39.dim(`  ${nodes.length} template${nodes.length !== 1 ? "s" : ""}`)
         );
         console.log(hr8());
-        console.log(pc38.bold("Step 1: CMS Node Contract Validation"));
-        console.log(pc38.dim("Validate contract visibility before template selection."));
-        console.log(pc38.dim(`View mode: ${viewMode}`));
+        console.log(pc39.bold("Step 1: CMS Node Contract Validation"));
+        console.log(pc39.dim("Validate contract visibility before template selection."));
+        console.log(pc39.dim(`View mode: ${viewMode}`));
         console.log("");
         if (viewMode === "tree") {
           console.log(box5(renderTemplateTree(nodes)));
           console.log(hr8());
-          console.log(pc38.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+          console.log(pc39.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
           console.log("");
           return;
         }
@@ -30277,24 +32064,24 @@ Examples:
           const contract = introspectNodeContract(node);
           const requiredInputs = contract.inputs.filter((input) => input.required).length;
           const optionalInputs = contract.inputs.length - requiredInputs;
-          const enabledTag = node.enabled ? pc38.green("enabled") : pc38.red("disabled");
-          console.log(`  ${node.icon}  ${pc38.bold(node.displayName)}  ${pc38.dim(node.slug)}  ${enabledTag}`);
+          const enabledTag = node.enabled ? pc39.green("enabled") : pc39.red("disabled");
+          console.log(`  ${node.icon}  ${pc39.bold(node.displayName)}  ${pc39.dim(node.slug)}  ${enabledTag}`);
           console.log(
-            `     ${pc38.dim("Contract:")} ${pc38.dim("required")}=${requiredInputs} ${pc38.dim("optional")}=${optionalInputs} ${pc38.dim("bindings")}=${contract.requiredBindings.length} ${pc38.dim("outputs")}=${contract.outputTypes.length}`
+            `     ${pc39.dim("Contract:")} ${pc39.dim("required")}=${requiredInputs} ${pc39.dim("optional")}=${optionalInputs} ${pc39.dim("bindings")}=${contract.requiredBindings.length} ${pc39.dim("outputs")}=${contract.outputTypes.length}`
           );
           console.log(
-            `     ${pc38.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
+            `     ${pc39.dim("Execution:")} ${contract.executionStrategy} \xB7 ${contract.executionKind}`
           );
           if (node.description) {
-            console.log(`     ${pc38.dim(node.description)}`);
+            console.log(`     ${pc39.dim(node.description)}`);
           }
           console.log("");
         }
         console.log(hr8());
-        console.log(pc38.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
+        console.log(pc39.dim(`  Source: ${meta.source}  \xB7  growthub workflow`));
         console.log("");
       } catch (err) {
-        console.error(pc38.red("Failed: " + err.message));
+        console.error(pc39.red("Failed: " + err.message));
         process.exitCode = 1;
       }
     });
@@ -30314,67 +32101,68 @@ Examples:
       return;
     }
     if (visibleSaved.length === 0) {
-      console.log(pc38.dim("No saved workflows. Run `growthub workflow` to assemble one."));
+      console.log(pc39.dim("No saved workflows. Run `growthub workflow` to assemble one."));
       return;
     }
     console.log("");
     console.log(
-      pc38.bold("Saved Workflows") + pc38.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
+      pc39.bold("Saved Workflows") + pc39.dim(`  ${visibleSaved.length} workflow${visibleSaved.length !== 1 ? "s" : ""}`)
     );
     if (!opts.includeArchived) {
       const hiddenArchivedCount = saved.length - visibleSaved.length;
       if (hiddenArchivedCount > 0) {
-        console.log(pc38.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
+        console.log(pc39.dim(`  Archived hidden: ${hiddenArchivedCount} (use --include-archived to show)`));
       }
     }
     console.log(hr8());
     for (const w of visibleSaved) {
       console.log(
-        `  ${pc38.bold(w.name)}  ` + pc38.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc38.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
+        `  ${pc39.bold(w.name)}  ` + pc39.dim(`[${renderWorkflowLabel(w.workflowLabel)}] `) + pc39.dim(`${w.nodeCount} node${w.nodeCount !== 1 ? "s" : ""}  \xB7  ${w.executionMode}  \xB7  ${w.updatedAt?.slice(0, 10) ?? w.createdAt.slice(0, 10)}`)
       );
     }
     console.log("");
-    console.log(pc38.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
+    console.log(pc39.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
     console.log("");
   });
 }
 
 // src/commands/open-agents.ts
 import * as p25 from "@clack/prompts";
-import pc39 from "picocolors";
+import pc40 from "picocolors";
 
 // src/runtime/agent-harness/auth-store.ts
 init_home();
-import fs41 from "node:fs";
-import path49 from "node:path";
+import fs44 from "node:fs";
+import path53 from "node:path";
 function resolveHarnessAuthDir() {
-  return path49.resolve(resolvePaperclipHomeDir(), "harness-auth");
+  return path53.resolve(resolvePaperclipHomeDir(), "harness-auth");
 }
 function resolveHarnessAuthFile(harnessId) {
-  return path49.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
+  return path53.resolve(resolveHarnessAuthDir(), `${harnessId}.json`);
 }
 function normalizeSecret(value) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : void 0;
 }
 function ensureSecureDir(dirPath) {
-  fs41.mkdirSync(dirPath, { recursive: true });
+  fs44.mkdirSync(dirPath, { recursive: true });
   try {
-    fs41.chmodSync(dirPath, 448);
+    fs44.chmodSync(dirPath, 448);
   } catch {
   }
 }
 function ensureSecureFile(filePath) {
   try {
-    fs41.chmodSync(filePath, 384);
+    fs44.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessCredentials(harnessId) {
   const filePath = resolveHarnessAuthFile(harnessId);
-  if (!fs41.existsSync(filePath)) return {};
+  if (!fs44.existsSync(filePath))
+    return {};
   try {
-    const parsed = JSON.parse(fs41.readFileSync(filePath, "utf-8"));
+    const parsed = JSON.parse(fs44.readFileSync(filePath, "utf-8"));
     const creds = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value.trim().length > 0) {
@@ -30401,7 +32189,7 @@ function setHarnessCredential(harnessId, key, value) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs41.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs44.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -30418,20 +32206,22 @@ function setHarnessCredentials(harnessId, updates) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs41.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs44.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
 function maskSecret(value) {
-  if (!value) return "(not set)";
-  if (value.length <= 4) return "****";
+  if (!value)
+    return "(not set)";
+  if (value.length <= 4)
+    return "****";
   return `${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
 }
 
 // src/runtime/open-agents/index.ts
 init_home();
-import fs42 from "node:fs";
-import path50 from "node:path";
+import fs45 from "node:fs";
+import path54 from "node:path";
 
 // src/runtime/open-agents/contract.ts
 var DEFAULT_OPEN_AGENTS_CONFIG = {
@@ -30524,8 +32314,10 @@ async function createOpenAgentsSession(config, input) {
   const body = {
     prompt: input.prompt
   };
-  if (input.repoUrl) body.repoUrl = input.repoUrl;
-  if (input.branch) body.branch = input.branch;
+  if (input.repoUrl)
+    body.repoUrl = input.repoUrl;
+  if (input.branch)
+    body.branch = input.branch;
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
@@ -30618,18 +32410,18 @@ var OpenAgentsBackendError = class extends Error {
 
 // src/runtime/open-agents/index.ts
 function resolveConfigPath3() {
-  return path50.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
+  return path54.resolve(resolvePaperclipHomeDir(), "open-agents", "config.json");
 }
 function readOpenAgentsConfig() {
   const configPath = resolveConfigPath3();
-  if (!fs42.existsSync(configPath)) {
+  if (!fs45.existsSync(configPath)) {
     return {
       ...DEFAULT_OPEN_AGENTS_CONFIG,
       apiKey: getHarnessCredential("open-agents", "apiKey")
     };
   }
   try {
-    const raw = JSON.parse(fs42.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs45.readFileSync(configPath, "utf-8"));
     const storedApiKey = getHarnessCredential("open-agents", "apiKey");
     return {
       backendType: validateBackendType(raw.backendType),
@@ -30650,18 +32442,19 @@ function readOpenAgentsConfig() {
 }
 function writeOpenAgentsConfig(config) {
   const configPath = resolveConfigPath3();
-  fs42.mkdirSync(path50.dirname(configPath), { recursive: true });
+  fs45.mkdirSync(path54.dirname(configPath), { recursive: true });
   const persisted = {
     ...config,
     authMode: validateAuthMode(config.authMode),
     apiKey: void 0
   };
-  fs42.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
+  fs45.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
 `, "utf-8");
   setHarnessCredential("open-agents", "apiKey", config.apiKey);
 }
 function validateBackendType(value) {
-  if (value === "local" || value === "hosted") return value;
+  if (value === "local" || value === "hosted")
+    return value;
   return "local";
 }
 function validateAuthMode(value) {
@@ -30674,21 +32467,29 @@ function validateAuthMode(value) {
 // src/commands/open-agents.ts
 init_banner();
 function statusColor2(status) {
-  if (status === "running") return pc39.green(status);
-  if (status === "completed") return pc39.cyan(status);
-  if (status === "failed" || status === "cancelled") return pc39.red(status);
-  if (status === "waiting" || status === "idle") return pc39.yellow(status);
-  return pc39.dim(status);
+  if (status === "running")
+    return pc40.green(status);
+  if (status === "completed")
+    return pc40.cyan(status);
+  if (status === "failed" || status === "cancelled")
+    return pc40.red(status);
+  if (status === "waiting" || status === "idle")
+    return pc40.yellow(status);
+  return pc40.dim(status);
 }
 function sandboxBadge(state) {
-  if (state === "running") return pc39.green("running");
-  if (state === "hibernating") return pc39.yellow("hibernating");
-  if (state === "stopped") return pc39.dim("stopped");
-  if (state === "error") return pc39.red("error");
-  return pc39.dim(state);
+  if (state === "running")
+    return pc40.green("running");
+  if (state === "hibernating")
+    return pc40.yellow("hibernating");
+  if (state === "stopped")
+    return pc40.dim("stopped");
+  if (state === "error")
+    return pc40.red("error");
+  return pc40.dim(state);
 }
 function hr9(width = 72) {
-  return pc39.dim("\u2500".repeat(width));
+  return pc40.dim("\u2500".repeat(width));
 }
 function stripAnsi7(str) {
   return str.replace(/\x1B\[[0-9;]*m/g, "");
@@ -30696,27 +32497,29 @@ function stripAnsi7(str) {
 function box6(lines) {
   const padded = lines.map((l) => "  " + l);
   const width = Math.max(...padded.map((l) => stripAnsi7(l).length)) + 4;
-  const top = pc39.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
-  const bottom = pc39.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
+  const top = pc40.dim("\u250C" + "\u2500".repeat(width) + "\u2510");
+  const bottom = pc40.dim("\u2514" + "\u2500".repeat(width) + "\u2518");
   const body = padded.map((l) => {
     const pad2 = width - stripAnsi7(l).length;
-    return pc39.dim("\u2502") + l + " ".repeat(pad2) + pc39.dim("\u2502");
+    return pc40.dim("\u2502") + l + " ".repeat(pad2) + pc40.dim("\u2502");
   });
   return [top, ...body, bottom].join("\n");
 }
 function printSessionCard(session) {
   const lines = [
-    `${pc39.bold("Session")}  ${pc39.dim(session.sessionId)}`,
-    `${pc39.dim("Status:")}   ${statusColor2(session.status)}`,
-    `${pc39.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
-    `${pc39.dim("Events:")}   ${session.eventCount}`,
-    `${pc39.dim("Created:")}  ${session.createdAt}`
+    `${pc40.bold("Session")}  ${pc40.dim(session.sessionId)}`,
+    `${pc40.dim("Status:")}   ${statusColor2(session.status)}`,
+    `${pc40.dim("Sandbox:")}  ${sandboxBadge(session.sandboxState)}`,
+    `${pc40.dim("Events:")}   ${session.eventCount}`,
+    `${pc40.dim("Created:")}  ${session.createdAt}`
   ];
-  if (session.repoUrl) lines.push(`${pc39.dim("Repo:")}     ${session.repoUrl}`);
-  if (session.branch) lines.push(`${pc39.dim("Branch:")}   ${session.branch}`);
+  if (session.repoUrl)
+    lines.push(`${pc40.dim("Repo:")}     ${session.repoUrl}`);
+  if (session.branch)
+    lines.push(`${pc40.dim("Branch:")}   ${session.branch}`);
   if (session.prompt) {
     const truncated = session.prompt.length > 80 ? session.prompt.slice(0, 77) + "..." : session.prompt;
-    lines.push(`${pc39.dim("Prompt:")}   ${truncated}`);
+    lines.push(`${pc40.dim("Prompt:")}   ${truncated}`);
   }
   console.log("");
   console.log(box6(lines));
@@ -30743,12 +32546,12 @@ var EVENT_EMOJI = {
 };
 function printEvent(event) {
   const emoji = EVENT_EMOJI[event.type] ?? "\xB7";
-  const ts = pc39.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
+  const ts = pc40.dim(event.timestamp.split("T")[1]?.slice(0, 8) ?? "");
   console.log(`  ${emoji}  ${ts}  ${event.detail}`);
 }
 async function runOpenAgentsHub(opts) {
   printPaperclipCliBanner();
-  p25.intro(pc39.bold("Open Agents"));
+  p25.intro(pc40.bold("Open Agents"));
   while (true) {
     const config = readOpenAgentsConfig();
     const action = await p25.select({
@@ -30762,7 +32565,8 @@ async function runOpenAgentsHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p25.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p25.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "setup") {
       await runSetupFlow(config);
       continue;
@@ -30798,7 +32602,8 @@ async function runOpenAgentsHub(opts) {
     }
     if (action === "list") {
       const listResult = await runSessionListFlow(config);
-      if (listResult === "back") continue;
+      if (listResult === "back")
+        continue;
       return "done";
     }
     if (action === "create") {
@@ -30820,7 +32625,8 @@ async function runSetupFlow(currentConfig) {
     ],
     initialValue: currentConfig.backendType
   });
-  if (p25.isCancel(backendChoice)) return;
+  if (p25.isCancel(backendChoice))
+    return;
   const authMode = backendChoice === "hosted" ? await p25.select({
     message: "Hosted authentication strategy",
     options: [
@@ -30837,13 +32643,15 @@ async function runSetupFlow(currentConfig) {
     ],
     initialValue: currentConfig.authMode === "api-key" || currentConfig.authMode === "vercel-managed" ? currentConfig.authMode : "api-key"
   }) : "none";
-  if (p25.isCancel(authMode)) return;
+  if (p25.isCancel(authMode))
+    return;
   const endpoint = await p25.text({
     message: "Backend endpoint",
     placeholder: currentConfig.endpoint,
     initialValue: currentConfig.endpoint
   });
-  if (p25.isCancel(endpoint)) return;
+  if (p25.isCancel(endpoint))
+    return;
   let apiKeyValue;
   if (authMode === "api-key") {
     const existingKeyMasked = maskSecret(currentConfig.apiKey);
@@ -30856,12 +32664,14 @@ async function runSetupFlow(currentConfig) {
       ],
       initialValue: currentConfig.apiKey ? "keep" : "replace"
     });
-    if (p25.isCancel(apiKeyMode)) return;
+    if (p25.isCancel(apiKeyMode))
+      return;
     if (apiKeyMode === "replace") {
       const entered = await p25.password({
         message: "Open Agents API key"
       });
-      if (p25.isCancel(entered)) return;
+      if (p25.isCancel(entered))
+        return;
       apiKeyValue = String(entered).trim() || void 0;
     } else if (apiKeyMode === "keep") {
       apiKeyValue = currentConfig.apiKey;
@@ -30876,12 +32686,14 @@ async function runSetupFlow(currentConfig) {
     placeholder: currentConfig.defaultRepo ?? "",
     initialValue: currentConfig.defaultRepo ?? ""
   });
-  if (p25.isCancel(defaultRepo)) return;
+  if (p25.isCancel(defaultRepo))
+    return;
   const confirmed = await p25.confirm({
     message: "Save Open Agents configuration?",
     initialValue: true
   });
-  if (p25.isCancel(confirmed) || !confirmed) return;
+  if (p25.isCancel(confirmed) || !confirmed)
+    return;
   const newConfig = {
     ...currentConfig,
     backendType: backendChoice,
@@ -30915,15 +32727,17 @@ async function runSessionListFlow(config) {
       options: [
         ...sessions.map((s) => ({
           value: s.sessionId,
-          label: `${statusColor2(s.status)}  ${pc39.dim(s.sessionId.slice(0, 12))}`,
+          label: `${statusColor2(s.status)}  ${pc40.dim(s.sessionId.slice(0, 12))}`,
           hint: s.prompt ? s.prompt.slice(0, 50) : void 0
         })),
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p25.isCancel(sessionChoice) || sessionChoice === "__back") return "back";
+    if (p25.isCancel(sessionChoice) || sessionChoice === "__back")
+      return "back";
     const selected = sessions.find((s) => s.sessionId === sessionChoice);
-    if (!selected) continue;
+    if (!selected)
+      continue;
     printSessionCard(selected);
     const nextStep = await p25.select({
       message: "What next?",
@@ -30932,7 +32746,8 @@ async function runSessionListFlow(config) {
         { value: "back_to_list", label: "\u2190 Back to session list" }
       ]
     });
-    if (p25.isCancel(nextStep) || nextStep === "back_to_list") continue;
+    if (p25.isCancel(nextStep) || nextStep === "back_to_list")
+      continue;
     if (nextStep === "events") {
       try {
         const events = await pollSessionEvents(config, selected.sessionId);
@@ -30940,7 +32755,7 @@ async function runSessionListFlow(config) {
           p25.note("No events recorded yet.", "Empty");
         } else {
           console.log("");
-          console.log(pc39.bold("Recent Events") + pc39.dim(`  (${events.length})`));
+          console.log(pc40.bold("Recent Events") + pc40.dim(`  (${events.length})`));
           console.log(hr9());
           for (const event of events.slice(-20)) {
             printEvent(event);
@@ -30959,24 +32774,28 @@ async function runCreateSessionFlow(config) {
     message: "What should the agent do?",
     placeholder: "Describe the task for the agent"
   });
-  if (p25.isCancel(prompt) || !String(prompt).trim()) return;
+  if (p25.isCancel(prompt) || !String(prompt).trim())
+    return;
   const repoUrl = await p25.text({
     message: "Repository URL (optional)",
     placeholder: config.defaultRepo ?? "https://github.com/org/repo",
     initialValue: config.defaultRepo ?? ""
   });
-  if (p25.isCancel(repoUrl)) return;
+  if (p25.isCancel(repoUrl))
+    return;
   const branch = await p25.text({
     message: "Branch (optional)",
     placeholder: config.defaultBranch ?? "main",
     initialValue: config.defaultBranch ?? ""
   });
-  if (p25.isCancel(branch)) return;
+  if (p25.isCancel(branch))
+    return;
   const confirmed = await p25.confirm({
     message: "Create agent session?",
     initialValue: true
   });
-  if (p25.isCancel(confirmed) || !confirmed) return;
+  if (p25.isCancel(confirmed) || !confirmed)
+    return;
   const spinner13 = p25.spinner();
   spinner13.start("Creating session...");
   try {
@@ -30997,7 +32816,8 @@ async function runResumeSessionFlow(config) {
     message: "Session ID",
     placeholder: "Paste the session ID to resume"
   });
-  if (p25.isCancel(sessionId) || !String(sessionId).trim()) return;
+  if (p25.isCancel(sessionId) || !String(sessionId).trim())
+    return;
   const spinner13 = p25.spinner();
   spinner13.start("Resuming session...");
   try {
@@ -31006,7 +32826,7 @@ async function runResumeSessionFlow(config) {
     printSessionCard(session);
     const events = await pollSessionEvents(config, session.sessionId);
     if (events.length > 0) {
-      console.log(pc39.bold("Latest Events") + pc39.dim(`  (${events.length})`));
+      console.log(pc40.bold("Latest Events") + pc40.dim(`  (${events.length})`));
       console.log(hr9());
       for (const event of events.slice(-20)) {
         printEvent(event);
@@ -31053,7 +32873,7 @@ Examples:
       if (opts.json) {
         console.log(JSON.stringify(updated, null, 2));
       } else {
-        console.log(pc39.green("Configuration updated."));
+        console.log(pc40.green("Configuration updated."));
       }
       return;
     }
@@ -31062,15 +32882,15 @@ Examples:
       return;
     }
     console.log("");
-    console.log(pc39.bold("Open Agents Configuration"));
+    console.log(pc40.bold("Open Agents Configuration"));
     console.log(hr9());
-    console.log(`  ${pc39.dim("Backend:")}   ${config.backendType}`);
-    console.log(`  ${pc39.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
-    console.log(`  ${pc39.dim("Endpoint:")}  ${config.endpoint}`);
-    console.log(`  ${pc39.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc39.dim("(none)")}`);
-    console.log(`  ${pc39.dim("Repo:")}      ${config.defaultRepo ?? pc39.dim("(none)")}`);
-    console.log(`  ${pc39.dim("Branch:")}    ${config.defaultBranch ?? pc39.dim("(none)")}`);
-    console.log(`  ${pc39.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
+    console.log(`  ${pc40.dim("Backend:")}   ${config.backendType}`);
+    console.log(`  ${pc40.dim("Auth Mode:")} ${config.authMode ?? "none"}`);
+    console.log(`  ${pc40.dim("Endpoint:")}  ${config.endpoint}`);
+    console.log(`  ${pc40.dim("API Key:")}   ${config.apiKey ? maskSecret(config.apiKey) : pc40.dim("(none)")}`);
+    console.log(`  ${pc40.dim("Repo:")}      ${config.defaultRepo ?? pc40.dim("(none)")}`);
+    console.log(`  ${pc40.dim("Branch:")}    ${config.defaultBranch ?? pc40.dim("(none)")}`);
+    console.log(`  ${pc40.dim("Timeout:")}   ${config.timeoutMs ?? 3e4}ms`);
     console.log(hr9());
     console.log("");
   });
@@ -31083,12 +32903,12 @@ Examples:
     }
     if (health.available) {
       console.log(
-        pc39.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
+        pc40.green("\u2713") + ` Backend reachable at ${config.endpoint} (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
       );
     } else {
-      console.log(pc39.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
+      console.log(pc40.red("\u2717") + ` Backend unavailable at ${config.endpoint} (${health.latencyMs}ms)`);
       if (health.error) {
-        console.log(pc39.dim(`  ${health.error}`));
+        console.log(pc40.dim(`  ${health.error}`));
       }
       process.exitCode = 1;
     }
@@ -31102,22 +32922,22 @@ Examples:
         return;
       }
       if (sessions.length === 0) {
-        console.log(pc39.yellow("No sessions found.") + pc39.dim(" Run `growthub open-agents create` to start one."));
+        console.log(pc40.yellow("No sessions found.") + pc40.dim(" Run `growthub open-agents create` to start one."));
         return;
       }
       console.log("");
-      console.log(pc39.bold("Agent Sessions") + pc39.dim(`  (${sessions.length})`));
+      console.log(pc40.bold("Agent Sessions") + pc40.dim(`  (${sessions.length})`));
       console.log(hr9());
       for (const session of sessions) {
-        const truncatedPrompt = session.prompt ? pc39.dim(session.prompt.slice(0, 50)) : "";
+        const truncatedPrompt = session.prompt ? pc40.dim(session.prompt.slice(0, 50)) : "";
         console.log(
-          `  ${statusColor2(session.status)}  ${pc39.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
+          `  ${statusColor2(session.status)}  ${pc40.dim(session.sessionId.slice(0, 12))}  ${sandboxBadge(session.sandboxState)}  ${truncatedPrompt}`
         );
       }
       console.log(hr9());
       console.log("");
     } catch (err) {
-      console.error(pc39.red("Failed to list sessions: " + err.message));
+      console.error(pc40.red("Failed to list sessions: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -31139,7 +32959,7 @@ Examples:
       }
       printSessionCard(session);
     } catch (err) {
-      console.error(pc39.red("Failed to create session: " + err.message));
+      console.error(pc40.red("Failed to create session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -31157,7 +32977,7 @@ Examples:
       }
       printSessionCard(session);
     } catch (err) {
-      console.error(pc39.red("Failed to create session: " + err.message));
+      console.error(pc40.red("Failed to create session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -31172,7 +32992,7 @@ Examples:
       printSessionCard(session);
       const events = await pollSessionEvents(config, session.sessionId);
       if (events.length > 0) {
-        console.log(pc39.bold("Latest Events") + pc39.dim(`  (${events.length})`));
+        console.log(pc40.bold("Latest Events") + pc40.dim(`  (${events.length})`));
         console.log(hr9());
         for (const event of events.slice(-20)) {
           printEvent(event);
@@ -31181,7 +33001,7 @@ Examples:
         console.log("");
       }
     } catch (err) {
-      console.error(pc39.red("Failed to resume session: " + err.message));
+      console.error(pc40.red("Failed to resume session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -31196,7 +33016,7 @@ Examples:
       printSessionCard(session);
       const events = await pollSessionEvents(config, session.sessionId);
       if (events.length > 0) {
-        console.log(pc39.bold("Latest Events") + pc39.dim(`  (${events.length})`));
+        console.log(pc40.bold("Latest Events") + pc40.dim(`  (${events.length})`));
         console.log(hr9());
         for (const event of events.slice(-20)) {
           printEvent(event);
@@ -31205,7 +33025,7 @@ Examples:
         console.log("");
       }
     } catch (err) {
-      console.error(pc39.red("Failed to chat/resume session: " + err.message));
+      console.error(pc40.red("Failed to chat/resume session: " + err.message));
       process.exitCode = 1;
     }
   });
@@ -31213,12 +33033,12 @@ Examples:
 
 // src/commands/qwen-code.ts
 import * as p26 from "@clack/prompts";
-import pc40 from "picocolors";
+import pc41 from "picocolors";
 
 // src/runtime/qwen-code/index.ts
 init_home();
-import fs43 from "node:fs";
-import path51 from "node:path";
+import fs46 from "node:fs";
+import path55 from "node:path";
 
 // src/runtime/qwen-code/contract.ts
 var QWEN_CODE_APPROVAL_MODES = [
@@ -31274,7 +33094,8 @@ async function executeHeadlessPrompt(prompt, configOverride) {
       timedOut = true;
       child.kill("SIGTERM");
       setTimeout(() => {
-        if (!child.killed) child.kill("SIGKILL");
+        if (!child.killed)
+          child.kill("SIGKILL");
       }, 5e3);
     }, config.timeoutMs) : null;
     child.stdout.on("data", (data) => {
@@ -31284,7 +33105,8 @@ async function executeHeadlessPrompt(prompt, configOverride) {
       stderr += data.toString();
     });
     child.on("close", (exitCode, signal) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle)
+        clearTimeout(timeoutHandle);
       resolve2({
         exitCode,
         timedOut,
@@ -31295,7 +33117,8 @@ async function executeHeadlessPrompt(prompt, configOverride) {
       });
     });
     child.on("error", (err) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle)
+        clearTimeout(timeoutHandle);
       resolve2({
         exitCode: null,
         timedOut: false,
@@ -31436,19 +33259,19 @@ function buildSetupGuidance(env) {
 
 // src/runtime/qwen-code/index.ts
 function resolveConfigPath4() {
-  return path51.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
+  return path55.resolve(resolvePaperclipHomeDir(), "qwen-code", "config.json");
 }
 function readQwenCodeConfig() {
   const configPath = resolveConfigPath4();
   const storedCredentials = readHarnessCredentials("qwen-code");
-  if (!fs43.existsSync(configPath)) {
+  if (!fs46.existsSync(configPath)) {
     return {
       ...DEFAULT_QWEN_CODE_CONFIG,
       env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs43.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs46.readFileSync(configPath, "utf-8"));
     return {
       binaryPath: typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_QWEN_CODE_CONFIG.binaryPath,
       defaultModel: typeof raw.defaultModel === "string" ? raw.defaultModel : DEFAULT_QWEN_CODE_CONFIG.defaultModel,
@@ -31470,7 +33293,7 @@ function readQwenCodeConfig() {
 }
 function writeQwenCodeConfig(config) {
   const configPath = resolveConfigPath4();
-  fs43.mkdirSync(path51.dirname(configPath), { recursive: true });
+  fs46.mkdirSync(path55.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -31482,7 +33305,7 @@ function writeQwenCodeConfig(config) {
     publicEnv[key] = value;
   }
   setHarnessCredentials("qwen-code", credentialUpdates);
-  fs43.writeFileSync(
+  fs46.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -31492,7 +33315,8 @@ function writeQwenCodeConfig(config) {
 function mergeHarnessEnv(runtimeEnv, credentials) {
   const merged = {};
   for (const [key, value] of Object.entries(runtimeEnv)) {
-    if (typeof value === "string") merged[key] = value;
+    if (typeof value === "string")
+      merged[key] = value;
   }
   for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
     const secret = credentials[key];
@@ -31508,7 +33332,7 @@ async function runQwenCodeHub(opts) {
   while (true) {
     const config = readQwenCodeConfig();
     const health = checkHealth(config.binaryPath, config.env);
-    const statusHint = health.status === "available" ? pc40.green("ready") : health.status === "degraded" ? pc40.yellow("degraded") : pc40.red("unavailable");
+    const statusHint = health.status === "available" ? pc41.green("ready") : health.status === "degraded" ? pc41.yellow("degraded") : pc41.red("unavailable");
     const action = await p26.select({
       message: `Qwen Code CLI (${statusHint})`,
       options: [
@@ -31519,7 +33343,8 @@ async function runQwenCodeHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p26.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p26.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "health") {
       const env = detectEnvironment(config.binaryPath, config.env);
       const guidance = buildSetupGuidance(env);
@@ -31535,9 +33360,11 @@ async function runQwenCodeHub(opts) {
         message: "Enter prompt for Qwen Code",
         placeholder: "Describe what you want to build or analyze..."
       });
-      if (p26.isCancel(rawPrompt)) continue;
+      if (p26.isCancel(rawPrompt))
+        continue;
       const prompt = String(rawPrompt).trim();
-      if (!prompt) continue;
+      if (!prompt)
+        continue;
       const runSpinner = p26.spinner();
       runSpinner.start(`Running qwen -p (model: ${config.defaultModel})...`);
       const result = await executeHeadlessPrompt(prompt, config);
@@ -31592,7 +33419,8 @@ async function runConfigureFlow(currentConfig) {
     placeholder: "qwen3-coder",
     defaultValue: currentConfig.defaultModel
   });
-  if (p26.isCancel(modelInput)) return;
+  if (p26.isCancel(modelInput))
+    return;
   const modeInput = await p26.select({
     message: "Approval mode",
     options: QWEN_CODE_APPROVAL_MODES.map((mode) => ({
@@ -31602,13 +33430,15 @@ async function runConfigureFlow(currentConfig) {
     })),
     initialValue: currentConfig.approvalMode
   });
-  if (p26.isCancel(modeInput)) return;
+  if (p26.isCancel(modeInput))
+    return;
   const binaryInput = await p26.text({
     message: "Binary path",
     placeholder: "qwen",
     defaultValue: currentConfig.binaryPath
   });
-  if (p26.isCancel(binaryInput)) return;
+  if (p26.isCancel(binaryInput))
+    return;
   const authAction = await p26.select({
     message: "Authentication setup",
     options: [
@@ -31630,7 +33460,8 @@ async function runConfigureFlow(currentConfig) {
     ],
     initialValue: "skip"
   });
-  if (p26.isCancel(authAction)) return;
+  if (p26.isCancel(authAction))
+    return;
   const nextEnv = { ...currentConfig.env };
   if (authAction === "set-key") {
     const providerKey = await p26.select({
@@ -31647,15 +33478,19 @@ async function runConfigureFlow(currentConfig) {
         }
       ]
     });
-    if (p26.isCancel(providerKey)) return;
-    if (providerKey === "__back_to_auth_setup") return;
+    if (p26.isCancel(providerKey))
+      return;
+    if (providerKey === "__back_to_auth_setup")
+      return;
     const keyValue = await p26.password({
       message: `${providerKey} value`,
       validate: (value) => {
-        if (!value || String(value).trim().length === 0) return "Key value is required.";
+        if (!value || String(value).trim().length === 0)
+          return "Key value is required.";
       }
     });
-    if (p26.isCancel(keyValue)) return;
+    if (p26.isCancel(keyValue))
+      return;
     nextEnv[providerKey] = String(keyValue).trim();
   } else if (authAction === "clear-keys") {
     for (const key of QWEN_CODE_SUPPORTED_ENV_KEYS) {
@@ -31666,7 +33501,8 @@ async function runConfigureFlow(currentConfig) {
     message: `Save Qwen Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
     initialValue: true
   });
-  if (p26.isCancel(confirmed) || !confirmed) return;
+  if (p26.isCancel(confirmed) || !confirmed)
+    return;
   writeQwenCodeConfig({
     ...currentConfig,
     defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
@@ -31728,37 +33564,39 @@ function registerQwenCodeCommands(program2) {
 
 // src/commands/t3code.ts
 import * as p28 from "@clack/prompts";
-import pc42 from "picocolors";
+import pc43 from "picocolors";
 
 // src/runtime/t3code/index.ts
 init_home();
-import fs45 from "node:fs";
-import path53 from "node:path";
+import fs48 from "node:fs";
+import path57 from "node:path";
 
 // src/runtime/agent-harness/harness-profile.ts
 init_home();
-import fs44 from "node:fs";
-import path52 from "node:path";
+import fs47 from "node:fs";
+import path56 from "node:path";
 import * as p27 from "@clack/prompts";
-import pc41 from "picocolors";
+import pc42 from "picocolors";
 function resolveProfileDir(harnessId) {
-  return path52.resolve(resolvePaperclipHomeDir(), harnessId);
+  return path56.resolve(resolvePaperclipHomeDir(), harnessId);
 }
 function resolveProfilePath(harnessId) {
-  return path52.resolve(resolveProfileDir(harnessId), "growthub-profile.json");
+  return path56.resolve(resolveProfileDir(harnessId), "growthub-profile.json");
 }
 function ensureSecureFile2(filePath) {
   try {
-    fs44.chmodSync(filePath, 384);
+    fs47.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (!fs44.existsSync(filePath)) return null;
+  if (!fs47.existsSync(filePath))
+    return null;
   try {
-    const raw = JSON.parse(fs44.readFileSync(filePath, "utf-8"));
-    if (typeof raw.workspaceId !== "string" || typeof raw.machineLabel !== "string") return null;
+    const raw = JSON.parse(fs47.readFileSync(filePath, "utf-8"));
+    if (typeof raw.workspaceId !== "string" || typeof raw.machineLabel !== "string")
+      return null;
     return {
       profileVersion: 1,
       workspaceId: raw.workspaceId,
@@ -31775,32 +33613,33 @@ function readHarnessProfile(harnessId) {
 function writeHarnessProfile(harnessId, profile) {
   const dirPath = resolveProfileDir(harnessId);
   const filePath = resolveProfilePath(harnessId);
-  fs44.mkdirSync(dirPath, { recursive: true });
-  fs44.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
+  fs47.mkdirSync(dirPath, { recursive: true });
+  fs47.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
 `, "utf-8");
   ensureSecureFile2(filePath);
 }
 function clearHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (fs44.existsSync(filePath)) fs44.rmSync(filePath);
+  if (fs47.existsSync(filePath))
+    fs47.rmSync(filePath);
 }
 function buildProfileStatusLines(harnessId, harnessLabel, profile) {
   if (!profile) {
     return [
-      `${harnessLabel} Growthub Profile: ${pc41.yellow("not linked")}`,
+      `${harnessLabel} Growthub Profile: ${pc42.yellow("not linked")}`,
       "",
       `Link this harness to a Growthub workspace:`,
       `  growthub ${harnessId} profile link`
     ];
   }
   return [
-    `${harnessLabel} Growthub Profile: ${pc41.green("linked")}`,
+    `${harnessLabel} Growthub Profile: ${pc42.green("linked")}`,
     `  Workspace ID : ${profile.workspaceId}`,
     `  Machine      : ${profile.machineLabel}`,
-    `  Fork binary  : ${profile.forkBinaryPath ?? pc41.dim("(using default)")}`,
-    `  Fork kit     : ${profile.forkKitSlug ?? pc41.dim("(none)")}`,
+    `  Fork binary  : ${profile.forkBinaryPath ?? pc42.dim("(using default)")}`,
+    `  Fork kit     : ${profile.forkKitSlug ?? pc42.dim("(none)")}`,
     `  Linked at    : ${profile.linkedAt}`,
-    `  Last sync    : ${profile.lastSyncAt ?? pc41.dim("(never synced)")}`
+    `  Last sync    : ${profile.lastSyncAt ?? pc42.dim("(never synced)")}`
   ];
 }
 async function runProfileLinkFlow(harnessId, harnessLabel, existing) {
@@ -31811,31 +33650,36 @@ async function runProfileLinkFlow(harnessId, harnessLabel, existing) {
     defaultValue: existing?.workspaceId ?? "",
     validate: (v) => !v?.trim() ? "Workspace ID is required." : void 0
   });
-  if (p27.isCancel(workspaceId)) return null;
+  if (p27.isCancel(workspaceId))
+    return null;
   const machineLabel = await p27.text({
     message: "Machine label (human-readable name for this machine)",
     placeholder: "my-macbook-pro",
     defaultValue: existing?.machineLabel ?? "",
     validate: (v) => !v?.trim() ? "Machine label is required." : void 0
   });
-  if (p27.isCancel(machineLabel)) return null;
+  if (p27.isCancel(machineLabel))
+    return null;
   const forkBinaryPath = await p27.text({
     message: "Fork binary path (optional \u2014 leave blank to use system default)",
     placeholder: "/path/to/fork/bin/t3",
     defaultValue: existing?.forkBinaryPath ?? ""
   });
-  if (p27.isCancel(forkBinaryPath)) return null;
+  if (p27.isCancel(forkBinaryPath))
+    return null;
   const forkKitSlug = await p27.text({
     message: "Fork kit slug (optional \u2014 e.g. growthub-t3-v1)",
     placeholder: "growthub-t3-v1",
     defaultValue: existing?.forkKitSlug ?? ""
   });
-  if (p27.isCancel(forkKitSlug)) return null;
+  if (p27.isCancel(forkKitSlug))
+    return null;
   const confirmed = await p27.confirm({
     message: `Save profile? (workspace: ${String(workspaceId).trim()}, machine: ${String(machineLabel).trim()})`,
     initialValue: true
   });
-  if (p27.isCancel(confirmed) || !confirmed) return null;
+  if (p27.isCancel(confirmed) || !confirmed)
+    return null;
   const profile = {
     profileVersion: 1,
     workspaceId: String(workspaceId).trim(),
@@ -31852,7 +33696,8 @@ function registerHarnessProfileCommands(harnessCommand, harnessId, harnessLabel)
   profileCmd.command("status").description("Show the current Growthub profile linked to this harness").action(() => {
     const profile = readHarnessProfile(harnessId);
     const lines = buildProfileStatusLines(harnessId, harnessLabel, profile);
-    for (const line of lines) console.log(line);
+    for (const line of lines)
+      console.log(line);
   });
   profileCmd.command("link").description("Link this harness to a Growthub workspace").action(async () => {
     const existing = readHarnessProfile(harnessId);
@@ -31884,7 +33729,8 @@ function registerHarnessProfileCommands(harnessCommand, harnessId, harnessLabel)
   profileCmd.action(() => {
     const profile = readHarnessProfile(harnessId);
     const lines = buildProfileStatusLines(harnessId, harnessLabel, profile);
-    for (const line of lines) console.log(line);
+    for (const line of lines)
+      console.log(line);
   });
 }
 
@@ -31914,8 +33760,10 @@ async function executeHeadlessPrompt2(prompt, configOverride) {
   const config = { ...DEFAULT_T3_CODE_CONFIG, ...configOverride };
   const startMs = Date.now();
   const args = ["-p", prompt];
-  if (config.defaultModel) args.push("--model", config.defaultModel);
-  if (config.approvalMode === "yolo") args.push("--yolo");
+  if (config.defaultModel)
+    args.push("--model", config.defaultModel);
+  if (config.approvalMode === "yolo")
+    args.push("--yolo");
   const env = {
     ...process.env,
     ...config.env
@@ -31933,7 +33781,8 @@ async function executeHeadlessPrompt2(prompt, configOverride) {
       timedOut = true;
       child.kill("SIGTERM");
       setTimeout(() => {
-        if (!child.killed) child.kill("SIGKILL");
+        if (!child.killed)
+          child.kill("SIGKILL");
       }, 5e3);
     }, config.timeoutMs) : null;
     child.stdout.on("data", (d) => {
@@ -31943,11 +33792,13 @@ async function executeHeadlessPrompt2(prompt, configOverride) {
       stderr += d.toString();
     });
     child.on("close", (exitCode, signal) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle)
+        clearTimeout(timeoutHandle);
       resolve2({ exitCode, timedOut, stdout, stderr, durationMs: Date.now() - startMs, signal: signal ?? null });
     });
     child.on("error", (err) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle)
+        clearTimeout(timeoutHandle);
       resolve2({ exitCode: null, timedOut: false, stdout, stderr: stderr + (err.message ?? "spawn error"), durationMs: Date.now() - startMs, signal: null });
     });
   });
@@ -31955,8 +33806,10 @@ async function executeHeadlessPrompt2(prompt, configOverride) {
 function launchInteractiveSession2(configOverride) {
   const config = { ...DEFAULT_T3_CODE_CONFIG, ...configOverride };
   const args = [];
-  if (config.defaultModel) args.push("--model", config.defaultModel);
-  if (config.approvalMode === "yolo") args.push("--yolo");
+  if (config.defaultModel)
+    args.push("--model", config.defaultModel);
+  if (config.approvalMode === "yolo")
+    args.push("--yolo");
   const env = {
     ...process.env,
     ...config.env
@@ -32063,19 +33916,19 @@ function writeT3GrowthubProfile(profile) {
   writeHarnessProfile(T3_HARNESS_ID, profile);
 }
 function resolveConfigPath5() {
-  return path53.resolve(resolvePaperclipHomeDir(), "t3code", "config.json");
+  return path57.resolve(resolvePaperclipHomeDir(), "t3code", "config.json");
 }
 function readT3CodeConfig() {
   const configPath = resolveConfigPath5();
   const storedCredentials = readHarnessCredentials(T3_HARNESS_ID);
-  if (!fs45.existsSync(configPath)) {
+  if (!fs48.existsSync(configPath)) {
     return {
       ...DEFAULT_T3_CODE_CONFIG,
       env: mergeHarnessEnv2(DEFAULT_T3_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs45.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs48.readFileSync(configPath, "utf-8"));
     const profile = readHarnessProfile(T3_HARNESS_ID);
     const resolvedBinaryPath = profile?.forkBinaryPath ?? (typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_T3_CODE_CONFIG.binaryPath);
     return {
@@ -32098,7 +33951,7 @@ function readT3CodeConfig() {
 }
 function writeT3CodeConfig(config) {
   const configPath = resolveConfigPath5();
-  fs45.mkdirSync(path53.dirname(configPath), { recursive: true });
+  fs48.mkdirSync(path57.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -32110,7 +33963,7 @@ function writeT3CodeConfig(config) {
     }
   }
   setHarnessCredentials(T3_HARNESS_ID, credentialUpdates);
-  fs45.writeFileSync(
+  fs48.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -32120,7 +33973,8 @@ function writeT3CodeConfig(config) {
 function mergeHarnessEnv2(runtimeEnv, credentials) {
   const merged = {};
   for (const [key, value] of Object.entries(runtimeEnv)) {
-    if (typeof value === "string") merged[key] = value;
+    if (typeof value === "string")
+      merged[key] = value;
   }
   for (const key of T3_CODE_SUPPORTED_ENV_KEYS) {
     const secret = credentials[key];
@@ -32137,8 +33991,8 @@ async function runT3CodeHub(opts) {
     const config = readT3CodeConfig();
     const health = checkHealth2(config.binaryPath, config.env);
     const profile = readT3GrowthubProfile();
-    const statusHint = health.status === "available" ? pc42.green("ready") : health.status === "degraded" ? pc42.yellow("degraded") : pc42.red("unavailable");
-    const profileHint = profile ? pc42.green(`linked \u2192 ${profile.workspaceId}`) : pc42.dim("not linked");
+    const statusHint = health.status === "available" ? pc43.green("ready") : health.status === "degraded" ? pc43.yellow("degraded") : pc43.red("unavailable");
+    const profileHint = profile ? pc43.green(`linked \u2192 ${profile.workspaceId}`) : pc43.dim("not linked");
     const action = await p28.select({
       message: `T3 Code CLI (${statusHint})`,
       options: [
@@ -32170,7 +34024,8 @@ async function runT3CodeHub(opts) {
         ...opts?.allowBackToHub ? [{ value: "__back_to_hub", label: "\u2190 Back to harness type" }] : []
       ]
     });
-    if (p28.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p28.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "health") {
       const env = detectEnvironment2(config.binaryPath, config.env);
       const guidance = buildSetupGuidance2(env);
@@ -32186,9 +34041,11 @@ async function runT3CodeHub(opts) {
         message: "Enter prompt for T3 Code",
         placeholder: "Describe what you want to build or analyze..."
       });
-      if (p28.isCancel(rawPrompt)) continue;
+      if (p28.isCancel(rawPrompt))
+        continue;
       const prompt = String(rawPrompt).trim();
-      if (!prompt) continue;
+      if (!prompt)
+        continue;
       const runSpinner = p28.spinner();
       runSpinner.start(`Running t3 -p (model: ${config.defaultModel})...`);
       const result = await executeHeadlessPrompt2(prompt, config);
@@ -32199,7 +34056,8 @@ async function runT3CodeHub(opts) {
       }
       if (result.exitCode !== 0) {
         runSpinner.stop(`Exited with code ${result.exitCode ?? "null"}.`);
-        if (result.stderr.trim()) p28.note(result.stderr.trim().slice(0, 2e3), "stderr");
+        if (result.stderr.trim())
+          p28.note(result.stderr.trim().slice(0, 2e3), "stderr");
         continue;
       }
       runSpinner.stop(`Completed (${result.durationMs}ms).`);
@@ -32262,7 +34120,8 @@ async function runProfileHubFlow() {
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p28.isCancel(action) || action === "__back") return;
+    if (p28.isCancel(action) || action === "__back")
+      return;
     if (action === "link") {
       const newProfile = await runProfileLinkFlow(T3_HARNESS_ID, T3_HARNESS_LABEL, profile);
       if (newProfile) {
@@ -32294,7 +34153,8 @@ async function runConfigureFlow2(currentConfig) {
     placeholder: "claude-sonnet-4-6",
     defaultValue: currentConfig.defaultModel
   });
-  if (p28.isCancel(modelInput)) return;
+  if (p28.isCancel(modelInput))
+    return;
   const modeInput = await p28.select({
     message: "Approval mode",
     options: T3_CODE_APPROVAL_MODES.map((mode) => ({
@@ -32304,13 +34164,15 @@ async function runConfigureFlow2(currentConfig) {
     })),
     initialValue: currentConfig.approvalMode
   });
-  if (p28.isCancel(modeInput)) return;
+  if (p28.isCancel(modeInput))
+    return;
   const binaryInput = await p28.text({
     message: "Binary path",
     placeholder: "t3",
     defaultValue: currentConfig.binaryPath
   });
-  if (p28.isCancel(binaryInput)) return;
+  if (p28.isCancel(binaryInput))
+    return;
   const authAction = await p28.select({
     message: "Authentication setup",
     options: [
@@ -32320,7 +34182,8 @@ async function runConfigureFlow2(currentConfig) {
     ],
     initialValue: "skip"
   });
-  if (p28.isCancel(authAction)) return;
+  if (p28.isCancel(authAction))
+    return;
   const nextEnv = { ...currentConfig.env };
   if (authAction === "set-key") {
     const providerKey = await p28.select({
@@ -32334,21 +34197,25 @@ async function runConfigureFlow2(currentConfig) {
         { value: "__back_to_auth_setup", label: "\u2190 Back to authentication setup" }
       ]
     });
-    if (p28.isCancel(providerKey) || providerKey === "__back_to_auth_setup") return;
+    if (p28.isCancel(providerKey) || providerKey === "__back_to_auth_setup")
+      return;
     const keyValue = await p28.password({
       message: `${providerKey} value`,
       validate: (v) => !v?.trim() ? "Key value is required." : void 0
     });
-    if (p28.isCancel(keyValue)) return;
+    if (p28.isCancel(keyValue))
+      return;
     nextEnv[providerKey] = String(keyValue).trim();
   } else if (authAction === "clear-keys") {
-    for (const key of T3_CODE_SUPPORTED_ENV_KEYS) delete nextEnv[key];
+    for (const key of T3_CODE_SUPPORTED_ENV_KEYS)
+      delete nextEnv[key];
   }
   const confirmed = await p28.confirm({
     message: `Save T3 Code config? (model: ${String(modelInput)}, mode: ${modeInput}, binary: ${String(binaryInput)})`,
     initialValue: true
   });
-  if (p28.isCancel(confirmed) || !confirmed) return;
+  if (p28.isCancel(confirmed) || !confirmed)
+    return;
   writeT3CodeConfig({
     ...currentConfig,
     defaultModel: String(modelInput).trim() || currentConfig.defaultModel,
@@ -32368,7 +34235,8 @@ function registerT3CodeCommands(program2) {
     console.log(`Status: ${health.status}`);
     console.log(health.summary);
     console.log("");
-    for (const line of guidance) console.log(line);
+    for (const line of guidance)
+      console.log(line);
   });
   t3code.command("prompt").description("Run a headless T3 Code prompt and print the output").argument("<prompt>", "Prompt text").option("--model <model>", "Model override").option("--yolo", "Auto-approve all tool calls").option("--timeout-ms <ms>", "Execution timeout in milliseconds", (v) => Number(v)).option("--cwd <path>", "Working directory").action(async (prompt, opts) => {
     const config = readT3CodeConfig();
@@ -32383,8 +34251,10 @@ function registerT3CodeCommands(program2) {
       console.error("Timed out.");
       process.exit(124);
     }
-    if (result.stdout.trim()) console.log(result.stdout.trim());
-    if (result.stderr.trim()) console.error(result.stderr.trim());
+    if (result.stdout.trim())
+      console.log(result.stdout.trim());
+    if (result.stderr.trim())
+      console.error(result.stderr.trim());
     process.exit(result.exitCode ?? 1);
   });
   t3code.command("session").description("Launch an interactive T3 Code terminal session").option("--model <model>", "Model override").option("--yolo", "Auto-approve all tool calls").option("--cwd <path>", "Working directory").action((opts) => {
@@ -32409,7 +34279,7 @@ init_github();
 // src/commands/integrations.ts
 init_bridge();
 import * as p30 from "@clack/prompts";
-import pc44 from "picocolors";
+import pc45 from "picocolors";
 async function integrationsStatus(opts = {}) {
   const status = await describeIntegrationBridge();
   if (opts.json) {
@@ -32420,7 +34290,7 @@ async function integrationsStatus(opts = {}) {
     p30.log.warn(status.notice ?? "Not logged into Growthub.");
     return;
   }
-  p30.log.message(`Growthub: ${pc44.green("connected")}  as ${status.growthubLogin ?? "?"}`);
+  p30.log.message(`Growthub: ${pc45.green("connected")}  as ${status.growthubLogin ?? "?"}`);
   if (!status.bridgeAvailable) {
     p30.log.info(status.notice ?? "Hosted integrations endpoint not available.");
     return;
@@ -32430,9 +34300,9 @@ async function integrationsStatus(opts = {}) {
     return;
   }
   for (const i of status.integrations) {
-    const ready = i.ready ? pc44.green("ready") : pc44.yellow("reauth needed");
+    const ready = i.ready ? pc45.green("ready") : pc45.yellow("reauth needed");
     p30.log.message(
-      `  \u2022 ${pc44.cyan(i.provider)}  ${ready}  handle=${i.handle ?? "?"}  scopes=[${(i.scopes ?? []).join(", ")}]`
+      `  \u2022 ${pc45.cyan(i.provider)}  ${ready}  handle=${i.handle ?? "?"}  scopes=[${(i.scopes ?? []).join(", ")}]`
     );
   }
 }
@@ -32447,7 +34317,7 @@ async function integrationsList(opts = {}) {
     return;
   }
   for (const i of integrations) {
-    p30.log.message(`${pc44.cyan(i.provider)}  ${i.handle ?? ""}  (ready=${i.ready})`);
+    p30.log.message(`${pc45.cyan(i.provider)}  ${i.handle ?? ""}  (ready=${i.ready})`);
   }
 }
 async function integrationsProbe(opts) {
@@ -32470,7 +34340,7 @@ async function integrationsProbe(opts) {
     return;
   }
   p30.log.success(
-    `Resolved ${pc44.cyan(opts.provider)} credential via ${cred.source}  handle=${cred.handle ?? "?"}  scopes=[${(cred.scopes ?? []).join(", ")}]`
+    `Resolved ${pc45.cyan(opts.provider)} credential via ${cred.source}  handle=${cred.handle ?? "?"}  scopes=[${(cred.scopes ?? []).join(", ")}]`
   );
 }
 function registerIntegrationsCommands(program2) {
@@ -32488,12 +34358,12 @@ function registerIntegrationsCommands(program2) {
 
 // src/commands/status.ts
 import * as p31 from "@clack/prompts";
-import pc45 from "picocolors";
+import pc46 from "picocolors";
 
 // src/status/probes.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import fs46 from "node:fs";
-import path54 from "node:path";
+import fs49 from "node:fs";
+import path58 from "node:path";
 var GITHUB_API = "https://api.github.com";
 var NPM_REGISTRY = "https://registry.npmjs.org";
 function isoNow() {
@@ -32658,7 +34528,7 @@ async function probeKitForksIndex(_timeoutMs) {
   try {
     const { resolveKitForksIndexPath: resolveKitForksIndexPath2 } = await Promise.resolve().then(() => (init_kit_forks_home(), kit_forks_home_exports));
     const p36 = resolveKitForksIndexPath2();
-    if (!fs46.existsSync(p36)) {
+    if (!fs49.existsSync(p36)) {
       return {
         componentId: "kit-forks-index",
         level: "operational",
@@ -32666,7 +34536,7 @@ async function probeKitForksIndex(_timeoutMs) {
         lastCheckedAt: isoNow()
       };
     }
-    const parsed = JSON.parse(fs46.readFileSync(p36, "utf8"));
+    const parsed = JSON.parse(fs49.readFileSync(p36, "utf8"));
     const count = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
     return {
       componentId: "kit-forks-index",
@@ -32735,10 +34605,10 @@ async function probeNode(_timeoutMs) {
   };
 }
 async function probeReleaseBundleArtifacts(_timeoutMs) {
-  const distPath = path54.resolve(process.cwd(), "cli/dist/index.js");
-  const installerPath = path54.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
-  const distOk = fs46.existsSync(distPath);
-  const installerOk = fs46.existsSync(installerPath);
+  const distPath = path58.resolve(process.cwd(), "cli/dist/index.js");
+  const installerPath = path58.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
+  const distOk = fs49.existsSync(distPath);
+  const installerOk = fs49.existsSync(installerPath);
   const ok = distOk && installerOk;
   return {
     componentId: "release-bundle",
@@ -32868,20 +34738,30 @@ function aggregateLevel(components) {
   let unknown = 0;
   let operational = 0;
   for (const c of components) {
-    if (c.critical && c.level === "outage") outage += 1;
-    else if (c.level === "outage" || c.level === "degraded") degraded += 1;
-    else if (c.level === "unknown") unknown += 1;
-    else operational += 1;
+    if (c.critical && c.level === "outage")
+      outage += 1;
+    else if (c.level === "outage" || c.level === "degraded")
+      degraded += 1;
+    else if (c.level === "unknown")
+      unknown += 1;
+    else
+      operational += 1;
   }
-  if (outage > 0) return { overallLevel: "outage", summary: `${outage} critical outage(s), ${degraded} degraded.` };
-  if (degraded > 0) return { overallLevel: "degraded", summary: `${degraded} degraded / non-critical outage(s).` };
-  if (operational === 0 && unknown > 0) return { overallLevel: "unknown", summary: `No operational components; ${unknown} unknown.` };
+  if (outage > 0)
+    return { overallLevel: "outage", summary: `${outage} critical outage(s), ${degraded} degraded.` };
+  if (degraded > 0)
+    return { overallLevel: "degraded", summary: `${degraded} degraded / non-critical outage(s).` };
+  if (operational === 0 && unknown > 0)
+    return { overallLevel: "unknown", summary: `No operational components; ${unknown} unknown.` };
   return { overallLevel: "operational", summary: `All ${operational} checked component(s) operational.` };
 }
 function isSelected(entry, opts) {
-  if (entry.component.superAdminOnly && !opts.superAdmin) return false;
-  if (opts.onlyCategory && entry.component.category !== opts.onlyCategory) return false;
-  if (opts.onlyIds && opts.onlyIds.length > 0 && !opts.onlyIds.includes(entry.component.id)) return false;
+  if (entry.component.superAdminOnly && !opts.superAdmin)
+    return false;
+  if (opts.onlyCategory && entry.component.category !== opts.onlyCategory)
+    return false;
+  if (opts.onlyIds && opts.onlyIds.length > 0 && !opts.onlyIds.includes(entry.component.id))
+    return false;
   return true;
 }
 async function runStatuspageReport(opts = {}) {
@@ -32921,25 +34801,25 @@ async function runStatuspageReport(opts = {}) {
 function levelGlyph(level) {
   switch (level) {
     case "operational":
-      return pc45.green("\u25CF");
+      return pc46.green("\u25CF");
     case "degraded":
-      return pc45.yellow("\u25CF");
+      return pc46.yellow("\u25CF");
     case "outage":
-      return pc45.red("\u25CF");
+      return pc46.red("\u25CF");
     default:
-      return pc45.dim("\u25CB");
+      return pc46.dim("\u25CB");
   }
 }
 function overallBanner(report) {
   switch (report.overallLevel) {
     case "operational":
-      return pc45.green("\u2713 All systems operational");
+      return pc46.green("\u2713 All systems operational");
     case "degraded":
-      return pc45.yellow("\u26A0 Degraded \u2014 non-critical issues detected");
+      return pc46.yellow("\u26A0 Degraded \u2014 non-critical issues detected");
     case "outage":
-      return pc45.red("\u2717 Outage \u2014 at least one critical component is down");
+      return pc46.red("\u2717 Outage \u2014 at least one critical component is down");
     default:
-      return pc45.dim("? Status indeterminate");
+      return pc46.dim("? Status indeterminate");
   }
 }
 function renderHuman(report) {
@@ -32949,14 +34829,14 @@ function renderHuman(report) {
     bucket.push(c);
     byCategory.set(c.category, bucket);
   }
-  p31.log.message(`${overallBanner(report)}  ${pc45.dim(`(${report.summary})`)}`);
+  p31.log.message(`${overallBanner(report)}  ${pc46.dim(`(${report.summary})`)}`);
   for (const [category, list] of byCategory) {
-    p31.log.message(pc45.cyan(`
+    p31.log.message(pc46.cyan(`
   ${category}`));
     for (const c of list) {
-      const crit = c.critical ? pc45.red("!") : pc45.dim("\xB7");
-      const lat = c.latencyMs !== void 0 ? pc45.dim(` ${c.latencyMs}ms`) : "";
-      const sa = c.superAdminOnly ? pc45.magenta(" [super-admin]") : "";
+      const crit = c.critical ? pc46.red("!") : pc46.dim("\xB7");
+      const lat = c.latencyMs !== void 0 ? pc46.dim(` ${c.latencyMs}ms`) : "";
+      const sa = c.superAdminOnly ? pc46.magenta(" [super-admin]") : "";
       p31.log.message(`    ${levelGlyph(c.level)} ${crit} ${c.label.padEnd(30)} ${c.summary}${lat}${sa}`);
     }
   }
@@ -32970,11 +34850,13 @@ async function runStatuspage(opts) {
   });
   if (opts.json) {
     console.log(JSON.stringify(report, null, 2));
-    if (report.overallLevel === "outage") process.exitCode = 2;
+    if (report.overallLevel === "outage")
+      process.exitCode = 2;
     return;
   }
   renderHuman(report);
-  if (report.overallLevel === "outage") process.exitCode = 2;
+  if (report.overallLevel === "outage")
+    process.exitCode = 2;
 }
 function registerStatusCommands(program2) {
   program2.command("status").description("Statuspage-style health grid for every mission-critical service the CLI depends on.").option("--json", "Emit machine-readable report").option("--super-admin", "Include super-admin-only probes (release bundle, etc)").option("--only-category <category>", "Restrict to a single category (e.g. github, fork-sync)").option("--only <id...>", "Restrict to specific component ids").option("--timeout-ms <n>", "Per-probe timeout in ms (default 5000)", (v) => Number(v)).action(async (opts) => {
@@ -32984,7 +34866,7 @@ function registerStatusCommands(program2) {
 
 // src/commands/starter.ts
 import * as p32 from "@clack/prompts";
-import pc46 from "picocolors";
+import pc47 from "picocolors";
 import { pathToFileURL as pathToFileURL3 } from "node:url";
 init_init();
 init_table_renderer();
@@ -32999,15 +34881,15 @@ async function runStarterInit(opts) {
       return;
     }
     p32.outro(
-      `Workspace scaffolded at ${pc46.cyan(result.forkPath)}
+      `Workspace scaffolded at ${pc47.cyan(result.forkPath)}
   kitId:       ${result.kitId}
-  forkId:      ${pc46.cyan(result.forkId)}
+  forkId:      ${pc47.cyan(result.forkId)}
   baseVersion: ${result.baseVersion}
   open:        ${folderOpenLabel2(result.forkPath)}
   policyMode:  remoteSyncMode=${result.policyMode}` + (result.remote ? `
-  remote:      ${pc46.cyan(result.remote.htmlUrl)}` : "") + `
+  remote:      ${pc47.cyan(result.remote.htmlUrl)}` : "") + `
 
-Next: ${pc46.dim(`growthub kit fork status ${result.forkId}`)}`
+Next: ${pc47.dim(`growthub kit fork status ${result.forkId}`)}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -33057,12 +34939,14 @@ async function promptConfirmations(pending, securitySummary) {
     message: "Acknowledge the security report and proceed?",
     initialValue: false
   });
-  if (p32.isCancel(first) || first !== true) return null;
+  if (p32.isCancel(first) || first !== true)
+    return null;
   const second = await p32.confirm({
     message: "Second confirmation \u2014 materialize the workspace now?",
     initialValue: false
   });
-  if (p32.isCancel(second) || second !== true) return null;
+  if (p32.isCancel(second) || second !== true)
+    return null;
   return pending;
 }
 async function runSourceImportCommand(opts) {
@@ -33073,7 +34957,8 @@ async function runSourceImportCommand(opts) {
   try {
     const onProgressFromInput = input.onProgress;
     const onProgress = (step) => {
-      if (!json) p32.log.step(step);
+      if (!json)
+        p32.log.step(step);
       onProgressFromInput?.(step);
     };
     const { job, result } = await importSourceAsWorkspace({
@@ -33153,24 +35038,26 @@ function finalizeSuccess(result, jobId) {
   printActivationNudge("import_completed");
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
   p32.outro(
-    `Imported ${sourceLine} into ${pc46.cyan(result.forkPath)}
-  jobId:       ${pc46.cyan(jobId)}
+    `Imported ${sourceLine} into ${pc47.cyan(result.forkPath)}
+  jobId:       ${pc47.cyan(jobId)}
   importId:    ${result.importId}
-  forkId:      ${pc46.cyan(result.forkId)}
+  forkId:      ${pc47.cyan(result.forkId)}
   kitId:       ${result.kitId}
   sourceKind:  ${result.sourceKind}
   importMode:  ${result.importMode}
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager} confidence=${result.detection.confidence}
   security:    ${formatSecuritySummary(result)}
-  summary:     ${pc46.dim(result.summaryPath)}
-  manifest:    ${pc46.dim(result.manifestPath)}
+  summary:     ${pc47.dim(result.summaryPath)}
+  manifest:    ${pc47.dim(result.manifestPath)}
 
-Next: ${pc46.dim(`growthub kit fork status ${result.forkId}`)}`
+Next: ${pc47.dim(`growthub kit fork status ${result.forkId}`)}`
   );
 }
 function scopeLabel(scope) {
-  if (scope === "trending") return "Trending (24h)";
-  if (scope === "hot") return "Hot";
+  if (scope === "trending")
+    return "Trending (24h)";
+  if (scope === "hot")
+    return "Hot";
   return "All Time";
 }
 async function runBrowseSkills(opts) {
@@ -33213,7 +35100,7 @@ async function runBrowseSkills(opts) {
       })
     );
     for (const entry of result.entries) {
-      p32.log.message(`${pc46.bold(entry.skillId)}  ${pc46.dim(entry.htmlUrl)}`);
+      p32.log.message(`${pc47.bold(entry.skillId)}  ${pc47.dim(entry.htmlUrl)}`);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -33292,22 +35179,23 @@ function registerStarterCommands(program2) {
 
 // src/commands/skills.ts
 init_catalog2();
-import fs59 from "node:fs";
-import path67 from "node:path";
-import pc47 from "picocolors";
+import fs62 from "node:fs";
+import path71 from "node:path";
+import pc48 from "picocolors";
 
 // src/skills/session-memory.ts
 init_frontmatter();
-import fs58 from "node:fs";
-import path66 from "node:path";
+import fs61 from "node:fs";
+import path70 from "node:path";
 var PROJECT_MD_RELATIVE2 = ".growthub-fork/project.md";
 function resolveProjectMdPath(forkPath) {
-  return path66.resolve(forkPath, PROJECT_MD_RELATIVE2);
+  return path70.resolve(forkPath, PROJECT_MD_RELATIVE2);
 }
 function readSessionMemory(forkPath) {
   const projectMdPath = resolveProjectMdPath(forkPath);
-  if (!fs58.existsSync(projectMdPath)) return null;
-  const raw = fs58.readFileSync(projectMdPath, "utf8");
+  if (!fs61.existsSync(projectMdPath))
+    return null;
+  const raw = fs61.readFileSync(projectMdPath, "utf8");
   const sizeBytes = Buffer.byteLength(raw, "utf8");
   try {
     const { frontmatter, body } = readFrontmatter(raw);
@@ -33325,17 +35213,20 @@ init_kit_forks_home();
 init_table_renderer();
 function readLocalForkHead(forkPath) {
   const p36 = resolveInForkRegistrationPath(forkPath);
-  if (!fs59.existsSync(p36)) return null;
+  if (!fs62.existsSync(p36))
+    return null;
   try {
-    const parsed = JSON.parse(fs59.readFileSync(p36, "utf8"));
-    if (typeof parsed.forkId !== "string" || typeof parsed.kitId !== "string") return null;
+    const parsed = JSON.parse(fs62.readFileSync(p36, "utf8"));
+    if (typeof parsed.forkId !== "string" || typeof parsed.kitId !== "string")
+      return null;
     return { forkId: parsed.forkId, kitId: parsed.kitId };
   } catch {
     return null;
   }
 }
 function resolveRoot(optRoot) {
-  if (optRoot) return path67.resolve(optRoot);
+  if (optRoot)
+    return path71.resolve(optRoot);
   return process.cwd();
 }
 function runList(opts) {
@@ -33357,13 +35248,13 @@ function runList(opts) {
     return;
   }
   if (result.entries.length === 0) {
-    console.log(pc47.dim(`No SKILL.md found under ${result.catalog.root}`));
+    console.log(pc48.dim(`No SKILL.md found under ${result.catalog.root}`));
     return;
   }
   const rows = result.entries.map((e) => ({
     name: e.manifest.name,
     source: e.source,
-    skillPath: path67.relative(result.catalog.root ?? "", e.skillPath),
+    skillPath: path71.relative(result.catalog.root ?? "", e.skillPath),
     triggers: e.manifest.triggers?.length ?? 0,
     helpers: e.manifest.helpers?.length ?? 0,
     subSkills: e.manifest.subSkills?.length ?? 0,
@@ -33383,9 +35274,9 @@ function runList(opts) {
   }));
   if (result.warnings.length > 0) {
     console.log("");
-    console.log(pc47.yellow(`${result.warnings.length} warning(s):`));
+    console.log(pc48.yellow(`${result.warnings.length} warning(s):`));
     for (const w of result.warnings) {
-      console.log(pc47.yellow(`  - ${path67.relative(result.catalog.root ?? "", w.skillPath)}: ${w.reason}`));
+      console.log(pc48.yellow(`  - ${path71.relative(result.catalog.root ?? "", w.skillPath)}: ${w.reason}`));
     }
   }
 }
@@ -33412,10 +35303,10 @@ function runValidate(opts) {
         severity: "error"
       });
     }
-    const skillDir = path67.dirname(entry.skillPath);
+    const skillDir = path71.dirname(entry.skillPath);
     for (const helper of m.helpers ?? []) {
-      const helperPath = path67.resolve(skillDir, helper.path);
-      if (!fs59.existsSync(helperPath)) {
+      const helperPath = path71.resolve(skillDir, helper.path);
+      if (!fs62.existsSync(helperPath)) {
         issues2.push({
           skillPath: entry.skillPath,
           reason: `helpers[].path missing on disk: ${helper.path}`,
@@ -33424,8 +35315,8 @@ function runValidate(opts) {
       }
     }
     for (const sub of m.subSkills ?? []) {
-      const subPath = path67.resolve(skillDir, sub.path);
-      if (!fs59.existsSync(subPath)) {
+      const subPath = path71.resolve(skillDir, sub.path);
+      if (!fs62.existsSync(subPath)) {
         issues2.push({
           skillPath: entry.skillPath,
           reason: `subSkills[].path missing on disk: ${sub.path}`,
@@ -33455,18 +35346,19 @@ function runValidate(opts) {
     process.exitCode = issues2.filter((i) => i.severity === "error").length === 0 ? 0 : 1;
     return;
   }
-  console.log(pc47.bold(`Validated ${result.entries.length} skill(s) under ${root}`));
+  console.log(pc48.bold(`Validated ${result.entries.length} skill(s) under ${root}`));
   if (issues2.length === 0) {
-    console.log(pc47.green("OK \u2014 no issues."));
+    console.log(pc48.green("OK \u2014 no issues."));
     return;
   }
   for (const issue of issues2) {
-    const rel = path67.relative(root, issue.skillPath);
-    const tag = issue.severity === "error" ? pc47.red("[error]  ") : pc47.yellow("[warning]");
+    const rel = path71.relative(root, issue.skillPath);
+    const tag = issue.severity === "error" ? pc48.red("[error]  ") : pc48.yellow("[warning]");
     console.log(`${tag} ${rel}: ${issue.reason}`);
   }
   const errors = issues2.filter((i) => i.severity === "error").length;
-  if (errors > 0) process.exitCode = 1;
+  if (errors > 0)
+    process.exitCode = 1;
 }
 function runSessionInit(opts) {
   const forkPath = resolveRoot(opts.fork);
@@ -33475,7 +35367,8 @@ function runSessionInit(opts) {
   const forkHead = readLocalForkHead(forkPath);
   if (forkHead) {
     forkId = forkHead.forkId;
-    if (!kitId) kitId = forkHead.kitId;
+    if (!kitId)
+      kitId = forkHead.kitId;
   }
   if (!kitId) {
     const err = "Pass --kit <id>, or run this inside a registered fork (`.growthub-fork/fork.json`).";
@@ -33483,7 +35376,7 @@ function runSessionInit(opts) {
       console.log(JSON.stringify({ status: "error", error: err }));
       process.exitCode = 1;
     } else {
-      console.error(pc47.red(err));
+      console.error(pc48.red(err));
       process.exitCode = 1;
     }
     return;
@@ -33513,13 +35406,13 @@ function runSessionInit(opts) {
     return;
   }
   if (result.written) {
-    console.log(pc47.green(`Seeded ${path67.relative(forkPath, result.projectMdPath)}`));
+    console.log(pc48.green(`Seeded ${path71.relative(forkPath, result.projectMdPath)}`));
   } else if (!result.templatePath) {
-    console.log(pc47.yellow(
+    console.log(pc48.yellow(
       `Kit tree does not ship templates/project.md \u2014 this kit has not been upgraded to the v1.2 primitives yet. No seed written; session memory can still be maintained manually.`
     ));
   } else {
-    console.log(pc47.dim(`${path67.relative(forkPath, result.projectMdPath)} already present; left untouched.`));
+    console.log(pc48.dim(`${path71.relative(forkPath, result.projectMdPath)} already present; left untouched.`));
   }
 }
 function runSessionShow(opts) {
@@ -33532,7 +35425,7 @@ function runSessionShow(opts) {
       process.exitCode = 1;
       return;
     }
-    console.error(pc47.yellow(err));
+    console.error(pc48.yellow(err));
     process.exitCode = 1;
     return;
   }
@@ -33549,8 +35442,8 @@ function runSessionShow(opts) {
     ));
     return;
   }
-  console.log(pc47.bold(head.path));
-  console.log(pc47.dim(`${head.sizeBytes} bytes`));
+  console.log(pc48.bold(head.path));
+  console.log(pc48.dim(`${head.sizeBytes} bytes`));
   if (head.frontmatter) {
     for (const [k, v] of Object.entries(head.frontmatter)) {
       if (Array.isArray(v)) {
@@ -33567,7 +35460,7 @@ function runSessionShow(opts) {
     console.log(head.body);
   } else {
     console.log("");
-    console.log(pc47.dim("(pass --body to print the markdown body)"));
+    console.log(pc48.dim("(pass --body to print the markdown body)"));
   }
 }
 function registerSkillsCommands(program2) {
@@ -33582,21 +35475,25 @@ function registerSkillsCommands(program2) {
 // src/commands/fleet.ts
 init_fork_registry();
 import * as p33 from "@clack/prompts";
-import pc48 from "picocolors";
+import pc49 from "picocolors";
 
 // src/fleet/summary.ts
 init_fork_registry();
-import fs60 from "node:fs";
+import fs63 from "node:fs";
 init_fork_policy();
 init_fork_trace();
 function classifyHealth(drift, pendingConfirmationJobs, lastJobStatus) {
-  if (!drift) return "unknown";
-  if (pendingConfirmationJobs > 0) return "awaiting-confirmation";
-  if (lastJobStatus === "failed") return "error";
+  if (!drift)
+    return "unknown";
+  if (pendingConfirmationJobs > 0)
+    return "awaiting-confirmation";
+  if (lastJobStatus === "failed")
+    return "error";
   if (drift.overallSeverity === "critical" || drift.overallSeverity === "warning") {
     return "drift-major";
   }
-  if (drift.overallSeverity === "info" || drift.hasUpstreamUpdate) return "drift-minor";
+  if (drift.overallSeverity === "info" || drift.hasUpstreamUpdate)
+    return "drift-minor";
   return "clean";
 }
 var REMOTE_EVENT_TYPES = /* @__PURE__ */ new Set([
@@ -33606,7 +35503,7 @@ var REMOTE_EVENT_TYPES = /* @__PURE__ */ new Set([
   "conflict_encountered"
 ]);
 function buildForkSummary(reg) {
-  if (!fs60.existsSync(reg.forkPath)) {
+  if (!fs63.existsSync(reg.forkPath)) {
     return {
       forkId: reg.forkId,
       kitId: reg.kitId,
@@ -33711,8 +35608,10 @@ function buildFleetSummary() {
     byHealth[f.health] += 1;
     bySeverity[f.driftSeverity] += 1;
     byKit[f.kitId] = (byKit[f.kitId] ?? 0) + 1;
-    if (f.remote) forksWithRemote += 1;
-    if (f.pendingConfirmationJobs > 0) forksAwaitingConfirmation += 1;
+    if (f.remote)
+      forksWithRemote += 1;
+    if (f.pendingConfirmationJobs > 0)
+      forksAwaitingConfirmation += 1;
     pendingApprovalCount += f.pendingConfirmationJobs;
   }
   return {
@@ -33786,8 +35685,10 @@ function buildDriftArtifactSummary(report, plan, policy) {
       toVersion: pd.upstreamVersion,
       changeType: pd.changeType
     };
-    if (pd.changeType === "added") packageAdditions.push(entry);
-    else if (pd.changeType === "updated") packageUpgrades.push(entry);
+    if (pd.changeType === "added")
+      packageAdditions.push(entry);
+    else if (pd.changeType === "updated")
+      packageUpgrades.push(entry);
   }
   return {
     forkId: report.forkId,
@@ -33842,7 +35743,8 @@ function summariseArtifactSummaryAsNarrative(summary) {
     lines.push(
       `${b.unresolvedUpstreamDeletion.length} file(s) removed upstream remain in your fork \u2014 your call.`
     );
-  if (lines.length === 1) lines.push("Fork is clean \u2014 no actionable changes.");
+  if (lines.length === 1)
+    lines.push("Fork is clean \u2014 no actionable changes.");
   return lines;
 }
 
@@ -33854,8 +35756,10 @@ function buildApprovalQueue() {
   for (const reg of regs) {
     const jobs = listKitForkSyncJobs({ forkId: reg.forkId });
     for (const job of jobs) {
-      if (job.status !== "awaiting_confirmation") continue;
-      if (!job.healPlan) continue;
+      if (job.status !== "awaiting_confirmation")
+        continue;
+      if (!job.healPlan)
+        continue;
       entries.push({
         jobId: job.jobId,
         forkId: reg.forkId,
@@ -33915,21 +35819,22 @@ init_fork_policy();
 function healthGlyph(level) {
   switch (level) {
     case "clean":
-      return pc48.green("\u25CF");
+      return pc49.green("\u25CF");
     case "drift-minor":
-      return pc48.cyan("\u25CF");
+      return pc49.cyan("\u25CF");
     case "drift-major":
-      return pc48.yellow("\u25CF");
+      return pc49.yellow("\u25CF");
     case "awaiting-confirmation":
-      return pc48.magenta("\u25D0");
+      return pc49.magenta("\u25D0");
     case "error":
-      return pc48.red("\u25CF");
+      return pc49.red("\u25CF");
     default:
-      return pc48.dim("\u25CB");
+      return pc49.dim("\u25CB");
   }
 }
 function truncate4(s, n) {
-  if (!s) return "";
+  if (!s)
+    return "";
   return s.length <= n ? s : s.slice(0, n - 1) + "\u2026";
 }
 async function fleetView(opts) {
@@ -33939,7 +35844,7 @@ async function fleetView(opts) {
     return;
   }
   p33.log.message(
-    `Fleet: ${pc48.cyan(String(fleet.totalForks))} fork(s)  |  remote=${fleet.forksWithRemote}  awaiting=${fleet.forksAwaitingConfirmation}  pending-approvals=${fleet.pendingApprovalCount}`
+    `Fleet: ${pc49.cyan(String(fleet.totalForks))} fork(s)  |  remote=${fleet.forksWithRemote}  awaiting=${fleet.forksAwaitingConfirmation}  pending-approvals=${fleet.pendingApprovalCount}`
   );
   p33.log.message(
     `  Health \u2192 clean=${fleet.byHealth.clean}  drift-minor=${fleet.byHealth["drift-minor"]}  drift-major=${fleet.byHealth["drift-major"]}  awaiting=${fleet.byHealth["awaiting-confirmation"]}  error=${fleet.byHealth.error}  unknown=${fleet.byHealth.unknown}`
@@ -33948,7 +35853,8 @@ async function fleetView(opts) {
     p33.log.info("No forks registered yet. Run `growthub kit fork register` or `growthub starter init`.");
     return;
   }
-  for (const f of fleet.forks) renderForkRow(f);
+  for (const f of fleet.forks)
+    renderForkRow(f);
 }
 function renderForkRow(f) {
   const label = truncate4(f.label ?? f.forkId, 28).padEnd(28);
@@ -33956,10 +35862,10 @@ function renderForkRow(f) {
   const base = f.baseVersion.padEnd(8);
   const upstream = (f.upstreamVersion ?? "?").padEnd(8);
   const driftCounts = `files=${f.fileDriftCount} pkgs=${f.packageDriftCount}`;
-  const pending = f.pendingConfirmationJobs > 0 ? pc48.magenta(` awaits=${f.pendingConfirmationJobs}`) : "";
-  const remote = f.remote ? pc48.dim(` ${f.remote.owner}/${f.remote.repo}`) : "";
+  const pending = f.pendingConfirmationJobs > 0 ? pc49.magenta(` awaits=${f.pendingConfirmationJobs}`) : "";
+  const remote = f.remote ? pc49.dim(` ${f.remote.owner}/${f.remote.repo}`) : "";
   p33.log.message(
-    `  ${healthGlyph(f.health)} ${label}  ${pc48.dim(kit)}  ${base} \u2192 ${upstream}  ${pc48.dim(driftCounts)}${pending}${remote}`
+    `  ${healthGlyph(f.health)} ${label}  ${pc49.dim(kit)}  ${base} \u2192 ${upstream}  ${pc49.dim(driftCounts)}${pending}${remote}`
   );
 }
 async function fleetDrift(opts) {
@@ -33974,17 +35880,20 @@ async function fleetDrift(opts) {
     return;
   }
   p33.log.message(
-    `Fleet drift: ${pc48.cyan(String(withDrift.length))} of ${fleet.totalForks} fork(s) have drift.`
+    `Fleet drift: ${pc49.cyan(String(withDrift.length))} of ${fleet.totalForks} fork(s) have drift.`
   );
   p33.log.message(
     `  By severity \u2192 none=${fleet.bySeverity.none}  info=${fleet.bySeverity.info}  warning=${fleet.bySeverity.warning}  critical=${fleet.bySeverity.critical}`
   );
-  for (const f of withDrift) renderForkRow(f);
-  if (withDrift.length === 0) p33.log.success("No drift detected across the fleet.");
+  for (const f of withDrift)
+    renderForkRow(f);
+  if (withDrift.length === 0)
+    p33.log.success("No drift detected across the fleet.");
 }
 async function fleetDriftSummary(opts) {
   const reg = listKitForkRegistrations().find((r) => r.forkId === opts.forkId);
-  if (!reg) throw new Error(`Fork not found: ${opts.forkId}`);
+  if (!reg)
+    throw new Error(`Fork not found: ${opts.forkId}`);
   const policy = readKitForkPolicy(reg.forkPath);
   const report = detectKitForkDrift(reg);
   const plan = buildKitForkHealPlan(report, { policy });
@@ -33994,8 +35903,9 @@ async function fleetDriftSummary(opts) {
     console.log(JSON.stringify({ summary, narrative }, null, 2));
     return;
   }
-  p33.log.message(pc48.cyan(`Drift summary \u2014 ${reg.forkId}  (${summary.fromVersion} \u2192 ${summary.toVersion})`));
-  for (const line of narrative) p33.log.message(`  ${line}`);
+  p33.log.message(pc49.cyan(`Drift summary \u2014 ${reg.forkId}  (${summary.fromVersion} \u2192 ${summary.toVersion})`));
+  for (const line of narrative)
+    p33.log.message(`  ${line}`);
   const sections = [
     ["safe additions", summary.buckets.safeAdditions],
     ["safe updates", summary.buckets.safeUpdates],
@@ -34006,14 +35916,16 @@ async function fleetDriftSummary(opts) {
     ["upstream deletions (unresolved)", summary.buckets.unresolvedUpstreamDeletion]
   ];
   for (const [label, items] of sections) {
-    if (items.length === 0) continue;
-    p33.log.message(pc48.dim(`  \u2014 ${label} (${items.length}) \u2014`));
-    for (const item of items) p33.log.message(`    \xB7 ${item.path}  ${pc48.dim(item.note)}`);
+    if (items.length === 0)
+      continue;
+    p33.log.message(pc49.dim(`  \u2014 ${label} (${items.length}) \u2014`));
+    for (const item of items)
+      p33.log.message(`    \xB7 ${item.path}  ${pc49.dim(item.note)}`);
   }
   if (summary.buckets.packageAdditions.length || summary.buckets.packageUpgrades.length) {
-    p33.log.message(pc48.dim(`  \u2014 dependency drift \u2014`));
+    p33.log.message(pc49.dim(`  \u2014 dependency drift \u2014`));
     for (const d of summary.buckets.packageAdditions) {
-      p33.log.message(`    + ${d.packageName}@${d.toVersion}  ${pc48.dim("(added upstream)")}`);
+      p33.log.message(`    + ${d.packageName}@${d.toVersion}  ${pc49.dim("(added upstream)")}`);
     }
     for (const d of summary.buckets.packageUpgrades) {
       p33.log.message(`    \u2191 ${d.packageName}  ${d.fromVersion ?? "?"} \u2192 ${d.toVersion}`);
@@ -34039,14 +35951,14 @@ async function fleetPolicy(opts) {
     console.log(JSON.stringify({ count: rows.length, rows }, null, 2));
     return;
   }
-  p33.log.message(pc48.cyan(`Fleet policy matrix (${rows.length} fork(s))`));
+  p33.log.message(pc49.cyan(`Fleet policy matrix (${rows.length} fork(s))`));
   for (const r of rows) {
     const label = truncate4(r.label ?? r.forkId, 28).padEnd(28);
     const aa = r.autoApprove.padEnd(9);
     const ad = r.autoApproveDepUpdates.padEnd(9);
     const rs = r.remoteSyncMode.padEnd(6);
     const ut = String(r.untouchableCount).padStart(3);
-    const remote = r.hasRemote ? pc48.green("+") : pc48.dim("\xB7");
+    const remote = r.hasRemote ? pc49.green("+") : pc49.dim("\xB7");
     p33.log.message(
       `  ${label}  autoApprove=${aa}  deps=${ad}  remote=${rs}  untouchable=${ut}  ${remote}`
     );
@@ -34062,44 +35974,47 @@ async function fleetApprovals(opts) {
     p33.log.success("Approval queue is empty.");
     return;
   }
-  p33.log.message(pc48.cyan(`Approval queue: ${queue.length} job(s) awaiting confirmation`));
+  p33.log.message(pc49.cyan(`Approval queue: ${queue.length} job(s) awaiting confirmation`));
   for (const entry of queue) {
     p33.log.message(
-      `  \xB7 ${pc48.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
+      `  \xB7 ${pc49.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
     );
-    for (const path71 of entry.pendingPaths.slice(0, 6)) {
-      p33.log.message(`      ${pc48.dim("awaits")} ${path71}`);
+    for (const path75 of entry.pendingPaths.slice(0, 6)) {
+      p33.log.message(`      ${pc49.dim("awaits")} ${path75}`);
     }
     if (entry.pendingPaths.length > 6) {
-      p33.log.message(`      ${pc48.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
+      p33.log.message(`      ${pc49.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
     }
     p33.log.message(
-      `      ${pc48.dim("resume:")} growthub kit fork confirm --job-id ${entry.jobId}`
+      `      ${pc49.dim("resume:")} growthub kit fork confirm --job-id ${entry.jobId}`
     );
   }
 }
 async function fleetAgentPlan(opts) {
   const reg = listKitForkRegistrations().find((r) => r.forkId === opts.forkId);
-  if (!reg) throw new Error(`Fork not found: ${opts.forkId}`);
+  if (!reg)
+    throw new Error(`Fork not found: ${opts.forkId}`);
   const doc = buildAgentHealPlanDocument(reg, { captureInTrace: opts.captureInTrace !== false });
   if (opts.json) {
     console.log(JSON.stringify(doc, null, 2));
     return;
   }
-  p33.log.message(pc48.cyan(`Agent heal plan \u2014 ${reg.forkId}`));
+  p33.log.message(pc49.cyan(`Agent heal plan \u2014 ${reg.forkId}`));
   p33.log.message(`  ${doc.summary}`);
-  for (const line of doc.narrative) p33.log.message(`    ${line}`);
+  for (const line of doc.narrative)
+    p33.log.message(`    ${line}`);
   if (doc.awaitsConfirmation.length > 0) {
-    p33.log.message(pc48.magenta(`  Awaiting confirmation on:`));
-    for (const p210 of doc.awaitsConfirmation) p33.log.message(`    \xB7 ${p210}`);
+    p33.log.message(pc49.magenta(`  Awaiting confirmation on:`));
+    for (const p210 of doc.awaitsConfirmation)
+      p33.log.message(`    \xB7 ${p210}`);
     p33.log.message(
-      pc48.dim(
+      pc49.dim(
         `  Next: growthub kit fork heal ${reg.forkId}  (will park in awaiting_confirmation until resumed)`
       )
     );
   } else if (doc.plan.actions.length > 0) {
     p33.log.message(
-      pc48.dim(`  Next: growthub kit fork heal ${reg.forkId}  (${doc.plan.actions.length} safe action(s) ready)`)
+      pc49.dim(`  Next: growthub kit fork heal ${reg.forkId}  (${doc.plan.actions.length} safe action(s) ready)`)
     );
   }
 }
@@ -34154,21 +36069,21 @@ var DEFAULT_MEMORY_PROVIDER_CONFIG = {
 
 // src/runtime/memory/store.ts
 init_home();
-import fs61 from "node:fs";
-import path68 from "node:path";
+import fs64 from "node:fs";
+import path72 from "node:path";
 function toProjectSlug(project) {
   return project.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "default";
 }
 function resolveProjectPath(project) {
-  return path68.resolve(resolveMemoryProjectsDir(), `${toProjectSlug(project)}.json`);
+  return path72.resolve(resolveMemoryProjectsDir(), `${toProjectSlug(project)}.json`);
 }
 function loadMemoryDatabase(project) {
   const filePath = resolveProjectPath(project);
-  if (!fs61.existsSync(filePath)) {
+  if (!fs64.existsSync(filePath)) {
     return { version: 1, project, observations: [], summaries: [], nextObservationId: 1, nextSummaryId: 1 };
   }
   try {
-    const raw = JSON.parse(fs61.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs64.readFileSync(filePath, "utf-8"));
     return {
       version: 1,
       project,
@@ -34183,9 +36098,9 @@ function loadMemoryDatabase(project) {
 }
 function saveMemoryDatabase(db) {
   const dir = resolveMemoryProjectsDir();
-  fs61.mkdirSync(dir, { recursive: true });
+  fs64.mkdirSync(dir, { recursive: true });
   const filePath = resolveProjectPath(db.project);
-  fs61.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
+  fs64.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
 `, "utf-8");
 }
 function addObservation(project, input) {
@@ -34279,8 +36194,9 @@ function incrementRelevanceCount(project, observationId) {
 }
 function listMemoryProjects() {
   const dir = resolveMemoryProjectsDir();
-  if (!fs61.existsSync(dir)) return [];
-  return fs61.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+  if (!fs64.existsSync(dir))
+    return [];
+  return fs64.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
 }
 function getMemoryStats(project) {
   const db = loadMemoryDatabase(project);
@@ -34292,15 +36208,15 @@ function getMemoryStats(project) {
   };
 }
 function resolveProviderConfigPath() {
-  return path68.resolve(resolveMemoryDir(), "provider-config.json");
+  return path72.resolve(resolveMemoryDir(), "provider-config.json");
 }
 function readProviderConfig() {
   const filePath = resolveProviderConfigPath();
-  if (!fs61.existsSync(filePath)) {
+  if (!fs64.existsSync(filePath)) {
     return { ...DEFAULT_MEMORY_PROVIDER_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs61.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs64.readFileSync(filePath, "utf-8"));
     return {
       provider: validateProvider(raw.provider),
       apiKey: typeof raw.apiKey === "string" ? raw.apiKey : void 0,
@@ -34313,9 +36229,9 @@ function readProviderConfig() {
 }
 function writeProviderConfig(config) {
   const dir = resolveMemoryDir();
-  fs61.mkdirSync(dir, { recursive: true });
+  fs64.mkdirSync(dir, { recursive: true });
   const filePath = resolveProviderConfigPath();
-  fs61.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
+  fs64.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
 `, { mode: 384 });
 }
 function validateProvider(value) {
@@ -34359,10 +36275,14 @@ function scoreObservation(observation, queryTokens) {
     }
   }
   scoreField("title", observation.title);
-  if (observation.subtitle) scoreField("subtitle", observation.subtitle);
-  for (const fact of observation.facts) scoreField("facts", fact);
-  if (observation.narrative) scoreField("narrative", observation.narrative);
-  for (const concept of observation.concepts) scoreField("concepts", concept);
+  if (observation.subtitle)
+    scoreField("subtitle", observation.subtitle);
+  for (const fact of observation.facts)
+    scoreField("facts", fact);
+  if (observation.narrative)
+    scoreField("narrative", observation.narrative);
+  for (const concept of observation.concepts)
+    scoreField("concepts", concept);
   scoreField("type", observation.type);
   if (observation.relevanceCount > 0) {
     totalScore *= 1 + Math.min(observation.relevanceCount, 10) * 0.02;
@@ -34410,7 +36330,8 @@ function searchMemory(query) {
 function searchSummaries(project, text69, limit = 10) {
   const db = loadMemoryDatabase(project);
   const queryTokens = tokenize(text69);
-  if (queryTokens.length === 0) return [];
+  if (queryTokens.length === 0)
+    return [];
   const scored = [];
   for (const summary of db.summaries) {
     let score = 0;
@@ -34446,10 +36367,14 @@ function estimateTokens(text69) {
 }
 function renderSummaryCompact(summary) {
   const parts = [];
-  if (summary.request) parts.push(`Request: ${summary.request}`);
-  if (summary.completed) parts.push(`Completed: ${summary.completed}`);
-  if (summary.learned) parts.push(`Learned: ${summary.learned}`);
-  if (summary.nextSteps) parts.push(`Next: ${summary.nextSteps}`);
+  if (summary.request)
+    parts.push(`Request: ${summary.request}`);
+  if (summary.completed)
+    parts.push(`Completed: ${summary.completed}`);
+  if (summary.learned)
+    parts.push(`Learned: ${summary.learned}`);
+  if (summary.nextSteps)
+    parts.push(`Next: ${summary.nextSteps}`);
   const date2 = summary.createdAt.split("T")[0];
   return `[${date2}] ${parts.join(" | ")}`;
 }
@@ -34462,8 +36387,10 @@ function renderObservationFull(observation) {
   const lines = [];
   const date2 = observation.createdAt.split("T")[0];
   lines.push(`#${observation.id} [${date2}] ${observation.type}: ${observation.title}`);
-  if (observation.subtitle) lines.push(`  ${observation.subtitle}`);
-  if (observation.narrative) lines.push(`  ${observation.narrative}`);
+  if (observation.subtitle)
+    lines.push(`  ${observation.subtitle}`);
+  if (observation.narrative)
+    lines.push(`  ${observation.narrative}`);
   if (observation.facts.length > 0) {
     for (const fact of observation.facts) {
       lines.push(`  \u2022 ${fact}`);
@@ -34496,7 +36423,8 @@ function buildMemoryContext(project, configOverride) {
     for (const summary of summaries) {
       const line = renderSummaryCompact(summary);
       const lineCost = estimateTokens(line) + 1;
-      if (usedTokens + lineCost > config.tokenBudget) break;
+      if (usedTokens + lineCost > config.tokenBudget)
+        break;
       summaryLines.push(line);
       usedTokens += lineCost;
       includedSummaries += 1;
@@ -34511,7 +36439,8 @@ function buildMemoryContext(project, configOverride) {
     for (let i = 0; i < fullDetailCount; i += 1) {
       const block = renderObservationFull(observations[i]);
       const blockCost = estimateTokens(block) + 2;
-      if (usedTokens + blockCost > config.tokenBudget) break;
+      if (usedTokens + blockCost > config.tokenBudget)
+        break;
       fullLines.push(block);
       usedTokens += blockCost;
       includedObservations += 1;
@@ -34528,7 +36457,8 @@ function buildMemoryContext(project, configOverride) {
     for (let i = compactStart; i < observations.length; i += 1) {
       const line = renderObservationCompact(observations[i]);
       const lineCost = estimateTokens(line) + 1;
-      if (usedTokens + lineCost > config.tokenBudget) break;
+      if (usedTokens + lineCost > config.tokenBudget)
+        break;
       compactLines.push(line);
       usedTokens += lineCost;
       compactCount += 1;
@@ -34569,7 +36499,8 @@ function buildSemanticContext(project, prompt, configOverride) {
     for (let i = 0; i < fullDetailCount; i += 1) {
       const block = renderObservationFull(searchResults.results[i].observation);
       const blockCost = estimateTokens(block) + 2;
-      if (usedTokens + blockCost > config.tokenBudget) break;
+      if (usedTokens + blockCost > config.tokenBudget)
+        break;
       fullLines.push(block);
       usedTokens += blockCost;
       includedObservations += 1;
@@ -34582,7 +36513,8 @@ function buildSemanticContext(project, prompt, configOverride) {
     for (let i = fullDetailCount; i < searchResults.results.length; i += 1) {
       const line = renderObservationCompact(searchResults.results[i].observation);
       const lineCost = estimateTokens(line) + 1;
-      if (usedTokens + lineCost > config.tokenBudget) break;
+      if (usedTokens + lineCost > config.tokenBudget)
+        break;
       compactLines.push(line);
       usedTokens += lineCost;
       includedObservations += 1;
@@ -34694,15 +36626,17 @@ async function syncMemoriesToHosted(project, options) {
 init_llm();
 function resolveCliVersion() {
   try {
-    const moduleDir = path70.dirname(fileURLToPath7(import.meta.url));
+    const moduleDir = path74.dirname(fileURLToPath7(import.meta.url));
     const candidates = [
-      path70.resolve(moduleDir, "../package.json"),
-      path70.resolve(moduleDir, "../../package.json")
+      path74.resolve(moduleDir, "../package.json"),
+      path74.resolve(moduleDir, "../../package.json")
     ];
     for (const candidate of candidates) {
-      if (!fs63.existsSync(candidate)) continue;
-      const parsed = JSON.parse(fs63.readFileSync(candidate, "utf8"));
-      if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
+      if (!fs66.existsSync(candidate))
+        continue;
+      const parsed = JSON.parse(fs66.readFileSync(candidate, "utf8"));
+      if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string")
+        return parsed.version;
     }
   } catch {
   }
@@ -34711,9 +36645,11 @@ function resolveCliVersion() {
 var program = new Command();
 var DATA_DIR_OPTION_HELP = "Growthub data directory root (isolates local instance state)";
 function resolveSurfaceProfile(config) {
-  if (typeof config !== "object" || config === null) return null;
+  if (typeof config !== "object" || config === null)
+    return null;
   const surface = config.surface;
-  if (typeof surface !== "object" || surface === null) return null;
+  if (typeof surface !== "object" || surface === null)
+    return null;
   const profile = surface.profile;
   return profile === "dx" || profile === "gtm" ? profile : null;
 }
@@ -34745,7 +36681,7 @@ function registerSharedCommands(target) {
   });
   target.command("allowed-hostname").description("Allow a hostname for authenticated/private mode access").argument("<host>", "Hostname to allow (for example dotta-macbook-pro)").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).action(addAllowedHostname);
   target.command("run").description("Bootstrap local setup (onboard + doctor) and run Growthub").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("-i, --instance <id>", "Local instance id (default: default)").option("--repair", "Attempt automatic repairs during doctor", true).option("--no-repair", "Disable automatic repairs during doctor").action(runCommand);
-  target.command("discover").description("Shared discovery entry for local app install, worker kits, and templates").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--run", "Start Growthub immediately after saving config", false).action(async (opts) => {
+  target.command("discover").description("Shared discovery entry for local app install, worker kits, and templates").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--run", "Start Growthub immediately after saving config", false).option("--start <surface>", "Start in a discovery surface, e.g. create-workspace").action(async (opts) => {
     await runDiscoveryHub(opts);
   });
   registerKitCommands(target);
@@ -34753,6 +36689,7 @@ function registerSharedCommands(target) {
   registerCapabilityCommands(target);
   registerPipelineCommands(target);
   registerArtifactCommands(target);
+  registerBridgeCommands(target);
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
@@ -34799,7 +36736,8 @@ async function runNativeIntelligenceHub() {
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p35.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p35.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "setup") {
       const setupLines = [
         `OS: ${status.osLabel}`,
@@ -34828,14 +36766,17 @@ async function runNativeIntelligenceHub() {
         message: "Choose local custom model adapter",
         options: modelOptions
       });
-      if (p35.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
+      if (p35.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel")
+        continue;
       const chosenModel = adapterChoice === "__custom_model" ? await promptForCustomModel(defaultModel) : adapterChoice;
-      if (!chosenModel) continue;
+      if (!chosenModel)
+        continue;
       const applyConfirmed = await p35.confirm({
         message: `Apply Local Intelligence config for model "${chosenModel}"?`,
         initialValue: true
       });
-      if (p35.isCancel(applyConfirmed) || !applyConfirmed) continue;
+      if (p35.isCancel(applyConfirmed) || !applyConfirmed)
+        continue;
       const applySpinner = p35.spinner();
       applySpinner.start(`Applying model config (${chosenModel})...`);
       writeIntelligenceConfig({
@@ -34863,7 +36804,8 @@ async function runNativeIntelligenceHub() {
     }
     if (action === "provider-config") {
       const result = await promptExtendedProvider("intelligence");
-      if (!result) continue;
+      if (!result)
+        continue;
       if (result.provider === "local") {
         writeIntelligenceConfig({
           ...currentConfig,
@@ -34911,7 +36853,8 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
       message: "Enter your local intelligence prompt",
       placeholder: "Describe what you want to create/analyze"
     });
-    if (p35.isCancel(customPrompt)) continue;
+    if (p35.isCancel(customPrompt))
+      continue;
     const prompt = String(customPrompt).trim();
     if (!prompt) {
       p35.note("Prompt was empty. Nothing was run.", "Local Intelligence");
@@ -34926,9 +36869,10 @@ async function runMarketingContextBuilder(baseUrl, model) {
     placeholder: process.cwd(),
     defaultValue: process.cwd()
   });
-  if (p35.isCancel(projectDir)) return;
+  if (p35.isCancel(projectDir))
+    return;
   const dir = String(projectDir).trim() || process.cwd();
-  if (!fs63.existsSync(dir)) {
+  if (!fs66.existsSync(dir)) {
     p35.note(`Directory not found: ${dir}`, "Marketing Context Builder");
     return;
   }
@@ -34941,10 +36885,10 @@ async function runMarketingContextBuilder(baseUrl, model) {
       endpoint: baseUrl.replace(/\/v1$/, "") + "/v1/chat/completions",
       localModel: model
     });
-    const health = await checkBackendHealth(backend);
+    const health = await checkBackendHealth(config);
     const input = { projectDir: dir };
     let result;
-    if (health.ok) {
+    if (health.available) {
       result = await buildMarketingContext(input, backend);
     } else {
       result = buildDeterministicContext(input);
@@ -34964,10 +36908,10 @@ async function runMarketingContextBuilder(baseUrl, model) {
       p35.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
       return;
     }
-    const outDir = path70.resolve(dir, ".agents");
-    fs63.mkdirSync(outDir, { recursive: true });
-    const outPath = path70.resolve(outDir, "product-marketing-context.md");
-    fs63.writeFileSync(outPath, result.contextMarkdown, "utf-8");
+    const outDir = path74.resolve(dir, ".agents");
+    fs66.mkdirSync(outDir, { recursive: true });
+    const outPath = path74.resolve(outDir, "product-marketing-context.md");
+    fs66.writeFileSync(outPath, result.contextMarkdown, "utf-8");
     p35.note(`Saved to: ${outPath}
 
 Review the file and replace [NEEDS INPUT] placeholders with real data.`, "Marketing Context Builder");
@@ -35021,7 +36965,8 @@ function buildSetupCommands(osLabel, baseUrl, recommendedModel) {
 }
 function prioritizeModelOptions(models, favoriteModel, recommendedModel) {
   const unique3 = [...new Set(models)];
-  if (unique3.length === 0) return unique3;
+  if (unique3.length === 0)
+    return unique3;
   if (favoriteModel && unique3.includes(favoriteModel)) {
     return [favoriteModel, ...unique3.filter((id) => id !== favoriteModel)];
   }
@@ -35036,14 +36981,17 @@ async function promptForCustomModel(defaultModel) {
     placeholder: "example: gemma3:4b",
     defaultValue: defaultModel
   });
-  if (p35.isCancel(input)) return null;
+  if (p35.isCancel(input))
+    return null;
   const trimmed = String(input).trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 function inferCanonicalModelId(modelId) {
   const lower = modelId.toLowerCase();
-  if (lower.includes("gemma3n")) return "gemma3n";
-  if (lower.includes("codegemma")) return "codegemma";
+  if (lower.includes("gemma3n"))
+    return "gemma3n";
+  if (lower.includes("codegemma"))
+    return "codegemma";
   return "gemma3";
 }
 async function runLocalPromptChat(baseUrl, defaultModel) {
@@ -35092,7 +37040,8 @@ async function runLocalPromptChat(baseUrl, defaultModel) {
       captureSessionSummary(currentProject, sessionId, thread.messages);
       return;
     }
-    if (prompt.length === 0) continue;
+    if (prompt.length === 0)
+      continue;
     const semanticCtx = buildSemanticContext(currentProject, prompt, {
       maxObservations: 10,
       fullDetailCount: 2,
@@ -35150,17 +37099,25 @@ function extractFactsFromResponse(text69) {
 function inferConceptsFromPrompt(prompt) {
   const lower = prompt.toLowerCase();
   const concepts = [];
-  if (lower.includes("how") || lower.includes("explain")) concepts.push("how-it-works");
-  if (lower.includes("why")) concepts.push("why-it-exists");
-  if (lower.includes("change") || lower.includes("update") || lower.includes("modify")) concepts.push("what-changed");
-  if (lower.includes("fix") || lower.includes("bug") || lower.includes("issue") || lower.includes("error")) concepts.push("problem-solution");
-  if (lower.includes("careful") || lower.includes("warn") || lower.includes("watch out")) concepts.push("gotcha");
-  if (lower.includes("pattern") || lower.includes("approach") || lower.includes("best practice")) concepts.push("pattern");
-  if (lower.includes("trade") || lower.includes("versus") || lower.includes("vs")) concepts.push("trade-off");
+  if (lower.includes("how") || lower.includes("explain"))
+    concepts.push("how-it-works");
+  if (lower.includes("why"))
+    concepts.push("why-it-exists");
+  if (lower.includes("change") || lower.includes("update") || lower.includes("modify"))
+    concepts.push("what-changed");
+  if (lower.includes("fix") || lower.includes("bug") || lower.includes("issue") || lower.includes("error"))
+    concepts.push("problem-solution");
+  if (lower.includes("careful") || lower.includes("warn") || lower.includes("watch out"))
+    concepts.push("gotcha");
+  if (lower.includes("pattern") || lower.includes("approach") || lower.includes("best practice"))
+    concepts.push("pattern");
+  if (lower.includes("trade") || lower.includes("versus") || lower.includes("vs"))
+    concepts.push("trade-off");
   return concepts.length > 0 ? concepts : ["how-it-works"];
 }
 function captureSessionSummary(project, sessionId, messages) {
-  if (messages.length === 0) return;
+  if (messages.length === 0)
+    return;
   try {
     const userMessages = messages.filter((m) => m.role === "user");
     const assistantMessages = messages.filter((m) => m.role === "assistant");
@@ -35176,39 +37133,39 @@ function captureSessionSummary(project, sessionId, messages) {
   }
 }
 function resolveLocalThreadsDir() {
-  return path70.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
+  return path74.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
 }
 function loadOrCreateLocalThread() {
   const dir = resolveLocalThreadsDir();
-  fs63.mkdirSync(dir, { recursive: true });
-  const activePath = path70.resolve(dir, "active-thread.json");
-  if (fs63.existsSync(activePath)) {
+  fs66.mkdirSync(dir, { recursive: true });
+  const activePath = path74.resolve(dir, "active-thread.json");
+  if (fs66.existsSync(activePath)) {
     try {
-      const parsed = JSON.parse(fs63.readFileSync(activePath, "utf-8"));
+      const parsed = JSON.parse(fs66.readFileSync(activePath, "utf-8"));
       const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
-      const threadFile = path70.resolve(dir, `${id2}.json`);
+      const threadFile = path74.resolve(dir, `${id2}.json`);
       const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
       return { id: id2, filePath: threadFile, messages };
     } catch {
     }
   }
   const id = `thread-${Date.now()}`;
-  const filePath = path70.resolve(dir, `${id}.json`);
+  const filePath = path74.resolve(dir, `${id}.json`);
   const thread = { id, filePath, messages: [] };
   saveLocalThread(thread);
   return thread;
 }
 function saveLocalThread(thread) {
   const dir = resolveLocalThreadsDir();
-  fs63.mkdirSync(dir, { recursive: true });
-  fs63.writeFileSync(
+  fs66.mkdirSync(dir, { recursive: true });
+  fs66.writeFileSync(
     thread.filePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
     "utf-8"
   );
-  const activePath = path70.resolve(dir, "active-thread.json");
-  fs63.writeFileSync(
+  const activePath = path74.resolve(dir, "active-thread.json");
+  fs66.writeFileSync(
     activePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
@@ -35223,7 +37180,8 @@ async function completeWithRetry(backend, baseConfig, input) {
     return await backend.complete(input);
   } catch (err) {
     const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-    if (!message.includes("aborted")) throw err;
+    if (!message.includes("aborted"))
+      throw err;
     const retryBackend = createNativeIntelligenceBackend({
       ...baseConfig,
       timeoutMs: Math.max(baseConfig.timeoutMs, 18e4)
@@ -35315,9 +37273,11 @@ async function loadRuntimeContracts() {
 }
 async function loadRuntimeWorkflows() {
   const session = readSession();
-  if (!session || isSessionExpired(session)) return [];
+  if (!session || isSessionExpired(session))
+    return [];
   const response = await listHostedWorkflows(session);
-  if (!response?.workflows) return [];
+  if (!response?.workflows)
+    return [];
   return response.workflows.map((workflow) => ({
     workflowId: workflow.workflowId,
     name: workflow.name,
@@ -35354,7 +37314,7 @@ async function collectBindingsFromContract(contract, promptSeed) {
   return bindings;
 }
 function resolveCurrentProject() {
-  return path70.basename(process.cwd());
+  return path74.basename(process.cwd());
 }
 async function runMemoryKnowledgeHub() {
   const project = resolveCurrentProject();
@@ -35387,21 +37347,24 @@ async function runMemoryKnowledgeHub() {
         },
         {
           value: "sync",
-          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc50.dim(" (unavailable)"),
+          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc51.dim(" (unavailable)"),
           hint: syncStatus.available ? "push memories to hosted account" : syncStatus.reason
         },
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p35.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p35.isCancel(action) || action === "__back_to_hub")
+      return "back";
     if (action === "search") {
       const query = await p35.text({
         message: "Search query",
         placeholder: "what are you looking for?"
       });
-      if (p35.isCancel(query)) continue;
+      if (p35.isCancel(query))
+        continue;
       const text69 = String(query).trim();
-      if (!text69) continue;
+      if (!text69)
+        continue;
       const results = searchMemory({ text: text69, project, limit: 15 });
       if (results.totalMatched === 0) {
         p35.note("No matching observations found.", "Search Results");
@@ -35442,7 +37405,8 @@ async function runMemoryKnowledgeHub() {
       for (const obs of observations) {
         const date2 = obs.createdAt.split("T")[0];
         if (date2 !== lastDate) {
-          if (lastDate) lines.push("");
+          if (lastDate)
+            lines.push("");
           lines.push(`\u2500\u2500 ${date2} \u2500\u2500`);
           lastDate = date2;
         }
@@ -35470,7 +37434,8 @@ async function runMemoryKnowledgeHub() {
     }
     if (action === "provider") {
       const result = await promptExtendedProvider("memory intelligence");
-      if (!result) continue;
+      if (!result)
+        continue;
       writeProviderConfig({
         provider: result.provider,
         apiKey: result.apiKey,
@@ -35505,34 +37470,135 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
     }
   }
 }
+async function runCreateGovernedWorkspaceFlow(opts) {
+  workspaceLoop:
+    while (true) {
+      const starterChoice = await p35.select({
+        message: opts?.firstRun ? "What do you want to create?" : opts?.title ?? "Create Governed Workspace",
+        options: [
+          ...opts?.importOnly ? [] : [
+            {
+              value: "new-greenfield",
+              label: opts?.firstRun ? "\u{1F680} New governed workspace" : "\u{1F680} New greenfield workspace",
+              hint: "Scaffold a fresh governed workspace"
+            }
+          ],
+          {
+            value: "import-github",
+            label: opts?.firstRun ? "\u{1F517} Import GitHub repository" : "\u{1F517} Import GitHub repository",
+            hint: "Import a public or private repo via the Source Import Agent"
+          },
+          {
+            value: "import-skill",
+            label: opts?.firstRun ? "\u{1F9E0} Import skills.sh skill" : "\u{1F9E0} Import skills.sh skill",
+            hint: "Discover live skills, inspect metadata, then import the selected skill"
+          },
+          ...opts?.importOnly ? [] : [
+            {
+              value: "worker-kit",
+              label: opts?.firstRun ? "\u{1F9F0} Start from worker kit" : "\u{1F9F0} Start from worker kit",
+              hint: "Browse worker kits and materialize one locally"
+            }
+          ],
+          opts?.firstRun ? { value: "__full_menu", label: "\u{1F440} Open full discovery menu" } : { value: "__back", label: opts?.backLabel ?? "\u2190 Back" }
+        ],
+        initialValue: opts?.firstRun ? "new-greenfield" : void 0
+      });
+      if (p35.isCancel(starterChoice)) {
+        p35.cancel("Cancelled.");
+        process.exit(0);
+      }
+      if (starterChoice === "__full_menu")
+        return "full-menu";
+      if (starterChoice === "__back")
+        return "back";
+      if (starterChoice === "new-greenfield") {
+        const outRaw = await p35.text({
+          message: "Destination path for the new workspace (will be created if missing):",
+          placeholder: "./my-workspace"
+        });
+        if (p35.isCancel(outRaw) || !outRaw)
+          continue workspaceLoop;
+        const nameRaw = await p35.text({
+          message: "Optional label (leave blank to use directory basename):",
+          placeholder: ""
+        });
+        if (p35.isCancel(nameRaw))
+          continue workspaceLoop;
+        await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : void 0 });
+        continue workspaceLoop;
+      }
+      if (starterChoice === "import-github") {
+        const repoRaw = await p35.text({
+          message: "GitHub repo (owner/repo or https URL):",
+          placeholder: "octocat/Hello-World"
+        });
+        if (p35.isCancel(repoRaw) || !repoRaw)
+          continue workspaceLoop;
+        const {
+          promptForInteractiveWorkspacePath: promptForInteractiveWorkspacePath2,
+          startSourceImportFlow: startSourceImportFlow2
+        } = await Promise.resolve().then(() => (init_source_import_discovery(), source_import_discovery_exports));
+        const outPath = await promptForInteractiveWorkspacePath2({
+          kind: "github-repo",
+          repo: String(repoRaw),
+          out: ""
+        });
+        if (!outPath)
+          continue workspaceLoop;
+        await startSourceImportFlow2({
+          kind: "github-repo",
+          repo: String(repoRaw),
+          out: outPath
+        });
+        continue workspaceLoop;
+      }
+      if (starterChoice === "import-skill") {
+        const { startSkillsSourceImportFlow: startSkillsSourceImportFlow2 } = await Promise.resolve().then(() => (init_source_import_discovery(), source_import_discovery_exports));
+        await startSkillsSourceImportFlow2();
+        continue workspaceLoop;
+      }
+      if (starterChoice === "worker-kit") {
+        const result = await runInteractivePicker({ allowBackToHub: true });
+        if (result === "back")
+          continue workspaceLoop;
+        return "done";
+      }
+    }
+}
 async function runDiscoveryHub(opts) {
   track("discover_opened");
   printPaperclipCliBanner();
   p35.intro("Growthub Local");
+  if (opts?.start === "create-workspace") {
+    const result = await runCreateGovernedWorkspaceFlow({ firstRun: true });
+    if (result === "done")
+      return;
+  }
   while (true) {
     const workflowAccess = getWorkflowAccess();
     const surfaceChoice = await p35.select({
       message: "What do you want to do first?",
       options: [
         {
+          value: "create-workspace",
+          label: "\u{1F680} Create Governed Workspace",
+          hint: "Start from a repo, skills.sh skill, starter, or worker kit"
+        },
+        {
           value: "kits",
-          label: "\u{1F9F0} Worker Kits",
+          label: "\u{1F9F0} Browse Worker Kits",
           hint: "Self-contained workspace environments for agents"
         },
         {
-          value: "templates",
-          label: "\u{1F4DA} Templates",
-          hint: "Artifact template library"
+          value: "import-source",
+          label: "\u{1F501} Import Repo or Skill",
+          hint: "Build a governed workspace from GitHub or skills.sh"
         },
         {
-          value: "workflows",
-          label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc50.dim(" (locked)"),
-          hint: workflowAccess.state === "ready" ? "CMS contracts, dynamic pipelines, and saved workflows" : workflowAccess.reason
-        },
-        {
-          value: "native-intelligence",
-          label: "\u{1F9E0} Local Intelligence",
-          hint: "use local custom models adapaters"
+          value: "memory-knowledge",
+          label: "\u{1F4D6} Memory & Knowledge",
+          hint: "persistent memory, search, multi-provider config, Growthub sync"
         },
         {
           value: "agent-harness",
@@ -35542,12 +37608,7 @@ async function runDiscoveryHub(opts) {
         {
           value: "settings",
           label: "\u2699\uFE0F  Settings",
-          hint: "GitHub, Fork Sync, Integrations, Service Status, Starter, Fleet"
-        },
-        {
-          value: "memory-knowledge",
-          label: "\u{1F4D6} Memory & Knowledge",
-          hint: "persistent memory, search, multi-provider config, Growthub sync"
+          hint: "GitHub, Fork Sync, workflows, templates, local models, service status"
         },
         {
           value: "help",
@@ -35564,10 +37625,10 @@ async function runDiscoveryHub(opts) {
       p35.note(
         [
           "\u{1F916} Agent Harness: filter by type \u2014 Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
-          "\u{1F9F0} Worker Kits: browse specialized agents and custom workspaces.",
-          "\u{1F4DA} Templates: browse reusable artifact templates by library type.",
-          "\u{1F517} Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
-          "\u{1F9E0} Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
+          "\u{1F680} Create Governed Workspace: start from a repo, skills.sh skill, greenfield starter, or worker kit.",
+          "\u{1F9F0} Browse Worker Kits: browse specialized agents and custom workspaces.",
+          "\u{1F501} Import Repo or Skill: route directly into the Source Import Agent.",
+          "\u2699\uFE0F Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
           "\u{1F4D6} Memory & Knowledge: persistent cross-session memory, search observations, multi-provider AI config, sync to Growthub.",
           `   Locked state: ${workflowAccess.reason}.`,
           "\u{1F500} Fork Sync Agent: register, track, and heal your forked worker kits \u2014 preserves all customisations while syncing to the latest upstream version.",
@@ -35593,6 +37654,18 @@ async function runDiscoveryHub(opts) {
         ].join("\n"),
         "Growthub CLI Help"
       );
+      continue;
+    }
+    if (surfaceChoice === "create-workspace") {
+      const result = await runCreateGovernedWorkspaceFlow();
+      if (result === "done")
+        return;
+      continue;
+    }
+    if (surfaceChoice === "import-source") {
+      const result = await runCreateGovernedWorkspaceFlow({ importOnly: true, title: "Import Repo or Skill" });
+      if (result === "done")
+        return;
       continue;
     }
     if (surfaceChoice === "agent-harness") {
@@ -35630,7 +37703,8 @@ async function runDiscoveryHub(opts) {
           p35.cancel("Cancelled.");
           process.exit(0);
         }
-        if (harnessType === "__back_to_hub") break;
+        if (harnessType === "__back_to_hub")
+          break;
         if (harnessType === "paperclip") {
           let paperclipDone = false;
           while (!paperclipDone) {
@@ -35657,7 +37731,8 @@ async function runDiscoveryHub(opts) {
               p35.cancel("Cancelled.");
               process.exit(0);
             }
-            if (appModeChoice === "__back_to_harness") break;
+            if (appModeChoice === "__back_to_harness")
+              break;
             if (appModeChoice === "load") {
               const existingSurfaces = listLocalSurfaces();
               if (existingSurfaces.length === 0) {
@@ -35734,17 +37809,20 @@ async function runDiscoveryHub(opts) {
         }
         if (harnessType === "open-agents") {
           const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
-          if (oaResult === "back") continue;
+          if (oaResult === "back")
+            continue;
           return;
         }
         if (harnessType === "qwen-code") {
           const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
-          if (qwenResult === "back") continue;
+          if (qwenResult === "back")
+            continue;
           return;
         }
         if (harnessType === "t3code") {
           const t3Result = await runT3CodeHub({ allowBackToHub: true });
-          if (t3Result === "back") continue;
+          if (t3Result === "back")
+            continue;
           return;
         }
       }
@@ -35777,8 +37855,23 @@ async function runDiscoveryHub(opts) {
             },
             {
               value: "custom-workspace-starter",
-              label: "\u{1F9EA} Custom Workspace Starter",
-              hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring"
+              label: "\u{1F680} Create Governed Workspace",
+              hint: "Start from a repo, skills.sh skill, starter, or worker kit"
+            },
+            {
+              value: "workflows",
+              label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc51.dim(" (locked)"),
+              hint: workflowAccess.state === "ready" ? "CMS contracts, dynamic pipelines, and saved workflows" : workflowAccess.reason
+            },
+            {
+              value: "templates",
+              label: "\u{1F4DA} Templates",
+              hint: "Artifact template library"
+            },
+            {
+              value: "native-intelligence",
+              label: "\u{1F9E0} Local Intelligence",
+              hint: "Use local custom model adapters"
             },
             {
               value: "fleet-ops",
@@ -35800,7 +37893,8 @@ async function runDiscoveryHub(opts) {
           p35.cancel("Cancelled.");
           process.exit(0);
         }
-        if (settingsChoice === "__back_to_hub") break;
+        if (settingsChoice === "__back_to_hub")
+          break;
         const surfaceChoice2 = settingsChoice;
         if (surfaceChoice2 === "hosted-auth") {
           await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
@@ -35812,8 +37906,9 @@ async function runDiscoveryHub(opts) {
           continue;
         }
         if (surfaceChoice2 === "fork-sync") {
-          const result2 = await runKitForkHub({ allowBackToHub: true });
-          if (result2 === "back") continue;
+          const result = await runKitForkHub({ allowBackToHub: true });
+          if (result === "back")
+            continue;
           break;
         }
         if (surfaceChoice2 === "service-status") {
@@ -35821,77 +37916,26 @@ async function runDiscoveryHub(opts) {
           continue;
         }
         if (surfaceChoice2 === "custom-workspace-starter") {
-          starterLoop: while (true) {
-            const starterChoice = await p35.select({
-              message: "Custom Workspace Starter",
-              options: [
-                {
-                  value: "new-greenfield",
-                  label: "\u{1F9EA} New greenfield workspace",
-                  hint: "Scaffold a fresh starter-derived fork (no source import)"
-                },
-                {
-                  value: "import-github",
-                  label: "\u{1F419} Build from GitHub repository",
-                  hint: "Import a public or private repo via the Source Import Agent"
-                },
-                {
-                  value: "import-skill",
-                  label: "\u{1F9E0} Build from skills.sh",
-                  hint: "Discover live skills, inspect metadata, then import the selected skill"
-                },
-                { value: "__back", label: "\u2190 Back to Settings" }
-              ]
-            });
-            if (p35.isCancel(starterChoice)) {
-              p35.cancel("Cancelled.");
-              process.exit(0);
-            }
-            if (starterChoice === "__back") break starterLoop;
-            if (starterChoice === "new-greenfield") {
-              const outRaw = await p35.text({
-                message: "Destination path for the new workspace (will be created if missing):",
-                placeholder: "./my-workspace"
-              });
-              if (p35.isCancel(outRaw) || !outRaw) continue starterLoop;
-              const nameRaw = await p35.text({
-                message: "Optional label (leave blank to use directory basename):",
-                placeholder: ""
-              });
-              if (p35.isCancel(nameRaw)) continue starterLoop;
-              await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : void 0 });
-              continue starterLoop;
-            }
-            if (starterChoice === "import-github") {
-              const repoRaw = await p35.text({
-                message: "GitHub repo (owner/repo or https URL):",
-                placeholder: "octocat/Hello-World"
-              });
-              if (p35.isCancel(repoRaw) || !repoRaw) continue starterLoop;
-              const {
-                promptForInteractiveWorkspacePath: promptForInteractiveWorkspacePath2,
-                startSourceImportFlow: startSourceImportFlow2
-              } = await Promise.resolve().then(() => (init_source_import_discovery(), source_import_discovery_exports));
-              const outPath = await promptForInteractiveWorkspacePath2({
-                kind: "github-repo",
-                repo: String(repoRaw),
-                out: ""
-              });
-              if (!outPath) continue starterLoop;
-              await startSourceImportFlow2({
-                kind: "github-repo",
-                repo: String(repoRaw),
-                out: outPath
-              });
-              continue starterLoop;
-            }
-            if (starterChoice === "import-skill") {
-              const { startSkillsSourceImportFlow: startSkillsSourceImportFlow2 } = await Promise.resolve().then(() => (init_source_import_discovery(), source_import_discovery_exports));
-              await startSkillsSourceImportFlow2();
-              continue starterLoop;
-            }
-          }
+          await runCreateGovernedWorkspaceFlow({ backLabel: "\u2190 Back to Settings" });
           continue;
+        }
+        if (surfaceChoice2 === "workflows") {
+          const result = await runWorkflowPicker({ allowBackToHub: true });
+          if (result === "back")
+            continue;
+          return;
+        }
+        if (surfaceChoice2 === "templates") {
+          const result = await runTemplatePicker({ allowBackToHub: true });
+          if (result === "back")
+            continue;
+          return;
+        }
+        if (surfaceChoice2 === "native-intelligence") {
+          const result = await runNativeIntelligenceHub();
+          if (result === "back")
+            continue;
+          return;
         }
         if (surfaceChoice2 === "fleet-ops") {
           await fleetView({});
@@ -35902,9 +37946,9 @@ async function runDiscoveryHub(opts) {
           const catalog = readSkillCatalog2({ root: process.cwd() });
           p35.note(
             [
-              `Root: ${pc50.cyan(catalog.catalog.root ?? process.cwd())}`,
-              `Skills discovered: ${pc50.bold(String(catalog.entries.length))}`,
-              catalog.warnings.length > 0 ? `Warnings: ${pc50.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
+              `Root: ${pc51.cyan(catalog.catalog.root ?? process.cwd())}`,
+              `Skills discovered: ${pc51.bold(String(catalog.entries.length))}`,
+              catalog.warnings.length > 0 ? `Warnings: ${pc51.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
               "",
               "Invoke directly:",
               "  growthub skills list --json",
@@ -35920,28 +37964,17 @@ async function runDiscoveryHub(opts) {
       continue;
     }
     if (surfaceChoice === "kits") {
-      const result2 = await runInteractivePicker({ allowBackToHub: true });
-      if (result2 === "back") continue;
-      return;
-    }
-    if (surfaceChoice === "workflows") {
-      const result2 = await runWorkflowPicker({ allowBackToHub: true });
-      if (result2 === "back") continue;
-      return;
-    }
-    if (surfaceChoice === "native-intelligence") {
-      const result2 = await runNativeIntelligenceHub();
-      if (result2 === "back") continue;
+      const result = await runInteractivePicker({ allowBackToHub: true });
+      if (result === "back")
+        continue;
       return;
     }
     if (surfaceChoice === "memory-knowledge") {
-      const result2 = await runMemoryKnowledgeHub();
-      if (result2 === "back") continue;
+      const result = await runMemoryKnowledgeHub();
+      if (result === "back")
+        continue;
       return;
     }
-    const result = await runTemplatePicker({ allowBackToHub: true });
-    if (result === "back") continue;
-    return;
   }
 }
 function isInstallerMode() {
@@ -35949,17 +37982,21 @@ function isInstallerMode() {
 }
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
-  const instancesDir = path70.resolve(homeDir, "instances");
-  if (!fs63.existsSync(instancesDir)) return [];
-  return fs63.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  const instancesDir = path74.resolve(homeDir, "instances");
+  if (!fs66.existsSync(instancesDir))
+    return [];
+  return fs66.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
-    const configPath = path70.resolve(instancesDir, instanceId, "config.json");
-    if (!fs63.existsSync(configPath)) return null;
+    const configPath = path74.resolve(instancesDir, instanceId, "config.json");
+    if (!fs66.existsSync(configPath))
+      return null;
     try {
       const config = readConfig(configPath);
-      if (!config) return null;
+      if (!config)
+        return null;
       const profile = resolveSurfaceProfile(config);
-      if (!profile) return null;
+      if (!profile)
+        return null;
       return {
         instanceId,
         profile,

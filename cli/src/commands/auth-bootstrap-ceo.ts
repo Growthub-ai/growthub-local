@@ -84,7 +84,7 @@ export async function bootstrapCeoInvite(opts: {
     const existingAdminCount = await db
       .select()
       .from(instanceUserRoles)
-      .where(eq(instanceUserRoles.role, "instance_admin"))
+      .where(eq(instanceUserRoles.role as any, "instance_admin") as any)
       .then((rows) => rows.length);
 
     if (existingAdminCount > 0 && !opts.force) {
@@ -98,11 +98,11 @@ export async function bootstrapCeoInvite(opts: {
       .set({ revokedAt: now, updatedAt: now })
       .where(
         and(
-          eq(invites.inviteType, "bootstrap_ceo"),
-          isNull(invites.revokedAt),
-          isNull(invites.acceptedAt),
-          gt(invites.expiresAt, now),
-        ),
+          eq(invites.inviteType as any, "bootstrap_ceo"),
+          isNull(invites.revokedAt as any),
+          isNull(invites.acceptedAt as any),
+          gt(invites.expiresAt as any, now),
+        ) as any,
       );
 
     const token = createInviteToken();

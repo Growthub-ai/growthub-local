@@ -289,6 +289,10 @@ function normalizeEnvelope(raw: unknown): CapabilityManifestEnvelope {
 export interface FetchManifestOptions extends BaseUrlResolutionOptions {
   /** Optional fetch timeout in milliseconds. */
   timeoutMs?: number;
+  /** Include experimental/admin-hidden capabilities from the hosted registry. */
+  includeExperimental?: boolean;
+  /** Include disabled capabilities from the hosted registry. */
+  includeDisabled?: boolean;
   /**
    * If true, do not attach the active session bearer token. Used for smoke
    * tests against public manifest surfaces; NOT the normal path.
@@ -327,7 +331,10 @@ export async function fetchCapabilityManifest(
   opts: FetchManifestOptions = {},
 ): Promise<FetchManifestResult> {
   const resolvedBaseUrl = resolveManifestBaseUrl(opts);
-  const url = new URL(MANIFEST_PATH, `${resolvedBaseUrl.baseUrl}/`).toString();
+  const url = new URL(MANIFEST_PATH, `${resolvedBaseUrl.baseUrl}/`);
+  if (opts.includeExperimental) url.searchParams.set("include_experimental", "true");
+  if (opts.includeDisabled) url.searchParams.set("include_disabled", "true");
+  const manifestUrl = url.toString();
 
   const headers: Record<string, string> = {
     accept: "application/json",
@@ -353,7 +360,7 @@ export async function fetchCapabilityManifest(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(manifestUrl, {
       method: "GET",
       headers,
       signal: controller?.signal,
@@ -361,7 +368,7 @@ export async function fetchCapabilityManifest(
   } catch (err) {
     throw new ManifestEndpointUnavailableError(
       undefined,
-      `Hosted manifest endpoint unreachable (${url}): ${err instanceof Error ? err.message : String(err)}`,
+      `Hosted manifest endpoint unreachable (${manifestUrl}): ${err instanceof Error ? err.message : String(err)}`,
     );
   } finally {
     if (timer) clearTimeout(timer);

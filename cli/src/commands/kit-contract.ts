@@ -187,21 +187,21 @@ export interface TargetEnvelope {
   };
 }
 
+type KitJsonManifest = {
+  schemaVersion?: unknown;
+  kit?: { id?: unknown; version?: unknown; family?: unknown; type?: unknown };
+};
+
 /**
  * Read `kit.json` once and project onto the universal envelope.
  * Tolerant — missing or malformed `kit.json` returns null fields.
  */
 function buildTargetEnvelope(target: ResolvedTarget): TargetEnvelope {
   const kitJsonPath = path.resolve(target.kitRoot, "kit.json");
-  let manifest:
-    | {
-        schemaVersion?: unknown;
-        kit?: { id?: unknown; version?: unknown; family?: unknown; type?: unknown };
-      }
-    | null = null;
+  let manifest: KitJsonManifest | null = null;
   try {
     if (fs.existsSync(kitJsonPath)) {
-      manifest = JSON.parse(fs.readFileSync(kitJsonPath, "utf8")) as typeof manifest;
+      manifest = JSON.parse(fs.readFileSync(kitJsonPath, "utf8")) as KitJsonManifest;
     }
   } catch {
     manifest = null;

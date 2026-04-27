@@ -59,6 +59,7 @@ import { registerTemplateCommands, runTemplatePicker } from "./commands/template
 import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capability.js";
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
+import { registerBridgeCommands } from "./commands/bridge.js";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
@@ -215,6 +216,7 @@ function registerSharedCommands(target: Command) {
     .option("-c, --config <path>", "Path to config file")
     .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
     .option("--run", "Start Growthub immediately after saving config", false)
+    .option("--start <surface>", "Start in a discovery surface, e.g. create-workspace")
     .action(async (opts) => {
       await runDiscoveryHub(opts);
     });
@@ -224,6 +226,7 @@ function registerSharedCommands(target: Command) {
   registerCapabilityCommands(target);
   registerPipelineCommands(target);
   registerArtifactCommands(target);
+  registerBridgeCommands(target);
   registerWorkflowCommands(target);
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
@@ -491,11 +494,11 @@ async function runMarketingContextBuilder(baseUrl: string, model: string): Promi
       endpoint: baseUrl.replace(/\/v1$/, "") + "/v1/chat/completions",
       localModel: model,
     });
-    const health = await checkBackendHealth(backend);
+    const health = await checkBackendHealth(config);
     const input = { projectDir: dir };
 
     let result;
-    if (health.ok) {
+    if (health.available) {
       result = await buildMarketingContext(input, backend);
     } else {
       result = buildDeterministicContext(input);
@@ -1197,14 +1200,125 @@ async function runMemoryKnowledgeHub(): Promise<"back"> {
   }
 }
 
+type GovernedWorkspaceFlowResult = "back" | "full-menu" | "done";
+
+async function runCreateGovernedWorkspaceFlow(opts?: {
+  firstRun?: boolean;
+  importOnly?: boolean;
+  title?: string;
+  backLabel?: string;
+}): Promise<GovernedWorkspaceFlowResult> {
+  workspaceLoop: while (true) {
+    const starterChoice = await p.select({
+      message: opts?.firstRun
+        ? "What do you want to create?"
+        : opts?.title ?? "Create Governed Workspace",
+      options: [
+        ...(opts?.importOnly ? [] : [
+          {
+            value: "new-greenfield",
+            label: opts?.firstRun ? "🚀 New governed workspace" : "🚀 New greenfield workspace",
+            hint: "Scaffold a fresh governed workspace",
+          },
+        ]),
+        {
+          value: "import-github",
+          label: opts?.firstRun ? "🔗 Import GitHub repository" : "🔗 Import GitHub repository",
+          hint: "Import a public or private repo via the Source Import Agent",
+        },
+        {
+          value: "import-skill",
+          label: opts?.firstRun ? "🧠 Import skills.sh skill" : "🧠 Import skills.sh skill",
+          hint: "Discover live skills, inspect metadata, then import the selected skill",
+        },
+        ...(opts?.importOnly ? [] : [
+          {
+            value: "worker-kit",
+            label: opts?.firstRun ? "🧰 Start from worker kit" : "🧰 Start from worker kit",
+            hint: "Browse worker kits and materialize one locally",
+          },
+        ]),
+        opts?.firstRun
+          ? { value: "__full_menu", label: "👀 Open full discovery menu" }
+          : { value: "__back", label: opts?.backLabel ?? "← Back" },
+      ],
+      initialValue: opts?.firstRun ? "new-greenfield" : undefined,
+    });
+
+    if (p.isCancel(starterChoice)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (starterChoice === "__full_menu") return "full-menu";
+    if (starterChoice === "__back") return "back";
+
+    if (starterChoice === "new-greenfield") {
+      const outRaw = await p.text({
+        message: "Destination path for the new workspace (will be created if missing):",
+        placeholder: "./my-workspace",
+      });
+      if (p.isCancel(outRaw) || !outRaw) continue workspaceLoop;
+      const nameRaw = await p.text({
+        message: "Optional label (leave blank to use directory basename):",
+        placeholder: "",
+      });
+      if (p.isCancel(nameRaw)) continue workspaceLoop;
+      await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
+      continue workspaceLoop;
+    }
+
+    if (starterChoice === "import-github") {
+      const repoRaw = await p.text({
+        message: "GitHub repo (owner/repo or https URL):",
+        placeholder: "octocat/Hello-World",
+      });
+      if (p.isCancel(repoRaw) || !repoRaw) continue workspaceLoop;
+      const {
+        promptForInteractiveWorkspacePath,
+        startSourceImportFlow,
+      } = await import("./commands/source-import-discovery.js");
+      const outPath = await promptForInteractiveWorkspacePath({
+        kind: "github-repo",
+        repo: String(repoRaw),
+        out: "",
+      });
+      if (!outPath) continue workspaceLoop;
+      await startSourceImportFlow({
+        kind: "github-repo",
+        repo: String(repoRaw),
+        out: outPath,
+      });
+      continue workspaceLoop;
+    }
+
+    if (starterChoice === "import-skill") {
+      const { startSkillsSourceImportFlow } = await import("./commands/source-import-discovery.js");
+      await startSkillsSourceImportFlow();
+      continue workspaceLoop;
+    }
+
+    if (starterChoice === "worker-kit") {
+      const result = await runInteractivePicker({ allowBackToHub: true });
+      if (result === "back") continue workspaceLoop;
+      return "done";
+    }
+  }
+}
+
 async function runDiscoveryHub(opts?: {
   config?: string;
   dataDir?: string;
   run?: boolean;
+  start?: string;
 }): Promise<void> {
   track("discover_opened");
   printPaperclipCliBanner();
   p.intro("Growthub Local");
+
+  if (opts?.start === "create-workspace") {
+    const result = await runCreateGovernedWorkspaceFlow({ firstRun: true });
+    if (result === "done") return;
+  }
 
   while (true) {
     const workflowAccess = getWorkflowAccess();
@@ -1212,28 +1326,24 @@ async function runDiscoveryHub(opts?: {
       message: "What do you want to do first?",
       options: [
         {
+          value: "create-workspace",
+          label: "🚀 Create Governed Workspace",
+          hint: "Start from a repo, skills.sh skill, starter, or worker kit",
+        },
+        {
           value: "kits",
-          label: "🧰 Worker Kits",
+          label: "🧰 Browse Worker Kits",
           hint: "Self-contained workspace environments for agents",
         },
         {
-          value: "templates",
-          label: "📚 Templates",
-          hint: "Artifact template library",
+          value: "import-source",
+          label: "🔁 Import Repo or Skill",
+          hint: "Build a governed workspace from GitHub or skills.sh",
         },
         {
-          value: "workflows",
-          label: workflowAccess.state === "ready"
-            ? "🔗 Workflows"
-            : "🔗 Workflows" + pc.dim(" (locked)"),
-          hint: workflowAccess.state === "ready"
-            ? "CMS contracts, dynamic pipelines, and saved workflows"
-            : workflowAccess.reason,
-        },
-        {
-          value: "native-intelligence",
-          label: "🧠 Local Intelligence",
-          hint: "use local custom models adapaters",
+          value: "memory-knowledge",
+          label: "📖 Memory & Knowledge",
+          hint: "persistent memory, search, multi-provider config, Growthub sync",
         },
         {
           value: "agent-harness",
@@ -1243,12 +1353,7 @@ async function runDiscoveryHub(opts?: {
         {
           value: "settings",
           label: "⚙️  Settings",
-          hint: "GitHub, Fork Sync, Integrations, Service Status, Starter, Fleet",
-        },
-        {
-          value: "memory-knowledge",
-          label: "📖 Memory & Knowledge",
-          hint: "persistent memory, search, multi-provider config, Growthub sync",
+          hint: "GitHub, Fork Sync, workflows, templates, local models, service status",
         },
         {
           value: "help",
@@ -1267,10 +1372,10 @@ async function runDiscoveryHub(opts?: {
       p.note(
         [
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
-          "🧰 Worker Kits: browse specialized agents and custom workspaces.",
-          "📚 Templates: browse reusable artifact templates by library type.",
-          "🔗 Workflows: browse CMS contracts, create dynamic pipelines, and manage saved workflows.",
-          "🧠 Local Intelligence: use local custom models adapaters: inspect Gemma health, view intelligence tree, and run sample summary checks.",
+          "🚀 Create Governed Workspace: start from a repo, skills.sh skill, greenfield starter, or worker kit.",
+          "🧰 Browse Worker Kits: browse specialized agents and custom workspaces.",
+          "🔁 Import Repo or Skill: route directly into the Source Import Agent.",
+          "⚙️ Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
           "📖 Memory & Knowledge: persistent cross-session memory, search observations, multi-provider AI config, sync to Growthub.",
           `   Locked state: ${workflowAccess.reason}.`,
           "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
@@ -1296,6 +1401,18 @@ async function runDiscoveryHub(opts?: {
         ].join("\n"),
         "Growthub CLI Help",
       );
+      continue;
+    }
+
+    if (surfaceChoice === "create-workspace") {
+      const result = await runCreateGovernedWorkspaceFlow();
+      if (result === "done") return;
+      continue;
+    }
+
+    if (surfaceChoice === "import-source") {
+      const result = await runCreateGovernedWorkspaceFlow({ importOnly: true, title: "Import Repo or Skill" });
+      if (result === "done") return;
       continue;
     }
 
@@ -1501,8 +1618,27 @@ async function runDiscoveryHub(opts?: {
             },
             {
               value: "custom-workspace-starter",
-              label: "🧪 Custom Workspace Starter",
-              hint: "Scaffold a new forked worker kit with v1 Self-Healing Fork Sync wiring",
+              label: "🚀 Create Governed Workspace",
+              hint: "Start from a repo, skills.sh skill, starter, or worker kit",
+            },
+            {
+              value: "workflows",
+              label: workflowAccess.state === "ready"
+                ? "🔗 Workflows"
+                : "🔗 Workflows" + pc.dim(" (locked)"),
+              hint: workflowAccess.state === "ready"
+                ? "CMS contracts, dynamic pipelines, and saved workflows"
+                : workflowAccess.reason,
+            },
+            {
+              value: "templates",
+              label: "📚 Templates",
+              hint: "Artifact template library",
+            },
+            {
+              value: "native-intelligence",
+              label: "🧠 Local Intelligence",
+              hint: "Use local custom model adapters",
             },
             {
               value: "fleet-ops",
@@ -1550,77 +1686,26 @@ async function runDiscoveryHub(opts?: {
         }
 
         if (surfaceChoice === "custom-workspace-starter") {
-          starterLoop: while (true) {
-            const starterChoice = await p.select({
-              message: "Custom Workspace Starter",
-              options: [
-                {
-                  value: "new-greenfield",
-                  label: "🧪 New greenfield workspace",
-                  hint: "Scaffold a fresh starter-derived fork (no source import)",
-                },
-                {
-                  value: "import-github",
-                  label: "🐙 Build from GitHub repository",
-                  hint: "Import a public or private repo via the Source Import Agent",
-                },
-                {
-                  value: "import-skill",
-                  label: "🧠 Build from skills.sh",
-                  hint: "Discover live skills, inspect metadata, then import the selected skill",
-                },
-                { value: "__back", label: "← Back to Settings" },
-              ],
-            });
-            if (p.isCancel(starterChoice)) { p.cancel("Cancelled."); process.exit(0); }
-            if (starterChoice === "__back") break starterLoop;
-
-            if (starterChoice === "new-greenfield") {
-              const outRaw = await p.text({
-                message: "Destination path for the new workspace (will be created if missing):",
-                placeholder: "./my-workspace",
-              });
-              if (p.isCancel(outRaw) || !outRaw) continue starterLoop;
-              const nameRaw = await p.text({
-                message: "Optional label (leave blank to use directory basename):",
-                placeholder: "",
-              });
-              if (p.isCancel(nameRaw)) continue starterLoop;
-              await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : undefined });
-              continue starterLoop;
-            }
-
-            if (starterChoice === "import-github") {
-              const repoRaw = await p.text({
-                message: "GitHub repo (owner/repo or https URL):",
-                placeholder: "octocat/Hello-World",
-              });
-              if (p.isCancel(repoRaw) || !repoRaw) continue starterLoop;
-              const {
-                promptForInteractiveWorkspacePath,
-                startSourceImportFlow,
-              } = await import("./commands/source-import-discovery.js");
-              const outPath = await promptForInteractiveWorkspacePath({
-                kind: "github-repo",
-                repo: String(repoRaw),
-                out: "",
-              });
-              if (!outPath) continue starterLoop;
-              await startSourceImportFlow({
-                kind: "github-repo",
-                repo: String(repoRaw),
-                out: outPath,
-              });
-              continue starterLoop;
-            }
-
-            if (starterChoice === "import-skill") {
-              const { startSkillsSourceImportFlow } = await import("./commands/source-import-discovery.js");
-              await startSkillsSourceImportFlow();
-              continue starterLoop;
-            }
-          }
+          await runCreateGovernedWorkspaceFlow({ backLabel: "← Back to Settings" });
           continue;
+        }
+
+        if (surfaceChoice === "workflows") {
+          const result = await runWorkflowPicker({ allowBackToHub: true });
+          if (result === "back") continue;
+          return;
+        }
+
+        if (surfaceChoice === "templates") {
+          const result = await runTemplatePicker({ allowBackToHub: true });
+          if (result === "back") continue;
+          return;
+        }
+
+        if (surfaceChoice === "native-intelligence") {
+          const result = await runNativeIntelligenceHub();
+          if (result === "back") continue;
+          return;
         }
 
         if (surfaceChoice === "fleet-ops") {
@@ -1659,27 +1744,11 @@ async function runDiscoveryHub(opts?: {
       return;
     }
 
-    if (surfaceChoice === "workflows") {
-      const result = await runWorkflowPicker({ allowBackToHub: true });
-      if (result === "back") continue;
-      return;
-    }
-
-    if (surfaceChoice === "native-intelligence") {
-      const result = await runNativeIntelligenceHub();
-      if (result === "back") continue;
-      return;
-    }
-
     if (surfaceChoice === "memory-knowledge") {
       const result = await runMemoryKnowledgeHub();
       if (result === "back") continue;
       return;
     }
-
-    const result = await runTemplatePicker({ allowBackToHub: true });
-    if (result === "back") continue;
-    return;
   }
 }
 

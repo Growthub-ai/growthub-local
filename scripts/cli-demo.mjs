@@ -291,7 +291,7 @@ async function runInteractive() {
       {
         value: "cli",
         label: "🧰 CLI Discovery Preview",
-        hint: "Top-level kits/templates choice from this branch UX",
+        hint: "Top-level Create Governed Workspace path from this branch UX",
       },
       {
         value: "hosted-auth",
@@ -340,13 +340,13 @@ async function runInteractive() {
       },
       {
         value: "custom-workspace-starter",
-        label: "🧪 Custom Workspace Starter Preview",
-        hint: "Invoke `growthub starter init --help` against this branch CLI binary",
+        label: "🚀 Create Governed Workspace Preview",
+        hint: "Open the first-run governed workspace path from this branch CLI binary",
       },
       {
         value: "source-import",
-        label: "📥 Source Import Agent Preview",
-        hint: "Portable Source → Agent Environment pipeline (GitHub repo + skills.sh skill)",
+        label: "🔁 Import Repo or Skill Preview",
+        hint: "Portable Source → governed workspace path (GitHub repo + skills.sh skill)",
       },
       {
         value: "hyperframes-custom-workspace",
@@ -379,8 +379,8 @@ async function runInteractive() {
         { value: "dx", label: "🧠 DX", hint: "Developer Experience surface" },
         {
           value: "workspace",
-          label: "🧪 Workspace",
-          hint: "Custom Workspace Starter — one-shot `create-growthub-local --profile workspace --out ./...`",
+          label: "🚀 Governed Workspace",
+          hint: "One-shot `create-growthub-local --profile workspace --out ./...`",
         },
       ],
     });
@@ -430,11 +430,11 @@ async function runInteractive() {
   }
 
   if (choice === "custom-workspace-starter") {
-    runCli(["starter", "init", "--help"]);
+    runCli(["discover", "--start", "create-workspace"]);
   }
 
   if (choice === "source-import") {
-    runCli(["starter", "import-repo", "--help"]);
+    runCli(["discover"]);
   }
 
   if (choice === "hyperframes-custom-workspace") {

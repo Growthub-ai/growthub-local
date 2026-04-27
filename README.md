@@ -10,6 +10,8 @@ Growthub Local is a **local control plane for portable agent environments**.
 - **The hosted app** is the identity and connection authority
 - **Worker Kits** are the portable execution unit
 - **Forks** are your customizable, policy-governed branch of that infrastructure
+- **CMS pipelines** are the production surface for generated content and reusable hosted capabilities
+- **Growthub Bridge** is the authenticated path from local/kit environments into real business systems and asset outputs
 
 ![npm](https://img.shields.io/npm/v/@growthub/cli?label=%40growthub%2Fcli)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -21,10 +23,16 @@ Growthub Local is a **local control plane for portable agent environments**.
 
 ## Start here
 
-1. [**Import a GitHub repo into a governed workspace**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
-2. [**Import a skills.sh skill into a governed workspace**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
-3. [**Start from a custom workspace starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
-4. [**Download a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
+```bash
+npm create @growthub/growthub-local@latest
+```
+
+Choose **Create Governed Workspace**, then pick the fastest source:
+
+1. [**Import a GitHub repo**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
+2. [**Import a skills.sh skill**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
+3. [**Start greenfield**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
+4. [**Start from a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
 &nbsp;
@@ -76,6 +84,10 @@ Download complete, validated agent environments instead of starting from a blank
 
 Use saved workflows, templates, and dynamic pipelines through the CLI, backed by hosted execution where needed.
 
+CMS pipeline execution returns structured results and media pointers so agents
+can capture generated images, videos, slides, and text as finished work, then
+review or download them through the authenticated Growthub session.
+
 ### Use local intelligence and harnesses
 
 Run local model flows and external harnesses like Open Agents and Qwen Code through the same CLI ecosystem.
@@ -96,8 +108,9 @@ npm create @growthub/growthub-local@latest
 
 The guided installer is **profile-first**:
 
-1. choose your base profile (`gtm`, `dx`, or `workspace`)
-2. then move into command/harness lanes (Open Agents, Qwen Code, workflows, kits, auth)
+1. without flags, it opens **Create Governed Workspace** first
+2. choose greenfield, GitHub repo import, skills.sh import, worker kit, or the full discovery menu
+3. use explicit profiles (`gtm`, `dx`, or `workspace`) only when you want a direct install lane
 
 ### Direct profile install
 
@@ -115,7 +128,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.8.0` and the guided installer `@growthub/create-growthub-local@0.4.9`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.2.0-alpha.1` (adds the v1.2 Skills primitive surface additively — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+Growthub Local currently ships `@growthub/cli@0.9.1` and the guided installer `@growthub/create-growthub-local@0.5.1`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.3.0-alpha.1` (adds the bridge resource primitives additively alongside the v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
 
 ---
 
@@ -214,17 +227,51 @@ Growthub Local is intentionally split into:
 - **local CLI / machine layer** for execution, forks, kits, workflows, and harnesses
 - **hosted authority layer** for identity, connections, and higher-trust capability flows
 
+### The production stack
+
+The same primitives now cover governed workspaces and production outputs:
+
+```text
+Governed workspace
+  -> where the agent coordinates work
+
+Growthub bridge
+  -> how the agent accesses authenticated business systems
+
+CMS pipeline
+  -> how the agent produces finished images, videos, slides, text, and reports
+
+Fork sync
+  -> how the workspace stays customizable and upgradeable
+```
+
+The practical loop is:
+
+```text
+connect Growthub account
+  -> export or operate a governed workspace
+  -> execute CMS capabilities
+  -> capture result JSON and storage paths
+  -> download artifacts through Growthub auth
+  -> review, regenerate, or deliver finished output
+```
+
+Experimental hosted CMS rows are intentionally hidden by default. Use
+`growthub capability list --include-experimental --json` when you need to see
+them; machine consumers should read the existing `experimental` boolean.
+
 ---
 
 ## CLI surfaces
 
 The CLI is multiple product surfaces, not one. The public docs and READMEs expose these core lanes:
 
+- **Create Governed Workspace**
+- **Import Repo or Skill**
 - **Agent Harness**
 - **Worker Kits**
-- **Templates**
-- **Workflows**
-- **Local Intelligence**
+- **Memory & Knowledge**
+- **Settings** for templates, workflows, local intelligence, auth, fork sync, and service status
 - **Connect Growthub Account**
 
 ### Main commands
@@ -259,7 +306,7 @@ Example:
 
 ```text
 Growthub Local
--> Worker Kits / Templates / Workflows / Local Intelligence / Agent Harness / Settings
+-> Create Governed Workspace / Browse Worker Kits / Import Repo or Skill / Memory & Knowledge / Agent Harness / Settings / Help CLI
 ```
 
 ### Kits

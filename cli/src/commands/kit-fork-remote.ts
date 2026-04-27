@@ -397,7 +397,7 @@ function applyPolicyAssignment(
   const eqMatch = assignment.match(/^([a-zA-Z]+)=(.+)$/);
   if (plusMatch) {
     const [, field, value] = plusMatch;
-    const current = (policy as Record<string, unknown>)[field];
+    const current = (policy as unknown as Record<string, unknown>)[field];
     if (Array.isArray(current)) {
       return { ...policy, [field]: Array.from(new Set([...(current as string[]), value.trim()])) } as typeof policy;
     }

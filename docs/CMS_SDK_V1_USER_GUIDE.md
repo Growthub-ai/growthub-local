@@ -62,6 +62,9 @@ Quick checks:
 - `growthub auth whoami` shows your account
 - `growthub workflow saved` can list workflows
 - `growthub capability list --json` returns capabilities
+- `growthub capability list --family video --include-experimental --json`
+  returns experimental video rows with `"experimental": true` when you
+  intentionally need hidden/Atlas CMS items
 
 If these fail, fix auth/session first.
 
@@ -117,6 +120,15 @@ What to expect:
 
 This is good behavior.
 It proves the system is protecting users from invalid inputs.
+
+For Atlas/hidden model verification, use:
+
+```bash
+growthub capability list --family video --include-experimental --json
+```
+
+The SDK flag to look for is the existing `experimental` boolean. Stable rows
+have `experimental: false`; hidden/Atlas rows have `experimental: true`.
 
 ---
 
@@ -199,7 +211,123 @@ All confidential values should be redacted in doc copies.
 
 ---
 
-## 11) Fast troubleshooting guide
+## 11) Downloading generated media safely
+
+Generated images, videos, and slides should be downloaded through Growthub auth,
+not by extracting Supabase keys from hosted JavaScript.
+
+Use this pattern:
+
+```bash
+growthub pipeline execute ./payload.json --json > result.json
+```
+
+Then inspect storage paths:
+
+```bash
+node -e "
+  const r = require('./result.json')
+  Object.entries(r.nodeResults)
+    .filter(([, n]) => n.output?.storagePath)
+    .forEach(([nodeId, n]) => console.log(nodeId, n.output.storagePath))
+"
+```
+
+Download path:
+
+```text
+GET /api/secure-image?bucket=node_documents&path=<encoded storagePath>
+Authorization: Bearer <Growthub CLI session token>
+```
+
+CLI bridge commands:
+
+```bash
+growthub bridge assets list --limit 20 --json
+growthub bridge assets download --storage-path <storage_path> --out ./asset.bin --json
+growthub bridge brand kits --include-assets --json
+growthub bridge brand assets --brand-kit-id <brandKitId> --json
+growthub bridge brand download --storage-path <storage_path> --out ./brand-asset.bin --json
+growthub bridge knowledge list --json
+growthub bridge knowledge write --title "Run notes" --content "# Run notes" --json
+growthub bridge knowledge download <knowledgeItemId> --out ./knowledge.md --json
+growthub bridge mcp accounts --json
+```
+
+The bridge surface is the same authenticated user boundary for asset gallery
+outputs, remote brand kits/assets, knowledge items, and MCP accounts. Use
+`@growthub/api-contract/bridge` for SDK types. Brand assets are fetched from the
+existing hosted brand-kit/CMS media system and downloaded through the same
+authenticated storage proxy; arbitrary Asset Gallery uploads are intentionally
+not part of this primitive.
+
+For brand kits and brand assets, the official source of truth is the hosted GH
+app brand system:
+
+```text
+GET /api/brand-settings
+GET /api/brand-settings/assets
+```
+
+The CLI derives the hosted session-cookie auth shape from the active Growthub
+session so the JSON contract is accessible to both agents and humans through the
+same `growthub bridge brand ... --json` commands.
+
+Representative outputs:
+
+```json
+{
+  "success": true,
+  "userId": "20d81c2e-c440-4f93-afe2-1c45f39abd81",
+  "brandKits": [
+    {
+      "id": "174299f8-5045-415a-99b2-a9e4b33aa4d1",
+      "brand_name": "Dr. Robert Whitfield",
+      "visibility": "private",
+      "colors": { "primary": "#000000" },
+      "fonts": { "primary": "Inter" },
+      "messaging": "...",
+      "share_config": { "collaborators": [] }
+    }
+  ],
+  "count": 21
+}
+```
+
+```json
+{
+  "success": true,
+  "userId": "20d81c2e-c440-4f93-afe2-1c45f39abd81",
+  "brandKitId": "174299f8-5045-415a-99b2-a9e4b33aa4d1",
+  "assets": [
+    {
+      "id": "6bbb47de-7aa4-4cfc-aaff-e3409800837d",
+      "brand_kit_id": "174299f8-5045-415a-99b2-a9e4b33aa4d1",
+      "asset_type": "product_photo",
+      "storage_path": "public/.../brand_assets/.../winner1.jpeg",
+      "metadata": {
+        "file_name": "winner1.jpeg",
+        "file_size": 546061,
+        "file_type": "image/jpeg"
+      }
+    }
+  ],
+  "count": 2
+}
+```
+
+For videos, the expected storage path shape is:
+
+```text
+workflow_videos/{userId}/{threadId}/{videoId}.mp4
+```
+
+The hosted route must verify the authenticated user owns that `{userId}` path
+segment before downloading with service-role storage credentials.
+
+---
+
+## 12) Fast troubleshooting guide
 
 ### Problem: auth looks connected but run fails as session missing
 
@@ -238,7 +366,7 @@ What to do:
 
 ---
 
-## 12) User-facing examples (plain language)
+## 13) User-facing examples (plain language)
 
 ### Example A: “I only care if image generation works”
 
@@ -272,16 +400,37 @@ This usually removes unstable behavior from missing defaults.
 
 ---
 
-## 13) What not to do
+## 14) What not to do
 
 - do not store raw private URLs in release docs
 - do not publish internal IDs in user docs
 - do not call a release validated if only one primitive was tested
 - do not skip sync checks
 - do not ignore clear contract failures; fix and rerun
+- do not use Supabase anon-key extraction as the documented SDK artifact
+  download path
+
+---
+
+## 15) Platform pattern
+
+Growthub Local is proving one shared operating pattern:
+
+```text
+governed workspace
+-> Growthub bridge auth
+-> CMS capability execution
+-> artifact capture
+-> agent review / self-correction
+-> finished output or deployed app surface
+```
+
+The Growthub bridge removes integration setup. CMS pipelines remove production
+setup. Governed forks keep the workspace customizable and syncable. The SDK
+contract is what lets agents operate that stack without guessing payload shapes.
 
 ---
 
 ## 16) Short plain summary
 
-CMS SDK v1 is validated when image, video, and text all run successfully through real hosted execution, bad inputs fail clearly, corrected reruns pass, and sync remains stable after execution.
+CMS SDK v1 is validated when image, video, and text all run successfully through real hosted execution, bad inputs fail clearly, corrected reruns pass, generated artifacts are captured with storage paths, downloads go through Growthub auth, and sync remains stable after execution.
