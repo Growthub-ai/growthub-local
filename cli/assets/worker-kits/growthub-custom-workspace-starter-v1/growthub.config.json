@@ -1,0 +1,49 @@
+{
+  "id": "custom-workspace-default",
+  "name": "Custom Workspace Canvas",
+  "description": "Default composition shipped by growthub-custom-workspace-starter-v1. Demonstrates the SDK widget grid (`@growthub/api-contract/widgets`) on the canonical Custom Workspace primitive: chat session + workflow runner + artifact viewer wired to the kit's session-memory and trace.jsonl primitives. Forks edit ids, layouts, and bindings to tailor the canvas to the workspace's real domain.",
+  "capabilities": [],
+  "pipelines": [],
+  "integrations": [],
+  "canvas": {
+    "id": "workspace-default",
+    "name": "Custom workspace dashboard",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "widgets": [
+      {
+        "id": "agent-chat",
+        "kind": "chat-session",
+        "title": "Agent chat",
+        "position": { "x": 0, "y": 0, "w": 6, "h": 4 }
+      },
+      {
+        "id": "active-workflow",
+        "kind": "workflow-runner",
+        "title": "Active workflow",
+        "position": { "x": 6, "y": 0, "w": 6, "h": 4 }
+      },
+      {
+        "id": "session-artifacts",
+        "kind": "artifact-viewer",
+        "title": "Session artifacts",
+        "mediaPreview": true,
+        "position": { "x": 0, "y": 4, "w": 12, "h": 3 }
+      }
+    ],
+    "bindings": {
+      "chatToCanvas": true,
+      "workflowOutputsToArtifacts": true,
+      "sessionContext": true
+    }
+  },
+  "provenance": {
+    "createdBy": "cli",
+    "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit. Run `growthub compose preview` to validate after edits."
+  }
+}

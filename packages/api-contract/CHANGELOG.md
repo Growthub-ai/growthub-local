@@ -1,5 +1,96 @@
 # @growthub/api-contract
 
+## 1.3.1-alpha.1
+
+Additive patch. Promotes the production primitives shipped in the
+agency-portal kit (commit `55561ef`) — `portalCapabilities`,
+`AgencyPortalIntegration`, `groupIntegrationsByLane`, adapter
+selectors — into a public, kit-family-agnostic contract, and adds
+the **Widget Grid** primitive that turns those data primitives into
+a Twenty CRM-style declarative dashboard surface.
+
+Pure type-only contract. The runtime surface is six pure identity
+helpers (typed passthroughs) and one zero-cost lane filter — same
+precedent as `isExecutionEvent` / `isPipelineTraceEvent`. The SDK
+does NOT generate ids; non-determinism would break manifest
+diffing and fork-sync drift detection.
+
+No existing export shape changes; v1.0 / v1.2 / v1.3 surfaces
+unchanged. The frozen `CapabilityManifestEnvelope` is intentionally
+not touched.
+
+### Added — Widgets (`./widgets`)
+
+Twenty-style widget grid primitive — the visual composability layer
+that turns governed-workspace data primitives into a code-first,
+declarative dashboard surface. Mirrors Twenty's
+`Dashboards → Tabs → Widgets` hierarchy with agent-native widget
+kinds (`chat-session`, `workflow-runner`, `artifact-viewer`) that
+extend beyond Twenty's CRM-bound widget set.
+
+- `WidgetKind` — open-ended union; first five mirror Twenty
+  (`chart-metric`, `integration-card`, `table`, `fields`, `iframe`),
+  next four are Growthub-native (`chat-session`, `workflow-runner`,
+  `artifact-viewer`, `custom-component`).
+- `WidgetChartKind` — `number | bar | line | pie | area | gauge | …`
+- `WidgetAggregate` — `count | sum | avg | min | max | first | last | …`
+- `WidgetGridPosition` — `react-grid-layout`-compatible coordinate
+  block (`x`, `y`, `w`, `h`, `static?`, min/max bounds).
+- `GridLayout` — canvas-level grid configuration (columns, rowHeight,
+  gap, responsive, breakpoints).
+- `WidgetDefinition` — single widget with stable `id`, `kind`,
+  `position`, optional `slug` / `bindings` / `chart` / `aggregate` /
+  `mediaPreview` / `customComponentPath` / `requiredEntitlements`.
+- `CanvasScope` — `workspace | user-favorite | …`
+- `CanvasDefinition` — one dashboard tab; declares `layout`,
+  `widgets[]`, optional cross-primitive `bindings`
+  (`chatToCanvas`, `workflowOutputsToArtifacts`, `sessionContext`,
+  `portalCapabilities`).
+- `WIDGETS_CONTRACT_VERSION` — version sentinel.
+
+### Added — Compositions (`./compositions`)
+
+Top-level manifest a kit ships from `growthub.config.ts`. Stitches
+the declarative primitives every governed workspace already exposes
+(capabilities, integrations, pipelines, objects) and an optional
+widget grid into one diffable shape.
+
+- `PortalFieldType` — open-ended union mirroring twenty-sdk field
+  types (production literals from
+  `apps/agency-portal/lib/domain/portal.js:1-22`).
+- `PortalFieldRef` — `{ name, type, label? }`.
+- `PortalView` — `table | kanban | record | dashboard | calendar |
+  gallery | …`
+- `PortalObjectDefinition` — kit-family-agnostic object spec.
+- `PortalCapability` — strict superset of the production
+  `portalCapabilities` row shape.
+- `IntegrationLane` — `data-source | workspace-integration | …`
+- `IntegrationSetupMode`, `IntegrationAuthPath`, `IntegrationStatus`
+  — open-ended unions mirroring production literals.
+- `PortalIntegration` — strict superset of every row in
+  `agencyPortalIntegrationCatalog`. Generic across kits.
+- `GroupedIntegrations<T>` — `{ dataSources, workspaceIntegrations }`
+  partition.
+- `AdapterSelector` — runtime adapter selector mirroring the
+  `readAdapterConfig()` shape; reuses `AdapterKind` / `AdapterMode`
+  from `./adapters`.
+- `Composition` — top-level shape; capabilities / pipelines /
+  integrations / objects / canvas / provenance.
+- Pure identity helpers (typed passthroughs):
+  `definePortalCapability`, `definePortalObject`,
+  `defineIntegration`, `defineWidget`, `defineCanvas`,
+  `defineComposition`.
+- `groupIntegrationsByLane` — pure runtime helper; identical
+  behavior to the production helper at
+  `apps/agency-portal/lib/domain/integrations.js:176-183`.
+- `COMPOSITIONS_CONTRACT_VERSION` — version sentinel.
+
+### CLI consumer
+
+Companion CLI surface ships in `@growthub/cli@0.9.3`:
+`growthub compose new | preview | deploy` (deploy is local-only in
+this release; hosted-bridge sync follows in a subsequent release).
+
 ## 1.3.0-alpha.1
 
 Additive minor. Promotes the **Worker Kit** universal primitive and

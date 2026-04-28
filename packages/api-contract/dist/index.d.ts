@@ -53,5 +53,9 @@ export type { PipelineTraceEventType, PipelineTraceEnvelope, PipelineStageStarte
 export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
 export type { KitHealthSeverity, KitHealthCheck, KitHealthReport, KitMaturityDimension, KitMaturityScore, } from "./health.js";
 export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
+export type { WidgetKind, WidgetChartKind, WidgetAggregate, WidgetGridPosition, GridLayout, WidgetDefinition, CanvasScope, CanvasDefinition, } from "./widgets.js";
+export { WIDGETS_CONTRACT_VERSION } from "./widgets.js";
+export type { PortalFieldType, PortalFieldRef, PortalView, PortalObjectDefinition, PortalCapability, IntegrationLane, IntegrationSetupMode, IntegrationAuthPath, IntegrationStatus, PortalIntegration, GroupedIntegrations, AdapterSelector, Composition, } from "./compositions.js";
+export { definePortalCapability, definePortalObject, defineIntegration, defineWidget, defineCanvas, defineComposition, groupIntegrationsByLane, COMPOSITIONS_CONTRACT_VERSION, } from "./compositions.js";
 export declare const API_CONTRACT_VERSION: 1;
 //# sourceMappingURL=index.d.ts.map

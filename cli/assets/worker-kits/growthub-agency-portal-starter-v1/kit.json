@@ -71,6 +71,7 @@
     "apps/agency-portal/next.config.js",
     "apps/agency-portal/postcss.config.mjs",
     "apps/agency-portal/vercel.json",
+    "apps/agency-portal/growthub.config.json",
     "apps/agency-portal/app/layout.jsx",
     "apps/agency-portal/app/page.jsx",
     "apps/agency-portal/app/globals.css",

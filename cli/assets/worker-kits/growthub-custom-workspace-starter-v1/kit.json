@@ -30,6 +30,7 @@
     "output-standards.md",
     "runtime-assumptions.md",
     "validation-checklist.md",
+    "growthub.config.json",
     "workers/custom-workspace-operator/CLAUDE.md",
     "brands/_template/brand-kit.md",
     "brands/growthub/brand-kit.md",
