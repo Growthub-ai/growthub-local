@@ -36,7 +36,7 @@ async function IntegrationsSettingsPage() {
           </div>
           <div className="utility-actions">
             <span className="pill">{adapter.authority}</span>
-            <span className="pill">{adapter.source}</span>
+            <span className="pill">{adapter.id}</span>
           </div>
         </div>
 

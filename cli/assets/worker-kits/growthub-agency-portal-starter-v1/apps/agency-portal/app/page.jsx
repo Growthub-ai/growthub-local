@@ -1,24 +1,28 @@
 import { describeAuthAdapter } from "@/lib/adapters/auth";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { listAgencyPortalIntegrations } from "@/lib/adapters/integrations";
 import { describePaymentAdapter } from "@/lib/adapters/payments";
 import { describePersistenceAdapter } from "@/lib/adapters/persistence";
+import { groupIntegrationsByLane } from "@/lib/domain/integrations";
 import { portalCapabilities } from "@/lib/domain/portal";
 import Link from "next/link";
 const nav = [
   ...portalCapabilities.map((item) => ({ href: `#${item.id}`, label: item.label })),
   { href: "/settings/integrations", label: "Integrations" }
 ];
-const quickActions = [
-  "Client onboarding",
-  "Publish report",
-  "Sync Windsor data",
-  "Review open tasks"
-];
-function Home() {
+async function Home() {
   const config = readAdapterConfig();
   const persistence = describePersistenceAdapter();
   const auth = describeAuthAdapter();
   const payments = describePaymentAdapter();
+  const grouped = groupIntegrationsByLane(await listAgencyPortalIntegrations());
+  const integrations = [...grouped.dataSources, ...grouped.workspaceIntegrations];
+  const connectedIntegrations = integrations.filter((item) => item.isConnected);
+  const connectedDataSources = grouped.dataSources.filter((item) => item.isConnected);
+  const quickActions = [
+    ...portalCapabilities.slice(0, 4).map((item) => ({ href: `#${item.id}`, label: item.label })),
+    { href: "/settings/integrations", label: "Integrations" }
+  ];
   return <main className="shell">
       <aside className="sidebar">
         <div className="brand">
@@ -42,7 +46,7 @@ function Home() {
           </div>
           <div className="utility-actions">
             <Link href="/settings/integrations">Integrations</Link>
-            <span className="pill">v1 kit</span>
+            <span className="pill">deploy: {config.deployTarget}</span>
           </div>
         </div>
 
@@ -61,20 +65,19 @@ function Home() {
 
         <section className="hero-grid" id="dashboard">
           <article className="hero-card wide">
-            <p className="card-label">Monthly Revenue</p>
-            <strong>$0</strong>
-            <div className="progress"><span style={{ width: "0%" }} /></div>
-            <p className="muted">Connect persistence to populate invoices, retainers, and margin reporting.</p>
+            <p className="card-label">Runtime adapters</p>
+            <strong>{config.dataAdapter} / {config.authAdapter}</strong>
+            <p className="muted">Persistence, auth, payment, reporting, and deploy state come from runtime adapter selectors.</p>
           </article>
           <article className="hero-card">
             <p className="card-label">MCP Connections</p>
-            <strong>{config.integrationAdapter}</strong>
-            <p className="muted">Growthub bridge and BYO API key paths normalize into one object model.</p>
+            <strong>{connectedIntegrations.length}/{integrations.length}</strong>
+            <p className="muted">{config.integrationAdapter} normalizes bridge, BYO, and catalog rows into one object model.</p>
           </article>
           <article className="hero-card">
             <p className="card-label">Client Results</p>
-            <strong>Windsor</strong>
-            <p className="muted">First-class Windsor AI and Google Sheets blended data pipeline support.</p>
+            <strong>{config.dataSources.hasWindsorApiKey ? "Windsor key set" : `${connectedDataSources.length}/${grouped.dataSources.length}`}</strong>
+            <p className="muted">Reporting readiness is derived from data-source integrations and the Windsor overlay.</p>
           </article>
         </section>
 
@@ -127,7 +130,7 @@ function Home() {
           </article>
           <article className="card">
             <h3>Integrations</h3>
-            <p><strong>{config.integrationAdapter}</strong></p>
+            <p><strong>{connectedIntegrations.length}/{integrations.length} connected</strong></p>
             <p><Link href="/settings/integrations">Open setup surface</Link></p>
           </article>
           <article className="card">
@@ -140,23 +143,20 @@ function Home() {
         <section className="results-panel" id="client-results">
           <div>
             <p className="eyebrow">Client Results</p>
-            <h2>Windsor AI + blended data ready</h2>
+            <h2>Reporting state comes from data-source integrations</h2>
             <p>
-              Windsor is a data pipeline object, not a database choice. Google Sheets blended
-              exports, GA4, Shopify, and Meta data stay composable through the integrations surface.
+              Windsor is a data pipeline object, not a database choice. Google Sheets blended exports,
+              GA4, Shopify, and Meta stay composable through the normalized integrations surface.
             </p>
           </div>
           <div className="results-metrics">
-            <span>Meta</span>
-            <span>Shopify</span>
-            <span>GA4</span>
-            <span>Sheets</span>
+            {grouped.dataSources.map((source) => <span key={source.id}>{source.label}: {source.status}</span>)}
           </div>
         </section>
       </section>
 
       <aside className="quick-actions" aria-label="Quick actions">
-        {quickActions.map((action) => <button type="button" key={action}>{action}</button>)}
+        {quickActions.map((action) => <Link href={action.href} key={action.href}>{action.label}</Link>)}
       </aside>
     </main>;
 }

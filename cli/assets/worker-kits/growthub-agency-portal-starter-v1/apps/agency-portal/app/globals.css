@@ -170,7 +170,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   gap: 8px;
   width: 190px;
 }
-.quick-actions button {
+.quick-actions button, .quick-actions a {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
@@ -178,6 +178,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   color: var(--ink);
   text-align: left;
   font: inherit;
+  text-decoration: none;
 }
 .integration-board { display: grid; gap: 14px; }
 .integration-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 16px; }

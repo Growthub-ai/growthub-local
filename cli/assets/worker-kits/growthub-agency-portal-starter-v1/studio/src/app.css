@@ -114,7 +114,7 @@ a { color: inherit; }
 .results-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .results-metrics span { display: block; color: var(--muted); font-size: 12px; }
 .quick-actions { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; width: 190px; }
-.quick-actions button {
+.quick-actions button, .quick-actions a {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
@@ -122,6 +122,7 @@ a { color: inherit; }
   color: var(--ink);
   text-align: left;
   font: inherit;
+  text-decoration: none;
 }
 
 @media (max-width: 1020px) {

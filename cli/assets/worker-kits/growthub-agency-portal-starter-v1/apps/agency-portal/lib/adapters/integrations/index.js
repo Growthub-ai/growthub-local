@@ -57,7 +57,27 @@ async function listAgencyPortalIntegrations() {
     return agencyPortalIntegrationCatalog;
   }
   const payload = await response.json();
-  return mergeBridgeRows(normalizeGrowthubBridgePayload(payload));
+  const merged = mergeBridgeRows(normalizeGrowthubBridgePayload(payload));
+  return applyApiKeyOverlays(merged, config);
+}
+function applyApiKeyOverlays(integrations, config) {
+  if (!config.dataSources.hasWindsorApiKey) return integrations;
+  const windsorOverlay = {
+    status: "connected",
+    isConnected: true,
+    isActive: true,
+    authPath: "byo-api-key",
+    setupMode: "bring-your-own-key",
+    authType: "api_token",
+    category: "api_key",
+    secretEnvName: "WINDSOR_API_KEY",
+    connectionMetadata: { source: "workspace-env", secretEnvName: "WINDSOR_API_KEY" }
+  };
+  return integrations.map((item) => {
+    if (item.provider === "windsor-ai") return { ...item, ...windsorOverlay };
+    if (item.provider === "google-sheets") return { ...item, ...windsorOverlay, secretEnvName: undefined, connectionMetadata: { source: "windsor-blended-data" } };
+    return item;
+  });
 }
 function readBringYourOwnRows() {
   const raw = process.env.AGENCY_PORTAL_BYO_CONNECTIONS_JSON;
