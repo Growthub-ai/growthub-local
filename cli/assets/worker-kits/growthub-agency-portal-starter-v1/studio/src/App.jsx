@@ -1,22 +1,19 @@
 import React from "react";
+import { agencyPortalIntegrationCatalog, groupIntegrationsByLane } from "../../apps/agency-portal/lib/domain/integrations.js";
+import { portalCapabilities } from "../../apps/agency-portal/lib/domain/portal.js";
 
-const capabilities = [
-  ["Dashboard", "Live agency snapshot", "Revenue, client health, overdue work, and next actions."],
-  ["Clients", "Profiles and onboarding", "Client records, notes, KPIs, lifecycle state, and contacts."],
-  ["Pipeline", "Opportunities", "Lead stages, potential value, won/lost state, and follow-up ownership."],
-  ["Reports", "Performance reviews", "Ad and campaign reporting through pluggable reporting adapters."],
-  ["Client Results", "Windsor reporting", "Blended Meta, Shopify, GA4, and Google Sheets-backed results."],
-  ["Settings", "Workspace control", "Branding, adapter selections, deployment metadata, and user preferences."],
-];
-
+const grouped = groupIntegrationsByLane(agencyPortalIntegrationCatalog);
+const integrations = [...grouped.dataSources, ...grouped.workspaceIntegrations];
 const adapters = [
-  ["Persistence", "Postgres-compatible adapter boundary, not bound to one vendor."],
-  ["Auth", "Local workspace auth or Growthub hosted bridge authority."],
-  ["Payments", "Replaceable billing adapter for Stripe or explicit project needs."],
-  ["Integrations", "Growthub MCP bridge, BYO API tokens, and Windsor data pipelines."],
+  ["Persistence", "Provider-managed", "Postgres, Qstash KV, or provider-managed adapter boundary."],
+  ["Auth", "Provider-managed", "OIDC, Clerk, Auth.js, or provider-managed auth selector."],
+  ["Payments", "None", "Stripe, Polar, or disabled payment adapter selector."],
+  ["Integrations", `${integrations.filter((item) => item.isConnected).length}/${integrations.length} connected`, "Growthub MCP bridge, BYO API tokens, and Windsor data pipelines."],
 ];
-
-const quickActions = ["Client onboarding", "Publish report", "Sync Windsor data", "Review open tasks"];
+const quickActions = [
+  ...portalCapabilities.slice(0, 4).map((item) => ({ href: `#${item.id}`, label: item.label })),
+  { href: "#integrations", label: "Integrations" },
+];
 
 export default function App() {
   return (
@@ -27,8 +24,8 @@ export default function App() {
           <span>Agency Portal</span>
         </div>
         <nav className="nav">
-          {capabilities.map(([label]) => (
-            <a key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>
+          {portalCapabilities.map((capability) => (
+            <a key={capability.id} href={`#${capability.id}`}>{capability.label}</a>
           ))}
           <a href="#integrations">Integrations</a>
         </nav>
@@ -46,7 +43,7 @@ export default function App() {
           </div>
           <div className="utility-actions">
             <a href="#integrations">Open integrations</a>
-            <span className="pill">worker kit v1</span>
+            <span className="pill">deploy: local-preview</span>
           </div>
         </div>
 
@@ -54,26 +51,25 @@ export default function App() {
           <span className="eyebrow">Agency operating system</span>
           <h1>Client work, reporting, and integrations in one governed shell.</h1>
           <p>
-            This starter keeps the copied prototype as product direction while the worker kit owns the
-            composable adapter model, local Vite workflow, and clean Vercel deployment path.
+            The local shell previews the same capability and integration objects that the deployable portal exposes.
           </p>
         </header>
 
         <section className="hero-grid">
           <article className="hero-card primary">
-            <span>Monthly revenue</span>
-            <strong>$84.2k</strong>
-            <p>MRR, retainers, won pipeline, and invoice state are ready to bind to any supported database adapter.</p>
+            <span>Runtime adapters</span>
+            <strong>provider-managed</strong>
+            <p>Persistence, auth, and payment selectors stay replaceable at runtime.</p>
           </article>
           <article className="hero-card">
             <span>MCP connections</span>
-            <strong>9 active</strong>
-            <p>Growthub bridge connections can hydrate user-linked providers without hardcoded API sprawl.</p>
+            <strong>{integrations.filter((item) => item.isConnected).length}/{integrations.length}</strong>
+            <p>Bridge, BYO, and catalog rows normalize into one integration object model.</p>
           </article>
           <article className="hero-card">
             <span>Windsor data</span>
-            <strong>4 sources</strong>
-            <p>Meta, Shopify, GA4, and Sheets-backed blended data are modeled as data pipeline objects.</p>
+            <strong>{grouped.dataSources.filter((item) => item.isConnected).length}/{grouped.dataSources.length}</strong>
+            <p>Data pipeline readiness comes from integration state, not seeded reporting metrics.</p>
           </article>
         </section>
 
@@ -101,19 +97,20 @@ export default function App() {
         </section>
 
         <section className="grid">
-          {capabilities.map(([label, metric, description]) => (
-            <article className="card" id={label.toLowerCase().replaceAll(" ", "-")} key={label}>
-              <span>{metric}</span>
-              <h3>{label}</h3>
-              <p>{description}</p>
+          {portalCapabilities.map((capability) => (
+            <article className="card" id={capability.id} key={capability.id}>
+              <span>{capability.metric}</span>
+              <h3>{capability.label}</h3>
+              <p>{capability.description}</p>
             </article>
           ))}
         </section>
 
         <section className="adapter">
-          {adapters.map(([title, body]) => (
+          {adapters.map(([title, value, body]) => (
             <article className="card" key={title}>
               <h3>{title}</h3>
+              <p><strong>{value}</strong></p>
               <p>{body}</p>
             </article>
           ))}
@@ -147,15 +144,15 @@ export default function App() {
             </p>
           </div>
           <div className="results-metrics">
-            <div><strong>Meta</strong><span>Ads and social source</span></div>
-            <div><strong>Shopify</strong><span>Commerce source</span></div>
-            <div><strong>GA4</strong><span>Analytics source</span></div>
+            {grouped.dataSources.map((source) => (
+              <div key={source.id}><strong>{source.label}</strong><span>{source.status}</span></div>
+            ))}
           </div>
         </section>
       </section>
 
       <div className="quick-actions" aria-label="Quick actions">
-        {quickActions.map((action) => <button key={action}>{action}</button>)}
+        {quickActions.map((action) => <a key={action.href} href={action.href}>{action.label}</a>)}
       </div>
     </main>
   );

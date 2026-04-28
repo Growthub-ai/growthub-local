@@ -77,3 +77,10 @@ It also accepts the GH app MCP accounts shape returned by `/api/mcp/accounts`:
 Both shapes normalize into the same `AgencyPortalIntegration` object used by the BYO path. Unknown connected providers are preserved as discovered workspace integrations instead of being dropped.
 
 The BYO path uses the same normalized object shape, but expects the workspace operator to provide the connection metadata and secret env names explicitly. Windsor is first-class: when `WINDSOR_API_KEY` is set with `AGENCY_PORTAL_INTEGRATION_ADAPTER=byo-api-key`, the app marks the Windsor AI data pipeline object as connected without requiring a larger JSON payload. The hosted Growthub bridge remains the lower-friction first-party path for user-owned MCP connections.
+
+The starter also supports a safe hybrid mode for new users: keep `AGENCY_PORTAL_INTEGRATION_ADAPTER=growthub-bridge` for hosted account authority, and set `WINDSOR_API_KEY` locally when Windsor reporting is being bootstrapped before the hosted bridge has returned a Windsor account row. In that mode the app overlays a connected Windsor state onto:
+
+- `windsor-ai`
+- `google-sheets` blended data
+
+This preserves the bridge as the source of truth for the rest of the integration catalog while letting the portal surface Windsor-backed reporting setup end to end from first boot.
