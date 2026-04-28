@@ -273,6 +273,51 @@ export type {
 } from "./health.js";
 export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 
+// Widgets (UNIVERSAL — Twenty-style widget grid primitive; applies to
+// every kit that ships a dashboard surface. Type-only contract; the
+// matching identity helpers ship from `./compositions`.)
+export type {
+  WidgetKind,
+  WidgetChartKind,
+  WidgetAggregate,
+  WidgetGridPosition,
+  GridLayout,
+  WidgetDefinition,
+  CanvasScope,
+  CanvasDefinition,
+} from "./widgets.js";
+export { WIDGETS_CONTRACT_VERSION } from "./widgets.js";
+
+// Compositions (UNIVERSAL — the top-level manifest a `growthub.config.ts`
+// file ships; stitches capabilities + integrations + pipelines + canvas
+// into one diffable shape. Promotes the production primitives shipped in
+// the agency-portal kit to a public, kit-family-agnostic contract.)
+export type {
+  PortalFieldType,
+  PortalFieldRef,
+  PortalView,
+  PortalObjectDefinition,
+  PortalCapability,
+  IntegrationLane,
+  IntegrationSetupMode,
+  IntegrationAuthPath,
+  IntegrationStatus,
+  PortalIntegration,
+  GroupedIntegrations,
+  AdapterSelector,
+  Composition,
+} from "./compositions.js";
+export {
+  definePortalCapability,
+  definePortalObject,
+  defineIntegration,
+  defineWidget,
+  defineCanvas,
+  defineComposition,
+  groupIntegrationsByLane,
+  COMPOSITIONS_CONTRACT_VERSION,
+} from "./compositions.js";
+
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1 as const;

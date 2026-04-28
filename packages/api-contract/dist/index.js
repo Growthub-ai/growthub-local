@@ -38,6 +38,8 @@ export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
 export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
 export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
+export { WIDGETS_CONTRACT_VERSION } from "./widgets.js";
+export { definePortalCapability, definePortalObject, defineIntegration, defineWidget, defineCanvas, defineComposition, groupIntegrationsByLane, COMPOSITIONS_CONTRACT_VERSION, } from "./compositions.js";
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1;

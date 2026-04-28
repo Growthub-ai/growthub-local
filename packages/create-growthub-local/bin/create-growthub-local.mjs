@@ -11,6 +11,9 @@ const __filename = fileURLToPath(import.meta.url);
 
 const VALID_PROFILES = new Set(["dx", "gtm", "workspace"]);
 const VALID_REMOTE_SYNC_MODES = new Set(["off", "branch", "pr"]);
+const VALID_WITH_FEATURES = new Set(["canvas"]);
+const COMPOSITIONS_CONTRACT_VERSION = 1;
+const WIDGETS_CONTRACT_VERSION = 1;
 
 function printUsage() {
   console.log(
@@ -18,7 +21,7 @@ function printUsage() {
       "Usage:",
       "  create-growthub-local [--profile <dx|gtm|workspace>] [--out <path>]",
       "                        [--data-dir <path>] [--config <path>]",
-      "                        [--run]",
+      "                        [--with <feature>]... [--run]",
       "",
       "Paperclip Local App profiles (dx | gtm):",
       "  create-growthub-local --profile gtm",
@@ -32,6 +35,11 @@ function printUsage() {
       "",
       "Discovery mode (no profile):",
       "  create-growthub-local      # opens `growthub discover` picker",
+      "",
+      "Optional features (--with):",
+      "  canvas    Drop a starter growthub.config.json (Twenty-style widget grid",
+      "            manifest, SDK v1 contract) into the resolved workspace so",
+      "            `growthub compose preview` works out of the box.",
     ].join("\n"),
   );
 }
@@ -50,6 +58,7 @@ function parseArgs(argv) {
     forkName: null,
     remoteSyncMode: null,
     json: false,
+    withFeatures: new Set(),
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -111,6 +120,19 @@ function parseArgs(argv) {
     }
     if (value === "--json") {
       opts.json = true;
+      continue;
+    }
+    if (value === "--with" && argv[index + 1]) {
+      const feature = String(argv[index + 1]).trim();
+      if (!VALID_WITH_FEATURES.has(feature)) {
+        printUsage();
+        console.error(
+          `--with must be one of: ${Array.from(VALID_WITH_FEATURES).join(", ")} (got: ${feature})`,
+        );
+        process.exit(1);
+      }
+      opts.withFeatures.add(feature);
+      index += 1;
       continue;
     }
     if (value === "-h" || value === "--help") {
@@ -271,4 +293,106 @@ const result = spawnSync(process.execPath, cliArgs, {
   env: cliEnv,
 });
 
+// `--with canvas` is a post-action: after the primary CLI surface has
+// scaffolded the workspace (or kit fork, or onboarded the local app),
+// drop a starter `growthub.config.json` at the resolved workspace root
+// so `growthub compose preview` works immediately. The shape mirrors
+// `growthub compose new` exactly — no SDK fields are invented here.
+if (
+  (result.status ?? 0) === 0
+  && opts.withFeatures.has("canvas")
+) {
+  try {
+    writeStarterCanvasManifest(opts, effectiveDataDir);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`--with canvas: failed to write growthub.config.json — ${message}`);
+  }
+}
+
 process.exit(result.status ?? 1);
+
+function resolveCanvasTargetDir(opts, effectiveDataDir) {
+  if (opts.profile === "workspace") {
+    return path.resolve(process.cwd(), opts.out ?? "./my-workspace");
+  }
+  if (opts.profile === "dx" || opts.profile === "gtm") {
+    return effectiveDataDir;
+  }
+  return process.cwd();
+}
+
+function buildStarterCanvasManifest() {
+  return {
+    id: "workspace-default",
+    name: "Workspace Canvas",
+    description:
+      "Starter composition emitted by `create-growthub-local --with canvas`. Edit ids and bindings to tailor to your workspace, then run `growthub compose preview` to validate against the v1 SDK contract.",
+    capabilities: [],
+    pipelines: [],
+    integrations: [],
+    canvas: {
+      id: "default",
+      name: "Workspace dashboard",
+      scope: "workspace",
+      layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+      widgets: [
+        {
+          id: "agent-chat",
+          kind: "chat-session",
+          title: "Agent chat",
+          position: { x: 0, y: 0, w: 6, h: 4 },
+        },
+        {
+          id: "active-workflow",
+          kind: "workflow-runner",
+          title: "Active workflow",
+          position: { x: 6, y: 0, w: 6, h: 4 },
+        },
+        {
+          id: "session-artifacts",
+          kind: "artifact-viewer",
+          title: "Session artifacts",
+          mediaPreview: true,
+          position: { x: 0, y: 4, w: 12, h: 3 },
+        },
+      ],
+      bindings: {
+        chatToCanvas: true,
+        workflowOutputsToArtifacts: true,
+        sessionContext: true,
+      },
+    },
+    provenance: {
+      createdBy: "cli",
+      note: "create-growthub-local --with canvas",
+    },
+  };
+}
+
+function writeStarterCanvasManifest(opts, effectiveDataDir) {
+  const targetDir = resolveCanvasTargetDir(opts, effectiveDataDir);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const targetPath = path.join(targetDir, "growthub.config.json");
+  if (fs.existsSync(targetPath)) {
+    if (!opts.json) {
+      console.log(
+        `--with canvas: ${targetPath} already exists, leaving it untouched.`,
+      );
+    }
+    return;
+  }
+  const manifest = buildStarterCanvasManifest();
+  fs.writeFileSync(
+    targetPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf8",
+  );
+  if (!opts.json) {
+    console.log(
+      `--with canvas: wrote ${targetPath} (compositions=v${COMPOSITIONS_CONTRACT_VERSION} widgets=v${WIDGETS_CONTRACT_VERSION}).`,
+    );
+  }
+}
