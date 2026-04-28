@@ -5,21 +5,25 @@ import { describeIntegrationAdapter, listAgencyPortalIntegrations } from "@/lib/
 import { describePaymentAdapter } from "@/lib/adapters/payments";
 import { describePersistenceAdapter } from "@/lib/adapters/persistence";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
-import { portalCapabilities } from "@/lib/domain/portal";
+import { buildPortalWorkspace, portalCapabilities } from "@/lib/domain/portal";
 async function GET() {
   const integrations = await listAgencyPortalIntegrations();
+  const config = readAdapterConfig();
+  const adapters = {
+    persistence: describePersistenceAdapter(),
+    auth: describeAuthAdapter(),
+    payments: describePaymentAdapter(),
+    integrations: describeIntegrationAdapter()
+  };
+  const settings = {
+    integrations: groupIntegrationsByLane(integrations)
+  };
   return NextResponse.json({
-    config: readAdapterConfig(),
-    adapters: {
-      persistence: describePersistenceAdapter(),
-      auth: describeAuthAdapter(),
-      payments: describePaymentAdapter(),
-      integrations: describeIntegrationAdapter()
-    },
+    config,
+    adapters,
     capabilities: portalCapabilities,
-    settings: {
-      integrations: groupIntegrationsByLane(integrations)
-    }
+    settings,
+    workspace: buildPortalWorkspace({ config, adapters, integrations: settings.integrations })
   });
 }
 export {
