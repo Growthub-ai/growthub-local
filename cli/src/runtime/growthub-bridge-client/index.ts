@@ -12,6 +12,8 @@ import type {
   BridgeKnowledgeSaveInput,
   BridgeKnowledgeSaveResponse,
   BridgeKnowledgeTableListResponse,
+  BridgeHostedAgentManifestListResponse,
+  BridgeHostedAgentManifestResponse,
   BridgeMcpAccountsResponse,
   BridgeRunOutputSyncInput,
 } from "@growthub/api-contract/bridge";
@@ -299,6 +301,25 @@ export class GrowthubBridgeClient {
     return requestJson<BridgeMcpAccountsResponse>(this.session, url);
   }
 
+  async listHostedAgentManifests(): Promise<BridgeHostedAgentManifestListResponse> {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "agent-orchestrator-manifests",
+    });
+    const result = await requestJson<unknown>(this.session, url);
+    if (isHostedAgentManifestListResponse(result)) return result;
+    throw new Error("Growthub bridge agent manifest list did not return the hosted agent manifest contract.");
+  }
+
+  async inspectHostedAgentManifest(agentSlug: string): Promise<BridgeHostedAgentManifestResponse> {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "agent-orchestrator-manifest",
+      agentSlug,
+    });
+    const result = await requestJson<unknown>(this.session, url);
+    if (isHostedAgentManifestResponse(result)) return result;
+    throw new Error("Growthub bridge agent manifest inspect did not return the hosted agent manifest contract.");
+  }
+
   async downloadStoragePath(storagePath: string, outPath: string, bucket = "node_documents"): Promise<number> {
     const url = bridgeUrl(this.session, "/api/secure-image", { bucket, path: storagePath });
     const response = await fetch(url, {
@@ -392,6 +413,27 @@ function isKnowledgeTableListResponse(value: unknown): value is BridgeKnowledgeT
     typeof value === "object" &&
     Array.isArray((value as { tables?: unknown }).tables) &&
     typeof (value as { count?: unknown }).count === "number",
+  );
+}
+
+function isHostedAgentManifestListResponse(value: unknown): value is BridgeHostedAgentManifestListResponse {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as { agents?: unknown }).agents),
+  );
+}
+
+function isHostedAgentManifestResponse(value: unknown): value is BridgeHostedAgentManifestResponse {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    (
+      typeof (value as { agent?: { slug?: unknown } }).agent?.slug === "string" ||
+      typeof (value as { agent?: { agentSlug?: unknown } }).agent?.agentSlug === "string" ||
+      typeof (value as { manifest?: { slug?: unknown } }).manifest?.slug === "string" ||
+      typeof (value as { manifest?: { agentSlug?: unknown } }).manifest?.agentSlug === "string"
+    ),
   );
 }
 

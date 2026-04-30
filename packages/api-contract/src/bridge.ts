@@ -171,3 +171,57 @@ export interface BridgeMcpAccountsResponse {
   success: boolean;
   accounts: BridgeMcpAccount[];
 }
+
+export type BridgeHostedAgentSourceStatus = "available" | "missing" | "disabled" | "unknown";
+
+export interface BridgeHostedAgentSourceDiagnostics {
+  status: BridgeHostedAgentSourceStatus | string;
+  detail?: string;
+  count?: number;
+  checkedAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BridgeHostedAgentDiagnostics {
+  kv?: BridgeHostedAgentSourceDiagnostics;
+  cms?: BridgeHostedAgentSourceDiagnostics;
+  sources?: Record<string, BridgeHostedAgentSourceDiagnostics>;
+  warnings?: string[];
+  resolvedSlugs?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface BridgeHostedAgentManifest {
+  slug?: string;
+  agentSlug?: string;
+  resolvedSlug?: string;
+  name?: string;
+  agentName?: string;
+  title?: string;
+  description?: string;
+  version?: string;
+  source?: string;
+  status?: string;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface BridgeHostedAgentManifestListResponse {
+  success: boolean;
+  agents: BridgeHostedAgentManifest[];
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  resolvedSlugs?: string[];
+  count?: number;
+}
+
+export interface BridgeHostedAgentManifestResponse {
+  success: boolean;
+  agent?: BridgeHostedAgentManifest;
+  manifest?: BridgeHostedAgentManifest;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  resolvedSlug?: string;
+}

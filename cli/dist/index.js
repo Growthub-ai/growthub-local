@@ -29690,6 +29690,23 @@ var GrowthubBridgeClient = class {
     const url = bridgeUrl(this.session, "/api/mcp/accounts");
     return requestJson(this.session, url);
   }
+  async listHostedAgentManifests() {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "agent-orchestrator-manifests"
+    });
+    const result = await requestJson(this.session, url);
+    if (isHostedAgentManifestListResponse(result)) return result;
+    throw new Error("Growthub bridge agent manifest list did not return the hosted agent manifest contract.");
+  }
+  async inspectHostedAgentManifest(agentSlug) {
+    const url = bridgeUrl(this.session, "/api/cli/profile", {
+      view: "agent-orchestrator-manifest",
+      agentSlug
+    });
+    const result = await requestJson(this.session, url);
+    if (isHostedAgentManifestResponse(result)) return result;
+    throw new Error("Growthub bridge agent manifest inspect did not return the hosted agent manifest contract.");
+  }
   async downloadStoragePath(storagePath, outPath, bucket = "node_documents") {
     const url = bridgeUrl(this.session, "/api/secure-image", { bucket, path: storagePath });
     const response = await fetch(url, {
@@ -29748,6 +29765,16 @@ function isKnowledgeTableListResponse(value) {
     value && typeof value === "object" && Array.isArray(value.tables) && typeof value.count === "number"
   );
 }
+function isHostedAgentManifestListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.agents)
+  );
+}
+function isHostedAgentManifestResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && (typeof value.agent?.slug === "string" || typeof value.manifest?.slug === "string")
+  );
+}
 function createGrowthubBridgeClient() {
   return new GrowthubBridgeClient();
 }
@@ -29761,8 +29788,62 @@ function printRows(rows, keys) {
 function outPathFromStorage(storagePath, out) {
   return path50.resolve(out?.trim() || path50.basename(storagePath));
 }
+function formatList(value) {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean).join(", ") : "";
+}
+function sourceStatus(diagnostics, source) {
+  return String(diagnostics?.[source]?.status ?? diagnostics?.sources?.[source]?.status ?? "");
+}
+function agentLabel(agent) {
+  return agent.name ?? agent.title ?? agent.slug;
+}
 function registerBridgeCommands(program2) {
-  const bridge = program2.command("bridge").description("Authenticated Growthub bridge resources: assets, knowledge, and MCP accounts.");
+  const bridge = program2.command("bridge").description("Authenticated Growthub bridge resources: agents, assets, knowledge, and MCP accounts.");
+  const agents2 = bridge.command("agents").description("Hosted Agent Builder manifests through the Growthub bridge.");
+  agents2.command("list").description("List hosted Agent Builder manifests.").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listHostedAgentManifests();
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub hosted agents (${result.count ?? result.agents.length})`));
+    printRows(result.agents.map((agent) => ({
+      slug: agent.slug,
+      resolved: agent.resolvedSlug ?? "",
+      name: agentLabel(agent),
+      source: agent.source ?? "",
+      status: agent.status ?? "",
+      kv: sourceStatus(agent.diagnostics ?? result.diagnostics, "kv"),
+      cms: sourceStatus(agent.diagnostics ?? result.diagnostics, "cms"),
+      warnings: formatList(agent.warnings)
+    })), ["slug", "resolved", "name", "source", "status", "kv", "cms", "warnings"]);
+    if (result.resolvedSlugs?.length) console.log(`${pc37.dim("resolvedSlugs:")} ${result.resolvedSlugs.join(", ")}`);
+    if (result.warnings?.length) console.log(`${pc37.yellow("warnings:")} ${result.warnings.join("; ")}`);
+  });
+  agents2.command("inspect").description("Inspect one hosted Agent Builder manifest.").argument("<slug>", "Hosted agent slug").option("--json", "Output raw JSON").action(async (slug, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.inspectHostedAgentManifest(slug);
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    const agent = result.agent ?? result.manifest;
+    if (!agent) {
+      console.log(pc37.red("Hosted agent manifest not found."));
+      return;
+    }
+    console.log(pc37.bold(`Growthub hosted agent: ${agentLabel(agent)}`));
+    printRows([{
+      slug: agent.slug,
+      resolved: result.resolvedSlug ?? agent.resolvedSlug ?? "",
+      source: agent.source ?? "",
+      status: agent.status ?? "",
+      kv: sourceStatus(agent.diagnostics ?? result.diagnostics, "kv"),
+      cms: sourceStatus(agent.diagnostics ?? result.diagnostics, "cms"),
+      warnings: formatList(agent.warnings ?? result.warnings)
+    }], ["slug", "resolved", "source", "status", "kv", "cms", "warnings"]);
+  });
   const assets2 = bridge.command("assets").description("User asset gallery through the Growthub bridge.");
   assets2.command("list").description("List user-owned gallery assets.").option("--page <page>", "Page number", (value) => Number(value), 1).option("--limit <limit>", "Page size", (value) => Number(value), 20).option("--source <source>", "Source filter").option("--media-type <type>", "Media type filter").option("--search <query>", "Filename/source search").option("--json", "Output raw JSON").action(async (opts) => {
     const client = createGrowthubBridgeClient();
