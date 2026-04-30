@@ -171,6 +171,7 @@ growthub bridge knowledge download <knowledgeItemId> --out ./item.md --json
 growthub bridge mcp accounts --json
 growthub bridge agents list --json
 growthub bridge agents inspect <slug> --json
+growthub bridge agents bind <slug> --workspace ./my-governed-workspace --json
 ```
 
 SDK consumers should import the stable bridge contracts from

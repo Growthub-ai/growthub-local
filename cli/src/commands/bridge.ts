@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
@@ -37,6 +38,56 @@ function agentLabel(agent: BridgeHostedAgentManifest): string {
 
 function agentSlug(agent: BridgeHostedAgentManifest): string {
   return agent.slug ?? agent.agentSlug ?? "";
+}
+
+function bindingFileSlug(slug: string): string {
+  return slug
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function writeHostedAgentBinding(input: {
+  workspacePath: string;
+  requestedSlug: string;
+  agent: BridgeHostedAgentManifest;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  resolvedSlug?: string;
+}): { bindingPath: string; binding: Record<string, unknown> } {
+  const workspacePath = path.resolve(input.workspacePath);
+  const forkStateDir = path.resolve(workspacePath, ".growthub-fork");
+  if (!fs.existsSync(forkStateDir)) {
+    throw new Error(`Governed workspace state not found at ${forkStateDir}. Run inside a governed workspace or pass --workspace.`);
+  }
+
+  const slug = agentSlug(input.agent) || input.resolvedSlug || input.requestedSlug;
+  const safeSlug = bindingFileSlug(slug);
+  if (!safeSlug) throw new Error(`Invalid hosted agent slug: ${input.requestedSlug}`);
+
+  const agentsDir = path.resolve(forkStateDir, "agents");
+  fs.mkdirSync(agentsDir, { recursive: true });
+
+  const binding = {
+    version: 1,
+    kind: "growthub-hosted-agent-binding",
+    agentSlug: slug,
+    requestedSlug: input.requestedSlug,
+    resolvedSlug: input.resolvedSlug ?? input.agent.resolvedSlug ?? slug,
+    agentName: agentLabel(input.agent),
+    source: "growthub-bridge",
+    executionAuthority: "gh-app",
+    localExecution: false,
+    boundAt: new Date().toISOString(),
+    diagnostics: input.diagnostics ?? input.agent.diagnostics,
+    warnings: input.warnings ?? input.agent.warnings ?? [],
+    manifest: input.agent,
+  };
+  const bindingPath = path.resolve(agentsDir, `${safeSlug}.json`);
+  fs.writeFileSync(bindingPath, `${JSON.stringify(binding, null, 2)}\n`, "utf8");
+  return { bindingPath, binding };
 }
 
 export function registerBridgeCommands(program: Command): void {
@@ -99,6 +150,42 @@ export function registerBridgeCommands(program: Command): void {
         cms: sourceStatus(agent.diagnostics ?? result.diagnostics, "cms"),
         warnings: formatList(agent.warnings ?? result.warnings),
       }], ["slug", "resolved", "source", "status", "kv", "cms", "warnings"]);
+    });
+
+  agents
+    .command("bind")
+    .description("Bind one hosted Agent Builder manifest into the governed workspace without executing it.")
+    .argument("<slug>", "Hosted agent slug")
+    .option("--workspace <path>", "Governed workspace path", process.cwd())
+    .option("--json", "Output raw JSON")
+    .action(async (slug, opts) => {
+      const client = createGrowthubBridgeClient();
+      const result = await client.inspectHostedAgentManifest(slug);
+      const agent = result.agent ?? result.manifest;
+      if (!agent) {
+        throw new Error(`Hosted agent manifest not found for slug: ${slug}`);
+      }
+      const written = writeHostedAgentBinding({
+        workspacePath: opts.workspace,
+        requestedSlug: slug,
+        agent,
+        diagnostics: result.diagnostics,
+        warnings: result.warnings,
+        resolvedSlug: result.resolvedSlug,
+      });
+      const payload = {
+        success: true,
+        agentSlug: agentSlug(agent),
+        bindingPath: written.bindingPath,
+        executionAuthority: "gh-app",
+        localExecution: false,
+      };
+      if (opts.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return;
+      }
+      console.log(`${pc.green("Bound")} ${payload.agentSlug} ${pc.dim("->")} ${written.bindingPath}`);
+      console.log(pc.dim("Execution remains hosted in gh-app; no agent was executed locally."));
     });
 
   const assets = bridge.command("assets").description("User asset gallery through the Growthub bridge.");
