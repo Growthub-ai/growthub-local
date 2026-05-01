@@ -9,26 +9,29 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 
-const VALID_PROFILES = new Set(["dx", "gtm", "workspace"]);
+const VALID_PROFILES = new Set(["dx", "gtm", "workspace", "self-improving"]);
 const VALID_REMOTE_SYNC_MODES = new Set(["off", "branch", "pr"]);
 
 function printUsage() {
   console.log(
     [
       "Usage:",
-      "  create-growthub-local [--profile <dx|gtm|workspace>] [--out <path>]",
+      "  create-growthub-local [--profile <dx|gtm|workspace|self-improving>] [--out <path>]",
       "                        [--data-dir <path>] [--config <path>]",
       "                        [--run]",
       "",
-      "Paperclip Local App profiles (dx | gtm):",
-      "  create-growthub-local --profile gtm",
-      "  create-growthub-local --profile dx --data-dir ./my-growthub",
+      "Fastest path — Self-Improving Governed Workspace:",
+      "  create-growthub-local --profile self-improving --out ./my-workspace",
       "",
       "Custom Workspace Starter profile (workspace):",
       "  create-growthub-local --profile workspace --out ./my-workspace",
       "  create-growthub-local --profile workspace --out ./my-workspace --name \"My Workspace\"",
       "  create-growthub-local --profile workspace --out ./my-workspace \\",
       "    --upstream Growthub-ai/growthub-custom-workspace-starter-v1 --remote-sync-mode off",
+      "",
+      "Paperclip Local App profiles (dx | gtm):",
+      "  create-growthub-local --profile gtm",
+      "  create-growthub-local --profile dx --data-dir ./my-growthub",
       "",
       "Discovery mode (no profile):",
       "  create-growthub-local      # opens `growthub discover` picker",
@@ -147,12 +150,12 @@ function parseArgs(argv) {
     ["--fork-name", opts.forkName],
     ["--remote-sync-mode", opts.remoteSyncMode],
   ];
-  if (opts.profile !== "workspace") {
+  if (opts.profile !== "workspace" && opts.profile !== "self-improving") {
     for (const [flag, value] of workspaceOnlyFlags) {
       if (value !== null) {
         printUsage();
         console.error(
-          `${flag} is only valid with --profile workspace (the Custom Workspace Starter path).`,
+          `${flag} is only valid with --profile workspace or --profile self-improving.`,
         );
         process.exit(1);
       }
@@ -186,6 +189,20 @@ function resolveGrowthubCliEntrypoint() {
 }
 
 function buildCliArgs(opts, effectiveDataDir, growthubCli) {
+  // --profile self-improving → same as workspace (custom-workspace-starter kit)
+  // The self-improving feature is an optional extension on any governed workspace,
+  // not a separate kit. We scaffold the standard kit and print guidance.
+  if (opts.profile === "self-improving") {
+    const outArg = opts.out ?? "./my-workspace";
+    const absOut = path.resolve(process.cwd(), outArg);
+    const args = [growthubCli, "starter", "init",
+      "--kit", "growthub-custom-workspace-starter-v1",
+      "--out", absOut,
+    ];
+    if (opts.json) args.push("--json");
+    return args;
+  }
+
   // --profile workspace → forward into `growthub starter init`
   // (the Custom Workspace Starter surface, which composes
   // copyBundledKitSource + registerKitFork + writeKitForkPolicy
@@ -241,6 +258,9 @@ function buildCliEnv(opts) {
   // Paperclip surface selection, so we intentionally do not set it.
   if (opts.profile === "dx" || opts.profile === "gtm") {
     env.PAPERCLIP_SURFACE_PROFILE = opts.profile;
+  }
+  if (opts.profile === "self-improving") {
+    env.GROWTHUB_WORKSPACE_PROFILE = "self-improving";
   }
   return env;
 }

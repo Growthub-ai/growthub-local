@@ -117,6 +117,7 @@ describe("worker kit service", () => {
       "growthub-open-montage-studio-v1",
       "growthub-ai-website-cloner-v1",
       "growthub-agency-portal-starter-v1",
+      "growthub-creative-video-pipeline-v1",
       "growthub-twenty-crm-v1",
       "growthub-custom-workspace-starter-v1",
       "growthub-zernio-social-v1",

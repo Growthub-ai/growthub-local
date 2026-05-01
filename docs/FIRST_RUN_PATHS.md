@@ -1,6 +1,50 @@
 # First-Run Paths
 
-Six concrete starting points — pick the one that matches where you are right now.
+## Fastest path (< 5 minutes)
+
+```bash
+npm create @growthub/growthub-local@latest
+```
+
+Choose a profile in the wizard, or pass one directly:
+
+```bash
+# Self-improving governed workspace (recommended)
+npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace
+
+# Custom workspace starter
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
+
+# Power-user curl installer
+curl -fsSL https://raw.githubusercontent.com/Growthub-ai/growthub-local/main/scripts/install.sh | bash
+```
+
+After install, run the guided wizard:
+
+```bash
+growthub setup wizard
+```
+
+---
+
+Seven concrete starting points — pick the one that matches where you are right now.
+
+---
+
+## 0) Self-improving workspace (recommended first path)
+
+```bash
+npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace
+```
+
+A governed workspace that grows with each pipeline run. After setup:
+
+```bash
+cd my-workspace
+growthub workspace improve propose --from-run demo  # propose your first capability
+growthub workspace improve list                      # see all proposals
+growthub workspace improve promote <slug>            # promote to active library
+```
 
 ---
 

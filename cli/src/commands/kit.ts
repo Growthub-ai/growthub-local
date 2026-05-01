@@ -22,6 +22,7 @@ import {
   runDependenciesInspect,
   runKitHealth,
 } from "./kit-contract.js";
+import { registerKitPublishCommands } from "./kit-publish.js";
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -699,4 +700,7 @@ Examples:
 
   // ── fork (Fork Sync Agent sub-tree) ──────────────────────────────────────
   registerKitForkSubcommands(kit);
+
+  // ── publish (Community Kit Publishing) ───────────────────────────────────
+  registerKitPublishCommands(kit);
 }

@@ -75,6 +75,9 @@ import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerSkillsCommands } from "./commands/skills.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
+import { registerSetupCommands } from "./commands/setup.js";
+import { registerWorkspaceImproveCommands } from "./commands/workspace-improve.js";
+import { registerWorkspaceDeployCommands } from "./commands/workspace-deploy.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -235,6 +238,9 @@ function registerSharedCommands(target: Command) {
   registerOpenAgentsCommands(target);
   registerQwenCodeCommands(target);
   registerT3CodeCommands(target);
+  registerSetupCommands(target);
+  const workspaceCmd = registerWorkspaceImproveCommands(target);
+  registerWorkspaceDeployCommands(workspaceCmd);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 

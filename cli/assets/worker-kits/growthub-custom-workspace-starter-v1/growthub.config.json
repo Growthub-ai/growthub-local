@@ -1,0 +1,49 @@
+{
+  "id": "custom-workspace-default",
+  "name": "Custom Workspace Canvas",
+  "description": "Default no-code composition shipped by growthub-custom-workspace-starter-v1. It keeps the canonical custom workspace primitive agnostic: chat session, workflow runner, and artifact viewer wired to session memory and trace primitives. Forks can edit ids, layouts, and bindings to tailor the canvas to the workspace domain.",
+  "capabilities": [],
+  "pipelines": [],
+  "integrations": [],
+  "canvas": {
+    "id": "workspace-default",
+    "name": "Custom workspace dashboard",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "widgets": [
+      {
+        "id": "agent-chat",
+        "kind": "chat-session",
+        "title": "Agent chat",
+        "position": { "x": 0, "y": 0, "w": 6, "h": 4 }
+      },
+      {
+        "id": "active-workflow",
+        "kind": "workflow-runner",
+        "title": "Active workflow",
+        "position": { "x": 6, "y": 0, "w": 6, "h": 4 }
+      },
+      {
+        "id": "session-artifacts",
+        "kind": "artifact-viewer",
+        "title": "Session artifacts",
+        "mediaPreview": true,
+        "position": { "x": 0, "y": 4, "w": 12, "h": 3 }
+      }
+    ],
+    "bindings": {
+      "chatToCanvas": true,
+      "workflowOutputsToArtifacts": true,
+      "sessionContext": true
+    }
+  },
+  "provenance": {
+    "createdBy": "cli",
+    "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit inside a governed fork and validate through the starter export smoke path."
+  }
+}

@@ -54,6 +54,7 @@
     "apps/agency-portal/package.json",
     "apps/agency-portal/package-lock.json",
     "apps/agency-portal/next.config.js",
+    "apps/agency-portal/growthub.config.json",
     "apps/agency-portal/app/settings/integrations/page.jsx",
     "apps/agency-portal/lib/adapters/env.js",
     "apps/agency-portal/lib/adapters/integrations/index.js",
