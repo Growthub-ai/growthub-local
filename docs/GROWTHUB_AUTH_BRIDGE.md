@@ -168,6 +168,26 @@ growthub auth logout
 growthub profile status
 growthub profile pull
 growthub profile push
+
+# Bridge resource commands (require active session)
+growthub bridge agents list
+growthub bridge agents inspect <slug>
+growthub bridge agents bind <slug>
+growthub bridge agents bindings
+growthub bridge agents unbind <slug>
+growthub bridge assets list
+growthub bridge assets download
+growthub bridge brand kits
+growthub bridge brand assets
+growthub bridge brand download
+growthub bridge knowledge tables
+growthub bridge knowledge list
+growthub bridge knowledge write
+growthub bridge knowledge download <id>
+growthub bridge knowledge delete <id>
+growthub bridge knowledge metadata <id>
+growthub bridge run-sync
+growthub bridge mcp accounts
 ```
 
 ### `growthub auth login`
@@ -452,10 +472,13 @@ Do not extend this system by:
 
 - `cli/src/index.ts`
 - `cli/src/commands/auth-login.ts`
+- `cli/src/commands/bridge.ts`
 - `cli/src/auth/login-flow.ts`
 - `cli/src/auth/session-store.ts`
 - `cli/src/auth/overlay-store.ts`
 - `cli/src/auth/effective-profile.ts`
+- `cli/src/runtime/growthub-bridge-client/index.ts`
+- `packages/api-contract/src/bridge.ts`
 - `server/src/routes/gtm.ts`
 
 ### In `gh-app`
@@ -470,6 +493,210 @@ Do not extend this system by:
 - `src/app/auth/page.tsx`
 - `src/app/auth/auth-form.tsx`
 - `src/app/auth/callback/page.tsx`
+
+---
+
+## Bridge Resource Commands
+
+The bridge surface exposes authenticated access to hosted Growthub resources from the CLI. All commands require an active session (`growthub auth login`). All commands support `--json` for machine-readable output.
+
+### Agents
+
+```bash
+growthub bridge agents list --json
+growthub bridge agents inspect <slug> --json
+growthub bridge agents bind <slug> [--fork-id <id>] [--workspace <path>] [--allow-local] --json
+growthub bridge agents bindings [--fork-id <id>] [--workspace <path>] [--allow-local] --json
+growthub bridge agents unbind <slug> [--fork-id <id>] [--workspace <path>] [--allow-local] --json
+```
+
+`agents list` — fetches all hosted agent manifests for the authenticated user via `/api/cli/profile?view=agent-orchestrator-manifests`. Returns the full `BridgeHostedAgentManifestListResponse` including per-agent `operations`, `workspaceBinding`, `diagnostics`, and `provenance`.
+
+`agents inspect <slug>` — fetches one manifest via `/api/cli/profile?view=agent-orchestrator-manifest&agentSlug=<slug>`.
+
+`agents bind <slug>` — writes a `.growthub-fork/agents/<slug>.json` binding file into a governed workspace without executing the agent. Requires a registered fork-sync workspace (`--fork-id`) or a local `.growthub-fork` directory with `--allow-local`.
+
+`agents bindings` — lists all `.growthub-fork/agents/*.json` binding files for a workspace.
+
+`agents unbind <slug>` — removes the binding file without touching the hosted agent.
+
+Binding files have this shape:
+
+```json
+{
+  "version": 1,
+  "kind": "growthub-governed-workspace-agent-binding",
+  "agentSlug": "quick-image-generator-xlq5",
+  "executionAuthority": "gh-app",
+  "localExecution": false,
+  "forkSyncRegistered": true,
+  "remoteSyncConfigured": false,
+  "boundAt": "2026-05-01T00:24:14.000Z"
+}
+```
+
+Execution stays in `gh-app`. Binding files are local-only workspace state.
+
+### Assets
+
+```bash
+growthub bridge assets list [--page <n>] [--limit <n>] [--source <source>] [--media-type <type>] [--search <query>] --json
+growthub bridge assets download --storage-path <path> [--bucket <bucket>] [--out <path>] --json
+```
+
+`assets list` — fetches the authenticated user's gallery assets via `/api/cli/profile?view=gallery-assets`, falling back to `/api/gallery/assets`. Returns `BridgeAssetListResponse` with pagination.
+
+`assets download` — downloads an asset by storage path through `/api/secure-image?bucket=<bucket>&path=<path>` using bearer-token auth. Safe download path; does not use Supabase anon keys.
+
+### Brand Kits and Brand Assets
+
+```bash
+growthub bridge brand kits [--include-assets] --json
+growthub bridge brand assets [--brand-kit-id <id>] [--asset-type <type>] --json
+growthub bridge brand download --storage-path <path> [--bucket <bucket>] [--out <path>] --json
+```
+
+`brand kits` — fetches all brand kits from `/api/brand-settings` using session-cookie auth. Pass `--include-assets` to embed per-kit asset arrays in the response.
+
+`brand assets` — fetches brand assets from `/api/brand-settings/assets`, optionally filtered by `brandKitId` or `assetType`.
+
+`brand download` — downloads a brand asset through the same authenticated storage proxy as `assets download`.
+
+The hosted brand system (`/api/brand-settings`) is the source of truth. The CLI does not maintain a local brand-kit cache.
+
+### Knowledge
+
+```bash
+growthub bridge knowledge tables [--origin <origin>] [--connector-type <type>] --json
+growthub bridge knowledge list [--type <type>] [--agent-slug <slug>] [--table-id <id>] --json
+growthub bridge knowledge write [--id <id>] [--title <title>] [--content <md>] [--table-id <id>] [--notes <notes>] [--agent-slug <slug>] --json
+growthub bridge knowledge download <id> --out <path> --json
+growthub bridge knowledge delete <id> --json
+growthub bridge knowledge metadata <id> [--table-id <id>] [--notes <notes>] --json
+```
+
+`knowledge tables` — lists knowledge table groupings via `/api/cli/profile?view=knowledge-tables`, falling back to `/api/providers/growthub-local/knowledge/tables`.
+
+`knowledge list` — lists knowledge items via `/api/cli/profile?view=knowledge`, falling back to `/api/providers/growthub-local/knowledge/items`.
+
+`knowledge write` — creates or updates a markdown knowledge item. Pass `--id` to update an existing item, omit for a new item with `--title` and `--content`.
+
+`knowledge download <id>` — downloads the raw content of a knowledge item by id.
+
+`knowledge delete <id>` — deletes a knowledge item.
+
+`knowledge metadata <id>` — patches metadata (`table_id`, `notes`) on an existing item.
+
+### Run Output Sync
+
+```bash
+growthub bridge run-sync [--run-id <id>] [--title <title>] [--output <json>] [--table-id <id>] [--agent-slug <slug>] --json
+```
+
+Persists a local run output into the hosted knowledge substrate via `/api/providers/growthub-local/runs/sync`. Used by agent harnesses to write governed run traces into the hosted knowledge layer.
+
+### MCP Accounts
+
+```bash
+growthub bridge mcp accounts --json
+```
+
+Lists all MCP-connected accounts for the authenticated user via `/api/mcp/accounts`. Returns `BridgeMcpAccountsResponse` with provider, connection name, type, active/verified status, and per-provider metadata.
+
+---
+
+## SDK Types — `@growthub/api-contract/bridge`
+
+All bridge resource shapes are typed in `@growthub/api-contract/bridge`. Import by subpath:
+
+```ts
+import type {
+  BridgeAssetType,
+  BridgeAssetSource,
+  BridgeAssetItem,
+  BridgePagination,
+  BridgeAssetListResponse,
+  BridgeBrandKit,
+  BridgeBrandAsset,
+  BridgeBrandKitListResponse,
+  BridgeBrandAssetListResponse,
+  BridgeKnowledgeItem,
+  BridgeKnowledgeTable,
+  BridgeKnowledgeListResponse,
+  BridgeKnowledgeTableListResponse,
+  BridgeKnowledgeSaveInput,
+  BridgeKnowledgeSaveResponse,
+  BridgeKnowledgeMetadataPatchInput,
+  BridgeRunOutputSyncInput,
+  BridgeMcpAccount,
+  BridgeMcpAccountsResponse,
+  BridgeHostedAgentSourceStatus,
+  BridgeHostedAgentSourceDiagnostics,
+  BridgeHostedAgentDiagnostics,
+  BridgeHostedAgentManifest,
+  BridgeHostedAgentManifestListResponse,
+  BridgeHostedAgentManifestResponse,
+  BridgeHostedAgentWorkspaceBinding,
+  BridgeHostedAgentWorkspaceBindingResponse,
+  BridgeHostedAgentWorkspaceBindingsResponse,
+} from "@growthub/api-contract/bridge";
+```
+
+These types are re-exported from the root barrel (`@growthub/api-contract`) as well. Use the subpath import when you only need bridge types.
+
+---
+
+## Bridge Client — `GrowthubBridgeClient`
+
+The client lives at `cli/src/runtime/growthub-bridge-client/index.ts`. Instantiate it via the factory:
+
+```ts
+import { createGrowthubBridgeClient } from "./runtime/growthub-bridge-client/index.js";
+const client = createGrowthubBridgeClient();
+```
+
+The constructor reads the active session from `~/.paperclip/auth/session.json` and throws if the session is missing or expired.
+
+Two request strategies are used internally:
+
+- `requestJson` — sends `Authorization: Bearer <token>` + `x-user-id` headers. Used for bridge API routes that accept bearer-token auth.
+- `requestJsonWithSessionCookie` — sends `sb-growthub-auth-token` cookie. Used for brand-settings routes that require the Supabase session cookie.
+
+The base URL is read from `session.hostedBaseUrl` and can be overridden with `GROWTHUB_BRIDGE_BASE_URL` for local development.
+
+All list methods implement a primary + fallback URL strategy to remain compatible across hosted API versions.
+
+---
+
+## Updated Validation Checklist
+
+In addition to the auth checklist above, validate bridge resources:
+
+### Bridge agents
+
+- `growthub bridge agents list --json` returns `agents` array with at least one manifest
+- `growthub bridge agents inspect <slug> --json` returns `agent` or `manifest` field
+- `growthub bridge agents bind <slug> --allow-local --json` writes binding file into `.growthub-fork/agents/`
+- `growthub bridge agents bindings --allow-local --json` lists the written binding
+- `growthub bridge agents unbind <slug> --allow-local --json` removes the binding
+
+### Bridge assets
+
+- `growthub bridge assets list --limit 3 --json` returns `assets` array with `pagination.total`
+
+### Bridge brand
+
+- `growthub bridge brand kits --json` returns `brandKits` array
+
+### Bridge knowledge
+
+- `growthub bridge knowledge list --json` returns `items` array with `count`
+
+### Bridge MCP accounts
+
+- `growthub bridge mcp accounts --json` returns `accounts` array including the `growthub_local` entry
+
+---
 
 ## Related Docs
 

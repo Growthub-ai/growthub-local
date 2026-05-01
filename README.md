@@ -156,7 +156,7 @@ Growthub Local currently ships `@growthub/cli@0.9.3` and the guided installer `@
     <td align="center"><strong>📈 Fleet + Operations Ready</strong><br>Manage multiple forks and environments with service status, job surfaces, health checks, background jobs, and operator-friendly lifecycle controls.</td>
   </tr>
   <tr>
-    <td align="center"><strong>🧩 Governed Workspace Agents</strong><br>Connect hosted Growthub agents to fork-sync governed workspaces, keep execution hosted, and manage the binding from the CLI.</td>
+    <td align="center"><strong>🧱 Agent Lego Blocks</strong><br>Governed Workspace Agents — attach hosted Growthub agents to fork-sync governed workspaces through the CLI.</td>
     <td align="center"><strong>🔎 Agent Visibility + Control</strong><br>List, inspect, bind, view bindings, and unbind agents with clear diagnostics, warnings, resolved slugs, and workspace status.</td>
     <td align="center"><strong>🧱 Orchestration Building Blocks</strong><br>Use typed agent manifests, workflow bindings, knowledge, variables, and workspace attachments as composable pieces for building higher-level orchestration agents.</td>
   </tr>
