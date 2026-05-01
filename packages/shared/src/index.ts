@@ -473,7 +473,6 @@ export {
   type ServerConfig,
   type AuthConfig,
   type SurfaceConfig,
-  type SurfaceProfile,
   type StorageConfig,
   type StorageLocalDiskConfig,
   type StorageS3Config,

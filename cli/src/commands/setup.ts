@@ -59,7 +59,7 @@ async function runSetupWizard(opts: { profile?: string; out?: string }): Promise
   // the self-improving extension automatically (no extra prompt)
   const autoSelfImproving = opts.profile === "self-improving";
 
-  if (!opts.profile || opts.profile === "self-improving") {
+  if (!opts.profile) {
     const choice = await p.select<WizardWorkspaceType>({
       message: "What are you building?",
       options: [
@@ -113,17 +113,17 @@ async function runSetupWizard(opts: { profile?: string; out?: string }): Promise
 
   // Step 2: Output path
   const defaultOut = opts.out ?? `./my-workspace`;
-  const outRaw = await p.text({
-    message: "Workspace output path:",
-    placeholder: defaultOut,
-    defaultValue: defaultOut,
-  });
+  const outRaw = opts.out ?? await p.text({
+      message: "Workspace output path:",
+      placeholder: defaultOut,
+      defaultValue: defaultOut,
+    });
   if (p.isCancel(outRaw)) { p.cancel("Setup cancelled."); process.exit(0); }
   const outPath = path.resolve(process.cwd(), String(outRaw) || defaultOut);
 
   // Step 3: Enable self-improving feature? (optional extension, not a separate kit)
   let enableSelfImproving = autoSelfImproving;
-  if (!autoSelfImproving) {
+  if (!autoSelfImproving && !opts.out) {
     const siChoice = await p.confirm({
       message: "Enable self-improving workspace? (proposes reusable capabilities after each run)",
       initialValue: false,
@@ -133,10 +133,12 @@ async function runSetupWizard(opts: { profile?: string; out?: string }): Promise
   }
 
   // Step 4: Connect Growthub Bridge?
-  const connectBridge = await p.confirm({
-    message: "Connect to hosted Growthub Bridge? (optional — for hosted agent binding)",
-    initialValue: false,
-  });
+  const connectBridge = opts.out
+    ? false
+    : await p.confirm({
+      message: "Connect to hosted Growthub Bridge? (optional — for hosted agent binding)",
+      initialValue: false,
+    });
   if (p.isCancel(connectBridge)) { p.cancel("Setup cancelled."); process.exit(0); }
 
   track("setup_wizard_started", { profile: workspaceType, selfImproving: String(enableSelfImproving) });
