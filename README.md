@@ -155,6 +155,11 @@ Growthub Local currently ships `@growthub/cli@0.9.3` and the guided installer `@
     <td align="center"><strong>🏢 Hosted Activation Layer</strong><br>Keep local open-source value first, then connect Growthub when you want hosted identity, workflow access, capability activation, and enterprise customization depth.</td>
     <td align="center"><strong>📈 Fleet + Operations Ready</strong><br>Manage multiple forks and environments with service status, job surfaces, health checks, background jobs, and operator-friendly lifecycle controls.</td>
   </tr>
+  <tr>
+    <td align="center"><strong>🧩 Governed Workspace Agents</strong><br>Connect hosted Growthub agents to fork-sync governed workspaces, keep execution hosted, and manage the binding from the CLI.</td>
+    <td align="center"><strong>🔎 Agent Visibility + Control</strong><br>List, inspect, bind, view bindings, and unbind agents with clear diagnostics, warnings, resolved slugs, and workspace status.</td>
+    <td align="center"><strong>🧱 Orchestration Building Blocks</strong><br>Use typed agent manifests, workflow bindings, knowledge, variables, and workspace attachments as composable pieces for building higher-level orchestration agents.</td>
+  </tr>
 </table>
 
 **Problems Growthub Local solves**
@@ -238,6 +243,9 @@ Governed workspace
 Growthub bridge
   -> how the agent accesses authenticated business systems
 
+Governed Workspace Agents
+  -> hosted agents bound into fork-sync workspaces without local execution
+
 CMS pipeline
   -> how the agent produces finished images, videos, slides, text, and reports
 
@@ -273,6 +281,7 @@ The CLI is multiple product surfaces, not one. The public docs and READMEs expos
 - **Memory & Knowledge**
 - **Settings** for templates, workflows, local intelligence, auth, fork sync, and service status
 - **Connect Growthub Account**
+- **Governed Workspace Agents** inside Settings after Growthub connection is active
 
 ### Main commands
 
@@ -291,6 +300,9 @@ growthub qwen-code
 growthub auth login
 growthub auth whoami
 growthub auth logout
+
+growthub bridge agents list --json
+growthub bridge agents bind <slug> --fork-id <fork-id> --json
 ```
 
 <details>
@@ -444,6 +456,7 @@ This keeps the mental model intact:
 
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
+- [Governed Workspace Agents](./docs/GOVERNED_WORKSPACE_AGENTS.md) — attach hosted Growthub agents to fork-sync governed workspaces through the CLI
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
 - [**Governed Workspace Primitives (user-facing)**](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — how the six architectural primitives (SKILL.md, AGENTS.md pointer, session memory, self-evaluation, sub-skills, helpers) coordinate agents inside every exported workspace
 - [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — six concrete starting points: import a repo, import a skill, workspace starter, worker kit, connect account, unlock hosted workflows
