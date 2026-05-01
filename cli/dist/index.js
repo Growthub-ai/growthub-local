@@ -10125,6 +10125,754 @@ var init_table_renderer = __esm({
   }
 });
 
+// src/runtime/growthub-bridge-client/index.ts
+import fs41 from "node:fs";
+import path49 from "node:path";
+function readActiveSession() {
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    throw new Error("Hosted session expired. Run `growthub auth login` again.");
+  }
+  if (!session.userId) {
+    throw new Error("Hosted session is missing userId. Run `growthub auth login` again.");
+  }
+  return session;
+}
+function bridgeUrl(session, pathname, params) {
+  const baseUrl = process.env.GROWTHUB_BRIDGE_BASE_URL?.trim() || session.hostedBaseUrl;
+  const url = new URL(pathname, `${baseUrl.replace(/\/+$/, "")}/`);
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value === void 0 || value === "") continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+function buildSupabaseSessionCookie(session) {
+  const payload = {
+    access_token: session.accessToken,
+    user: {
+      id: session.userId,
+      email: session.email
+    }
+  };
+  return `sb-growthub-auth-token=${encodeURIComponent(JSON.stringify(payload))}`;
+}
+async function requestJson(session, url, init = {}) {
+  const headers = {
+    accept: "application/json",
+    authorization: `Bearer ${session.accessToken}`,
+    "x-user-id": session.userId ?? "",
+    ...Object.fromEntries(new Headers(init.headers).entries())
+  };
+  if (init.body !== void 0 && !headers["content-type"]) {
+    headers["content-type"] = "application/json";
+  }
+  const response = await fetch(url, { ...init, headers });
+  const text69 = await response.text();
+  const parsed = text69.trim() ? safeJson(text69) : null;
+  if (!response.ok) {
+    const message = typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : `Growthub bridge request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return parsed;
+}
+async function requestJsonWithSessionCookie(session, url, init = {}) {
+  const headers = {
+    accept: "application/json",
+    cookie: buildSupabaseSessionCookie(session),
+    ...Object.fromEntries(new Headers(init.headers).entries())
+  };
+  if (init.body !== void 0 && !headers["content-type"]) {
+    headers["content-type"] = "application/json";
+  }
+  const response = await fetch(url, { ...init, headers });
+  const text69 = await response.text();
+  const parsed = text69.trim() ? safeJson(text69) : null;
+  if (!response.ok) {
+    const message = typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : `Growthub session-backed request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return parsed;
+}
+function safeJson(text69) {
+  try {
+    return JSON.parse(text69);
+  } catch {
+    return text69;
+  }
+}
+function isAssetListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.assets) && typeof value.pagination?.total === "number"
+  );
+}
+function isRemoteBrandKitArray(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.brandKits)
+  );
+}
+function isRemoteBrandAssetArray(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.assets)
+  );
+}
+function isKnowledgeListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.items) && typeof value.count === "number"
+  );
+}
+function isKnowledgeTableListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.tables) && typeof value.count === "number"
+  );
+}
+function isHostedAgentManifestListResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && Array.isArray(value.agents)
+  );
+}
+function isHostedAgentManifestResponse(value) {
+  return Boolean(
+    value && typeof value === "object" && (typeof value.agent?.slug === "string" || typeof value.agent?.agentSlug === "string" || typeof value.manifest?.slug === "string" || typeof value.manifest?.agentSlug === "string")
+  );
+}
+function createGrowthubBridgeClient() {
+  return new GrowthubBridgeClient();
+}
+var GrowthubBridgeClient;
+var init_growthub_bridge_client = __esm({
+  "src/runtime/growthub-bridge-client/index.ts"() {
+    "use strict";
+    init_session_store();
+    GrowthubBridgeClient = class {
+      constructor(session = readActiveSession()) {
+        this.session = session;
+      }
+      session;
+      async listAssets(query = {}) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", {
+          view: "gallery-assets",
+          page: query.page ?? 1,
+          limit: query.limit ?? 20,
+          source: query.source,
+          mediaType: query.mediaType,
+          search: query.search
+        });
+        const bridgeResult = await requestJson(this.session, url);
+        if (isAssetListResponse(bridgeResult)) return bridgeResult;
+        const fallback = bridgeUrl(this.session, "/api/gallery/assets", {
+          userId: this.session.userId,
+          page: query.page ?? 1,
+          limit: query.limit ?? 20,
+          source: query.source,
+          mediaType: query.mediaType,
+          search: query.search
+        });
+        const fallbackResult = await requestJson(this.session, fallback);
+        if (isAssetListResponse(fallbackResult)) return fallbackResult;
+        throw new Error("Growthub bridge asset list did not return the asset contract.");
+      }
+      async listBrandKits(query = {}) {
+        const url = bridgeUrl(this.session, "/api/brand-settings");
+        const directResult = await requestJsonWithSessionCookie(this.session, url);
+        if (!isRemoteBrandKitArray(directResult)) {
+          throw new Error("Growthub brand settings endpoint did not return brand kits.");
+        }
+        const brandKits = directResult.brandKits;
+        if (!query.includeAssets || brandKits.length === 0) {
+          return {
+            success: true,
+            userId: this.session.userId,
+            brandKits,
+            count: brandKits.length
+          };
+        }
+        const assetsResult = await this.listBrandAssets();
+        const assetsByKitId = /* @__PURE__ */ new Map();
+        for (const asset of assetsResult.assets) {
+          const key = String(asset.brand_kit_id);
+          assetsByKitId.set(key, [...assetsByKitId.get(key) ?? [], asset]);
+        }
+        return {
+          success: true,
+          userId: this.session.userId,
+          brandKits: brandKits.map((kit) => ({
+            ...kit,
+            assets: assetsByKitId.get(String(kit.id)) ?? []
+          })),
+          count: brandKits.length
+        };
+      }
+      async listBrandAssets(query = {}) {
+        const url = bridgeUrl(this.session, "/api/brand-settings/assets", {
+          brandKitId: query.brandKitId
+        });
+        const result = await requestJsonWithSessionCookie(this.session, url);
+        if (!isRemoteBrandAssetArray(result)) {
+          throw new Error("Growthub brand assets endpoint did not return brand assets.");
+        }
+        const assets2 = query.assetType ? result.assets.filter((asset) => asset.asset_type === query.assetType) : result.assets;
+        return {
+          success: true,
+          userId: this.session.userId,
+          brandKitId: query.brandKitId,
+          assets: assets2,
+          count: assets2.length
+        };
+      }
+      async listKnowledge(query = {}) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", {
+          view: "knowledge",
+          type: query.type,
+          agentSlug: query.agentSlug,
+          tableId: query.tableId
+        });
+        const result = await requestJson(this.session, url);
+        if (isKnowledgeListResponse(result)) return result;
+        const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items", {
+          type: query.type,
+          agentSlug: query.agentSlug,
+          tableId: query.tableId
+        });
+        const providerResult = await requestJson(this.session, providerUrl);
+        if (isKnowledgeListResponse(providerResult)) return providerResult;
+        throw new Error("Growthub bridge knowledge list did not return the knowledge contract.");
+      }
+      async listKnowledgeTables(query = {}) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", {
+          view: "knowledge-tables",
+          origin: query.origin,
+          connectorType: query.connectorType
+        });
+        const result = await requestJson(this.session, url);
+        if (isKnowledgeTableListResponse(result)) return result;
+        const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/tables", {
+          origin: query.origin,
+          connectorType: query.connectorType
+        });
+        const providerResult = await requestJson(this.session, providerUrl);
+        if (isKnowledgeTableListResponse(providerResult)) return providerResult;
+        throw new Error("Growthub bridge knowledge table list did not return the knowledge table contract.");
+      }
+      async saveKnowledge(input) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", { action: "save-knowledge" });
+        const result = await requestJson(this.session, url, {
+          method: "POST",
+          body: JSON.stringify(input)
+        });
+        if (result && typeof result === "object" && "success" in result) {
+          return result;
+        }
+        const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items");
+        const providerResult = await requestJson(this.session, providerUrl, {
+          method: "POST",
+          body: JSON.stringify(input)
+        });
+        if (providerResult && typeof providerResult === "object" && "success" in providerResult) {
+          return providerResult;
+        }
+        throw new Error("Growthub bridge knowledge save did not return the knowledge save contract.");
+      }
+      deleteKnowledge(id) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", { action: "delete-knowledge" });
+        return requestJson(this.session, url, {
+          method: "POST",
+          body: JSON.stringify({ id })
+        });
+      }
+      updateKnowledgeMetadata(input) {
+        const url = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items/metadata");
+        return requestJson(this.session, url, {
+          method: "PATCH",
+          body: JSON.stringify(input)
+        });
+      }
+      syncRunOutput(input) {
+        const url = bridgeUrl(this.session, "/api/providers/growthub-local/runs/sync");
+        return requestJson(this.session, url, {
+          method: "POST",
+          body: JSON.stringify(input)
+        });
+      }
+      listMcpAccounts() {
+        const url = bridgeUrl(this.session, "/api/mcp/accounts");
+        return requestJson(this.session, url);
+      }
+      async listHostedAgentManifests() {
+        const url = bridgeUrl(this.session, "/api/cli/profile", {
+          view: "agent-orchestrator-manifests"
+        });
+        const result = await requestJson(this.session, url);
+        if (isHostedAgentManifestListResponse(result)) return result;
+        throw new Error("Growthub bridge agent manifest list did not return the hosted agent manifest contract.");
+      }
+      async inspectHostedAgentManifest(agentSlug2) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", {
+          view: "agent-orchestrator-manifest",
+          agentSlug: agentSlug2
+        });
+        const result = await requestJson(this.session, url);
+        if (isHostedAgentManifestResponse(result)) return result;
+        throw new Error("Growthub bridge agent manifest inspect did not return the hosted agent manifest contract.");
+      }
+      async downloadStoragePath(storagePath, outPath, bucket = "node_documents") {
+        const url = bridgeUrl(this.session, "/api/secure-image", { bucket, path: storagePath });
+        const response = await fetch(url, {
+          headers: {
+            authorization: `Bearer ${this.session.accessToken}`,
+            "x-user-id": this.session.userId ?? ""
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`Authenticated artifact download failed (${response.status}).`);
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs41.mkdirSync(path49.dirname(path49.resolve(outPath)), { recursive: true });
+        fs41.writeFileSync(path49.resolve(outPath), buffer);
+        return buffer.length;
+      }
+      async downloadKnowledge(id, outPath) {
+        const url = bridgeUrl(this.session, "/api/cli/profile", { view: "knowledge-download", id });
+        const response = await fetch(url, {
+          headers: {
+            authorization: `Bearer ${this.session.accessToken}`,
+            "x-user-id": this.session.userId ?? ""
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`Knowledge download failed (${response.status}).`);
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs41.mkdirSync(path49.dirname(path49.resolve(outPath)), { recursive: true });
+        fs41.writeFileSync(path49.resolve(outPath), buffer);
+        return buffer.length;
+      }
+    };
+  }
+});
+
+// src/commands/bridge.ts
+var bridge_exports2 = {};
+__export(bridge_exports2, {
+  agentLabel: () => agentLabel,
+  agentSlug: () => agentSlug,
+  listHostedAgentBindings: () => listHostedAgentBindings,
+  registerBridgeCommands: () => registerBridgeCommands,
+  removeHostedAgentBinding: () => removeHostedAgentBinding,
+  writeHostedAgentBinding: () => writeHostedAgentBinding
+});
+import fs42 from "node:fs";
+import path50 from "node:path";
+import pc37 from "picocolors";
+function printRows(rows, keys) {
+  for (const row of rows) {
+    console.log(keys.map((key) => `${pc37.dim(`${key}:`)} ${String(row[key] ?? "")}`).join("  "));
+  }
+}
+function outPathFromStorage(storagePath, out) {
+  return path50.resolve(out?.trim() || path50.basename(storagePath));
+}
+function formatList(value) {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean).join(", ") : "";
+}
+function sourceStatus(diagnostics, source) {
+  return String(diagnostics?.[source]?.status ?? diagnostics?.sources?.[source]?.status ?? "");
+}
+function agentLabel(agent) {
+  return agent.name ?? agent.agentName ?? agent.title ?? agent.agentSlug ?? agent.slug ?? "";
+}
+function agentSlug(agent) {
+  return agent.slug ?? agent.agentSlug ?? "";
+}
+function bindingFileSlug(slug) {
+  return slug.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+function resolveBindingWorkspace(input) {
+  const forks = listKitForkRegistrations();
+  if (input.forkId) {
+    const registration2 = forks.find((fork) => fork.forkId === input.forkId);
+    if (!registration2) {
+      throw new Error(`Fork-sync workspace not found: ${input.forkId}. Run 'growthub kit fork list'.`);
+    }
+    return { workspacePath: registration2.forkPath, registration: registration2, enterpriseReady: true };
+  }
+  const workspacePath = path50.resolve(input.workspacePath ?? process.cwd());
+  const registration = forks.find((fork) => path50.resolve(fork.forkPath) === workspacePath) ?? null;
+  if (registration) return { workspacePath, registration, enterpriseReady: true };
+  if (!input.allowLocal) {
+    throw new Error(
+      `Workspace is not registered with fork-sync: ${workspacePath}. Use --fork-id for a governed workspace, or pass --allow-local for a local-only binding.`
+    );
+  }
+  return { workspacePath, registration: null, enterpriseReady: false };
+}
+function resolveAgentsDir(workspacePath) {
+  return path50.resolve(workspacePath, ".growthub-fork", "agents");
+}
+function bindingPathFor(workspacePath, slug) {
+  const safeSlug = bindingFileSlug(slug);
+  if (!safeSlug) throw new Error(`Invalid hosted agent slug: ${slug}`);
+  return path50.resolve(resolveAgentsDir(workspacePath), `${safeSlug}.json`);
+}
+function listHostedAgentBindings(input) {
+  const resolved = resolveBindingWorkspace(input);
+  const forkStateDir = path50.resolve(resolved.workspacePath, ".growthub-fork");
+  if (!fs42.existsSync(forkStateDir)) {
+    throw new Error(`Governed workspace state not found at ${forkStateDir}.`);
+  }
+  const agentsDir = resolveAgentsDir(resolved.workspacePath);
+  const files = fs42.existsSync(agentsDir) ? fs42.readdirSync(agentsDir).filter((file) => file.endsWith(".json")) : [];
+  const bindings = files.flatMap((file) => {
+    const bindingPath = path50.resolve(agentsDir, file);
+    try {
+      const parsed = JSON.parse(fs42.readFileSync(bindingPath, "utf8"));
+      if (!parsed.agentSlug) return [];
+      return [{
+        agentSlug: parsed.agentSlug,
+        agentName: parsed.agentName,
+        bindingPath,
+        executionAuthority: "gh-app",
+        localExecution: false,
+        forkSyncRegistered: resolved.enterpriseReady,
+        remoteSyncConfigured: Boolean(resolved.registration?.remote),
+        boundAt: parsed.boundAt
+      }];
+    } catch {
+      return [];
+    }
+  });
+  return {
+    success: true,
+    forkId: resolved.registration?.forkId,
+    workspacePath: resolved.workspacePath,
+    bindings,
+    count: bindings.length
+  };
+}
+function removeHostedAgentBinding(input) {
+  const resolved = resolveBindingWorkspace(input);
+  const bindingPath = bindingPathFor(resolved.workspacePath, input.agentSlug);
+  const removed = fs42.existsSync(bindingPath);
+  if (removed) fs42.rmSync(bindingPath, { force: true });
+  return { success: true, agentSlug: input.agentSlug, bindingPath, removed };
+}
+function writeHostedAgentBinding(input) {
+  const resolved = resolveBindingWorkspace(input);
+  const workspacePath = resolved.workspacePath;
+  const forkStateDir = path50.resolve(workspacePath, ".growthub-fork");
+  if (!fs42.existsSync(forkStateDir)) {
+    throw new Error(`Governed workspace state not found at ${forkStateDir}.`);
+  }
+  const slug = agentSlug(input.agent) || input.resolvedSlug || input.requestedSlug;
+  const agentsDir = resolveAgentsDir(workspacePath);
+  fs42.mkdirSync(agentsDir, { recursive: true });
+  const binding = {
+    version: 1,
+    kind: "growthub-governed-workspace-agent-binding",
+    agentSlug: slug,
+    requestedSlug: input.requestedSlug,
+    resolvedSlug: input.resolvedSlug ?? input.agent.resolvedSlug ?? slug,
+    agentName: agentLabel(input.agent),
+    forkId: resolved.registration?.forkId ?? null,
+    kitId: resolved.registration?.kitId ?? null,
+    workspacePath,
+    forkSyncRegistered: resolved.enterpriseReady,
+    remoteSyncConfigured: Boolean(resolved.registration?.remote),
+    source: "growthub-bridge",
+    executionAuthority: "gh-app",
+    localExecution: false,
+    boundAt: (/* @__PURE__ */ new Date()).toISOString(),
+    diagnostics: input.diagnostics ?? input.agent.diagnostics,
+    warnings: input.warnings ?? input.agent.warnings ?? [],
+    manifest: input.agent
+  };
+  const bindingPath = bindingPathFor(workspacePath, slug);
+  fs42.writeFileSync(bindingPath, `${JSON.stringify(binding, null, 2)}
+`, "utf8");
+  return { bindingPath, binding };
+}
+function registerBridgeCommands(program2) {
+  const bridge = program2.command("bridge").description("Authenticated Growthub bridge resources: agents, assets, knowledge, and MCP accounts.");
+  const agents2 = bridge.command("agents").description("Governed workspace agents through the authenticated Growthub bridge.");
+  agents2.command("list").description("List agents available to governed workspaces.").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listHostedAgentManifests();
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub hosted agents (${result.count ?? result.agents.length})`));
+    printRows(result.agents.map((agent) => ({
+      slug: agentSlug(agent),
+      resolved: agent.resolvedSlug ?? "",
+      name: agentLabel(agent),
+      source: agent.source ?? "",
+      status: agent.status ?? "",
+      kv: sourceStatus(agent.diagnostics ?? result.diagnostics, "kv"),
+      cms: sourceStatus(agent.diagnostics ?? result.diagnostics, "cms"),
+      warnings: formatList(agent.warnings)
+    })), ["slug", "resolved", "name", "source", "status", "kv", "cms", "warnings"]);
+    if (result.resolvedSlugs?.length) console.log(`${pc37.dim("resolvedSlugs:")} ${result.resolvedSlugs.join(", ")}`);
+    if (result.warnings?.length) console.log(`${pc37.yellow("warnings:")} ${result.warnings.join("; ")}`);
+  });
+  agents2.command("inspect").description("Inspect one governed workspace agent manifest.").argument("<slug>", "Hosted agent slug").option("--json", "Output raw JSON").action(async (slug, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.inspectHostedAgentManifest(slug);
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    const agent = result.agent ?? result.manifest;
+    if (!agent) {
+      console.log(pc37.red("Hosted agent manifest not found."));
+      return;
+    }
+    console.log(pc37.bold(`Growthub hosted agent: ${agentLabel(agent)}`));
+    printRows([{
+      slug: agentSlug(agent),
+      resolved: result.resolvedSlug ?? agent.resolvedSlug ?? "",
+      source: agent.source ?? "",
+      status: agent.status ?? "",
+      kv: sourceStatus(agent.diagnostics ?? result.diagnostics, "kv"),
+      cms: sourceStatus(agent.diagnostics ?? result.diagnostics, "cms"),
+      warnings: formatList(agent.warnings ?? result.warnings)
+    }], ["slug", "resolved", "source", "status", "kv", "cms", "warnings"]);
+  });
+  agents2.command("bind").description("Attach one agent to a fork-sync governed workspace without executing it.").argument("<slug>", "Hosted agent slug").option("--fork-id <id>", "Registered fork-sync workspace id from `growthub kit fork list`").option("--workspace <path>", "Governed workspace path").option("--allow-local", "Allow binding to an unregistered local-only .growthub-fork workspace").option("--json", "Output raw JSON").action(async (slug, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.inspectHostedAgentManifest(slug);
+    const agent = result.agent ?? result.manifest;
+    if (!agent) {
+      throw new Error(`Hosted agent manifest not found for slug: ${slug}`);
+    }
+    const written = writeHostedAgentBinding({
+      forkId: opts.forkId,
+      workspacePath: opts.workspace,
+      allowLocal: opts.allowLocal === true,
+      requestedSlug: slug,
+      agent,
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+      resolvedSlug: result.resolvedSlug
+    });
+    const payload = {
+      success: true,
+      agentSlug: agentSlug(agent),
+      bindingPath: written.bindingPath,
+      binding: written.binding
+    };
+    if (opts.json) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log(`${pc37.green("Bound")} ${payload.agentSlug} ${pc37.dim("->")} ${written.bindingPath}`);
+    console.log(pc37.dim(`Fork-sync registered: ${String(written.binding.forkSyncRegistered)}; remote sync configured: ${String(written.binding.remoteSyncConfigured)}`));
+    console.log(pc37.dim("Execution remains hosted in gh-app; no agent was executed locally."));
+  });
+  agents2.command("bindings").description("List governed workspace agent bindings for a fork-sync workspace.").option("--fork-id <id>", "Registered fork-sync workspace id from `growthub kit fork list`").option("--workspace <path>", "Governed workspace path").option("--allow-local", "Allow listing an unregistered local-only .growthub-fork workspace").option("--json", "Output raw JSON").action((opts) => {
+    const result = listHostedAgentBindings({
+      forkId: opts.forkId,
+      workspacePath: opts.workspace,
+      allowLocal: opts.allowLocal === true
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Governed workspace agent bindings (${result.count})`));
+    printRows(result.bindings.map((binding) => ({
+      slug: binding.agentSlug,
+      name: binding.agentName ?? "",
+      forkSync: binding.forkSyncRegistered,
+      remote: binding.remoteSyncConfigured,
+      path: binding.bindingPath
+    })), ["slug", "name", "forkSync", "remote", "path"]);
+  });
+  agents2.command("unbind").description("Remove one governed workspace agent binding without touching the hosted agent.").argument("<slug>", "Hosted agent slug").option("--fork-id <id>", "Registered fork-sync workspace id from `growthub kit fork list`").option("--workspace <path>", "Governed workspace path").option("--allow-local", "Allow unbinding from an unregistered local-only .growthub-fork workspace").option("--json", "Output raw JSON").action((slug, opts) => {
+    const result = removeHostedAgentBinding({
+      agentSlug: slug,
+      forkId: opts.forkId,
+      workspacePath: opts.workspace,
+      allowLocal: opts.allowLocal === true
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(result.removed ? `${pc37.green("Unbound")} ${slug} ${pc37.dim(result.bindingPath)}` : `${pc37.yellow("No binding found")} ${slug} ${pc37.dim(result.bindingPath)}`);
+  });
+  const assets2 = bridge.command("assets").description("User asset gallery through the Growthub bridge.");
+  assets2.command("list").description("List user-owned gallery assets.").option("--page <page>", "Page number", (value) => Number(value), 1).option("--limit <limit>", "Page size", (value) => Number(value), 20).option("--source <source>", "Source filter").option("--media-type <type>", "Media type filter").option("--search <query>", "Filename/source search").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listAssets({
+      page: opts.page,
+      limit: opts.limit,
+      source: opts.source,
+      mediaType: opts.mediaType,
+      search: opts.search
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub assets (${result.assets.length}/${result.pagination.total})`));
+    printRows(result.assets.map((asset) => ({
+      id: asset.id,
+      type: asset.type,
+      source: asset.source,
+      storage: asset.storage_path
+    })), ["id", "type", "source", "storage"]);
+  });
+  assets2.command("download").description("Download a user-owned gallery asset by storage path.").requiredOption("--storage-path <path>", "Asset storage path from bridge assets list").option("--bucket <bucket>", "Storage bucket", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const outPath = outPathFromStorage(opts.storagePath, opts.out);
+    const bytes = await client.downloadStoragePath(opts.storagePath, outPath, opts.bucket);
+    const payload = { success: true, storagePath: opts.storagePath, bucket: opts.bucket, outPath, bytes };
+    if (opts.json) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
+  });
+  const brand = bridge.command("brand").description("User brand kits and brand assets through the Growthub bridge.");
+  brand.command("kits").description("List accessible remote brand kits.").option("--include-assets", "Include each brand kit's assets").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listBrandKits({ includeAssets: opts.includeAssets === true });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub brand kits (${result.count})`));
+    printRows(result.brandKits.map((kit) => ({
+      id: kit.id,
+      name: kit.brand_name,
+      visibility: kit.visibility,
+      assets: kit.assets?.length ?? ""
+    })), ["id", "name", "visibility", "assets"]);
+  });
+  brand.command("assets").description("List remote brand assets from accessible brand kits.").option("--brand-kit-id <id>", "Filter by brand kit id").option("--asset-type <type>", "Filter by asset type").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listBrandAssets({ brandKitId: opts.brandKitId, assetType: opts.assetType });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub brand assets (${result.count})`));
+    printRows(result.assets.map((asset) => ({
+      id: asset.id,
+      kit: asset.brand_kit_id,
+      type: asset.asset_type,
+      storage: asset.storage_path
+    })), ["id", "kit", "type", "storage"]);
+  });
+  brand.command("download").description("Download a remote brand asset by storage path.").requiredOption("--storage-path <path>", "Brand asset storage path from bridge brand assets").option("--bucket <bucket>", "Storage bucket", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const outPath = outPathFromStorage(opts.storagePath, opts.out);
+    const bytes = await client.downloadStoragePath(opts.storagePath, outPath, opts.bucket);
+    const payload = { success: true, storagePath: opts.storagePath, bucket: opts.bucket, outPath, bytes };
+    if (opts.json) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
+  });
+  const knowledge = bridge.command("knowledge").description("User knowledge items through the Growthub bridge.");
+  knowledge.command("tables").description("List user-owned knowledge tables, the custom groupings for knowledge items.").option("--origin <origin>", "Filter by metadata.origin").option("--connector-type <type>", "Filter by metadata.connector_type").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listKnowledgeTables({ origin: opts.origin, connectorType: opts.connectorType });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub knowledge tables (${result.count})`));
+    printRows(result.tables.map((table) => ({
+      id: table.id,
+      file: table.file_name,
+      origin: table.metadata?.origin,
+      children: table.child_count ?? 0
+    })), ["id", "file", "origin", "children"]);
+  });
+  knowledge.command("list").description("List user-owned knowledge items.").option("--type <type>", "Knowledge source type").option("--agent-slug <slug>", "Agent slug filter").option("--table-id <id>", "Filter by metadata.table_id knowledge table grouping").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listKnowledge({ type: opts.type, agentSlug: opts.agentSlug, tableId: opts.tableId });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub knowledge (${result.count})`));
+    printRows(result.items.map((item) => ({
+      id: item.id,
+      file: item.file_name,
+      type: item.source_type,
+      storage: item.storage_path
+    })), ["id", "file", "type", "storage"]);
+  });
+  knowledge.command("write").description("Create or update a markdown knowledge item.").option("--id <id>", "Existing knowledge item id to update").option("--title <title>", "Title for a new item").option("--file-name <name>", "File name for an update").option("--content <content>", "Markdown content for a new item").option("--table-id <id>", "Attach new item to metadata.table_id knowledge table grouping").option("--notes <notes>", "Notes metadata").option("--agent-slug <slug>", "Agent slug", "growthub-cli").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.saveKnowledge({
+      id: opts.id,
+      title: opts.title,
+      fileName: opts.fileName,
+      content: opts.content,
+      tableId: opts.tableId,
+      notes: opts.notes,
+      agentSlug: opts.agentSlug
+    });
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(result.success ? pc37.green("Knowledge saved") : pc37.red(result.error ?? "Knowledge save failed"));
+  });
+  knowledge.command("download").description("Download a knowledge item by id.").argument("<id>", "Knowledge item id").requiredOption("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (id, opts) => {
+    const client = createGrowthubBridgeClient();
+    const outPath = path50.resolve(opts.out);
+    const bytes = await client.downloadKnowledge(id, outPath);
+    const payload = { success: true, id, outPath, bytes };
+    if (opts.json) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
+  });
+  knowledge.command("delete").description("Delete a knowledge item by id.").argument("<id>", "Knowledge item id").option("--json", "Output raw JSON").action(async (id, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.deleteKnowledge(id);
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(result.success ? pc37.green("Knowledge deleted") : pc37.red(result.error ?? "Knowledge delete failed"));
+  });
+  knowledge.command("metadata").description("Patch metadata for an existing knowledge item.").argument("<id>", "Knowledge item id").option("--table-id <id>", "Set metadata.table_id").option("--notes <notes>", "Set metadata.notes").option("--json", "Output raw JSON").action(async (id, opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.updateKnowledgeMetadata({ id, tableId: opts.tableId, notes: opts.notes });
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(result.success ? pc37.green("Knowledge metadata updated") : pc37.red(result.error ?? "Knowledge metadata update failed"));
+  });
+  bridge.command("run-sync").description("Persist a local run output into the remote Growthub knowledge substrate.").option("--run-id <id>", "Run id").option("--title <title>", "Knowledge item title").option("--output <json>", "JSON output payload").option("--table-id <id>", "Attach to metadata.table_id").option("--agent-slug <slug>", "Agent slug", "growthub_local_bridge").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const parsedOutput = opts.output ? JSON.parse(opts.output) : {};
+    const result = await client.syncRunOutput({
+      runId: opts.runId,
+      title: opts.title,
+      output: parsedOutput,
+      tableId: opts.tableId,
+      agentSlug: opts.agentSlug
+    });
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(result.success ? pc37.green("Run output synced") : pc37.red(result.error ?? "Run output sync failed"));
+  });
+  const mcp = bridge.command("mcp").description("MCP bridge accounts.");
+  mcp.command("accounts").description("List connected MCP accounts.").option("--json", "Output raw JSON").action(async (opts) => {
+    const client = createGrowthubBridgeClient();
+    const result = await client.listMcpAccounts();
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(pc37.bold(`Growthub MCP accounts (${result.accounts.length})`));
+    printRows(result.accounts.map((account) => ({
+      id: account.id,
+      provider: account.provider,
+      app: account.appSlug,
+      active: account.isActive
+    })), ["id", "provider", "app", "active"]);
+  });
+}
+var init_bridge2 = __esm({
+  "src/commands/bridge.ts"() {
+    "use strict";
+    init_growthub_bridge_client();
+    init_fork_registry();
+  }
+});
+
 // src/commands/github.ts
 var github_exports = {};
 __export(github_exports, {
@@ -10306,24 +11054,24 @@ var init_github = __esm({
 });
 
 // src/starter/scaffold-session-memory.ts
-import fs50 from "node:fs";
+import fs51 from "node:fs";
 import path59 from "node:path";
 function scaffoldSessionMemory(input) {
   const forkPath = path59.resolve(input.forkPath);
   const templatePath = path59.join(forkPath, TEMPLATE_RELATIVE);
   const projectMdPath = path59.join(forkPath, PROJECT_MD_RELATIVE);
-  if (!fs50.existsSync(templatePath)) {
+  if (!fs51.existsSync(templatePath)) {
     return { written: false, projectMdPath, templatePath: null };
   }
-  if (fs50.existsSync(projectMdPath)) {
+  if (fs51.existsSync(projectMdPath)) {
     return { written: false, projectMdPath, templatePath };
   }
-  const template = fs50.readFileSync(templatePath, "utf8");
+  const template = fs51.readFileSync(templatePath, "utf8");
   const startedAt = input.startedAt ?? (/* @__PURE__ */ new Date()).toISOString();
   const sourceRef = input.sourceRef ?? "";
   const seeded = template.replaceAll("{{KIT_ID}}", input.kitId).replaceAll("{{FORK_ID}}", input.forkId).replaceAll("{{STARTED_AT}}", startedAt).replaceAll("{{SOURCE}}", input.source).replaceAll("{{SOURCE_REF}}", sourceRef);
-  fs50.mkdirSync(path59.dirname(projectMdPath), { recursive: true });
-  fs50.writeFileSync(projectMdPath, seeded, "utf8");
+  fs51.mkdirSync(path59.dirname(projectMdPath), { recursive: true });
+  fs51.writeFileSync(projectMdPath, seeded, "utf8");
   return { written: true, projectMdPath, templatePath };
 }
 var PROJECT_MD_RELATIVE, TEMPLATE_RELATIVE;
@@ -10336,12 +11084,12 @@ var init_scaffold_session_memory = __esm({
 });
 
 // src/starter/init.ts
-import fs51 from "node:fs";
+import fs52 from "node:fs";
 import path60 from "node:path";
 async function initStarterWorkspace(opts) {
   const kitId = opts.kitId ?? DEFAULT_STARTER_KIT_ID;
   const absOut = path60.resolve(opts.out);
-  if (fs51.existsSync(absOut) && fs51.readdirSync(absOut).length > 0) {
+  if (fs52.existsSync(absOut) && fs52.readdirSync(absOut).length > 0) {
     throw new Error(`Destination ${absOut} already exists and is not empty.`);
   }
   const info = getBundledKitSourceInfo(kitId);
@@ -10460,7 +11208,7 @@ var init_types2 = __esm({
 });
 
 // src/starter/source-import/github-source.ts
-import fs52 from "node:fs";
+import fs53 from "node:fs";
 import path61 from "node:path";
 import { spawnSync as spawnSync6 } from "node:child_process";
 function baseHeaders() {
@@ -10592,12 +11340,12 @@ function cloneGithubRepo(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot clone.");
   }
-  if (fs52.existsSync(input.destination)) {
+  if (fs53.existsSync(input.destination)) {
     throw new Error(`Clone destination already exists: ${input.destination}`);
   }
   const cloneUrl = input.token ? buildTokenCloneUrl(input.probe.repo, input.token) : input.probe.cloneUrl;
   const parent = path61.dirname(input.destination);
-  fs52.mkdirSync(parent, { recursive: true });
+  fs53.mkdirSync(parent, { recursive: true });
   const depth = input.depth ?? 1;
   const branch = input.branch ?? input.probe.defaultBranch;
   const args = ["clone"];
@@ -10625,16 +11373,16 @@ function narrowToSubdirectory(rootDir, subdirectory) {
   const normalizedSub = subdirectory.replace(/^\/+|\/+$/g, "");
   if (!normalizedSub) return;
   const abs = path61.resolve(rootDir, normalizedSub);
-  if (!fs52.existsSync(abs) || !fs52.statSync(abs).isDirectory()) {
+  if (!fs53.existsSync(abs) || !fs53.statSync(abs).isDirectory()) {
     throw new Error(`Subdirectory not found in cloned repo: ${subdirectory}`);
   }
   const tmp = path61.resolve(
     path61.dirname(rootDir),
     `.${path61.basename(rootDir)}-narrow-${Date.now().toString(36)}`
   );
-  fs52.renameSync(abs, tmp);
-  fs52.rmSync(rootDir, { recursive: true, force: true });
-  fs52.renameSync(tmp, rootDir);
+  fs53.renameSync(abs, tmp);
+  fs53.rmSync(rootDir, { recursive: true, force: true });
+  fs53.renameSync(tmp, rootDir);
 }
 var GITHUB_API_BASE2;
 var init_github_source = __esm({
@@ -10648,7 +11396,7 @@ var init_github_source = __esm({
 });
 
 // src/starter/source-import/skills-source.ts
-import fs53 from "node:fs";
+import fs54 from "node:fs";
 import os11 from "node:os";
 import path62 from "node:path";
 import { spawnSync as spawnSync7 } from "node:child_process";
@@ -10935,13 +11683,13 @@ function runGit3(args, cwd) {
 }
 function skillDirectoryMatches(dir, skillSlug) {
   const skillFile = path62.resolve(dir, "SKILL.md");
-  if (!fs53.existsSync(skillFile) || !fs53.statSync(skillFile).isFile()) {
+  if (!fs54.existsSync(skillFile) || !fs54.statSync(skillFile).isFile()) {
     return false;
   }
   if (path62.basename(dir) === skillSlug) {
     return true;
   }
-  const content = fs53.readFileSync(skillFile, "utf8");
+  const content = fs54.readFileSync(skillFile, "utf8");
   const nameMatch = content.match(/(?:^|\n)name:\s*["']?([A-Za-z0-9._:-]+)["']?\s*(?:\n|$)/i);
   return nameMatch?.[1] === skillSlug;
 }
@@ -10951,7 +11699,7 @@ function locateSkillDirectory(root, skillSlug) {
     path62.resolve(root, skillSlug)
   ];
   for (const candidate of preferred) {
-    if (fs53.existsSync(candidate) && fs53.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
+    if (fs54.existsSync(candidate) && fs54.statSync(candidate).isDirectory() && skillDirectoryMatches(candidate, skillSlug)) {
       return candidate;
     }
   }
@@ -10961,7 +11709,7 @@ function locateSkillDirectory(root, skillSlug) {
     if (skillDirectoryMatches(current, skillSlug)) {
       return current;
     }
-    for (const entry of fs53.readdirSync(current, { withFileTypes: true })) {
+    for (const entry of fs54.readdirSync(current, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if ([".git", "node_modules", ".next", "dist", "build", "coverage"].includes(entry.name)) {
         continue;
@@ -10976,8 +11724,8 @@ function copySkillTree(sourceDir, destination) {
   const stack = [{ from: sourceDir, to: destination }];
   while (stack.length > 0) {
     const current = stack.pop();
-    fs53.mkdirSync(current.to, { recursive: true });
-    for (const entry of fs53.readdirSync(current.from, { withFileTypes: true })) {
+    fs54.mkdirSync(current.to, { recursive: true });
+    for (const entry of fs54.readdirSync(current.from, { withFileTypes: true })) {
       const fromPath = path62.resolve(current.from, entry.name);
       const toPath = path62.resolve(current.to, entry.name);
       assertInsidePayloadRoot(destination, toPath);
@@ -10985,9 +11733,9 @@ function copySkillTree(sourceDir, destination) {
         stack.push({ from: fromPath, to: toPath });
         continue;
       }
-      const data = fs53.readFileSync(fromPath);
-      fs53.mkdirSync(path62.dirname(toPath), { recursive: true });
-      fs53.writeFileSync(toPath, data, { mode: 420 });
+      const data = fs54.readFileSync(fromPath);
+      fs54.mkdirSync(path62.dirname(toPath), { recursive: true });
+      fs54.writeFileSync(toPath, data, { mode: 420 });
       written += 1;
     }
   }
@@ -10998,7 +11746,7 @@ async function fetchSkillPayload(input) {
   if (!gitAvailable()) {
     throw new Error("`git` is not available on PATH \u2014 cannot materialize a skills.sh payload.");
   }
-  if (fs53.existsSync(destination)) {
+  if (fs54.existsSync(destination)) {
     throw new Error(`Skill payload destination already exists: ${destination}`);
   }
   const repoSource = probe.repoUrl ?? (probe.repository ? `https://github.com/${probe.repository}` : void 0);
@@ -11006,7 +11754,7 @@ async function fetchSkillPayload(input) {
   if (!repoSource || !skillSlug) {
     throw new Error(`Skill '${probe.skillId}' is missing repository metadata \u2014 cannot materialize payload.`);
   }
-  const cloneRoot = fs53.mkdtempSync(
+  const cloneRoot = fs54.mkdtempSync(
     path62.join(os11.tmpdir(), "growthub-skills-source-")
   );
   try {
@@ -11023,7 +11771,7 @@ async function fetchSkillPayload(input) {
     const fileCount = copySkillTree(skillDir, destination);
     return { destination, fileCount };
   } finally {
-    fs53.rmSync(cloneRoot, { recursive: true, force: true });
+    fs54.rmSync(cloneRoot, { recursive: true, force: true });
   }
 }
 var DEFAULT_BASE, COMMENT_PATTERN;
@@ -11037,13 +11785,13 @@ var init_skills_source = __esm({
 });
 
 // src/starter/source-import/detect.ts
-import fs54 from "node:fs";
+import fs55 from "node:fs";
 import path63 from "node:path";
 function safeReadPackageJson(dir) {
   const p36 = path63.resolve(dir, "package.json");
-  if (!fs54.existsSync(p36)) return null;
+  if (!fs55.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs54.readFileSync(p36, "utf8"));
+    return JSON.parse(fs55.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -11053,10 +11801,10 @@ function detectPackageManager(dir, pkg) {
   if (pkg?.packageManager?.startsWith("yarn")) return "yarn";
   if (pkg?.packageManager?.startsWith("npm")) return "npm";
   if (pkg?.packageManager?.startsWith("bun")) return "bun";
-  if (fs54.existsSync(path63.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
-  if (fs54.existsSync(path63.resolve(dir, "yarn.lock"))) return "yarn";
-  if (fs54.existsSync(path63.resolve(dir, "bun.lockb"))) return "bun";
-  if (fs54.existsSync(path63.resolve(dir, "package-lock.json"))) return "npm";
+  if (fs55.existsSync(path63.resolve(dir, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs55.existsSync(path63.resolve(dir, "yarn.lock"))) return "yarn";
+  if (fs55.existsSync(path63.resolve(dir, "bun.lockb"))) return "bun";
+  if (fs55.existsSync(path63.resolve(dir, "package-lock.json"))) return "npm";
   return "unknown";
 }
 function collectDeps(pkg) {
@@ -11070,12 +11818,12 @@ function collectDeps(pkg) {
 }
 function looksLikeSkillPayload(rootDir) {
   const markers = ["SKILL.md", "skill.md", "skill.json", "skill.yml", "skill.yaml", "prompt.md"];
-  return markers.some((name) => fs54.existsSync(path63.resolve(rootDir, name)));
+  return markers.some((name) => fs55.existsSync(path63.resolve(rootDir, name)));
 }
 function detectFramework(rootDir, pkg) {
   if (!pkg) {
     if (looksLikeSkillPayload(rootDir)) return "skill";
-    if (fs54.existsSync(path63.resolve(rootDir, "docs"))) return "docs";
+    if (fs55.existsSync(path63.resolve(rootDir, "docs"))) return "docs";
     return "unknown";
   }
   const deps = collectDeps(pkg);
@@ -11084,8 +11832,8 @@ function detectFramework(rootDir, pkg) {
     "vite.config.ts",
     "vite.config.mjs",
     "vite.config.cjs"
-  ].some((name) => fs54.existsSync(path63.resolve(rootDir, name)));
-  if (deps.has("next") || fs54.existsSync(path63.resolve(rootDir, "next.config.js")) || fs54.existsSync(path63.resolve(rootDir, "next.config.mjs"))) {
+  ].some((name) => fs55.existsSync(path63.resolve(rootDir, name)));
+  if (deps.has("next") || fs55.existsSync(path63.resolve(rootDir, "next.config.js")) || fs55.existsSync(path63.resolve(rootDir, "next.config.mjs"))) {
     return "next";
   }
   if (deps.has("vite") || hasViteConfig) return "vite";
@@ -11111,15 +11859,15 @@ function pickScripts(pkg) {
   return out;
 }
 function listEnvFiles(dir) {
-  if (!fs54.existsSync(dir)) return [];
-  return fs54.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
+  if (!fs55.existsSync(dir)) return [];
+  return fs55.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).filter((name) => name === ".env" || name.startsWith(".env.") || name === ".env.example");
 }
 function findAppRoot(rootDir, pkg) {
   if (pkg) return ".";
   const candidates = ["app", "src", "apps", "packages"];
   for (const candidate of candidates) {
     const abs = path63.resolve(rootDir, candidate);
-    if (fs54.existsSync(abs) && fs54.statSync(abs).isDirectory()) {
+    if (fs55.existsSync(abs) && fs55.statSync(abs).isDirectory()) {
       const child = safeReadPackageJson(abs);
       if (child) return candidate;
     }
@@ -11135,7 +11883,7 @@ function computeConfidence(framework, manager, pkg) {
   return Math.min(1, Number(score.toFixed(2)));
 }
 function detectSourceShape(rootDir) {
-  if (!fs54.existsSync(rootDir) || !fs54.statSync(rootDir).isDirectory()) {
+  if (!fs55.existsSync(rootDir) || !fs55.statSync(rootDir).isDirectory()) {
     throw new Error(`Detection target is not a directory: ${rootDir}`);
   }
   const rootPkg = safeReadPackageJson(rootDir);
@@ -11180,7 +11928,7 @@ var init_detect = __esm({
 });
 
 // src/starter/source-import/security.ts
-import fs55 from "node:fs";
+import fs56 from "node:fs";
 import path64 from "node:path";
 function isLikelyTextFile(filename) {
   const ext = path64.extname(filename).toLowerCase();
@@ -11246,7 +11994,7 @@ function walkPayload(root, onFile, limits) {
     if (!current) break;
     let entries;
     try {
-      entries = fs55.readdirSync(current, { withFileTypes: true });
+      entries = fs56.readdirSync(current, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -11268,7 +12016,7 @@ function walkPayload(root, onFile, limits) {
 }
 function inspectSourcePayload(input) {
   const { payloadRoot } = input;
-  if (!fs55.existsSync(payloadRoot) || !fs55.statSync(payloadRoot).isDirectory()) {
+  if (!fs56.existsSync(payloadRoot) || !fs56.statSync(payloadRoot).isDirectory()) {
     throw new Error(`Inspection target is not a directory: ${payloadRoot}`);
   }
   const findings = [];
@@ -11278,7 +12026,7 @@ function inspectSourcePayload(input) {
     (abs, rel) => {
       let size = 0;
       try {
-        size = fs55.statSync(abs).size;
+        size = fs56.statSync(abs).size;
       } catch {
         return;
       }
@@ -11304,12 +12052,12 @@ function inspectSourcePayload(input) {
       if (bytesInspected + Math.min(size, MAX_BYTES_PER_FILE) > MAX_TOTAL_BYTES) return;
       let buf;
       try {
-        const handle = fs55.openSync(abs, "r");
+        const handle = fs56.openSync(abs, "r");
         try {
           buf = Buffer.alloc(Math.min(size, MAX_BYTES_PER_FILE));
-          fs55.readSync(handle, buf, 0, buf.length, 0);
+          fs56.readSync(handle, buf, 0, buf.length, 0);
         } finally {
-          fs55.closeSync(handle);
+          fs56.closeSync(handle);
         }
       } catch {
         return;
@@ -11518,18 +12266,18 @@ var init_security = __esm({
 });
 
 // src/starter/source-import/plan.ts
-import fs56 from "node:fs";
+import fs57 from "node:fs";
 import path65 from "node:path";
 function generateImportId() {
   return `si-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function destinationState(absDest) {
-  if (!fs56.existsSync(absDest)) return { exists: false, nonEmpty: false };
-  const stats = fs56.statSync(absDest);
+  if (!fs57.existsSync(absDest)) return { exists: false, nonEmpty: false };
+  const stats = fs57.statSync(absDest);
   if (!stats.isDirectory()) {
     throw new Error(`Destination is not a directory: ${absDest}`);
   }
-  const entries = fs56.readdirSync(absDest);
+  const entries = fs57.readdirSync(absDest);
   return { exists: true, nonEmpty: entries.length > 0 };
 }
 function describeSource2(probe) {
@@ -11652,7 +12400,7 @@ var init_plan = __esm({
 });
 
 // src/starter/source-import/summarize.ts
-import fs57 from "node:fs";
+import fs58 from "node:fs";
 import path66 from "node:path";
 function sourceHeading(manifest) {
   const src = manifest.source;
@@ -11738,8 +12486,8 @@ function writeImportSummary(input) {
     `Generated by the Growthub Source Import Agent. Canonical manifest lives at \`.growthub-fork/source-import.json\`.`,
     ``
   ].join("\n");
-  fs57.mkdirSync(path66.dirname(summaryPath), { recursive: true });
-  fs57.writeFileSync(summaryPath, body, "utf8");
+  fs58.mkdirSync(path66.dirname(summaryPath), { recursive: true });
+  fs58.writeFileSync(summaryPath, body, "utf8");
   return summaryPath;
 }
 var init_summarize = __esm({
@@ -11749,7 +12497,7 @@ var init_summarize = __esm({
 });
 
 // src/starter/source-import/materialize.ts
-import fs58 from "node:fs";
+import fs59 from "node:fs";
 import os12 from "node:os";
 import path67 from "node:path";
 function resolveSourceKind(probe) {
@@ -11791,17 +12539,17 @@ async function fetchPayload(probe, stagingDir, opts) {
 }
 function movePayloadIntoFork(payloadRoot, forkPath, payloadRelativePath) {
   const target = path67.resolve(forkPath, payloadRelativePath);
-  if (fs58.existsSync(target)) {
-    fs58.rmSync(target, { recursive: true, force: true });
+  if (fs59.existsSync(target)) {
+    fs59.rmSync(target, { recursive: true, force: true });
   }
-  fs58.mkdirSync(path67.dirname(target), { recursive: true });
-  fs58.renameSync(payloadRoot, target);
+  fs59.mkdirSync(path67.dirname(target), { recursive: true });
+  fs59.renameSync(payloadRoot, target);
   return target;
 }
 function writeManifest(forkPath, manifest) {
   const p36 = path67.resolve(forkPath, MANIFEST_RELATIVE_PATH);
-  fs58.mkdirSync(path67.dirname(p36), { recursive: true });
-  fs58.writeFileSync(p36, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  fs59.mkdirSync(path67.dirname(p36), { recursive: true });
+  fs59.writeFileSync(p36, JSON.stringify(manifest, null, 2) + "\n", "utf8");
   return p36;
 }
 function assertConfirmationsSatisfied(plan, confirmations) {
@@ -11841,7 +12589,7 @@ async function materializeImportPlan(input) {
     requireSkillAcknowledgement: sourceKind === "skills-skill"
   });
   if (security.blocked) {
-    fs58.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
+    fs59.rmSync(fetchResult.payloadRoot, { recursive: true, force: true });
     throw new Error(
       `Security inspection blocked the fetched payload: ${security.summaryLines[0] ?? "blocking finding"}`
     );
@@ -11989,7 +12737,7 @@ var init_materialize = __esm({
 });
 
 // src/starter/source-import/agent.ts
-import fs59 from "node:fs";
+import fs60 from "node:fs";
 import path68 from "node:path";
 function resolveJobsDir() {
   return path68.resolve(resolveKitForksHomeDir(), "source-import-jobs");
@@ -12002,13 +12750,13 @@ function generateJobId2() {
 }
 function writeJob2(job) {
   const p36 = resolveJobPath2(job.jobId);
-  fs59.mkdirSync(path68.dirname(p36), { recursive: true });
-  fs59.writeFileSync(p36, JSON.stringify(job, null, 2) + "\n", "utf8");
+  fs60.mkdirSync(path68.dirname(p36), { recursive: true });
+  fs60.writeFileSync(p36, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function readJobFile(p36) {
-  if (!fs59.existsSync(p36)) return null;
+  if (!fs60.existsSync(p36)) return null;
   try {
-    return JSON.parse(fs59.readFileSync(p36, "utf8"));
+    return JSON.parse(fs60.readFileSync(p36, "utf8"));
   } catch {
     return null;
   }
@@ -12018,7 +12766,7 @@ function patchJob2(jobId, status, patch = {}) {
   const job = readJobFile(p36);
   if (!job) return null;
   const updated = { ...job, ...patch, status };
-  fs59.writeFileSync(p36, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs60.writeFileSync(p36, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function getSourceImportJob(jobId) {
@@ -12347,11 +13095,11 @@ var catalog_exports = {};
 __export(catalog_exports, {
   readSkillCatalog: () => readSkillCatalog
 });
-import fs60 from "node:fs";
+import fs61 from "node:fs";
 import path69 from "node:path";
 function exists(p36) {
   try {
-    fs60.accessSync(p36);
+    fs61.accessSync(p36);
     return true;
   } catch {
     return false;
@@ -12359,14 +13107,14 @@ function exists(p36) {
 }
 function isDir2(p36) {
   try {
-    return fs60.statSync(p36).isDirectory();
+    return fs61.statSync(p36).isDirectory();
   } catch {
     return false;
   }
 }
 function safeRead(p36) {
   try {
-    return fs60.readFileSync(p36, "utf8");
+    return fs61.readFileSync(p36, "utf8");
   } catch {
     return null;
   }
@@ -12451,7 +13199,7 @@ function readOne(skillPath, source) {
 }
 function readSkillDirs(baseDir, source, out, warnings) {
   if (!isDir2(baseDir)) return;
-  for (const child of fs60.readdirSync(baseDir).sort()) {
+  for (const child of fs61.readdirSync(baseDir).sort()) {
     const dir = path69.join(baseDir, child);
     if (!isDir2(dir)) continue;
     const skill = path69.join(dir, "SKILL.md");
@@ -12466,7 +13214,7 @@ function readKitSubSkills(kitDir, out, warnings, depth = 0) {
   if (!isDir2(base)) return;
   const walk = (dir, d) => {
     if (d > MAX_DEPTH) return;
-    for (const entry of fs60.readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of fs61.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name)) continue;
         walk(path69.join(dir, entry.name), d + 1);
@@ -12498,7 +13246,7 @@ function readSkillCatalog(opts) {
     const kitsDir = path69.join(root, "cli/assets/worker-kits");
     readSkillDirs(kitsDir, "worker-kit", entries, warnings);
     if (isDir2(kitsDir)) {
-      for (const kit of fs60.readdirSync(kitsDir).sort()) {
+      for (const kit of fs61.readdirSync(kitsDir).sort()) {
         const kitPath = path69.join(kitsDir, kit);
         if (!isDir2(kitPath)) continue;
         readKitSubSkills(kitPath, entries, warnings);
@@ -12545,7 +13293,7 @@ __export(source_import_discovery_exports, {
 });
 import * as p34 from "@clack/prompts";
 import pc50 from "picocolors";
-import fs65 from "node:fs";
+import fs66 from "node:fs";
 import path73 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 function slugifyWorkspaceName(input) {
@@ -12576,7 +13324,7 @@ async function promptForInteractiveWorkspacePath(input) {
   const trimmed = String(raw).trim();
   const expanded = trimmed.startsWith("~/") ? path73.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
   const resolved = path73.resolve(expanded);
-  if (fs65.existsSync(resolved) && fs65.statSync(resolved).isDirectory()) {
+  if (fs66.existsSync(resolved) && fs66.statSync(resolved).isDirectory()) {
     const finalPath = path73.join(resolved, suggestedName);
     p34.note(
       [
@@ -12848,7 +13596,7 @@ var init_source_import_discovery = __esm({
 import { Command } from "commander";
 import * as p35 from "@clack/prompts";
 import pc51 from "picocolors";
-import fs66 from "node:fs";
+import fs67 from "node:fs";
 import path74 from "node:path";
 import { spawnSync as spawnSync8 } from "node:child_process";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
@@ -29455,481 +30203,12 @@ Examples:
   });
 }
 
-// src/commands/bridge.ts
-import path50 from "node:path";
-import pc37 from "picocolors";
-
-// src/runtime/growthub-bridge-client/index.ts
-init_session_store();
-import fs41 from "node:fs";
-import path49 from "node:path";
-function readActiveSession() {
-  const session = readSession();
-  if (!session || isSessionExpired(session)) {
-    throw new Error("Hosted session expired. Run `growthub auth login` again.");
-  }
-  if (!session.userId) {
-    throw new Error("Hosted session is missing userId. Run `growthub auth login` again.");
-  }
-  return session;
-}
-function bridgeUrl(session, pathname, params) {
-  const baseUrl = process.env.GROWTHUB_BRIDGE_BASE_URL?.trim() || session.hostedBaseUrl;
-  const url = new URL(pathname, `${baseUrl.replace(/\/+$/, "")}/`);
-  for (const [key, value] of Object.entries(params ?? {})) {
-    if (value === void 0 || value === "") continue;
-    url.searchParams.set(key, String(value));
-  }
-  return url;
-}
-function buildSupabaseSessionCookie(session) {
-  const payload = {
-    access_token: session.accessToken,
-    user: {
-      id: session.userId,
-      email: session.email
-    }
-  };
-  return `sb-growthub-auth-token=${encodeURIComponent(JSON.stringify(payload))}`;
-}
-async function requestJson(session, url, init = {}) {
-  const headers = {
-    accept: "application/json",
-    authorization: `Bearer ${session.accessToken}`,
-    "x-user-id": session.userId ?? "",
-    ...Object.fromEntries(new Headers(init.headers).entries())
-  };
-  if (init.body !== void 0 && !headers["content-type"]) {
-    headers["content-type"] = "application/json";
-  }
-  const response = await fetch(url, { ...init, headers });
-  const text69 = await response.text();
-  const parsed = text69.trim() ? safeJson(text69) : null;
-  if (!response.ok) {
-    const message = typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : `Growthub bridge request failed (${response.status})`;
-    throw new Error(message);
-  }
-  return parsed;
-}
-async function requestJsonWithSessionCookie(session, url, init = {}) {
-  const headers = {
-    accept: "application/json",
-    cookie: buildSupabaseSessionCookie(session),
-    ...Object.fromEntries(new Headers(init.headers).entries())
-  };
-  if (init.body !== void 0 && !headers["content-type"]) {
-    headers["content-type"] = "application/json";
-  }
-  const response = await fetch(url, { ...init, headers });
-  const text69 = await response.text();
-  const parsed = text69.trim() ? safeJson(text69) : null;
-  if (!response.ok) {
-    const message = typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : `Growthub session-backed request failed (${response.status})`;
-    throw new Error(message);
-  }
-  return parsed;
-}
-function safeJson(text69) {
-  try {
-    return JSON.parse(text69);
-  } catch {
-    return text69;
-  }
-}
-var GrowthubBridgeClient = class {
-  constructor(session = readActiveSession()) {
-    this.session = session;
-  }
-  session;
-  async listAssets(query = {}) {
-    const url = bridgeUrl(this.session, "/api/cli/profile", {
-      view: "gallery-assets",
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
-      source: query.source,
-      mediaType: query.mediaType,
-      search: query.search
-    });
-    const bridgeResult = await requestJson(this.session, url);
-    if (isAssetListResponse(bridgeResult)) return bridgeResult;
-    const fallback = bridgeUrl(this.session, "/api/gallery/assets", {
-      userId: this.session.userId,
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
-      source: query.source,
-      mediaType: query.mediaType,
-      search: query.search
-    });
-    const fallbackResult = await requestJson(this.session, fallback);
-    if (isAssetListResponse(fallbackResult)) return fallbackResult;
-    throw new Error("Growthub bridge asset list did not return the asset contract.");
-  }
-  async listBrandKits(query = {}) {
-    const url = bridgeUrl(this.session, "/api/brand-settings");
-    const directResult = await requestJsonWithSessionCookie(this.session, url);
-    if (!isRemoteBrandKitArray(directResult)) {
-      throw new Error("Growthub brand settings endpoint did not return brand kits.");
-    }
-    const brandKits = directResult.brandKits;
-    if (!query.includeAssets || brandKits.length === 0) {
-      return {
-        success: true,
-        userId: this.session.userId,
-        brandKits,
-        count: brandKits.length
-      };
-    }
-    const assetsResult = await this.listBrandAssets();
-    const assetsByKitId = /* @__PURE__ */ new Map();
-    for (const asset of assetsResult.assets) {
-      const key = String(asset.brand_kit_id);
-      assetsByKitId.set(key, [...assetsByKitId.get(key) ?? [], asset]);
-    }
-    return {
-      success: true,
-      userId: this.session.userId,
-      brandKits: brandKits.map((kit) => ({
-        ...kit,
-        assets: assetsByKitId.get(String(kit.id)) ?? []
-      })),
-      count: brandKits.length
-    };
-  }
-  async listBrandAssets(query = {}) {
-    const url = bridgeUrl(this.session, "/api/brand-settings/assets", {
-      brandKitId: query.brandKitId
-    });
-    const result = await requestJsonWithSessionCookie(this.session, url);
-    if (!isRemoteBrandAssetArray(result)) {
-      throw new Error("Growthub brand assets endpoint did not return brand assets.");
-    }
-    const assets2 = query.assetType ? result.assets.filter((asset) => asset.asset_type === query.assetType) : result.assets;
-    return {
-      success: true,
-      userId: this.session.userId,
-      brandKitId: query.brandKitId,
-      assets: assets2,
-      count: assets2.length
-    };
-  }
-  async listKnowledge(query = {}) {
-    const url = bridgeUrl(this.session, "/api/cli/profile", {
-      view: "knowledge",
-      type: query.type,
-      agentSlug: query.agentSlug,
-      tableId: query.tableId
-    });
-    const result = await requestJson(this.session, url);
-    if (isKnowledgeListResponse(result)) return result;
-    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items", {
-      type: query.type,
-      agentSlug: query.agentSlug,
-      tableId: query.tableId
-    });
-    const providerResult = await requestJson(this.session, providerUrl);
-    if (isKnowledgeListResponse(providerResult)) return providerResult;
-    throw new Error("Growthub bridge knowledge list did not return the knowledge contract.");
-  }
-  async listKnowledgeTables(query = {}) {
-    const url = bridgeUrl(this.session, "/api/cli/profile", {
-      view: "knowledge-tables",
-      origin: query.origin,
-      connectorType: query.connectorType
-    });
-    const result = await requestJson(this.session, url);
-    if (isKnowledgeTableListResponse(result)) return result;
-    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/tables", {
-      origin: query.origin,
-      connectorType: query.connectorType
-    });
-    const providerResult = await requestJson(this.session, providerUrl);
-    if (isKnowledgeTableListResponse(providerResult)) return providerResult;
-    throw new Error("Growthub bridge knowledge table list did not return the knowledge table contract.");
-  }
-  async saveKnowledge(input) {
-    const url = bridgeUrl(this.session, "/api/cli/profile", { action: "save-knowledge" });
-    const result = await requestJson(this.session, url, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-    if (result && typeof result === "object" && "success" in result) {
-      return result;
-    }
-    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items");
-    const providerResult = await requestJson(this.session, providerUrl, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-    if (providerResult && typeof providerResult === "object" && "success" in providerResult) {
-      return providerResult;
-    }
-    throw new Error("Growthub bridge knowledge save did not return the knowledge save contract.");
-  }
-  deleteKnowledge(id) {
-    const url = bridgeUrl(this.session, "/api/cli/profile", { action: "delete-knowledge" });
-    return requestJson(this.session, url, {
-      method: "POST",
-      body: JSON.stringify({ id })
-    });
-  }
-  updateKnowledgeMetadata(input) {
-    const url = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items/metadata");
-    return requestJson(this.session, url, {
-      method: "PATCH",
-      body: JSON.stringify(input)
-    });
-  }
-  syncRunOutput(input) {
-    const url = bridgeUrl(this.session, "/api/providers/growthub-local/runs/sync");
-    return requestJson(this.session, url, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  }
-  listMcpAccounts() {
-    const url = bridgeUrl(this.session, "/api/mcp/accounts");
-    return requestJson(this.session, url);
-  }
-  async downloadStoragePath(storagePath, outPath, bucket = "node_documents") {
-    const url = bridgeUrl(this.session, "/api/secure-image", { bucket, path: storagePath });
-    const response = await fetch(url, {
-      headers: {
-        authorization: `Bearer ${this.session.accessToken}`,
-        "x-user-id": this.session.userId ?? ""
-      }
-    });
-    if (!response.ok) {
-      throw new Error(`Authenticated artifact download failed (${response.status}).`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    fs41.mkdirSync(path49.dirname(path49.resolve(outPath)), { recursive: true });
-    fs41.writeFileSync(path49.resolve(outPath), buffer);
-    return buffer.length;
-  }
-  async downloadKnowledge(id, outPath) {
-    const url = bridgeUrl(this.session, "/api/cli/profile", { view: "knowledge-download", id });
-    const response = await fetch(url, {
-      headers: {
-        authorization: `Bearer ${this.session.accessToken}`,
-        "x-user-id": this.session.userId ?? ""
-      }
-    });
-    if (!response.ok) {
-      throw new Error(`Knowledge download failed (${response.status}).`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    fs41.mkdirSync(path49.dirname(path49.resolve(outPath)), { recursive: true });
-    fs41.writeFileSync(path49.resolve(outPath), buffer);
-    return buffer.length;
-  }
-};
-function isAssetListResponse(value) {
-  return Boolean(
-    value && typeof value === "object" && Array.isArray(value.assets) && typeof value.pagination?.total === "number"
-  );
-}
-function isRemoteBrandKitArray(value) {
-  return Boolean(
-    value && typeof value === "object" && Array.isArray(value.brandKits)
-  );
-}
-function isRemoteBrandAssetArray(value) {
-  return Boolean(
-    value && typeof value === "object" && Array.isArray(value.assets)
-  );
-}
-function isKnowledgeListResponse(value) {
-  return Boolean(
-    value && typeof value === "object" && Array.isArray(value.items) && typeof value.count === "number"
-  );
-}
-function isKnowledgeTableListResponse(value) {
-  return Boolean(
-    value && typeof value === "object" && Array.isArray(value.tables) && typeof value.count === "number"
-  );
-}
-function createGrowthubBridgeClient() {
-  return new GrowthubBridgeClient();
-}
-
-// src/commands/bridge.ts
-function printRows(rows, keys) {
-  for (const row of rows) {
-    console.log(keys.map((key) => `${pc37.dim(`${key}:`)} ${String(row[key] ?? "")}`).join("  "));
-  }
-}
-function outPathFromStorage(storagePath, out) {
-  return path50.resolve(out?.trim() || path50.basename(storagePath));
-}
-function registerBridgeCommands(program2) {
-  const bridge = program2.command("bridge").description("Authenticated Growthub bridge resources: assets, knowledge, and MCP accounts.");
-  const assets2 = bridge.command("assets").description("User asset gallery through the Growthub bridge.");
-  assets2.command("list").description("List user-owned gallery assets.").option("--page <page>", "Page number", (value) => Number(value), 1).option("--limit <limit>", "Page size", (value) => Number(value), 20).option("--source <source>", "Source filter").option("--media-type <type>", "Media type filter").option("--search <query>", "Filename/source search").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.listAssets({
-      page: opts.page,
-      limit: opts.limit,
-      source: opts.source,
-      mediaType: opts.mediaType,
-      search: opts.search
-    });
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    console.log(pc37.bold(`Growthub assets (${result.assets.length}/${result.pagination.total})`));
-    printRows(result.assets.map((asset) => ({
-      id: asset.id,
-      type: asset.type,
-      source: asset.source,
-      storage: asset.storage_path
-    })), ["id", "type", "source", "storage"]);
-  });
-  assets2.command("download").description("Download a user-owned gallery asset by storage path.").requiredOption("--storage-path <path>", "Asset storage path from bridge assets list").option("--bucket <bucket>", "Storage bucket", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const outPath = outPathFromStorage(opts.storagePath, opts.out);
-    const bytes = await client.downloadStoragePath(opts.storagePath, outPath, opts.bucket);
-    const payload = { success: true, storagePath: opts.storagePath, bucket: opts.bucket, outPath, bytes };
-    if (opts.json) console.log(JSON.stringify(payload, null, 2));
-    else console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
-  });
-  const brand = bridge.command("brand").description("User brand kits and brand assets through the Growthub bridge.");
-  brand.command("kits").description("List accessible remote brand kits.").option("--include-assets", "Include each brand kit's assets").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.listBrandKits({ includeAssets: opts.includeAssets === true });
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    console.log(pc37.bold(`Growthub brand kits (${result.count})`));
-    printRows(result.brandKits.map((kit) => ({
-      id: kit.id,
-      name: kit.brand_name,
-      visibility: kit.visibility,
-      assets: kit.assets?.length ?? ""
-    })), ["id", "name", "visibility", "assets"]);
-  });
-  brand.command("assets").description("List remote brand assets from accessible brand kits.").option("--brand-kit-id <id>", "Filter by brand kit id").option("--asset-type <type>", "Filter by asset type").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.listBrandAssets({ brandKitId: opts.brandKitId, assetType: opts.assetType });
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    console.log(pc37.bold(`Growthub brand assets (${result.count})`));
-    printRows(result.assets.map((asset) => ({
-      id: asset.id,
-      kit: asset.brand_kit_id,
-      type: asset.asset_type,
-      storage: asset.storage_path
-    })), ["id", "kit", "type", "storage"]);
-  });
-  brand.command("download").description("Download a remote brand asset by storage path.").requiredOption("--storage-path <path>", "Brand asset storage path from bridge brand assets").option("--bucket <bucket>", "Storage bucket", "node_documents").option("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const outPath = outPathFromStorage(opts.storagePath, opts.out);
-    const bytes = await client.downloadStoragePath(opts.storagePath, outPath, opts.bucket);
-    const payload = { success: true, storagePath: opts.storagePath, bucket: opts.bucket, outPath, bytes };
-    if (opts.json) console.log(JSON.stringify(payload, null, 2));
-    else console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
-  });
-  const knowledge = bridge.command("knowledge").description("User knowledge items through the Growthub bridge.");
-  knowledge.command("tables").description("List user-owned knowledge tables, the custom groupings for knowledge items.").option("--origin <origin>", "Filter by metadata.origin").option("--connector-type <type>", "Filter by metadata.connector_type").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.listKnowledgeTables({ origin: opts.origin, connectorType: opts.connectorType });
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    console.log(pc37.bold(`Growthub knowledge tables (${result.count})`));
-    printRows(result.tables.map((table) => ({
-      id: table.id,
-      file: table.file_name,
-      origin: table.metadata?.origin,
-      children: table.child_count ?? 0
-    })), ["id", "file", "origin", "children"]);
-  });
-  knowledge.command("list").description("List user-owned knowledge items.").option("--type <type>", "Knowledge source type").option("--agent-slug <slug>", "Agent slug filter").option("--table-id <id>", "Filter by metadata.table_id knowledge table grouping").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.listKnowledge({ type: opts.type, agentSlug: opts.agentSlug, tableId: opts.tableId });
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    console.log(pc37.bold(`Growthub knowledge (${result.count})`));
-    printRows(result.items.map((item) => ({
-      id: item.id,
-      file: item.file_name,
-      type: item.source_type,
-      storage: item.storage_path
-    })), ["id", "file", "type", "storage"]);
-  });
-  knowledge.command("write").description("Create or update a markdown knowledge item.").option("--id <id>", "Existing knowledge item id to update").option("--title <title>", "Title for a new item").option("--file-name <name>", "File name for an update").option("--content <content>", "Markdown content for a new item").option("--table-id <id>", "Attach new item to metadata.table_id knowledge table grouping").option("--notes <notes>", "Notes metadata").option("--agent-slug <slug>", "Agent slug", "growthub-cli").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.saveKnowledge({
-      id: opts.id,
-      title: opts.title,
-      fileName: opts.fileName,
-      content: opts.content,
-      tableId: opts.tableId,
-      notes: opts.notes,
-      agentSlug: opts.agentSlug
-    });
-    if (opts.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.success ? pc37.green("Knowledge saved") : pc37.red(result.error ?? "Knowledge save failed"));
-  });
-  knowledge.command("download").description("Download a knowledge item by id.").argument("<id>", "Knowledge item id").requiredOption("--out <path>", "Output file path").option("--json", "Output raw JSON").action(async (id, opts) => {
-    const client = createGrowthubBridgeClient();
-    const outPath = path50.resolve(opts.out);
-    const bytes = await client.downloadKnowledge(id, outPath);
-    const payload = { success: true, id, outPath, bytes };
-    if (opts.json) console.log(JSON.stringify(payload, null, 2));
-    else console.log(`${pc37.green("Downloaded")} ${outPath} (${bytes} bytes)`);
-  });
-  knowledge.command("delete").description("Delete a knowledge item by id.").argument("<id>", "Knowledge item id").option("--json", "Output raw JSON").action(async (id, opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.deleteKnowledge(id);
-    if (opts.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.success ? pc37.green("Knowledge deleted") : pc37.red(result.error ?? "Knowledge delete failed"));
-  });
-  knowledge.command("metadata").description("Patch metadata for an existing knowledge item.").argument("<id>", "Knowledge item id").option("--table-id <id>", "Set metadata.table_id").option("--notes <notes>", "Set metadata.notes").option("--json", "Output raw JSON").action(async (id, opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.updateKnowledgeMetadata({ id, tableId: opts.tableId, notes: opts.notes });
-    if (opts.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.success ? pc37.green("Knowledge metadata updated") : pc37.red(result.error ?? "Knowledge metadata update failed"));
-  });
-  bridge.command("run-sync").description("Persist a local run output into the remote Growthub knowledge substrate.").option("--run-id <id>", "Run id").option("--title <title>", "Knowledge item title").option("--output <json>", "JSON output payload").option("--table-id <id>", "Attach to metadata.table_id").option("--agent-slug <slug>", "Agent slug", "growthub_local_bridge").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const parsedOutput = opts.output ? JSON.parse(opts.output) : {};
-    const result = await client.syncRunOutput({
-      runId: opts.runId,
-      title: opts.title,
-      output: parsedOutput,
-      tableId: opts.tableId,
-      agentSlug: opts.agentSlug
-    });
-    if (opts.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.success ? pc37.green("Run output synced") : pc37.red(result.error ?? "Run output sync failed"));
-  });
-  const mcp = bridge.command("mcp").description("MCP bridge accounts.");
-  mcp.command("accounts").description("List connected MCP accounts.").option("--json", "Output raw JSON").action(async (opts) => {
-    const client = createGrowthubBridgeClient();
-    const result = await client.listMcpAccounts();
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    console.log(pc37.bold(`Growthub MCP accounts (${result.accounts.length})`));
-    printRows(result.accounts.map((account) => ({
-      id: account.id,
-      provider: account.provider,
-      app: account.appSlug,
-      active: account.isActive
-    })), ["id", "provider", "app", "active"]);
-  });
-}
+// src/index.ts
+init_bridge2();
+init_growthub_bridge_client();
 
 // src/commands/workflow.ts
-import fs43 from "node:fs";
+import fs44 from "node:fs";
 import path52 from "node:path";
 import * as p24 from "@clack/prompts";
 import pc39 from "picocolors";
@@ -29938,15 +30217,15 @@ init_hosted_client();
 
 // src/runtime/workflow-hygiene/labels.ts
 init_home();
-import fs42 from "node:fs";
+import fs43 from "node:fs";
 import path51 from "node:path";
 function resolveStorePath() {
   return path51.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "labels.json");
 }
 function readStoreFile(filePath) {
-  if (!fs42.existsSync(filePath)) return { records: [] };
+  if (!fs43.existsSync(filePath)) return { records: [] };
   try {
-    const raw = JSON.parse(fs42.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs43.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw.records)) return { records: [] };
     return raw;
   } catch {
@@ -29954,8 +30233,8 @@ function readStoreFile(filePath) {
   }
 }
 function writeStoreFile(filePath, data) {
-  fs42.mkdirSync(path51.dirname(filePath), { recursive: true });
-  fs42.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
+  fs43.mkdirSync(path51.dirname(filePath), { recursive: true });
+  fs43.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}
 `, "utf-8");
 }
 function inferDefaultLabel(name, createdAt, versionCount) {
@@ -30063,9 +30342,9 @@ function resolveDeletedWorkflowIdsPath() {
 }
 function readDeletedWorkflowIds() {
   const filePath = resolveDeletedWorkflowIdsPath();
-  if (!fs43.existsSync(filePath)) return /* @__PURE__ */ new Set();
+  if (!fs44.existsSync(filePath)) return /* @__PURE__ */ new Set();
   try {
-    const raw = JSON.parse(fs43.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs44.readFileSync(filePath, "utf-8"));
     if (!Array.isArray(raw?.workflowIds)) return /* @__PURE__ */ new Set();
     return new Set(raw.workflowIds.filter((value) => typeof value === "string"));
   } catch {
@@ -30074,8 +30353,8 @@ function readDeletedWorkflowIds() {
 }
 function writeDeletedWorkflowIds(ids) {
   const filePath = resolveDeletedWorkflowIdsPath();
-  fs43.mkdirSync(path52.dirname(filePath), { recursive: true });
-  fs43.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
+  fs44.mkdirSync(path52.dirname(filePath), { recursive: true });
+  fs44.writeFileSync(filePath, `${JSON.stringify({ workflowIds: [...ids] }, null, 2)}
 `, "utf-8");
 }
 function markWorkflowDeletedLocally(workflowId) {
@@ -30101,10 +30380,10 @@ function filterLocallyDeletedWorkflows(entries) {
 }
 function listLocalSavedWorkflows() {
   const dir = resolveSavedWorkflowsDir();
-  if (!fs43.existsSync(dir)) return [];
-  const entries = fs43.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
+  if (!fs44.existsSync(dir)) return [];
+  const entries = fs44.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => {
     try {
-      const raw = JSON.parse(fs43.readFileSync(path52.resolve(dir, e.name), "utf-8"));
+      const raw = JSON.parse(fs44.readFileSync(path52.resolve(dir, e.name), "utf-8"));
       const pipeline = raw.pipeline ?? raw;
       return {
         filename: e.name,
@@ -30166,8 +30445,8 @@ async function archiveSavedWorkflow(entry) {
   }
   const dir = resolveSavedWorkflowsDir();
   const archiveDir = path52.resolve(dir, "archived");
-  fs43.mkdirSync(archiveDir, { recursive: true });
-  fs43.renameSync(
+  fs44.mkdirSync(archiveDir, { recursive: true });
+  fs44.renameSync(
     path52.resolve(dir, entry.filename),
     path52.resolve(archiveDir, entry.filename)
   );
@@ -30193,7 +30472,7 @@ async function deleteSavedWorkflow(entry) {
   if (!entry.filename) {
     throw new Error("Local workflow entry is missing filename.");
   }
-  fs43.rmSync(path52.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
+  fs44.rmSync(path52.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
   markWorkflowDeletedLocally(entry.workflowId);
 }
 async function loadSavedWorkflowDetail(entry) {
@@ -30212,7 +30491,7 @@ async function loadSavedWorkflowDetail(entry) {
     };
   }
   const dir = resolveSavedWorkflowsDir();
-  const content = fs43.readFileSync(path52.resolve(dir, entry.filename), "utf-8");
+  const content = fs44.readFileSync(path52.resolve(dir, entry.filename), "utf-8");
   const raw = JSON.parse(content);
   return {
     pipeline: raw.pipeline ?? raw,
@@ -31196,7 +31475,7 @@ import pc40 from "picocolors";
 
 // src/runtime/agent-harness/auth-store.ts
 init_home();
-import fs44 from "node:fs";
+import fs45 from "node:fs";
 import path53 from "node:path";
 function resolveHarnessAuthDir() {
   return path53.resolve(resolvePaperclipHomeDir(), "harness-auth");
@@ -31209,23 +31488,23 @@ function normalizeSecret(value) {
   return trimmed && trimmed.length > 0 ? trimmed : void 0;
 }
 function ensureSecureDir(dirPath) {
-  fs44.mkdirSync(dirPath, { recursive: true });
+  fs45.mkdirSync(dirPath, { recursive: true });
   try {
-    fs44.chmodSync(dirPath, 448);
+    fs45.chmodSync(dirPath, 448);
   } catch {
   }
 }
 function ensureSecureFile(filePath) {
   try {
-    fs44.chmodSync(filePath, 384);
+    fs45.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessCredentials(harnessId) {
   const filePath = resolveHarnessAuthFile(harnessId);
-  if (!fs44.existsSync(filePath)) return {};
+  if (!fs45.existsSync(filePath)) return {};
   try {
-    const parsed = JSON.parse(fs44.readFileSync(filePath, "utf-8"));
+    const parsed = JSON.parse(fs45.readFileSync(filePath, "utf-8"));
     const creds = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value.trim().length > 0) {
@@ -31252,7 +31531,7 @@ function setHarnessCredential(harnessId, key, value) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs44.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs45.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -31269,7 +31548,7 @@ function setHarnessCredentials(harnessId, updates) {
   const dirPath = resolveHarnessAuthDir();
   ensureSecureDir(dirPath);
   const filePath = resolveHarnessAuthFile(harnessId);
-  fs44.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
+  fs45.writeFileSync(filePath, `${JSON.stringify(creds, null, 2)}
 `, "utf-8");
   ensureSecureFile(filePath);
 }
@@ -31281,7 +31560,7 @@ function maskSecret(value) {
 
 // src/runtime/open-agents/index.ts
 init_home();
-import fs45 from "node:fs";
+import fs46 from "node:fs";
 import path54 from "node:path";
 
 // src/runtime/open-agents/contract.ts
@@ -31473,14 +31752,14 @@ function resolveConfigPath3() {
 }
 function readOpenAgentsConfig() {
   const configPath = resolveConfigPath3();
-  if (!fs45.existsSync(configPath)) {
+  if (!fs46.existsSync(configPath)) {
     return {
       ...DEFAULT_OPEN_AGENTS_CONFIG,
       apiKey: getHarnessCredential("open-agents", "apiKey")
     };
   }
   try {
-    const raw = JSON.parse(fs45.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs46.readFileSync(configPath, "utf-8"));
     const storedApiKey = getHarnessCredential("open-agents", "apiKey");
     return {
       backendType: validateBackendType(raw.backendType),
@@ -31501,13 +31780,13 @@ function readOpenAgentsConfig() {
 }
 function writeOpenAgentsConfig(config) {
   const configPath = resolveConfigPath3();
-  fs45.mkdirSync(path54.dirname(configPath), { recursive: true });
+  fs46.mkdirSync(path54.dirname(configPath), { recursive: true });
   const persisted = {
     ...config,
     authMode: validateAuthMode(config.authMode),
     apiKey: void 0
   };
-  fs45.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
+  fs46.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}
 `, "utf-8");
   setHarnessCredential("open-agents", "apiKey", config.apiKey);
 }
@@ -32068,7 +32347,7 @@ import pc41 from "picocolors";
 
 // src/runtime/qwen-code/index.ts
 init_home();
-import fs46 from "node:fs";
+import fs47 from "node:fs";
 import path55 from "node:path";
 
 // src/runtime/qwen-code/contract.ts
@@ -32292,14 +32571,14 @@ function resolveConfigPath4() {
 function readQwenCodeConfig() {
   const configPath = resolveConfigPath4();
   const storedCredentials = readHarnessCredentials("qwen-code");
-  if (!fs46.existsSync(configPath)) {
+  if (!fs47.existsSync(configPath)) {
     return {
       ...DEFAULT_QWEN_CODE_CONFIG,
       env: mergeHarnessEnv(DEFAULT_QWEN_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs46.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs47.readFileSync(configPath, "utf-8"));
     return {
       binaryPath: typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_QWEN_CODE_CONFIG.binaryPath,
       defaultModel: typeof raw.defaultModel === "string" ? raw.defaultModel : DEFAULT_QWEN_CODE_CONFIG.defaultModel,
@@ -32321,7 +32600,7 @@ function readQwenCodeConfig() {
 }
 function writeQwenCodeConfig(config) {
   const configPath = resolveConfigPath4();
-  fs46.mkdirSync(path55.dirname(configPath), { recursive: true });
+  fs47.mkdirSync(path55.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -32333,7 +32612,7 @@ function writeQwenCodeConfig(config) {
     publicEnv[key] = value;
   }
   setHarnessCredentials("qwen-code", credentialUpdates);
-  fs46.writeFileSync(
+  fs47.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -32583,12 +32862,12 @@ import pc43 from "picocolors";
 
 // src/runtime/t3code/index.ts
 init_home();
-import fs48 from "node:fs";
+import fs49 from "node:fs";
 import path57 from "node:path";
 
 // src/runtime/agent-harness/harness-profile.ts
 init_home();
-import fs47 from "node:fs";
+import fs48 from "node:fs";
 import path56 from "node:path";
 import * as p27 from "@clack/prompts";
 import pc42 from "picocolors";
@@ -32600,15 +32879,15 @@ function resolveProfilePath(harnessId) {
 }
 function ensureSecureFile2(filePath) {
   try {
-    fs47.chmodSync(filePath, 384);
+    fs48.chmodSync(filePath, 384);
   } catch {
   }
 }
 function readHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (!fs47.existsSync(filePath)) return null;
+  if (!fs48.existsSync(filePath)) return null;
   try {
-    const raw = JSON.parse(fs47.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs48.readFileSync(filePath, "utf-8"));
     if (typeof raw.workspaceId !== "string" || typeof raw.machineLabel !== "string") return null;
     return {
       profileVersion: 1,
@@ -32626,14 +32905,14 @@ function readHarnessProfile(harnessId) {
 function writeHarnessProfile(harnessId, profile) {
   const dirPath = resolveProfileDir(harnessId);
   const filePath = resolveProfilePath(harnessId);
-  fs47.mkdirSync(dirPath, { recursive: true });
-  fs47.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
+  fs48.mkdirSync(dirPath, { recursive: true });
+  fs48.writeFileSync(filePath, `${JSON.stringify(profile, null, 2)}
 `, "utf-8");
   ensureSecureFile2(filePath);
 }
 function clearHarnessProfile(harnessId) {
   const filePath = resolveProfilePath(harnessId);
-  if (fs47.existsSync(filePath)) fs47.rmSync(filePath);
+  if (fs48.existsSync(filePath)) fs48.rmSync(filePath);
 }
 function buildProfileStatusLines(harnessId, harnessLabel, profile) {
   if (!profile) {
@@ -32919,14 +33198,14 @@ function resolveConfigPath5() {
 function readT3CodeConfig() {
   const configPath = resolveConfigPath5();
   const storedCredentials = readHarnessCredentials(T3_HARNESS_ID);
-  if (!fs48.existsSync(configPath)) {
+  if (!fs49.existsSync(configPath)) {
     return {
       ...DEFAULT_T3_CODE_CONFIG,
       env: mergeHarnessEnv2(DEFAULT_T3_CODE_CONFIG.env, storedCredentials)
     };
   }
   try {
-    const raw = JSON.parse(fs48.readFileSync(configPath, "utf-8"));
+    const raw = JSON.parse(fs49.readFileSync(configPath, "utf-8"));
     const profile = readHarnessProfile(T3_HARNESS_ID);
     const resolvedBinaryPath = profile?.forkBinaryPath ?? (typeof raw.binaryPath === "string" ? raw.binaryPath : DEFAULT_T3_CODE_CONFIG.binaryPath);
     return {
@@ -32949,7 +33228,7 @@ function readT3CodeConfig() {
 }
 function writeT3CodeConfig(config) {
   const configPath = resolveConfigPath5();
-  fs48.mkdirSync(path57.dirname(configPath), { recursive: true });
+  fs49.mkdirSync(path57.dirname(configPath), { recursive: true });
   const rawEnv = typeof config.env === "object" && config.env !== null ? config.env : {};
   const credentialUpdates = {};
   const publicEnv = {};
@@ -32961,7 +33240,7 @@ function writeT3CodeConfig(config) {
     }
   }
   setHarnessCredentials(T3_HARNESS_ID, credentialUpdates);
-  fs48.writeFileSync(
+  fs49.writeFileSync(
     configPath,
     `${JSON.stringify({ ...config, env: publicEnv }, null, 2)}
 `,
@@ -33255,6 +33534,7 @@ function registerT3CodeCommands(program2) {
 }
 
 // src/index.ts
+init_fork_registry();
 init_github();
 
 // src/commands/integrations.ts
@@ -33343,7 +33623,7 @@ import pc46 from "picocolors";
 
 // src/status/probes.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import fs49 from "node:fs";
+import fs50 from "node:fs";
 import path58 from "node:path";
 var GITHUB_API = "https://api.github.com";
 var NPM_REGISTRY = "https://registry.npmjs.org";
@@ -33509,7 +33789,7 @@ async function probeKitForksIndex(_timeoutMs) {
   try {
     const { resolveKitForksIndexPath: resolveKitForksIndexPath2 } = await Promise.resolve().then(() => (init_kit_forks_home(), kit_forks_home_exports));
     const p36 = resolveKitForksIndexPath2();
-    if (!fs49.existsSync(p36)) {
+    if (!fs50.existsSync(p36)) {
       return {
         componentId: "kit-forks-index",
         level: "operational",
@@ -33517,7 +33797,7 @@ async function probeKitForksIndex(_timeoutMs) {
         lastCheckedAt: isoNow()
       };
     }
-    const parsed = JSON.parse(fs49.readFileSync(p36, "utf8"));
+    const parsed = JSON.parse(fs50.readFileSync(p36, "utf8"));
     const count = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
     return {
       componentId: "kit-forks-index",
@@ -33588,8 +33868,8 @@ async function probeNode(_timeoutMs) {
 async function probeReleaseBundleArtifacts(_timeoutMs) {
   const distPath = path58.resolve(process.cwd(), "cli/dist/index.js");
   const installerPath = path58.resolve(process.cwd(), "packages/create-growthub-local/bin/create-growthub-local.mjs");
-  const distOk = fs49.existsSync(distPath);
-  const installerOk = fs49.existsSync(installerPath);
+  const distOk = fs50.existsSync(distPath);
+  const installerOk = fs50.existsSync(installerPath);
   const ok = distOk && installerOk;
   return {
     componentId: "release-bundle",
@@ -34143,13 +34423,13 @@ function registerStarterCommands(program2) {
 
 // src/commands/skills.ts
 init_catalog2();
-import fs62 from "node:fs";
+import fs63 from "node:fs";
 import path71 from "node:path";
 import pc48 from "picocolors";
 
 // src/skills/session-memory.ts
 init_frontmatter();
-import fs61 from "node:fs";
+import fs62 from "node:fs";
 import path70 from "node:path";
 var PROJECT_MD_RELATIVE2 = ".growthub-fork/project.md";
 function resolveProjectMdPath(forkPath) {
@@ -34157,8 +34437,8 @@ function resolveProjectMdPath(forkPath) {
 }
 function readSessionMemory(forkPath) {
   const projectMdPath = resolveProjectMdPath(forkPath);
-  if (!fs61.existsSync(projectMdPath)) return null;
-  const raw = fs61.readFileSync(projectMdPath, "utf8");
+  if (!fs62.existsSync(projectMdPath)) return null;
+  const raw = fs62.readFileSync(projectMdPath, "utf8");
   const sizeBytes = Buffer.byteLength(raw, "utf8");
   try {
     const { frontmatter, body } = readFrontmatter(raw);
@@ -34176,9 +34456,9 @@ init_kit_forks_home();
 init_table_renderer();
 function readLocalForkHead(forkPath) {
   const p36 = resolveInForkRegistrationPath(forkPath);
-  if (!fs62.existsSync(p36)) return null;
+  if (!fs63.existsSync(p36)) return null;
   try {
-    const parsed = JSON.parse(fs62.readFileSync(p36, "utf8"));
+    const parsed = JSON.parse(fs63.readFileSync(p36, "utf8"));
     if (typeof parsed.forkId !== "string" || typeof parsed.kitId !== "string") return null;
     return { forkId: parsed.forkId, kitId: parsed.kitId };
   } catch {
@@ -34266,7 +34546,7 @@ function runValidate(opts) {
     const skillDir = path71.dirname(entry.skillPath);
     for (const helper of m.helpers ?? []) {
       const helperPath = path71.resolve(skillDir, helper.path);
-      if (!fs62.existsSync(helperPath)) {
+      if (!fs63.existsSync(helperPath)) {
         issues2.push({
           skillPath: entry.skillPath,
           reason: `helpers[].path missing on disk: ${helper.path}`,
@@ -34276,7 +34556,7 @@ function runValidate(opts) {
     }
     for (const sub of m.subSkills ?? []) {
       const subPath = path71.resolve(skillDir, sub.path);
-      if (!fs62.existsSync(subPath)) {
+      if (!fs63.existsSync(subPath)) {
         issues2.push({
           skillPath: entry.skillPath,
           reason: `subSkills[].path missing on disk: ${sub.path}`,
@@ -34437,7 +34717,7 @@ import pc49 from "picocolors";
 
 // src/fleet/summary.ts
 init_fork_registry();
-import fs63 from "node:fs";
+import fs64 from "node:fs";
 init_fork_policy();
 init_fork_trace();
 function classifyHealth(drift, pendingConfirmationJobs, lastJobStatus) {
@@ -34457,7 +34737,7 @@ var REMOTE_EVENT_TYPES = /* @__PURE__ */ new Set([
   "conflict_encountered"
 ]);
 function buildForkSummary(reg) {
-  if (!fs63.existsSync(reg.forkPath)) {
+  if (!fs64.existsSync(reg.forkPath)) {
     return {
       forkId: reg.forkId,
       kitId: reg.kitId,
@@ -35005,7 +35285,7 @@ var DEFAULT_MEMORY_PROVIDER_CONFIG = {
 
 // src/runtime/memory/store.ts
 init_home();
-import fs64 from "node:fs";
+import fs65 from "node:fs";
 import path72 from "node:path";
 function toProjectSlug(project) {
   return project.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "default";
@@ -35015,11 +35295,11 @@ function resolveProjectPath(project) {
 }
 function loadMemoryDatabase(project) {
   const filePath = resolveProjectPath(project);
-  if (!fs64.existsSync(filePath)) {
+  if (!fs65.existsSync(filePath)) {
     return { version: 1, project, observations: [], summaries: [], nextObservationId: 1, nextSummaryId: 1 };
   }
   try {
-    const raw = JSON.parse(fs64.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs65.readFileSync(filePath, "utf-8"));
     return {
       version: 1,
       project,
@@ -35034,9 +35314,9 @@ function loadMemoryDatabase(project) {
 }
 function saveMemoryDatabase(db) {
   const dir = resolveMemoryProjectsDir();
-  fs64.mkdirSync(dir, { recursive: true });
+  fs65.mkdirSync(dir, { recursive: true });
   const filePath = resolveProjectPath(db.project);
-  fs64.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
+  fs65.writeFileSync(filePath, `${JSON.stringify(db, null, 2)}
 `, "utf-8");
 }
 function addObservation(project, input) {
@@ -35130,8 +35410,8 @@ function incrementRelevanceCount(project, observationId) {
 }
 function listMemoryProjects() {
   const dir = resolveMemoryProjectsDir();
-  if (!fs64.existsSync(dir)) return [];
-  return fs64.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+  if (!fs65.existsSync(dir)) return [];
+  return fs65.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
 }
 function getMemoryStats(project) {
   const db = loadMemoryDatabase(project);
@@ -35147,11 +35427,11 @@ function resolveProviderConfigPath() {
 }
 function readProviderConfig() {
   const filePath = resolveProviderConfigPath();
-  if (!fs64.existsSync(filePath)) {
+  if (!fs65.existsSync(filePath)) {
     return { ...DEFAULT_MEMORY_PROVIDER_CONFIG };
   }
   try {
-    const raw = JSON.parse(fs64.readFileSync(filePath, "utf-8"));
+    const raw = JSON.parse(fs65.readFileSync(filePath, "utf-8"));
     return {
       provider: validateProvider(raw.provider),
       apiKey: typeof raw.apiKey === "string" ? raw.apiKey : void 0,
@@ -35164,9 +35444,9 @@ function readProviderConfig() {
 }
 function writeProviderConfig(config) {
   const dir = resolveMemoryDir();
-  fs64.mkdirSync(dir, { recursive: true });
+  fs65.mkdirSync(dir, { recursive: true });
   const filePath = resolveProviderConfigPath();
-  fs64.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
+  fs65.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}
 `, { mode: 384 });
 }
 function validateProvider(value) {
@@ -35551,8 +35831,8 @@ function resolveCliVersion() {
       path74.resolve(moduleDir, "../../package.json")
     ];
     for (const candidate of candidates) {
-      if (!fs66.existsSync(candidate)) continue;
-      const parsed = JSON.parse(fs66.readFileSync(candidate, "utf8"));
+      if (!fs67.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs67.readFileSync(candidate, "utf8"));
       if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
     }
   } catch {
@@ -35780,7 +36060,7 @@ async function runMarketingContextBuilder(baseUrl, model) {
   });
   if (p35.isCancel(projectDir)) return;
   const dir = String(projectDir).trim() || process.cwd();
-  if (!fs66.existsSync(dir)) {
+  if (!fs67.existsSync(dir)) {
     p35.note(`Directory not found: ${dir}`, "Marketing Context Builder");
     return;
   }
@@ -35817,9 +36097,9 @@ async function runMarketingContextBuilder(baseUrl, model) {
       return;
     }
     const outDir = path74.resolve(dir, ".agents");
-    fs66.mkdirSync(outDir, { recursive: true });
+    fs67.mkdirSync(outDir, { recursive: true });
     const outPath = path74.resolve(outDir, "product-marketing-context.md");
-    fs66.writeFileSync(outPath, result.contextMarkdown, "utf-8");
+    fs67.writeFileSync(outPath, result.contextMarkdown, "utf-8");
     p35.note(`Saved to: ${outPath}
 
 Review the file and replace [NEEDS INPUT] placeholders with real data.`, "Marketing Context Builder");
@@ -36032,11 +36312,11 @@ function resolveLocalThreadsDir() {
 }
 function loadOrCreateLocalThread() {
   const dir = resolveLocalThreadsDir();
-  fs66.mkdirSync(dir, { recursive: true });
+  fs67.mkdirSync(dir, { recursive: true });
   const activePath = path74.resolve(dir, "active-thread.json");
-  if (fs66.existsSync(activePath)) {
+  if (fs67.existsSync(activePath)) {
     try {
-      const parsed = JSON.parse(fs66.readFileSync(activePath, "utf-8"));
+      const parsed = JSON.parse(fs67.readFileSync(activePath, "utf-8"));
       const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
       const threadFile = path74.resolve(dir, `${id2}.json`);
       const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
@@ -36052,15 +36332,15 @@ function loadOrCreateLocalThread() {
 }
 function saveLocalThread(thread) {
   const dir = resolveLocalThreadsDir();
-  fs66.mkdirSync(dir, { recursive: true });
-  fs66.writeFileSync(
+  fs67.mkdirSync(dir, { recursive: true });
+  fs67.writeFileSync(
     thread.filePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
     "utf-8"
   );
   const activePath = path74.resolve(dir, "active-thread.json");
-  fs66.writeFileSync(
+  fs67.writeFileSync(
     activePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
@@ -36355,6 +36635,200 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
       }
       continue;
     }
+  }
+}
+function summarizeHostedAgent(agent) {
+  const provenance = agent.provenance && typeof agent.provenance === "object" ? agent.provenance.source : "";
+  return {
+    slug: agentSlug(agent),
+    name: agentLabel(agent),
+    source: agent.source ?? provenance,
+    workflows: Array.isArray(agent.workflowBindings) ? agent.workflowBindings.length : "",
+    knowledge: Array.isArray(agent.knowledgeBindings) ? agent.knowledgeBindings.length : "",
+    execution: "gh-app"
+  };
+}
+async function runGovernedWorkspaceAgentsFlow() {
+  async function pickRegisteredFork(message = "Select governed workspace") {
+    const forks = listKitForkRegistrations();
+    if (forks.length === 0) {
+      p35.note(
+        [
+          "No fork-sync registered governed workspaces were found.",
+          "",
+          "Create or register one first:",
+          "  growthub starter init --out ./my-workspace",
+          "  growthub kit fork register --path ./my-workspace --kit <kit-id>"
+        ].join("\n"),
+        "No Governed Workspaces"
+      );
+      return null;
+    }
+    const choice = await p35.select({
+      message,
+      options: [
+        ...forks.map((fork) => ({
+          value: fork.forkId,
+          label: `${fork.label ?? fork.forkId}  ${pc51.dim(fork.kitId)}`,
+          hint: fork.remote ? "fork-sync + remote" : "fork-sync registered"
+        })),
+        { value: "__back", label: "\u2190 Back" }
+      ]
+    });
+    if (p35.isCancel(choice) || choice === "__back") return null;
+    return forks.find((fork) => fork.forkId === choice) ?? null;
+  }
+  while (true) {
+    const action = await p35.select({
+      message: "Governed Workspace Agents",
+      options: [
+        { value: "list", label: "\u{1F4CB} List agents", hint: "Show hosted agents available to governed workspaces" },
+        { value: "inspect", label: "\u{1F50E} Inspect agent", hint: "Review one agent manifest, diagnostics, warnings, and resolved slugs" },
+        { value: "bind", label: "\u{1F517} Bind agent to workspace", hint: "Pick a fork-sync workspace and write .growthub-fork/agents/<slug>.json" },
+        { value: "bindings", label: "\u{1F5C2}\uFE0F Show workspace bindings", hint: "List agents currently attached to a governed workspace" },
+        { value: "unbind", label: "\u2715 Unbind agent", hint: "Remove a workspace binding without touching the hosted agent" },
+        { value: "json", label: "\u{1F9FE} JSON commands", hint: "Copy-safe commands for agent automation" },
+        { value: "__back", label: "\u2190 Back to main menu" }
+      ]
+    });
+    if (p35.isCancel(action)) {
+      p35.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (action === "__back") return "back";
+    if (action === "json") {
+      p35.note(
+        [
+          "growthub bridge agents list --json",
+          "growthub bridge agents inspect <slug> --json",
+          "growthub bridge agents bind <slug> --fork-id <fork-id> --json",
+          "growthub bridge agents bindings --fork-id <fork-id> --json",
+          "growthub bridge agents unbind <slug> --fork-id <fork-id> --json"
+        ].join("\n"),
+        "Governed Workspace Agent JSON"
+      );
+      continue;
+    }
+    if (action === "bindings") {
+      const fork2 = await pickRegisteredFork("Select governed workspace to inspect");
+      if (!fork2) continue;
+      const result2 = await Promise.resolve().then(() => (init_bridge2(), bridge_exports2)).then(
+        (mod) => mod.listHostedAgentBindings({ forkId: fork2.forkId })
+      );
+      p35.note(
+        [
+          `Workspace: ${fork2.label ?? fork2.forkId}`,
+          `Fork ID: ${fork2.forkId}`,
+          `Kit: ${fork2.kitId}`,
+          `Bindings: ${result2.count}`,
+          "",
+          ...result2.bindings.map(
+            (binding) => `${binding.agentSlug} \xB7 ${binding.agentName ?? ""} \xB7 execution=gh-app \xB7 localExecution=false`
+          ),
+          "",
+          `JSON: growthub bridge agents bindings --fork-id ${fork2.forkId} --json`
+        ].join("\n"),
+        "Governed Workspace Agent Bindings"
+      );
+      continue;
+    }
+    const client = createGrowthubBridgeClient();
+    if (action === "list") {
+      const spinner14 = p35.spinner();
+      spinner14.start("Loading governed workspace agents...");
+      const result2 = await client.listHostedAgentManifests();
+      spinner14.stop(`Loaded ${result2.agents.length} governed workspace agent(s).`);
+      p35.note(
+        [
+          `Contract: ${result2.contract ?? "AgentOrchestratorManifest"}`,
+          `Diagnostics: ${result2.diagnostics?.status ?? "unknown"}`,
+          `Resolved slugs: ${result2.diagnostics?.resolvedSlugs?.join(", ") || result2.resolvedSlugs?.join(", ") || "none"}`,
+          `Warnings: ${result2.diagnostics?.warnings?.length ?? result2.warnings?.length ?? 0}`,
+          "",
+          ...result2.agents.map((agent2) => {
+            const row = summarizeHostedAgent(agent2);
+            return `${row.slug} \xB7 ${row.name} \xB7 workflows=${row.workflows} \xB7 knowledge=${row.knowledge} \xB7 execution=${row.execution}`;
+          })
+        ].join("\n"),
+        "Governed Workspace Agents"
+      );
+      continue;
+    }
+    const slugRaw = await p35.text({
+      message: action === "bind" ? "Agent slug to bind:" : action === "unbind" ? "Agent slug to unbind:" : "Agent slug to inspect:",
+      placeholder: "quick-image-generator-xlq5"
+    });
+    if (p35.isCancel(slugRaw) || !slugRaw) continue;
+    const slug = String(slugRaw);
+    if (action === "unbind") {
+      const fork2 = await pickRegisteredFork("Select governed workspace to unbind from");
+      if (!fork2) continue;
+      const result2 = await Promise.resolve().then(() => (init_bridge2(), bridge_exports2)).then(
+        (mod) => mod.removeHostedAgentBinding({ agentSlug: slug, forkId: fork2.forkId })
+      );
+      p35.note(
+        [
+          `Agent: ${slug}`,
+          `Workspace: ${fork2.label ?? fork2.forkId}`,
+          `Removed: ${String(result2.removed)}`,
+          `Binding: ${result2.bindingPath}`,
+          "",
+          `JSON: growthub bridge agents unbind ${slug} --fork-id ${fork2.forkId} --json`
+        ].join("\n"),
+        "Governed Workspace Agent Unbound"
+      );
+      continue;
+    }
+    const spinner13 = p35.spinner();
+    spinner13.start(action === "bind" ? "Loading agent before binding..." : "Loading agent manifest...");
+    const result = await client.inspectHostedAgentManifest(slug);
+    spinner13.stop("Agent manifest loaded.");
+    const agent = result.agent ?? result.manifest;
+    if (!agent) {
+      p35.log.error(`Hosted agent manifest not found for slug: ${slug}`);
+      continue;
+    }
+    if (action === "inspect") {
+      p35.note(
+        [
+          `Slug: ${agentSlug(agent)}`,
+          `Name: ${agentLabel(agent)}`,
+          `Execution authority: gh-app`,
+          `Diagnostics: ${result.diagnostics?.status ?? agent.diagnostics?.status ?? "unknown"}`,
+          `Resolved slug: ${result.resolvedSlug ?? agent.resolvedSlug ?? agentSlug(agent)}`,
+          `Warnings: ${(result.warnings ?? agent.warnings ?? []).length}`,
+          "",
+          `JSON: growthub bridge agents inspect ${agentSlug(agent)} --json`
+        ].join("\n"),
+        "Governed Workspace Agent"
+      );
+      continue;
+    }
+    const fork = await pickRegisteredFork("Select governed workspace to bind this agent");
+    if (!fork) continue;
+    const written = writeHostedAgentBinding({
+      forkId: fork.forkId,
+      requestedSlug: slug,
+      agent,
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+      resolvedSlug: result.resolvedSlug
+    });
+    p35.note(
+      [
+        `Agent: ${agentSlug(agent)}`,
+        `Workspace: ${fork.label ?? fork.forkId}`,
+        `Fork ID: ${fork.forkId}`,
+        `Binding: ${written.bindingPath}`,
+        `Fork-sync registered: ${String(written.binding.forkSyncRegistered)}`,
+        `Remote sync configured: ${String(written.binding.remoteSyncConfigured)}`,
+        "Execution authority: gh-app",
+        "Local execution: false",
+        "",
+        `JSON: growthub bridge agents bind ${agentSlug(agent)} --fork-id ${fork.forkId} --json`
+      ].join("\n"),
+      "Governed Workspace Agent Bound"
+    );
   }
 }
 async function runCreateGovernedWorkspaceFlow(opts) {
@@ -36701,6 +37175,8 @@ async function runDiscoveryHub(opts) {
     }
     if (surfaceChoice === "settings") {
       while (true) {
+        const hostedSession = readSession();
+        const growthubConnected = Boolean(hostedSession && !isSessionExpired(hostedSession));
         const settingsChoice = await p35.select({
           message: "Settings",
           options: [
@@ -36709,6 +37185,11 @@ async function runDiscoveryHub(opts) {
               label: "\u{1F510} Connect Growthub Account",
               hint: "Attach this CLI to your hosted Growthub account"
             },
+            ...growthubConnected ? [{
+              value: "workspace-agents",
+              label: "\u{1F9E9} Governed Workspace Agents",
+              hint: "Manage agents attached to fork-sync governed workspaces"
+            }] : [],
             {
               value: "github",
               label: "\u{1F419} GitHub Integration",
@@ -36769,6 +37250,11 @@ async function runDiscoveryHub(opts) {
         if (surfaceChoice2 === "hosted-auth") {
           await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
           continue;
+        }
+        if (surfaceChoice2 === "workspace-agents") {
+          const result = await runGovernedWorkspaceAgentsFlow();
+          if (result === "back") continue;
+          return;
         }
         if (surfaceChoice2 === "github") {
           const { githubWhoami: githubWhoami2 } = await Promise.resolve().then(() => (init_github(), github_exports));
@@ -36847,11 +37333,11 @@ function isInstallerMode() {
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
   const instancesDir = path74.resolve(homeDir, "instances");
-  if (!fs66.existsSync(instancesDir)) return [];
-  return fs66.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  if (!fs67.existsSync(instancesDir)) return [];
+  return fs67.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
     const configPath = path74.resolve(instancesDir, instanceId, "config.json");
-    if (!fs66.existsSync(configPath)) return null;
+    if (!fs67.existsSync(configPath)) return null;
     try {
       const config = readConfig(configPath);
       if (!config) return null;

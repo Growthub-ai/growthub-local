@@ -59,12 +59,16 @@ import { registerTemplateCommands, runTemplatePicker } from "./commands/template
 import { registerCapabilityCommands, runCapabilityPicker } from "./commands/capability.js";
 import { registerPipelineCommands, runPipelineAssembler } from "./commands/pipeline.js";
 import { registerArtifactCommands } from "./commands/artifact.js";
-import { registerBridgeCommands } from "./commands/bridge.js";
+import { agentLabel, agentSlug, registerBridgeCommands, writeHostedAgentBinding } from "./commands/bridge.js";
+import { createGrowthubBridgeClient } from "./runtime/growthub-bridge-client/index.js";
+import type { BridgeHostedAgentManifest } from "@growthub/api-contract/bridge";
 import { registerWorkflowCommands, runWorkflowPicker } from "./commands/workflow.js";
 import { registerOpenAgentsCommands, runOpenAgentsHub } from "./commands/open-agents.js";
 import { registerQwenCodeCommands, runQwenCodeHub } from "./commands/qwen-code.js";
 import { registerT3CodeCommands, runT3CodeHub } from "./commands/t3code.js";
 import { registerKitForkCommands, runKitForkHub } from "./commands/kit-fork.js";
+import { listKitForkRegistrations } from "./kits/fork-registry.js";
+import type { KitForkRegistration } from "./kits/fork-types.js";
 import { registerGithubCommands } from "./commands/github.js";
 import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
@@ -1202,6 +1206,215 @@ async function runMemoryKnowledgeHub(): Promise<"back"> {
 
 type GovernedWorkspaceFlowResult = "back" | "full-menu" | "done";
 
+function summarizeHostedAgent(agent: BridgeHostedAgentManifest): Record<string, unknown> {
+  const provenance = agent.provenance && typeof agent.provenance === "object"
+    ? (agent.provenance as { source?: unknown }).source
+    : "";
+  return {
+    slug: agentSlug(agent),
+    name: agentLabel(agent),
+    source: agent.source ?? provenance,
+    workflows: Array.isArray(agent.workflowBindings) ? agent.workflowBindings.length : "",
+    knowledge: Array.isArray(agent.knowledgeBindings) ? agent.knowledgeBindings.length : "",
+    execution: "gh-app",
+  };
+}
+
+async function runGovernedWorkspaceAgentsFlow(): Promise<"back"> {
+  async function pickRegisteredFork(message = "Select governed workspace"): Promise<KitForkRegistration | null> {
+    const forks = listKitForkRegistrations();
+    if (forks.length === 0) {
+      p.note(
+        [
+          "No fork-sync registered governed workspaces were found.",
+          "",
+          "Create or register one first:",
+          "  growthub starter init --out ./my-workspace",
+          "  growthub kit fork register --path ./my-workspace --kit <kit-id>",
+        ].join("\n"),
+        "No Governed Workspaces",
+      );
+      return null;
+    }
+    const choice = await p.select({
+      message,
+      options: [
+        ...forks.map((fork) => ({
+          value: fork.forkId,
+          label: `${fork.label ?? fork.forkId}  ${pc.dim(fork.kitId)}`,
+          hint: fork.remote ? "fork-sync + remote" : "fork-sync registered",
+        })),
+        { value: "__back", label: "← Back" },
+      ],
+    });
+    if (p.isCancel(choice) || choice === "__back") return null;
+    return forks.find((fork) => fork.forkId === choice) ?? null;
+  }
+
+  while (true) {
+    const action = await p.select({
+      message: "Governed Workspace Agents",
+      options: [
+        { value: "list", label: "📋 List agents", hint: "Show hosted agents available to governed workspaces" },
+        { value: "inspect", label: "🔎 Inspect agent", hint: "Review one agent manifest, diagnostics, warnings, and resolved slugs" },
+        { value: "bind", label: "🔗 Bind agent to workspace", hint: "Pick a fork-sync workspace and write .growthub-fork/agents/<slug>.json" },
+        { value: "bindings", label: "🗂️ Show workspace bindings", hint: "List agents currently attached to a governed workspace" },
+        { value: "unbind", label: "✕ Unbind agent", hint: "Remove a workspace binding without touching the hosted agent" },
+        { value: "json", label: "🧾 JSON commands", hint: "Copy-safe commands for agent automation" },
+        { value: "__back", label: "← Back to main menu" },
+      ],
+    });
+
+    if (p.isCancel(action)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    if (action === "__back") return "back";
+
+    if (action === "json") {
+      p.note(
+        [
+          "growthub bridge agents list --json",
+          "growthub bridge agents inspect <slug> --json",
+          "growthub bridge agents bind <slug> --fork-id <fork-id> --json",
+          "growthub bridge agents bindings --fork-id <fork-id> --json",
+          "growthub bridge agents unbind <slug> --fork-id <fork-id> --json",
+        ].join("\n"),
+        "Governed Workspace Agent JSON",
+      );
+      continue;
+    }
+
+    if (action === "bindings") {
+      const fork = await pickRegisteredFork("Select governed workspace to inspect");
+      if (!fork) continue;
+      const result = await import("./commands/bridge.js").then((mod) =>
+        mod.listHostedAgentBindings({ forkId: fork.forkId }),
+      );
+      p.note(
+        [
+          `Workspace: ${fork.label ?? fork.forkId}`,
+          `Fork ID: ${fork.forkId}`,
+          `Kit: ${fork.kitId}`,
+          `Bindings: ${result.count}`,
+          "",
+          ...result.bindings.map((binding) =>
+            `${binding.agentSlug} · ${binding.agentName ?? ""} · execution=gh-app · localExecution=false`,
+          ),
+          "",
+          `JSON: growthub bridge agents bindings --fork-id ${fork.forkId} --json`,
+        ].join("\n"),
+        "Governed Workspace Agent Bindings",
+      );
+      continue;
+    }
+
+    const client = createGrowthubBridgeClient();
+
+    if (action === "list") {
+      const spinner = p.spinner();
+      spinner.start("Loading governed workspace agents...");
+      const result = await client.listHostedAgentManifests();
+      spinner.stop(`Loaded ${result.agents.length} governed workspace agent(s).`);
+      p.note(
+        [
+          `Contract: ${result.contract ?? "AgentOrchestratorManifest"}`,
+          `Diagnostics: ${result.diagnostics?.status ?? "unknown"}`,
+          `Resolved slugs: ${result.diagnostics?.resolvedSlugs?.join(", ") || result.resolvedSlugs?.join(", ") || "none"}`,
+          `Warnings: ${result.diagnostics?.warnings?.length ?? result.warnings?.length ?? 0}`,
+          "",
+          ...result.agents.map((agent) => {
+            const row = summarizeHostedAgent(agent);
+            return `${row.slug} · ${row.name} · workflows=${row.workflows} · knowledge=${row.knowledge} · execution=${row.execution}`;
+          }),
+        ].join("\n"),
+        "Governed Workspace Agents",
+      );
+      continue;
+    }
+
+    const slugRaw = await p.text({
+      message: action === "bind" ? "Agent slug to bind:" : action === "unbind" ? "Agent slug to unbind:" : "Agent slug to inspect:",
+      placeholder: "quick-image-generator-xlq5",
+    });
+    if (p.isCancel(slugRaw) || !slugRaw) continue;
+    const slug = String(slugRaw);
+
+    if (action === "unbind") {
+      const fork = await pickRegisteredFork("Select governed workspace to unbind from");
+      if (!fork) continue;
+      const result = await import("./commands/bridge.js").then((mod) =>
+        mod.removeHostedAgentBinding({ agentSlug: slug, forkId: fork.forkId }),
+      );
+      p.note(
+        [
+          `Agent: ${slug}`,
+          `Workspace: ${fork.label ?? fork.forkId}`,
+          `Removed: ${String(result.removed)}`,
+          `Binding: ${result.bindingPath}`,
+          "",
+          `JSON: growthub bridge agents unbind ${slug} --fork-id ${fork.forkId} --json`,
+        ].join("\n"),
+        "Governed Workspace Agent Unbound",
+      );
+      continue;
+    }
+
+    const spinner = p.spinner();
+    spinner.start(action === "bind" ? "Loading agent before binding..." : "Loading agent manifest...");
+    const result = await client.inspectHostedAgentManifest(slug);
+    spinner.stop("Agent manifest loaded.");
+    const agent = result.agent ?? result.manifest;
+    if (!agent) {
+      p.log.error(`Hosted agent manifest not found for slug: ${slug}`);
+      continue;
+    }
+
+    if (action === "inspect") {
+      p.note(
+        [
+          `Slug: ${agentSlug(agent)}`,
+          `Name: ${agentLabel(agent)}`,
+          `Execution authority: gh-app`,
+          `Diagnostics: ${result.diagnostics?.status ?? agent.diagnostics?.status ?? "unknown"}`,
+          `Resolved slug: ${result.resolvedSlug ?? agent.resolvedSlug ?? agentSlug(agent)}`,
+          `Warnings: ${(result.warnings ?? agent.warnings ?? []).length}`,
+          "",
+          `JSON: growthub bridge agents inspect ${agentSlug(agent)} --json`,
+        ].join("\n"),
+        "Governed Workspace Agent",
+      );
+      continue;
+    }
+
+    const fork = await pickRegisteredFork("Select governed workspace to bind this agent");
+    if (!fork) continue;
+    const written = writeHostedAgentBinding({
+      forkId: fork.forkId,
+      requestedSlug: slug,
+      agent,
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+      resolvedSlug: result.resolvedSlug,
+    });
+    p.note(
+      [
+        `Agent: ${agentSlug(agent)}`,
+        `Workspace: ${fork.label ?? fork.forkId}`,
+        `Fork ID: ${fork.forkId}`,
+        `Binding: ${written.bindingPath}`,
+        `Fork-sync registered: ${String(written.binding.forkSyncRegistered)}`,
+        `Remote sync configured: ${String(written.binding.remoteSyncConfigured)}`,
+        "Execution authority: gh-app",
+        "Local execution: false",
+        "",
+        `JSON: growthub bridge agents bind ${agentSlug(agent)} --fork-id ${fork.forkId} --json`,
+      ].join("\n"),
+      "Governed Workspace Agent Bound",
+    );
+  }
+}
+
 async function runCreateGovernedWorkspaceFlow(opts?: {
   firstRun?: boolean;
   importOnly?: boolean;
@@ -1302,6 +1515,7 @@ async function runCreateGovernedWorkspaceFlow(opts?: {
       if (result === "back") continue workspaceLoop;
       return "done";
     }
+
   }
 }
 
@@ -1593,6 +1807,8 @@ async function runDiscoveryHub(opts?: {
 
     if (surfaceChoice === "settings") {
       while (true) {
+        const hostedSession = readSession();
+        const growthubConnected = Boolean(hostedSession && !isSessionExpired(hostedSession));
         const settingsChoice = await p.select({
           message: "Settings",
           options: [
@@ -1601,6 +1817,11 @@ async function runDiscoveryHub(opts?: {
               label: "🔐 Connect Growthub Account",
               hint: "Attach this CLI to your hosted Growthub account",
             },
+            ...(growthubConnected ? [{
+              value: "workspace-agents",
+              label: "🧩 Governed Workspace Agents",
+              hint: "Manage agents attached to fork-sync governed workspaces",
+            }] : []),
             {
               value: "github",
               label: "🐙 GitHub Integration",
@@ -1666,6 +1887,12 @@ async function runDiscoveryHub(opts?: {
         if (surfaceChoice === "hosted-auth") {
           await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
           continue;
+        }
+
+        if (surfaceChoice === "workspace-agents") {
+          const result = await runGovernedWorkspaceAgentsFlow();
+          if (result === "back") continue;
+          return;
         }
 
         if (surfaceChoice === "github") {

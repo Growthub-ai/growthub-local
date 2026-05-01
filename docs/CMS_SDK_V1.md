@@ -87,6 +87,7 @@ Package name: `@growthub/api-contract`. Versions:
 - `1.0.0-alpha.1` — Phase 1 baseline (capabilities, execution, providers, profile, events, manifests, schemas).
 - `1.2.0-alpha.1` — adds `skills` (SkillManifest + sub-skills + helpers + self-eval + session-memory).
 - `1.3.0-alpha.1` — adds `worker-kits` (universal v1+v2 base), `pipeline-kits`, `workspaces`, `adapters`, `pipeline-trace`, `health`.
+- `1.3.0-alpha.2` — adds hosted Agent Builder manifest bridge contracts.
 
 ---
 
@@ -168,12 +169,18 @@ growthub bridge knowledge list --json
 growthub bridge knowledge write --title notes --content "# Notes" --json
 growthub bridge knowledge download <knowledgeItemId> --out ./item.md --json
 growthub bridge mcp accounts --json
+growthub bridge agents list --json
+growthub bridge agents inspect <slug> --json
+growthub bridge agents bind <slug> --fork-id <fork-id> --json
+growthub bridge agents bindings --fork-id <fork-id> --json
+growthub bridge agents unbind <slug> --fork-id <fork-id> --json
 ```
 
 SDK consumers should import the stable bridge contracts from
 `@growthub/api-contract/bridge`: `BridgeAssetItem`,
 `BridgeBrandKit`, `BridgeBrandAsset`, `BridgeKnowledgeItem`,
-`BridgeKnowledgeSaveInput`, and `BridgeMcpAccount`. The local CLI
+`BridgeKnowledgeSaveInput`, `BridgeMcpAccount`, and
+`BridgeHostedAgentManifest`. The local CLI
 implementation uses the same bearer session as `growthub auth whoami`; it does
 not use raw Supabase anon-key extraction.
 

@@ -68,6 +68,15 @@ export type {
   BridgeRunOutputSyncInput,
   BridgeMcpAccount,
   BridgeMcpAccountsResponse,
+  BridgeHostedAgentSourceStatus,
+  BridgeHostedAgentSourceDiagnostics,
+  BridgeHostedAgentDiagnostics,
+  BridgeHostedAgentManifest,
+  BridgeHostedAgentManifestListResponse,
+  BridgeHostedAgentManifestResponse,
+  BridgeHostedAgentWorkspaceBinding,
+  BridgeHostedAgentWorkspaceBindingResponse,
+  BridgeHostedAgentWorkspaceBindingsResponse,
 } from "./bridge.js";
 
 // Execution

@@ -1,5 +1,23 @@
 # @growthub/api-contract
 
+## 1.3.0-alpha.2
+
+Additive patch. Adds descriptive hosted Agent Builder manifest contracts to
+the Growthub bridge surface.
+
+Pure type-only; no execution semantics. The SDK describes hosted agents,
+diagnostics, KV/CMS source status, warnings, and resolved slugs. Hosted
+execution remains owned by gh-app; local consumption remains an authenticated
+bridge inspection surface.
+
+### Added
+
+- `BridgeHostedAgentManifest`
+- `BridgeHostedAgentDiagnostics`
+- `BridgeHostedAgentSourceDiagnostics`
+- `BridgeHostedAgentManifestListResponse`
+- `BridgeHostedAgentManifestResponse`
+
 ## 1.3.0-alpha.1
 
 Additive minor. Promotes the **Worker Kit** universal primitive and

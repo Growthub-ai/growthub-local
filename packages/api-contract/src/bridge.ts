@@ -171,3 +171,120 @@ export interface BridgeMcpAccountsResponse {
   success: boolean;
   accounts: BridgeMcpAccount[];
 }
+
+export type BridgeHostedAgentSourceStatus = "available" | "missing" | "disabled" | "unknown";
+
+export interface BridgeHostedAgentSourceDiagnostics {
+  status: BridgeHostedAgentSourceStatus | string;
+  detail?: string;
+  count?: number;
+  checkedAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BridgeHostedAgentDiagnostics {
+  status?: string;
+  requestedAgentSlug?: string;
+  kvAgentCount?: number;
+  cmsAgentCount?: number;
+  kvSlugs?: string[];
+  cmsSlugs?: string[];
+  sourceOfTruth?: string;
+  projectedAgentCount?: number;
+  kv?: BridgeHostedAgentSourceDiagnostics;
+  cms?: BridgeHostedAgentSourceDiagnostics;
+  sources?: Record<string, BridgeHostedAgentSourceDiagnostics>;
+  warnings?: string[];
+  resolvedSlugs?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface BridgeHostedAgentManifest {
+  slug?: string;
+  agentSlug?: string;
+  resolvedSlug?: string;
+  name?: string;
+  agentName?: string;
+  title?: string;
+  description?: string;
+  version?: string;
+  source?: string;
+  status?: string;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface BridgeHostedAgentManifestListResponse {
+  version?: number;
+  source?: string;
+  contract?: string;
+  fetchedAt?: string;
+  contractVersion?: number;
+  success?: boolean;
+  agents: BridgeHostedAgentManifest[];
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  resolvedSlugs?: string[];
+  count?: number;
+}
+
+export interface BridgeHostedAgentManifestResponse {
+  version?: number;
+  source?: string;
+  contract?: string;
+  fetchedAt?: string;
+  contractVersion?: number;
+  success?: boolean;
+  agent?: BridgeHostedAgentManifest;
+  manifest?: BridgeHostedAgentManifest;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings?: string[];
+  resolvedSlug?: string;
+}
+
+export interface BridgeHostedAgentWorkspaceBinding {
+  version: 1;
+  kind: "growthub-governed-workspace-agent-binding";
+  agentSlug: string;
+  requestedSlug: string;
+  resolvedSlug: string;
+  agentName: string;
+  forkId: string | null;
+  kitId: string | null;
+  workspacePath: string;
+  forkSyncRegistered: boolean;
+  remoteSyncConfigured: boolean;
+  source: "growthub-bridge";
+  executionAuthority: "gh-app";
+  localExecution: false;
+  boundAt: string;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings: string[];
+  manifest: BridgeHostedAgentManifest;
+}
+
+export interface BridgeHostedAgentWorkspaceBindingResponse {
+  success: boolean;
+  agentSlug: string;
+  bindingPath: string;
+  binding: BridgeHostedAgentWorkspaceBinding;
+}
+
+export interface BridgeHostedAgentWorkspaceBindingsResponse {
+  success: boolean;
+  forkId?: string;
+  workspacePath: string;
+  bindings: Array<{
+    agentSlug: string;
+    agentName?: string;
+    bindingPath: string;
+    executionAuthority: "gh-app";
+    localExecution: false;
+    forkSyncRegistered: boolean;
+    remoteSyncConfigured: boolean;
+    boundAt?: string;
+  }>;
+  count: number;
+}
