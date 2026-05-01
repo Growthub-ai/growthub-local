@@ -127,7 +127,17 @@ export type GrowthubAnalyticsEvent =
   // Email / lead capture
   | "email_capture_shown"
   | "email_capture_submitted"
-  | "email_capture_dismissed";
+  | "email_capture_dismissed"
+  // Setup wizard (Stream 1)
+  | "setup_wizard_started"
+  | "setup_wizard_completed"
+  // Self-improving workspace (Stream 2)
+  | "workspace_improve_proposed"
+  | "workspace_improve_promoted"
+  | "workspace_improve_rejected"
+  // Kit publish (Stream 3)
+  | "kit_publish_validate"
+  | "kit_publish_pack";
 
 export type SafeProperties = Record<string, string | number | boolean | null | undefined>;
 

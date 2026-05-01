@@ -19,7 +19,16 @@ selfEval:
     - Operator contract read before any material change.
   maxRetries: 3
   traceTo: .growthub-fork/trace.jsonl
-helpers: []
+helpers:
+  - path: helpers/propose-capability.mjs
+    verb: propose-capability
+    description: Propose a reusable capability from a pipeline run (self-improving feature).
+  - path: helpers/promote-capability.mjs
+    verb: promote-capability
+    description: Promote a capability proposal to the active library.
+  - path: helpers/check-self-improving-health.sh
+    verb: check-self-improving-health
+    description: Validate self-improving workspace primitives and proposal dirs.
 subSkills: []
 mcpTools: []
 ---
@@ -90,6 +99,31 @@ If this fork declares sub-skills under `skills/<slug>/SKILL.md`, list them below
 Helpers live under `helpers/`. When an existing shell snippet in `skills.md` is re-used in multiple sessions, extract it into `helpers/<verb>.sh`, add a row to `helpers/README.md`, and add an entry to this frontmatter's `helpers[]` array. Agents then call one shell file rather than reconstructing the snippet — safer, reviewable, consistent.
 
 (None declared at the baseline; see `helpers/README.md` for the pattern.)
+
+## Self-improving feature (optional extension)
+
+Any governed workspace can activate the self-improving loop — no separate kit required.
+
+After a successful pipeline or orchestrator run, propose a reusable capability:
+
+```bash
+# Propose a capability from a run (anchors to trace.jsonl event)
+node helpers/propose-capability.mjs --from-run <run-id> --summary "what this run produced"
+# or directly:
+growthub workspace improve propose --from-run <run-id>
+
+# Review proposals
+growthub workspace improve list
+growthub workspace improve inspect <slug>
+growthub workspace improve promote <slug>
+
+# Health check (includes self-improving feature checks)
+bash helpers/check-self-improving-health.sh
+```
+
+Proposals are governed writes to `.growthub-fork/capabilities/proposals/`. Every proposal references the originating `trace.jsonl` event by trace-event ID — no duplicated schema. Each lifecycle transition (`proposed → promoted | rejected`) appends a typed trace event (`capability_proposed`, `capability_promoted`, `capability_rejected`).
+
+This is an **optional feature extension** on the base governed workspace primitive, not a separate workspace type.
 
 ## MCP routing (optional)
 

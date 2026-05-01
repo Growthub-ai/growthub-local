@@ -31,6 +31,7 @@ import { KIT_HEALTH_REPORT_VERSION } from "@growthub/api-contract/health";
 
 import { readPipelineManifest } from "../pipeline-kits/index.js";
 import { readWorkspaceDependencies } from "../workspace-dependencies/index.js";
+import { checkSelfImprovingHealth } from "../self-improving/health.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -358,6 +359,24 @@ export function computeKitHealthReport(
           },
         ),
       );
+    }
+  }
+
+  // Self-improving workspace specialization checks
+  const siHealth = checkSelfImprovingHealth(kitRoot);
+  if (siHealth.detected) {
+    for (const siCheck of siHealth.checks) {
+      checks.push(check(
+        siCheck.id,
+        siCheck.severity,
+        siCheck.label,
+        {
+          message: siCheck.message,
+          remediation: siCheck.remediation,
+          category: siCheck.category,
+          evidence: siCheck.evidence,
+        },
+      ));
     }
   }
 

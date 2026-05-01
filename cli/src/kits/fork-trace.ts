@@ -36,7 +36,12 @@ export type KitForkTraceEventType =
   | "authority_attested"
   | "authority_revoked"
   | "skills_scaffolded"
-  | "self_eval_recorded";
+  | "self_eval_recorded"
+  // Self-improving workspace events (v1.3)
+  | "capability_proposed"
+  | "capability_promoted"
+  | "capability_rejected"
+  | "self_improvement_reviewed";
 
 export interface KitForkTraceEvent {
   timestamp: string;
