@@ -9,10 +9,15 @@ import type {
   BridgeBrandKit,
   BridgeHostedAgentDiagnostics,
   BridgeHostedAgentManifest,
+  BridgeHostedAgentWorkspaceBinding,
+  BridgeHostedAgentWorkspaceBindingResponse,
+  BridgeHostedAgentWorkspaceBindingsResponse,
   BridgeKnowledgeItem,
   BridgeKnowledgeTable,
   BridgeMcpAccount,
 } from "@growthub/api-contract/bridge";
+import { listKitForkRegistrations } from "../kits/fork-registry.js";
+import type { KitForkRegistration } from "../kits/fork-types.js";
 
 function printRows(rows: Array<Record<string, unknown>>, keys: string[]): void {
   for (const row of rows) {
@@ -32,11 +37,11 @@ function sourceStatus(diagnostics: BridgeHostedAgentDiagnostics | undefined, sou
   return String(diagnostics?.[source]?.status ?? diagnostics?.sources?.[source]?.status ?? "");
 }
 
-function agentLabel(agent: BridgeHostedAgentManifest): string {
+export function agentLabel(agent: BridgeHostedAgentManifest): string {
   return agent.name ?? agent.agentName ?? agent.title ?? agent.agentSlug ?? agent.slug ?? "";
 }
 
-function agentSlug(agent: BridgeHostedAgentManifest): string {
+export function agentSlug(agent: BridgeHostedAgentManifest): string {
   return agent.slug ?? agent.agentSlug ?? "";
 }
 
@@ -49,34 +54,129 @@ function bindingFileSlug(slug: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function writeHostedAgentBinding(input: {
-  workspacePath: string;
+function resolveBindingWorkspace(input: {
+  forkId?: string;
+  workspacePath?: string;
+  allowLocal?: boolean;
+}): { workspacePath: string; registration: KitForkRegistration | null; enterpriseReady: boolean } {
+  const forks = listKitForkRegistrations();
+  if (input.forkId) {
+    const registration = forks.find((fork) => fork.forkId === input.forkId);
+    if (!registration) {
+      throw new Error(`Fork-sync workspace not found: ${input.forkId}. Run 'growthub kit fork list'.`);
+    }
+    return { workspacePath: registration.forkPath, registration, enterpriseReady: true };
+  }
+
+  const workspacePath = path.resolve(input.workspacePath ?? process.cwd());
+  const registration = forks.find((fork) => path.resolve(fork.forkPath) === workspacePath) ?? null;
+  if (registration) return { workspacePath, registration, enterpriseReady: true };
+  if (!input.allowLocal) {
+    throw new Error(
+      `Workspace is not registered with fork-sync: ${workspacePath}. Use --fork-id for a governed workspace, or pass --allow-local for a local-only binding.`,
+    );
+  }
+  return { workspacePath, registration: null, enterpriseReady: false };
+}
+
+function resolveAgentsDir(workspacePath: string): string {
+  return path.resolve(workspacePath, ".growthub-fork", "agents");
+}
+
+function bindingPathFor(workspacePath: string, slug: string): string {
+  const safeSlug = bindingFileSlug(slug);
+  if (!safeSlug) throw new Error(`Invalid hosted agent slug: ${slug}`);
+  return path.resolve(resolveAgentsDir(workspacePath), `${safeSlug}.json`);
+}
+
+export function listHostedAgentBindings(input: {
+  forkId?: string;
+  workspacePath?: string;
+  allowLocal?: boolean;
+}): BridgeHostedAgentWorkspaceBindingsResponse {
+  const resolved = resolveBindingWorkspace(input);
+  const forkStateDir = path.resolve(resolved.workspacePath, ".growthub-fork");
+  if (!fs.existsSync(forkStateDir)) {
+    throw new Error(`Governed workspace state not found at ${forkStateDir}.`);
+  }
+  const agentsDir = resolveAgentsDir(resolved.workspacePath);
+  const files = fs.existsSync(agentsDir)
+    ? fs.readdirSync(agentsDir).filter((file) => file.endsWith(".json"))
+    : [];
+  const bindings = files.flatMap((file) => {
+    const bindingPath = path.resolve(agentsDir, file);
+    try {
+      const parsed = JSON.parse(fs.readFileSync(bindingPath, "utf8")) as Partial<BridgeHostedAgentWorkspaceBinding>;
+      if (!parsed.agentSlug) return [];
+      return [{
+        agentSlug: parsed.agentSlug,
+        agentName: parsed.agentName,
+        bindingPath,
+        executionAuthority: "gh-app" as const,
+        localExecution: false as const,
+        forkSyncRegistered: resolved.enterpriseReady,
+        remoteSyncConfigured: Boolean(resolved.registration?.remote),
+        boundAt: parsed.boundAt,
+      }];
+    } catch {
+      return [];
+    }
+  });
+  return {
+    success: true,
+    forkId: resolved.registration?.forkId,
+    workspacePath: resolved.workspacePath,
+    bindings,
+    count: bindings.length,
+  };
+}
+
+export function removeHostedAgentBinding(input: {
+  agentSlug: string;
+  forkId?: string;
+  workspacePath?: string;
+  allowLocal?: boolean;
+}): { success: boolean; agentSlug: string; bindingPath: string; removed: boolean } {
+  const resolved = resolveBindingWorkspace(input);
+  const bindingPath = bindingPathFor(resolved.workspacePath, input.agentSlug);
+  const removed = fs.existsSync(bindingPath);
+  if (removed) fs.rmSync(bindingPath, { force: true });
+  return { success: true, agentSlug: input.agentSlug, bindingPath, removed };
+}
+
+export function writeHostedAgentBinding(input: {
+  forkId?: string;
+  workspacePath?: string;
+  allowLocal?: boolean;
   requestedSlug: string;
   agent: BridgeHostedAgentManifest;
   diagnostics?: BridgeHostedAgentDiagnostics;
   warnings?: string[];
   resolvedSlug?: string;
-}): { bindingPath: string; binding: Record<string, unknown> } {
-  const workspacePath = path.resolve(input.workspacePath);
+}): { bindingPath: string; binding: BridgeHostedAgentWorkspaceBinding } {
+  const resolved = resolveBindingWorkspace(input);
+  const workspacePath = resolved.workspacePath;
   const forkStateDir = path.resolve(workspacePath, ".growthub-fork");
   if (!fs.existsSync(forkStateDir)) {
-    throw new Error(`Governed workspace state not found at ${forkStateDir}. Run inside a governed workspace or pass --workspace.`);
+    throw new Error(`Governed workspace state not found at ${forkStateDir}.`);
   }
 
   const slug = agentSlug(input.agent) || input.resolvedSlug || input.requestedSlug;
-  const safeSlug = bindingFileSlug(slug);
-  if (!safeSlug) throw new Error(`Invalid hosted agent slug: ${input.requestedSlug}`);
-
-  const agentsDir = path.resolve(forkStateDir, "agents");
+  const agentsDir = resolveAgentsDir(workspacePath);
   fs.mkdirSync(agentsDir, { recursive: true });
 
-  const binding = {
+  const binding: BridgeHostedAgentWorkspaceBinding = {
     version: 1,
-    kind: "growthub-hosted-agent-binding",
+    kind: "growthub-governed-workspace-agent-binding",
     agentSlug: slug,
     requestedSlug: input.requestedSlug,
     resolvedSlug: input.resolvedSlug ?? input.agent.resolvedSlug ?? slug,
     agentName: agentLabel(input.agent),
+    forkId: resolved.registration?.forkId ?? null,
+    kitId: resolved.registration?.kitId ?? null,
+    workspacePath,
+    forkSyncRegistered: resolved.enterpriseReady,
+    remoteSyncConfigured: Boolean(resolved.registration?.remote),
     source: "growthub-bridge",
     executionAuthority: "gh-app",
     localExecution: false,
@@ -85,7 +185,7 @@ function writeHostedAgentBinding(input: {
     warnings: input.warnings ?? input.agent.warnings ?? [],
     manifest: input.agent,
   };
-  const bindingPath = path.resolve(agentsDir, `${safeSlug}.json`);
+  const bindingPath = bindingPathFor(workspacePath, slug);
   fs.writeFileSync(bindingPath, `${JSON.stringify(binding, null, 2)}\n`, "utf8");
   return { bindingPath, binding };
 }
@@ -95,11 +195,11 @@ export function registerBridgeCommands(program: Command): void {
     .command("bridge")
     .description("Authenticated Growthub bridge resources: agents, assets, knowledge, and MCP accounts.");
 
-  const agents = bridge.command("agents").description("Hosted Agent Builder manifests through the Growthub bridge.");
+  const agents = bridge.command("agents").description("Governed workspace agents through the authenticated Growthub bridge.");
 
   agents
     .command("list")
-    .description("List hosted Agent Builder manifests.")
+    .description("List agents available to governed workspaces.")
     .option("--json", "Output raw JSON")
     .action(async (opts) => {
       const client = createGrowthubBridgeClient();
@@ -125,7 +225,7 @@ export function registerBridgeCommands(program: Command): void {
 
   agents
     .command("inspect")
-    .description("Inspect one hosted Agent Builder manifest.")
+    .description("Inspect one governed workspace agent manifest.")
     .argument("<slug>", "Hosted agent slug")
     .option("--json", "Output raw JSON")
     .action(async (slug, opts) => {
@@ -154,9 +254,11 @@ export function registerBridgeCommands(program: Command): void {
 
   agents
     .command("bind")
-    .description("Bind one hosted Agent Builder manifest into the governed workspace without executing it.")
+    .description("Attach one agent to a fork-sync governed workspace without executing it.")
     .argument("<slug>", "Hosted agent slug")
-    .option("--workspace <path>", "Governed workspace path", process.cwd())
+    .option("--fork-id <id>", "Registered fork-sync workspace id from `growthub kit fork list`")
+    .option("--workspace <path>", "Governed workspace path")
+    .option("--allow-local", "Allow binding to an unregistered local-only .growthub-fork workspace")
     .option("--json", "Output raw JSON")
     .action(async (slug, opts) => {
       const client = createGrowthubBridgeClient();
@@ -166,26 +268,79 @@ export function registerBridgeCommands(program: Command): void {
         throw new Error(`Hosted agent manifest not found for slug: ${slug}`);
       }
       const written = writeHostedAgentBinding({
+        forkId: opts.forkId,
         workspacePath: opts.workspace,
+        allowLocal: opts.allowLocal === true,
         requestedSlug: slug,
         agent,
         diagnostics: result.diagnostics,
         warnings: result.warnings,
         resolvedSlug: result.resolvedSlug,
       });
-      const payload = {
+      const payload: BridgeHostedAgentWorkspaceBindingResponse = {
         success: true,
         agentSlug: agentSlug(agent),
         bindingPath: written.bindingPath,
-        executionAuthority: "gh-app",
-        localExecution: false,
+        binding: written.binding,
       };
       if (opts.json) {
         console.log(JSON.stringify(payload, null, 2));
         return;
       }
       console.log(`${pc.green("Bound")} ${payload.agentSlug} ${pc.dim("->")} ${written.bindingPath}`);
+      console.log(pc.dim(`Fork-sync registered: ${String(written.binding.forkSyncRegistered)}; remote sync configured: ${String(written.binding.remoteSyncConfigured)}`));
       console.log(pc.dim("Execution remains hosted in gh-app; no agent was executed locally."));
+    });
+
+  agents
+    .command("bindings")
+    .description("List governed workspace agent bindings for a fork-sync workspace.")
+    .option("--fork-id <id>", "Registered fork-sync workspace id from `growthub kit fork list`")
+    .option("--workspace <path>", "Governed workspace path")
+    .option("--allow-local", "Allow listing an unregistered local-only .growthub-fork workspace")
+    .option("--json", "Output raw JSON")
+    .action((opts) => {
+      const result = listHostedAgentBindings({
+        forkId: opts.forkId,
+        workspacePath: opts.workspace,
+        allowLocal: opts.allowLocal === true,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(pc.bold(`Governed workspace agent bindings (${result.count})`));
+      printRows(result.bindings.map((binding) => ({
+        slug: binding.agentSlug,
+        name: binding.agentName ?? "",
+        forkSync: binding.forkSyncRegistered,
+        remote: binding.remoteSyncConfigured,
+        path: binding.bindingPath,
+      })), ["slug", "name", "forkSync", "remote", "path"]);
+    });
+
+  agents
+    .command("unbind")
+    .description("Remove one governed workspace agent binding without touching the hosted agent.")
+    .argument("<slug>", "Hosted agent slug")
+    .option("--fork-id <id>", "Registered fork-sync workspace id from `growthub kit fork list`")
+    .option("--workspace <path>", "Governed workspace path")
+    .option("--allow-local", "Allow unbinding from an unregistered local-only .growthub-fork workspace")
+    .option("--json", "Output raw JSON")
+    .action((slug, opts) => {
+      const result = removeHostedAgentBinding({
+        agentSlug: slug,
+        forkId: opts.forkId,
+        workspacePath: opts.workspace,
+        allowLocal: opts.allowLocal === true,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(result.removed
+        ? `${pc.green("Unbound")} ${slug} ${pc.dim(result.bindingPath)}`
+        : `${pc.yellow("No binding found")} ${slug} ${pc.dim(result.bindingPath)}`);
     });
 
   const assets = bridge.command("assets").description("User asset gallery through the Growthub bridge.");

@@ -74,6 +74,9 @@ export type {
   BridgeHostedAgentManifest,
   BridgeHostedAgentManifestListResponse,
   BridgeHostedAgentManifestResponse,
+  BridgeHostedAgentWorkspaceBinding,
+  BridgeHostedAgentWorkspaceBindingResponse,
+  BridgeHostedAgentWorkspaceBindingsResponse,
 } from "./bridge.js";
 
 // Execution

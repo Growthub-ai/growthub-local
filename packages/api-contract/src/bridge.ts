@@ -183,6 +183,14 @@ export interface BridgeHostedAgentSourceDiagnostics {
 }
 
 export interface BridgeHostedAgentDiagnostics {
+  status?: string;
+  requestedAgentSlug?: string;
+  kvAgentCount?: number;
+  cmsAgentCount?: number;
+  kvSlugs?: string[];
+  cmsSlugs?: string[];
+  sourceOfTruth?: string;
+  projectedAgentCount?: number;
   kv?: BridgeHostedAgentSourceDiagnostics;
   cms?: BridgeHostedAgentSourceDiagnostics;
   sources?: Record<string, BridgeHostedAgentSourceDiagnostics>;
@@ -209,7 +217,12 @@ export interface BridgeHostedAgentManifest {
 }
 
 export interface BridgeHostedAgentManifestListResponse {
-  success: boolean;
+  version?: number;
+  source?: string;
+  contract?: string;
+  fetchedAt?: string;
+  contractVersion?: number;
+  success?: boolean;
   agents: BridgeHostedAgentManifest[];
   diagnostics?: BridgeHostedAgentDiagnostics;
   warnings?: string[];
@@ -218,10 +231,60 @@ export interface BridgeHostedAgentManifestListResponse {
 }
 
 export interface BridgeHostedAgentManifestResponse {
-  success: boolean;
+  version?: number;
+  source?: string;
+  contract?: string;
+  fetchedAt?: string;
+  contractVersion?: number;
+  success?: boolean;
   agent?: BridgeHostedAgentManifest;
   manifest?: BridgeHostedAgentManifest;
   diagnostics?: BridgeHostedAgentDiagnostics;
   warnings?: string[];
   resolvedSlug?: string;
+}
+
+export interface BridgeHostedAgentWorkspaceBinding {
+  version: 1;
+  kind: "growthub-governed-workspace-agent-binding";
+  agentSlug: string;
+  requestedSlug: string;
+  resolvedSlug: string;
+  agentName: string;
+  forkId: string | null;
+  kitId: string | null;
+  workspacePath: string;
+  forkSyncRegistered: boolean;
+  remoteSyncConfigured: boolean;
+  source: "growthub-bridge";
+  executionAuthority: "gh-app";
+  localExecution: false;
+  boundAt: string;
+  diagnostics?: BridgeHostedAgentDiagnostics;
+  warnings: string[];
+  manifest: BridgeHostedAgentManifest;
+}
+
+export interface BridgeHostedAgentWorkspaceBindingResponse {
+  success: boolean;
+  agentSlug: string;
+  bindingPath: string;
+  binding: BridgeHostedAgentWorkspaceBinding;
+}
+
+export interface BridgeHostedAgentWorkspaceBindingsResponse {
+  success: boolean;
+  forkId?: string;
+  workspacePath: string;
+  bindings: Array<{
+    agentSlug: string;
+    agentName?: string;
+    bindingPath: string;
+    executionAuthority: "gh-app";
+    localExecution: false;
+    forkSyncRegistered: boolean;
+    remoteSyncConfigured: boolean;
+    boundAt?: string;
+  }>;
+  count: number;
 }
