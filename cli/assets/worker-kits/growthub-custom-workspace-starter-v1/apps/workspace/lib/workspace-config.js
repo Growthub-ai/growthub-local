@@ -8,7 +8,7 @@ const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 
 function resolveWorkspaceConfigPath() {
-  return path.resolve(process.cwd(), "growthub.config.json");
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "growthub.config.json");
 }
 
 async function readWorkspaceConfig() {
@@ -149,7 +149,7 @@ async function writeWorkspaceConfig(patch) {
     canvas: next.canvas
   });
   const configPath = resolveWorkspaceConfigPath();
-  const expectedDir = path.resolve(process.cwd());
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
   if (path.dirname(configPath) !== expectedDir) {
     const error = new Error(`refused to write outside workspace cwd: ${configPath}`);
     error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
