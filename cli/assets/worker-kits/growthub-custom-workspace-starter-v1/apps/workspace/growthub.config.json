@@ -25,7 +25,10 @@
     { "kind": "chart", "label": "Chart", "icon": "C" },
     { "kind": "view", "label": "View", "icon": "V" },
     { "kind": "iframe", "label": "iFrame", "icon": "I" },
-    { "kind": "rich-text", "label": "Rich Text", "icon": "T" }
+    { "kind": "rich-text", "label": "Rich Text", "icon": "T" },
+    { "kind": "chat-session", "label": "Chat", "icon": "A" },
+    { "kind": "workflow-runner", "label": "Workflow", "icon": "W" },
+    { "kind": "artifact-viewer", "label": "Artifacts", "icon": "O" }
   ],
   "canvas": {
     "id": "workspace-canvas",
@@ -44,6 +47,10 @@
       "sessionContext": true,
       "configDrivenCanvas": true
     }
+  },
+  "onboarding": {
+    "completed": false,
+    "currentStep": "name"
   },
   "provenance": {
     "createdBy": "cli",
