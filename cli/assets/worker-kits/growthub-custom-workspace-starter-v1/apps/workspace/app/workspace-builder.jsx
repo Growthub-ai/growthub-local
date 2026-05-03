@@ -2,6 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  DASHBOARD_TEMPLATES,
+  SAMPLE_DATA_BINDINGS,
+  SAMPLE_VIEW_ROWS,
+  defaultConfigFor,
+  validateWorkspaceConfig
+} from "@/lib/workspace-schema";
 
 const DEFAULT_POSITION = { x: 4, y: 0, w: 4, h: 5 };
 const GRID_COLUMNS = 12;
@@ -24,19 +31,6 @@ function defaultTitleFor(kind) {
     case "iframe": return "Untitled iFrame";
     case "rich-text": return "Untitled Rich Text";
     default: return "Untitled widget";
-  }
-}
-
-function defaultConfigFor(kind) {
-  switch (kind) {
-    case "view":
-      return { source: "Companies", layout: "Table" };
-    case "iframe":
-      return { url: "" };
-    case "rich-text":
-      return { text: "" };
-    default:
-      return {};
   }
 }
 
@@ -200,7 +194,69 @@ function widgetKindLabel(kind) {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+function cloneConfig(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeChartValues(value) {
+  return String(value)
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item));
+}
+
+function serializeChartValues(values) {
+  return (Array.isArray(values) ? values : []).join(", ");
+}
+
+function parseLineList(value) {
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function serializeLineList(values) {
+  return (Array.isArray(values) ? values : []).join(", ");
+}
+
+function parseManualRows(value, columns) {
+  const activeColumns = columns.length ? columns : ["Name", "Domain Name"];
+  return String(value)
+    .split("\n")
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row) => {
+      const values = row.split("|").map((item) => item.trim());
+      return activeColumns.reduce((record, column, index) => {
+        record[column] = values[index] || "";
+        return record;
+      }, {});
+    });
+}
+
+function serializeManualRows(rows, columns) {
+  const activeColumns = columns.length ? columns : ["Name", "Domain Name"];
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => activeColumns.map((column) => row?.[column] || "").join(" | "))
+    .join("\n");
+}
+
+function hydrateTemplate(template) {
+  return {
+    name: template.name,
+    widgets: template.widgets.map((widget) => ({
+      ...cloneConfig(widget),
+      id: generateId("widget"),
+      config: cloneConfig(widget.config || defaultConfigFor(widget.kind))
+    }))
+  };
+}
+
 function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) {
+  const viewColumns = widget.config?.columns?.length ? widget.config.columns : ["Name", "Domain Name"];
+  const viewRows = widget.config?.rows?.length ? widget.config.rows : SAMPLE_VIEW_ROWS;
+  const chartValues = widget.config?.values?.length ? widget.config.values : defaultConfigFor("chart").values;
   return <article
     className={`workspace-widget-preview${selected ? " selected" : ""}`}
     onClick={onSelect}
@@ -221,16 +277,15 @@ function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) 
         type="button"
       >x</button>
     </div>
-    {widget.kind === "view" ? <div className="workspace-view-table" aria-label={`${widget.title} preview`}>
-      <div><span>Name</span><span>Domain Name</span></div>
-      {[
-        ["CMWL Direct", "centerformedica"],
-        ["Medi-Weightloss", "mediweightloss.com"],
-        ["Optima Tyler", "optimatyler.com"],
-        ["Balanced Hormone He...", "balancedhormor"],
-        ["Jolie Aesthetics RVA", "jolie-aesthetics.c"],
-        ["Livea Centers", "livea.com"]
-      ].map(([name, domain]) => <div key={name}><span>{name}</span><span>{domain}</span></div>)}
+    {widget.kind === "view" ? <div
+      className="workspace-view-table"
+      aria-label={`${widget.title} preview`}
+      style={{ "--workspace-view-columns": viewColumns.length }}
+    >
+      <div>{viewColumns.map((column) => <span key={column}>{column}</span>)}</div>
+      {viewRows.slice(0, 6).map((row, rowIndex) => <div key={rowIndex}>
+        {viewColumns.map((column) => <span key={column}>{row?.[column] || ""}</span>)}
+      </div>)}
       <footer>Calculate</footer>
     </div> : null}
     {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
@@ -238,7 +293,7 @@ function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) 
     </div> : null}
     {widget.kind === "rich-text" ? <p className="workspace-rich-text-preview">{widget.config?.text || "Start writing..."}</p> : null}
     {widget.kind === "chart" ? <div className="workspace-chart-preview">
-      {[58, 36, 72, 48, 64].map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}
+      {chartValues.map((height, index) => <span key={index} style={{ height: `${Math.max(5, Math.min(100, height))}%` }} />)}
     </div> : null}
     {selected ? ["nw", "ne", "sw", "se"].map((corner) => <button
       aria-label={`Resize ${widget.title} from ${corner} corner`}
@@ -267,7 +322,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
   const [dragStartCell, setDragStartCell] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
   const [resizeDrag, setResizeDrag] = useState(null);
+  const [configMessage, setConfigMessage] = useState("");
   const resizeDragRef = useRef(null);
+  const importInputRef = useRef(null);
   const addSlot = dragPreview || selectedPosition;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
   const occupiedCells = useMemo(() => {
@@ -358,6 +415,121 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     }));
   }, []);
 
+  const duplicateDashboard = useCallback(() => {
+    setConfig((prev) => {
+      const source = prev.dashboards?.[0] || {
+        name: "Untitled",
+        createdBy: "Workspace owner",
+        updatedAt: "new",
+        status: "draft"
+      };
+      return {
+        ...prev,
+        dashboards: [
+          ...(prev.dashboards || []),
+          {
+            ...source,
+            id: generateId("dashboard"),
+            name: `${source.name} Copy`,
+            updatedAt: "new",
+            status: "draft"
+          }
+        ]
+      };
+    });
+  }, []);
+
+  const duplicateTab = useCallback(() => {
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const source = prevTabs.find((tab) => tab.id === prevActiveId) || prevTabs[0];
+      const stableFirst = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
+        ? { ...prevTabs[0], id: generateId("tab") }
+        : prevTabs[0];
+      const stableTabs = prevTabs.length === 1 ? [stableFirst] : prevTabs;
+      const cloned = {
+        id: generateId("tab"),
+        name: `${source.name} Copy`,
+        widgets: (source.widgets || []).map((widget) => ({
+          ...cloneConfig(widget),
+          id: generateId("widget")
+        }))
+      };
+      const nextTabs = [...stableTabs, cloned];
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(cloned.widgets));
+      setDragPreview(null);
+      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, cloned.id) };
+    });
+  }, []);
+
+  const applyTemplate = useCallback((templateId) => {
+    const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    setConfig((prev) => {
+      const hydrated = hydrateTemplate(template);
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const stableTabs = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
+        ? [{ ...prevTabs[0], id: DEFAULT_TAB_ID }]
+        : prevTabs;
+      const nextTabs = stableTabs.map((tab) =>
+        tab.id === prevActiveId ? { ...tab, name: hydrated.name, widgets: hydrated.widgets } : tab
+      );
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(hydrated.widgets));
+      setDragPreview(null);
+      setConfigMessage(`Applied ${template.name}`);
+      return {
+        ...prev,
+        dashboards: (prev.dashboards || []).map((dashboard, index) =>
+          index === 0 ? { ...dashboard, name: template.name, updatedAt: "new", status: "draft" } : dashboard
+        ),
+        canvas: commitTabs(prev.canvas, nextTabs, prevActiveId)
+      };
+    });
+  }, []);
+
+  const exportConfig = useCallback(() => {
+    const blob = new Blob([`${JSON.stringify({
+      dashboards: config.dashboards,
+      widgetTypes: config.widgetTypes,
+      canvas: config.canvas
+    }, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "growthub-dashboard.config.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setConfigMessage("Exported dashboard config");
+  }, [config]);
+
+  const importConfig = useCallback(async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const imported = JSON.parse(await file.text());
+      validateWorkspaceConfig(imported);
+      setConfig((prev) => ({
+        ...prev,
+        dashboards: imported.dashboards,
+        widgetTypes: imported.widgetTypes,
+        canvas: imported.canvas
+      }));
+      const importedTabs = getTabs(imported.canvas);
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(importedTabs[0]?.widgets || []));
+      setDragPreview(null);
+      setConfigMessage(`Imported ${file.name}`);
+    } catch (error) {
+      setConfigMessage(error.message || "Import failed");
+    } finally {
+      event.target.value = "";
+    }
+  }, []);
+
   const save = useCallback(async () => {
     if (saving) return;
     setSaving(true);
@@ -378,7 +550,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       const payload = await response.json();
       if (response.ok && payload.workspaceConfig) {
         setConfig(payload.workspaceConfig);
+        setConfigMessage("Saved dashboard config");
+      } else {
+        setConfigMessage(payload.error || "Save failed");
       }
+    } catch (error) {
+      setConfigMessage(error.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -525,10 +702,28 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <h1>{config.name}</h1>
           </div>
           <div className="workspace-toolbar-actions">
+            <select aria-label="Apply dashboard template" defaultValue="" onChange={(event) => {
+              if (event.target.value) applyTemplate(event.target.value);
+              event.target.value = "";
+            }}>
+              <option value="">Templates</option>
+              {DASHBOARD_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
             <button type="button" onClick={addDashboard}>New Dashboard</button>
+            <button type="button" onClick={duplicateDashboard}>Duplicate Dashboard</button>
+            <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
+            <button type="button" onClick={exportConfig}>Export</button>
             <button type="button" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</button>
           </div>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="workspace-hidden-input"
+            onChange={importConfig}
+          />
         </header>
+        {configMessage ? <p className="workspace-config-message">{configMessage}</p> : null}
 
         <section className="workspace-table" id="dashboards" aria-label="Dashboards">
           <div className="workspace-table-heading">
@@ -558,6 +753,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
                 onClick={() => switchTab(tab.id)}
               >{tab.name}</button>)}
             <button type="button" onClick={addTab}>New Tab</button>
+            <button type="button" onClick={duplicateTab}>Duplicate Tab</button>
           </div>
           <div
             className="workspace-grid"
@@ -622,6 +818,27 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <span>Title</span>
             <input value={selectedWidget.title} onChange={(event) => updateSelectedWidget({ title: event.target.value })} />
           </label>
+          {selectedWidget.kind === "chart" ? <section className="workspace-field-stack">
+            <label>
+              <span>Sample Values</span>
+              <input
+                value={serializeChartValues(selectedWidget.config?.values || [])}
+                onChange={(event) => updateSelectedWidgetConfig({ values: normalizeChartValues(event.target.value) })}
+              />
+            </label>
+            <label>
+              <span>Static Binding</span>
+              <select
+                value={selectedWidget.config?.binding?.mode || "json"}
+                onChange={(event) => updateSelectedWidgetConfig({
+                  binding: event.target.value === "csv" ? SAMPLE_DATA_BINDINGS.contentCsv : SAMPLE_DATA_BINDINGS.reportingJson
+                })}
+              >
+                <option value="json">Sample JSON</option>
+                <option value="csv">Sample CSV</option>
+              </select>
+            </label>
+          </section> : null}
           {selectedWidget.kind === "iframe" ? <label>
             <span>URL to Embed</span>
             <input
@@ -638,14 +855,68 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
               onChange={(event) => updateSelectedWidgetConfig({ text: event.target.value })}
             />
           </label> : null}
-          {selectedWidget.kind === "view" ? <div className="workspace-settings-list">
+          {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
+            <label>
+              <span>Source</span>
+              <input
+                value={selectedWidget.config?.source || ""}
+                onChange={(event) => updateSelectedWidgetConfig({ source: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>Columns</span>
+              <input
+                value={serializeLineList(selectedWidget.config?.columns || [])}
+                onChange={(event) => updateSelectedWidgetConfig({ columns: parseLineList(event.target.value) })}
+              />
+            </label>
+            <label>
+              <span>Manual Rows</span>
+              <textarea
+                value={serializeManualRows(selectedWidget.config?.rows || [], selectedWidget.config?.columns || [])}
+                onChange={(event) => {
+                  const columns = selectedWidget.config?.columns?.length ? selectedWidget.config.columns : ["Name", "Domain Name"];
+                  updateSelectedWidgetConfig({
+                    rows: parseManualRows(event.target.value, columns),
+                    binding: { mode: "manual", source: "Manual rows", rows: parseManualRows(event.target.value, columns) }
+                  });
+                }}
+              />
+            </label>
+            <label>
+              <span>Static Binding</span>
+              <select
+                value={selectedWidget.config?.binding?.mode || "manual"}
+                onChange={(event) => {
+                  const binding = event.target.value === "csv" ? SAMPLE_DATA_BINDINGS.contentCsv : SAMPLE_DATA_BINDINGS.companiesManual;
+                  updateSelectedWidgetConfig({ binding });
+                }}
+              >
+                <option value="manual">Manual Rows</option>
+                <option value="csv">Sample CSV</option>
+              </select>
+            </label>
+            <div className="workspace-settings-list">
             <p className="workspace-panel-label">Settings</p>
             <div><span>Layout</span><code>{selectedWidget.config?.layout || "Table"}</code></div>
             <div><span>Source</span><code>{selectedWidget.config?.source || "Companies"}</code></div>
-            <div><span>Fields</span><code>6 shown</code></div>
+            <div><span>Fields</span><code>{selectedWidget.config?.columns?.length || 2} shown</code></div>
             <div><span>Filter</span><code>›</code></div>
             <div><span>Sort</span><code>›</code></div>
-          </div> : null}
+            </div>
+          </section> : null}
+          {selectedWidget.kind === "rich-text" ? <label>
+            <span>Static Binding</span>
+            <select
+              value={selectedWidget.config?.binding?.mode || "manual"}
+              onChange={(event) => updateSelectedWidgetConfig({
+                binding: { mode: event.target.value, source: event.target.value === "manual" ? "Manual text" : "Sample JSON", rows: [] }
+              })}
+            >
+              <option value="manual">Manual Text</option>
+              <option value="json">Sample JSON</option>
+            </select>
+          </label> : null}
           <div className="workspace-settings-list">
             <p className="workspace-panel-label">Placement</p>
             <div><span>Size</span><code>{selectedWidget.position.w} x {selectedWidget.position.h}</code></div>

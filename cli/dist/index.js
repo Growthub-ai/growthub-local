@@ -38241,27 +38241,27 @@ async function runDiscoveryHub(opts) {
       options: [
         {
           value: "create-workspace",
-          label: "\u{1F680} Create Governed Workspace",
+          label: "\u{1F680}  Create Governed Workspace",
           hint: "Start from a repo, skills.sh skill, starter, or worker kit"
         },
         {
           value: "kits",
-          label: "\u{1F9F0} Browse Worker Kits",
+          label: "\u{1F9F0}  Browse Worker Kits",
           hint: "Self-contained workspace environments for agents"
         },
         {
           value: "import-source",
-          label: "\u{1F501} Import Repo or Skill",
+          label: "\u{1F501}  Import Repo or Skill",
           hint: "Build a governed workspace from GitHub or skills.sh"
         },
         {
           value: "memory-knowledge",
-          label: "\u{1F4D6} Memory & Knowledge",
+          label: "\u{1F4D6}  Memory & Knowledge",
           hint: "persistent memory, search, multi-provider config, Growthub sync"
         },
         {
           value: "agent-harness",
-          label: "\u{1F916} Agent Harness",
+          label: "\u{1F916}  Agent Harness",
           hint: "Paperclip Local App + Open Agents + Qwen Code + T3 Code"
         },
         {
@@ -38271,7 +38271,7 @@ async function runDiscoveryHub(opts) {
         },
         {
           value: "help",
-          label: "\u2753 Help CLI",
+          label: "\u2753  Help CLI",
           hint: "See the main commands and what each path does"
         }
       ]
