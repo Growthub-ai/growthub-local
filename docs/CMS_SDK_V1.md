@@ -460,3 +460,11 @@ Ecosystem-level:
 ## One-line frozen summary
 
 CMS SDK v1 freezes the existing CLI truth into one public contract package and one manifest-first registry model — capabilities, node schemas, provider assembly, execution payloads, and streaming events — additive, portable, and reusable across every Growthub surface.
+
+---
+
+## Generated agent operating contract
+
+The hand-authored worker-kit `CLAUDE.md` is the source pattern for an agent's operating frame. The CLI emits the same shape *generated* for hosted CMS workflows via the **CMS Workflow Context Packet (v1)** — composed entirely from the api-contract types listed above.
+
+The packet is internal to the CLI in v1 (lives under `cli/src/runtime/cms-workflow-context/`) and is promoted to `@growthub/api-contract` only after two real consumers prove its shape stable. See [`./CMS_WORKFLOW_CONTEXT_PACKET_V1.md`](./CMS_WORKFLOW_CONTEXT_PACKET_V1.md).

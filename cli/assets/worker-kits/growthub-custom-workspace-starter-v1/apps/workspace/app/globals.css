@@ -544,6 +544,24 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   background: #f3f3f3;
   color: #222;
 }
+.workspace-toolbar-actions select,
+.workspace-widget-settings select {
+  min-height: 32px;
+  border: 1px solid #dcdcdc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #444;
+  font: inherit;
+  padding: 0 8px;
+}
+.workspace-hidden-input {
+  display: none;
+}
+.workspace-config-message {
+  margin: -8px 0 10px;
+  color: #777;
+  font-size: 12px;
+}
 .workspace-grid {
   position: relative;
   display: grid;
@@ -687,7 +705,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 }
 .workspace-view-table div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(var(--workspace-view-columns, 2), minmax(0, 1fr));
   min-height: 25px;
   border-bottom: 1px solid #eeeeee;
 }
@@ -791,7 +809,6 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   padding: 0 8px;
   text-align: left;
 }
-.workspace-widget-types button:first-child,
 .workspace-widget-types button:hover {
   background: #f2f2f2;
 }
@@ -826,6 +843,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   display: grid;
   gap: 14px;
   padding-top: 14px;
+}
+.workspace-field-stack {
+  display: grid;
+  gap: 12px;
 }
 .workspace-widget-settings label {
   display: grid;

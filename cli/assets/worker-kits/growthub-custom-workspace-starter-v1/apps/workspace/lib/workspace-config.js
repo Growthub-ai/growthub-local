@@ -1,11 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readAdapterConfig } from "@/lib/adapters/env";
-
-const KNOWN_FIELDS = ["dashboards", "widgetTypes", "canvas"];
-const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
-const GRID_COLUMNS = 12;
-const GRID_ROWS = 16;
+import {
+  GRID_COLUMNS,
+  GRID_ROWS,
+  KNOWN_WIDGET_KINDS,
+  validateWorkspaceConfig
+} from "@/lib/workspace-schema";
 
 function resolveWorkspaceConfigPath() {
   return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "growthub.config.json");
@@ -36,156 +37,35 @@ function describePersistenceMode() {
   return { mode: "filesystem", reason: "Local development" };
 }
 
-function isFiniteInt(value) {
-  return typeof value === "number" && Number.isFinite(value) && Math.floor(value) === value;
-}
-
-function validateWidgetArray(widgets, contextPath, errors, seenIds) {
-  if (!Array.isArray(widgets)) {
-    errors.push(`${contextPath} must be an array`);
-    return;
-  }
-  const occupied = new Map();
-  widgets.forEach((widget, index) => {
-    const prefix = `${contextPath}[${index}]`;
-    if (!widget || typeof widget !== "object" || Array.isArray(widget)) {
-      errors.push(`${prefix} must be an object`);
-      return;
-    }
-    if (typeof widget.id !== "string" || !widget.id) {
-      errors.push(`${prefix}.id must be a non-empty string`);
-    } else if (seenIds.has(widget.id)) {
-      errors.push(`${prefix}.id duplicates an earlier widget id`);
-    } else {
-      seenIds.add(widget.id);
-    }
-    if (!KNOWN_WIDGET_KINDS.includes(widget.kind)) {
-      errors.push(`${prefix}.kind must be one of ${KNOWN_WIDGET_KINDS.join(", ")}`);
-    }
-    if (!widget.position || typeof widget.position !== "object" || Array.isArray(widget.position)) {
-      errors.push(`${prefix}.position must be an object`);
-      return;
-    }
-    for (const k of ["x", "y", "w", "h"]) {
-      if (!isFiniteInt(widget.position[k])) {
-        errors.push(`${prefix}.position.${k} must be a finite integer`);
-      }
-    }
-    if (
-      isFiniteInt(widget.position.x) &&
-      isFiniteInt(widget.position.w) &&
-      (widget.position.x < 0 || widget.position.w < 1 || widget.position.x + widget.position.w > GRID_COLUMNS)
-    ) {
-      errors.push(`${prefix} x/w out of [0..${GRID_COLUMNS}] grid`);
-    }
-    if (
-      isFiniteInt(widget.position.y) &&
-      isFiniteInt(widget.position.h) &&
-      (widget.position.y < 0 || widget.position.h < 1 || widget.position.y + widget.position.h > GRID_ROWS)
-    ) {
-      errors.push(`${prefix} y/h out of [0..${GRID_ROWS}] grid`);
-    }
-    if (
-      isFiniteInt(widget.position.x) &&
-      isFiniteInt(widget.position.y) &&
-      isFiniteInt(widget.position.w) &&
-      isFiniteInt(widget.position.h)
-    ) {
-      for (let dx = 0; dx < widget.position.w; dx += 1) {
-        for (let dy = 0; dy < widget.position.h; dy += 1) {
-          const cell = `${widget.position.x + dx}:${widget.position.y + dy}`;
-          const previous = occupied.get(cell);
-          if (previous) {
-            errors.push(`${prefix} overlaps ${previous} at grid cell ${cell}`);
-          } else {
-            occupied.set(cell, `${prefix}.position`);
-          }
-        }
-      }
-    }
-  });
-}
-
-function validateWorkspaceConfig(nextConfig) {
-  if (!nextConfig || typeof nextConfig !== "object" || Array.isArray(nextConfig)) {
-    const error = new Error("workspace config must be a plain object");
-    error.code = "INVALID_WORKSPACE_CONFIG";
-    error.details = ["root must be a plain object"];
-    throw error;
-  }
-  const errors = [];
-  for (const key of Object.keys(nextConfig)) {
-    if (!KNOWN_FIELDS.includes(key)) {
-      errors.push(`unknown top-level field: ${key}`);
-    }
-  }
-  if (nextConfig.dashboards !== undefined && !Array.isArray(nextConfig.dashboards)) {
-    errors.push("dashboards must be an array");
-  }
-  if (nextConfig.widgetTypes !== undefined && !Array.isArray(nextConfig.widgetTypes)) {
-    errors.push("widgetTypes must be an array");
-  }
-  if (nextConfig.canvas !== undefined) {
-    if (typeof nextConfig.canvas !== "object" || Array.isArray(nextConfig.canvas) || nextConfig.canvas === null) {
-      errors.push("canvas must be a plain object");
-    } else {
-      const seenWidgetIds = new Set();
-      if (nextConfig.canvas.widgets !== undefined) {
-        validateWidgetArray(nextConfig.canvas.widgets, "canvas.widgets", errors, seenWidgetIds);
-      }
-      if (nextConfig.canvas.tabs !== undefined) {
-        if (!Array.isArray(nextConfig.canvas.tabs)) {
-          errors.push("canvas.tabs must be an array");
-        } else {
-          const seenTabIds = new Set();
-          nextConfig.canvas.tabs.forEach((tab, index) => {
-            const tabPrefix = `canvas.tabs[${index}]`;
-            if (!tab || typeof tab !== "object" || Array.isArray(tab)) {
-              errors.push(`${tabPrefix} must be an object`);
-              return;
-            }
-            if (typeof tab.id !== "string" || !tab.id) {
-              errors.push(`${tabPrefix}.id must be a non-empty string`);
-            } else if (seenTabIds.has(tab.id)) {
-              errors.push(`${tabPrefix}.id duplicates an earlier tab id`);
-            } else {
-              seenTabIds.add(tab.id);
-            }
-            if (typeof tab.name !== "string" || !tab.name) {
-              errors.push(`${tabPrefix}.name must be a non-empty string`);
-            }
-            if (tab.widgets !== undefined) {
-              validateWidgetArray(tab.widgets, `${tabPrefix}.widgets`, errors, seenWidgetIds);
-            }
-          });
-        }
-      }
-      if (nextConfig.canvas.activeTabId !== undefined && typeof nextConfig.canvas.activeTabId !== "string") {
-        errors.push("canvas.activeTabId must be a string");
-      }
-    }
-  }
-  if (errors.length) {
-    const error = new Error(`invalid workspace config: ${errors.join("; ")}`);
-    error.code = "INVALID_WORKSPACE_CONFIG";
-    error.details = errors;
-    throw error;
-  }
-}
-
 function applyPatch(currentConfig, patch) {
   const next = { ...currentConfig };
   if (patch.dashboards !== undefined) next.dashboards = patch.dashboards;
   if (patch.widgetTypes !== undefined) next.widgetTypes = patch.widgetTypes;
   if (patch.canvas !== undefined && patch.canvas !== null) {
+    const patchCanvas = { ...patch.canvas };
+    if (Array.isArray(patchCanvas.tabs)) {
+      delete patchCanvas.widgets;
+      delete patchCanvas.name;
+    } else if (Array.isArray(patchCanvas.widgets)) {
+      delete patchCanvas.tabs;
+      delete patchCanvas.activeTabId;
+    }
     next.canvas = {
       ...currentConfig.canvas,
-      ...patch.canvas,
-      layout: { ...(currentConfig.canvas?.layout || {}), ...(patch.canvas.layout || {}) },
-      bindings: { ...(currentConfig.canvas?.bindings || {}), ...(patch.canvas.bindings || {}) }
+      ...patchCanvas,
+      layout: { ...(currentConfig.canvas?.layout || {}), ...(patchCanvas.layout || {}) },
+      bindings: { ...(currentConfig.canvas?.bindings || {}), ...(patchCanvas.bindings || {}) }
     };
+    if (Array.isArray(patch.canvas.tabs)) {
+      delete next.canvas.widgets;
+      delete next.canvas.name;
+    }
+    if (Array.isArray(patch.canvas.widgets)) {
+      delete next.canvas.tabs;
+      delete next.canvas.activeTabId;
+    }
     for (const key of ["widgets", "tabs", "activeTabId", "name"]) {
-      if (Object.prototype.hasOwnProperty.call(patch.canvas, key) && patch.canvas[key] === null) {
+      if (Object.prototype.hasOwnProperty.call(patchCanvas, key) && patchCanvas[key] === null) {
         delete next.canvas[key];
       }
     }
