@@ -27,10 +27,7 @@ import { readSession, isSessionExpired } from "../auth/session-store.js";
 import {
   archiveHostedWorkflow,
   deleteHostedWorkflow,
-  fetchHostedWorkflow,
-  listHostedWorkflows,
   saveHostedWorkflow,
-  HostedEndpointUnavailableError,
 } from "../auth/hosted-client.js";
 import {
   createCmsCapabilityRegistryClient,
@@ -43,9 +40,15 @@ import {
 } from "../runtime/machine-capability-resolver/index.js";
 import {
   createPipelineBuilder,
-  deserializePipeline,
   type DynamicRegistryPipeline,
 } from "../runtime/dynamic-registry-pipeline/index.js";
+import {
+  listSavedWorkflows,
+  loadSavedWorkflowDetail,
+  resolveSavedWorkflowsDir,
+  toExecutableSavedWorkflowPipeline,
+  type SavedWorkflowEntry,
+} from "../runtime/saved-workflows/index.js";
 import {
   introspectNodeContract,
   normalizeNodeBindings,
@@ -69,6 +72,7 @@ import {
   type PipelineSummaryForIntelligence,
 } from "../runtime/native-intelligence/index.js";
 import { executeHostedPipeline, runPipelineAssembler } from "./pipeline.js";
+import { registerWorkflowContextCommand } from "./workflow-context.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { resolvePaperclipHomeDir } from "../config/home.js";
 
@@ -144,10 +148,6 @@ function isAuthenticated(): boolean {
 // Saved workflows directory
 // ---------------------------------------------------------------------------
 
-function resolveSavedWorkflowsDir(): string {
-  return path.resolve(resolvePaperclipHomeDir(), "workflows");
-}
-
 function resolveDeletedWorkflowIdsPath(): string {
   return path.resolve(resolvePaperclipHomeDir(), "workflow-hygiene", "deleted-workflows.json");
 }
@@ -178,21 +178,6 @@ function markWorkflowDeletedLocally(workflowId: string): void {
 
 function isWorkflowDeletedLocally(workflowId: string): boolean {
   return readDeletedWorkflowIds().has(workflowId);
-}
-
-interface SavedWorkflowEntry {
-  filename?: string;
-  workflowId: string;
-  pipelineId: string;
-  name: string;
-  nodeCount: number;
-  executionMode: string;
-  createdAt: string;
-  updatedAt?: string;
-  versionCount?: number;
-  source: "hosted" | "local";
-  isActive?: boolean;
-  workflowLabel?: WorkflowLabel;
 }
 
 type TemplateViewMode = "condensed" | "expanded" | "tree";
@@ -296,66 +281,6 @@ function runBulkUnarchive(
   );
 }
 
-function listLocalSavedWorkflows(): SavedWorkflowEntry[] {
-  const dir = resolveSavedWorkflowsDir();
-  if (!fs.existsSync(dir)) return [];
-
-  const entries: Array<SavedWorkflowEntry | null> = fs.readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".json"))
-    .map((e) => {
-      try {
-        const raw = JSON.parse(fs.readFileSync(path.resolve(dir, e.name), "utf-8"));
-        const pipeline = raw.pipeline ?? raw;
-        return {
-          filename: e.name,
-          workflowId: pipeline.metadata?.hostedWorkflowId ?? pipeline.pipelineId ?? e.name.replace(".json", ""),
-          pipelineId: pipeline.pipelineId ?? e.name.replace(".json", ""),
-          name: pipeline.metadata?.workflowName ?? pipeline.pipelineId ?? e.name.replace(".json", ""),
-          nodeCount: Array.isArray(pipeline.nodes) ? pipeline.nodes.length : 0,
-          executionMode: pipeline.executionMode ?? "hosted",
-          createdAt: raw.createdAt ?? "",
-          source: "local",
-        } satisfies SavedWorkflowEntry;
-      } catch {
-        return null;
-      }
-    });
-
-  return entries
-    .filter((entry): entry is SavedWorkflowEntry => entry !== null)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
-async function listSavedWorkflows(): Promise<SavedWorkflowEntry[]> {
-  const session = readSession();
-  if (!session || isSessionExpired(session)) {
-    return listLocalSavedWorkflows();
-  }
-
-  try {
-    const response = await listHostedWorkflows(session);
-    if (!response || !Array.isArray(response.workflows)) return listLocalSavedWorkflows();
-
-    return response.workflows.map((workflow) => ({
-      workflowId: workflow.workflowId,
-      pipelineId: workflow.workflowId,
-      name: workflow.name,
-      nodeCount: workflow.latestVersion?.nodeCount ?? 0,
-      executionMode: "hosted",
-      createdAt: workflow.createdAt,
-      updatedAt: workflow.updatedAt,
-      versionCount: workflow.versionCount,
-      source: "hosted",
-      isActive: workflow.isActive,
-    }));
-  } catch (err) {
-    if (err instanceof HostedEndpointUnavailableError) {
-      return listLocalSavedWorkflows();
-    }
-    throw err;
-  }
-}
-
 async function archiveSavedWorkflow(entry: SavedWorkflowEntry): Promise<void> {
   if (entry.source === "hosted") {
     const session = readSession();
@@ -409,111 +334,6 @@ async function deleteSavedWorkflow(entry: SavedWorkflowEntry): Promise<void> {
 
   fs.rmSync(path.resolve(resolveSavedWorkflowsDir(), entry.filename), { force: true });
   markWorkflowDeletedLocally(entry.workflowId);
-}
-
-async function loadSavedWorkflowDetail(entry: SavedWorkflowEntry): Promise<{
-  pipeline: Record<string, unknown>;
-  createdAt: string;
-}> {
-  if (entry.source === "hosted") {
-    const session = readSession();
-    if (!session || isSessionExpired(session)) {
-      throw new Error("Hosted session expired while loading workflow detail.");
-    }
-    const detail = await fetchHostedWorkflow(session, entry.workflowId);
-    if (!detail) {
-      throw new Error(`Hosted workflow ${entry.workflowId} not found.`);
-    }
-    return {
-      pipeline: (detail.latestVersion.config ?? {}) as Record<string, unknown>,
-      createdAt: detail.latestVersion.createdAt,
-    };
-  }
-
-  const dir = resolveSavedWorkflowsDir();
-  const content = fs.readFileSync(path.resolve(dir, entry.filename!), "utf-8");
-  const raw = JSON.parse(content);
-  return {
-    pipeline: (raw.pipeline ?? raw) as Record<string, unknown>,
-    createdAt: raw.createdAt ?? "",
-  };
-}
-
-function toDynamicPipelineFromHostedWorkflow(
-  entry: SavedWorkflowEntry,
-  pipeline: Record<string, unknown>,
-): DynamicRegistryPipeline {
-  const rawNodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
-  const rawEdges = Array.isArray(pipeline.edges) ? pipeline.edges : [];
-  const cmsNodes = rawNodes.filter((node): node is Record<string, unknown> => {
-    return typeof node === "object" && node !== null && (node as { type?: unknown }).type === "cmsNode";
-  });
-
-  const upstreamNodeIdsByTarget = new Map<string, string[]>();
-  for (const edge of rawEdges) {
-    if (typeof edge !== "object" || edge === null) continue;
-    const source = typeof (edge as { source?: unknown }).source === "string"
-      ? (edge as { source: string }).source
-      : null;
-    const target = typeof (edge as { target?: unknown }).target === "string"
-      ? (edge as { target: string }).target
-      : null;
-    if (!source || !target || source === "start-1" || target === "end-1") continue;
-    const existing = upstreamNodeIdsByTarget.get(target) ?? [];
-    existing.push(source);
-    upstreamNodeIdsByTarget.set(target, existing);
-  }
-
-  return {
-    pipelineId: entry.pipelineId,
-    executionMode: "hosted",
-    nodes: cmsNodes.map((node) => {
-      const id = typeof node.id === "string" ? node.id : `node-${Math.random().toString(36).slice(2, 8)}`;
-      const data = typeof node.data === "object" && node.data !== null
-        ? node.data as { slug?: unknown; inputs?: unknown }
-        : {};
-      return {
-        id,
-        slug: typeof data.slug === "string" ? data.slug : id,
-        bindings:
-          typeof data.inputs === "object" && data.inputs !== null
-            ? data.inputs as Record<string, unknown>
-            : {},
-        upstreamNodeIds: upstreamNodeIdsByTarget.get(id),
-      };
-    }),
-    metadata: {
-      hostedWorkflowId: entry.workflowId,
-      workflowName: entry.name,
-    },
-  };
-}
-
-function toExecutableSavedWorkflowPipeline(
-  entry: SavedWorkflowEntry,
-  pipeline: Record<string, unknown>,
-): DynamicRegistryPipeline {
-  const looksLikeDynamicPipeline =
-    Array.isArray(pipeline.nodes) &&
-    pipeline.nodes.every((node) => {
-      if (typeof node !== "object" || node === null) return false;
-      const record = node as Record<string, unknown>;
-      return typeof record.id === "string" && typeof record.slug === "string";
-    });
-
-  if (looksLikeDynamicPipeline) {
-    const parsed = deserializePipeline(pipeline);
-    return {
-      ...parsed,
-      metadata: {
-        ...(parsed.metadata ?? {}),
-        hostedWorkflowId: entry.workflowId,
-        workflowName: entry.name,
-      },
-    };
-  }
-
-  return toDynamicPipelineFromHostedWorkflow(entry, pipeline);
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,6 +1264,7 @@ Examples:
   $ growthub workflow                       # interactive workflow browser
   $ growthub pipeline assemble              # create new dynamic pipeline workflow
   $ growthub workflow saved                 # list saved workflows
+  $ growthub workflow context <id> --json   # emit CMS Workflow Context Packet
 `);
 
   wf.action(async () => {
@@ -1597,4 +1418,7 @@ Examples:
       console.log(pc.dim(`  Source: ${visibleSaved[0]?.source === "hosted" ? "hosted workflow registry" : resolveSavedWorkflowsDir()}`));
       console.log("");
     });
+
+  // ── context (CMS Workflow Context Packet v1) ─────────────────────────────
+  registerWorkflowContextCommand(wf);
 }
