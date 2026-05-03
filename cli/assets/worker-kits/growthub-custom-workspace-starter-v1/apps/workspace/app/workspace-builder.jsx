@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
-const DEFAULT_POSITION = { x: 0, y: 0, w: 4, h: 3 };
+const DEFAULT_POSITION = { x: 4, y: 0, w: 4, h: 5 };
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
+const GRID_CELL_COUNT = GRID_COLUMNS * GRID_ROWS;
 const DEFAULT_TAB_ID = "tab-default";
 const COLLAPSED_GRID_COLUMNS = "220px minmax(0, 1fr)";
 
@@ -19,10 +20,23 @@ function generateId(prefix) {
 function defaultTitleFor(kind) {
   switch (kind) {
     case "chart": return "Untitled chart";
-    case "view": return "Untitled view";
-    case "iframe": return "Embedded view";
-    case "rich-text": return "Note";
+    case "view": return "Companies";
+    case "iframe": return "Untitled iFrame";
+    case "rich-text": return "Untitled Rich Text";
     default: return "Untitled widget";
+  }
+}
+
+function defaultConfigFor(kind) {
+  switch (kind) {
+    case "view":
+      return { source: "Companies", layout: "Table" };
+    case "iframe":
+      return { url: "" };
+    case "rich-text":
+      return { text: "" };
+    default:
+      return {};
   }
 }
 
@@ -85,14 +99,162 @@ function findFreePosition(widgets) {
   return { ...DEFAULT_POSITION };
 }
 
+function normalizePosition(start, end) {
+  const x1 = start % GRID_COLUMNS;
+  const y1 = Math.floor(start / GRID_COLUMNS);
+  const x2 = end % GRID_COLUMNS;
+  const y2 = Math.floor(end / GRID_COLUMNS);
+  return {
+    x: Math.min(x1, x2),
+    y: Math.min(y1, y2),
+    w: Math.abs(x2 - x1) + 1,
+    h: Math.abs(y2 - y1) + 1
+  };
+}
+
+function positionsOverlap(a, b) {
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
+
+function clampPositionToFreeSpace(position, widgets) {
+  const bounded = {
+    x: Math.max(0, Math.min(position.x, GRID_COLUMNS - 1)),
+    y: Math.max(0, Math.min(position.y, GRID_ROWS - 1)),
+    w: Math.max(1, Math.min(position.w, GRID_COLUMNS - position.x)),
+    h: Math.max(1, Math.min(position.h, GRID_ROWS - position.y))
+  };
+  const collides = widgets.some((widget) => positionsOverlap(bounded, widget.position));
+  return collides ? findFreePosition(widgets) : bounded;
+}
+
+function cellIndexFromGridPointer(event, gridElement) {
+  if (!gridElement) return null;
+  const rect = gridElement.getBoundingClientRect();
+  const styles = window.getComputedStyle(gridElement);
+  const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+  const gap = Number.parseFloat(styles.columnGap) || 0;
+  const x = event.clientX - rect.left - paddingLeft;
+  const y = event.clientY - rect.top - paddingTop;
+  const usableWidth = rect.width - paddingLeft - paddingRight - gap * (GRID_COLUMNS - 1);
+  const cellWidth = usableWidth / GRID_COLUMNS;
+  const cellHeight = 52;
+  const column = Math.max(0, Math.min(GRID_COLUMNS - 1, Math.floor(x / (cellWidth + gap))));
+  const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(y / (cellHeight + gap))));
+  if (x < 0 || y < 0) return null;
+  return row * GRID_COLUMNS + column;
+}
+
+function resizePositionFromCell(position, corner, index) {
+  const cellX = index % GRID_COLUMNS;
+  const cellY = Math.floor(index / GRID_COLUMNS);
+  const right = position.x + position.w - 1;
+  const bottom = position.y + position.h - 1;
+  if (corner === "nw") {
+    return {
+      x: Math.min(cellX, right),
+      y: Math.min(cellY, bottom),
+      w: Math.max(1, right - Math.min(cellX, right) + 1),
+      h: Math.max(1, bottom - Math.min(cellY, bottom) + 1)
+    };
+  }
+  if (corner === "ne") {
+    const y = Math.min(cellY, bottom);
+    return {
+      x: position.x,
+      y,
+      w: Math.max(1, Math.max(cellX, position.x) - position.x + 1),
+      h: Math.max(1, bottom - y + 1)
+    };
+  }
+  if (corner === "sw") {
+    const x = Math.min(cellX, right);
+    return {
+      x,
+      y: position.y,
+      w: Math.max(1, right - x + 1),
+      h: Math.max(1, Math.max(cellY, position.y) - position.y + 1)
+    };
+  }
+  return {
+    x: position.x,
+    y: position.y,
+    w: Math.max(1, Math.max(cellX, position.x) - position.x + 1),
+    h: Math.max(1, Math.max(cellY, position.y) - position.y + 1)
+  };
+}
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function widgetKindLabel(kind) {
+  if (kind === "iframe") return "iFrame";
+  if (kind === "rich-text") return "Rich Text";
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) {
+  return <article
+    className={`workspace-widget-preview${selected ? " selected" : ""}`}
+    onClick={onSelect}
+    style={{
+      gridColumn: `${widget.position.x + 1} / span ${widget.position.w}`,
+      gridRow: `${widget.position.y + 1} / span ${widget.position.h}`
+    }}
+  >
+    <div className="workspace-widget-preview-title">
+      <span aria-hidden="true">::</span>
+      <strong>{widget.title}</strong>
+      <button
+        aria-label={`Remove ${widget.title}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        type="button"
+      >x</button>
+    </div>
+    {widget.kind === "view" ? <div className="workspace-view-table" aria-label={`${widget.title} preview`}>
+      <div><span>Name</span><span>Domain Name</span></div>
+      {[
+        ["CMWL Direct", "centerformedica"],
+        ["Medi-Weightloss", "mediweightloss.com"],
+        ["Optima Tyler", "optimatyler.com"],
+        ["Balanced Hormone He...", "balancedhormor"],
+        ["Jolie Aesthetics RVA", "jolie-aesthetics.c"],
+        ["Livea Centers", "livea.com"]
+      ].map(([name, domain]) => <div key={name}><span>{name}</span><span>{domain}</span></div>)}
+      <footer>Calculate</footer>
+    </div> : null}
+    {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
+      {widget.config?.url ? <span>{widget.config.url}</span> : <span>Invalid URL</span>}
+    </div> : null}
+    {widget.kind === "rich-text" ? <p className="workspace-rich-text-preview">{widget.config?.text || "Start writing..."}</p> : null}
+    {widget.kind === "chart" ? <div className="workspace-chart-preview">
+      {[58, 36, 72, 48, 64].map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}
+    </div> : null}
+    {selected ? ["nw", "ne", "sw", "se"].map((corner) => <button
+      aria-label={`Resize ${widget.title} from ${corner} corner`}
+      className={`workspace-resize-handle ${corner}`}
+      key={corner}
+      onPointerDown={(event) => onResizeStart(corner, event)}
+      type="button"
+    />) : null}
+  </article>;
 }
 
 function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) {
   const [config, setConfig] = useState(initialConfig);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+  const gridRef = useRef(null);
   const canvas = config.canvas;
   const dashboards = config.dashboards;
   const widgetTypes = config.widgetTypes;
@@ -100,17 +262,38 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
   const activeTabId = getActiveTabId(canvas);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
   const activeWidgets = activeTab.widgets || [];
+  const [selectedPosition, setSelectedPosition] = useState(() => findFreePosition(activeWidgets));
+  const [selectedWidgetId, setSelectedWidgetId] = useState(null);
+  const [dragStartCell, setDragStartCell] = useState(null);
+  const [dragPreview, setDragPreview] = useState(null);
+  const [resizeDrag, setResizeDrag] = useState(null);
+  const resizeDragRef = useRef(null);
+  const addSlot = dragPreview || selectedPosition;
+  const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
+  const occupiedCells = useMemo(() => {
+    const cells = new Set();
+    for (const widget of activeWidgets) {
+      for (let dx = 0; dx < widget.position.w; dx += 1) {
+        for (let dy = 0; dy < widget.position.h; dy += 1) {
+          cells.add(`${widget.position.x + dx}:${widget.position.y + dy}`);
+        }
+      }
+    }
+    return cells;
+  }, [activeWidgets]);
 
   const addWidget = useCallback((kind) => {
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
+      const existingWidgets = prevTabs.find((tab) => tab.id === prevActiveId)?.widgets || [];
+      const position = clampPositionToFreeSpace(addSlot, existingWidgets);
       const widget = {
         id: generateId("widget"),
         kind,
         title: defaultTitleFor(kind),
-        position: findFreePosition(prevTabs.find((tab) => tab.id === prevActiveId)?.widgets || []),
-        config: {}
+        position,
+        config: defaultConfigFor(kind)
       };
       const stableTabs = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
         ? [{ ...prevTabs[0], id: DEFAULT_TAB_ID }]
@@ -118,15 +301,22 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       const nextTabs = stableTabs.map((tab) =>
         tab.id === prevActiveId ? { ...tab, widgets: [...(tab.widgets || []), widget] } : tab
       );
+      setSelectedWidgetId(widget.id);
+      setSelectedPosition(findFreePosition([...existingWidgets, widget]));
+      setDragPreview(null);
       return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
     });
-  }, []);
+  }, [addSlot]);
 
   const switchTab = useCallback((tabId) => {
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       if (prevTabs.length <= 1) return prev;
       if (!prevTabs.some((tab) => tab.id === tabId)) return prev;
+      const nextTab = prevTabs.find((tab) => tab.id === tabId);
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(nextTab?.widgets || []));
+      setDragPreview(null);
       return { ...prev, canvas: commitTabs(prev.canvas, prevTabs, tabId) };
     });
   }, []);
@@ -145,6 +335,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
         widgets: []
       };
       const nextTabs = [...allExisting, newTab];
+      setSelectedWidgetId(null);
+      setSelectedPosition({ ...DEFAULT_POSITION });
+      setDragPreview(null);
       return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, newTab.id) };
     });
   }, []);
@@ -193,6 +386,116 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
 
   const reopenPanel = useCallback(() => setPanelOpen(true), []);
   const closePanel = useCallback(() => setPanelOpen(false), []);
+  const beginCellDrag = useCallback((index, event) => {
+    const x = index % GRID_COLUMNS;
+    const y = Math.floor(index / GRID_COLUMNS);
+    if (occupiedCells.has(`${x}:${y}`)) return;
+    event.preventDefault();
+    const position = normalizePosition(index, index);
+    setSelectedWidgetId(null);
+    setDragStartCell(index);
+    setDragPreview(position);
+    setPanelOpen(true);
+  }, [occupiedCells]);
+  const updateCellDrag = useCallback((index) => {
+    if (dragStartCell === null) return;
+    setDragPreview(normalizePosition(dragStartCell, index));
+  }, [dragStartCell]);
+  const finishCellDrag = useCallback((index) => {
+    if (dragStartCell === null) return;
+    const position = normalizePosition(dragStartCell, index);
+    setSelectedPosition(clampPositionToFreeSpace(position, activeWidgets));
+    setDragStartCell(null);
+    setDragPreview(null);
+    setPanelOpen(true);
+  }, [activeWidgets, dragStartCell]);
+  const updatePointerDrag = useCallback((event) => {
+    if (dragStartCell === null) return;
+    const index = cellIndexFromGridPointer(event, gridRef.current);
+    if (index !== null) updateCellDrag(index);
+  }, [dragStartCell, updateCellDrag]);
+  const finishPointerDrag = useCallback((event) => {
+    if (dragStartCell === null) return;
+    const index = cellIndexFromGridPointer(event, gridRef.current);
+    finishCellDrag(index ?? dragStartCell);
+  }, [dragStartCell, finishCellDrag]);
+  const beginResizeDrag = useCallback((widget, corner, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const nextResizeDrag = { widgetId: widget.id, corner, originalPosition: widget.position };
+    setSelectedWidgetId(widget.id);
+    resizeDragRef.current = nextResizeDrag;
+    setResizeDrag(nextResizeDrag);
+  }, []);
+  const updateResizeDrag = useCallback((event) => {
+    const activeResizeDrag = resizeDragRef.current;
+    if (!activeResizeDrag) return;
+    event.preventDefault();
+    const index = cellIndexFromGridPointer(event, gridRef.current);
+    if (index === null) return;
+    const nextPosition = resizePositionFromCell(activeResizeDrag.originalPosition, activeResizeDrag.corner, index);
+    const otherWidgets = activeWidgets.filter((widget) => widget.id !== activeResizeDrag.widgetId);
+    if (otherWidgets.some((widget) => positionsOverlap(nextPosition, widget.position))) return;
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return {
+          ...tab,
+          widgets: (tab.widgets || []).map((widget) =>
+            widget.id === activeResizeDrag.widgetId ? { ...widget, position: nextPosition } : widget
+          )
+        };
+      });
+      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+    });
+  }, [activeWidgets]);
+  const finishResizeDrag = useCallback(() => {
+    if (!resizeDragRef.current) return;
+    resizeDragRef.current = null;
+    setResizeDrag(null);
+  }, []);
+  const selectWidget = useCallback((widgetId) => {
+    setSelectedWidgetId(widgetId);
+    setPanelOpen(true);
+  }, []);
+  const updateSelectedWidget = useCallback((updates) => {
+    if (!selectedWidgetId) return;
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return {
+          ...tab,
+          widgets: (tab.widgets || []).map((widget) =>
+            widget.id === selectedWidgetId ? { ...widget, ...updates } : widget
+          )
+        };
+      });
+      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+    });
+  }, [selectedWidgetId]);
+  const updateSelectedWidgetConfig = useCallback((updates) => {
+    if (!selectedWidget) return;
+    updateSelectedWidget({ config: { ...(selectedWidget.config || {}), ...updates } });
+  }, [selectedWidget, updateSelectedWidget]);
+  const removeSelectedWidget = useCallback((widgetId) => {
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return { ...tab, widgets: (tab.widgets || []).filter((widget) => widget.id !== widgetId) };
+      });
+      const nextActiveWidgets = nextTabs.find((tab) => tab.id === prevActiveId)?.widgets || [];
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(nextActiveWidgets));
+      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+    });
+  }, []);
 
   const builderStyle = panelOpen ? undefined : { gridTemplateColumns: COLLAPSED_GRID_COLUMNS };
 
@@ -256,20 +559,53 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
               >{tab.name}</button>)}
             <button type="button" onClick={addTab}>New Tab</button>
           </div>
-          <div className="workspace-grid" style={{ "--workspace-columns": canvas.layout.columns }}>
-            <button className="workspace-add-widget" type="button" onClick={() => addWidget("chart")}>
+          <div
+            className="workspace-grid"
+            ref={gridRef}
+            onPointerMove={updatePointerDrag}
+            onPointerUp={(event) => {
+              finishPointerDrag(event);
+              finishResizeDrag();
+            }}
+            onPointerLeave={finishResizeDrag}
+            onPointerMoveCapture={updateResizeDrag}
+            style={{ "--workspace-columns": canvas.layout.columns, "--workspace-rows": GRID_ROWS }}
+          >
+            {Array.from({ length: GRID_CELL_COUNT }).map((_, index) => {
+              const x = index % GRID_COLUMNS;
+              const y = Math.floor(index / GRID_COLUMNS);
+              const isOccupied = occupiedCells.has(`${x}:${y}`);
+              return <button
+                aria-label={`Select cell ${x + 1}, ${y + 1}`}
+                aria-hidden={isOccupied ? "true" : undefined}
+                className="workspace-grid-cell"
+                data-cell-index={index}
+                disabled={isOccupied}
+                key={index}
+                onPointerDown={(event) => beginCellDrag(index, event)}
+                style={{
+                  gridColumn: `${x + 1} / span 1`,
+                  gridRow: `${y + 1} / span 1`
+                }}
+                type="button"
+              />;
+            })}
+            <button className={`workspace-add-widget${dragPreview ? " selecting" : ""}`} type="button" onClick={() => setPanelOpen(true)} style={{
+              gridColumn: `${addSlot.x + 1} / span ${addSlot.w}`,
+              gridRow: `${addSlot.y + 1} / span ${addSlot.h}`
+            }}>
               <span className="workspace-widget-icon" aria-hidden="true"><span /></span>
               <strong>Add widget</strong>
               <small>Click to add your first widget</small>
             </button>
-            {Array.from({ length: 96 }).map((_, index) => <span aria-hidden="true" className="workspace-grid-cell" key={index} />)}
-            {activeWidgets.map((widget) => <article className="workspace-widget-preview" key={widget.id} style={{
-              gridColumn: `${widget.position.x + 1} / span ${widget.position.w}`,
-              gridRow: `${widget.position.y + 1} / span ${widget.position.h}`
-            }}>
-                <span>{widget.kind}</span>
-                <strong>{widget.title}</strong>
-              </article>)}
+            {activeWidgets.map((widget) => <WidgetPreview
+              key={widget.id}
+              onRemove={() => removeSelectedWidget(widget.id)}
+              onResizeStart={(corner, event) => beginResizeDrag(widget, corner, event)}
+              onSelect={() => selectWidget(widget.id)}
+              selected={widget.id === selectedWidgetId}
+              widget={widget}
+            />)}
           </div>
         </section>
       </section>
@@ -277,9 +613,45 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       {panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
         <div className="workspace-panel-title">
           <button type="button" aria-label="Close widget panel" onClick={closePanel}>x</button>
-          <strong>New widget</strong>
+          <span aria-hidden="true">+</span>
+          <strong>{selectedWidget ? selectedWidget.title : "New widget"}</strong>
+          {selectedWidget ? <em>{widgetKindLabel(selectedWidget.kind)}</em> : null}
         </div>
-        <section>
+        {selectedWidget ? <section className="workspace-widget-settings">
+          <label>
+            <span>Title</span>
+            <input value={selectedWidget.title} onChange={(event) => updateSelectedWidget({ title: event.target.value })} />
+          </label>
+          {selectedWidget.kind === "iframe" ? <label>
+            <span>URL to Embed</span>
+            <input
+              placeholder="https://example.com/embed"
+              value={selectedWidget.config?.url || ""}
+              onChange={(event) => updateSelectedWidgetConfig({ url: event.target.value })}
+            />
+          </label> : null}
+          {selectedWidget.kind === "rich-text" ? <label>
+            <span>Content</span>
+            <textarea
+              placeholder="Write text..."
+              value={selectedWidget.config?.text || ""}
+              onChange={(event) => updateSelectedWidgetConfig({ text: event.target.value })}
+            />
+          </label> : null}
+          {selectedWidget.kind === "view" ? <div className="workspace-settings-list">
+            <p className="workspace-panel-label">Settings</p>
+            <div><span>Layout</span><code>{selectedWidget.config?.layout || "Table"}</code></div>
+            <div><span>Source</span><code>{selectedWidget.config?.source || "Companies"}</code></div>
+            <div><span>Fields</span><code>6 shown</code></div>
+            <div><span>Filter</span><code>›</code></div>
+            <div><span>Sort</span><code>›</code></div>
+          </div> : null}
+          <div className="workspace-settings-list">
+            <p className="workspace-panel-label">Placement</p>
+            <div><span>Size</span><code>{selectedWidget.position.w} x {selectedWidget.position.h}</code></div>
+            <div><span>Origin</span><code>{selectedWidget.position.x + 1}, {selectedWidget.position.y + 1}</code></div>
+          </div>
+        </section> : <section>
           <p className="workspace-panel-label">Widget type</p>
           <div className="workspace-widget-types">
             {widgetTypes.map((widget) => <button type="button" key={widget.kind} onClick={() => addWidget(widget.kind)}>
@@ -287,7 +659,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
                 {widget.label}
               </button>)}
           </div>
-        </section>
+        </section>}
         <section className="workspace-bindings" id="bindings">
           <p className="workspace-panel-label">Config bindings</p>
           {Object.entries(canvas.bindings).map(([key, value]) => <div key={key}>

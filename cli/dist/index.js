@@ -10248,6 +10248,7 @@ var init_growthub_bridge_client = __esm({
       constructor(session = readActiveSession()) {
         this.session = session;
       }
+      session;
       async listAssets(query = {}) {
         const url = bridgeUrl(this.session, "/api/cli/profile", {
           view: "gallery-assets",

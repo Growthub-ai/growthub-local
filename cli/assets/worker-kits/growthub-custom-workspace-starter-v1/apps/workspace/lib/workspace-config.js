@@ -24,6 +24,9 @@ function describePersistenceMode() {
   if (allowFsWrite) {
     return { mode: "filesystem", reason: "WORKSPACE_CONFIG_ALLOW_FS_WRITE=true" };
   }
+  if (process.env.NODE_ENV === "development") {
+    return { mode: "filesystem", reason: "Local Next.js development" };
+  }
   if (isReadOnlyDeploy) {
     return {
       mode: "read-only",
@@ -42,6 +45,7 @@ function validateWidgetArray(widgets, contextPath, errors, seenIds) {
     errors.push(`${contextPath} must be an array`);
     return;
   }
+  const occupied = new Map();
   widgets.forEach((widget, index) => {
     const prefix = `${contextPath}[${index}]`;
     if (!widget || typeof widget !== "object" || Array.isArray(widget)) {
@@ -80,6 +84,24 @@ function validateWidgetArray(widgets, contextPath, errors, seenIds) {
       (widget.position.y < 0 || widget.position.h < 1 || widget.position.y + widget.position.h > GRID_ROWS)
     ) {
       errors.push(`${prefix} y/h out of [0..${GRID_ROWS}] grid`);
+    }
+    if (
+      isFiniteInt(widget.position.x) &&
+      isFiniteInt(widget.position.y) &&
+      isFiniteInt(widget.position.w) &&
+      isFiniteInt(widget.position.h)
+    ) {
+      for (let dx = 0; dx < widget.position.w; dx += 1) {
+        for (let dy = 0; dy < widget.position.h; dy += 1) {
+          const cell = `${widget.position.x + dx}:${widget.position.y + dy}`;
+          const previous = occupied.get(cell);
+          if (previous) {
+            errors.push(`${prefix} overlaps ${previous} at grid cell ${cell}`);
+          } else {
+            occupied.set(cell, `${prefix}.position`);
+          }
+        }
+      }
     }
   });
 }

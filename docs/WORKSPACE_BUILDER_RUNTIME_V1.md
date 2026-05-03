@@ -6,10 +6,11 @@ The exported screenshot of `apps/workspace` is the canonical baseline. All wirin
 
 - **Save** → `PATCH /api/workspace`
 - **New Dashboard** → appends a row to `dashboards`
-- **Add widget** placeholder → adds a `chart` widget at the next free slot
-- **Widget type** buttons (Chart / View / iFrame / Rich Text) → add the chosen widget at the next free slot
+- **Add widget** placeholder / drag-selected cells → opens the existing widget picker for the selected grid rectangle
+- **Widget type** buttons (Chart / View / iFrame / Rich Text) → add the chosen widget into the selected cells
+- **Selected widget corners** → resize the placed widget across the same fixed cell lattice while rejecting overlap
 
-No new tabs, panels, overlays, drag handles, remove buttons, save pills, deploy panels, onboarding wizards, AI-native widget kinds, or status banners are introduced. The DOM produced for the empty state is byte-identical to the pre-V1 starter.
+No deploy panels, onboarding wizards, AI-native widget kinds, bridge data routes, save pills, or status banners are introduced.
 
 ## Source of truth
 
@@ -83,7 +84,7 @@ No new API routes are added. No bridge data widgets, no chat route, no workflow 
 | `app/page.jsx` | Server entry. Reads adapter env, integration adapter, persistence mode. Delegates to the client builder. |
 | `app/workspace-builder.jsx` | Client component. Renders the **identical** original DOM as a controlled `useState`. Wires `onClick` for Save, New Dashboard, Add widget placeholder, and widget-type palette buttons. |
 
-That is the entire UI delta vs. the pre-V1 starter — a `"use client"` boundary and event handlers. The CSS file (`app/globals.css`) is byte-identical to the baseline.
+That is the entire UI delta vs. the pre-V1 starter — a `"use client"` boundary, event handlers, fixed-cell placement, and selected-widget resize handles.
 
 ## Save semantics
 
@@ -93,8 +94,7 @@ The button label remains `Save` in the idle state shown in the screenshot.
 
 ## V1 limitations
 
-- No drag/resize. Widget positions persist whatever `findFreePosition` chose at insert time. To move a widget, edit `growthub.config.json` and refresh.
-- No remove control. To remove a widget, edit `growthub.config.json`.
+- No freeform pixel layout. Placement and resize snap to the 12-column x 16-row cell lattice and reject overlaps.
 - No bridge / agents / workflows / artifacts UI. Those remain in the existing `growthub bridge ...` CLI commands; introducing them here would require new UI surfaces and is out of scope for V1.
 - No onboarding overlay. The starter exports unchanged from the original screenshot.
 
@@ -107,10 +107,12 @@ npm run dev    # filesystem mode, local persistence enabled
 ```
 
 1. Confirm the rendered page matches the baseline screenshot exactly (rail, dashboards table, canvas grid with the `Add widget` placeholder, widget panel with Chart/View/iFrame/Rich Text, bindings panel showing `integrationAdapter: static`).
-2. Click **Chart** in the right palette → a `<article class="workspace-widget-preview">` appears in the grid showing `chart` and `Untitled chart`.
-3. Click **Save** → `growthub.config.json` is rewritten on disk; `canvas.widgets` now contains the new entry.
-4. Refresh → the widget reappears, proving persistence.
-5. Run `node ./scripts/check-worker-kits.mjs` from the repo root → kit validation passes.
+2. Drag across empty grid cells → the selected rectangle becomes the `Add widget` target and the right widget picker remains open.
+3. Click **Chart** in the right palette → a `<article class="workspace-widget-preview">` appears in the selected rectangle showing `chart` and `Untitled chart`.
+4. Drag a selected widget corner → the widget resizes by whole cells and the right panel placement values update.
+5. Click **Save** → `growthub.config.json` is rewritten on disk; `canvas.widgets` now contains the new entry.
+6. Refresh → the widget reappears, proving persistence.
+7. Run `node ./scripts/check-worker-kits.mjs` from the repo root → kit validation passes.
 
 ## Read-only runtime smoke
 
