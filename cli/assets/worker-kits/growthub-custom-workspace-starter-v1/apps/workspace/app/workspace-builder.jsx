@@ -1,13 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DASHBOARD_TEMPLATES,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
+  cloneTemplateToDashboard,
+  cloneTemplateToTab,
   defaultConfigFor,
-  validateWorkspaceConfig
+  normalizeWorkspaceTemplate,
+  unwrapWorkspaceTemplateImport,
+  validateWorkspaceConfig,
+  wrapWorkspaceTemplateExport
 } from "@/lib/workspace-schema";
 
 const DEFAULT_POSITION = { x: 4, y: 0, w: 4, h: 5 };
@@ -242,15 +247,98 @@ function serializeManualRows(rows, columns) {
     .join("\n");
 }
 
-function hydrateTemplate(template) {
-  return {
-    name: template.name,
-    widgets: template.widgets.map((widget) => ({
-      ...cloneConfig(widget),
-      id: generateId("widget"),
-      config: cloneConfig(widget.config || defaultConfigFor(widget.kind))
-    }))
-  };
+const NORMALIZED_TEMPLATES = DASHBOARD_TEMPLATES.map((template) => ({
+  ...normalizeWorkspaceTemplate(template),
+  widgets: template.widgets
+}));
+
+function widgetKindFill(kind) {
+  switch (kind) {
+    case "chart": return "#dbeafe";
+    case "view": return "#fef3c7";
+    case "iframe": return "#ede9fe";
+    case "rich-text": return "#dcfce7";
+    default: return "#e5e7eb";
+  }
+}
+
+function TemplateMiniGrid({ template }) {
+  const widgets = Array.isArray(template?.widgets) ? template.widgets : [];
+  return <div
+    className="template-mini-grid"
+    aria-hidden="true"
+    style={{
+      "--template-mini-columns": GRID_COLUMNS,
+      "--template-mini-rows": GRID_ROWS
+    }}
+  >
+    {widgets.map((widget, index) => <span
+      className={`template-mini-widget kind-${widget.kind}`}
+      key={`${widget.kind}-${index}`}
+      style={{
+        gridColumn: `${widget.position.x + 1} / span ${widget.position.w}`,
+        gridRow: `${widget.position.y + 1} / span ${widget.position.h}`,
+        background: widgetKindFill(widget.kind)
+      }}
+    />)}
+  </div>;
+}
+
+function TemplateGallery({
+  templates,
+  previewTemplateId,
+  onPreview,
+  onClose,
+  onApplyToCurrentTab,
+  onCloneAsDashboard
+}) {
+  const previewTemplate = templates.find((template) => template.id === previewTemplateId) || null;
+  return <div className="template-gallery" role="dialog" aria-modal="true" aria-label="Workspace templates">
+    <div className="template-gallery-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="template-gallery-panel">
+      <header className="template-gallery-header">
+        <div>
+          <p>Workspace templates</p>
+          <h2>Pick a starting layout</h2>
+        </div>
+        <button type="button" aria-label="Close template gallery" onClick={onClose}>x</button>
+      </header>
+      <div className="template-gallery-grid">
+        {templates.map((template) => {
+          const isPreviewing = previewTemplate?.id === template.id;
+          return <article
+            className={`template-card${isPreviewing ? " previewing" : ""}`}
+            key={template.id}
+          >
+            <div className="template-card-header">
+              <strong>{template.name}</strong>
+              <span className="template-card-category">{template.category}</span>
+            </div>
+            <p className="template-card-description">{template.description}</p>
+            <div className="template-card-preview">
+              <TemplateMiniGrid template={template} />
+            </div>
+            <div className="template-card-meta">
+              <span>{template.widgetCount} widget{template.widgetCount === 1 ? "" : "s"}</span>
+              {template.bestFor.length ? <span>· Best for: {template.bestFor.join(", ")}</span> : null}
+            </div>
+            {template.tags.length ? <div className="template-card-tags">
+              {template.tags.map((tag) => <span key={tag}>#{tag}</span>)}
+            </div> : null}
+            <div className="template-card-actions">
+              <button type="button" onClick={() => onPreview(template.id)}>{isPreviewing ? "Previewing" : "Preview"}</button>
+              <button type="button" onClick={() => onApplyToCurrentTab(template.id)}>Apply to Current Tab</button>
+              <button type="button" onClick={() => onCloneAsDashboard(template.id)}>Clone as New Dashboard</button>
+            </div>
+          </article>;
+        })}
+      </div>
+      {previewTemplate ? <footer className="template-gallery-footer" aria-live="polite">
+        <strong>{previewTemplate.name}</strong>
+        <span>{previewTemplate.preview?.summary || previewTemplate.description}</span>
+      </footer> : null}
+    </section>
+  </div>;
 }
 
 function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) {
@@ -309,6 +397,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
   const [config, setConfig] = useState(initialConfig);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
+  const [previewTemplateId, setPreviewTemplateId] = useState(null);
   const gridRef = useRef(null);
   const canvas = config.canvas;
   const dashboards = config.dashboards;
@@ -464,23 +554,19 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     });
   }, []);
 
-  const applyTemplate = useCallback((templateId) => {
+  const applyTemplateToCurrentTab = useCallback((templateId) => {
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
     if (!template) return;
+    const clonedTab = cloneTemplateToTab(template, { tabName: template.name, idFactory: generateId });
     setConfig((prev) => {
-      const hydrated = hydrateTemplate(template);
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
       const stableTabs = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
         ? [{ ...prevTabs[0], id: DEFAULT_TAB_ID }]
         : prevTabs;
       const nextTabs = stableTabs.map((tab) =>
-        tab.id === prevActiveId ? { ...tab, name: hydrated.name, widgets: hydrated.widgets } : tab
+        tab.id === prevActiveId ? { ...tab, name: clonedTab.name, widgets: clonedTab.widgets } : tab
       );
-      setSelectedWidgetId(null);
-      setSelectedPosition(findFreePosition(hydrated.widgets));
-      setDragPreview(null);
-      setConfigMessage(`Applied ${template.name}`);
       return {
         ...prev,
         dashboards: (prev.dashboards || []).map((dashboard, index) =>
@@ -489,36 +575,78 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
         canvas: commitTabs(prev.canvas, nextTabs, prevActiveId)
       };
     });
+    setSelectedWidgetId(null);
+    setSelectedPosition(findFreePosition(clonedTab.widgets));
+    setDragPreview(null);
+    setConfigMessage(`Applied ${template.name} to current tab`);
+    setTemplateGalleryOpen(false);
+    setPreviewTemplateId(null);
+  }, []);
+
+  const cloneTemplateAsDashboard = useCallback((templateId) => {
+    const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    const cloned = cloneTemplateToDashboard(template, { idFactory: generateId });
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const stableTabs = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
+        ? [{ ...prevTabs[0], id: DEFAULT_TAB_ID }]
+        : prevTabs;
+      const nextTabs = stableTabs.map((tab) =>
+        tab.id === prevActiveId ? { ...tab, name: cloned.tab.name, widgets: cloned.tab.widgets } : tab
+      );
+      return {
+        ...prev,
+        dashboards: [...(prev.dashboards || []), cloned.dashboard],
+        canvas: commitTabs(prev.canvas, nextTabs, prevActiveId)
+      };
+    });
+    setSelectedWidgetId(null);
+    setSelectedPosition(findFreePosition(cloned.tab.widgets));
+    setDragPreview(null);
+    setConfigMessage(`Cloned ${template.name} as dashboard`);
+    setTemplateGalleryOpen(false);
+    setPreviewTemplateId(null);
   }, []);
 
   const exportConfig = useCallback(() => {
-    const blob = new Blob([`${JSON.stringify({
-      dashboards: config.dashboards,
-      widgetTypes: config.widgetTypes,
-      canvas: config.canvas
-    }, null, 2)}\n`], { type: "application/json" });
+    const primaryDashboard = config.dashboards?.[0] || {};
+    const wrapped = wrapWorkspaceTemplateExport(
+      {
+        dashboards: config.dashboards,
+        widgetTypes: config.widgetTypes,
+        canvas: config.canvas
+      },
+      {
+        name: primaryDashboard.name || config.name || "Workspace template",
+        description: config.description || ""
+      }
+    );
+    const blob = new Blob([`${JSON.stringify(wrapped, null, 2)}\n`], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "growthub-dashboard.config.json";
+    anchor.download = "growthub-dashboard.template.json";
     anchor.click();
     URL.revokeObjectURL(url);
-    setConfigMessage("Exported dashboard config");
+    setConfigMessage("Exported workspace template");
   }, [config]);
 
   const importConfig = useCallback(async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      const imported = JSON.parse(await file.text());
-      validateWorkspaceConfig(imported);
+      const parsed = JSON.parse(await file.text());
+      const payload = unwrapWorkspaceTemplateImport(parsed);
+      validateWorkspaceConfig(payload);
       setConfig((prev) => ({
         ...prev,
-        dashboards: imported.dashboards,
-        widgetTypes: imported.widgetTypes,
-        canvas: imported.canvas
+        dashboards: payload.dashboards,
+        widgetTypes: payload.widgetTypes,
+        canvas: payload.canvas
       }));
-      const importedTabs = getTabs(imported.canvas);
+      const importedTabs = getTabs(payload.canvas);
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(importedTabs[0]?.widgets || []));
       setDragPreview(null);
@@ -674,6 +802,20 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     });
   }, []);
 
+  const closeTemplateGallery = useCallback(() => {
+    setTemplateGalleryOpen(false);
+    setPreviewTemplateId(null);
+  }, []);
+
+  useEffect(() => {
+    if (!templateGalleryOpen) return undefined;
+    const handler = (event) => {
+      if (event.key === "Escape") closeTemplateGallery();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [templateGalleryOpen, closeTemplateGallery]);
+
   const builderStyle = panelOpen ? undefined : { gridTemplateColumns: COLLAPSED_GRID_COLUMNS };
 
   return <main className="workspace-builder" style={builderStyle}>
@@ -702,13 +844,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <h1>{config.name}</h1>
           </div>
           <div className="workspace-toolbar-actions">
-            <select aria-label="Apply dashboard template" defaultValue="" onChange={(event) => {
-              if (event.target.value) applyTemplate(event.target.value);
-              event.target.value = "";
-            }}>
-              <option value="">Templates</option>
-              {DASHBOARD_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-            </select>
+            <button type="button" onClick={() => setTemplateGalleryOpen(true)}>Templates</button>
             <button type="button" onClick={addDashboard}>New Dashboard</button>
             <button type="button" onClick={duplicateDashboard}>Duplicate Dashboard</button>
             <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
@@ -805,6 +941,15 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
           </div>
         </section>
       </section>
+
+      {templateGalleryOpen ? <TemplateGallery
+        templates={NORMALIZED_TEMPLATES}
+        previewTemplateId={previewTemplateId}
+        onPreview={setPreviewTemplateId}
+        onClose={closeTemplateGallery}
+        onApplyToCurrentTab={applyTemplateToCurrentTab}
+        onCloneAsDashboard={cloneTemplateAsDashboard}
+      /> : null}
 
       {panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
         <div className="workspace-panel-title">
