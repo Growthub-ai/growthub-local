@@ -129,6 +129,10 @@ assert(
   "CLI tarball is missing dist/index.js",
 );
 assert(
+  cliPack.includes("README.md"),
+  "CLI tarball is missing README.md",
+);
+assert(
   cliPack.includes("dist/runtime/server/ui-dist"),
   "CLI tarball is missing bundled runtime UI payload",
 );
@@ -143,6 +147,10 @@ assert(
 assert(
   createPack.includes("bin/create-growthub-local.mjs"),
   "create-growthub-local tarball is missing installer entrypoint",
+);
+assert(
+  createPack.includes("README.md"),
+  "create-growthub-local tarball is missing README.md",
 );
 assert(
   apiContractPack.includes("dist/index.js"),
