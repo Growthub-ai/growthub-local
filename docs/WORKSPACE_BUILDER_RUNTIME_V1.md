@@ -103,20 +103,89 @@ No new API routes are added. No bridge data widgets, no chat route, no workflow 
 
 ## Templates
 
-The client builder includes a small local template library:
+### Template Gallery
 
-- Blank
-- Client Portal
-- Content Ops
-- Reporting Dashboard
-- Creative Review
-- Agency Delivery
+The toolbar `Templates` button opens a modal gallery of business-ready starting layouts. The gallery renders cards for every template in `DASHBOARD_TEMPLATES`. ESC or the close button dismisses the gallery; clicking the backdrop also closes it.
 
-Applying a template replaces the active tab widgets with validated fixed-grid widgets. Template widgets are still normal serialized widget configs; there is no hidden runtime state and no hosted dependency.
+Templates are local config assets shipped with the starter. There is no remote registry, no hosted fetch, and no auth requirement for browsing or applying them.
 
-## Import / export
+### Template Metadata
 
-The builder can export the current `{ dashboards, widgetTypes, canvas }` shape as JSON and import the same shape back into the active workspace. Imports run through `validateWorkspaceConfig` before entering client state, then the normal Save path validates again on the server.
+Every template entry in `lib/workspace-schema.js` carries:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable identifier for the template. |
+| `name` | Display title in the gallery and applied dashboard. |
+| `description` | One-line summary. |
+| `category` | Coarse grouping (`agency`, `content`, `reporting`, `creative`, `blank`, ...). |
+| `bestFor` | Audience hints (e.g. `["Agencies", "Consultants"]`). |
+| `tags` | Free-form tags for filter/search. |
+| `preview` | `{ layout, summary }` short preview hint. |
+| `dashboard` | Default dashboard row metadata when cloning (`name`, `status`). |
+| `widgets` | Validated fixed-grid widget blueprints. **Template widgets intentionally omit `id`** — IDs are minted at clone time. |
+
+`normalizeWorkspaceTemplate` returns a template with a derived `widgetCount` and safe defaults for missing optional fields.
+
+### Apply to Current Tab
+
+The `Apply to Current Tab` action calls `cloneTemplateToTab(template, { idFactory })`, regenerates fresh `tab` and `widget` IDs, then replaces the active tab's widgets and renames the active tab to the template name. The first dashboard row is renamed to the template name. The change marks the config dirty; **Save is not triggered automatically**.
+
+### Clone as New Dashboard
+
+The `Clone as New Dashboard` action calls `cloneTemplateToDashboard(template, { idFactory })` and:
+
+1. Appends a new dashboard row with regenerated dashboard `id`, the template's default name, `status: "draft"`, and `updatedAt: "new"`.
+2. Applies the cloned template tab/widgets to the active canvas/tab. **V1 limitation:** the builder does not yet maintain an independent canvas per dashboard row, so the appended row reuses the active canvas. A true per-dashboard canvas model is future work.
+
+The change marks the config dirty; Save is not triggered automatically.
+
+### Template Validation Rules
+
+`validateWorkspaceTemplate(template)` enforces:
+
+- `id` and `name` are non-empty strings
+- `description`, `category`, `bestFor`, `tags`, `preview`, `dashboard` shape matches the metadata contract
+- `widgets` are validated through `validateTemplateWidgetArray`, which checks `kind`, `title`, `position`, per-kind `config`, grid bounds, and overlap
+- `validateTemplateWidgetArray` does **not** require `widget.id` because raw template widgets are blueprints; IDs are minted only when cloning
+
+`cloneTemplateToTab` and `cloneTemplateToDashboard` require an `idFactory` function (the builder passes its `generateId`). The schema module never reads `globalThis.crypto` directly.
+
+### Template Import / Export Format
+
+Export wraps the current `{ dashboards, widgetTypes, canvas }` payload in the canonical envelope:
+
+```json
+{
+  "version": 1,
+  "kind": "growthub-workspace-template",
+  "exportedAt": "2026-05-04T00:00:00.000Z",
+  "source": "growthub-custom-workspace-starter-v1",
+  "name": "Client Portal",
+  "description": "",
+  "payload": {
+    "dashboards": [],
+    "widgetTypes": [],
+    "canvas": {}
+  }
+}
+```
+
+Import accepts both shapes:
+
+- A wrapped envelope where `kind === "growthub-workspace-template"` — `unwrapWorkspaceTemplateImport` returns `payload`.
+- A raw `{ dashboards, widgetTypes, canvas }` payload — passed through unchanged for backward compatibility.
+
+Either way, the result is validated through `validateWorkspaceConfig` before entering client state, then validated again on the server during Save. Unknown `kind` values, missing `payload`, or invalid contents are rejected with a status message.
+
+### Non-goals
+
+- Templates do not execute workflows.
+- Templates do not bind agents.
+- Templates do not fetch hosted data.
+- Templates do not require Growthub Bridge auth.
+- Templates do not create a remote registry or marketplace.
+- Templates are local config assets.
 
 ## UI composition
 
