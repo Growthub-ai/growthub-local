@@ -75,6 +75,120 @@ function commitTabs(canvas, tabs, activeTabId) {
   return next;
 }
 
+function createDashboardRecord(name = "Untitled") {
+  const tab = createEmptyTab(name);
+  return {
+    id: generateId("dashboard"),
+    name,
+    createdBy: "Workspace owner",
+    updatedAt: "new",
+    status: "draft",
+    tabs: [tab],
+    activeTabId: tab.id
+  };
+}
+
+function createEmptyTab(name = "Untitled") {
+  return {
+    id: generateId("tab"),
+    name,
+    widgets: []
+  };
+}
+
+function cloneTabForDashboard(tab, name) {
+  return {
+    id: generateId("tab"),
+    name,
+    widgets: (tab?.widgets || []).map((widget) => ({
+      ...cloneConfig(widget),
+      id: generateId("widget")
+    }))
+  };
+}
+
+function normalizeDashboard(dashboard, fallbackCanvas) {
+  const tabs = Array.isArray(dashboard?.tabs) && dashboard.tabs.length
+    ? dashboard.tabs
+    : getTabs(fallbackCanvas).map((tab) => ({
+        ...tab,
+        id: tab.id === DEFAULT_TAB_ID ? generateId("tab") : tab.id
+      }));
+  const activeTabId = dashboard?.activeTabId && tabs.some((tab) => tab.id === dashboard.activeTabId)
+    ? dashboard.activeTabId
+    : tabs[0].id;
+  return {
+    ...dashboard,
+    tabs,
+    activeTabId
+  };
+}
+
+function dashboardCanvasFrom(dashboard, baseCanvas) {
+  const normalized = normalizeDashboard(dashboard, baseCanvas);
+  return commitTabs(baseCanvas, normalized.tabs, normalized.activeTabId);
+}
+
+function updateDashboardCanvas(dashboard, canvas) {
+  const tabs = getTabs(canvas);
+  const activeTabId = getActiveTabId(canvas);
+  return {
+    ...dashboard,
+    tabs,
+    activeTabId
+  };
+}
+
+function createDashboardFromTab(name, tab, source = {}) {
+  const clonedTab = cloneTabForDashboard(tab, name);
+  return {
+    ...source,
+    id: generateId("dashboard"),
+    name,
+    createdBy: source.createdBy || "Workspace owner",
+    updatedAt: "new",
+    status: "draft",
+    tabs: [clonedTab],
+    activeTabId: clonedTab.id
+  };
+}
+
+function getActiveDashboardId(dashboards, fallback) {
+  if (fallback && dashboards.some((dashboard) => dashboard.id === fallback)) {
+    return fallback;
+  }
+  return dashboards[0]?.id || null;
+}
+
+function activeDashboardIndex(dashboards, activeDashboardId) {
+  const index = dashboards.findIndex((dashboard) => dashboard.id === activeDashboardId);
+  return index >= 0 ? index : 0;
+}
+
+function syncActiveDashboard(config, activeDashboardId) {
+  const dashboards = config.dashboards || [];
+  const resolvedId = getActiveDashboardId(dashboards, activeDashboardId);
+  if (!resolvedId) return config;
+  return {
+    ...config,
+    dashboards: dashboards.map((dashboard) =>
+      dashboard.id === resolvedId ? updateDashboardCanvas(dashboard, config.canvas) : dashboard
+    )
+  };
+}
+
+function commitDashboardCanvas(config, activeDashboardId, nextCanvas) {
+  const dashboards = config.dashboards || [];
+  const resolvedId = getActiveDashboardId(dashboards, activeDashboardId);
+  return {
+    ...config,
+    dashboards: dashboards.map((dashboard) =>
+      dashboard.id === resolvedId ? updateDashboardCanvas(dashboard, nextCanvas) : dashboard
+    ),
+    canvas: nextCanvas
+  };
+}
+
 function findFreePosition(widgets) {
   const occupied = new Set();
   for (const widget of widgets) {
@@ -394,14 +508,34 @@ function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) 
 }
 
 function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) {
-  const [config, setConfig] = useState(initialConfig);
+  const [config, setConfig] = useState(() => {
+    const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
+      ? initialConfig.dashboards.map((dashboard, index) =>
+          normalizeDashboard(dashboard, index === 0 ? initialConfig.canvas : undefined)
+        )
+      : [createDashboardRecord("Untitled")];
+    return {
+      ...initialConfig,
+      dashboards,
+      canvas: dashboardCanvasFrom(dashboards[0], initialConfig.canvas)
+    };
+  });
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
   const [previewTemplateId, setPreviewTemplateId] = useState(null);
+  const [editingDashboardId, setEditingDashboardId] = useState(null);
+  const [activeDashboardId, setActiveDashboardId] = useState(() =>
+    getActiveDashboardId(
+      Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length ? initialConfig.dashboards : [],
+      null
+    )
+  );
   const gridRef = useRef(null);
   const canvas = config.canvas;
-  const dashboards = config.dashboards;
+  const dashboards = config.dashboards || [];
+  const resolvedActiveDashboardId = getActiveDashboardId(dashboards, activeDashboardId);
+  const resolvedActiveDashboardIndex = activeDashboardIndex(dashboards, resolvedActiveDashboardId);
   const widgetTypes = config.widgetTypes;
   const tabs = getTabs(canvas);
   const activeTabId = getActiveTabId(canvas);
@@ -451,9 +585,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setSelectedWidgetId(widget.id);
       setSelectedPosition(findFreePosition([...existingWidgets, widget]));
       setDragPreview(null);
-      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [addSlot]);
+  }, [activeDashboardId, addSlot]);
 
   const switchTab = useCallback((tabId) => {
     setConfig((prev) => {
@@ -464,9 +598,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(nextTab?.widgets || []));
       setDragPreview(null);
-      return { ...prev, canvas: commitTabs(prev.canvas, prevTabs, tabId) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, prevTabs, tabId));
     });
-  }, []);
+  }, [activeDashboardId]);
 
   const addTab = useCallback(() => {
     setConfig((prev) => {
@@ -485,49 +619,160 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setSelectedWidgetId(null);
       setSelectedPosition({ ...DEFAULT_POSITION });
       setDragPreview(null);
-      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, newTab.id) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, newTab.id));
     });
-  }, []);
+  }, [activeDashboardId]);
 
   const addDashboard = useCallback(() => {
+    setConfig((prev) => {
+      const synced = syncActiveDashboard(prev, activeDashboardId);
+      const prevDashboards = synced.dashboards || [];
+      const name = `Dashboard ${prevDashboards.length + 1}`;
+      const dashboard = createDashboardRecord(name);
+      setSelectedWidgetId(null);
+      setSelectedPosition({ ...DEFAULT_POSITION });
+      setDragPreview(null);
+      setEditingDashboardId(dashboard.id);
+      setActiveDashboardId(dashboard.id);
+      setConfigMessage(`Created ${name}`);
+      return {
+        ...synced,
+        dashboards: [...prevDashboards, dashboard],
+        canvas: dashboardCanvasFrom(dashboard, synced.canvas)
+      };
+    });
+  }, [activeDashboardId]);
+
+  const selectDashboard = useCallback((index) => {
+    setConfig((prev) => {
+      const synced = syncActiveDashboard(prev, activeDashboardId);
+      const prevDashboards = synced.dashboards || [];
+      const dashboard = prevDashboards[index];
+      if (!dashboard) return prev;
+      const normalized = normalizeDashboard(dashboard, index === 0 ? synced.canvas : undefined);
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(getTabs(dashboardCanvasFrom(normalized, prev.canvas))[0]?.widgets || []));
+      setDragPreview(null);
+      setEditingDashboardId(dashboard.id);
+      setActiveDashboardId(dashboard.id);
+      setConfigMessage(`Editing ${dashboard.name}`);
+      return {
+        ...synced,
+        dashboards: prevDashboards.map((item) => item.id === dashboard.id ? normalized : item),
+        canvas: dashboardCanvasFrom(normalized, synced.canvas)
+      };
+    });
+  }, [activeDashboardId]);
+
+  const renameDashboard = useCallback((dashboardId, name) => {
+    const nextName = name.trimStart();
+    setConfig((prev) => {
+      const prevDashboards = prev.dashboards || [];
+      const index = prevDashboards.findIndex((dashboard) => dashboard.id === dashboardId);
+      if (index < 0) return prev;
+      const displayName = nextName || "Untitled";
+      const nextDashboards = prevDashboards.map((dashboard) =>
+        dashboard.id === dashboardId ? { ...dashboard, name: displayName, updatedAt: "new" } : dashboard
+      );
+      const nextDashboardsWithTabs = nextDashboards.map((dashboard, dashboardIndex) => {
+        if (dashboardIndex !== index) return dashboard;
+        const normalized = normalizeDashboard(dashboard, index === 0 ? prev.canvas : undefined);
+        const renamedTabs = normalized.tabs.map((tab, tabIndex) =>
+          tabIndex === 0 ? { ...tab, name: displayName } : tab
+        );
+        return { ...normalized, tabs: renamedTabs };
+      });
+      const activeDashboard = nextDashboardsWithTabs.find((dashboard) => dashboard.id === getActiveDashboardId(nextDashboardsWithTabs, activeDashboardId));
+      return {
+        ...prev,
+        dashboards: nextDashboardsWithTabs,
+        canvas: dashboardCanvasFrom(activeDashboard || nextDashboardsWithTabs[0], prev.canvas)
+      };
+    });
+  }, [activeDashboardId]);
+
+  const updateDashboardStatus = useCallback((dashboardId, status) => {
     setConfig((prev) => ({
       ...prev,
-      dashboards: [
-        ...(prev.dashboards || []),
-        {
-          id: generateId("dashboard"),
-          name: "Untitled",
-          createdBy: "Workspace owner",
-          updatedAt: "new",
-          status: "draft"
-        }
-      ]
+      dashboards: (prev.dashboards || []).map((dashboard) =>
+        dashboard.id === dashboardId ? { ...dashboard, status, updatedAt: "new" } : dashboard
+      )
     }));
   }, []);
 
-  const duplicateDashboard = useCallback(() => {
+  const cloneDashboard = useCallback((index) => {
     setConfig((prev) => {
-      const source = prev.dashboards?.[0] || {
-        name: "Untitled",
-        createdBy: "Workspace owner",
+      const synced = syncActiveDashboard(prev, activeDashboardId);
+      const prevDashboards = synced.dashboards || [];
+      const sourceDashboard = prevDashboards[index];
+      if (!sourceDashboard) return prev;
+      const normalizedSource = normalizeDashboard(sourceDashboard, index === resolvedActiveDashboardIndex ? synced.canvas : undefined);
+      const name = `${sourceDashboard.name} Copy`;
+      const dashboard = {
+        ...normalizedSource,
+        id: generateId("dashboard"),
+        name,
         updatedAt: "new",
-        status: "draft"
+        status: "draft",
+        tabs: normalizedSource.tabs.map((tab, tabIndex) =>
+          cloneTabForDashboard(tab, tabIndex === 0 ? name : tab.name)
+        )
       };
+      dashboard.activeTabId = dashboard.tabs[0].id;
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(dashboard.tabs[0].widgets));
+      setDragPreview(null);
+      setEditingDashboardId(dashboard.id);
+      setActiveDashboardId(dashboard.id);
+      setConfigMessage(`Cloned ${sourceDashboard.name}`);
       return {
-        ...prev,
-        dashboards: [
-          ...(prev.dashboards || []),
-          {
-            ...source,
-            id: generateId("dashboard"),
-            name: `${source.name} Copy`,
-            updatedAt: "new",
-            status: "draft"
-          }
-        ]
+        ...synced,
+        dashboards: [...prevDashboards, dashboard],
+        canvas: dashboardCanvasFrom(dashboard, synced.canvas)
       };
     });
-  }, []);
+  }, [activeDashboardId, resolvedActiveDashboardIndex]);
+
+  const deleteDashboard = useCallback((index) => {
+    setConfig((prev) => {
+      const synced = syncActiveDashboard(prev, activeDashboardId);
+      const prevDashboards = synced.dashboards || [];
+      if (!prevDashboards[index]) return prev;
+      if (prevDashboards.length <= 1) {
+        const dashboard = createDashboardRecord("Untitled");
+        setSelectedWidgetId(null);
+        setSelectedPosition({ ...DEFAULT_POSITION });
+        setDragPreview(null);
+        setEditingDashboardId(dashboard.id);
+        setActiveDashboardId(dashboard.id);
+        setConfigMessage("Reset dashboard");
+        return {
+          ...synced,
+          dashboards: [dashboard],
+          canvas: dashboardCanvasFrom(dashboard, synced.canvas)
+        };
+      }
+      const removed = prevDashboards[index];
+      const nextDashboards = prevDashboards.filter((_, dashboardIndex) => dashboardIndex !== index);
+      const nextActiveIndex = Math.min(index, nextDashboards.length - 1);
+      const nextActiveDashboard = normalizeDashboard(nextDashboards[nextActiveIndex], synced.canvas);
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(nextActiveDashboard.tabs[0]?.widgets || []));
+      setDragPreview(null);
+      setEditingDashboardId(nextActiveDashboard.id);
+      setActiveDashboardId(nextActiveDashboard.id);
+      setConfigMessage(`Deleted ${removed.name}`);
+      return {
+        ...synced,
+        dashboards: nextDashboards.map((dashboard) => dashboard.id === nextActiveDashboard.id ? nextActiveDashboard : dashboard),
+        canvas: dashboardCanvasFrom(nextActiveDashboard, synced.canvas)
+      };
+    });
+  }, [activeDashboardId]);
+
+  const duplicateDashboard = useCallback(() => {
+    cloneDashboard(resolvedActiveDashboardIndex);
+  }, [cloneDashboard, resolvedActiveDashboardIndex]);
 
   const duplicateTab = useCallback(() => {
     setConfig((prev) => {
@@ -550,9 +795,33 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(cloned.widgets));
       setDragPreview(null);
-      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, cloned.id) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, cloned.id));
     });
-  }, []);
+  }, [activeDashboardId]);
+
+  const deleteTab = useCallback((tabId) => {
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const tab = prevTabs.find((item) => item.id === tabId);
+      if (!tab) return prev;
+      if (prevTabs.length <= 1) {
+        const fallback = createEmptyTab(tab.name || "Tab 1");
+        setSelectedWidgetId(null);
+        setSelectedPosition({ ...DEFAULT_POSITION });
+        setDragPreview(null);
+        setConfigMessage(`Cleared ${tab.name}`);
+        return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, [fallback], fallback.id));
+      }
+      const nextTabs = prevTabs.filter((item) => item.id !== tabId);
+      const activeIndex = prevTabs.findIndex((item) => item.id === tabId);
+      const nextActiveTab = nextTabs[Math.min(activeIndex, nextTabs.length - 1)] || nextTabs[0];
+      setSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(nextActiveTab.widgets || []));
+      setDragPreview(null);
+      setConfigMessage(`Deleted ${tab.name}`);
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, nextActiveTab.id));
+    });
+  }, [activeDashboardId]);
 
   const applyTemplateToCurrentTab = useCallback((templateId) => {
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
@@ -561,18 +830,23 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
+      const dashboardIndex = activeDashboardIndex(prev.dashboards || [], activeDashboardId);
       const stableTabs = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
         ? [{ ...prevTabs[0], id: DEFAULT_TAB_ID }]
         : prevTabs;
       const nextTabs = stableTabs.map((tab) =>
         tab.id === prevActiveId ? { ...tab, name: clonedTab.name, widgets: clonedTab.widgets } : tab
       );
+      const nextCanvas = commitTabs(prev.canvas, nextTabs, prevActiveId);
+      const nextDashboards = (prev.dashboards || []).map((dashboard, index) =>
+        index === dashboardIndex
+          ? updateDashboardCanvas({ ...dashboard, name: template.name, updatedAt: "new", status: "draft" }, nextCanvas)
+          : dashboard
+      );
       return {
         ...prev,
-        dashboards: (prev.dashboards || []).map((dashboard, index) =>
-          index === 0 ? { ...dashboard, name: template.name, updatedAt: "new", status: "draft" } : dashboard
-        ),
-        canvas: commitTabs(prev.canvas, nextTabs, prevActiveId)
+        dashboards: nextDashboards,
+        canvas: nextCanvas
       };
     });
     setSelectedWidgetId(null);
@@ -581,25 +855,24 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     setConfigMessage(`Applied ${template.name} to current tab`);
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
-  }, []);
+  }, [activeDashboardId]);
 
   const cloneTemplateAsDashboard = useCallback((templateId) => {
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
     if (!template) return;
     const cloned = cloneTemplateToDashboard(template, { idFactory: generateId });
     setConfig((prev) => {
-      const prevTabs = getTabs(prev.canvas);
-      const prevActiveId = getActiveTabId(prev.canvas);
-      const stableTabs = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
-        ? [{ ...prevTabs[0], id: DEFAULT_TAB_ID }]
-        : prevTabs;
-      const nextTabs = stableTabs.map((tab) =>
-        tab.id === prevActiveId ? { ...tab, name: cloned.tab.name, widgets: cloned.tab.widgets } : tab
-      );
+      const synced = syncActiveDashboard(prev, activeDashboardId);
+      const dashboard = {
+        ...cloned.dashboard,
+        tabs: [cloned.tab],
+        activeTabId: cloned.tab.id
+      };
+      setActiveDashboardId(dashboard.id);
       return {
-        ...prev,
-        dashboards: [...(prev.dashboards || []), cloned.dashboard],
-        canvas: commitTabs(prev.canvas, nextTabs, prevActiveId)
+        ...synced,
+        dashboards: [...(synced.dashboards || []), dashboard],
+        canvas: dashboardCanvasFrom(dashboard, synced.canvas)
       };
     });
     setSelectedWidgetId(null);
@@ -608,19 +881,20 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     setConfigMessage(`Cloned ${template.name} as dashboard`);
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
-  }, []);
+  }, [activeDashboardId]);
 
   const exportConfig = useCallback(() => {
-    const primaryDashboard = config.dashboards?.[0] || {};
+    const syncedConfig = syncActiveDashboard(config, activeDashboardId);
+    const primaryDashboard = syncedConfig.dashboards?.[0] || {};
     const wrapped = wrapWorkspaceTemplateExport(
       {
-        dashboards: config.dashboards,
-        widgetTypes: config.widgetTypes,
-        canvas: config.canvas
+        dashboards: syncedConfig.dashboards,
+        widgetTypes: syncedConfig.widgetTypes,
+        canvas: syncedConfig.canvas
       },
       {
-        name: primaryDashboard.name || config.name || "Workspace template",
-        description: config.description || ""
+        name: primaryDashboard.name || syncedConfig.name || "Workspace template",
+        description: syncedConfig.description || ""
       }
     );
     const blob = new Blob([`${JSON.stringify(wrapped, null, 2)}\n`], { type: "application/json" });
@@ -631,7 +905,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     anchor.click();
     URL.revokeObjectURL(url);
     setConfigMessage("Exported workspace template");
-  }, [config]);
+  }, [activeDashboardId, config]);
 
   const importConfig = useCallback(async (event) => {
     const file = event.target.files?.[0];
@@ -640,13 +914,18 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       const parsed = JSON.parse(await file.text());
       const payload = unwrapWorkspaceTemplateImport(parsed);
       validateWorkspaceConfig(payload);
+      const importedDashboards = (payload.dashboards || []).map((dashboard, index) =>
+        normalizeDashboard(dashboard, index === 0 ? payload.canvas : undefined)
+      );
+      const importedActiveDashboard = importedDashboards[0];
       setConfig((prev) => ({
         ...prev,
-        dashboards: payload.dashboards,
+        dashboards: importedDashboards,
         widgetTypes: payload.widgetTypes,
-        canvas: payload.canvas
+        canvas: importedActiveDashboard ? dashboardCanvasFrom(importedActiveDashboard, payload.canvas) : payload.canvas
       }));
-      const importedTabs = getTabs(payload.canvas);
+      setActiveDashboardId(importedActiveDashboard?.id || null);
+      const importedTabs = getTabs(importedActiveDashboard ? dashboardCanvasFrom(importedActiveDashboard, payload.canvas) : payload.canvas);
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(importedTabs[0]?.widgets || []));
       setDragPreview(null);
@@ -663,21 +942,32 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     setSaving(true);
     try {
       const stamp = todayIsoDate();
-      const updatedDashboards = (config.dashboards || []).map((dashboard, index) =>
-        index === 0 ? { ...dashboard, updatedAt: stamp } : dashboard
+      const syncedConfig = syncActiveDashboard(config, activeDashboardId);
+      const updatedDashboards = (syncedConfig.dashboards || []).map((dashboard) =>
+        dashboard.id === getActiveDashboardId(syncedConfig.dashboards || [], activeDashboardId)
+          ? { ...dashboard, updatedAt: stamp }
+          : dashboard
       );
       const response = await fetch("/api/workspace", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           dashboards: updatedDashboards,
-          widgetTypes: config.widgetTypes,
-          canvas: config.canvas
+          widgetTypes: syncedConfig.widgetTypes,
+          canvas: syncedConfig.canvas
         })
       });
       const payload = await response.json();
       if (response.ok && payload.workspaceConfig) {
-        setConfig(payload.workspaceConfig);
+        const savedDashboards = (payload.workspaceConfig.dashboards || []).map((dashboard, index) =>
+          normalizeDashboard(dashboard, index === 0 ? payload.workspaceConfig.canvas : undefined)
+        );
+        const savedActiveDashboard = savedDashboards.find((dashboard) => dashboard.id === activeDashboardId) || savedDashboards[0];
+        setConfig({
+          ...payload.workspaceConfig,
+          dashboards: savedDashboards,
+          canvas: savedActiveDashboard ? dashboardCanvasFrom(savedActiveDashboard, payload.workspaceConfig.canvas) : payload.workspaceConfig.canvas
+        });
         setConfigMessage("Saved dashboard config");
       } else {
         setConfigMessage(payload.error || "Save failed");
@@ -687,7 +977,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     } finally {
       setSaving(false);
     }
-  }, [saving, config]);
+  }, [activeDashboardId, saving, config]);
 
   const reopenPanel = useCallback(() => setPanelOpen(true), []);
   const closePanel = useCallback(() => setPanelOpen(false), []);
@@ -754,9 +1044,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
           )
         };
       });
-      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [activeWidgets]);
+  }, [activeDashboardId, activeWidgets]);
   const finishResizeDrag = useCallback(() => {
     if (!resizeDragRef.current) return;
     resizeDragRef.current = null;
@@ -780,9 +1070,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
           )
         };
       });
-      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [selectedWidgetId]);
+  }, [activeDashboardId, selectedWidgetId]);
   const updateSelectedWidgetConfig = useCallback((updates) => {
     if (!selectedWidget) return;
     updateSelectedWidget({ config: { ...(selectedWidget.config || {}), ...updates } });
@@ -798,9 +1088,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       const nextActiveWidgets = nextTabs.find((tab) => tab.id === prevActiveId)?.widgets || [];
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(nextActiveWidgets));
-      return { ...prev, canvas: commitTabs(prev.canvas, nextTabs, prevActiveId) };
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, []);
+  }, [activeDashboardId]);
 
   const closeTemplateGallery = useCallback(() => {
     setTemplateGalleryOpen(false);
@@ -871,12 +1161,45 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <span>Created by</span>
             <span>Last update</span>
             <span>Status</span>
+            <span>Actions</span>
           </div>
-          {dashboards.map((dashboard) => <div className="workspace-table-row" key={dashboard.id}>
-              <span>{dashboard.name}</span>
+          {dashboards.map((dashboard, index) => <div className="workspace-table-row" key={dashboard.id}>
+              <span className="workspace-dashboard-title">
+                {editingDashboardId === dashboard.id ? <input
+                  aria-label={`Rename ${dashboard.name}`}
+                  onBlur={() => setEditingDashboardId(null)}
+                  onChange={(event) => renameDashboard(dashboard.id, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === "Escape") {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  value={dashboard.name}
+                /> : <button
+                  className={index === resolvedActiveDashboardIndex ? "active" : ""}
+                  onClick={() => selectDashboard(index)}
+                  type="button"
+                >{dashboard.name}</button>}
+              </span>
               <span>{dashboard.createdBy}</span>
               <span>{dashboard.updatedAt}</span>
-              <code>{dashboard.status}</code>
+              <span>
+                <select
+                  aria-label={`Status for ${dashboard.name}`}
+                  onChange={(event) => updateDashboardStatus(dashboard.id, event.target.value)}
+                  value={dashboard.status}
+                >
+                  <option value="draft">draft</option>
+                  <option value="active">active</option>
+                  <option value="archived">archived</option>
+                </select>
+              </span>
+              <span className="workspace-dashboard-actions">
+                <button type="button" onClick={() => selectDashboard(index)}>Edit</button>
+                <button type="button" onClick={() => setEditingDashboardId(dashboard.id)}>Rename</button>
+                <button type="button" onClick={() => cloneDashboard(index)}>Clone</button>
+                <button type="button" onClick={() => deleteDashboard(index)}>Delete</button>
+              </span>
             </div>)}
         </section>
 
@@ -887,7 +1210,26 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
                 className={tab.id === activeTabId ? "active" : ""}
                 type="button"
                 onClick={() => switchTab(tab.id)}
-              >{tab.name}</button>)}
+              >
+                <span>{tab.name}</span>
+                <span
+                  aria-label={`Delete tab ${tab.name}`}
+                  className="workspace-tab-delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteTab(tab.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      deleteTab(tab.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >x</span>
+              </button>)}
             <button type="button" onClick={addTab}>New Tab</button>
             <button type="button" onClick={duplicateTab}>Duplicate Tab</button>
           </div>

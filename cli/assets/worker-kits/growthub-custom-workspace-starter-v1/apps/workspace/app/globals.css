@@ -500,7 +500,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 }
 .workspace-table-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.4fr) repeat(3, minmax(110px, 0.8fr));
+  grid-template-columns: minmax(170px, 1.2fr) minmax(100px, 0.7fr) minmax(92px, 0.6fr) minmax(96px, 0.55fr) minmax(260px, 1.35fr);
   align-items: center;
   min-height: 34px;
   border-bottom: 1px solid #f0f0f0;
@@ -529,6 +529,55 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   background: transparent;
   font-size: 11px;
 }
+.workspace-dashboard-title,
+.workspace-dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.workspace-dashboard-title button {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-dashboard-title button.active {
+  font-weight: 700;
+}
+.workspace-dashboard-title input,
+.workspace-table-row select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  padding: 5px 7px;
+}
+.workspace-dashboard-actions {
+  flex-wrap: wrap;
+}
+.workspace-dashboard-actions button {
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #444;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 8px;
+}
+.workspace-dashboard-actions button:hover {
+  background: #f0f0f0;
+}
 .workspace-tabs {
   display: flex;
   align-items: center;
@@ -537,12 +586,32 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   padding: 8px;
 }
 .workspace-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border-color: transparent;
   background: transparent;
 }
 .workspace-tabs button.active {
   background: #f3f3f3;
   color: #222;
+}
+.workspace-tab-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: #8a8a8a;
+  font-size: 11px;
+  line-height: 1;
+}
+.workspace-tab-delete:hover,
+.workspace-tab-delete:focus {
+  background: #e2e2e2;
+  color: #333;
+  outline: none;
 }
 .workspace-toolbar-actions select,
 .workspace-widget-settings select {

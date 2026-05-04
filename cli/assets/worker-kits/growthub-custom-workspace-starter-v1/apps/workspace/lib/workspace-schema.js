@@ -354,7 +354,44 @@ function validateDashboardArray(dashboards, errors) {
     if (dashboard.status !== undefined && !["draft", "active", "archived"].includes(dashboard.status)) {
       errors.push(`${prefix}.status must be draft, active, or archived`);
     }
+    if (dashboard.tabs !== undefined) {
+      validateDashboardTabs(dashboard.tabs, dashboard.activeTabId, `${prefix}.tabs`, errors, new Set());
+    }
+    if (dashboard.activeTabId !== undefined && typeof dashboard.activeTabId !== "string") {
+      errors.push(`${prefix}.activeTabId must be a string`);
+    }
   });
+}
+
+function validateDashboardTabs(tabs, activeTabId, contextPath, errors, seenWidgetIds) {
+  if (!Array.isArray(tabs)) {
+    errors.push(`${contextPath} must be an array`);
+    return;
+  }
+  if (!tabs.length) {
+    errors.push(`${contextPath} must include at least one tab`);
+    return;
+  }
+  const seenTabIds = new Set();
+  tabs.forEach((tab, index) => {
+    const tabPrefix = `${contextPath}[${index}]`;
+    if (!isPlainObject(tab)) {
+      errors.push(`${tabPrefix} must be an object`);
+      return;
+    }
+    if (typeof tab.id !== "string" || !tab.id) {
+      errors.push(`${tabPrefix}.id must be a non-empty string`);
+    } else if (seenTabIds.has(tab.id)) {
+      errors.push(`${tabPrefix}.id duplicates an earlier tab id`);
+    } else {
+      seenTabIds.add(tab.id);
+    }
+    if (typeof tab.name !== "string" || !tab.name) errors.push(`${tabPrefix}.name must be a non-empty string`);
+    validateWidgetArray(tab.widgets || [], `${tabPrefix}.widgets`, errors, seenWidgetIds);
+  });
+  if (activeTabId !== undefined && !seenTabIds.has(activeTabId)) {
+    errors.push(`${contextPath.replace(/\.tabs$/, "")}.activeTabId must match an existing tab id`);
+  }
 }
 
 function validateWidgetArray(widgets, contextPath, errors, seenIds) {
