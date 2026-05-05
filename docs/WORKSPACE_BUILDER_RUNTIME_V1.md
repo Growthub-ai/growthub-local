@@ -12,8 +12,17 @@ The exported screenshot of `apps/workspace` is the canonical baseline. All wirin
 - **Templates** → apply a validated dashboard layout without leaving the builder
 - **Import / Export** → move dashboard configs as JSON assets
 - **Widget settings** → edit the per-kind config fields that are serialized into `growthub.config.json`
+- **Workspace Settings** → inspect workspace identity, persistence state, and integration adapter state
+- **Management panel** → inspect API, workflow binding state, integration state, and persistence adapter state
 
-No deploy panels, onboarding wizards, AI-native widget kinds, bridge data routes, save pills, or status banners are introduced.
+No deploy panels, onboarding wizards, AI-native widget kinds, bridge data routes, or status banners are introduced.
+
+## Related docs
+
+- [`docs/WORKSPACE_CONFIG_CONTRACT_V1.md`](./WORKSPACE_CONFIG_CONTRACT_V1.md) — V1 config schema spec
+- [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — workspace file topology + authority boundaries
+- [`docs/SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md`](./SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md) — source import → workspace journey
+- [`docs/WORKSPACE_STARTER_ACTIVATION_PATH.md`](./WORKSPACE_STARTER_ACTIVATION_PATH.md) — activation path from install to running builder
 
 ## Source of truth
 
@@ -187,15 +196,61 @@ Either way, the result is validated through `validateWorkspaceConfig` before ent
 - Templates do not create a remote registry or marketplace.
 - Templates are local config assets.
 
+## Workspace Settings panel
+
+The **Settings** section in the right panel exposes workspace identity, persistence state, and integration adapter state as read-only metadata. No secrets are exposed.
+
+| Section | What it shows |
+| --- | --- |
+| Workspace identity | Name, logo URL placeholder, accent colour from `canvas.branding` |
+| Persistence mode | `filesystem` or `read-only` with human-readable explanation |
+| Integration adapter | `static`, `growthub-bridge`, or `byo-api-key` from `AGENCY_PORTAL_INTEGRATION_ADAPTER` |
+
+The settings fields are config-backed: editing the workspace name or logo in the Settings panel writes to `canvas.branding` through the same PATCH path.
+
+## Management panel
+
+The **Management** section is an inspect-only surface that shows connection and configuration state. It does not execute workflows, expose tokens, or require auth.
+
+| Section | Content |
+| --- | --- |
+| Workspace | ID, name, source type, persistence mode |
+| API | Config API endpoint, method, last observed status |
+| Workflows | `not connected` / `bridge mode` state, no execution |
+| Integrations | Integration adapter type and connection status |
+| Persistence | Adapter type, mode, whether save is available |
+
+Future-action hints tell the operator what steps would upgrade each section:
+- "Connect Growthub Bridge" to enable live integration data
+- "Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true" to enable saving on writable runtimes
+- "Configure a persistence adapter" for database-backed deployments
+
+## Branding
+
+`canvas.branding` is an optional config-safe section:
+
+```json
+{
+  "branding": {
+    "name":    "My Workspace",
+    "logoUrl": "https://example.com/logo.png",
+    "accent":  "#38bdf8"
+  }
+}
+```
+
+All subfields are optional strings. The validator accepts any non-object `branding` with an error. The builder uses `branding.name` as the workspace identity label and `branding.accent` as the accent colour token.
+
 ## UI composition
 
 | File | Responsibility |
 | --- | --- |
 | `app/page.jsx` | Server entry. Reads adapter env, integration adapter, persistence mode. Delegates to the client builder. |
-| `app/workspace-builder.jsx` | Client component. Renders the controlled builder, fixed-grid placement, templates, import/export, selected-widget editing, and Save path. |
-| `lib/workspace-schema.js` | Shared schema contracts, validator, static bindings, and template definitions. |
+| `app/workspace-builder.jsx` | Client component. Renders the controlled builder, fixed-grid placement, templates, import/export, selected-widget editing, Settings panel, Management panel, and Save path. |
+| `lib/workspace-schema.js` | Shared schema contracts, validator, branding validator, static bindings, and template definitions. |
+| `lib/workspace-config.js` | Config read/write, persistence mode descriptor with `canSave` flag. |
 
-That is the entire UI delta vs. the pre-V1 starter — a `"use client"` boundary, event handlers, fixed-cell placement, and selected-widget resize handles.
+That is the entire UI delta vs. the pre-V1 starter — a `"use client"` boundary, event handlers, fixed-cell placement, selected-widget resize handles, and the Settings / Management inspect panels.
 
 ## Save semantics
 

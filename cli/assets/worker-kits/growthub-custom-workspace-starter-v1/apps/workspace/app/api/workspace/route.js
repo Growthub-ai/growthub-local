@@ -35,7 +35,10 @@ async function GET() {
     settings,
     workspace: buildPortalWorkspace({ config, adapters, integrations: settings.integrations }),
     workspaceConfig,
-    workspaceConfigPersistence: persistence
+    workspaceConfigPersistence: {
+      ...persistence,
+      canSave: persistence.canSave ?? (persistence.mode === "filesystem")
+    }
   });
 }
 

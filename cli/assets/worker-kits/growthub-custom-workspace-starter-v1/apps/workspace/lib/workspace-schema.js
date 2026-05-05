@@ -1,3 +1,48 @@
+/**
+ * workspace-schema.js — V1 Config Contract
+ *
+ * This is the canonical source of truth for the growthub-custom-workspace-starter-v1
+ * config schema. It defines every shape accepted by PATCH /api/workspace, the
+ * import/export envelope, template definitions, and static binding samples.
+ *
+ * Agents and operators must generate configs that satisfy the constraints here.
+ * The validator (validateWorkspaceConfig) is run server-side on every PATCH and
+ * client-side on every import — there is no bypass path.
+ *
+ * Config sections
+ * ───────────────
+ *   dashboards   — ordered list of dashboard metadata rows (DashboardConfig)
+ *   widgetTypes  — ordered list of widget type descriptors shown in the picker
+ *   canvas       — the active canvas state (CanvasConfig)
+ *
+ * Canvas shape rules
+ * ──────────────────
+ *   Single-tab canvas:  canvas.widgets holds WidgetBase[]; canvas.tabs is absent.
+ *   Multi-tab canvas:   canvas.tabs holds Tab[]; canvas.widgets is absent.
+ *   A save with canvas.tabs replaces canvas.widgets so the same widget IDs cannot
+ *   appear in both places simultaneously.
+ *
+ * Template envelope (import/export)
+ * ──────────────────────────────────
+ *   { version: 1, kind: "growthub-workspace-template", exportedAt, source, name,
+ *     description, payload: { dashboards, widgetTypes, canvas } }
+ *   Import accepts either the wrapped envelope or a raw payload for backward compat.
+ *
+ * Grid invariants
+ * ───────────────
+ *   12 columns × 16 rows fixed lattice.
+ *   x/y/w/h are non-negative finite integers; w >= 1; h >= 1.
+ *   x + w <= 12; y + h <= 16; no two widgets may share a cell within the same tab.
+ *
+ * Branding (optional, config-safe)
+ * ──────────────────────────────────
+ *   canvas.branding is an optional object with:
+ *     logoUrl  — string (URL or relative path)
+ *     name     — string workspace display name override
+ *     accent   — string CSS colour token (e.g. "#38bdf8")
+ *   Validated if present; all subfields optional.
+ */
+
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
@@ -7,6 +52,14 @@ const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
 const WORKSPACE_TEMPLATE_VERSION = 1;
 const WORKSPACE_TEMPLATE_SOURCE = "growthub-custom-workspace-starter-v1";
 
+/**
+ * WIDGET_SCHEMA_CONTRACTS
+ *
+ * Declarative shape contracts for every schema type in this module.
+ * These are documentation objects consumed by agents and tooling — they do
+ * not replace the runtime validator functions below but keep contracts
+ * co-located with the data structures they describe.
+ */
 const WIDGET_SCHEMA_CONTRACTS = {
   WidgetPosition: {
     x: "integer >= 0",
@@ -34,7 +87,7 @@ const WIDGET_SCHEMA_CONTRACTS = {
     binding: "StaticDataBinding optional"
   },
   IframeWidgetConfig: {
-    url: "string"
+    url: "string (full URL for embedded content)"
   },
   RichTextWidgetConfig: {
     text: "string",
@@ -44,22 +97,39 @@ const WIDGET_SCHEMA_CONTRACTS = {
     id: "non-empty string",
     name: "non-empty string",
     createdBy: "string",
-    updatedAt: "string",
-    status: "draft | active | archived"
+    updatedAt: "string (ISO date or 'new')",
+    status: "draft | active | archived",
+    tabs: "Tab[] optional — per-dashboard tab array; overrides canvas.tabs when present",
+    activeTabId: "string optional — must match a tab id in this dashboard's tabs"
   },
   CanvasConfig: {
     layout: `{ columns: ${GRID_COLUMNS}, rowHeight: number, gap: number, responsive: boolean }`,
-    widgets: "WidgetBase[] for single-tab canvases only",
-    tabs: "optional tab array for multi-tab canvases; each tab owns WidgetBase[] and replaces canvas.widgets",
-    activeTabId: "optional active tab id",
-    bindings: "workspace-level boolean/config bindings"
+    widgets: "WidgetBase[] — single-tab canvases only; absent when tabs is present",
+    tabs: "Tab[] optional — multi-tab canvases; replaces canvas.widgets",
+    activeTabId: "string optional — must match an existing tab id",
+    bindings: "workspace-level feature-flag bindings (boolean | string values)",
+    branding: "BrandingConfig optional — workspace identity overrides"
+  },
+  BrandingConfig: {
+    logoUrl: "string optional — URL or relative path to workspace logo",
+    name: "string optional — workspace display name override",
+    accent: "string optional — CSS colour token (e.g. '#38bdf8')"
   },
   StaticDataBinding: {
     mode: KNOWN_DATA_BINDING_MODES.join(" | "),
-    source: "string",
-    rows: "manual record[] optional",
-    json: "JSON string optional",
-    csv: "CSV string optional"
+    source: "string — human-readable source label",
+    rows: "record[] optional — used when mode is 'manual'",
+    json: "string optional — JSON string used when mode is 'json'",
+    csv: "string optional — CSV string used when mode is 'csv'"
+  },
+  WorkspaceTemplateEnvelope: {
+    version: "1",
+    kind: WORKSPACE_TEMPLATE_KIND,
+    exportedAt: "ISO timestamp string",
+    source: WORKSPACE_TEMPLATE_SOURCE,
+    name: "string",
+    description: "string",
+    payload: "{ dashboards, widgetTypes, canvas }"
   }
 };
 
@@ -462,6 +532,22 @@ function validateWidgetArray(widgets, contextPath, errors, seenIds) {
   });
 }
 
+function validateBrandingConfig(branding, errors) {
+  if (!isPlainObject(branding)) {
+    errors.push("canvas.branding must be a plain object");
+    return;
+  }
+  if (branding.logoUrl !== undefined && typeof branding.logoUrl !== "string") {
+    errors.push("canvas.branding.logoUrl must be a string");
+  }
+  if (branding.name !== undefined && typeof branding.name !== "string") {
+    errors.push("canvas.branding.name must be a string");
+  }
+  if (branding.accent !== undefined && typeof branding.accent !== "string") {
+    errors.push("canvas.branding.accent must be a string");
+  }
+}
+
 function validateCanvasConfig(canvas, errors) {
   if (!isPlainObject(canvas)) {
     errors.push("canvas must be a plain object");
@@ -473,6 +559,9 @@ function validateCanvasConfig(canvas, errors) {
     } else if (canvas.layout.columns !== undefined && canvas.layout.columns !== GRID_COLUMNS) {
       errors.push(`canvas.layout.columns must be ${GRID_COLUMNS}`);
     }
+  }
+  if (canvas.branding !== undefined) {
+    validateBrandingConfig(canvas.branding, errors);
   }
   const seenWidgetIds = new Set();
   if (canvas.widgets !== undefined) {
@@ -763,6 +852,7 @@ export {
   defaultConfigFor,
   normalizeWorkspaceTemplate,
   unwrapWorkspaceTemplateImport,
+  validateBrandingConfig,
   validateTemplateWidgetArray,
   validateWorkspaceConfig,
   validateWorkspaceTemplate,

@@ -18,23 +18,36 @@ async function readWorkspaceConfig() {
   return JSON.parse(raw);
 }
 
+/**
+ * Persistence modes
+ *
+ * filesystem   — local Next.js dev, or any runtime with WORKSPACE_CONFIG_ALLOW_FS_WRITE=true.
+ *                PATCH /api/workspace writes growthub.config.json on disk.
+ * read-only    — Vercel/Netlify-style runtimes where the bundle is immutable.
+ *                PATCH /api/workspace returns 409. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true
+ *                on a writable runtime, or wire a hosted persistence adapter.
+ * (future)     — A database-backed adapter can replace the filesystem write path without
+ *                touching the UI: implement a new adapter that satisfies the same read/write
+ *                contract and register it via AGENCY_PORTAL_DATA_ADAPTER.
+ */
 function describePersistenceMode() {
   const target = process.env.AGENCY_PORTAL_DEPLOY_TARGET || "vercel";
   const isReadOnlyDeploy = target === "vercel" || target === "netlify";
   const allowFsWrite = process.env.WORKSPACE_CONFIG_ALLOW_FS_WRITE === "true";
   if (allowFsWrite) {
-    return { mode: "filesystem", reason: "WORKSPACE_CONFIG_ALLOW_FS_WRITE=true" };
+    return { mode: "filesystem", reason: "WORKSPACE_CONFIG_ALLOW_FS_WRITE=true", canSave: true };
   }
   if (process.env.NODE_ENV === "development") {
-    return { mode: "filesystem", reason: "Local Next.js development" };
+    return { mode: "filesystem", reason: "Local Next.js development", canSave: true };
   }
   if (isReadOnlyDeploy) {
     return {
       mode: "read-only",
-      reason: `Deploy target ${target} treats the bundle as read-only. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime, or wire a hosted persistence adapter.`
+      reason: `Deploy target ${target} treats the bundle as read-only. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime, or wire a hosted persistence adapter.`,
+      canSave: false
     };
   }
-  return { mode: "filesystem", reason: "Local development" };
+  return { mode: "filesystem", reason: "Local development", canSave: true };
 }
 
 function applyPatch(currentConfig, patch) {
@@ -56,6 +69,14 @@ function applyPatch(currentConfig, patch) {
       layout: { ...(currentConfig.canvas?.layout || {}), ...(patchCanvas.layout || {}) },
       bindings: { ...(currentConfig.canvas?.bindings || {}), ...(patchCanvas.bindings || {}) }
     };
+    if (patchCanvas.branding !== undefined && patchCanvas.branding !== null) {
+      const isBrandingObj = Boolean(patchCanvas.branding) && typeof patchCanvas.branding === "object" && !Array.isArray(patchCanvas.branding);
+      if (isBrandingObj) {
+        next.canvas.branding = { ...(currentConfig.canvas?.branding || {}), ...patchCanvas.branding };
+      } else {
+        next.canvas.branding = patchCanvas.branding;
+      }
+    }
     if (Array.isArray(patch.canvas.tabs)) {
       delete next.canvas.widgets;
       delete next.canvas.name;
@@ -64,7 +85,7 @@ function applyPatch(currentConfig, patch) {
       delete next.canvas.tabs;
       delete next.canvas.activeTabId;
     }
-    for (const key of ["widgets", "tabs", "activeTabId", "name"]) {
+    for (const key of ["widgets", "tabs", "activeTabId", "name", "branding"]) {
       if (Object.prototype.hasOwnProperty.call(patchCanvas, key) && patchCanvas[key] === null) {
         delete next.canvas[key];
       }

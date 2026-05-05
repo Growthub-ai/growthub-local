@@ -7,13 +7,13 @@ import WorkspaceBuilder from "./workspace-builder.jsx";
 function Home() {
   const adapterConfig = readAdapterConfig();
   const integrationAdapter = describeIntegrationAdapter();
-  const persistence = describePersistenceMode();
+  const persistenceMode = describePersistenceMode();
   return (
     <WorkspaceBuilder
       initialConfig={workspaceConfig}
       adapterConfig={adapterConfig}
       integrationAdapter={integrationAdapter}
-      persistence={persistence}
+      persistenceMode={persistenceMode}
     />
   );
 }

@@ -31,8 +31,8 @@ Choose **Create Governed Workspace**, then pick the fastest source:
 
 1. [**Import a GitHub repo**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
 2. [**Import a skills.sh skill**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
-3. [**Start greenfield**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
-4. [**Start from a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
+3. [**Start from the Workspace Starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
+4. [**Download a Worker Kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
 &nbsp;
@@ -128,7 +128,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.9.4` and the guided installer `@growthub/create-growthub-local@0.5.4`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.3.0-alpha.2` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+Growthub Local currently ships `@growthub/cli@0.9.8` and the guided installer `@growthub/create-growthub-local@0.5.8`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.3.0-alpha.2` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
 
 ---
 
@@ -452,14 +452,25 @@ This keeps the mental model intact:
 
 ## Docs
 
-### Start here
+### Workspace (start here)
 
-- [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
-- [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
-- [Governed Workspace Agents](./docs/GOVERNED_WORKSPACE_AGENTS.md) — attach hosted Growthub agents to fork-sync governed workspaces through the CLI
-- [Worker Kits Overview](./docs/WORKER_KITS.md)
-- [**Governed Workspace Primitives (user-facing)**](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — how the six architectural primitives (SKILL.md, AGENTS.md pointer, session memory, self-evaluation, sub-skills, helpers) coordinate agents inside every exported workspace
-- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — six concrete starting points: import a repo, import a skill, workspace starter, worker kit, connect account, unlock hosted workflows
+- [**Quickstart: Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md) — get running in under 5 minutes
+- [**Setup**](./docs/SETUP.md) — canonical install paths
+- [**Workspace Starter Activation Path**](./docs/WORKSPACE_STARTER_ACTIVATION_PATH.md) — step-by-step from install to builder
+- [**Workspace Builder Runtime V1**](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md) — builder runtime reference
+- [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) — official V1 config schema
+- [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — file topology + authority boundaries
+- [**Source Import to Workspace Builder**](./docs/SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md) — how sources flow into workspaces
+- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — six concrete starting points
+
+### Workspace templates
+
+- [Client Portal](./docs/workspace-templates/client-portal.md)
+- [Reporting Dashboard](./docs/workspace-templates/reporting-dashboard.md)
+- [Creative Review](./docs/workspace-templates/creative-review.md)
+- [Content Ops](./docs/workspace-templates/content-ops.md)
+- [Agency Delivery](./docs/workspace-templates/agency-delivery.md)
+- [Agent Command Center](./docs/workspace-templates/agent-command-center.md)
 
 ### Architecture and protocol
 
@@ -469,6 +480,14 @@ This keeps the mental model intact:
 - [Source Import Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_SOURCE_IMPORT_AGENT.md)
 - [Custom Workspace Starter Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md)
 - [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
+
+### Platform and integrations
+
+- [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
+- [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
+- [Governed Workspace Agents](./docs/GOVERNED_WORKSPACE_AGENTS.md) — attach hosted Growthub agents to fork-sync governed workspaces
+- [Worker Kits Overview](./docs/WORKER_KITS.md)
+- [Governed Workspace Primitives (user-facing)](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md)
 
 ### Local intelligence and harnesses
 

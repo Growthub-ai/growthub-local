@@ -22,14 +22,29 @@
     }
   ],
   "widgetTypes": [
-    { "kind": "chart", "label": "Chart", "icon": "C" },
-    { "kind": "view", "label": "View", "icon": "V" },
-    { "kind": "iframe", "label": "iFrame", "icon": "I" },
-    { "kind": "rich-text", "label": "Rich Text", "icon": "T" }
+    {
+      "kind": "chart",
+      "label": "Chart",
+      "icon": "C"
+    },
+    {
+      "kind": "view",
+      "label": "View",
+      "icon": "V"
+    },
+    {
+      "kind": "iframe",
+      "label": "iFrame",
+      "icon": "I"
+    },
+    {
+      "kind": "rich-text",
+      "label": "Rich Text",
+      "icon": "T"
+    }
   ],
   "canvas": {
     "id": "workspace-canvas",
-    "name": "Tab 1",
     "scope": "workspace",
     "layout": {
       "columns": 12,
@@ -37,13 +52,44 @@
       "gap": 16,
       "responsive": true
     },
-    "widgets": [],
     "bindings": {
       "chatToCanvas": true,
       "workflowOutputsToArtifacts": true,
       "sessionContext": true,
       "configDrivenCanvas": true
-    }
+    },
+    "branding": {
+      "0": "n",
+      "1": "o",
+      "2": "t",
+      "3": "-",
+      "4": "a",
+      "5": "n",
+      "6": "-",
+      "7": "o",
+      "8": "b",
+      "9": "j",
+      "10": "e",
+      "11": "c",
+      "12": "t",
+      "name": "Acme Corp",
+      "logoUrl": "",
+      "accent": "#16a34a"
+    },
+    "widgets": [
+      {
+        "id": "w1",
+        "kind": "chart",
+        "title": "T",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 3
+        },
+        "config": {}
+      }
+    ]
   },
   "provenance": {
     "createdBy": "cli",
