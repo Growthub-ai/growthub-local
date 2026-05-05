@@ -215,6 +215,8 @@ Both shapes are accepted on import:
 
 The unwrapped payload is validated through `validateWorkspaceConfig` before entering client state, then validated again on the server during Save.
 
+> **Branding is fork-local, not template-portable.** Templates carry layout — dashboards, widgetTypes, canvas — and nothing else. The optional `branding` block (`name`, `logoUrl`, `accent`) is intentionally **not** included in the export envelope and is **not** restored by import. Branding lives in the destination Workspace's own `growthub.config.json`; if you import a template into a branded Workspace, the branding stays untouched.
+
 ---
 
 ## Persistence adapter modes

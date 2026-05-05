@@ -555,7 +555,7 @@ function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integratio
           <p>Workspace</p>
           <h2>Workspace Settings</h2>
         </div>
-        <button type="button" aria-label="Close workspace settings" onClick={onClose}>x</button>
+        <button type="button" aria-label="Close workspace settings" onClick={onClose} autoFocus>x</button>
       </header>
       <p className="workspace-overlay-note">
         Inspect-only. Sourced from <code>growthub.config.json</code> + <code>GET /api/workspace</code>.
@@ -625,7 +625,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
           <p>Workspace</p>
           <h2>Management</h2>
         </div>
-        <button type="button" aria-label="Close management panel" onClick={onClose}>x</button>
+        <button type="button" aria-label="Close management panel" onClick={onClose} autoFocus>x</button>
       </header>
       <p className="workspace-overlay-note">
         Inspect-only. Workflow execution stays in <code>growthub workflow</code> / <code>growthub bridge</code>; this panel does not

@@ -46,6 +46,15 @@ async function readWorkspaceConfig() {
   return JSON.parse(raw);
 }
 
+/**
+ * `canSave` is a *logical* statement about adapter mode, not a *filesystem*
+ * guarantee. A `filesystem`-mode workspace whose `growthub.config.json` is
+ * actually read-only on disk (permission denied, RO mount) will still report
+ * `canSave: true`; the no-code Save UI surfaces the underlying fs error
+ * (workspace-builder.jsx#save → setConfigMessage) and PATCH returns 500 with
+ * the original error message. Read-only-mode 409 is the *contractual* not-save
+ * path and gets verbatim `guidance` instead.
+ */
 function describePersistenceMode() {
   const target = process.env.AGENCY_PORTAL_DEPLOY_TARGET || "vercel";
   const isReadOnlyDeploy = target === "vercel" || target === "netlify";
