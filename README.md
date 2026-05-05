@@ -481,6 +481,17 @@ This keeps the mental model intact:
 - [**Workspace Builder Runtime V1**](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md) — the no-code builder runtime
 - [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
 
+### Workspace Templates
+
+Five shipped dashboard templates, each grounded in the actual `DASHBOARD_TEMPLATES` array in `apps/workspace/lib/workspace-schema.js`:
+
+- [**Templates Index**](./docs/workspace-templates/README.md) — all five at a glance
+- [Client Portal](./docs/workspace-templates/client-portal.md) — client status, documents, embedded portal area
+- [Content Ops](./docs/workspace-templates/content-ops.md) — editorial pipeline and review snapshot
+- [Reporting Dashboard](./docs/workspace-templates/reporting-dashboard.md) — KPIs, table, executive readout
+- [Creative Review](./docs/workspace-templates/creative-review.md) — creative artifact embed and approval notes
+- [Agency Delivery](./docs/workspace-templates/agency-delivery.md) — agency workstream, KPI, delivery notes
+
 ### Start here
 
 - [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)

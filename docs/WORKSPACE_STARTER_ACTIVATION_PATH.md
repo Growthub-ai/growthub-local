@@ -84,7 +84,7 @@ Click `Templates` in the toolbar. Pick from the gallery:
 
 Apply to current tab, or clone as a new dashboard. Templates clone with fresh widget IDs and write to the active config.
 
-Future per-template docs live under [`docs/workspace-templates/`](./workspace-templates/) once they ship.
+Per-template docs live under [`docs/workspace-templates/`](./workspace-templates/README.md) — one page per shipped template, grounded in the actual `DASHBOARD_TEMPLATES` array.
 
 ---
 

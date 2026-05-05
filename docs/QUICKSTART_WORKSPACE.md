@@ -24,6 +24,8 @@ cd <workspace>/apps/workspace && npm install && npm run dev
 
 You land at `http://localhost:3000` — the Workspace Builder. Click `Templates`, pick `Reporting Dashboard`, click `Apply to Current Tab`, click `Save`. You just edited validated config persisted to `growthub.config.json`.
 
+Per-template docs (widgets, positions, bindings) live under [`docs/workspace-templates/`](./workspace-templates/README.md).
+
 ---
 
 ## What you actually have on disk
@@ -69,6 +71,7 @@ The Workspace Settings overlay shows you exactly which mode is active and what S
 - [`docs/WORKSPACE_BUILDER_RUNTIME_V1.md`](./WORKSPACE_BUILDER_RUNTIME_V1.md)
 - [`docs/SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md`](./SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md)
 - [`docs/WORKSPACE_DEPLOY_FLOW.md`](./WORKSPACE_DEPLOY_FLOW.md)
+- [`docs/workspace-templates/`](./workspace-templates/README.md) — per-template widgets, positions, bindings
 
 ---
 
