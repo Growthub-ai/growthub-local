@@ -33,9 +33,11 @@ subSkills: []
 mcpTools: []
 ---
 
-# Custom Workspace Starter — Baseline Primitive
+# Custom Workspace Starter — Baseline Primitive for the Governed Workspace product object
 
-Every Growthub governed workspace is materialised from this kit. The kit ships the `.growthub-fork/` contract (identity, policy, trace, optional authority) plus the six primitive layers Claude/Cursor/Codex agents operate against:
+The **Workspace** is the top-level Growthub Local product object. This kit is the official starter that bootstraps every governed Workspace; everything else (worker kits, templates, workflows, hosted agents, source imports) is an input to a Workspace.
+
+Every Growthub governed Workspace is materialised from this kit. The kit ships the `.growthub-fork/` contract (identity, policy, trace, optional authority), the `apps/workspace` no-code Workspace Builder, the validated `growthub.config.json` V1 contract, plus the six primitive layers Claude/Cursor/Codex agents operate against:
 
 1. **`SKILL.md`** — this file. Discovery entry + routing menu. Always loaded first; the full operator runbook (`skills.md`) is disclosed progressively when work begins.
 2. **`skills.md`** — the deep operator runbook. Everything the operator agent needs to actually customise the workspace. Unchanged from v1.
@@ -154,3 +156,7 @@ If a concrete MCP server is available for this fork, list its tool IDs in `mcpTo
 - `helpers/README.md` — helpers convention
 - `skills/README.md` — sub-skills convention
 - `workers/custom-workspace-operator/CLAUDE.md` — agent contract
+- `apps/workspace/` — the no-code Workspace Builder Next.js app (V1 runtime)
+- `apps/workspace/lib/workspace-schema.js` — Workspace Config Contract V1 (validator + grid invariants)
+- `apps/workspace/lib/workspace-config.js` — persistence adapter (filesystem / read-only / future database)
+- `growthub.config.json` — persisted Workspace Config (V1 reference instance)

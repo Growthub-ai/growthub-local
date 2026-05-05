@@ -4,15 +4,15 @@ This app is the Vercel/serverless runtime payload for `growthub-workspace-starte
 
 It intentionally depends on adapter contracts:
 
-- `AGENCY_PORTAL_DATA_ADAPTER`
-- `AGENCY_PORTAL_AUTH_ADAPTER`
-- `AGENCY_PORTAL_PAYMENT_ADAPTER`
-- `AGENCY_PORTAL_INTEGRATION_ADAPTER`
+- `GROWTHUB_WORKSPACE_DATA_ADAPTER`
+- `GROWTHUB_WORKSPACE_AUTH_ADAPTER`
+- `GROWTHUB_WORKSPACE_PAYMENT_ADAPTER`
+- `GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER`
 - `GROWTHUB_BRIDGE_BASE_URL`
 - `GROWTHUB_BRIDGE_INTEGRATIONS_PATH`
 - `GROWTHUB_BRIDGE_ACCESS_TOKEN`
 - `GROWTHUB_BRIDGE_USER_ID`
-- `AGENCY_PORTAL_BYO_CONNECTIONS_JSON`
+- `GROWTHUB_WORKSPACE_BYO_CONNECTIONS_JSON`
 
 The Growthub local-first operator shell remains at `../../studio`.
 
@@ -21,9 +21,11 @@ Settings exposes two integration lanes:
 - Data sources: Windsor AI, Google Sheets blended data, Google Analytics, Shopify, Meta Facebook/Instagram.
 - Workspace integrations: Asana, Slack, GoHighLevel, Google Drive, Notion.
 
-Use `AGENCY_PORTAL_INTEGRATION_ADAPTER=growthub-bridge` when the deployed app should read connection state from the Growthub GH app MCP bridge. The reusable primitive is `lib/adapters/integrations/growthub-connection-normalizer.js`; it accepts SDK/profile-style `integrations[]` payloads and GH app MCP `accounts[]` payloads, then emits the same normalized object shape used by `byo-api-key`. Keep provider tokens in the hosted authority layer or named env vars; this app consumes normalized connection metadata only.
+The `/settings/integrations` page is part of the official governed workspace app shell. It uses the same light workspace rail, toolbar, and product object model as the dashboard workspace, and it renders Growthub bridge account state without redirecting to or borrowing the agency portal kit.
 
-For first boot, the bundled app also supports a hybrid path: keep `AGENCY_PORTAL_INTEGRATION_ADAPTER=growthub-bridge` and set `WINDSOR_API_KEY` locally. That overlays connected state for Windsor AI and Google Sheets blended data without moving the rest of the portal off the hosted bridge authority path.
+Use `GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER=growthub-bridge` when the deployed app should read connection state from the Growthub GH app MCP bridge. The reusable primitive is `lib/adapters/integrations/growthub-connection-normalizer.js`; it accepts SDK/profile-style `integrations[]` payloads and GH app MCP `accounts[]` payloads, then emits the same normalized object shape used by `byo-api-key`. Keep provider tokens in the hosted authority layer or named env vars; this app consumes normalized connection metadata only.
+
+For first boot, the bundled app also supports a hybrid path: keep `GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER=growthub-bridge` and set `WINDSOR_API_KEY` locally. That overlays connected state for Windsor AI and Google Sheets blended data without moving the rest of the workspace off the hosted bridge authority path.
 
 ## Run
 

@@ -1,7 +1,12 @@
 {
   "id": "workspace-builder-default",
-  "name": "Workspace Builder",
-  "description": "Default no-code composition for the official Growthub Custom Workspace Starter. The interface starts as a configurable dashboard-builder shell and can be customized by editing this file or by future governed UI controls.",
+  "name": "Growthub Workspace",
+  "description": "Default no-code composition for the official Growthub Custom Workspace Starter. The interface starts as a governed dashboard workspace and can be customized by editing this file or by future governed UI controls.",
+  "branding": {
+    "name": "Growthub Workspace",
+    "logoUrl": "",
+    "accent": "#3f68ff"
+  },
   "capabilities": [
     "dashboards",
     "canvas",
@@ -47,7 +52,7 @@
   },
   "provenance": {
     "createdBy": "cli",
-    "mirrors": "growthub-agency-portal-starter-v1",
+    "mirrors": "growthub-custom-workspace-starter-v1",
     "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit inside a governed fork and validate through the starter export smoke path."
   }
 }

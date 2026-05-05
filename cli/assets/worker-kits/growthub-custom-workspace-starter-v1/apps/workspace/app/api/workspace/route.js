@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { describeAuthAdapter } from "@/lib/adapters/auth";
 import { readAdapterConfig } from "@/lib/adapters/env";
-import { describeIntegrationAdapter, listAgencyPortalIntegrations } from "@/lib/adapters/integrations";
+import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { describePaymentAdapter } from "@/lib/adapters/payments";
 import { describePersistenceAdapter } from "@/lib/adapters/persistence";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
@@ -15,7 +15,7 @@ import {
 const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas"]);
 
 async function GET() {
-  const integrations = await listAgencyPortalIntegrations();
+  const integrations = await listGovernedWorkspaceIntegrations();
   const config = readAdapterConfig();
   const adapters = {
     persistence: describePersistenceAdapter(),
@@ -72,8 +72,8 @@ async function PATCH(request) {
           error: "workspace config is read-only in this runtime",
           reason: error.message,
           adapter: error.adapter,
-          guidance:
-            "Edit growthub.config.json locally, or set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime."
+          guidance: error.guidance
+            || "Edit growthub.config.json locally, or set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime."
         },
         { status: 409 }
       );

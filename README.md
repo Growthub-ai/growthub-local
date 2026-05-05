@@ -2,16 +2,18 @@
 
 ![Growthub Local Logo](./ui/public/growthub%20logo%20copy.png)
 
-**Turn a repo, skill, or starter into a governed agent environment you can customize, keep current, and run through a CLI that works for both humans and agents.**
+**Create a governed Workspace from any source — repo, skill, kit, or greenfield — customize it visually, keep it current, and ship it.**
 
-Growthub Local is a **local control plane for portable agent environments**.
+Growthub Local is a **local control plane for governed Workspaces**. The Workspace is the top-level product object. Everything else is an input to a Workspace:
 
-- **The CLI** is the local executor
-- **The hosted app** is the identity and connection authority
-- **Worker Kits** are the portable execution unit
-- **Forks** are your customizable, policy-governed branch of that infrastructure
-- **CMS pipelines** are the production surface for generated content and reusable hosted capabilities
-- **Growthub Bridge** is the authenticated path from local/kit environments into real business systems and asset outputs
+- **Workspace** — the governed product object: dashboards, tabs, widgets, validated config, fork policy, exportable, deployable
+- **Workspace Builder** — the no-code admin surface inside the official starter kit (`apps/workspace`)
+- **Starter Kit** — `growthub-custom-workspace-starter-v1` bootstraps every governed Workspace
+- **Worker Kits** — portable execution/infrastructure units that plug into a Workspace
+- **Templates** — reusable Workspace layouts (Client Portal, Reporting Dashboard, Creative Review, Content Ops, Agency Delivery)
+- **Forks** — `.growthub-fork/` carries identity, policy, and append-only trace inside the artifact
+- **CLI** — the local executor that creates, customizes, and inspects Workspaces
+- **Bridge** — optional hosted authority for identity, hosted agents, and CMS pipeline execution
 
 ![npm](https://img.shields.io/npm/v/@growthub/cli?label=%40growthub%2Fcli)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -21,7 +23,7 @@ Growthub Local is a **local control plane for portable agent environments**.
 
 ---
 
-## Start here
+## Start here: create a governed Workspace
 
 ```bash
 npm create @growthub/growthub-local@latest
@@ -35,6 +37,20 @@ Choose **Create Governed Workspace**, then pick the fastest source:
 4. [**Start from a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
+
+What you get:
+
+```
+Source  →  Governed Workspace  →  Workspace Builder  →  Deploy  →  Optional Bridge
+```
+
+- Dashboards, tabs, widgets, templates
+- Validated `growthub.config.json` (V1 contract)
+- Import / export workspace templates
+- `.growthub-fork/` policy + trace
+- Deployable Next.js app surface (`apps/workspace`)
+
+**Reference contracts:** [Workspace Config Contract V1](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace Builder Runtime V1](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 &nbsp;
 
 **▶️ [Watch on YouTube](https://youtu.be/3wUyHsUePpY)**
@@ -128,7 +144,9 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.9.4` and the guided installer `@growthub/create-growthub-local@0.5.4`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.3.0-alpha.2` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+Growthub Local currently ships `@growthub/cli@0.9.8` and the guided installer `@growthub/create-growthub-local@0.5.8`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.3.0-alpha.2` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+
+> Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
 ---
 
@@ -451,6 +469,28 @@ This keeps the mental model intact:
 ---
 
 ## Docs
+
+### Workspace 1.0 (the product object)
+
+- [**Setup**](./docs/SETUP.md) — one canonical install path
+- [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md) — 30-second mental model
+- [**Workspace Starter Activation Path**](./docs/WORKSPACE_STARTER_ACTIVATION_PATH.md) — full end-to-end journey
+- [**Source Import → Workspace Builder**](./docs/SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md) — source-type matrix
+- [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) — the canonical `growthub.config.json` shape
+- [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — what's inside a Workspace + authority boundary
+- [**Workspace Builder Runtime V1**](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md) — the no-code builder runtime
+- [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
+
+### Workspace Templates
+
+Five shipped dashboard templates, each grounded in the actual `DASHBOARD_TEMPLATES` array in `apps/workspace/lib/workspace-schema.js`:
+
+- [**Templates Index**](./docs/workspace-templates/README.md) — all five at a glance
+- [Client Portal](./docs/workspace-templates/client-portal.md) — client status, documents, embedded portal area
+- [Content Ops](./docs/workspace-templates/content-ops.md) — editorial pipeline and review snapshot
+- [Reporting Dashboard](./docs/workspace-templates/reporting-dashboard.md) — KPIs, table, executive readout
+- [Creative Review](./docs/workspace-templates/creative-review.md) — creative artifact embed and approval notes
+- [Agency Delivery](./docs/workspace-templates/agency-delivery.md) — agency workstream, KPI, delivery notes
 
 ### Start here
 

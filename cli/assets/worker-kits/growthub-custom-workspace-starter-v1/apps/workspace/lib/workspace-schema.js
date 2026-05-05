@@ -1,3 +1,41 @@
+/**
+ * Workspace Config Contract V1 — local source of truth.
+ *
+ * Authoritative reference: `docs/WORKSPACE_CONFIG_CONTRACT_V1.md`.
+ * Companion runtime doc: `docs/WORKSPACE_BUILDER_RUNTIME_V1.md`.
+ *
+ * This file owns the workspace config validator. The persisted file lives at
+ * `<workspace>/growthub.config.json`. The PATCH allowlist on `/api/workspace`
+ * is permanently restricted to:
+ *
+ *   - `dashboards`     dashboard rows (id, name, status, tabs, activeTabId)
+ *   - `widgetTypes`    palette of allowed widget kinds (label/icon)
+ *   - `canvas`         active canvas: layout, single-tab `widgets[]`, or
+ *                      multi-tab `tabs[]` + `activeTabId`, plus `bindings`
+ *
+ * Other top-level fields (`id`, `name`, `description`, `capabilities`,
+ * `branding`, `pipelines`, `integrations`, `provenance`) are preserved
+ * round-trip but cannot be mutated through PATCH. The validator rejects
+ * unknown fields inside the three allowlisted sections.
+ *
+ * Canonical canvas shape (mutually exclusive — never both at once):
+ *
+ *   single-tab → `canvas.widgets[]`           (DO NOT also serialize tabs)
+ *   multi-tab  → `canvas.tabs[]` + `activeTabId` (DO NOT also serialize widgets)
+ *
+ * Import/export envelope: `{ version: 1, kind: "growthub-workspace-template",
+ * exportedAt, source, name, description, payload }`. Raw `{dashboards,
+ * widgetTypes, canvas}` payloads are also accepted for back-compat.
+ *
+ * Widget grid is a strict 12-column × 16-row fixed lattice with
+ * non-overlapping integer rectangles. Widget IDs are minted at clone time —
+ * template widgets intentionally omit `id`.
+ *
+ * Validation errors are surfaced as readable strings on the thrown error
+ * (`error.details: string[]`) so agents and the no-code Save UI can round-trip
+ * them without parsing a stack trace.
+ */
+
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];

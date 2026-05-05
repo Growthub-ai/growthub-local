@@ -76,7 +76,7 @@ function commitTabs(canvas, tabs, activeTabId) {
 }
 
 function createDashboardRecord(name = "Untitled") {
-  const tab = createEmptyTab(name);
+  const tab = createEmptyTab("Tab 1");
   return {
     id: generateId("dashboard"),
     name,
@@ -140,7 +140,7 @@ function updateDashboardCanvas(dashboard, canvas) {
 }
 
 function createDashboardFromTab(name, tab, source = {}) {
-  const clonedTab = cloneTabForDashboard(tab, name);
+  const clonedTab = cloneTabForDashboard(tab, tab?.name || "Tab 1");
   return {
     ...source,
     id: generateId("dashboard"),
@@ -186,6 +186,24 @@ function commitDashboardCanvas(config, activeDashboardId, nextCanvas) {
       dashboard.id === resolvedId ? updateDashboardCanvas(dashboard, nextCanvas) : dashboard
     ),
     canvas: nextCanvas
+  };
+}
+
+function renameDashboardInConfig(config, dashboardId, name, activeDashboardId) {
+  const nextName = name.trim() || "Untitled";
+  const prevDashboards = config.dashboards || [];
+  const index = prevDashboards.findIndex((dashboard) => dashboard.id === dashboardId);
+  if (index < 0) return config;
+  const nextDashboardsWithTabs = prevDashboards.map((dashboard, dashboardIndex) => {
+    if (dashboard.id !== dashboardId) return dashboard;
+    const normalized = normalizeDashboard(dashboard, dashboardIndex === 0 ? config.canvas : undefined);
+    return { ...normalized, name: nextName, updatedAt: "new" };
+  });
+  const activeDashboard = nextDashboardsWithTabs.find((dashboard) => dashboard.id === getActiveDashboardId(nextDashboardsWithTabs, activeDashboardId));
+  return {
+    ...config,
+    dashboards: nextDashboardsWithTabs,
+    canvas: dashboardCanvasFrom(activeDashboard || nextDashboardsWithTabs[0], config.canvas)
   };
 }
 
@@ -245,6 +263,18 @@ function clampPositionToFreeSpace(position, widgets) {
   return collides ? findFreePosition(widgets) : bounded;
 }
 
+function clampWidgetMovePosition(position, widget, widgets) {
+  const bounded = {
+    ...widget.position,
+    x: Math.max(0, Math.min(position.x, GRID_COLUMNS - widget.position.w)),
+    y: Math.max(0, Math.min(position.y, GRID_ROWS - widget.position.h))
+  };
+  const otherWidgets = widgets.filter((item) => item.id !== widget.id);
+  return otherWidgets.some((item) => positionsOverlap(bounded, item.position))
+    ? widget.position
+    : bounded;
+}
+
 function cellIndexFromGridPointer(event, gridElement) {
   if (!gridElement) return null;
   const rect = gridElement.getBoundingClientRect();
@@ -262,6 +292,13 @@ function cellIndexFromGridPointer(event, gridElement) {
   const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(y / (cellHeight + gap))));
   if (x < 0 || y < 0) return null;
   return row * GRID_COLUMNS + column;
+}
+
+function cellPointFromIndex(index) {
+  return {
+    x: index % GRID_COLUMNS,
+    y: Math.floor(index / GRID_COLUMNS)
+  };
 }
 
 function resizePositionFromCell(position, corner, index) {
@@ -311,6 +348,16 @@ function widgetKindLabel(kind) {
   if (kind === "iframe") return "iFrame";
   if (kind === "rich-text") return "Rich Text";
   return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+function isLikelyHttpUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function cloneConfig(value) {
@@ -441,8 +488,8 @@ function TemplateGallery({
             </div> : null}
             <div className="template-card-actions">
               <button type="button" onClick={() => onPreview(template.id)}>{isPreviewing ? "Previewing" : "Preview"}</button>
-              <button type="button" onClick={() => onApplyToCurrentTab(template.id)}>Apply to Current Tab</button>
-              <button type="button" onClick={() => onCloneAsDashboard(template.id)}>Clone as New Dashboard</button>
+              <button type="button" className="primary" onClick={() => onApplyToCurrentTab(template.id)}>Use Here</button>
+              <button type="button" onClick={() => onCloneAsDashboard(template.id)}>New Dashboard</button>
             </div>
           </article>;
         })}
@@ -455,7 +502,7 @@ function TemplateGallery({
   </div>;
 }
 
-function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) {
+function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onResizeStart }) {
   const viewColumns = widget.config?.columns?.length ? widget.config.columns : ["Name", "Domain Name"];
   const viewRows = widget.config?.rows?.length ? widget.config.rows : SAMPLE_VIEW_ROWS;
   const chartValues = widget.config?.values?.length ? widget.config.values : defaultConfigFor("chart").values;
@@ -468,7 +515,11 @@ function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) 
     }}
   >
     <div className="workspace-widget-preview-title">
-      <span aria-hidden="true">::</span>
+      <span
+        aria-hidden="true"
+        className="workspace-widget-drag-handle"
+        onPointerDown={(event) => onMoveStart(event)}
+      >::</span>
       <strong>{widget.title}</strong>
       <button
         aria-label={`Remove ${widget.title}`}
@@ -507,7 +558,170 @@ function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) 
   </article>;
 }
 
-function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) {
+const DEFAULT_PERSISTENCE = {
+  mode: "filesystem",
+  adapter: "filesystem",
+  canSave: true,
+  saveLabel: "Save writes growthub.config.json on disk.",
+  reason: "Local development",
+  nextAction: null,
+  guidance: null
+};
+
+function countCanvasWidgets(canvas) {
+  if (!canvas) return 0;
+  if (Array.isArray(canvas.tabs) && canvas.tabs.length) {
+    return canvas.tabs.reduce((acc, tab) => acc + (Array.isArray(tab.widgets) ? tab.widgets.length : 0), 0);
+  }
+  return Array.isArray(canvas.widgets) ? canvas.widgets.length : 0;
+}
+
+function countCanvasTabs(canvas) {
+  if (!canvas) return 0;
+  if (Array.isArray(canvas.tabs) && canvas.tabs.length) return canvas.tabs.length;
+  return 1;
+}
+
+function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integrationAdapter, onClose }) {
+  const branding = (config && config.branding) || {};
+  const dashboards = Array.isArray(config?.dashboards) ? config.dashboards : [];
+  const tabCount = countCanvasTabs(config?.canvas);
+  const widgetCount = countCanvasWidgets(config?.canvas);
+  const persist = persistence || DEFAULT_PERSISTENCE;
+  return <div className="workspace-overlay" role="dialog" aria-modal="true" aria-label="Workspace settings">
+    <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="workspace-overlay-panel">
+      <header className="workspace-overlay-header">
+        <div>
+          <p>Workspace</p>
+          <h2>Workspace Settings</h2>
+        </div>
+        <button type="button" aria-label="Close workspace settings" onClick={onClose} autoFocus>x</button>
+      </header>
+      <p className="workspace-overlay-note">
+        Inspect-only. Sourced from <code>growthub.config.json</code> + <code>GET /api/workspace</code>.
+        Edit branding by updating <code>growthub.config.json</code> inside your governed fork.
+        The builder itself never holds tokens, never executes hosted workflows, and never bypasses the PATCH allowlist
+        (<code>dashboards</code>, <code>widgetTypes</code>, <code>canvas</code>).
+      </p>
+      <div className="workspace-readiness">
+        <article className="workspace-readiness-section">
+          <h3>Identity</h3>
+          <div className="workspace-readiness-row"><span>Name</span><strong>{config?.name || "Workspace"}</strong></div>
+          <div className="workspace-readiness-row"><span>Workspace ID</span><code>{config?.id || "Unknown"}</code></div>
+          <div className="workspace-readiness-row"><span>Brand name</span><strong>{branding.name || "Unknown"}</strong></div>
+          <div className="workspace-readiness-row"><span>Logo URL</span><code>{branding.logoUrl || "—"}</code></div>
+          <div className="workspace-readiness-row"><span>Accent</span>
+            <span className="workspace-readiness-badge" style={{ background: branding.accent || "#3f68ff" }}>{branding.accent || "—"}</span>
+          </div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Persistence</h3>
+          <div className="workspace-readiness-row"><span>Mode</span>
+            <span className={`workspace-readiness-badge mode-${persist.mode}`}>{persist.mode}</span>
+          </div>
+          <div className="workspace-readiness-row"><span>Adapter</span><code>{persist.adapter}</code></div>
+          <div className="workspace-readiness-row"><span>Can save</span>
+            <span className={`workspace-readiness-badge ${persist.canSave ? "good" : "warn"}`}>{persist.canSave ? "yes" : "no"}</span>
+          </div>
+          <div className="workspace-readiness-row"><span>Save behavior</span><strong>{persist.saveLabel}</strong></div>
+          <div className="workspace-readiness-row"><span>Reason</span><em>{persist.reason}</em></div>
+          {persist.guidance ? <div className="workspace-readiness-row"><span>Guidance</span><em>{persist.guidance}</em></div> : null}
+          {persist.nextAction ? <div className="workspace-readiness-row"><span>Next action</span><em>{persist.nextAction}</em></div> : null}
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Integrations</h3>
+          <div className="workspace-readiness-row"><span>Integration adapter</span><code>{adapterConfig.integrationAdapter}</code></div>
+          <div className="workspace-readiness-row"><span>Deploy target</span><code>{adapterConfig.deployTarget}</code></div>
+          <div className="workspace-readiness-row"><span>Bridge</span>
+            <span className={`workspace-readiness-badge ${adapterConfig.growthubBridge?.hasAccessToken ? "good" : ""}`}>
+              {adapterConfig.growthubBridge?.hasAccessToken ? "token configured" : "no token"}
+            </span>
+          </div>
+          <div className="workspace-readiness-row"><span>Bridge base URL</span><code>{adapterConfig.growthubBridge?.baseUrl || "—"}</code></div>
+          <div className="workspace-readiness-row"><span>Authority</span><strong>{integrationAdapter.authority}</strong></div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Counts</h3>
+          <div className="workspace-readiness-row"><span>Dashboards</span><strong>{dashboards.length}</strong></div>
+          <div className="workspace-readiness-row"><span>Tabs (active canvas)</span><strong>{tabCount}</strong></div>
+          <div className="workspace-readiness-row"><span>Widgets (active canvas)</span><strong>{widgetCount}</strong></div>
+          <div className="workspace-readiness-row"><span>Template format</span><code>growthub-workspace-template</code></div>
+        </article>
+      </div>
+    </section>
+  </div>;
+}
+
+function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose }) {
+  const persist = persistence || DEFAULT_PERSISTENCE;
+  const pipelines = Array.isArray(config?.pipelines) ? config.pipelines : [];
+  const integrations = Array.isArray(config?.integrations) ? config.integrations : [];
+  const capabilities = Array.isArray(config?.capabilities) ? config.capabilities : [];
+  return <div className="workspace-overlay" role="dialog" aria-modal="true" aria-label="Workspace management">
+    <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="workspace-overlay-panel">
+      <header className="workspace-overlay-header">
+        <div>
+          <p>Workspace</p>
+          <h2>Management</h2>
+        </div>
+        <button type="button" aria-label="Close management panel" onClick={onClose} autoFocus>x</button>
+      </header>
+      <p className="workspace-overlay-note">
+        Inspect-only. Workflow execution stays in <code>growthub workflow</code> / <code>growthub bridge</code>; this panel does not
+        execute, does not call hosted endpoints, and does not expose tokens.
+      </p>
+      <div className="workspace-readiness">
+        <article className="workspace-readiness-section">
+          <h3>Workspace</h3>
+          <div className="workspace-readiness-row"><span>ID</span><code>{config?.id || "Unknown"}</code></div>
+          <div className="workspace-readiness-row"><span>Name</span><strong>{config?.name || "Workspace"}</strong></div>
+          <div className="workspace-readiness-row"><span>Capabilities</span>
+            <span>{capabilities.length ? capabilities.join(", ") : "none"}</span>
+          </div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>API</h3>
+          <div className="workspace-readiness-row"><span>PATCH allowlist</span><code>dashboards | widgetTypes | canvas</code></div>
+          <div className="workspace-readiness-row"><span>Unknown field</span><code>400</code></div>
+          <div className="workspace-readiness-row"><span>Read-only runtime</span><code>409 + guidance</code></div>
+          <div className="workspace-readiness-row"><span>Can save now</span>
+            <span className={`workspace-readiness-badge ${persist.canSave ? "good" : "warn"}`}>{persist.canSave ? "yes" : "no"}</span>
+          </div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Workflows</h3>
+          {pipelines.length === 0 ? <div className="workspace-readiness-row workspace-readiness-empty">
+            <em>No workflows declared in growthub.config.json. Connect via <code>growthub workflow</code> after Bridge auth.</em>
+          </div> : pipelines.map((pipeline, index) => <div className="workspace-readiness-row" key={pipeline.id || index}>
+            <span>{pipeline.id || `pipeline-${index}`}</span><strong>{pipeline.name || "Untitled"}</strong>
+          </div>)}
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Integrations</h3>
+          <div className="workspace-readiness-row"><span>Adapter</span><code>{adapterConfig.integrationAdapter}</code></div>
+          <div className="workspace-readiness-row"><span>Deploy target</span><code>{adapterConfig.deployTarget}</code></div>
+          {integrations.length === 0 ? <div className="workspace-readiness-row workspace-readiness-empty">
+            <em>No static integrations declared. Use <code>growthub bridge agents bind</code> for hosted bindings.</em>
+          </div> : integrations.map((integration, index) => <div className="workspace-readiness-row" key={integration.id || index}>
+            <span>{integration.id || `integration-${index}`}</span><strong>{integration.name || "Untitled"}</strong>
+          </div>)}
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Persistence</h3>
+          <div className="workspace-readiness-row"><span>Mode</span>
+            <span className={`workspace-readiness-badge mode-${persist.mode}`}>{persist.mode}</span>
+          </div>
+          <div className="workspace-readiness-row"><span>Reason</span><em>{persist.reason}</em></div>
+          {persist.guidance ? <div className="workspace-readiness-row"><span>Guidance</span><em>{persist.guidance}</em></div> : null}
+        </article>
+      </div>
+    </section>
+  </div>;
+}
+
+function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, persistence }) {
   const [config, setConfig] = useState(() => {
     const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
       ? initialConfig.dashboards.map((dashboard, index) =>
@@ -523,8 +737,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [managementOpen, setManagementOpen] = useState(false);
   const [previewTemplateId, setPreviewTemplateId] = useState(null);
   const [editingDashboardId, setEditingDashboardId] = useState(null);
+  const [editingDashboardDraft, setEditingDashboardDraft] = useState("");
+  const [workspaceView, setWorkspaceView] = useState("dashboards");
   const [activeDashboardId, setActiveDashboardId] = useState(() =>
     getActiveDashboardId(
       Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length ? initialConfig.dashboards : [],
@@ -541,13 +759,16 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
   const activeTabId = getActiveTabId(canvas);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
   const activeWidgets = activeTab.widgets || [];
+  const activeDashboard = dashboards[resolvedActiveDashboardIndex] || dashboards[0] || null;
   const [selectedPosition, setSelectedPosition] = useState(() => findFreePosition(activeWidgets));
   const [selectedWidgetId, setSelectedWidgetId] = useState(null);
   const [dragStartCell, setDragStartCell] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
   const [resizeDrag, setResizeDrag] = useState(null);
+  const [moveDrag, setMoveDrag] = useState(null);
   const [configMessage, setConfigMessage] = useState("");
   const resizeDragRef = useRef(null);
+  const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
   const addSlot = dragPreview || selectedPosition;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
@@ -633,7 +854,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setSelectedPosition({ ...DEFAULT_POSITION });
       setDragPreview(null);
       setEditingDashboardId(dashboard.id);
+      setEditingDashboardDraft(dashboard.name);
       setActiveDashboardId(dashboard.id);
+      setWorkspaceView("builder");
       setConfigMessage(`Created ${name}`);
       return {
         ...synced,
@@ -653,8 +876,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(getTabs(dashboardCanvasFrom(normalized, prev.canvas))[0]?.widgets || []));
       setDragPreview(null);
-      setEditingDashboardId(dashboard.id);
+      setEditingDashboardId(null);
+      setEditingDashboardDraft("");
       setActiveDashboardId(dashboard.id);
+      setWorkspaceView("builder");
       setConfigMessage(`Editing ${dashboard.name}`);
       return {
         ...synced,
@@ -664,32 +889,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     });
   }, [activeDashboardId]);
 
-  const renameDashboard = useCallback((dashboardId, name) => {
-    const nextName = name.trimStart();
-    setConfig((prev) => {
-      const prevDashboards = prev.dashboards || [];
-      const index = prevDashboards.findIndex((dashboard) => dashboard.id === dashboardId);
-      if (index < 0) return prev;
-      const displayName = nextName || "Untitled";
-      const nextDashboards = prevDashboards.map((dashboard) =>
-        dashboard.id === dashboardId ? { ...dashboard, name: displayName, updatedAt: "new" } : dashboard
-      );
-      const nextDashboardsWithTabs = nextDashboards.map((dashboard, dashboardIndex) => {
-        if (dashboardIndex !== index) return dashboard;
-        const normalized = normalizeDashboard(dashboard, index === 0 ? prev.canvas : undefined);
-        const renamedTabs = normalized.tabs.map((tab, tabIndex) =>
-          tabIndex === 0 ? { ...tab, name: displayName } : tab
-        );
-        return { ...normalized, tabs: renamedTabs };
-      });
-      const activeDashboard = nextDashboardsWithTabs.find((dashboard) => dashboard.id === getActiveDashboardId(nextDashboardsWithTabs, activeDashboardId));
-      return {
-        ...prev,
-        dashboards: nextDashboardsWithTabs,
-        canvas: dashboardCanvasFrom(activeDashboard || nextDashboardsWithTabs[0], prev.canvas)
-      };
-    });
-  }, [activeDashboardId]);
+  const enterDashboardTitleEdit = useCallback((dashboard) => {
+    if (!dashboard) return;
+    setEditingDashboardId(dashboard.id);
+    setEditingDashboardDraft(dashboard.name);
+    setWorkspaceView("dashboards");
+  }, []);
 
   const updateDashboardStatus = useCallback((dashboardId, status) => {
     setConfig((prev) => ({
@@ -714,9 +919,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
         name,
         updatedAt: "new",
         status: "draft",
-        tabs: normalizedSource.tabs.map((tab, tabIndex) =>
-          cloneTabForDashboard(tab, tabIndex === 0 ? name : tab.name)
-        )
+        tabs: normalizedSource.tabs.map((tab) => cloneTabForDashboard(tab, tab.name || "Tab 1"))
       };
       dashboard.activeTabId = dashboard.tabs[0].id;
       setSelectedWidgetId(null);
@@ -724,6 +927,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       setDragPreview(null);
       setEditingDashboardId(dashboard.id);
       setActiveDashboardId(dashboard.id);
+      setWorkspaceView("builder");
       setConfigMessage(`Cloned ${sourceDashboard.name}`);
       return {
         ...synced,
@@ -840,7 +1044,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       const nextCanvas = commitTabs(prev.canvas, nextTabs, prevActiveId);
       const nextDashboards = (prev.dashboards || []).map((dashboard, index) =>
         index === dashboardIndex
-          ? updateDashboardCanvas({ ...dashboard, name: template.name, updatedAt: "new", status: "draft" }, nextCanvas)
+          ? updateDashboardCanvas({ ...dashboard, updatedAt: "new", status: "draft" }, nextCanvas)
           : dashboard
       );
       return {
@@ -937,14 +1141,14 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     }
   }, []);
 
-  const save = useCallback(async () => {
+  const persistWorkspaceConfig = useCallback(async (nextConfig, nextActiveDashboardId = activeDashboardId) => {
     if (saving) return;
     setSaving(true);
     try {
       const stamp = todayIsoDate();
-      const syncedConfig = syncActiveDashboard(config, activeDashboardId);
+      const syncedConfig = syncActiveDashboard(nextConfig, nextActiveDashboardId);
       const updatedDashboards = (syncedConfig.dashboards || []).map((dashboard) =>
-        dashboard.id === getActiveDashboardId(syncedConfig.dashboards || [], activeDashboardId)
+        dashboard.id === getActiveDashboardId(syncedConfig.dashboards || [], nextActiveDashboardId)
           ? { ...dashboard, updatedAt: stamp }
           : dashboard
       );
@@ -962,13 +1166,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
         const savedDashboards = (payload.workspaceConfig.dashboards || []).map((dashboard, index) =>
           normalizeDashboard(dashboard, index === 0 ? payload.workspaceConfig.canvas : undefined)
         );
-        const savedActiveDashboard = savedDashboards.find((dashboard) => dashboard.id === activeDashboardId) || savedDashboards[0];
+        const savedActiveDashboard = savedDashboards.find((dashboard) => dashboard.id === nextActiveDashboardId) || savedDashboards[0];
         setConfig({
           ...payload.workspaceConfig,
           dashboards: savedDashboards,
           canvas: savedActiveDashboard ? dashboardCanvasFrom(savedActiveDashboard, payload.workspaceConfig.canvas) : payload.workspaceConfig.canvas
         });
-        setConfigMessage("Saved dashboard config");
       } else {
         setConfigMessage(payload.error || "Save failed");
       }
@@ -979,7 +1182,33 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     }
   }, [activeDashboardId, saving, config]);
 
-  const reopenPanel = useCallback(() => setPanelOpen(true), []);
+  const save = useCallback(async () => {
+    await persistWorkspaceConfig(config, activeDashboardId);
+  }, [activeDashboardId, config, persistWorkspaceConfig]);
+
+  const confirmDashboardTitleEdit = useCallback(async (dashboardId) => {
+    const nextConfig = renameDashboardInConfig(config, dashboardId, editingDashboardDraft, activeDashboardId);
+    setEditingDashboardId(null);
+    setEditingDashboardDraft("");
+    setConfig(nextConfig);
+    await persistWorkspaceConfig(nextConfig, activeDashboardId);
+  }, [activeDashboardId, config, editingDashboardDraft, persistWorkspaceConfig]);
+
+  const cancelDashboardTitleEdit = useCallback((dashboard) => {
+    if (!dashboard) return;
+    if (editingDashboardDraft.trim() !== dashboard.name) {
+      const discard = window.confirm("Discard dashboard title changes?");
+      if (!discard) {
+        requestAnimationFrame(() => {
+          document.querySelector(`[data-dashboard-title-input="${dashboard.id}"]`)?.focus();
+        });
+        return;
+      }
+    }
+    setEditingDashboardId(null);
+    setEditingDashboardDraft("");
+  }, [editingDashboardDraft]);
+
   const closePanel = useCallback(() => setPanelOpen(false), []);
   const beginCellDrag = useCallback((index, event) => {
     const x = index % GRID_COLUMNS;
@@ -1052,6 +1281,55 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     resizeDragRef.current = null;
     setResizeDrag(null);
   }, []);
+  const beginMoveDrag = useCallback((widget, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const pointerIndex = cellIndexFromGridPointer(event, gridRef.current);
+    const pointerCell = pointerIndex === null ? { x: widget.position.x, y: widget.position.y } : cellPointFromIndex(pointerIndex);
+    const nextMoveDrag = {
+      widgetId: widget.id,
+      offsetX: Math.max(0, Math.min(widget.position.w - 1, pointerCell.x - widget.position.x)),
+      offsetY: Math.max(0, Math.min(widget.position.h - 1, pointerCell.y - widget.position.y))
+    };
+    setSelectedWidgetId(widget.id);
+    setPanelOpen(true);
+    moveDragRef.current = nextMoveDrag;
+    setMoveDrag(nextMoveDrag);
+  }, []);
+  const updateMoveDrag = useCallback((event) => {
+    const activeMoveDrag = moveDragRef.current;
+    if (!activeMoveDrag) return;
+    event.preventDefault();
+    const index = cellIndexFromGridPointer(event, gridRef.current);
+    if (index === null) return;
+    const point = cellPointFromIndex(index);
+    const movingWidget = activeWidgets.find((widget) => widget.id === activeMoveDrag.widgetId);
+    if (!movingWidget) return;
+    const nextPosition = clampWidgetMovePosition({
+      x: point.x - activeMoveDrag.offsetX,
+      y: point.y - activeMoveDrag.offsetY
+    }, movingWidget, activeWidgets);
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return {
+          ...tab,
+          widgets: (tab.widgets || []).map((widget) =>
+            widget.id === activeMoveDrag.widgetId ? { ...widget, position: nextPosition } : widget
+          )
+        };
+      });
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
+    });
+  }, [activeDashboardId, activeWidgets]);
+  const finishMoveDrag = useCallback(() => {
+    if (!moveDragRef.current) return;
+    moveDragRef.current = null;
+    setMoveDrag(null);
+  }, []);
   const selectWidget = useCallback((widgetId) => {
     setSelectedWidgetId(widgetId);
     setPanelOpen(true);
@@ -1092,10 +1370,56 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     });
   }, [activeDashboardId]);
 
+  const duplicateSelectedWidget = useCallback(() => {
+    if (!selectedWidget) return;
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const tabWidgets = prevTabs.find((tab) => tab.id === prevActiveId)?.widgets || [];
+      const position = clampPositionToFreeSpace(
+        { ...selectedWidget.position, x: selectedWidget.position.x, y: selectedWidget.position.y },
+        tabWidgets
+      );
+      const cloned = {
+        ...cloneConfig(selectedWidget),
+        id: generateId("widget"),
+        title: `${selectedWidget.title} Copy`,
+        position
+      };
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return { ...tab, widgets: [...(tab.widgets || []), cloned] };
+      });
+      setSelectedWidgetId(cloned.id);
+      setSelectedPosition(findFreePosition([...tabWidgets, cloned]));
+      setConfigMessage(`Duplicated ${selectedWidget.title}`);
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
+    });
+  }, [activeDashboardId, selectedWidget]);
+
   const closeTemplateGallery = useCallback(() => {
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
   }, []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const closeManagement = useCallback(() => setManagementOpen(false), []);
+  const resetWidgetSelection = useCallback(() => {
+    setSelectedWidgetId(null);
+    setPanelOpen(true);
+  }, []);
+  const showDashboardHome = useCallback(() => {
+    setEditingDashboardId(null);
+    setEditingDashboardDraft("");
+    setWorkspaceView("dashboards");
+  }, []);
+  const resetWidgetSelectionOnOutsidePointer = useCallback((event) => {
+    if (!selectedWidgetId) return;
+    if (resizeDragRef.current || moveDragRef.current) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".workspace-widget-preview, .workspace-widget-panel, .workspace-overlay, .template-gallery")) return;
+    resetWidgetSelection();
+  }, [resetWidgetSelection, selectedWidgetId]);
 
   useEffect(() => {
     if (!templateGalleryOpen) return undefined;
@@ -1106,20 +1430,39 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     return () => window.removeEventListener("keydown", handler);
   }, [templateGalleryOpen, closeTemplateGallery]);
 
-  const builderStyle = panelOpen ? undefined : { gridTemplateColumns: COLLAPSED_GRID_COLUMNS };
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const handler = (event) => {
+      if (event.key === "Escape") closeSettings();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [settingsOpen, closeSettings]);
 
-  return <main className="workspace-builder" style={builderStyle}>
+  useEffect(() => {
+    if (!managementOpen) return undefined;
+    const handler = (event) => {
+      if (event.key === "Escape") closeManagement();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [managementOpen, closeManagement]);
+
+  const builderStyle = workspaceView === "dashboards" || !panelOpen
+    ? { gridTemplateColumns: COLLAPSED_GRID_COLUMNS }
+    : undefined;
+
+  return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
       <aside className="workspace-rail" aria-label="Workspace navigation">
         <div className="workspace-brand">
           <span className="workspace-mark">G</span>
           <span>Growthub Workspace</span>
         </div>
         <nav className="workspace-nav">
-          <a className="active" href="#dashboards">Dashboards</a>
-          <a href="#canvas">Canvas</a>
-          <a href="#widgets" onClick={reopenPanel}>Widgets</a>
-          <a href="#bindings" onClick={reopenPanel}>Bindings</a>
+          <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
           <Link href="/settings/integrations">Integrations</Link>
+          <button type="button" className="workspace-nav-button" onClick={() => setSettingsOpen(true)}>Workspace Settings</button>
+          <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
         </nav>
         <div className="workspace-rail-status">
           <span className="status-dot" />
@@ -1130,8 +1473,13 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
       <section className="workspace-surface">
         <header className="workspace-toolbar">
           <div>
-            <p>Official starter</p>
-            <h1>{config.name}</h1>
+            {workspaceView === "builder" ? <>
+              <p>{activeTab?.name || "Tab 1"}</p>
+              <h1>{activeDashboard?.name || "Untitled"}</h1>
+            </> : <>
+              <p>Workspace home</p>
+              <h1>Dashboards</h1>
+            </>}
           </div>
           <div className="workspace-toolbar-actions">
             <button type="button" onClick={() => setTemplateGalleryOpen(true)}>Templates</button>
@@ -1149,12 +1497,11 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             onChange={importConfig}
           />
         </header>
-        {configMessage ? <p className="workspace-config-message">{configMessage}</p> : null}
 
-        <section className="workspace-table" id="dashboards" aria-label="Dashboards">
+        {workspaceView === "dashboards" ? <section className="workspace-table" id="dashboards" aria-label="Dashboards">
           <div className="workspace-table-heading">
             <strong>Dashboards</strong>
-            <span>{dashboards.length} template</span>
+            <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"}</span>
           </div>
           <div className="workspace-table-row workspace-table-head">
             <span>Title</span>
@@ -1165,19 +1512,35 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
           </div>
           {dashboards.map((dashboard, index) => <div className="workspace-table-row" key={dashboard.id}>
               <span className="workspace-dashboard-title">
-                {editingDashboardId === dashboard.id ? <input
-                  aria-label={`Rename ${dashboard.name}`}
-                  onBlur={() => setEditingDashboardId(null)}
-                  onChange={(event) => renameDashboard(dashboard.id, event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === "Escape") {
-                      event.currentTarget.blur();
-                    }
-                  }}
-                  value={dashboard.name}
-                /> : <button
+                {editingDashboardId === dashboard.id ? <span className="workspace-dashboard-title-editor">
+                  <input
+                    aria-label={`Rename ${dashboard.name}`}
+                    autoFocus
+                    data-dashboard-title-input={dashboard.id}
+                    onBlur={() => cancelDashboardTitleEdit(dashboard)}
+                    onChange={(event) => setEditingDashboardDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        confirmDashboardTitleEdit(dashboard.id);
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelDashboardTitleEdit(dashboard);
+                      }
+                    }}
+                    value={editingDashboardDraft}
+                  />
+                  <button
+                    aria-label={`Confirm ${dashboard.name} title`}
+                    className="workspace-dashboard-title-confirm"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => confirmDashboardTitleEdit(dashboard.id)}
+                    type="button"
+                  >✓</button>
+                </span> : <button
                   className={index === resolvedActiveDashboardIndex ? "active" : ""}
-                  onClick={() => selectDashboard(index)}
+                  onClick={() => enterDashboardTitleEdit(dashboard)}
                   type="button"
                 >{dashboard.name}</button>}
               </span>
@@ -1196,14 +1559,14 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
               </span>
               <span className="workspace-dashboard-actions">
                 <button type="button" onClick={() => selectDashboard(index)}>Edit</button>
-                <button type="button" onClick={() => setEditingDashboardId(dashboard.id)}>Rename</button>
+                <button type="button" onClick={() => enterDashboardTitleEdit(dashboard)}>Rename</button>
                 <button type="button" onClick={() => cloneDashboard(index)}>Clone</button>
                 <button type="button" onClick={() => deleteDashboard(index)}>Delete</button>
               </span>
             </div>)}
-        </section>
+        </section> : null}
 
-        <section className="workspace-canvas" id="canvas" aria-label="Composable dashboard canvas">
+        {workspaceView === "builder" ? <section className="workspace-canvas" id="canvas" aria-label="Composable dashboard canvas">
           <div className="workspace-tabs">
             {tabs.map((tab) => <button
                 key={tab.id}
@@ -1234,15 +1597,22 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <button type="button" onClick={duplicateTab}>Duplicate Tab</button>
           </div>
           <div
-            className="workspace-grid"
+            className={`workspace-grid${moveDrag ? " moving-widget" : ""}`}
             ref={gridRef}
             onPointerMove={updatePointerDrag}
             onPointerUp={(event) => {
               finishPointerDrag(event);
               finishResizeDrag();
+              finishMoveDrag();
             }}
-            onPointerLeave={finishResizeDrag}
-            onPointerMoveCapture={updateResizeDrag}
+            onPointerLeave={() => {
+              finishResizeDrag();
+              finishMoveDrag();
+            }}
+            onPointerMoveCapture={(event) => {
+              updateResizeDrag(event);
+              updateMoveDrag(event);
+            }}
             style={{ "--workspace-columns": canvas.layout.columns, "--workspace-rows": GRID_ROWS }}
           >
             {Array.from({ length: GRID_CELL_COUNT }).map((_, index) => {
@@ -1274,6 +1644,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             </button>
             {activeWidgets.map((widget) => <WidgetPreview
               key={widget.id}
+              onMoveStart={(event) => beginMoveDrag(widget, event)}
               onRemove={() => removeSelectedWidget(widget.id)}
               onResizeStart={(corner, event) => beginResizeDrag(widget, corner, event)}
               onSelect={() => selectWidget(widget.id)}
@@ -1281,7 +1652,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
               widget={widget}
             />)}
           </div>
-        </section>
+        </section> : null}
       </section>
 
       {templateGalleryOpen ? <TemplateGallery
@@ -1293,13 +1664,32 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
         onCloneAsDashboard={cloneTemplateAsDashboard}
       /> : null}
 
-      {panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
+      {settingsOpen ? <WorkspaceSettingsPanel
+        config={config}
+        persistence={persistence}
+        adapterConfig={adapterConfig}
+        integrationAdapter={integrationAdapter}
+        onClose={closeSettings}
+      /> : null}
+
+      {managementOpen ? <WorkspaceManagementPanel
+        config={config}
+        persistence={persistence}
+        adapterConfig={adapterConfig}
+        onClose={closeManagement}
+      /> : null}
+
+      {workspaceView === "builder" && panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
         <div className="workspace-panel-title">
           <button type="button" aria-label="Close widget panel" onClick={closePanel}>x</button>
           <span aria-hidden="true">+</span>
           <strong>{selectedWidget ? selectedWidget.title : "New widget"}</strong>
           {selectedWidget ? <em>{widgetKindLabel(selectedWidget.kind)}</em> : null}
         </div>
+        {selectedWidget ? <div className="workspace-widget-actions" role="group" aria-label="Widget actions">
+          <button type="button" onClick={duplicateSelectedWidget}>Duplicate</button>
+          <button type="button" className="danger" onClick={() => removeSelectedWidget(selectedWidget.id)}>Remove</button>
+        </div> : null}
         {selectedWidget ? <section className="workspace-widget-settings">
           <label>
             <span>Title</span>
@@ -1326,21 +1716,31 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
               </select>
             </label>
           </section> : null}
-          {selectedWidget.kind === "iframe" ? <label>
+          {selectedWidget.kind === "iframe" ? <label className="workspace-field-with-hint">
             <span>URL to Embed</span>
             <input
               placeholder="https://example.com/embed"
               value={selectedWidget.config?.url || ""}
               onChange={(event) => updateSelectedWidgetConfig({ url: event.target.value })}
             />
+            <small className={isLikelyHttpUrl(selectedWidget.config?.url) ? "workspace-field-hint good" : "workspace-field-hint warn"}>
+              {isLikelyHttpUrl(selectedWidget.config?.url)
+                ? "Looks like a valid http(s) URL"
+                : selectedWidget.config?.url
+                  ? "URL must start with http:// or https://"
+                  : "Add an http(s) URL to embed"}
+            </small>
           </label> : null}
-          {selectedWidget.kind === "rich-text" ? <label>
+          {selectedWidget.kind === "rich-text" ? <label className="workspace-field-with-hint">
             <span>Content</span>
             <textarea
               placeholder="Write text..."
               value={selectedWidget.config?.text || ""}
               onChange={(event) => updateSelectedWidgetConfig({ text: event.target.value })}
             />
+            <small className="workspace-field-hint">
+              {(selectedWidget.config?.text || "").length} characters · plain text only at V1
+            </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
             <label>
@@ -1410,6 +1810,14 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <div><span>Origin</span><code>{selectedWidget.position.x + 1}, {selectedWidget.position.y + 1}</code></div>
           </div>
         </section> : <section>
+          <div className="workspace-widget-empty">
+            <strong>Pick a widget kind</strong>
+            <p>
+              Widgets snap to the 12-column × 16-row grid. {addSlot.w} × {addSlot.h} cells
+              selected at column {addSlot.x + 1}, row {addSlot.y + 1}. Drag empty cells in the
+              canvas to reshape the placement.
+            </p>
+          </div>
           <p className="workspace-panel-label">Widget type</p>
           <div className="workspace-widget-types">
             {widgetTypes.map((widget) => <button type="button" key={widget.kind} onClick={() => addWidget(widget.kind)}>
