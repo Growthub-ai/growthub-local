@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { describeAuthAdapter } from "@/lib/adapters/auth";
 import { readAdapterConfig } from "@/lib/adapters/env";
-import { describeIntegrationAdapter, listAgencyPortalIntegrations } from "@/lib/adapters/integrations";
+import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { describePaymentAdapter } from "@/lib/adapters/payments";
 import { describePersistenceAdapter } from "@/lib/adapters/persistence";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
@@ -15,7 +15,7 @@ import {
 const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas"]);
 
 async function GET() {
-  const integrations = await listAgencyPortalIntegrations();
+  const integrations = await listGovernedWorkspaceIntegrations();
   const config = readAdapterConfig();
   const adapters = {
     persistence: describePersistenceAdapter(),

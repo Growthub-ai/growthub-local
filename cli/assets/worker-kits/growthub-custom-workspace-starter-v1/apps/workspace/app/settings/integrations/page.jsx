@@ -1,105 +1,139 @@
-import { readAdapterConfig } from "@/lib/adapters/env";
-import { describeIntegrationAdapter, listAgencyPortalIntegrations } from "@/lib/adapters/integrations";
-import { groupIntegrationsByLane } from "@/lib/domain/integrations";
-import { buildPortalWorkspace } from "@/lib/domain/portal";
-import { describeAuthAdapter } from "@/lib/adapters/auth";
-import { describePaymentAdapter } from "@/lib/adapters/payments";
-import { describePersistenceAdapter } from "@/lib/adapters/persistence";
 import Link from "next/link";
+import { readAdapterConfig } from "@/lib/adapters/env";
+import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
+import { groupIntegrationsByLane } from "@/lib/domain/integrations";
+
+function countConnected(rows) {
+  return rows.filter((item) => item.isConnected || item.status === "connected").length;
+}
+
+function integrationKey(item, lane, index) {
+  return [
+    lane,
+    item.provider,
+    item.id,
+    item.accountId,
+    item.connectionId,
+    index
+  ].filter(Boolean).join(":");
+}
+
+function IntegrationRow({ item }) {
+  return <article className="workspace-integration-row">
+      <div className="workspace-provider-mark">{item.icon || item.label.slice(0, 1)}</div>
+      <div className="workspace-integration-main">
+        <strong>{item.label}</strong>
+        <p>{item.description}</p>
+        <div className="workspace-integration-meta">
+          <span>{item.provider}</span>
+          <span>{item.objectType}</span>
+          <span>{item.authPath}</span>
+          <span>{item.setupMode}</span>
+          <span>{item.authType}</span>
+          {item.secretEnvName ? <span>{item.secretEnvName}</span> : null}
+        </div>
+      </div>
+      <span className={`workspace-integration-status ${item.status}`}>{item.status}</span>
+    </article>;
+}
+
 async function IntegrationsSettingsPage() {
   const config = readAdapterConfig();
   const adapter = describeIntegrationAdapter();
-  const grouped = groupIntegrationsByLane(await listAgencyPortalIntegrations());
-  const workspace = buildPortalWorkspace({
-    config,
-    integrations: grouped,
-    adapters: {
-      persistence: describePersistenceAdapter(),
-      auth: describeAuthAdapter(),
-      payments: describePaymentAdapter(),
-      integrations: adapter
-    }
-  });
-  const rows = [
-    ...grouped.dataSources.map((item) => ({ ...item, primitiveGroup: "data-source" })),
-    ...grouped.workspaceIntegrations.map((item) => ({ ...item, primitiveGroup: "workspace-integration" }))
-  ];
-  return <main className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">{workspace.identity.mark}</span>
-          <span>{workspace.identity.label}</span>
+  const grouped = groupIntegrationsByLane(await listGovernedWorkspaceIntegrations());
+  const allRows = [...grouped.dataSources, ...grouped.workspaceIntegrations];
+
+  return <main className="workspace-builder workspace-settings-page">
+      <aside className="workspace-rail" aria-label="Workspace navigation">
+        <div className="workspace-brand">
+          <span className="workspace-mark">G</span>
+          <span>Growthub Workspace</span>
         </div>
-        <nav className="nav">
-          {workspace.navigation.map((item) => <Link className={item.href === "/settings/integrations" ? "active" : ""} key={item.href} href={item.href.startsWith("#") ? `/${item.href}` : item.href}>
-              {item.label}
-            </Link>)}
+        <nav className="workspace-nav">
+          <Link href="/">Dashboards</Link>
+          <Link className="active" href="/settings/integrations">Integrations</Link>
+          <span className="workspace-nav-static">Workspace Settings</span>
+          <span className="workspace-nav-static">Management</span>
         </nav>
-        <div className="sidebar-footer">
+        <div className="workspace-rail-status">
           <span className="status-dot" />
           {adapter.authority}
         </div>
       </aside>
-      <section className="main">
-        <div className="utility-bar">
+
+      <section className="workspace-surface">
+        <header className="workspace-toolbar">
           <div>
+            <p>Workspace settings</p>
+            <h1>Integrations</h1>
+          </div>
+          <div className="workspace-toolbar-actions">
+            <Link href="/api/settings/integrations">API contract</Link>
+            <span>{adapter.id}</span>
+            <span>{adapter.authority}</span>
+          </div>
+        </header>
+
+        <section className="workspace-integration-summary" aria-label="Integration adapter summary">
+          <article>
+            <span>Adapter</span>
             <strong>{adapter.label}</strong>
-            <span>{workspace.identity.primitiveContract}</span>
-          </div>
-          <div className="utility-actions">
-            <span className="pill">{adapter.id}</span>
-            <span className="pill">{adapter.authority}</span>
-          </div>
-        </div>
-        <section className="primitive-grid summary" aria-label="Integration adapter primitives">
-          <article className="primitive-card">
-            <div className="primitive-card-top">
-              <p className="card-label">Authority</p>
-              <span className="status runtime-derived">{adapter.authority}</span>
-            </div>
-            <strong>{adapter.id}</strong>
-            <div className="primitive-meta">
-              {adapter.requiredEnv.map((key) => <code key={key}>{key}</code>)}
+            <div>
+              {adapter.requiredEnv.length
+                ? adapter.requiredEnv.map((key) => <code key={key}>{key}</code>)
+                : <code>local catalog</code>}
             </div>
           </article>
-          <article className="primitive-card">
-            <div className="primitive-card-top">
-              <p className="card-label">Data-source primitives</p>
-              <span className="status runtime-derived">{grouped.dataSources.length}</span>
-            </div>
-            <strong>{grouped.dataSources.filter((item) => item.isConnected).length}/{grouped.dataSources.length}</strong>
-            <div className="primitive-meta"><span>{config.reportingAdapter || "reporting-adapter"}</span></div>
+          <article>
+            <span>Data sources</span>
+            <strong>{countConnected(grouped.dataSources)}/{grouped.dataSources.length}</strong>
+            <div><code>{config.reportingAdapter || "reporting-adapter"}</code></div>
           </article>
-          <article className="primitive-card">
-            <div className="primitive-card-top">
-              <p className="card-label">Workspace primitives</p>
-              <span className="status runtime-derived">{grouped.workspaceIntegrations.length}</span>
-            </div>
-            <strong>{grouped.workspaceIntegrations.filter((item) => item.isConnected).length}/{grouped.workspaceIntegrations.length}</strong>
-            <div className="primitive-meta"><span>{config.integrationAdapter}</span></div>
+          <article>
+            <span>Workspace tools</span>
+            <strong>{countConnected(grouped.workspaceIntegrations)}/{grouped.workspaceIntegrations.length}</strong>
+            <div><code>{config.integrationAdapter}</code></div>
           </article>
         </section>
-        <section className="integration-board">
-          {rows.map((item) => <article className="integration-card" key={item.id}>
-              <div className="integration-card-top">
-                <div className="provider-mark">{item.icon || item.label.slice(0, 1)}</div>
-                <div>
-                  <strong>{item.label}</strong>
-                  <p>{item.provider} / {item.objectType} / {item.primitiveGroup}</p>
-                </div>
-                <span className={`status ${item.status}`}>{item.status}</span>
+
+        <section className="workspace-integration-toolbar">
+          <div>
+            <strong>Connection catalog</strong>
+            <p>{countConnected(allRows)}/{allRows.length} connected. Setup state is resolved from the selected adapter without storing provider tokens in the app.</p>
+          </div>
+        </section>
+
+        <section className="workspace-integration-board">
+          <section className="workspace-integration-section">
+            <div className="workspace-integration-section-heading">
+              <div>
+                <h2>Data Sources</h2>
+                <p>Reporting and blended-data providers available to dashboard widgets.</p>
               </div>
-              <div className="integration-card-meta">
-                <span>{item.authPath}</span>
-                <span>{item.setupMode}</span>
-                <span>{item.authType}</span>
-                {item.secretEnvName ? <span>{item.secretEnvName}</span> : null}
+              <span>{countConnected(grouped.dataSources)}/{grouped.dataSources.length}</span>
+            </div>
+            <div className="workspace-integration-list">
+              {grouped.dataSources.map((item, index) => <IntegrationRow item={item} key={integrationKey(item, "data-source", index)} />)}
+            </div>
+          </section>
+
+          <section className="workspace-integration-section">
+            <div className="workspace-integration-section-heading">
+              <div>
+                <h2>Workspace Tools</h2>
+                <p>Account-level tool connections available to governed workspace workflows.</p>
               </div>
-            </article>)}
+              <span>{countConnected(grouped.workspaceIntegrations)}/{grouped.workspaceIntegrations.length}</span>
+            </div>
+            <div className="workspace-integration-list">
+              {grouped.workspaceIntegrations.map((item, index) => <IntegrationRow item={item} key={integrationKey(item, "workspace-integration", index)} />)}
+            </div>
+          </section>
         </section>
       </section>
     </main>;
 }
+
 export {
   IntegrationsSettingsPage as default
 };

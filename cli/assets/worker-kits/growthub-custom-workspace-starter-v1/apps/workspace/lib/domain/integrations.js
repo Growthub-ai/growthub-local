@@ -172,7 +172,7 @@ const workspaceIntegrations = [
     setupMode: "hosted-authority"
   }
 ];
-const agencyPortalIntegrationCatalog = [...dataSources, ...workspaceIntegrations];
+const governedWorkspaceIntegrationCatalog = [...dataSources, ...workspaceIntegrations];
 function groupIntegrationsByLane(integrations) {
   return {
     dataSources: integrations.filter((item) => item.lane === "data-source"),
@@ -180,6 +180,6 @@ function groupIntegrationsByLane(integrations) {
   };
 }
 export {
-  agencyPortalIntegrationCatalog,
+  governedWorkspaceIntegrationCatalog,
   groupIntegrationsByLane
 };

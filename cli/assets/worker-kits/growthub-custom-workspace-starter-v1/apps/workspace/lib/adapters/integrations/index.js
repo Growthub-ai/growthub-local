@@ -1,6 +1,6 @@
 import { readAdapterConfig } from "@/lib/adapters/env";
 import {
-  agencyPortalIntegrationCatalog
+  governedWorkspaceIntegrationCatalog
 } from "@/lib/domain/integrations";
 import {
   normalizeGrowthubBridgePayload
@@ -19,7 +19,7 @@ function describeIntegrationAdapter() {
     return {
       id: "byo-api-key",
       label: "Bring your own API key",
-      requiredEnv: ["AGENCY_PORTAL_BYO_CONNECTIONS_JSON"],
+      requiredEnv: ["GROWTHUB_WORKSPACE_BYO_CONNECTIONS_JSON"],
       authority: "workspace-env"
     };
   }
@@ -30,16 +30,16 @@ function describeIntegrationAdapter() {
     authority: "local-catalog"
   };
 }
-async function listAgencyPortalIntegrations() {
+async function listGovernedWorkspaceIntegrations() {
   const config = readAdapterConfig();
   if (config.integrationAdapter !== "growthub-bridge") {
     if (config.integrationAdapter === "byo-api-key") {
       return mergeBringYourOwnRows(readBringYourOwnRows());
     }
-    return agencyPortalIntegrationCatalog;
+    return governedWorkspaceIntegrationCatalog;
   }
   if (!config.growthubBridge.baseUrl || !process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN) {
-    return agencyPortalIntegrationCatalog;
+    return governedWorkspaceIntegrationCatalog;
   }
   const url = new URL(config.growthubBridge.integrationsPath, config.growthubBridge.baseUrl);
   const headers = {
@@ -54,7 +54,7 @@ async function listAgencyPortalIntegrations() {
     next: { revalidate: 30 }
   });
   if (!response.ok) {
-    return agencyPortalIntegrationCatalog;
+    return governedWorkspaceIntegrationCatalog;
   }
   const payload = await response.json();
   const merged = mergeBridgeRows(normalizeGrowthubBridgePayload(payload));
@@ -80,7 +80,7 @@ function applyApiKeyOverlays(integrations, config) {
   });
 }
 function readBringYourOwnRows() {
-  const raw = process.env.AGENCY_PORTAL_BYO_CONNECTIONS_JSON;
+  const raw = process.env.GROWTHUB_WORKSPACE_BYO_CONNECTIONS_JSON || process.env.AGENCY_PORTAL_BYO_CONNECTIONS_JSON;
   const rows = [];
   if (process.env.WINDSOR_API_KEY) {
     rows.push({
@@ -129,7 +129,7 @@ function mergeBringYourOwnRows(rows) {
 }
 function mergeBridgeRows(rows) {
   const seenProviders = /* @__PURE__ */ new Set();
-  const merged = agencyPortalIntegrationCatalog.map((catalogItem) => {
+  const merged = governedWorkspaceIntegrationCatalog.map((catalogItem) => {
     const row = rows.find((item) => {
       const provider = item.provider || item.id;
       return provider === catalogItem.provider || item.id === catalogItem.id;
@@ -160,7 +160,7 @@ function mergeBridgeRows(rows) {
     const provider = row.provider || row.id;
     if (!provider) return false;
     if (seenProviders.has(provider)) return false;
-    return !agencyPortalIntegrationCatalog.some((item) => item.provider === provider || item.id === row.id);
+    return !governedWorkspaceIntegrationCatalog.some((item) => item.provider === provider || item.id === row.id);
   });
   return [...merged, ...discoveredRows.map(toDiscoveredIntegration)];
 }
@@ -194,5 +194,5 @@ function toDiscoveredIntegration(row) {
 }
 export {
   describeIntegrationAdapter,
-  listAgencyPortalIntegrations
+  listGovernedWorkspaceIntegrations
 };

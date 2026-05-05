@@ -56,7 +56,7 @@ async function readWorkspaceConfig() {
  * path and gets verbatim `guidance` instead.
  */
 function describePersistenceMode() {
-  const target = process.env.AGENCY_PORTAL_DEPLOY_TARGET || "vercel";
+  const target = process.env.GROWTHUB_WORKSPACE_DEPLOY_TARGET || process.env.AGENCY_PORTAL_DEPLOY_TARGET || "vercel";
   const isReadOnlyDeploy = target === "vercel" || target === "netlify";
   const allowFsWrite = process.env.WORKSPACE_CONFIG_ALLOW_FS_WRITE === "true";
   const baseFilesystem = (reason) => ({
