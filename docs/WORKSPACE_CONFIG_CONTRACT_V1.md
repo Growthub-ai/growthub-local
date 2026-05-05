@@ -1,0 +1,266 @@
+# Workspace Config Contract V1
+
+The official local contract for `growthub.config.json` shipped by every governed workspace exported from `growthub-custom-workspace-starter-v1`. This is the source of truth for the no-code workspace builder, the `/api/workspace` route, and any agent that reads or generates workspace configuration.
+
+This contract is local to the starter kit. It is **not** promoted to `@growthub/api-contract`. Promotion happens later, and only after the local contract is validated end-to-end.
+
+---
+
+## Files that own this contract
+
+| File | Role |
+| --- | --- |
+| `apps/workspace/lib/workspace-schema.js` | Validator + template envelope + grid invariants. Source of truth. |
+| `apps/workspace/lib/workspace-config.js` | Filesystem read/write, persistence-mode adapter, write guard. |
+| `apps/workspace/app/api/workspace/route.js` | `GET` + `PATCH` boundary; PATCH allowlist enforcement. |
+| `apps/workspace/growthub.config.json` | Persisted workspace config (the V1 reference instance). |
+
+---
+
+## Top-level structure
+
+```jsonc
+{
+  "id": "workspace-builder-default",
+  "name": "Workspace Builder",
+  "description": "...",
+  "branding": { "logoUrl": "", "name": "Growthub Workspace", "accent": "#3f68ff" },
+  "capabilities": ["dashboards", "canvas", "widgets", "bindings", "integrations", "settings"],
+  "pipelines": [],
+  "integrations": [],
+  "dashboards": [ /* DashboardConfig[] */ ],
+  "widgetTypes":  [ /* { kind, label, icon } */ ],
+  "canvas": { /* CanvasConfig */ },
+  "provenance": { /* free-form metadata */ }
+}
+```
+
+`dashboards`, `widgetTypes`, `canvas` are **the only fields the validator inspects** and the only fields the API can mutate. Everything else is preserved through the round-trip but never validated and never accepted on `PATCH`.
+
+---
+
+## PATCH allowlist (immutable)
+
+`PATCH /api/workspace` accepts **only** these top-level keys:
+
+```
+dashboards
+widgetTypes
+canvas
+```
+
+Any other key returns:
+
+```http
+HTTP/1.1 400 Bad Request
+{ "error": "patch contains unknown fields", "details": ["..."], "allowed": ["dashboards","widgetTypes","canvas"] }
+```
+
+This rule is enforced in `apps/workspace/app/api/workspace/route.js` and is part of the V1 contract. New top-level concepts (e.g. `branding`) are **not** added to PATCH; they are persisted by editing `growthub.config.json` directly inside the governed fork.
+
+---
+
+## DashboardConfig
+
+```ts
+{
+  id: string,                                  // non-empty, unique within dashboards[]
+  name: string,                                // non-empty
+  createdBy?: string,
+  updatedAt?: string,                          // ISO date or "new"
+  status?: "draft" | "active" | "archived",
+  tabs?: TabConfig[],                          // optional per-dashboard tab list
+  activeTabId?: string                         // must match a tabs[].id when present
+}
+```
+
+Dashboard `id` duplicates are rejected. `activeTabId`, when present, must resolve.
+
+---
+
+## CanvasConfig
+
+`canvas` carries the active editing surface. **Single-tab and multi-tab are mutually exclusive — never both at once.**
+
+```ts
+{
+  layout: { columns: 12, rowHeight: number, gap: number, responsive: boolean },
+  // single-tab:
+  widgets?: WidgetBase[],
+  // multi-tab:
+  tabs?: TabConfig[],
+  activeTabId?: string,
+  bindings?: { [key: string]: boolean | string }
+}
+```
+
+`canvas.layout.columns` is locked at `12`. The validator rejects any other value.
+
+`apps/workspace/lib/workspace-config.js#applyPatch` strips the dormant shape during PATCH to guarantee mutual exclusion: a multi-tab patch removes `canvas.widgets`; a single-tab patch removes `canvas.tabs` + `canvas.activeTabId`.
+
+---
+
+## TabConfig
+
+```ts
+{
+  id: string,                                  // non-empty, unique within tabs[]
+  name: string,                                // non-empty
+  widgets: WidgetBase[]
+}
+```
+
+---
+
+## WidgetBase
+
+```ts
+{
+  id: string,                                  // non-empty, unique across the entire canvas
+  kind: "chart" | "view" | "iframe" | "rich-text",
+  title: string,                               // non-empty
+  position: WidgetPosition,
+  config: ChartWidgetConfig | ViewWidgetConfig | IframeWidgetConfig | RichTextWidgetConfig
+}
+```
+
+Widget `id` uniqueness is checked across single-tab `canvas.widgets[]` AND every `canvas.tabs[*].widgets[]` together — the same id cannot exist twice in the same canvas.
+
+---
+
+## WidgetPosition
+
+```ts
+{ x: integer >= 0, y: integer >= 0, w: integer >= 1, h: integer >= 1 }
+```
+
+Invariants enforced by `validateWidgetArray`:
+
+- `x + w <= 12`
+- `y + h <= 16`
+- No two widgets may occupy the same grid cell within the same canvas/tab
+
+Off-grid placements and overlaps return `400` with `details[]` naming the offending widget.
+
+---
+
+## Widget config shapes
+
+```ts
+ChartWidgetConfig = {
+  values?: number[],                           // finite numbers only
+  binding?: StaticDataBinding
+}
+
+ViewWidgetConfig = {
+  source?: string,
+  layout?: "Table",                            // "Table" only at V1
+  columns?: string[],
+  rows?: Record<string, unknown>[],
+  binding?: StaticDataBinding
+}
+
+IframeWidgetConfig = {
+  url?: string
+}
+
+RichTextWidgetConfig = {
+  text?: string,
+  binding?: StaticDataBinding
+}
+```
+
+---
+
+## StaticDataBinding
+
+```ts
+{
+  mode: "manual" | "json" | "csv",
+  source?: string,
+  rows?: Record<string, unknown>[],
+  json?: string,
+  csv?: string
+}
+```
+
+V1 ships `static` bindings only. Bridge-backed bindings are documented in `docs/BRIDGE_BACKED_WIDGETS_V1_PLAN.md` and are explicitly out of scope for V1.
+
+---
+
+## Import/export envelope
+
+Export format produced by the no-code builder and accepted by the import path:
+
+```jsonc
+{
+  "version": 1,
+  "kind": "growthub-workspace-template",
+  "exportedAt": "2026-05-05T00:00:00.000Z",
+  "source": "growthub-custom-workspace-starter-v1",
+  "name": "Client Portal",
+  "description": "",
+  "payload": {
+    "dashboards": [],
+    "widgetTypes": [],
+    "canvas": {}
+  }
+}
+```
+
+Both shapes are accepted on import:
+
+- Wrapped envelope where `kind === "growthub-workspace-template"` — `unwrapWorkspaceTemplateImport` returns `payload`.
+- Raw `{ dashboards, widgetTypes, canvas }` — passed through unchanged for back-compat.
+
+The unwrapped payload is validated through `validateWorkspaceConfig` before entering client state, then validated again on the server during Save.
+
+---
+
+## Persistence adapter modes
+
+`describePersistenceMode()` (in `apps/workspace/lib/workspace-config.js`) returns:
+
+```ts
+{
+  mode: "filesystem" | "read-only" | "database",  // "database" reserved
+  adapter: "filesystem" | "read-only" | "database",
+  canSave: boolean,
+  saveLabel: string,
+  reason: string,
+  nextAction: string | null,
+  guidance: string | null
+}
+```
+
+Read-only runtime returns the guidance verbatim on the `409` body, so the UI and the API surface speak the same words. Filesystem runtime returns `nextAction = null` and `guidance = null`.
+
+V1 ships `filesystem` and `read-only`. The `database` slot is reserved for a future hosted persistence adapter; the return shape is stable so adding the adapter does not change UI or API contracts.
+
+---
+
+## Validation contract
+
+`validateWorkspaceConfig(payload)` throws:
+
+```ts
+Error & { code: "INVALID_WORKSPACE_CONFIG", details: string[] }
+```
+
+The thrown details array is human-readable enough for the no-code Save UI to render them and for an agent to round-trip them as a structured error.
+
+`validateWorkspaceTemplate(template)` throws the analogous `INVALID_WORKSPACE_TEMPLATE`.
+
+---
+
+## Out of scope for V1
+
+- Hosted persistence (database adapter)
+- Bridge-backed widget bindings
+- Workflow execution from the browser
+- Agent chat in the workspace
+- Artifact viewers
+- New widget kinds beyond `chart | view | iframe | rich-text`
+- Free-form pixel layout (V1 is fixed-grid only)
+
+These are intentionally deferred. The V1 contract is the substrate they will additively extend.

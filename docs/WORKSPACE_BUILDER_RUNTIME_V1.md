@@ -1,8 +1,22 @@
 # Workspace Builder Runtime V1
 
-The Workspace Builder Runtime turns the official `growthub-custom-workspace-starter-v1` shell from a static dashboard preview into a config-backed no-code surface — **without changing any of the existing UI/UX**.
+## Product Role
 
-The exported screenshot of `apps/workspace` is the canonical baseline. All wiring added by V1 lives behind the buttons that are already visible there:
+The Workspace Builder Runtime is the **front-end customization plane for the governed workspace starter kit** — the official 1.0 product object of Growthub Local. A governed workspace is the top-level unit; kits, templates, workflows, agents, and source imports are inputs to a workspace, not parallel concepts.
+
+A user installs Growthub Local, picks a source (GitHub repo, skills.sh skill, worker kit, starter), exports a governed workspace, and lands inside this builder. The builder edits validated config, the config is exportable/importable/deployable, and `.growthub-fork/` keeps the lifecycle governable.
+
+Companion contracts:
+
+- [`docs/WORKSPACE_CONFIG_CONTRACT_V1.md`](./WORKSPACE_CONFIG_CONTRACT_V1.md) — the canonical `growthub.config.json` shape
+- [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — the workspace topology + authority boundary
+- [`docs/WORKSPACE_DEPLOY_FLOW.md`](./WORKSPACE_DEPLOY_FLOW.md) — how a workspace ships to production
+
+---
+
+## Behavioural baseline
+
+The Workspace Builder Runtime turns the official `growthub-custom-workspace-starter-v1` shell from a static dashboard preview into a config-backed no-code surface. The exported screenshot of `apps/workspace` is the canonical baseline. All wiring lives behind the buttons that are already visible there:
 
 - **Save** → `PATCH /api/workspace`
 - **New Dashboard** → appends a row to `dashboards`
@@ -12,8 +26,10 @@ The exported screenshot of `apps/workspace` is the canonical baseline. All wirin
 - **Templates** → apply a validated dashboard layout without leaving the builder
 - **Import / Export** → move dashboard configs as JSON assets
 - **Widget settings** → edit the per-kind config fields that are serialized into `growthub.config.json`
+- **Workspace Settings** → inspect-only admin panel: workspace name, branding, persistence mode, integration adapter, dashboard/tab/widget counts (sourced from existing `GET /api/workspace`)
+- **Management** → inspect-only management panel: Workspace / API / Workflows / Integrations / Persistence state (sourced from existing `GET /api/workspace`)
 
-No deploy panels, onboarding wizards, AI-native widget kinds, bridge data routes, save pills, or status banners are introduced.
+V1 does **not** introduce deploy panels, onboarding wizards, AI-native widget kinds, bridge data routes, browser workflow execution, save pills, or deploy status banners. The Workspace Settings and Management panels are inspect-only — they read state that already exists in the GET payload, never call hosted endpoints, and never expose tokens.
 
 ## Source of truth
 
@@ -85,12 +101,27 @@ Persistence uses one canonical canvas shape at a time: single-tab saves use `can
 
 ## Persistence modes
 
-`describePersistenceMode` returns `{ mode, reason }`:
+`describePersistenceMode` returns the V1 persistence-adapter shape:
 
-- `filesystem` — local development (or any runtime that opts in with `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true`).
-- `read-only` — Vercel/Netlify-style runtimes where the bundle is immutable. `PATCH /api/workspace` returns 409 with adapter guidance.
+```ts
+{
+  mode: "filesystem" | "read-only" | "database",   // "database" reserved
+  adapter: "filesystem" | "read-only" | "database",
+  canSave: boolean,
+  saveLabel: string,                               // copy for the no-code Save UI
+  reason: string,
+  nextAction: string | null,
+  guidance: string | null                          // mirrors the 409 body
+}
+```
 
-The starter ships in `read-only` mode by default. Local `next dev` runs in `filesystem` mode. A future hosted persistence adapter can replace the filesystem write without touching the UI.
+Adapter modes:
+
+- `filesystem` — local Next.js dev or any runtime that opts in with `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true`. `canSave: true`. Save writes `growthub.config.json`.
+- `read-only` — Vercel / Netlify-style runtimes. `canSave: false`. `PATCH /api/workspace` returns `409` with `guidance` matching `describePersistenceMode().guidance` verbatim, so the API and the no-code UI speak the same words.
+- `database` — reserved adapter slot for a future hosted persistence adapter. Not implemented in V1; the return shape is stable so adding the adapter does not change UI or API contracts.
+
+The starter ships in `read-only` mode by default. Local `next dev` runs in `filesystem` mode. The full contract reference is `docs/WORKSPACE_CONFIG_CONTRACT_V1.md`.
 
 ## API surface
 
@@ -203,12 +234,38 @@ Click `Save` → `fetch("/api/workspace", { method: "PATCH", body: JSON.stringif
 
 The button label remains `Save` in the idle state shown in the screenshot.
 
+## Workspace Settings panel (inspect-only admin)
+
+The Workspace Settings panel is the no-code admin surface inside the existing builder shell. It is **inspect-only** — every field is sourced from data already on `GET /api/workspace` and the in-memory client state. There are no new API routes, no hosted calls, no token exposure, no execution.
+
+It surfaces:
+
+- **Identity** — workspace `name`, optional `branding.logoUrl`, `branding.name`, `branding.accent` from `growthub.config.json`.
+- **Persistence** — `mode`, `adapter`, `canSave`, `saveLabel`, `reason`, `nextAction`, `guidance` from `describePersistenceMode()`.
+- **Integrations** — `integrationAdapter` (`static | growthub-bridge | byo-api-key`), `deployTarget`, and the bridge access token presence boolean from `readAdapterConfig()`.
+- **Counts** — dashboards / tabs / widgets in the active config. The Save / Read-only state mirrors the persistence adapter — read-only runtimes show the same `guidance` string the 409 returns.
+
+The optional `branding` object is preserved through the workspace-config round-trip but is **not** in the PATCH allowlist. Operators set branding by editing `growthub.config.json` inside the governed fork.
+
+## Management panel (inspect-only)
+
+The Management panel reads the same `GET /api/workspace` payload and renders five sections:
+
+- **Workspace** — id, name, capabilities.
+- **API** — `PATCH /api/workspace` allowlist (`dashboards | widgetTypes | canvas`), known error codes, persistence-derived `canSave`.
+- **Workflows** — list of workflows declared in `growthub.config.json#pipelines`. V1 ships empty. Hosted execution from the browser is **not** introduced.
+- **Integrations** — adapter-derived state: integration adapter, deploy target, bridge presence.
+- **Persistence** — mirror of the persistence-adapter shape.
+
+The panel never executes a workflow, never lists hosted agents, never calls Growthub Bridge from the browser. Future-action hints (e.g. "Connect Growthub Bridge", "Configure persistence adapter") are docs-only references to the existing CLI commands.
+
 ## V1 limitations
 
 - No freeform pixel layout. Placement and resize snap to the 12-column x 16-row cell lattice and reject overlaps.
 - No hosted data binding yet. Static JSON, CSV, and manual rows exist only as local config-backed binding examples.
-- No bridge / agents / workflows / artifacts UI. Those remain in the existing `growthub bridge ...` CLI commands; introducing them here would require new UI surfaces and is out of scope for V1.
-- No onboarding overlay. The starter exports unchanged from the original screenshot.
+- No bridge / agents / workflows / artifacts execution UI. Those remain in the existing `growthub bridge ...` and `growthub workflow` CLI commands. The Management panel is inspect-only.
+- No onboarding overlay. The starter exports the same baseline screenshot.
+- The `branding` object is preserved round-trip but is not editable through PATCH; it is operator-edited inside the governed fork.
 
 ## Local E2E smoke
 

@@ -1191,3 +1191,292 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
     grid-template-columns: 1fr;
   }
 }
+
+/*
+ * Widget panel — Twenty-style action row, empty state, inline field hints.
+ * Additive to the existing .workspace-widget-* vocabulary.
+ */
+.workspace-widget-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ececec;
+}
+.workspace-widget-actions button {
+  flex: 1;
+  min-height: 30px;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #3d3d3d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 8px;
+}
+.workspace-widget-actions button:hover {
+  background: #f7f7f7;
+}
+.workspace-widget-actions button.danger {
+  color: #b3261e;
+  border-color: #f0c5c2;
+  background: #fff7f6;
+}
+.workspace-widget-actions button.danger:hover {
+  background: #fdeae8;
+}
+.workspace-widget-empty {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px dashed #d8d8d8;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.workspace-widget-empty strong {
+  color: #2c2c2c;
+  font-size: 13px;
+}
+.workspace-widget-empty p {
+  margin: 0;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workspace-field-with-hint {
+  position: relative;
+}
+.workspace-field-hint {
+  display: block;
+  margin-top: 4px;
+  color: #888;
+  font-size: 11px;
+  font-style: normal;
+}
+.workspace-field-hint.good {
+  color: #15803d;
+}
+.workspace-field-hint.warn {
+  color: #92400e;
+}
+
+/*
+ * Workspace Settings + Management overlays.
+ * Inspect-only panels sourced from GET /api/workspace + describePersistenceMode().
+ * Visual vocabulary mirrors .template-gallery (modal + backdrop + white panel)
+ * and .workspace-* (light theme, thin borders, subtle muted text).
+ */
+.workspace-nav-button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #686868;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 9px;
+  text-align: left;
+  text-decoration: none;
+}
+.workspace-nav-button:hover,
+.workspace-nav-button:focus {
+  background: #f1f1f1;
+  color: #2c2c2c;
+  outline: none;
+}
+.workspace-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+.workspace-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 15, 15, 0.42);
+}
+.workspace-overlay-panel {
+  position: relative;
+  margin: 32px auto;
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #e3e3e3;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(15, 15, 15, 0.18);
+  padding: 18px 18px 14px;
+}
+.workspace-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.workspace-overlay-header p {
+  margin: 0 0 2px;
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.workspace-overlay-header h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+.workspace-overlay-header button {
+  min-height: 30px;
+  min-width: 30px;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #4f4f4f;
+  font: inherit;
+  cursor: pointer;
+}
+.workspace-overlay-note {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px dashed #d8d8d8;
+  border-radius: 8px;
+  background: #fafafa;
+  color: #555;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workspace-overlay-note code {
+  background: #f4f4f4;
+  border-radius: 4px;
+  color: #444;
+  font-size: 11px;
+  padding: 1px 5px;
+}
+.workspace-readiness {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.workspace-readiness-section {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  border: 1px solid #e7e7e7;
+  border-radius: 10px;
+  background: #fcfcfc;
+  padding: 14px;
+}
+.workspace-readiness-section h3 {
+  margin: 0 0 4px;
+  color: #333;
+  font-size: 13px;
+  font-weight: 700;
+}
+.workspace-readiness-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 28px;
+  border-top: 1px solid #f0f0f0;
+  padding: 6px 0;
+}
+.workspace-readiness-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.workspace-readiness-row > span:first-child {
+  color: #999;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.workspace-readiness-row strong {
+  min-width: 0;
+  color: #2c2c2c;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+.workspace-readiness-row em {
+  min-width: 0;
+  color: #666;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.workspace-readiness-row code {
+  min-width: 0;
+  background: #f4f4f4;
+  border-radius: 4px;
+  color: #555;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  word-break: break-word;
+}
+.workspace-readiness-empty {
+  grid-template-columns: 1fr;
+}
+.workspace-readiness-empty em {
+  color: #888;
+}
+.workspace-readiness-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e1e1e1;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: #444;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.workspace-readiness-badge.good {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #15803d;
+}
+.workspace-readiness-badge.warn {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #92400e;
+}
+.workspace-readiness-badge.mode-filesystem {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #15803d;
+}
+.workspace-readiness-badge.mode-read-only {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #92400e;
+}
+.workspace-readiness-badge.mode-database {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #075985;
+}
+
+@media (max-width: 720px) {
+  .workspace-overlay-panel {
+    margin: 16px;
+    width: calc(100vw - 32px);
+    padding: 14px;
+  }
+  .workspace-readiness {
+    grid-template-columns: 1fr;
+  }
+}

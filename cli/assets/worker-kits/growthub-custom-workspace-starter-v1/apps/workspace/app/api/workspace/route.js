@@ -72,8 +72,8 @@ async function PATCH(request) {
           error: "workspace config is read-only in this runtime",
           reason: error.message,
           adapter: error.adapter,
-          guidance:
-            "Edit growthub.config.json locally, or set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime."
+          guidance: error.guidance
+            || "Edit growthub.config.json locally, or set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime."
         },
         { status: 409 }
       );

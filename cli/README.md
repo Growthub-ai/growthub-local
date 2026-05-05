@@ -2,19 +2,37 @@
 
 `@growthub/cli` is the CLI control plane for Growthub Local.
 
-It helps you turn a repo, skill, starter, or kit into a governed local agent environment you can customize, keep current, and optionally activate with hosted authority.
+It creates governed **Workspaces** from any source — repo, skill, kit, template, or greenfield. The Workspace is the top-level product object; this CLI is the local executor that creates, customizes, and inspects them.
 
-## Install
+## Start here: create a governed Workspace
+
+Power-user one-liner that exports the official starter directly:
+
+```bash
+npx -p @growthub/cli@latest growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
+```
+
+Or the guided installer:
+
+```bash
+npm create @growthub/growthub-local@latest
+```
+
+After export, open the no-code Workspace Builder:
+
+```bash
+cd my-workspace/apps/workspace
+npm install
+npm run dev
+```
+
+## Install (CLI only)
 
 ```bash
 npm install -g @growthub/cli
 ```
 
-Or start with the guided installer:
-
-```bash
-npm create growthub-local@latest
-```
+Reference contracts: [Workspace Config Contract V1](../docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](../docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace Builder Runtime V1](../docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 
 ## Profile-first setup (recommended)
 

@@ -313,6 +313,16 @@ function widgetKindLabel(kind) {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+function isLikelyHttpUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function cloneConfig(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -507,7 +517,170 @@ function WidgetPreview({ widget, selected, onSelect, onRemove, onResizeStart }) 
   </article>;
 }
 
-function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) {
+const DEFAULT_PERSISTENCE = {
+  mode: "filesystem",
+  adapter: "filesystem",
+  canSave: true,
+  saveLabel: "Save writes growthub.config.json on disk.",
+  reason: "Local development",
+  nextAction: null,
+  guidance: null
+};
+
+function countCanvasWidgets(canvas) {
+  if (!canvas) return 0;
+  if (Array.isArray(canvas.tabs) && canvas.tabs.length) {
+    return canvas.tabs.reduce((acc, tab) => acc + (Array.isArray(tab.widgets) ? tab.widgets.length : 0), 0);
+  }
+  return Array.isArray(canvas.widgets) ? canvas.widgets.length : 0;
+}
+
+function countCanvasTabs(canvas) {
+  if (!canvas) return 0;
+  if (Array.isArray(canvas.tabs) && canvas.tabs.length) return canvas.tabs.length;
+  return 1;
+}
+
+function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integrationAdapter, onClose }) {
+  const branding = (config && config.branding) || {};
+  const dashboards = Array.isArray(config?.dashboards) ? config.dashboards : [];
+  const tabCount = countCanvasTabs(config?.canvas);
+  const widgetCount = countCanvasWidgets(config?.canvas);
+  const persist = persistence || DEFAULT_PERSISTENCE;
+  return <div className="workspace-overlay" role="dialog" aria-modal="true" aria-label="Workspace settings">
+    <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="workspace-overlay-panel">
+      <header className="workspace-overlay-header">
+        <div>
+          <p>Workspace</p>
+          <h2>Workspace Settings</h2>
+        </div>
+        <button type="button" aria-label="Close workspace settings" onClick={onClose}>x</button>
+      </header>
+      <p className="workspace-overlay-note">
+        Inspect-only. Sourced from <code>growthub.config.json</code> + <code>GET /api/workspace</code>.
+        Edit branding by updating <code>growthub.config.json</code> inside your governed fork.
+        The builder itself never holds tokens, never executes hosted workflows, and never bypasses the PATCH allowlist
+        (<code>dashboards</code>, <code>widgetTypes</code>, <code>canvas</code>).
+      </p>
+      <div className="workspace-readiness">
+        <article className="workspace-readiness-section">
+          <h3>Identity</h3>
+          <div className="workspace-readiness-row"><span>Name</span><strong>{config?.name || "Workspace"}</strong></div>
+          <div className="workspace-readiness-row"><span>Workspace ID</span><code>{config?.id || "Unknown"}</code></div>
+          <div className="workspace-readiness-row"><span>Brand name</span><strong>{branding.name || "Unknown"}</strong></div>
+          <div className="workspace-readiness-row"><span>Logo URL</span><code>{branding.logoUrl || "—"}</code></div>
+          <div className="workspace-readiness-row"><span>Accent</span>
+            <span className="workspace-readiness-badge" style={{ background: branding.accent || "#3f68ff" }}>{branding.accent || "—"}</span>
+          </div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Persistence</h3>
+          <div className="workspace-readiness-row"><span>Mode</span>
+            <span className={`workspace-readiness-badge mode-${persist.mode}`}>{persist.mode}</span>
+          </div>
+          <div className="workspace-readiness-row"><span>Adapter</span><code>{persist.adapter}</code></div>
+          <div className="workspace-readiness-row"><span>Can save</span>
+            <span className={`workspace-readiness-badge ${persist.canSave ? "good" : "warn"}`}>{persist.canSave ? "yes" : "no"}</span>
+          </div>
+          <div className="workspace-readiness-row"><span>Save behavior</span><strong>{persist.saveLabel}</strong></div>
+          <div className="workspace-readiness-row"><span>Reason</span><em>{persist.reason}</em></div>
+          {persist.guidance ? <div className="workspace-readiness-row"><span>Guidance</span><em>{persist.guidance}</em></div> : null}
+          {persist.nextAction ? <div className="workspace-readiness-row"><span>Next action</span><em>{persist.nextAction}</em></div> : null}
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Integrations</h3>
+          <div className="workspace-readiness-row"><span>Integration adapter</span><code>{adapterConfig.integrationAdapter}</code></div>
+          <div className="workspace-readiness-row"><span>Deploy target</span><code>{adapterConfig.deployTarget}</code></div>
+          <div className="workspace-readiness-row"><span>Bridge</span>
+            <span className={`workspace-readiness-badge ${adapterConfig.growthubBridge?.hasAccessToken ? "good" : ""}`}>
+              {adapterConfig.growthubBridge?.hasAccessToken ? "token configured" : "no token"}
+            </span>
+          </div>
+          <div className="workspace-readiness-row"><span>Bridge base URL</span><code>{adapterConfig.growthubBridge?.baseUrl || "—"}</code></div>
+          <div className="workspace-readiness-row"><span>Authority</span><strong>{integrationAdapter.authority}</strong></div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Counts</h3>
+          <div className="workspace-readiness-row"><span>Dashboards</span><strong>{dashboards.length}</strong></div>
+          <div className="workspace-readiness-row"><span>Tabs (active canvas)</span><strong>{tabCount}</strong></div>
+          <div className="workspace-readiness-row"><span>Widgets (active canvas)</span><strong>{widgetCount}</strong></div>
+          <div className="workspace-readiness-row"><span>Template format</span><code>growthub-workspace-template</code></div>
+        </article>
+      </div>
+    </section>
+  </div>;
+}
+
+function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose }) {
+  const persist = persistence || DEFAULT_PERSISTENCE;
+  const pipelines = Array.isArray(config?.pipelines) ? config.pipelines : [];
+  const integrations = Array.isArray(config?.integrations) ? config.integrations : [];
+  const capabilities = Array.isArray(config?.capabilities) ? config.capabilities : [];
+  return <div className="workspace-overlay" role="dialog" aria-modal="true" aria-label="Workspace management">
+    <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="workspace-overlay-panel">
+      <header className="workspace-overlay-header">
+        <div>
+          <p>Workspace</p>
+          <h2>Management</h2>
+        </div>
+        <button type="button" aria-label="Close management panel" onClick={onClose}>x</button>
+      </header>
+      <p className="workspace-overlay-note">
+        Inspect-only. Workflow execution stays in <code>growthub workflow</code> / <code>growthub bridge</code>; this panel does not
+        execute, does not call hosted endpoints, and does not expose tokens.
+      </p>
+      <div className="workspace-readiness">
+        <article className="workspace-readiness-section">
+          <h3>Workspace</h3>
+          <div className="workspace-readiness-row"><span>ID</span><code>{config?.id || "Unknown"}</code></div>
+          <div className="workspace-readiness-row"><span>Name</span><strong>{config?.name || "Workspace"}</strong></div>
+          <div className="workspace-readiness-row"><span>Capabilities</span>
+            <span>{capabilities.length ? capabilities.join(", ") : "none"}</span>
+          </div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>API</h3>
+          <div className="workspace-readiness-row"><span>PATCH allowlist</span><code>dashboards | widgetTypes | canvas</code></div>
+          <div className="workspace-readiness-row"><span>Unknown field</span><code>400</code></div>
+          <div className="workspace-readiness-row"><span>Read-only runtime</span><code>409 + guidance</code></div>
+          <div className="workspace-readiness-row"><span>Can save now</span>
+            <span className={`workspace-readiness-badge ${persist.canSave ? "good" : "warn"}`}>{persist.canSave ? "yes" : "no"}</span>
+          </div>
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Workflows</h3>
+          {pipelines.length === 0 ? <div className="workspace-readiness-row workspace-readiness-empty">
+            <em>No workflows declared in growthub.config.json. Connect via <code>growthub workflow</code> after Bridge auth.</em>
+          </div> : pipelines.map((pipeline, index) => <div className="workspace-readiness-row" key={pipeline.id || index}>
+            <span>{pipeline.id || `pipeline-${index}`}</span><strong>{pipeline.name || "Untitled"}</strong>
+          </div>)}
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Integrations</h3>
+          <div className="workspace-readiness-row"><span>Adapter</span><code>{adapterConfig.integrationAdapter}</code></div>
+          <div className="workspace-readiness-row"><span>Deploy target</span><code>{adapterConfig.deployTarget}</code></div>
+          {integrations.length === 0 ? <div className="workspace-readiness-row workspace-readiness-empty">
+            <em>No static integrations declared. Use <code>growthub bridge agents bind</code> for hosted bindings.</em>
+          </div> : integrations.map((integration, index) => <div className="workspace-readiness-row" key={integration.id || index}>
+            <span>{integration.id || `integration-${index}`}</span><strong>{integration.name || "Untitled"}</strong>
+          </div>)}
+        </article>
+        <article className="workspace-readiness-section">
+          <h3>Persistence</h3>
+          <div className="workspace-readiness-row"><span>Mode</span>
+            <span className={`workspace-readiness-badge mode-${persist.mode}`}>{persist.mode}</span>
+          </div>
+          <div className="workspace-readiness-row"><span>Reason</span><em>{persist.reason}</em></div>
+          {persist.guidance ? <div className="workspace-readiness-row"><span>Guidance</span><em>{persist.guidance}</em></div> : null}
+        </article>
+      </div>
+    </section>
+  </div>;
+}
+
+function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, persistence }) {
   const [config, setConfig] = useState(() => {
     const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
       ? initialConfig.dashboards.map((dashboard, index) =>
@@ -523,6 +696,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [managementOpen, setManagementOpen] = useState(false);
   const [previewTemplateId, setPreviewTemplateId] = useState(null);
   const [editingDashboardId, setEditingDashboardId] = useState(null);
   const [activeDashboardId, setActiveDashboardId] = useState(() =>
@@ -1092,10 +1267,39 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     });
   }, [activeDashboardId]);
 
+  const duplicateSelectedWidget = useCallback(() => {
+    if (!selectedWidget) return;
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const tabWidgets = prevTabs.find((tab) => tab.id === prevActiveId)?.widgets || [];
+      const position = clampPositionToFreeSpace(
+        { ...selectedWidget.position, x: selectedWidget.position.x, y: selectedWidget.position.y },
+        tabWidgets
+      );
+      const cloned = {
+        ...cloneConfig(selectedWidget),
+        id: generateId("widget"),
+        title: `${selectedWidget.title} Copy`,
+        position
+      };
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return { ...tab, widgets: [...(tab.widgets || []), cloned] };
+      });
+      setSelectedWidgetId(cloned.id);
+      setSelectedPosition(findFreePosition([...tabWidgets, cloned]));
+      setConfigMessage(`Duplicated ${selectedWidget.title}`);
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
+    });
+  }, [activeDashboardId, selectedWidget]);
+
   const closeTemplateGallery = useCallback(() => {
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
   }, []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const closeManagement = useCallback(() => setManagementOpen(false), []);
 
   useEffect(() => {
     if (!templateGalleryOpen) return undefined;
@@ -1105,6 +1309,24 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [templateGalleryOpen, closeTemplateGallery]);
+
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const handler = (event) => {
+      if (event.key === "Escape") closeSettings();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [settingsOpen, closeSettings]);
+
+  useEffect(() => {
+    if (!managementOpen) return undefined;
+    const handler = (event) => {
+      if (event.key === "Escape") closeManagement();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [managementOpen, closeManagement]);
 
   const builderStyle = panelOpen ? undefined : { gridTemplateColumns: COLLAPSED_GRID_COLUMNS };
 
@@ -1120,6 +1342,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
           <a href="#widgets" onClick={reopenPanel}>Widgets</a>
           <a href="#bindings" onClick={reopenPanel}>Bindings</a>
           <Link href="/settings/integrations">Integrations</Link>
+          <button type="button" className="workspace-nav-button" onClick={() => setSettingsOpen(true)}>Workspace Settings</button>
+          <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
         </nav>
         <div className="workspace-rail-status">
           <span className="status-dot" />
@@ -1293,6 +1517,21 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
         onCloneAsDashboard={cloneTemplateAsDashboard}
       /> : null}
 
+      {settingsOpen ? <WorkspaceSettingsPanel
+        config={config}
+        persistence={persistence}
+        adapterConfig={adapterConfig}
+        integrationAdapter={integrationAdapter}
+        onClose={closeSettings}
+      /> : null}
+
+      {managementOpen ? <WorkspaceManagementPanel
+        config={config}
+        persistence={persistence}
+        adapterConfig={adapterConfig}
+        onClose={closeManagement}
+      /> : null}
+
       {panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
         <div className="workspace-panel-title">
           <button type="button" aria-label="Close widget panel" onClick={closePanel}>x</button>
@@ -1300,6 +1539,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
           <strong>{selectedWidget ? selectedWidget.title : "New widget"}</strong>
           {selectedWidget ? <em>{widgetKindLabel(selectedWidget.kind)}</em> : null}
         </div>
+        {selectedWidget ? <div className="workspace-widget-actions" role="group" aria-label="Widget actions">
+          <button type="button" onClick={duplicateSelectedWidget}>Duplicate</button>
+          <button type="button" className="danger" onClick={() => removeSelectedWidget(selectedWidget.id)}>Remove</button>
+        </div> : null}
         {selectedWidget ? <section className="workspace-widget-settings">
           <label>
             <span>Title</span>
@@ -1326,21 +1569,31 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
               </select>
             </label>
           </section> : null}
-          {selectedWidget.kind === "iframe" ? <label>
+          {selectedWidget.kind === "iframe" ? <label className="workspace-field-with-hint">
             <span>URL to Embed</span>
             <input
               placeholder="https://example.com/embed"
               value={selectedWidget.config?.url || ""}
               onChange={(event) => updateSelectedWidgetConfig({ url: event.target.value })}
             />
+            <small className={isLikelyHttpUrl(selectedWidget.config?.url) ? "workspace-field-hint good" : "workspace-field-hint warn"}>
+              {isLikelyHttpUrl(selectedWidget.config?.url)
+                ? "Looks like a valid http(s) URL"
+                : selectedWidget.config?.url
+                  ? "URL must start with http:// or https://"
+                  : "Add an http(s) URL to embed"}
+            </small>
           </label> : null}
-          {selectedWidget.kind === "rich-text" ? <label>
+          {selectedWidget.kind === "rich-text" ? <label className="workspace-field-with-hint">
             <span>Content</span>
             <textarea
               placeholder="Write text..."
               value={selectedWidget.config?.text || ""}
               onChange={(event) => updateSelectedWidgetConfig({ text: event.target.value })}
             />
+            <small className="workspace-field-hint">
+              {(selectedWidget.config?.text || "").length} characters · plain text only at V1
+            </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
             <label>
@@ -1410,6 +1663,14 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter }) 
             <div><span>Origin</span><code>{selectedWidget.position.x + 1}, {selectedWidget.position.y + 1}</code></div>
           </div>
         </section> : <section>
+          <div className="workspace-widget-empty">
+            <strong>Pick a widget kind</strong>
+            <p>
+              Widgets snap to the 12-column × 16-row grid. {addSlot.w} × {addSlot.h} cells
+              selected at column {addSlot.x + 1}, row {addSlot.y + 1}. Drag empty cells in the
+              canvas to reshape the placement.
+            </p>
+          </div>
           <p className="workspace-panel-label">Widget type</p>
           <div className="workspace-widget-types">
             {widgetTypes.map((widget) => <button type="button" key={widget.kind} onClick={() => addWidget(widget.kind)}>

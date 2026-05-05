@@ -1,3 +1,22 @@
+/**
+ * Workspace persistence — thin adapter boundary.
+ *
+ * Modes (Workspace Builder Runtime V1 contract — `docs/WORKSPACE_BUILDER_RUNTIME_V1.md`):
+ *
+ *   - `filesystem`    Local Next.js dev or any runtime that opts in via
+ *                     `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true`. Save writes
+ *                     `growthub.config.json` on disk.
+ *   - `read-only`     Vercel / Netlify-style runtimes where the bundle is
+ *                     immutable. `PATCH /api/workspace` returns 409 with the
+ *                     same `guidance` string the no-code Save UI surfaces.
+ *   - `database` (future) Reserved adapter slot. Not implemented in V1 — the
+ *                     return shape is stable so a hosted adapter can be wired
+ *                     without changing UI or API contracts.
+ *
+ * `describePersistenceMode()` is the single source of truth the GET payload,
+ * the no-code Settings/Readiness panel, and the PATCH 409 path all read.
+ */
+
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readAdapterConfig } from "@/lib/adapters/env";
@@ -7,6 +26,15 @@ import {
   KNOWN_WIDGET_KINDS,
   validateWorkspaceConfig
 } from "@/lib/workspace-schema";
+
+const PERSISTENCE_ADAPTERS = Object.freeze({
+  FILESYSTEM: "filesystem",
+  READ_ONLY: "read-only",
+  DATABASE: "database"
+});
+
+const READ_ONLY_GUIDANCE =
+  "Edit growthub.config.json locally, or set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime.";
 
 function resolveWorkspaceConfigPath() {
   return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "growthub.config.json");
@@ -22,19 +50,34 @@ function describePersistenceMode() {
   const target = process.env.AGENCY_PORTAL_DEPLOY_TARGET || "vercel";
   const isReadOnlyDeploy = target === "vercel" || target === "netlify";
   const allowFsWrite = process.env.WORKSPACE_CONFIG_ALLOW_FS_WRITE === "true";
+  const baseFilesystem = (reason) => ({
+    mode: PERSISTENCE_ADAPTERS.FILESYSTEM,
+    adapter: PERSISTENCE_ADAPTERS.FILESYSTEM,
+    canSave: true,
+    saveLabel: "Save writes growthub.config.json on disk.",
+    reason,
+    nextAction: null,
+    guidance: null
+  });
   if (allowFsWrite) {
-    return { mode: "filesystem", reason: "WORKSPACE_CONFIG_ALLOW_FS_WRITE=true" };
+    return baseFilesystem("WORKSPACE_CONFIG_ALLOW_FS_WRITE=true");
   }
   if (process.env.NODE_ENV === "development") {
-    return { mode: "filesystem", reason: "Local Next.js development" };
+    return baseFilesystem("Local Next.js development");
   }
   if (isReadOnlyDeploy) {
+    const reason = `Deploy target ${target} treats the bundle as read-only. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime, or wire a hosted persistence adapter.`;
     return {
-      mode: "read-only",
-      reason: `Deploy target ${target} treats the bundle as read-only. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true on a writable runtime, or wire a hosted persistence adapter.`
+      mode: PERSISTENCE_ADAPTERS.READ_ONLY,
+      adapter: PERSISTENCE_ADAPTERS.READ_ONLY,
+      canSave: false,
+      saveLabel: "Save is disabled in this runtime.",
+      reason,
+      nextAction: "Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true or connect a persistence adapter.",
+      guidance: READ_ONLY_GUIDANCE
     };
   }
-  return { mode: "filesystem", reason: "Local development" };
+  return baseFilesystem("Local development");
 }
 
 function applyPatch(currentConfig, patch) {
@@ -76,10 +119,11 @@ function applyPatch(currentConfig, patch) {
 async function writeWorkspaceConfig(patch) {
   const persistence = describePersistenceMode();
   const adapter = readAdapterConfig();
-  if (persistence.mode !== "filesystem") {
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
     const error = new Error(persistence.reason);
     error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
     error.adapter = adapter.integrationAdapter;
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
     throw error;
   }
   const current = await readWorkspaceConfig();
@@ -104,6 +148,8 @@ export {
   GRID_COLUMNS,
   GRID_ROWS,
   KNOWN_WIDGET_KINDS,
+  PERSISTENCE_ADAPTERS,
+  READ_ONLY_GUIDANCE,
   describePersistenceMode,
   readWorkspaceConfig,
   resolveWorkspaceConfigPath,

@@ -2,6 +2,11 @@
   "id": "workspace-builder-default",
   "name": "Workspace Builder",
   "description": "Default no-code composition for the official Growthub Custom Workspace Starter. The interface starts as a configurable dashboard-builder shell and can be customized by editing this file or by future governed UI controls.",
+  "branding": {
+    "name": "Growthub Workspace",
+    "logoUrl": "",
+    "accent": "#3f68ff"
+  },
   "capabilities": [
     "dashboards",
     "canvas",

@@ -2,13 +2,27 @@
 
 `@growthub/create-growthub-local` is the guided installer for Growthub Local.
 
-It is designed for immediate value first: choose a profile, create a usable local environment, then optionally activate hosted lanes later.
+It creates a governed **Workspace** — the top-level Growthub product object — by exporting the official `growthub-custom-workspace-starter-v1` kit and pinning the matching `@growthub/cli` version. Local value first; hosted authority is additive.
 
 ## Quickstart
 
 ```bash
-npm create growthub-local@latest
+npm create @growthub/growthub-local@latest
 ```
+
+After install, open the no-code Workspace Builder:
+
+```bash
+cd <workspace>/apps/workspace
+npm install
+npm run dev
+```
+
+Reference contracts:
+
+- [Workspace Config Contract V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKSPACE_CONFIG_CONTRACT_V1.md)
+- [Governed Workspace Topology V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
+- [Workspace Builder Runtime V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 
 ## Profile-first install
 
