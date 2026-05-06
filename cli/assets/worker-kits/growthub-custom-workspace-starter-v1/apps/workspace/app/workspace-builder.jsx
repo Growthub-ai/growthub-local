@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DASHBOARD_TEMPLATES,
+  IFRAME_HEIGHT_MIN,
+  KNOWN_IFRAME_ASPECT_RATIOS,
+  KNOWN_IFRAME_REFRESH_MODES,
+  KNOWN_IFRAME_SANDBOX_MODES,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
   cloneTemplateToDashboard,
@@ -14,6 +18,30 @@ import {
   validateWorkspaceConfig,
   wrapWorkspaceTemplateExport
 } from "@/lib/workspace-schema";
+
+const IFRAME_PROVIDER_SUGGESTIONS = [
+  "airtable",
+  "looker-studio",
+  "google-sheets",
+  "figma",
+  "loom",
+  "typeform",
+  "posthog",
+  "supabase",
+  "vercel-preview",
+  "growthub-app"
+];
+
+const IFRAME_SANDBOX_LABELS = {
+  minimal: "Minimal — scripts only",
+  forms: "Forms — scripts + forms + same-origin",
+  interactive: "Interactive — scripts + forms + popups"
+};
+
+const IFRAME_REFRESH_LABELS = {
+  manual: "Manual",
+  static: "Static (no refresh)"
+};
 
 const DEFAULT_POSITION = { x: 4, y: 0, w: 4, h: 5 };
 const GRID_COLUMNS = 12;
@@ -542,7 +570,11 @@ function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onRe
       <footer>Calculate</footer>
     </div> : null}
     {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
+      {widget.config?.provider ? <small className="workspace-iframe-provider">{widget.config.provider}</small> : null}
       {widget.config?.url ? <span>{widget.config.url}</span> : <span>Invalid URL</span>}
+      {widget.config?.aspectRatio && widget.config.aspectRatio !== "auto"
+        ? <small className="workspace-iframe-aspect">{widget.config.aspectRatio}</small>
+        : null}
     </div> : null}
     {widget.kind === "rich-text" ? <p className="workspace-rich-text-preview">{widget.config?.text || "Start writing..."}</p> : null}
     {widget.kind === "chart" ? <div className="workspace-chart-preview">
@@ -1716,21 +1748,92 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
               </select>
             </label>
           </section> : null}
-          {selectedWidget.kind === "iframe" ? <label className="workspace-field-with-hint">
-            <span>URL to Embed</span>
-            <input
-              placeholder="https://example.com/embed"
-              value={selectedWidget.config?.url || ""}
-              onChange={(event) => updateSelectedWidgetConfig({ url: event.target.value })}
-            />
-            <small className={isLikelyHttpUrl(selectedWidget.config?.url) ? "workspace-field-hint good" : "workspace-field-hint warn"}>
-              {isLikelyHttpUrl(selectedWidget.config?.url)
-                ? "Looks like a valid http(s) URL"
-                : selectedWidget.config?.url
-                  ? "URL must start with http:// or https://"
-                  : "Add an http(s) URL to embed"}
-            </small>
-          </label> : null}
+          {selectedWidget.kind === "iframe" ? <section className="workspace-field-stack">
+            <label className="workspace-field-with-hint">
+              <span>URL to Embed</span>
+              <input
+                placeholder="https://example.com/embed"
+                value={selectedWidget.config?.url || ""}
+                onChange={(event) => updateSelectedWidgetConfig({ url: event.target.value })}
+              />
+              <small className={isLikelyHttpUrl(selectedWidget.config?.url) ? "workspace-field-hint good" : "workspace-field-hint warn"}>
+                {isLikelyHttpUrl(selectedWidget.config?.url)
+                  ? "Looks like a valid http(s) URL"
+                  : selectedWidget.config?.url
+                    ? "URL must start with http:// or https://"
+                    : "Add an http(s) URL to embed"}
+              </small>
+            </label>
+            <label>
+              <span>Provider</span>
+              <input
+                list="workspace-iframe-providers"
+                placeholder="airtable, looker-studio, figma…"
+                value={selectedWidget.config?.provider || ""}
+                onChange={(event) => updateSelectedWidgetConfig({ provider: event.target.value })}
+              />
+              <datalist id="workspace-iframe-providers">
+                {IFRAME_PROVIDER_SUGGESTIONS.map((provider) => <option key={provider} value={provider} />)}
+              </datalist>
+            </label>
+            <label>
+              <span>Aspect ratio</span>
+              <select
+                value={selectedWidget.config?.aspectRatio || "auto"}
+                onChange={(event) => updateSelectedWidgetConfig({ aspectRatio: event.target.value })}
+              >
+                {KNOWN_IFRAME_ASPECT_RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratio === "auto" ? "Auto (grid-fit)" : ratio}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Sandbox</span>
+              <select
+                value={selectedWidget.config?.sandboxMode || "minimal"}
+                onChange={(event) => updateSelectedWidgetConfig({ sandboxMode: event.target.value })}
+              >
+                {KNOWN_IFRAME_SANDBOX_MODES.map((mode) => <option key={mode} value={mode}>{IFRAME_SANDBOX_LABELS[mode] || mode}</option>)}
+              </select>
+              <small className="workspace-field-hint">No-token, no hosted execution. Sandbox enforced on the iframe element.</small>
+            </label>
+            <label className="workspace-field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(selectedWidget.config?.allowFullscreen)}
+                onChange={(event) => updateSelectedWidgetConfig({ allowFullscreen: event.target.checked })}
+              />
+              <span>Allow fullscreen</span>
+            </label>
+            <label>
+              <span>Height override (px)</span>
+              <input
+                type="number"
+                min={IFRAME_HEIGHT_MIN}
+                placeholder="Auto"
+                value={selectedWidget.config?.height ?? ""}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === "") {
+                    updateSelectedWidgetConfig({ height: undefined });
+                    return;
+                  }
+                  const parsed = Number.parseInt(raw, 10);
+                  if (Number.isInteger(parsed) && parsed >= IFRAME_HEIGHT_MIN) {
+                    updateSelectedWidgetConfig({ height: parsed });
+                  }
+                }}
+              />
+              <small className="workspace-field-hint">Optional. Falls back to grid-derived height when blank. Minimum {IFRAME_HEIGHT_MIN}px.</small>
+            </label>
+            <label>
+              <span>Refresh</span>
+              <select
+                value={selectedWidget.config?.refreshMode || "manual"}
+                onChange={(event) => updateSelectedWidgetConfig({ refreshMode: event.target.value })}
+              >
+                {KNOWN_IFRAME_REFRESH_MODES.map((mode) => <option key={mode} value={mode}>{IFRAME_REFRESH_LABELS[mode] || mode}</option>)}
+              </select>
+            </label>
+          </section> : null}
           {selectedWidget.kind === "rich-text" ? <label className="workspace-field-with-hint">
             <span>Content</span>
             <textarea

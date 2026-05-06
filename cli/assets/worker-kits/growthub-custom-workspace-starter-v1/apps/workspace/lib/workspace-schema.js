@@ -41,6 +41,10 @@ const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
 const KNOWN_FIELDS = ["dashboards", "widgetTypes", "canvas"];
 const KNOWN_DATA_BINDING_MODES = ["manual", "json", "csv"];
+const KNOWN_IFRAME_SANDBOX_MODES = ["minimal", "forms", "interactive"];
+const KNOWN_IFRAME_REFRESH_MODES = ["manual", "static"];
+const KNOWN_IFRAME_ASPECT_RATIOS = ["auto", "16:9", "4:3", "1:1"];
+const IFRAME_HEIGHT_MIN = 80;
 const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
 const WORKSPACE_TEMPLATE_VERSION = 1;
 const WORKSPACE_TEMPLATE_SOURCE = "growthub-custom-workspace-starter-v1";
@@ -72,7 +76,13 @@ const WIDGET_SCHEMA_CONTRACTS = {
     binding: "StaticDataBinding optional"
   },
   IframeWidgetConfig: {
-    url: "string"
+    url: "string",
+    provider: "string optional (e.g. airtable | looker-studio | figma | loom)",
+    aspectRatio: KNOWN_IFRAME_ASPECT_RATIOS.join(" | ") + " optional",
+    allowFullscreen: "boolean optional",
+    sandboxMode: KNOWN_IFRAME_SANDBOX_MODES.join(" | ") + " optional (default minimal)",
+    height: `integer >= ${IFRAME_HEIGHT_MIN} optional (px override)`,
+    refreshMode: KNOWN_IFRAME_REFRESH_MODES.join(" | ") + " optional"
   },
   RichTextWidgetConfig: {
     text: "string",
@@ -362,8 +372,28 @@ function validateWidgetConfig(kind, config, path, errors) {
     if (config.rows !== undefined && !Array.isArray(config.rows)) errors.push(`${path}.rows must be an array`);
     validateStaticDataBinding(config.binding, `${path}.binding`, errors);
   }
-  if (kind === "iframe" && config.url !== undefined && typeof config.url !== "string") {
-    errors.push(`${path}.url must be a string`);
+  if (kind === "iframe") {
+    if (config.url !== undefined && typeof config.url !== "string") {
+      errors.push(`${path}.url must be a string`);
+    }
+    if (config.provider !== undefined && typeof config.provider !== "string") {
+      errors.push(`${path}.provider must be a string`);
+    }
+    if (config.aspectRatio !== undefined && !KNOWN_IFRAME_ASPECT_RATIOS.includes(config.aspectRatio)) {
+      errors.push(`${path}.aspectRatio must be one of: ${KNOWN_IFRAME_ASPECT_RATIOS.join(", ")}`);
+    }
+    if (config.allowFullscreen !== undefined && typeof config.allowFullscreen !== "boolean") {
+      errors.push(`${path}.allowFullscreen must be a boolean`);
+    }
+    if (config.sandboxMode !== undefined && !KNOWN_IFRAME_SANDBOX_MODES.includes(config.sandboxMode)) {
+      errors.push(`${path}.sandboxMode must be one of: ${KNOWN_IFRAME_SANDBOX_MODES.join(", ")}`);
+    }
+    if (config.height !== undefined && (!Number.isInteger(config.height) || config.height < IFRAME_HEIGHT_MIN)) {
+      errors.push(`${path}.height must be an integer >= ${IFRAME_HEIGHT_MIN}`);
+    }
+    if (config.refreshMode !== undefined && !KNOWN_IFRAME_REFRESH_MODES.includes(config.refreshMode)) {
+      errors.push(`${path}.refreshMode must be one of: ${KNOWN_IFRAME_REFRESH_MODES.join(", ")}`);
+    }
   }
   if (kind === "rich-text") {
     if (config.text !== undefined && typeof config.text !== "string") errors.push(`${path}.text must be a string`);
@@ -787,8 +817,12 @@ export {
   DASHBOARD_TEMPLATES,
   GRID_COLUMNS,
   GRID_ROWS,
+  IFRAME_HEIGHT_MIN,
   KNOWN_DATA_BINDING_MODES,
   KNOWN_FIELDS,
+  KNOWN_IFRAME_ASPECT_RATIOS,
+  KNOWN_IFRAME_REFRESH_MODES,
+  KNOWN_IFRAME_SANDBOX_MODES,
   KNOWN_WIDGET_KINDS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
