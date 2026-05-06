@@ -11,6 +11,7 @@ Companion contracts:
 - [`docs/WORKSPACE_CONFIG_CONTRACT_V1.md`](./WORKSPACE_CONFIG_CONTRACT_V1.md) — the canonical `growthub.config.json` shape
 - [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — the workspace topology + authority boundary
 - [`docs/WORKSPACE_DEPLOY_FLOW.md`](./WORKSPACE_DEPLOY_FLOW.md) — how a workspace ships to production
+- [`docs/WORKSPACE_BUILDER_RUNTIME_V1_1.md`](./WORKSPACE_BUILDER_RUNTIME_V1_1.md) — V1.1 Twenty-style data-view editor extensions (Source picker, Fields manager, Sort/Filter builders, Chart config, command palette, template filters). Additive editor vocabulary only — V1 envelope, allowlist, and runtime authority boundary unchanged.
 
 ---
 

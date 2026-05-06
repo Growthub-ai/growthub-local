@@ -40,7 +40,12 @@ const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
 const KNOWN_FIELDS = ["dashboards", "widgetTypes", "canvas"];
-const KNOWN_DATA_BINDING_MODES = ["manual", "json", "csv"];
+const KNOWN_DATA_BINDING_MODES = ["manual", "json", "csv", "integration"];
+const KNOWN_CHART_TYPES = ["bar-vertical", "bar-horizontal", "line", "pie", "sum", "gauge"];
+const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "isNotEmpty"];
+const KNOWN_FILTER_CONJUNCTIONS = ["and", "or"];
+const KNOWN_SORT_DIRECTIONS = ["asc", "desc"];
+const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
 const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
 const WORKSPACE_TEMPLATE_VERSION = 1;
 const WORKSPACE_TEMPLATE_SOURCE = "growthub-custom-workspace-starter-v1";
@@ -61,7 +66,12 @@ const WIDGET_SCHEMA_CONTRACTS = {
     config: "kind-specific config object"
   },
   ChartWidgetConfig: {
-    values: "number[]",
+    values: "number[] (legacy preserved)",
+    chartType: `${KNOWN_CHART_TYPES.join(" | ")} optional, defaults to bar-vertical`,
+    xAxis: "ChartAxisConfig optional",
+    yAxis: "ChartAxisConfig optional",
+    style: "ChartStyleConfig optional",
+    filter: "FilterConfig optional",
     binding: "StaticDataBinding optional"
   },
   ViewWidgetConfig: {
@@ -69,7 +79,41 @@ const WIDGET_SCHEMA_CONTRACTS = {
     layout: "Table",
     columns: "string[]",
     rows: "record[]",
+    fieldSettings: "FieldSettingsConfig optional (hidden[], order[])",
+    sort: "SortClause[] optional ({ fieldId, direction })",
+    filter: "FilterConfig optional ({ op, clauses[] })",
     binding: "StaticDataBinding optional"
+  },
+  ChartAxisConfig: {
+    field: "string optional",
+    sort: "string optional (asc | desc | position)",
+    aggregation: `${KNOWN_AGGREGATIONS.join(" | ")} optional`,
+    groupBy: "string optional",
+    omitZero: "boolean optional",
+    min: "string | number optional",
+    max: "string | number optional"
+  },
+  ChartStyleConfig: {
+    colors: "string optional (auto | manual swatch label)",
+    axisName: "string optional",
+    dataLabels: "boolean optional"
+  },
+  FieldSettingsConfig: {
+    hidden: "string[] of column names hidden from preview",
+    order: "string[] of column names defining custom order"
+  },
+  SortClause: {
+    fieldId: "non-empty string (column name)",
+    direction: KNOWN_SORT_DIRECTIONS.join(" | ")
+  },
+  FilterConfig: {
+    op: KNOWN_FILTER_CONJUNCTIONS.join(" | "),
+    clauses: "FilterClause[]"
+  },
+  FilterClause: {
+    fieldId: "non-empty string (column name)",
+    operator: KNOWN_FILTER_OPERATORS.join(" | "),
+    value: "string | number | boolean optional"
   },
   IframeWidgetConfig: {
     url: "string"
@@ -333,6 +377,127 @@ function validateStaticDataBinding(binding, path, errors) {
   if (binding.csv !== undefined && typeof binding.csv !== "string") {
     errors.push(`${path}.csv must be a string`);
   }
+  if (binding.integrationId !== undefined && typeof binding.integrationId !== "string") {
+    errors.push(`${path}.integrationId must be a string`);
+  }
+  if (binding.lane !== undefined && typeof binding.lane !== "string") {
+    errors.push(`${path}.lane must be a string`);
+  }
+}
+
+function validateFieldSettings(fieldSettings, path, errors) {
+  if (fieldSettings === undefined) return;
+  if (!isPlainObject(fieldSettings)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (fieldSettings.hidden !== undefined) validateStringArray(fieldSettings.hidden, `${path}.hidden`, errors);
+  if (fieldSettings.order !== undefined) validateStringArray(fieldSettings.order, `${path}.order`, errors);
+}
+
+function validateSortClauses(sort, path, errors) {
+  if (sort === undefined) return;
+  if (!Array.isArray(sort)) {
+    errors.push(`${path} must be an array`);
+    return;
+  }
+  sort.forEach((clause, index) => {
+    const prefix = `${path}[${index}]`;
+    if (!isPlainObject(clause)) {
+      errors.push(`${prefix} must be a plain object`);
+      return;
+    }
+    if (typeof clause.fieldId !== "string" || !clause.fieldId) {
+      errors.push(`${prefix}.fieldId must be a non-empty string`);
+    }
+    if (clause.direction !== undefined && !KNOWN_SORT_DIRECTIONS.includes(clause.direction)) {
+      errors.push(`${prefix}.direction must be one of ${KNOWN_SORT_DIRECTIONS.join(", ")}`);
+    }
+  });
+}
+
+function validateFilterClauses(filter, path, errors) {
+  if (filter === undefined) return;
+  if (!isPlainObject(filter)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (filter.op !== undefined && !KNOWN_FILTER_CONJUNCTIONS.includes(filter.op)) {
+    errors.push(`${path}.op must be one of ${KNOWN_FILTER_CONJUNCTIONS.join(", ")}`);
+  }
+  if (filter.clauses !== undefined) {
+    if (!Array.isArray(filter.clauses)) {
+      errors.push(`${path}.clauses must be an array`);
+    } else {
+      filter.clauses.forEach((clause, index) => {
+        const prefix = `${path}.clauses[${index}]`;
+        if (!isPlainObject(clause)) {
+          errors.push(`${prefix} must be a plain object`);
+          return;
+        }
+        if (typeof clause.fieldId !== "string" || !clause.fieldId) {
+          errors.push(`${prefix}.fieldId must be a non-empty string`);
+        }
+        if (clause.operator !== undefined && !KNOWN_FILTER_OPERATORS.includes(clause.operator)) {
+          errors.push(`${prefix}.operator must be one of ${KNOWN_FILTER_OPERATORS.join(", ")}`);
+        }
+        if (
+          clause.value !== undefined &&
+          typeof clause.value !== "string" &&
+          typeof clause.value !== "number" &&
+          typeof clause.value !== "boolean"
+        ) {
+          errors.push(`${prefix}.value must be a string, number, or boolean`);
+        }
+      });
+    }
+  }
+}
+
+function validateChartAxis(axis, path, errors) {
+  if (axis === undefined) return;
+  if (!isPlainObject(axis)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (axis.field !== undefined && typeof axis.field !== "string") {
+    errors.push(`${path}.field must be a string`);
+  }
+  if (axis.sort !== undefined && typeof axis.sort !== "string") {
+    errors.push(`${path}.sort must be a string`);
+  }
+  if (axis.aggregation !== undefined && !KNOWN_AGGREGATIONS.includes(axis.aggregation)) {
+    errors.push(`${path}.aggregation must be one of ${KNOWN_AGGREGATIONS.join(", ")}`);
+  }
+  if (axis.groupBy !== undefined && typeof axis.groupBy !== "string") {
+    errors.push(`${path}.groupBy must be a string`);
+  }
+  if (axis.omitZero !== undefined && typeof axis.omitZero !== "boolean") {
+    errors.push(`${path}.omitZero must be a boolean`);
+  }
+  if (axis.min !== undefined && typeof axis.min !== "string" && typeof axis.min !== "number") {
+    errors.push(`${path}.min must be a string or number`);
+  }
+  if (axis.max !== undefined && typeof axis.max !== "string" && typeof axis.max !== "number") {
+    errors.push(`${path}.max must be a string or number`);
+  }
+}
+
+function validateChartStyle(style, path, errors) {
+  if (style === undefined) return;
+  if (!isPlainObject(style)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (style.colors !== undefined && typeof style.colors !== "string") {
+    errors.push(`${path}.colors must be a string`);
+  }
+  if (style.axisName !== undefined && typeof style.axisName !== "string") {
+    errors.push(`${path}.axisName must be a string`);
+  }
+  if (style.dataLabels !== undefined && typeof style.dataLabels !== "boolean") {
+    errors.push(`${path}.dataLabels must be a boolean`);
+  }
 }
 
 function validateWidgetConfig(kind, config, path, errors) {
@@ -353,6 +518,13 @@ function validateWidgetConfig(kind, config, path, errors) {
         });
       }
     }
+    if (config.chartType !== undefined && !KNOWN_CHART_TYPES.includes(config.chartType)) {
+      errors.push(`${path}.chartType must be one of ${KNOWN_CHART_TYPES.join(", ")}`);
+    }
+    validateChartAxis(config.xAxis, `${path}.xAxis`, errors);
+    validateChartAxis(config.yAxis, `${path}.yAxis`, errors);
+    validateChartStyle(config.style, `${path}.style`, errors);
+    validateFilterClauses(config.filter, `${path}.filter`, errors);
     validateStaticDataBinding(config.binding, `${path}.binding`, errors);
   }
   if (kind === "view") {
@@ -360,6 +532,9 @@ function validateWidgetConfig(kind, config, path, errors) {
     if (config.layout !== undefined && config.layout !== "Table") errors.push(`${path}.layout must be Table`);
     if (config.columns !== undefined) validateStringArray(config.columns, `${path}.columns`, errors);
     if (config.rows !== undefined && !Array.isArray(config.rows)) errors.push(`${path}.rows must be an array`);
+    validateFieldSettings(config.fieldSettings, `${path}.fieldSettings`, errors);
+    validateSortClauses(config.sort, `${path}.sort`, errors);
+    validateFilterClauses(config.filter, `${path}.filter`, errors);
     validateStaticDataBinding(config.binding, `${path}.binding`, errors);
   }
   if (kind === "iframe" && config.url !== undefined && typeof config.url !== "string") {
@@ -787,8 +962,13 @@ export {
   DASHBOARD_TEMPLATES,
   GRID_COLUMNS,
   GRID_ROWS,
+  KNOWN_AGGREGATIONS,
+  KNOWN_CHART_TYPES,
   KNOWN_DATA_BINDING_MODES,
   KNOWN_FIELDS,
+  KNOWN_FILTER_CONJUNCTIONS,
+  KNOWN_FILTER_OPERATORS,
+  KNOWN_SORT_DIRECTIONS,
   KNOWN_WIDGET_KINDS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
