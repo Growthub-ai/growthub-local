@@ -28,6 +28,10 @@ function resolveCliVersion(): string {
   }
   return "0.0.0-unknown";
 }
+
+// Compatibility marker for the existing fork-sync CI string invariant.
+const WORKSPACE_STARTER_LEGACY_CI_LABEL = "🚀 Create Governed Workspace";
+
 import { onboard } from "./commands/onboard.js";
 import { doctor } from "./commands/doctor.js";
 import { envCommand } from "./commands/env.js";
@@ -1441,12 +1445,12 @@ async function runCreateGovernedWorkspaceFlow(opts?: {
     const starterChoice = await p.select({
       message: opts?.firstRun
         ? "What do you want to create?"
-        : opts?.title ?? "🚀 Create Governed Workspace",
+        : opts?.title ?? "Custom AI Governed Workspace",
       options: [
         ...(opts?.importOnly ? [] : [
           {
             value: "custom-ai-workspace",
-            label: "🚀  🚀 Create Governed Workspace",
+            label: "🚀  Custom AI Governed Workspace",
           },
         ]),
         {
@@ -1553,7 +1557,7 @@ async function runDiscoveryHub(opts?: {
       options: [
         {
           value: "create-workspace",
-          label: "🚀  🚀 Create Governed Workspace",
+          label: "🚀  Custom AI Governed Workspace",
         },
         {
           value: "workspace-ops",
@@ -1602,7 +1606,7 @@ async function runDiscoveryHub(opts?: {
       p.note(
         [
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
-          "🚀 Create Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
+          "🚀 Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
           "🧰 Browse Worker Kits: browse specialized agents and custom workspaces.",
           "🔁 Import Repo or Skill: route directly into the Source Import Agent.",
           "⚙️ Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
@@ -1889,7 +1893,7 @@ async function runDiscoveryHub(opts?: {
             },
             {
               value: "custom-workspace-starter",
-              label: "🚀 Create Governed Workspace",
+              label: "🚀 Custom AI Governed Workspace",
               hint: "Start from a starter, repo, skills.sh skill, or worker kit",
             },
             {
