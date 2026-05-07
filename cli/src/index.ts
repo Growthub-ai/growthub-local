@@ -78,6 +78,11 @@ import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { registerSetupCommands } from "./commands/setup.js";
 import { registerWorkspaceImproveCommands } from "./commands/workspace-improve.js";
 import { registerWorkspaceDeployCommands } from "./commands/workspace-deploy.js";
+import { registerWorkspaceStatusCommands } from "./commands/workspace-status.js";
+import { registerWorkspaceQaCommands } from "./commands/workspace-qa.js";
+import { registerWorkspaceSurfaceCommands } from "./commands/workspace-surface.js";
+import { registerWorkspaceUpstreamCommands } from "./commands/workspace-upstream.js";
+import { registerWorkspacePortalCommands } from "./commands/workspace-portal.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -241,6 +246,11 @@ function registerSharedCommands(target: Command) {
   registerSetupCommands(target);
   const workspaceCmd = registerWorkspaceImproveCommands(target);
   registerWorkspaceDeployCommands(workspaceCmd);
+  registerWorkspaceStatusCommands(workspaceCmd);
+  registerWorkspaceQaCommands(workspaceCmd);
+  registerWorkspaceSurfaceCommands(workspaceCmd);
+  registerWorkspaceUpstreamCommands(workspaceCmd);
+  registerWorkspacePortalCommands(workspaceCmd);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 
@@ -1551,6 +1561,11 @@ async function runDiscoveryHub(opts?: {
           hint: "Start from a repo, skills.sh skill, starter, or worker kit",
         },
         {
+          value: "workspace-ops",
+          label: "🏗️  Workspace Operations",
+          hint: "status · qa · deploy check · upstream · surface · portal",
+        },
+        {
           value: "kits",
           label: "🧰  Browse Worker Kits",
           hint: "Self-contained workspace environments for agents",
@@ -1627,6 +1642,40 @@ async function runDiscoveryHub(opts?: {
     if (surfaceChoice === "create-workspace") {
       const result = await runCreateGovernedWorkspaceFlow();
       if (result === "done") return;
+      continue;
+    }
+
+    if (surfaceChoice === "workspace-ops") {
+      p.note(
+        [
+          "Workspace commands (run directly):",
+          "",
+          "  growthub workspace status --json",
+          "    Unified health: bridge, GitHub, fork, agents, config, apps",
+          "",
+          "  growthub workspace qa --json",
+          "    Validate: config, env, deps, fork, routes, skills",
+          "",
+          "  growthub workspace deploy check --json",
+          "    Readiness gate: canDeploy, missingSteps, appRoot, envVarsNeeded",
+          "",
+          "  growthub workspace deploy vercel --print-env --json",
+          "    Print required env var names from .env.example",
+          "",
+          "  growthub workspace upstream check --json",
+          "    Fork drift state + recommended sync commands",
+          "",
+          "  growthub workspace upstream heal --dry-run --json",
+          "    Preview upstream heal without applying",
+          "",
+          "  growthub workspace surface list --json",
+          "    Discover apps/workspace, apps/agency-portal, studio",
+          "",
+          "  growthub workspace portal prepare --client <slug> --json",
+          "    Scaffold client brand config, env template, handoff doc",
+        ].join("\n"),
+        "Workspace Operations",
+      );
       continue;
     }
 

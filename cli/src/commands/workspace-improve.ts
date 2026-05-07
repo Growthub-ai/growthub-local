@@ -292,7 +292,7 @@ function runReject(
 export function registerWorkspaceImproveCommands(program: Command): Command {
   const workspace = program
     .command("workspace")
-    .description("Governed workspace operations — deploy status, self-improving loop, capability proposals");
+    .description("Governed workspace operations — status, QA, deploy, upstream, surface, portal, self-improving");
 
   const improve = workspace
     .command("improve")

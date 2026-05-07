@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-postiz-social-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Postiz Social Media Studio",
+    "name": "Growthub Agent Worker Kit \u2014 Postiz Social Media Studio",
     "description": "Self-contained local execution environment for Postiz, the open-source agentic social media scheduler. Produces implementation-ready social media campaigns, content calendars, multi-platform publishing plans, AI-assisted captions, and analytics briefings across 28+ platforms including Instagram, LinkedIn, TikTok, X/Twitter, YouTube, Pinterest, Reddit, Bluesky, and more.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -112,5 +112,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-15T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "social-media"
 }

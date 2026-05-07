@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-zernio-social-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Zernio Social Media Studio",
+    "name": "Growthub Agent Worker Kit \u2014 Zernio Social Media Studio",
     "description": "Self-contained local execution environment for Zernio, the unified social media REST API for developers and AI agents. Produces implementation-ready social media campaigns, content calendars, multi-platform publishing plans, AI-assisted captions, Zernio-shaped scheduling manifests, recurring queue definitions, inbox reply plans, and analytics briefings across 14 platforms including X/Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, Pinterest, Reddit, Bluesky, Threads, Google Business, Telegram, Snapchat, and WhatsApp.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -144,5 +144,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-15T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "social-media"
 }

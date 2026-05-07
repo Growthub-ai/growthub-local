@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-email-marketing-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Email Marketing Strategist",
+    "name": "Growthub Agent Worker Kit \u2014 Email Marketing Strategist",
     "description": "Self-contained local execution environment for Growthub-focused email marketing. Produces brand-aware email campaigns, nurture sequences, broadcasts, and content-pillar-driven campaign plans with pluggable email platform integration.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -112,5 +112,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-10T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": true,
+  "workspaceCategory": "email-marketing"
 }
