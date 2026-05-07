@@ -44,6 +44,9 @@ Legacy widget configs **must keep loading**. The V1.1 validator additions are op
 | — | `chart.config.filter: FilterConfig` |
 | — | `binding.integrationId: string` (when `mode === "integration"`) |
 | — | `binding.lane: "data-source" \| "workspace-integration"` |
+| — | `binding.entityId: string` — stable provider entity ID (never a token) |
+| — | `binding.entityType: string` — canonical type (`account`, `property`, `store`, etc.) |
+| — | `binding.entityLabel: string` — display-only resolved label, refreshable |
 
 **Filter operators** (`KNOWN_FILTER_OPERATORS`): `eq`, `ne`, `contains`, `gt`, `lt`, `isEmpty`, `isNotEmpty`.
 **Aggregations** (`KNOWN_AGGREGATIONS`): `sum`, `avg`, `count`, `min`, `max`.
@@ -77,6 +80,20 @@ binding: { mode: "integration", source: "Google Sheets", integrationId: "google-
 ```
 
 The browser never queries the integration. Static rows remain available; selecting them resets the binding to the static catalog defaults.
+
+**Entity selector** (`EntitySelector`) appears below the selected integration in `SourceSubPanel`. It fetches `NormalizedIntegrationEntity[]` from the server via `GET /api/workspace/integration-entities?integrationId=<id>` — never directly from the provider. Selecting an entity atomically writes two things to `widget.config`:
+
+1. Entity reference into `binding`:
+```js
+binding: { mode: "integration", source: "Meta Facebook and Instagram", integrationId: "meta-ads",
+           lane: "data-source", entityId: "57497690", entityType: "account", entityLabel: "Dr. Robert Whitfield" }
+```
+2. Canonical filter clause into `filter`:
+```js
+filter: { op: "and", clauses: [{ fieldId: "accountId", operator: "eq", value: "57497690" }] }
+```
+
+Only `entityId` is authoritative. `entityLabel` is display-only and refreshable. The filter clause stores the stable ID so execution engines can use it without the browser. Full contract: [`docs/BRIDGE_BACKED_WIDGETS_V1_PLAN.md`](./BRIDGE_BACKED_WIDGETS_V1_PLAN.md).
 
 **Fields manager** (`FieldsSubPanel`) renders `view.config.columns` as drag-orderable rows with up/down + hide + remove + add. Hidden state lives in `fieldSettings.hidden`; reorder lives in `fieldSettings.order`. The visible-column list returned by `getVisibleColumns(widget)` drives `WidgetPreview`.
 
@@ -145,11 +162,16 @@ Applying a template still preserves identity invariants from V1: dashboard names
 
 | File | Role |
 | --- | --- |
-| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-schema.js` | Adds `KNOWN_CHART_TYPES`, `KNOWN_FILTER_OPERATORS`, `KNOWN_FILTER_CONJUNCTIONS`, `KNOWN_SORT_DIRECTIONS`, `KNOWN_AGGREGATIONS`; extends `KNOWN_DATA_BINDING_MODES` with `"integration"`; adds `validateFieldSettings`, `validateSortClauses`, `validateFilterClauses`, `validateChartAxis`, `validateChartStyle`. All additions optional. |
-| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/workspace-builder.jsx` | Adds `inspectorPath` state + `SUB_PANEL_ROOT`; helpers `getOrderedColumns`, `getVisibleColumns`, `summarizeSource/Fields/Sort/Filter`, `getChartType/Axis/Style`; components `SubPanelHeader`, `SourceSubPanel`, `FieldsSubPanel`, `SortSubPanel`, `FilterSubPanel`, `ChartConfigPanel`, `CommandPalette`; Cmd+K / "/" keybindings; template gallery filter integration; chart preview kind dispatch. |
-| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/globals.css` | Adds the V1.1 class families: `.workspace-widget-subpanel*`, `.workspace-source-*`, `.workspace-field-row*`, `.workspace-hidden-fields*`, `.workspace-sort-row`, `.workspace-filter-clause`, `.workspace-filter-op-toggle`, `.workspace-add-clause`, `.workspace-chart-config`, `.workspace-chart-type-tabs`, `.workspace-axis-range`, `.workspace-toggle-row`, `.workspace-chart-preview.kind-*`, `.workspace-command-palette*`, `.template-gallery-filters`. |
+| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-schema.js` | Adds `KNOWN_CHART_TYPES`, `KNOWN_FILTER_OPERATORS`, `KNOWN_FILTER_CONJUNCTIONS`, `KNOWN_SORT_DIRECTIONS`, `KNOWN_AGGREGATIONS`; extends `KNOWN_DATA_BINDING_MODES` with `"integration"`; adds `validateFieldSettings`, `validateSortClauses`, `validateFilterClauses`, `validateChartAxis`, `validateChartStyle`. Also adds `KNOWN_ENTITY_TYPES`, `ENTITY_TYPE_FIELD_MAP`, `buildEntityFilterClause`, entity field validation in `validateStaticDataBinding`, and `NormalizedIntegrationEntity` shape in `WIDGET_SCHEMA_CONTRACTS`. All additions optional. |
+| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/domain/integrations.js` | Adds `SAMPLE_ENTITIES_BY_PROVIDER` (demo entity catalog keyed by provider) and `getEntityMetadataForIntegration(integrationId)` helper. |
+| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/integrations/index.js` | Adds `listEntityMetadataForIntegration(integrationId)` — server-side entity resolution with bridge fallback to sample data. |
+| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/integration-entities/route.js` | New route: `GET /api/workspace/integration-entities?integrationId=<id>` returns `NormalizedIntegrationEntity[]`. Server-side only — no tokens reach the browser. |
+| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/workspace-builder.jsx` | Adds `EntityBadge` and `EntitySelector` components; updates `SourceSubPanel` with entity fetch + `selectEntity` callback that atomically writes `binding.entityId` + filter clause; updates `summarizeSource` to show entity label. |
+| `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/globals.css` | Adds the V1.1 class families listed below, plus entity binding classes: `.workspace-entity-selector`, `.workspace-entity-list`, `.workspace-entity-row*`, `.workspace-entity-badge*`, `.workspace-entity-empty`, `.workspace-entity-sample-hint`. |
 
-No new files are added under `apps/workspace/`. No new API routes. No new dependencies.
+V1.1 base class families: `.workspace-widget-subpanel*`, `.workspace-source-*`, `.workspace-field-row*`, `.workspace-hidden-fields*`, `.workspace-sort-row`, `.workspace-filter-clause`, `.workspace-filter-op-toggle`, `.workspace-add-clause`, `.workspace-chart-config`, `.workspace-chart-type-tabs`, `.workspace-axis-range`, `.workspace-toggle-row`, `.workspace-chart-preview.kind-*`, `.workspace-command-palette*`, `.template-gallery-filters`.
+
+No new npm dependencies added. One new API route added under `apps/workspace/app/api/workspace/integration-entities/`.
 
 ---
 
@@ -161,6 +183,13 @@ Before promoting V1.1 work:
 - [ ] Applying a template does not rewrite the dashboard name or tab name.
 - [ ] Template gallery filters return the expected subset (category + tag + query AND).
 - [ ] Source sub-page can select Static, then any integration, then back to Static — `binding.mode` flips between `"manual"`/`"json"` and `"integration"`.
+- [ ] Selecting an integration shows the EntitySelector below the integration list.
+- [ ] Selecting an entity writes `binding.entityId`, `binding.entityType`, `binding.entityLabel` and inserts an entity filter clause into `widget.config.filter.clauses`.
+- [ ] Clearing an entity (× on EntityBadge) removes entity fields from `binding` and removes the entity clause from `filter.clauses`.
+- [ ] `summarizeSource` shows `"Integration · Entity Label"` when entity is selected.
+- [ ] `GET /api/workspace/integration-entities?integrationId=meta-ads` returns sample entities in static adapter mode.
+- [ ] Widget binding with `entityId` round-trips through PATCH → GET without modification.
+- [ ] EntitySelector shows sample hint when integration is not connected.
 - [ ] Fields sub-page reorders + hides + adds + removes columns. Hidden columns are absent from the `WidgetPreview` table. Refresh restores the same state.
 - [ ] Sort sub-page persists multiple clauses; root inspector summary matches.
 - [ ] Filter sub-page persists clauses with each operator. `isEmpty` / `isNotEmpty` hide the value input.
@@ -175,10 +204,11 @@ Before promoting V1.1 work:
 
 - Browser-hosted workflow execution — out of scope.
 - Provider token storage — out of scope.
+- Live metric querying from the browser — out of scope (entity binding configures WHERE, not WHAT).
 - Chart library dependency — out of scope.
-- New `/api/...` routes — out of scope.
 - Replacing `view.config.columns` with object[] — out of scope (string[] preserved).
 - Replacing `chart.config.values` — out of scope (still rendered when present).
 - Top-level Builder / Widgets navigation — remains forbidden per V1.
+- Provider-specific widget types (Meta widget, GA4 widget, Shopify widget) — out of scope; the governed reference binding is provider-agnostic.
 
 V1.1 is the safe middle: rich Twenty-style data-view editor on top of the V1 envelope, with strict compatibility preservation.

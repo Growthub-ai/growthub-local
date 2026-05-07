@@ -48,6 +48,7 @@ import {
   KNOWN_SORT_DIRECTIONS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
+  buildEntityFilterClause,
   cloneTemplateToDashboard,
   cloneTemplateToTab,
   defaultConfigFor,
@@ -622,7 +623,12 @@ function getChartStyle(widget) {
 
 function summarizeSource(widget) {
   const binding = widget?.config?.binding;
-  if (binding?.mode === "integration" && binding.source) return binding.source;
+  if (binding?.mode === "integration") {
+    const source = binding.source || "Integration";
+    if (binding.entityLabel) return `${source} · ${binding.entityLabel}`;
+    if (binding.entityId) return `${source} · ${binding.entityId}`;
+    return source;
+  }
   if (widget?.config?.source) return widget.config.source;
   return "Static";
 }
@@ -809,11 +815,119 @@ function SubPanelHeader({ title, breadcrumb, onBack }) {
   </div>;
 }
 
+/**
+ * EntityBadge — chip showing the selected entity on the source panel and root inspector.
+ * Displays primary label + muted secondary label (stable ID). onClear is optional.
+ */
+function EntityBadge({ entity, onClear }) {
+  const initials = entity.entityType
+    ? entity.entityType[0].toUpperCase()
+    : (entity.label?.[0] || "•").toUpperCase();
+  return <div className="workspace-entity-badge">
+    <span className="workspace-entity-badge-icon" aria-hidden="true">{initials}</span>
+    <span className="workspace-entity-badge-meta">
+      <strong title={entity.label}>{entity.label}</strong>
+      {entity.secondaryLabel ? <em title={entity.secondaryLabel}>{entity.secondaryLabel}</em> : null}
+    </span>
+    {onClear ? <button
+      type="button"
+      className="workspace-entity-badge-clear"
+      aria-label={`Clear selected entity ${entity.label}`}
+      onClick={onClear}
+    >
+      <X size={11} />
+    </button> : null}
+  </div>;
+}
+
+/**
+ * EntitySelector — compact list for picking a provider entity after an integration
+ * is selected from the SourceSubPanel.
+ *
+ * Governed invariant: only the entity `id` is persisted. The `label` is
+ * display-only and may be refreshed from adapter metadata at any time.
+ * The browser never holds provider tokens or executes provider queries.
+ */
+function EntitySelector({ integration, entities, selectedEntityId, onSelect, loading }) {
+  const connected = integration?.isConnected || integration?.status === "connected";
+  const selected = entities.find((e) => e.id === selectedEntityId) || null;
+
+  return <div className="workspace-entity-selector">
+    <p className="workspace-panel-label">
+      Entity
+      {!connected ? <span className="workspace-entity-selector-hint"> · sample data</span> : null}
+    </p>
+    {selected ? <EntityBadge entity={selected} onClear={() => onSelect(null)} /> : null}
+    {loading ? <p className="workspace-entity-empty">Loading entities…</p> : null}
+    {!loading && !entities.length ? <p className="workspace-entity-empty">
+      No entities available. Ensure this integration is connected via Growthub Bridge.
+    </p> : null}
+    {!loading && entities.length ? <div className="workspace-entity-list">
+      {entities.map((entity) => {
+        const isActive = entity.id === selectedEntityId;
+        const initials = entity.entityType
+          ? entity.entityType[0].toUpperCase()
+          : (entity.label?.[0] || "•").toUpperCase();
+        return <button
+          key={entity.id}
+          type="button"
+          className={`workspace-entity-row${isActive ? " active" : ""}`}
+          onClick={() => onSelect(entity)}
+          title={entity.label}
+        >
+          <span className="workspace-entity-row-icon" aria-hidden="true">{initials}</span>
+          <span className="workspace-entity-row-meta">
+            <strong>{entity.label}</strong>
+            {entity.secondaryLabel ? <em title={entity.secondaryLabel}>{entity.secondaryLabel}</em> : null}
+          </span>
+          {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Sparkles size={13} /></span> : null}
+        </button>;
+      })}
+    </div> : null}
+    {!connected ? <p className="workspace-panel-hint workspace-entity-sample-hint">
+      Sample entities shown. Connect via Growthub Bridge for live account data.
+    </p> : null}
+  </div>;
+}
+
 function SourceSubPanel({ widget, integrations, onChange, onBack }) {
   const binding = widget.config?.binding || {};
   const currentMode = binding.mode || (widget.kind === "view" ? "manual" : "json");
   const [query, setQuery] = useState("");
   const [laneFilter, setLaneFilter] = useState("all");
+  const [entities, setEntities] = useState([]);
+  const [entitiesLoading, setEntitiesLoading] = useState(false);
+
+  const activeIntegration = useMemo(() => {
+    if (currentMode !== "integration" || !binding.integrationId) return null;
+    const list = Array.isArray(integrations) ? integrations : [];
+    return list.find((item) => item.id === binding.integrationId) || null;
+  }, [currentMode, binding.integrationId, integrations]);
+
+  useEffect(() => {
+    if (!binding.integrationId || currentMode !== "integration") {
+      setEntities([]);
+      return;
+    }
+    let cancelled = false;
+    setEntitiesLoading(true);
+    fetch(`/api/workspace/integration-entities?integrationId=${encodeURIComponent(binding.integrationId)}`)
+      .then((res) => res.ok ? res.json() : { entities: [] })
+      .then((data) => {
+        if (!cancelled) {
+          setEntities(Array.isArray(data.entities) ? data.entities : []);
+          setEntitiesLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEntities([]);
+          setEntitiesLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [binding.integrationId, currentMode]);
+
   const groups = useMemo(() => {
     const list = Array.isArray(integrations) ? integrations : [];
     const filtered = list.filter((item) => {
@@ -826,6 +940,7 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
       "workspace-integration": filtered.filter((item) => item.lane === "workspace-integration")
     };
   }, [integrations, laneFilter, query]);
+
   const selectStatic = useCallback(() => {
     if (widget.kind === "chart") {
       onChange({ ...widget.config, binding: SAMPLE_DATA_BINDINGS.reportingJson });
@@ -837,6 +952,7 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
       });
     }
   }, [onChange, widget.config, widget.kind]);
+
   const selectIntegration = useCallback((integration) => {
     onChange({
       ...widget.config,
@@ -849,6 +965,60 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
       }
     });
   }, [onChange, widget.config]);
+
+  /**
+   * Entity selection — the heart of the governed reference binding.
+   *
+   * When an entity is selected:
+   *   1. Persist `entityId`, `entityType`, `entityLabel` into `binding`.
+   *      Only the stable ID is authoritative; label is display-only.
+   *   2. Write a canonical filter clause `{ fieldId, operator: "eq", value }`.
+   *      The filter lives at `widget.config.filter` and is what data adapters
+   *      will use at query time. It stores the ID, not the label.
+   *
+   * When cleared (entity = null): remove entity fields from binding and
+   * remove only the entity-generated clause from the filter.
+   */
+  const selectEntity = useCallback((entity) => {
+    const existingFilter = widget.config?.filter;
+    const existingClauses = Array.isArray(existingFilter?.clauses) ? existingFilter.clauses : [];
+
+    if (!entity) {
+      const { entityId, entityType, entityLabel, ...restBinding } = binding;
+      const entityFieldIds = ["accountId", "propertyId", "shopId", "spreadsheetId",
+        "channelId", "projectId", "locationId", "folderId", "pipelineId", "workspaceId", "entityId"];
+      const cleanedClauses = existingClauses.filter(
+        (clause) => !(entityFieldIds.includes(clause.fieldId) && clause.operator === "eq")
+      );
+      onChange({
+        ...widget.config,
+        binding: restBinding,
+        filter: { op: existingFilter?.op || "and", clauses: cleanedClauses }
+      });
+      return;
+    }
+
+    const entityClause = buildEntityFilterClause(entity.entityType, entity.id);
+    const entityFieldIds = ["accountId", "propertyId", "shopId", "spreadsheetId",
+      "channelId", "projectId", "locationId", "folderId", "pipelineId", "workspaceId", "entityId"];
+    const otherClauses = existingClauses.filter(
+      (clause) => !(entityFieldIds.includes(clause.fieldId) && clause.operator === "eq")
+    );
+    const updatedClauses = [entityClause, ...otherClauses];
+
+    onChange({
+      ...widget.config,
+      source: binding.source || entity.label,
+      binding: {
+        ...binding,
+        entityId: entity.id,
+        entityType: entity.entityType || "",
+        entityLabel: entity.label
+      },
+      filter: { op: existingFilter?.op || "and", clauses: updatedClauses }
+    });
+  }, [binding, buildEntityFilterClause, onChange, widget.config]);
+
   return <section className="workspace-widget-subpanel">
     <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
     <div className="workspace-source-controls">
@@ -912,6 +1082,13 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
         })}
       </div>
     </div> : null)}
+    {currentMode === "integration" && binding.integrationId ? <EntitySelector
+      integration={activeIntegration}
+      entities={entities}
+      selectedEntityId={binding.entityId || null}
+      onSelect={selectEntity}
+      loading={entitiesLoading}
+    /> : null}
     <p className="workspace-panel-hint">
       Selecting a source writes a binding reference only. The browser does not query integrations or store tokens.
     </p>

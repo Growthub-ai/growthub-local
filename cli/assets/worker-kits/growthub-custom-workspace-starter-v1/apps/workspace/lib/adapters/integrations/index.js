@@ -1,6 +1,7 @@
 import { readAdapterConfig } from "@/lib/adapters/env";
 import {
-  governedWorkspaceIntegrationCatalog
+  governedWorkspaceIntegrationCatalog,
+  getEntityMetadataForIntegration
 } from "@/lib/domain/integrations";
 import {
   normalizeGrowthubBridgePayload
@@ -192,7 +193,55 @@ function toDiscoveredIntegration(row) {
     metadata: row.metadata || row.connectionMetadata
   };
 }
+/**
+ * Governed Integration Reference Binding — entity metadata resolution.
+ *
+ * Returns NormalizedIntegrationEntity[] for the requested integration.
+ * In static adapter mode: returns sample entities from the domain catalog.
+ * In growthub-bridge mode: attempts a server-side fetch against the bridge;
+ *   falls back to sample entities on failure so the builder always stays usable.
+ *
+ * Authority invariant: this function runs server-side only (API route).
+ * The browser NEVER calls provider APIs, holds tokens, or resolves entities.
+ */
+async function listEntityMetadataForIntegration(integrationId) {
+  if (!integrationId) return [];
+  const config = readAdapterConfig();
+
+  if (config.integrationAdapter === "growthub-bridge" &&
+      config.growthubBridge?.baseUrl &&
+      process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN) {
+    try {
+      const baseUrl = config.growthubBridge.baseUrl;
+      const entitiesPath = `/api/integrations/${encodeURIComponent(integrationId)}/entities`;
+      const url = new URL(entitiesPath, baseUrl);
+      const headers = {
+        accept: "application/json",
+        authorization: `Bearer ${process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN}`
+      };
+      if (config.growthubBridge.userId) {
+        headers["x-user-id"] = config.growthubBridge.userId;
+      }
+      const response = await fetch(url, {
+        headers,
+        next: { revalidate: 30 }
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        const entities = Array.isArray(payload.entities) ? payload.entities :
+          Array.isArray(payload) ? payload : [];
+        if (entities.length) return entities;
+      }
+    } catch {
+      // fall through to sample data on network error
+    }
+  }
+
+  return getEntityMetadataForIntegration(integrationId);
+}
+
 export {
   describeIntegrationAdapter,
-  listGovernedWorkspaceIntegrations
+  listGovernedWorkspaceIntegrations,
+  listEntityMetadataForIntegration
 };

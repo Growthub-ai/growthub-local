@@ -46,6 +46,48 @@ const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "
 const KNOWN_FILTER_CONJUNCTIONS = ["and", "or"];
 const KNOWN_SORT_DIRECTIONS = ["asc", "desc"];
 const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
+
+/**
+ * Governed Integration Reference Binding — entity types
+ *
+ * Each provider adapter maps its entity kind onto one of these canonical
+ * strings so the UI can build a consistent filter clause regardless of
+ * provider.  The fieldId for each type:
+ *   account      → accountId      property → propertyId
+ *   store        → shopId         sheet    → spreadsheetId
+ *   channel      → channelId      project  → projectId
+ *   location     → locationId     folder   → folderId
+ *   pipeline     → pipelineId     workspace → workspaceId
+ */
+const KNOWN_ENTITY_TYPES = [
+  "account", "property", "store", "sheet", "channel",
+  "project", "location", "folder", "pipeline", "workspace"
+];
+
+/** Map from entityType → the stable fieldId used in filter clauses. */
+const ENTITY_TYPE_FIELD_MAP = {
+  account: "accountId",
+  property: "propertyId",
+  store: "shopId",
+  sheet: "spreadsheetId",
+  channel: "channelId",
+  project: "projectId",
+  location: "locationId",
+  folder: "folderId",
+  pipeline: "pipelineId",
+  workspace: "workspaceId"
+};
+
+/**
+ * Build the canonical filter clause for a selected entity.
+ * Returns `{ fieldId, operator: "eq", value: entityId }`.
+ * This is the only value that persists with the widget — the display
+ * label is resolved at runtime from adapter metadata.
+ */
+function buildEntityFilterClause(entityType, entityId) {
+  const fieldId = ENTITY_TYPE_FIELD_MAP[entityType] || "entityId";
+  return { fieldId, operator: "eq", value: String(entityId) };
+}
 const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
 const WORKSPACE_TEMPLATE_VERSION = 1;
 const WORKSPACE_TEMPLATE_SOURCE = "growthub-custom-workspace-starter-v1";
@@ -141,7 +183,22 @@ const WIDGET_SCHEMA_CONTRACTS = {
     source: "string",
     rows: "manual record[] optional",
     json: "JSON string optional",
-    csv: "CSV string optional"
+    csv: "CSV string optional",
+    integrationId: "string optional (when mode === 'integration')",
+    lane: "string optional (when mode === 'integration')",
+    entityId: "string optional — stable provider entity ID (never a token or credential)",
+    entityType: `${KNOWN_ENTITY_TYPES.join(" | ")} optional`,
+    entityLabel: "string optional — display-only resolved label, not authoritative"
+  },
+  NormalizedIntegrationEntity: {
+    id: "non-empty string — stable provider entity ID",
+    label: "non-empty string — primary display name",
+    secondaryLabel: "string optional — muted subtitle (ID, domain, or type hint)",
+    entityType: `${KNOWN_ENTITY_TYPES.join(" | ")} optional`,
+    provider: "string optional — provider slug (e.g. meta-ads, shopify)",
+    lane: "data-source | workspace-integration optional",
+    status: "connected | needs-connection | unavailable optional",
+    metadata: "record optional — additional display-only adapter metadata"
   }
 };
 
@@ -382,6 +439,15 @@ function validateStaticDataBinding(binding, path, errors) {
   }
   if (binding.lane !== undefined && typeof binding.lane !== "string") {
     errors.push(`${path}.lane must be a string`);
+  }
+  if (binding.entityId !== undefined && typeof binding.entityId !== "string") {
+    errors.push(`${path}.entityId must be a string`);
+  }
+  if (binding.entityType !== undefined && typeof binding.entityType !== "string") {
+    errors.push(`${path}.entityType must be a string`);
+  }
+  if (binding.entityLabel !== undefined && typeof binding.entityLabel !== "string") {
+    errors.push(`${path}.entityLabel must be a string`);
   }
 }
 
@@ -960,11 +1026,13 @@ function validateWorkspaceConfig(nextConfig) {
 
 export {
   DASHBOARD_TEMPLATES,
+  ENTITY_TYPE_FIELD_MAP,
   GRID_COLUMNS,
   GRID_ROWS,
   KNOWN_AGGREGATIONS,
   KNOWN_CHART_TYPES,
   KNOWN_DATA_BINDING_MODES,
+  KNOWN_ENTITY_TYPES,
   KNOWN_FIELDS,
   KNOWN_FILTER_CONJUNCTIONS,
   KNOWN_FILTER_OPERATORS,
@@ -976,6 +1044,7 @@ export {
   WORKSPACE_TEMPLATE_KIND,
   WORKSPACE_TEMPLATE_SOURCE,
   WORKSPACE_TEMPLATE_VERSION,
+  buildEntityFilterClause,
   cloneTemplateToDashboard,
   cloneTemplateToTab,
   defaultConfigFor,
