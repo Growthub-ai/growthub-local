@@ -3,7 +3,49 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BarChart3,
+  Bolt,
+  ChevronDown,
+  Code2,
+  Columns3,
+  Copy,
+  Database,
+  Download,
+  ExternalLink,
+  FileText,
+  Filter,
+  Gauge,
+  Grid2X2,
+  Home,
+  Import,
+  Italic,
+  LayoutDashboard,
+  Link as LinkIcon,
+  List,
+  Maximize2,
+  Pencil,
+  PieChart,
+  Plus,
+  Quote,
+  Rows3,
+  Save,
+  Search,
+  Settings,
+  Sigma,
+  SlidersHorizontal,
+  Sparkles,
+  Table2,
+  Trash2,
+  Type,
+  X
+} from "lucide-react";
+import {
   DASHBOARD_TEMPLATES,
+  KNOWN_AGGREGATIONS,
+  KNOWN_CHART_TYPES,
+  KNOWN_FILTER_CONJUNCTIONS,
+  KNOWN_FILTER_OPERATORS,
+  KNOWN_SORT_DIRECTIONS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
   cloneTemplateToDashboard,
@@ -14,6 +56,60 @@ import {
   validateWorkspaceConfig,
   wrapWorkspaceTemplateExport
 } from "@/lib/workspace-schema";
+import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
+
+const DEFAULT_CHART_TYPE = "bar-vertical";
+const DEFAULT_FILTER_OP = "and";
+const DEFAULT_FILTER_OPERATOR = "contains";
+const DEFAULT_SORT_DIRECTION = "asc";
+const SUB_PANEL_ROOT = "root";
+
+const CHART_TYPE_LABELS = {
+  "bar-vertical": "Vertical Bar",
+  "bar-horizontal": "Horizontal Bar",
+  "pie": "Pie",
+  "sum": "Sum",
+  "gauge": "Gauge"
+};
+
+const CHART_TYPE_ICONS = {
+  "bar-vertical": BarChart3,
+  "bar-horizontal": Rows3,
+  "pie": PieChart,
+  "sum": Sigma,
+  "gauge": Gauge
+};
+
+const VISIBLE_CHART_TYPES = KNOWN_CHART_TYPES.filter((type) => type !== "line");
+
+const WIDGET_KIND_ICONS = {
+  chart: BarChart3,
+  view: Table2,
+  iframe: Code2,
+  "rich-text": FileText
+};
+
+const FILTER_OPERATOR_LABELS = {
+  eq: "equals",
+  ne: "does not equal",
+  contains: "contains",
+  gt: "is greater than",
+  lt: "is less than",
+  isEmpty: "is empty",
+  isNotEmpty: "is not empty"
+};
+
+const COLUMN_ICON_FOR = (name) => {
+  const lower = String(name || "").toLowerCase();
+  if (lower.includes("name") || lower.includes("title")) return "🏛";
+  if (lower.includes("domain") || lower.includes("url") || lower.includes("link")) return "🔗";
+  if (lower.includes("address") || lower.includes("location")) return "🗺";
+  if (lower.includes("employee") || lower.includes("people") || lower.includes("user")) return "👥";
+  if (lower.includes("linkedin")) return "in";
+  if (lower.includes("twitter") || lower === "x") return "𝕏";
+  if (lower.includes("date") || lower.includes("created") || lower.includes("updated")) return "📅";
+  return "▦";
+};
 
 const DEFAULT_POSITION = { x: 4, y: 0, w: 4, h: 5 };
 const GRID_COLUMNS = 12;
@@ -350,6 +446,11 @@ function widgetKindLabel(kind) {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+function IconGlyph({ icon: Icon, size = 16 }) {
+  if (!Icon) return null;
+  return <Icon aria-hidden="true" size={size} strokeWidth={1.9} />;
+}
+
 function isLikelyHttpUrl(value) {
   if (typeof value !== "string" || !value.trim()) return false;
   try {
@@ -362,6 +463,29 @@ function isLikelyHttpUrl(value) {
 
 function cloneConfig(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function richTextToHtml(value) {
+  const escaped = escapeHtml(value || "Start writing...");
+  return escaped
+    .replace(/^### (.*)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.*)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.*)$/gm, "<h1>$1</h1>")
+    .replace(/^> (.*)$/gm, "<blockquote>$1</blockquote>")
+    .replace(/^- (.*)$/gm, "<li>$1</li>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/\[(.*?)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+    .replace(/\n/g, "<br />");
 }
 
 function normalizeChartValues(value) {
@@ -408,6 +532,129 @@ function serializeManualRows(rows, columns) {
     .join("\n");
 }
 
+function getColumnList(widget) {
+  return Array.isArray(widget?.config?.columns) ? widget.config.columns : [];
+}
+
+function getOrderedColumns(widget) {
+  const columns = getColumnList(widget);
+  const order = Array.isArray(widget?.config?.fieldSettings?.order) ? widget.config.fieldSettings.order : [];
+  if (!order.length) return columns;
+  const known = new Set(columns);
+  const ordered = order.filter((name) => known.has(name));
+  const remaining = columns.filter((name) => !ordered.includes(name));
+  return [...ordered, ...remaining];
+}
+
+function getHiddenColumnSet(widget) {
+  const hidden = Array.isArray(widget?.config?.fieldSettings?.hidden) ? widget.config.fieldSettings.hidden : [];
+  return new Set(hidden);
+}
+
+function getVisibleColumns(widget) {
+  const ordered = getOrderedColumns(widget);
+  const hidden = getHiddenColumnSet(widget);
+  return ordered.filter((name) => !hidden.has(name));
+}
+
+function withFieldSettings(config, patch) {
+  const current = isPlainConfigObject(config?.fieldSettings) ? config.fieldSettings : { hidden: [], order: [] };
+  return {
+    ...config,
+    fieldSettings: {
+      hidden: Array.isArray(current.hidden) ? [...current.hidden] : [],
+      order: Array.isArray(current.order) ? [...current.order] : [],
+      ...patch
+    }
+  };
+}
+
+function isPlainConfigObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function reorderColumn(widget, fieldId, direction) {
+  const ordered = getOrderedColumns(widget);
+  const index = ordered.indexOf(fieldId);
+  if (index < 0) return widget.config?.fieldSettings;
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= ordered.length) return widget.config?.fieldSettings;
+  const next = [...ordered];
+  const [moved] = next.splice(index, 1);
+  next.splice(target, 0, moved);
+  return { ...(widget.config?.fieldSettings || {}), order: next };
+}
+
+function toggleColumnHidden(widget, fieldId) {
+  const hidden = getHiddenColumnSet(widget);
+  if (hidden.has(fieldId)) hidden.delete(fieldId);
+  else hidden.add(fieldId);
+  return { ...(widget.config?.fieldSettings || {}), hidden: Array.from(hidden) };
+}
+
+function getSortClauses(widget) {
+  return Array.isArray(widget?.config?.sort) ? widget.config.sort : [];
+}
+
+function getFilterConfig(widget) {
+  const filter = widget?.config?.filter;
+  if (!isPlainConfigObject(filter)) return { op: DEFAULT_FILTER_OP, clauses: [] };
+  return {
+    op: KNOWN_FILTER_CONJUNCTIONS.includes(filter.op) ? filter.op : DEFAULT_FILTER_OP,
+    clauses: Array.isArray(filter.clauses) ? filter.clauses : []
+  };
+}
+
+function getChartType(widget) {
+  const chartType = widget?.config?.chartType;
+  return KNOWN_CHART_TYPES.includes(chartType) ? chartType : DEFAULT_CHART_TYPE;
+}
+
+function getChartAxis(widget, axisKey) {
+  const axis = widget?.config?.[axisKey];
+  return isPlainConfigObject(axis) ? axis : {};
+}
+
+function getChartStyle(widget) {
+  const style = widget?.config?.style;
+  return isPlainConfigObject(style) ? style : {};
+}
+
+function summarizeSource(widget) {
+  const binding = widget?.config?.binding;
+  if (binding?.mode === "integration" && binding.source) return binding.source;
+  if (widget?.config?.source) return widget.config.source;
+  return "Static";
+}
+
+function summarizeFields(widget) {
+  const total = getColumnList(widget).length;
+  const hidden = getHiddenColumnSet(widget).size;
+  if (!total) return "0 shown";
+  return hidden ? `${total - hidden} of ${total} shown` : `${total} shown`;
+}
+
+function summarizeSort(widget) {
+  const sort = getSortClauses(widget);
+  if (!sort.length) return "›";
+  if (sort.length === 1) {
+    const [first] = sort;
+    return `${first.fieldId} ${first.direction || DEFAULT_SORT_DIRECTION}`;
+  }
+  return `${sort.length} sorts`;
+}
+
+function summarizeFilter(widget) {
+  const filter = getFilterConfig(widget);
+  const count = filter.clauses.length;
+  if (!count) return "›";
+  return `${count} clause${count === 1 ? "" : "s"} (${filter.op})`;
+}
+
+function describeIntegrationLane(integration) {
+  return integration?.lane === "data-source" ? "Data Sources" : "Workspace Tools";
+}
+
 const NORMALIZED_TEMPLATES = DASHBOARD_TEMPLATES.map((template) => ({
   ...normalizeWorkspaceTemplate(template),
   widgets: template.widgets
@@ -451,9 +698,36 @@ function TemplateGallery({
   onPreview,
   onClose,
   onApplyToCurrentTab,
-  onCloneAsDashboard
+  onCloneAsDashboard,
+  filter,
+  onFilterChange
 }) {
+  const categories = useMemo(() => {
+    const set = new Set();
+    templates.forEach((template) => {
+      if (template.category) set.add(template.category);
+    });
+    return ["all", ...Array.from(set)];
+  }, [templates]);
+  const tags = useMemo(() => {
+    const set = new Set();
+    templates.forEach((template) => {
+      (template.tags || []).forEach((tag) => set.add(tag));
+    });
+    return ["all", ...Array.from(set)];
+  }, [templates]);
+  const filtered = useMemo(() => {
+    const query = (filter?.query || "").trim().toLowerCase();
+    return templates.filter((template) => {
+      if (filter?.category && filter.category !== "all" && template.category !== filter.category) return false;
+      if (filter?.tag && filter.tag !== "all" && !(template.tags || []).includes(filter.tag)) return false;
+      if (!query) return true;
+      const haystack = `${template.name} ${template.description} ${(template.tags || []).join(" ")} ${(template.bestFor || []).join(" ")}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [templates, filter]);
   const previewTemplate = templates.find((template) => template.id === previewTemplateId) || null;
+  const setFilter = (patch) => onFilterChange({ ...(filter || {}), ...patch });
   return <div className="template-gallery" role="dialog" aria-modal="true" aria-label="Workspace templates">
     <div className="template-gallery-backdrop" onClick={onClose} aria-hidden="true" />
     <section className="template-gallery-panel">
@@ -464,8 +738,31 @@ function TemplateGallery({
         </div>
         <button type="button" aria-label="Close template gallery" onClick={onClose}>x</button>
       </header>
+      <div className="template-gallery-filters">
+        <input
+          aria-label="Search templates"
+          placeholder="Search templates…"
+          value={filter?.query || ""}
+          onChange={(event) => setFilter({ query: event.target.value })}
+        />
+        <select
+          aria-label="Filter by category"
+          value={filter?.category || "all"}
+          onChange={(event) => setFilter({ category: event.target.value })}
+        >
+          {categories.map((category) => <option key={category} value={category}>{category === "all" ? "All categories" : category}</option>)}
+        </select>
+        <select
+          aria-label="Filter by tag"
+          value={filter?.tag || "all"}
+          onChange={(event) => setFilter({ tag: event.target.value })}
+        >
+          {tags.map((tag) => <option key={tag} value={tag}>{tag === "all" ? "All tags" : `#${tag}`}</option>)}
+        </select>
+      </div>
       <div className="template-gallery-grid">
-        {templates.map((template) => {
+        {filtered.length === 0 ? <p className="workspace-panel-hint">No templates match those filters.</p> : null}
+        {filtered.map((template) => {
           const isPreviewing = previewTemplate?.id === template.id;
           return <article
             className={`template-card${isPreviewing ? " previewing" : ""}`}
@@ -502,10 +799,631 @@ function TemplateGallery({
   </div>;
 }
 
-function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onResizeStart }) {
-  const viewColumns = widget.config?.columns?.length ? widget.config.columns : ["Name", "Domain Name"];
+function SubPanelHeader({ title, breadcrumb, onBack }) {
+  return <div className="workspace-widget-subpanel-header">
+    <button type="button" className="workspace-widget-subpanel-back" aria-label={`Back from ${title}`} onClick={onBack}>‹</button>
+    <div>
+      {breadcrumb ? <p>{breadcrumb}</p> : null}
+      <strong>{title}</strong>
+    </div>
+  </div>;
+}
+
+function SourceSubPanel({ widget, integrations, onChange, onBack }) {
+  const binding = widget.config?.binding || {};
+  const currentMode = binding.mode || (widget.kind === "view" ? "manual" : "json");
+  const [query, setQuery] = useState("");
+  const [laneFilter, setLaneFilter] = useState("all");
+  const groups = useMemo(() => {
+    const list = Array.isArray(integrations) ? integrations : [];
+    const filtered = list.filter((item) => {
+      if (laneFilter !== "all" && item.lane !== laneFilter) return false;
+      const text = `${item.label} ${item.provider} ${item.description}`.toLowerCase();
+      return !query.trim() || text.includes(query.trim().toLowerCase());
+    });
+    return {
+      "data-source": filtered.filter((item) => item.lane === "data-source"),
+      "workspace-integration": filtered.filter((item) => item.lane === "workspace-integration")
+    };
+  }, [integrations, laneFilter, query]);
+  const selectStatic = useCallback(() => {
+    if (widget.kind === "chart") {
+      onChange({ ...widget.config, binding: SAMPLE_DATA_BINDINGS.reportingJson });
+    } else {
+      onChange({
+        ...widget.config,
+        source: widget.config?.source || "Companies",
+        binding: SAMPLE_DATA_BINDINGS.companiesManual
+      });
+    }
+  }, [onChange, widget.config, widget.kind]);
+  const selectIntegration = useCallback((integration) => {
+    onChange({
+      ...widget.config,
+      source: integration.label,
+      binding: {
+        mode: "integration",
+        source: integration.label,
+        integrationId: integration.id,
+        lane: integration.lane
+      }
+    });
+  }, [onChange, widget.config]);
+  return <section className="workspace-widget-subpanel">
+    <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
+    <div className="workspace-source-controls">
+      <label>
+        <Search size={14} aria-hidden="true" />
+        <input
+          aria-label="Search sources"
+          placeholder="Search sources"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      <label>
+        <Database size={14} aria-hidden="true" />
+        <select
+          aria-label="Filter source type"
+          value={laneFilter}
+          onChange={(event) => setLaneFilter(event.target.value)}
+        >
+          <option value="all">All source types</option>
+          <option value="data-source">Data sources</option>
+          <option value="workspace-integration">Workspace tools</option>
+        </select>
+        <ChevronDown size={14} aria-hidden="true" />
+      </label>
+    </div>
+    <p className="workspace-panel-label">Static data</p>
+    <div className="workspace-source-list">
+      <button
+        type="button"
+        className={`workspace-source-row${currentMode !== "integration" ? " active" : ""}`}
+        onClick={selectStatic}
+      >
+        <span className="workspace-source-icon" aria-hidden="true"><Grid2X2 size={15} /></span>
+        <span className="workspace-source-meta">
+          <strong>Static rows</strong>
+          <em>Inline data — no external authority required.</em>
+        </span>
+        {currentMode !== "integration" ? <span className="workspace-source-tick" aria-hidden="true"><Sparkles size={15} /></span> : null}
+      </button>
+    </div>
+    {Object.entries(groups).map(([lane, items]) => items.length ? <div key={lane}>
+      <p className="workspace-panel-label">{lane === "data-source" ? "Data Sources" : "Workspace Tools"}</p>
+      <div className="workspace-source-list">
+        {items.map((integration) => {
+          const isActive = currentMode === "integration" && binding.integrationId === integration.id;
+          const connected = integration.isConnected || integration.status === "connected";
+          return <button
+            key={integration.id}
+            type="button"
+            className={`workspace-source-row${isActive ? " active" : ""}`}
+            onClick={() => selectIntegration(integration)}
+          >
+            <span className="workspace-source-icon" aria-hidden="true">{integration.icon || integration.label?.[0] || "•"}</span>
+            <span className="workspace-source-meta">
+              <strong>{integration.label}</strong>
+              <em>{describeIntegrationLane(integration)} · {connected ? "connected" : "needs connection"}</em>
+            </span>
+            {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Sparkles size={15} /></span> : null}
+          </button>;
+        })}
+      </div>
+    </div> : null)}
+    <p className="workspace-panel-hint">
+      Selecting a source writes a binding reference only. The browser does not query integrations or store tokens.
+    </p>
+  </section>;
+}
+
+function FieldsSubPanel({ widget, onChange, onBack }) {
+  const ordered = getOrderedColumns(widget);
+  const hidden = getHiddenColumnSet(widget);
+  const visible = ordered.filter((name) => !hidden.has(name));
+  const hiddenList = ordered.filter((name) => hidden.has(name));
+  const [hiddenOpen, setHiddenOpen] = useState(true);
+  const [draftField, setDraftField] = useState("");
+  const move = (fieldId, direction) => {
+    const next = reorderColumn(widget, fieldId, direction);
+    onChange({ ...widget.config, fieldSettings: next });
+  };
+  const toggle = (fieldId) => {
+    const next = toggleColumnHidden(widget, fieldId);
+    onChange({ ...widget.config, fieldSettings: next });
+  };
+  const removeColumn = (fieldId) => {
+    const nextColumns = ordered.filter((name) => name !== fieldId);
+    const fs = widget.config?.fieldSettings || {};
+    onChange({
+      ...widget.config,
+      columns: nextColumns,
+      fieldSettings: {
+        hidden: (fs.hidden || []).filter((name) => name !== fieldId),
+        order: (fs.order || []).filter((name) => name !== fieldId)
+      }
+    });
+  };
+  const addColumn = () => {
+    const trimmed = draftField.trim();
+    if (!trimmed || ordered.includes(trimmed)) return;
+    onChange({ ...widget.config, columns: [...ordered, trimmed] });
+    setDraftField("");
+  };
+  return <section className="workspace-widget-subpanel">
+    <SubPanelHeader title="Fields" breadcrumb={widget.title} onBack={onBack} />
+    <p className="workspace-panel-label">Visible fields</p>
+    <div className="workspace-field-rows">
+      {visible.length === 0 ? <p className="workspace-panel-hint">No visible fields. Add one below or unhide an existing field.</p> : null}
+      {visible.map((name, index) => <div key={name} className="workspace-field-row">
+        <span className="workspace-field-row-handle" aria-hidden="true">::</span>
+        <span className="workspace-field-row-icon" aria-hidden="true">{COLUMN_ICON_FOR(name)}</span>
+        <span className="workspace-field-row-name">{name}</span>
+        <span className="workspace-field-row-actions">
+          <button type="button" aria-label={`Move ${name} up`} disabled={index === 0} onClick={() => move(name, "up")}>↑</button>
+          <button type="button" aria-label={`Move ${name} down`} disabled={index === visible.length - 1} onClick={() => move(name, "down")}>↓</button>
+          <button type="button" aria-label={`Hide ${name}`} onClick={() => toggle(name)}>👁</button>
+          <button type="button" aria-label={`Remove ${name}`} onClick={() => removeColumn(name)}>✕</button>
+        </span>
+      </div>)}
+    </div>
+    <button
+      type="button"
+      className="workspace-hidden-fields-toggle"
+      onClick={() => setHiddenOpen((value) => !value)}
+      aria-expanded={hiddenOpen}
+    >
+      <span>👁‍🗨 Hidden Fields</span>
+      <span aria-hidden="true">{hiddenOpen ? "−" : "+"}</span>
+    </button>
+    {hiddenOpen ? <div className="workspace-field-rows workspace-hidden-fields">
+      {hiddenList.length === 0 ? <p className="workspace-panel-hint">No hidden fields.</p> : null}
+      {hiddenList.map((name) => <div key={name} className="workspace-field-row workspace-field-row-hidden">
+        <span className="workspace-field-row-icon" aria-hidden="true">{COLUMN_ICON_FOR(name)}</span>
+        <span className="workspace-field-row-name">{name}</span>
+        <span className="workspace-field-row-actions">
+          <button type="button" aria-label={`Show ${name}`} onClick={() => toggle(name)}>👁</button>
+          <button type="button" aria-label={`Remove ${name}`} onClick={() => removeColumn(name)}>✕</button>
+        </span>
+      </div>)}
+    </div> : null}
+    <div className="workspace-field-add">
+      <input
+        aria-label="New field name"
+        value={draftField}
+        placeholder="Add field…"
+        onChange={(event) => setDraftField(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            addColumn();
+          }
+        }}
+      />
+      <button type="button" onClick={addColumn} disabled={!draftField.trim()}>Add</button>
+    </div>
+  </section>;
+}
+
+function SortSubPanel({ widget, onChange, onBack }) {
+  const sort = getSortClauses(widget);
+  const columns = getColumnList(widget);
+  const updateSort = (next) => onChange({ ...widget.config, sort: next });
+  const addClause = () => {
+    const fieldId = columns[0] || "";
+    if (!fieldId) return;
+    updateSort([...sort, { fieldId, direction: DEFAULT_SORT_DIRECTION }]);
+  };
+  const updateClause = (index, patch) => {
+    updateSort(sort.map((clause, idx) => idx === index ? { ...clause, ...patch } : clause));
+  };
+  const removeClause = (index) => updateSort(sort.filter((_, idx) => idx !== index));
+  return <section className="workspace-widget-subpanel">
+    <SubPanelHeader title="Sorts" breadcrumb={widget.title} onBack={onBack} />
+    <p className="workspace-panel-label">Sorts</p>
+    <div className="workspace-sort-list">
+      {sort.length === 0 ? <p className="workspace-panel-hint">No sorts applied.</p> : null}
+      {sort.map((clause, index) => <div key={index} className="workspace-sort-row">
+        <select
+          aria-label={`Sort ${index + 1} field`}
+          value={clause.fieldId}
+          onChange={(event) => updateClause(index, { fieldId: event.target.value })}
+        >
+          {!columns.includes(clause.fieldId) && clause.fieldId ? <option value={clause.fieldId}>{clause.fieldId}</option> : null}
+          {columns.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select
+          aria-label={`Sort ${index + 1} direction`}
+          value={clause.direction || DEFAULT_SORT_DIRECTION}
+          onChange={(event) => updateClause(index, { direction: event.target.value })}
+        >
+          {KNOWN_SORT_DIRECTIONS.map((dir) => <option key={dir} value={dir}>{dir === "asc" ? "Ascending" : "Descending"}</option>)}
+        </select>
+        <button type="button" aria-label={`Remove sort ${index + 1}`} onClick={() => removeClause(index)}>✕</button>
+      </div>)}
+    </div>
+    <button type="button" className="workspace-add-clause" onClick={addClause} disabled={!columns.length}>
+      + Add sort
+    </button>
+    <p className="workspace-panel-hint">
+      Sort metadata persists with the widget. Live integrations are not queried from the browser.
+    </p>
+  </section>;
+}
+
+function FilterSubPanel({ widget, onChange, onBack }) {
+  const filter = getFilterConfig(widget);
+  const columns = getColumnList(widget);
+  const setFilter = (next) => onChange({ ...widget.config, filter: next });
+  const setOp = (op) => setFilter({ ...filter, op });
+  const addClause = () => {
+    const fieldId = columns[0] || "";
+    if (!fieldId) return;
+    setFilter({ ...filter, clauses: [...filter.clauses, { fieldId, operator: DEFAULT_FILTER_OPERATOR, value: "" }] });
+  };
+  const updateClause = (index, patch) => {
+    setFilter({ ...filter, clauses: filter.clauses.map((clause, idx) => idx === index ? { ...clause, ...patch } : clause) });
+  };
+  const removeClause = (index) => {
+    setFilter({ ...filter, clauses: filter.clauses.filter((_, idx) => idx !== index) });
+  };
+  return <section className="workspace-widget-subpanel">
+    <SubPanelHeader title="Filter" breadcrumb={widget.title} onBack={onBack} />
+    <div className="workspace-filter-op-toggle" role="radiogroup" aria-label="Filter conjunction">
+      {KNOWN_FILTER_CONJUNCTIONS.map((op) => <button
+        key={op}
+        type="button"
+        role="radio"
+        aria-checked={filter.op === op}
+        className={filter.op === op ? "active" : ""}
+        onClick={() => setOp(op)}
+      >{op.toUpperCase()}</button>)}
+    </div>
+    <div className="workspace-filter-list">
+      {filter.clauses.length === 0 ? <p className="workspace-panel-hint">No filter clauses.</p> : null}
+      {filter.clauses.map((clause, index) => {
+        const valueless = clause.operator === "isEmpty" || clause.operator === "isNotEmpty";
+        return <div key={index} className="workspace-filter-clause">
+          <select
+            aria-label={`Filter ${index + 1} field`}
+            value={clause.fieldId}
+            onChange={(event) => updateClause(index, { fieldId: event.target.value })}
+          >
+            {!columns.includes(clause.fieldId) && clause.fieldId ? <option value={clause.fieldId}>{clause.fieldId}</option> : null}
+            {columns.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <select
+            aria-label={`Filter ${index + 1} operator`}
+            value={clause.operator || DEFAULT_FILTER_OPERATOR}
+            onChange={(event) => updateClause(index, { operator: event.target.value })}
+          >
+            {KNOWN_FILTER_OPERATORS.map((op) => <option key={op} value={op}>{FILTER_OPERATOR_LABELS[op] || op}</option>)}
+          </select>
+          {!valueless ? <input
+            aria-label={`Filter ${index + 1} value`}
+            value={clause.value ?? ""}
+            placeholder="value"
+            onChange={(event) => updateClause(index, { value: event.target.value })}
+          /> : <span className="workspace-filter-clause-empty">—</span>}
+          <button type="button" aria-label={`Remove filter ${index + 1}`} onClick={() => removeClause(index)}>✕</button>
+        </div>;
+      })}
+    </div>
+    <button type="button" className="workspace-add-clause" onClick={addClause} disabled={!columns.length}>
+      + Add filter
+    </button>
+    <p className="workspace-panel-hint">
+      Filter metadata persists with the widget. Live integration queries stay in the CLI / hosted layers.
+    </p>
+  </section>;
+}
+
+function ChartConfigPanel({ widget, onChange, onSubPage }) {
+  const chartType = getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget);
+  const xAxis = getChartAxis(widget, "xAxis");
+  const yAxis = getChartAxis(widget, "yAxis");
+  const style = getChartStyle(widget);
+  const setChartType = (type) => onChange({ ...widget.config, chartType: type });
+  const setXAxis = (patch) => onChange({ ...widget.config, xAxis: { ...xAxis, ...patch } });
+  const setYAxis = (patch) => onChange({ ...widget.config, yAxis: { ...yAxis, ...patch } });
+  const setStyle = (patch) => onChange({ ...widget.config, style: { ...style, ...patch } });
+  return <section className="workspace-chart-config">
+    <p className="workspace-panel-label">Chart type</p>
+    <div className="workspace-chart-type-tabs" role="tablist" aria-label="Chart type">
+      {VISIBLE_CHART_TYPES.map((type) => {
+        const TypeIcon = CHART_TYPE_ICONS[type];
+        return <button
+          key={type}
+          type="button"
+          role="tab"
+          aria-selected={chartType === type}
+          className={chartType === type ? "active" : ""}
+          onClick={() => setChartType(type)}
+          title={CHART_TYPE_LABELS[type]}
+        >
+          <IconGlyph icon={TypeIcon} size={17} />
+          <em>{CHART_TYPE_LABELS[type]}</em>
+        </button>;
+      })}
+    </div>
+    <button type="button" className="workspace-settings-row" onClick={() => onSubPage("source")}>
+      <span>Source</span><code>{summarizeSource(widget)}</code>
+    </button>
+    <button type="button" className="workspace-settings-row" onClick={() => onSubPage("filter")}>
+      <span>Filter</span><code>{summarizeFilter(widget)}</code>
+    </button>
+    <p className="workspace-panel-label">X axis</p>
+    <label>
+      <span>Data on display</span>
+      <input
+        value={xAxis.field || ""}
+        placeholder="Stage"
+        onChange={(event) => setXAxis({ field: event.target.value })}
+      />
+    </label>
+    <label>
+      <span>Sort by</span>
+      <select value={xAxis.sort || "position"} onChange={(event) => setXAxis({ sort: event.target.value })}>
+        <option value="position">Stage position ascending</option>
+        <option value="asc">Value ascending</option>
+        <option value="desc">Value descending</option>
+      </select>
+    </label>
+    <label className="workspace-toggle-row">
+      <span>Omit zero values</span>
+      <input
+        type="checkbox"
+        checked={Boolean(xAxis.omitZero)}
+        onChange={(event) => setXAxis({ omitZero: event.target.checked })}
+      />
+    </label>
+    <p className="workspace-panel-label">Y axis</p>
+    <label>
+      <span>Aggregation</span>
+      <select value={yAxis.aggregation || "sum"} onChange={(event) => setYAxis({ aggregation: event.target.value })}>
+        {KNOWN_AGGREGATIONS.map((agg) => <option key={agg} value={agg}>{agg}</option>)}
+      </select>
+    </label>
+    <label>
+      <span>Data on display</span>
+      <input
+        value={yAxis.field || ""}
+        placeholder="Amount"
+        onChange={(event) => setYAxis({ field: event.target.value })}
+      />
+    </label>
+    <label>
+      <span>Group by</span>
+      <input
+        value={yAxis.groupBy || ""}
+        placeholder="—"
+        onChange={(event) => setYAxis({ groupBy: event.target.value })}
+      />
+    </label>
+    <div className="workspace-axis-range">
+      <label>
+        <span>Min range</span>
+        <input
+          value={yAxis.min ?? ""}
+          placeholder="Min"
+          onChange={(event) => setYAxis({ min: event.target.value })}
+        />
+      </label>
+      <label>
+        <span>Max range</span>
+        <input
+          value={yAxis.max ?? ""}
+          placeholder="Max"
+          onChange={(event) => setYAxis({ max: event.target.value })}
+        />
+      </label>
+    </div>
+    <p className="workspace-panel-label">Style</p>
+    <label>
+      <span>Colors</span>
+      <select value={style.colors || "auto"} onChange={(event) => setStyle({ colors: event.target.value })}>
+        <option value="auto">Auto</option>
+        <option value="accent">Accent</option>
+        <option value="manual">Manual</option>
+      </select>
+    </label>
+    {style.colors === "manual" ? <div className="workspace-color-picker-row">
+      <label>
+        <span>Manual color</span>
+        <input
+          type="color"
+          value={style.manualColor || "#38bdf8"}
+          onChange={(event) => setStyle({ manualColor: event.target.value })}
+        />
+      </label>
+      <input
+        aria-label="Manual color hex"
+        value={style.manualColor || "#38bdf8"}
+        onChange={(event) => setStyle({ manualColor: event.target.value })}
+      />
+    </div> : null}
+    <label>
+      <span>Axis name</span>
+      <input
+        value={style.axisName || ""}
+        placeholder="None"
+        onChange={(event) => setStyle({ axisName: event.target.value })}
+      />
+    </label>
+    <label className="workspace-toggle-row">
+      <span>Data labels</span>
+      <input
+        type="checkbox"
+        checked={Boolean(style.dataLabels)}
+        onChange={(event) => setStyle({ dataLabels: event.target.checked })}
+      />
+    </label>
+  </section>;
+}
+
+function CommandPalette({ commands, onClose }) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef(null);
+  const [highlight, setHighlight] = useState(0);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+  const filtered = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return commands;
+    return commands.filter((command) => {
+      const haystack = `${command.label} ${command.group || ""} ${(command.aliases || []).join(" ")}`.toLowerCase();
+      return haystack.includes(trimmed);
+    });
+  }, [commands, query]);
+  useEffect(() => {
+    setHighlight((value) => Math.min(value, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+  const handleKeyDown = (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlight((value) => Math.min(filtered.length - 1, value + 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlight((value) => Math.max(0, value - 1));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const command = filtered[highlight];
+      if (command && !command.disabled) {
+        command.run();
+        onClose();
+      }
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+    }
+  };
+  const groups = useMemo(() => {
+    const map = new Map();
+    filtered.forEach((command) => {
+      const key = command.group || "General";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(command);
+    });
+    return Array.from(map.entries());
+  }, [filtered]);
+  return <div className="workspace-command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="workspace-command-palette-panel" onKeyDown={handleKeyDown}>
+      <header className="workspace-command-palette-input">
+        <span aria-hidden="true">⌘</span>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Type a command…"
+          aria-label="Command palette search"
+        />
+        <kbd>esc</kbd>
+      </header>
+      <div className="workspace-command-palette-list" role="listbox">
+        {filtered.length === 0 ? <p className="workspace-panel-hint">No matching commands.</p> : null}
+        {groups.map(([group, items]) => <div key={group} className="workspace-command-palette-group">
+          <p className="workspace-panel-label">{group}</p>
+          {items.map((command) => {
+            const globalIndex = filtered.indexOf(command);
+            const isHighlighted = globalIndex === highlight;
+            return <button
+              key={command.id}
+              type="button"
+              role="option"
+              aria-selected={isHighlighted}
+              className={`workspace-command-palette-item${isHighlighted ? " active" : ""}${command.disabled ? " disabled" : ""}`}
+              disabled={command.disabled}
+              onMouseEnter={() => setHighlight(globalIndex)}
+              onClick={() => {
+                if (command.disabled) return;
+                command.run();
+                onClose();
+              }}
+            >
+              <span aria-hidden="true">{typeof command.icon === "string" ? command.icon : <IconGlyph icon={command.icon} size={15} />}</span>
+              <span className="workspace-command-palette-label">{command.label}</span>
+              {command.shortcut ? <kbd>{command.shortcut}</kbd> : null}
+            </button>;
+          })}
+        </div>)}
+      </div>
+      <footer className="workspace-command-palette-footer">
+        <span>↑ ↓ navigate</span>
+        <span>↵ run</span>
+        <span>esc close</span>
+      </footer>
+    </section>
+  </div>;
+}
+
+function RichTextEditor({ value, onChange }) {
+  const textareaRef = useRef(null);
+  const insert = useCallback((prefix, suffix = "", placeholder = "text") => {
+    const textarea = textareaRef.current;
+    const current = value || "";
+    const start = textarea?.selectionStart ?? current.length;
+    const end = textarea?.selectionEnd ?? current.length;
+    const selected = current.slice(start, end) || placeholder;
+    const next = `${current.slice(0, start)}${prefix}${selected}${suffix}${current.slice(end)}`;
+    onChange(next);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      const cursor = start + prefix.length + selected.length + suffix.length;
+      textarea?.setSelectionRange(cursor, cursor);
+    });
+  }, [onChange, value]);
+  return <div className="workspace-rich-text-editor">
+    <div className="workspace-rich-text-toolbar" role="toolbar" aria-label="Rich text controls">
+      <button type="button" aria-label="Heading" onClick={() => insert("## ", "", "Heading")}><Type size={14} /></button>
+      <button type="button" aria-label="Bold" onClick={() => insert("**", "**")}><strong>B</strong></button>
+      <button type="button" aria-label="Italic" onClick={() => insert("*", "*")}><Italic size={14} /></button>
+      <button type="button" aria-label="Quote" onClick={() => insert("> ", "", "Quote")}><Quote size={14} /></button>
+      <button type="button" aria-label="Bullet list" onClick={() => insert("- ", "", "List item")}><List size={14} /></button>
+      <button type="button" aria-label="Link" onClick={() => insert("[", "](https://)", "Link")}><LinkIcon size={14} /></button>
+    </div>
+    <textarea
+      ref={textareaRef}
+      placeholder="Write text..."
+      value={value || ""}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  </div>;
+}
+
+function IframePreviewModal({ widget, onClose }) {
+  const url = widget?.config?.url || "";
+  const valid = isLikelyHttpUrl(url);
+  return <div className="workspace-overlay" role="dialog" aria-modal="true" aria-label={`${widget?.title || "iFrame"} expanded preview`}>
+    <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+    <section className="workspace-iframe-modal">
+      <header>
+        <div>
+          <p>iFrame preview</p>
+          <h2>{widget?.title || "Untitled iFrame"}</h2>
+        </div>
+        <div>
+          {valid ? <a href={url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Open</a> : null}
+          <button type="button" aria-label="Close iFrame preview" onClick={onClose}><X size={16} /></button>
+        </div>
+      </header>
+      {valid ? <iframe title={widget?.title || "iFrame preview"} src={url} /> : <div className="workspace-iframe-invalid">Enter a valid http(s) URL to preview this iFrame.</div>}
+    </section>
+  </div>;
+}
+
+function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onResizeStart, onExpandIframe }) {
+  const fallbackColumns = widget.config?.columns?.length ? widget.config.columns : ["Name", "Domain Name"];
+  const visibleColumns = widget.kind === "view" ? getVisibleColumns(widget) : fallbackColumns;
+  const viewColumns = visibleColumns.length ? visibleColumns : fallbackColumns;
   const viewRows = widget.config?.rows?.length ? widget.config.rows : SAMPLE_VIEW_ROWS;
   const chartValues = widget.config?.values?.length ? widget.config.values : defaultConfigFor("chart").values;
+  const chartType = widget.kind === "chart" ? (getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget)) : null;
+  const dataLabels = widget.kind === "chart" ? Boolean(widget.config?.style?.dataLabels) : false;
+  const chartStyle = widget.kind === "chart" ? getChartStyle(widget) : {};
+  const chartColor = chartStyle.colors === "manual" && chartStyle.manualColor ? chartStyle.manualColor : undefined;
   return <article
     className={`workspace-widget-preview${selected ? " selected" : ""}`}
     onClick={onSelect}
@@ -528,7 +1446,7 @@ function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onRe
           onRemove();
         }}
         type="button"
-      >x</button>
+      ><X size={13} /></button>
     </div>
     {widget.kind === "view" ? <div
       className="workspace-view-table"
@@ -542,11 +1460,23 @@ function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onRe
       <footer>Calculate</footer>
     </div> : null}
     {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
-      {widget.config?.url ? <span>{widget.config.url}</span> : <span>Invalid URL</span>}
+      {isLikelyHttpUrl(widget.config?.url) ? <iframe title={`${widget.title} preview`} src={widget.config.url} /> : <span>Enter a valid http(s) URL</span>}
+      <button type="button" onClick={(event) => {
+        event.stopPropagation();
+        onExpandIframe(widget);
+      }}><Maximize2 size={14} /> Expand</button>
     </div> : null}
-    {widget.kind === "rich-text" ? <p className="workspace-rich-text-preview">{widget.config?.text || "Start writing..."}</p> : null}
-    {widget.kind === "chart" ? <div className="workspace-chart-preview">
-      {chartValues.map((height, index) => <span key={index} style={{ height: `${Math.max(5, Math.min(100, height))}%` }} />)}
+    {widget.kind === "rich-text" ? <div className="workspace-rich-text-preview" dangerouslySetInnerHTML={{ __html: richTextToHtml(widget.config?.text) }} /> : null}
+    {widget.kind === "chart" ? <div className={`workspace-chart-preview kind-${chartType}`} data-data-labels={dataLabels ? "true" : "false"} style={chartColor ? { "--chart-accent": chartColor } : undefined}>
+      {chartType === "sum" ? <strong className="workspace-chart-sum">{chartValues.reduce((acc, v) => acc + v, 0)}</strong> : null}
+      {chartType === "gauge" ? <span className="workspace-chart-gauge" style={{ "--gauge-fill": `${Math.min(100, chartValues[chartValues.length - 1] || 0)}%` }} /> : null}
+      {chartType === "pie" ? <span className="workspace-chart-pie" aria-hidden="true" /> : null}
+      {chartType === "bar-horizontal" ? chartValues.map((height, index) => <span key={index} className="workspace-chart-bar-h" style={{ width: `${Math.max(5, Math.min(100, height))}%` }}>
+        {dataLabels ? <em>{height}</em> : null}
+      </span>) : null}
+      {chartType === "bar-vertical" || !chartType ? chartValues.map((height, index) => <span key={index} style={{ height: `${Math.max(5, Math.min(100, height))}%` }}>
+        {dataLabels ? <em>{height}</em> : null}
+      </span>) : null}
     </div> : null}
     {selected ? ["nw", "ne", "sw", "se"].map((corner) => <button
       aria-label={`Resize ${widget.title} from ${corner} corner`}
@@ -767,6 +1697,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
   const [resizeDrag, setResizeDrag] = useState(null);
   const [moveDrag, setMoveDrag] = useState(null);
   const [configMessage, setConfigMessage] = useState("");
+  const [inspectorPath, setInspectorPath] = useState(SUB_PANEL_ROOT);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [templateFilter, setTemplateFilter] = useState({ category: "all", tag: "all", query: "" });
+  const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
@@ -1332,8 +2266,26 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
   }, []);
   const selectWidget = useCallback((widgetId) => {
     setSelectedWidgetId(widgetId);
+    setInspectorPath(SUB_PANEL_ROOT);
     setPanelOpen(true);
   }, []);
+  const replaceSelectedWidgetConfig = useCallback((nextConfig) => {
+    if (!selectedWidgetId) return;
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const prevActiveId = getActiveTabId(prev.canvas);
+      const nextTabs = prevTabs.map((tab) => {
+        if (tab.id !== prevActiveId) return tab;
+        return {
+          ...tab,
+          widgets: (tab.widgets || []).map((widget) =>
+            widget.id === selectedWidgetId ? { ...widget, config: nextConfig } : widget
+          )
+        };
+      });
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
+    });
+  }, [activeDashboardId, selectedWidgetId]);
   const updateSelectedWidget = useCallback((updates) => {
     if (!selectedWidgetId) return;
     setConfig((prev) => {
@@ -1448,9 +2400,182 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
     return () => window.removeEventListener("keydown", handler);
   }, [managementOpen, closeManagement]);
 
+  useEffect(() => {
+    const handler = (event) => {
+      if (commandPaletteOpen) return;
+      const target = event.target;
+      const isEditable = target instanceof HTMLElement && (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      );
+      const meta = event.metaKey || event.ctrlKey;
+      if (meta && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+      if (event.key === "/" && !isEditable && !templateGalleryOpen && !settingsOpen && !managementOpen) {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+      if (!isEditable && workspaceView === "builder" && panelOpen && !commandPaletteOpen && !templateGalleryOpen && !settingsOpen && !managementOpen) {
+        const quickMap = { c: "chart", v: "view", i: "iframe", t: "rich-text" };
+        const kind = quickMap[event.key.toLowerCase()];
+        if (kind) {
+          event.preventDefault();
+          addWidget(kind);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [addWidget, commandPaletteOpen, managementOpen, panelOpen, settingsOpen, templateGalleryOpen, workspaceView]);
+
   const builderStyle = workspaceView === "dashboards" || !panelOpen
     ? { gridTemplateColumns: COLLAPSED_GRID_COLUMNS }
     : undefined;
+
+  const closeCommandPalette = useCallback(() => setCommandPaletteOpen(false), []);
+
+  const paletteCommands = useMemo(() => {
+    const list = [];
+    list.push({
+      id: "dashboard.new", group: "Dashboard", icon: Plus, label: "Create dashboard", shortcut: "N",
+      run: () => addDashboard()
+    });
+    list.push({
+      id: "dashboard.duplicate", group: "Dashboard", icon: Copy, label: "Duplicate dashboard",
+      run: () => duplicateDashboard(),
+      disabled: !activeDashboard
+    });
+    list.push({
+      id: "dashboard.delete", group: "Dashboard", icon: Trash2, label: "Delete dashboard",
+      disabled: !activeDashboard,
+      run: () => {
+        if (resolvedActiveDashboardIndex >= 0) deleteDashboard(resolvedActiveDashboardIndex);
+      }
+    });
+    list.push({
+      id: "dashboard.export", group: "Dashboard", icon: Download, label: "Export dashboard",
+      run: () => exportConfig()
+    });
+    list.push({
+      id: "dashboard.import", group: "Dashboard", icon: Import, label: "Import dashboards",
+      run: () => importInputRef.current?.click()
+    });
+    list.push({
+      id: "dashboard.templates", group: "Dashboard", icon: Grid2X2, label: "Open template gallery",
+      run: () => setTemplateGalleryOpen(true)
+    });
+    list.push({
+      id: "tab.new", group: "Tab", icon: Plus, label: "New tab",
+      run: () => addTab()
+    });
+    list.push({
+      id: "tab.duplicate", group: "Tab", icon: Copy, label: "Duplicate tab",
+      run: () => duplicateTab()
+    });
+    [
+      ["chart", "Add chart widget", "C"],
+      ["view", "Add view widget", "V"],
+      ["iframe", "Add iFrame widget", "I"],
+      ["rich-text", "Add rich text widget", "T"]
+    ].forEach(([kind, label, shortcut]) => {
+      list.push({
+        id: `widget.add.${kind}`,
+        group: "Widget Add",
+        icon: WIDGET_KIND_ICONS[kind],
+        label,
+        shortcut,
+        disabled: workspaceView !== "builder",
+        run: () => addWidget(kind)
+      });
+    });
+    list.push({
+      id: "widget.duplicate", group: "Widget", icon: Copy, label: "Duplicate selected widget",
+      disabled: !selectedWidget,
+      run: () => duplicateSelectedWidget()
+    });
+    list.push({
+      id: "widget.remove", group: "Widget", icon: Trash2, label: "Remove selected widget",
+      disabled: !selectedWidget,
+      run: () => selectedWidget && removeSelectedWidget(selectedWidget.id)
+    });
+    list.push({
+      id: "widget.source", group: "Widget", icon: Database, label: "Open widget source",
+      disabled: !selectedWidget,
+      run: () => {
+        setPanelOpen(true);
+        setInspectorPath("source");
+      }
+    });
+    list.push({
+      id: "widget.fields", group: "Widget", icon: Columns3, label: "Open widget fields",
+      disabled: !(selectedWidget && selectedWidget.kind === "view"),
+      run: () => {
+        setPanelOpen(true);
+        setInspectorPath("fields");
+      }
+    });
+    list.push({
+      id: "widget.sort", group: "Widget", icon: SlidersHorizontal, label: "Open widget sorts",
+      disabled: !(selectedWidget && selectedWidget.kind === "view"),
+      run: () => {
+        setPanelOpen(true);
+        setInspectorPath("sort");
+      }
+    });
+    list.push({
+      id: "widget.filter", group: "Widget", icon: Filter, label: "Open widget filter",
+      disabled: !selectedWidget,
+      run: () => {
+        setPanelOpen(true);
+        setInspectorPath("filter");
+      }
+    });
+    list.push({
+      id: "workspace.save", group: "Workspace", icon: Save, label: saving ? "Saving..." : "Save workspace",
+      disabled: saving,
+      shortcut: "S",
+      run: () => save()
+    });
+    list.push({
+      id: "workspace.settings", group: "Workspace", icon: Settings, label: "Go to Workspace Settings", shortcut: "G S",
+      run: () => setSettingsOpen(true)
+    });
+    list.push({
+      id: "workspace.management", group: "Workspace", icon: Bolt, label: "Go to Management",
+      run: () => setManagementOpen(true)
+    });
+    list.push({
+      id: "workspace.dashboards", group: "Navigation", icon: Home, label: "Go to Dashboards",
+      run: () => showDashboardHome()
+    });
+    list.push({
+      id: "workspace.integrations", group: "Navigation", icon: LayoutDashboard, label: "Go to Integrations",
+      run: () => { window.location.href = "/settings/integrations"; }
+    });
+    return list;
+  }, [
+    activeDashboard,
+    addWidget,
+    addDashboard,
+    addTab,
+    deleteDashboard,
+    duplicateDashboard,
+    duplicateSelectedWidget,
+    duplicateTab,
+    exportConfig,
+    removeSelectedWidget,
+    resolvedActiveDashboardIndex,
+    save,
+    saving,
+    selectedWidget,
+    showDashboardHome,
+    workspaceView
+  ]);
 
   return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
       <aside className="workspace-rail" aria-label="Workspace navigation">
@@ -1482,12 +2607,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
             </>}
           </div>
           <div className="workspace-toolbar-actions">
-            <button type="button" onClick={() => setTemplateGalleryOpen(true)}>Templates</button>
-            <button type="button" onClick={addDashboard}>New Dashboard</button>
-            <button type="button" onClick={duplicateDashboard}>Duplicate Dashboard</button>
-            <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
-            <button type="button" onClick={exportConfig}>Export</button>
-            <button type="button" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</button>
+            <button type="button" onClick={() => setTemplateGalleryOpen(true)}><Grid2X2 size={15} />Templates</button>
+            <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
+            <button type="button" onClick={duplicateDashboard}><Copy size={15} />Duplicate Dashboard</button>
+            <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
+            <button type="button" onClick={exportConfig}><Download size={15} />Export</button>
+            <button type="button" onClick={save} disabled={saving}><Save size={15} />{saving ? "Saving..." : "Save"}</button>
           </div>
           <input
             ref={importInputRef}
@@ -1593,8 +2718,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
                   tabIndex={0}
                 >x</span>
               </button>)}
-            <button type="button" onClick={addTab}>New Tab</button>
-            <button type="button" onClick={duplicateTab}>Duplicate Tab</button>
+            <button type="button" onClick={addTab}><Plus size={15} />New Tab</button>
+            <button type="button" onClick={duplicateTab}><Copy size={15} />Duplicate Tab</button>
           </div>
           <div
             className={`workspace-grid${moveDrag ? " moving-widget" : ""}`}
@@ -1648,6 +2773,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
               onRemove={() => removeSelectedWidget(widget.id)}
               onResizeStart={(corner, event) => beginResizeDrag(widget, corner, event)}
               onSelect={() => selectWidget(widget.id)}
+              onExpandIframe={setExpandedIframeWidget}
               selected={widget.id === selectedWidgetId}
               widget={widget}
             />)}
@@ -1662,6 +2788,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
         onClose={closeTemplateGallery}
         onApplyToCurrentTab={applyTemplateToCurrentTab}
         onCloneAsDashboard={cloneTemplateAsDashboard}
+        filter={templateFilter}
+        onFilterChange={setTemplateFilter}
       /> : null}
 
       {settingsOpen ? <WorkspaceSettingsPanel
@@ -1686,15 +2814,41 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
           <strong>{selectedWidget ? selectedWidget.title : "New widget"}</strong>
           {selectedWidget ? <em>{widgetKindLabel(selectedWidget.kind)}</em> : null}
         </div>
-        {selectedWidget ? <div className="workspace-widget-actions" role="group" aria-label="Widget actions">
-          <button type="button" onClick={duplicateSelectedWidget}>Duplicate</button>
-          <button type="button" className="danger" onClick={() => removeSelectedWidget(selectedWidget.id)}>Remove</button>
+        {selectedWidget && inspectorPath === SUB_PANEL_ROOT ? <div className="workspace-widget-actions" role="group" aria-label="Widget actions">
+          <button type="button" onClick={duplicateSelectedWidget}><Copy size={15} />Duplicate</button>
+          <button type="button" className="danger" onClick={() => removeSelectedWidget(selectedWidget.id)}><Trash2 size={15} />Remove</button>
         </div> : null}
-        {selectedWidget ? <section className="workspace-widget-settings">
+        {selectedWidget && inspectorPath === "source" ? <SourceSubPanel
+          widget={selectedWidget}
+          integrations={governedWorkspaceIntegrationCatalog}
+          onChange={replaceSelectedWidgetConfig}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
+        {selectedWidget && inspectorPath === "fields" ? <FieldsSubPanel
+          widget={selectedWidget}
+          onChange={replaceSelectedWidgetConfig}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
+        {selectedWidget && inspectorPath === "sort" ? <SortSubPanel
+          widget={selectedWidget}
+          onChange={replaceSelectedWidgetConfig}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
+        {selectedWidget && inspectorPath === "filter" ? <FilterSubPanel
+          widget={selectedWidget}
+          onChange={replaceSelectedWidgetConfig}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
+        {selectedWidget && inspectorPath === SUB_PANEL_ROOT ? <section className="workspace-widget-settings">
           <label>
             <span>Title</span>
             <input value={selectedWidget.title} onChange={(event) => updateSelectedWidget({ title: event.target.value })} />
           </label>
+          {selectedWidget.kind === "chart" ? <ChartConfigPanel
+            widget={selectedWidget}
+            onChange={replaceSelectedWidgetConfig}
+            onSubPage={(name) => setInspectorPath(name)}
+          /> : null}
           {selectedWidget.kind === "chart" ? <section className="workspace-field-stack">
             <label>
               <span>Sample Values</span>
@@ -1713,6 +2867,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
               >
                 <option value="json">Sample JSON</option>
                 <option value="csv">Sample CSV</option>
+                {selectedWidget.config?.binding?.mode === "integration" ? <option value="integration">Integration reference</option> : null}
               </select>
             </label>
           </section> : null}
@@ -1733,30 +2888,15 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
           </label> : null}
           {selectedWidget.kind === "rich-text" ? <label className="workspace-field-with-hint">
             <span>Content</span>
-            <textarea
-              placeholder="Write text..."
+            <RichTextEditor
               value={selectedWidget.config?.text || ""}
-              onChange={(event) => updateSelectedWidgetConfig({ text: event.target.value })}
+              onChange={(text) => updateSelectedWidgetConfig({ text })}
             />
             <small className="workspace-field-hint">
-              {(selectedWidget.config?.text || "").length} characters · plain text only at V1
+              {(selectedWidget.config?.text || "").length} characters · markdown controls
             </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
-            <label>
-              <span>Source</span>
-              <input
-                value={selectedWidget.config?.source || ""}
-                onChange={(event) => updateSelectedWidgetConfig({ source: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>Columns</span>
-              <input
-                value={serializeLineList(selectedWidget.config?.columns || [])}
-                onChange={(event) => updateSelectedWidgetConfig({ columns: parseLineList(event.target.value) })}
-              />
-            </label>
             <label>
               <span>Manual Rows</span>
               <textarea
@@ -1770,26 +2910,23 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
                 }}
               />
             </label>
-            <label>
-              <span>Static Binding</span>
-              <select
-                value={selectedWidget.config?.binding?.mode || "manual"}
-                onChange={(event) => {
-                  const binding = event.target.value === "csv" ? SAMPLE_DATA_BINDINGS.contentCsv : SAMPLE_DATA_BINDINGS.companiesManual;
-                  updateSelectedWidgetConfig({ binding });
-                }}
-              >
-                <option value="manual">Manual Rows</option>
-                <option value="csv">Sample CSV</option>
-              </select>
-            </label>
-            <div className="workspace-settings-list">
-            <p className="workspace-panel-label">Settings</p>
-            <div><span>Layout</span><code>{selectedWidget.config?.layout || "Table"}</code></div>
-            <div><span>Source</span><code>{selectedWidget.config?.source || "Companies"}</code></div>
-            <div><span>Fields</span><code>{selectedWidget.config?.columns?.length || 2} shown</code></div>
-            <div><span>Filter</span><code>›</code></div>
-            <div><span>Sort</span><code>›</code></div>
+            <div className="workspace-settings-list" role="group" aria-label="View widget settings">
+              <p className="workspace-panel-label">Settings</p>
+              <button type="button" className="workspace-settings-row" disabled>
+                <span>Layout</span><code>{selectedWidget.config?.layout || "Table"}</code>
+              </button>
+              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("source")}>
+                <span>Source</span><code>{summarizeSource(selectedWidget)}</code>
+              </button>
+              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("fields")}>
+                <span>Fields</span><code>{summarizeFields(selectedWidget)}</code>
+              </button>
+              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("filter")}>
+                <span>Filter</span><code>{summarizeFilter(selectedWidget)}</code>
+              </button>
+              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("sort")}>
+                <span>Sort</span><code>{summarizeSort(selectedWidget)}</code>
+              </button>
             </div>
           </section> : null}
           {selectedWidget.kind === "rich-text" ? <label>
@@ -1809,24 +2946,30 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
             <div><span>Size</span><code>{selectedWidget.position.w} x {selectedWidget.position.h}</code></div>
             <div><span>Origin</span><code>{selectedWidget.position.x + 1}, {selectedWidget.position.y + 1}</code></div>
           </div>
-        </section> : <section>
+        </section> : null}
+        {!selectedWidget ? <section>
           <div className="workspace-widget-empty">
             <strong>Pick a widget kind</strong>
             <p>
               Widgets snap to the 12-column × 16-row grid. {addSlot.w} × {addSlot.h} cells
               selected at column {addSlot.x + 1}, row {addSlot.y + 1}. Drag empty cells in the
-              canvas to reshape the placement.
+              canvas to reshape the placement. Press <kbd>⌘K</kbd> for the command palette.
             </p>
           </div>
           <p className="workspace-panel-label">Widget type</p>
           <div className="workspace-widget-types">
-            {widgetTypes.map((widget) => <button type="button" key={widget.kind} onClick={() => addWidget(widget.kind)}>
-                <span>{widget.icon}</span>
+            {widgetTypes.map((widget) => {
+              const KindIcon = WIDGET_KIND_ICONS[widget.kind];
+              const shortcut = widget.kind === "chart" ? "C" : widget.kind === "view" ? "V" : widget.kind === "iframe" ? "I" : "T";
+              return <button type="button" key={widget.kind} onClick={() => addWidget(widget.kind)}>
+                <span><IconGlyph icon={KindIcon} size={15} /></span>
                 {widget.label}
-              </button>)}
+                <kbd>{shortcut}</kbd>
+              </button>;
+            })}
           </div>
-        </section>}
-        <section className="workspace-bindings" id="bindings">
+        </section> : null}
+        {inspectorPath === SUB_PANEL_ROOT ? <section className="workspace-bindings" id="bindings">
           <p className="workspace-panel-label">Config bindings</p>
           {Object.entries(canvas.bindings).map(([key, value]) => <div key={key}>
               <span>{key}</span>
@@ -1836,8 +2979,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
             <span>integrationAdapter</span>
             <code>{adapterConfig.integrationAdapter}</code>
           </div>
-        </section>
+        </section> : null}
       </aside> : null}
+      {expandedIframeWidget ? <IframePreviewModal widget={expandedIframeWidget} onClose={() => setExpandedIframeWidget(null)} /> : null}
+      {commandPaletteOpen ? <CommandPalette commands={paletteCommands} onClose={closeCommandPalette} /> : null}
     </main>;
 }
 

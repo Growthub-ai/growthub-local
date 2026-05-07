@@ -1,6 +1,6 @@
 # Fork Sync Agent Kernel Packet
 
-Version: `v2` (Phase 1 UX surface — `@growthub/cli@0.5.0`)
+Version: `v2` (current package surface — `@growthub/cli@0.9.10`)
 
 This packet freezes the contract, invariants, and procedure for the Fork Sync Agent subsystem — the CLI-native, agent-first mechanism that enables users to fork any Growthub worker kit, apply their own customisations, and stay in sync with upstream kit releases on their terms, locally and/or through first-party native GitHub integration.
 
@@ -66,7 +66,7 @@ cli/src/config/
   github-home.ts        # GROWTHUB_GITHUB_HOME
 ```
 
-## Phase 1 UX Surface (v0.5.0)
+## Phase 1 UX Surface
 
 Phase 1 is a pure command-surface + presentation pass. No changes to drift/heal/policy semantics.
 
@@ -301,4 +301,4 @@ node scripts/check-fork-sync.mjs
 - Discovery Hub options `🔀 Fork Sync Agent` + `🐙 GitHub Integration` visible.
 - Zero `PAPERCLIP_HOME` / `resolvePaperclipHomeDir` references in fork-sync + github subsystems.
 - `bash scripts/pr-ready.sh` passes.
-- `@growthub/cli` version is `0.5.0`; `create-growthub-local` pin matches exactly.
+- `@growthub/cli` version is `0.9.10`; `create-growthub-local` pins `@growthub/cli@0.9.10`.
