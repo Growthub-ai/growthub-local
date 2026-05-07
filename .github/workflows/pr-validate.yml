@@ -25,9 +25,9 @@ jobs:
       - name: Validate branch name
         run: |
           branch="${{ github.head_ref }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude)/.+'
+          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor)/.+'
           if ! echo "$branch" | grep -Eq "$pattern"; then
-            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude/<name>"
+            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor/<name>"
             exit 1
           fi
 
