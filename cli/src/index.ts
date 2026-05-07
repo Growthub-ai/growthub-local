@@ -1441,37 +1441,33 @@ async function runCreateGovernedWorkspaceFlow(opts?: {
     const starterChoice = await p.select({
       message: opts?.firstRun
         ? "What do you want to create?"
-        : opts?.title ?? "Create Governed Workspace",
+        : opts?.title ?? "Custom AI Governed Workspace",
       options: [
         ...(opts?.importOnly ? [] : [
           {
-            value: "new-greenfield",
-            label: opts?.firstRun ? "🚀 New governed workspace" : "🚀 New greenfield workspace",
-            hint: "Scaffold a fresh governed workspace",
+            value: "custom-ai-workspace",
+            label: "🚀  Custom AI Governed Workspace",
           },
         ]),
         {
           value: "import-github",
-          label: opts?.firstRun ? "🔗 Import GitHub repository" : "🔗 Import GitHub repository",
-          hint: "Import a public or private repo via the Source Import Agent",
+          label: "🔗  Import GitHub repository",
         },
         {
           value: "import-skill",
-          label: opts?.firstRun ? "🧠 Import skills.sh skill" : "🧠 Import skills.sh skill",
-          hint: "Discover live skills, inspect metadata, then import the selected skill",
+          label: "🧠  Import skills.sh skill",
         },
         ...(opts?.importOnly ? [] : [
           {
             value: "worker-kit",
-            label: opts?.firstRun ? "🧰 Start from worker kit" : "🧰 Start from worker kit",
-            hint: "Browse worker kits and materialize one locally",
+            label: "🧰  Start from worker kit",
           },
         ]),
         opts?.firstRun
           ? { value: "__full_menu", label: "👀 Open full discovery menu" }
           : { value: "__back", label: opts?.backLabel ?? "← Back" },
       ],
-      initialValue: opts?.firstRun ? "new-greenfield" : undefined,
+      initialValue: opts?.firstRun ? "custom-ai-workspace" : undefined,
     });
 
     if (p.isCancel(starterChoice)) {
@@ -1481,7 +1477,7 @@ async function runCreateGovernedWorkspaceFlow(opts?: {
     if (starterChoice === "__full_menu") return "full-menu";
     if (starterChoice === "__back") return "back";
 
-    if (starterChoice === "new-greenfield") {
+    if (starterChoice === "custom-ai-workspace") {
       const outRaw = await p.text({
         message: "Destination path for the new workspace (will be created if missing):",
         placeholder: "./my-workspace",
@@ -1557,8 +1553,7 @@ async function runDiscoveryHub(opts?: {
       options: [
         {
           value: "create-workspace",
-          label: "🚀  Create Governed Workspace",
-          hint: "Start from a repo, skills.sh skill, starter, or worker kit",
+          label: "🚀  Custom AI Governed Workspace",
         },
         {
           value: "workspace-ops",
@@ -1607,7 +1602,7 @@ async function runDiscoveryHub(opts?: {
       p.note(
         [
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
-          "🚀 Create Governed Workspace: start from a repo, skills.sh skill, greenfield starter, or worker kit.",
+          "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
           "🧰 Browse Worker Kits: browse specialized agents and custom workspaces.",
           "🔁 Import Repo or Skill: route directly into the Source Import Agent.",
           "⚙️ Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
@@ -1894,8 +1889,8 @@ async function runDiscoveryHub(opts?: {
             },
             {
               value: "custom-workspace-starter",
-              label: "🚀 Create Governed Workspace",
-              hint: "Start from a repo, skills.sh skill, starter, or worker kit",
+              label: "Custom AI Governed Workspace",
+              hint: "Start from a starter, repo, skills.sh skill, or worker kit",
             },
             {
               value: "workflows",

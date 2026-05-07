@@ -18,7 +18,7 @@ This doc names the path. It does not introduce new commands.
 | --- | --- | --- | --- |
 | GitHub repo | `growthub starter import-repo <owner/repo> --out <path>` | Governed Workspace wrapped around the imported tree | Teams with existing code |
 | skills.sh skill | `growthub starter import-skill <owner/repo/skill> --out <path>` | Governed Workspace seeded by the skill | Automation builders |
-| Workspace starter (greenfield) | `growthub starter init --kit growthub-custom-workspace-starter-v1 --out <path>` | Empty governed Workspace, ready for the builder | New projects |
+| Workspace starter | `growthub starter init --kit growthub-custom-workspace-starter-v1 --out <path>` | Empty governed Workspace, ready for the builder | New projects |
 | Worker kit | `growthub kit download <kit-id> --out <path>` | Specialized governed Workspace (creative-strategist, agency-portal, etc.) | Production workflows |
 | Hosted template (post-Bridge) | `growthub bridge agents bind <slug> --workspace-path <path>` | Governed Workspace with a hosted agent bound | Hosted activation |
 
@@ -44,7 +44,7 @@ All five paths land at the same artifact shape (`docs/GOVERNED_WORKSPACE_TOPOLOG
 2. Choose source
      • GitHub repo        → growthub starter import-repo
      • skills.sh skill    → growthub starter import-skill
-     • greenfield starter → growthub starter init
+     • workspace starter → growthub starter init
      • worker kit         → growthub kit download
      • hosted template    → growthub bridge agents bind
 
@@ -76,7 +76,7 @@ All five paths land at the same artifact shape (`docs/GOVERNED_WORKSPACE_TOPOLOG
 
 ## Why this matters
 
-- **Source heterogeneity is normalized.** A GitHub repo, a skill, a kit, and a greenfield start all collapse into the same governed object. Agents and humans operate against the same `growthub.config.json` + `.growthub-fork/` shape regardless of origin.
+- **Source heterogeneity is normalized.** A GitHub repo, a skill, a kit, and a starter-created workspace all collapse into the same governed object. Agents and humans operate against the same `growthub.config.json` + `.growthub-fork/` shape regardless of origin.
 - **The Workspace Builder is reachable from every entry point.** Once a Workspace exists, `apps/workspace` is the no-code admin surface. There is no separate UI per source type.
 - **The hosted authority layer is additive.** Local Workspaces work without Bridge. Bridge attaches identity, hosted agents, integrations, and CMS pipeline execution when needed.
 - **Validation is uniform.** Every Workspace passes through `validateWorkspaceConfig` (schema), `kit health` (kit shape), `skills validate` (SKILL.md), and the existing CI smoke / verify / validate gates.

@@ -41,6 +41,7 @@ function resolveCliVersion(): string {
   try {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
+      path.resolve(moduleDir, "../package.json"),
       path.resolve(moduleDir, "../../package.json"),
       path.resolve(moduleDir, "../../../package.json"),
     ];

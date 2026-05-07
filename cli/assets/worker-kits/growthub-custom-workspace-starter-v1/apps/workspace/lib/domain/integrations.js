@@ -173,13 +173,43 @@ const workspaceIntegrations = [
   }
 ];
 const governedWorkspaceIntegrationCatalog = [...dataSources, ...workspaceIntegrations];
+
 function groupIntegrationsByLane(integrations) {
   return {
     dataSources: integrations.filter((item) => item.lane === "data-source"),
     workspaceIntegrations: integrations.filter((item) => item.lane === "workspace-integration")
   };
 }
+
+function normalizeIntegrationEntity(entity) {
+  if (!entity || typeof entity !== "object" || Array.isArray(entity)) return null;
+  const id = typeof entity.id === "string" ? entity.id.trim() : "";
+  const label = typeof entity.label === "string" && entity.label.trim()
+    ? entity.label.trim()
+    : id;
+  if (!id || !label) return null;
+  const normalized = {
+    id,
+    label,
+    secondaryLabel: typeof entity.secondaryLabel === "string" ? entity.secondaryLabel : id,
+    entityType: typeof entity.entityType === "string" ? entity.entityType : undefined,
+    provider: typeof entity.provider === "string" ? entity.provider : undefined,
+    lane: typeof entity.lane === "string" ? entity.lane : undefined,
+    status: typeof entity.status === "string" ? entity.status : undefined,
+    metadata: entity.metadata && typeof entity.metadata === "object" && !Array.isArray(entity.metadata)
+      ? entity.metadata
+      : undefined
+  };
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
+}
+
+function normalizeIntegrationEntities(entities) {
+  if (!Array.isArray(entities)) return [];
+  return entities.map(normalizeIntegrationEntity).filter(Boolean);
+}
+
 export {
   governedWorkspaceIntegrationCatalog,
-  groupIntegrationsByLane
+  groupIntegrationsByLane,
+  normalizeIntegrationEntities
 };

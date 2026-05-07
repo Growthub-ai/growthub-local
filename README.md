@@ -2,7 +2,7 @@
 
 ![Growthub Local Logo](./ui/public/growthub%20logo%20copy.png)
 
-**Create a governed Workspace from any source — repo, skill, kit, or greenfield — customize it visually, keep it current, and ship it.**
+**Create a governed Workspace from any source — repo, skill, kit, or starter — customize it visually, keep it current, and ship it.**
 
 Growthub Local is a **local control plane for governed Workspaces**. The Workspace is the top-level product object. Everything else is an input to a Workspace:
 
@@ -29,11 +29,11 @@ Growthub Local is a **local control plane for governed Workspaces**. The Workspa
 npm create @growthub/growthub-local@latest
 ```
 
-Choose **Create Governed Workspace**, then pick the fastest source:
+Choose **Custom AI Governed Workspace**, then pick the fastest source:
 
 1. [**Import a GitHub repo**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
 2. [**Import a skills.sh skill**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
-3. [**Start greenfield**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
+3. [**Start from the workspace starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
 4. [**Start from a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
 5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
 6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
@@ -124,8 +124,8 @@ npm create @growthub/growthub-local@latest
 
 The guided installer is **profile-first**:
 
-1. without flags, it opens **Create Governed Workspace** first
-2. choose greenfield, GitHub repo import, skills.sh import, worker kit, or the full discovery menu
+1. without flags, it opens **Custom AI Governed Workspace** first
+2. choose workspace starter, GitHub repo import, skills.sh import, worker kit, or the full discovery menu
 3. use explicit profiles (`gtm`, `dx`, or `workspace`) only when you want a direct install lane
 
 ### Direct profile install
@@ -292,7 +292,7 @@ them; machine consumers should read the existing `experimental` boolean.
 
 The CLI is multiple product surfaces, not one. The public docs and READMEs expose these core lanes:
 
-- **Create Governed Workspace**
+- **Custom AI Governed Workspace**
 - **Import Repo or Skill**
 - **Agent Harness**
 - **Worker Kits**
@@ -336,7 +336,7 @@ Example:
 
 ```text
 Growthub Local
--> Create Governed Workspace / Browse Worker Kits / Import Repo or Skill / Memory & Knowledge / Agent Harness / Settings / Help CLI
+-> Custom AI Governed Workspace / Browse Worker Kits / Import Repo or Skill / Memory & Knowledge / Agent Harness / Settings / Help CLI
 ```
 
 ### Kits

@@ -36,11 +36,11 @@ npm create growthub-local@latest -- --profile workspace --out ./my-workspace
 
 ## First-run outcomes
 
-After install, users land on **Create Governed Workspace** first. The fastest paths are:
+After install, users land on **Custom AI Governed Workspace** first. The fastest paths are:
 
 1. import a GitHub repo into a governed workspace
 2. import a skills.sh skill into a governed workspace
-3. start a greenfield governed workspace
+3. start from the workspace starter
 4. start from a worker kit
 5. connect Growthub account after local value is proven
 6. optionally activate upgrade path for hosted depth

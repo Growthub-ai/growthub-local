@@ -90,7 +90,7 @@ export async function initStarterWorkspace(
     forkPath: absOut,
     kitId: info.id,
     forkId: reg.forkId,
-    source: "greenfield",
+    source: "workspace-starter",
     sourceRef: "",
   });
   if (sessionSeed.written) {

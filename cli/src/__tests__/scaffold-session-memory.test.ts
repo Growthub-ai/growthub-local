@@ -43,14 +43,14 @@ describe("scaffoldSessionMemory", () => {
       forkPath: tmp,
       kitId: "demo-kit",
       forkId: "fork_abc",
-      source: "greenfield",
+      source: "workspace-starter",
     });
     expect(result.written).toBe(false);
     expect(result.templatePath).toBeNull();
     expect(fs.existsSync(path.join(tmp, ".growthub-fork/project.md"))).toBe(false);
   });
 
-  it("substitutes tokens and writes .growthub-fork/project.md on greenfield", () => {
+  it("substitutes tokens and writes .growthub-fork/project.md for workspace starter provenance", () => {
     fs.mkdirSync(path.join(tmp, "templates"), { recursive: true });
     fs.writeFileSync(path.join(tmp, "templates/project.md"), PROJECT_MD_TEMPLATE);
 
@@ -58,8 +58,8 @@ describe("scaffoldSessionMemory", () => {
     const result = scaffoldSessionMemory({
       forkPath: tmp,
       kitId: "growthub-custom-workspace-starter-v1",
-      forkId: "fork_greenfield_1",
-      source: "greenfield",
+      forkId: "fork_workspace_starter_1",
+      source: "workspace-starter",
       sourceRef: "",
       startedAt,
     });
@@ -69,11 +69,11 @@ describe("scaffoldSessionMemory", () => {
 
     const written = fs.readFileSync(result.projectMdPath, "utf8");
     expect(written).toContain('kitId: "growthub-custom-workspace-starter-v1"');
-    expect(written).toContain('forkId: "fork_greenfield_1"');
+    expect(written).toContain('forkId: "fork_workspace_starter_1"');
     expect(written).toContain(`startedAt: "${startedAt}"`);
-    expect(written).toContain('source: "greenfield"');
+    expect(written).toContain('source: "workspace-starter"');
     expect(written).toContain('sourceRef: ""');
-    expect(written).toContain("# Project journal — fork `fork_greenfield_1`");
+    expect(written).toContain("# Project journal — fork `fork_workspace_starter_1`");
   });
 
   it("tags the seed with the source-import provenance (github-repo)", () => {
@@ -102,7 +102,7 @@ describe("scaffoldSessionMemory", () => {
       forkPath: tmp,
       kitId: "demo-kit",
       forkId: "fork_once",
-      source: "greenfield",
+      source: "workspace-starter",
     });
     expect(first.written).toBe(true);
     const originalBytes = fs.readFileSync(first.projectMdPath);
@@ -114,7 +114,7 @@ describe("scaffoldSessionMemory", () => {
       forkPath: tmp,
       kitId: "demo-kit",
       forkId: "fork_once",
-      source: "greenfield",
+      source: "workspace-starter",
     });
     expect(second.written).toBe(false);
 

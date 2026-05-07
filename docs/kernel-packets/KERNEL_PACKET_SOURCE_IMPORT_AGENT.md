@@ -93,7 +93,7 @@ Every command supports:
 ## Discovery Hub Invariants
 
 - The **Settings → Custom Workspace Starter** entry opens a submenu with three options:
-  1. `new-greenfield` — invokes `growthub starter init`.
+  1. `custom-ai-workspace` — invokes `growthub starter init`.
   2. `import-github` — routes to `startSourceImportFlow({ kind: "github-repo" })`.
   3. `import-skill` — routes to a single interactive skills.sh discovery lane that:
      - fetches the live leaderboard from skills.sh

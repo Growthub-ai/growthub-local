@@ -1,6 +1,7 @@
 import { readAdapterConfig } from "@/lib/adapters/env";
 import {
-  governedWorkspaceIntegrationCatalog
+  governedWorkspaceIntegrationCatalog,
+  normalizeIntegrationEntities
 } from "@/lib/domain/integrations";
 import {
   normalizeGrowthubBridgePayload
@@ -136,10 +137,10 @@ function mergeBridgeRows(rows) {
     });
     if (!row) return catalogItem;
     seenProviders.add(row.provider || row.id || catalogItem.provider);
-    return {
-      ...catalogItem,
-      label: row.label || row.name || catalogItem.label,
-      name: row.name || row.label || catalogItem.name,
+	  return {
+	    ...catalogItem,
+	    label: catalogItem.label,
+	    name: catalogItem.name,
       icon: row.icon || catalogItem.icon,
       description: row.description || catalogItem.description,
       category: row.category || catalogItem.category,
@@ -150,7 +151,6 @@ function mergeBridgeRows(rows) {
       setupMode: row.setupMode || catalogItem.setupMode,
       status: row.status || (row.isConnected || row.isActive ? "connected" : catalogItem.status),
       connectionId: row.connectionId,
-      accountId: row.accountId,
       secretEnvName: row.secretEnvName,
       connectionMetadata: row.connectionMetadata || row.metadata,
       metadata: row.metadata || row.connectionMetadata
@@ -167,8 +167,9 @@ function mergeBridgeRows(rows) {
 function toDiscoveredIntegration(row) {
   const provider = row.provider || row.id || "unknown-provider";
   const label = row.label || row.name || provider;
-  const isDataPipeline = ["windsor-ai", "google-sheets", "google-analytics", "shopify", "meta-ads"].includes(provider);
   const isConnected = row.isConnected ?? row.status === "connected";
+  const lane = typeof row.lane === "string" && row.lane ? row.lane : "workspace-integration";
+  const objectType = typeof row.objectType === "string" && row.objectType ? row.objectType : "mcp-connection";
   return {
     id: row.id || provider,
     label,
@@ -180,19 +181,68 @@ function toDiscoveredIntegration(row) {
     authType: row.authType || "oauth_first_party",
     isConnected,
     isActive: row.isActive ?? isConnected,
-    lane: isDataPipeline ? "data-source" : "workspace-integration",
-    objectType: isDataPipeline ? "data-pipeline" : "mcp-connection",
+    lane,
+    objectType,
     status: row.status || (isConnected ? "connected" : "needs-connection"),
     authPath: row.authPath || "growthub-mcp-bridge",
     setupMode: row.setupMode || "hosted-authority",
     connectionId: row.connectionId,
-    accountId: row.accountId,
     secretEnvName: row.secretEnvName,
     connectionMetadata: row.connectionMetadata || row.metadata,
     metadata: row.metadata || row.connectionMetadata
   };
 }
+/**
+ * Governed Integration Reference Binding — entity metadata resolution.
+ *
+ * Returns NormalizedIntegrationEntity[] for the requested integration when a
+ * server-side object resolver is available. Bridge connection discovery alone
+ * does not fabricate provider objects.
+ *
+ * Authority invariant: this function runs server-side only (API route).
+ * The browser NEVER calls provider APIs, holds tokens, or resolves entities.
+ */
+async function listEntityMetadataForIntegration(integrationId) {
+  if (!integrationId) return [];
+  const config = readAdapterConfig();
+
+  if (config.integrationAdapter === "growthub-bridge" &&
+      config.growthubBridge?.baseUrl &&
+      process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN) {
+    try {
+      const baseUrl = config.growthubBridge.baseUrl;
+      const entitiesPath = `/api/integrations/${encodeURIComponent(integrationId)}/entities`;
+      const url = new URL(entitiesPath, baseUrl);
+      const headers = {
+        accept: "application/json",
+        authorization: `Bearer ${process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN}`
+      };
+      if (config.growthubBridge.userId) {
+        headers["x-user-id"] = config.growthubBridge.userId;
+      }
+      const response = await fetch(url, {
+        headers,
+        next: { revalidate: 30 }
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        const entities = Array.isArray(payload.entities) ? payload.entities :
+          Array.isArray(payload.objects) ? payload.objects :
+            Array.isArray(payload.data) ? payload.data :
+              Array.isArray(payload) ? payload : [];
+        const normalized = normalizeIntegrationEntities(entities);
+        if (normalized.length) return normalized;
+      }
+    } catch {
+      // No fallback object data. The UI must surface the missing resolver.
+    }
+  }
+
+  return [];
+}
+
 export {
   describeIntegrationAdapter,
-  listGovernedWorkspaceIntegrations
+  listGovernedWorkspaceIntegrations,
+  listEntityMetadataForIntegration
 };

@@ -291,7 +291,7 @@ async function runInteractive() {
       {
         value: "cli",
         label: "🧰 CLI Discovery Preview",
-        hint: "Top-level Create Governed Workspace path from this branch UX",
+        hint: "Top-level Custom AI Governed Workspace path from this branch UX",
       },
       {
         value: "hosted-auth",
@@ -340,7 +340,7 @@ async function runInteractive() {
       },
       {
         value: "custom-workspace-starter",
-        label: "🚀 Create Governed Workspace Preview",
+        label: "Custom AI Governed Workspace Preview",
         hint: "Open the first-run governed workspace path from this branch CLI binary",
       },
       {

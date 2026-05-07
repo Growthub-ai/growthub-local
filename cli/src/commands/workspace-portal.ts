@@ -90,7 +90,7 @@ function generateEnvVarNames(clientSlug: string): string[] {
     `${upper}_BRAND_LOGO_URL`,
     `${upper}_BRAND_PRIMARY_COLOR`,
     `DATABASE_URL`,
-    `GROWTHUB_BRIDGE_TOKEN`,
+    `GROWTHUB_BRIDGE_ACCESS_TOKEN`,
   ];
 }
 

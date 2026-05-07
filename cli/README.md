@@ -2,7 +2,7 @@
 
 `@growthub/cli` is the CLI control plane for Growthub Local.
 
-It creates governed **Workspaces** from any source — repo, skill, kit, template, or greenfield. The Workspace is the top-level product object; this CLI is the local executor that creates, customizes, and inspects them.
+It creates governed **Workspaces** from any source — repo, skill, kit, template, or starter. The Workspace is the top-level product object; this CLI is the local executor that creates, customizes, and inspects them.
 
 ## Start here: create a governed Workspace
 
