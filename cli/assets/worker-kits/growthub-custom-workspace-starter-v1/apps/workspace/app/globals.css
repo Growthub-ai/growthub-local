@@ -1818,6 +1818,46 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   display: grid;
   gap: 4px;
 }
+.workspace-source-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.workspace-source-controls label {
+  min-width: 0;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e5e5e5;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #777;
+  padding: 0 9px;
+  box-shadow: 0 1px 2px rgba(15, 15, 15, 0.04);
+}
+.workspace-source-controls input,
+.workspace-source-controls select {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #333;
+  font: inherit;
+  font-size: 13px;
+  padding: 0;
+}
+.workspace-source-controls select {
+  appearance: none;
+  cursor: pointer;
+}
+.workspace-source-controls label:focus-within {
+  border-color: #8fb4ff;
+  box-shadow: 0 0 0 2px rgba(63, 104, 255, 0.12);
+}
 .workspace-source-row {
   width: 100%;
   display: grid;
