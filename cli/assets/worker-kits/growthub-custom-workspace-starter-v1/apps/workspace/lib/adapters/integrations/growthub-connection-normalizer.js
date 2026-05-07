@@ -1,15 +1,12 @@
-const providerAliases = {
-  ga4: "google-analytics",
-  google_analytics: "google-analytics",
-  google_drive: "google-drive",
-  ghl: "go-high-level",
-  gohighlevel: "go-high-level",
-  meta: "meta-ads",
-  meta_ads: "meta-ads"
-};
 function normalizeProviderId(provider) {
-  const normalized = provider.trim().toLowerCase().replaceAll("_", "-");
-  return providerAliases[normalized] || normalized;
+  return provider.trim().toLowerCase().replaceAll("_", "-");
+}
+function providerLabel(provider) {
+  return normalizeProviderId(provider)
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 function isHostedRecord(row) {
   return "provider" in row && ("ready" in row || "connectedAt" in row || "scopes" in row || "handle" in row);
@@ -41,10 +38,10 @@ function normalizeMcpAccount(account) {
   const isVerified = account.isVerified === true;
   const isConnected = isActive;
   return {
-    id: provider,
-    provider,
-    label: account.connectionName || void 0,
-    name: account.connectionName || void 0,
+	    id: provider,
+	    provider,
+	    label: providerLabel(provider),
+	    name: providerLabel(provider),
     authType: normalizeConnectionType(account.connectionType),
     status: isConnected ? "connected" : "needs-connection",
     isConnected,
@@ -54,7 +51,6 @@ function normalizeMcpAccount(account) {
     setupMode: "hosted-authority",
     connectionMetadata: {
       source: "growthub-mcp-accounts",
-      accountId: account.id,
       connectionName: account.connectionName,
       connectionType: account.connectionType,
       isVerified,

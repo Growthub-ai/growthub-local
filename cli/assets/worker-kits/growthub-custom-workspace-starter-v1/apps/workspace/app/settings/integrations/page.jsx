@@ -10,10 +10,9 @@ function countConnected(rows) {
 function integrationKey(item, lane, index) {
   return [
     lane,
-    item.provider,
-    item.id,
-    item.accountId,
-    item.connectionId,
+	    item.provider,
+	    item.id,
+	    item.connectionId,
     index
   ].filter(Boolean).join(":");
 }
@@ -99,7 +98,7 @@ async function IntegrationsSettingsPage() {
         <section className="workspace-integration-toolbar">
           <div>
             <strong>Connection catalog</strong>
-            <p>{countConnected(allRows)}/{allRows.length} connected. Setup state is resolved from the selected adapter without storing provider tokens in the app.</p>
+            <p>{countConnected(allRows)}/{allRows.length} connected. Setup state is resolved from the selected adapter without storing source credentials in the app.</p>
           </div>
         </section>
 

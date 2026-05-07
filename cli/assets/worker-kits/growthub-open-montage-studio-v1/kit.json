@@ -3,8 +3,8 @@
   "kit": {
     "id": "growthub-open-montage-studio-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Open Montage Studio",
-    "description": "Self-contained local execution environment for OpenMontage agentic video production. Produces end-to-end video content through 12 production pipelines — from animated explainers and cinematic trailers to documentary montages and talking heads — with direct CMS node integration for first-party video/image generation.",
+    "name": "Growthub Agent Worker Kit \u2014 Open Montage Studio",
+    "description": "Self-contained local execution environment for OpenMontage agentic video production. Produces end-to-end video content through 12 production pipelines \u2014 from animated explainers and cinematic trailers to documentary montages and talking heads \u2014 with direct CMS node integration for first-party video/image generation.",
     "type": "worker",
     "visibility": "public-open-source",
     "sourceRepo": "growthub-local",
@@ -115,5 +115,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-14T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "studio"
 }

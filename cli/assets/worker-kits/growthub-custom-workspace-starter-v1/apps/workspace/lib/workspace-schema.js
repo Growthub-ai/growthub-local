@@ -46,6 +46,8 @@ const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "
 const KNOWN_FILTER_CONJUNCTIONS = ["and", "or"];
 const KNOWN_SORT_DIRECTIONS = ["asc", "desc"];
 const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
+
+const NORMALIZED_OBJECT_FIELD_IDS = ["id", "label", "secondaryLabel", "entityType", "provider", "lane", "status"];
 const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
 const WORKSPACE_TEMPLATE_VERSION = 1;
 const WORKSPACE_TEMPLATE_SOURCE = "growthub-custom-workspace-starter-v1";
@@ -141,17 +143,35 @@ const WIDGET_SCHEMA_CONTRACTS = {
     source: "string",
     rows: "manual record[] optional",
     json: "JSON string optional",
-    csv: "CSV string optional"
+    csv: "CSV string optional",
+    sourceType: "managed-integrations | custom-api-webhooks optional",
+    sourceAuthority: "string optional — adapter authority label, never a secret",
+    endpointRef: "string optional — stable custom API/webhook reference, never a token",
+    integrationId: "string optional (when mode === 'integration')",
+    lane: "string optional (when mode === 'integration')",
+    entityId: "string optional — stable source object ID (never a token or credential)",
+    entityType: "string optional — adapter-provided object type",
+    entityLabel: "string optional — display-only resolved label, not authoritative"
+  },
+  NormalizedIntegrationEntity: {
+    id: "non-empty string — stable source object ID",
+    label: "non-empty string — primary display name",
+    secondaryLabel: "string optional — muted subtitle (ID, domain, or type hint)",
+    entityType: "string optional — adapter-provided object type",
+    provider: "string optional — adapter/provider slug",
+    lane: "string optional — adapter-provided lane",
+    status: "string optional — adapter-provided status",
+    metadata: "record optional — additional adapter metadata"
   }
 };
 
 const SAMPLE_VIEW_ROWS = [
-  { Name: "CMWL Direct", "Domain Name": "centerformedica" },
-  { Name: "Medi-Weightloss", "Domain Name": "mediweightloss.com" },
-  { Name: "Optima Tyler", "Domain Name": "optimatyler.com" },
-  { Name: "Balanced Hormone He...", "Domain Name": "balancedhormor" },
-  { Name: "Jolie Aesthetics RVA", "Domain Name": "jolie-aesthetics.c" },
-  { Name: "Livea Centers", "Domain Name": "livea.com" }
+  { Name: "Example Company A", "Domain Name": "example-a.test" },
+  { Name: "Example Company B", "Domain Name": "example-b.test" },
+  { Name: "Example Company C", "Domain Name": "example-c.test" },
+  { Name: "Example Company D", "Domain Name": "example-d.test" },
+  { Name: "Example Company E", "Domain Name": "example-e.test" },
+  { Name: "Example Company F", "Domain Name": "example-f.test" }
 ];
 
 const SAMPLE_DATA_BINDINGS = {
@@ -365,6 +385,14 @@ function validateStaticDataBinding(binding, path, errors) {
   if (!KNOWN_DATA_BINDING_MODES.includes(binding.mode)) {
     errors.push(`${path}.mode must be one of ${KNOWN_DATA_BINDING_MODES.join(", ")}`);
   }
+  if (binding.mode === "integration") {
+    if (typeof binding.integrationId !== "string" || !binding.integrationId.trim()) {
+      errors.push(`${path}.integrationId is required when mode is integration`);
+    }
+    if (typeof binding.lane !== "string" || !binding.lane.trim()) {
+      errors.push(`${path}.lane is required when mode is integration`);
+    }
+  }
   if (binding.source !== undefined && typeof binding.source !== "string") {
     errors.push(`${path}.source must be a string`);
   }
@@ -377,11 +405,29 @@ function validateStaticDataBinding(binding, path, errors) {
   if (binding.csv !== undefined && typeof binding.csv !== "string") {
     errors.push(`${path}.csv must be a string`);
   }
+  if (binding.sourceType !== undefined && typeof binding.sourceType !== "string") {
+    errors.push(`${path}.sourceType must be a string`);
+  }
+  if (binding.sourceAuthority !== undefined && typeof binding.sourceAuthority !== "string") {
+    errors.push(`${path}.sourceAuthority must be a string`);
+  }
+  if (binding.endpointRef !== undefined && typeof binding.endpointRef !== "string") {
+    errors.push(`${path}.endpointRef must be a string`);
+  }
   if (binding.integrationId !== undefined && typeof binding.integrationId !== "string") {
     errors.push(`${path}.integrationId must be a string`);
   }
   if (binding.lane !== undefined && typeof binding.lane !== "string") {
     errors.push(`${path}.lane must be a string`);
+  }
+  if (binding.entityId !== undefined && typeof binding.entityId !== "string") {
+    errors.push(`${path}.entityId must be a string`);
+  }
+  if (binding.entityType !== undefined && typeof binding.entityType !== "string") {
+    errors.push(`${path}.entityType must be a string`);
+  }
+  if (binding.entityLabel !== undefined && typeof binding.entityLabel !== "string") {
+    errors.push(`${path}.entityLabel must be a string`);
   }
 }
 
@@ -970,6 +1016,7 @@ export {
   KNOWN_FILTER_OPERATORS,
   KNOWN_SORT_DIRECTIONS,
   KNOWN_WIDGET_KINDS,
+  NORMALIZED_OBJECT_FIELD_IDS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
   WIDGET_SCHEMA_CONTRACTS,

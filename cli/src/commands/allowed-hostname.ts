@@ -13,7 +13,9 @@ export async function addAllowedHostname(host: string, opts: { config?: string }
   }
 
   const normalized = normalizeHostnameInput(host);
-  const current = new Set((config.server.allowedHostnames ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean));
+  const current = new Set(
+    (config.server.allowedHostnames ?? []).map((value: string) => value.trim().toLowerCase()).filter(Boolean),
+  );
   const existed = current.has(normalized);
   current.add(normalized);
 
@@ -37,4 +39,3 @@ export async function addAllowedHostname(host: string, opts: { config?: string }
     );
   }
 }
-

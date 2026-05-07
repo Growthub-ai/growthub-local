@@ -2,7 +2,7 @@
  * `growthub starter` — Custom Workspace Starter Kit CLI surface.
  *
  * Thin Commander wrapper over:
- *   - `cli/src/starter/init.ts`                (greenfield starter)
+ *   - `cli/src/starter/init.ts`                (workspace starter)
  *   - `cli/src/starter/source-import/index.ts` (portable source importer)
  *
  * No business logic here — every production behaviour lives in

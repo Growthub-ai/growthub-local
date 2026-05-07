@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-geo-seo-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — GEO SEO Studio",
+    "name": "Growthub Agent Worker Kit \u2014 GEO SEO Studio",
     "description": "Self-contained local execution environment for GEO + SEO auditing using geo-seo-claude. Produces AI search visibility audits, citability scores, crawler access reports, brand mention scans, remediation roadmaps, and client-ready PDF deliverables via 14 specialized commands and 5 parallel subagents.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -116,5 +116,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-14T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "studio"
 }

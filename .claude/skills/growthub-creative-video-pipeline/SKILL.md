@@ -1,4 +1,6 @@
 ---
+name: growthub-creative-video-pipeline
+description: End-to-end creative video pipeline skill — brief generation, generative execution, and video-use handoff for the growthub-creative-video-pipeline-v1 kit.
 id: growthub-creative-video-pipeline
 version: 1.0.0
 kitId: growthub-creative-video-pipeline-v1

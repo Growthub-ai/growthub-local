@@ -3,8 +3,8 @@
   "kit": {
     "id": "growthub-ai-website-cloner-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — AI Website Cloner",
-    "description": "Self-contained local workspace for cloning any website into a clean Next.js 16 + shadcn/ui + Tailwind CSS v4 codebase using AI coding agents. Produces pixel-perfect component clones from a target URL via multi-phase reconnaissance, spec writing, parallel builder dispatch, and visual QA — all driven by the ai-website-cloner-template fork.",
+    "name": "Growthub Agent Worker Kit \u2014 AI Website Cloner",
+    "description": "Self-contained local workspace for cloning any website into a clean Next.js 16 + shadcn/ui + Tailwind CSS v4 codebase using AI coding agents. Produces pixel-perfect component clones from a target URL via multi-phase reconnaissance, spec writing, parallel builder dispatch, and visual QA \u2014 all driven by the ai-website-cloner-template fork.",
     "type": "worker",
     "visibility": "public-open-source",
     "sourceRepo": "growthub-local",
@@ -113,5 +113,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-15T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "studio"
 }

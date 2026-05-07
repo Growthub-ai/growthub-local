@@ -3,7 +3,24 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@growthub/api-contract": ["../packages/api-contract/dist/index.d.ts"],
+      "@growthub/api-contract/*": ["../packages/api-contract/dist/*.d.ts"],
+      "@paperclipai/adapter-claude-local/cli": ["../packages/adapters/claude-local/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-codex-local/cli": ["../packages/adapters/codex-local/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-cursor-local/cli": ["../packages/adapters/cursor-local/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-gemini-local/cli": ["../packages/adapters/gemini-local/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-opencode-local/cli": ["../packages/adapters/opencode-local/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-openclaw-gateway/cli": ["../packages/adapters/openclaw-gateway/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-pi-local/cli": ["../packages/adapters/pi-local/dist/cli/index.d.ts"],
+      "@paperclipai/adapter-utils": ["../packages/adapter-utils/dist/index.d.ts"],
+      "@paperclipai/adapter-utils/*": ["../packages/adapter-utils/dist/*.d.ts"],
+      "@paperclipai/db": ["../packages/db/dist/index.d.ts"],
+      "@paperclipai/server": ["../server/dist/index.d.ts"],
+      "@paperclipai/shared": ["../packages/shared/dist/index.d.ts"]
+    }
   },
   "include": ["src"],
   "exclude": ["src/__tests__"]

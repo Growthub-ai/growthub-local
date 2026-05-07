@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Bolt,
+  Check,
   ChevronDown,
   Code2,
   Columns3,
@@ -33,7 +34,6 @@ import {
   Settings,
   Sigma,
   SlidersHorizontal,
-  Sparkles,
   Table2,
   Trash2,
   Type,
@@ -63,6 +63,25 @@ const DEFAULT_FILTER_OP = "and";
 const DEFAULT_FILTER_OPERATOR = "contains";
 const DEFAULT_SORT_DIRECTION = "asc";
 const SUB_PANEL_ROOT = "root";
+const MANAGED_INTEGRATION_SOURCE_TYPE = "managed-integrations";
+const CUSTOM_API_SOURCE_TYPE = "custom-api-webhooks";
+
+const SOURCE_TYPE_OBJECTS = [
+  {
+    id: MANAGED_INTEGRATION_SOURCE_TYPE,
+    label: "Managed Integrations",
+    authority: "Growthub Bridge",
+    description: "Bridge or BYO adapters resolve metadata server-side."
+  },
+  {
+    id: CUSTOM_API_SOURCE_TYPE,
+    label: "Custom APIs/Webhooks",
+    authority: "Custom endpoint",
+    description: "Reference a governed endpoint object without storing credentials in widget config."
+  }
+];
+
+const ENTITY_REFERENCE_FIELD_IDS = ["id", "entityId"];
 
 const CHART_TYPE_LABELS = {
   "bar-vertical": "Vertical Bar",
@@ -622,9 +641,26 @@ function getChartStyle(widget) {
 
 function summarizeSource(widget) {
   const binding = widget?.config?.binding;
-  if (binding?.mode === "integration" && binding.source) return binding.source;
+  if (binding?.mode === "integration") {
+    const source = binding.source || "Integration";
+    if (binding.entityLabel) return `${source} · ${binding.entityLabel}`;
+    if (binding.entityId) return `${source} · ${binding.entityId}`;
+    return source;
+  }
   if (widget?.config?.source) return widget.config.source;
   return "Static";
+}
+
+function summarizeSourceType(binding) {
+  if (binding?.sourceType === CUSTOM_API_SOURCE_TYPE) return "Custom APIs/Webhooks";
+  if (binding?.mode === "integration" || binding?.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE) return "Managed Integrations";
+  return "Static data";
+}
+
+function resolveBindingSourceType(binding) {
+  if (binding?.sourceType) return binding.sourceType;
+  if (binding?.mode === "integration") return MANAGED_INTEGRATION_SOURCE_TYPE;
+  return "static";
 }
 
 function summarizeFields(widget) {
@@ -653,6 +689,142 @@ function summarizeFilter(widget) {
 
 function describeIntegrationLane(integration) {
   return integration?.lane === "data-source" ? "Data Sources" : "Workspace Tools";
+}
+
+function flattenIntegrationSettings(integrationSettings) {
+  const grouped = integrationSettings?.integrations || integrationSettings || {};
+  const runtime = [
+    ...(Array.isArray(grouped.dataSources) ? grouped.dataSources : []),
+    ...(Array.isArray(grouped.workspaceIntegrations) ? grouped.workspaceIntegrations : [])
+  ];
+  const byId = new Map();
+  for (const item of [...governedWorkspaceIntegrationCatalog, ...runtime]) {
+    if (item?.id) byId.set(item.id, { ...byId.get(item.id), ...item });
+  }
+  return Array.from(byId.values());
+}
+
+function getFilterFieldOptions(widget, entities = []) {
+  const fields = new Set(getColumnList(widget));
+  const binding = widget?.config?.binding || {};
+  if (binding.mode === "integration") {
+    ["id", "label", "secondaryLabel", "entityType", "provider", "lane", "status"].forEach((field) => fields.add(field));
+    fields.add("provider");
+    fields.add("lane");
+    for (const entity of entities) {
+      if (entity?.metadata && typeof entity.metadata === "object") {
+        Object.keys(entity.metadata).forEach((field) => fields.add(field));
+      }
+    }
+  }
+  if (binding.sourceType === CUSTOM_API_SOURCE_TYPE) {
+    const customFields = Array.isArray(binding.fields) ? binding.fields : ["entityId", "status", "createdAt"];
+    customFields.forEach((field) => fields.add(field));
+  }
+  return Array.from(fields).filter(Boolean);
+}
+
+function getEntityFieldValue(entity, fieldId) {
+  if (!entity || !fieldId) return "";
+  if (fieldId === "id" || fieldId === "entityId") return entity.id || "";
+  if (fieldId === "label" || fieldId === "name") return entity.label || "";
+  if (fieldId === "secondaryLabel") return entity.secondaryLabel || "";
+  if (fieldId === "entityType") return entity.entityType || "";
+  if (fieldId === "provider") return entity.provider || "";
+  if (fieldId === "lane") return entity.lane || "";
+  if (fieldId === "status") return entity.status || "";
+  if (entity.metadata && typeof entity.metadata === "object" && entity.metadata[fieldId] !== undefined) {
+    return String(entity.metadata[fieldId]);
+  }
+  return "";
+}
+
+function getEntityFieldChoices(entities) {
+  const fields = new Map();
+  const add = (id, label) => {
+    if (id && !fields.has(id)) fields.set(id, { id, label });
+  };
+  add("id", "Stable ID");
+  add("label", "Primary label");
+  add("secondaryLabel", "Secondary label");
+  add("entityType", "Entity type");
+  add("provider", "Provider");
+  add("lane", "Lane");
+  add("status", "Status");
+  for (const entity of entities) {
+    if (entity?.metadata && typeof entity.metadata === "object") {
+      Object.keys(entity.metadata).forEach((field) => add(field, field));
+    }
+  }
+  return Array.from(fields.values());
+}
+
+function getFilterFieldChoices(widget, entities = []) {
+  const binding = widget?.config?.binding || {};
+  if (binding.mode === "integration" && entities.length) return getEntityFieldChoices(entities);
+  return getFilterFieldOptions(widget, entities).map((id) => ({ id, label: id }));
+}
+
+function getEntityValueChoices(entities, fieldId) {
+  const seen = new Map();
+  for (const entity of entities) {
+    const value = getEntityFieldValue(entity, fieldId);
+    if (!value || seen.has(value)) continue;
+    const label = fieldId === "id" || fieldId === "entityId"
+      ? `${entity.label || value} · ${value}`
+      : value;
+    seen.set(value, { value, label, entity });
+  }
+  return Array.from(seen.values());
+}
+
+function findEntityByFieldValue(entities, fieldId, value) {
+  if (!value) return null;
+  return entities.find((entity) => getEntityFieldValue(entity, fieldId) === value) || null;
+}
+
+function updateWidgetEntityBinding(widget, entity) {
+  const binding = widget.config?.binding || {};
+  const existingFilter = widget.config?.filter;
+  const existingClauses = Array.isArray(existingFilter?.clauses) ? existingFilter.clauses : [];
+
+  if (!entity) {
+    const { entityId, entityType, entityLabel, ...restBinding } = binding;
+    const cleanedClauses = existingClauses.filter(
+      (clause) => !(ENTITY_REFERENCE_FIELD_IDS.includes(clause.fieldId) && clause.operator === "eq")
+    );
+    return {
+      ...widget.config,
+      binding: restBinding,
+      filter: { op: existingFilter?.op || DEFAULT_FILTER_OP, clauses: cleanedClauses }
+    };
+  }
+
+  const entityClause = { fieldId: "id", operator: "eq", value: entity.id };
+  const otherClauses = existingClauses.filter(
+    (clause) => !(ENTITY_REFERENCE_FIELD_IDS.includes(clause.fieldId) && clause.operator === "eq")
+  );
+  const nextBinding = {
+    ...binding,
+    entityId: entity.id,
+    entityLabel: entity.label
+  };
+  if (entity.entityType) nextBinding.entityType = entity.entityType;
+  else delete nextBinding.entityType;
+  return {
+    ...widget.config,
+    source: binding.source || entity.label,
+    binding: nextBinding,
+    filter: { op: existingFilter?.op || DEFAULT_FILTER_OP, clauses: [entityClause, ...otherClauses] }
+  };
+}
+
+function resolveChartColor(style, branding) {
+  if (style?.colors === "manual" && style.manualColor) return style.manualColor;
+  if (style?.colors === "brand-local") return branding?.accent || "#3f68ff";
+  if (style?.colors === "brand-bridge") return branding?.bridgeAccent || branding?.accent || "#3f68ff";
+  if (style?.colors === "accent") return "#38bdf8";
+  return null;
 }
 
 const NORMALIZED_TEMPLATES = DASHBOARD_TEMPLATES.map((template) => ({
@@ -809,11 +981,110 @@ function SubPanelHeader({ title, breadcrumb, onBack }) {
   </div>;
 }
 
+/**
+ * EntityBadge — chip showing the selected entity on the source panel and root inspector.
+ * Displays primary label + muted secondary label (stable ID). onClear is optional.
+ */
+function EntityBadge({ entity, onClear }) {
+  const initials = entity.entityType
+    ? entity.entityType[0].toUpperCase()
+    : (entity.label?.[0] || "•").toUpperCase();
+  return <div className="workspace-entity-badge">
+    <span className="workspace-entity-badge-icon" aria-hidden="true">{initials}</span>
+    <span className="workspace-entity-badge-meta">
+      <strong title={entity.label}>{entity.label}</strong>
+      {entity.secondaryLabel ? <em title={entity.secondaryLabel}>{entity.secondaryLabel}</em> : null}
+    </span>
+    {onClear ? <button
+      type="button"
+      className="workspace-entity-badge-clear"
+      aria-label={`Clear selected entity ${entity.label}`}
+      onClick={onClear}
+    >
+      <X size={11} />
+    </button> : null}
+  </div>;
+}
+
+function UniversalSourceInfoCard() {
+  return <p className="workspace-source-info-card">
+    Universal source objects support managed integrations and custom APIs/webhooks through normalized metadata and stable saved references.
+  </p>;
+}
+
+/**
+ * EntitySelector — compact dropdown for picking a normalized source object after
+ * an integration is selected from the SourceSubPanel.
+ *
+ * Governed invariant: only the object `id` is persisted. The `label` is
+ * display-only and may be refreshed from adapter metadata at any time.
+ * The browser never holds source credentials or executes source queries.
+ */
+function EntitySelector({ integration, entities, selectedEntityId, selectedEntityLabel, selectedEntityType, onSelect, loading }) {
+  const selected = entities.find((e) => e.id === selectedEntityId)
+    || (selectedEntityId ? {
+      id: selectedEntityId,
+      label: selectedEntityLabel || selectedEntityId,
+      secondaryLabel: selectedEntityId,
+      entityType: selectedEntityType
+    } : null);
+
+  const clearSelected = () => {
+    if (!selectedEntityId || window.confirm("Remove the selected source object from this widget?")) {
+      onSelect(null);
+    }
+  };
+
+  return <div className="workspace-entity-selector">
+    <p className="workspace-panel-label">Source object</p>
+    {selected ? <EntityBadge entity={selected} onClear={clearSelected} /> : null}
+    {loading ? <p className="workspace-entity-empty">Loading source objects…</p> : null}
+    {!loading && !entities.length ? <p className="workspace-entity-empty">
+      No source objects returned. Configure a server-side API/webhook object resolver for this integration.
+    </p> : null}
+    {!loading && entities.length ? <label className="workspace-entity-dropdown">
+      <span>Select source object</span>
+      <select
+        aria-label="Select source object"
+        value={selectedEntityId || ""}
+        onChange={(event) => {
+          const entity = entities.find((item) => item.id === event.target.value);
+          onSelect(entity || null);
+        }}
+      >
+        <option value="">Choose an object</option>
+        {entities.map((entity) => <option key={entity.id} value={entity.id}>
+          {entity.label}{entity.secondaryLabel ? ` · ${entity.secondaryLabel}` : ""}
+        </option>)}
+      </select>
+    </label> : null}
+  </div>;
+}
+
 function SourceSubPanel({ widget, integrations, onChange, onBack }) {
   const binding = widget.config?.binding || {};
   const currentMode = binding.mode || (widget.kind === "view" ? "manual" : "json");
-  const [query, setQuery] = useState("");
-  const [laneFilter, setLaneFilter] = useState("all");
+	  const activeSourceType = resolveBindingSourceType(binding);
+	  const [query, setQuery] = useState("");
+	  const [laneFilter, setLaneFilter] = useState("all");
+  const hasConnectedSource = Boolean(
+    binding.integrationId ||
+    binding.endpointRef ||
+    binding.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE ||
+    binding.sourceType === CUSTOM_API_SOURCE_TYPE
+  );
+  const confirmSourceChange = useCallback((nextLabel) => {
+    if (!hasConnectedSource) return true;
+    const currentLabel = summarizeSource(widget);
+    return window.confirm(`Change source from ${currentLabel} to ${nextLabel}? This updates the widget binding and can clear source-object filters.`);
+  }, [hasConnectedSource, widget]);
+
+  const activeIntegration = useMemo(() => {
+    if (currentMode !== "integration" || !binding.integrationId) return null;
+    const list = Array.isArray(integrations) ? integrations : [];
+    return list.find((item) => item.id === binding.integrationId) || null;
+  }, [currentMode, binding.integrationId, integrations]);
+
   const groups = useMemo(() => {
     const list = Array.isArray(integrations) ? integrations : [];
     const filtered = list.filter((item) => {
@@ -826,8 +1097,10 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
       "workspace-integration": filtered.filter((item) => item.lane === "workspace-integration")
     };
   }, [integrations, laneFilter, query]);
-  const selectStatic = useCallback(() => {
-    if (widget.kind === "chart") {
+
+	  const selectStatic = useCallback(() => {
+    if (!confirmSourceChange("Static rows")) return;
+	    if (widget.kind === "chart") {
       onChange({ ...widget.config, binding: SAMPLE_DATA_BINDINGS.reportingJson });
     } else {
       onChange({
@@ -836,27 +1109,102 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
         binding: SAMPLE_DATA_BINDINGS.companiesManual
       });
     }
-  }, [onChange, widget.config, widget.kind]);
-  const selectIntegration = useCallback((integration) => {
+	  }, [confirmSourceChange, onChange, widget.config, widget.kind]);
+
+	  const selectCustomApi = useCallback(() => {
+    if (!confirmSourceChange("Custom APIs/Webhooks")) return;
+	    onChange({
+      ...widget.config,
+      source: "Custom APIs/Webhooks",
+      binding: {
+        ...binding,
+        mode: "json",
+        source: "Custom APIs/Webhooks",
+        sourceType: CUSTOM_API_SOURCE_TYPE,
+        sourceAuthority: "custom-api",
+        endpointRef: binding.endpointRef || "",
+        fields: Array.isArray(binding.fields) ? binding.fields : ["entityId", "status", "createdAt"]
+      }
+    });
+	  }, [binding, confirmSourceChange, onChange, widget.config]);
+
+  const updateCustomFields = useCallback((value) => {
+    const fields = value.split(",").map((item) => item.trim()).filter(Boolean);
     onChange({
+      ...widget.config,
+      binding: {
+        ...binding,
+        mode: "json",
+        source: "Custom APIs/Webhooks",
+        sourceType: CUSTOM_API_SOURCE_TYPE,
+        sourceAuthority: "custom-api",
+        fields
+      }
+    });
+  }, [binding, onChange, widget.config]);
+
+  const updateEndpointRef = useCallback((value) => {
+    onChange({
+      ...widget.config,
+      binding: {
+        ...binding,
+        mode: "json",
+        source: "Custom APIs/Webhooks",
+        sourceType: CUSTOM_API_SOURCE_TYPE,
+        sourceAuthority: "custom-api",
+        endpointRef: value
+      }
+    });
+  }, [binding, onChange, widget.config]);
+
+	  const selectIntegration = useCallback((integration) => {
+    if (binding.integrationId && binding.integrationId !== integration.id && !confirmSourceChange(integration.label)) return;
+	    onChange({
       ...widget.config,
       source: integration.label,
       binding: {
         mode: "integration",
         source: integration.label,
+        sourceType: MANAGED_INTEGRATION_SOURCE_TYPE,
+        sourceAuthority: "growthub-bridge",
         integrationId: integration.id,
-        lane: integration.lane
+        lane: integration.lane,
+        provider: integration.provider
       }
     });
-  }, [onChange, widget.config]);
-  return <section className="workspace-widget-subpanel">
-    <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
+	  }, [binding.integrationId, confirmSourceChange, onChange, widget.config]);
+
+	  return <section className="workspace-widget-subpanel">
+	    <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
+    <UniversalSourceInfoCard />
+	    <p className="workspace-panel-label">Source type</p>
+    <div className="workspace-source-object-list">
+      {SOURCE_TYPE_OBJECTS.map((sourceType) => {
+        const isActive = activeSourceType === sourceType.id;
+        return <button
+          key={sourceType.id}
+          type="button"
+          className={`workspace-source-object-row${isActive ? " active" : ""}`}
+          onClick={sourceType.id === CUSTOM_API_SOURCE_TYPE ? selectCustomApi : undefined}
+          disabled={sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE}
+        >
+          <span className="workspace-source-object-icon" aria-hidden="true">
+            {sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE ? <Database size={15} /> : <LinkIcon size={15} />}
+          </span>
+          <span className="workspace-source-meta">
+            <strong>{sourceType.label}</strong>
+            <em>{sourceType.authority} · {sourceType.description}</em>
+          </span>
+	          {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
+        </button>;
+      })}
+    </div>
     <div className="workspace-source-controls">
       <label>
         <Search size={14} aria-hidden="true" />
         <input
           aria-label="Search sources"
-          placeholder="Search sources"
+          placeholder="Search connectors"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -868,7 +1216,7 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
           value={laneFilter}
           onChange={(event) => setLaneFilter(event.target.value)}
         >
-          <option value="all">All source types</option>
+          <option value="all">All connector lanes</option>
           <option value="data-source">Data sources</option>
           <option value="workspace-integration">Workspace tools</option>
         </select>
@@ -879,15 +1227,15 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
     <div className="workspace-source-list">
       <button
         type="button"
-        className={`workspace-source-row${currentMode !== "integration" ? " active" : ""}`}
+        className={`workspace-source-row${activeSourceType === "static" ? " active" : ""}`}
         onClick={selectStatic}
       >
         <span className="workspace-source-icon" aria-hidden="true"><Grid2X2 size={15} /></span>
         <span className="workspace-source-meta">
           <strong>Static rows</strong>
-          <em>Inline data — no external authority required.</em>
+          <em>Inline JSON, CSV, or manual rows remain supported.</em>
         </span>
-        {currentMode !== "integration" ? <span className="workspace-source-tick" aria-hidden="true"><Sparkles size={15} /></span> : null}
+        {activeSourceType === "static" ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
       </button>
     </div>
     {Object.entries(groups).map(([lane, items]) => items.length ? <div key={lane}>
@@ -907,13 +1255,36 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
               <strong>{integration.label}</strong>
               <em>{describeIntegrationLane(integration)} · {connected ? "connected" : "needs connection"}</em>
             </span>
-            {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Sparkles size={15} /></span> : null}
+            {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
           </button>;
         })}
       </div>
     </div> : null)}
+    {activeSourceType === CUSTOM_API_SOURCE_TYPE ? <div className="workspace-custom-source-config">
+      <label>
+        <span>Endpoint reference</span>
+        <input
+          value={binding.endpointRef || ""}
+          placeholder="api.clients.primary"
+          onChange={(event) => updateEndpointRef(event.target.value)}
+        />
+      </label>
+      <label>
+        <span>Available fields</span>
+        <input
+          value={(Array.isArray(binding.fields) ? binding.fields : []).join(", ")}
+          placeholder="entityId, status, createdAt"
+          onChange={(event) => updateCustomFields(event.target.value)}
+        />
+      </label>
+    </div> : null}
+    {currentMode === "integration" && binding.integrationId ? <div className="workspace-active-source-state">
+      <span>Active source</span>
+      <strong>{activeIntegration?.label || binding.source || binding.integrationId}</strong>
+      <code>{binding.integrationId}</code>
+    </div> : null}
     <p className="workspace-panel-hint">
-      Selecting a source writes a binding reference only. The browser does not query integrations or store tokens.
+      Selecting a source writes a binding reference only. The browser only calls local workspace routes and never stores source credentials.
     </p>
   </section>;
 }
@@ -1052,24 +1423,85 @@ function SortSubPanel({ widget, onChange, onBack }) {
   </section>;
 }
 
-function FilterSubPanel({ widget, onChange, onBack }) {
+function FilterSubPanel({ widget, integrations, onChange, onBack }) {
+  const binding = widget.config?.binding || {};
   const filter = getFilterConfig(widget);
-  const columns = getColumnList(widget);
+  const [entities, setEntities] = useState([]);
+  const [entitiesLoading, setEntitiesLoading] = useState(false);
+  const fieldChoices = getFilterFieldChoices(widget, entities);
+  const columns = fieldChoices.map((field) => field.id);
   const setFilter = (next) => onChange({ ...widget.config, filter: next });
   const setOp = (op) => setFilter({ ...filter, op });
+  const activeIntegration = useMemo(() => {
+    if (binding.mode !== "integration" || !binding.integrationId) return null;
+    const list = Array.isArray(integrations) ? integrations : [];
+    return list.find((item) => item.id === binding.integrationId) || null;
+  }, [binding.integrationId, binding.mode, integrations]);
+
+  useEffect(() => {
+    if (!binding.integrationId || binding.mode !== "integration") {
+      setEntities([]);
+      return;
+    }
+    let cancelled = false;
+    setEntitiesLoading(true);
+    fetch(`/api/workspace/integration-entities?integrationId=${encodeURIComponent(binding.integrationId)}`, { cache: "no-store" })
+      .then((res) => res.ok ? res.json() : { entities: [] })
+      .then((data) => {
+        if (!cancelled) {
+          setEntities(Array.isArray(data.entities) ? data.entities : []);
+          setEntitiesLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEntities([]);
+          setEntitiesLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [binding.integrationId, binding.mode]);
+
   const addClause = () => {
-    const fieldId = columns[0] || "";
+    const fieldId = binding.mode === "integration" && entities.length ? "id" : (columns[0] || "");
     if (!fieldId) return;
-    setFilter({ ...filter, clauses: [...filter.clauses, { fieldId, operator: DEFAULT_FILTER_OPERATOR, value: "" }] });
+    setFilter({ ...filter, clauses: [...filter.clauses, { fieldId, operator: "eq", value: "" }] });
   };
+  const updateField = (index, fieldId) => {
+    setFilter({
+      ...filter,
+      clauses: filter.clauses.map((clause, idx) => idx === index ? { ...clause, fieldId, value: "" } : clause)
+    });
+  };
+  const selectEntity = useCallback((entity) => {
+    onChange(updateWidgetEntityBinding(widget, entity));
+  }, [onChange, widget]);
   const updateClause = (index, patch) => {
     setFilter({ ...filter, clauses: filter.clauses.map((clause, idx) => idx === index ? { ...clause, ...patch } : clause) });
   };
   const removeClause = (index) => {
     setFilter({ ...filter, clauses: filter.clauses.filter((_, idx) => idx !== index) });
   };
-  return <section className="workspace-widget-subpanel">
-    <SubPanelHeader title="Filter" breadcrumb={widget.title} onBack={onBack} />
+	  return <section className="workspace-widget-subpanel">
+	    <SubPanelHeader title="Filter" breadcrumb={widget.title} onBack={onBack} />
+    <UniversalSourceInfoCard />
+	    <div className="workspace-filter-source-state">
+      <span>{summarizeSourceType(binding)}</span>
+      <strong>{summarizeSource(widget)}</strong>
+    </div>
+    {binding.mode === "integration" && binding.integrationId ? <EntitySelector
+      integration={activeIntegration}
+      entities={entities}
+      selectedEntityId={binding.entityId || null}
+      selectedEntityLabel={binding.entityLabel || null}
+      selectedEntityType={binding.entityType || null}
+      onSelect={selectEntity}
+      loading={entitiesLoading}
+    /> : null}
+    {binding.sourceType === CUSTOM_API_SOURCE_TYPE ? <div className="workspace-filter-source-state">
+      <span>Custom endpoint</span>
+      <code>{binding.endpointRef || "No endpoint reference set"}</code>
+    </div> : null}
     <div className="workspace-filter-op-toggle" role="radiogroup" aria-label="Filter conjunction">
       {KNOWN_FILTER_CONJUNCTIONS.map((op) => <button
         key={op}
@@ -1084,14 +1516,15 @@ function FilterSubPanel({ widget, onChange, onBack }) {
       {filter.clauses.length === 0 ? <p className="workspace-panel-hint">No filter clauses.</p> : null}
       {filter.clauses.map((clause, index) => {
         const valueless = clause.operator === "isEmpty" || clause.operator === "isNotEmpty";
+        const valueChoices = binding.mode === "integration" ? getEntityValueChoices(entities, clause.fieldId) : [];
         return <div key={index} className="workspace-filter-clause">
           <select
             aria-label={`Filter ${index + 1} field`}
             value={clause.fieldId}
-            onChange={(event) => updateClause(index, { fieldId: event.target.value })}
+            onChange={(event) => updateField(index, event.target.value)}
           >
             {!columns.includes(clause.fieldId) && clause.fieldId ? <option value={clause.fieldId}>{clause.fieldId}</option> : null}
-            {columns.map((name) => <option key={name} value={name}>{name}</option>)}
+            {fieldChoices.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
           </select>
           <select
             aria-label={`Filter ${index + 1} operator`}
@@ -1100,7 +1533,20 @@ function FilterSubPanel({ widget, onChange, onBack }) {
           >
             {KNOWN_FILTER_OPERATORS.map((op) => <option key={op} value={op}>{FILTER_OPERATOR_LABELS[op] || op}</option>)}
           </select>
-          {!valueless ? <input
+          {!valueless && binding.mode === "integration" && valueChoices.length ? <select
+            aria-label={`Filter ${index + 1} value`}
+            value={clause.value ?? ""}
+            onChange={(event) => {
+              const entity = findEntityByFieldValue(entities, clause.fieldId, event.target.value);
+              updateClause(index, { value: event.target.value });
+              if (entity && (clause.fieldId === "id" || clause.fieldId === "entityId")) {
+                onChange(updateWidgetEntityBinding(widget, entity));
+              }
+            }}
+          >
+            <option value="">Select value</option>
+            {valueChoices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+          </select> : !valueless ? <input
             aria-label={`Filter ${index + 1} value`}
             value={clause.value ?? ""}
             placeholder="value"
@@ -1119,11 +1565,12 @@ function FilterSubPanel({ widget, onChange, onBack }) {
   </section>;
 }
 
-function ChartConfigPanel({ widget, onChange, onSubPage }) {
+function ChartConfigPanel({ widget, branding, onChange, onSubPage }) {
   const chartType = getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget);
   const xAxis = getChartAxis(widget, "xAxis");
   const yAxis = getChartAxis(widget, "yAxis");
   const style = getChartStyle(widget);
+  const activeColor = resolveChartColor(style, branding) || "#d9e4ff";
   const setChartType = (type) => onChange({ ...widget.config, chartType: type });
   const setXAxis = (patch) => onChange({ ...widget.config, xAxis: { ...xAxis, ...patch } });
   const setYAxis = (patch) => onChange({ ...widget.config, yAxis: { ...yAxis, ...patch } });
@@ -1148,11 +1595,17 @@ function ChartConfigPanel({ widget, onChange, onSubPage }) {
       })}
     </div>
     <button type="button" className="workspace-settings-row" onClick={() => onSubPage("source")}>
-      <span>Source</span><code>{summarizeSource(widget)}</code>
+      <span>Source</span><code>{summarizeSourceType(widget.config?.binding)} · {summarizeSource(widget)}</code>
     </button>
     <button type="button" className="workspace-settings-row" onClick={() => onSubPage("filter")}>
       <span>Filter</span><code>{summarizeFilter(widget)}</code>
     </button>
+    {widget.config?.binding?.entityId ? <EntityBadge entity={{
+      id: widget.config.binding.entityId,
+      label: widget.config.binding.entityLabel || widget.config.binding.entityId,
+      secondaryLabel: widget.config.binding.entityId,
+      entityType: widget.config.binding.entityType
+    }} /> : null}
     <p className="workspace-panel-label">X axis</p>
     <label>
       <span>Data on display</span>
@@ -1225,9 +1678,16 @@ function ChartConfigPanel({ widget, onChange, onSubPage }) {
       <select value={style.colors || "auto"} onChange={(event) => setStyle({ colors: event.target.value })}>
         <option value="auto">Auto</option>
         <option value="accent">Accent</option>
+        <option value="brand-local">Local brand kit</option>
+        <option value="brand-bridge">Bridge brand kit</option>
         <option value="manual">Manual</option>
       </select>
     </label>
+    <div className="workspace-color-preview-row">
+      <span>Active color</span>
+      <em style={{ background: activeColor }} />
+      <code>{activeColor}</code>
+    </div>
     {style.colors === "manual" ? <div className="workspace-color-picker-row">
       <label>
         <span>Manual color</span>
@@ -1414,7 +1874,7 @@ function IframePreviewModal({ widget, onClose }) {
   </div>;
 }
 
-function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onResizeStart, onExpandIframe }) {
+function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRemove, onResizeStart, onExpandIframe }) {
   const fallbackColumns = widget.config?.columns?.length ? widget.config.columns : ["Name", "Domain Name"];
   const visibleColumns = widget.kind === "view" ? getVisibleColumns(widget) : fallbackColumns;
   const viewColumns = visibleColumns.length ? visibleColumns : fallbackColumns;
@@ -1423,7 +1883,11 @@ function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onRe
   const chartType = widget.kind === "chart" ? (getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget)) : null;
   const dataLabels = widget.kind === "chart" ? Boolean(widget.config?.style?.dataLabels) : false;
   const chartStyle = widget.kind === "chart" ? getChartStyle(widget) : {};
-  const chartColor = chartStyle.colors === "manual" && chartStyle.manualColor ? chartStyle.manualColor : undefined;
+  const chartColor = resolveChartColor(chartStyle, branding);
+  const selectedSourceObject = widget.config?.binding?.entityId ? {
+    id: widget.config.binding.entityId,
+    label: widget.config.binding.entityLabel || widget.config.binding.entityId
+  } : null;
   return <article
     className={`workspace-widget-preview${selected ? " selected" : ""}`}
     onClick={onSelect}
@@ -1439,6 +1903,10 @@ function WidgetPreview({ widget, selected, onSelect, onMoveStart, onRemove, onRe
         onPointerDown={(event) => onMoveStart(event)}
       >::</span>
       <strong>{widget.title}</strong>
+      {selectedSourceObject ? <span
+        className="workspace-widget-source-chip"
+        title={`${selectedSourceObject.label} · ${selectedSourceObject.id}`}
+      >{selectedSourceObject.label}</span> : null}
       <button
         aria-label={`Remove ${widget.title}`}
         onClick={(event) => {
@@ -1651,7 +2119,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
   </div>;
 }
 
-function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, persistence }) {
+function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, integrationSettings, persistence }) {
   const [config, setConfig] = useState(() => {
     const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
       ? initialConfig.dashboards.map((dashboard, index) =>
@@ -1706,6 +2174,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
   const importInputRef = useRef(null);
   const addSlot = dragPreview || selectedPosition;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
+  const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
+  const branding = config.branding || {};
   const occupiedCells = useMemo(() => {
     const cells = new Set();
     for (const widget of activeWidgets) {
@@ -2769,6 +3239,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
             </button>
             {activeWidgets.map((widget) => <WidgetPreview
               key={widget.id}
+              branding={branding}
               onMoveStart={(event) => beginMoveDrag(widget, event)}
               onRemove={() => removeSelectedWidget(widget.id)}
               onResizeStart={(corner, event) => beginResizeDrag(widget, corner, event)}
@@ -2820,7 +3291,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
         </div> : null}
         {selectedWidget && inspectorPath === "source" ? <SourceSubPanel
           widget={selectedWidget}
-          integrations={governedWorkspaceIntegrationCatalog}
+          integrations={availableIntegrations}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
@@ -2836,6 +3307,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
         /> : null}
         {selectedWidget && inspectorPath === "filter" ? <FilterSubPanel
           widget={selectedWidget}
+          integrations={availableIntegrations}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
@@ -2846,6 +3318,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, pe
           </label>
           {selectedWidget.kind === "chart" ? <ChartConfigPanel
             widget={selectedWidget}
+            branding={branding}
             onChange={replaceSelectedWidgetConfig}
             onSubPage={(name) => setInspectorPath(name)}
           /> : null}

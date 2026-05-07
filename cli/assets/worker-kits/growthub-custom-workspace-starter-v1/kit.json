@@ -101,7 +101,7 @@
   },
   "outputStandard": {
     "type": "working-directory",
-    "description": "Fork the starter kit directly with `growthub starter init` — the CLI materializes this bundled asset tree to the user's chosen path, auto-registers the destination as a kit-fork (canonical state under `<forkPath>/.growthub-fork/fork.json`), optionally binds it to a GitHub remote, and hands off the forkId. Every downstream customization flows through the v1 Self-Healing Fork Sync Agent.",
+    "description": "Fork the starter kit directly with `growthub starter init` \u2014 the CLI materializes this bundled asset tree to the user's chosen path, auto-registers the destination as a kit-fork (canonical state under `<forkPath>/.growthub-fork/fork.json`), optionally binds it to a GitHub remote, and hands off the forkId. Every downstream customization flows through the v1 Self-Healing Fork Sync Agent.",
     "requiredPaths": [
       "QUICKSTART.md",
       "kit.json",
@@ -159,5 +159,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-16T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "official",
+  "workspaceCompatible": true,
+  "workspaceCategory": "workspace-starter"
 }

@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-hyperframes-studio-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Hyperframes Studio",
+    "name": "Growthub Agent Worker Kit \u2014 Hyperframes Studio",
     "description": "Self-contained local execution environment for Hyperframes video production. Produces implementation-ready video briefs, composition specs, render plans, and QA handoff artifacts for HTML-native rendering workflows.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -105,5 +105,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-17T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "studio"
 }

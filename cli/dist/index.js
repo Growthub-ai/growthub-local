@@ -6436,9 +6436,9 @@ async function runDatabaseBackup(opts) {
         WHERE n.nspname = ${schema_name} AND t.relname = ${tablename} AND c.contype = 'p'
         GROUP BY c.conname
       `;
-      for (const p39 of pk) {
-        const cols = p39.column_names.map((c) => `"${c}"`).join(", ");
-        colDefs.push(`  CONSTRAINT "${p39.constraint_name}" PRIMARY KEY (${cols})`);
+      for (const p42 of pk) {
+        const cols = p42.column_names.map((c) => `"${c}"`).join(", ");
+        colDefs.push(`  CONSTRAINT "${p42.constraint_name}" PRIMARY KEY (${cols})`);
       }
       emit(`CREATE TABLE ${qualifiedTableName} (`);
       emit(colDefs.join(",\n"));
@@ -8182,8 +8182,8 @@ var init_onboard = __esm({
 
 // src/client/http.ts
 import { URL as URL2 } from "node:url";
-function buildUrl(apiBase, path86) {
-  const normalizedPath = path86.startsWith("/") ? path86 : `/${path86}`;
+function buildUrl(apiBase, path91) {
+  const normalizedPath = path91.startsWith("/") ? path91 : `/${path91}`;
   const [pathname, query] = normalizedPath.split("?");
   const url = new URL2(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
@@ -8245,26 +8245,26 @@ var init_http = __esm({
         this.runId = opts.runId?.trim() || void 0;
         this.userId = opts.userId?.trim() || void 0;
       }
-      get(path86, opts) {
-        return this.request(path86, { method: "GET" }, opts);
+      get(path91, opts) {
+        return this.request(path91, { method: "GET" }, opts);
       }
-      post(path86, body, opts) {
-        return this.request(path86, {
+      post(path91, body, opts) {
+        return this.request(path91, {
           method: "POST",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      patch(path86, body, opts) {
-        return this.request(path86, {
+      patch(path91, body, opts) {
+        return this.request(path91, {
           method: "PATCH",
           body: body === void 0 ? void 0 : JSON.stringify(body)
         }, opts);
       }
-      delete(path86, opts) {
-        return this.request(path86, { method: "DELETE" }, opts);
+      delete(path91, opts) {
+        return this.request(path91, { method: "DELETE" }, opts);
       }
-      async request(path86, init, opts) {
-        const url = buildUrl(this.apiBase, path86);
+      async request(path91, init, opts) {
+        const url = buildUrl(this.apiBase, path91);
         const headers = {
           accept: "application/json",
           ...toStringRecord(init.headers)
@@ -9297,10 +9297,10 @@ var init_kit_forks_home = __esm({
 import fs19 from "node:fs";
 import path26 from "node:path";
 function readIndex() {
-  const p39 = resolveKitForksIndexPath();
-  if (!fs19.existsSync(p39)) return { version: 1, entries: [] };
+  const p42 = resolveKitForksIndexPath();
+  if (!fs19.existsSync(p42)) return { version: 1, entries: [] };
   try {
-    const parsed = JSON.parse(fs19.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs19.readFileSync(p42, "utf8"));
     if (!parsed || !Array.isArray(parsed.entries)) return { version: 1, entries: [] };
     return parsed;
   } catch {
@@ -9308,9 +9308,9 @@ function readIndex() {
   }
 }
 function writeIndex(index51) {
-  const p39 = resolveKitForksIndexPath();
-  fs19.mkdirSync(path26.dirname(p39), { recursive: true });
-  fs19.writeFileSync(p39, JSON.stringify(index51, null, 2) + "\n", "utf8");
+  const p42 = resolveKitForksIndexPath();
+  fs19.mkdirSync(path26.dirname(p42), { recursive: true });
+  fs19.writeFileSync(p42, JSON.stringify(index51, null, 2) + "\n", "utf8");
 }
 function upsertIndexEntry(entry) {
   const index51 = readIndex();
@@ -9336,10 +9336,10 @@ function generateForkId(forkPath, kitId) {
   return `${base}-${suffix}`;
 }
 function readForkJson(forkPath) {
-  const p39 = resolveInForkRegistrationPath(forkPath);
-  if (!fs19.existsSync(p39)) return null;
+  const p42 = resolveInForkRegistrationPath(forkPath);
+  if (!fs19.existsSync(p42)) return null;
   try {
-    return JSON.parse(fs19.readFileSync(p39, "utf8"));
+    return JSON.parse(fs19.readFileSync(p42, "utf8"));
   } catch {
     return null;
   }
@@ -9446,20 +9446,20 @@ function resolvePolicyPath(forkPath) {
   return path27.resolve(resolveInForkStateDir(forkPath), "policy.json");
 }
 function readKitForkPolicy(forkPath) {
-  const p39 = resolvePolicyPath(forkPath);
-  if (!fs20.existsSync(p39)) return makeDefaultKitForkPolicy();
+  const p42 = resolvePolicyPath(forkPath);
+  if (!fs20.existsSync(p42)) return makeDefaultKitForkPolicy();
   try {
-    const parsed = JSON.parse(fs20.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs20.readFileSync(p42, "utf8"));
     return { ...makeDefaultKitForkPolicy(), ...parsed, version: 1 };
   } catch {
     return makeDefaultKitForkPolicy();
   }
 }
 function writeKitForkPolicy(forkPath, policy) {
-  const p39 = resolvePolicyPath(forkPath);
-  fs20.mkdirSync(path27.dirname(p39), { recursive: true });
+  const p42 = resolvePolicyPath(forkPath);
+  fs20.mkdirSync(path27.dirname(p42), { recursive: true });
   const body = { ...policy, version: 1, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  fs20.writeFileSync(p39, JSON.stringify(body, null, 2) + "\n", "utf8");
+  fs20.writeFileSync(p42, JSON.stringify(body, null, 2) + "\n", "utf8");
 }
 function matchesAnyPrefix(targetPath, patterns) {
   const normalized = targetPath.replace(/^\/+|\/+$/g, "");
@@ -9491,15 +9491,15 @@ function appendKitForkTraceEvent(forkPath, event) {
     ...event,
     timestamp: event.timestamp ?? (/* @__PURE__ */ new Date()).toISOString()
   };
-  const p39 = resolveTracePath(forkPath);
-  fs21.mkdirSync(path28.dirname(p39), { recursive: true });
-  fs21.appendFileSync(p39, JSON.stringify(full) + "\n", "utf8");
+  const p42 = resolveTracePath(forkPath);
+  fs21.mkdirSync(path28.dirname(p42), { recursive: true });
+  fs21.appendFileSync(p42, JSON.stringify(full) + "\n", "utf8");
   return full;
 }
 function readKitForkTrace(forkPath) {
-  const p39 = resolveTracePath(forkPath);
-  if (!fs21.existsSync(p39)) return [];
-  const raw = fs21.readFileSync(p39, "utf8").trim();
+  const p42 = resolveTracePath(forkPath);
+  if (!fs21.existsSync(p42)) return [];
+  const raw = fs21.readFileSync(p42, "utf8").trim();
   if (!raw) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -9654,10 +9654,10 @@ function atomicWrite(filePath, body) {
   }
 }
 function readGithubToken() {
-  const p39 = resolveGithubTokenPath();
-  if (!fs24.existsSync(p39)) return null;
+  const p42 = resolveGithubTokenPath();
+  if (!fs24.existsSync(p42)) return null;
   try {
-    const parsed = JSON.parse(fs24.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs24.readFileSync(p42, "utf8"));
     if (!parsed?.accessToken) return null;
     return parsed;
   } catch {
@@ -9669,8 +9669,8 @@ function writeGithubToken(token) {
   atomicWrite(resolveGithubTokenPath(), JSON.stringify(token, null, 2) + "\n");
 }
 function clearGithubToken() {
-  const p39 = resolveGithubTokenPath();
-  if (fs24.existsSync(p39)) fs24.rmSync(p39, { force: true });
+  const p42 = resolveGithubTokenPath();
+  if (fs24.existsSync(p42)) fs24.rmSync(p42, { force: true });
 }
 function isGithubTokenExpired(token) {
   if (!token) return true;
@@ -9680,10 +9680,10 @@ function isGithubTokenExpired(token) {
   return Date.now() >= expiresAtMs;
 }
 function readGithubProfile() {
-  const p39 = resolveGithubProfilePath();
-  if (!fs24.existsSync(p39)) return null;
+  const p42 = resolveGithubProfilePath();
+  if (!fs24.existsSync(p42)) return null;
   try {
-    return JSON.parse(fs24.readFileSync(p39, "utf8"));
+    return JSON.parse(fs24.readFileSync(p42, "utf8"));
   } catch {
     return null;
   }
@@ -9693,8 +9693,8 @@ function writeGithubProfile(profile) {
   atomicWrite(resolveGithubProfilePath(), JSON.stringify(profile, null, 2) + "\n");
 }
 function clearGithubProfile() {
-  const p39 = resolveGithubProfilePath();
-  if (fs24.existsSync(p39)) fs24.rmSync(p39, { force: true });
+  const p42 = resolveGithubProfilePath();
+  if (fs24.existsSync(p42)) fs24.rmSync(p42, { force: true });
 }
 function describeGithubTokenPath() {
   return resolveGithubTokenPath();
@@ -9729,9 +9729,9 @@ async function fetchHostedIntegrations(session) {
 }
 async function fetchHostedIntegrationCredential(session, providerId) {
   const client = toApiClient2(session);
-  const path86 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
+  const path91 = `${DEFAULT_INTEGRATION_CREDENTIAL_PATH}&provider=${encodeURIComponent(providerId)}`;
   try {
-    return await client.get(path86, { ignoreNotFound: true });
+    return await client.get(path91, { ignoreNotFound: true });
   } catch (err) {
     if (err instanceof ApiRequestError && (err.status === 404 || err.status === 501)) {
       throw new HostedEndpointUnavailableError(err.status, err.message);
@@ -11080,13 +11080,13 @@ async function githubLogin(opts) {
   const startedAt = Date.now();
   const maxMs = opts.timeoutMs ?? start.expiresInSec * 1e3;
   let interval = start.pollIntervalSec;
-  const spinner14 = p29.spinner();
-  spinner14.start("Waiting for GitHub authorization...");
+  const spinner15 = p29.spinner();
+  spinner15.start("Waiting for GitHub authorization...");
   while (Date.now() - startedAt < maxMs) {
     await sleep2(interval * 1e3);
     const poll = await pollDeviceFlow(start.deviceCode);
     if (poll.status === "authorized" && poll.token) {
-      spinner14.stop("Authorization received.");
+      spinner15.stop("Authorization received.");
       const profile = await fetchAuthenticatedUser(poll.token.accessToken);
       const token = {
         ...poll.token,
@@ -11107,15 +11107,15 @@ async function githubLogin(opts) {
       continue;
     }
     if (poll.status === "expired") {
-      spinner14.stop("Device code expired.");
+      spinner15.stop("Device code expired.");
       throw new Error("GitHub device code expired \u2014 run `growthub github login` again.");
     }
     if (poll.status === "denied") {
-      spinner14.stop("Authorization denied.");
+      spinner15.stop("Authorization denied.");
       throw new Error("GitHub authorization was denied.");
     }
   }
-  spinner14.stop("Timed out.");
+  spinner15.stop("Timed out.");
   throw new Error("GitHub login timed out. Re-run `growthub github login` to retry.");
 }
 async function githubWhoami(opts = {}) {
@@ -11279,7 +11279,7 @@ async function initStarterWorkspace(opts) {
     forkPath: absOut,
     kitId: info.id,
     forkId: reg.forkId,
-    source: "greenfield",
+    source: "workspace-starter",
     sourceRef: ""
   });
   if (sessionSeed.written) {
@@ -11945,10 +11945,10 @@ var init_skills_source = __esm({
 import fs61 from "node:fs";
 import path71 from "node:path";
 function safeReadPackageJson(dir) {
-  const p39 = path71.resolve(dir, "package.json");
-  if (!fs61.existsSync(p39)) return null;
+  const p42 = path71.resolve(dir, "package.json");
+  if (!fs61.existsSync(p42)) return null;
   try {
-    return JSON.parse(fs61.readFileSync(p39, "utf8"));
+    return JSON.parse(fs61.readFileSync(p42, "utf8"));
   } catch {
     return null;
   }
@@ -12704,10 +12704,10 @@ function movePayloadIntoFork(payloadRoot, forkPath, payloadRelativePath) {
   return target;
 }
 function writeManifest(forkPath, manifest) {
-  const p39 = path75.resolve(forkPath, MANIFEST_RELATIVE_PATH);
-  fs65.mkdirSync(path75.dirname(p39), { recursive: true });
-  fs65.writeFileSync(p39, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-  return p39;
+  const p42 = path75.resolve(forkPath, MANIFEST_RELATIVE_PATH);
+  fs65.mkdirSync(path75.dirname(p42), { recursive: true });
+  fs65.writeFileSync(p42, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  return p42;
 }
 function assertConfirmationsSatisfied(plan, confirmations) {
   const confirmed = new Set(confirmations);
@@ -12906,24 +12906,24 @@ function generateJobId2() {
   return `sij-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 function writeJob2(job) {
-  const p39 = resolveJobPath2(job.jobId);
-  fs66.mkdirSync(path76.dirname(p39), { recursive: true });
-  fs66.writeFileSync(p39, JSON.stringify(job, null, 2) + "\n", "utf8");
+  const p42 = resolveJobPath2(job.jobId);
+  fs66.mkdirSync(path76.dirname(p42), { recursive: true });
+  fs66.writeFileSync(p42, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
-function readJobFile(p39) {
-  if (!fs66.existsSync(p39)) return null;
+function readJobFile(p42) {
+  if (!fs66.existsSync(p42)) return null;
   try {
-    return JSON.parse(fs66.readFileSync(p39, "utf8"));
+    return JSON.parse(fs66.readFileSync(p42, "utf8"));
   } catch {
     return null;
   }
 }
 function patchJob2(jobId, status, patch = {}) {
-  const p39 = resolveJobPath2(jobId);
-  const job = readJobFile(p39);
+  const p42 = resolveJobPath2(jobId);
+  const job = readJobFile(p42);
   if (!job) return null;
   const updated = { ...job, ...patch, status };
-  fs66.writeFileSync(p39, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  fs66.writeFileSync(p42, JSON.stringify(updated, null, 2) + "\n", "utf8");
   return updated;
 }
 function getSourceImportJob(jobId) {
@@ -13097,24 +13097,24 @@ __export(catalog_exports, {
 });
 import fs67 from "node:fs";
 import path77 from "node:path";
-function exists(p39) {
+function exists(p42) {
   try {
-    fs67.accessSync(p39);
+    fs67.accessSync(p42);
     return true;
   } catch {
     return false;
   }
 }
-function isDir3(p39) {
+function isDir3(p42) {
   try {
-    return fs67.statSync(p39).isDirectory();
+    return fs67.statSync(p42).isDirectory();
   } catch {
     return false;
   }
 }
-function safeRead(p39) {
+function safeRead(p42) {
   try {
-    return fs67.readFileSync(p39, "utf8");
+    return fs67.readFileSync(p42, "utf8");
   } catch {
     return null;
   }
@@ -13291,10 +13291,10 @@ __export(source_import_discovery_exports, {
   startSkillsSourceImportFlow: () => startSkillsSourceImportFlow,
   startSourceImportFlow: () => startSourceImportFlow
 });
-import * as p37 from "@clack/prompts";
-import pc55 from "picocolors";
-import fs73 from "node:fs";
-import path84 from "node:path";
+import * as p40 from "@clack/prompts";
+import pc60 from "picocolors";
+import fs78 from "node:fs";
+import path89 from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 function slugifyWorkspaceName(input) {
   const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -13316,17 +13316,17 @@ function defaultWorkspaceFolderName(input) {
 }
 async function promptForInteractiveWorkspacePath(input) {
   const suggestedName = defaultWorkspaceFolderName(input);
-  const raw = await p37.text({
+  const raw = await p40.text({
     message: "Where should we create the custom workspace?",
     placeholder: `~/Desktop/${suggestedName}`
   });
-  if (p37.isCancel(raw) || !raw) return null;
+  if (p40.isCancel(raw) || !raw) return null;
   const trimmed = String(raw).trim();
-  const expanded = trimmed.startsWith("~/") ? path84.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
-  const resolved = path84.resolve(expanded);
-  if (fs73.existsSync(resolved) && fs73.statSync(resolved).isDirectory()) {
-    const finalPath = path84.join(resolved, suggestedName);
-    p37.note(
+  const expanded = trimmed.startsWith("~/") ? path89.join(process.env.HOME ?? "~", trimmed.slice(2)) : trimmed;
+  const resolved = path89.resolve(expanded);
+  if (fs78.existsSync(resolved) && fs78.statSync(resolved).isDirectory()) {
+    const finalPath = path89.join(resolved, suggestedName);
+    p40.note(
       [
         `You selected an existing folder: ${resolved}`,
         `Growthub will create the workspace inside it as:`,
@@ -13344,7 +13344,7 @@ function scopeLabel2(scope) {
   return "All Time";
 }
 async function chooseSkillsScope(current) {
-  const choice = await p37.select({
+  const choice = await p40.select({
     message: "Leaderboard scope",
     options: [
       { value: "all", label: "All Time", hint: current === "all" ? "current" : "most trusted by install rank" },
@@ -13352,7 +13352,7 @@ async function chooseSkillsScope(current) {
       { value: "hot", label: "Hot", hint: current === "hot" ? "current" : "currently active picks" }
     ]
   });
-  if (p37.isCancel(choice)) return null;
+  if (p40.isCancel(choice)) return null;
   return choice;
 }
 async function previewSkillSelection(skillRef) {
@@ -13361,7 +13361,7 @@ async function previewSkillSelection(skillRef) {
     skillRef
   });
   const audits = skill.audits?.length ? skill.audits.map((audit) => `${audit.name}:${audit.status}`).join(", ") : "none";
-  p37.note(
+  p40.note(
     [
       `Skill: ${skill.skillId}`,
       `Repo: ${skill.repository ?? "unknown"}`,
@@ -13374,11 +13374,11 @@ async function previewSkillSelection(skillRef) {
     ].join("\n"),
     skill.title
   );
-  const confirmed = await p37.confirm({
+  const confirmed = await p40.confirm({
     message: `Use ${skill.title} to build a starter-derived workspace?`,
     initialValue: true
   });
-  return !p37.isCancel(confirmed) && confirmed === true;
+  return !p40.isCancel(confirmed) && confirmed === true;
 }
 async function selectSkillFromCatalog() {
   let query = "";
@@ -13414,7 +13414,7 @@ async function selectSkillFromCatalog() {
     );
     const hasNext = (result.total ?? 0) > page * pageSize;
     const hasPrev = page > 1;
-    const choice = await p37.select({
+    const choice = await p40.select({
       message: `skills.sh \xB7 ${scopeLabel2(scope)}${query ? ` \xB7 query="${query}"` : ""}`,
       options: [
         ...result.entries.map((entry, index51) => ({
@@ -13430,7 +13430,7 @@ async function selectSkillFromCatalog() {
         { value: "back", label: "\u2190 Back to Starter" }
       ]
     });
-    if (p37.isCancel(choice) || choice === "back") return null;
+    if (p40.isCancel(choice) || choice === "back") return null;
     if (choice === "prev") {
       page = Math.max(1, page - 1);
       continue;
@@ -13448,23 +13448,23 @@ async function selectSkillFromCatalog() {
       continue;
     }
     if (choice === "search") {
-      const nextQuery = await p37.text({
+      const nextQuery = await p40.text({
         message: "Search the live leaderboard",
         placeholder: "marketing, frontend design, firecrawl, seo",
         defaultValue: query
       });
-      if (!p37.isCancel(nextQuery)) {
+      if (!p40.isCancel(nextQuery)) {
         query = String(nextQuery).trim();
         page = 1;
       }
       continue;
     }
     if (choice === "manual") {
-      const manual = await p37.text({
+      const manual = await p40.text({
         message: "skills.sh URL or canonical skill id",
         placeholder: "https://skills.sh/anthropics/skills/frontend-design"
       });
-      if (!p37.isCancel(manual) && String(manual).trim()) {
+      if (!p40.isCancel(manual) && String(manual).trim()) {
         const skillRef = String(manual).trim();
         if (await previewSkillSelection(skillRef)) {
           return skillRef;
@@ -13495,20 +13495,20 @@ async function startSkillsSourceImportFlow() {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    p37.log.error(msg);
+    p40.log.error(msg);
   }
 }
 function renderSuccess(result, jobId) {
   const sourceLine = result.source.kind === "github-repo" ? `${result.source.repo.owner}/${result.source.repo.repo}` : `${result.source.skillId}@${result.source.version}`;
-  p37.outro(
-    `Imported ${sourceLine} into ${pc55.cyan(result.forkPath)}
-  jobId:       ${pc55.cyan(jobId)}
-  forkId:      ${pc55.cyan(result.forkId)}
+  p40.outro(
+    `Imported ${sourceLine} into ${pc60.cyan(result.forkPath)}
+  jobId:       ${pc60.cyan(jobId)}
+  forkId:      ${pc60.cyan(result.forkId)}
   risk:        ${result.security.riskClass} (${result.security.findings.length} findings)
   detection:   framework=${result.detection.framework} pm=${result.detection.packageManager}
   open:        ${folderOpenLabel3(result.forkPath)}
-  summary:     ${pc55.dim(result.summaryPath)}
-  manifest:    ${pc55.dim(result.manifestPath)}`
+  summary:     ${pc60.dim(result.summaryPath)}
+  manifest:    ${pc60.dim(result.manifestPath)}`
   );
 }
 async function confirmTwice(job) {
@@ -13516,26 +13516,26 @@ async function confirmTwice(job) {
   if (pending.length === 0) return [];
   const sec = job.plan?.security;
   if (sec) {
-    p37.log.warn(`Security report \u2014 risk: ${sec.riskClass}`);
+    p40.log.warn(`Security report \u2014 risk: ${sec.riskClass}`);
     for (const line of sec.summaryLines.slice(0, 6)) {
-      p37.log.message(`  ${line}`);
+      p40.log.message(`  ${line}`);
     }
     if (sec.blocked) {
-      p37.log.error("Security inspection BLOCKED this payload \u2014 import cannot continue.");
+      p40.log.error("Security inspection BLOCKED this payload \u2014 import cannot continue.");
       return null;
     }
   }
-  p37.log.info(`Pending confirmations: ${pending.join(", ")}`);
-  const ack = await p37.confirm({
+  p40.log.info(`Pending confirmations: ${pending.join(", ")}`);
+  const ack = await p40.confirm({
     message: "Acknowledge the security report?",
     initialValue: false
   });
-  if (p37.isCancel(ack) || ack !== true) return null;
-  const go = await p37.confirm({
+  if (p40.isCancel(ack) || ack !== true) return null;
+  const go = await p40.confirm({
     message: "Second confirmation \u2014 materialize the workspace now?",
     initialValue: false
   });
-  if (p37.isCancel(go) || go !== true) return null;
+  if (p40.isCancel(go) || go !== true) return null;
   return pending;
 }
 async function startSourceImportFlow(input) {
@@ -13543,12 +13543,12 @@ async function startSourceImportFlow(input) {
     source: { kind: "github-repo", repo: input.repo },
     out: input.out,
     importMode: "wrap",
-    onProgress: (step) => p37.log.step(step)
+    onProgress: (step) => p40.log.step(step)
   } : {
     source: { kind: "skills-skill", skillRef: input.skillRef },
     out: input.out,
     importMode: "wrap",
-    onProgress: (step) => p37.log.step(step)
+    onProgress: (step) => p40.log.step(step)
   };
   try {
     const { job, result } = await importSourceAsWorkspace(importInput);
@@ -13557,31 +13557,31 @@ async function startSourceImportFlow(input) {
       return;
     }
     if (job.status === "failed") {
-      p37.log.error(job.error ?? "Source import failed.");
+      p40.log.error(job.error ?? "Source import failed.");
       return;
     }
     if (job.status !== "awaiting_confirmation") {
-      p37.log.warn(`Unexpected job status: ${job.status}`);
+      p40.log.warn(`Unexpected job status: ${job.status}`);
       return;
     }
     const acked = await confirmTwice(job);
     if (!acked) {
-      p37.log.warn("Import aborted \u2014 confirmations not provided.");
+      p40.log.warn("Import aborted \u2014 confirmations not provided.");
       return;
     }
     const resumed = await confirmAndResumeSourceImportJob({
       jobId: job.jobId,
       confirmations: acked,
-      onProgress: (step) => p37.log.step(step)
+      onProgress: (step) => p40.log.step(step)
     });
     if (!resumed || resumed.status !== "completed" || !resumed.result) {
-      p37.log.error(resumed?.error ?? "Import did not complete after confirmation.");
+      p40.log.error(resumed?.error ?? "Import did not complete after confirmation.");
       return;
     }
     renderSuccess(resumed.result, resumed.jobId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    p37.log.error(msg);
+    p40.log.error(msg);
   }
 }
 var init_source_import_discovery = __esm({
@@ -13594,12 +13594,12 @@ var init_source_import_discovery = __esm({
 
 // src/index.ts
 import { Command } from "commander";
-import * as p38 from "@clack/prompts";
-import pc56 from "picocolors";
-import fs74 from "node:fs";
-import path85 from "node:path";
-import { spawnSync as spawnSync9 } from "node:child_process";
-import { fileURLToPath as fileURLToPath7 } from "node:url";
+import * as p41 from "@clack/prompts";
+import pc61 from "picocolors";
+import fs79 from "node:fs";
+import path90 from "node:path";
+import { spawnSync as spawnSync11 } from "node:child_process";
+import { fileURLToPath as fileURLToPath8 } from "node:url";
 
 // src/analytics/posthog.ts
 init_home();
@@ -14398,8 +14398,8 @@ function printItemCompleted(item) {
     const changes = Array.isArray(item.changes) ? item.changes : [];
     const entries = changes.map((changeRaw) => asRecord(changeRaw)).filter((change) => Boolean(change)).map((change) => {
       const kind = asString(change.kind, "update");
-      const path86 = asString(change.path, "unknown");
-      return `${kind} ${path86}`;
+      const path91 = asString(change.path, "unknown");
+      return `${kind} ${path91}`;
     });
     const preview = entries.length > 0 ? entries.slice(0, 6).join(", ") : "none";
     const more = entries.length > 6 ? ` (+${entries.length - 6} more)` : "";
@@ -16340,11 +16340,11 @@ async function authLogin(opts) {
     p14.log.message(pc19.dim("Paste this URL into a browser:"));
     p14.log.message(pc19.cyan(flow.loginUrl));
   }
-  const spinner14 = p14.spinner();
-  spinner14.start("Waiting for hosted app to complete the exchange\u2026");
+  const spinner15 = p14.spinner();
+  spinner15.start("Waiting for hosted app to complete the exchange\u2026");
   try {
     const result = await flow.waitForCallback();
-    spinner14.stop("Received hosted session token.");
+    spinner15.stop("Received hosted session token.");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     writeSession({
       version: 1,
@@ -16402,7 +16402,7 @@ async function authLogin(opts) {
     }
     p14.outro("Done");
   } catch (err) {
-    spinner14.stop("Login failed.");
+    spinner15.stop("Login failed.");
     p14.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   } finally {
@@ -16788,8 +16788,8 @@ async function dbBackupCommand(opts) {
   p15.log.message(pc21.dim(`Connection source: ${connection.source}`));
   p15.log.message(pc21.dim(`Backup dir: ${backupDir}`));
   p15.log.message(pc21.dim(`Retention: ${retentionDays} day(s)`));
-  const spinner14 = p15.spinner();
-  spinner14.start("Creating database backup...");
+  const spinner15 = p15.spinner();
+  spinner15.start("Creating database backup...");
   try {
     const result = await runDatabaseBackup({
       connectionString: connection.value,
@@ -16797,7 +16797,7 @@ async function dbBackupCommand(opts) {
       retentionDays,
       filenamePrefix
     });
-    spinner14.stop(`Backup saved: ${formatDatabaseBackupResult(result)}`);
+    spinner15.stop(`Backup saved: ${formatDatabaseBackupResult(result)}`);
     if (opts.json) {
       console.log(
         JSON.stringify(
@@ -16816,7 +16816,7 @@ async function dbBackupCommand(opts) {
     }
     p15.outro(pc21.green("Backup completed."));
   } catch (err) {
-    spinner14.stop(pc21.red("Backup failed."));
+    spinner15.stop(pc21.red("Backup failed."));
     throw err;
   }
 }
@@ -17233,8 +17233,8 @@ function registerIssueCommands(program2) {
         if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
         if (opts.projectId) params.set("projectId", opts.projectId);
         const query = params.toString();
-        const path86 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path86) ?? [];
+        const path91 = `/api/companies/${ctx.companyId}/issues${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path91) ?? [];
         const filtered = filterIssueRows(rows, opts.match);
         if (ctx.json) {
           printOutput(filtered, { json: true });
@@ -17840,8 +17840,8 @@ function registerActivityCommands(program2) {
         if (opts.entityType) params.set("entityType", opts.entityType);
         if (opts.entityId) params.set("entityId", opts.entityId);
         const query = params.toString();
-        const path86 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
-        const rows = await ctx.api.get(path86) ?? [];
+        const path91 = `/api/companies/${ctx.companyId}/activity${query ? `?${query}` : ""}`;
+        const rows = await ctx.api.get(path91) ?? [];
         if (ctx.json) {
           printOutput(rows, { json: true });
           return;
@@ -18729,8 +18729,8 @@ async function runWorktreeInit(opts) {
         `Cannot seed worktree database because source config was not found at ${sourceConfigPath}. Use --no-seed or provide --from-config.`
       );
     }
-    const spinner14 = p16.spinner();
-    spinner14.start(`Seeding isolated worktree database from source instance (${seedMode})...`);
+    const spinner15 = p16.spinner();
+    spinner15.start(`Seeding isolated worktree database from source instance (${seedMode})...`);
     try {
       const seeded = await seedWorktreeDatabase({
         sourceConfigPath,
@@ -18742,9 +18742,9 @@ async function runWorktreeInit(opts) {
       });
       seedSummary = seeded.backupSummary;
       reboundWorkspaceSummary = seeded.reboundWorkspaces;
-      spinner14.stop(`Seeded isolated worktree database (${seedMode}).`);
+      spinner15.stop(`Seeded isolated worktree database (${seedMode}).`);
     } catch (error) {
-      spinner14.stop(pc24.red("Failed to seed worktree database."));
+      spinner15.stop(pc24.red("Failed to seed worktree database."));
       throw error;
     }
   }
@@ -18810,16 +18810,16 @@ async function worktreeMakeCommand(nameArg, opts) {
     branchExists: !startPoint && localBranchExists(sourceCwd, name),
     startPoint
   });
-  const spinner14 = p16.spinner();
-  spinner14.start(`Creating git worktree at ${targetPath}...`);
+  const spinner15 = p16.spinner();
+  spinner15.start(`Creating git worktree at ${targetPath}...`);
   try {
     execFileSync("git", worktreeArgs, {
       cwd: sourceCwd,
       stdio: ["ignore", "pipe", "pipe"]
     });
-    spinner14.stop(`Created git worktree at ${targetPath}.`);
+    spinner15.stop(`Created git worktree at ${targetPath}.`);
   } catch (error) {
-    spinner14.stop(pc24.red("Failed to create git worktree."));
+    spinner15.stop(pc24.red("Failed to create git worktree."));
     throw new Error(extractExecSyncErrorMessage(error) ?? String(error));
   }
   const installSpinner = p16.spinner();
@@ -18982,9 +18982,9 @@ async function worktreeCleanupCommand(nameArg, opts) {
   }
   if (linkedWorktree) {
     const worktreeDirExists = existsSync2(linkedWorktree.worktree);
-    const spinner14 = p16.spinner();
+    const spinner15 = p16.spinner();
     if (worktreeDirExists) {
-      spinner14.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
+      spinner15.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
       try {
         const removeArgs = ["worktree", "remove", linkedWorktree.worktree];
         if (opts.force) removeArgs.push("--force");
@@ -18992,18 +18992,18 @@ async function worktreeCleanupCommand(nameArg, opts) {
           cwd: sourceCwd,
           stdio: ["ignore", "pipe", "pipe"]
         });
-        spinner14.stop(`Removed git worktree at ${linkedWorktree.worktree}.`);
+        spinner15.stop(`Removed git worktree at ${linkedWorktree.worktree}.`);
       } catch (error) {
-        spinner14.stop(pc24.yellow(`Could not remove worktree cleanly, will prune instead.`));
+        spinner15.stop(pc24.yellow(`Could not remove worktree cleanly, will prune instead.`));
         p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
       }
     } else {
-      spinner14.start("Pruning stale worktree entry...");
+      spinner15.start("Pruning stale worktree entry...");
       execFileSync("git", ["worktree", "prune"], {
         cwd: sourceCwd,
         stdio: ["ignore", "pipe", "pipe"]
       });
-      spinner14.stop("Pruned stale worktree entry.");
+      spinner15.stop("Pruned stale worktree entry.");
     }
   } else {
     execFileSync("git", ["worktree", "prune"], {
@@ -19012,31 +19012,31 @@ async function worktreeCleanupCommand(nameArg, opts) {
     });
   }
   if (existsSync2(targetPath)) {
-    const spinner14 = p16.spinner();
-    spinner14.start(`Removing worktree directory ${targetPath}...`);
+    const spinner15 = p16.spinner();
+    spinner15.start(`Removing worktree directory ${targetPath}...`);
     rmSync(targetPath, { recursive: true, force: true });
-    spinner14.stop(`Removed worktree directory ${targetPath}.`);
+    spinner15.stop(`Removed worktree directory ${targetPath}.`);
   }
   if (localBranchExists(sourceCwd, name)) {
-    const spinner14 = p16.spinner();
-    spinner14.start(`Deleting local branch "${name}"...`);
+    const spinner15 = p16.spinner();
+    spinner15.start(`Deleting local branch "${name}"...`);
     try {
       const deleteFlag = opts.force ? "-D" : "-d";
       execFileSync("git", ["branch", deleteFlag, name], {
         cwd: sourceCwd,
         stdio: ["ignore", "pipe", "pipe"]
       });
-      spinner14.stop(`Deleted local branch "${name}".`);
+      spinner15.stop(`Deleted local branch "${name}".`);
     } catch (error) {
-      spinner14.stop(pc24.yellow(`Could not delete branch "${name}".`));
+      spinner15.stop(pc24.yellow(`Could not delete branch "${name}".`));
       p16.log.warning(extractExecSyncErrorMessage(error) ?? String(error));
     }
   }
   if (existsSync2(instanceRoot)) {
-    const spinner14 = p16.spinner();
-    spinner14.start(`Removing instance data at ${instanceRoot}...`);
+    const spinner15 = p16.spinner();
+    spinner15.start(`Removing instance data at ${instanceRoot}...`);
     rmSync(instanceRoot, { recursive: true, force: true });
-    spinner14.stop(`Removed instance data at ${instanceRoot}.`);
+    spinner15.stop(`Removed instance data at ${instanceRoot}.`);
   }
   p16.outro(pc24.green("Cleanup complete."));
 }
@@ -19077,16 +19077,16 @@ function resolvePackageArg(packageArg, isLocal) {
   }
   return path23.resolve(process.cwd(), packageArg);
 }
-function formatPlugin(p39) {
-  const statusColor3 = p39.status === "ready" ? pc25.green(p39.status) : p39.status === "error" ? pc25.red(p39.status) : p39.status === "disabled" ? pc25.dim(p39.status) : pc25.yellow(p39.status);
+function formatPlugin(p42) {
+  const statusColor3 = p42.status === "ready" ? pc25.green(p42.status) : p42.status === "error" ? pc25.red(p42.status) : p42.status === "disabled" ? pc25.dim(p42.status) : pc25.yellow(p42.status);
   const parts = [
-    `key=${pc25.bold(p39.pluginKey)}`,
+    `key=${pc25.bold(p42.pluginKey)}`,
     `status=${statusColor3}`,
-    `version=${p39.version}`,
-    `id=${pc25.dim(p39.id)}`
+    `version=${p42.version}`,
+    `id=${pc25.dim(p42.id)}`
   ];
-  if (p39.lastError) {
-    parts.push(`error=${pc25.red(p39.lastError.slice(0, 80))}`);
+  if (p42.lastError) {
+    parts.push(`error=${pc25.red(p42.lastError.slice(0, 80))}`);
   }
   return parts.join("  ");
 }
@@ -19107,8 +19107,8 @@ function registerPluginCommands(program2) {
           console.log(pc25.dim("No plugins installed."));
           return;
         }
-        for (const p39 of rows) {
-          console.log(formatPlugin(p39));
+        for (const p42 of rows) {
+          console.log(formatPlugin(p42));
         }
       } catch (err) {
         handleCommandError(err);
@@ -19316,10 +19316,10 @@ function resolveUpstreamAssetRoot(kitId) {
   }
   throw new Error(`Cannot locate bundled asset root for kit: ${kitId}`);
 }
-function readFileIfExists(p39) {
-  if (!fs23.existsSync(p39)) return null;
+function readFileIfExists(p42) {
+  if (!fs23.existsSync(p42)) return null;
   try {
-    return fs23.readFileSync(p39, "utf8");
+    return fs23.readFileSync(p42, "utf8");
   } catch {
     return null;
   }
@@ -19834,10 +19834,10 @@ function resolveOrphanJobPath(jobId) {
 function generateJobId() {
   return `kfj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
-function parseJobFile(p39) {
-  if (!fs25.existsSync(p39)) return null;
+function parseJobFile(p42) {
+  if (!fs25.existsSync(p42)) return null;
   try {
-    return JSON.parse(fs25.readFileSync(p39, "utf8"));
+    return JSON.parse(fs25.readFileSync(p42, "utf8"));
   } catch {
     return null;
   }
@@ -19846,19 +19846,19 @@ function findJobPath(jobId) {
   const orphanPath = resolveOrphanJobPath(jobId);
   if (fs25.existsSync(orphanPath)) return orphanPath;
   for (const reg of listKitForkRegistrations()) {
-    const p39 = path32.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
-    if (fs25.existsSync(p39)) return p39;
+    const p42 = path32.resolve(resolveInForkJobsDir(reg.forkPath), `${jobId}.json`);
+    if (fs25.existsSync(p42)) return p42;
   }
   return null;
 }
 function readJob(jobId) {
-  const p39 = findJobPath(jobId);
-  return p39 ? parseJobFile(p39) : null;
+  const p42 = findJobPath(jobId);
+  return p42 ? parseJobFile(p42) : null;
 }
 function writeJob(job) {
-  const p39 = resolveJobPath(job.jobId, job.kitId, job.forkId);
-  fs25.mkdirSync(path32.dirname(p39), { recursive: true });
-  fs25.writeFileSync(p39, JSON.stringify(job, null, 2) + "\n", "utf8");
+  const p42 = resolveJobPath(job.jobId, job.kitId, job.forkId);
+  fs25.mkdirSync(path32.dirname(p42), { recursive: true });
+  fs25.writeFileSync(p42, JSON.stringify(job, null, 2) + "\n", "utf8");
 }
 function patchJob(jobId, status, patch) {
   const existingPath = findJobPath(jobId);
@@ -20696,10 +20696,10 @@ function computePolicyHash(policy) {
   return crypto2.createHash("sha256").update(canonicalize(shape), "utf8").digest("hex");
 }
 function readIssuerRegistry() {
-  const p39 = resolveAuthorityIssuersPath();
-  if (!fs27.existsSync(p39)) return { version: 1, issuers: [] };
+  const p42 = resolveAuthorityIssuersPath();
+  if (!fs27.existsSync(p42)) return { version: 1, issuers: [] };
   try {
-    const parsed = JSON.parse(fs27.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs27.readFileSync(p42, "utf8"));
     if (!parsed || !Array.isArray(parsed.issuers)) return { version: 1, issuers: [] };
     return { version: 1, issuers: parsed.issuers.filter(isValidIssuer) };
   } catch {
@@ -20712,9 +20712,9 @@ function isValidIssuer(x) {
   return typeof o.id === "string" && typeof o.publicKeyPem === "string" && (o.kind === "growthub-hosted" || o.kind === "self-signed" || o.kind === "enterprise");
 }
 function writeIssuerRegistry(registry) {
-  const p39 = resolveAuthorityIssuersPath();
-  fs27.mkdirSync(path34.dirname(p39), { recursive: true });
-  fs27.writeFileSync(p39, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
+  const p42 = resolveAuthorityIssuersPath();
+  fs27.mkdirSync(path34.dirname(p42), { recursive: true });
+  fs27.writeFileSync(p42, JSON.stringify({ version: 1, issuers: registry.issuers }, null, 2) + "\n", "utf8");
 }
 function upsertIssuer(issuer) {
   if (!isValidIssuer(issuer)) {
@@ -20786,12 +20786,12 @@ function isWellFormedEnvelope(x) {
   return e.version === 1 && typeof e.envelopeId === "string" && typeof e.issuerId === "string" && e.algorithm === "ed25519" && typeof e.signature === "string" && typeof e.issuedAt === "string" && typeof e.nonce === "string" && !!e.subject && typeof e.subject.kitId === "string" && typeof e.subject.forkId === "string" && !!e.grants && Array.isArray(e.grants.capabilities) && typeof e.grants.policyAttested === "boolean";
 }
 function readForkAuthorityState(forkPath) {
-  const p39 = resolveInForkAuthorityPath(forkPath);
-  if (!fs27.existsSync(p39)) {
+  const p42 = resolveInForkAuthorityPath(forkPath);
+  if (!fs27.existsSync(p42)) {
     return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
   }
   try {
-    const parsed = JSON.parse(fs27.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs27.readFileSync(p42, "utf8"));
     if (!parsed || parsed.version !== 1) {
       return { state: "none", version: 1, updatedAt: (/* @__PURE__ */ new Date(0)).toISOString() };
     }
@@ -20801,9 +20801,9 @@ function readForkAuthorityState(forkPath) {
   }
 }
 function writeForkAuthorityState(forkPath, state) {
-  const p39 = resolveInForkAuthorityPath(forkPath);
-  fs27.mkdirSync(path34.dirname(p39), { recursive: true });
-  fs27.writeFileSync(p39, JSON.stringify(state, null, 2) + "\n", "utf8");
+  const p42 = resolveInForkAuthorityPath(forkPath);
+  fs27.mkdirSync(path34.dirname(p42), { recursive: true });
+  fs27.writeFileSync(p42, JSON.stringify(state, null, 2) + "\n", "utf8");
 }
 function attachAuthorityEnvelope(forkPath, envelope, options = {}) {
   const verification = verifyAuthorityEnvelope(envelope, options);
@@ -21410,8 +21410,8 @@ async function runRegisterFlow() {
     return;
   }
   const kitVersion = kits.find((k) => k.id === kitChoice)?.version ?? "0.0.0";
-  const spinner14 = p18.spinner();
-  spinner14.start("Registering fork...");
+  const spinner15 = p18.spinner();
+  spinner15.start("Registering fork...");
   try {
     const reg = registerKitFork({
       forkPath: rawPath.trim(),
@@ -21419,7 +21419,7 @@ async function runRegisterFlow() {
       baseVersion: kitVersion,
       label: labelInput.trim() || void 0
     });
-    spinner14.stop(pc29.green("Fork registered."));
+    spinner15.stop(pc29.green("Fork registered."));
     track("fork_registered", { kit_id: reg.kitId });
     p18.note(
       [
@@ -21432,7 +21432,7 @@ async function runRegisterFlow() {
       "Registration complete"
     );
   } catch (err) {
-    spinner14.stop(pc29.red("Registration failed."));
+    spinner15.stop(pc29.red("Registration failed."));
     p18.log.error(err.message);
   }
 }
@@ -21462,15 +21462,15 @@ async function runStatusFlow() {
     p18.cancel("Fork not found.");
     return;
   }
-  const spinner14 = p18.spinner();
-  spinner14.start("Detecting drift...");
+  const spinner15 = p18.spinner();
+  spinner15.start("Detecting drift...");
   try {
     const report = detectKitForkDrift(reg);
-    spinner14.stop(pc29.green("Analysis complete."));
+    spinner15.stop(pc29.green("Analysis complete."));
     track("fork_sync_preview_started", { kit_id: reg.kitId, drift_severity: report.overallSeverity });
     printDriftReport(report);
   } catch (err) {
-    spinner14.stop(pc29.red("Drift detection failed."));
+    spinner15.stop(pc29.red("Drift detection failed."));
     p18.log.error(err.message);
   }
 }
@@ -22666,16 +22666,16 @@ var KIT_HEALTH_REPORT_VERSION = 1;
 // src/runtime/self-improving/health.ts
 import fs31 from "node:fs";
 import path37 from "node:path";
-function isFile(p39) {
+function isFile(p42) {
   try {
-    return fs31.statSync(p39).isFile();
+    return fs31.statSync(p42).isFile();
   } catch {
     return false;
   }
 }
-function isDir(p39) {
+function isDir(p42) {
   try {
-    return fs31.statSync(p39).isDirectory();
+    return fs31.statSync(p42).isDirectory();
   } catch {
     return false;
   }
@@ -22783,16 +22783,16 @@ function checkSelfImprovingHealth(forkRoot) {
 }
 
 // src/runtime/kit-health/index.ts
-function isFile2(p39) {
+function isFile2(p42) {
   try {
-    return fs32.statSync(p39).isFile();
+    return fs32.statSync(p42).isFile();
   } catch {
     return false;
   }
 }
-function isDir2(p39) {
+function isDir2(p42) {
   try {
-    return fs32.statSync(p39).isDirectory();
+    return fs32.statSync(p42).isDirectory();
   } catch {
     return false;
   }
@@ -25837,31 +25837,31 @@ function resolveManifestBaseUrl(opts = {}) {
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function assertRecord(value, path86) {
+function assertRecord(value, path91) {
   if (!isRecord(value)) {
-    throw new ManifestMalformedError(`Expected object at \`${path86}\`.`);
+    throw new ManifestMalformedError(`Expected object at \`${path91}\`.`);
   }
   return value;
 }
-function assertArray(value, path86) {
+function assertArray(value, path91) {
   if (!Array.isArray(value)) {
-    throw new ManifestMalformedError(`Expected array at \`${path86}\`.`);
+    throw new ManifestMalformedError(`Expected array at \`${path91}\`.`);
   }
   return value;
 }
-function assertString(value, path86) {
+function assertString(value, path91) {
   if (typeof value !== "string" || value.length === 0) {
-    throw new ManifestMalformedError(`Expected non-empty string at \`${path86}\`.`);
+    throw new ManifestMalformedError(`Expected non-empty string at \`${path91}\`.`);
   }
   return value;
 }
-function normalizeProvenance(value, path86) {
-  const record = assertRecord(value, path86);
-  const originType = assertString(record.originType, `${path86}.originType`);
+function normalizeProvenance(value, path91) {
+  const record = assertRecord(value, path91);
+  const originType = assertString(record.originType, `${path91}.originType`);
   const allowed = ["hosted", "local-extension", "derived-from-workflow"];
   if (!allowed.includes(originType)) {
     throw new ManifestMalformedError(
-      `Unknown provenance originType at \`${path86}.originType\`: ${originType}`
+      `Unknown provenance originType at \`${path91}.originType\`: ${originType}`
     );
   }
   return {
@@ -33131,15 +33131,15 @@ async function runOpenAgentsHub(opts) {
       continue;
     }
     if (action === "health") {
-      const spinner14 = p25.spinner();
-      spinner14.start(`Checking ${config.endpoint}...`);
+      const spinner15 = p25.spinner();
+      spinner15.start(`Checking ${config.endpoint}...`);
       const health = await checkOpenAgentsHealth(config);
       if (health.available) {
-        spinner14.stop(
+        spinner15.stop(
           `Backend reachable (${health.latencyMs}ms)` + (health.version ? `  version: ${health.version}` : "")
         );
       } else {
-        spinner14.stop(`Backend unavailable (${health.latencyMs}ms)`);
+        spinner15.stop(`Backend unavailable (${health.latencyMs}ms)`);
         p25.note(
           [
             health.error ? `Error: ${health.error}` : "",
@@ -33257,17 +33257,17 @@ async function runSetupFlow(currentConfig) {
   p25.log.success("Configuration saved.");
 }
 async function runSessionListFlow(config) {
-  const spinner14 = p25.spinner();
-  spinner14.start("Loading sessions...");
+  const spinner15 = p25.spinner();
+  spinner15.start("Loading sessions...");
   let sessions;
   try {
     sessions = await listOpenAgentsSessions(config);
   } catch (err) {
-    spinner14.stop("Failed to load sessions.");
+    spinner15.stop("Failed to load sessions.");
     p25.log.error(err.message);
     return "back";
   }
-  spinner14.stop(`${sessions.length} session${sessions.length !== 1 ? "s" : ""} found.`);
+  spinner15.stop(`${sessions.length} session${sessions.length !== 1 ? "s" : ""} found.`);
   if (sessions.length === 0) {
     p25.note("No agent sessions found. Create one to get started.", "Nothing found");
     return "back";
@@ -33340,18 +33340,18 @@ async function runCreateSessionFlow(config) {
     initialValue: true
   });
   if (p25.isCancel(confirmed) || !confirmed) return;
-  const spinner14 = p25.spinner();
-  spinner14.start("Creating session...");
+  const spinner15 = p25.spinner();
+  spinner15.start("Creating session...");
   try {
     const session = await createOpenAgentsSession(config, {
       prompt: String(prompt).trim(),
       repoUrl: String(repoUrl).trim() || void 0,
       branch: String(branch).trim() || void 0
     });
-    spinner14.stop("Session created.");
+    spinner15.stop("Session created.");
     printSessionCard(session);
   } catch (err) {
-    spinner14.stop("Failed to create session.");
+    spinner15.stop("Failed to create session.");
     p25.log.error(err.message);
   }
 }
@@ -33361,11 +33361,11 @@ async function runResumeSessionFlow(config) {
     placeholder: "Paste the session ID to resume"
   });
   if (p25.isCancel(sessionId) || !String(sessionId).trim()) return;
-  const spinner14 = p25.spinner();
-  spinner14.start("Resuming session...");
+  const spinner15 = p25.spinner();
+  spinner15.start("Resuming session...");
   try {
     const session = await resumeOpenAgentsSession(config, String(sessionId).trim());
-    spinner14.stop("Session resumed.");
+    spinner15.stop("Session resumed.");
     printSessionCard(session);
     const events = await pollSessionEvents(config, session.sessionId);
     if (events.length > 0) {
@@ -33378,7 +33378,7 @@ async function runResumeSessionFlow(config) {
       console.log("");
     }
   } catch (err) {
-    spinner14.stop("Failed to resume session.");
+    spinner15.stop("Failed to resume session.");
     p25.log.error(err.message);
   }
 }
@@ -34863,9 +34863,9 @@ var NPM_REGISTRY = "https://registry.npmjs.org";
 function isoNow() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
-async function withTimeout(p39, ms, label) {
+async function withTimeout(p42, ms, label) {
   return await Promise.race([
-    p39,
+    p42,
     new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timeout`)), ms))
   ]);
 }
@@ -35021,8 +35021,8 @@ async function probeGithubDirectAuth(_timeoutMs) {
 async function probeKitForksIndex(_timeoutMs) {
   try {
     const { resolveKitForksIndexPath: resolveKitForksIndexPath2 } = await Promise.resolve().then(() => (init_kit_forks_home(), kit_forks_home_exports));
-    const p39 = resolveKitForksIndexPath2();
-    if (!fs56.existsSync(p39)) {
+    const p42 = resolveKitForksIndexPath2();
+    if (!fs56.existsSync(p42)) {
       return {
         componentId: "kit-forks-index",
         level: "operational",
@@ -35030,14 +35030,14 @@ async function probeKitForksIndex(_timeoutMs) {
         lastCheckedAt: isoNow()
       };
     }
-    const parsed = JSON.parse(fs56.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs56.readFileSync(p42, "utf8"));
     const count = Array.isArray(parsed.entries) ? parsed.entries.length : 0;
     return {
       componentId: "kit-forks-index",
       level: "operational",
       summary: `${count} fork(s) registered locally.`,
       lastCheckedAt: isoNow(),
-      detail: { indexPath: p39, count }
+      detail: { indexPath: p42, count }
     };
   } catch (err) {
     return {
@@ -35664,10 +35664,10 @@ init_fork_trace();
 init_kit_forks_home();
 init_table_renderer();
 function readLocalForkHead(forkPath) {
-  const p39 = resolveInForkRegistrationPath(forkPath);
-  if (!fs68.existsSync(p39)) return null;
+  const p42 = resolveInForkRegistrationPath(forkPath);
+  if (!fs68.existsSync(p42)) return null;
   try {
-    const parsed = JSON.parse(fs68.readFileSync(p39, "utf8"));
+    const parsed = JSON.parse(fs68.readFileSync(p42, "utf8"));
     if (typeof parsed.forkId !== "string" || typeof parsed.kitId !== "string") return null;
     return { forkId: parsed.forkId, kitId: parsed.kitId };
   } catch {
@@ -36089,33 +36089,33 @@ function buildDriftArtifactSummary(report, plan, policy) {
     }
   }
   for (const action of plan.actions) {
-    const p39 = action.targetPath;
-    if (isUntouchable(policy, p39)) {
-      skippedUntouchable.push({ path: p39, note: "Untouchable per policy.untouchablePaths." });
+    const p42 = action.targetPath;
+    if (isUntouchable(policy, p42)) {
+      skippedUntouchable.push({ path: p42, note: "Untouchable per policy.untouchablePaths." });
       continue;
     }
     if (action.needsConfirmation) {
       needsConfirmation.push({
-        path: p39,
+        path: p42,
         note: action.confirmationReason ?? "Policy requires explicit confirmation."
       });
       continue;
     }
     switch (action.actionType) {
       case "add_file":
-        safeAdditions.push({ path: p39, note: "Upstream scaffold absent from fork \u2014 safe to add." });
+        safeAdditions.push({ path: p42, note: "Upstream scaffold absent from fork \u2014 safe to add." });
         break;
       case "update_package_json_deps":
-        safeUpdates.push({ path: p39, note: "Dependency merge (additive-only)." });
+        safeUpdates.push({ path: p42, note: "Dependency merge (additive-only)." });
         break;
       case "patch_manifest":
-        safeUpdates.push({ path: p39, note: "kit.json alignment field patch (safe allow-list)." });
+        safeUpdates.push({ path: p42, note: "kit.json alignment field patch (safe allow-list)." });
         break;
       case "skip_user_modified":
-        skippedUserModified.push({ path: p39, note: "Preserved \u2014 user has modified this file." });
+        skippedUserModified.push({ path: p42, note: "Preserved \u2014 user has modified this file." });
         break;
       case "add_custom_skill":
-        customSkills.push({ path: p39, note: "User-authored custom skill \u2014 preserved unchanged." });
+        customSkills.push({ path: p42, note: "User-authored custom skill \u2014 preserved unchanged." });
         break;
     }
   }
@@ -36407,8 +36407,8 @@ async function fleetApprovals(opts) {
     p33.log.message(
       `  \xB7 ${pc51.cyan(entry.jobId)}  fork=${entry.forkLabel ?? entry.forkId}  created=${entry.createdAt.slice(0, 19)}`
     );
-    for (const path86 of entry.pendingPaths.slice(0, 6)) {
-      p33.log.message(`      ${pc51.dim("awaits")} ${path86}`);
+    for (const path91 of entry.pendingPaths.slice(0, 6)) {
+      p33.log.message(`      ${pc51.dim("awaits")} ${path91}`);
     }
     if (entry.pendingPaths.length > 6) {
       p33.log.message(`      ${pc51.dim(`\u2026 +${entry.pendingPaths.length - 6} more`)}`);
@@ -36979,9 +36979,9 @@ function buildFilename(slug) {
 }
 function readForkMeta(forkPath) {
   try {
-    const p39 = path81.resolve(resolveInForkStateDir(forkPath), "fork.json");
-    if (fs71.existsSync(p39)) {
-      const parsed = JSON.parse(fs71.readFileSync(p39, "utf8"));
+    const p42 = path81.resolve(resolveInForkStateDir(forkPath), "fork.json");
+    if (fs71.existsSync(p42)) {
+      const parsed = JSON.parse(fs71.readFileSync(p42, "utf8"));
       return {
         forkId: parsed.forkId ?? "unknown",
         kitId: parsed.kitId ?? "growthub-custom-workspace-starter-v1"
@@ -37022,8 +37022,8 @@ function listProposals(forkPath, opts = {}) {
 function inspectProposal(forkPath, slug) {
   const proposalPath = resolveProposalPath(forkPath, slug);
   if (proposalPath) return readProposalFile(proposalPath);
-  const p39 = path81.resolve(promotedDir(forkPath), slug + ".json");
-  if (fs71.existsSync(p39)) return readProposalFile(p39);
+  const p42 = path81.resolve(promotedDir(forkPath), slug + ".json");
+  if (fs71.existsSync(p42)) return readProposalFile(p42);
   return null;
 }
 function proposeCapability(input) {
@@ -37240,11 +37240,11 @@ function runList2(opts) {
       { key: "createdAt", label: "created", maxWidth: 24 },
       { key: "summary", label: "summary", maxWidth: 48 }
     ],
-    rows: proposals.map((p39) => ({
-      slug: p39.slug,
-      status: p39.status,
-      createdAt: p39.createdAt.slice(0, 16).replace("T", " "),
-      summary: p39.summary
+    rows: proposals.map((p42) => ({
+      slug: p42.slug,
+      status: p42.status,
+      createdAt: p42.createdAt.slice(0, 16).replace("T", " "),
+      summary: p42.summary
     }))
   }));
   console.log("");
@@ -37364,7 +37364,7 @@ function runReject(slug, opts) {
   console.log("");
 }
 function registerWorkspaceImproveCommands(program2) {
-  const workspace = program2.command("workspace").description("Governed workspace operations \u2014 deploy status, self-improving loop, capability proposals");
+  const workspace = program2.command("workspace").description("Governed workspace operations \u2014 status, QA, deploy, upstream, surface, portal, self-improving");
   const improve = workspace.command("improve").description("Manage the self-improving capability proposal lifecycle").addHelpText("after", `
 Examples:
   $ growthub workspace improve propose --from-run demo
@@ -37615,21 +37615,1300 @@ async function runDeployChecklist(opts) {
     );
   }
 }
+function detectAppRoot(forkPath) {
+  for (const rel of ["apps/workspace", "apps/agency-portal", "apps/portal", "studio"]) {
+    if (fs72.existsSync(path83.join(forkPath, rel, "package.json"))) return rel;
+  }
+  return null;
+}
+function detectVercelProject(forkPath) {
+  return [
+    path83.join(forkPath, "vercel.json"),
+    path83.join(forkPath, ".vercel/project.json"),
+    path83.join(forkPath, "apps/workspace/vercel.json"),
+    path83.join(forkPath, "apps/workspace/.vercel/project.json")
+  ].some((c) => fs72.existsSync(c));
+}
+function detectEnvVarsNeeded(forkPath) {
+  for (const rel of [".env.example", "apps/workspace/.env.example"]) {
+    const p210 = path83.join(forkPath, rel);
+    if (!fs72.existsSync(p210)) continue;
+    try {
+      return fs72.readFileSync(p210, "utf8").split("\n").filter((l) => l.match(/^[A-Z_]+=/) && !l.startsWith("#")).map((l) => l.split("=")[0]);
+    } catch {
+    }
+  }
+  return [];
+}
+function runDeployCheck(opts) {
+  const forkPath = opts.fork ? path83.resolve(opts.fork) : process.cwd();
+  const ds = computeDeployStatus(forkPath);
+  const appRoot = detectAppRoot(forkPath);
+  const vercelProjectDetected = detectVercelProject(forkPath);
+  const envVarsNeeded = detectEnvVarsNeeded(forkPath);
+  const recommendedCommands = [];
+  if (!ds.bridge.connected && !ds.github.connected) recommendedCommands.push("growthub auth login");
+  if (!ds.fork.registered) recommendedCommands.push("growthub kit fork register .");
+  if (appRoot) recommendedCommands.push(`cd ${appRoot} && npm install && npm run build`);
+  if (appRoot && !vercelProjectDetected) recommendedCommands.push(`cd ${appRoot} && vercel link`);
+  const status = ds.ready ? "ready" : ds.missingSteps.length > 0 ? "needs_action" : "blocked";
+  const result = {
+    status,
+    forkPath,
+    canDeploy: ds.ready && appRoot !== null,
+    bridge: { connected: ds.bridge.connected, login: ds.bridge.login },
+    github: { connected: ds.github.connected, login: ds.github.login },
+    fork: { registered: ds.fork.registered, forkId: ds.fork.forkId, hasRemote: ds.fork.hasRemote },
+    missingSteps: ds.missingSteps,
+    envVarsNeeded,
+    appRoot,
+    vercelProjectDetected,
+    nextCommand: ds.nextCommand ?? recommendedCommands[0] ?? null,
+    recommendedCommands
+  };
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  const tick = (ok) => ok ? pc54.green("\u2713") : pc54.red("\u2717");
+  const dot = (ok) => ok ? pc54.green("\u25CF") : pc54.dim("\u25CB");
+  console.log("");
+  console.log(pc54.bold("Workspace Deploy Check"));
+  console.log(pc54.dim("\u2500".repeat(60)));
+  console.log(`  ${tick(result.bridge.connected)}  Bridge/auth     ${result.bridge.connected ? pc54.green("connected") + pc54.dim(` \xB7 ${result.bridge.login ?? ""}`) : pc54.dim("not connected")}`);
+  console.log(`  ${tick(result.github.connected)}  GitHub          ${result.github.connected ? pc54.green("connected") + pc54.dim(` \xB7 ${result.github.login ?? ""}`) : pc54.dim("not connected")}`);
+  console.log(`  ${tick(result.fork.registered)}  Fork registered ${result.fork.registered ? pc54.green("yes") + pc54.dim(` \xB7 ${result.fork.forkId ?? ""}`) : pc54.dim("no")}`);
+  console.log(`  ${dot(result.appRoot !== null)}  App root        ${result.appRoot ?? pc54.dim("not detected")}`);
+  console.log(`  ${dot(result.vercelProjectDetected)}  Vercel project  ${result.vercelProjectDetected ? pc54.green("detected") : pc54.dim("not detected")}`);
+  if (result.envVarsNeeded.length > 0) console.log(`  ${dot(false)}  Env vars needed ${pc54.dim(`${result.envVarsNeeded.length} from .env.example`)}`);
+  console.log("");
+  const col = { ready: pc54.green, needs_action: pc54.yellow, blocked: pc54.red };
+  console.log(`  Status: ${col[result.status](result.status.replace("_", " "))}`);
+  console.log(`  Can deploy: ${result.canDeploy ? pc54.green("yes") : pc54.red("no")}`);
+  if (result.missingSteps.length > 0) {
+    console.log("");
+    console.log(pc54.yellow("  Missing:"));
+    for (const s of result.missingSteps) console.log(pc54.dim(`    \xB7 ${s}`));
+  }
+  if (result.recommendedCommands.length > 0) {
+    console.log("");
+    console.log(pc54.dim("  Recommended:"));
+    for (const c of result.recommendedCommands) console.log(pc54.dim(`    ${pc54.cyan(c)}`));
+  }
+  console.log("");
+  console.log(pc54.dim("  Agent output: growthub workspace deploy check --json"));
+  console.log("");
+}
+function runDeployVercel(opts) {
+  const forkPath = opts.fork ? path83.resolve(opts.fork) : process.cwd();
+  const appRoot = detectAppRoot(forkPath);
+  const vercelProjectDetected = detectVercelProject(forkPath);
+  const envVarsNeeded = detectEnvVarsNeeded(forkPath);
+  const result = {
+    forkPath,
+    appRoot,
+    appRootAbsolute: appRoot ? path83.resolve(forkPath, appRoot) : null,
+    vercelProjectDetected,
+    envVarsNeeded,
+    deployCommands: appRoot ? [`cd ${appRoot}`, "npm install", "npm run build", "vercel"] : ["# No app root detected"]
+  };
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (opts.printEnv) {
+    console.log("");
+    console.log(pc54.bold("Required Env Vars (from .env.example):"));
+    console.log(pc54.dim("\u2500".repeat(60)));
+    if (envVarsNeeded.length === 0) {
+      console.log(pc54.dim("  No .env.example found."));
+    } else {
+      for (const v of envVarsNeeded) console.log(`  ${v}=`);
+    }
+    console.log("");
+    return;
+  }
+  console.log("");
+  console.log(pc54.bold("Vercel Deploy Guide"));
+  console.log(pc54.dim("\u2500".repeat(60)));
+  console.log(`  App root:       ${appRoot ?? pc54.dim("not detected")}`);
+  console.log(`  Vercel project: ${vercelProjectDetected ? pc54.green("detected") : pc54.dim("not detected")}`);
+  console.log(`  Env vars:       ${envVarsNeeded.length > 0 ? `${envVarsNeeded.length} var(s)` : pc54.dim("none from .env.example")}`);
+  console.log("");
+  console.log(pc54.dim("  Steps:"));
+  for (const cmd of result.deployCommands) console.log(pc54.dim(`    ${pc54.cyan(cmd)}`));
+  console.log("");
+  console.log(pc54.dim("  Print env: growthub workspace deploy vercel --print-env --json"));
+  console.log("");
+}
 function registerWorkspaceDeployCommands(workspaceCommand) {
   const deploy = workspaceCommand.command("deploy").description("Deployment status and readiness check for a governed workspace").addHelpText("after", `
 Examples:
-  $ growthub workspace deploy status
   $ growthub workspace deploy status --json
+  $ growthub workspace deploy check --json
+  $ growthub workspace deploy vercel --check --json
+  $ growthub workspace deploy vercel --print-env --json
   $ growthub workspace deploy checklist
-  $ growthub workspace deploy status --fork ./my-workspace --json
 
 Docs: docs/WORKSPACE_DEPLOY_FLOW.md
 `);
   deploy.command("status").description("Show deployment readiness status \u2014 Bridge, GitHub, fork, agents, integrations").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON (agent-friendly)").action((opts) => {
     runDeployStatus(opts);
   });
+  deploy.command("check").description("Fast deploy-readiness gate \u2014 canDeploy, missingSteps, appRoot, envVarsNeeded").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON (agent-friendly)").action((opts) => {
+    runDeployCheck(opts);
+  });
+  deploy.command("vercel").description("Vercel-specific deploy guide and env var printer").option("--fork <path>", "Fork root path (default: cwd)").option("--check", "Run readiness check (alias for deploy check)").option("--print-env", "Print required env var names from .env.example").option("--json", "Emit machine-readable JSON").action((opts) => {
+    if (opts.check) {
+      runDeployCheck({ fork: opts.fork, json: opts.json });
+      return;
+    }
+    runDeployVercel(opts);
+  });
   deploy.command("checklist").description("Interactive step-by-step deployment checklist for humans").option("--fork <path>", "Fork root path (default: cwd)").action(async (opts) => {
     await runDeployChecklist(opts);
+  });
+}
+
+// src/commands/workspace-status.ts
+init_session_store();
+init_token_store();
+init_kit_forks_home();
+import pc55 from "picocolors";
+import fs73 from "node:fs";
+import path84 from "node:path";
+import { fileURLToPath as fileURLToPath7 } from "node:url";
+init_fork_registry();
+function resolveCliVersion() {
+  try {
+    const moduleDir = path84.dirname(fileURLToPath7(import.meta.url));
+    const candidates = [
+      path84.resolve(moduleDir, "../package.json"),
+      path84.resolve(moduleDir, "../../package.json"),
+      path84.resolve(moduleDir, "../../../package.json")
+    ];
+    for (const candidate of candidates) {
+      if (!fs73.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs73.readFileSync(candidate, "utf8"));
+      if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
+    }
+  } catch {
+  }
+  return "unknown";
+}
+function checkBridge2() {
+  const session = readSession();
+  if (!session) return { connected: false };
+  const expired = isSessionExpired(session);
+  return { connected: !expired, email: session.email, expired };
+}
+function checkGithub2() {
+  const token = readGithubToken();
+  if (!token) return { connected: false, source: "none" };
+  const profile = readGithubProfile();
+  const expired = isGithubTokenExpired(token);
+  return {
+    connected: !expired,
+    login: profile?.login ?? token.login,
+    source: "direct",
+    expired
+  };
+}
+function checkFork2(forkPath) {
+  const stateDir = resolveInForkStateDir(forkPath);
+  const forkJsonPath = path84.resolve(stateDir, "fork.json");
+  if (!fs73.existsSync(forkJsonPath)) return { registered: false, hasRemote: false };
+  try {
+    const parsed = JSON.parse(fs73.readFileSync(forkJsonPath, "utf8"));
+    const policyPath = path84.resolve(stateDir, "policy.json");
+    let remoteSyncMode = "off";
+    if (fs73.existsSync(policyPath)) {
+      try {
+        const policy = JSON.parse(fs73.readFileSync(policyPath, "utf8"));
+        remoteSyncMode = policy.remoteSyncMode ?? "off";
+      } catch {
+      }
+    }
+    const forks = listKitForkRegistrations();
+    const reg = forks.find((f) => f.forkId === parsed.forkId);
+    return {
+      registered: true,
+      forkId: parsed.forkId,
+      kitId: parsed.kitId,
+      label: reg?.label ?? parsed.label,
+      hasRemote: Boolean(parsed.remote),
+      remoteUrl: parsed.remote?.htmlUrl ?? parsed.remote?.cloneUrl,
+      remoteSyncMode
+    };
+  } catch {
+    return { registered: false, hasRemote: false };
+  }
+}
+function checkAgentBindings2(forkPath) {
+  const agentsDir = path84.resolve(resolveInForkStateDir(forkPath), "agents");
+  if (!fs73.existsSync(agentsDir)) return { count: 0, agents: [] };
+  const files = fs73.readdirSync(agentsDir).filter((f) => f.endsWith(".json"));
+  const agents2 = [];
+  for (const f of files) {
+    try {
+      const parsed = JSON.parse(fs73.readFileSync(path84.resolve(agentsDir, f), "utf8"));
+      if (parsed.agentSlug) agents2.push(parsed.agentSlug);
+    } catch {
+    }
+  }
+  return { count: agents2.length, agents: agents2 };
+}
+function checkConfig(forkPath) {
+  const candidates = [
+    path84.resolve(forkPath, "growthub.config.json"),
+    path84.resolve(forkPath, "apps/workspace/growthub.config.json")
+  ];
+  for (const configPath of candidates) {
+    if (!fs73.existsSync(configPath)) continue;
+    try {
+      const parsed = JSON.parse(fs73.readFileSync(configPath, "utf8"));
+      return {
+        found: true,
+        configPath,
+        workspaceId: parsed.workspaceId,
+        persistenceMode: parsed.persistence?.mode ?? "unknown",
+        valid: true
+      };
+    } catch (err) {
+      return {
+        found: true,
+        configPath,
+        valid: false,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+  return { found: false, valid: false };
+}
+function detectAppPaths(forkPath) {
+  const candidates = ["apps/workspace", "apps/agency-portal", "apps/portal", "studio"];
+  const detected = candidates.filter((rel) => fs73.existsSync(path84.resolve(forkPath, rel)));
+  return { detected };
+}
+function computeWorkspaceStatus(forkPath) {
+  const cliVersion = resolveCliVersion();
+  const config = checkConfig(forkPath);
+  const bridge = checkBridge2();
+  const github = checkGithub2();
+  const fork = checkFork2(forkPath);
+  const agentBindings = checkAgentBindings2(forkPath);
+  const apps = detectAppPaths(forkPath);
+  const siHealth = checkSelfImprovingHealth(forkPath);
+  const issues2 = [];
+  const recommendedCommands = [];
+  if (!bridge.connected && !github.connected) {
+    issues2.push("No auth: Growthub Bridge and GitHub are both disconnected");
+    recommendedCommands.push("growthub auth login");
+  }
+  if (!config.found) {
+    issues2.push("No growthub.config.json found \u2014 run workspace init or starter init");
+    recommendedCommands.push("growthub workspace init");
+  } else if (!config.valid) {
+    issues2.push(`growthub.config.json parse error: ${config.error}`);
+  }
+  if (!fork.registered) {
+    issues2.push("Fork not registered \u2014 run: growthub kit fork register .");
+    recommendedCommands.push("growthub kit fork register .");
+  }
+  const overall = issues2.length === 0 ? "healthy" : (bridge.connected || github.connected) && fork.registered ? "needs_action" : "degraded";
+  return {
+    cliVersion,
+    forkPath,
+    config,
+    bridge,
+    github,
+    fork,
+    agentBindings,
+    apps,
+    selfImproving: {
+      detected: siHealth.detected,
+      proposalCount: siHealth.proposalCount,
+      promotedCount: siHealth.promotedCount
+    },
+    overall,
+    issues: issues2,
+    recommendedCommands
+  };
+}
+function printWorkspaceStatus(status) {
+  const tick = (ok) => ok ? pc55.green("\u2713") : pc55.red("\u2717");
+  const info = (ok) => ok ? pc55.green("\u25CF") : pc55.dim("\u25CB");
+  console.log("");
+  console.log(pc55.bold("Workspace Status"));
+  console.log(pc55.dim("\u2500".repeat(60)));
+  console.log(`  CLI version         ${pc55.cyan(status.cliVersion)}`);
+  console.log(`  Workspace path      ${pc55.dim(status.forkPath)}`);
+  console.log("");
+  const cfgLabel = status.config.found ? status.config.valid ? pc55.green("valid") + pc55.dim(` \xB7 ${status.config.configPath?.replace(status.forkPath, ".")}`) : pc55.red("invalid") + pc55.dim(` \xB7 ${status.config.error}`) : pc55.dim("not found");
+  console.log(`  ${tick(status.config.found && status.config.valid)}  Config              ${cfgLabel}`);
+  if (status.config.workspaceId) {
+    console.log(`     ${pc55.dim("workspace_id:")} ${pc55.dim(status.config.workspaceId)}`);
+  }
+  if (status.config.persistenceMode) {
+    console.log(`     ${pc55.dim("persistence:")} ${pc55.dim(status.config.persistenceMode)}`);
+  }
+  console.log(`  ${tick(status.bridge.connected)}  Growthub Bridge     ${status.bridge.connected ? pc55.green("connected") + pc55.dim(` \xB7 ${status.bridge.email ?? ""}`) : pc55.dim("not connected \u2014 run: growthub auth login")}`);
+  console.log(`  ${tick(status.github.connected)}  GitHub              ${status.github.connected ? pc55.green("connected") + pc55.dim(` \xB7 ${status.github.login ?? ""}`) : pc55.dim("not connected \u2014 run: growthub github login")}`);
+  console.log(`  ${tick(status.fork.registered)}  Fork registered     ${status.fork.registered ? pc55.green("yes") + pc55.dim(` \xB7 ${status.fork.forkId ?? ""}`) : pc55.dim("no \u2014 run: growthub kit fork register .")}`);
+  console.log(`  ${info(status.fork.hasRemote)}  GitHub remote       ${status.fork.hasRemote ? pc55.green("connected") + pc55.dim(` \xB7 ${status.fork.remoteUrl ?? ""}`) : pc55.dim("none")}`);
+  console.log(`  ${info(status.agentBindings.count > 0)}  Agent bindings      ${status.agentBindings.count > 0 ? pc55.green(`${status.agentBindings.count} bound`) + pc55.dim(` \xB7 ${status.agentBindings.agents.join(", ")}`) : pc55.dim("none")}`);
+  if (status.apps.detected.length > 0) {
+    console.log(`  ${info(true)}  Apps detected       ${pc55.dim(status.apps.detected.join(", "))}`);
+  }
+  console.log(`  ${info(status.selfImproving.detected)}  Self-improving      ${status.selfImproving.detected ? pc55.cyan(`${status.selfImproving.proposalCount} proposals \xB7 ${status.selfImproving.promotedCount} promoted`) : pc55.dim("not active")}`);
+  console.log("");
+  const overallColor = {
+    healthy: pc55.green,
+    needs_action: pc55.yellow,
+    degraded: pc55.red
+  };
+  console.log(`  Overall: ${overallColor[status.overall](status.overall.replace("_", " "))}`);
+  if (status.issues.length > 0) {
+    console.log("");
+    console.log(pc55.yellow("  Issues:"));
+    for (const issue of status.issues) {
+      console.log(pc55.dim(`    \xB7 ${issue}`));
+    }
+  }
+  if (status.recommendedCommands.length > 0) {
+    console.log("");
+    console.log(pc55.dim("  Recommended next:"));
+    for (const cmd of status.recommendedCommands) {
+      console.log(pc55.dim(`    ${pc55.cyan(cmd)}`));
+    }
+  }
+  console.log("");
+  console.log(pc55.dim("  Agent output: growthub workspace status --json"));
+  console.log(pc55.dim("  Deploy check: growthub workspace deploy check --json"));
+  console.log(pc55.dim("  Full QA:      growthub workspace qa --json"));
+  console.log("");
+}
+function registerWorkspaceStatusCommands(workspaceCmd) {
+  workspaceCmd.command("status").description("Unified workspace health snapshot \u2014 bridge, GitHub, fork, agents, config, apps").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON (agent-friendly)").addHelpText("after", `
+Examples:
+  $ growthub workspace status
+  $ growthub workspace status --json
+  $ growthub workspace status --fork ./my-workspace --json
+
+JSON shape:
+  { cliVersion, forkPath, config, bridge, github, fork, agentBindings, apps, selfImproving, overall, issues, recommendedCommands }
+
+Docs: docs/WORKSPACE_DEPLOY_FLOW.md
+`).action((opts) => {
+    const forkPath = opts.fork ? path84.resolve(opts.fork) : process.cwd();
+    const status = computeWorkspaceStatus(forkPath);
+    if (opts.json) {
+      console.log(JSON.stringify(status, null, 2));
+      return;
+    }
+    printWorkspaceStatus(status);
+  });
+}
+
+// src/commands/workspace-qa.ts
+init_kit_forks_home();
+import * as p37 from "@clack/prompts";
+import pc56 from "picocolors";
+import fs74 from "node:fs";
+import path85 from "node:path";
+import { spawnSync as spawnSync9 } from "node:child_process";
+function checkWorkspaceConfig(forkPath) {
+  const candidates = [
+    path85.resolve(forkPath, "growthub.config.json"),
+    path85.resolve(forkPath, "apps/workspace/growthub.config.json")
+  ];
+  for (const configPath of candidates) {
+    if (!fs74.existsSync(configPath)) continue;
+    try {
+      JSON.parse(fs74.readFileSync(configPath, "utf8"));
+      return { name: "workspace-config", status: "pass", detail: configPath.replace(forkPath, ".") };
+    } catch (err) {
+      return {
+        name: "workspace-config",
+        status: "fail",
+        detail: `Parse error in ${configPath.replace(forkPath, ".")}`,
+        fix: `Fix JSON syntax in ${configPath.replace(forkPath, ".")}`
+      };
+    }
+  }
+  return {
+    name: "workspace-config",
+    status: "warn",
+    detail: "growthub.config.json not found",
+    fix: "growthub workspace init  OR  growthub starter init --kit growthub-custom-workspace-starter-v1"
+  };
+}
+function checkKitType(forkPath) {
+  const hasKitJson = fs74.existsSync(path85.resolve(forkPath, "kit.json"));
+  const hasSkillMd = fs74.existsSync(path85.resolve(forkPath, "SKILL.md"));
+  const hasForkJson = fs74.existsSync(path85.resolve(resolveInForkStateDir(forkPath), "fork.json"));
+  if (hasKitJson || hasSkillMd || hasForkJson) {
+    const types = [
+      ...hasKitJson ? ["kit.json"] : [],
+      ...hasSkillMd ? ["SKILL.md"] : [],
+      ...hasForkJson ? ["fork.json"] : []
+    ];
+    return { name: "workspace-type", status: "pass", detail: `Detected: ${types.join(", ")}` };
+  }
+  return {
+    name: "workspace-type",
+    status: "warn",
+    detail: "No kit.json, SKILL.md, or fork.json found \u2014 may not be a governed workspace root",
+    fix: "Run from inside a workspace directory, or pass --fork <path>"
+  };
+}
+function checkEnvFile(forkPath) {
+  const envExamplePaths = [
+    path85.resolve(forkPath, ".env.example"),
+    path85.resolve(forkPath, "apps/workspace/.env.example")
+  ];
+  const envPaths = [
+    path85.resolve(forkPath, ".env"),
+    path85.resolve(forkPath, "apps/workspace/.env"),
+    path85.resolve(forkPath, "apps/workspace/.env.local")
+  ];
+  const examplePath = envExamplePaths.find((p42) => fs74.existsSync(p42));
+  if (!examplePath) {
+    return { name: "env-file", status: "skip", detail: "No .env.example found \u2014 skipping env var check" };
+  }
+  const hasEnv = envPaths.some((p42) => fs74.existsSync(p42));
+  if (!hasEnv) {
+    return {
+      name: "env-file",
+      status: "warn",
+      detail: ".env.example found but no .env / .env.local present",
+      fix: `cp ${examplePath.replace(forkPath, ".")} .env  # then fill in required values`
+    };
+  }
+  const exampleContent = fs74.readFileSync(examplePath, "utf8");
+  const requiredKeys = exampleContent.split("\n").filter((line) => line.match(/^[A-Z_]+=/) && !line.startsWith("#")).map((line) => line.split("=")[0]);
+  const envContent = envPaths.filter((p42) => fs74.existsSync(p42)).map((p42) => fs74.readFileSync(p42, "utf8")).join("\n");
+  const missingKeys = requiredKeys.filter((key) => !envContent.includes(`${key}=`) || envContent.match(new RegExp(`${key}=\\s*$`, "m")));
+  if (missingKeys.length > 0) {
+    return {
+      name: "env-file",
+      status: "warn",
+      detail: `${missingKeys.length} env var(s) may be unset: ${missingKeys.slice(0, 5).join(", ")}${missingKeys.length > 5 ? "\u2026" : ""}`,
+      fix: "Fill in required env vars in .env or .env.local"
+    };
+  }
+  return { name: "env-file", status: "pass", detail: `.env aligned with .env.example (${requiredKeys.length} vars)` };
+}
+function checkDependencies(forkPath) {
+  const appPaths = [
+    path85.resolve(forkPath, "apps/workspace"),
+    path85.resolve(forkPath, "apps/agency-portal"),
+    forkPath
+  ];
+  for (const appPath of appPaths) {
+    const pkgPath = path85.resolve(appPath, "package.json");
+    const nodeModules = path85.resolve(appPath, "node_modules");
+    if (fs74.existsSync(pkgPath)) {
+      if (!fs74.existsSync(nodeModules)) {
+        return {
+          name: "dependencies",
+          status: "warn",
+          detail: `package.json found at ${appPath.replace(forkPath, ".")} but node_modules missing`,
+          fix: `cd ${appPath.replace(forkPath, ".")} && npm install`
+        };
+      }
+      return { name: "dependencies", status: "pass", detail: `node_modules present at ${appPath.replace(forkPath, ".")}` };
+    }
+  }
+  return { name: "dependencies", status: "skip", detail: "No package.json found in workspace apps" };
+}
+function checkForkRegistration(forkPath) {
+  const stateDir = resolveInForkStateDir(forkPath);
+  const forkJsonPath = path85.resolve(stateDir, "fork.json");
+  if (!fs74.existsSync(forkJsonPath)) {
+    return {
+      name: "fork-registration",
+      status: "warn",
+      detail: "Fork not registered \u2014 workspace is untracked",
+      fix: "growthub kit fork register ."
+    };
+  }
+  try {
+    const parsed = JSON.parse(fs74.readFileSync(forkJsonPath, "utf8"));
+    return {
+      name: "fork-registration",
+      status: "pass",
+      detail: `fork-id: ${parsed.forkId ?? "?"} \xB7 kit: ${parsed.kitId ?? "?"}`
+    };
+  } catch {
+    return { name: "fork-registration", status: "fail", detail: "fork.json is malformed", fix: "growthub kit fork register . --force" };
+  }
+}
+function checkAppRoutes(forkPath) {
+  const routeCandidates = [
+    path85.resolve(forkPath, "apps/workspace/app/page.jsx"),
+    path85.resolve(forkPath, "apps/workspace/app/page.tsx"),
+    path85.resolve(forkPath, "apps/workspace/src/app/page.tsx"),
+    path85.resolve(forkPath, "apps/workspace/pages/index.jsx"),
+    path85.resolve(forkPath, "apps/workspace/pages/index.tsx")
+  ];
+  const found = routeCandidates.find((r) => fs74.existsSync(r));
+  if (found) {
+    return { name: "app-routes", status: "pass", detail: `Root route: ${found.replace(forkPath, ".")}` };
+  }
+  const appDir = path85.resolve(forkPath, "apps/workspace");
+  if (!fs74.existsSync(appDir)) {
+    return { name: "app-routes", status: "skip", detail: "apps/workspace not present" };
+  }
+  return {
+    name: "app-routes",
+    status: "warn",
+    detail: "apps/workspace exists but no root route page found",
+    fix: "Check apps/workspace/app/page.jsx or pages/index.jsx"
+  };
+}
+function checkSkillsValidate(forkPath, skipBuild) {
+  if (skipBuild) return { name: "skills-validate", status: "skip", detail: "--skip-build passed" };
+  const skillMd = path85.resolve(forkPath, "SKILL.md");
+  if (!fs74.existsSync(skillMd)) {
+    return { name: "skills-validate", status: "skip", detail: "No SKILL.md at root \u2014 skipping skills validate" };
+  }
+  const result = spawnSync9("growthub", ["skills", "validate", "--json"], {
+    cwd: forkPath,
+    stdio: "pipe",
+    encoding: "utf8",
+    timeout: 3e4
+  });
+  if (result.error) {
+    return { name: "skills-validate", status: "skip", detail: "growthub not available in PATH for skills validate" };
+  }
+  if (result.status !== 0) {
+    return {
+      name: "skills-validate",
+      status: "warn",
+      detail: `skills validate failed (exit ${result.status ?? "?"})`,
+      fix: "growthub skills validate"
+    };
+  }
+  return { name: "skills-validate", status: "pass", detail: "skills validate passed" };
+}
+function computeWorkspaceQa(forkPath, opts = {}) {
+  const checks = [
+    checkWorkspaceConfig(forkPath),
+    checkKitType(forkPath),
+    checkEnvFile(forkPath),
+    checkDependencies(forkPath),
+    checkForkRegistration(forkPath),
+    checkAppRoutes(forkPath),
+    checkSkillsValidate(forkPath, opts.skipBuild ?? false)
+  ];
+  const passCount = checks.filter((c) => c.status === "pass").length;
+  const warnCount = checks.filter((c) => c.status === "warn").length;
+  const failCount = checks.filter((c) => c.status === "fail").length;
+  const skipCount = checks.filter((c) => c.status === "skip").length;
+  const overall = failCount > 0 ? "fail" : warnCount > 0 ? "warn" : "pass";
+  const safeToDeployCheck = failCount === 0;
+  const recommendedCommands = checks.filter((c) => c.fix && (c.status === "fail" || c.status === "warn")).map((c) => c.fix);
+  return {
+    forkPath,
+    checks,
+    passCount,
+    warnCount,
+    failCount,
+    skipCount,
+    overall,
+    safeToDeployCheck,
+    recommendedCommands
+  };
+}
+function printQaResult(result) {
+  const icon = (status) => {
+    switch (status) {
+      case "pass":
+        return pc56.green("\u2713");
+      case "fail":
+        return pc56.red("\u2717");
+      case "warn":
+        return pc56.yellow("!");
+      case "skip":
+        return pc56.dim("\u25CB");
+    }
+  };
+  console.log("");
+  console.log(pc56.bold("Workspace QA"));
+  console.log(pc56.dim("\u2500".repeat(60)));
+  console.log(`  Path: ${pc56.dim(result.forkPath)}`);
+  console.log("");
+  for (const check3 of result.checks) {
+    const label = check3.name.padEnd(22);
+    const detail = check3.detail ? pc56.dim(` ${check3.detail}`) : "";
+    console.log(`  ${icon(check3.status)}  ${label}${detail}`);
+    if (check3.fix && check3.status !== "pass" && check3.status !== "skip") {
+      console.log(pc56.dim(`        Fix: ${pc56.cyan(check3.fix)}`));
+    }
+  }
+  console.log("");
+  console.log(
+    `  ${pc56.green(String(result.passCount))} pass \xB7 ${pc56.yellow(String(result.warnCount))} warn \xB7 ${pc56.red(String(result.failCount))} fail \xB7 ${pc56.dim(String(result.skipCount))} skip`
+  );
+  const overallLabel = {
+    pass: pc56.green("PASS"),
+    warn: pc56.yellow("WARN"),
+    fail: pc56.red("FAIL")
+  };
+  console.log(`  Overall: ${overallLabel[result.overall]}`);
+  console.log(`  Safe to run deploy check: ${result.safeToDeployCheck ? pc56.green("yes") : pc56.red("no")}`);
+  if (result.recommendedCommands.length > 0) {
+    console.log("");
+    console.log(pc56.dim("  Recommended:"));
+    for (const cmd of result.recommendedCommands) {
+      console.log(pc56.dim(`    ${pc56.cyan(cmd)}`));
+    }
+  }
+  console.log("");
+  console.log(pc56.dim("  Agent output: growthub workspace qa --json"));
+  console.log(pc56.dim("  Deploy check: growthub workspace deploy check --json"));
+  console.log("");
+}
+function registerWorkspaceQaCommands(workspaceCmd) {
+  workspaceCmd.command("qa").description("Artifact-first workspace validation \u2014 config, env, deps, fork, routes, skills").option("--fork <path>", "Fork root path (default: cwd)").option("--skip-build", "Skip checks that require build tooling (skills validate, etc.)").option("--json", "Emit machine-readable JSON (agent-friendly)").addHelpText("after", `
+Examples:
+  $ growthub workspace qa
+  $ growthub workspace qa --json
+  $ growthub workspace qa --skip-build --json
+  $ growthub workspace qa --fork ./my-workspace --json
+
+JSON shape:
+  { forkPath, checks[], passCount, warnCount, failCount, skipCount, overall, safeToDeployCheck, recommendedCommands }
+
+Docs: docs/WORKSPACE_DEPLOY_FLOW.md
+`).action((opts) => {
+    const forkPath = opts.fork ? path85.resolve(opts.fork) : process.cwd();
+    if (!opts.json) {
+      const spinner15 = p37.spinner();
+      spinner15.start("Running workspace QA checks\u2026");
+      const result2 = computeWorkspaceQa(forkPath, { skipBuild: opts.skipBuild });
+      spinner15.stop("QA checks complete.");
+      printQaResult(result2);
+      return;
+    }
+    const result = computeWorkspaceQa(forkPath, { skipBuild: opts.skipBuild });
+    console.log(JSON.stringify(result, null, 2));
+  });
+}
+
+// src/commands/workspace-surface.ts
+import pc57 from "picocolors";
+import fs75 from "node:fs";
+import path86 from "node:path";
+function detectFramework2(appPath) {
+  const nextConfig = ["next.config.js", "next.config.mjs", "next.config.ts"];
+  if (nextConfig.some((f) => fs75.existsSync(path86.resolve(appPath, f)))) return "nextjs";
+  const viteConfig = ["vite.config.js", "vite.config.mjs", "vite.config.ts"];
+  if (viteConfig.some((f) => fs75.existsSync(path86.resolve(appPath, f)))) return "vite";
+  return "unknown";
+}
+function detectEntryRoutes(appPath) {
+  const candidates = [
+    "app/page.jsx",
+    "app/page.tsx",
+    "app/page.js",
+    "src/app/page.tsx",
+    "pages/index.jsx",
+    "pages/index.tsx",
+    "pages/index.js",
+    "index.html",
+    "src/main.jsx",
+    "src/main.tsx"
+  ];
+  return candidates.filter((c) => fs75.existsSync(path86.resolve(appPath, c)));
+}
+function detectPackageName(appPath) {
+  const pkgPath = path86.resolve(appPath, "package.json");
+  if (!fs75.existsSync(pkgPath)) return void 0;
+  try {
+    const parsed = JSON.parse(fs75.readFileSync(pkgPath, "utf8"));
+    return parsed.name;
+  } catch {
+    return void 0;
+  }
+}
+var KNOWN_APP_DIRS = [
+  "apps/workspace",
+  "apps/agency-portal",
+  "apps/portal",
+  "studio",
+  "app",
+  "src"
+];
+function discoverAppSurfaces(forkPath) {
+  const surfaces = [];
+  for (const relPath of KNOWN_APP_DIRS) {
+    const absPath = path86.resolve(forkPath, relPath);
+    if (!fs75.existsSync(absPath)) continue;
+    const hasPackageJson = fs75.existsSync(path86.resolve(absPath, "package.json"));
+    const hasIndex = fs75.existsSync(path86.resolve(absPath, "index.html")) || fs75.existsSync(path86.resolve(absPath, "app")) || fs75.existsSync(path86.resolve(absPath, "pages")) || fs75.existsSync(path86.resolve(absPath, "src"));
+    if (!hasPackageJson && !hasIndex) continue;
+    surfaces.push({
+      name: path86.basename(relPath),
+      relPath,
+      absPath,
+      framework: detectFramework2(absPath),
+      hasEnvExample: fs75.existsSync(path86.resolve(absPath, ".env.example")),
+      hasVercelJson: fs75.existsSync(path86.resolve(absPath, "vercel.json")),
+      hasGrowthubConfig: fs75.existsSync(path86.resolve(absPath, "growthub.config.json")),
+      entryRoutes: detectEntryRoutes(absPath),
+      packageName: detectPackageName(absPath)
+    });
+  }
+  return surfaces;
+}
+function runSurfaceList(forkPath, json) {
+  const surfaces = discoverAppSurfaces(forkPath);
+  if (json) {
+    console.log(JSON.stringify({ forkPath, count: surfaces.length, surfaces }, null, 2));
+    return;
+  }
+  console.log("");
+  console.log(pc57.bold("Workspace Surfaces"));
+  console.log(pc57.dim("\u2500".repeat(60)));
+  if (surfaces.length === 0) {
+    console.log(pc57.dim("  No app surfaces detected."));
+    console.log(pc57.dim("  Expected: apps/workspace, apps/agency-portal, or studio/"));
+    console.log("");
+    return;
+  }
+  for (const surface of surfaces) {
+    console.log(`  ${pc57.cyan(surface.relPath)} ${pc57.dim(`(${surface.framework})`)}`);
+    if (surface.packageName) console.log(`    ${pc57.dim(`package: ${surface.packageName}`)}`);
+    console.log(`    env-example: ${surface.hasEnvExample ? pc57.green("yes") : pc57.dim("no")}  vercel.json: ${surface.hasVercelJson ? pc57.green("yes") : pc57.dim("no")}  growthub.config: ${surface.hasGrowthubConfig ? pc57.green("yes") : pc57.dim("no")}`);
+    if (surface.entryRoutes.length > 0) {
+      console.log(`    routes: ${pc57.dim(surface.entryRoutes.join(", "))}`);
+    }
+    console.log("");
+  }
+  console.log(pc57.dim(`  Agent output: growthub workspace surface list --json`));
+  console.log(pc57.dim(`  Inspect:      growthub workspace surface inspect apps/workspace --json`));
+  console.log("");
+}
+function runSurfaceInspect(relPath, forkPath, json) {
+  const absPath = path86.resolve(forkPath, relPath);
+  if (!fs75.existsSync(absPath)) {
+    if (json) {
+      console.log(JSON.stringify({ error: `Path not found: ${absPath}` }));
+      process.exitCode = 1;
+    } else {
+      console.error(pc57.red(`Path not found: ${absPath}`));
+      process.exitCode = 1;
+    }
+    return;
+  }
+  const surface = {
+    name: path86.basename(relPath),
+    relPath,
+    absPath,
+    framework: detectFramework2(absPath),
+    hasEnvExample: fs75.existsSync(path86.resolve(absPath, ".env.example")),
+    hasVercelJson: fs75.existsSync(path86.resolve(absPath, "vercel.json")),
+    hasGrowthubConfig: fs75.existsSync(path86.resolve(absPath, "growthub.config.json")),
+    entryRoutes: detectEntryRoutes(absPath),
+    packageName: detectPackageName(absPath)
+  };
+  if (json) {
+    console.log(JSON.stringify(surface, null, 2));
+    return;
+  }
+  console.log("");
+  console.log(pc57.bold(`Surface: ${surface.relPath}`));
+  console.log(pc57.dim("\u2500".repeat(60)));
+  console.log(`  Framework:       ${surface.framework}`);
+  if (surface.packageName) console.log(`  Package:         ${surface.packageName}`);
+  console.log(`  .env.example:    ${surface.hasEnvExample ? pc57.green("yes") : pc57.dim("no")}`);
+  console.log(`  vercel.json:     ${surface.hasVercelJson ? pc57.green("yes") : pc57.dim("no")}`);
+  console.log(`  growthub.config: ${surface.hasGrowthubConfig ? pc57.green("yes") : pc57.dim("no")}`);
+  if (surface.entryRoutes.length > 0) {
+    console.log(`  Entry routes:`);
+    for (const r of surface.entryRoutes) {
+      console.log(`    ${pc57.dim(r)}`);
+    }
+  }
+  console.log("");
+}
+function registerWorkspaceSurfaceCommands(workspaceCmd) {
+  const surface = workspaceCmd.command("surface").description("Discover and inspect app surfaces in the governed workspace");
+  surface.command("list").description("List all detected app surfaces (Next.js apps, Vite studio, etc.)").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON").addHelpText("after", `
+Examples:
+  $ growthub workspace surface list
+  $ growthub workspace surface list --json
+  $ growthub workspace surface list --fork ./my-workspace --json
+`).action((opts) => {
+    const forkPath = opts.fork ? path86.resolve(opts.fork) : process.cwd();
+    runSurfaceList(forkPath, opts.json ?? false);
+  });
+  surface.command("inspect").description("Inspect a specific app surface path").argument("<app-path>", "Relative path to the app (e.g. apps/workspace)").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON").addHelpText("after", `
+Examples:
+  $ growthub workspace surface inspect apps/workspace
+  $ growthub workspace surface inspect apps/workspace --json
+  $ growthub workspace surface inspect studio --json
+`).action((appPath, opts) => {
+    const forkPath = opts.fork ? path86.resolve(opts.fork) : process.cwd();
+    runSurfaceInspect(appPath, forkPath, opts.json ?? false);
+  });
+}
+
+// src/commands/workspace-upstream.ts
+init_kit_forks_home();
+import { spawnSync as spawnSync10 } from "node:child_process";
+import * as p38 from "@clack/prompts";
+import pc58 from "picocolors";
+import fs76 from "node:fs";
+import path87 from "node:path";
+function resolveForkInfo(forkPath) {
+  const stateDir = resolveInForkStateDir(forkPath);
+  const forkJsonPath = path87.resolve(stateDir, "fork.json");
+  if (!fs76.existsSync(forkJsonPath)) return null;
+  try {
+    const parsed = JSON.parse(fs76.readFileSync(forkJsonPath, "utf8"));
+    if (!parsed.forkId || !parsed.kitId) return null;
+    const policyPath = path87.resolve(stateDir, "policy.json");
+    let remoteSyncMode = "off";
+    if (fs76.existsSync(policyPath)) {
+      try {
+        const policy = JSON.parse(fs76.readFileSync(policyPath, "utf8"));
+        remoteSyncMode = policy.remoteSyncMode ?? "off";
+      } catch {
+      }
+    }
+    return {
+      forkId: parsed.forkId,
+      kitId: parsed.kitId,
+      label: parsed.label,
+      remoteSyncMode,
+      hasRemote: Boolean(parsed.remote)
+    };
+  } catch {
+    return null;
+  }
+}
+function runUpstreamCheck(forkPath, json) {
+  const forkInfo = resolveForkInfo(forkPath);
+  const blockingIssues = [];
+  const safeNextActions = [];
+  if (!forkInfo) {
+    blockingIssues.push("Fork not registered \u2014 run: growthub kit fork register .");
+    safeNextActions.push("growthub kit fork register .");
+  }
+  if (forkInfo && !forkInfo.hasRemote) {
+    blockingIssues.push("No GitHub remote connected \u2014 drift check requires remote");
+    safeNextActions.push(`growthub kit fork connect --fork-id ${forkInfo.forkId} --remote <owner/repo>`);
+  }
+  if (forkInfo && forkInfo.remoteSyncMode === "off") {
+    safeNextActions.push(`growthub kit fork policy ${forkInfo.forkId} --set remoteSyncMode=pr`);
+  }
+  const upstreamCheckCommand = forkInfo ? `growthub kit fork status ${forkInfo.forkId} --json` : "growthub kit fork register . # first register";
+  const healCommand = forkInfo ? `growthub kit fork heal ${forkInfo.forkId} --dry-run --json` : "growthub kit fork register . # first register";
+  const prCommand = forkInfo ? `growthub kit fork heal ${forkInfo.forkId} --json` : "growthub kit fork register . # first register";
+  const result = {
+    forkPath,
+    forkId: forkInfo?.forkId ?? null,
+    kitId: forkInfo?.kitId ?? null,
+    registered: Boolean(forkInfo),
+    hasRemote: forkInfo?.hasRemote ?? false,
+    remoteSyncMode: forkInfo?.remoteSyncMode ?? "off",
+    upstreamCheckCommand,
+    healCommand,
+    prCommand,
+    blockingIssues,
+    safeNextActions
+  };
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log("");
+  console.log(pc58.bold("Workspace Upstream Check"));
+  console.log(pc58.dim("\u2500".repeat(60)));
+  if (forkInfo) {
+    console.log(`  Fork ID:       ${pc58.cyan(forkInfo.forkId)}`);
+    console.log(`  Kit:           ${pc58.dim(forkInfo.kitId)}`);
+    console.log(`  Remote:        ${forkInfo.hasRemote ? pc58.green("connected") : pc58.dim("not connected")}`);
+    console.log(`  Sync mode:     ${forkInfo.remoteSyncMode === "pr" ? pc58.green("pr") : pc58.dim(forkInfo.remoteSyncMode)}`);
+    console.log("");
+    console.log(`  Check drift:   ${pc58.cyan(upstreamCheckCommand)}`);
+    console.log(`  Dry-run heal:  ${pc58.cyan(healCommand)}`);
+    console.log(`  Submit PR:     ${pc58.cyan(prCommand)}`);
+  } else {
+    console.log(pc58.yellow("  Fork not registered."));
+  }
+  if (blockingIssues.length > 0) {
+    console.log("");
+    console.log(pc58.yellow("  Blocking issues:"));
+    for (const issue of blockingIssues) {
+      console.log(pc58.dim(`    \xB7 ${issue}`));
+    }
+  }
+  if (safeNextActions.length > 0) {
+    console.log("");
+    console.log(pc58.dim("  Safe next actions:"));
+    for (const action of safeNextActions) {
+      console.log(pc58.dim(`    ${pc58.cyan(action)}`));
+    }
+  }
+  console.log("");
+  console.log(pc58.dim("  Agent output: growthub workspace upstream check --json"));
+  console.log("");
+}
+function runUpstreamHeal(forkPath, dryRun, json) {
+  const forkInfo = resolveForkInfo(forkPath);
+  if (!forkInfo) {
+    const err = { error: "Fork not registered. Run: growthub kit fork register ." };
+    if (json) {
+      console.log(JSON.stringify(err));
+      process.exitCode = 1;
+      return;
+    }
+    console.error(pc58.red(err.error));
+    process.exitCode = 1;
+    return;
+  }
+  const args = ["kit", "fork", "heal", forkInfo.forkId, "--json"];
+  if (dryRun) args.push("--dry-run");
+  if (!json) {
+    p38.note(
+      [
+        `Fork ID: ${forkInfo.forkId}`,
+        `Kit:     ${forkInfo.kitId}`,
+        `Mode:    ${dryRun ? "dry-run" : "live"}`,
+        "",
+        `Command: growthub ${args.join(" ")}`
+      ].join("\n"),
+      "Upstream Heal"
+    );
+  }
+  const result = spawnSync10("growthub", args, { stdio: json ? "pipe" : "inherit", encoding: "utf8" });
+  if (json && result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.status !== 0) {
+    process.exitCode = result.status ?? 1;
+  }
+}
+function runUpstreamPr(forkPath, json) {
+  const forkInfo = resolveForkInfo(forkPath);
+  if (!forkInfo) {
+    const err = { error: "Fork not registered. Run: growthub kit fork register ." };
+    if (json) {
+      console.log(JSON.stringify(err));
+      process.exitCode = 1;
+      return;
+    }
+    console.error(pc58.red(err.error));
+    process.exitCode = 1;
+    return;
+  }
+  if (forkInfo.remoteSyncMode !== "pr") {
+    const msg = {
+      status: "needs_action",
+      message: `remoteSyncMode is "${forkInfo.remoteSyncMode}", not "pr". Set it first.`,
+      fix: `growthub kit fork policy ${forkInfo.forkId} --set remoteSyncMode=pr`
+    };
+    if (json) {
+      console.log(JSON.stringify(msg));
+      return;
+    }
+    p38.note(
+      [`Remote sync mode is "${forkInfo.remoteSyncMode}", not "pr".`, "", `Fix: growthub kit fork policy ${forkInfo.forkId} --set remoteSyncMode=pr`].join("\n"),
+      "Set Sync Mode First"
+    );
+    return;
+  }
+  runUpstreamHeal(forkPath, false, json);
+}
+function registerWorkspaceUpstreamCommands(workspaceCmd) {
+  const upstream = workspaceCmd.command("upstream").description("Fork upstream sync helpers \u2014 check drift, heal, and open sync PRs");
+  upstream.command("check").description("Check upstream drift state and print recommended sync commands").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON").addHelpText("after", `
+Examples:
+  $ growthub workspace upstream check
+  $ growthub workspace upstream check --json
+  $ growthub workspace upstream check --fork ./my-workspace --json
+
+JSON shape:
+  { forkId, kitId, registered, hasRemote, remoteSyncMode, upstreamCheckCommand, healCommand, prCommand, blockingIssues, safeNextActions }
+`).action((opts) => {
+    const forkPath = opts.fork ? path87.resolve(opts.fork) : process.cwd();
+    runUpstreamCheck(forkPath, opts.json ?? false);
+  });
+  upstream.command("heal").description("Run upstream heal (wraps growthub kit fork heal) \u2014 preserves customizations").option("--fork <path>", "Fork root path (default: cwd)").option("--dry-run", "Show what would change without applying it").option("--json", "Emit machine-readable JSON (pass-through from kit fork heal)").addHelpText("after", `
+Examples:
+  $ growthub workspace upstream heal --dry-run
+  $ growthub workspace upstream heal --dry-run --json
+  $ growthub workspace upstream heal --json
+`).action((opts) => {
+    const forkPath = opts.fork ? path87.resolve(opts.fork) : process.cwd();
+    runUpstreamHeal(forkPath, opts.dryRun ?? false, opts.json ?? false);
+  });
+  upstream.command("pr").description("Submit upstream sync as a PR (requires remoteSyncMode=pr on the fork)").option("--fork <path>", "Fork root path (default: cwd)").option("--json", "Emit machine-readable JSON (pass-through from kit fork heal)").addHelpText("after", `
+Examples:
+  $ growthub workspace upstream pr
+  $ growthub workspace upstream pr --json
+
+Note: remoteSyncMode must be set to "pr" first:
+  $ growthub kit fork policy <fork-id> --set remoteSyncMode=pr
+`).action((opts) => {
+    const forkPath = opts.fork ? path87.resolve(opts.fork) : process.cwd();
+    runUpstreamPr(forkPath, opts.json ?? false);
+  });
+}
+
+// src/commands/workspace-portal.ts
+init_kit_forks_home();
+import * as p39 from "@clack/prompts";
+import pc59 from "picocolors";
+import fs77 from "node:fs";
+import path88 from "node:path";
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+function resolveClientSlug(raw) {
+  return slugify(raw);
+}
+function readForkMeta2(forkPath) {
+  const forkJsonPath = path88.resolve(resolveInForkStateDir(forkPath), "fork.json");
+  if (!fs77.existsSync(forkJsonPath)) return {};
+  try {
+    return JSON.parse(fs77.readFileSync(forkJsonPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+function readWorkspaceConfig(forkPath) {
+  const candidates = [
+    path88.resolve(forkPath, "growthub.config.json"),
+    path88.resolve(forkPath, "apps/workspace/growthub.config.json")
+  ];
+  for (const candidate of candidates) {
+    if (!fs77.existsSync(candidate)) continue;
+    try {
+      return JSON.parse(fs77.readFileSync(candidate, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+function generateEnvVarNames(clientSlug) {
+  const upper = clientSlug.toUpperCase().replace(/-/g, "_");
+  return [
+    `GROWTHUB_WORKSPACE_ID`,
+    `GROWTHUB_WORKSPACE_SLUG`,
+    `${upper}_BRAND_NAME`,
+    `${upper}_BRAND_LOGO_URL`,
+    `${upper}_BRAND_PRIMARY_COLOR`,
+    `DATABASE_URL`,
+    `GROWTHUB_BRIDGE_ACCESS_TOKEN`
+  ];
+}
+function generateHandoffDoc(opts) {
+  return `# Client Portal Handoff \u2014 ${opts.clientName}
+
+Generated by \`growthub workspace portal prepare --client ${opts.clientSlug}\`
+
+---
+
+## Workspace Details
+
+- **Client slug:** \`${opts.clientSlug}\`
+- **Fork ID:** \`${opts.forkId ?? "not registered"}\`
+- **Kit:** \`${opts.kitId ?? "unknown"}\`
+- **Output path:** \`${opts.outputPath}\`
+
+---
+
+## Required Environment Variables
+
+Set these in your Vercel project or \`.env.local\`:
+
+\`\`\`bash
+${opts.envVarNames.map((v) => `${v}=`).join("\n")}
+\`\`\`
+
+---
+
+## Deploy Checklist
+
+1. Fill in all environment variables above
+2. \`growthub workspace qa --json\` \u2014 verify workspace is build-ready
+3. \`growthub workspace deploy check --json\` \u2014 verify deployment readiness
+4. \`cd apps/workspace && npm install && npm run build\` \u2014 verify build passes
+5. Deploy to Vercel: \`cd apps/workspace && vercel\`
+6. \`growthub integrations status --json\` \u2014 verify integrations are live
+7. Hand off dashboard URL + credentials to client
+
+---
+
+## Fork Sync
+
+To pull upstream updates:
+\`\`\`bash
+growthub workspace upstream check --json
+growthub workspace upstream heal --dry-run --json
+growthub workspace upstream pr --json
+\`\`\`
+
+---
+
+*Generated by Growthub Local CLI \u2014 docs/WORKSPACE_DEPLOY_FLOW.md*
+`;
+}
+function generateBrandConfig(clientSlug, clientName) {
+  return {
+    clientSlug,
+    clientName,
+    branding: {
+      name: clientName,
+      logoUrl: "",
+      primaryColor: "#6366f1",
+      accentColor: "#8b5cf6"
+    },
+    deploy: {
+      platform: "vercel",
+      appRoot: "apps/workspace"
+    },
+    generatedBy: "growthub workspace portal prepare",
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function runPortalPrepare(opts) {
+  const forkPath = opts.fork ? path88.resolve(opts.fork) : process.cwd();
+  const clientSlug = resolveClientSlug(opts.client);
+  const clientName = opts.client;
+  const outputPath = opts.out ? path88.resolve(opts.out) : path88.resolve(forkPath, `client-portals/${clientSlug}`);
+  const forkMeta = readForkMeta2(forkPath);
+  const workspaceConfig = readWorkspaceConfig(forkPath);
+  const envVarNames = generateEnvVarNames(clientSlug);
+  const deployChecklist = [
+    "Fill in all required env vars",
+    "growthub workspace qa --json",
+    "growthub workspace deploy check --json",
+    "npm install && npm run build (in apps/workspace)",
+    "Deploy to Vercel",
+    "growthub integrations status --json"
+  ];
+  try {
+    fs77.mkdirSync(outputPath, { recursive: true });
+    const filesWritten = [];
+    const brandConfigPath = path88.resolve(outputPath, "brand.config.json");
+    fs77.writeFileSync(
+      brandConfigPath,
+      `${JSON.stringify(generateBrandConfig(clientSlug, clientName), null, 2)}
+`,
+      "utf8"
+    );
+    filesWritten.push(brandConfigPath.replace(forkPath, "."));
+    const envTemplatePath = path88.resolve(outputPath, ".env.template");
+    fs77.writeFileSync(
+      envTemplatePath,
+      `# Environment variables for client: ${clientName} (${clientSlug})
+# Generated by growthub workspace portal prepare
+
+${envVarNames.map((v) => `${v}=`).join("\n")}
+`,
+      "utf8"
+    );
+    filesWritten.push(envTemplatePath.replace(forkPath, "."));
+    const handoffPath = path88.resolve(outputPath, "HANDOFF.md");
+    fs77.writeFileSync(
+      handoffPath,
+      generateHandoffDoc({
+        clientSlug,
+        clientName,
+        forkId: forkMeta.forkId,
+        kitId: forkMeta.kitId,
+        envVarNames,
+        outputPath
+      }),
+      "utf8"
+    );
+    filesWritten.push(handoffPath.replace(forkPath, "."));
+    const metaPath = path88.resolve(outputPath, "growthub-portal-meta.json");
+    fs77.writeFileSync(
+      metaPath,
+      `${JSON.stringify({
+        clientSlug,
+        clientName,
+        forkId: forkMeta.forkId,
+        kitId: forkMeta.kitId,
+        workspaceId: workspaceConfig.workspaceId ?? null,
+        outputPath,
+        preparedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, null, 2)}
+`,
+      "utf8"
+    );
+    filesWritten.push(metaPath.replace(forkPath, "."));
+    const result = {
+      status: "ok",
+      clientSlug,
+      forkPath,
+      outputPath,
+      filesWritten,
+      envVarsNeeded: envVarNames,
+      deployChecklist,
+      nextCommand: `growthub workspace deploy check --fork ${forkPath} --json`
+    };
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    p39.note(
+      [
+        `Client: ${clientName} (${clientSlug})`,
+        `Output: ${outputPath}`,
+        "",
+        "Files written:",
+        ...filesWritten.map((f) => `  ${f}`),
+        "",
+        "Env vars to configure:",
+        ...envVarNames.map((v) => `  ${v}=`),
+        "",
+        "Next: growthub workspace deploy check --json"
+      ].join("\n"),
+      "Portal Prepared"
+    );
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    if (opts.json) {
+      console.log(JSON.stringify({ status: "error", clientSlug, forkPath, outputPath, error }));
+      process.exitCode = 1;
+      return;
+    }
+    console.error(pc59.red(`Failed to prepare portal: ${error}`));
+    process.exitCode = 1;
+  }
+}
+async function runPortalExport(opts) {
+  await runPortalPrepare(opts);
+}
+function registerWorkspacePortalCommands(workspaceCmd) {
+  const portal = workspaceCmd.command("portal").description("Agency portal helpers \u2014 prepare and export client workspace configs");
+  portal.command("prepare").description("Scaffold a client-specific portal config, env template, and handoff doc").requiredOption("--client <slug>", "Client name or slug (e.g. acme-corp)").option("--fork <path>", "Fork root path (default: cwd)").option("--out <path>", "Output directory (default: client-portals/<slug> under fork root)").option("--json", "Emit machine-readable JSON").addHelpText("after", `
+Examples:
+  $ growthub workspace portal prepare --client acme-corp
+  $ growthub workspace portal prepare --client acme-corp --json
+  $ growthub workspace portal prepare --client acme-corp --out ./acme-portal --json
+
+JSON shape:
+  { status, clientSlug, forkPath, outputPath, filesWritten, envVarsNeeded, deployChecklist, nextCommand }
+
+Docs: docs/WORKSPACE_DEPLOY_FLOW.md
+`).action(async (opts) => {
+    await runPortalPrepare(opts);
+  });
+  portal.command("export").description("Export client portal scaffold (alias for prepare + handoff summary)").requiredOption("--client <slug>", "Client name or slug").option("--fork <path>", "Fork root path (default: cwd)").option("--out <path>", "Output directory").option("--json", "Emit machine-readable JSON").addHelpText("after", `
+Examples:
+  $ growthub workspace portal export --client acme-corp --json
+`).action(async (opts) => {
+    await runPortalExport(opts);
   });
 }
 
@@ -37890,16 +39169,16 @@ async function syncMemoriesToHosted(project, options) {
 
 // src/index.ts
 init_llm();
-function resolveCliVersion() {
+function resolveCliVersion2() {
   try {
-    const moduleDir = path85.dirname(fileURLToPath7(import.meta.url));
+    const moduleDir = path90.dirname(fileURLToPath8(import.meta.url));
     const candidates = [
-      path85.resolve(moduleDir, "../package.json"),
-      path85.resolve(moduleDir, "../../package.json")
+      path90.resolve(moduleDir, "../package.json"),
+      path90.resolve(moduleDir, "../../package.json")
     ];
     for (const candidate of candidates) {
-      if (!fs74.existsSync(candidate)) continue;
-      const parsed = JSON.parse(fs74.readFileSync(candidate, "utf8"));
+      if (!fs79.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs79.readFileSync(candidate, "utf8"));
       if (parsed?.name === "@growthub/cli" && typeof parsed.version === "string") return parsed.version;
     }
   } catch {
@@ -37959,6 +39238,11 @@ function registerSharedCommands(target) {
   registerSetupCommands(target);
   const workspaceCmd = registerWorkspaceImproveCommands(target);
   registerWorkspaceDeployCommands(workspaceCmd);
+  registerWorkspaceStatusCommands(workspaceCmd);
+  registerWorkspaceQaCommands(workspaceCmd);
+  registerWorkspaceSurfaceCommands(workspaceCmd);
+  registerWorkspaceUpstreamCommands(workspaceCmd);
+  registerWorkspacePortalCommands(workspaceCmd);
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
   auth.command("bootstrap-ceo").description("Create a one-time bootstrap invite URL for first instance admin").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--force", "Create new invite even if admin already exists", false).option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value)).option("--base-url <url>", "Public base URL used to print invite link").action(bootstrapCeoInvite);
   auth.command("login").description("Sign in to hosted Growthub and save a CLI session (browser flow)").option("-c, --config <path>", "Path to config file").option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP).option("--base-url <url>", "Hosted Growthub base URL (defaults to auth.growthubBaseUrl or GROWTHUB_BASE_URL)").option("--token <token>", "Skip the browser flow by providing a pre-issued hosted token (scripting/CI)").option("--machine-label <label>", "Label identifying this machine in the hosted app").option("--workspace-label <label>", "Label identifying this workspace in the hosted app").option("--timeout-ms <ms>", "How long to wait for the browser callback", (value) => Number(value)).option("--no-browser", "Do not try to launch a browser \u2014 print the URL and wait").option("--json", "Output raw JSON").action(async (opts) => {
@@ -37989,7 +39273,7 @@ async function runNativeIntelligenceHub() {
     const favoriteModel = currentConfig.localModel?.trim() || void 0;
     const defaultModel = currentConfig.localModel?.trim() || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL?.trim() || process.env.OLLAMA_MODEL?.trim() || recommendedModel;
     const status = await detectLocalIntelligenceStatus(baseUrl, defaultModel);
-    const action = await p38.select({
+    const action = await p41.select({
       message: "Local Intelligence",
       options: [
         { value: "setup", label: "Setup helper", hint: "machine detection + install/env guidance" },
@@ -38001,7 +39285,7 @@ async function runNativeIntelligenceHub() {
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p38.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p41.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "setup") {
       const setupLines = [
         `OS: ${status.osLabel}`,
@@ -38013,7 +39297,7 @@ async function runNativeIntelligenceHub() {
         "",
         ...buildSetupCommands(status.osLabel, baseUrl, recommendedModel)
       ];
-      p38.note(setupLines.join("\n"), "Local Intelligence Setup Helper");
+      p41.note(setupLines.join("\n"), "Local Intelligence Setup Helper");
       continue;
     }
     if (action === "models") {
@@ -38026,19 +39310,19 @@ async function runNativeIntelligenceHub() {
         { value: "__custom_model", label: "Enter custom local model id", hint: "for any other local adapter model" },
         { value: "__back_to_local_intel", label: "\u2190 Back to Local Intelligence" }
       ];
-      const adapterChoice = await p38.select({
+      const adapterChoice = await p41.select({
         message: "Choose local custom model adapter",
         options: modelOptions
       });
-      if (p38.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
+      if (p41.isCancel(adapterChoice) || adapterChoice === "__back_to_local_intel") continue;
       const chosenModel = adapterChoice === "__custom_model" ? await promptForCustomModel(defaultModel) : adapterChoice;
       if (!chosenModel) continue;
-      const applyConfirmed = await p38.confirm({
+      const applyConfirmed = await p41.confirm({
         message: `Apply Local Intelligence config for model "${chosenModel}"?`,
         initialValue: true
       });
-      if (p38.isCancel(applyConfirmed) || !applyConfirmed) continue;
-      const applySpinner = p38.spinner();
+      if (p41.isCancel(applyConfirmed) || !applyConfirmed) continue;
+      const applySpinner = p41.spinner();
       applySpinner.start(`Applying model config (${chosenModel})...`);
       writeIntelligenceConfig({
         ...currentConfig,
@@ -38050,7 +39334,7 @@ async function runNativeIntelligenceHub() {
       const health = await checkBackendHealth(readIntelligenceConfig());
       if (!health.available) {
         applySpinner.stop(`Config saved, backend unavailable (${health.latencyMs}ms).`);
-        p38.note(
+        p41.note(
           [...health.error ? [`Error: ${health.error}`] : [], "You can still run prompt flow and retry health later."].join("\n"),
           "Local model status"
         );
@@ -38097,7 +39381,7 @@ async function runNativeIntelligenceHub() {
         modelId: result.modelId,
         endpoint: result.endpoint
       });
-      p38.note(
+      p41.note(
         `Provider: ${result.provider}
 Model: ${result.modelId ?? "default"}
 API key: ${result.apiKey ? "configured" : "not needed"}`,
@@ -38109,33 +39393,33 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
       await runMarketingContextBuilder(baseUrl, defaultModel);
       continue;
     }
-    const customPrompt = await p38.text({
+    const customPrompt = await p41.text({
       message: "Enter your local intelligence prompt",
       placeholder: "Describe what you want to create/analyze"
     });
-    if (p38.isCancel(customPrompt)) continue;
+    if (p41.isCancel(customPrompt)) continue;
     const prompt = String(customPrompt).trim();
     if (!prompt) {
-      p38.note("Prompt was empty. Nothing was run.", "Local Intelligence");
+      p41.note("Prompt was empty. Nothing was run.", "Local Intelligence");
       continue;
     }
     await runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt);
   }
 }
 async function runMarketingContextBuilder(baseUrl, model) {
-  const projectDir = await p38.text({
+  const projectDir = await p41.text({
     message: "Project directory to scan",
     placeholder: process.cwd(),
     defaultValue: process.cwd()
   });
-  if (p38.isCancel(projectDir)) return;
+  if (p41.isCancel(projectDir)) return;
   const dir = String(projectDir).trim() || process.cwd();
-  if (!fs74.existsSync(dir)) {
-    p38.note(`Directory not found: ${dir}`, "Marketing Context Builder");
+  if (!fs79.existsSync(dir)) {
+    p41.note(`Directory not found: ${dir}`, "Marketing Context Builder");
     return;
   }
-  const spinner14 = p38.spinner();
-  spinner14.start("Scanning project artifacts and drafting product-marketing context...");
+  const spinner15 = p41.spinner();
+  spinner15.start("Scanning project artifacts and drafting product-marketing context...");
   try {
     const config = readIntelligenceConfig();
     const backend = createNativeIntelligenceBackend({
@@ -38151,36 +39435,36 @@ async function runMarketingContextBuilder(baseUrl, model) {
     } else {
       result = buildDeterministicContext(input);
     }
-    spinner14.stop("Product-marketing context drafted.");
+    spinner15.stop("Product-marketing context drafted.");
     const summaryLines = [
       `Mode: ${result.mode}`,
       `Confidence: ${(result.confidence * 100).toFixed(0)}%`,
       `Sources used: ${result.sourcesUsed.join(", ") || "none"}`,
       `Sources missing: ${result.sourcesMissing.join(", ") || "none"}`
     ];
-    p38.note(summaryLines.join("\n"), "Marketing Context Builder");
-    const saveChoice = await p38.confirm({
+    p41.note(summaryLines.join("\n"), "Marketing Context Builder");
+    const saveChoice = await p41.confirm({
       message: "Save the drafted context to .agents/product-marketing-context.md?"
     });
-    if (p38.isCancel(saveChoice) || !saveChoice) {
-      p38.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
+    if (p41.isCancel(saveChoice) || !saveChoice) {
+      p41.note("Draft was not saved. You can copy it from the output above.", "Marketing Context Builder");
       return;
     }
-    const outDir = path85.resolve(dir, ".agents");
-    fs74.mkdirSync(outDir, { recursive: true });
-    const outPath = path85.resolve(outDir, "product-marketing-context.md");
-    fs74.writeFileSync(outPath, result.contextMarkdown, "utf-8");
-    p38.note(`Saved to: ${outPath}
+    const outDir = path90.resolve(dir, ".agents");
+    fs79.mkdirSync(outDir, { recursive: true });
+    const outPath = path90.resolve(outDir, "product-marketing-context.md");
+    fs79.writeFileSync(outPath, result.contextMarkdown, "utf-8");
+    p41.note(`Saved to: ${outPath}
 
 Review the file and replace [NEEDS INPUT] placeholders with real data.`, "Marketing Context Builder");
   } catch (err) {
-    spinner14.stop("Failed to build marketing context.");
-    p38.note(String(err), "Marketing Context Builder \u2014 Error");
+    spinner15.stop("Failed to build marketing context.");
+    p41.note(String(err), "Marketing Context Builder \u2014 Error");
   }
 }
 async function detectLocalIntelligenceStatus(baseUrl, model) {
   const osLabel = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux";
-  const ollamaInstalled = spawnSync9("ollama", ["--version"], { stdio: "ignore" }).status === 0;
+  const ollamaInstalled = spawnSync11("ollama", ["--version"], { stdio: "ignore" }).status === 0;
   const modelsUrl = `${baseUrl}/models`;
   try {
     const response = await fetch(modelsUrl, { method: "GET" });
@@ -38233,12 +39517,12 @@ function prioritizeModelOptions(models, favoriteModel, recommendedModel) {
   return unique3;
 }
 async function promptForCustomModel(defaultModel) {
-  const input = await p38.text({
+  const input = await p41.text({
     message: "Enter local model id",
     placeholder: "example: gemma3:4b",
     defaultValue: defaultModel
   });
-  if (p38.isCancel(input)) return null;
+  if (p41.isCancel(input)) return null;
   const trimmed = String(input).trim();
   return trimmed.length > 0 ? trimmed : null;
 }
@@ -38279,13 +39563,13 @@ async function runLocalPromptChat(baseUrl, defaultModel) {
   }
   infoLines.push("Type your prompt and press Enter.");
   infoLines.push("Use '/back' to return to Local Intelligence menu.");
-  p38.note(infoLines.join("\n"), "Local Prompt Flow");
+  p41.note(infoLines.join("\n"), "Local Prompt Flow");
   while (true) {
-    const rawPrompt = await p38.text({
+    const rawPrompt = await p41.text({
       message: `Prompt (${activeModel})`,
       placeholder: "Ask anything..."
     });
-    if (p38.isCancel(rawPrompt)) {
+    if (p41.isCancel(rawPrompt)) {
       captureSessionSummary(currentProject, sessionId, thread.messages);
       return;
     }
@@ -38306,7 +39590,7 @@ async function runLocalPromptChat(baseUrl, defaultModel) {
     if (semanticCtx.text) {
       systemParts.push(semanticCtx.text);
     }
-    const runSpinner = p38.spinner();
+    const runSpinner = p41.spinner();
     runSpinner.start("Invoking local model...");
     try {
       const out = await completeWithRetry(
@@ -38341,7 +39625,7 @@ User: ${prompt}` : prompt,
       }
     } catch (err) {
       runSpinner.stop("Invocation failed.");
-      p38.note(err instanceof Error ? err.message : String(err), "Local model error");
+      p41.note(err instanceof Error ? err.message : String(err), "Local model error");
     }
   }
 }
@@ -38378,39 +39662,39 @@ function captureSessionSummary(project, sessionId, messages) {
   }
 }
 function resolveLocalThreadsDir() {
-  return path85.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
+  return path90.resolve(resolvePaperclipHomeDir(), "native-intelligence", "threads");
 }
 function loadOrCreateLocalThread() {
   const dir = resolveLocalThreadsDir();
-  fs74.mkdirSync(dir, { recursive: true });
-  const activePath = path85.resolve(dir, "active-thread.json");
-  if (fs74.existsSync(activePath)) {
+  fs79.mkdirSync(dir, { recursive: true });
+  const activePath = path90.resolve(dir, "active-thread.json");
+  if (fs79.existsSync(activePath)) {
     try {
-      const parsed = JSON.parse(fs74.readFileSync(activePath, "utf-8"));
+      const parsed = JSON.parse(fs79.readFileSync(activePath, "utf-8"));
       const id2 = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : `thread-${Date.now()}`;
-      const threadFile = path85.resolve(dir, `${id2}.json`);
+      const threadFile = path90.resolve(dir, `${id2}.json`);
       const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
       return { id: id2, filePath: threadFile, messages };
     } catch {
     }
   }
   const id = `thread-${Date.now()}`;
-  const filePath = path85.resolve(dir, `${id}.json`);
+  const filePath = path90.resolve(dir, `${id}.json`);
   const thread = { id, filePath, messages: [] };
   saveLocalThread(thread);
   return thread;
 }
 function saveLocalThread(thread) {
   const dir = resolveLocalThreadsDir();
-  fs74.mkdirSync(dir, { recursive: true });
-  fs74.writeFileSync(
+  fs79.mkdirSync(dir, { recursive: true });
+  fs79.writeFileSync(
     thread.filePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
     "utf-8"
   );
-  const activePath = path85.resolve(dir, "active-thread.json");
-  fs74.writeFileSync(
+  const activePath = path90.resolve(dir, "active-thread.json");
+  fs79.writeFileSync(
     activePath,
     `${JSON.stringify({ id: thread.id, messages: thread.messages }, null, 2)}
 `,
@@ -38449,7 +39733,7 @@ async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
     const primaryContract = contracts.find((contract) => contract.inputs.length > 0) ?? contracts[0];
     const rawBindings = await collectBindingsFromContract(primaryContract, prompt);
     const requiredOutputTypes = primaryContract.outputTypes.length > 0 ? [primaryContract.outputTypes[0]] : void 0;
-    const flowSpinner = p38.spinner();
+    const flowSpinner = p41.spinner();
     flowSpinner.start("Running planner/normalizer/recommender/summarizer with your prompt...");
     const plan = await provider.planWorkflow({
       userIntent: prompt,
@@ -38496,7 +39780,7 @@ async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
       phase: "pre-execution"
     });
     flowSpinner.stop("Flow suite completed.");
-    p38.note(
+    p41.note(
       [
         `Prompt: ${prompt}`,
         `Planner nodes: ${plan.proposedNodes.map((n) => n.slug).join(", ")}`,
@@ -38507,7 +39791,7 @@ async function runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt) {
       "Native Intelligence Flow Results"
     );
   } catch (err) {
-    p38.note(err instanceof Error ? err.message : String(err), "Flow error");
+    p41.note(err instanceof Error ? err.message : String(err), "Flow error");
   }
 }
 async function loadRuntimeContracts() {
@@ -38536,12 +39820,12 @@ async function collectBindingsFromContract(contract, promptSeed) {
   const bindings = {};
   for (const input of contract.inputs) {
     const defaultValue = input.key === "prompt" ? promptSeed : input.defaultValue !== void 0 ? String(input.defaultValue) : "";
-    const raw = await p38.text({
+    const raw = await p41.text({
       message: `${contract.slug} \u2192 ${input.key} (${input.type}${input.required ? ", required" : ""})`,
       placeholder: input.required ? `Enter ${input.key}` : `Optional: press Enter to skip ${input.key}`,
       defaultValue
     });
-    if (p38.isCancel(raw)) {
+    if (p41.isCancel(raw)) {
       throw new Error("Cancelled while collecting contract input bindings.");
     }
     const value = String(raw).trim();
@@ -38556,7 +39840,7 @@ async function collectBindingsFromContract(contract, promptSeed) {
   return bindings;
 }
 function resolveCurrentProject() {
-  return path85.basename(process.cwd());
+  return path90.basename(process.cwd());
 }
 async function runMemoryKnowledgeHub() {
   const project = resolveCurrentProject();
@@ -38564,7 +39848,7 @@ async function runMemoryKnowledgeHub() {
     const stats = getMemoryStats(project);
     const syncStatus = canSync();
     const providerConfig = readProviderConfig();
-    const action = await p38.select({
+    const action = await p41.select({
       message: "Memory & Knowledge",
       options: [
         {
@@ -38589,24 +39873,24 @@ async function runMemoryKnowledgeHub() {
         },
         {
           value: "sync",
-          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc56.dim(" (unavailable)"),
+          label: syncStatus.available ? "Sync to Growthub" : "Sync to Growthub" + pc61.dim(" (unavailable)"),
           hint: syncStatus.available ? "push memories to hosted account" : syncStatus.reason
         },
         { value: "__back_to_hub", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p38.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p41.isCancel(action) || action === "__back_to_hub") return "back";
     if (action === "search") {
-      const query = await p38.text({
+      const query = await p41.text({
         message: "Search query",
         placeholder: "what are you looking for?"
       });
-      if (p38.isCancel(query)) continue;
+      if (p41.isCancel(query)) continue;
       const text70 = String(query).trim();
       if (!text70) continue;
       const results = searchMemory({ text: text70, project, limit: 15 });
       if (results.totalMatched === 0) {
-        p38.note("No matching observations found.", "Search Results");
+        p41.note("No matching observations found.", "Search Results");
         continue;
       }
       const lines = [`Found ${results.totalMatched} match(es), showing top ${results.results.length}:`, ""];
@@ -38627,13 +39911,13 @@ async function runMemoryKnowledgeHub() {
           lines.push(`[${date2}] ${s.request ?? "Session"}: ${s.completed ?? s.learned ?? "(no summary)"}`);
         }
       }
-      p38.note(lines.join("\n"), "Search Results");
+      p41.note(lines.join("\n"), "Search Results");
       continue;
     }
     if (action === "timeline") {
       const observations = getObservations(project, { limit: 20 });
       if (observations.length === 0) {
-        p38.note(
+        p41.note(
           "No observations stored yet. Start a local prompt chat to begin capturing memories.",
           "Timeline"
         );
@@ -38653,13 +39937,13 @@ async function runMemoryKnowledgeHub() {
           lines.push(`    ${obs.narrative.slice(0, 120)}${obs.narrative.length > 120 ? "..." : ""}`);
         }
       }
-      p38.note(lines.join("\n"), `Timeline \u2014 ${project} (${observations.length} recent)`);
+      p41.note(lines.join("\n"), `Timeline \u2014 ${project} (${observations.length} recent)`);
       continue;
     }
     if (action === "projects") {
       const projects2 = listMemoryProjects();
       if (projects2.length === 0) {
-        p38.note("No memory projects found. Interact with the local prompt chat to start capturing.", "Projects");
+        p41.note("No memory projects found. Interact with the local prompt chat to start capturing.", "Projects");
         continue;
       }
       const lines = [];
@@ -38667,7 +39951,7 @@ async function runMemoryKnowledgeHub() {
         const s = getMemoryStats(proj);
         lines.push(`${proj}: ${s.observationCount} observations, ${s.summaryCount} summaries`);
       }
-      p38.note(lines.join("\n"), "Memory Projects");
+      p41.note(lines.join("\n"), "Memory Projects");
       continue;
     }
     if (action === "provider") {
@@ -38679,7 +39963,7 @@ async function runMemoryKnowledgeHub() {
         modelId: result.modelId,
         endpoint: result.endpoint
       });
-      p38.note(
+      p41.note(
         `Provider: ${result.provider}
 Model: ${result.modelId ?? "default"}
 API key: ${result.apiKey ? "configured" : "not needed"}`,
@@ -38689,10 +39973,10 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
     }
     if (action === "sync") {
       if (!syncStatus.available) {
-        p38.note(syncStatus.reason ?? "Sync unavailable", "Sync");
+        p41.note(syncStatus.reason ?? "Sync unavailable", "Sync");
         continue;
       }
-      const syncSpinner = p38.spinner();
+      const syncSpinner = p41.spinner();
       syncSpinner.start("Syncing memories to Growthub...");
       const syncResult = await syncMemoriesToHosted(project);
       if (syncResult.success) {
@@ -38701,7 +39985,7 @@ API key: ${result.apiKey ? "configured" : "not needed"}`,
         );
       } else {
         syncSpinner.stop("Sync failed.");
-        p38.note(syncResult.error ?? "Unknown error", "Sync Error");
+        p41.note(syncResult.error ?? "Unknown error", "Sync Error");
       }
       continue;
     }
@@ -38722,7 +40006,7 @@ async function runGovernedWorkspaceAgentsFlow() {
   async function pickRegisteredFork(message = "Select governed workspace") {
     const forks = listKitForkRegistrations();
     if (forks.length === 0) {
-      p38.note(
+      p41.note(
         [
           "No fork-sync registered governed workspaces were found.",
           "",
@@ -38734,22 +40018,22 @@ async function runGovernedWorkspaceAgentsFlow() {
       );
       return null;
     }
-    const choice = await p38.select({
+    const choice = await p41.select({
       message,
       options: [
         ...forks.map((fork) => ({
           value: fork.forkId,
-          label: `${fork.label ?? fork.forkId}  ${pc56.dim(fork.kitId)}`,
+          label: `${fork.label ?? fork.forkId}  ${pc61.dim(fork.kitId)}`,
           hint: fork.remote ? "fork-sync + remote" : "fork-sync registered"
         })),
         { value: "__back", label: "\u2190 Back" }
       ]
     });
-    if (p38.isCancel(choice) || choice === "__back") return null;
+    if (p41.isCancel(choice) || choice === "__back") return null;
     return forks.find((fork) => fork.forkId === choice) ?? null;
   }
   while (true) {
-    const action = await p38.select({
+    const action = await p41.select({
       message: "Governed Workspace Agents",
       options: [
         { value: "list", label: "\u{1F4CB} List agents", hint: "Show hosted agents available to governed workspaces" },
@@ -38761,13 +40045,13 @@ async function runGovernedWorkspaceAgentsFlow() {
         { value: "__back", label: "\u2190 Back to main menu" }
       ]
     });
-    if (p38.isCancel(action)) {
-      p38.cancel("Cancelled.");
+    if (p41.isCancel(action)) {
+      p41.cancel("Cancelled.");
       process.exit(0);
     }
     if (action === "__back") return "back";
     if (action === "json") {
-      p38.note(
+      p41.note(
         [
           "growthub bridge agents list --json",
           "growthub bridge agents inspect <slug> --json",
@@ -38785,7 +40069,7 @@ async function runGovernedWorkspaceAgentsFlow() {
       const result2 = await Promise.resolve().then(() => (init_bridge2(), bridge_exports2)).then(
         (mod) => mod.listHostedAgentBindings({ forkId: fork2.forkId })
       );
-      p38.note(
+      p41.note(
         [
           `Workspace: ${fork2.label ?? fork2.forkId}`,
           `Fork ID: ${fork2.forkId}`,
@@ -38804,11 +40088,11 @@ async function runGovernedWorkspaceAgentsFlow() {
     }
     const client = createGrowthubBridgeClient();
     if (action === "list") {
-      const spinner15 = p38.spinner();
-      spinner15.start("Loading governed workspace agents...");
+      const spinner16 = p41.spinner();
+      spinner16.start("Loading governed workspace agents...");
       const result2 = await client.listHostedAgentManifests();
-      spinner15.stop(`Loaded ${result2.agents.length} governed workspace agent(s).`);
-      p38.note(
+      spinner16.stop(`Loaded ${result2.agents.length} governed workspace agent(s).`);
+      p41.note(
         [
           `Contract: ${result2.contract ?? "AgentOrchestratorManifest"}`,
           `Diagnostics: ${result2.diagnostics?.status ?? "unknown"}`,
@@ -38824,11 +40108,11 @@ async function runGovernedWorkspaceAgentsFlow() {
       );
       continue;
     }
-    const slugRaw = await p38.text({
+    const slugRaw = await p41.text({
       message: action === "bind" ? "Agent slug to bind:" : action === "unbind" ? "Agent slug to unbind:" : "Agent slug to inspect:",
       placeholder: "quick-image-generator-xlq5"
     });
-    if (p38.isCancel(slugRaw) || !slugRaw) continue;
+    if (p41.isCancel(slugRaw) || !slugRaw) continue;
     const slug = String(slugRaw);
     if (action === "unbind") {
       const fork2 = await pickRegisteredFork("Select governed workspace to unbind from");
@@ -38836,7 +40120,7 @@ async function runGovernedWorkspaceAgentsFlow() {
       const result2 = await Promise.resolve().then(() => (init_bridge2(), bridge_exports2)).then(
         (mod) => mod.removeHostedAgentBinding({ agentSlug: slug, forkId: fork2.forkId })
       );
-      p38.note(
+      p41.note(
         [
           `Agent: ${slug}`,
           `Workspace: ${fork2.label ?? fork2.forkId}`,
@@ -38849,17 +40133,17 @@ async function runGovernedWorkspaceAgentsFlow() {
       );
       continue;
     }
-    const spinner14 = p38.spinner();
-    spinner14.start(action === "bind" ? "Loading agent before binding..." : "Loading agent manifest...");
+    const spinner15 = p41.spinner();
+    spinner15.start(action === "bind" ? "Loading agent before binding..." : "Loading agent manifest...");
     const result = await client.inspectHostedAgentManifest(slug);
-    spinner14.stop("Agent manifest loaded.");
+    spinner15.stop("Agent manifest loaded.");
     const agent = result.agent ?? result.manifest;
     if (!agent) {
-      p38.log.error(`Hosted agent manifest not found for slug: ${slug}`);
+      p41.log.error(`Hosted agent manifest not found for slug: ${slug}`);
       continue;
     }
     if (action === "inspect") {
-      p38.note(
+      p41.note(
         [
           `Slug: ${agentSlug(agent)}`,
           `Name: ${agentLabel(agent)}`,
@@ -38884,7 +40168,7 @@ async function runGovernedWorkspaceAgentsFlow() {
       warnings: result.warnings,
       resolvedSlug: result.resolvedSlug
     });
-    p38.note(
+    p41.note(
       [
         `Agent: ${agentSlug(agent)}`,
         `Workspace: ${fork.label ?? fork.forkId}`,
@@ -38903,63 +40187,59 @@ async function runGovernedWorkspaceAgentsFlow() {
 }
 async function runCreateGovernedWorkspaceFlow(opts) {
   workspaceLoop: while (true) {
-    const starterChoice = await p38.select({
-      message: opts?.firstRun ? "What do you want to create?" : opts?.title ?? "Create Governed Workspace",
+    const starterChoice = await p41.select({
+      message: opts?.firstRun ? "What do you want to create?" : opts?.title ?? "Custom AI Governed Workspace",
       options: [
         ...opts?.importOnly ? [] : [
           {
-            value: "new-greenfield",
-            label: opts?.firstRun ? "\u{1F680} New governed workspace" : "\u{1F680} New greenfield workspace",
-            hint: "Scaffold a fresh governed workspace"
+            value: "custom-ai-workspace",
+            label: "\u{1F680}  Custom AI Governed Workspace"
           }
         ],
         {
           value: "import-github",
-          label: opts?.firstRun ? "\u{1F517} Import GitHub repository" : "\u{1F517} Import GitHub repository",
-          hint: "Import a public or private repo via the Source Import Agent"
+          label: "\u{1F517}  Import GitHub repository"
         },
         {
           value: "import-skill",
-          label: opts?.firstRun ? "\u{1F9E0} Import skills.sh skill" : "\u{1F9E0} Import skills.sh skill",
-          hint: "Discover live skills, inspect metadata, then import the selected skill"
+          label: "\u{1F9E0}  Import skills.sh skill"
         },
         ...opts?.importOnly ? [] : [
           {
             value: "worker-kit",
-            label: opts?.firstRun ? "\u{1F9F0} Start from worker kit" : "\u{1F9F0} Start from worker kit",
-            hint: "Browse worker kits and materialize one locally"
+            label: "\u{1F9F0}  Start from worker kit"
           }
         ],
         opts?.firstRun ? { value: "__full_menu", label: "\u{1F440} Open full discovery menu" } : { value: "__back", label: opts?.backLabel ?? "\u2190 Back" }
       ],
-      initialValue: opts?.firstRun ? "new-greenfield" : void 0
+      initialValue: opts?.firstRun ? "custom-ai-workspace" : void 0
     });
-    if (p38.isCancel(starterChoice)) {
-      p38.cancel("Cancelled.");
+    if (p41.isCancel(starterChoice)) {
+      p41.cancel("Cancelled.");
       process.exit(0);
     }
     if (starterChoice === "__full_menu") return "full-menu";
     if (starterChoice === "__back") return "back";
-    if (starterChoice === "new-greenfield") {
-      const outRaw = await p38.text({
+    if (starterChoice === "custom-ai-workspace") {
+      const outRaw = await p41.text({
         message: "Destination path for the new workspace (will be created if missing):",
         placeholder: "./my-workspace"
       });
-      if (p38.isCancel(outRaw) || !outRaw) continue workspaceLoop;
-      const nameRaw = await p38.text({
+      if (p41.isCancel(outRaw) || !outRaw) continue workspaceLoop;
+      const nameRaw = await p41.text({
         message: "Optional label (leave blank to use directory basename):",
         placeholder: ""
       });
-      if (p38.isCancel(nameRaw)) continue workspaceLoop;
+      if (p41.isCancel(nameRaw)) continue workspaceLoop;
       await runStarterInit({ out: String(outRaw), name: nameRaw ? String(nameRaw) : void 0 });
       continue workspaceLoop;
     }
     if (starterChoice === "import-github") {
-      const repoRaw = await p38.text({
+      const repoRaw = await p41.text({
         message: "GitHub repo (owner/repo or https URL):",
         placeholder: "octocat/Hello-World"
       });
-      if (p38.isCancel(repoRaw) || !repoRaw) continue workspaceLoop;
+      if (p41.isCancel(repoRaw) || !repoRaw) continue workspaceLoop;
       const {
         promptForInteractiveWorkspacePath: promptForInteractiveWorkspacePath2,
         startSourceImportFlow: startSourceImportFlow2
@@ -38992,20 +40272,24 @@ async function runCreateGovernedWorkspaceFlow(opts) {
 async function runDiscoveryHub(opts) {
   track("discover_opened");
   printPaperclipCliBanner();
-  p38.intro("Growthub Local");
+  p41.intro("Growthub Local");
   if (opts?.start === "create-workspace") {
     const result = await runCreateGovernedWorkspaceFlow({ firstRun: true });
     if (result === "done") return;
   }
   while (true) {
     const workflowAccess = getWorkflowAccess();
-    const surfaceChoice = await p38.select({
+    const surfaceChoice = await p41.select({
       message: "What do you want to do first?",
       options: [
         {
           value: "create-workspace",
-          label: "\u{1F680}  Create Governed Workspace",
-          hint: "Start from a repo, skills.sh skill, starter, or worker kit"
+          label: "\u{1F680}  Custom AI Governed Workspace"
+        },
+        {
+          value: "workspace-ops",
+          label: "\u{1F3D7}\uFE0F  Workspace Operations",
+          hint: "status \xB7 qa \xB7 deploy check \xB7 upstream \xB7 surface \xB7 portal"
         },
         {
           value: "kits",
@@ -39039,15 +40323,15 @@ async function runDiscoveryHub(opts) {
         }
       ]
     });
-    if (p38.isCancel(surfaceChoice)) {
-      p38.cancel("Cancelled.");
+    if (p41.isCancel(surfaceChoice)) {
+      p41.cancel("Cancelled.");
       process.exit(0);
     }
     if (surfaceChoice === "help") {
-      p38.note(
+      p41.note(
         [
           "\u{1F916} Agent Harness: filter by type \u2014 Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
-          "\u{1F680} Create Governed Workspace: start from a repo, skills.sh skill, greenfield starter, or worker kit.",
+          "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
           "\u{1F9F0} Browse Worker Kits: browse specialized agents and custom workspaces.",
           "\u{1F501} Import Repo or Skill: route directly into the Source Import Agent.",
           "\u2699\uFE0F Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
@@ -39083,6 +40367,39 @@ async function runDiscoveryHub(opts) {
       if (result === "done") return;
       continue;
     }
+    if (surfaceChoice === "workspace-ops") {
+      p41.note(
+        [
+          "Workspace commands (run directly):",
+          "",
+          "  growthub workspace status --json",
+          "    Unified health: bridge, GitHub, fork, agents, config, apps",
+          "",
+          "  growthub workspace qa --json",
+          "    Validate: config, env, deps, fork, routes, skills",
+          "",
+          "  growthub workspace deploy check --json",
+          "    Readiness gate: canDeploy, missingSteps, appRoot, envVarsNeeded",
+          "",
+          "  growthub workspace deploy vercel --print-env --json",
+          "    Print required env var names from .env.example",
+          "",
+          "  growthub workspace upstream check --json",
+          "    Fork drift state + recommended sync commands",
+          "",
+          "  growthub workspace upstream heal --dry-run --json",
+          "    Preview upstream heal without applying",
+          "",
+          "  growthub workspace surface list --json",
+          "    Discover apps/workspace, apps/agency-portal, studio",
+          "",
+          "  growthub workspace portal prepare --client <slug> --json",
+          "    Scaffold client brand config, env template, handoff doc"
+        ].join("\n"),
+        "Workspace Operations"
+      );
+      continue;
+    }
     if (surfaceChoice === "import-source") {
       const result = await runCreateGovernedWorkspaceFlow({ importOnly: true, title: "Import Repo or Skill" });
       if (result === "done") return;
@@ -39090,7 +40407,7 @@ async function runDiscoveryHub(opts) {
     }
     if (surfaceChoice === "agent-harness") {
       while (true) {
-        const harnessType = await p38.select({
+        const harnessType = await p41.select({
           message: "Filter by type",
           options: [
             {
@@ -39119,15 +40436,15 @@ async function runDiscoveryHub(opts) {
             }
           ]
         });
-        if (p38.isCancel(harnessType)) {
-          p38.cancel("Cancelled.");
+        if (p41.isCancel(harnessType)) {
+          p41.cancel("Cancelled.");
           process.exit(0);
         }
         if (harnessType === "__back_to_hub") break;
         if (harnessType === "paperclip") {
           let paperclipDone = false;
           while (!paperclipDone) {
-            const appModeChoice = await p38.select({
+            const appModeChoice = await p41.select({
               message: "How do you want to open Growthub Local?",
               options: [
                 {
@@ -39146,18 +40463,18 @@ async function runDiscoveryHub(opts) {
                 }
               ]
             });
-            if (p38.isCancel(appModeChoice)) {
-              p38.cancel("Cancelled.");
+            if (p41.isCancel(appModeChoice)) {
+              p41.cancel("Cancelled.");
               process.exit(0);
             }
             if (appModeChoice === "__back_to_harness") break;
             if (appModeChoice === "load") {
               const existingSurfaces = listLocalSurfaces();
               if (existingSurfaces.length === 0) {
-                p38.note("No existing local app profiles were found on this machine.", "Nothing found");
+                p41.note("No existing local app profiles were found on this machine.", "Nothing found");
                 continue;
               }
-              const existingChoice = await p38.select({
+              const existingChoice = await p41.select({
                 message: "Select an existing app surface",
                 options: [
                   ...existingSurfaces.map((surface) => ({
@@ -39168,8 +40485,8 @@ async function runDiscoveryHub(opts) {
                   { value: "__back_to_app_mode", label: "\u2190 Back to app options" }
                 ]
               });
-              if (p38.isCancel(existingChoice)) {
-                p38.cancel("Cancelled.");
+              if (p41.isCancel(existingChoice)) {
+                p41.cancel("Cancelled.");
                 process.exit(0);
               }
               if (existingChoice === "__back_to_app_mode") {
@@ -39177,7 +40494,7 @@ async function runDiscoveryHub(opts) {
               }
               const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
               if (!selectedSurface) {
-                p38.cancel("Selected profile not found.");
+                p41.cancel("Selected profile not found.");
                 process.exit(1);
               }
               process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
@@ -39189,7 +40506,7 @@ async function runDiscoveryHub(opts) {
               });
               return;
             }
-            const profileChoice = await p38.select({
+            const profileChoice = await p41.select({
               message: "Which new app surface do you want to create?",
               options: [
                 {
@@ -39208,8 +40525,8 @@ async function runDiscoveryHub(opts) {
                 }
               ]
             });
-            if (p38.isCancel(profileChoice)) {
-              p38.cancel("Cancelled.");
+            if (p41.isCancel(profileChoice)) {
+              p41.cancel("Cancelled.");
               process.exit(0);
             }
             if (profileChoice === "__back_to_app_mode") {
@@ -39247,7 +40564,7 @@ async function runDiscoveryHub(opts) {
       while (true) {
         const hostedSession = readSession();
         const growthubConnected = Boolean(hostedSession && !isSessionExpired(hostedSession));
-        const settingsChoice = await p38.select({
+        const settingsChoice = await p41.select({
           message: "Settings",
           options: [
             {
@@ -39277,12 +40594,12 @@ async function runDiscoveryHub(opts) {
             },
             {
               value: "custom-workspace-starter",
-              label: "\u{1F680} Create Governed Workspace",
-              hint: "Start from a repo, skills.sh skill, starter, or worker kit"
+              label: "Custom AI Governed Workspace",
+              hint: "Start from a starter, repo, skills.sh skill, or worker kit"
             },
             {
               value: "workflows",
-              label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc56.dim(" (locked)"),
+              label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc61.dim(" (locked)"),
               hint: workflowAccess.state === "ready" ? "CMS contracts, dynamic pipelines, and saved workflows" : workflowAccess.reason
             },
             {
@@ -39311,8 +40628,8 @@ async function runDiscoveryHub(opts) {
             }
           ]
         });
-        if (p38.isCancel(settingsChoice)) {
-          p38.cancel("Cancelled.");
+        if (p41.isCancel(settingsChoice)) {
+          p41.cancel("Cancelled.");
           process.exit(0);
         }
         if (settingsChoice === "__back_to_hub") break;
@@ -39366,11 +40683,11 @@ async function runDiscoveryHub(opts) {
         if (surfaceChoice2 === "skills-catalog") {
           const { readSkillCatalog: readSkillCatalog2 } = await Promise.resolve().then(() => (init_catalog2(), catalog_exports));
           const catalog = readSkillCatalog2({ root: process.cwd() });
-          p38.note(
+          p41.note(
             [
-              `Root: ${pc56.cyan(catalog.catalog.root ?? process.cwd())}`,
-              `Skills discovered: ${pc56.bold(String(catalog.entries.length))}`,
-              catalog.warnings.length > 0 ? `Warnings: ${pc56.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
+              `Root: ${pc61.cyan(catalog.catalog.root ?? process.cwd())}`,
+              `Skills discovered: ${pc61.bold(String(catalog.entries.length))}`,
+              catalog.warnings.length > 0 ? `Warnings: ${pc61.yellow(String(catalog.warnings.length))}` : `Warnings: 0`,
               "",
               "Invoke directly:",
               "  growthub skills list --json",
@@ -39402,12 +40719,12 @@ function isInstallerMode() {
 }
 function listLocalSurfaces() {
   const homeDir = resolvePaperclipHomeDir();
-  const instancesDir = path85.resolve(homeDir, "instances");
-  if (!fs74.existsSync(instancesDir)) return [];
-  return fs74.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+  const instancesDir = path90.resolve(homeDir, "instances");
+  if (!fs79.existsSync(instancesDir)) return [];
+  return fs79.readdirSync(instancesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
     const instanceId = entry.name;
-    const configPath = path85.resolve(instancesDir, instanceId, "config.json");
-    if (!fs74.existsSync(configPath)) return null;
+    const configPath = path90.resolve(instancesDir, instanceId, "config.json");
+    if (!fs79.existsSync(configPath)) return null;
     try {
       const config = readConfig(configPath);
       if (!config) return null;
@@ -39448,7 +40765,7 @@ applyDataDirOverride(bootstrapOptions, {
 loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
-program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version(resolveCliVersion()).addHelpText("after", `
+program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version(resolveCliVersion2()).addHelpText("after", `
 Worker Kits (agent execution environments):
 
   Discovery:

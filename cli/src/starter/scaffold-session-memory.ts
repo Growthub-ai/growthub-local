@@ -27,13 +27,13 @@ export interface ScaffoldSessionMemoryInput {
   /** Fork id from `registerKitFork`. */
   forkId: string;
   /**
-   * Provenance tag — one of `"greenfield"`, `"github-repo"`, `"skills-skill"`,
+   * Provenance tag — one of `"workspace-starter"`, `"github-repo"`, `"skills-skill"`,
    * or any additive string future source types introduce.
    */
   source: string;
   /**
    * Optional human-readable reference (e.g. `octocat/hello-world@main`,
-   * `anthropics/skills/frontend-design@1.2.0`, or `""` for greenfield).
+   * `anthropics/skills/frontend-design@1.2.0`, or `""` for starter-created workspaces).
    */
   sourceRef?: string;
   /** Override the ISO timestamp written into the seed. Defaults to `new Date().toISOString()`. */
