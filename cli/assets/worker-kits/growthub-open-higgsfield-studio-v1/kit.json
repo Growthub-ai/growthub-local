@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-open-higgsfield-studio-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Open Higgsfield Studio",
+    "name": "Growthub Agent Worker Kit \u2014 Open Higgsfield Studio",
     "description": "Self-contained local execution environment for Open Higgsfield AI visual production. Produces implementation-ready visual briefs, prompt systems, shot plans, generation batches, model selections, and execution handoff artifacts for browser, desktop, and local fork workflows.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -119,5 +119,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-10T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "studio"
 }

@@ -3,7 +3,7 @@
   "kit": {
     "id": "growthub-video-use-studio-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Video Use Studio",
+    "name": "Growthub Agent Worker Kit \u2014 Video Use Studio",
     "description": "Self-contained local execution environment for conversational video editing with browser-use/video-use. Produces implementation-ready video briefs, transcript-driven edit strategies, edit decision lists, render plans, and QA handoff artifacts for ElevenLabs Scribe + FFmpeg workflows.",
     "type": "worker",
     "visibility": "public-open-source",
@@ -108,5 +108,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-23T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "studio"
 }

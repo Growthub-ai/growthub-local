@@ -3,8 +3,8 @@
   "kit": {
     "id": "growthub-marketing-skills-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Marketing Operator",
-    "description": "Self-contained marketing execution environment wrapping the open-source marketingskills library (coreyhaines31/marketingskills). Provides structured marketing workflows for CRO, SEO, content strategy, email sequences, paid ads, and growth — grounded in product-marketing context and brand voice. Skills are one dimension of the kit; the operator workflow, brand kit, templates, and output standards form the complete environment.",
+    "name": "Growthub Agent Worker Kit \u2014 Marketing Operator",
+    "description": "Self-contained marketing execution environment wrapping the open-source marketingskills library (coreyhaines31/marketingskills). Provides structured marketing workflows for CRO, SEO, content strategy, email sequences, paid ads, and growth \u2014 grounded in product-marketing context and brand voice. Skills are one dimension of the kit; the operator workflow, brand kit, templates, and output standards form the complete environment.",
     "type": "worker",
     "visibility": "public-open-source",
     "sourceRepo": "growthub-local",
@@ -101,5 +101,8 @@
     "sourceRepo": "growthub-local",
     "upstream": "https://github.com/coreyhaines31/marketingskills",
     "frozenAt": "2026-04-15T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": true,
+  "workspaceCategory": "marketing-operator"
 }

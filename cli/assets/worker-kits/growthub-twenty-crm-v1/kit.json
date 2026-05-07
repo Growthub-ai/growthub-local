@@ -3,8 +3,8 @@
   "kit": {
     "id": "growthub-twenty-crm-v1",
     "version": "1.0.0",
-    "name": "Growthub Agent Worker Kit — Twenty CRM",
-    "description": "Self-contained local execution environment for Twenty CRM — the open-source Salesforce/Apollo alternative. Produces CRM setup plans, data model designs, lead enrichment pipelines, pipeline automation briefs, webhook integration specs, API query plans, and client-ready CRM playbooks for teams adopting Twenty as their growth stack foundation.",
+    "name": "Growthub Agent Worker Kit \u2014 Twenty CRM",
+    "description": "Self-contained local execution environment for Twenty CRM \u2014 the open-source Salesforce/Apollo alternative. Produces CRM setup plans, data model designs, lead enrichment pipelines, pipeline automation briefs, webhook integration specs, API query plans, and client-ready CRM playbooks for teams adopting Twenty as their growth stack foundation.",
     "type": "worker",
     "visibility": "public-open-source",
     "sourceRepo": "growthub-local",
@@ -116,5 +116,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-15T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": false,
+  "workspaceCategory": "crm"
 }

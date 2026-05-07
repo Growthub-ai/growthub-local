@@ -150,5 +150,8 @@
   "provenance": {
     "sourceRepo": "growthub-local",
     "frozenAt": "2026-04-24T00:00:00.000Z"
-  }
+  },
+  "workspaceVisibility": "addon",
+  "workspaceCompatible": true,
+  "workspaceCategory": "video-pipeline"
 }

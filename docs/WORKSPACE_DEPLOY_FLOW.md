@@ -4,6 +4,33 @@ This document maps the exact CLI steps from scaffold to live deployment, grounde
 
 ---
 
+## Workspace helper commands — agent bootstrap (new in this release)
+
+These aggregate existing primitives into single JSON envelopes. Start here for agent use.
+
+| Command | What it answers |
+|---------|----------------|
+| `growthub workspace status --json` | Unified health: bridge, GitHub, fork, agents, config, apps |
+| `growthub workspace qa --json` | Validation: config, env, deps, fork, routes, skills |
+| `growthub workspace deploy check --json` | Can this workspace deploy? missingSteps, appRoot, envVarsNeeded |
+| `growthub workspace deploy status --json` | Full deploy primitives: bridge, GitHub, fork, agents |
+| `growthub workspace deploy vercel --check --json` | Vercel-specific: appRoot, vercelProjectDetected, deployCommands |
+| `growthub workspace deploy vercel --print-env --json` | Print env var names from .env.example |
+| `growthub workspace upstream check --json` | Fork drift state + healCommand + prCommand |
+| `growthub workspace upstream heal --dry-run --json` | Preview upstream heal without applying |
+| `growthub workspace surface list --json` | Detect apps/workspace, apps/agency-portal, studio |
+| `growthub workspace portal prepare --client <slug> --json` | Scaffold client brand config, env template, handoff doc |
+
+**Recommended agent sequence:**
+```bash
+growthub workspace status --json
+growthub workspace qa --json
+growthub workspace deploy check --json
+growthub workspace deploy vercel --print-env --json
+```
+
+---
+
 ## Prerequisite primitives (all already ship in the CLI)
 
 | Primitive | Source | What it provides |
