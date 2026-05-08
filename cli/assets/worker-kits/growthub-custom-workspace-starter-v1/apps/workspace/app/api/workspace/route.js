@@ -12,7 +12,7 @@ import {
   writeWorkspaceConfig
 } from "@/lib/workspace-config";
 
-const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas"]);
+const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"]);
 
 async function GET() {
   const integrations = await listGovernedWorkspaceIntegrations();

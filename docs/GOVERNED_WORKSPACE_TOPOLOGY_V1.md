@@ -58,7 +58,7 @@ The canonical state lives in the artifact itself. Discovery indexes and CLI-owne
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| `growthub.config.json` | Workspace config — dashboards, widgetTypes, canvas, branding, capabilities, integrations. | The no-code builder via `PATCH /api/workspace` (filesystem mode). Operator manually inside the fork. |
+| `growthub.config.json` | Workspace config — dashboards, widgetTypes, canvas, governed `dataModel.objects`, branding, capabilities, integrations. | The no-code builder and Data Model page via `PATCH /api/workspace` (filesystem mode). Operator manually inside the fork. |
 | `apps/workspace/lib/workspace-schema.js` | Validator, grid invariants, template envelope, default config. | Operator inside a governed fork. Never via API. |
 | `apps/workspace/lib/workspace-config.js` | Persistence adapter (filesystem / read-only / future database). | Operator inside a governed fork. |
 | `apps/workspace/app/api/workspace/route.js` | `GET` returns config + adapters + persistence; `PATCH` mutates only allowlisted fields. | Operator inside a governed fork. |
@@ -100,8 +100,20 @@ Hard rules:
 
 1. The **browser** never executes a hosted workflow, never holds a Bridge access token, never decides authority. The no-code builder edits config; execution, when it happens, happens on the hosted side or on the local CLI.
 2. The **filesystem persistence** adapter is opt-in for non-dev runtimes (`WORKSPACE_CONFIG_ALLOW_FS_WRITE=true`). The default for serverless deploys is `read-only` with a 409 + guidance string.
-3. **`PATCH /api/workspace`** is permanently restricted to `dashboards`, `widgetTypes`, `canvas`. Other fields are preserved through the round-trip but never accepted on PATCH.
+3. **`PATCH /api/workspace`** is restricted to `dashboards`, `widgetTypes`, `canvas`, and `dataModel`. `dataModel.objects` is a governed manual object surface; creating or editing one must not create a widget or mutate canvas placement. Other fields are preserved through the round-trip but never accepted on PATCH.
 4. **Trace and policy** are append-only and write-through-the-CLI. Hand-edits to `trace.jsonl` are not part of the V1 contract.
+
+## Governed data objects
+
+`dataModel.objects[]` is the local, config-backed surface for manual business objects. It exists to let an operator define fields and rows before deciding whether any dashboard should render them.
+
+Rules:
+
+1. Data Model object creation writes only `growthub.config.json#dataModel.objects[]`.
+2. Existing dashboard View widgets remain discoverable as data model tables, so dashboards created from templates or by hand still appear on `/data-model`.
+3. Binding a Data Model object to a dashboard is a separate user action inside an existing View widget's Source panel.
+4. The View widget stores a stable reference (`widget.config.binding.sourceType = "workspace-data-model"` and `objectId`) plus widget-local presentation settings. The object rows and fields remain owned by `dataModel.objects[]`.
+5. Integration-backed source objects continue to use the integration resolver path; the browser stores references and normalized metadata, not provider credentials.
 
 ---
 

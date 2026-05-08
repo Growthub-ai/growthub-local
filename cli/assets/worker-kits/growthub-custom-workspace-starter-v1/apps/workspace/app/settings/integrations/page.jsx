@@ -50,6 +50,7 @@ async function IntegrationsSettingsPage() {
         </div>
         <nav className="workspace-nav">
           <Link href="/">Dashboards</Link>
+          <Link href="/data-model">Data Model</Link>
           <Link className="active" href="/settings/integrations">Integrations</Link>
           <span className="workspace-nav-static">Workspace Settings</span>
           <span className="workspace-nav-static">Management</span>

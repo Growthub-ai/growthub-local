@@ -1,6 +1,6 @@
 # Workspace Builder Runtime V1.1
 
-V1.1 is an additive widget configuration layer on top of the governed Workspace V1 contract. It does not change the workspace envelope, `/api/workspace` PATCH allowlist, or execution boundary.
+V1.1 is an additive widget configuration layer on top of the governed Workspace V1 contract. It keeps the execution boundary intact and adds one governed local data surface, `dataModel.objects`, for manual business objects.
 
 ## Non-Negotiable Boundary
 
@@ -9,7 +9,8 @@ V1.1 is an additive widget configuration layer on top of the governed Workspace 
 - Browser does not execute source/provider calls.
 - Browser does not receive source credentials, API keys, webhook secrets, or bridge secrets.
 - Widgets persist references and generic filter clauses only.
-- `/api/workspace` PATCH allowlist remains `dashboards`, `widgetTypes`, and `canvas`.
+- `/api/workspace` PATCH allowlist is `dashboards`, `widgetTypes`, `canvas`, and `dataModel`.
+- Creating a Data Model object never creates a widget and never changes canvas placement.
 
 ## Universal Source Types
 
@@ -17,6 +18,7 @@ Chart and view widgets can bind to source objects through additive `widget.confi
 
 - `managed-integrations`: connected integrations discovered through Bridge/BYO authority.
 - `custom-api-webhooks`: universal API/webhook object sources identified by stable endpoint references.
+- `workspace-data-model`: local governed objects from `growthub.config.json#dataModel.objects[]`.
 
 The UI does not encode provider object types. It renders the normalized object shape returned by a server-side resolver.
 
@@ -44,6 +46,18 @@ binding: {
   sourceAuthority: "custom-api",
   endpointRef: "stable-endpoint-reference",
   fields: ["id", "label", "status"]
+}
+```
+
+Data Model object references are View-widget-only and persist a stable local object pointer:
+
+```js
+binding: {
+  mode: "manual",
+  sourceType: "workspace-data-model",
+  sourceAuthority: "workspace-config",
+  objectId: "companies",
+  source: "Companies"
 }
 ```
 
@@ -107,6 +121,9 @@ All V1.1 fields are optional and live under `widget.config`.
 
 - Existing V1 widgets load unchanged.
 - Source picker can select static, managed integration, or custom API/webhook source types.
+- View source picker can select static rows or a governed Data Model object.
+- New View widgets do not auto-load hard-coded Companies rows.
+- Data Model object selection writes a binding reference only; rows and fields remain in `dataModel.objects`.
 - Integration source selection writes only `binding` reference fields.
 - Object selection writes only `binding.entityId` and generic `filter.clauses`.
 - Filter field/value dropdowns are derived from returned normalized objects, not provider assumptions.

@@ -30,12 +30,13 @@ This contract is local to the starter kit. It is **not** promoted to `@growthub/
   "integrations": [],
   "dashboards": [ /* DashboardConfig[] */ ],
   "widgetTypes":  [ /* { kind, label, icon } */ ],
+  "dataModel": { "objects": [ /* DataModelObject[] */ ] },
   "canvas": { /* CanvasConfig */ },
   "provenance": { /* free-form metadata */ }
 }
 ```
 
-`dashboards`, `widgetTypes`, `canvas` are **the only fields the validator inspects** and the only fields the API can mutate. Everything else is preserved through the round-trip but never validated and never accepted on `PATCH`.
+`dashboards`, `widgetTypes`, `canvas`, and `dataModel` are **the only fields the validator inspects** and the only fields the API can mutate. Everything else is preserved through the round-trip but never validated and never accepted on `PATCH`.
 
 ---
 
@@ -47,16 +48,47 @@ This contract is local to the starter kit. It is **not** promoted to `@growthub/
 dashboards
 widgetTypes
 canvas
+dataModel
 ```
 
 Any other key returns:
 
 ```http
 HTTP/1.1 400 Bad Request
-{ "error": "patch contains unknown fields", "details": ["..."], "allowed": ["dashboards","widgetTypes","canvas"] }
+{ "error": "patch contains unknown fields", "details": ["..."], "allowed": ["dashboards","widgetTypes","canvas","dataModel"] }
 ```
 
-This rule is enforced in `apps/workspace/app/api/workspace/route.js` and is part of the V1 contract. New top-level concepts (e.g. `branding`) are **not** added to PATCH; they are persisted by editing `growthub.config.json` directly inside the governed fork.
+This rule is enforced in `apps/workspace/app/api/workspace/route.js` and is part of the V1 contract. `dataModel` is included because it is a governed local object surface; new presentation or identity concepts (e.g. `branding`) are **not** added to PATCH and are persisted by editing `growthub.config.json` directly inside the governed fork.
+
+## DataModelObject
+
+`dataModel.objects[]` stores manual business objects that can later be selected by a View widget. Creating or editing one does not create a dashboard widget and does not mutate `canvas`.
+
+```ts
+{
+  id: string,
+  label: string,
+  source?: string,
+  columns: string[],
+  rows: Record<string, unknown>[],
+  binding?: { mode: "manual", source?: string },
+  fieldSettings?: { hidden?: string[], order?: string[] }
+}
+```
+
+A View widget may reference one at user discretion:
+
+```ts
+widget.config.binding = {
+  mode: "manual",
+  sourceType: "workspace-data-model",
+  sourceAuthority: "workspace-config",
+  objectId: string,
+  source: string
+}
+```
+
+The reference is widget-local. Object rows and fields remain owned by `dataModel.objects[]`.
 
 ---
 
