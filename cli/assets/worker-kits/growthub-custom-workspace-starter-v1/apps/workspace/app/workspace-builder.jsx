@@ -3055,6 +3055,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         </div>
         <nav className="workspace-nav">
           <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
+          <Link href="/data-model">Data Model</Link>
           <Link href="/settings/integrations">Integrations</Link>
           <button type="button" className="workspace-nav-button" onClick={() => setSettingsOpen(true)}>Workspace Settings</button>
           <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
