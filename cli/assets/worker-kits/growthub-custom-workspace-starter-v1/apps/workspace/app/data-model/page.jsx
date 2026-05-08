@@ -151,6 +151,8 @@ function FieldsTab({ table, saving, onSave }) {
   const [renameValue, setRenameValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [fieldError, setFieldError] = useState("");
+  const [fieldSearch, setFieldSearch] = useState("");
+  const [showHidden, setShowHidden] = useState(true);
 
   const addRef = useRef(null);
   const renameRef = useRef(null);
@@ -160,6 +162,12 @@ function FieldsTab({ table, saving, onSave }) {
 
   const effectiveOrder = getEffectiveFieldOrder(table);
   const hiddenSet = new Set(table.fieldSettings?.hidden || []);
+
+  const filteredOrder = effectiveOrder.filter((name) => {
+    if (!showHidden && hiddenSet.has(name)) return false;
+    if (!fieldSearch.trim()) return true;
+    return name.toLowerCase().includes(fieldSearch.trim().toLowerCase());
+  });
 
   function doAddField() {
     const name = addName.trim();
@@ -202,6 +210,7 @@ function FieldsTab({ table, saving, onSave }) {
         <p className="dm-tab-stat">
           {effectiveOrder.length} field{effectiveOrder.length !== 1 ? "s" : ""}
           {hiddenSet.size ? ` · ${hiddenSet.size} hidden` : ""}
+          {fieldSearch ? ` · ${filteredOrder.length} matching` : ""}
         </p>
         <button
           type="button"
@@ -211,6 +220,26 @@ function FieldsTab({ table, saving, onSave }) {
         >
           + Add field
         </button>
+      </div>
+
+      {/* Field search + filter bar — mirrors Twenty SettingsObjectFieldTable search */}
+      <div className="dm-field-search-bar">
+        <input
+          className="dm-input dm-field-search-input"
+          type="search"
+          placeholder="Search fields…"
+          value={fieldSearch}
+          onChange={(e) => setFieldSearch(e.target.value)}
+          aria-label="Search fields"
+        />
+        <label className="dm-radio-label dm-field-filter-toggle">
+          <input
+            type="checkbox"
+            checked={showHidden}
+            onChange={(e) => setShowHidden(e.target.checked)}
+          />
+          Show hidden
+        </label>
       </div>
 
       {fieldError ? <p className="dm-field-error" role="alert">{fieldError}</p> : null}
@@ -237,9 +266,12 @@ function FieldsTab({ table, saving, onSave }) {
       <div className="dm-field-list" role="list">
         {effectiveOrder.length === 0 ? (
           <div className="dm-empty-inline">No fields defined. Add the first field to define this object's schema.</div>
+        ) : filteredOrder.length === 0 ? (
+          <div className="dm-empty-inline">No fields match <strong>{fieldSearch}</strong>{!showHidden ? " (hidden fields filtered out)" : ""}.</div>
         ) : null}
 
-        {effectiveOrder.map((fieldName, idx) => {
+        {filteredOrder.map((fieldName) => {
+          const idx = effectiveOrder.indexOf(fieldName);
           const isHidden = hiddenSet.has(fieldName);
           const isRenaming = renamingField === fieldName;
           const isDeleting = confirmDelete === fieldName;

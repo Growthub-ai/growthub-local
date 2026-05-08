@@ -3039,6 +3039,24 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   width: 100%;
 }
 
+/* Field search bar (mirrors Twenty SettingsObjectFieldTable search) */
+.dm-field-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.dm-field-search-input {
+  flex: 1;
+  min-width: 0;
+}
+.dm-field-filter-toggle {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
 /* Inline form (add/rename row) */
 .dm-inline-form {
   display: flex;
