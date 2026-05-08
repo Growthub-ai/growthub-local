@@ -57,6 +57,7 @@ import {
   wrapWorkspaceTemplateExport
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
+import { listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
 
 const DEFAULT_CHART_TYPE = "bar-vertical";
 const DEFAULT_FILTER_OP = "and";
@@ -65,6 +66,7 @@ const DEFAULT_SORT_DIRECTION = "asc";
 const SUB_PANEL_ROOT = "root";
 const MANAGED_INTEGRATION_SOURCE_TYPE = "managed-integrations";
 const CUSTOM_API_SOURCE_TYPE = "custom-api-webhooks";
+const DATA_MODEL_SOURCE_TYPE = "workspace-data-model";
 
 const SOURCE_TYPE_OBJECTS = [
   {
@@ -147,7 +149,7 @@ function generateId(prefix) {
 function defaultTitleFor(kind) {
   switch (kind) {
     case "chart": return "Untitled chart";
-    case "view": return "Companies";
+    case "view": return "Untitled view";
     case "iframe": return "Untitled iFrame";
     case "rich-text": return "Untitled Rich Text";
     default: return "Untitled widget";
@@ -641,6 +643,7 @@ function getChartStyle(widget) {
 
 function summarizeSource(widget) {
   const binding = widget?.config?.binding;
+  if (binding?.sourceType === DATA_MODEL_SOURCE_TYPE) return binding.source || widget?.config?.source || "Data Model object";
   if (binding?.mode === "integration") {
     const source = binding.source || "Integration";
     if (binding.entityLabel) return `${source} · ${binding.entityLabel}`;
@@ -652,6 +655,7 @@ function summarizeSource(widget) {
 }
 
 function summarizeSourceType(binding) {
+  if (binding?.sourceType === DATA_MODEL_SOURCE_TYPE) return "Data Model";
   if (binding?.sourceType === CUSTOM_API_SOURCE_TYPE) return "Custom APIs/Webhooks";
   if (binding?.mode === "integration" || binding?.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE) return "Managed Integrations";
   return "Static data";
@@ -661,6 +665,27 @@ function resolveBindingSourceType(binding) {
   if (binding?.sourceType) return binding.sourceType;
   if (binding?.mode === "integration") return MANAGED_INTEGRATION_SOURCE_TYPE;
   return "static";
+}
+
+function resolveDataModelTable(dataModelTables, binding) {
+  if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE) return null;
+  const tables = Array.isArray(dataModelTables) ? dataModelTables : [];
+  return tables.find((table) => table.objectId === binding.objectId || table.id === binding.objectId || table.source === binding.source) || null;
+}
+
+function resolveViewWidget(widget, dataModelTables) {
+  if (widget?.kind !== "view") return widget;
+  const table = resolveDataModelTable(dataModelTables, widget.config?.binding);
+  if (!table) return widget;
+  return {
+    ...widget,
+    config: {
+      ...(widget.config || {}),
+      source: table.source,
+      columns: table.columns,
+      rows: table.rows
+    }
+  };
 }
 
 function summarizeFields(widget) {
@@ -1061,7 +1086,7 @@ function EntitySelector({ integration, entities, selectedEntityId, selectedEntit
   </div>;
 }
 
-function SourceSubPanel({ widget, integrations, onChange, onBack }) {
+function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBack }) {
   const binding = widget.config?.binding || {};
   const currentMode = binding.mode || (widget.kind === "view" ? "manual" : "json");
 	  const activeSourceType = resolveBindingSourceType(binding);
@@ -1070,6 +1095,7 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
   const hasConnectedSource = Boolean(
     binding.integrationId ||
     binding.endpointRef ||
+    binding.sourceType === DATA_MODEL_SOURCE_TYPE ||
     binding.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE ||
     binding.sourceType === CUSTOM_API_SOURCE_TYPE
   );
@@ -1098,6 +1124,16 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
     };
   }, [integrations, laneFilter, query]);
 
+  const availableDataObjects = useMemo(() => {
+    const list = Array.isArray(dataModelTables) ? dataModelTables : [];
+    const trimmed = query.trim().toLowerCase();
+    return list.filter((table) => {
+      if (table.storage !== "manual-object") return false;
+      if (!trimmed) return true;
+      return `${table.label} ${table.source}`.toLowerCase().includes(trimmed);
+    });
+  }, [dataModelTables, query]);
+
 	  const selectStatic = useCallback(() => {
     if (!confirmSourceChange("Static rows")) return;
 	    if (widget.kind === "chart") {
@@ -1105,11 +1141,33 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
     } else {
       onChange({
         ...widget.config,
-        source: widget.config?.source || "Companies",
-        binding: SAMPLE_DATA_BINDINGS.companiesManual
+        source: widget.config?.source || "Static rows",
+        binding: { mode: "manual", source: "Static rows", rows: Array.isArray(widget.config?.rows) ? widget.config.rows : [] }
       });
     }
 	  }, [confirmSourceChange, onChange, widget.config, widget.kind]);
+
+  const selectDataModelObject = useCallback((table) => {
+    if (!table || !confirmSourceChange(table.label)) return;
+    onChange({
+      ...widget.config,
+      source: table.source,
+      columns: table.columns,
+      rows: [],
+      binding: {
+        mode: "manual",
+        source: table.source,
+        sourceType: DATA_MODEL_SOURCE_TYPE,
+        sourceAuthority: "workspace-config",
+        objectId: table.objectId,
+        rows: []
+      },
+      fieldSettings: {
+        hidden: [],
+        order: table.columns
+      }
+    });
+  }, [confirmSourceChange, onChange, widget.config]);
 
 	  const selectCustomApi = useCallback(() => {
     if (!confirmSourceChange("Custom APIs/Webhooks")) return;
@@ -1238,6 +1296,27 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
         {activeSourceType === "static" ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
       </button>
     </div>
+    {widget.kind === "view" ? <>
+      <p className="workspace-panel-label">Data Model objects</p>
+      <div className="workspace-source-list">
+        {availableDataObjects.length ? availableDataObjects.map((table) => {
+          const isActive = binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId === table.objectId;
+          return <button
+            key={table.id}
+            type="button"
+            className={`workspace-source-row${isActive ? " active" : ""}`}
+            onClick={() => selectDataModelObject(table)}
+          >
+            <span className="workspace-source-icon" aria-hidden="true"><Database size={15} /></span>
+            <span className="workspace-source-meta">
+              <strong>{table.label}</strong>
+              <em>{table.columns.length} fields · {table.rows.length} records · workspace config</em>
+            </span>
+            {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
+          </button>;
+        }) : <p className="workspace-entity-empty">No manual Data Model objects yet.</p>}
+      </div>
+    </> : null}
     {Object.entries(groups).map(([lane, items]) => items.length ? <div key={lane}>
       <p className="workspace-panel-label">{lane === "data-source" ? "Data Sources" : "Workspace Tools"}</p>
       <div className="workspace-source-list">
@@ -1289,22 +1368,24 @@ function SourceSubPanel({ widget, integrations, onChange, onBack }) {
   </section>;
 }
 
-function FieldsSubPanel({ widget, onChange, onBack }) {
-  const ordered = getOrderedColumns(widget);
-  const hidden = getHiddenColumnSet(widget);
+function FieldsSubPanel({ widget, dataModelTable, onChange, onBack }) {
+  const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
+  const ordered = getOrderedColumns(viewWidget);
+  const hidden = getHiddenColumnSet(viewWidget);
   const visible = ordered.filter((name) => !hidden.has(name));
   const hiddenList = ordered.filter((name) => hidden.has(name));
   const [hiddenOpen, setHiddenOpen] = useState(true);
   const [draftField, setDraftField] = useState("");
   const move = (fieldId, direction) => {
-    const next = reorderColumn(widget, fieldId, direction);
+    const next = reorderColumn(viewWidget, fieldId, direction);
     onChange({ ...widget.config, fieldSettings: next });
   };
   const toggle = (fieldId) => {
-    const next = toggleColumnHidden(widget, fieldId);
+    const next = toggleColumnHidden(viewWidget, fieldId);
     onChange({ ...widget.config, fieldSettings: next });
   };
   const removeColumn = (fieldId) => {
+    if (dataModelTable) return;
     const nextColumns = ordered.filter((name) => name !== fieldId);
     const fs = widget.config?.fieldSettings || {};
     onChange({
@@ -1317,6 +1398,7 @@ function FieldsSubPanel({ widget, onChange, onBack }) {
     });
   };
   const addColumn = () => {
+    if (dataModelTable) return;
     const trimmed = draftField.trim();
     if (!trimmed || ordered.includes(trimmed)) return;
     onChange({ ...widget.config, columns: [...ordered, trimmed] });
@@ -1324,6 +1406,7 @@ function FieldsSubPanel({ widget, onChange, onBack }) {
   };
   return <section className="workspace-widget-subpanel">
     <SubPanelHeader title="Fields" breadcrumb={widget.title} onBack={onBack} />
+    {dataModelTable ? <p className="workspace-panel-hint">This View is bound to a Data Model object. Field order and visibility are widget-local; add or remove object fields on the Data Model page.</p> : null}
     <p className="workspace-panel-label">Visible fields</p>
     <div className="workspace-field-rows">
       {visible.length === 0 ? <p className="workspace-panel-hint">No visible fields. Add one below or unhide an existing field.</p> : null}
@@ -1335,7 +1418,7 @@ function FieldsSubPanel({ widget, onChange, onBack }) {
           <button type="button" aria-label={`Move ${name} up`} disabled={index === 0} onClick={() => move(name, "up")}>↑</button>
           <button type="button" aria-label={`Move ${name} down`} disabled={index === visible.length - 1} onClick={() => move(name, "down")}>↓</button>
           <button type="button" aria-label={`Hide ${name}`} onClick={() => toggle(name)}>👁</button>
-          <button type="button" aria-label={`Remove ${name}`} onClick={() => removeColumn(name)}>✕</button>
+          <button type="button" aria-label={`Remove ${name}`} disabled={Boolean(dataModelTable)} onClick={() => removeColumn(name)}>✕</button>
         </span>
       </div>)}
     </div>
@@ -1355,7 +1438,7 @@ function FieldsSubPanel({ widget, onChange, onBack }) {
         <span className="workspace-field-row-name">{name}</span>
         <span className="workspace-field-row-actions">
           <button type="button" aria-label={`Show ${name}`} onClick={() => toggle(name)}>👁</button>
-          <button type="button" aria-label={`Remove ${name}`} onClick={() => removeColumn(name)}>✕</button>
+          <button type="button" aria-label={`Remove ${name}`} disabled={Boolean(dataModelTable)} onClick={() => removeColumn(name)}>✕</button>
         </span>
       </div>)}
     </div> : null}
@@ -1372,14 +1455,15 @@ function FieldsSubPanel({ widget, onChange, onBack }) {
           }
         }}
       />
-      <button type="button" onClick={addColumn} disabled={!draftField.trim()}>Add</button>
+      <button type="button" onClick={addColumn} disabled={Boolean(dataModelTable) || !draftField.trim()}>Add</button>
     </div>
   </section>;
 }
 
-function SortSubPanel({ widget, onChange, onBack }) {
+function SortSubPanel({ widget, dataModelTable, onChange, onBack }) {
+  const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
   const sort = getSortClauses(widget);
-  const columns = getColumnList(widget);
+  const columns = getColumnList(viewWidget);
   const updateSort = (next) => onChange({ ...widget.config, sort: next });
   const addClause = () => {
     const fieldId = columns[0] || "";
@@ -1423,12 +1507,13 @@ function SortSubPanel({ widget, onChange, onBack }) {
   </section>;
 }
 
-function FilterSubPanel({ widget, integrations, onChange, onBack }) {
+function FilterSubPanel({ widget, integrations, dataModelTable, onChange, onBack }) {
+  const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
   const binding = widget.config?.binding || {};
   const filter = getFilterConfig(widget);
   const [entities, setEntities] = useState([]);
   const [entitiesLoading, setEntitiesLoading] = useState(false);
-  const fieldChoices = getFilterFieldChoices(widget, entities);
+  const fieldChoices = getFilterFieldChoices(viewWidget, entities);
   const columns = fieldChoices.map((field) => field.id);
   const setFilter = (next) => onChange({ ...widget.config, filter: next });
   const setOp = (op) => setFilter({ ...filter, op });
@@ -2000,7 +2085,7 @@ function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integratio
         Inspect-only. Sourced from <code>growthub.config.json</code> + <code>GET /api/workspace</code>.
         Edit branding by updating <code>growthub.config.json</code> inside your governed fork.
         The builder itself never holds tokens, never executes hosted workflows, and never bypasses the PATCH allowlist
-        (<code>dashboards</code>, <code>widgetTypes</code>, <code>canvas</code>).
+        (<code>dashboards</code>, <code>widgetTypes</code>, <code>canvas</code>, <code>dataModel</code>).
       </p>
       <div className="workspace-readiness">
         <article className="workspace-readiness-section">
@@ -2081,7 +2166,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
         </article>
         <article className="workspace-readiness-section">
           <h3>API</h3>
-          <div className="workspace-readiness-row"><span>PATCH allowlist</span><code>dashboards | widgetTypes | canvas</code></div>
+          <div className="workspace-readiness-row"><span>PATCH allowlist</span><code>dashboards | widgetTypes | canvas | dataModel</code></div>
           <div className="workspace-readiness-row"><span>Unknown field</span><code>400</code></div>
           <div className="workspace-readiness-row"><span>Read-only runtime</span><code>409 + guidance</code></div>
           <div className="workspace-readiness-row"><span>Can save now</span>
@@ -2175,6 +2260,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const addSlot = dragPreview || selectedPosition;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
   const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
+  const dataModelTables = useMemo(() => listWorkspaceDataModelTables(config), [config]);
+  const selectedResolvedWidget = selectedWidget ? resolveViewWidget(selectedWidget, dataModelTables) : null;
   const branding = config.branding || {};
   const occupiedCells = useMemo(() => {
     const cells = new Set();
@@ -3055,6 +3142,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         </div>
         <nav className="workspace-nav">
           <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
+          <Link href="/data-model">Data Model</Link>
           <Link href="/settings/integrations">Integrations</Link>
           <button type="button" className="workspace-nav-button" onClick={() => setSettingsOpen(true)}>Workspace Settings</button>
           <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
@@ -3246,7 +3334,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
               onSelect={() => selectWidget(widget.id)}
               onExpandIframe={setExpandedIframeWidget}
               selected={widget.id === selectedWidgetId}
-              widget={widget}
+              widget={resolveViewWidget(widget, dataModelTables)}
             />)}
           </div>
         </section> : null}
@@ -3292,22 +3380,26 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         {selectedWidget && inspectorPath === "source" ? <SourceSubPanel
           widget={selectedWidget}
           integrations={availableIntegrations}
+          dataModelTables={dataModelTables}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
         {selectedWidget && inspectorPath === "fields" ? <FieldsSubPanel
           widget={selectedWidget}
+          dataModelTable={resolveDataModelTable(dataModelTables, selectedWidget.config?.binding)}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
         {selectedWidget && inspectorPath === "sort" ? <SortSubPanel
           widget={selectedWidget}
+          dataModelTable={resolveDataModelTable(dataModelTables, selectedWidget.config?.binding)}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
         {selectedWidget && inspectorPath === "filter" ? <FilterSubPanel
           widget={selectedWidget}
           integrations={availableIntegrations}
+          dataModelTable={resolveDataModelTable(dataModelTables, selectedWidget.config?.binding)}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
@@ -3370,7 +3462,11 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
-            <label>
+            {selectedWidget.config?.binding?.sourceType === DATA_MODEL_SOURCE_TYPE ? <div className="workspace-active-source-state">
+              <span>Data Model object</span>
+              <strong>{summarizeSource(selectedWidget)}</strong>
+              <code>{selectedWidget.config?.binding?.objectId || "workspace-config"}</code>
+            </div> : <label>
               <span>Manual Rows</span>
               <textarea
                 value={serializeManualRows(selectedWidget.config?.rows || [], selectedWidget.config?.columns || [])}
@@ -3382,7 +3478,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                   });
                 }}
               />
-            </label>
+            </label>}
             <div className="workspace-settings-list" role="group" aria-label="View widget settings">
               <p className="workspace-panel-label">Settings</p>
               <button type="button" className="workspace-settings-row" disabled>
@@ -3392,13 +3488,13 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                 <span>Source</span><code>{summarizeSource(selectedWidget)}</code>
               </button>
               <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("fields")}>
-                <span>Fields</span><code>{summarizeFields(selectedWidget)}</code>
+                <span>Fields</span><code>{summarizeFields(selectedResolvedWidget || selectedWidget)}</code>
               </button>
               <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("filter")}>
-                <span>Filter</span><code>{summarizeFilter(selectedWidget)}</code>
+                <span>Filter</span><code>{summarizeFilter(selectedResolvedWidget || selectedWidget)}</code>
               </button>
               <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("sort")}>
-                <span>Sort</span><code>{summarizeSort(selectedWidget)}</code>
+                <span>Sort</span><code>{summarizeSort(selectedResolvedWidget || selectedWidget)}</code>
               </button>
             </div>
           </section> : null}

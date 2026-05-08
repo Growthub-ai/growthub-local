@@ -129,7 +129,7 @@ The starter ships in `read-only` mode by default. Local `next dev` runs in `file
 | Route | Purpose |
 | --- | --- |
 | `GET /api/workspace` | Returns `config`, `adapters`, `capabilities`, `settings`, `workspace`, plus the resolved `workspaceConfig` and `workspaceConfigPersistence`. Pre-existing fields are preserved. |
-| `PATCH /api/workspace` | Validates and writes only `dashboards`, `widgetTypes`, and `canvas`. Unknown fields → 400. Invalid widget shape → 400. Read-only runtime → 409. |
+| `PATCH /api/workspace` | Validates and writes only `dashboards`, `widgetTypes`, `canvas`, and `dataModel`. Unknown fields → 400. Invalid shape → 400. Read-only runtime → 409. |
 
 No new API routes are added. No bridge data widgets, no chat route, no workflow runner, no artifact viewer, no deploy status route — those would all introduce UI surfaces that are not in the baseline.
 
@@ -231,7 +231,7 @@ That is the entire UI delta vs. the pre-V1 starter — a `"use client"` boundary
 
 ## Save semantics
 
-Click `Save` → `fetch("/api/workspace", { method: "PATCH", body: JSON.stringify({ dashboards, widgetTypes, canvas }) })`. While the request is in flight the button is disabled and reads `Saving...`; it returns to `Save` once the response settles. On success the response payload is hydrated back into local state so subsequent reads come from the validated server output.
+Click `Save` → `fetch("/api/workspace", { method: "PATCH", body: JSON.stringify({ dashboards, widgetTypes, canvas }) })`. Data Model edits use the same route with `dataModel` only. While the request is in flight the button is disabled and reads `Saving...`; it returns to `Save` once the response settles. On success the response payload is hydrated back into local state so subsequent reads come from the validated server output.
 
 The button label remains `Save` in the idle state shown in the screenshot.
 
@@ -253,7 +253,7 @@ The optional `branding` object is preserved through the workspace-config round-t
 The Management panel reads the same `GET /api/workspace` payload and renders five sections:
 
 - **Workspace** — id, name, capabilities.
-- **API** — `PATCH /api/workspace` allowlist (`dashboards | widgetTypes | canvas`), known error codes, persistence-derived `canSave`.
+- **API** — `PATCH /api/workspace` allowlist (`dashboards | widgetTypes | canvas | dataModel`), known error codes, persistence-derived `canSave`.
 - **Workflows** — list of workflows declared in `growthub.config.json#pipelines`. V1 ships empty. Hosted execution from the browser is **not** introduced.
 - **Integrations** — adapter-derived state: integration adapter, deploy target, bridge presence.
 - **Persistence** — mirror of the persistence-adapter shape.

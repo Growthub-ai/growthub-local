@@ -93,6 +93,7 @@ function applyPatch(currentConfig, patch) {
   const next = { ...currentConfig };
   if (patch.dashboards !== undefined) next.dashboards = patch.dashboards;
   if (patch.widgetTypes !== undefined) next.widgetTypes = patch.widgetTypes;
+  if (patch.dataModel !== undefined) next.dataModel = patch.dataModel;
   if (patch.canvas !== undefined && patch.canvas !== null) {
     const patchCanvas = { ...patch.canvas };
     if (Array.isArray(patchCanvas.tabs)) {
@@ -140,7 +141,8 @@ async function writeWorkspaceConfig(patch) {
   validateWorkspaceConfig({
     dashboards: next.dashboards,
     widgetTypes: next.widgetTypes,
-    canvas: next.canvas
+    canvas: next.canvas,
+    dataModel: next.dataModel
   });
   const configPath = resolveWorkspaceConfigPath();
   const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());

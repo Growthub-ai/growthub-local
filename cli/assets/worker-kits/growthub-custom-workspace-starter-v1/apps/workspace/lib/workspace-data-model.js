@@ -1,0 +1,433 @@
+function parseCsv(text) {
+  const lines = String(text || "").trim().split("\n").filter(Boolean);
+  if (!lines.length) return { columns: [], rows: [] };
+  const parseLine = (line) => {
+    const cells = [];
+    let value = "";
+    let quoted = false;
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      if (char === '"') {
+        if (quoted && line[index + 1] === '"') {
+          value += '"';
+          index += 1;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (char === "," && !quoted) {
+        cells.push(value);
+        value = "";
+      } else {
+        value += char;
+      }
+    }
+    cells.push(value);
+    return cells;
+  };
+  const columns = parseLine(lines[0]).map((cell) => cell.trim()).filter(Boolean);
+  const rows = lines.slice(1).map((line) => {
+    const cells = parseLine(line);
+    return columns.reduce((record, column, index) => {
+      record[column] = (cells[index] || "").trim();
+      return record;
+    }, {});
+  });
+  return { columns, rows };
+}
+
+function toCsv(columns, rows) {
+  const escape = (value) => {
+    const text = String(value ?? "");
+    return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  };
+  const header = columns.map(escape).join(",");
+  const body = rows.map((row) => columns.map((column) => escape(row?.[column])).join(",")).join("\n");
+  return body ? `${header}\n${body}` : header;
+}
+
+function parseJsonRows(text) {
+  try {
+    const parsed = JSON.parse(text || "[]");
+    const rows = Array.isArray(parsed) ? parsed.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+    const columns = Array.from(rows.reduce((set, row) => {
+      Object.keys(row).forEach((key) => set.add(key));
+      return set;
+    }, new Set()));
+    return { columns, rows };
+  } catch {
+    return { columns: [], rows: [] };
+  }
+}
+
+function listWidgetEntries(workspaceConfig) {
+  const entries = [];
+  const seen = new Set();
+  const push = (widget, location) => {
+    if (!widget?.id || seen.has(widget.id)) return;
+    seen.add(widget.id);
+    entries.push({ widget, location });
+  };
+
+  for (const dashboard of workspaceConfig?.dashboards || []) {
+    for (const tab of dashboard.tabs || []) {
+      for (const widget of tab.widgets || []) {
+        push(widget, {
+          dashboardId: dashboard.id,
+          dashboardName: dashboard.name,
+          tabId: tab.id,
+          tabName: tab.name,
+          widgetId: widget.id
+        });
+      }
+    }
+  }
+
+  const canvas = workspaceConfig?.canvas;
+  for (const tab of canvas?.tabs || []) {
+    for (const widget of tab.widgets || []) {
+      push(widget, { dashboardId: null, dashboardName: null, tabId: tab.id, tabName: tab.name, widgetId: widget.id });
+    }
+  }
+  for (const widget of canvas?.widgets || []) {
+    push(widget, { dashboardId: null, dashboardName: null, tabId: null, tabName: canvas.name || "Tab 1", widgetId: widget.id });
+  }
+
+  return entries;
+}
+
+function bindingColumns(binding) {
+  const fields = Array.isArray(binding?.fields) ? binding.fields : [];
+  return Array.from(new Set([...fields, "id", "label", "entityType", "provider", "lane", "status"])).filter(Boolean);
+}
+
+function deriveWidgetTable(widget, location) {
+  const config = widget.config || {};
+  const binding = config.binding && typeof config.binding === "object" && !Array.isArray(config.binding) ? config.binding : null;
+
+  if (widget.kind === "view") {
+    if (binding?.sourceType === "workspace-data-model") return null;
+    const source = config.source || widget.title || "Untitled";
+    const integration = binding?.mode === "integration";
+    const columns = integration ? bindingColumns(binding) : (Array.isArray(config.columns) ? config.columns : []);
+    const rows = integration && (binding.entityId || binding.entityLabel)
+      ? [{ id: binding.entityId || "", label: binding.entityLabel || binding.entityId || "", entityType: binding.entityType || "", provider: binding.provider || "", lane: binding.lane || "", status: binding.status || "" }]
+      : (Array.isArray(config.rows) ? config.rows : []);
+    return { source, columns, rows, binding: binding || { mode: "manual", source: "Manual rows" }, mutable: !integration, storage: "view" };
+  }
+
+  if (binding?.mode === "integration") {
+    const source = binding.entityLabel || binding.source || widget.title || "Integration reference";
+    const rows = binding.entityId || binding.entityLabel
+      ? [{ id: binding.entityId || "", label: binding.entityLabel || binding.entityId || "", entityType: binding.entityType || "", provider: binding.provider || "", lane: binding.lane || "", status: binding.status || "" }]
+      : [];
+    return { source, columns: bindingColumns(binding), rows, binding, mutable: false, storage: "integration" };
+  }
+
+  if (binding?.mode === "json" && typeof binding.json === "string") {
+    const parsed = parseJsonRows(binding.json);
+    return { source: binding.source || widget.title || "JSON binding", columns: parsed.columns, rows: parsed.rows, binding, mutable: true, storage: "json" };
+  }
+
+  if (binding?.mode === "csv" && typeof binding.csv === "string") {
+    const parsed = parseCsv(binding.csv);
+    return { source: binding.source || widget.title || "CSV binding", columns: parsed.columns, rows: parsed.rows, binding, mutable: true, storage: "csv" };
+  }
+
+  if (binding?.mode === "manual" && Array.isArray(binding.rows)) {
+    const columns = Array.from(binding.rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => set.add(key));
+      return set;
+    }, new Set()));
+    return { source: binding.source || widget.title || "Manual rows", columns, rows: binding.rows, binding, mutable: true, storage: "manual-binding" };
+  }
+
+  if (widget.kind === "chart" && Array.isArray(config.values)) {
+    return {
+      source: widget.title || "Chart values",
+      columns: ["Index", "Value"],
+      rows: config.values.map((value, index) => ({ Index: index + 1, Value: value })),
+      binding: binding || { mode: "manual", source: "Chart values" },
+      mutable: true,
+      storage: "chart-values"
+    };
+  }
+
+  return null;
+}
+
+function tableId(source, columns) {
+  return `table:${source}:${columns.join("\0")}`;
+}
+
+function normalizeManualObjects(workspaceConfig) {
+  return Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+}
+
+function deriveManualObjectTable(object) {
+  const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
+  const rows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+  const source = object.source || object.label || object.name || "Manual object";
+  return {
+    id: `manual-object:${object.id || source}`,
+    label: object.label || object.name || source,
+    source,
+    columns,
+    rows,
+    binding: object.binding || { mode: "manual", source: "Data Model" },
+    mutable: true,
+    storage: "manual-object",
+    objectId: object.id,
+    widgetRefs: [],
+    fieldSettings: {
+      hidden: Array.isArray(object.fieldSettings?.hidden) ? object.fieldSettings.hidden : [],
+      order: Array.isArray(object.fieldSettings?.order) ? object.fieldSettings.order : columns
+    }
+  };
+}
+
+function listWorkspaceDataModelTables(workspaceConfig) {
+  const widgetEntries = listWidgetEntries(workspaceConfig);
+  const refsByObjectId = widgetEntries.reduce((map, { widget, location }) => {
+    const binding = widget?.config?.binding;
+    if (binding?.sourceType !== "workspace-data-model" || !binding.objectId) return map;
+    const refs = map.get(binding.objectId) || [];
+    refs.push({
+      ...location,
+      widgetTitle: widget.title,
+      widgetKind: widget.kind
+    });
+    map.set(binding.objectId, refs);
+    return map;
+  }, new Map());
+  const manualObjects = normalizeManualObjects(workspaceConfig).map((object) => {
+    const table = deriveManualObjectTable(object);
+    return { ...table, widgetRefs: refsByObjectId.get(object.id) || [] };
+  });
+  const widgetTables = widgetEntries
+    .map(({ widget, location }) => {
+      const table = deriveWidgetTable(widget, location);
+      if (!table) return null;
+      return {
+        id: tableId(table.source, table.columns),
+        label: table.source,
+        source: table.source,
+        columns: table.columns,
+        rows: table.rows,
+        binding: table.binding,
+        mutable: table.mutable,
+        storage: table.storage,
+        widgetRefs: [{
+          ...location,
+          widgetTitle: widget.title,
+          widgetKind: widget.kind
+        }],
+        fieldSettings: {
+          hidden: Array.isArray(widget.config?.fieldSettings?.hidden) ? widget.config.fieldSettings.hidden : [],
+          order: Array.isArray(widget.config?.fieldSettings?.order) ? widget.config.fieldSettings.order : table.columns
+        }
+      };
+    })
+    .filter(Boolean);
+  return [...manualObjects, ...widgetTables];
+}
+
+function writeTableConfig(config, storage, columns, rows) {
+  if (storage === "view") {
+    const binding = config.binding?.mode === "manual" ? { ...config.binding, rows } : config.binding;
+    return { ...config, columns, rows, binding, fieldSettings: { hidden: config.fieldSettings?.hidden || [], order: columns } };
+  }
+  if (storage === "json") {
+    return { ...config, binding: { ...config.binding, json: JSON.stringify(rows, null, 2) } };
+  }
+  if (storage === "csv") {
+    return { ...config, binding: { ...config.binding, csv: toCsv(columns, rows) } };
+  }
+  if (storage === "manual-binding") {
+    return { ...config, binding: { ...config.binding, rows } };
+  }
+  if (storage === "chart-values") {
+    return { ...config, values: rows.map((row) => Number(row.Value)).filter((value) => Number.isFinite(value)) };
+  }
+  return config;
+}
+
+function applyTableMutation(workspaceConfig, table, mutate) {
+  if (table.storage === "manual-object") {
+    const objects = normalizeManualObjects(workspaceConfig);
+    const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+    return {
+      ...workspaceConfig,
+      dataModel: {
+        ...dataModel,
+        objects: objects.map((object) => {
+          if (object.id !== table.objectId) return object;
+          const current = deriveManualObjectTable(object);
+          const next = mutate({ columns: current.columns, rows: current.rows });
+          return {
+            ...object,
+            columns: next.columns,
+            rows: next.rows,
+            fieldSettings: { ...(object.fieldSettings || {}), order: next.columns }
+          };
+        })
+      }
+    };
+  }
+
+  const ids = new Set((table.widgetRefs || []).map((ref) => ref.widgetId));
+  const mutateWidgets = (widgets) => (widgets || []).map((widget) => {
+    if (!ids.has(widget.id)) return widget;
+    const current = deriveWidgetTable(widget, { widgetId: widget.id });
+    if (!current?.mutable) return widget;
+    const next = mutate({ columns: current.columns, rows: current.rows });
+    return { ...widget, config: writeTableConfig(widget.config || {}, current.storage, next.columns, next.rows) };
+  });
+
+  const dashboards = (workspaceConfig.dashboards || []).map((dashboard) => ({
+    ...dashboard,
+    tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) }))
+  }));
+  let canvas = workspaceConfig.canvas ? { ...workspaceConfig.canvas } : {};
+  if (Array.isArray(canvas.widgets)) canvas = { ...canvas, widgets: mutateWidgets(canvas.widgets) };
+  if (Array.isArray(canvas.tabs)) canvas = { ...canvas, tabs: canvas.tabs.map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) })) };
+  return { ...workspaceConfig, dashboards, canvas };
+}
+
+function slugifyObjectName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "object";
+}
+
+function uniqueObjectId(workspaceConfig, name) {
+  const base = slugifyObjectName(name);
+  const used = new Set(normalizeManualObjects(workspaceConfig).map((object) => object.id));
+  if (!used.has(base)) return base;
+  let index = 2;
+  while (used.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
+}
+
+function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
+  const label = String(name || "").trim();
+  const columns = Array.from(new Set((Array.isArray(fields) ? fields : String(fields || "").split(","))
+    .map((field) => String(field || "").trim())
+    .filter(Boolean)));
+  if (!label || !columns.length) return workspaceConfig;
+  const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+    ? workspaceConfig.dataModel
+    : {};
+  const id = uniqueObjectId(workspaceConfig, label);
+  const object = {
+    id,
+    label,
+    source: label,
+    columns,
+    rows: [],
+    binding: { mode: "manual", source: "Data Model" },
+    fieldSettings: { hidden: [], order: columns }
+  };
+  return {
+    ...workspaceConfig,
+    dataModel: {
+      ...dataModel,
+      objects: [...normalizeManualObjects(workspaceConfig), object]
+    }
+  };
+}
+
+function addTableField(workspaceConfig, table, fieldName) {
+  const name = String(fieldName || "").trim();
+  if (!name || !table.mutable) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+    if (columns.includes(name)) return { columns, rows };
+    return { columns: [...columns, name], rows: rows.map((row) => ({ ...row, [name]: "" })) };
+  });
+}
+
+function addTableRow(workspaceConfig, table) {
+  if (!table.mutable) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({
+    columns,
+    rows: [...rows, Object.fromEntries(columns.map((column) => [column, ""]))]
+  }));
+}
+
+function updateTableCell(workspaceConfig, table, rowIndex, fieldName, value) {
+  if (!table.mutable) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({
+    columns,
+    rows: rows.map((row, index) => index === rowIndex ? { ...row, [fieldName]: value } : row)
+  }));
+}
+
+function deleteTableRow(workspaceConfig, table, rowIndex) {
+  if (!table.mutable) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({
+    columns,
+    rows: rows.filter((_, index) => index !== rowIndex)
+  }));
+}
+
+function duplicateTableRow(workspaceConfig, table, rowIndex) {
+  if (!table.mutable) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+    const next = [...rows];
+    if (rows[rowIndex]) next.splice(rowIndex + 1, 0, { ...rows[rowIndex] });
+    return { columns, rows: next };
+  });
+}
+
+function appendRowsToTable(workspaceConfig, table, rowsToAppend) {
+  if (!table.mutable || !Array.isArray(rowsToAppend)) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({ columns, rows: [...rows, ...rowsToAppend] }));
+}
+
+function replaceTableContent(workspaceConfig, table, { columns = [], rows = [] } = {}) {
+  if (!table.mutable) return workspaceConfig;
+  return applyTableMutation(workspaceConfig, table, () => ({ columns, rows }));
+}
+
+function exportTableAsCsv(table) {
+  return toCsv(table.columns || [], table.rows || []);
+}
+
+function importTableFromCsv(text) {
+  return parseCsv(text);
+}
+
+function describeBindingLane(binding) {
+  if (binding?.mode === "integration" && binding.lane === "data-source") return "data-source";
+  if (binding?.mode === "integration" && binding.lane === "workspace-integration") return "workspace-integration";
+  if (binding?.mode === "integration") return "integration";
+  return "manual";
+}
+
+function describeBindingMode(binding) {
+  const lane = describeBindingLane(binding);
+  if (lane === "data-source") return { label: "Data source scope", description: "Integration reference selected in the existing widget source flow. Dynamic data resolves through the governed server-side integration path." };
+  if (lane === "workspace-integration") return { label: "Workspace tool scope", description: "Workspace integration reference selected in the existing widget source flow." };
+  if (lane === "integration") return { label: "Integration scope", description: "Integration reference stored on widget.config.binding." };
+  return { label: "Manual local table", description: "Rows and fields live in the existing widget config and travel with workspace export/import." };
+}
+
+export {
+  addTableField,
+  addTableRow,
+  appendRowsToTable,
+  createManualBusinessObject,
+  deleteTableRow,
+  describeBindingLane,
+  describeBindingMode,
+  duplicateTableRow,
+  exportTableAsCsv,
+  importTableFromCsv,
+  listWorkspaceDataModelTables,
+  replaceTableContent,
+  updateTableCell
+};

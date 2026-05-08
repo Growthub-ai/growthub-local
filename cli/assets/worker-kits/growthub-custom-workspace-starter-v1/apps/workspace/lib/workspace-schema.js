@@ -12,11 +12,12 @@
  *   - `widgetTypes`    palette of allowed widget kinds (label/icon)
  *   - `canvas`         active canvas: layout, single-tab `widgets[]`, or
  *                      multi-tab `tabs[]` + `activeTabId`, plus `bindings`
+ *   - `dataModel`      governed manual data objects, never dashboard widgets
  *
  * Other top-level fields (`id`, `name`, `description`, `capabilities`,
  * `branding`, `pipelines`, `integrations`, `provenance`) are preserved
  * round-trip but cannot be mutated through PATCH. The validator rejects
- * unknown fields inside the three allowlisted sections.
+ * unknown fields inside the allowlisted sections.
  *
  * Canonical canvas shape (mutually exclusive — never both at once):
  *
@@ -39,7 +40,7 @@
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
-const KNOWN_FIELDS = ["dashboards", "widgetTypes", "canvas"];
+const KNOWN_FIELDS = ["dashboards", "widgetTypes", "canvas", "dataModel"];
 const KNOWN_DATA_BINDING_MODES = ["manual", "json", "csv", "integration"];
 const KNOWN_CHART_TYPES = ["bar-vertical", "bar-horizontal", "line", "pie", "sum", "gauge"];
 const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "isNotEmpty"];
@@ -202,11 +203,11 @@ function defaultConfigFor(kind) {
       return { values: [58, 36, 72, 48, 64], binding: SAMPLE_DATA_BINDINGS.reportingJson };
     case "view":
       return {
-        source: "Companies",
+        source: "",
         layout: "Table",
-        columns: ["Name", "Domain Name"],
-        rows: SAMPLE_VIEW_ROWS,
-        binding: SAMPLE_DATA_BINDINGS.companiesManual
+        columns: [],
+        rows: [],
+        binding: { mode: "manual", source: "Static rows", rows: [] }
       };
     case "iframe":
       return { url: "" };
@@ -247,7 +248,13 @@ const DASHBOARD_TEMPLATES = [
     dashboard: { name: "Client Portal", status: "draft" },
     widgets: [
       createWidget("rich-text", "Client Summary", { x: 0, y: 0, w: 4, h: 4 }, { text: "Current client priorities, owner notes, and next milestone.", binding: { mode: "manual", source: "Manual text", rows: [] } }),
-      createWidget("view", "Companies", { x: 4, y: 0, w: 5, h: 5 }),
+      createWidget("view", "Companies", { x: 4, y: 0, w: 5, h: 5 }, {
+        source: "Companies",
+        layout: "Table",
+        columns: ["Name", "Domain Name"],
+        rows: SAMPLE_VIEW_ROWS,
+        binding: SAMPLE_DATA_BINDINGS.companiesManual
+      }),
       createWidget("iframe", "Client Portal Embed", { x: 9, y: 0, w: 3, h: 5 }, { url: "" }),
       createWidget("chart", "Delivery Health", { x: 0, y: 4, w: 4, h: 4 }, { values: [72, 64, 81, 58, 76], binding: SAMPLE_DATA_BINDINGS.reportingJson })
     ]
@@ -413,6 +420,9 @@ function validateStaticDataBinding(binding, path, errors) {
   }
   if (binding.endpointRef !== undefined && typeof binding.endpointRef !== "string") {
     errors.push(`${path}.endpointRef must be a string`);
+  }
+  if (binding.objectId !== undefined && typeof binding.objectId !== "string") {
+    errors.push(`${path}.objectId must be a string`);
   }
   if (binding.integrationId !== undefined && typeof binding.integrationId !== "string") {
     errors.push(`${path}.integrationId must be a string`);
@@ -768,6 +778,46 @@ function validateCanvasConfig(canvas, errors) {
   }
 }
 
+function validateDataModelConfig(dataModel, errors) {
+  if (dataModel === undefined) return;
+  if (!isPlainObject(dataModel)) {
+    errors.push("dataModel must be a plain object");
+    return;
+  }
+  if (dataModel.objects === undefined) return;
+  if (!Array.isArray(dataModel.objects)) {
+    errors.push("dataModel.objects must be an array");
+    return;
+  }
+  const ids = new Set();
+  dataModel.objects.forEach((object, index) => {
+    const prefix = `dataModel.objects[${index}]`;
+    if (!isPlainObject(object)) {
+      errors.push(`${prefix} must be an object`);
+      return;
+    }
+    if (typeof object.id !== "string" || !object.id.trim()) {
+      errors.push(`${prefix}.id must be a non-empty string`);
+    } else if (ids.has(object.id)) {
+      errors.push(`${prefix}.id duplicates an earlier object id`);
+    } else {
+      ids.add(object.id);
+    }
+    if (typeof object.label !== "string" || !object.label.trim()) errors.push(`${prefix}.label must be a non-empty string`);
+    if (object.source !== undefined && typeof object.source !== "string") errors.push(`${prefix}.source must be a string`);
+    validateStringArray(object.columns, `${prefix}.columns`, errors);
+    if (!Array.isArray(object.rows)) {
+      errors.push(`${prefix}.rows must be an array`);
+    } else {
+      object.rows.forEach((row, rowIndex) => {
+        if (!isPlainObject(row)) errors.push(`${prefix}.rows[${rowIndex}] must be a plain object`);
+      });
+    }
+    validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
+    validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
+  });
+}
+
 function validateTemplateWidgetArray(widgets, contextPath, errors) {
   if (!Array.isArray(widgets)) {
     errors.push(`${contextPath} must be an array`);
@@ -996,6 +1046,7 @@ function validateWorkspaceConfig(nextConfig) {
   if (nextConfig.dashboards !== undefined) validateDashboardArray(nextConfig.dashboards, errors);
   if (nextConfig.widgetTypes !== undefined && !Array.isArray(nextConfig.widgetTypes)) errors.push("widgetTypes must be an array");
   if (nextConfig.canvas !== undefined) validateCanvasConfig(nextConfig.canvas, errors);
+  if (nextConfig.dataModel !== undefined) validateDataModelConfig(nextConfig.dataModel, errors);
   if (errors.length) {
     const error = new Error(`invalid workspace config: ${errors.join("; ")}`);
     error.code = "INVALID_WORKSPACE_CONFIG";

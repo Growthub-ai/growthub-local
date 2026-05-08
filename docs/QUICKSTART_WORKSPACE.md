@@ -39,7 +39,7 @@ my-workspace/
 └── docs/                          ← starter docs
 ```
 
-Edit the config visually in the builder. Edit branding / capabilities / pipelines / integrations directly in `growthub.config.json` (not in the PATCH allowlist). The validator enforces grid invariants, no overlaps, and the canonical canvas shape.
+Edit dashboards visually in the builder and manual business objects in Data Model. Edit branding / capabilities / pipelines / integrations directly in `growthub.config.json` (not in the PATCH allowlist). The validator enforces grid invariants, no overlaps, the canonical canvas shape, and governed `dataModel.objects`.
 
 ---
 
