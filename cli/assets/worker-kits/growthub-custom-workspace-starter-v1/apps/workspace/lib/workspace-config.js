@@ -155,6 +155,189 @@ async function writeWorkspaceConfig(patch) {
   return next;
 }
 
+function normalizeWorkspaceIdentityPatch(patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    const error = new Error("settings patch must be a plain object");
+    error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+    throw error;
+  }
+
+  const allowed = new Set(["name", "branding"]);
+  const unknown = Object.keys(patch).filter((key) => !allowed.has(key));
+  if (unknown.length) {
+    const error = new Error("settings patch contains unknown fields");
+    error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+    error.details = unknown;
+    throw error;
+  }
+
+  const normalized = {};
+  if (Object.prototype.hasOwnProperty.call(patch, "name")) {
+    if (typeof patch.name !== "string") {
+      const error = new Error("name must be a string");
+      error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+      throw error;
+    }
+    normalized.name = patch.name.trim() || "Growthub Workspace";
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, "branding")) {
+    if (!patch.branding || typeof patch.branding !== "object" || Array.isArray(patch.branding)) {
+      const error = new Error("branding must be a plain object");
+      error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+      throw error;
+    }
+    const brandingAllowed = new Set(["name", "logoUrl", "accent"]);
+    const brandingUnknown = Object.keys(patch.branding).filter((key) => !brandingAllowed.has(key));
+    if (brandingUnknown.length) {
+      const error = new Error("branding patch contains unknown fields");
+      error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+      error.details = brandingUnknown.map((key) => `branding.${key}`);
+      throw error;
+    }
+    normalized.branding = {};
+    for (const key of brandingAllowed) {
+      if (Object.prototype.hasOwnProperty.call(patch.branding, key)) {
+        if (typeof patch.branding[key] !== "string") {
+          const error = new Error(`branding.${key} must be a string`);
+          error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+          throw error;
+        }
+        normalized.branding[key] = patch.branding[key].trim();
+      }
+    }
+  }
+
+  return normalized;
+}
+
+async function writeWorkspaceIdentitySettings(patch) {
+  const persistence = describePersistenceMode();
+  const adapter = readAdapterConfig();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.adapter = adapter.integrationAdapter;
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+
+  const normalized = normalizeWorkspaceIdentityPatch(patch);
+  const current = await readWorkspaceConfig();
+  const next = { ...current };
+  if (normalized.name !== undefined) {
+    next.name = normalized.name;
+  }
+  if (normalized.branding) {
+    next.branding = {
+      ...(current.branding && typeof current.branding === "object" && !Array.isArray(current.branding)
+        ? current.branding
+        : {}),
+      ...normalized.branding
+    };
+    if (!next.branding.name) {
+      next.branding.name = next.name || "Growthub Workspace";
+    }
+  }
+
+  validateWorkspaceConfig({
+    dashboards: next.dashboards,
+    widgetTypes: next.widgetTypes,
+    canvas: next.canvas,
+    dataModel: next.dataModel
+  });
+
+  const configPath = resolveWorkspaceConfigPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(configPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${configPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+function normalizeApiWebhookRefs(refs) {
+  if (!Array.isArray(refs)) {
+    const error = new Error("refs must be an array");
+    error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+    throw error;
+  }
+  return refs
+    .map((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        const error = new Error("each ref must be a plain object");
+        error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+        throw error;
+      }
+      const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url"]);
+      const unknown = Object.keys(item).filter((key) => !allowed.has(key));
+      if (unknown.length) {
+        const error = new Error("ref contains unknown fields");
+        error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+        error.details = unknown;
+        throw error;
+      }
+      const kind = item.kind === "webhook" ? "webhook" : "api";
+      const label = typeof item.label === "string" ? item.label.trim() : "";
+      const endpointRef = typeof item.endpointRef === "string" ? item.endpointRef.trim() : "";
+      const url = typeof item.url === "string" ? item.url.trim() : "";
+      if (!label && !endpointRef && !url && item.hasSecret !== true) return null;
+      return {
+        id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `custom-${kind}-${index + 1}`,
+        label: label || endpointRef,
+        kind,
+        sourceType: "custom-api-webhooks",
+        endpointRef,
+        url,
+        status: typeof item.status === "string" && item.status.trim() ? item.status.trim() : "configured",
+        hasSecret: item.hasSecret === true
+      };
+    })
+    .filter(Boolean);
+}
+
+async function writeWorkspaceApiWebhookSettings(patch) {
+  const persistence = describePersistenceMode();
+  const adapter = readAdapterConfig();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.adapter = adapter.integrationAdapter;
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+
+  const refs = normalizeApiWebhookRefs(patch?.refs);
+  const current = await readWorkspaceConfig();
+  const existing = Array.isArray(current.integrations) ? current.integrations : [];
+  const next = {
+    ...current,
+    integrations: [
+      ...existing.filter((item) => item?.sourceType !== "custom-api-webhooks"),
+      ...refs
+    ]
+  };
+
+  validateWorkspaceConfig({
+    dashboards: next.dashboards,
+    widgetTypes: next.widgetTypes,
+    canvas: next.canvas,
+    dataModel: next.dataModel
+  });
+
+  const configPath = resolveWorkspaceConfigPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(configPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${configPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+}
+
 export {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -165,5 +348,7 @@ export {
   readWorkspaceConfig,
   resolveWorkspaceConfigPath,
   validateWorkspaceConfig,
-  writeWorkspaceConfig
+  writeWorkspaceConfig,
+  writeWorkspaceApiWebhookSettings,
+  writeWorkspaceIdentitySettings
 };

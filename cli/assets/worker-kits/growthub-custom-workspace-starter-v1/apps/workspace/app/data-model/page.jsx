@@ -41,19 +41,36 @@ function SaveToast({ saving, message }) {
   return <span className={`dm-toast ${message.startsWith("Error") ? "error" : "ok"}`}>{message}</span>;
 }
 
-function NavRail({ authority }) {
+function textColorForAccent(accent) {
+  const hex = String(accent || "").replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return "#ffffff";
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.62 ? "#252525" : "#ffffff";
+}
+
+function NavRail({ authority, workspaceConfig }) {
+  const branding = workspaceConfig?.branding || {};
+  const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
   return (
     <aside className="workspace-rail" aria-label="Workspace navigation">
       <div className="workspace-brand">
-        <span className="workspace-mark">G</span>
-        <span>Growthub Workspace</span>
+        <span className="workspace-mark" style={{
+          background: branding.logoUrl ? undefined : branding.accent || undefined,
+          color: branding.logoUrl ? undefined : textColorForAccent(branding.accent)
+        }}>
+          {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : workspaceName.slice(0, 1).toUpperCase()}
+        </span>
+        <span>{workspaceName}</span>
       </div>
       <nav className="workspace-nav">
         <Link href="/">Dashboards</Link>
         <Link className="active" href="/data-model">Data Model</Link>
         <Link href="/settings/integrations">Integrations</Link>
-        <span className="workspace-nav-static">Workspace Settings</span>
         <span className="workspace-nav-static">Management</span>
+        <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
       </nav>
       <div className="workspace-rail-status"><span className="status-dot" />{authority || "local-catalog"}</div>
     </aside>
@@ -349,7 +366,7 @@ export default function DataModelPage() {
 
   return (
     <main className="workspace-builder workspace-settings-page">
-      <NavRail authority={authority} />
+      <NavRail authority={authority} workspaceConfig={workspaceConfig} />
       <section className="workspace-surface">
         <header className="workspace-toolbar">
           <div><p>Workspace</p><h1>Data Model</h1></div>

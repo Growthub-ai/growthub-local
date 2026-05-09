@@ -146,6 +146,16 @@ function generateId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
 }
 
+function textColorForAccent(accent) {
+  const hex = String(accent || "").replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return "#ffffff";
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.62 ? "#252525" : "#ffffff";
+}
+
 function defaultTitleFor(kind) {
   switch (kind) {
     case "chart": return "Untitled chart";
@@ -3100,7 +3110,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     });
     list.push({
       id: "workspace.settings", group: "Workspace", icon: Settings, label: "Go to Workspace Settings", shortcut: "G S",
-      run: () => setSettingsOpen(true)
+      run: () => { window.location.href = "/settings/general"; }
     });
     list.push({
       id: "workspace.management", group: "Workspace", icon: Bolt, label: "Go to Management",
@@ -3137,15 +3147,20 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
       <aside className="workspace-rail" aria-label="Workspace navigation">
         <div className="workspace-brand">
-          <span className="workspace-mark">G</span>
-          <span>Growthub Workspace</span>
+          <span className="workspace-mark" style={{
+            background: branding.logoUrl ? undefined : branding.accent || undefined,
+            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent)
+          }}>
+            {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : (branding.name || config.name || "Growthub Workspace").slice(0, 1).toUpperCase()}
+          </span>
+          <span>{branding.name || config.name || "Growthub Workspace"}</span>
         </div>
         <nav className="workspace-nav">
           <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
           <Link href="/data-model">Data Model</Link>
           <Link href="/settings/integrations">Integrations</Link>
-          <button type="button" className="workspace-nav-button" onClick={() => setSettingsOpen(true)}>Workspace Settings</button>
           <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
+          <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
         </nav>
         <div className="workspace-rail-status">
           <span className="status-dot" />
