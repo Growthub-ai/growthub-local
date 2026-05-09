@@ -14199,7 +14199,9 @@ async function addAllowedHostname(host, opts) {
     return;
   }
   const normalized = normalizeHostnameInput(host);
-  const current = new Set((config.server.allowedHostnames ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean));
+  const current = new Set(
+    (config.server.allowedHostnames ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)
+  );
   const existed = current.has(normalized);
   current.add(normalized);
   config.server.allowedHostnames = Array.from(current).sort();
