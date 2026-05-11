@@ -28,6 +28,7 @@ import {
   PieChart,
   Plus,
   Quote,
+  RefreshCw,
   Rows3,
   Save,
   Search,
@@ -2264,6 +2265,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [templateFilter, setTemplateFilter] = useState({ category: "all", tag: "all", query: "" });
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
@@ -2284,6 +2287,45 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     }
     return cells;
   }, [activeWidgets]);
+
+  /**
+   * Collect all sourceIds from live-backed widgets on the active tab.
+   * A widget is live-backed when its binding has sourceStorage === "workspace-source-records"
+   * and a non-empty sourceId. The refresh button is inert when this list is empty.
+   */
+  const liveSourceIds = useMemo(() => {
+    const ids = new Set();
+    for (const widget of activeWidgets) {
+      const binding = widget?.config?.binding;
+      if (binding?.sourceStorage === "workspace-source-records" && typeof binding.sourceId === "string" && binding.sourceId.trim()) {
+        ids.add(binding.sourceId.trim());
+      }
+    }
+    return Array.from(ids);
+  }, [activeWidgets]);
+
+  const refreshSources = useCallback(async () => {
+    if (refreshing || liveSourceIds.length === 0) return;
+    setRefreshing(true);
+    setRefreshResult(null);
+    try {
+      const response = await fetch("/api/workspace/refresh-sources", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceIds: liveSourceIds })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
+      } else {
+        setRefreshResult({ error: true });
+      }
+    } catch {
+      setRefreshResult({ error: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, liveSourceIds]);
 
   const addWidget = useCallback((kind) => {
     setConfig((prev) => {
@@ -3293,6 +3335,16 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
               </button>)}
             <button type="button" onClick={addTab}><Plus size={15} />New Tab</button>
             <button type="button" onClick={duplicateTab}><Copy size={15} />Duplicate Tab</button>
+            <button
+              type="button"
+              className={`workspace-tab-refresh${liveSourceIds.length === 0 ? " inert" : ""}${refreshing ? " loading" : ""}`}
+              disabled={liveSourceIds.length === 0 || refreshing}
+              onClick={refreshSources}
+              title={liveSourceIds.length === 0 ? "No live-backed sources on this tab" : `Refresh ${liveSourceIds.length} live source${liveSourceIds.length === 1 ? "" : "s"}`}
+            >
+              <RefreshCw size={15} className={refreshing ? "spinning" : ""} />
+              {refreshing ? "Refreshing…" : refreshResult?.error ? "Refresh failed" : refreshResult ? `${refreshResult.refreshed} updated` : "Refresh"}
+            </button>
           </div>
           <div
             className={`workspace-grid${moveDrag ? " moving-widget" : ""}`}

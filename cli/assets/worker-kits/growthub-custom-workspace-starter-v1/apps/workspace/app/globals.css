@@ -868,6 +868,39 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   color: #333;
   outline: none;
 }
+.workspace-tab-refresh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #444;
+  border: 1px solid #dcdcdc;
+  background: #fff;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.workspace-tab-refresh:hover:not(:disabled) {
+  background: #f3f3f3;
+  color: #111;
+}
+.workspace-tab-refresh.inert,
+.workspace-tab-refresh:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.workspace-tab-refresh.loading {
+  color: #555;
+}
+@keyframes workspace-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.workspace-tab-refresh svg.spinning {
+  animation: workspace-spin 0.7s linear infinite;
+}
 .workspace-toolbar-actions select,
 .workspace-widget-settings select {
   min-height: 32px;

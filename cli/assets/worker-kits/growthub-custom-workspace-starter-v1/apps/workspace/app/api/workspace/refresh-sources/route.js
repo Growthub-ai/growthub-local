@@ -1,0 +1,111 @@
+/**
+ * POST /api/workspace/refresh-sources
+ *
+ * Thin dispatcher for live-backed data sources. Zero provider-specific logic
+ * lives here. Each integration ships its own resolver file under
+ * `lib/adapters/integrations/resolvers/<id>.js` and registers itself via
+ * `registerSourceResolver()` from source-resolver-registry.js.
+ *
+ * This route never imports any provider directly. It reads the registry and
+ * dispatches to whatever resolvers the operator has registered. An upstream
+ * kit with no resolver files registered still works — it just skips sources
+ * that have no resolver and returns them in the `skipped` array.
+ *
+ * Request body:
+ *   { sourceIds: string[] }   — IDs of dataModel.objects to refresh
+ *
+ * Response shape:
+ *   200 { refreshed: SourceRefreshResult[], skipped: string[] }
+ *   400 { error: string }
+ *   500 { error: string }
+ *
+ * SourceRefreshResult:
+ *   { sourceId: string, integrationId: string, recordCount: number, fetchedAt: string }
+ *
+ * Authority contract (GOVERNED_WORKSPACE_TOPOLOGY_V1):
+ *   - Browser sends only non-secret sourceIds. No tokens, no provider auth.
+ *   - Server reads env credentials via readAdapterConfig().
+ *   - Normalized records are persisted via writeWorkspaceSourceRecords().
+ *   - Raw provider payloads are never forwarded to the client.
+ *   - The Growthub bridge owns provider auth — this route never holds tokens.
+ */
+
+import { NextResponse } from "next/server";
+import { readAdapterConfig } from "@/lib/adapters/env";
+import { readWorkspaceConfig, writeWorkspaceSourceRecords } from "@/lib/workspace-config";
+import { getSourceResolver } from "@/lib/adapters/integrations/source-resolver-registry";
+
+async function POST(request) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "body must be a plain object" }, { status: 400 });
+  }
+
+  const { sourceIds } = body;
+  if (!Array.isArray(sourceIds) || sourceIds.length === 0) {
+    return NextResponse.json({ error: "sourceIds must be a non-empty array" }, { status: 400 });
+  }
+
+  const invalidIds = sourceIds.filter((id) => typeof id !== "string" || !id.trim());
+  if (invalidIds.length) {
+    return NextResponse.json({ error: "every sourceId must be a non-empty string" }, { status: 400 });
+  }
+
+  let workspaceConfig;
+  try {
+    workspaceConfig = await readWorkspaceConfig();
+  } catch (err) {
+    return NextResponse.json({ error: `failed to read workspace config: ${err.message}` }, { status: 500 });
+  }
+
+  const adapterConfig = readAdapterConfig();
+  const dataObjects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+
+  const refreshed = [];
+  const skipped = [];
+
+  for (const sourceId of sourceIds) {
+    const obj = dataObjects.find((o) => o.id === sourceId);
+    if (!obj) {
+      skipped.push(sourceId);
+      continue;
+    }
+
+    const binding = obj.binding;
+    if (!binding || binding.sourceStorage !== "workspace-source-records") {
+      skipped.push(sourceId);
+      continue;
+    }
+
+    const integrationId = binding.integrationId;
+    if (!integrationId) {
+      skipped.push(sourceId);
+      continue;
+    }
+
+    const resolver = getSourceResolver(integrationId);
+    if (!resolver) {
+      skipped.push(sourceId);
+      continue;
+    }
+
+    try {
+      const records = await resolver.fetchRecords(adapterConfig, null, binding);
+      const fetchedAt = new Date().toISOString();
+      await writeWorkspaceSourceRecords(sourceId, records, { integrationId, fetchedAt });
+      refreshed.push({ sourceId, integrationId, recordCount: records.length, fetchedAt });
+    } catch {
+      skipped.push(sourceId);
+    }
+  }
+
+  return NextResponse.json({ refreshed, skipped });
+}
+
+export { POST };

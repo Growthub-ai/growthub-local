@@ -152,7 +152,9 @@ const WIDGET_SCHEMA_CONTRACTS = {
     lane: "string optional (when mode === 'integration')",
     entityId: "string optional — stable source object ID (never a token or credential)",
     entityType: "string optional — adapter-provided object type",
-    entityLabel: "string optional — display-only resolved label, not authoritative"
+    entityLabel: "string optional — display-only resolved label, not authoritative",
+    sourceStorage: "'workspace-source-records' optional — marks this binding as live-backed; records are written by POST /api/workspace/refresh-sources and keyed by dataModel.objects[].sourceId",
+    sourceId: "string optional — stable key in growthub.source-records.json; required when sourceStorage === 'workspace-source-records'"
   },
   NormalizedIntegrationEntity: {
     id: "non-empty string — stable source object ID",
@@ -438,6 +440,14 @@ function validateStaticDataBinding(binding, path, errors) {
   }
   if (binding.entityLabel !== undefined && typeof binding.entityLabel !== "string") {
     errors.push(`${path}.entityLabel must be a string`);
+  }
+  if (binding.sourceStorage !== undefined) {
+    if (binding.sourceStorage !== "workspace-source-records") {
+      errors.push(`${path}.sourceStorage must be "workspace-source-records" when present`);
+    }
+  }
+  if (binding.sourceId !== undefined && typeof binding.sourceId !== "string") {
+    errors.push(`${path}.sourceId must be a string`);
   }
 }
 
@@ -805,6 +815,7 @@ function validateDataModelConfig(dataModel, errors) {
     }
     if (typeof object.label !== "string" || !object.label.trim()) errors.push(`${prefix}.label must be a non-empty string`);
     if (object.source !== undefined && typeof object.source !== "string") errors.push(`${prefix}.source must be a string`);
+    if (object.sourceId !== undefined && typeof object.sourceId !== "string") errors.push(`${prefix}.sourceId must be a string`);
     validateStringArray(object.columns, `${prefix}.columns`, errors);
     if (!Array.isArray(object.rows)) {
       errors.push(`${prefix}.rows must be an array`);
@@ -814,6 +825,9 @@ function validateDataModelConfig(dataModel, errors) {
       });
     }
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
+    if (object.binding?.sourceStorage === "workspace-source-records" && typeof object.sourceId !== "string") {
+      errors.push(`${prefix}.sourceId is required when binding.sourceStorage is "workspace-source-records"`);
+    }
     validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
   });
 }
