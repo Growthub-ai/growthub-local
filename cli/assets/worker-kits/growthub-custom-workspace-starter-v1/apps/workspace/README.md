@@ -27,6 +27,33 @@ Use `GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER=growthub-bridge` when the deployed a
 
 For first boot, the bundled app also supports a hybrid path: keep `GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER=growthub-bridge` and set `WINDSOR_API_KEY` locally. That overlays connected state for Windsor AI and Google Sheets blended data without moving the rest of the workspace off the hosted bridge authority path.
 
+## Data sources and API registry
+
+Use the Data Model page to configure API-backed Data Sources and reusable API Registry records. Credentials stay in workspace settings or server env; Data Model records store only non-secret references such as `authRef`.
+
+See [`docs/data-sources-api-registry.md`](./docs/data-sources-api-registry.md) for the setup guide, test flow, widget source eligibility rules, and the LeadShark example.
+
+## Integration resolvers
+
+Drop one `.js` file per integration into `lib/adapters/integrations/resolvers/`. Each file registers a provider-agnostic resolver that the workspace routes (`test-source`, `refresh-sources`) dispatch to. The bridge confirms which integrations are connected — resolvers call the provider API directly using env-var tokens.
+
+```bash
+# List registered resolvers (JSON)
+curl -s http://localhost:3000/api/workspace/resolvers
+
+# Test a resolver before saving to data model (JSON)
+curl -s -X POST http://localhost:3000/api/workspace/test-source \
+  -H "Content-Type: application/json" \
+  -d '{"integrationId":"google-analytics","binding":{"entityType":"ga4.traffic","sourceStorage":"workspace-source-records","sourceId":"ga4-traffic"}}'
+
+# Register a resolver-backed data model object (persists to growthub.config.json)
+curl -s -X PATCH http://localhost:3000/api/workspace \
+  -H "Content-Type: application/json" \
+  -d '{"dataModel":{"objects":[...]}}'
+```
+
+See [`lib/adapters/integrations/resolvers/README.md`](./lib/adapters/integrations/resolvers/README.md) for the full resolver shape, all CLI commands with JSON response contracts, and the complete data model → source dropdown → refresh flow.
+
 ## Run
 
 ```bash

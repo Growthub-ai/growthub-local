@@ -3,9 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
+  BarChart2,
   BarChart3,
   Bolt,
+  Box,
+  Building2,
+  Calendar,
   Check,
+  CheckSquare,
   ChevronDown,
   Code2,
   Columns3,
@@ -16,28 +22,41 @@ import {
   FileText,
   Filter,
   Gauge,
+  Globe,
+  GripVertical,
   Grid2X2,
+  Hash,
   Home,
   Import,
   Italic,
+  Layers,
   LayoutDashboard,
   Link as LinkIcon,
+  Link2,
   List,
+  Mail,
   Maximize2,
   Pencil,
   PieChart,
   Plus,
   Quote,
+  RefreshCw,
   Rows3,
   Save,
   Search,
   Settings,
+  ShoppingCart,
   Sigma,
   SlidersHorizontal,
+  Star,
   Table2,
+  Tag,
+  ToggleLeft,
   Trash2,
   Type,
-  X
+  Users,
+  X,
+  Zap,
 } from "lucide-react";
 import {
   DASHBOARD_TEMPLATES,
@@ -47,7 +66,6 @@ import {
   KNOWN_FILTER_OPERATORS,
   KNOWN_SORT_DIRECTIONS,
   SAMPLE_DATA_BINDINGS,
-  SAMPLE_VIEW_ROWS,
   cloneTemplateToDashboard,
   cloneTemplateToTab,
   defaultConfigFor,
@@ -57,7 +75,7 @@ import {
   wrapWorkspaceTemplateExport
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
-import { listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
+import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
 
 const DEFAULT_CHART_TYPE = "bar-vertical";
 const DEFAULT_FILTER_OP = "and";
@@ -67,6 +85,8 @@ const SUB_PANEL_ROOT = "root";
 const MANAGED_INTEGRATION_SOURCE_TYPE = "managed-integrations";
 const CUSTOM_API_SOURCE_TYPE = "custom-api-webhooks";
 const DATA_MODEL_SOURCE_TYPE = "workspace-data-model";
+const LIVE_SOURCE_TYPE = "workspace-source-records";
+const TESTED_SOURCE_STATUSES = new Set(["connected", "approved", "ok", "success"]);
 
 const SOURCE_TYPE_OBJECTS = [
   {
@@ -84,6 +104,32 @@ const SOURCE_TYPE_OBJECTS = [
 ];
 
 const ENTITY_REFERENCE_FIELD_IDS = ["id", "entityId"];
+
+function hasSavedResponseShape(row) {
+  const raw = row?.lastResponse || row?.LastResponse;
+  if (!raw || typeof raw !== "string") return false;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed !== null && (Array.isArray(parsed) || typeof parsed === "object");
+  } catch {
+    return false;
+  }
+}
+
+function hasTestedSavedRow(table) {
+  return (table.rows || []).some((row) => {
+    const status = String(row?.status || row?.Status || "").toLowerCase();
+    return TESTED_SOURCE_STATUSES.has(status) && hasSavedResponseShape(row);
+  });
+}
+
+function isSelectableDataModelSource(table) {
+  if (table?.storage !== "manual-object") return false;
+  if (table.objectType === "api-registry") return false;
+  if (table.objectType === "data-source") return hasTestedSavedRow(table);
+  const hasStatusField = (table.columns || []).some((column) => String(column).toLowerCase() === "status");
+  return hasStatusField ? hasTestedSavedRow(table) : true;
+}
 
 const CHART_TYPE_LABELS = {
   "bar-vertical": "Vertical Bar",
@@ -131,6 +177,88 @@ const COLUMN_ICON_FOR = (name) => {
   if (lower.includes("date") || lower.includes("created") || lower.includes("updated")) return "📅";
   return "▦";
 };
+
+// Icon map for workspace data model object types
+const OBJ_ICON_MAP = {
+  Activity, BarChart2, Box, Building2, Calendar, CheckSquare, Code2,
+  Database, FileText, Globe, Hash, Layers, Link2, List, Mail, Plus,
+  ShoppingCart, Star, Tag, Type, Users, Zap,
+};
+
+function ObjectIcon({ name, size = 14, className }) {
+  const Icon = OBJ_ICON_MAP[name] || Database;
+  return <Icon size={size} className={className} aria-hidden="true" />;
+}
+
+// Infer a lightweight type from a field name for the dropdown icon
+function inferFieldType(name) {
+  const n = String(name || "").toLowerCase();
+  if (n.includes("date") || n.includes("_at") || n.includes("created") || n.includes("updated")) return "date";
+  if (n === "status" || n === "stage" || n === "type" || n === "priority" || n === "authtype") return "select";
+  if (n.includes("count") || n.includes("num") || n.includes("amount") || n.includes("arr") || n.includes("price")) return "number";
+  if (n.startsWith("is_") || n.includes("active") || n.includes("enabled")) return "boolean";
+  return "text";
+}
+const FIELD_TYPE_ICON_MAP = { date: Calendar, select: List, number: Hash, boolean: ToggleLeft };
+
+/**
+ * FieldDropdown — searchable field picker driven by a source object's column list.
+ * Used by ChartConfigPanel for X/Y axis "Data on display" selection.
+ */
+function FieldDropdown({ fields, value, onChange, placeholder = "Select field…", disabled }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? (fields || []).filter((f) => f.toLowerCase().includes(q)) : (fields || []);
+  }, [fields, query]);
+
+  function pick(field) { onChange(field); setOpen(false); setQuery(""); }
+
+  return (
+    <div className="field-dropdown-wrap" ref={ref}>
+      <button
+        type="button"
+        className={`field-dropdown-trigger${open ? " open" : ""}${disabled ? " disabled" : ""}`}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled}
+      >
+        <span className="field-dropdown-label">{value || placeholder}</span>
+        <ChevronDown size={12} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="field-dropdown-popover" role="listbox">
+          <div className="field-dropdown-search">
+            <Search size={11} aria-hidden="true" />
+            <input autoFocus placeholder="Search fields" value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          {filtered.length > 0 ? filtered.map((field) => {
+            const FIcon = FIELD_TYPE_ICON_MAP[inferFieldType(field)] || Type;
+            const sel = value === field;
+            return (
+              <button key={field} type="button" role="option" aria-selected={sel}
+                className={`field-dropdown-item${sel ? " selected" : ""}`}
+                onClick={() => pick(field)}>
+                <FIcon size={13} aria-hidden="true" />
+                <span>{field}</span>
+                {sel && <Check size={12} strokeWidth={2.5} aria-hidden="true" />}
+              </button>
+            );
+          }) : <p className="field-dropdown-empty">{fields?.length ? "No match" : "No source selected"}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const DEFAULT_POSITION = { x: 4, y: 0, w: 4, h: 5 };
 const GRID_COLUMNS = 12;
@@ -542,7 +670,7 @@ function serializeLineList(values) {
 }
 
 function parseManualRows(value, columns) {
-  const activeColumns = columns.length ? columns : ["Name", "Domain Name"];
+  const activeColumns = columns.length ? columns : [];
   return String(value)
     .split("\n")
     .map((row) => row.trim())
@@ -557,7 +685,7 @@ function parseManualRows(value, columns) {
 }
 
 function serializeManualRows(rows, columns) {
-  const activeColumns = columns.length ? columns : ["Name", "Domain Name"];
+  const activeColumns = columns.length ? columns : [];
   return (Array.isArray(rows) ? rows : [])
     .map((row) => activeColumns.map((column) => row?.[column] || "").join(" | "))
     .join("\n");
@@ -667,11 +795,14 @@ function summarizeSource(widget) {
 function summarizeSourceType(binding) {
   if (binding?.sourceType === DATA_MODEL_SOURCE_TYPE) return "Data Model";
   if (binding?.sourceType === CUSTOM_API_SOURCE_TYPE) return "Custom APIs/Webhooks";
-  if (binding?.mode === "integration" || binding?.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE) return "Managed Integrations";
+  if (binding?.mode === "integration" || binding?.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE || binding?.sourceStorage === LIVE_SOURCE_TYPE) return "Managed Integrations";
   return "Static data";
 }
 
 function resolveBindingSourceType(binding) {
+  // LIVE_SOURCE_TYPE is internal infrastructure — resolve to its user-facing source category
+  if (binding?.sourceStorage === LIVE_SOURCE_TYPE) return MANAGED_INTEGRATION_SOURCE_TYPE;
+  if (binding?.sourceType === LIVE_SOURCE_TYPE) return MANAGED_INTEGRATION_SOURCE_TYPE;
   if (binding?.sourceType) return binding.sourceType;
   if (binding?.mode === "integration") return MANAGED_INTEGRATION_SOURCE_TYPE;
   return "static";
@@ -1096,69 +1227,856 @@ function EntitySelector({ integration, entities, selectedEntityId, selectedEntit
   </div>;
 }
 
-function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBack }) {
+/**
+ * LiveSourcePanel — step-by-step no-code wizard for configuring a live source
+ * binding backed by the source-resolver-registry.
+ *
+ * Steps:
+ *   1 — Auth mode  (Bridge / BYO Token)
+ *   2 — Integration  (pick from available or enter custom id)
+ *   3 — Entity config  (entity type, entity id — optional)
+ *   4 — Source ID  (stable key for growthub.source-records.json)
+ *   5 — Test + Preview  (POST /api/workspace/test-source)
+ *
+ * Apply button is only enabled after a successful test (testState.ok === true).
+ * When the user clicks Apply the binding is committed to the widget config.
+ */
+function LiveSourcePanel({ widget, integrations, adapterConfig, onApply, onCancel }) {
+  const existing = widget.config?.binding || {};
+  const [step, setStep] = useState(1);
+  const [authMode, setAuthMode] = useState(existing.sourceAuthority === "byo-token" ? "byo-token" : "bridge");
+  const [integrationId, setIntegrationId] = useState(existing.integrationId || "");
+  const [entityType, setEntityType] = useState(existing.entityType || "");
+  const [entityId, setEntityId] = useState(existing.entityId || "");
+  const [sourceId, setSourceId] = useState(existing.sourceId || existing.integrationId || "");
+  const [testState, setTestState] = useState(null);
+  const [testing, setTesting] = useState(false);
+
+  const isBridge = adapterConfig?.integrationAdapter === "growthub-bridge";
+  const hasBridgeToken = adapterConfig?.growthubBridge?.hasAccessToken;
+  const availableIntegrations = Array.isArray(integrations) ? integrations : [];
+
+  const canProceedStep1 = authMode === "bridge" || authMode === "byo-token";
+  const canProceedStep2 = typeof integrationId === "string" && integrationId.trim().length > 0;
+  const canProceedStep3 = true;
+  const canProceedStep4 = typeof sourceId === "string" && sourceId.trim().length > 0;
+  const canApply = testState?.ok === true;
+
+  const autoSourceId = integrationId.trim().replace(/[^a-z0-9-]/gi, "-").toLowerCase();
+
+  function handleIntegrationSelect(id) {
+    setIntegrationId(id);
+    if (!sourceId || sourceId === autoSourceId) {
+      setSourceId(id.replace(/[^a-z0-9-]/gi, "-").toLowerCase());
+    }
+  }
+
+  async function runTest() {
+    if (!canProceedStep2) return;
+    setTesting(true);
+    setTestState(null);
+    try {
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          integrationId: integrationId.trim(),
+          binding: {
+            integrationId: integrationId.trim(),
+            entityType: entityType.trim() || undefined,
+            entityId: entityId.trim() || undefined,
+            sourceId: sourceId.trim() || integrationId.trim(),
+            authMode
+          }
+        })
+      });
+      const data = await res.json();
+      setTestState(data);
+      if (data.ok) setStep(5);
+    } catch {
+      setTestState({ ok: false, reason: "network-error", error: "Network error — check console" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  function applyBinding() {
+    if (!canApply) return;
+    onApply({
+      ...widget.config,
+      source: integrationId.trim(),
+      binding: {
+        mode: "integration",
+        source: integrationId.trim(),
+        sourceStorage: LIVE_SOURCE_TYPE,
+        sourceType: MANAGED_INTEGRATION_SOURCE_TYPE,
+        sourceId: sourceId.trim() || integrationId.trim(),
+        integrationId: integrationId.trim(),
+        entityType: entityType.trim() || undefined,
+        entityId: entityId.trim() || undefined,
+        sourceAuthority: authMode === "bridge" ? "growthub-bridge" : "byo-token"
+      }
+    });
+  }
+
+  return <div className="live-source-wizard">
+    {/* Step breadcrumb */}
+    <div className="live-source-steps" role="list">
+      {["Auth", "Integration", "Entity", "Source ID", "Test"].map((label, idx) => {
+        const s = idx + 1;
+        const done = step > s;
+        const active = step === s;
+        return <span
+          key={s}
+          className={`live-source-step${active ? " active" : ""}${done ? " done" : ""}`}
+          role="listitem"
+          aria-current={active ? "step" : undefined}
+        >
+          <span className="live-source-step-dot">{done ? "✓" : s}</span>
+          <span className="live-source-step-label">{label}</span>
+        </span>;
+      })}
+    </div>
+
+    {/* Step 1: Auth mode */}
+    {step === 1 && <div className="live-source-step-body">
+      <p className="live-source-step-title">How does this integration authenticate?</p>
+      <p className="live-source-step-hint">Your token stays server-side. The browser only sees normalized records.</p>
+      <div className="live-source-auth-toggle" role="radiogroup" aria-label="Auth mode">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={authMode === "bridge"}
+          className={authMode === "bridge" ? "active" : ""}
+          onClick={() => setAuthMode("bridge")}
+        >
+          <strong>Growthub Bridge</strong>
+          <em>{isBridge && hasBridgeToken ? "Connected — token in env" : "Set GROWTHUB_BRIDGE_BASE_URL + GROWTHUB_BRIDGE_ACCESS_TOKEN"}</em>
+          {isBridge && hasBridgeToken ? <span className="live-source-badge connected">connected</span> : <span className="live-source-badge warn">env required</span>}
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={authMode === "byo-token"}
+          className={authMode === "byo-token" ? "active" : ""}
+          onClick={() => setAuthMode("byo-token")}
+        >
+          <strong>BYO Token / Custom env</strong>
+          <em>Your resolver reads the env var you specify. Set it in .env or Vercel env.</em>
+          <span className="live-source-badge neutral">custom</span>
+        </button>
+      </div>
+      <button type="button" className="live-source-next" disabled={!canProceedStep1} onClick={() => setStep(2)}>
+        Next → Choose integration
+      </button>
+    </div>}
+
+    {/* Step 2: Integration */}
+    {step === 2 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Which integration?</p>
+      <p className="live-source-step-hint">Pick a connected integration or enter a custom resolver id that matches what your resolver file registers.</p>
+      <div className="live-source-integration-list">
+        {availableIntegrations.filter((i) => i.isConnected || i.status === "connected").map((integration) => <button
+          key={integration.id}
+          type="button"
+          className={`live-source-integration-row${integrationId === integration.id ? " active" : ""}`}
+          onClick={() => handleIntegrationSelect(integration.id)}
+        >
+          <span className="live-source-integration-icon">{integration.icon || integration.label?.[0] || "•"}</span>
+          <span className="live-source-integration-meta">
+            <strong>{integration.label}</strong>
+            <em>{integration.provider} · {integration.status}</em>
+          </span>
+          {integrationId === integration.id ? <Check size={15} /> : null}
+        </button>)}
+        {availableIntegrations.filter((i) => i.isConnected || i.status === "connected").length === 0
+          ? <p className="live-source-empty">No connected integrations — enter a custom resolver id below.</p>
+          : null}
+      </div>
+      <label className="live-source-custom-id">
+        <span>Custom resolver id</span>
+        <input
+          type="text"
+          placeholder="my-crm, windsor-ai, custom-api…"
+          value={integrationId}
+          onChange={(e) => handleIntegrationSelect(e.target.value)}
+        />
+      </label>
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(1)}>← Back</button>
+        <button type="button" className="live-source-next" disabled={!canProceedStep2} onClick={() => setStep(3)}>
+          Next → Entity config
+        </button>
+      </div>
+    </div>}
+
+    {/* Step 3: Entity config */}
+    {step === 3 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Entity configuration <em>(optional)</em></p>
+      <p className="live-source-step-hint">Tell the resolver which object to fetch. Leave blank if your resolver fetches everything by default.</p>
+      <label className="live-source-field">
+        <span>Entity type</span>
+        <input
+          type="text"
+          placeholder="project.tasks, records, contacts…"
+          value={entityType}
+          onChange={(e) => setEntityType(e.target.value)}
+        />
+      </label>
+      <label className="live-source-field">
+        <span>Entity id / object id</span>
+        <input
+          type="text"
+          placeholder="gid_12345, project_abc, board-id…"
+          value={entityId}
+          onChange={(e) => setEntityId(e.target.value)}
+        />
+      </label>
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(2)}>← Back</button>
+        <button type="button" className="live-source-next" disabled={!canProceedStep3} onClick={() => setStep(4)}>
+          Next → Source ID
+        </button>
+      </div>
+    </div>}
+
+    {/* Step 4: Source ID */}
+    {step === 4 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Source ID</p>
+      <p className="live-source-step-hint">A stable key used to store and retrieve live records. Defaults to the integration id.</p>
+      <label className="live-source-field">
+        <span>Source ID</span>
+        <input
+          type="text"
+          placeholder={autoSourceId || "my-source"}
+          value={sourceId}
+          onChange={(e) => setSourceId(e.target.value)}
+        />
+      </label>
+      <p className="live-source-step-hint">Records will be stored under this key in <code>growthub.source-records.json</code> and available immediately after Refresh.</p>
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(3)}>← Back</button>
+        <button type="button" className="live-source-next" disabled={!canProceedStep4} onClick={() => { setStep(5); }}>
+          Next → Test connection
+        </button>
+      </div>
+    </div>}
+
+    {/* Step 5: Test + preview */}
+    {step === 5 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Test connection</p>
+      <div className="live-source-summary">
+        <span><em>Integration</em> <strong>{integrationId}</strong></span>
+        {entityType ? <span><em>Entity type</em> <strong>{entityType}</strong></span> : null}
+        {entityId ? <span><em>Entity id</em> <strong>{entityId}</strong></span> : null}
+        <span><em>Auth</em> <strong>{authMode === "bridge" ? "Growthub Bridge" : "BYO Token"}</strong></span>
+      </div>
+
+      {!testState && !testing && <button
+        type="button"
+        className="live-source-test-btn"
+        onClick={runTest}
+        disabled={testing || !canProceedStep2 || !canProceedStep4}
+      >
+        <RefreshCw size={15} />
+        Run test fetch
+      </button>}
+
+      {testing && <div className="live-source-testing">
+        <RefreshCw size={15} className="spinning" />
+        <span>Contacting resolver…</span>
+      </div>}
+
+      {testState && !testState.ok && <div className="live-source-test-result error">
+        <strong>{testState.reason === "no-resolver" ? "No resolver registered" : "Fetch failed"}</strong>
+        {testState.reason === "no-resolver" && <p>
+          No resolver is registered for <code>{integrationId}</code>.
+          Registered resolvers: {testState.registeredResolvers?.length
+            ? testState.registeredResolvers.join(", ")
+            : "none"}.
+          <br />Upload a resolver file in the Management panel or add one to <code>lib/adapters/integrations/resolvers/</code>.
+        </p>}
+        {testState.reason !== "no-resolver" && <p>{testState.error}</p>}
+        <button type="button" className="live-source-retry" onClick={runTest} disabled={testing}>Retry</button>
+      </div>}
+
+      {testState?.ok && <div className="live-source-test-result success">
+        <strong>✓ {testState.recordCount} record{testState.recordCount !== 1 ? "s" : ""} fetched</strong>
+        <span>Columns: {testState.columns?.join(", ") || "—"}</span>
+        {testState.preview?.length > 0 && <div className="live-source-preview">
+          <table>
+            <thead>
+              <tr>{testState.columns?.slice(0, 6).map((col) => <th key={col}>{col}</th>)}</tr>
+            </thead>
+            <tbody>
+              {testState.preview.map((row, idx) => <tr key={idx}>
+                {testState.columns?.slice(0, 6).map((col) => <td key={col}>
+                  {row[col] === null || row[col] === undefined ? <em className="live-source-null">—</em> : String(row[col]).slice(0, 60)}
+                </td>)}
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+        <button type="button" className="live-source-retry" onClick={runTest} disabled={testing}>Re-test</button>
+      </div>}
+
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(4)}>← Back</button>
+        <button
+          type="button"
+          className="live-source-apply"
+          disabled={!canApply}
+          onClick={applyBinding}
+          title={canApply ? "Apply live source binding to widget" : "Run a successful test first"}
+        >
+          {canApply ? "✓ Apply binding" : "Test required to apply"}
+        </button>
+      </div>
+    </div>}
+
+    <button type="button" className="live-source-cancel" onClick={onCancel}>Cancel</button>
+  </div>;
+}
+
+/**
+ * SourceDropdown — compact inline source picker used in the chart config header.
+ * Shows only workspace-config saved data model objects. No static rows, no integrations.
+ */
+function SourceDropdown({ widget, dataModelTables, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
   const binding = widget.config?.binding || {};
-  const currentMode = binding.mode || (widget.kind === "view" ? "manual" : "json");
-	  const activeSourceType = resolveBindingSourceType(binding);
-	  const [query, setQuery] = useState("");
-	  const [laneFilter, setLaneFilter] = useState("all");
-  const hasConnectedSource = Boolean(
-    binding.integrationId ||
-    binding.endpointRef ||
-    binding.sourceType === DATA_MODEL_SOURCE_TYPE ||
-    binding.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE ||
-    binding.sourceType === CUSTOM_API_SOURCE_TYPE
-  );
-  const confirmSourceChange = useCallback((nextLabel) => {
-    if (!hasConnectedSource) return true;
-    const currentLabel = summarizeSource(widget);
-    return window.confirm(`Change source from ${currentLabel} to ${nextLabel}? This updates the widget binding and can clear source-object filters.`);
-  }, [hasConnectedSource, widget]);
 
-  const activeIntegration = useMemo(() => {
-    if (currentMode !== "integration" || !binding.integrationId) return null;
-    const list = Array.isArray(integrations) ? integrations : [];
-    return list.find((item) => item.id === binding.integrationId) || null;
-  }, [currentMode, binding.integrationId, integrations]);
+  useEffect(() => {
+    if (!open) return;
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
 
-  const groups = useMemo(() => {
-    const list = Array.isArray(integrations) ? integrations : [];
-    const filtered = list.filter((item) => {
-      if (laneFilter !== "all" && item.lane !== laneFilter) return false;
-      const text = `${item.label} ${item.provider} ${item.description}`.toLowerCase();
-      return !query.trim() || text.includes(query.trim().toLowerCase());
-    });
-    return {
-      "data-source": filtered.filter((item) => item.lane === "data-source"),
-      "workspace-integration": filtered.filter((item) => item.lane === "workspace-integration")
-    };
-  }, [integrations, laneFilter, query]);
-
-  const availableDataObjects = useMemo(() => {
-    const list = Array.isArray(dataModelTables) ? dataModelTables : [];
-    const trimmed = query.trim().toLowerCase();
-    return list.filter((table) => {
-      if (table.storage !== "manual-object") return false;
-      if (!trimmed) return true;
-      return `${table.label} ${table.source}`.toLowerCase().includes(trimmed);
-    });
+  const savedObjects = useMemo(() => {
+    const list = (Array.isArray(dataModelTables) ? dataModelTables : []).filter(isSelectableDataModelSource);
+    const q = query.trim().toLowerCase();
+    return q ? list.filter((t) => `${t.label} ${t.source}`.toLowerCase().includes(q)) : list;
   }, [dataModelTables, query]);
 
-	  const selectStatic = useCallback(() => {
-    if (!confirmSourceChange("Static rows")) return;
-	    if (widget.kind === "chart") {
-      onChange({ ...widget.config, binding: SAMPLE_DATA_BINDINGS.reportingJson });
-    } else {
-      onChange({
-        ...widget.config,
-        source: widget.config?.source || "Static rows",
-        binding: { mode: "manual", source: "Static rows", rows: Array.isArray(widget.config?.rows) ? widget.config.rows : [] }
-      });
+  const currentLabel = (() => {
+    if (binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
+      const found = (Array.isArray(dataModelTables) ? dataModelTables : []).find((t) => t.objectId === binding.objectId);
+      return found?.label || binding.source || "Object";
     }
-	  }, [confirmSourceChange, onChange, widget.config, widget.kind]);
+    return "Select source…";
+  })();
 
-  const selectDataModelObject = useCallback((table) => {
-    if (!table || !confirmSourceChange(table.label)) return;
+  function selectObject(table) {
+    onChange({
+      ...widget.config,
+      source: table.source,
+      columns: table.columns,
+      rows: [],
+      binding: { mode: "manual", source: table.source, sourceType: DATA_MODEL_SOURCE_TYPE, sourceAuthority: "workspace-config", objectId: table.objectId },
+      fieldSettings: { hidden: [], order: table.columns }
+    });
+    setOpen(false);
+    setQuery("");
+  }
+
+  return (
+    <div className="source-dropdown-wrap" ref={ref}>
+      <button type="button" className={`source-dropdown-trigger${open ? " open" : ""}`} onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
+        <span className="source-dropdown-label">{currentLabel}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="source-dropdown-popover" role="listbox">
+          <div className="source-dropdown-search">
+            <Search size={12} aria-hidden="true" />
+            <input autoFocus placeholder="Search objects…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search objects" />
+          </div>
+          {savedObjects.length > 0 ? savedObjects.map((table) => {
+            const sel = binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId === table.objectId;
+            return (
+              <button key={table.id} type="button" role="option" aria-selected={sel} className={`source-dropdown-item${sel ? " selected" : ""}`} onClick={() => selectObject(table)}>
+                <ObjectIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={13} />
+                <span>{table.label}</span>
+                {sel && <Check size={12} strokeWidth={2.5} aria-hidden="true" />}
+              </button>
+            );
+          }) : (
+            <div className="source-dropdown-empty">
+              <span>No objects yet.</span>
+              <a href="/data-model" className="source-dropdown-hint">Set up sources on Data Model →</a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * SourceRefreshConfigurator — inline test + apply panel shown inside
+ * Managed Integration and Custom API/Webhook source config.
+ *
+ * Refresh is a *behavior* of a source, not a source type.
+ * This component surfaces test-source and preview-records capabilities
+ * without exposing resolver-registry internals to the user.
+ */
+
+/**
+ * ResolverControlPanel — composable, provider-agnostic resolver management.
+ *
+ * Reads resolver metadata from /api/workspace/resolvers (entityTypes,
+ * hasListEntities) and renders generic controls. No provider names,
+ * no hardcoded field names — every control is driven by what the resolver
+ * file itself declares.
+ *
+ * Props:
+ *   binding           — current widget binding (read-only, source of truth)
+ *   adapterConfig     — workspace adapter config (bridge vs byo-token auth mode)
+ *   onUpdateBinding   — (nextBinding) => void — saves binding params to widget config
+ *   onRefreshAndSave  — (binding, objectId) => Promise<void> — fetch+persist rows
+ */
+function ResolverControlPanel({ binding, adapterConfig, onUpdateBinding, onRefreshAndSave }) {
+  const integrationId = binding?.integrationId;
+  const objectId = binding?.objectId;
+
+  const [resolverMeta, setResolverMeta] = useState(null);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [entities, setEntities] = useState(null);
+  const [entitiesLoading, setEntitiesLoading] = useState(false);
+  const [entitiesError, setEntitiesError] = useState(null);
+
+  const [entityType, setEntityType] = useState(binding?.entityType || "");
+  const [entityId, setEntityId] = useState(binding?.entityId || "");
+  const [lookbackDays, setLookbackDays] = useState(binding?.days || 30);
+
+  const [testState, setTestState] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
+
+  // Load resolver metadata once on mount
+  useEffect(() => {
+    if (!integrationId) { setMetaLoading(false); return; }
+    setMetaLoading(true);
+    fetch("/api/workspace/resolvers")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        const meta = Array.isArray(data.resolvers)
+          ? data.resolvers.find((r) => r.integrationId === integrationId) || null
+          : null;
+        setResolverMeta(meta);
+        if (!entityType && meta?.entityTypes?.length) {
+          setEntityType(meta.entityTypes[0]);
+        }
+      })
+      .catch(() => setResolverMeta(null))
+      .finally(() => setMetaLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [integrationId]);
+
+  // Load entity list when resolver declares listEntities
+  useEffect(() => {
+    if (!integrationId || !resolverMeta?.hasListEntities) return;
+    setEntitiesLoading(true);
+    setEntitiesError(null);
+    fetch(`/api/workspace/list-entities?integrationId=${encodeURIComponent(integrationId)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r))
+      .then((data) => setEntities(Array.isArray(data.entities) ? data.entities : []))
+      .catch(() => { setEntitiesError("Could not load entities"); setEntities([]); })
+      .finally(() => setEntitiesLoading(false));
+  }, [integrationId, resolverMeta?.hasListEntities]);
+
+  const authMode = adapterConfig?.integrationAdapter === "growthub-bridge" ? "bridge" : "byo-token";
+
+  function buildTestBinding() {
+    return {
+      ...binding,
+      entityType: entityType || undefined,
+      entityId: entityId || undefined,
+      days: lookbackDays || undefined,
+    };
+  }
+
+  function saveParams() {
+    onUpdateBinding({
+      ...binding,
+      entityType: entityType || undefined,
+      entityId: entityId || undefined,
+      days: lookbackDays || undefined,
+    });
+  }
+
+  async function runTest() {
+    setTesting(true);
+    setTestState(null);
+    try {
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ integrationId, binding: { ...buildTestBinding(), authMode } }),
+      });
+      setTestState(await res.json());
+    } catch {
+      setTestState({ ok: false, reason: "network-error", error: "Network error — check console" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    setRefreshResult(null);
+    try {
+      await onRefreshAndSave(buildTestBinding(), objectId);
+      setRefreshResult({ ok: true });
+    } catch (err) {
+      setRefreshResult({ ok: false, error: err.message || "Refresh failed" });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  if (!integrationId) return null;
+
+  const isRegistered = !metaLoading && resolverMeta !== null;
+  const isMissing = !metaLoading && resolverMeta === null;
+  const entityTypes = resolverMeta?.entityTypes || [];
+
+  return (
+    <section className="resolver-control-panel">
+      {/* ── Status bar ─────────────────────────────────────────────── */}
+      <div className="resolver-status-bar">
+        <span className={`resolver-reg-badge${isRegistered ? " ok" : isMissing ? " missing" : ""}`}>
+          {metaLoading ? "…" : isRegistered ? "✓" : "!"}
+        </span>
+        <code className="resolver-id-code">{integrationId}</code>
+        <span className="resolver-status-label">
+          {metaLoading
+            ? "checking…"
+            : isRegistered
+              ? `resolver registered · ${entityTypes.length} entity type${entityTypes.length !== 1 ? "s" : ""}`
+              : "resolver not found"}
+        </span>
+      </div>
+
+      {isMissing && (
+        <p className="resolver-guidance warn">
+          No resolver registered for <code>{integrationId}</code>.
+          Add a file at <code>lib/adapters/integrations/resolvers/{integrationId}.js</code> that calls{" "}
+          <code>{"registerSourceResolver({ integrationId: \"" + integrationId + "\", ... })"}</code>,
+          then restart the dev server.
+        </p>
+      )}
+
+      {isRegistered && (
+        <>
+          {/* ── Entity type ─────────────────────────────────────────── */}
+          {entityTypes.length > 0 && (
+            <div className="resolver-param-row">
+              <label className="resolver-param-label">Entity type</label>
+              <select
+                className="resolver-param-select"
+                value={entityType}
+                onChange={(e) => setEntityType(e.target.value)}
+              >
+                <option value="">— any —</option>
+                {entityTypes.map((et) => (
+                  <option key={et} value={et}>{et}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* ── Entity picker ────────────────────────────────────────── */}
+          {resolverMeta?.hasListEntities && (
+            <div className="resolver-param-row">
+              <label className="resolver-param-label">Entity</label>
+              {entitiesLoading ? (
+                <span className="resolver-loading-label">Loading entities…</span>
+              ) : entitiesError ? (
+                <span className="resolver-error-label">{entitiesError}</span>
+              ) : entities?.length ? (
+                <select
+                  className="resolver-param-select"
+                  value={entityId}
+                  onChange={(e) => setEntityId(e.target.value)}
+                >
+                  <option value="">— all —</option>
+                  {entities.map((ent) => (
+                    <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="resolver-param-input"
+                  value={entityId}
+                  placeholder="Entity id"
+                  onChange={(e) => setEntityId(e.target.value)}
+                />
+              )}
+            </div>
+          )}
+
+          {/* ── Lookback ────────────────────────────────────────────── */}
+          <div className="resolver-param-row">
+            <label className="resolver-param-label">Lookback</label>
+            <div className="resolver-lookback-row">
+              {[7, 30, 90].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`resolver-lookback-pill${lookbackDays === d ? " active" : ""}`}
+                  onClick={() => setLookbackDays(d)}
+                >
+                  {d}d
+                </button>
+              ))}
+              <input
+                type="number"
+                className="resolver-lookback-custom"
+                value={lookbackDays}
+                min={1}
+                max={365}
+                aria-label="Custom lookback days"
+                onChange={(e) => setLookbackDays(Number(e.target.value) || 30)}
+              />
+            </div>
+          </div>
+
+          {/* ── Save params ─────────────────────────────────────────── */}
+          <button type="button" className="resolver-save-params-btn" onClick={saveParams}>
+            Save parameters to binding
+          </button>
+
+          {/* ── Test connection ─────────────────────────────────────── */}
+          <div className="resolver-actions">
+            <button
+              type="button"
+              className="resolver-test-btn"
+              onClick={runTest}
+              disabled={testing}
+            >
+              {testing ? "Testing…" : "Test connection"}
+            </button>
+            <button
+              type="button"
+              className="resolver-refresh-btn"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Fetch all records and save to Data Model"
+            >
+              {refreshing ? "Fetching…" : "Fetch & save data"}
+            </button>
+          </div>
+
+          {/* ── Test result ─────────────────────────────────────────── */}
+          {testState && !testState.ok && (
+            <div className="resolver-result-block error">
+              <p className="resolver-result-title">
+                {testState.reason === "no-token" ? "Token required" : "Connection failed"}
+              </p>
+              <p className="resolver-result-detail">{testState.error || testState.reason}</p>
+              {testState.reason === "no-token" && (
+                <p className="resolver-guidance">
+                  Add the required env var to <code>.env.local</code> and restart the dev server.
+                  Check the resolver file for the exact variable name.
+                </p>
+              )}
+              <button type="button" className="resolver-retry-btn" onClick={runTest} disabled={testing}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {testState?.ok && (
+            <div className="resolver-result-block ok">
+              <div className="resolver-result-header">
+                <span className="resolver-result-ok-badge">✓ Connected</span>
+                <span className="resolver-result-count">
+                  {testState.rowCount ?? testState.preview?.length ?? 0} records (preview)
+                </span>
+              </div>
+              {testState.preview?.length > 0 && (
+                <div className="resolver-preview-table-wrap">
+                  <table className="resolver-preview-table">
+                    <thead>
+                      <tr>
+                        {(testState.columns || []).slice(0, 5).map((col) => (
+                          <th key={col}>{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {testState.preview.slice(0, 3).map((row, i) => (
+                        <tr key={i}>
+                          {(testState.columns || []).slice(0, 5).map((col) => (
+                            <td key={col}>
+                              {row[col] == null ? <em>—</em> : String(row[col]).slice(0, 30)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Refresh result ─────────────────────────────────────── */}
+          {refreshResult && (
+            <div className={`resolver-result-block ${refreshResult.ok ? "ok" : "error"}`}>
+              {refreshResult.ok
+                ? <span className="resolver-result-ok-badge">✓ Data saved to Data Model</span>
+                : <p className="resolver-result-detail">{refreshResult.error}</p>}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function SourceRefreshConfigurator({ widget, integrationId, adapterConfig, onApply }) {
+  const existing = widget.config?.binding || {};
+  const isRefreshable = Boolean(existing.sourceStorage === LIVE_SOURCE_TYPE);
+  const [open, setOpen] = useState(isRefreshable);
+  const [entityType, setEntityType] = useState(existing.entityType || "");
+  const [entityId, setEntityId] = useState(existing.entityId || "");
+  const [testState, setTestState] = useState(null);
+  const [testing, setTesting] = useState(false);
+
+  const canApply = testState?.ok === true;
+  const authMode = adapterConfig?.integrationAdapter === "growthub-bridge" ? "bridge" : "byo-token";
+
+  async function runTest() {
+    setTesting(true);
+    setTestState(null);
+    try {
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          integrationId,
+          binding: {
+            integrationId,
+            entityType: entityType.trim() || undefined,
+            entityId: entityId.trim() || undefined,
+            sourceId: integrationId,
+            authMode,
+          }
+        })
+      });
+      const data = await res.json();
+      setTestState(data);
+    } catch {
+      setTestState({ ok: false, error: "Network error — check console" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  function applyRefreshable() {
+    if (!canApply) return;
+    onApply({
+      ...widget.config,
+      binding: {
+        ...widget.config?.binding,
+        sourceStorage: LIVE_SOURCE_TYPE,
+        sourceId: integrationId,
+        entityType: entityType.trim() || undefined,
+        entityId: entityId.trim() || undefined,
+      }
+    });
+  }
+
+  if (!open) {
+    return <div className="source-refresh-collapsed">
+      <button type="button" className="source-refresh-toggle" onClick={() => setOpen(true)}>
+        <RefreshCw size={13} aria-hidden="true" />
+        {isRefreshable ? "Refresh enabled — reconfigure" : "Enable source refresh"}
+      </button>
+      {isRefreshable && <span className="source-refresh-active-badge">✓ refreshable</span>}
+    </div>;
+  }
+
+  return <div className="source-refresh-panel">
+    <div className="source-refresh-header">
+      <RefreshCw size={14} aria-hidden="true" />
+      <strong>Source refresh</strong>
+      <button type="button" className="source-refresh-close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
+    </div>
+    <p className="source-refresh-hint">
+      Test the connection to preview live records. Apply to enable the Refresh tab for this widget.
+    </p>
+    <label className="source-refresh-field">
+      <span>Entity type <em>(optional)</em></span>
+      <input value={entityType} placeholder="contacts, companies…" onChange={(e) => setEntityType(e.target.value)} />
+    </label>
+    <label className="source-refresh-field">
+      <span>Entity id filter <em>(optional)</em></span>
+      <input value={entityId} placeholder="specific record id" onChange={(e) => setEntityId(e.target.value)} />
+    </label>
+    <button type="button" className="source-refresh-test-btn" onClick={runTest} disabled={testing}>
+      {testing ? "Testing…" : "Test connection"}
+    </button>
+    {testState && !testState.ok && (
+      <div className="source-refresh-error">
+        <strong>Connection failed</strong>
+        <span>{testState.reason || testState.error || "Unknown error"}</span>
+        <button type="button" onClick={runTest} disabled={testing}>Retry</button>
+      </div>
+    )}
+    {testState?.ok && (
+      <div className="source-refresh-success">
+        <span>✓ Connection verified</span>
+        {testState.preview?.length > 0 && (
+          <div className="source-refresh-preview">
+            <p className="source-refresh-preview-label">{testState.preview.length} record(s) preview</p>
+            <table>
+              <thead>
+                <tr>{testState.columns?.slice(0, 5).map((col) => <th key={col}>{col}</th>)}</tr>
+              </thead>
+              <tbody>
+                {testState.preview.slice(0, 3).map((row, idx) => (
+                  <tr key={idx}>
+                    {testState.columns?.slice(0, 5).map((col) => (
+                      <td key={col}>{row[col] == null ? <em>—</em> : String(row[col]).slice(0, 40)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <button type="button" className="source-refresh-apply" onClick={applyRefreshable}>
+          ✓ Apply refresh binding
+        </button>
+      </div>
+    )}
+  </div>;
+}
+
+function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
+  const binding = widget.config?.binding || {};
+  const [query, setQuery] = useState("");
+
+  const savedObjects = useMemo(() => {
+    const list = (Array.isArray(dataModelTables) ? dataModelTables : []).filter(isSelectableDataModelSource);
+    const q = query.trim().toLowerCase();
+    return q ? list.filter((t) => `${t.label} ${t.source}`.toLowerCase().includes(q)) : list;
+  }, [dataModelTables, query]);
+
+  const selectObject = useCallback((table) => {
+    const alreadySelected = binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId === table.objectId;
+    if (alreadySelected) return;
+    if (binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
+      if (!window.confirm(`Change source to "${table.label}"?`)) return;
+    }
     onChange({
       ...widget.config,
       source: table.source,
@@ -1170,304 +2088,173 @@ function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBac
         sourceType: DATA_MODEL_SOURCE_TYPE,
         sourceAuthority: "workspace-config",
         objectId: table.objectId,
-        rows: []
       },
-      fieldSettings: {
-        hidden: [],
-        order: table.columns
-      }
-    });
-  }, [confirmSourceChange, onChange, widget.config]);
-
-	  const selectCustomApi = useCallback(() => {
-    if (!confirmSourceChange("Custom APIs/Webhooks")) return;
-	    onChange({
-      ...widget.config,
-      source: "Custom APIs/Webhooks",
-      binding: {
-        ...binding,
-        mode: "json",
-        source: "Custom APIs/Webhooks",
-        sourceType: CUSTOM_API_SOURCE_TYPE,
-        sourceAuthority: "custom-api",
-        endpointRef: binding.endpointRef || "",
-        fields: Array.isArray(binding.fields) ? binding.fields : ["entityId", "status", "createdAt"]
-      }
-    });
-	  }, [binding, confirmSourceChange, onChange, widget.config]);
-
-  const updateCustomFields = useCallback((value) => {
-    const fields = value.split(",").map((item) => item.trim()).filter(Boolean);
-    onChange({
-      ...widget.config,
-      binding: {
-        ...binding,
-        mode: "json",
-        source: "Custom APIs/Webhooks",
-        sourceType: CUSTOM_API_SOURCE_TYPE,
-        sourceAuthority: "custom-api",
-        fields
-      }
+      fieldSettings: { hidden: [], order: table.columns }
     });
   }, [binding, onChange, widget.config]);
 
-  const updateEndpointRef = useCallback((value) => {
-    onChange({
-      ...widget.config,
-      binding: {
-        ...binding,
-        mode: "json",
-        source: "Custom APIs/Webhooks",
-        sourceType: CUSTOM_API_SOURCE_TYPE,
-        sourceAuthority: "custom-api",
-        endpointRef: value
-      }
-    });
-  }, [binding, onChange, widget.config]);
+  const activeObjectId = binding.sourceType === DATA_MODEL_SOURCE_TYPE ? binding.objectId : null;
 
-	  const selectIntegration = useCallback((integration) => {
-    if (binding.integrationId && binding.integrationId !== integration.id && !confirmSourceChange(integration.label)) return;
-	    onChange({
-      ...widget.config,
-      source: integration.label,
-      binding: {
-        mode: "integration",
-        source: integration.label,
-        sourceType: MANAGED_INTEGRATION_SOURCE_TYPE,
-        sourceAuthority: "growthub-bridge",
-        integrationId: integration.id,
-        lane: integration.lane,
-        provider: integration.provider
-      }
-    });
-	  }, [binding.integrationId, confirmSourceChange, onChange, widget.config]);
-
-	  return <section className="workspace-widget-subpanel">
-	    <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
-    <UniversalSourceInfoCard />
-	    <p className="workspace-panel-label">Source type</p>
-    <div className="workspace-source-object-list">
-      {SOURCE_TYPE_OBJECTS.map((sourceType) => {
-        const isActive = activeSourceType === sourceType.id;
-        return <button
-          key={sourceType.id}
-          type="button"
-          className={`workspace-source-object-row${isActive ? " active" : ""}`}
-          onClick={sourceType.id === CUSTOM_API_SOURCE_TYPE ? selectCustomApi : undefined}
-          disabled={sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE}
-        >
-          <span className="workspace-source-object-icon" aria-hidden="true">
-            {sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE ? <Database size={15} /> : <LinkIcon size={15} />}
-          </span>
-          <span className="workspace-source-meta">
-            <strong>{sourceType.label}</strong>
-            <em>{sourceType.authority} · {sourceType.description}</em>
-          </span>
-	          {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
-        </button>;
-      })}
-    </div>
-    <div className="workspace-source-controls">
-      <label>
-        <Search size={14} aria-hidden="true" />
+  return (
+    <section className="workspace-widget-subpanel">
+      <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
+      <label className="workspace-source-search-wrap">
+        <Search size={13} aria-hidden="true" />
         <input
-          aria-label="Search sources"
-          placeholder="Search connectors"
+          placeholder="Search objects…"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search data objects"
         />
       </label>
-      <label>
-        <Database size={14} aria-hidden="true" />
-        <select
-          aria-label="Filter source type"
-          value={laneFilter}
-          onChange={(event) => setLaneFilter(event.target.value)}
+      <div className="workspace-source-object-list">
+        {savedObjects.length > 0 ? savedObjects.map((table) => {
+          const isActive = activeObjectId === table.objectId;
+          const iconName = table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database";
+          return (
+            <button
+              key={table.id}
+              type="button"
+              className={`workspace-source-object-row${isActive ? " active" : ""}`}
+              onClick={() => selectObject(table)}
+            >
+              <span className="workspace-source-object-icon">
+                <ObjectIcon name={iconName} size={15} />
+              </span>
+              <span className="workspace-source-object-meta">
+                <strong>{table.label}</strong>
+                <em>{table.columns.length} field{table.columns.length !== 1 ? "s" : ""} · {table.rows.length} record{table.rows.length !== 1 ? "s" : ""}</em>
+              </span>
+              {isActive && <Check size={14} strokeWidth={2.5} aria-hidden="true" />}
+            </button>
+          );
+        }) : (
+          <div className="workspace-source-empty">
+            <Database size={22} aria-hidden="true" />
+            <strong>No objects yet</strong>
+            <p>Create Data Source, People, Tasks, or Custom objects on the Data Model page, then return here to bind them.</p>
+            <a href="/data-model" className="workspace-source-empty-link">Go to Data Model →</a>
+          </div>
+        )}
+      </div>
+      <p className="workspace-panel-hint">
+        Selecting an object writes a config reference only. Resolver functions and auth credentials stay server-side.
+      </p>
+    </section>
+  );
+}
+
+function FieldRow({ name, hidden, onToggle, onRemove, canRemove }) {
+  const FIcon = FIELD_TYPE_ICON_MAP[inferFieldType(name)] || Type;
+  return (
+    <div className={`wfp-field-row${hidden ? " hidden" : ""}`}>
+      <GripVertical size={13} className="wfp-grip" aria-hidden="true" />
+      <span className="wfp-field-icon" aria-hidden="true"><FIcon size={13} /></span>
+      <span className="wfp-field-name">{name}</span>
+      <div className="wfp-field-actions">
+        <button
+          type="button"
+          className={`wfp-eye-btn${hidden ? " off" : ""}`}
+          onClick={() => onToggle(name)}
+          aria-label={hidden ? `Show ${name}` : `Hide ${name}`}
+          title={hidden ? "Show" : "Hide"}
         >
-          <option value="all">All connector lanes</option>
-          <option value="data-source">Data sources</option>
-          <option value="workspace-integration">Workspace tools</option>
-        </select>
-        <ChevronDown size={14} aria-hidden="true" />
-      </label>
-    </div>
-    <p className="workspace-panel-label">Static data</p>
-    <div className="workspace-source-list">
-      <button
-        type="button"
-        className={`workspace-source-row${activeSourceType === "static" ? " active" : ""}`}
-        onClick={selectStatic}
-      >
-        <span className="workspace-source-icon" aria-hidden="true"><Grid2X2 size={15} /></span>
-        <span className="workspace-source-meta">
-          <strong>Static rows</strong>
-          <em>Inline JSON, CSV, or manual rows remain supported.</em>
-        </span>
-        {activeSourceType === "static" ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
-      </button>
-    </div>
-    {widget.kind === "view" ? <>
-      <p className="workspace-panel-label">Data Model objects</p>
-      <div className="workspace-source-list">
-        {availableDataObjects.length ? availableDataObjects.map((table) => {
-          const isActive = binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId === table.objectId;
-          return <button
-            key={table.id}
-            type="button"
-            className={`workspace-source-row${isActive ? " active" : ""}`}
-            onClick={() => selectDataModelObject(table)}
-          >
-            <span className="workspace-source-icon" aria-hidden="true"><Database size={15} /></span>
-            <span className="workspace-source-meta">
-              <strong>{table.label}</strong>
-              <em>{table.columns.length} fields · {table.rows.length} records · workspace config</em>
-            </span>
-            {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
-          </button>;
-        }) : <p className="workspace-entity-empty">No manual Data Model objects yet.</p>}
+          {hidden
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+          }
+        </button>
+        {canRemove && (
+          <button type="button" className="wfp-remove-btn" onClick={() => onRemove(name)} aria-label={`Remove ${name}`} title="Remove">
+            <X size={12} />
+          </button>
+        )}
       </div>
-    </> : null}
-    {Object.entries(groups).map(([lane, items]) => items.length ? <div key={lane}>
-      <p className="workspace-panel-label">{lane === "data-source" ? "Data Sources" : "Workspace Tools"}</p>
-      <div className="workspace-source-list">
-        {items.map((integration) => {
-          const isActive = currentMode === "integration" && binding.integrationId === integration.id;
-          const connected = integration.isConnected || integration.status === "connected";
-          return <button
-            key={integration.id}
-            type="button"
-            className={`workspace-source-row${isActive ? " active" : ""}`}
-            onClick={() => selectIntegration(integration)}
-          >
-            <span className="workspace-source-icon" aria-hidden="true">{integration.icon || integration.label?.[0] || "•"}</span>
-            <span className="workspace-source-meta">
-              <strong>{integration.label}</strong>
-              <em>{describeIntegrationLane(integration)} · {connected ? "connected" : "needs connection"}</em>
-            </span>
-            {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
-          </button>;
-        })}
-      </div>
-    </div> : null)}
-    {activeSourceType === CUSTOM_API_SOURCE_TYPE ? <div className="workspace-custom-source-config">
-      <label>
-        <span>Endpoint reference</span>
-        <input
-          value={binding.endpointRef || ""}
-          placeholder="api.clients.primary"
-          onChange={(event) => updateEndpointRef(event.target.value)}
-        />
-      </label>
-      <label>
-        <span>Available fields</span>
-        <input
-          value={(Array.isArray(binding.fields) ? binding.fields : []).join(", ")}
-          placeholder="entityId, status, createdAt"
-          onChange={(event) => updateCustomFields(event.target.value)}
-        />
-      </label>
-    </div> : null}
-    {currentMode === "integration" && binding.integrationId ? <div className="workspace-active-source-state">
-      <span>Active source</span>
-      <strong>{activeIntegration?.label || binding.source || binding.integrationId}</strong>
-      <code>{binding.integrationId}</code>
-    </div> : null}
-    <p className="workspace-panel-hint">
-      Selecting a source writes a binding reference only. The browser only calls local workspace routes and never stores source credentials.
-    </p>
-  </section>;
+    </div>
+  );
 }
 
 function FieldsSubPanel({ widget, dataModelTable, onChange, onBack }) {
   const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
   const ordered = getOrderedColumns(viewWidget);
-  const hidden = getHiddenColumnSet(viewWidget);
-  const visible = ordered.filter((name) => !hidden.has(name));
-  const hiddenList = ordered.filter((name) => hidden.has(name));
-  const [hiddenOpen, setHiddenOpen] = useState(true);
+  const hiddenSet = getHiddenColumnSet(viewWidget);
+  const visible = ordered.filter((n) => !hiddenSet.has(n));
+  const hiddenList = ordered.filter((n) => hiddenSet.has(n));
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   const [draftField, setDraftField] = useState("");
-  const move = (fieldId, direction) => {
-    const next = reorderColumn(viewWidget, fieldId, direction);
-    onChange({ ...widget.config, fieldSettings: next });
-  };
+  const isBound = Boolean(dataModelTable);
+
   const toggle = (fieldId) => {
-    const next = toggleColumnHidden(viewWidget, fieldId);
-    onChange({ ...widget.config, fieldSettings: next });
+    onChange({ ...widget.config, fieldSettings: toggleColumnHidden(viewWidget, fieldId) });
   };
   const removeColumn = (fieldId) => {
-    if (dataModelTable) return;
-    const nextColumns = ordered.filter((name) => name !== fieldId);
+    if (isBound) return;
     const fs = widget.config?.fieldSettings || {};
     onChange({
       ...widget.config,
-      columns: nextColumns,
+      columns: ordered.filter((n) => n !== fieldId),
       fieldSettings: {
-        hidden: (fs.hidden || []).filter((name) => name !== fieldId),
-        order: (fs.order || []).filter((name) => name !== fieldId)
+        hidden: (fs.hidden || []).filter((n) => n !== fieldId),
+        order: (fs.order || []).filter((n) => n !== fieldId)
       }
     });
   };
   const addColumn = () => {
-    if (dataModelTable) return;
-    const trimmed = draftField.trim();
-    if (!trimmed || ordered.includes(trimmed)) return;
-    onChange({ ...widget.config, columns: [...ordered, trimmed] });
+    if (isBound) return;
+    const name = draftField.trim();
+    if (!name || ordered.includes(name)) return;
+    onChange({ ...widget.config, columns: [...ordered, name] });
     setDraftField("");
   };
-  return <section className="workspace-widget-subpanel">
-    <SubPanelHeader title="Fields" breadcrumb={widget.title} onBack={onBack} />
-    {dataModelTable ? <p className="workspace-panel-hint">This View is bound to a Data Model object. Field order and visibility are widget-local; add or remove object fields on the Data Model page.</p> : null}
-    <p className="workspace-panel-label">Visible fields</p>
-    <div className="workspace-field-rows">
-      {visible.length === 0 ? <p className="workspace-panel-hint">No visible fields. Add one below or unhide an existing field.</p> : null}
-      {visible.map((name, index) => <div key={name} className="workspace-field-row">
-        <span className="workspace-field-row-handle" aria-hidden="true">::</span>
-        <span className="workspace-field-row-icon" aria-hidden="true">{COLUMN_ICON_FOR(name)}</span>
-        <span className="workspace-field-row-name">{name}</span>
-        <span className="workspace-field-row-actions">
-          <button type="button" aria-label={`Move ${name} up`} disabled={index === 0} onClick={() => move(name, "up")}>↑</button>
-          <button type="button" aria-label={`Move ${name} down`} disabled={index === visible.length - 1} onClick={() => move(name, "down")}>↓</button>
-          <button type="button" aria-label={`Hide ${name}`} onClick={() => toggle(name)}>👁</button>
-          <button type="button" aria-label={`Remove ${name}`} disabled={Boolean(dataModelTable)} onClick={() => removeColumn(name)}>✕</button>
-        </span>
-      </div>)}
-    </div>
-    <button
-      type="button"
-      className="workspace-hidden-fields-toggle"
-      onClick={() => setHiddenOpen((value) => !value)}
-      aria-expanded={hiddenOpen}
-    >
-      <span>👁‍🗨 Hidden Fields</span>
-      <span aria-hidden="true">{hiddenOpen ? "−" : "+"}</span>
-    </button>
-    {hiddenOpen ? <div className="workspace-field-rows workspace-hidden-fields">
-      {hiddenList.length === 0 ? <p className="workspace-panel-hint">No hidden fields.</p> : null}
-      {hiddenList.map((name) => <div key={name} className="workspace-field-row workspace-field-row-hidden">
-        <span className="workspace-field-row-icon" aria-hidden="true">{COLUMN_ICON_FOR(name)}</span>
-        <span className="workspace-field-row-name">{name}</span>
-        <span className="workspace-field-row-actions">
-          <button type="button" aria-label={`Show ${name}`} onClick={() => toggle(name)}>👁</button>
-          <button type="button" aria-label={`Remove ${name}`} disabled={Boolean(dataModelTable)} onClick={() => removeColumn(name)}>✕</button>
-        </span>
-      </div>)}
-    </div> : null}
-    <div className="workspace-field-add">
-      <input
-        aria-label="New field name"
-        value={draftField}
-        placeholder="Add field…"
-        onChange={(event) => setDraftField(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            addColumn();
-          }
-        }}
-      />
-      <button type="button" onClick={addColumn} disabled={Boolean(dataModelTable) || !draftField.trim()}>Add</button>
-    </div>
-  </section>;
+
+  return (
+    <section className="workspace-widget-subpanel">
+      <SubPanelHeader title="Fields" breadcrumb={widget.title} onBack={onBack} />
+      {isBound && (
+        <p className="workspace-panel-hint">
+          Fields come from the bound object. Manage them on the <a href="/data-model" style={{ color: "#6366f1" }}>Data Model page</a>.
+        </p>
+      )}
+
+      <div className="wfp-field-list">
+        {visible.length === 0 && <p className="workspace-panel-hint">No visible fields.</p>}
+        {visible.map((name) => (
+          <FieldRow key={name} name={name} hidden={false} onToggle={toggle} onRemove={removeColumn} canRemove={!isBound} />
+        ))}
+
+        {hiddenList.length > 0 && (
+          <button
+            type="button"
+            className="wfp-hidden-toggle"
+            onClick={() => setHiddenOpen((v) => !v)}
+            aria-expanded={hiddenOpen}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+            <span>Hidden Fields</span>
+            <span className="wfp-hidden-count">{hiddenList.length}</span>
+            <ChevronDown size={13} className={hiddenOpen ? "wfp-chevron open" : "wfp-chevron"} />
+          </button>
+        )}
+
+        {hiddenOpen && hiddenList.map((name) => (
+          <FieldRow key={name} name={name} hidden={true} onToggle={toggle} onRemove={removeColumn} canRemove={!isBound} />
+        ))}
+      </div>
+
+      {!isBound && (
+        <div className="wfp-add-field">
+          <input
+            placeholder="Add field…"
+            value={draftField}
+            aria-label="New field name"
+            onChange={(e) => setDraftField(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addColumn(); } }}
+          />
+          <button type="button" onClick={addColumn} disabled={!draftField.trim()}>Add</button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function SortSubPanel({ widget, dataModelTable, onChange, onBack }) {
@@ -1517,12 +2304,20 @@ function SortSubPanel({ widget, dataModelTable, onChange, onBack }) {
   </section>;
 }
 
-function FilterSubPanel({ widget, integrations, dataModelTable, onChange, onBack }) {
+function FilterSubPanel({ widget, integrations, dataModelTable, adapterConfig, onRefreshAndSave, onChange, onBack }) {
   const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
   const binding = widget.config?.binding || {};
   const filter = getFilterConfig(widget);
   const [entities, setEntities] = useState([]);
   const [entitiesLoading, setEntitiesLoading] = useState(false);
+  // Resolver controls state (entity type, lookback, test, fetch)
+  const [resolverMeta, setResolverMeta] = useState(null);
+  const [entityType, setEntityType] = useState(binding.entityType || "");
+  const [lookbackDays, setLookbackDays] = useState(binding.days || 30);
+  const [testing, setTesting] = useState(false);
+  const [testState, setTestState] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
   const fieldChoices = getFilterFieldChoices(viewWidget, entities);
   const columns = fieldChoices.map((field) => field.id);
   const setFilter = (next) => onChange({ ...widget.config, filter: next });
@@ -1532,6 +2327,48 @@ function FilterSubPanel({ widget, integrations, dataModelTable, onChange, onBack
     const list = Array.isArray(integrations) ? integrations : [];
     return list.find((item) => item.id === binding.integrationId) || null;
   }, [binding.integrationId, binding.mode, integrations]);
+
+  // Load resolver metadata when integration binding is present
+  useEffect(() => {
+    if (binding.mode !== "integration" || !binding.integrationId) { setResolverMeta(null); return; }
+    fetch("/api/workspace/resolvers")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        const meta = Array.isArray(data.resolvers)
+          ? data.resolvers.find((r) => r.integrationId === binding.integrationId) || null
+          : null;
+        setResolverMeta(meta);
+        if (!entityType && meta?.entityTypes?.length) setEntityType(meta.entityTypes[0]);
+      })
+      .catch(() => setResolverMeta(null));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [binding.integrationId, binding.mode]);
+
+  async function runTest() {
+    if (!binding.integrationId) return;
+    setTesting(true); setTestState(null);
+    try {
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ integrationId: binding.integrationId, binding: { ...binding, entityType: entityType || undefined, days: lookbackDays } })
+      });
+      setTestState(await res.json());
+    } catch { setTestState({ ok: false, error: "Network error" }); }
+    finally { setTesting(false); }
+  }
+
+  async function runFetch() {
+    if (!binding.integrationId || !onRefreshAndSave) return;
+    setRefreshing(true); setRefreshResult(null);
+    try {
+      await onRefreshAndSave({ ...binding, entityType: entityType || undefined, days: lookbackDays }, binding.objectId || binding.sourceId);
+      setRefreshResult({ ok: true });
+    } catch (err) { setRefreshResult({ ok: false, error: err.message || "Fetch failed" }); }
+    finally { setRefreshing(false); }
+  }
+
+  const isResolverBacked = binding.mode === "integration" && resolverMeta !== null;
 
   useEffect(() => {
     if (!binding.integrationId || binding.mode !== "integration") {
@@ -1593,6 +2430,58 @@ function FilterSubPanel({ widget, integrations, dataModelTable, onChange, onBack
       onSelect={selectEntity}
       loading={entitiesLoading}
     /> : null}
+    {isResolverBacked ? <div className="workspace-resolver-controls">
+      {resolverMeta.entityTypes?.length > 0 ? <label className="workspace-panel-label">
+        <span>Entity type</span>
+        <select
+          value={entityType}
+          onChange={(e) => setEntityType(e.target.value)}
+        >
+          <option value="">— any —</option>
+          {resolverMeta.entityTypes.map((et) => <option key={et} value={et}>{et}</option>)}
+        </select>
+      </label> : null}
+      <label className="workspace-panel-label">
+        <span>Lookback (days)</span>
+        <div className="workspace-lookback-row">
+          {[7, 30, 90].map((d) => <button
+            key={d}
+            type="button"
+            className={`workspace-lookback-btn${lookbackDays === d ? " active" : ""}`}
+            onClick={() => setLookbackDays(d)}
+          >{d}d</button>)}
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={lookbackDays}
+            onChange={(e) => setLookbackDays(Number(e.target.value) || 30)}
+          />
+        </div>
+      </label>
+      <div className="workspace-resolver-actions">
+        <button
+          type="button"
+          className="workspace-settings-row-btn"
+          disabled={testing}
+          onClick={runTest}
+        >{testing ? "Testing…" : "Test connection"}</button>
+        {onRefreshAndSave ? <button
+          type="button"
+          className="workspace-settings-row-btn"
+          disabled={refreshing}
+          onClick={runFetch}
+        >{refreshing ? "Fetching…" : "Fetch & save data"}</button> : null}
+      </div>
+      {testState ? <div className={`workspace-resolver-result${testState.ok ? " ok" : " error"}`}>
+        {testState.ok
+          ? `Connected · ${testState.rowCount ?? testState.rows?.length ?? 0} rows`
+          : `${testState.reason || "error"}: ${testState.error || "check resolver"}`}
+      </div> : null}
+      {refreshResult ? <div className={`workspace-resolver-result${refreshResult.ok ? " ok" : " error"}`}>
+        {refreshResult.ok ? "Saved to data model" : refreshResult.error}
+      </div> : null}
+    </div> : null}
     {binding.sourceType === CUSTOM_API_SOURCE_TYPE ? <div className="workspace-filter-source-state">
       <span>Custom endpoint</span>
       <code>{binding.endpointRef || "No endpoint reference set"}</code>
@@ -1660,7 +2549,7 @@ function FilterSubPanel({ widget, integrations, dataModelTable, onChange, onBack
   </section>;
 }
 
-function ChartConfigPanel({ widget, branding, onChange, onSubPage }) {
+function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPage }) {
   const chartType = getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget);
   const xAxis = getChartAxis(widget, "xAxis");
   const yAxis = getChartAxis(widget, "yAxis");
@@ -1670,6 +2559,18 @@ function ChartConfigPanel({ widget, branding, onChange, onSubPage }) {
   const setXAxis = (patch) => onChange({ ...widget.config, xAxis: { ...xAxis, ...patch } });
   const setYAxis = (patch) => onChange({ ...widget.config, yAxis: { ...yAxis, ...patch } });
   const setStyle = (patch) => onChange({ ...widget.config, style: { ...style, ...patch } });
+
+  // Derive source fields from the bound data model object
+  const sourceFields = useMemo(() => {
+    const binding = widget.config?.binding;
+    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return [];
+    const table = (Array.isArray(dataModelTables) ? dataModelTables : [])
+      .find((t) => t.objectId === binding.objectId || t.source === binding.source);
+    return table?.columns || [];
+  }, [widget.config?.binding, dataModelTables]);
+
+  const hasSource = sourceFields.length > 0;
+
   return <section className="workspace-chart-config">
     <p className="workspace-panel-label">Chart type</p>
     <div className="workspace-chart-type-tabs" role="tablist" aria-label="Chart type">
@@ -1689,82 +2590,74 @@ function ChartConfigPanel({ widget, branding, onChange, onSubPage }) {
         </button>;
       })}
     </div>
+
+    <p className="workspace-panel-label">Data</p>
     <button type="button" className="workspace-settings-row" onClick={() => onSubPage("source")}>
-      <span>Source</span><code>{summarizeSourceType(widget.config?.binding)} · {summarizeSource(widget)}</code>
+      <span>Source</span><code>{summarizeSource(widget) || "None"}</code>
     </button>
     <button type="button" className="workspace-settings-row" onClick={() => onSubPage("filter")}>
       <span>Filter</span><code>{summarizeFilter(widget)}</code>
     </button>
-    {widget.config?.binding?.entityId ? <EntityBadge entity={{
-      id: widget.config.binding.entityId,
-      label: widget.config.binding.entityLabel || widget.config.binding.entityId,
-      secondaryLabel: widget.config.binding.entityId,
-      entityType: widget.config.binding.entityType
-    }} /> : null}
+
     <p className="workspace-panel-label">X axis</p>
-    <label>
+    <div className="workspace-settings-row-field">
       <span>Data on display</span>
-      <input
+      <FieldDropdown
+        fields={sourceFields}
         value={xAxis.field || ""}
-        placeholder="Stage"
-        onChange={(event) => setXAxis({ field: event.target.value })}
+        onChange={(field) => setXAxis({ field })}
+        placeholder={hasSource ? "Select field…" : "Select source first"}
+        disabled={!hasSource}
       />
-    </label>
-    <label>
+    </div>
+    <div className="workspace-settings-row-field">
       <span>Sort by</span>
       <select value={xAxis.sort || "position"} onChange={(event) => setXAxis({ sort: event.target.value })}>
-        <option value="position">Stage position ascending</option>
-        <option value="asc">Value ascending</option>
-        <option value="desc">Value descending</option>
+        <option value="position">Position asc</option>
+        <option value="asc">Value asc</option>
+        <option value="desc">Value desc</option>
       </select>
-    </label>
+    </div>
     <label className="workspace-toggle-row">
       <span>Omit zero values</span>
-      <input
-        type="checkbox"
-        checked={Boolean(xAxis.omitZero)}
-        onChange={(event) => setXAxis({ omitZero: event.target.checked })}
-      />
+      <input type="checkbox" checked={Boolean(xAxis.omitZero)} onChange={(event) => setXAxis({ omitZero: event.target.checked })} />
     </label>
+
     <p className="workspace-panel-label">Y axis</p>
-    <label>
+    <div className="workspace-settings-row-field">
+      <span>Data on display</span>
+      <FieldDropdown
+        fields={sourceFields}
+        value={yAxis.field || ""}
+        onChange={(field) => setYAxis({ field })}
+        placeholder={hasSource ? "Select field…" : "Select source first"}
+        disabled={!hasSource}
+      />
+    </div>
+    <div className="workspace-settings-row-field">
+      <span>Group by</span>
+      <FieldDropdown
+        fields={sourceFields}
+        value={yAxis.groupBy || ""}
+        onChange={(field) => setYAxis({ groupBy: field })}
+        placeholder="None"
+        disabled={!hasSource}
+      />
+    </div>
+    <div className="workspace-settings-row-field">
       <span>Aggregation</span>
       <select value={yAxis.aggregation || "sum"} onChange={(event) => setYAxis({ aggregation: event.target.value })}>
         {KNOWN_AGGREGATIONS.map((agg) => <option key={agg} value={agg}>{agg}</option>)}
       </select>
-    </label>
-    <label>
-      <span>Data on display</span>
-      <input
-        value={yAxis.field || ""}
-        placeholder="Amount"
-        onChange={(event) => setYAxis({ field: event.target.value })}
-      />
-    </label>
-    <label>
-      <span>Group by</span>
-      <input
-        value={yAxis.groupBy || ""}
-        placeholder="—"
-        onChange={(event) => setYAxis({ groupBy: event.target.value })}
-      />
-    </label>
+    </div>
     <div className="workspace-axis-range">
       <label>
         <span>Min range</span>
-        <input
-          value={yAxis.min ?? ""}
-          placeholder="Min"
-          onChange={(event) => setYAxis({ min: event.target.value })}
-        />
+        <input value={yAxis.min ?? ""} placeholder="Min" onChange={(event) => setYAxis({ min: event.target.value })} />
       </label>
       <label>
         <span>Max range</span>
-        <input
-          value={yAxis.max ?? ""}
-          placeholder="Max"
-          onChange={(event) => setYAxis({ max: event.target.value })}
-        />
+        <input value={yAxis.max ?? ""} placeholder="Max" onChange={(event) => setYAxis({ max: event.target.value })} />
       </label>
     </div>
     <p className="workspace-panel-label">Style</p>
@@ -1970,10 +2863,10 @@ function IframePreviewModal({ widget, onClose }) {
 }
 
 function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRemove, onResizeStart, onExpandIframe }) {
-  const fallbackColumns = widget.config?.columns?.length ? widget.config.columns : ["Name", "Domain Name"];
+  const fallbackColumns = widget.config?.columns?.length ? widget.config.columns : [];
   const visibleColumns = widget.kind === "view" ? getVisibleColumns(widget) : fallbackColumns;
   const viewColumns = visibleColumns.length ? visibleColumns : fallbackColumns;
-  const viewRows = widget.config?.rows?.length ? widget.config.rows : SAMPLE_VIEW_ROWS;
+  const viewRows = Array.isArray(widget.config?.rows) ? widget.config.rows : [];
   const chartValues = widget.config?.values?.length ? widget.config.values : defaultConfigFor("chart").values;
   const chartType = widget.kind === "chart" ? (getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget)) : null;
   const dataLabels = widget.kind === "chart" ? Boolean(widget.config?.style?.dataLabels) : false;
@@ -2020,6 +2913,7 @@ function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRe
       {viewRows.slice(0, 6).map((row, rowIndex) => <div key={rowIndex}>
         {viewColumns.map((column) => <span key={column}>{row?.[column] || ""}</span>)}
       </div>)}
+      {!viewColumns.length && !viewRows.length ? <div className="workspace-view-empty">Select a source</div> : null}
       <footer>Calculate</footer>
     </div> : null}
     {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
@@ -2146,6 +3040,200 @@ function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integratio
   </div>;
 }
 
+/**
+ * ResolverRow — per-resolver status row inside the Management panel.
+ * Shows metadata, linked data model objects, and a quick test button.
+ * Generic — renders purely from resolver-declared metadata.
+ */
+function ResolverRow({ resolver, linkedObjects }) {
+  const [testState, setTestState] = useState(null);
+  const [testing, setTesting] = useState(false);
+
+  async function quickTest() {
+    setTesting(true);
+    setTestState(null);
+    try {
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          integrationId: resolver.integrationId,
+          binding: { integrationId: resolver.integrationId }
+        }),
+      });
+      setTestState(await res.json());
+    } catch {
+      setTestState({ ok: false, reason: "network-error" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="mgmt-resolver-row">
+      <div className="mgmt-resolver-header">
+        <code className="mgmt-resolver-id">{resolver.integrationId}</code>
+        <div className="mgmt-resolver-badges">
+          {resolver.entityTypes.map((et) => (
+            <span key={et} className="mgmt-resolver-type-badge">{et}</span>
+          ))}
+          {resolver.hasListEntities && (
+            <span className="mgmt-resolver-type-badge list">listEntities</span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="mgmt-resolver-test-btn"
+          onClick={quickTest}
+          disabled={testing}
+        >
+          {testing ? "…" : "Test"}
+        </button>
+      </div>
+      {testState && (
+        <div className={`mgmt-resolver-test-result ${testState.ok ? "ok" : "error"}`}>
+          {testState.ok
+            ? `✓ connected · ${testState.rowCount ?? testState.preview?.length ?? 0} records`
+            : `✗ ${testState.reason === "no-token" ? "token required" : testState.reason || testState.error}`}
+        </div>
+      )}
+      {linkedObjects.length > 0 && (
+        <div className="mgmt-resolver-linked">
+          <span className="mgmt-resolver-linked-label">Data Model objects:</span>
+          {linkedObjects.map((obj) => (
+            <span key={obj.id} className="mgmt-resolver-linked-obj">{obj.label || obj.id}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResolverManagementSection({ canSave, config }) {
+  const [resolverData, setResolverData] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    fetch("/api/workspace/resolvers")
+      .then((r) => r.ok ? r.json() : { files: [], registeredIds: [], resolvers: [], canUpload: false })
+      .then(setResolverData)
+      .catch(() => setResolverData({ files: [], registeredIds: [], resolvers: [], canUpload: false }));
+  }, [uploadResult]);
+
+  const dataModelObjects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+
+  const linkedObjectsByResolver = useMemo(() => {
+    const map = {};
+    dataModelObjects.forEach((obj) => {
+      const intId = obj.binding?.integrationId;
+      if (!intId) return;
+      if (!map[intId]) map[intId] = [];
+      map[intId].push(obj);
+    });
+    return map;
+  }, [dataModelObjects]);
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadResult(null);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch("/api/workspace/register-resolver", { method: "POST", body: form });
+      const data = await res.json();
+      setUploadResult(res.ok ? { ok: true, ...data } : { ok: false, ...data });
+    } catch {
+      setUploadResult({ ok: false, error: "Network error" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  const resolvers = resolverData?.resolvers || [];
+
+  return <article className="workspace-readiness-section">
+    <h3>Source Resolvers</h3>
+    <div className="workspace-readiness-row">
+      <span>Files</span>
+      <code>{resolverData ? resolverData.files.length : "…"}</code>
+    </div>
+    <div className="workspace-readiness-row">
+      <span>Registered</span>
+      <code>{resolverData ? resolvers.length : "…"}</code>
+    </div>
+    <div className="workspace-readiness-row">
+      <span>Data Model objects</span>
+      <code>{dataModelObjects.length}</code>
+    </div>
+
+    {/* Per-resolver rows */}
+    {resolvers.length > 0 ? (
+      <div className="mgmt-resolver-list">
+        {resolvers.map((r) => (
+          <ResolverRow
+            key={r.integrationId}
+            resolver={r}
+            linkedObjects={linkedObjectsByResolver[r.integrationId] || []}
+          />
+        ))}
+      </div>
+    ) : resolverData && (
+      <p className="workspace-panel-hint">
+        No resolvers registered. Add a <code>.js</code> file to{" "}
+        <code>lib/adapters/integrations/resolvers/</code> that calls{" "}
+        <code>registerSourceResolver(&#123; integrationId, entityTypes, fetchRecords &#125;)</code>.
+      </p>
+    )}
+
+    {/* Data model objects without a resolver */}
+    {dataModelObjects.filter((o) => o.binding?.integrationId && !linkedObjectsByResolver[o.binding.integrationId]?.length).length > 0 && (
+      <div className="workspace-readiness-row warn">
+        <span>Unresolved objects</span>
+        <em>
+          {dataModelObjects
+            .filter((o) => o.binding?.integrationId && !resolvers.find((r) => r.integrationId === o.binding.integrationId))
+            .map((o) => o.label || o.id)
+            .join(", ")}
+          {" — resolver file missing"}
+        </em>
+      </div>
+    )}
+
+    {/* Upload */}
+    {canSave ? <>
+      <div className="workspace-readiness-row">
+        <span>Upload resolver</span>
+        <input ref={fileInputRef} type="file" accept=".js" style={{ display: "none" }} onChange={handleFileChange} />
+        <button
+          type="button"
+          className="workspace-readiness-action"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? "Uploading…" : "Upload .js file"}
+        </button>
+      </div>
+      {uploadResult && <div className={`workspace-readiness-row resolver-upload-result ${uploadResult.ok ? "good" : "error"}`}>
+        <span>{uploadResult.ok ? "Saved" : "Error"}</span>
+        <em>{uploadResult.ok ? uploadResult.path : uploadResult.error}</em>
+      </div>}
+      <p className="workspace-panel-hint">
+        Upload a <code>.js</code> resolver file that calls <code>registerSourceResolver()</code>.
+        The resolver file is the only place with provider-specific logic — the UI renders
+        controls from the metadata it declares (<code>entityTypes</code>, <code>listEntities</code>).
+      </p>
+    </> : <div className="workspace-readiness-row">
+      <span>Upload</span>
+      <em>Requires <code>WORKSPACE_CONFIG_ALLOW_FS_WRITE=true</code> or add resolver files manually to <code>lib/adapters/integrations/resolvers/</code>.</em>
+    </div>}
+  </article>;
+}
+
 function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose }) {
   const persist = persistence || DEFAULT_PERSISTENCE;
   const pipelines = Array.isArray(config?.pipelines) ? config.pipelines : [];
@@ -2209,6 +3297,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
           <div className="workspace-readiness-row"><span>Reason</span><em>{persist.reason}</em></div>
           {persist.guidance ? <div className="workspace-readiness-row"><span>Guidance</span><em>{persist.guidance}</em></div> : null}
         </article>
+        <ResolverManagementSection canSave={persist.canSave} config={config} />
       </div>
     </section>
   </div>;
@@ -2264,6 +3353,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [templateFilter, setTemplateFilter] = useState({ category: "all", tag: "all", query: "" });
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
@@ -2284,6 +3375,45 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     }
     return cells;
   }, [activeWidgets]);
+
+  /**
+   * Collect all sourceIds from live-backed widgets on the active tab.
+   * A widget is live-backed when its binding has sourceStorage === "workspace-source-records"
+   * and a non-empty sourceId. The refresh button is inert when this list is empty.
+   */
+  const liveSourceIds = useMemo(() => {
+    const ids = new Set();
+    for (const widget of activeWidgets) {
+      const binding = widget?.config?.binding;
+      if (binding?.sourceStorage === "workspace-source-records" && typeof binding.sourceId === "string" && binding.sourceId.trim()) {
+        ids.add(binding.sourceId.trim());
+      }
+    }
+    return Array.from(ids);
+  }, [activeWidgets]);
+
+  const refreshSources = useCallback(async () => {
+    if (refreshing || liveSourceIds.length === 0) return;
+    setRefreshing(true);
+    setRefreshResult(null);
+    try {
+      const response = await fetch("/api/workspace/refresh-sources", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceIds: liveSourceIds })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
+      } else {
+        setRefreshResult({ error: true });
+      }
+    } catch {
+      setRefreshResult({ error: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, liveSourceIds]);
 
   const addWidget = useCallback((kind) => {
     setConfig((prev) => {
@@ -2836,6 +3966,25 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     setInspectorPath(SUB_PANEL_ROOT);
     setPanelOpen(true);
   }, []);
+  // Fetches all records from a resolver and persists them into the data model object,
+  // then syncs the updated dataModel into local React state.
+  const handleRefreshDataModelObject = useCallback(async (binding, objectId) => {
+    const integrationId = binding?.integrationId;
+    if (!integrationId) throw new Error("No integrationId in binding");
+    const res = await fetch("/api/workspace/refresh-source", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ integrationId, binding, objectId: objectId || null }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || data.reason || "Refresh failed");
+    // Sync updated dataModel into local state so the widget immediately reflects new rows
+    if (data.dataModel) {
+      setConfig((prev) => ({ ...prev, dataModel: data.dataModel }));
+    }
+    return data;
+  }, []);
+
   const replaceSelectedWidgetConfig = useCallback((nextConfig) => {
     if (!selectedWidgetId) return;
     setConfig((prev) => {
@@ -3120,10 +4269,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       id: "workspace.dashboards", group: "Navigation", icon: Home, label: "Go to Dashboards",
       run: () => showDashboardHome()
     });
-    list.push({
-      id: "workspace.integrations", group: "Navigation", icon: LayoutDashboard, label: "Go to Integrations",
-      run: () => { window.location.href = "/settings/integrations"; }
-    });
+
     return list;
   }, [
     activeDashboard,
@@ -3158,7 +4304,6 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         <nav className="workspace-nav">
           <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
           <Link href="/data-model">Data Model</Link>
-          <Link href="/settings/integrations">Integrations</Link>
           <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
           <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
         </nav>
@@ -3293,6 +4438,16 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
               </button>)}
             <button type="button" onClick={addTab}><Plus size={15} />New Tab</button>
             <button type="button" onClick={duplicateTab}><Copy size={15} />Duplicate Tab</button>
+            <button
+              type="button"
+              className={`workspace-tab-refresh${liveSourceIds.length === 0 ? " inert" : ""}${refreshing ? " loading" : ""}`}
+              disabled={liveSourceIds.length === 0 || refreshing}
+              onClick={refreshSources}
+              title={liveSourceIds.length === 0 ? "No live-backed sources on this tab" : `Refresh ${liveSourceIds.length} live source${liveSourceIds.length === 1 ? "" : "s"}`}
+            >
+              <RefreshCw size={15} className={refreshing ? "spinning" : ""} />
+              {refreshing ? "Refreshing…" : refreshResult?.error ? "Refresh failed" : refreshResult ? `${refreshResult.refreshed} updated` : "Refresh"}
+            </button>
           </div>
           <div
             className={`workspace-grid${moveDrag ? " moving-widget" : ""}`}
@@ -3394,7 +4549,6 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         </div> : null}
         {selectedWidget && inspectorPath === "source" ? <SourceSubPanel
           widget={selectedWidget}
-          integrations={availableIntegrations}
           dataModelTables={dataModelTables}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
@@ -3415,6 +4569,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           widget={selectedWidget}
           integrations={availableIntegrations}
           dataModelTable={resolveDataModelTable(dataModelTables, selectedWidget.config?.binding)}
+          adapterConfig={adapterConfig}
+          onRefreshAndSave={handleRefreshDataModelObject}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
@@ -3426,31 +4582,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           {selectedWidget.kind === "chart" ? <ChartConfigPanel
             widget={selectedWidget}
             branding={branding}
+            dataModelTables={dataModelTables}
             onChange={replaceSelectedWidgetConfig}
             onSubPage={(name) => setInspectorPath(name)}
           /> : null}
-          {selectedWidget.kind === "chart" ? <section className="workspace-field-stack">
-            <label>
-              <span>Sample Values</span>
-              <input
-                value={serializeChartValues(selectedWidget.config?.values || [])}
-                onChange={(event) => updateSelectedWidgetConfig({ values: normalizeChartValues(event.target.value) })}
-              />
-            </label>
-            <label>
-              <span>Static Binding</span>
-              <select
-                value={selectedWidget.config?.binding?.mode || "json"}
-                onChange={(event) => updateSelectedWidgetConfig({
-                  binding: event.target.value === "csv" ? SAMPLE_DATA_BINDINGS.contentCsv : SAMPLE_DATA_BINDINGS.reportingJson
-                })}
-              >
-                <option value="json">Sample JSON</option>
-                <option value="csv">Sample CSV</option>
-                {selectedWidget.config?.binding?.mode === "integration" ? <option value="integration">Integration reference</option> : null}
-              </select>
-            </label>
-          </section> : null}
           {selectedWidget.kind === "iframe" ? <label className="workspace-field-with-hint">
             <span>URL to Embed</span>
             <input
@@ -3477,23 +4612,6 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
-            {selectedWidget.config?.binding?.sourceType === DATA_MODEL_SOURCE_TYPE ? <div className="workspace-active-source-state">
-              <span>Data Model object</span>
-              <strong>{summarizeSource(selectedWidget)}</strong>
-              <code>{selectedWidget.config?.binding?.objectId || "workspace-config"}</code>
-            </div> : <label>
-              <span>Manual Rows</span>
-              <textarea
-                value={serializeManualRows(selectedWidget.config?.rows || [], selectedWidget.config?.columns || [])}
-                onChange={(event) => {
-                  const columns = selectedWidget.config?.columns?.length ? selectedWidget.config.columns : ["Name", "Domain Name"];
-                  updateSelectedWidgetConfig({
-                    rows: parseManualRows(event.target.value, columns),
-                    binding: { mode: "manual", source: "Manual rows", rows: parseManualRows(event.target.value, columns) }
-                  });
-                }}
-              />
-            </label>}
             <div className="workspace-settings-list" role="group" aria-label="View widget settings">
               <p className="workspace-panel-label">Settings</p>
               <button type="button" className="workspace-settings-row" disabled>
@@ -3513,18 +4631,6 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
               </button>
             </div>
           </section> : null}
-          {selectedWidget.kind === "rich-text" ? <label>
-            <span>Static Binding</span>
-            <select
-              value={selectedWidget.config?.binding?.mode || "manual"}
-              onChange={(event) => updateSelectedWidgetConfig({
-                binding: { mode: event.target.value, source: event.target.value === "manual" ? "Manual text" : "Sample JSON", rows: [] }
-              })}
-            >
-              <option value="manual">Manual Text</option>
-              <option value="json">Sample JSON</option>
-            </select>
-          </label> : null}
           <div className="workspace-settings-list">
             <p className="workspace-panel-label">Placement</p>
             <div><span>Size</span><code>{selectedWidget.position.w} x {selectedWidget.position.h}</code></div>

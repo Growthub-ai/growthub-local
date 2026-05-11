@@ -16,8 +16,10 @@
  *   400 { error: string }
  */
 import { NextResponse } from "next/server";
-import { listEntityMetadataForIntegration } from "@/lib/adapters/integrations";
+import { listEntityMetadataForIntegration, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { loadAllResolvers } from "@/lib/adapters/integrations/resolver-loader";
+import { getSourceResolver } from "@/lib/adapters/integrations/source-resolver-registry";
 
 async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -30,21 +32,51 @@ async function GET(request) {
     );
   }
 
+  const id = integrationId.trim();
   const config = readAdapterConfig();
   const isBridgeMode =
     config.integrationAdapter === "growthub-bridge" &&
     config.growthubBridge?.baseUrl &&
     !!process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN;
 
-  const entities = await listEntityMetadataForIntegration(integrationId.trim());
+  // 1. Try the Bridge / catalog path first
+  let entities = await listEntityMetadataForIntegration(id);
+  let source = entities.length ? "bridge" : "none";
 
-	  return NextResponse.json({
-	    integrationId: integrationId.trim(),
-	    entities,
-	    source: entities.length ? "resolver" : "none",
-	    requiresObjectResolver: entities.length === 0,
-	    authority: isBridgeMode ? "growthub-bridge" : "local"
-	  });
+  // 2. If Bridge returned nothing, fall back to resolver registry listEntities()
+  if (!entities.length) {
+    try {
+      await loadAllResolvers();
+      const resolver = getSourceResolver(id);
+      if (resolver && typeof resolver.listEntities === "function") {
+        const allConnections = await listGovernedWorkspaceIntegrations().catch(() => []);
+        const connection = allConnections.find((c) => c.provider === id || c.id === id) || null;
+        const raw = await resolver.listEntities(config, connection);
+        if (Array.isArray(raw) && raw.length) {
+          entities = raw.map((item) => ({
+            id: String(item.id || item.entityId || item.propertyId || item.accountId || ""),
+            label: String(item.label || item.name || item.displayName || item.id || ""),
+            secondaryLabel: item.secondaryLabel || item.domain || item.accountId || undefined,
+            entityType: item.entityType || item.type || undefined,
+            provider: id,
+            status: item.status || undefined,
+            metadata: item.metadata || undefined
+          })).filter((e) => e.id);
+          source = "resolver";
+        }
+      }
+    } catch {
+      // resolver not available or threw — leave entities empty
+    }
+  }
+
+  return NextResponse.json({
+    integrationId: id,
+    entities,
+    source,
+    requiresObjectResolver: entities.length === 0,
+    authority: isBridgeMode ? "growthub-bridge" : "local"
+  });
 }
 
 export { GET };

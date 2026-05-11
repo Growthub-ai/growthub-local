@@ -152,7 +152,9 @@ const WIDGET_SCHEMA_CONTRACTS = {
     lane: "string optional (when mode === 'integration')",
     entityId: "string optional — stable source object ID (never a token or credential)",
     entityType: "string optional — adapter-provided object type",
-    entityLabel: "string optional — display-only resolved label, not authoritative"
+    entityLabel: "string optional — display-only resolved label, not authoritative",
+    sourceStorage: "'workspace-source-records' optional — marks this binding as live-backed; records are written by POST /api/workspace/refresh-sources and keyed by dataModel.objects[].sourceId",
+    sourceId: "string optional — stable key in growthub.source-records.json; required when sourceStorage === 'workspace-source-records'"
   },
   NormalizedIntegrationEntity: {
     id: "non-empty string — stable source object ID",
@@ -200,19 +202,19 @@ const SAMPLE_DATA_BINDINGS = {
 function defaultConfigFor(kind) {
   switch (kind) {
     case "chart":
-      return { values: [58, 36, 72, 48, 64], binding: SAMPLE_DATA_BINDINGS.reportingJson };
+      return { values: [], binding: { mode: "manual", source: "", rows: [] } };
     case "view":
       return {
         source: "",
         layout: "Table",
         columns: [],
         rows: [],
-        binding: { mode: "manual", source: "Static rows", rows: [] }
+        binding: { mode: "manual", source: "", rows: [] }
       };
     case "iframe":
       return { url: "" };
     case "rich-text":
-      return { text: "", binding: { mode: "manual", source: "Manual text", rows: [] } };
+      return { text: "", binding: { mode: "manual", source: "", rows: [] } };
     default:
       return {};
   }
@@ -396,8 +398,11 @@ function validateStaticDataBinding(binding, path, errors) {
     if (typeof binding.integrationId !== "string" || !binding.integrationId.trim()) {
       errors.push(`${path}.integrationId is required when mode is integration`);
     }
-    if (typeof binding.lane !== "string" || !binding.lane.trim()) {
-      errors.push(`${path}.lane is required when mode is integration`);
+    // lane is not required when sourceStorage delegates routing to a registry resolver
+    if (binding.sourceStorage !== "workspace-source-records") {
+      if (typeof binding.lane !== "string" || !binding.lane.trim()) {
+        errors.push(`${path}.lane is required when mode is integration`);
+      }
     }
   }
   if (binding.source !== undefined && typeof binding.source !== "string") {
@@ -438,6 +443,14 @@ function validateStaticDataBinding(binding, path, errors) {
   }
   if (binding.entityLabel !== undefined && typeof binding.entityLabel !== "string") {
     errors.push(`${path}.entityLabel must be a string`);
+  }
+  if (binding.sourceStorage !== undefined) {
+    if (binding.sourceStorage !== "workspace-source-records") {
+      errors.push(`${path}.sourceStorage must be "workspace-source-records" when present`);
+    }
+  }
+  if (binding.sourceId !== undefined && typeof binding.sourceId !== "string") {
+    errors.push(`${path}.sourceId must be a string`);
   }
 }
 
@@ -805,6 +818,7 @@ function validateDataModelConfig(dataModel, errors) {
     }
     if (typeof object.label !== "string" || !object.label.trim()) errors.push(`${prefix}.label must be a non-empty string`);
     if (object.source !== undefined && typeof object.source !== "string") errors.push(`${prefix}.source must be a string`);
+    if (object.sourceId !== undefined && typeof object.sourceId !== "string") errors.push(`${prefix}.sourceId must be a string`);
     validateStringArray(object.columns, `${prefix}.columns`, errors);
     if (!Array.isArray(object.rows)) {
       errors.push(`${prefix}.rows must be an array`);
@@ -814,6 +828,9 @@ function validateDataModelConfig(dataModel, errors) {
       });
     }
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
+    if (object.binding?.sourceStorage === "workspace-source-records" && typeof object.sourceId !== "string") {
+      errors.push(`${prefix}.sourceId is required when binding.sourceStorage is "workspace-source-records"`);
+    }
     validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
   });
 }

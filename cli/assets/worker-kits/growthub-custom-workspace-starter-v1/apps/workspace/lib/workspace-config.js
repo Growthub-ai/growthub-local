@@ -338,6 +338,82 @@ async function writeWorkspaceApiWebhookSettings(patch) {
   return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
 }
 
+/**
+ * Source Records persistence — sidecar store for live-backed dataModel objects.
+ *
+ * Records are written by POST /api/workspace/refresh-sources when a resolver
+ * fetches live data for a source with `binding.sourceStorage: "workspace-source-records"`.
+ *
+ * Persistence is keyed by `sourceId` and stored in a JSON sidecar file
+ * (`growthub.source-records.json`) beside `growthub.config.json`. The same
+ * filesystem / read-only / database mode rules apply: in read-only mode writes
+ * are rejected gracefully so the refresh button surface is disabled.
+ *
+ * Shape: { [sourceId]: { records: Record[], integrationId: string, fetchedAt: string } }
+ */
+
+const SOURCE_RECORDS_FILENAME = "growthub.source-records.json";
+
+function resolveSourceRecordsPath() {
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), SOURCE_RECORDS_FILENAME);
+}
+
+async function readWorkspaceSourceRecords(sourceId) {
+  const recordsPath = resolveSourceRecordsPath();
+  try {
+    const raw = await fs.readFile(recordsPath, "utf8");
+    const all = JSON.parse(raw);
+    if (sourceId) {
+      return all[sourceId] || null;
+    }
+    return all;
+  } catch {
+    return sourceId ? null : {};
+  }
+}
+
+async function writeWorkspaceSourceRecords(sourceId, records, metadata = {}) {
+  const persistence = describePersistenceMode();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+  if (typeof sourceId !== "string" || !sourceId.trim()) {
+    const error = new Error("sourceId must be a non-empty string");
+    error.code = "INVALID_SOURCE_RECORDS_WRITE";
+    throw error;
+  }
+  if (!Array.isArray(records)) {
+    const error = new Error("records must be an array");
+    error.code = "INVALID_SOURCE_RECORDS_WRITE";
+    throw error;
+  }
+  const recordsPath = resolveSourceRecordsPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(recordsPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${recordsPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+  let all = {};
+  try {
+    const raw = await fs.readFile(recordsPath, "utf8");
+    all = JSON.parse(raw);
+  } catch {
+    all = {};
+  }
+  all[sourceId.trim()] = {
+    records,
+    integrationId: metadata.integrationId || null,
+    fetchedAt: metadata.fetchedAt || new Date().toISOString(),
+    recordCount: records.length
+  };
+  await fs.writeFile(recordsPath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
+  return all[sourceId.trim()];
+}
+
 export {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -346,9 +422,11 @@ export {
   READ_ONLY_GUIDANCE,
   describePersistenceMode,
   readWorkspaceConfig,
+  readWorkspaceSourceRecords,
   resolveWorkspaceConfigPath,
   validateWorkspaceConfig,
   writeWorkspaceConfig,
   writeWorkspaceApiWebhookSettings,
-  writeWorkspaceIdentitySettings
+  writeWorkspaceIdentitySettings,
+  writeWorkspaceSourceRecords
 };
