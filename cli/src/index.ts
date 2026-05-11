@@ -83,6 +83,7 @@ import { registerWorkspaceQaCommands } from "./commands/workspace-qa.js";
 import { registerWorkspaceSurfaceCommands } from "./commands/workspace-surface.js";
 import { registerWorkspaceUpstreamCommands } from "./commands/workspace-upstream.js";
 import { registerWorkspacePortalCommands } from "./commands/workspace-portal.js";
+import { registerWorkspaceResolverCommands } from "./commands/workspace-resolvers.js";
 import { getWorkflowAccess } from "./auth/workflow-access.js";
 import { readSession, isSessionExpired } from "./auth/session-store.js";
 import {
@@ -251,6 +252,7 @@ function registerSharedCommands(target: Command) {
   registerWorkspaceSurfaceCommands(workspaceCmd);
   registerWorkspaceUpstreamCommands(workspaceCmd);
   registerWorkspacePortalCommands(workspaceCmd);
+  registerWorkspaceResolverCommands(workspaceCmd);
 
   const auth = target.command("auth").description("Authentication and bootstrap utilities");
 

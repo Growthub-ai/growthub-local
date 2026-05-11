@@ -2,26 +2,38 @@
  * GET /api/workspace/resolvers
  *
  * Lists resolver files present in lib/adapters/integrations/resolvers/ and
- * which integrationIds are registered in the source-resolver-registry after
- * loading them. Used by the no-code Resolver management panel.
+ * returns provider-agnostic metadata for each registered resolver.
+ * Used by the generic resolver management panel and ResolverControlPanel in the
+ * widget inspector. No provider names appear in the response shape.
  *
  * Response:
- *   { files: string[], registeredIds: string[], canUpload: boolean }
+ *   {
+ *     files:         string[],
+ *     registeredIds: string[],
+ *     resolvers: {
+ *       integrationId:   string,
+ *       entityTypes:     string[],
+ *       hasListEntities: boolean,
+ *       configSchema:    SchemaField[] | null
+ *     }[],
+ *     canUpload: boolean
+ *   }
  */
 
 import { NextResponse } from "next/server";
 import { loadAllResolvers, listResolverFiles } from "@/lib/adapters/integrations/resolver-loader";
-import { listRegisteredResolvers } from "@/lib/adapters/integrations/source-resolver-registry";
+import { describeRegisteredResolvers } from "@/lib/adapters/integrations/source-resolver-registry";
 import { describePersistenceMode } from "@/lib/workspace-config";
 
 async function GET() {
   await loadAllResolvers();
   const files = await listResolverFiles();
-  const registeredIds = listRegisteredResolvers();
+  const resolvers = describeRegisteredResolvers();
   const persistence = describePersistenceMode();
   return NextResponse.json({
     files,
-    registeredIds,
+    registeredIds: resolvers.map((r) => r.integrationId),
+    resolvers,
     canUpload: persistence.canSave
   });
 }

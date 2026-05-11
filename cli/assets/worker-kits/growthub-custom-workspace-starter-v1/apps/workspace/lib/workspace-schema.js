@@ -202,19 +202,19 @@ const SAMPLE_DATA_BINDINGS = {
 function defaultConfigFor(kind) {
   switch (kind) {
     case "chart":
-      return { values: [58, 36, 72, 48, 64], binding: SAMPLE_DATA_BINDINGS.reportingJson };
+      return { values: [], binding: { mode: "manual", source: "", rows: [] } };
     case "view":
       return {
         source: "",
         layout: "Table",
         columns: [],
         rows: [],
-        binding: { mode: "manual", source: "Static rows", rows: [] }
+        binding: { mode: "manual", source: "", rows: [] }
       };
     case "iframe":
       return { url: "" };
     case "rich-text":
-      return { text: "", binding: { mode: "manual", source: "Manual text", rows: [] } };
+      return { text: "", binding: { mode: "manual", source: "", rows: [] } };
     default:
       return {};
   }

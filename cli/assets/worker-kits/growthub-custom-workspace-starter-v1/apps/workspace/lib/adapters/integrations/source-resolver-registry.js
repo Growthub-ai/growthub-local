@@ -20,7 +20,12 @@
  * isolated from the others.
  */
 
-const registry = new Map();
+// globalThis singleton so resolver files loaded via dynamic file:// import
+// share the same Map instance as the Next.js-bundled copy of this module.
+if (!globalThis.__growthubSourceResolverRegistry) {
+  globalThis.__growthubSourceResolverRegistry = new Map();
+}
+const registry = globalThis.__growthubSourceResolverRegistry;
 
 /**
  * Register a source resolver. Called once per provider at module load.
@@ -55,4 +60,26 @@ function listRegisteredResolvers() {
   return Array.from(registry.keys());
 }
 
-export { registerSourceResolver, getSourceResolver, listRegisteredResolvers };
+/**
+ * Describe all registered resolvers — returns provider-agnostic metadata declared
+ * by each resolver file. The UI uses this to render generic controls without any
+ * knowledge of specific providers.
+ *
+ * Shape per entry:
+ *   {
+ *     integrationId: string,
+ *     entityTypes:   string[],           // declared by the resolver
+ *     hasListEntities: boolean,          // true if resolver.listEntities is a function
+ *     configSchema: SchemaField[] | null // optional declarative params schema
+ *   }
+ */
+function describeRegisteredResolvers() {
+  return Array.from(registry.entries()).map(([id, resolver]) => ({
+    integrationId: id,
+    entityTypes: Array.isArray(resolver.entityTypes) ? resolver.entityTypes : [],
+    hasListEntities: typeof resolver.listEntities === "function",
+    configSchema: Array.isArray(resolver.configSchema) ? resolver.configSchema : null,
+  }));
+}
+
+export { registerSourceResolver, getSourceResolver, listRegisteredResolvers, describeRegisteredResolvers };

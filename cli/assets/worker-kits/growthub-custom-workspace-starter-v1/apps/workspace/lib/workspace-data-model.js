@@ -171,9 +171,12 @@ function deriveManualObjectTable(object) {
     id: `manual-object:${object.id || source}`,
     label: object.label || object.name || source,
     source,
+    objectType: object.objectType || "custom",
+    icon: object.icon || null,
     columns,
     rows,
     binding: object.binding || { mode: "manual", source: "Data Model" },
+    relations: Array.isArray(object.relations) ? object.relations : [],
     mutable: true,
     storage: "manual-object",
     objectId: object.id,
@@ -313,6 +316,105 @@ function uniqueObjectId(workspaceConfig, name) {
   return `${base}-${index}`;
 }
 
+/**
+ * Top-level object type presets.
+ * Each entry defines: label, icon (Lucide name), description, default columns, and
+ * any built-in relations.  These are the five first-class types the UI offers when
+ * a user clicks "New object" — they act like schema templates, not hard constraints.
+ *
+ * Relation shape:
+ *   {
+ *     id:              string,   // stable slug within this object
+ *     name:            string,   // display label
+ *     field:           string,   // FK column on THIS object
+ *     targetObjectType:string,   // objectType of the referenced object
+ *     type:            "belongs-to" | "has-many",
+ *     description:     string
+ *   }
+ */
+const OBJECT_TYPE_PRESETS = {
+  "data-source": {
+    label: "Data Source",
+    icon: "Globe",
+    description: "Custom API, webhook, or external feed. References an API Registry record while credentials stay in workspace settings.",
+    columns: ["Name", "registryId", "endpoint", "authRef", "baseUrl", "status", "lastTested", "lastResponse"],
+    relations: [
+      {
+        id: "resolver-binding",
+        name: "Resolver",
+        field: "registryId",
+        targetObjectType: "api-registry",
+        type: "belongs-to",
+        description: "The API Registry entry whose fetchRecords function resolves this source. Set registryId to match the resolver integrationId."
+      }
+    ]
+  },
+  "api-registry": {
+    label: "API Registry",
+    icon: "Code2",
+    description: "HTTP API records with endpoint config, auth references, connection status, and stored test output.",
+    columns: ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description"],
+    relations: []
+  },
+  "people": {
+    label: "People",
+    icon: "Users",
+    description: "Contacts, leads, or team members with standard CRM fields.",
+    columns: ["Name", "Email", "Phone", "Company", "Status", "Role"],
+    relations: []
+  },
+  "tasks": {
+    label: "Tasks",
+    icon: "CheckSquare",
+    description: "Action items, to-dos, or work items.",
+    columns: ["Name", "Status", "DueDate", "Assignee", "Priority"],
+    relations: []
+  },
+  "custom": {
+    label: "Custom",
+    icon: "Plus",
+    description: "Start with a blank table — define your own fields and records.",
+    columns: ["Name"],
+    relations: []
+  }
+};
+
+/**
+ * Create a typed business object from a preset template.
+ * Accepts objectType (one of the OBJECT_TYPE_PRESETS keys) and an optional icon override.
+ * The object is stored in dataModel.objects[] alongside manual objects.
+ */
+function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom", icon } = {}) {
+  const label = String(name || "").trim();
+  if (!label) return workspaceConfig;
+  const preset = OBJECT_TYPE_PRESETS[objectType] || OBJECT_TYPE_PRESETS.custom;
+  const columns = [...preset.columns];
+  const dataModel =
+    workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+  const id = uniqueObjectId(workspaceConfig, label);
+  const object = {
+    id,
+    label,
+    source: label,
+    objectType,
+    icon: icon || preset.icon,
+    columns,
+    rows: [],
+    binding: { mode: "manual", source: "Data Model" },
+    relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
+    fieldSettings: { hidden: [], order: columns }
+  };
+  return {
+    ...workspaceConfig,
+    dataModel: {
+      ...dataModel,
+      objects: [...normalizeManualObjects(workspaceConfig), object]
+    }
+  };
+}
+
 function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
   const label = String(name || "").trim();
   const columns = Array.from(new Set((Array.isArray(fields) ? fields : String(fields || "").split(","))
@@ -417,10 +519,12 @@ function describeBindingMode(binding) {
 }
 
 export {
+  OBJECT_TYPE_PRESETS,
   addTableField,
   addTableRow,
   appendRowsToTable,
   createManualBusinessObject,
+  createTypedBusinessObject,
   deleteTableRow,
   describeBindingLane,
   describeBindingMode,

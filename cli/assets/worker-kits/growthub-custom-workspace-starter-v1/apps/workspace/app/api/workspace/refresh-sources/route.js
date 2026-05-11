@@ -32,7 +32,9 @@
 
 import { NextResponse } from "next/server";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { readWorkspaceConfig, writeWorkspaceSourceRecords } from "@/lib/workspace-config";
+import { loadAllResolvers } from "@/lib/adapters/integrations/resolver-loader";
 import { getSourceResolver } from "@/lib/adapters/integrations/source-resolver-registry";
 
 async function POST(request) {
@@ -64,8 +66,19 @@ async function POST(request) {
     return NextResponse.json({ error: `failed to read workspace config: ${err.message}` }, { status: 500 });
   }
 
+  await loadAllResolvers();
+
   const adapterConfig = readAdapterConfig();
   const dataObjects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+
+  // Resolve bridge connections once for this batch so every resolver
+  // receives the full live connection object (connectionId, authPath, metadata).
+  let bridgeIntegrations = [];
+  try {
+    bridgeIntegrations = await listGovernedWorkspaceIntegrations();
+  } catch {
+    // Non-fatal — resolvers fall back to env-only auth
+  }
 
   const refreshed = [];
   const skipped = [];
@@ -96,7 +109,10 @@ async function POST(request) {
     }
 
     try {
-      const records = await resolver.fetchRecords(adapterConfig, null, binding);
+      const connection = bridgeIntegrations.find(
+        (i) => i.provider === integrationId || i.id === integrationId
+      ) || null;
+      const records = await resolver.fetchRecords(adapterConfig, connection, binding);
       const fetchedAt = new Date().toISOString();
       await writeWorkspaceSourceRecords(sourceId, records, { integrationId, fetchedAt });
       refreshed.push({ sourceId, integrationId, recordCount: records.length, fetchedAt });

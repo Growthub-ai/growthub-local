@@ -1,54 +1,151 @@
 "use client";
 
 import Link from "next/link";
-import { Database } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  BarChart2,
+  Box,
+  Building2,
+  Calendar,
+  CheckSquare,
+  ChevronRight,
+  Code2,
+  Database,
+  FileText,
+  Globe,
+  Hash,
+  Layers,
+  Link2,
+  List,
+  Mail,
+  Plus,
+  ShoppingCart,
+  Star,
+  Tag,
+  ToggleLeft,
+  Type,
+  Users,
+  X,
+  Zap,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  OBJECT_TYPE_PRESETS,
   addTableField,
   addTableRow,
   appendRowsToTable,
-  createManualBusinessObject,
-  deleteTableRow,
+  createTypedBusinessObject,
   describeBindingLane,
-  describeBindingMode,
-  duplicateTableRow,
   exportTableAsCsv,
   importTableFromCsv,
   listWorkspaceDataModelTables,
   replaceTableContent,
-  updateTableCell
+  updateTableCell,
 } from "@/lib/workspace-data-model";
 
-const TABS = ["Fields", "Records", "Bindings", "Usage"];
-const LANE_META = {
-  manual: { label: "Manual", cls: "dm-badge-manual" },
-  "data-source": { label: "Data Source", cls: "dm-badge-datasource" },
-  "workspace-integration": { label: "Workspace Tool", cls: "dm-badge-integration" },
-  integration: { label: "Integration", cls: "dm-badge-integration" }
+// ─── Icon system ─────────────────────────────────────────────────────────────
+
+const LUCIDE_MAP = {
+  Activity, BarChart2, Box, Building2, Calendar, CheckSquare, Code2,
+  Database, FileText, Globe, Hash, Layers, Link2, List, Mail, Plus,
+  ShoppingCart, Star, Tag, Type, Users, Zap,
 };
+
+const ICON_PICKER_SET = [
+  "Database", "Globe", "Code2", "Users", "CheckSquare", "Building2",
+  "Tag", "Star", "Zap", "FileText", "Mail", "BarChart2",
+  "Layers", "Box", "Activity", "ShoppingCart",
+];
+
+function LucideIcon({ name, size = 14, className, style }) {
+  const Icon = LUCIDE_MAP[name] || Database;
+  return <Icon size={size} className={className} style={style} aria-hidden="true" />;
+}
+
+// ─── Object type definitions for the type-picker step ────────────────────────
+
+const OBJECT_TYPE_DEFS = [
+  {
+    type: "data-source",
+    icon: Globe,
+    label: "Data Source",
+    description: "Custom API, webhook, or external feed. Linked to a resolver via API Registry.",
+  },
+  {
+    type: "api-registry",
+    icon: Code2,
+    label: "API Registry",
+    description: "Resolver adapters — integrationId + fetch functions that power Data Sources.",
+  },
+  {
+    type: "people",
+    icon: Users,
+    label: "People",
+    description: "Contacts, leads, or team members with standard CRM fields.",
+  },
+  {
+    type: "tasks",
+    icon: CheckSquare,
+    label: "Tasks",
+    description: "Action items, to-dos, and work tracking.",
+  },
+  {
+    type: "custom",
+    icon: Plus,
+    label: "Custom",
+    description: "Blank table — define your own fields from scratch.",
+  },
+];
+
+// ─── Lane / badge meta ────────────────────────────────────────────────────────
+
+const OBJECT_TYPE_BADGE = {
+  "data-source":  { label: "Data Source",  cls: "dm-badge-datasource" },
+  "api-registry": { label: "API Registry", cls: "dm-badge-registry" },
+  people:         { label: "People",        cls: "dm-badge-people" },
+  tasks:          { label: "Tasks",         cls: "dm-badge-tasks" },
+  custom:         { label: "Custom",        cls: "dm-badge-manual" },
+};
+
+const FIELD_TYPE_ICON_NAMES = {
+  text: "Type", number: "Hash", date: "Calendar", url: "Link2", select: "List", boolean: "ToggleLeft",
+};
+
+function inferFieldType(name) {
+  const n = name.toLowerCase();
+  if (n.includes("date") || n.includes("_at") || n.includes("created") || n.includes("updated")) return "date";
+  if (n.includes("url") || n.includes("link") || n.includes("website") || n === "endpoint" || n === "baseurl") return "url";
+  if (n.includes("count") || n.includes("num") || n.includes("amount") || n.includes("arr") || n.includes("price")) return "number";
+  if (n === "status" || n === "stage" || n === "type" || n === "icp" || n === "priority" || n === "authtype" || n === "method") return "select";
+  if (n.startsWith("is_") || n.includes("active") || n.includes("enabled")) return "boolean";
+  return "text";
+}
 
 function pluralize(count, word) {
   return `${count} ${count === 1 ? word : `${word}s`}`;
 }
 
-function laneMeta(binding) {
-  return LANE_META[describeBindingLane(binding)] || LANE_META.manual;
-}
-
-function SaveToast({ saving, message }) {
-  if (saving) return <span className="dm-toast saving">Saving...</span>;
-  if (!message) return null;
-  return <span className={`dm-toast ${message.startsWith("Error") ? "error" : "ok"}`}>{message}</span>;
+function objectTypeBadge(objectType) {
+  return OBJECT_TYPE_BADGE[objectType] || OBJECT_TYPE_BADGE.custom;
 }
 
 function textColorForAccent(accent) {
   const hex = String(accent || "").replace("#", "");
   if (!/^[0-9a-f]{6}$/i.test(hex)) return "#ffffff";
-  const red = parseInt(hex.slice(0, 2), 16);
-  const green = parseInt(hex.slice(2, 4), 16);
-  const blue = parseInt(hex.slice(4, 6), 16);
-  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
-  return luminance > 0.62 ? "#252525" : "#ffffff";
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? "#252525" : "#ffffff";
+}
+
+// ─── Shared micro-components ──────────────────────────────────────────────────
+
+function SaveToast({ saving, message }) {
+  if (saving) return <span className="dm-toast saving">Saving…</span>;
+  if (!message) return null;
+  return <span className={`dm-toast ${message.startsWith("Error") ? "error" : "ok"}`}>{message}</span>;
 }
 
 function NavRail({ authority, workspaceConfig }) {
@@ -57,10 +154,13 @@ function NavRail({ authority, workspaceConfig }) {
   return (
     <aside className="workspace-rail" aria-label="Workspace navigation">
       <div className="workspace-brand">
-        <span className="workspace-mark" style={{
-          background: branding.logoUrl ? undefined : branding.accent || undefined,
-          color: branding.logoUrl ? undefined : textColorForAccent(branding.accent)
-        }}>
+        <span
+          className="workspace-mark"
+          style={{
+            background: branding.logoUrl ? undefined : branding.accent || undefined,
+            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent),
+          }}
+        >
           {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : workspaceName.slice(0, 1).toUpperCase()}
         </span>
         <span>{workspaceName}</span>
@@ -68,81 +168,239 @@ function NavRail({ authority, workspaceConfig }) {
       <nav className="workspace-nav">
         <Link href="/">Dashboards</Link>
         <Link className="active" href="/data-model">Data Model</Link>
-        <Link href="/settings/integrations">Integrations</Link>
         <span className="workspace-nav-static">Management</span>
         <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
       </nav>
-      <div className="workspace-rail-status"><span className="status-dot" />{authority || "local-catalog"}</div>
+      <div className="workspace-rail-status">
+        <span className="status-dot" />
+        {authority || "local-catalog"}
+      </div>
     </aside>
   );
 }
 
+// ─── Object list row ──────────────────────────────────────────────────────────
+
 function ObjectRow({ table, selected, onSelect }) {
-  const meta = laneMeta(table.binding);
+  const badge = objectTypeBadge(table.objectType);
+  const iconName = table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database";
   return (
-    <button type="button" className={`dm-object-row${selected ? " active" : ""}`} onClick={onSelect}>
-      <div className="dm-object-row-top">
-        <Database className="dm-object-icon" size={13} aria-hidden="true" />
-        <strong className="dm-object-name">{table.label}</strong>
-        <span className={`dm-badge ${meta.cls}`}>{meta.label}</span>
-      </div>
-      <div className="dm-object-row-meta">
-        <span>{pluralize(table.rows.length, "record")}</span>
-        <span>{pluralize(table.columns.length, "field")}</span>
-        <span>{pluralize(table.widgetRefs.length, "widget")}</span>
-      </div>
+    <button type="button" className={`dm-obj-row${selected ? " active" : ""}`} onClick={onSelect}>
+      <LucideIcon name={iconName} size={13} className="dm-obj-icon" />
+      <span className="dm-obj-name">{table.label}</span>
+      <span className={`dm-badge ${badge.cls}`}>{badge.label}</span>
     </button>
   );
 }
 
-function FieldsTab({ table, saving, onSave }) {
-  const [fieldName, setFieldName] = useState("");
-  const [error, setError] = useState("");
+// ─── Source validation banner ─────────────────────────────────────────────────
 
-  function addField() {
-    const name = fieldName.trim();
-    if (!name) return;
-    if (table.columns.includes(name)) {
-      setError(`${name} already exists.`);
-      return;
-    }
-    setError("");
-    setFieldName("");
-    onSave((config) => addTableField(config, table, name));
-  }
-
+function SourceValidationBanner({ table }) {
+  const lane = describeBindingLane(table?.binding);
+  if (!table || lane === "manual") return null;
+  const hasRef = table.binding?.integrationId || table.binding?.sourceKey || table.binding?.entityId;
+  if (hasRef) return null;
   return (
-    <div>
-      <div className="dm-tab-toolbar">
-        <p className="dm-tab-stat">{pluralize(table.columns.length, "field")}</p>
-        <div className="dm-inline-add">
-          <input className="dm-input" value={fieldName} disabled={!table.mutable} placeholder="New field" onChange={(event) => setFieldName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addField(); }} />
-          <button type="button" className="dm-btn primary" disabled={saving || !table.mutable || !fieldName.trim()} onClick={addField}>+ Add field</button>
-        </div>
-      </div>
-      {error ? <p className="dm-field-error">{error}</p> : null}
-      {!table.mutable ? <p className="dm-hint-block">This object is an integration reference. Select and configure its source object in the existing View widget source controls.</p> : null}
-      <div className="dm-field-list">
-        {table.columns.map((column) => <div key={column} className="dm-field-item"><span className="dm-field-icon">::</span><strong>{column}</strong></div>)}
-      </div>
+    <div className="dm-validation-banner">
+      <AlertCircle size={13} />
+      <span>Source binding incomplete — configure the source in widget source controls before data loads.</span>
     </div>
   );
 }
 
-function RecordsTab({ table, saving, onSave }) {
-  const [editing, setEditing] = useState(null);
-  const [draft, setDraft] = useState("");
+// ─── Database surface ─────────────────────────────────────────────────────────
+
+function formatCellValue(value, column) {
+  if (value === null || value === undefined || value === "") return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (column === "lastResponse" && text.length > 90) return `${text.slice(0, 90)}…`;
+  return text;
+}
+
+function ConnectionPill({ value }) {
+  const status = String(value || "untested").toLowerCase();
+  const ok = ["connected", "approved", "ok", "success"].includes(status);
+  const bad = ["failed", "error", "disconnected"].includes(status);
+  return (
+    <span className={`dm-db-status ${ok ? "ok" : bad ? "bad" : ""}`}>
+      <span />
+      {value || "untested"}
+    </span>
+  );
+}
+
+function relationForColumn(table, column) {
+  return (table?.relations || []).find((relation) => relation.field === column) || null;
+}
+
+function referenceOptions(tables, relation) {
+  if (!relation) return [];
+  return (tables || [])
+    .filter((candidate) => candidate.objectType === relation.targetObjectType)
+    .flatMap((candidate) => (candidate.rows || []).map((row, index) => {
+      const value = row?.integrationId || row?.id || row?.Name || `${candidate.objectId}:${index}`;
+      const label = row?.Name || row?.integrationId || row?.description || `${candidate.label} row ${index + 1}`;
+      return { value, label, source: candidate.label };
+    }));
+}
+
+function ReferenceSelect({ value, options, disabled, onChange }) {
+  return (
+    <select
+      className="dm-reference-select"
+      value={value || ""}
+      disabled={disabled}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">Select reference…</option>
+      {options.map((option) => (
+        <option key={`${option.source}:${option.value}`} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function DataModelRecordDrawer({ table, tables, rowIndex, row, saving, onClose, onSave }) {
+  const [draft, setDraft] = useState(row || {});
+  const [testing, setTesting] = useState(false);
+  const [testMessage, setTestMessage] = useState("");
+
+  useEffect(() => {
+    setDraft(row || {});
+    setTestMessage("");
+  }, [row, rowIndex]);
+
+  if (rowIndex === null || rowIndex === undefined || !row) return null;
+
+  function updateField(column, value) {
+    setDraft((current) => ({ ...current, [column]: value }));
+    onSave((config) => updateTableCell(config, table, rowIndex, column, value));
+  }
+
+  async function testApiRecord() {
+    setTesting(true);
+    setTestMessage("");
+    try {
+      const res = await fetch("/api/workspace/test-api-record", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(table.objectType === "data-source" ? { dataSourceRecord: draft } : { record: draft }),
+      });
+      const payload = await res.json();
+      const status = payload.ok ? "connected" : "failed";
+      const responseText = JSON.stringify(payload.response ?? payload, null, 2);
+      onSave((config) => {
+        let next = updateTableCell(config, table, rowIndex, "status", status);
+        next = updateTableCell(next, table, rowIndex, "lastTested", new Date().toISOString());
+        next = updateTableCell(next, table, rowIndex, "lastResponse", responseText);
+        return next;
+      });
+      setDraft((current) => ({ ...current, status, lastTested: new Date().toISOString(), lastResponse: responseText }));
+      setTestMessage(payload.ok ? "Connected" : payload.error || "Connection failed");
+    } catch (err) {
+      const responseText = JSON.stringify({ error: err.message || "Connection failed" }, null, 2);
+      onSave((config) => {
+        let next = updateTableCell(config, table, rowIndex, "status", "failed");
+        next = updateTableCell(next, table, rowIndex, "lastTested", new Date().toISOString());
+        next = updateTableCell(next, table, rowIndex, "lastResponse", responseText);
+        return next;
+      });
+      setTestMessage(err.message || "Connection failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="dm-record-backdrop" onClick={onClose} />
+      <aside className="dm-record-drawer" aria-label="Record details">
+        <header className="dm-record-drawer-head">
+          <div>
+            <p>Record</p>
+            <h2>{draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}</h2>
+          </div>
+          <button type="button" className="dm-sidebar-close" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </header>
+        {(table.objectType === "api-registry" || table.objectType === "data-source") && (
+          <div className="dm-record-testbar">
+            <ConnectionPill value={draft.status} />
+            <button type="button" className="dm-btn-primary-sm" disabled={testing || saving} onClick={testApiRecord}>
+              {testing ? "Testing…" : "Test connection"}
+            </button>
+            {testMessage && <span>{testMessage}</span>}
+          </div>
+        )}
+        <div className="dm-record-fields">
+          {table.columns.map((column) => {
+            const value = String(draft?.[column] ?? "");
+            const large = column === "lastResponse" || value.length > 120;
+            const relation = relationForColumn(table, column);
+            const options = referenceOptions(tables, relation);
+            return (
+              <label key={column} className="dm-record-field">
+                <span>{column}</span>
+                {relation ? (
+                  <ReferenceSelect
+                    value={value}
+                    options={options}
+                    disabled={!table.mutable || saving}
+                    onChange={(nextValue) => updateField(column, nextValue)}
+                  />
+                ) : large ? (
+                  <textarea
+                    value={value}
+                    rows={column === "lastResponse" ? 10 : 4}
+                    disabled={!table.mutable || saving}
+                    onChange={(event) => setDraft((current) => ({ ...current, [column]: event.target.value }))}
+                    onBlur={(event) => updateField(column, event.target.value)}
+                  />
+                ) : (
+                  <input
+                    value={value}
+                    disabled={!table.mutable || saving}
+                    onChange={(event) => setDraft((current) => ({ ...current, [column]: event.target.value }))}
+                    onBlur={(event) => updateField(column, event.target.value)}
+                  />
+                )}
+              </label>
+            );
+          })}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function DataModelTableSurface({ table, tables, saving, onSave }) {
+  const [selectedRow, setSelectedRow] = useState(null);
+  const [addingField, setAddingField] = useState(false);
+  const [fieldName, setFieldName] = useState("");
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [mode, setMode] = useState("append");
-  const inputRef = useRef(null);
+  const fieldInputRef = useRef(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, [editing]);
+  useEffect(() => { if (addingField) fieldInputRef.current?.focus(); }, [addingField]);
+  useEffect(() => { setSelectedRow(null); }, [table.id]);
 
-  function commit() {
-    if (!editing) return;
-    onSave((config) => updateTableCell(config, table, editing.row, editing.column, draft));
-    setEditing(null);
+  function commitField() {
+    const name = fieldName.trim();
+    if (!name) {
+      setAddingField(false);
+      setFieldName("");
+      return;
+    }
+    if (!table.columns.includes(name)) {
+      onSave((config) => addTableField(config, table, name));
+    }
+    setAddingField(false);
+    setFieldName("");
   }
 
   function importCsv() {
@@ -154,149 +412,298 @@ function RecordsTab({ table, saving, onSave }) {
     setCsvOpen(false);
   }
 
+  const selectedRecord = selectedRow === null ? null : table.rows[selectedRow];
+
   return (
-    <div>
-      <div className="dm-tab-toolbar">
-        <p className="dm-tab-stat">{pluralize(table.rows.length, "record")}</p>
-        <div className="dm-tab-toolbar-actions">
-          <button type="button" className="dm-btn" disabled={!table.rows.length} onClick={() => {
-            const blob = new Blob([exportTableAsCsv(table)], { type: "text/csv" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `${table.source.replace(/\s+/g, "-").toLowerCase()}.csv`;
-            link.click();
-            URL.revokeObjectURL(url);
-          }}>Export CSV</button>
-          <button type="button" className="dm-btn" disabled={!table.mutable} onClick={() => setCsvOpen((open) => !open)}>Import CSV</button>
-          <button type="button" className="dm-btn primary" disabled={saving || !table.mutable || !table.columns.length} onClick={() => onSave((config) => addTableRow(config, table))}>+ Add row</button>
-        </div>
-      </div>
-      {!table.mutable ? <p className="dm-hint-block">Dynamic integration records are resolved by the governed integration path. The selected source object reference is shown here but provider rows are not stored in browser config.</p> : null}
-      {csvOpen ? (
-        <div className="dm-csv-panel">
-          <textarea className="dm-csv-textarea" rows={5} value={csvText} onChange={(event) => setCsvText(event.target.value)} placeholder="Name,Status&#10;Acme,Active" />
-          <div className="dm-csv-options">
-            <label><input type="radio" checked={mode === "append"} onChange={() => setMode("append")} /> Append</label>
-            <label><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /> Replace</label>
-            <button type="button" className="dm-btn primary" disabled={!csvText.trim()} onClick={importCsv}>Import</button>
-          </div>
-        </div>
-      ) : null}
-      {!table.columns.length ? <div className="dm-empty-inline">No fields are defined for this object.</div> : (
-        <div className="dm-records-scroll">
-          <table className="dm-records-table">
-            <thead><tr><th>#</th>{table.columns.map((column) => <th key={column}>{column}</th>)}<th /></tr></thead>
-            <tbody>
-              {table.rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  <td>{rowIndex + 1}</td>
-                  {table.columns.map((column) => {
-                    const active = editing?.row === rowIndex && editing?.column === column;
-                    const value = String(row?.[column] ?? "");
-                    return <td key={column}>{active ? <input ref={inputRef} className="dm-cell-input" value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") commit(); if (event.key === "Escape") setEditing(null); }} /> : <button type="button" className="dm-cell-btn" disabled={!table.mutable} onClick={() => { setEditing({ row: rowIndex, column }); setDraft(value); }}>{value || <span className="dm-cell-empty">-</span>}</button>}</td>;
-                  })}
-                  <td>
-                    <button type="button" className="dm-icon-btn" disabled={saving || !table.mutable} onClick={() => onSave((config) => duplicateTableRow(config, table, rowIndex))}>⎘</button>
-                    <button type="button" className="dm-icon-btn danger" disabled={saving || !table.mutable} onClick={() => onSave((config) => deleteTableRow(config, table, rowIndex))}>x</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="dm-db-surface">
+      {!table.mutable && (
+        <div className="dm-source-notice">
+          <AlertCircle size={13} />
+          <span>Dynamic integration records are resolved at runtime.</span>
         </div>
       )}
-    </div>
-  );
-}
-
-function BindingsTab({ table }) {
-  const binding = table.binding || {};
-  const mode = describeBindingMode(binding);
-  const meta = laneMeta(binding);
-  return (
-    <div>
-      <div className="dm-binding-header"><span className={`dm-badge ${meta.cls}`}>{mode.label}</span><p>{mode.description}</p></div>
-      <div className="dm-binding-rows">
-        <div className="dm-binding-row"><span>Source</span><code>{table.source}</code></div>
-        <div className="dm-binding-row"><span>Config surface</span><code>{table.storage === "view" ? "view.config" : "widget.config.binding"}</code></div>
-        <div className="dm-binding-row"><span>Mode</span><code>{binding.mode || "manual"}</code></div>
-        {binding.integrationId ? <div className="dm-binding-row"><span>Integration</span><code>{binding.integrationId}</code></div> : null}
-        {binding.entityId ? <div className="dm-binding-row"><span>Entity ID</span><code>{binding.entityId}</code></div> : null}
-        {binding.entityLabel ? <div className="dm-binding-row"><span>Entity label</span><code>{binding.entityLabel}</code></div> : null}
+      <div className="dm-db-toolbar">
+        <div className="dm-db-toolbar-title">
+          <strong>{table.label}</strong>
+          <span>{pluralize(table.columns.length, "field")} · {pluralize(table.rows.length, "record")}</span>
+        </div>
+        <div className="dm-records-actions">
+          {table.rows.length > 0 && (
+            <button type="button" className="dm-btn-ghost" onClick={() => {
+              const blob = new Blob([exportTableAsCsv(table)], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url; a.download = `${table.source.replace(/\s+/g, "-").toLowerCase()}.csv`;
+              a.click(); URL.revokeObjectURL(url);
+            }}>Export CSV</button>
+          )}
+          {table.mutable && <button type="button" className="dm-btn-ghost" onClick={() => setCsvOpen((open) => !open)}>Import CSV</button>}
+          {table.mutable && (
+            <button type="button" className="dm-btn-primary-sm" disabled={saving} onClick={() => onSave((config) => addTableRow(config, table))}>
+              <Plus size={13} />Add record
+            </button>
+          )}
+        </div>
       </div>
+      {csvOpen && (
+        <div className="dm-csv-panel">
+          <textarea className="dm-csv-textarea" rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} placeholder={"Name,Status\nAcme,Active"} />
+          <div className="dm-csv-opts">
+            <label><input type="radio" checked={mode === "append"} onChange={() => setMode("append")} /> Append</label>
+            <label><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /> Replace</label>
+            <button type="button" className="dm-btn-primary-sm" disabled={!csvText.trim()} onClick={importCsv}>Import</button>
+          </div>
+        </div>
+      )}
+      <div className="dm-db-grid-wrap">
+        <table className="dm-db-grid">
+          <thead>
+            <tr>
+              <th className="dm-db-rownum">#</th>
+              {table.columns.map((column) => (
+                <th key={column}>
+                  <span className="dm-db-field-type"><LucideIcon name={FIELD_TYPE_ICON_NAMES[inferFieldType(column)] || "Type"} size={12} /></span>
+                  {column}
+                </th>
+              ))}
+              {table.mutable && (
+                <th className="dm-db-add-field">
+                  {addingField ? (
+                    <input
+                      ref={fieldInputRef}
+                      value={fieldName}
+                      placeholder="Field name"
+                      onChange={(event) => setFieldName(event.target.value)}
+                      onBlur={commitField}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") commitField();
+                        if (event.key === "Escape") { setAddingField(false); setFieldName(""); }
+                      }}
+                    />
+                  ) : (
+                    <button type="button" onClick={() => setAddingField(true)}>
+                      <Plus size={13} />Field
+                    </button>
+                  )}
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, rowIndex) => (
+              <tr key={rowIndex} className={selectedRow === rowIndex ? "selected" : ""} onClick={() => setSelectedRow(rowIndex)}>
+                <td className="dm-db-rownum">{rowIndex + 1}</td>
+                {table.columns.map((column) => {
+                  const relation = relationForColumn(table, column);
+                  const options = referenceOptions(tables, relation);
+                  return (
+                  <td key={column}>
+                    {relation ? (
+                      <ReferenceSelect
+                        value={String(row?.[column] || "")}
+                        options={options}
+                        disabled={!table.mutable || saving}
+                        onChange={(nextValue) => onSave((config) => updateTableCell(config, table, rowIndex, column, nextValue))}
+                      />
+                    ) : column.toLowerCase() === "status" ? (
+                      <ConnectionPill value={row?.[column]} />
+                    ) : (
+                      <span className={row?.[column] ? "" : "dm-cell-empty"}>
+                        {formatCellValue(row?.[column], column) || "—"}
+                      </span>
+                    )}
+                  </td>
+                );})}
+                {table.mutable && <td className="dm-db-empty-cell" />}
+              </tr>
+            ))}
+            {table.mutable && (
+              <tr className="dm-db-new-row" onClick={() => onSave((config) => addTableRow(config, table))}>
+                <td className="dm-db-rownum">+</td>
+                <td colSpan={Math.max(table.columns.length, 1) + 1}>Add record</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <DataModelRecordDrawer
+        table={table}
+        tables={tables}
+        rowIndex={selectedRow}
+        row={selectedRecord}
+        saving={saving}
+        onClose={() => setSelectedRow(null)}
+        onSave={onSave}
+      />
     </div>
   );
 }
 
-function UsageTab({ table }) {
-  if (!table.widgetRefs.length) return <div className="dm-empty-inline">Manual data object. It is available to the Data Model and can be selected by existing View widget source controls without being auto-added to a dashboard.</div>;
-  return <div className="dm-usage-list">{table.widgetRefs.map((ref) => <div key={ref.widgetId} className="dm-usage-item"><strong>{ref.widgetTitle}</strong><span>{ref.widgetKind}</span><code>{ref.dashboardName || "Canvas"}</code></div>)}</div>;
-}
+// ─── Add Object Sidebar — two-step (type picker → name + icon) ────────────────
 
-function Summary({ tables }) {
+function IconPicker({ value, onChange }) {
   return (
-    <div className="dm-summary-cards">
-      <div className="dm-summary-card"><span>Objects</span><strong>{tables.length}</strong></div>
-      <div className="dm-summary-card"><span>Fields</span><strong>{tables.reduce((sum, table) => sum + table.columns.length, 0)}</strong></div>
-      <div className="dm-summary-card"><span>Records</span><strong>{tables.reduce((sum, table) => sum + table.rows.length, 0)}</strong></div>
-      <div className="dm-summary-card"><span>Integrations</span><strong>{tables.filter((table) => describeBindingLane(table.binding) !== "manual").length}</strong></div>
+    <div className="dm-icon-picker">
+      {ICON_PICKER_SET.map((name) => (
+        <button
+          key={name}
+          type="button"
+          className={`dm-icon-picker-btn${value === name ? " active" : ""}`}
+          title={name}
+          onClick={() => onChange(name)}
+        >
+          <LucideIcon name={name} size={16} />
+        </button>
+      ))}
     </div>
   );
 }
 
-function AddObjectDialog({ open, saving, onClose, onCreate }) {
+function AddObjectSidebar({ open, saving, onClose, onCreate, allTables }) {
+  const [step, setStep] = useState(0); // 0 = type picker, 1 = name + icon
+  const [selectedType, setSelectedType] = useState(null);
   const [name, setName] = useState("");
-  const [fields, setFields] = useState("Name");
+  const [icon, setIcon] = useState(null);
   const [error, setError] = useState("");
+  const inputRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
+    setStep(0);
+    setSelectedType(null);
     setName("");
-    setFields("Name");
+    setIcon(null);
     setError("");
   }, [open]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (step === 1) setTimeout(() => inputRef.current?.focus(), 80);
+  }, [step]);
 
-  function submit(event) {
-    event.preventDefault();
+  function pickType(typeDef) {
+    setSelectedType(typeDef);
+    setIcon(typeDef.icon.displayName || OBJECT_TYPE_PRESETS[typeDef.type]?.icon || "Database");
+    setStep(1);
+  }
+
+  function submit(e) {
+    e.preventDefault();
     const objectName = name.trim();
-    const fieldList = fields.split(",").map((field) => field.trim()).filter(Boolean);
-    if (!objectName) {
-      setError("Object name is required.");
-      return;
-    }
-    if (!fieldList.length) {
-      setError("Add at least one field.");
-      return;
-    }
+    if (!objectName) { setError("Object name is required."); return; }
     setError("");
-    onCreate({ name: objectName, fields: fieldList });
+    onCreate({ name: objectName, objectType: selectedType.type, icon });
   }
 
   return (
-    <div className="dm-dialog-shell" role="dialog" aria-modal="true" aria-labelledby="dm-add-object-title">
-      <div className="dm-dialog-backdrop" onClick={onClose} />
-      <form className="dm-dialog" onSubmit={submit}>
-        <div className="dm-dialog-head">
-          <h2 id="dm-add-object-title">Add business object</h2>
-          <button type="button" className="dm-icon-btn" onClick={onClose}>x</button>
+    <>
+      {open && <div className="dm-sidebar-backdrop" onClick={onClose} />}
+      <aside className={`dm-add-sidebar${open ? " open" : ""}`} role="dialog" aria-label="New object" aria-modal="true">
+        <div className="dm-add-sidebar-head">
+          <div className="dm-add-sidebar-head-left">
+            {step === 1 && (
+              <button type="button" className="dm-sidebar-back" onClick={() => setStep(0)}>
+                ←
+              </button>
+            )}
+            <h2>{step === 0 ? "New object" : `New ${selectedType?.label}`}</h2>
+          </div>
+          <button type="button" className="dm-sidebar-close" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
         </div>
-        <div className="dm-dialog-body">
-          <p className="dm-dialog-copy">Creates a manual governed data object. This does not add a widget, change a dashboard, or write to canvas.</p>
-          <label className="dm-field-label">Object name<input className="dm-input" value={name} placeholder="Companies, Clients, Leads" onChange={(event) => setName(event.target.value)} /></label>
-          <label className="dm-field-label">Fields <span>comma-separated</span><input className="dm-input" value={fields} placeholder="Name, Status, Owner" onChange={(event) => setFields(event.target.value)} /></label>
-          {error ? <p className="dm-field-error">{error}</p> : null}
-        </div>
-        <div className="dm-dialog-actions">
-          <button type="button" className="dm-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="dm-btn primary" disabled={saving}>Create object</button>
-        </div>
-      </form>
-    </div>
+
+        {step === 0 && (
+          <div className="dm-type-picker">
+            <p className="dm-type-picker-hint">Choose an object type to start with the right fields and relation bindings.</p>
+            <div className="dm-type-picker-list">
+              {OBJECT_TYPE_DEFS.map((def) => {
+                const Icon = def.icon;
+                return (
+                  <button key={def.type} type="button" className="dm-type-card" onClick={() => pickType(def)}>
+                    <div className="dm-type-card-icon">
+                      <Icon size={18} />
+                    </div>
+                    <div className="dm-type-card-body">
+                      <strong>{def.label}</strong>
+                      <span>{def.description}</span>
+                    </div>
+                    <ChevronRight size={14} className="dm-type-card-arrow" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {step === 1 && selectedType && (
+          <form className="dm-add-sidebar-body" onSubmit={submit}>
+            <div className="dm-add-type-preview">
+              <div className="dm-add-type-icon">
+                <LucideIcon name={icon || OBJECT_TYPE_PRESETS[selectedType.type]?.icon || "Database"} size={20} />
+              </div>
+              <div>
+                <p className="dm-add-type-label">{selectedType.label}</p>
+                <p className="dm-add-sidebar-hint">{selectedType.description}</p>
+              </div>
+            </div>
+
+            <label className="dm-field-label-v2">
+              <span>Object name</span>
+              <input
+                ref={inputRef}
+                className="dm-input-v2"
+                value={name}
+                placeholder={selectedType.type === "data-source" ? "My Analytics API, Salesforce Feed…" : selectedType.type === "api-registry" ? "GA4 Resolver, Stripe Adapter…" : "Name this object…"}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+
+            <label className="dm-field-label-v2">
+              <span>Icon</span>
+              <IconPicker value={icon} onChange={setIcon} />
+            </label>
+
+            {OBJECT_TYPE_PRESETS[selectedType.type]?.columns?.length > 0 && (
+              <div className="dm-preset-fields-preview">
+                <p className="dm-usage-label">Pre-populated fields</p>
+                <div className="dm-preset-fields-list">
+                  {OBJECT_TYPE_PRESETS[selectedType.type].columns.map((col) => (
+                    <span key={col} className="dm-preset-field-chip">{col}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {OBJECT_TYPE_PRESETS[selectedType.type]?.relations?.length > 0 && (
+              <div className="dm-preset-relations-preview">
+                <p className="dm-usage-label">Built-in relations</p>
+                {OBJECT_TYPE_PRESETS[selectedType.type].relations.map((rel) => (
+                  <div key={rel.id} className="dm-preset-relation-row">
+                    <Zap size={12} />
+                    <span>{rel.name}</span>
+                    <ArrowRight size={11} />
+                    <span className="dm-preset-rel-target">{OBJECT_TYPE_PRESETS[rel.targetObjectType]?.label || rel.targetObjectType}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {error && <p className="dm-field-error">{error}</p>}
+
+            <div className="dm-add-sidebar-actions">
+              <button type="button" className="dm-btn-outline" onClick={onClose}>Cancel</button>
+              <button type="submit" className="dm-btn-primary" disabled={saving || !name.trim()}>
+                Create object
+              </button>
+            </div>
+          </form>
+        )}
+      </aside>
+    </>
   );
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DataModelPage() {
   const [workspaceConfig, setWorkspaceConfig] = useState(null);
@@ -306,16 +713,15 @@ export default function DataModelPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedSource, setSelectedSource] = useState("");
-  const [activeTab, setActiveTab] = useState("Fields");
   const [addOpen, setAddOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/workspace", { cache: "no-store" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Failed to load workspace");
+      const res = await fetch("/api/workspace", { cache: "no-store" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "Failed to load workspace");
       setWorkspaceConfig(payload.workspaceConfig);
       setAuthority(payload.adapters?.integrations?.authority || null);
     } catch (err) {
@@ -327,9 +733,16 @@ export default function DataModelPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const tables = useMemo(() => workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig) : [], [workspaceConfig]);
-  const selectedTable = tables.find((table) => table.source === selectedSource) || tables[0] || null;
-  useEffect(() => { if (!selectedSource && tables[0]) setSelectedSource(tables[0].source); }, [selectedSource, tables]);
+  const tables = useMemo(
+    () => (workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig) : []),
+    [workspaceConfig],
+  );
+
+  const selectedTable = tables.find((t) => t.source === selectedSource) || tables[0] || null;
+
+  useEffect(() => {
+    if (!selectedSource && tables[0]) setSelectedSource(tables[0].source);
+  }, [selectedSource, tables]);
 
   const save = useCallback(async (mutate) => {
     if (!workspaceConfig) return;
@@ -341,13 +754,13 @@ export default function DataModelPage() {
       for (const key of ["dashboards", "widgetTypes", "canvas", "dataModel"]) {
         if (next[key] !== workspaceConfig[key]) patch[key] = next[key];
       }
-      const response = await fetch("/api/workspace", {
+      const res = await fetch("/api/workspace", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch)
+        body: JSON.stringify(patch),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Save failed");
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "Save failed");
       setWorkspaceConfig(payload.workspaceConfig);
       setMessage("Saved");
     } catch (err) {
@@ -357,49 +770,105 @@ export default function DataModelPage() {
     }
   }, [workspaceConfig]);
 
-  const createObject = useCallback(({ name, fields }) => {
-    save((config) => createManualBusinessObject(config, { name, fields }));
+  const createObject = useCallback(({ name, objectType, icon }) => {
+    save((config) => createTypedBusinessObject(config, { name, objectType, icon }));
     setSelectedSource(name);
-    setActiveTab("Records");
     setAddOpen(false);
   }, [save]);
 
   return (
     <main className="workspace-builder workspace-settings-page">
       <NavRail authority={authority} workspaceConfig={workspaceConfig} />
+
       <section className="workspace-surface">
         <header className="workspace-toolbar">
           <div><p>Workspace</p><h1>Data Model</h1></div>
-          <div className="workspace-toolbar-actions"><SaveToast saving={saving} message={message} /><button type="button" className="dm-btn primary" onClick={() => setAddOpen(true)}>+ Add object</button></div>
+          <div className="workspace-toolbar-actions">
+            <SaveToast saving={saving} message={message} />
+            <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
+              <Plus size={14} />New object
+            </button>
+          </div>
         </header>
-        <AddObjectDialog open={addOpen} saving={saving} onClose={() => setAddOpen(false)} onCreate={createObject} />
-        {loading ? <div className="dm-loading">Loading workspace...</div> : null}
-        {error ? <div className="dm-error-state"><strong>Could not load workspace</strong><p>{error}</p><button type="button" className="dm-btn primary" onClick={load}>Retry</button></div> : null}
-        {!loading && !error && tables.length ? (
-          <>
-            <Summary tables={tables} />
-            <div className="dm-layout">
-              <aside className="dm-object-list">
-                <div className="dm-object-list-head"><p>{pluralize(tables.length, "object")}</p></div>
-                <div className="dm-object-list-body">{tables.map((table) => <ObjectRow key={`${table.source}-${table.id}`} table={table} selected={selectedTable?.id === table.id} onSelect={() => { setSelectedSource(table.source); setActiveTab("Fields"); }} />)}</div>
-              </aside>
-              <section className="dm-detail-panel">
-                <div className="dm-detail-header">
-                  <div className="dm-detail-title-row"><Database size={15} /><h2>{selectedTable.label}</h2><span className={`dm-badge ${laneMeta(selectedTable.binding).cls}`}>{laneMeta(selectedTable.binding).label}</span></div>
-                  <div className="dm-detail-meta-row"><code>{selectedTable.source}</code><span>{pluralize(selectedTable.columns.length, "field")} · {pluralize(selectedTable.rows.length, "record")} · {pluralize(selectedTable.widgetRefs.length, "widget")}</span></div>
+
+        <AddObjectSidebar
+          open={addOpen}
+          saving={saving}
+          onClose={() => setAddOpen(false)}
+          onCreate={createObject}
+          allTables={tables}
+        />
+
+        {loading && <div className="dm-loading">Loading workspace…</div>}
+
+        {error && (
+          <div className="dm-error-state">
+            <AlertCircle size={28} />
+            <strong>Could not load workspace</strong>
+            <p>{error}</p>
+            <button type="button" className="dm-btn-primary" onClick={load}>Retry</button>
+          </div>
+        )}
+
+        {!loading && !error && tables.length > 0 && (
+          <div className="dm-layout-v2">
+            <aside className="dm-obj-col">
+              <div className="dm-obj-col-head">
+                <span>{pluralize(tables.length, "object")}</span>
+              </div>
+              <div className="dm-obj-col-body">
+                {tables.map((table) => (
+                  <ObjectRow
+                    key={`${table.source}-${table.id}`}
+                    table={table}
+                    selected={selectedTable?.id === table.id}
+                    onSelect={() => setSelectedSource(table.source)}
+                  />
+                ))}
+              </div>
+              <div className="dm-obj-col-foot">
+                <button type="button" className="dm-obj-add-btn" onClick={() => setAddOpen(true)}>
+                  <Plus size={13} />New object
+                </button>
+              </div>
+            </aside>
+
+            {selectedTable && (
+              <section className="dm-detail-v2">
+                <div className="dm-detail-v2-head">
+                  <div className="dm-detail-v2-title">
+                    <LucideIcon
+                      name={selectedTable.icon || OBJECT_TYPE_PRESETS[selectedTable.objectType]?.icon || "Database"}
+                      size={14}
+                      className="dm-detail-icon"
+                    />
+                    <h2>{selectedTable.label}</h2>
+                    <span className={`dm-badge ${objectTypeBadge(selectedTable.objectType).cls}`}>
+                      {objectTypeBadge(selectedTable.objectType).label}
+                    </span>
+                  </div>
+                  <div className="dm-detail-v2-meta">
+                    <code>{selectedTable.source}</code>
+                    <span>{pluralize(selectedTable.columns.length, "field")} · {pluralize(selectedTable.rows.length, "record")}</span>
+                  </div>
+                  <SourceValidationBanner table={selectedTable} />
                 </div>
-                <div className="dm-tabs">{TABS.map((tab) => <button key={tab} type="button" className={`dm-tab${activeTab === tab ? " active" : ""}`} onClick={() => setActiveTab(tab)}>{tab}</button>)}</div>
-                <div className="dm-tab-content">
-                  {activeTab === "Fields" ? <FieldsTab table={selectedTable} saving={saving} onSave={save} /> : null}
-                  {activeTab === "Records" ? <RecordsTab table={selectedTable} saving={saving} onSave={save} /> : null}
-                  {activeTab === "Bindings" ? <BindingsTab table={selectedTable} /> : null}
-                  {activeTab === "Usage" ? <UsageTab table={selectedTable} /> : null}
-                </div>
+                <DataModelTableSurface table={selectedTable} tables={tables} saving={saving} onSave={save} />
               </section>
-            </div>
-          </>
-        ) : null}
-        {!loading && !error && !tables.length ? <div className="dm-page-empty"><Database size={28} /><strong>No business objects yet</strong><p>Create a manual governed object here, or expose existing View widget data when dashboards already define it.</p><button type="button" className="dm-btn primary" onClick={() => setAddOpen(true)}>+ Add object</button></div> : null}
+            )}
+          </div>
+        )}
+
+        {!loading && !error && tables.length === 0 && (
+          <div className="dm-page-empty">
+            <Database size={32} />
+            <strong>No objects yet</strong>
+            <p>Create a Data Source, API Registry, People, Tasks, or Custom object to get started.</p>
+            <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
+              <Plus size={14} />New object
+            </button>
+          </div>
+        )}
       </section>
     </main>
   );

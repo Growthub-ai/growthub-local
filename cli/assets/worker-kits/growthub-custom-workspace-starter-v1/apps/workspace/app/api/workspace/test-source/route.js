@@ -36,6 +36,7 @@
 
 import { NextResponse } from "next/server";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { loadAllResolvers } from "@/lib/adapters/integrations/resolver-loader";
 import { getSourceResolver, listRegisteredResolvers } from "@/lib/adapters/integrations/source-resolver-registry";
 
@@ -79,9 +80,22 @@ async function POST(request) {
   }
 
   const adapterConfig = readAdapterConfig();
+
+  // Resolve the live bridge connection for this integration so the resolver
+  // receives the full connection object (connectionId, authPath, metadata).
+  let connection = null;
+  try {
+    const integrations = await listGovernedWorkspaceIntegrations();
+    connection = integrations.find(
+      (i) => i.provider === integrationId.trim() || i.id === integrationId.trim()
+    ) || null;
+  } catch {
+    // Non-fatal — resolver falls back to env-only auth
+  }
+
   let records;
   try {
-    records = await resolver.fetchRecords(adapterConfig, null, binding || {});
+    records = await resolver.fetchRecords(adapterConfig, connection, binding || {});
   } catch (err) {
     return NextResponse.json({
       ok: false,
