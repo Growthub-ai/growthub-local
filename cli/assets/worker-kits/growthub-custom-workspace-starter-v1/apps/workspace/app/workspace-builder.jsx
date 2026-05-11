@@ -68,6 +68,7 @@ const SUB_PANEL_ROOT = "root";
 const MANAGED_INTEGRATION_SOURCE_TYPE = "managed-integrations";
 const CUSTOM_API_SOURCE_TYPE = "custom-api-webhooks";
 const DATA_MODEL_SOURCE_TYPE = "workspace-data-model";
+const LIVE_SOURCE_TYPE = "workspace-source-records";
 
 const SOURCE_TYPE_OBJECTS = [
   {
@@ -75,6 +76,12 @@ const SOURCE_TYPE_OBJECTS = [
     label: "Managed Integrations",
     authority: "Growthub Bridge",
     description: "Bridge or BYO adapters resolve metadata server-side."
+  },
+  {
+    id: LIVE_SOURCE_TYPE,
+    label: "Live Source",
+    authority: "Registry resolver",
+    description: "Fetch live records via a registered resolver. Token stays server-side."
   },
   {
     id: CUSTOM_API_SOURCE_TYPE,
@@ -668,11 +675,13 @@ function summarizeSource(widget) {
 function summarizeSourceType(binding) {
   if (binding?.sourceType === DATA_MODEL_SOURCE_TYPE) return "Data Model";
   if (binding?.sourceType === CUSTOM_API_SOURCE_TYPE) return "Custom APIs/Webhooks";
+  if (binding?.sourceStorage === LIVE_SOURCE_TYPE) return "Live Source";
   if (binding?.mode === "integration" || binding?.sourceType === MANAGED_INTEGRATION_SOURCE_TYPE) return "Managed Integrations";
   return "Static data";
 }
 
 function resolveBindingSourceType(binding) {
+  if (binding?.sourceStorage === LIVE_SOURCE_TYPE) return LIVE_SOURCE_TYPE;
   if (binding?.sourceType) return binding.sourceType;
   if (binding?.mode === "integration") return MANAGED_INTEGRATION_SOURCE_TYPE;
   return "static";
@@ -1097,10 +1106,322 @@ function EntitySelector({ integration, entities, selectedEntityId, selectedEntit
   </div>;
 }
 
-function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBack }) {
+/**
+ * LiveSourcePanel — step-by-step no-code wizard for configuring a live source
+ * binding backed by the source-resolver-registry.
+ *
+ * Steps:
+ *   1 — Auth mode  (Bridge / BYO Token)
+ *   2 — Integration  (pick from available or enter custom id)
+ *   3 — Entity config  (entity type, entity id — optional)
+ *   4 — Source ID  (stable key for growthub.source-records.json)
+ *   5 — Test + Preview  (POST /api/workspace/test-source)
+ *
+ * Apply button is only enabled after a successful test (testState.ok === true).
+ * When the user clicks Apply the binding is committed to the widget config.
+ */
+function LiveSourcePanel({ widget, integrations, adapterConfig, onApply, onCancel }) {
+  const existing = widget.config?.binding || {};
+  const [step, setStep] = useState(1);
+  const [authMode, setAuthMode] = useState(existing.sourceAuthority === "byo-token" ? "byo-token" : "bridge");
+  const [integrationId, setIntegrationId] = useState(existing.integrationId || "");
+  const [entityType, setEntityType] = useState(existing.entityType || "");
+  const [entityId, setEntityId] = useState(existing.entityId || "");
+  const [sourceId, setSourceId] = useState(existing.sourceId || existing.integrationId || "");
+  const [testState, setTestState] = useState(null);
+  const [testing, setTesting] = useState(false);
+
+  const isBridge = adapterConfig?.integrationAdapter === "growthub-bridge";
+  const hasBridgeToken = adapterConfig?.growthubBridge?.hasAccessToken;
+  const availableIntegrations = Array.isArray(integrations) ? integrations : [];
+
+  const canProceedStep1 = authMode === "bridge" || authMode === "byo-token";
+  const canProceedStep2 = typeof integrationId === "string" && integrationId.trim().length > 0;
+  const canProceedStep3 = true;
+  const canProceedStep4 = typeof sourceId === "string" && sourceId.trim().length > 0;
+  const canApply = testState?.ok === true;
+
+  const autoSourceId = integrationId.trim().replace(/[^a-z0-9-]/gi, "-").toLowerCase();
+
+  function handleIntegrationSelect(id) {
+    setIntegrationId(id);
+    if (!sourceId || sourceId === autoSourceId) {
+      setSourceId(id.replace(/[^a-z0-9-]/gi, "-").toLowerCase());
+    }
+  }
+
+  async function runTest() {
+    if (!canProceedStep2) return;
+    setTesting(true);
+    setTestState(null);
+    try {
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          integrationId: integrationId.trim(),
+          binding: {
+            integrationId: integrationId.trim(),
+            entityType: entityType.trim() || undefined,
+            entityId: entityId.trim() || undefined,
+            sourceId: sourceId.trim() || integrationId.trim(),
+            authMode
+          }
+        })
+      });
+      const data = await res.json();
+      setTestState(data);
+      if (data.ok) setStep(5);
+    } catch {
+      setTestState({ ok: false, reason: "network-error", error: "Network error — check console" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  function applyBinding() {
+    if (!canApply) return;
+    onApply({
+      ...widget.config,
+      source: integrationId.trim(),
+      binding: {
+        mode: "integration",
+        source: integrationId.trim(),
+        sourceStorage: LIVE_SOURCE_TYPE,
+        sourceType: LIVE_SOURCE_TYPE,
+        sourceId: sourceId.trim() || integrationId.trim(),
+        integrationId: integrationId.trim(),
+        entityType: entityType.trim() || undefined,
+        entityId: entityId.trim() || undefined,
+        sourceAuthority: authMode === "bridge" ? "growthub-bridge" : "byo-token"
+      }
+    });
+  }
+
+  return <div className="live-source-wizard">
+    {/* Step breadcrumb */}
+    <div className="live-source-steps" role="list">
+      {["Auth", "Integration", "Entity", "Source ID", "Test"].map((label, idx) => {
+        const s = idx + 1;
+        const done = step > s;
+        const active = step === s;
+        return <span
+          key={s}
+          className={`live-source-step${active ? " active" : ""}${done ? " done" : ""}`}
+          role="listitem"
+          aria-current={active ? "step" : undefined}
+        >
+          <span className="live-source-step-dot">{done ? "✓" : s}</span>
+          <span className="live-source-step-label">{label}</span>
+        </span>;
+      })}
+    </div>
+
+    {/* Step 1: Auth mode */}
+    {step === 1 && <div className="live-source-step-body">
+      <p className="live-source-step-title">How does this integration authenticate?</p>
+      <p className="live-source-step-hint">Your token stays server-side. The browser only sees normalized records.</p>
+      <div className="live-source-auth-toggle" role="radiogroup" aria-label="Auth mode">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={authMode === "bridge"}
+          className={authMode === "bridge" ? "active" : ""}
+          onClick={() => setAuthMode("bridge")}
+        >
+          <strong>Growthub Bridge</strong>
+          <em>{isBridge && hasBridgeToken ? "Connected — token in env" : "Set GROWTHUB_BRIDGE_BASE_URL + GROWTHUB_BRIDGE_ACCESS_TOKEN"}</em>
+          {isBridge && hasBridgeToken ? <span className="live-source-badge connected">connected</span> : <span className="live-source-badge warn">env required</span>}
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={authMode === "byo-token"}
+          className={authMode === "byo-token" ? "active" : ""}
+          onClick={() => setAuthMode("byo-token")}
+        >
+          <strong>BYO Token / Custom env</strong>
+          <em>Your resolver reads the env var you specify. Set it in .env or Vercel env.</em>
+          <span className="live-source-badge neutral">custom</span>
+        </button>
+      </div>
+      <button type="button" className="live-source-next" disabled={!canProceedStep1} onClick={() => setStep(2)}>
+        Next → Choose integration
+      </button>
+    </div>}
+
+    {/* Step 2: Integration */}
+    {step === 2 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Which integration?</p>
+      <p className="live-source-step-hint">Pick a connected integration or enter a custom resolver id that matches what your resolver file registers.</p>
+      <div className="live-source-integration-list">
+        {availableIntegrations.filter((i) => i.isConnected || i.status === "connected").map((integration) => <button
+          key={integration.id}
+          type="button"
+          className={`live-source-integration-row${integrationId === integration.id ? " active" : ""}`}
+          onClick={() => handleIntegrationSelect(integration.id)}
+        >
+          <span className="live-source-integration-icon">{integration.icon || integration.label?.[0] || "•"}</span>
+          <span className="live-source-integration-meta">
+            <strong>{integration.label}</strong>
+            <em>{integration.provider} · {integration.status}</em>
+          </span>
+          {integrationId === integration.id ? <Check size={15} /> : null}
+        </button>)}
+        {availableIntegrations.filter((i) => i.isConnected || i.status === "connected").length === 0
+          ? <p className="live-source-empty">No connected integrations — enter a custom resolver id below.</p>
+          : null}
+      </div>
+      <label className="live-source-custom-id">
+        <span>Custom resolver id</span>
+        <input
+          type="text"
+          placeholder="my-crm, windsor-ai, custom-api…"
+          value={integrationId}
+          onChange={(e) => handleIntegrationSelect(e.target.value)}
+        />
+      </label>
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(1)}>← Back</button>
+        <button type="button" className="live-source-next" disabled={!canProceedStep2} onClick={() => setStep(3)}>
+          Next → Entity config
+        </button>
+      </div>
+    </div>}
+
+    {/* Step 3: Entity config */}
+    {step === 3 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Entity configuration <em>(optional)</em></p>
+      <p className="live-source-step-hint">Tell the resolver which object to fetch. Leave blank if your resolver fetches everything by default.</p>
+      <label className="live-source-field">
+        <span>Entity type</span>
+        <input
+          type="text"
+          placeholder="project.tasks, records, contacts…"
+          value={entityType}
+          onChange={(e) => setEntityType(e.target.value)}
+        />
+      </label>
+      <label className="live-source-field">
+        <span>Entity id / object id</span>
+        <input
+          type="text"
+          placeholder="gid_12345, project_abc, board-id…"
+          value={entityId}
+          onChange={(e) => setEntityId(e.target.value)}
+        />
+      </label>
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(2)}>← Back</button>
+        <button type="button" className="live-source-next" disabled={!canProceedStep3} onClick={() => setStep(4)}>
+          Next → Source ID
+        </button>
+      </div>
+    </div>}
+
+    {/* Step 4: Source ID */}
+    {step === 4 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Source ID</p>
+      <p className="live-source-step-hint">A stable key used to store and retrieve live records. Defaults to the integration id.</p>
+      <label className="live-source-field">
+        <span>Source ID</span>
+        <input
+          type="text"
+          placeholder={autoSourceId || "my-source"}
+          value={sourceId}
+          onChange={(e) => setSourceId(e.target.value)}
+        />
+      </label>
+      <p className="live-source-step-hint">Records will be stored under this key in <code>growthub.source-records.json</code> and available immediately after Refresh.</p>
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(3)}>← Back</button>
+        <button type="button" className="live-source-next" disabled={!canProceedStep4} onClick={() => { setStep(5); }}>
+          Next → Test connection
+        </button>
+      </div>
+    </div>}
+
+    {/* Step 5: Test + preview */}
+    {step === 5 && <div className="live-source-step-body">
+      <p className="live-source-step-title">Test connection</p>
+      <div className="live-source-summary">
+        <span><em>Integration</em> <strong>{integrationId}</strong></span>
+        {entityType ? <span><em>Entity type</em> <strong>{entityType}</strong></span> : null}
+        {entityId ? <span><em>Entity id</em> <strong>{entityId}</strong></span> : null}
+        <span><em>Auth</em> <strong>{authMode === "bridge" ? "Growthub Bridge" : "BYO Token"}</strong></span>
+      </div>
+
+      {!testState && !testing && <button
+        type="button"
+        className="live-source-test-btn"
+        onClick={runTest}
+        disabled={testing || !canProceedStep2 || !canProceedStep4}
+      >
+        <RefreshCw size={15} />
+        Run test fetch
+      </button>}
+
+      {testing && <div className="live-source-testing">
+        <RefreshCw size={15} className="spinning" />
+        <span>Contacting resolver…</span>
+      </div>}
+
+      {testState && !testState.ok && <div className="live-source-test-result error">
+        <strong>{testState.reason === "no-resolver" ? "No resolver registered" : "Fetch failed"}</strong>
+        {testState.reason === "no-resolver" && <p>
+          No resolver is registered for <code>{integrationId}</code>.
+          Registered resolvers: {testState.registeredResolvers?.length
+            ? testState.registeredResolvers.join(", ")
+            : "none"}.
+          <br />Upload a resolver file in the Management panel or add one to <code>lib/adapters/integrations/resolvers/</code>.
+        </p>}
+        {testState.reason !== "no-resolver" && <p>{testState.error}</p>}
+        <button type="button" className="live-source-retry" onClick={runTest} disabled={testing}>Retry</button>
+      </div>}
+
+      {testState?.ok && <div className="live-source-test-result success">
+        <strong>✓ {testState.recordCount} record{testState.recordCount !== 1 ? "s" : ""} fetched</strong>
+        <span>Columns: {testState.columns?.join(", ") || "—"}</span>
+        {testState.preview?.length > 0 && <div className="live-source-preview">
+          <table>
+            <thead>
+              <tr>{testState.columns?.slice(0, 6).map((col) => <th key={col}>{col}</th>)}</tr>
+            </thead>
+            <tbody>
+              {testState.preview.map((row, idx) => <tr key={idx}>
+                {testState.columns?.slice(0, 6).map((col) => <td key={col}>
+                  {row[col] === null || row[col] === undefined ? <em className="live-source-null">—</em> : String(row[col]).slice(0, 60)}
+                </td>)}
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+        <button type="button" className="live-source-retry" onClick={runTest} disabled={testing}>Re-test</button>
+      </div>}
+
+      <div className="live-source-nav">
+        <button type="button" className="live-source-back" onClick={() => setStep(4)}>← Back</button>
+        <button
+          type="button"
+          className="live-source-apply"
+          disabled={!canApply}
+          onClick={applyBinding}
+          title={canApply ? "Apply live source binding to widget" : "Run a successful test first"}
+        >
+          {canApply ? "✓ Apply binding" : "Test required to apply"}
+        </button>
+      </div>
+    </div>}
+
+    <button type="button" className="live-source-cancel" onClick={onCancel}>Cancel</button>
+  </div>;
+}
+
+function SourceSubPanel({ widget, integrations, dataModelTables, adapterConfig, onChange, onBack }) {
   const binding = widget.config?.binding || {};
   const currentMode = binding.mode || (widget.kind === "view" ? "manual" : "json");
 	  const activeSourceType = resolveBindingSourceType(binding);
+  const [liveWizardOpen, setLiveWizardOpen] = useState(activeSourceType === LIVE_SOURCE_TYPE);
 	  const [query, setQuery] = useState("");
 	  const [laneFilter, setLaneFilter] = useState("all");
   const hasConnectedSource = Boolean(
@@ -1245,26 +1566,45 @@ function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBac
 
 	  return <section className="workspace-widget-subpanel">
 	    <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
+    {liveWizardOpen
+      ? <LiveSourcePanel
+          widget={widget}
+          integrations={integrations}
+          adapterConfig={adapterConfig}
+          onApply={(nextConfig) => { onChange(nextConfig); setLiveWizardOpen(false); }}
+          onCancel={() => setLiveWizardOpen(false)}
+        />
+      : <>
     <UniversalSourceInfoCard />
 	    <p className="workspace-panel-label">Source type</p>
     <div className="workspace-source-object-list">
       {SOURCE_TYPE_OBJECTS.map((sourceType) => {
         const isActive = activeSourceType === sourceType.id;
+        function handleSourceTypeClick() {
+          if (sourceType.id === LIVE_SOURCE_TYPE) { setLiveWizardOpen(true); return; }
+          if (sourceType.id === CUSTOM_API_SOURCE_TYPE) { selectCustomApi(); return; }
+        }
         return <button
           key={sourceType.id}
           type="button"
-          className={`workspace-source-object-row${isActive ? " active" : ""}`}
-          onClick={sourceType.id === CUSTOM_API_SOURCE_TYPE ? selectCustomApi : undefined}
+          className={`workspace-source-object-row${isActive ? " active" : ""}${sourceType.id === LIVE_SOURCE_TYPE ? " live-source-entry" : ""}`}
+          onClick={handleSourceTypeClick}
           disabled={sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE}
         >
           <span className="workspace-source-object-icon" aria-hidden="true">
-            {sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE ? <Database size={15} /> : <LinkIcon size={15} />}
+            {sourceType.id === MANAGED_INTEGRATION_SOURCE_TYPE ? <Database size={15} />
+              : sourceType.id === LIVE_SOURCE_TYPE ? <RefreshCw size={15} />
+              : <LinkIcon size={15} />}
           </span>
           <span className="workspace-source-meta">
             <strong>{sourceType.label}</strong>
             <em>{sourceType.authority} · {sourceType.description}</em>
           </span>
-	          {isActive ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span> : null}
+	          {isActive
+              ? <span className="workspace-source-tick" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span>
+              : sourceType.id === LIVE_SOURCE_TYPE
+                ? <span className="workspace-source-configure" aria-hidden="true">Configure →</span>
+                : null}
         </button>;
       })}
     </div>
@@ -1327,7 +1667,6 @@ function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBac
           </button>;
         }) : <p className="workspace-entity-empty">No manual Data Model objects yet.</p>}
       </div>
-    </> : null}
     {Object.entries(groups).map(([lane, items]) => items.length ? <div key={lane}>
       <p className="workspace-panel-label">{lane === "data-source" ? "Data Sources" : "Workspace Tools"}</p>
       <div className="workspace-source-list">
@@ -1350,6 +1689,12 @@ function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBac
         })}
       </div>
     </div> : null)}
+    {activeSourceType === LIVE_SOURCE_TYPE && binding.integrationId ? <div className="workspace-active-source-state live-source-active">
+      <span>Live source</span>
+      <strong>{binding.integrationId}</strong>
+      <code>source-records · {binding.sourceId || binding.integrationId}</code>
+      <button type="button" className="live-source-reconfigure" onClick={() => setLiveWizardOpen(true)}>Reconfigure</button>
+    </div> : null}
     {activeSourceType === CUSTOM_API_SOURCE_TYPE ? <div className="workspace-custom-source-config">
       <label>
         <span>Endpoint reference</span>
@@ -1368,7 +1713,7 @@ function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBac
         />
       </label>
     </div> : null}
-    {currentMode === "integration" && binding.integrationId ? <div className="workspace-active-source-state">
+    {currentMode === "integration" && binding.integrationId && activeSourceType !== LIVE_SOURCE_TYPE ? <div className="workspace-active-source-state">
       <span>Active source</span>
       <strong>{activeIntegration?.label || binding.source || binding.integrationId}</strong>
       <code>{binding.integrationId}</code>
@@ -1376,6 +1721,7 @@ function SourceSubPanel({ widget, integrations, dataModelTables, onChange, onBac
     <p className="workspace-panel-hint">
       Selecting a source writes a binding reference only. The browser only calls local workspace routes and never stores source credentials.
     </p>
+    </>}
   </section>;
 }
 
@@ -2147,6 +2493,83 @@ function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integratio
   </div>;
 }
 
+function ResolverManagementSection({ canSave }) {
+  const [resolvers, setResolvers] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    fetch("/api/workspace/resolvers")
+      .then((r) => r.ok ? r.json() : { files: [], registeredIds: [], canUpload: false })
+      .then(setResolvers)
+      .catch(() => setResolvers({ files: [], registeredIds: [], canUpload: false }));
+  }, [uploadResult]);
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadResult(null);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch("/api/workspace/register-resolver", { method: "POST", body: form });
+      const data = await res.json();
+      setUploadResult(res.ok ? { ok: true, ...data } : { ok: false, ...data });
+    } catch {
+      setUploadResult({ ok: false, error: "Network error" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  return <article className="workspace-readiness-section">
+    <h3>Live Source Resolvers</h3>
+    <div className="workspace-readiness-row">
+      <span>Resolver files</span>
+      <code>{resolvers ? resolvers.files.length : "…"} file{resolvers?.files.length !== 1 ? "s" : ""}</code>
+    </div>
+    <div className="workspace-readiness-row">
+      <span>Registered ids</span>
+      <code>{resolvers?.registeredIds?.length ? resolvers.registeredIds.join(", ") : "none"}</code>
+    </div>
+    {resolvers?.files?.length > 0 && <div className="workspace-readiness-row">
+      <span>Files</span>
+      <span>{resolvers.files.join(", ")}</span>
+    </div>}
+    {canSave ? <>
+      <div className="workspace-readiness-row">
+        <span>Upload resolver</span>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".js"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
+        <button
+          type="button"
+          className="workspace-readiness-action"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? "Uploading…" : "Upload .js file"}
+        </button>
+      </div>
+      {uploadResult && <div className={`workspace-readiness-row resolver-upload-result ${uploadResult.ok ? "good" : "error"}`}>
+        <span>{uploadResult.ok ? "Saved" : "Error"}</span>
+        <em>{uploadResult.ok ? uploadResult.path : uploadResult.error}</em>
+      </div>}
+      <p className="workspace-panel-hint">Upload a resolver .js file that calls <code>registerSourceResolver()</code>. After upload, use "Test connection" in the widget Source panel to verify.</p>
+    </> : <div className="workspace-readiness-row">
+      <span>Upload</span>
+      <em>Requires writable filesystem runtime. Set <code>WORKSPACE_CONFIG_ALLOW_FS_WRITE=true</code> or add resolver files manually to <code>lib/adapters/integrations/resolvers/</code>.</em>
+    </div>}
+  </article>;
+}
+
 function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose }) {
   const persist = persistence || DEFAULT_PERSISTENCE;
   const pipelines = Array.isArray(config?.pipelines) ? config.pipelines : [];
@@ -2210,6 +2633,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
           <div className="workspace-readiness-row"><span>Reason</span><em>{persist.reason}</em></div>
           {persist.guidance ? <div className="workspace-readiness-row"><span>Guidance</span><em>{persist.guidance}</em></div> : null}
         </article>
+        <ResolverManagementSection canSave={persist.canSave} />
       </div>
     </section>
   </div>;
@@ -3448,6 +3872,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           widget={selectedWidget}
           integrations={availableIntegrations}
           dataModelTables={dataModelTables}
+          adapterConfig={adapterConfig}
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}

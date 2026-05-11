@@ -901,6 +901,435 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .workspace-tab-refresh svg.spinning {
   animation: workspace-spin 0.7s linear infinite;
 }
+
+/* ─── Live Source Wizard ──────────────────────────────────────────────────── */
+
+.live-source-wizard {
+  padding: 12px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Step breadcrumb */
+.live-source-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 2px;
+  overflow-x: auto;
+}
+.live-source-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #999;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+.live-source-step.active {
+  color: #111;
+  font-weight: 600;
+}
+.live-source-step.done {
+  color: #2a9d5c;
+}
+.live-source-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ececec;
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+}
+.live-source-step.active .live-source-step-dot {
+  background: #111;
+  color: #fff;
+}
+.live-source-step.done .live-source-step-dot {
+  background: #2a9d5c;
+  color: #fff;
+}
+.live-source-step-label {
+  display: none;
+}
+.live-source-step.active .live-source-step-label,
+.live-source-step.done .live-source-step-label {
+  display: inline;
+}
+
+/* Step body */
+.live-source-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+.live-source-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+  margin: 0;
+}
+.live-source-step-hint {
+  font-size: 11px;
+  color: #777;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Auth mode toggle */
+.live-source-auth-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.live-source-auth-toggle button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  transition: border-color 0.1s, background 0.1s;
+  position: relative;
+}
+.live-source-auth-toggle button.active {
+  border-color: #111;
+  background: #f7f7f7;
+}
+.live-source-auth-toggle button strong {
+  font-size: 13px;
+  color: #111;
+}
+.live-source-auth-toggle button em {
+  font-size: 11px;
+  color: #777;
+  font-style: normal;
+}
+
+/* Badges */
+.live-source-badge {
+  display: inline-flex;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin-top: 4px;
+}
+.live-source-badge.connected { background: #dcf5e9; color: #1a7a44; }
+.live-source-badge.warn      { background: #fff3cd; color: #856404; }
+.live-source-badge.neutral   { background: #ececec; color: #555; }
+
+/* Integration list */
+.live-source-integration-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.live-source-integration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+.live-source-integration-row.active {
+  border-color: #111;
+  background: #f7f7f7;
+}
+.live-source-integration-icon {
+  font-size: 14px;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.live-source-integration-meta {
+  flex: 1;
+  min-width: 0;
+}
+.live-source-integration-meta strong {
+  display: block;
+  font-size: 13px;
+  color: #111;
+}
+.live-source-integration-meta em {
+  font-size: 11px;
+  color: #777;
+  font-style: normal;
+}
+.live-source-empty {
+  font-size: 12px;
+  color: #999;
+  padding: 6px 0;
+  margin: 0;
+}
+
+/* Custom id / field inputs */
+.live-source-custom-id,
+.live-source-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.live-source-custom-id span,
+.live-source-field span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.live-source-custom-id input,
+.live-source-field input {
+  padding: 7px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #111;
+  background: #fff;
+}
+.live-source-custom-id input:focus,
+.live-source-field input:focus {
+  outline: 2px solid #111;
+  border-color: transparent;
+}
+
+/* Summary row (step 5) */
+.live-source-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f7f7f7;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.live-source-summary span {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+}
+.live-source-summary em {
+  color: #888;
+  font-style: normal;
+  min-width: 80px;
+}
+.live-source-summary strong {
+  color: #111;
+}
+
+/* Test button */
+.live-source-test-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  background: #111;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.live-source-test-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.live-source-test-btn svg { flex-shrink: 0; }
+
+/* Testing spinner state */
+.live-source-testing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #555;
+  padding: 6px 0;
+}
+.live-source-testing svg {
+  animation: workspace-spin 0.7s linear infinite;
+}
+
+/* Test result panels */
+.live-source-test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid;
+}
+.live-source-test-result.success {
+  background: #f0faf5;
+  border-color: #b2e0c8;
+  color: #1a7a44;
+}
+.live-source-test-result.success strong { font-size: 13px; }
+.live-source-test-result.success span  { font-size: 11px; color: #3a8a5c; }
+.live-source-test-result.error {
+  background: #fff5f5;
+  border-color: #fdd;
+  color: #b02020;
+}
+.live-source-test-result.error strong { font-size: 13px; }
+.live-source-test-result.error p { font-size: 12px; margin: 0; color: #b02020; }
+.live-source-retry {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  color: inherit;
+}
+
+/* Preview table */
+.live-source-preview {
+  overflow-x: auto;
+  margin-top: 4px;
+  border-radius: 6px;
+  border: 1px solid #d0f0e0;
+}
+.live-source-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.live-source-preview th {
+  background: #e8f7ef;
+  padding: 5px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: #1a5c38;
+  border-bottom: 1px solid #c0e8d4;
+  white-space: nowrap;
+}
+.live-source-preview td {
+  padding: 4px 8px;
+  color: #222;
+  border-bottom: 1px solid #eaf7f0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-source-preview tr:last-child td { border-bottom: none; }
+.live-source-null { color: #bbb; font-style: normal; }
+
+/* Nav row (back / next / apply) */
+.live-source-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+.live-source-back {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: #fff;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+}
+.live-source-next {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: #111;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.live-source-next:disabled { opacity: 0.35; cursor: default; }
+.live-source-apply {
+  flex: 1;
+  padding: 9px 14px;
+  border-radius: 6px;
+  background: #1a7a44;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.live-source-apply:disabled {
+  background: #ccc;
+  color: #fff;
+  cursor: default;
+}
+.live-source-cancel {
+  align-self: flex-start;
+  font-size: 11px;
+  color: #999;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  text-decoration: underline;
+}
+
+/* Live source active state badge in subpanel */
+.workspace-active-source-state.live-source-active {
+  border-left: 3px solid #2a9d5c;
+}
+.live-source-reconfigure {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid #2a9d5c;
+  background: transparent;
+  color: #2a9d5c;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* "Configure →" label on Live Source entry in type picker */
+.workspace-source-configure {
+  font-size: 11px;
+  color: #888;
+  margin-left: auto;
+}
+.workspace-source-object-row.live-source-entry {
+  cursor: pointer;
+}
+
+/* Resolver management in management panel */
+.workspace-readiness-action {
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.workspace-readiness-action:disabled { opacity: 0.5; cursor: default; }
+.resolver-upload-result span { font-weight: 600; }
+.resolver-upload-result.good span { color: #1a7a44; }
+.resolver-upload-result.error span { color: #b02020; }
 .workspace-toolbar-actions select,
 .workspace-widget-settings select {
   min-height: 32px;
