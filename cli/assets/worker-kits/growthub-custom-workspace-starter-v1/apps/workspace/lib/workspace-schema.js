@@ -398,8 +398,11 @@ function validateStaticDataBinding(binding, path, errors) {
     if (typeof binding.integrationId !== "string" || !binding.integrationId.trim()) {
       errors.push(`${path}.integrationId is required when mode is integration`);
     }
-    if (typeof binding.lane !== "string" || !binding.lane.trim()) {
-      errors.push(`${path}.lane is required when mode is integration`);
+    // lane is not required when sourceStorage delegates routing to a registry resolver
+    if (binding.sourceStorage !== "workspace-source-records") {
+      if (typeof binding.lane !== "string" || !binding.lane.trim()) {
+        errors.push(`${path}.lane is required when mode is integration`);
+      }
     }
   }
   if (binding.source !== undefined && typeof binding.source !== "string") {

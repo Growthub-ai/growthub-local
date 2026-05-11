@@ -1564,26 +1564,30 @@ function SourceSubPanel({ widget, integrations, dataModelTables, adapterConfig, 
     });
 	  }, [binding.integrationId, confirmSourceChange, onChange, widget.config]);
 
+  if (liveWizardOpen) {
+    return <section className="workspace-widget-subpanel">
+      <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
+      <LiveSourcePanel
+        widget={widget}
+        integrations={integrations}
+        adapterConfig={adapterConfig}
+        onApply={(nextConfig) => { onChange(nextConfig); setLiveWizardOpen(false); }}
+        onCancel={() => setLiveWizardOpen(false)}
+      />
+    </section>;
+  }
+
 	  return <section className="workspace-widget-subpanel">
 	    <SubPanelHeader title="Source" breadcrumb={widget.title} onBack={onBack} />
-    {liveWizardOpen
-      ? <LiveSourcePanel
-          widget={widget}
-          integrations={integrations}
-          adapterConfig={adapterConfig}
-          onApply={(nextConfig) => { onChange(nextConfig); setLiveWizardOpen(false); }}
-          onCancel={() => setLiveWizardOpen(false)}
-        />
-      : <>
     <UniversalSourceInfoCard />
 	    <p className="workspace-panel-label">Source type</p>
     <div className="workspace-source-object-list">
       {SOURCE_TYPE_OBJECTS.map((sourceType) => {
         const isActive = activeSourceType === sourceType.id;
-        function handleSourceTypeClick() {
+        const handleSourceTypeClick = () => {
           if (sourceType.id === LIVE_SOURCE_TYPE) { setLiveWizardOpen(true); return; }
           if (sourceType.id === CUSTOM_API_SOURCE_TYPE) { selectCustomApi(); return; }
-        }
+        };
         return <button
           key={sourceType.id}
           type="button"
@@ -1667,6 +1671,7 @@ function SourceSubPanel({ widget, integrations, dataModelTables, adapterConfig, 
           </button>;
         }) : <p className="workspace-entity-empty">No manual Data Model objects yet.</p>}
       </div>
+    </> : null}
     {Object.entries(groups).map(([lane, items]) => items.length ? <div key={lane}>
       <p className="workspace-panel-label">{lane === "data-source" ? "Data Sources" : "Workspace Tools"}</p>
       <div className="workspace-source-list">
@@ -1721,7 +1726,6 @@ function SourceSubPanel({ widget, integrations, dataModelTables, adapterConfig, 
     <p className="workspace-panel-hint">
       Selecting a source writes a binding reference only. The browser only calls local workspace routes and never stores source credentials.
     </p>
-    </>}
   </section>;
 }
 

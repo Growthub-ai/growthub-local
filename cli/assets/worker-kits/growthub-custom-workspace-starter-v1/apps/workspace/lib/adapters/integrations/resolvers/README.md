@@ -27,6 +27,6 @@ registerSourceResolver({
 
 ## Auth contract
 
-- Provider tokens live in the Growthub bridge / BYO env var store — never in workspace config or client state.
+- **Tokens stay server-side.** Provider tokens live in the Growthub bridge / BYO env var store — never in workspace config or client state.
 - `config` passed to your resolver is the server-side `adapterConfig` from `readAdapterConfig()`. Read `process.env.YOUR_TOKEN` server-side inside the resolver. Never forward it to the client.
 - Normalize provider responses to display-safe records before returning — no raw API payloads, no token-adjacent fields.
