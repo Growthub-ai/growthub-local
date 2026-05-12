@@ -55,7 +55,7 @@ const HOST_CATALOG = {
   codex_local: {
     label: "Codex CLI (local)",
     binary: "codex",
-    argv: () => ["exec", "--quiet"],
+    argv: () => ["exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"],
     inputMode: "stdin",
     installHint: "Install Codex CLI: npm i -g @openai/codex"
   },

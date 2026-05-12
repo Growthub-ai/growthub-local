@@ -50,6 +50,7 @@ const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
 const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
 /** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
 const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
+const KNOWN_SANDBOX_LIFECYCLE_STATUSES = ["draft", "live"];
 const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
@@ -821,6 +822,13 @@ function validateCanvasConfig(canvas, errors) {
 
 function validateSandboxEnvironmentRow(row, path, errors) {
   if (!isPlainObject(row)) return;
+  const lifecycleStatus = String(row.lifecycleStatus || "").trim().toLowerCase();
+  if (row.lifecycleStatus !== undefined && row.lifecycleStatus !== "" && !KNOWN_SANDBOX_LIFECYCLE_STATUSES.includes(lifecycleStatus)) {
+    errors.push(`${path}.lifecycleStatus must be one of ${KNOWN_SANDBOX_LIFECYCLE_STATUSES.join(", ")}`);
+  }
+  if (row.version !== undefined && typeof row.version !== "string" && typeof row.version !== "number") {
+    errors.push(`${path}.version must be a string or number`);
+  }
   const runLocalityNorm = String(row.runLocality || "").trim().toLowerCase();
   if (row.runLocality !== undefined && row.runLocality !== "" && !KNOWN_SANDBOX_RUN_LOCALITY.includes(runLocalityNorm)) {
     errors.push(`${path}.runLocality must be one of ${KNOWN_SANDBOX_RUN_LOCALITY.join(", ")}`);
@@ -851,8 +859,17 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (row.allowList !== undefined && typeof row.allowList !== "string" && !Array.isArray(row.allowList)) {
     errors.push(`${path}.allowList must be a comma-separated string or array of hostnames`);
   }
+  if (row.instructions !== undefined && typeof row.instructions !== "string") {
+    errors.push(`${path}.instructions must be a string`);
+  }
   if (row.command !== undefined && typeof row.command !== "string") {
     errors.push(`${path}.command must be a string`);
+  }
+  if (row.lastRunId !== undefined && typeof row.lastRunId !== "string") {
+    errors.push(`${path}.lastRunId must be a string`);
+  }
+  if (row.lastSourceId !== undefined && typeof row.lastSourceId !== "string") {
+    errors.push(`${path}.lastSourceId must be a string`);
   }
   if (row.timeoutMs !== undefined && row.timeoutMs !== "") {
     const ms = Number(row.timeoutMs);
@@ -1157,6 +1174,7 @@ export {
   KNOWN_CHART_TYPES,
   KNOWN_DATA_BINDING_MODES,
   DEFAULT_SANDBOX_RUN_LOCALITY,
+  KNOWN_SANDBOX_LIFECYCLE_STATUSES,
   KNOWN_FIELDS,
   KNOWN_FILTER_CONJUNCTIONS,
   KNOWN_FILTER_OPERATORS,

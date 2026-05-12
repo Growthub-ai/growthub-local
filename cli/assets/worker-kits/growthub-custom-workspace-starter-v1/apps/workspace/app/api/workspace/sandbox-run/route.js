@@ -161,6 +161,7 @@ async function runServerlessScheduler({
   adapterId,
   agentHost,
   command,
+  instructions,
   timeoutMs,
   networkAllow,
   allowList,
@@ -235,6 +236,9 @@ async function runServerlessScheduler({
       runtime,
       adapter: adapterId,
       agentHost: agentHost || null,
+      lifecycleStatus: String(row.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft",
+      version: row.version ?? "",
+      instructions,
       command,
       timeoutMs,
       networkAllow,
@@ -332,6 +336,9 @@ function buildRunResponse({
   adapterId,
   agentHost,
   command,
+  instructions,
+  lifecycleStatus,
+  version,
   envRefsResolved,
   envRefsMissing,
   networkAllow,
@@ -347,6 +354,9 @@ function buildRunResponse({
     runtime,
     adapter: adapterId,
     agentHost: agentHost || null,
+    lifecycleStatus,
+    version,
+    instructions,
     command,
     timeoutMs,
     exitCode: result.exitCode,
@@ -371,6 +381,29 @@ function findSandboxRow(workspaceConfig, objectId, name) {
   const rowIndex = rows.findIndex((row) => String(row?.Name || "").trim() === wantedName);
   if (rowIndex === -1) return { object, row: null, rowIndex: -1 };
   return { object, row: rows[rowIndex], rowIndex };
+}
+
+async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const objectId = String(searchParams.get("objectId") || "").trim();
+  const name = String(searchParams.get("name") || "").trim();
+  if (!objectId || !name) {
+    return NextResponse.json({ ok: false, error: "objectId and name are required" }, { status: 400 });
+  }
+
+  const sourceId = sandboxRunSourceId(objectId, name);
+  if (!sourceId) {
+    return NextResponse.json({ ok: false, error: "could not derive sandbox sourceId" }, { status: 400 });
+  }
+
+  const existing = await readWorkspaceSourceRecords(sourceId);
+  const records = Array.isArray(existing?.records) ? existing.records : [];
+  return NextResponse.json({
+    ok: true,
+    sourceId,
+    recordCount: records.length,
+    records: records.slice(-25).reverse()
+  });
 }
 
 async function POST(request) {
@@ -405,6 +438,12 @@ async function POST(request) {
   const allowList = parseSandboxAllowList(row.allowList);
   const envRefSlugs = parseSandboxEnvRefs(row.envRefs);
   const command = typeof row.command === "string" ? row.command : "";
+  const instructions = typeof row.instructions === "string" ? row.instructions.trim() : "";
+  const agentCommand = instructions
+    ? `Instructions:\n${instructions}\n\nPrompt:\n${command}`
+    : command;
+  const lifecycleStatus = String(row.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
+  const version = row.version ?? "";
   const requestedTimeout = Number(row.timeoutMs);
   const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
     ? Math.min(requestedTimeout, SANDBOX_MAX_TIMEOUT_MS)
@@ -450,6 +489,7 @@ async function POST(request) {
       adapterId,
       agentHost,
       command,
+      instructions,
       timeoutMs,
       networkAllow,
       allowList,
@@ -482,7 +522,7 @@ async function POST(request) {
         name: row.Name || name,
         runtime,
         agentHost,
-        command,
+        command: adapterId === "local-agent-host" ? agentCommand : command,
         timeoutMs,
         networkAllow,
         allowList,
@@ -516,6 +556,9 @@ async function POST(request) {
     adapterId: effectiveAdapterId,
     agentHost,
     command,
+    instructions,
+    lifecycleStatus,
+    version,
     envRefsResolved,
     envRefsMissing,
     networkAllow,
@@ -547,6 +590,7 @@ async function POST(request) {
 
     try {
       const compactResponse = JSON.stringify(response, null, 2);
+      const sourceIdValue = sourceId || "";
       const objects = Array.isArray(workspaceConfig.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
       const nextObjects = objects.map((entry) => {
         if (entry.id !== object.id) return entry;
@@ -557,6 +601,8 @@ async function POST(request) {
             ...existingRow,
             status,
             lastTested: ranAt,
+            lastRunId: runId,
+            lastSourceId: sourceIdValue,
             lastResponse: compactResponse
           };
         });
@@ -585,4 +631,4 @@ async function POST(request) {
   });
 }
 
-export { POST };
+export { GET, POST };

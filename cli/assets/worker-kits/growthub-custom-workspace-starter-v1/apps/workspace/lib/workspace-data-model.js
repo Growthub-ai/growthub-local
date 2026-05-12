@@ -376,6 +376,8 @@ const OBJECT_TYPE_PRESETS = {
     description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. Not a widget binding source.",
     columns: [
       "Name",
+      "lifecycleStatus",
+      "version",
       "runLocality",
       "schedulerRegistryId",
       "runtime",
@@ -384,10 +386,13 @@ const OBJECT_TYPE_PRESETS = {
       "envRefs",
       "networkAllow",
       "allowList",
+      "instructions",
       "command",
       "timeoutMs",
       "status",
       "lastTested",
+      "lastRunId",
+      "lastSourceId",
       "lastResponse"
     ],
     relations: [

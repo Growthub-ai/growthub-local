@@ -10,6 +10,7 @@ import {
   Building2,
   Calendar,
   CheckSquare,
+  ChevronDown,
   ChevronRight,
   Code2,
   Database,
@@ -20,8 +21,10 @@ import {
   Link2,
   List,
   Mail,
+  Maximize2,
   Plus,
   Play,
+  Search,
   ShoppingCart,
   Star,
   Tag,
@@ -123,6 +126,8 @@ const OBJECT_TYPE_BADGE = {
 
 const SANDBOX_ROW_FIELDS = new Set([
   "Name",
+  "lifecycleStatus",
+  "version",
   "runLocality",
   "schedulerRegistryId",
   "runtime",
@@ -131,10 +136,13 @@ const SANDBOX_ROW_FIELDS = new Set([
   "envRefs",
   "networkAllow",
   "allowList",
+  "instructions",
   "command",
   "timeoutMs",
   "status",
   "lastTested",
+  "lastRunId",
+  "lastSourceId",
   "lastResponse"
 ]);
 
@@ -276,21 +284,230 @@ function referenceOptions(tables, relation) {
 }
 
 function ReferenceSelect({ value, options, disabled, onChange }) {
+  const normalizedOptions = useMemo(() => options.map((option) => ({
+    value: String(option.value ?? ""),
+    label: String(option.label ?? option.value ?? ""),
+    source: option.source ? String(option.source) : ""
+  })), [options]);
   return (
-    <select
-      className="dm-reference-select"
+    <SearchableSelect
       value={value || ""}
+      options={normalizedOptions}
       disabled={disabled}
+      placeholder="Select reference..."
+      onChange={onChange}
+    />
+  );
+}
+
+function SearchableSelect({ value, options, disabled, placeholder = "Select...", onChange, pageSize = 8 }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const selected = options.find((option) => option.value === String(value || ""));
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return options;
+    return options.filter((option) => `${option.label} ${option.value} ${option.source}`.toLowerCase().includes(needle));
+  }, [options, query]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleOptions = filtered.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
+
+  useEffect(() => {
+    setPage(0);
+  }, [query, options.length]);
+
+  return (
+    <div
+      className={`dm-select${open ? " open" : ""}${disabled ? " disabled" : ""}`}
       onClick={(event) => event.stopPropagation()}
-      onChange={(event) => onChange(event.target.value)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
     >
-      <option value="">Select reference…</option>
-      {options.map((option) => (
-        <option key={`${option.source}:${option.value}`} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+      <button
+        type="button"
+        className="dm-select-trigger"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className={selected ? "" : "empty"}>{selected?.label || placeholder}</span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="dm-select-popover">
+          <label className="dm-select-search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              autoFocus
+              value={query}
+              placeholder="Search..."
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <div className="dm-select-list" role="listbox">
+            <button
+              type="button"
+              className={`dm-select-option${!value ? " selected" : ""}`}
+              role="option"
+              aria-selected={!value}
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              <span>{placeholder}</span>
+            </button>
+            {visibleOptions.map((option) => (
+              <button
+                type="button"
+                key={`${option.source}:${option.value}`}
+                className={`dm-select-option${option.value === String(value || "") ? " selected" : ""}`}
+                role="option"
+                aria-selected={option.value === String(value || "")}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                <span>{option.label}</span>
+                {option.source && <em>{option.source}</em>}
+              </button>
+            ))}
+            {visibleOptions.length === 0 && <p className="dm-select-empty">No matches</p>}
+          </div>
+          {filtered.length > pageSize && (
+            <div className="dm-select-pager">
+              <button type="button" disabled={currentPage === 0} onClick={() => setPage((next) => Math.max(0, next - 1))}>Prev</button>
+              <span>{currentPage + 1} / {pageCount}</span>
+              <button type="button" disabled={currentPage >= pageCount - 1} onClick={() => setPage((next) => Math.min(pageCount - 1, next + 1))}>Next</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StaticSelect({ value, options, disabled, onChange, placeholder = "Select..." }) {
+  const normalizedOptions = useMemo(() => options.map((option) => (
+    typeof option === "string" ? { value: option, label: option } : option
+  )), [options]);
+  return (
+    <SearchableSelect
+      value={value || ""}
+      options={normalizedOptions}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={onChange}
+    />
+  );
+}
+
+function DrawerSection({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`dm-drawer-section${open ? " open" : ""}`}>
+      <button type="button" className="dm-drawer-section-toggle" onClick={() => setOpen((current) => !current)}>
+        <ChevronRight size={14} aria-hidden="true" />
+        <span>{title}</span>
+      </button>
+      {open && <div className="dm-drawer-section-body">{children}</div>}
+    </section>
+  );
+}
+
+const GENERIC_FIELD_SECTIONS = [
+  {
+    title: "Identity",
+    columns: new Set(["Name", "name", "id", "integrationId", "registryId", "authRef"])
+  },
+  {
+    title: "Connection",
+    columns: new Set(["baseUrl", "endpoint", "method", "schedulerRegistryId"])
+  },
+  {
+    title: "Status & Response",
+    columns: new Set(["status", "lastTested", "lastRunId", "lastSourceId", "lastResponse"])
+  }
+];
+
+function groupRecordColumns(columns) {
+  const groups = GENERIC_FIELD_SECTIONS.map((section) => ({
+    title: section.title,
+    columns: columns.filter((column) => section.columns.has(column))
+  })).filter((section) => section.columns.length > 0);
+  const grouped = new Set(groups.flatMap((section) => section.columns));
+  const otherColumns = columns.filter((column) => !grouped.has(column));
+  if (otherColumns.length) groups.push({ title: "Details", columns: otherColumns });
+  return groups;
+}
+
+function RecordFieldEditor({ table, tables, column, value, saving, onDraft, onCommit, onExpandJson }) {
+  const relation = relationForColumn(table, column);
+  const options = referenceOptions(tables, relation);
+  const large = column === "lastResponse" || value.length > 120;
+  if (relation) {
+    return (
+      <label className="dm-record-field">
+        <span>{column}</span>
+        <ReferenceSelect
+          value={value}
+          options={options}
+          disabled={!table.mutable || saving}
+          onChange={(nextValue) => onCommit(column, nextValue)}
+        />
+      </label>
+    );
+  }
+  if (column === "lastResponse") {
+    return (
+      <label className="dm-record-field dm-json-field">
+        <span>{column}</span>
+        <button
+          type="button"
+          className="dm-json-expand"
+          aria-label="Expand lastResponse JSON"
+          title="Expand JSON"
+          disabled={!value}
+          onClick={onExpandJson}
+        >
+          <Maximize2 size={14} aria-hidden="true" />
+        </button>
+        <textarea
+          value={value}
+          rows={10}
+          disabled={!table.mutable || saving}
+          onChange={(event) => onDraft(column, event.target.value)}
+          onBlur={(event) => onCommit(column, event.target.value)}
+        />
+      </label>
+    );
+  }
+  return (
+    <label className="dm-record-field">
+      <span>{column}</span>
+      {large ? (
+        <textarea
+          value={value}
+          rows={4}
+          disabled={!table.mutable || saving}
+          onChange={(event) => onDraft(column, event.target.value)}
+          onBlur={(event) => onCommit(column, event.target.value)}
+        />
+      ) : (
+        <input
+          value={value}
+          disabled={!table.mutable || saving}
+          onChange={(event) => onDraft(column, event.target.value)}
+          onBlur={(event) => onCommit(column, event.target.value)}
+        />
+      )}
+    </label>
   );
 }
 
@@ -302,7 +519,12 @@ function SandboxRecordFields({
   workspaceConfig,
   saving,
   onSave,
-  rowIndex
+  rowIndex,
+  sandboxHistory,
+  sandboxHistoryMessage,
+  loadingSandboxHistory,
+  onLoadSandboxHistory,
+  onExpandLastResponse
 }) {
   const [sandboxAdapters, setSandboxAdapters] = useState([]);
   useEffect(() => {
@@ -346,168 +568,244 @@ function SandboxRecordFields({
 
   return (
     <div className="dm-sandbox-config">
-      <label className="dm-record-field">
-        <span>Name</span>
-        <input
-          value={draft.Name ?? ""}
-          disabled={!table.mutable || saving}
-          onChange={(event) => setDraft((c) => ({ ...c, Name: event.target.value }))}
-          onBlur={(event) => patchFields({ Name: event.target.value })}
-        />
-      </label>
-
-      <div className="dm-record-field">
-        <span>Where it runs</span>
-        <div className="dm-radio-row" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <label>
-            <input
-              type="radio"
-              name="sandbox-run-locality"
-              checked={locality === "local"}
-              disabled={!table.mutable || saving}
-              onChange={() => setRunLocality("local")}
-            />
-            {" "}Local — process sandbox or Paperclip local agent host on this machine
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="sandbox-run-locality"
-              checked={locality === "serverless"}
-              disabled={!table.mutable || saving}
-              onChange={() => setRunLocality("serverless")}
-            />
-            {" "}Serverless — delegate to scheduler URL (API Registry); no local agent CLI
-          </label>
-        </div>
-      </div>
-
-      {locality === "serverless" && (
+      <DrawerSection title="Identity & Mode">
         <label className="dm-record-field">
-          <span>Scheduler (API Registry)</span>
-          <ReferenceSelect
-            value={draft.schedulerRegistryId || ""}
-            options={schedulerOptions}
+          <span>Name</span>
+          <input
+            value={draft.Name ?? ""}
             disabled={!table.mutable || saving}
-            onChange={(nextValue) => patchFields({ schedulerRegistryId: nextValue })}
+            onChange={(event) => setDraft((c) => ({ ...c, Name: event.target.value }))}
+            onBlur={(event) => patchFields({ Name: event.target.value })}
           />
-          <span className="dm-cell-empty" style={{ fontSize: 12, marginTop: 4, display: "block" }}>
-            POST sends <code>growthub-sandbox-run-v1</code> JSON; auth from registry <code>authRef</code> (server env only).
-          </span>
         </label>
-      )}
 
-      <label className="dm-record-field">
-        <span>Execution adapter</span>
-        <select
-          className="dm-reference-select"
-          value={String(draft.adapter || "local-process").trim() || "local-process"}
-          disabled={!table.mutable || saving}
-          onChange={(event) => patchFields({ adapter: event.target.value })}
-        >
-          {sandboxAdapters.length === 0 ? <option value="local-process">local-process</option> : sandboxAdapters.map((a) => (
-            <option key={a.id} value={a.id}>{a.label}</option>
-          ))}
-        </select>
-      </label>
-
-      {locality === "local" && String(draft.adapter || "").trim() === "local-agent-host" && (
         <label className="dm-record-field">
-          <span>Agent host (Paperclip)</span>
-          <select
-            className="dm-reference-select"
-            value={draft.agentHost || ""}
+          <span>Status mode</span>
+          <StaticSelect
+            value={String(draft.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft"}
             disabled={!table.mutable || saving}
-            onChange={(event) => patchFields({ agentHost: event.target.value })}
-          >
-            <option value="">Select host…</option>
-            {(selectedAdapterMeta?.hostCatalog || []).map((h) => (
-              <option key={h.slug} value={h.slug}>{h.label}</option>
-            ))}
-          </select>
+            options={["draft", "live"]}
+            onChange={(nextValue) => patchFields({ lifecycleStatus: nextValue })}
+          />
         </label>
-      )}
 
-      <label className="dm-record-field">
-        <span>Runtime</span>
-        <select
-          className="dm-reference-select"
-          value={draft.runtime || "node"}
-          disabled={!table.mutable || saving}
-          onChange={(event) => patchFields({ runtime: event.target.value })}
-        >
-          {SANDBOX_RUNTIME_OPTIONS.map((rt) => <option key={rt} value={rt}>{rt}</option>)}
-        </select>
-      </label>
+        <label className="dm-record-field">
+          <span>Version</span>
+          <input
+            value={draft.version ?? ""}
+            disabled={!table.mutable || saving}
+            onChange={(event) => setDraft((c) => ({ ...c, version: event.target.value }))}
+            onBlur={(event) => patchFields({ version: event.target.value })}
+          />
+        </label>
+      </DrawerSection>
 
-      <div className="dm-record-field">
-        <span>Env key references</span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {savedEnvRefs.length === 0 ? (
-            <span className="dm-cell-empty">Add keys under Settings → APIs & Webhooks.</span>
-          ) : savedEnvRefs.map((ref) => (
-            <button
-              key={ref.endpointRef}
-              type="button"
-              className={`dm-btn-ghost${selectedEnvSlugs.has(ref.endpointRef) ? " dm-chip-active" : ""}`}
-              style={{ padding: "2px 8px", borderRadius: 999, fontSize: 12 }}
-              disabled={!table.mutable || saving}
-              onClick={() => toggleEnvRef(ref.endpointRef)}
-            >
-              {ref.endpointRef}
-            </button>
-          ))}
+      <DrawerSection title="Execution Target">
+        <div className="dm-record-field">
+          <span>Where it runs</span>
+          <div className="dm-radio-row">
+            <label>
+              <input
+                type="radio"
+                name="sandbox-run-locality"
+                checked={locality === "local"}
+                disabled={!table.mutable || saving}
+                onChange={() => setRunLocality("local")}
+              />
+              <span>Local - process sandbox or Paperclip local agent host on this machine</span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="sandbox-run-locality"
+                checked={locality === "serverless"}
+                disabled={!table.mutable || saving}
+                onChange={() => setRunLocality("serverless")}
+              />
+              <span>Serverless - delegate to scheduler URL (API Registry); no local agent CLI</span>
+            </label>
+          </div>
         </div>
-      </div>
 
-      <label className="dm-record-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <input
-          type="checkbox"
-          checked={netOn}
-          disabled={!table.mutable || saving}
-          onChange={(event) => patchFields({ networkAllow: event.target.checked ? "true" : "false" })}
-        />
-        <span>Network allow-list mode (locals see <code>GROWTHUB_SANDBOX_NET_*</code>)</span>
-      </label>
+        {locality === "serverless" && (
+          <label className="dm-record-field">
+            <span>Scheduler (API Registry)</span>
+            <ReferenceSelect
+              value={draft.schedulerRegistryId || ""}
+              options={schedulerOptions}
+              disabled={!table.mutable || saving}
+              onChange={(nextValue) => patchFields({ schedulerRegistryId: nextValue })}
+            />
+            <span className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
+              POST sends <code>growthub-sandbox-run-v1</code> JSON; auth from registry <code>authRef</code> (server env only).
+            </span>
+          </label>
+        )}
 
-      <label className="dm-record-field">
-        <span>Allow list (comma-separated hosts)</span>
-        <input
-          value={draft.allowList ?? ""}
-          disabled={!table.mutable || saving}
-          onChange={(event) => setDraft((c) => ({ ...c, allowList: event.target.value }))}
-          onBlur={(event) => patchFields({ allowList: event.target.value })}
-        />
-      </label>
+        <label className="dm-record-field">
+          <span>Execution adapter</span>
+          <StaticSelect
+            value={String(draft.adapter || "local-process").trim() || "local-process"}
+            disabled={!table.mutable || saving}
+            options={sandboxAdapters.length === 0 ? [{ value: "local-process", label: "local-process" }] : sandboxAdapters.map((a) => ({ value: a.id, label: a.label }))}
+            onChange={(nextValue) => patchFields({ adapter: nextValue })}
+          />
+        </label>
 
-      <label className="dm-record-field">
-        <span>Command / prompt</span>
-        <textarea
-          rows={6}
-          value={draft.command ?? ""}
-          disabled={!table.mutable || saving}
-          onChange={(event) => setDraft((c) => ({ ...c, command: event.target.value }))}
-          onBlur={(event) => patchFields({ command: event.target.value })}
-        />
-      </label>
+        {locality === "local" && String(draft.adapter || "").trim() === "local-agent-host" && (
+          <label className="dm-record-field">
+            <span>Agent host (Paperclip)</span>
+            <StaticSelect
+              value={draft.agentHost || ""}
+              disabled={!table.mutable || saving}
+              placeholder="Select host..."
+              options={(selectedAdapterMeta?.hostCatalog || []).map((h) => ({ value: h.slug, label: h.label }))}
+              onChange={(nextValue) => patchFields({ agentHost: nextValue })}
+            />
+          </label>
+        )}
 
-      <label className="dm-record-field">
-        <span>timeoutMs</span>
-        <input
-          type="number"
-          min={1000}
-          max={600000}
-          value={draft.timeoutMs ?? ""}
-          disabled={!table.mutable || saving}
-          onChange={(event) => setDraft((c) => ({ ...c, timeoutMs: event.target.value }))}
-          onBlur={(event) => patchFields({ timeoutMs: event.target.value })}
-        />
-      </label>
+        <label className="dm-record-field">
+          <span>Runtime</span>
+          <StaticSelect
+            value={draft.runtime || "node"}
+            disabled={!table.mutable || saving}
+            options={SANDBOX_RUNTIME_OPTIONS}
+            onChange={(nextValue) => patchFields({ runtime: nextValue })}
+          />
+        </label>
+      </DrawerSection>
 
-      <label className="dm-record-field">
-        <span>lastResponse</span>
-        <textarea rows={10} readOnly value={draft.lastResponse ?? ""} />
-      </label>
+      <DrawerSection title="Environment & Network">
+        <div className="dm-record-field">
+          <span>Env key references</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {savedEnvRefs.length === 0 ? (
+              <span className="dm-cell-empty">Add keys under Settings -&gt; APIs &amp; Webhooks.</span>
+            ) : savedEnvRefs.map((ref) => (
+              <button
+                key={ref.endpointRef}
+                type="button"
+                className={`dm-btn-ghost${selectedEnvSlugs.has(ref.endpointRef) ? " dm-chip-active" : ""}`}
+                style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11 }}
+                disabled={!table.mutable || saving}
+                onClick={() => toggleEnvRef(ref.endpointRef)}
+              >
+                {ref.endpointRef}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="dm-check-row">
+          <input
+            type="checkbox"
+            checked={netOn}
+            disabled={!table.mutable || saving}
+            onChange={(event) => patchFields({ networkAllow: event.target.checked ? "true" : "false" })}
+          />
+          <span>Network allow-list mode (locals see <code>GROWTHUB_SANDBOX_NET_*</code>)</span>
+        </label>
+
+        <label className="dm-record-field">
+          <span>Allow list (comma-separated hosts)</span>
+          <input
+            value={draft.allowList ?? ""}
+            disabled={!table.mutable || saving}
+            onChange={(event) => setDraft((c) => ({ ...c, allowList: event.target.value }))}
+            onBlur={(event) => patchFields({ allowList: event.target.value })}
+          />
+        </label>
+      </DrawerSection>
+
+      <DrawerSection title="Prompt & Limits">
+        <label className="dm-record-field">
+          <span>Instructions</span>
+          <textarea
+            rows={5}
+            value={draft.instructions ?? ""}
+            disabled={!table.mutable || saving}
+            onChange={(event) => setDraft((c) => ({ ...c, instructions: event.target.value }))}
+            onBlur={(event) => patchFields({ instructions: event.target.value })}
+          />
+        </label>
+
+        <label className="dm-record-field">
+          <span>Command / prompt</span>
+          <textarea
+            rows={6}
+            value={draft.command ?? ""}
+            disabled={!table.mutable || saving}
+            onChange={(event) => setDraft((c) => ({ ...c, command: event.target.value }))}
+            onBlur={(event) => patchFields({ command: event.target.value })}
+          />
+        </label>
+
+        <label className="dm-record-field">
+          <span>timeoutMs</span>
+          <input
+            type="number"
+            min={1000}
+            max={600000}
+            value={draft.timeoutMs ?? ""}
+            disabled={!table.mutable || saving}
+            onChange={(event) => setDraft((c) => ({ ...c, timeoutMs: event.target.value }))}
+            onBlur={(event) => patchFields({ timeoutMs: event.target.value })}
+          />
+        </label>
+      </DrawerSection>
+
+      <DrawerSection title="Response & History">
+        <label className="dm-record-field">
+          <span>lastRunId</span>
+          <input readOnly value={draft.lastRunId ?? ""} />
+        </label>
+
+        <label className="dm-record-field">
+          <span>lastSourceId</span>
+          <input readOnly value={draft.lastSourceId ?? ""} />
+        </label>
+
+        <label className="dm-record-field dm-json-field">
+          <span>lastResponse</span>
+          <button
+            type="button"
+            className="dm-json-expand"
+            aria-label="Expand lastResponse JSON"
+            title="Expand JSON"
+            disabled={!draft.lastResponse}
+            onClick={onExpandLastResponse}
+          >
+            <Maximize2 size={14} aria-hidden="true" />
+          </button>
+          <textarea rows={10} readOnly value={draft.lastResponse ?? ""} />
+        </label>
+
+        <div className="dm-record-field">
+          <span>Run history</span>
+          <button type="button" className="dm-btn-ghost" disabled={loadingSandboxHistory} onClick={onLoadSandboxHistory}>
+            {loadingSandboxHistory ? "Loading..." : "Load previous runs"}
+          </button>
+          {sandboxHistoryMessage && <span className="dm-cell-empty">{sandboxHistoryMessage}</span>}
+          {Array.isArray(sandboxHistory) && sandboxHistory.length > 0 && (
+            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+              {sandboxHistory.slice(0, 8).map((record) => (
+                <pre key={record.runId || record.ranAt} className="dm-source-preview" style={{ margin: 0, maxHeight: 160, overflow: "auto" }}>
+                  {JSON.stringify({
+                    runId: record.runId,
+                    ranAt: record.ranAt,
+                    lifecycleStatus: record.lifecycleStatus,
+                    version: record.version,
+                    status: record.exitCode === 0 && !record.error ? "connected" : "failed",
+                    stdout: record.stdout,
+                    error: record.error
+                  }, null, 2)}
+                </pre>
+              ))}
+            </div>
+          )}
+        </div>
+      </DrawerSection>
     </div>
   );
 }
@@ -518,11 +816,18 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   const [testMessage, setTestMessage] = useState("");
   const [sandboxRunning, setSandboxRunning] = useState(false);
   const [sandboxMessage, setSandboxMessage] = useState("");
+  const [sandboxHistory, setSandboxHistory] = useState([]);
+  const [sandboxHistoryMessage, setSandboxHistoryMessage] = useState("");
+  const [loadingSandboxHistory, setLoadingSandboxHistory] = useState(false);
+  const [expandedJson, setExpandedJson] = useState(null);
 
   useEffect(() => {
     setDraft(row || {});
     setTestMessage("");
     setSandboxMessage("");
+    setSandboxHistory([]);
+    setSandboxHistoryMessage("");
+    setExpandedJson(null);
   }, [row, rowIndex]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
@@ -590,18 +895,55 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
       const responseText = JSON.stringify(payload.response ?? payload, null, 2);
       const status = String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
       const testedAt = payload.response?.ranAt || new Date().toISOString();
+      const lastRunId = payload.runId || payload.response?.runId || "";
+      const lastSourceId = payload.sourceId || payload.response?.sourceId || "";
       onSave((config) => {
         let next = updateTableCell(config, table, rowIndex, "status", status);
         next = updateTableCell(next, table, rowIndex, "lastTested", testedAt);
+        next = updateTableCell(next, table, rowIndex, "lastRunId", lastRunId);
+        next = updateTableCell(next, table, rowIndex, "lastSourceId", lastSourceId);
         next = updateTableCell(next, table, rowIndex, "lastResponse", responseText);
         return next;
       });
-      setDraft((current) => ({ ...current, status, lastTested: testedAt, lastResponse: responseText }));
+      setDraft((current) => ({ ...current, status, lastTested: testedAt, lastRunId, lastSourceId, lastResponse: responseText }));
+      setSandboxHistory((current) => payload.response ? [payload.response, ...current].slice(0, 25) : current);
       setSandboxMessage(payload.ok ? "Sandbox run recorded" : (payload.response?.error || payload.error || "Run failed"));
     } catch (err) {
       setSandboxMessage(err.message || "Sandbox run failed");
     } finally {
       setSandboxRunning(false);
+    }
+  }
+
+  async function loadSandboxHistory() {
+    if (!table.objectId || !String(draft?.Name || "").trim()) {
+      setSandboxHistoryMessage("Sandbox Name is required.");
+      return;
+    }
+    setLoadingSandboxHistory(true);
+    setSandboxHistoryMessage("");
+    try {
+      const params = new URLSearchParams({ objectId: table.objectId, name: String(draft.Name || "").trim() });
+      const res = await fetch(`/api/workspace/sandbox-run?${params.toString()}`, { cache: "no-store" });
+      const payload = await res.json();
+      if (!payload.ok) throw new Error(payload.error || "Could not load run history");
+      setSandboxHistory(Array.isArray(payload.records) ? payload.records : []);
+      setSandboxHistoryMessage(`${payload.recordCount || 0} saved run${payload.recordCount === 1 ? "" : "s"} · ${payload.sourceId || ""}`);
+    } catch (err) {
+      setSandboxHistory([]);
+      setSandboxHistoryMessage(err.message || "Could not load run history");
+    } finally {
+      setLoadingSandboxHistory(false);
+    }
+  }
+
+  function expandLastResponse() {
+    const text = String(draft.lastResponse || "");
+    if (!text) return;
+    try {
+      setExpandedJson(JSON.stringify(JSON.parse(text), null, 2));
+    } catch {
+      setExpandedJson(text);
     }
   }
 
@@ -647,43 +989,47 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
               saving={saving}
               onSave={onSave}
               rowIndex={rowIndex}
+              sandboxHistory={sandboxHistory}
+              sandboxHistoryMessage={sandboxHistoryMessage}
+              loadingSandboxHistory={loadingSandboxHistory}
+              onLoadSandboxHistory={loadSandboxHistory}
+              onExpandLastResponse={expandLastResponse}
             />
-          ) : table.columns.map((column) => {
-            const value = String(draft?.[column] ?? "");
-            const large = column === "lastResponse" || value.length > 120;
-            const relation = relationForColumn(table, column);
-            const options = referenceOptions(tables, relation);
-            return (
-              <label key={column} className="dm-record-field">
-                <span>{column}</span>
-                {relation ? (
-                  <ReferenceSelect
-                    value={value}
-                    options={options}
-                    disabled={!table.mutable || saving}
-                    onChange={(nextValue) => updateField(column, nextValue)}
-                  />
-                ) : large ? (
-                  <textarea
-                    value={value}
-                    rows={column === "lastResponse" ? 10 : 4}
-                    disabled={!table.mutable || saving}
-                    onChange={(event) => setDraft((current) => ({ ...current, [column]: event.target.value }))}
-                    onBlur={(event) => updateField(column, event.target.value)}
-                  />
-                ) : (
-                  <input
-                    value={value}
-                    disabled={!table.mutable || saving}
-                    onChange={(event) => setDraft((current) => ({ ...current, [column]: event.target.value }))}
-                    onBlur={(event) => updateField(column, event.target.value)}
-                  />
-                )}
-              </label>
-            );
-          })}
+          ) : groupRecordColumns(table.columns || []).map((section) => (
+            <DrawerSection key={section.title} title={section.title}>
+              {section.columns.map((column) => (
+                <RecordFieldEditor
+                  key={column}
+                  table={table}
+                  tables={tables}
+                  column={column}
+                  value={String(draft?.[column] ?? "")}
+                  saving={saving}
+                  onDraft={(field, nextValue) => setDraft((current) => ({ ...current, [field]: nextValue }))}
+                  onCommit={updateField}
+                  onExpandJson={expandLastResponse}
+                />
+              ))}
+            </DrawerSection>
+          ))}
         </div>
       </aside>
+      {expandedJson !== null && (
+        <div className="dm-json-modal-backdrop" onClick={() => setExpandedJson(null)}>
+          <section className="dm-json-modal" role="dialog" aria-modal="true" aria-label="lastResponse JSON" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <p>lastResponse</p>
+                <h2>{draft.Name || draft.integrationId || "Record response"}</h2>
+              </div>
+              <button type="button" className="dm-sidebar-close" onClick={() => setExpandedJson(null)} aria-label="Close expanded JSON">
+                <X size={16} />
+              </button>
+            </header>
+            <pre>{expandedJson}</pre>
+          </section>
+        </div>
+      )}
     </>
   );
 }
