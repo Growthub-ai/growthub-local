@@ -169,6 +169,15 @@ describe("worker kit service", () => {
     },
   );
 
+  it("downloads the custom workspace starter directly into --out for the README path", () => {
+    const outDir = makeTempDir("my-workspace-");
+    const result = downloadBundledKit("growthub-custom-workspace-starter-v1", outDir);
+
+    expect(result.folderPath).toBe(outDir);
+    expect(fs.existsSync(path.resolve(outDir, "apps/workspace/package.json"))).toBe(true);
+    expect(result.zipPath).toBe(`${outDir}.zip`);
+  });
+
   it("inspects the kit with capability metadata and default export paths", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
     process.env.PAPERCLIP_HOME = paperclipHome;

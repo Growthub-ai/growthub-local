@@ -535,6 +535,13 @@ function toListItem(resolved: ResolvedBundledKit): KitListItem {
 
 function resolveOutputPaths(resolved: ResolvedBundledKit, outDir?: string): KitDownloadResult & { outputRoot: string } {
   const outputRoot = resolveRequestedOutputRoot(outDir);
+  if (outDir?.trim() && resolved.manifest.kit.id === "growthub-custom-workspace-starter-v1") {
+    return {
+      outputRoot,
+      folderPath: outputRoot,
+      zipPath: path.resolve(path.dirname(outputRoot), `${path.basename(outputRoot)}.zip`),
+    };
+  }
   const folderPath = path.resolve(outputRoot, resolved.bundleManifest.export.folderName);
   const zipPath = path.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
   return { outputRoot, folderPath, zipPath };

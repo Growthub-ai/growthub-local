@@ -9027,6 +9027,13 @@ function toListItem(resolved) {
 }
 function resolveOutputPaths(resolved, outDir) {
   const outputRoot = resolveRequestedOutputRoot(outDir);
+  if (outDir?.trim() && resolved.manifest.kit.id === "growthub-custom-workspace-starter-v1") {
+    return {
+      outputRoot,
+      folderPath: outputRoot,
+      zipPath: path24.resolve(path24.dirname(outputRoot), `${path24.basename(outputRoot)}.zip`)
+    };
+  }
   const folderPath = path24.resolve(outputRoot, resolved.bundleManifest.export.folderName);
   const zipPath = path24.resolve(outputRoot, resolved.bundleManifest.export.zipFileName);
   return { outputRoot, folderPath, zipPath };
