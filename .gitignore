@@ -9,9 +9,6 @@ growthub-local/instances
 tmp
 .npm-cache/
 
-# Per-clone agent / operator runbook (copy from docs/LOCAL_AGENTS.template.md)
-LOCAL_AGENTS.md
-
 # Claude Code — personal overrides only. Everything else under .claude/
 # (skills/, agents/, commands/, settings.json) is tracked so every agent
 # landing in the repo gets the same CLI skills and pathways.

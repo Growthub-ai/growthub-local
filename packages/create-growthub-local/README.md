@@ -2,7 +2,7 @@
 
 `@growthub/create-growthub-local` is the guided installer for Growthub Local.
 
-It creates a governed **Workspace** — the top-level Growthub product object — by exporting the official `growthub-custom-workspace-starter-v1` kit and pinning the matching `@growthub/cli` version. Local value first; hosted authority is additive.
+It creates a governed **Workspace** — the top-level Growthub product object and Agent Workspace as Code (AWaC) artifact — by exporting the official `growthub-custom-workspace-starter-v1` kit and pinning the matching `@growthub/cli` version. Local value first; hosted authority is additive.
 
 ## Quickstart
 
@@ -29,10 +29,22 @@ Reference contracts:
 The installer offers profile selection before command/harness depth:
 
 ```bash
-npm create growthub-local@latest -- --profile gtm
-npm create growthub-local@latest -- --profile dx
-npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile gtm
+npm create @growthub/growthub-local@latest -- --profile dx
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
+
+## How this fits the governed workspace architecture
+
+The installer is the safest entrypoint into the same lifecycle the CLI operates:
+
+1. choose a source profile or starter path
+2. export the governed Workspace app
+3. register the fork metadata and local policy
+4. open the Workspace Builder for dashboards, tabs, widgets, templates, data model objects, and settings
+5. continue with `@growthub/cli` for status checks, fork sync, deploy preparation, worker kits, workflows, pipelines, and optional Growthub authority
+
+The generated Workspace is not a loose app copy. It carries `growthub.config.json` plus `.growthub-fork/` lifecycle state so export, fork safety, ongoing customization, and agent operation stay tied to one portable artifact.
 
 ## First-run outcomes
 
