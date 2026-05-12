@@ -47,6 +47,35 @@ const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "
 const KNOWN_FILTER_CONJUNCTIONS = ["and", "or"];
 const KNOWN_SORT_DIRECTIONS = ["asc", "desc"];
 const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
+const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
+/** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
+const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
+const KNOWN_SANDBOX_LIFECYCLE_STATUSES = ["draft", "live"];
+const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
+const DEFAULT_SANDBOX_ADAPTER = "local-process";
+const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
+const SANDBOX_MAX_TIMEOUT_MS = 600000;
+/**
+ * Canonical Paperclip local agent-host slugs — mirrors the upstream
+ * `AGENT_ADAPTER_TYPES` enum in `packages/shared/src/constants.ts`. The
+ * sandbox-environment row's `agentHost` column accepts any of these values
+ * when `adapter === "local-agent-host"`. The standalone workspace starter
+ * does NOT import the @paperclipai/adapter-* packages directly — instead the
+ * default `local-agent-host` adapter spawns the host CLI binary the user has
+ * on PATH (cross-platform: macOS / Windows / Linux), keeping the workspace
+ * starter portable and thin.
+ */
+const KNOWN_SANDBOX_AGENT_HOSTS = [
+  "claude_local",
+  "codex_local",
+  "cursor",
+  "gemini_local",
+  "opencode_local",
+  "pi_local",
+  "qwen_local",
+  "openclaw_gateway",
+  "hermes_local"
+];
 
 const NORMALIZED_OBJECT_FIELD_IDS = ["id", "label", "secondaryLabel", "entityType", "provider", "lane", "status"];
 const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
@@ -791,6 +820,65 @@ function validateCanvasConfig(canvas, errors) {
   }
 }
 
+function validateSandboxEnvironmentRow(row, path, errors) {
+  if (!isPlainObject(row)) return;
+  const lifecycleStatus = String(row.lifecycleStatus || "").trim().toLowerCase();
+  if (row.lifecycleStatus !== undefined && row.lifecycleStatus !== "" && !KNOWN_SANDBOX_LIFECYCLE_STATUSES.includes(lifecycleStatus)) {
+    errors.push(`${path}.lifecycleStatus must be one of ${KNOWN_SANDBOX_LIFECYCLE_STATUSES.join(", ")}`);
+  }
+  if (row.version !== undefined && typeof row.version !== "string" && typeof row.version !== "number") {
+    errors.push(`${path}.version must be a string or number`);
+  }
+  const runLocalityNorm = String(row.runLocality || "").trim().toLowerCase();
+  if (row.runLocality !== undefined && row.runLocality !== "" && !KNOWN_SANDBOX_RUN_LOCALITY.includes(runLocalityNorm)) {
+    errors.push(`${path}.runLocality must be one of ${KNOWN_SANDBOX_RUN_LOCALITY.join(", ")}`);
+  }
+  if (runLocalityNorm === "serverless") {
+    if (typeof row.schedulerRegistryId !== "string" || !row.schedulerRegistryId.trim()) {
+      errors.push(`${path}.schedulerRegistryId must reference an API Registry integrationId when runLocality is serverless`);
+    }
+  }
+  if (runLocalityNorm === "local" && row.runtime !== undefined && row.runtime !== "" && !KNOWN_SANDBOX_RUNTIMES.includes(row.runtime)) {
+    errors.push(`${path}.runtime must be one of ${KNOWN_SANDBOX_RUNTIMES.join(", ")}`);
+  }
+  if (row.adapter !== undefined && typeof row.adapter !== "string") {
+    errors.push(`${path}.adapter must be a string`);
+  }
+  if (row.agentHost !== undefined && row.agentHost !== "" && !KNOWN_SANDBOX_AGENT_HOSTS.includes(row.agentHost)) {
+    errors.push(`${path}.agentHost must be one of ${KNOWN_SANDBOX_AGENT_HOSTS.join(", ")}`);
+  }
+  if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
+    errors.push(`${path}.envRefs must be a comma-separated string or array of env-ref slugs (never values)`);
+  }
+  if (row.networkAllow !== undefined) {
+    const value = String(row.networkAllow).trim().toLowerCase();
+    if (!["", "true", "false", "0", "1", "on", "off"].includes(value)) {
+      errors.push(`${path}.networkAllow must coerce to a boolean (true/false/on/off)`);
+    }
+  }
+  if (row.allowList !== undefined && typeof row.allowList !== "string" && !Array.isArray(row.allowList)) {
+    errors.push(`${path}.allowList must be a comma-separated string or array of hostnames`);
+  }
+  if (row.instructions !== undefined && typeof row.instructions !== "string") {
+    errors.push(`${path}.instructions must be a string`);
+  }
+  if (row.command !== undefined && typeof row.command !== "string") {
+    errors.push(`${path}.command must be a string`);
+  }
+  if (row.lastRunId !== undefined && typeof row.lastRunId !== "string") {
+    errors.push(`${path}.lastRunId must be a string`);
+  }
+  if (row.lastSourceId !== undefined && typeof row.lastSourceId !== "string") {
+    errors.push(`${path}.lastSourceId must be a string`);
+  }
+  if (row.timeoutMs !== undefined && row.timeoutMs !== "") {
+    const ms = Number(row.timeoutMs);
+    if (!Number.isFinite(ms) || ms < 0 || ms > SANDBOX_MAX_TIMEOUT_MS) {
+      errors.push(`${path}.timeoutMs must be a finite number between 0 and ${SANDBOX_MAX_TIMEOUT_MS}`);
+    }
+  }
+}
+
 function validateDataModelConfig(dataModel, errors) {
   if (dataModel === undefined) return;
   if (!isPlainObject(dataModel)) {
@@ -824,7 +912,13 @@ function validateDataModelConfig(dataModel, errors) {
       errors.push(`${prefix}.rows must be an array`);
     } else {
       object.rows.forEach((row, rowIndex) => {
-        if (!isPlainObject(row)) errors.push(`${prefix}.rows[${rowIndex}] must be a plain object`);
+        if (!isPlainObject(row)) {
+          errors.push(`${prefix}.rows[${rowIndex}] must be a plain object`);
+          return;
+        }
+        if (object.objectType === "sandbox-environment") {
+          validateSandboxEnvironmentRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        }
       });
     }
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
@@ -1079,11 +1173,19 @@ export {
   KNOWN_AGGREGATIONS,
   KNOWN_CHART_TYPES,
   KNOWN_DATA_BINDING_MODES,
+  DEFAULT_SANDBOX_RUN_LOCALITY,
+  KNOWN_SANDBOX_LIFECYCLE_STATUSES,
   KNOWN_FIELDS,
   KNOWN_FILTER_CONJUNCTIONS,
   KNOWN_FILTER_OPERATORS,
+  KNOWN_SANDBOX_AGENT_HOSTS,
+  KNOWN_SANDBOX_RUN_LOCALITY,
+  KNOWN_SANDBOX_RUNTIMES,
   KNOWN_SORT_DIRECTIONS,
   KNOWN_WIDGET_KINDS,
+  DEFAULT_SANDBOX_ADAPTER,
+  SANDBOX_DEFAULT_TIMEOUT_MS,
+  SANDBOX_MAX_TIMEOUT_MS,
   NORMALIZED_OBJECT_FIELD_IDS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,

@@ -114,6 +114,7 @@ Rules:
 3. Binding a Data Model object to a dashboard is a separate user action inside an existing View widget's Source panel.
 4. The View widget stores a stable reference (`widget.config.binding.sourceType = "workspace-data-model"` and `objectId`) plus widget-local presentation settings. The object rows and fields remain owned by `dataModel.objects[]`.
 5. Integration-backed source objects continue to use the integration resolver path; the browser stores references and normalized metadata, not provider credentials.
+6. **Sandbox Environment** (`objectType: "sandbox-environment"`) rows describe where and how workloads run (`runLocality`, adapter, optional `schedulerRegistryId` → API Registry). They persist in the same `dataModel.objects[]` surface as other governed objects. They are **not** bindable as View widget sources; execution is `POST /api/workspace/sandbox-run`. Details and the `growthub-sandbox-run-v1` envelope live in the starter kit at `apps/workspace/docs/sandbox-environment-primitive.md` (materialized path under `growthub-custom-workspace-starter-v1`).
 
 ---
 
