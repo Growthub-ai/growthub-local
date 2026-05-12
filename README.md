@@ -12,7 +12,7 @@
 
 **Streamlined one-click deployment:** [Launch Growthub Local](https://www.growthub.ai/f/growthub-local)
 
-**Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Why this exists](#why-this-exists) · [Install](#install) · [First-run paths](./docs/FIRST_RUN_PATHS.md) · [Workspace deploy flow](./docs/WORKSPACE_DEPLOY_FLOW.md) · [Docs](#docs)
+**Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
 
 ---
 
@@ -53,9 +53,9 @@ growthub workspace status --json
 **Reference contracts:** [Workspace Config Contract V1](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace Builder Runtime V1](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 &nbsp;
 
-**▶️ [Watch on YouTube](https://youtu.be/3wUyHsUePpY)**
+**▶️ [Watch on YouTube](https://youtu.be/DL38oRoIB3g)**
 
-<a href="https://youtu.be/3wUyHsUePpY"><img src="https://img.youtube.com/vi/3wUyHsUePpY/maxresdefault.jpg" alt="Watch the video" width="600"></a>
+<a href="https://youtu.be/DL38oRoIB3g"><img src="https://img.youtube.com/vi/DL38oRoIB3g/maxresdefault.jpg" alt="Watch the video" width="600"></a>
 
 &nbsp;
 
