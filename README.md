@@ -67,38 +67,28 @@ AWaC in Growthub Local is the full governed workspace stack:
 
 ![AWaC governed workspace stack](./docs/assets/awac-workspace-stack.jpg)
 
-The important point is that these are not separate products. Growthub Local turns them into one governed workspace:
-
-- **Source import and starter paths** turn repos, skills, worker kits, and templates into a starter-derived workspace with policy and trace.
-- **Workspace Builder** is the no-code admin surface for dashboards, tabs, widgets, templates, import/export, and config-backed customization.
-- **Data Model** makes business objects first-class, so the workspace can manage records, fields, relations, tables, widget bindings, and external source references without collapsing everything into canvas state.
-- **Integration and resolver surfaces** let the workspace connect to providers through adapters, API Registry rows, Data Sources, bridge-backed connections, BYO keys, and local resolver files.
-- **Workspace Operations** give humans and agents JSON-first checks for health, QA, deploy readiness, upstream drift, surface detection, and portal preparation.
-- **Agent and workflow surfaces** cover local intelligence, Open Agents, Qwen Code, T3 Code, saved workflows, dynamic pipelines, artifacts, and hosted CMS execution when connected.
-- **Bridge and authority** add hosted identity, connected integrations, MCP accounts, hosted agents, and signed fork authority without making hosted SaaS mandatory for local value.
-
-The governed data model is one layer inside that system. Its core split is still critical: API Registry objects define how to call a provider, while Data Source objects define what tested business data widgets can consume. That split sits inside the larger AWaC workspace, not in place of it.
+AWaC is the DevOps layer for AI workspaces. Instead of rebuilding agent setups by hand, Growthub Local makes the workspace itself portable, inspectable, repeatable, and safe to operate.
 
 ---
 
 ## Why this exists
 
-Most tools make you choose between:
+AI work creates the same pressure that made DevOps necessary for apps:
 
-- **open-source freedom**
-- **deep customization**
-- **staying current with upstream**
-- **enterprise trust and control**
+- **Scale:** you cannot manually set up reliable environments for every agent, operator, client, repo, or workflow.
+- **Security and governance:** teams need to know what an agent can touch, what it cannot touch, and where that policy lives.
+- **Reliability:** when an agent workflow fails, the environment needs to be reconstructible so humans can debug what happened.
 
-Growthub Local is built so you do not have to choose.
+Growthub Local answers that with Agent Workspace as Code: the app, builder, data model, workflows, integrations, fork policy, trace, and optional authority move together as one governed workspace artifact.
 
-It gives you a control plane where you can:
+That matters at every skill level:
 
-- start from a repo, skill, starter, or kit
-- turn it into a governed local environment
-- keep your customizations
-- sync safely with upstream over time
-- optionally layer in hosted identity, authority, and premium capabilities later
+- **Non-technical teams** get a real workspace they can open, customize, hand off, and trust without learning how to wire repos, prompts, credentials, and scripts together.
+- **Builders and no-code innovators** can turn a repo, skill, starter, template, or worker kit into a working product surface without losing upgrade paths or governance.
+- **Agents and operators** get clear commands, JSON status, policy, trace, and reusable workspace primitives instead of guessing what folder, prompt, or script matters.
+- **Enterprise developers** get local-first flexibility with fork safety, deploy checks, credential boundaries, audit trails, and optional hosted authority when higher-trust flows need it.
+
+The practical result: Growthub Local keeps open-source speed and customization, but gives AI workspaces the structure teams expect from serious DevOps.
 
 ---
 
