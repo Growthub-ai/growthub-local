@@ -363,6 +363,7 @@ function buildRunResponse({
 }
 
 function findSandboxRow(workspaceConfig, objectId, name) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   const object = objects.find((entry) => entry?.id === objectId && entry?.objectType === "sandbox-environment");
   if (!object) return { object: null, row: null, rowIndex: -1 };
   const wantedName = String(name || "").trim();
