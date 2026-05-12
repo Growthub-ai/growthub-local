@@ -12,7 +12,7 @@
 
 **Streamlined one-click deployment:** [Launch Growthub Local](https://www.growthub.ai/f/growthub-local)
 
-**Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Structural invariants](#structural-invariants) · [Why this exists](#why-this-exists) · [Install](#install) · [First-run paths](./docs/FIRST_RUN_PATHS.md) · [Workspace deploy flow](./docs/WORKSPACE_DEPLOY_FLOW.md) · [Docs](#docs)
+**Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Why this exists](#why-this-exists) · [Install](#install) · [First-run paths](./docs/FIRST_RUN_PATHS.md) · [Workspace deploy flow](./docs/WORKSPACE_DEPLOY_FLOW.md) · [Docs](#docs)
 
 ---
 
@@ -89,23 +89,6 @@ The governed data model is one layer inside that system. Its core split is still
 
 ---
 
-## Structural invariants
-
-These are the non-negotiable properties the repository implements and contributors must preserve.
-
-| # | Invariant | What it delivers |
-|---|-----------|------------------|
-| 1 | **Workspace as product object** | Dashboards, canvas, data model, adapters, templates, provenance, and deploy state travel as one governed workspace artifact. |
-| 2 | **Source-to-workspace path** | Repos, skills, starters, kits, and templates enter the same lifecycle: discover, create, register fork, customize, sync, optionally connect authority. |
-| 3 | **Config-backed customization** | Humans and agents mutate validated workspace state through the builder, `PATCH /api/workspace`, CLI commands, and JSON operations. |
-| 4 | **Object layer separation** | Business objects, presentation widgets, and binding references stay separate so a workspace can evolve without corrupting its layout or data model. |
-| 5 | **Credential boundary** | Workspace records store named references, not secrets. Provider credentials resolve server-side through env, adapters, or hosted bridge state. |
-| 6 | **Test-before-bind data quality** | Data Sources must pass a server-side test and save a response shape before widgets consume them. |
-| 7 | **Fork safety** | Fork sync detects drift, previews/heals safe changes, preserves protected paths, and never overwrites user-modified files or custom skills. |
-| 8 | **Portable authority** | The governed artifact carries `growthub.config.json` plus `.growthub-fork/fork.json`, `policy.json`, `trace.jsonl`, optional `project.md`, and optional `authority.json`. |
-
----
-
 ## Why this exists
 
 Most tools make you choose between:
@@ -167,29 +150,29 @@ Growthub Local currently ships `@growthub/cli@0.9.14` and the guided installer `
 
 <table>
   <tr>
-    <td align="center"><strong>Workspace Builder</strong><br>No-code dashboard, tab, canvas, widget, template, import/export, and settings surface backed by validated config.</td>
-    <td align="center"><strong>Governed Data Model</strong><br>Business objects, rows, fields, relations, field settings, table helpers, and widget bindings live as first-class workspace state.</td>
-    <td align="center"><strong>Source Import</strong><br>GitHub repos, skills.sh skills, starters, worker kits, and templates become governed workspaces through one lifecycle.</td>
+    <td align="center"><strong>🧱 Workspace Builder</strong><br>No-code dashboard, tab, canvas, widget, template, import/export, and settings surface backed by validated config.</td>
+    <td align="center"><strong>📊 Governed Data Model</strong><br>Business objects, rows, fields, relations, field settings, table helpers, and widget bindings live as first-class workspace state.</td>
+    <td align="center"><strong>📥 Source Import</strong><br>GitHub repos, skills.sh skills, starters, worker kits, and templates become governed workspaces through one lifecycle.</td>
   </tr>
   <tr>
-    <td align="center"><strong>Integration Catalog</strong><br>Data-source and workspace-integration lanes cover analytics, commerce, ads, spreadsheets, project tools, docs, and CRM-style systems.</td>
-    <td align="center"><strong>Resolver Layer</strong><br>Local resolver files, bridge-backed connections, BYO credentials, API Registry rows, and Data Sources make live data governable.</td>
-    <td align="center"><strong>Workspace Operations</strong><br><code>workspace status</code>, QA, deploy checks, Vercel env output, upstream checks, surface detection, and portal preparation are JSON-first.</td>
+    <td align="center"><strong>🔌 Integration Catalog</strong><br>Data-source and workspace-integration lanes cover analytics, commerce, ads, spreadsheets, project tools, docs, and CRM-style systems.</td>
+    <td align="center"><strong>🧩 Resolver Layer</strong><br>Local resolver files, bridge-backed connections, BYO credentials, API Registry rows, and Data Sources make live data governable.</td>
+    <td align="center"><strong>🧪 Workspace Operations</strong><br><code>workspace status</code>, QA, deploy checks, Vercel env output, upstream checks, surface detection, and portal preparation are JSON-first.</td>
   </tr>
   <tr>
-    <td align="center"><strong>Self-Healing Forks</strong><br>Fork registration, drift detection, dry-run heal plans, protected paths, background jobs, optional GitHub PR flow, and trace history.</td>
-    <td align="center"><strong>Worker Kits</strong><br>Self-contained operator environments ship SKILL.md, helpers, sub-skills, templates, assumptions, examples, and output standards.</td>
-    <td align="center"><strong>Agent Harnesses</strong><br>Open Agents, Qwen Code, T3 Code, local intelligence, memory, knowledge sync, health checks, sessions, and profile binding.</td>
+    <td align="center"><strong>🔁 Self-Healing Forks</strong><br>Fork registration, drift detection, dry-run heal plans, protected paths, background jobs, optional GitHub PR flow, and trace history.</td>
+    <td align="center"><strong>🧰 Worker Kits</strong><br>Self-contained operator environments ship SKILL.md, helpers, sub-skills, templates, assumptions, examples, and output standards.</td>
+    <td align="center"><strong>🤖 Agent Harnesses</strong><br>Open Agents, Qwen Code, T3 Code, local intelligence, memory, knowledge sync, health checks, sessions, and profile binding.</td>
   </tr>
   <tr>
-    <td align="center"><strong>Workflows + Pipelines</strong><br>Saved workflows, templates, dynamic pipeline assembly, CMS node contracts, execution payloads, artifacts, and structured results.</td>
-    <td align="center"><strong>Self-Improving Workspace</strong><br>Workspace improvement commands propose, list, and promote capabilities after runs so the workspace compounds over time.</td>
-    <td align="center"><strong>Bridge + Hosted Agents</strong><br>Hosted identity, integrations, MCP accounts, agent list/inspect/bind/bindings, and authority-backed activation remain optional.</td>
+    <td align="center"><strong>⚙️ Workflows + Pipelines</strong><br>Saved workflows, templates, dynamic pipeline assembly, CMS node contracts, execution payloads, artifacts, and structured results.</td>
+    <td align="center"><strong>✨ Self-Improving Workspace</strong><br>Workspace improvement commands propose, list, and promote capabilities after runs so the workspace compounds over time.</td>
+    <td align="center"><strong>🌉 Bridge + Hosted Agents</strong><br>Hosted identity, integrations, MCP accounts, agent list/inspect/bind/bindings, and authority-backed activation remain optional.</td>
   </tr>
   <tr>
-    <td align="center"><strong>Deployable Workspace App</strong><br>Each workspace exports as a Next.js app with Vercel-ready project config, environment handoff, and deploy checks.</td>
-    <td align="center"><strong>Policy + Trace</strong><br>Every governed fork carries identity, policy, session memory, self-eval records, trace events, and optional signed authority.</td>
-    <td align="center"><strong>Human + Agent Co-Operability</strong><br>The builder, API, CLI, JSON outputs, skill manifests, and helper scripts expose the same workspace contracts.</td>
+    <td align="center"><strong>🚀 Deployable Workspace App</strong><br>Each workspace exports as a Next.js app with Vercel-ready project config, environment handoff, and deploy checks.</td>
+    <td align="center"><strong>🧾 Policy + Trace</strong><br>Every governed fork carries identity, policy, session memory, self-eval records, trace events, and optional signed authority.</td>
+    <td align="center"><strong>🤝 Human + Agent Co-Operability</strong><br>The builder, API, CLI, JSON outputs, skill manifests, and helper scripts expose the same workspace contracts.</td>
   </tr>
 </table>
 
