@@ -2,6 +2,14 @@
 
 This file defines agent behavior in this repository. Keep it aligned with `README.md` and the current CLI source.
 
+## Canonical Product Reality
+
+Growthub Local is the reference implementation of **Agent Workspace as Code (AWaC)**.
+
+AWaC means the **workspace is the owned artifact**: a forkable app, `growthub.config.json`, `.growthub-fork/` lifecycle state, Data Model objects, local builder, agent-readable contracts, helper scripts, runtime/deploy checks, and optional hosted authority moving together.
+
+The official topology reference is [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md). If agent guidance conflicts with that topology, update the guidance instead of inventing a side path.
+
 ## Canonical Product Mental Model
 
 Growthub Local turns a **repo, skill, starter, or kit** into a governed local environment that can be customized, kept current, and optionally connected to hosted authority.
@@ -31,7 +39,7 @@ Do not preserve older prose "for history" in active docs.
 
 ## Runtime And Validation
 
-Use the canonical runtime control surface:
+Use the canonical runtime control surface for this repo. Do not replace it with ad-hoc server/UI loops unless a maintainer explicitly assigns that path.
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -43,6 +51,19 @@ scripts/runtime-control.sh url
 ```
 
 Use `GH_SERVER_PORT` when the API is not on the script default.
+
+For exported governed workspaces, the starter app runtime is scoped to the exported artifact:
+
+```bash
+cd <workspace>/apps/workspace
+npm install
+npm run dev
+```
+
+Keep these two runtime lanes separate:
+
+- repo development and PR validation use `scripts/runtime-control.sh`
+- exported AWaC workspace smoke tests use the exported `apps/workspace` app
 
 ## Discovery Grounding
 
@@ -87,6 +108,34 @@ Every worker kit and every governed fork now ships the six architectural primiti
 6. `helpers/<verb>.{sh,mjs,py}` — safe shell tool layer
 
 Protocol reference: [`docs/SKILLS_MCP_DISCOVERY.md`](./docs/SKILLS_MCP_DISCOVERY.md). User-facing narrative: [`cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md`](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — this file ships into every exported workspace. CLI entry: `growthub skills {list,validate,session {init,show}}`.
+
+## Governed Workspace Topology
+
+When inspecting or editing the official custom workspace starter, use the topology contract before guessing from UI state:
+
+1. `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`
+2. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/kit.json`
+3. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/growthub.config.json`
+4. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-schema.js`
+5. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-data-model.js`
+6. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/route.js`
+7. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/data-model/page.jsx`
+
+`dataModel.objects[]` is the governed config-backed object surface. Data Model changes must preserve the `PATCH /api/workspace` validator boundary and must not create widgets or mutate canvas placement as a side effect.
+
+## Sandbox Environment Primitive
+
+The shipped `growthub-custom-workspace-starter-v1` kit includes `objectType: "sandbox-environment"` as a governed Data Model object. It is part of the AWaC runtime topology, not a separate ad-hoc data type.
+
+Sandbox Environment rows:
+
+- define where and how workloads run: `runLocality`, execution adapter, runtime, prompt, instructions, env-key references, network policy, lifecycle status, version, and optional `schedulerRegistryId`
+- store secret references only; provider/API keys resolve server-side or through local/hosted authority
+- execute through `POST /api/workspace/sandbox-run`
+- persist normalized run output into source-record storage and write `lastRunId`, `lastSourceId`, `lastResponse`, and status fields back to the row
+- are not View widget sources; selection and binding stay through governed source records
+
+The local agent host adapter is the handoff point for Codex and other local CLIs. Keep its command syntax and stdin prompt/instructions handoff aligned with `apps/workspace/lib/adapters/sandboxes/default-local-agent-host.js`.
 
 ## Worker-kit workspace convention
 

@@ -8,6 +8,8 @@ Do not add Cursor rules here. Edit `AGENTS.md` instead.
 
 See also:
 - `AGENTS.md` — authoritative agent contract
+- `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md` — AWaC workspace topology and authority boundary
+- `scripts/runtime-control.sh` — canonical repo runtime control surface
 - `CLAUDE.md` — Claude pointer (same target)
 - `.claude/skills/README.md` — Claude Code skill catalog authoring rules
 - `docs/SKILLS_MCP_DISCOVERY.md` — skills + MCP primitive reference

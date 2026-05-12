@@ -23,9 +23,9 @@ Current package grounding must always be read from:
 
 As of this branch, the local package manifests show:
 
-- `@growthub/cli@0.9.14`
-- `@growthub/create-growthub-local@0.5.14`
-- create package pin: `@growthub/cli@0.9.14`
+- `@growthub/cli@0.9.17`
+- `@growthub/create-growthub-local@0.5.17`
+- create package pin: `@growthub/cli@0.9.17`
 - `@growthub/api-contract@1.3.0-alpha.2`
 
 Never cite semver from memory.
@@ -163,6 +163,8 @@ It manages:
 
 The Data Model is not an isolated feature. It is how the workspace gives business objects, integration objects, and widget-consumable data the same governed shape.
 
+The shipped custom workspace starter now includes `objectType: "sandbox-environment"` in this same governed surface. Treat it as AWaC runtime configuration for local/serverless execution, not as a widget source and not as a separate parallel model.
+
 ### 4. Capability Layer
 
 Capabilities include:
@@ -280,6 +282,40 @@ Preserve these invariants:
 - Resolver additions must be fork-sync safe.
 
 If a future implementation weakens any of those invariants, it is probably breaking AWaC.
+
+## Sandbox Environment Primitive
+
+Sandbox Environment is the governed execution-environment object inside `dataModel.objects[]`.
+
+Grounded files:
+
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-data-model.js`
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-schema.js`
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/data-model/page.jsx`
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js`
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-adapters/route.js`
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/sandboxes/default-local-agent-host.js`
+- `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/docs/sandbox-environment-primitive.md`
+
+Preserve these invariants:
+
+- Sandbox rows are config-backed governed records, not new storage primitives.
+- `instructions` travel with `prompt` into the local adapter handoff.
+- `runLocality=local` executes through local adapters such as `local-agent-host`.
+- `runLocality=serverless` delegates through an API Registry scheduler reference.
+- `envKeyRefs[]` store named server-side references only; secrets never move into browser config.
+- `lifecycleStatus` and `version` support draft/live and previous-configuration UX without forking object type behavior.
+- `lastRunId`, `lastSourceId`, `lastResponse`, and status fields are observable run state written back after execution.
+- Normalized sandbox run output belongs in source-record sidecar storage with a source type accepted by the workspace source system.
+- Sandbox Environment rows are not directly bindable View widget sources; users consume normalized tested output through source records and governed references.
+
+The Codex thin local adapter syntax is intentionally explicit:
+
+```text
+codex exec --skip-git-repo-check --sandbox read-only -
+```
+
+Do not replace that handoff with a shell-specific one-off. The adapter owns command construction and stdin payload assembly.
 
 ## Resolver Drop-Zone
 
@@ -472,7 +508,7 @@ For workspace builder behavior, inspect:
 
 ## Runtime Control
 
-Use the canonical runtime surface:
+Use the canonical repo runtime surface:
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -486,6 +522,16 @@ scripts/runtime-control.sh url
 Use `GH_SERVER_PORT` when the API is not on the script default.
 
 Do not replace this with ad-hoc `pnpm --dir server` and `pnpm --dir ui` loops unless explicitly told.
+
+For an exported AWaC workspace, runtime is scoped to the exported kit:
+
+```bash
+cd <workspace>/apps/workspace
+npm install
+npm run dev
+```
+
+Do not confuse those lanes. `runtime-control.sh` is for the Growthub Local repo services and PR/runtime validation. `apps/workspace` is the exported governed workspace app that buyers and operators open locally.
 
 ## Testing And Validation
 

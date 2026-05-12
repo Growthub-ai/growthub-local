@@ -9,6 +9,8 @@ Do not add agent rules here. Edit `AGENTS.md` instead.
 See also:
 
 - [`AGENTS.md`](./AGENTS.md) — authoritative agent contract
+- [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — AWaC workspace topology and authority boundary
+- [`scripts/runtime-control.sh`](./scripts/runtime-control.sh) — canonical repo runtime control surface
 - [`.cursorrules`](./.cursorrules) — Cursor pointer (same target)
 - [`.claude/skills/README.md`](./.claude/skills/README.md) — Claude Code skill catalog authoring rules
 - [`docs/SKILLS_MCP_DISCOVERY.md`](./docs/SKILLS_MCP_DISCOVERY.md) — skills + MCP primitive reference
