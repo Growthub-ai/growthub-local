@@ -1,8 +1,8 @@
 # @growthub/cli
 
-`@growthub/cli` is the CLI control plane for Growthub Local.
+`@growthub/cli` is the local control plane for Growthub Local and Agent Workspace as Code (AWaC).
 
-It creates governed **Workspaces** from any source — repo, skill, kit, template, or starter. The Workspace is the top-level product object; this CLI is the local executor that creates, customizes, and inspects them.
+It turns repos, skills, starters, kits, and templates into governed **Workspaces** that can be exported, forked, inspected, operated by agents, kept current, and optionally connected to hosted authority. The Workspace is the top-level product object; the CLI is the executor that moves it through the lifecycle.
 
 ## Start here: create a governed Workspace
 
@@ -34,14 +34,26 @@ npm install -g @growthub/cli
 
 Reference contracts: [Workspace Config Contract V1](../docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](../docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace Builder Runtime V1](../docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 
+## CLI role in the governed workspace architecture
+
+Growthub Local keeps the Workspace as the owned artifact: a forkable app, `growthub.config.json`, `.growthub-fork/` lifecycle state, builder state, agent-readable contracts, and optional hosted authority.
+
+The CLI is the machine-readable path through that architecture:
+
+- **Export** a starter, repo, skill, template, or worker kit into a local Workspace.
+- **Register and inspect forks** so customization carries identity, policy, and trace instead of becoming an untracked copy.
+- **Operate ongoing lifecycle checks** for workspace status, QA, deploy readiness, upstream drift, surface detection, and portal preparation.
+- **Connect optional authority** through Growthub auth, bridge-backed integrations, hosted agents, and capability activation when local value is already clear.
+- **Expose the same contracts to agents and humans** through structured commands, JSON output, skill manifests, helper scripts, and the Workspace Builder.
+
 ## Profile-first setup (recommended)
 
 The guided flow is profile-first before deeper harness/workflow choices:
 
 ```bash
-npm create growthub-local@latest -- --profile gtm
-npm create growthub-local@latest -- --profile dx
-npm create growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile gtm
+npm create @growthub/growthub-local@latest -- --profile dx
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
 ```
 
 ## Discovery lanes
