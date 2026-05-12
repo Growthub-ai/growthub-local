@@ -23,9 +23,9 @@ Current package grounding must always be read from:
 
 As of this branch, the local package manifests show:
 
-- `@growthub/cli@0.9.17`
-- `@growthub/create-growthub-local@0.5.17`
-- create package pin: `@growthub/cli@0.9.17`
+- `@growthub/cli@0.9.18`
+- `@growthub/create-growthub-local@0.5.18`
+- create package pin: `@growthub/cli@0.9.18`
 - `@growthub/api-contract@1.3.0-alpha.2`
 
 Never cite semver from memory.
