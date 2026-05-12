@@ -65,15 +65,7 @@ growthub workspace status --json
 
 AWaC in Growthub Local is the full governed workspace stack:
 
-```mermaid
-graph TD
-    A["Source Layer<br/>repo · skills.sh skill · starter · worker kit · template"] --> B["Workspace Artifact<br/>Next.js app · growthub.config.json · .growthub-fork"]
-    B --> C["Builder + Object Layer<br/>dashboards · canvas · tabs · widgets · Data Model objects"]
-    C --> D["Capability Layer<br/>templates · workflows · pipelines · local intelligence · harnesses"]
-    D --> E["Integration Layer<br/>adapter catalog · API Registry · Data Sources · resolver drop-zone"]
-    E --> F["Operations Layer<br/>workspace status · QA · deploy check · upstream heal · surface list"]
-    F --> G["Authority Layer<br/>Growthub Bridge · hosted agents · MCP accounts · signed fork authority"]
-```
+![AWaC governed workspace stack](./docs/assets/awac-workspace-stack.jpg)
 
 The important point is that these are not separate products. Growthub Local turns them into one governed workspace:
 
