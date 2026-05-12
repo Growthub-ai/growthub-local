@@ -21,9 +21,11 @@ import {
   List,
   Mail,
   Plus,
+  Play,
   ShoppingCart,
   Star,
   Tag,
+  Terminal,
   ToggleLeft,
   Type,
   Users,
@@ -40,7 +42,10 @@ import {
   describeBindingLane,
   exportTableAsCsv,
   importTableFromCsv,
+  listSavedEnvRefs,
   listWorkspaceDataModelTables,
+  parseSandboxAllowList,
+  parseSandboxEnvRefs,
   replaceTableContent,
   updateTableCell,
 } from "@/lib/workspace-data-model";
@@ -50,13 +55,13 @@ import {
 const LUCIDE_MAP = {
   Activity, BarChart2, Box, Building2, Calendar, CheckSquare, Code2,
   Database, FileText, Globe, Hash, Layers, Link2, List, Mail, Plus,
-  ShoppingCart, Star, Tag, Type, Users, Zap,
+  ShoppingCart, Star, Tag, Terminal, Type, Users, Zap,
 };
 
 const ICON_PICKER_SET = [
   "Database", "Globe", "Code2", "Users", "CheckSquare", "Building2",
   "Tag", "Star", "Zap", "FileText", "Mail", "BarChart2",
-  "Layers", "Box", "Activity", "ShoppingCart",
+  "Layers", "Box", "Activity", "ShoppingCart", "Terminal",
 ];
 
 function LucideIcon({ name, size = 14, className, style }) {
@@ -92,6 +97,12 @@ const OBJECT_TYPE_DEFS = [
     description: "Action items, to-dos, and work tracking.",
   },
   {
+    type: "sandbox-environment",
+    icon: Terminal,
+    label: "Sandbox Environment",
+    description: "Localized py/node/bash terminal sandbox or local agent host (Claude / Codex / Cursor / Gemini / Hermes). Server-side execution with versioned run history. Cannot bind directly to a widget.",
+  },
+  {
     type: "custom",
     icon: Plus,
     label: "Custom",
@@ -102,12 +113,32 @@ const OBJECT_TYPE_DEFS = [
 // ─── Lane / badge meta ────────────────────────────────────────────────────────
 
 const OBJECT_TYPE_BADGE = {
-  "data-source":  { label: "Data Source",  cls: "dm-badge-datasource" },
-  "api-registry": { label: "API Registry", cls: "dm-badge-registry" },
-  people:         { label: "People",        cls: "dm-badge-people" },
-  tasks:          { label: "Tasks",         cls: "dm-badge-tasks" },
-  custom:         { label: "Custom",        cls: "dm-badge-manual" },
+  "data-source":         { label: "Data Source",         cls: "dm-badge-datasource" },
+  "api-registry":        { label: "API Registry",        cls: "dm-badge-registry" },
+  "sandbox-environment": { label: "Sandbox Environment", cls: "dm-badge-sandbox" },
+  people:                { label: "People",              cls: "dm-badge-people" },
+  tasks:                 { label: "Tasks",               cls: "dm-badge-tasks" },
+  custom:                { label: "Custom",              cls: "dm-badge-manual" },
 };
+
+const SANDBOX_ROW_FIELDS = new Set([
+  "Name",
+  "runLocality",
+  "schedulerRegistryId",
+  "runtime",
+  "adapter",
+  "agentHost",
+  "envRefs",
+  "networkAllow",
+  "allowList",
+  "command",
+  "timeoutMs",
+  "status",
+  "lastTested",
+  "lastResponse"
+]);
+
+const SANDBOX_RUNTIME_OPTIONS = ["python", "node", "bash"];
 
 const FIELD_TYPE_ICON_NAMES = {
   text: "Type", number: "Hash", date: "Calendar", url: "Link2", select: "List", boolean: "ToggleLeft",
@@ -263,17 +294,240 @@ function ReferenceSelect({ value, options, disabled, onChange }) {
   );
 }
 
-function DataModelRecordDrawer({ table, tables, rowIndex, row, saving, onClose, onSave }) {
+function SandboxRecordFields({
+  draft,
+  setDraft,
+  table,
+  tables,
+  workspaceConfig,
+  saving,
+  onSave,
+  rowIndex
+}) {
+  const [sandboxAdapters, setSandboxAdapters] = useState([]);
+  useEffect(() => {
+    fetch("/api/workspace/sandbox-adapters", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((payload) => setSandboxAdapters(Array.isArray(payload.adapters) ? payload.adapters : []))
+      .catch(() => setSandboxAdapters([]));
+  }, []);
+
+  const locality = String(draft.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
+  const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
+  const selectedEnvSlugs = useMemo(() => new Set(parseSandboxEnvRefs(draft.envRefs)), [draft.envRefs]);
+  const schedulerRelation = relationForColumn(table, "schedulerRegistryId");
+  const schedulerOptions = referenceOptions(tables, schedulerRelation);
+  const selectedAdapterMeta = sandboxAdapters.find((a) => a.id === String(draft.adapter || "").trim());
+
+  function patchFields(fields) {
+    setDraft((c) => ({ ...c, ...fields }));
+    onSave((cfg) => Object.entries(fields).reduce(
+      (acc, [column, value]) => updateTableCell(acc, table, rowIndex, column, value),
+      cfg
+    ));
+  }
+
+  function setRunLocality(next) {
+    const fields = { runLocality: next };
+    if (next === "serverless" && String(draft.adapter || "").trim() === "local-agent-host") {
+      fields.adapter = "local-process";
+    }
+    patchFields(fields);
+  }
+
+  function toggleEnvRef(slug) {
+    const next = new Set(selectedEnvSlugs);
+    if (next.has(slug)) next.delete(slug);
+    else next.add(slug);
+    patchFields({ envRefs: [...next].join(",") });
+  }
+
+  const netOn = ["true", "1", "on", "yes"].includes(String(draft.networkAllow || "").trim().toLowerCase());
+
+  return (
+    <div className="dm-sandbox-config">
+      <label className="dm-record-field">
+        <span>Name</span>
+        <input
+          value={draft.Name ?? ""}
+          disabled={!table.mutable || saving}
+          onChange={(event) => setDraft((c) => ({ ...c, Name: event.target.value }))}
+          onBlur={(event) => patchFields({ Name: event.target.value })}
+        />
+      </label>
+
+      <div className="dm-record-field">
+        <span>Where it runs</span>
+        <div className="dm-radio-row" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <label>
+            <input
+              type="radio"
+              name="sandbox-run-locality"
+              checked={locality === "local"}
+              disabled={!table.mutable || saving}
+              onChange={() => setRunLocality("local")}
+            />
+            {" "}Local — process sandbox or Paperclip local agent host on this machine
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="sandbox-run-locality"
+              checked={locality === "serverless"}
+              disabled={!table.mutable || saving}
+              onChange={() => setRunLocality("serverless")}
+            />
+            {" "}Serverless — delegate to scheduler URL (API Registry); no local agent CLI
+          </label>
+        </div>
+      </div>
+
+      {locality === "serverless" && (
+        <label className="dm-record-field">
+          <span>Scheduler (API Registry)</span>
+          <ReferenceSelect
+            value={draft.schedulerRegistryId || ""}
+            options={schedulerOptions}
+            disabled={!table.mutable || saving}
+            onChange={(nextValue) => patchFields({ schedulerRegistryId: nextValue })}
+          />
+          <span className="dm-cell-empty" style={{ fontSize: 12, marginTop: 4, display: "block" }}>
+            POST sends <code>growthub-sandbox-run-v1</code> JSON; auth from registry <code>authRef</code> (server env only).
+          </span>
+        </label>
+      )}
+
+      <label className="dm-record-field">
+        <span>Execution adapter</span>
+        <select
+          className="dm-reference-select"
+          value={String(draft.adapter || "local-process").trim() || "local-process"}
+          disabled={!table.mutable || saving}
+          onChange={(event) => patchFields({ adapter: event.target.value })}
+        >
+          {sandboxAdapters.length === 0 ? <option value="local-process">local-process</option> : sandboxAdapters.map((a) => (
+            <option key={a.id} value={a.id}>{a.label}</option>
+          ))}
+        </select>
+      </label>
+
+      {locality === "local" && String(draft.adapter || "").trim() === "local-agent-host" && (
+        <label className="dm-record-field">
+          <span>Agent host (Paperclip)</span>
+          <select
+            className="dm-reference-select"
+            value={draft.agentHost || ""}
+            disabled={!table.mutable || saving}
+            onChange={(event) => patchFields({ agentHost: event.target.value })}
+          >
+            <option value="">Select host…</option>
+            {(selectedAdapterMeta?.hostCatalog || []).map((h) => (
+              <option key={h.slug} value={h.slug}>{h.label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label className="dm-record-field">
+        <span>Runtime</span>
+        <select
+          className="dm-reference-select"
+          value={draft.runtime || "node"}
+          disabled={!table.mutable || saving}
+          onChange={(event) => patchFields({ runtime: event.target.value })}
+        >
+          {SANDBOX_RUNTIME_OPTIONS.map((rt) => <option key={rt} value={rt}>{rt}</option>)}
+        </select>
+      </label>
+
+      <div className="dm-record-field">
+        <span>Env key references</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {savedEnvRefs.length === 0 ? (
+            <span className="dm-cell-empty">Add keys under Settings → APIs & Webhooks.</span>
+          ) : savedEnvRefs.map((ref) => (
+            <button
+              key={ref.endpointRef}
+              type="button"
+              className={`dm-btn-ghost${selectedEnvSlugs.has(ref.endpointRef) ? " dm-chip-active" : ""}`}
+              style={{ padding: "2px 8px", borderRadius: 999, fontSize: 12 }}
+              disabled={!table.mutable || saving}
+              onClick={() => toggleEnvRef(ref.endpointRef)}
+            >
+              {ref.endpointRef}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="dm-record-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={netOn}
+          disabled={!table.mutable || saving}
+          onChange={(event) => patchFields({ networkAllow: event.target.checked ? "true" : "false" })}
+        />
+        <span>Network allow-list mode (locals see <code>GROWTHUB_SANDBOX_NET_*</code>)</span>
+      </label>
+
+      <label className="dm-record-field">
+        <span>Allow list (comma-separated hosts)</span>
+        <input
+          value={draft.allowList ?? ""}
+          disabled={!table.mutable || saving}
+          onChange={(event) => setDraft((c) => ({ ...c, allowList: event.target.value }))}
+          onBlur={(event) => patchFields({ allowList: event.target.value })}
+        />
+      </label>
+
+      <label className="dm-record-field">
+        <span>Command / prompt</span>
+        <textarea
+          rows={6}
+          value={draft.command ?? ""}
+          disabled={!table.mutable || saving}
+          onChange={(event) => setDraft((c) => ({ ...c, command: event.target.value }))}
+          onBlur={(event) => patchFields({ command: event.target.value })}
+        />
+      </label>
+
+      <label className="dm-record-field">
+        <span>timeoutMs</span>
+        <input
+          type="number"
+          min={1000}
+          max={600000}
+          value={draft.timeoutMs ?? ""}
+          disabled={!table.mutable || saving}
+          onChange={(event) => setDraft((c) => ({ ...c, timeoutMs: event.target.value }))}
+          onBlur={(event) => patchFields({ timeoutMs: event.target.value })}
+        />
+      </label>
+
+      <label className="dm-record-field">
+        <span>lastResponse</span>
+        <textarea rows={10} readOnly value={draft.lastResponse ?? ""} />
+      </label>
+    </div>
+  );
+}
+
+function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, saving, onClose, onSave }) {
   const [draft, setDraft] = useState(row || {});
   const [testing, setTesting] = useState(false);
   const [testMessage, setTestMessage] = useState("");
+  const [sandboxRunning, setSandboxRunning] = useState(false);
+  const [sandboxMessage, setSandboxMessage] = useState("");
 
   useEffect(() => {
     setDraft(row || {});
     setTestMessage("");
+    setSandboxMessage("");
   }, [row, rowIndex]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
+
+  const isSandbox = table.objectType === "sandbox-environment";
 
   function updateField(column, value) {
     setDraft((current) => ({ ...current, [column]: value }));
@@ -314,6 +568,43 @@ function DataModelRecordDrawer({ table, tables, rowIndex, row, saving, onClose, 
     }
   }
 
+  async function runSandbox() {
+    if (!table.objectId) {
+      setSandboxMessage("Missing object id for this sandbox table.");
+      return;
+    }
+    const rowName = String(draft?.Name ?? "").trim();
+    if (!rowName) {
+      setSandboxMessage("Row Name is required.");
+      return;
+    }
+    setSandboxRunning(true);
+    setSandboxMessage("");
+    try {
+      const res = await fetch("/api/workspace/sandbox-run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: table.objectId, name: rowName }),
+      });
+      const payload = await res.json();
+      const responseText = JSON.stringify(payload.response ?? payload, null, 2);
+      const status = String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
+      const testedAt = payload.response?.ranAt || new Date().toISOString();
+      onSave((config) => {
+        let next = updateTableCell(config, table, rowIndex, "status", status);
+        next = updateTableCell(next, table, rowIndex, "lastTested", testedAt);
+        next = updateTableCell(next, table, rowIndex, "lastResponse", responseText);
+        return next;
+      });
+      setDraft((current) => ({ ...current, status, lastTested: testedAt, lastResponse: responseText }));
+      setSandboxMessage(payload.ok ? "Sandbox run recorded" : (payload.response?.error || payload.error || "Run failed"));
+    } catch (err) {
+      setSandboxMessage(err.message || "Sandbox run failed");
+    } finally {
+      setSandboxRunning(false);
+    }
+  }
+
   return (
     <>
       <div className="dm-record-backdrop" onClick={onClose} />
@@ -336,8 +627,28 @@ function DataModelRecordDrawer({ table, tables, rowIndex, row, saving, onClose, 
             {testMessage && <span>{testMessage}</span>}
           </div>
         )}
+        {isSandbox && (
+          <div className="dm-record-testbar">
+            <ConnectionPill value={draft.status} />
+            <button type="button" className="dm-btn-primary-sm" disabled={sandboxRunning || saving || !String(draft.Name || "").trim()} onClick={runSandbox}>
+              {sandboxRunning ? "Running…" : (<><Play size={13} aria-hidden /> Run sandbox</>)}
+            </button>
+            {sandboxMessage && <span>{sandboxMessage}</span>}
+          </div>
+        )}
         <div className="dm-record-fields">
-          {table.columns.map((column) => {
+          {isSandbox ? (
+            <SandboxRecordFields
+              draft={draft}
+              setDraft={setDraft}
+              table={table}
+              tables={tables}
+              workspaceConfig={workspaceConfig}
+              saving={saving}
+              onSave={onSave}
+              rowIndex={rowIndex}
+            />
+          ) : table.columns.map((column) => {
             const value = String(draft?.[column] ?? "");
             const large = column === "lastResponse" || value.length > 120;
             const relation = relationForColumn(table, column);
@@ -377,7 +688,7 @@ function DataModelRecordDrawer({ table, tables, rowIndex, row, saving, onClose, 
   );
 }
 
-function DataModelTableSurface({ table, tables, saving, onSave }) {
+function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave }) {
   const [selectedRow, setSelectedRow] = useState(null);
   const [addingField, setAddingField] = useState(false);
   const [fieldName, setFieldName] = useState("");
@@ -529,6 +840,7 @@ function DataModelTableSurface({ table, tables, saving, onSave }) {
       <DataModelRecordDrawer
         table={table}
         tables={tables}
+        workspaceConfig={workspaceConfig}
         rowIndex={selectedRow}
         row={selectedRecord}
         saving={saving}
@@ -853,7 +1165,7 @@ export default function DataModelPage() {
                   </div>
                   <SourceValidationBanner table={selectedTable} />
                 </div>
-                <DataModelTableSurface table={selectedTable} tables={tables} saving={saving} onSave={save} />
+                <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} />
               </section>
             )}
           </div>

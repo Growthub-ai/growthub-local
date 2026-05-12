@@ -88,6 +88,8 @@ Data Source objects are selectable only when at least one row is:
 
 This ensures widgets bind only to tested, configured sources with a known returned shape.
 
+Sandbox Environment rows are execution records, **not** widget sources. Workspace Builder excludes `objectType: "sandbox-environment"` from source pickers. For serverless sandbox runs, reuse an API Registry integration as the **scheduler webhook** by setting `schedulerRegistryId` on the sandbox row to that row’s `integrationId` (`runLocality: serverless`). See `sandbox-environment-primitive.md` in this folder.
+
 ## LeadShark Example
 
 LeadShark uses:

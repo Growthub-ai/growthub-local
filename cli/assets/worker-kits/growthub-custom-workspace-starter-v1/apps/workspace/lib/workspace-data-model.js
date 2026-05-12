@@ -370,6 +370,37 @@ const OBJECT_TYPE_PRESETS = {
     columns: ["Name", "Status", "DueDate", "Assignee", "Priority"],
     relations: []
   },
+  "sandbox-environment": {
+    label: "Sandbox Environment",
+    icon: "Terminal",
+    description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. Not a widget binding source.",
+    columns: [
+      "Name",
+      "runLocality",
+      "schedulerRegistryId",
+      "runtime",
+      "adapter",
+      "agentHost",
+      "envRefs",
+      "networkAllow",
+      "allowList",
+      "command",
+      "timeoutMs",
+      "status",
+      "lastTested",
+      "lastResponse"
+    ],
+    relations: [
+      {
+        id: "scheduler-registry-binding",
+        name: "Scheduler (serverless)",
+        field: "schedulerRegistryId",
+        targetObjectType: "api-registry",
+        type: "belongs-to",
+        description: "When runLocality is serverless, POST /api/workspace/sandbox-run sends growthub-sandbox-run-v1 to this API Registry record (METHOD, baseUrl, endpoint, authRef resolved server-side). Use for Supabase Edge URL, QStash forwarder, Vercel-exposed webhook, cron targets, etc."
+      }
+    ]
+  },
   "custom": {
     label: "Custom",
     icon: "Plus",
@@ -510,6 +541,73 @@ function describeBindingLane(binding) {
   return "manual";
 }
 
+/**
+ * Saved env-key references — name-only projection of workspace integrations[].
+ *
+ * Used by the sandbox-environment drawer's env-ref multi-select. The browser
+ * receives the `endpointRef` slug only (never the secret value); the sandbox
+ * run route resolves the slug to a server-side env value using the same
+ * `envKeyCandidates(authRef)` pattern as `test-api-record/route.js`.
+ *
+ * Returns: [{ id, endpointRef, kind, hasSecret }]
+ */
+function listSavedEnvRefs(workspaceConfig) {
+  const integrations = Array.isArray(workspaceConfig?.integrations) ? workspaceConfig.integrations : [];
+  return integrations
+    .filter((entry) => entry?.sourceType === "custom-api-webhooks" && typeof entry.endpointRef === "string" && entry.endpointRef.trim())
+    .map((entry) => ({
+      id: entry.id || entry.endpointRef,
+      endpointRef: entry.endpointRef,
+      kind: entry.kind === "webhook" ? "webhook" : "api",
+      hasSecret: entry.hasSecret === true
+    }));
+}
+
+/**
+ * Parse a sandbox-environment row's `envRefs` column into a clean string array.
+ * Stored as a comma-separated string in the row to keep the column flat under
+ * the existing governed Data Model schema; rendered as a multi-select chip
+ * group in the drawer. The server reads the same comma-separated form.
+ */
+function parseSandboxEnvRefs(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Parse a sandbox-environment row's `allowList` column into a clean array of
+ * domain hostnames. Stored as comma-separated string for governed flatness;
+ * the run route enforces the list when `networkAllow` is truthy.
+ */
+function parseSandboxAllowList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean);
+  }
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Stable sourceId for a sandbox-environment row's run history sidecar.
+ * Keyed by object id + slugified Name so the key survives reorder of rows
+ * inside the same object. The sandbox-run route uses this id to read/write
+ * `growthub.source-records.json`.
+ */
+function sandboxRunSourceId(objectId, name) {
+  const slug = String(name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!objectId || !slug) return null;
+  return `sandbox:${objectId}:${slug}`;
+}
+
 function describeBindingMode(binding) {
   const lane = describeBindingLane(binding);
   if (lane === "data-source") return { label: "Data source scope", description: "Integration reference selected in the existing widget source flow. Dynamic data resolves through the governed server-side integration path." };
@@ -531,7 +629,11 @@ export {
   duplicateTableRow,
   exportTableAsCsv,
   importTableFromCsv,
+  listSavedEnvRefs,
   listWorkspaceDataModelTables,
+  parseSandboxAllowList,
+  parseSandboxEnvRefs,
   replaceTableContent,
+  sandboxRunSourceId,
   updateTableCell
 };
