@@ -498,10 +498,16 @@ if (command === "awac-probe" || command === "workspace-api-probe") {
 
 if (command === "e2e-workspace-sandbox") {
   const probe = path.join(repoRoot, "scripts", "e2e-workspace-sandbox-api-probe.mjs");
+  const demoHome = resolveDemoHome();
   const result = spawnSync(process.execPath, [probe, ...rest], {
     stdio: "inherit",
     cwd: repoRoot,
-    env: { ...getBaseEnv() },
+    env: {
+      ...getBaseEnv(),
+      ...process.env,
+      /** Same default tree as interactive / installer preview — temp workspace + probes stay under one profile. */
+      CLI_DEMO_HOME: process.env.CLI_DEMO_HOME?.trim() || demoHome,
+    },
   });
   process.exit(result.status ?? 1);
 }
