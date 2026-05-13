@@ -8,9 +8,18 @@
  *
  * Optional: if cli/dist/index.js exists (demo / release layout), prints its --version.
  *
- * Usage (from repo root):
+ * Usage (from repo root) — **canonical** (no monorepo `pnpm build`; no fake smoke):
+ *   bash scripts/demo-cli.sh e2e-workspace-sandbox
+ *   # or:
  *   node scripts/e2e-workspace-sandbox-api-probe.mjs
  *   PORT=3999 node scripts/e2e-workspace-sandbox-api-probe.mjs
+ *
+ * Sandbox rows are written with **PATCH /api/workspace** (`dataModel` only — there is no separate
+ * sandbox PATCH route). **POST /api/workspace/sandbox-run** executes the persisted row; the Data Model
+ * drawer / grid read the same `growthub.config.json` the probes mutate.
+ *
+ * Temp app + npm install live under `${CLI_DEMO_HOME:-$TMPDIR/growthub-cli-demo}/e2e-workspace-sandbox/`
+ * when invoked via `demo-cli.sh` (free preview profile).
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -167,7 +176,10 @@ async function main() {
     );
   }
 
-  const demoHome = process.env.CLI_DEMO_HOME?.trim() || path.join(os.tmpdir(), "growthub-e2e-workspace-sandbox");
+  const profileRoot = process.env.CLI_DEMO_HOME?.trim()
+    ? path.resolve(process.env.CLI_DEMO_HOME.trim())
+    : path.join(os.tmpdir(), "growthub-cli-demo");
+  const demoHome = path.join(profileRoot, "e2e-workspace-sandbox");
   fs.mkdirSync(demoHome, { recursive: true });
   const tmp = fs.mkdtempSync(path.join(demoHome, "ws-copy-"));
 
@@ -253,6 +265,31 @@ async function main() {
       }),
     });
     assert(goodPatch.status === 200, `expected 200 for valid PATCH, got ${goodPatch.status} ${await goodPatch.text()}`);
+
+    // --- Positive: GET /api/workspace round-trip (same surface the sidecar / UI consume) ---
+    const getCfg = await fetch(`${base}/api/workspace`, { cache: "no-store" });
+    assert(getCfg.ok, `GET /api/workspace expected 2xx, got ${getCfg.status}`);
+    const getPayload = await getCfg.json();
+    const objects = getPayload.workspaceConfig?.dataModel?.objects || [];
+    const sandObj = objects.find((o) => o.id === "sandboxes-e2e");
+    assert(sandObj, "GET workspaceConfig must include sandboxes-e2e object after PATCH");
+    const probeRow = (sandObj.rows || []).find((r) => String(r.Name || "").trim() === "api-probe-row");
+    assert(probeRow, "GET must return api-probe-row");
+    assert(
+      String(probeRow.adapter || "").trim() === "local-intelligence",
+      `GET row.adapter expected local-intelligence, got ${probeRow.adapter}`,
+    );
+    assert(String(probeRow.localModel || "").includes("gemma"), "GET row.localModel must echo PATCH");
+
+    // --- Negative: POST sandbox-run for unknown row name (customer-safe 404) ---
+    const missingRow = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "definitely-not-a-row" }),
+    });
+    assert(missingRow.status === 404, `expected 404 for unknown sandbox row, got ${missingRow.status}`);
+    const missingJson = await missingRow.json();
+    assert(String(missingJson.error || "").includes("no sandbox row"), "404 body should name missing row");
 
     // --- Adapter catalog includes local-intelligence ---
     const adaptersRes = await fetch(`${base}/api/workspace/sandbox-adapters`);
