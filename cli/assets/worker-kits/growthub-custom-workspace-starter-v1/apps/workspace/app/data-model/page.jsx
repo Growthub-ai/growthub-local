@@ -53,6 +53,42 @@ import {
   updateTableCell,
 } from "@/lib/workspace-data-model";
 
+/**
+ * Editable sandbox columns compared against the last persisted row.
+ * Run sandbox is gated until drift clears (blur-to-save fields match workspace file).
+ */
+const SANDBOX_DIRTY_COMPARE_KEYS = [
+  "Name",
+  "lifecycleStatus",
+  "version",
+  "runLocality",
+  "schedulerRegistryId",
+  "runtime",
+  "adapter",
+  "agentHost",
+  "localModel",
+  "localEndpoint",
+  "intelligenceAdapterMode",
+  "envRefs",
+  "networkAllow",
+  "allowList",
+  "instructions",
+  "command",
+  "timeoutMs",
+];
+
+function sandboxCellNorm(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function isSandboxConfigDrifted(draft, savedRow) {
+  if (!savedRow || !draft) return false;
+  return SANDBOX_DIRTY_COMPARE_KEYS.some(
+    (key) => sandboxCellNorm(draft[key]) !== sandboxCellNorm(savedRow[key]),
+  );
+}
+
 // ─── Icon system ─────────────────────────────────────────────────────────────
 
 const LUCIDE_MAP = {
@@ -524,7 +560,8 @@ function SandboxRecordFields({
   sandboxHistoryMessage,
   loadingSandboxHistory,
   onLoadSandboxHistory,
-  onExpandLastResponse
+  onExpandLastResponse,
+  configDirty,
 }) {
   const [sandboxAdapters, setSandboxAdapters] = useState([]);
   useEffect(() => {
@@ -568,6 +605,12 @@ function SandboxRecordFields({
 
   return (
     <div className="dm-sandbox-config">
+      {configDirty && (
+        <p className="dm-sandbox-dirty-note" role="status">
+          <strong>Unsaved edits.</strong> Blur each field to persist to the workspace file. Run sandbox stays disabled
+          until the header shows Saved to workspace — the same persisted-record guard used in products like Airtable and Twenty CRM.
+        </p>
+      )}
       <DrawerSection title="Identity & Mode">
         <label className="dm-record-field">
           <span>Name</span>
@@ -580,13 +623,14 @@ function SandboxRecordFields({
         </label>
 
         <label className="dm-record-field">
-          <span>Status mode</span>
+          <span>Record lifecycle</span>
           <StaticSelect
             value={String(draft.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft"}
             disabled={!table.mutable || saving}
             options={["draft", "live"]}
             onChange={(nextValue) => patchFields({ lifecycleStatus: nextValue })}
           />
+          <span className="dm-field-hint">Draft vs live for this row. Connection pill above is the last run health.</span>
         </label>
 
         <label className="dm-record-field">
@@ -666,7 +710,8 @@ function SandboxRecordFields({
         )}
 
         {locality === "local" && String(draft.adapter || "").trim() === "local-intelligence" && (
-          <div className="dm-sandbox-local-intel" style={{ display: "grid", gap: 10 }}>
+          <div className="dm-sandbox-subpanel" role="region" aria-label="Local model configuration">
+            <p className="dm-sandbox-subpanel-title">Local model (OpenAI-compatible)</p>
             <label className="dm-record-field">
               <span>Concrete model id</span>
               <input
@@ -676,8 +721,8 @@ function SandboxRecordFields({
                 onChange={(event) => setDraft((c) => ({ ...c, localModel: event.target.value }))}
                 onBlur={(event) => patchFields({ localModel: event.target.value })}
               />
-              <span className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
-                Open-ended tag (same as CLI Local Intelligence). Falls back to env <code>NATIVE_INTELLIGENCE_LOCAL_MODEL</code> / <code>OLLAMA_MODEL</code>.
+              <span className="dm-field-hint">
+                Same as CLI Local Intelligence. Falls back to env <code>NATIVE_INTELLIGENCE_LOCAL_MODEL</code> / <code>OLLAMA_MODEL</code>.
               </span>
             </label>
             <label className="dm-record-field">
@@ -696,16 +741,16 @@ function SandboxRecordFields({
                 value={String(draft.intelligenceAdapterMode || "ollama").trim().toLowerCase()}
                 disabled={!table.mutable || saving}
                 options={[
-                  { value: "ollama", label: "ollama (OLLAMA_BASE_URL + /v1/chat/completions)" },
-                  { value: "lmstudio", label: "lmstudio (LMSTUDIO_BASE_URL)" },
-                  { value: "vllm", label: "vllm (VLLM_BASE_URL required)" },
-                  { value: "custom-openai-compatible", label: "custom (use Chat completions URL above)" },
+                  { value: "ollama", label: "ollama — OLLAMA_BASE_URL" },
+                  { value: "lmstudio", label: "lmstudio — LMSTUDIO_BASE_URL" },
+                  { value: "vllm", label: "vllm — VLLM_BASE_URL" },
+                  { value: "custom-openai-compatible", label: "custom — full chat completions URL" },
                 ]}
                 onChange={(nextValue) => patchFields({ intelligenceAdapterMode: nextValue })}
               />
             </label>
-            <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 0 }}>
-              Uses <strong>Instructions</strong> + <strong>Command</strong> as the user task (same merge as agent-host). Tool intents in the JSON response are proposals only — the workspace does not execute them.
+            <p className="dm-field-hint dm-sandbox-subpanel-foot">
+              <strong>Instructions</strong> + <strong>Command</strong> form the task (same merge as agent-host). JSON <code>toolIntents</code> are proposals only.
             </p>
           </div>
         )}
@@ -878,6 +923,8 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
   const isSandbox = table.objectType === "sandbox-environment";
+  const sandboxConfigDrift = isSandbox && isSandboxConfigDrifted(draft, row);
+  const lifecycleLive = String(draft.lifecycleStatus || "draft").trim().toLowerCase() === "live";
 
   function updateField(column, value) {
     setDraft((current) => ({ ...current, [column]: value }));
@@ -1011,16 +1058,44 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             <button type="button" className="dm-btn-primary-sm" disabled={testing || saving} onClick={testApiRecord}>
               {testing ? "Testing…" : "Test connection"}
             </button>
-            {testMessage && <span>{testMessage}</span>}
+            {testMessage && <span className="dm-record-testbar-hint">{testMessage}</span>}
           </div>
         )}
         {isSandbox && (
-          <div className="dm-record-testbar">
-            <ConnectionPill value={draft.status} />
-            <button type="button" className="dm-btn-primary-sm" disabled={sandboxRunning || saving || !String(draft.Name || "").trim()} onClick={runSandbox}>
+          <div className="dm-record-testbar dm-record-testbar-sandbox">
+            <div className="dm-record-testbar-cluster" aria-label="Sandbox row status">
+              <ConnectionPill value={draft.status} />
+              <span
+                className={`dm-lifecycle-pill ${lifecycleLive ? "live" : "draft"}`}
+                title="Record lifecycle — same value as the Record lifecycle control in the form."
+              >
+                {lifecycleLive ? "Live" : "Draft"}
+              </span>
+              <span
+                className={`dm-config-state ${sandboxConfigDrift ? "dirty" : "saved"}`}
+                title={
+                  sandboxConfigDrift
+                    ? "Edits differ from the last workspace save (blur fields to persist)."
+                    : "Form matches the persisted workspace row."
+                }
+              >
+                {sandboxConfigDrift ? "Editing" : "Saved to workspace"}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="dm-btn-primary-sm"
+              disabled={sandboxRunning || saving || !String(draft.Name || "").trim() || sandboxConfigDrift}
+              title={
+                sandboxConfigDrift
+                  ? "Save each field (blur) until this strip shows Saved to workspace, then run."
+                  : undefined
+              }
+              onClick={runSandbox}
+            >
               {sandboxRunning ? "Running…" : (<><Play size={13} aria-hidden /> Run sandbox</>)}
             </button>
-            {sandboxMessage && <span>{sandboxMessage}</span>}
+            {sandboxMessage && <span className="dm-record-testbar-hint">{sandboxMessage}</span>}
           </div>
         )}
         <div className="dm-record-fields">
@@ -1039,6 +1114,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
               loadingSandboxHistory={loadingSandboxHistory}
               onLoadSandboxHistory={loadSandboxHistory}
               onExpandLastResponse={expandLastResponse}
+              configDirty={sandboxConfigDrift}
             />
           ) : groupRecordColumns(table.columns || []).map((section) => (
             <DrawerSection key={section.title} title={section.title}>

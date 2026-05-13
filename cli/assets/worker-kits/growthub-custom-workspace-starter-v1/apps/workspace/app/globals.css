@@ -4052,8 +4052,21 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-record-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid #edf0f3; }
 .dm-record-drawer-head p { margin: 0 0 3px; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .dm-record-drawer-head h2 { margin: 0; color: #111827; font-size: 16px; font-weight: 650; }
-.dm-record-testbar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid #edf0f3; background: #fbfdff; }
-.dm-record-testbar > span:last-child { min-width: 0; color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-record-testbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 18px; border-bottom: 1px solid #edf0f3; background: #fbfdff; }
+.dm-record-testbar-sandbox { align-items: flex-start; }
+.dm-record-testbar-cluster { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; }
+.dm-record-testbar-hint { min-width: 0; flex: 1 1 140px; color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-lifecycle-pill { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; letter-spacing: 0.02em; }
+.dm-lifecycle-pill.draft { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.dm-lifecycle-pill.live { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.dm-config-state { font-size: 11px; font-weight: 650; }
+.dm-config-state.saved { color: #047857; }
+.dm-config-state.dirty { color: #b45309; }
+.dm-field-hint { font-size: 11px; color: #64748b; line-height: 1.4; margin-top: 3px; display: block; }
+.dm-sandbox-dirty-note { margin: 0 0 4px; padding: 9px 11px; border-radius: 7px; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; font-size: 11px; line-height: 1.45; }
+.dm-sandbox-subpanel { display: grid; gap: 8px; margin-top: 4px; padding: 10px 11px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; }
+.dm-sandbox-subpanel-title { margin: 0; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.04em; }
+.dm-sandbox-subpanel-foot { margin: 0; }
 .dm-record-fields { display: grid; gap: 8px; padding: 14px 16px 28px; overflow-y: auto; }
 .dm-record-field { display: grid; gap: 5px; }
 .dm-record-field span { color: #475569; font-size: 11px; font-weight: 650; }
