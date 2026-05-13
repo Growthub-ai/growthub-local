@@ -47,11 +47,14 @@ import {
   importTableFromCsv,
   listSavedEnvRefs,
   listWorkspaceDataModelTables,
+  normalizeManualObjects,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   replaceTableContent,
   updateTableCell,
 } from "@/lib/workspace-data-model";
+import { ObjectSchemaPanel } from "@/app/components/data-model/ObjectSchemaPanel";
+import { RecordDrawer } from "@/app/components/data-model/RecordDrawer";
 
 // ─── Icon system ─────────────────────────────────────────────────────────────
 
@@ -254,6 +257,24 @@ function formatCellValue(value, column) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   if (column === "lastResponse" && text.length > 90) return `${text.slice(0, 90)}…`;
   return text;
+}
+
+function columnLabelForTable(table, column) {
+  const f = table.schemaFields?.find((x) => x.id === column);
+  return f?.label || column;
+}
+
+function displaySchemaRefInCell(table, tables, column, cellValue) {
+  const field = table.schemaFields?.find((f) => f.id === column);
+  if (!field?.refConfig || !cellValue) return "—";
+  const target = tables.find((t) => t.objectId === field.refConfig.targetObjectId);
+  if (!target) return String(cellValue);
+  const displayFieldId = field.refConfig.displayField;
+  const targetRow = (target.rows || []).find((r) => r.id === String(cellValue));
+  if (!targetRow) return String(cellValue);
+  const display = targetRow[displayFieldId];
+  if (display !== undefined && display !== null && display !== "") return String(display);
+  return String(cellValue);
 }
 
 function ConnectionPill({ value }) {
@@ -995,6 +1016,14 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
               onLoadSandboxHistory={loadSandboxHistory}
               onExpandLastResponse={expandLastResponse}
             />
+          ) : table.schemaFields?.length ? (
+            <RecordDrawer
+              record={draft}
+              objectSchema={{ fields: table.schemaFields, sections: table.schemaSections }}
+              allObjects={normalizeManualObjects(workspaceConfig)}
+              disabled={!table.mutable || saving}
+              onFieldUpdate={(fieldId, val) => updateField(fieldId, val)}
+            />
           ) : groupRecordColumns(table.columns || []).map((section) => (
             <DrawerSection key={section.title} title={section.title}>
               {section.columns.map((column) => (
@@ -1073,6 +1102,9 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
 
   return (
     <div className="dm-db-surface">
+      {table.storage === "manual-object" ? (
+        <ObjectSchemaPanel table={table} workspaceConfig={workspaceConfig} saving={saving} onSave={onSave} />
+      ) : null}
       {!table.mutable && (
         <div className="dm-source-notice">
           <AlertCircle size={13} />
@@ -1119,11 +1151,11 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
               <th className="dm-db-rownum">#</th>
               {table.columns.map((column) => (
                 <th key={column}>
-                  <span className="dm-db-field-type"><LucideIcon name={FIELD_TYPE_ICON_NAMES[inferFieldType(column)] || "Type"} size={12} /></span>
-                  {column}
+                  <span className="dm-db-field-type"><LucideIcon name={FIELD_TYPE_ICON_NAMES[inferFieldType(columnLabelForTable(table, column))] || "Type"} size={12} /></span>
+                  {columnLabelForTable(table, column)}
                 </th>
               ))}
-              {table.mutable && (
+              {table.mutable && !table.schemaFields?.length && (
                 <th className="dm-db-add-field">
                   {addingField ? (
                     <input
@@ -1151,6 +1183,16 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
               <tr key={rowIndex} className={selectedRow === rowIndex ? "selected" : ""} onClick={() => setSelectedRow(rowIndex)}>
                 <td className="dm-db-rownum">{rowIndex + 1}</td>
                 {table.columns.map((column) => {
+                  const sf = table.schemaFields?.find((f) => f.id === column);
+                  if (sf?.type === "ref" && sf.refConfig) {
+                    return (
+                      <td key={column}>
+                        <span className={row?.[column] ? "" : "dm-cell-empty"}>
+                          {displaySchemaRefInCell(table, tables, column, row?.[column])}
+                        </span>
+                      </td>
+                    );
+                  }
                   const relation = relationForColumn(table, column);
                   const options = referenceOptions(tables, relation);
                   return (
@@ -1171,13 +1213,13 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                     )}
                   </td>
                 );})}
-                {table.mutable && <td className="dm-db-empty-cell" />}
+                {table.mutable && !table.schemaFields?.length && <td className="dm-db-empty-cell" />}
               </tr>
             ))}
             {table.mutable && (
               <tr className="dm-db-new-row" onClick={() => onSave((config) => addTableRow(config, table))}>
                 <td className="dm-db-rownum">+</td>
-                <td colSpan={Math.max(table.columns.length, 1) + 1}>Add record</td>
+                <td colSpan={Math.max(table.columns.length, 1) + (table.mutable && !table.schemaFields?.length ? 1 : 0)}>Add record</td>
               </tr>
             )}
           </tbody>

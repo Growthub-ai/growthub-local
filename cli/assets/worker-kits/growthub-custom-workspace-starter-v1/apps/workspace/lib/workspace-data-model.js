@@ -163,9 +163,69 @@ function normalizeManualObjects(workspaceConfig) {
   return Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
 }
 
+function objectUsesFieldSchema(object) {
+  return Array.isArray(object.fields) && object.fields.length > 0;
+}
+
+function orderedVisibleFields(object) {
+  const all = (object.fields || []).filter((f) => f && f.isVisible !== false);
+  const order = Array.isArray(object.fieldSettings?.order) ? object.fieldSettings.order : [];
+  const byId = new Map(all.map((f) => [f.id, f]));
+  const seen = new Set();
+  const out = [];
+  for (const id of order) {
+    const f = byId.get(id);
+    if (f) {
+      out.push(f);
+      seen.add(id);
+    }
+  }
+  for (const f of all) {
+    if (!seen.has(f.id)) out.push(f);
+  }
+  return out;
+}
+
+function mergeFlatRowFromEnvelope(row, columnIds) {
+  if (row && typeof row === "object" && row.data && typeof row.data === "object" && !Array.isArray(row.data)) {
+    const id = typeof row.id === "string" && row.id ? row.id : "";
+    const merged = { id, ...row.data };
+    for (const col of columnIds) {
+      if (merged[col] === undefined) merged[col] = "";
+    }
+    return merged;
+  }
+  const id = typeof row?.id === "string" ? row.id : "";
+  const merged = { id, ...row };
+  for (const col of columnIds) {
+    if (merged[col] === undefined) merged[col] = "";
+  }
+  return merged;
+}
+
+function flatRowsToEnvelopeRows(rows, columnIds) {
+  return rows.map((flat, idx) => {
+    const id = typeof flat.id === "string" && flat.id
+      ? flat.id
+      : `row_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+    const data = {};
+    for (const col of columnIds) {
+      data[col] = flat[col] ?? "";
+    }
+    return { id, data };
+  });
+}
+
 function deriveManualObjectTable(object) {
-  const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
-  const rows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+  const useSchema = objectUsesFieldSchema(object);
+  const fieldsOrdered = useSchema ? orderedVisibleFields(object) : [];
+  const columns = useSchema
+    ? fieldsOrdered.map((f) => f.id)
+    : (Array.isArray(object.columns) ? object.columns.filter(Boolean) : []);
+  const rawRows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+  const rows = useSchema
+    ? rawRows.map((row) => mergeFlatRowFromEnvelope(row, columns))
+    : rawRows;
   const source = object.source || object.label || object.name || "Manual object";
   return {
     id: `manual-object:${object.id || source}`,
@@ -181,6 +241,9 @@ function deriveManualObjectTable(object) {
     storage: "manual-object",
     objectId: object.id,
     widgetRefs: [],
+    rowStorage: useSchema ? "envelope" : "flat",
+    schemaFields: useSchema ? object.fields : null,
+    schemaSections: useSchema ? (Array.isArray(object.sections) ? object.sections : []) : null,
     fieldSettings: {
       hidden: Array.isArray(object.fieldSettings?.hidden) ? object.fieldSettings.hidden : [],
       order: Array.isArray(object.fieldSettings?.order) ? object.fieldSettings.order : columns
@@ -267,7 +330,16 @@ function applyTableMutation(workspaceConfig, table, mutate) {
         objects: objects.map((object) => {
           if (object.id !== table.objectId) return object;
           const current = deriveManualObjectTable(object);
-          const next = mutate({ columns: current.columns, rows: current.rows });
+          const next = mutate({ columns: current.columns, rows: current.rows.map((r) => ({ ...r })) });
+          const useSchema = objectUsesFieldSchema(object);
+          if (useSchema) {
+            return {
+              ...object,
+              columns: next.columns,
+              rows: flatRowsToEnvelopeRows(next.rows, next.columns),
+              fieldSettings: { ...(object.fieldSettings || {}), order: next.columns }
+            };
+          }
           return {
             ...object,
             columns: next.columns,
@@ -490,10 +562,16 @@ function addTableField(workspaceConfig, table, fieldName) {
 
 function addTableRow(workspaceConfig, table) {
   if (!table.mutable) return workspaceConfig;
-  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({
-    columns,
-    rows: [...rows, Object.fromEntries(columns.map((column) => [column, ""]))]
-  }));
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+    let newRow;
+    if (table.rowStorage === "envelope") {
+      const id = `row_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      newRow = { id, ...Object.fromEntries(columns.map((column) => [column, ""])) };
+    } else {
+      newRow = Object.fromEntries(columns.map((column) => [column, ""]));
+    }
+    return { columns, rows: [...rows, newRow] };
+  });
 }
 
 function updateTableCell(workspaceConfig, table, rowIndex, fieldName, value) {
@@ -621,11 +699,102 @@ function describeBindingMode(binding) {
   return { label: "Manual local table", description: "Rows and fields live in the existing widget config and travel with workspace export/import." };
 }
 
+function updateManualObjectById(workspaceConfig, objectId, updater) {
+  const objects = normalizeManualObjects(workspaceConfig);
+  const dataModel =
+    workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+  return {
+    ...workspaceConfig,
+    dataModel: {
+      ...dataModel,
+      objects: objects.map((o) => (o.id === objectId ? updater(o) : o))
+    }
+  };
+}
+
+function defaultValueForFieldType(type) {
+  if (type === "multiSelect") return [];
+  if (type === "boolean") return false;
+  if (type === "ref") return null;
+  if (type === "multiRef") return [];
+  return "";
+}
+
+function appendStructuredField(workspaceConfig, { objectId, field }) {
+  return updateManualObjectById(workspaceConfig, objectId, (o) => {
+    const fields = [...(o.fields || []), field];
+    const visible = fields.filter((f) => f.isVisible !== false);
+    const columns = visible.map((f) => f.id);
+    const rows = (o.rows || []).map((row) => {
+      const dv = field.defaultValue !== undefined && field.defaultValue !== null
+        ? field.defaultValue
+        : defaultValueForFieldType(field.type);
+      if (row && typeof row === "object" && row.data && typeof row.data === "object" && !Array.isArray(row.data)) {
+        return { ...row, data: { ...row.data, [field.id]: dv } };
+      }
+      if (row && typeof row === "object") {
+        return { ...row, [field.id]: dv };
+      }
+      return row;
+    });
+    return {
+      ...o,
+      fields,
+      columns,
+      rows,
+      fieldSettings: { ...(o.fieldSettings || {}), order: columns }
+    };
+  });
+}
+
+function setStructuredFieldVisibility(workspaceConfig, { objectId, fieldId, isVisible }) {
+  return updateManualObjectById(workspaceConfig, objectId, (o) => ({
+    ...o,
+    fields: (o.fields || []).map((f) => (f.id === fieldId ? { ...f, isVisible } : f))
+  }));
+}
+
+function removeStructuredField(workspaceConfig, { objectId, fieldId }) {
+  return updateManualObjectById(workspaceConfig, objectId, (o) => {
+    const fields = (o.fields || []).filter((f) => f.id !== fieldId);
+    const visible = fields.filter((f) => f.isVisible !== false);
+    const columns = visible.map((f) => f.id);
+    const rows = (o.rows || []).map((row) => {
+      if (row && typeof row === "object" && row.data && typeof row.data === "object" && !Array.isArray(row.data)) {
+        const { [fieldId]: dropped, ...rest } = row.data;
+        return { ...row, data: rest };
+      }
+      if (row && typeof row === "object") {
+        const { [fieldId]: dropped, ...rest } = row;
+        return rest;
+      }
+      return row;
+    });
+    return {
+      ...o,
+      fields,
+      columns,
+      rows,
+      fieldSettings: { ...(o.fieldSettings || {}), order: columns }
+    };
+  });
+}
+
+function reorderStructuredFields(workspaceConfig, { objectId, orderedFieldIds }) {
+  return updateManualObjectById(workspaceConfig, objectId, (o) => ({
+    ...o,
+    fieldSettings: { ...(o.fieldSettings || {}), order: orderedFieldIds }
+  }));
+}
+
 export {
   OBJECT_TYPE_PRESETS,
   addTableField,
   addTableRow,
   appendRowsToTable,
+  appendStructuredField,
   createManualBusinessObject,
   createTypedBusinessObject,
   deleteTableRow,
@@ -636,9 +805,13 @@ export {
   importTableFromCsv,
   listSavedEnvRefs,
   listWorkspaceDataModelTables,
+  normalizeManualObjects,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
+  removeStructuredField,
+  reorderStructuredFields,
   replaceTableContent,
   sandboxRunSourceId,
+  setStructuredFieldVisibility,
   updateTableCell
 };

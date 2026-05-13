@@ -20,6 +20,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { deepMerge } from "@/lib/brand-kit-injector";
 import {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -187,7 +188,7 @@ function normalizeWorkspaceIdentityPatch(patch) {
       error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
       throw error;
     }
-    const brandingAllowed = new Set(["name", "logoUrl", "accent"]);
+    const brandingAllowed = new Set(["name", "logoUrl", "accent", "brandKit"]);
     const brandingUnknown = Object.keys(patch.branding).filter((key) => !brandingAllowed.has(key));
     if (brandingUnknown.length) {
       const error = new Error("branding patch contains unknown fields");
@@ -197,14 +198,23 @@ function normalizeWorkspaceIdentityPatch(patch) {
     }
     normalized.branding = {};
     for (const key of brandingAllowed) {
-      if (Object.prototype.hasOwnProperty.call(patch.branding, key)) {
-        if (typeof patch.branding[key] !== "string") {
-          const error = new Error(`branding.${key} must be a string`);
+      if (!Object.prototype.hasOwnProperty.call(patch.branding, key)) continue;
+      if (key === "brandKit") {
+        const bk = patch.branding.brandKit;
+        if (bk !== null && (typeof bk !== "object" || Array.isArray(bk))) {
+          const error = new Error("branding.brandKit must be a plain object or null");
           error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
           throw error;
         }
-        normalized.branding[key] = patch.branding[key].trim();
+        normalized.branding.brandKit = bk;
+        continue;
       }
+      if (typeof patch.branding[key] !== "string") {
+        const error = new Error(`branding.${key} must be a string`);
+        error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+        throw error;
+      }
+      normalized.branding[key] = patch.branding[key].trim();
     }
   }
 
@@ -229,12 +239,13 @@ async function writeWorkspaceIdentitySettings(patch) {
     next.name = normalized.name;
   }
   if (normalized.branding) {
-    next.branding = {
-      ...(current.branding && typeof current.branding === "object" && !Array.isArray(current.branding)
-        ? current.branding
-        : {}),
-      ...normalized.branding
-    };
+    const prev = current.branding && typeof current.branding === "object" && !Array.isArray(current.branding)
+      ? current.branding
+      : {};
+    next.branding = { ...prev, ...normalized.branding };
+    if (Object.prototype.hasOwnProperty.call(normalized.branding, "brandKit") && normalized.branding.brandKit) {
+      next.branding.brandKit = deepMerge(prev.brandKit || {}, normalized.branding.brandKit);
+    }
     if (!next.branding.name) {
       next.branding.name = next.name || "Growthub Workspace";
     }
