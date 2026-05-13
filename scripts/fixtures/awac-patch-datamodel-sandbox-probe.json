@@ -1,0 +1,146 @@
+{
+  "dataModel": {
+    "objects": [
+      {
+        "id": "obj_company",
+        "label": "Companies",
+        "objectType": "custom",
+        "columns": ["fld_name", "fld_status"],
+        "fields": [
+          {
+            "id": "fld_name",
+            "type": "text",
+            "label": "Name",
+            "isVisible": true,
+            "isRequired": true,
+            "sectionId": "default"
+          },
+          {
+            "id": "fld_status",
+            "type": "select",
+            "label": "Status",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "default",
+            "options": [
+              { "id": "opt_q", "label": "Qualified", "color": "#34d399" },
+              { "id": "opt_n", "label": "New", "color": "#94a3b8" }
+            ]
+          }
+        ],
+        "sections": [{ "id": "default", "label": "Fields", "isCollapsed": false, "order": 0 }],
+        "rows": [{ "id": "row_c1", "data": { "fld_name": "Acme Corp", "fld_status": "opt_q" } }],
+        "binding": { "mode": "manual", "source": "Companies" },
+        "fieldSettings": { "hidden": [], "order": ["fld_name", "fld_status"] }
+      },
+      {
+        "id": "obj_people",
+        "label": "People",
+        "objectType": "people",
+        "columns": ["fld_person_name", "fld_company"],
+        "fields": [
+          {
+            "id": "fld_person_name",
+            "type": "text",
+            "label": "Name",
+            "isVisible": true,
+            "isRequired": true,
+            "sectionId": "default"
+          },
+          {
+            "id": "fld_company",
+            "type": "ref",
+            "label": "Company",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "default",
+            "refConfig": {
+              "targetObjectType": "custom",
+              "targetObjectId": "obj_company",
+              "displayField": "fld_name",
+              "cardinality": "many-to-one"
+            }
+          }
+        ],
+        "sections": [{ "id": "default", "label": "Fields", "isCollapsed": false, "order": 0 }],
+        "rows": [{ "id": "row_p1", "data": { "fld_person_name": "Jane", "fld_company": "row_c1" } }],
+        "binding": { "mode": "manual", "source": "People" },
+        "fieldSettings": { "hidden": [], "order": ["fld_person_name", "fld_company"] }
+      },
+      {
+        "id": "obj_sandbox",
+        "label": "Sandboxes",
+        "objectType": "sandbox-environment",
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "version",
+          "runLocality",
+          "schedulerRegistryId",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "envRefs",
+          "networkAllow",
+          "allowList",
+          "instructions",
+          "command",
+          "timeoutMs",
+          "status",
+          "lastTested",
+          "lastRunId",
+          "lastSourceId",
+          "lastResponse"
+        ],
+        "rows": [
+          {
+            "Name": "api-probe",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-process",
+            "agentHost": "",
+            "envRefs": "",
+            "networkAllow": "false",
+            "allowList": "",
+            "instructions": "",
+            "command": "console.log('growthub-awac-probe')",
+            "timeoutMs": "30000",
+            "status": "",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          }
+        ],
+        "binding": { "mode": "manual", "source": "Sandboxes" },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "version",
+            "runLocality",
+            "schedulerRegistryId",
+            "runtime",
+            "adapter",
+            "agentHost",
+            "envRefs",
+            "networkAllow",
+            "allowList",
+            "instructions",
+            "command",
+            "timeoutMs",
+            "status",
+            "lastTested",
+            "lastRunId",
+            "lastSourceId",
+            "lastResponse"
+          ]
+        }
+      }
+    ]
+  }
+}
