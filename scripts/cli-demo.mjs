@@ -60,12 +60,14 @@ function printHelp() {
   bash scripts/demo-cli.sh interactive
   bash scripts/demo-cli.sh installer --profile gtm
   bash scripts/demo-cli.sh cli
+  bash scripts/demo-cli.sh e2e-workspace-sandbox
   bash scripts/demo-cli.sh env
 
 Modes:
   interactive  Top-level preview menu for this branch
   installer    Real installer/onboarding preview using local branch CLI dist
   cli          Real branch CLI interactive hub
+  e2e-workspace-sandbox  HTTP probes: PATCH /api/workspace + sandbox-run (temp Next app)
   env          Show preview environment metadata`);
 }
 
@@ -484,6 +486,16 @@ if (command === "cli") {
 if (command === "template") {
   await runTemplatePreview();
   process.exit(0);
+}
+
+if (command === "e2e-workspace-sandbox") {
+  const probe = path.join(repoRoot, "scripts", "e2e-workspace-sandbox-api-probe.mjs");
+  const result = spawnSync(process.execPath, [probe, ...rest], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    env: { ...process.env },
+  });
+  process.exit(result.status ?? 1);
 }
 
 console.error(`Unknown command '${command}'`);
