@@ -847,6 +847,16 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (row.agentHost !== undefined && row.agentHost !== "" && !KNOWN_SANDBOX_AGENT_HOSTS.includes(row.agentHost)) {
     errors.push(`${path}.agentHost must be one of ${KNOWN_SANDBOX_AGENT_HOSTS.join(", ")}`);
   }
+  if (row.localModelId !== undefined && row.localModelId !== "") {
+    if (typeof row.localModelId !== "string" || String(row.localModelId).length > 256) {
+      errors.push(`${path}.localModelId must be a string at most 256 characters`);
+    }
+  }
+  if (row.localIntelligenceAdapterMode !== undefined && row.localIntelligenceAdapterMode !== "") {
+    if (typeof row.localIntelligenceAdapterMode !== "string" || String(row.localIntelligenceAdapterMode).length > 64) {
+      errors.push(`${path}.localIntelligenceAdapterMode must be a string at most 64 characters`);
+    }
+  }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
     errors.push(`${path}.envRefs must be a comma-separated string or array of env-ref slugs (never values)`);
   }

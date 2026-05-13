@@ -1,0 +1,9 @@
+{
+  "name": "@paperclipai/adapter-claude-local",
+  "version": "0.0.0-private",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "description": "Minimal stub for workspace resolution when the full adapter package is not vendored in this clone."
+}

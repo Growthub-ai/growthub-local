@@ -28,6 +28,7 @@
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
+ *   - `@growthub/api-contract/local-intelligence-trace` — local model sandbox trace events
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -47,8 +48,10 @@ export type { PipelineArtifactRef, PipelineAdapterModeRef, PipelineTraceExpectat
 export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
 export type { WorkspaceDependencyKind, WorkspaceSurfaceRef, WorkspaceOutputTopology, WorkspaceDependencyRef, WorkspaceConventionEnvelope, WorkspaceDependencyManifest, } from "./workspaces.js";
 export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
-export type { AdapterKind, AdapterMode, AdapterInputRef, AdapterOutputRef, NormalizedConnectionRef, AdapterContractRef, } from "./adapters.js";
+export type { AdapterKind, AdapterMode, AdapterInputRef, AdapterOutputRef, LocalModelRuntimeRef, LocalModelAdapterOutputRef, NormalizedConnectionRef, AdapterContractRef, } from "./adapters.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
+export type { LocalIntelligenceTraceEventType, LocalIntelligenceTraceEnvelope, LocalIntelligenceAdapterSelectedEvent, LocalModelSandboxRunStartedEvent, LocalModelSandboxRunCompletedEvent, LocalModelToolIntentProposedEvent, LocalModelToolIntentRejectedEvent, LocalIntelligenceTraceEvent, } from "./local-intelligence-trace.js";
+export { isLocalIntelligenceTraceEvent } from "./local-intelligence-trace.js";
 export type { PipelineTraceEventType, PipelineTraceEnvelope, PipelineStageStartedEvent, PipelineStageCompletedEvent, PipelineStageFailedEvent, PipelineArtifactWrittenEvent, PipelineHandoffCreatedEvent, PipelineTraceEvent, } from "./pipeline-trace.js";
 export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
 export type { KitHealthSeverity, KitHealthCheck, KitHealthReport, KitMaturityDimension, KitMaturityScore, } from "./health.js";

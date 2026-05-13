@@ -94,6 +94,9 @@ import {
   writeIntelligenceConfig,
   buildMarketingContext,
   buildDeterministicContext,
+  runLocalIntelligenceSandboxTask,
+  sandboxEnvelopeToTraceRecord,
+  formatTraceRecordJsonl,
 } from "./runtime/native-intelligence/index.js";
 import type { NodeContractSummary } from "./runtime/cms-node-contracts/types.js";
 import { createCmsCapabilityRegistryClient } from "./runtime/cms-capability-registry/index.js";
@@ -343,6 +346,7 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
         { value: "setup", label: "Setup helper", hint: "machine detection + install/env guidance" },
         { value: "models", label: "Manage local custom models", hint: "select active favorite/default model" },
         { value: "prompt", label: "Prompt local model (chat flow)", hint: "human first local prompt submissions" },
+        { value: "sandbox", label: "Run sandboxed local model task", hint: "governed JSON + tool intents (validated, not executed)" },
         { value: "flows", label: "Run native-intelligence with your prompt", hint: "planner/normalizer/recommender/summarizer" },
         { value: "marketing-context", label: "Marketing Context Builder", hint: "auto-draft product-marketing-context from project artifacts" },
         { value: "provider-config", label: "Configure API provider", hint: "Claude, OpenAI, Gemini, OpenRouter, or local" },
@@ -470,6 +474,11 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
         `Provider: ${result.provider}\nModel: ${result.modelId ?? "default"}\nAPI key: ${result.apiKey ? "configured" : "not needed"}`,
         "Provider config saved (intelligence + memory)",
       );
+      continue;
+    }
+
+    if (action === "sandbox") {
+      await runLocalIntelligenceSandboxMenuFlow(baseUrl, defaultModel);
       continue;
     }
 
@@ -979,6 +988,126 @@ async function runNativeIntelligenceFlowSuite(
     );
   } catch (err) {
     p.note(err instanceof Error ? err.message : String(err), "Flow error");
+  }
+}
+
+async function runLocalIntelligenceSandboxMenuFlow(baseUrl: string, defaultModel: string): Promise<void> {
+  const userIntent = await p.text({
+    message: "Describe the sandbox task (user intent)",
+    placeholder: "e.g. Inspect bindings and propose safe next steps",
+  });
+  if (p.isCancel(userIntent) || !String(userIntent).trim()) {
+    p.note("Cancelled or empty intent.", "Sandbox task");
+    return;
+  }
+
+  const bot = await p.text({
+    message: "Business object type",
+    placeholder: "sandbox-environment",
+    defaultValue: "sandbox-environment",
+  });
+  if (p.isCancel(bot)) return;
+  const businessObjectType = String(bot).trim() || "sandbox-environment";
+
+  const spinner = p.spinner();
+  spinner.start("Loading CMS contracts…");
+  let contracts: NodeContractSummary[] = [];
+  try {
+    contracts = await loadRuntimeContracts();
+  } catch {
+    contracts = [];
+  }
+  spinner.stop(contracts.length ? `Loaded ${contracts.length} contracts.` : "No contracts (empty context is ok).");
+
+  const allowedSlugs = contracts.slice(0, 24).map((c) => c.slug);
+  const toolPolicy = {
+    mode: "propose-only" as const,
+    allowedToolSlugs: allowedSlugs,
+    requiresDeterministicValidation: true as const,
+    minConfidence: 0,
+  };
+
+  const baseConfig = readIntelligenceConfig();
+  const config = {
+    ...baseConfig,
+    backendType: "local" as const,
+    modelId: inferCanonicalModelId(defaultModel),
+    localModel: defaultModel,
+    endpoint: `${baseUrl}/chat/completions`,
+    providerType: "local" as const,
+  };
+
+  const taskId = `sandbox_${Date.now()}`;
+  const context = {
+    taskId,
+    businessObjectType,
+    executionMode: "local" as const,
+    allowedToolSlugs: allowedSlugs,
+    availableContracts: contracts,
+    bindings: {},
+  };
+
+  const backend = createNativeIntelligenceBackend(config);
+  const runSpinner = p.spinner();
+  runSpinner.start("Running governed local-model sandbox…");
+  const envelope = await runLocalIntelligenceSandboxTask(
+    {
+      taskId,
+      businessObjectType,
+      userIntent: String(userIntent).trim(),
+      context,
+    },
+    config,
+    backend,
+    toolPolicy,
+  );
+  runSpinner.stop(`Done in ${envelope.latencyMs}ms`);
+
+  p.note(
+    [
+      `Adapter: ${envelope.adapter.mode} / ${envelope.adapter.modelId}`,
+      `Confidence: ${(envelope.result.confidence * 100).toFixed(0)}%`,
+      `Validated intents: ${envelope.validatedToolIntents?.length ?? 0}`,
+      `Rejected intents: ${envelope.rejectedToolIntents?.length ?? 0}`,
+      `Warnings: ${envelope.result.warnings.length}`,
+    ].join("\n"),
+    "Sandbox result summary",
+  );
+
+  const full = await p.select({
+    message: "View output",
+    options: [
+      { value: "json", label: "Full envelope JSON" },
+      { value: "trace", label: "Trace events only" },
+      { value: "skip", label: "Skip" },
+    ],
+  });
+  if (!p.isCancel(full) && full === "json") {
+    p.note(JSON.stringify(envelope, null, 2), "Envelope");
+  } else if (!p.isCancel(full) && full === "trace") {
+    p.note(JSON.stringify(envelope.trace ?? [], null, 2), "Trace");
+  }
+
+  const save = await p.confirm({
+    message: "Append distillation-ready JSONL line to native-intelligence/sandbox-traces.jsonl?",
+    initialValue: false,
+  });
+  if (!p.isCancel(save) && save) {
+    const record = sandboxEnvelopeToTraceRecord(
+      {
+        taskId,
+        businessObjectType,
+        userIntent: String(userIntent).trim(),
+        context,
+      },
+      envelope,
+    );
+    const line = formatTraceRecordJsonl(record);
+    const outDir = path.resolve(resolvePaperclipHomeDir(), "native-intelligence");
+    const outPath = path.join(outDir, "sandbox-traces.jsonl");
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.appendFileSync(outPath, line, "utf-8");
+    p.note(outPath, "Trace append");
   }
 }
 

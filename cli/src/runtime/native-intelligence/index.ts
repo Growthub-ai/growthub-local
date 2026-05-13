@@ -40,6 +40,15 @@ import type {
   WorkflowRecommendationResult,
   ExecutionSummaryInput,
   ExecutionSummaryResult,
+  LocalIntelligenceSandboxContext,
+  LocalIntelligenceSandboxTaskInput,
+  LocalIntelligenceToolPolicy,
+  LocalIntelligenceAdapterMode,
+  LocalModelSandboxRunEnvelope,
+  LocalModelSandboxResult,
+  LocalModelToolIntent,
+  ValidatedLocalModelToolIntent,
+  RejectedLocalModelToolIntent,
 } from "./contract.js";
 import { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
 import { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth } from "./provider.js";
@@ -78,10 +87,27 @@ export type {
   ExecutionResultForIntelligence,
   ExecutionModeContext,
   WorkflowSummaryForIntelligence,
+  LocalIntelligenceSandboxContext,
+  LocalIntelligenceSandboxTaskInput,
+  LocalIntelligenceToolPolicy,
+  LocalIntelligenceAdapterMode,
+  LocalModelSandboxRunEnvelope,
+  LocalModelSandboxResult,
+  LocalModelToolIntent,
+  ValidatedLocalModelToolIntent,
+  RejectedLocalModelToolIntent,
 } from "./contract.js";
 
 export { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
 export { createNativeIntelligenceBackend, createStubBackend, checkBackendHealth, NativeIntelligenceBackendError } from "./provider.js";
+export { runLocalIntelligenceSandboxTask } from "./sandbox-runner.js";
+export { validateLocalModelToolIntents } from "./tool-intent-policy.js";
+export {
+  sandboxEnvelopeToTraceRecord,
+  formatTraceRecordJsonl,
+  LOCAL_INTELLIGENCE_TRACE_RECORD_VERSION,
+} from "./source-record-export.js";
+export type { LocalIntelligenceTraceExportRecord } from "./source-record-export.js";
 export { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";
 export { intelligentNormalizeBindings, buildDeterministicNormalization } from "./normalizer.js";
 export { recommendWorkflow, buildDeterministicRecommendation } from "./recommender.js";
@@ -104,6 +130,15 @@ export function readIntelligenceConfig(): NativeIntelligenceConfig {
   }
   try {
     const raw = JSON.parse(fs.readFileSync(configPath, "utf-8")) as Partial<NativeIntelligenceConfig>;
+    const providerType = raw.providerType;
+    const normalizedProvider =
+      providerType === "claude"
+      || providerType === "openai"
+      || providerType === "gemini"
+      || providerType === "openrouter"
+      || providerType === "local"
+        ? providerType
+        : undefined;
     return {
       modelId: validateModelId(raw.modelId),
       backendType: raw.backendType === "hosted" ? "hosted" : "local",
@@ -113,6 +148,9 @@ export function readIntelligenceConfig(): NativeIntelligenceConfig {
       defaultTemperature: typeof raw.defaultTemperature === "number" ? raw.defaultTemperature : DEFAULT_INTELLIGENCE_CONFIG.defaultTemperature,
       defaultMaxTokens: typeof raw.defaultMaxTokens === "number" ? raw.defaultMaxTokens : DEFAULT_INTELLIGENCE_CONFIG.defaultMaxTokens,
       timeoutMs: typeof raw.timeoutMs === "number" ? raw.timeoutMs : DEFAULT_INTELLIGENCE_CONFIG.timeoutMs,
+      providerType: normalizedProvider,
+      providerModelId: typeof raw.providerModelId === "string" ? raw.providerModelId : undefined,
+      localAdapterMode: typeof raw.localAdapterMode === "string" ? (raw.localAdapterMode as NativeIntelligenceConfig["localAdapterMode"]) : undefined,
     };
   } catch {
     return { ...DEFAULT_INTELLIGENCE_CONFIG };

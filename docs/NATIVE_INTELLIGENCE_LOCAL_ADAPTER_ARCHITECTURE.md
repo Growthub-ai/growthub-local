@@ -320,6 +320,10 @@ After training:
 3) set as active model in Local Intelligence menu.
 4) validate via prompt flow and flow suite.
 
+### Distillation-ready trace export
+
+The CLI does **not** train local models. The sandbox runner can append **JSONL-ready** trace records (hashed prompt material, structured output, accepted/rejected tool intents) for external QLoRA / fine-tuning tooling. After training, load the resulting weights into Ollama, LM Studio, or vLLM and select the concrete `localModel` id in Local Intelligence — no parallel model system.
+
 ## 31. Adapter Expansion Strategy
 Future adapters should implement equivalent backend interface:
 - request completion.
@@ -327,6 +331,24 @@ Future adapters should implement equivalent backend interface:
 - report backend availability health.
 Keep planner/normalizer/recommender/summarizer contract stable.
 Transport and mapping should be adapter-specific.
+
+## 31b. Governed Sandbox Adapter Extension
+
+The native-intelligence provider can be selected as a **governed sandbox adapter** surface (CLI + SDK types): the local model may:
+
+- reason over business-object context
+- produce structured JSON
+- normalize binding hints
+- propose tool calls as **intents** only
+
+The local model may **not**:
+
+- execute tools directly
+- access secrets or raw credentials
+- bypass CMS node contracts
+- write final workflow state without deterministic validation
+
+This preserves the rule that native intelligence is assistive and does not replace hosted workflow execution.
 
 ## 32. Coming Soon Areas
 Planned expansions:

@@ -1,0 +1,8 @@
+{
+  "name": "@paperclipai/db",
+  "version": "0.0.0-private",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts"
+}

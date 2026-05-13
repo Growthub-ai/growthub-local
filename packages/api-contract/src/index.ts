@@ -28,6 +28,7 @@
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
+ *   - `@growthub/api-contract/local-intelligence-trace` — local model sandbox trace events
  */
 
 // Capabilities
@@ -251,10 +252,25 @@ export type {
   AdapterMode,
   AdapterInputRef,
   AdapterOutputRef,
+  LocalModelRuntimeRef,
+  LocalModelAdapterOutputRef,
   NormalizedConnectionRef,
   AdapterContractRef,
 } from "./adapters.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
+
+// Local intelligence trace (distinct from hosted ExecutionEvent)
+export type {
+  LocalIntelligenceTraceEventType,
+  LocalIntelligenceTraceEnvelope,
+  LocalIntelligenceAdapterSelectedEvent,
+  LocalModelSandboxRunStartedEvent,
+  LocalModelSandboxRunCompletedEvent,
+  LocalModelToolIntentProposedEvent,
+  LocalModelToolIntentRejectedEvent,
+  LocalIntelligenceTraceEvent,
+} from "./local-intelligence-trace.js";
+export { isLocalIntelligenceTraceEvent } from "./local-intelligence-trace.js";
 
 // Pipeline trace (additive stage-boundary event shapes —
 // docs/PIPELINE_TRACE_CONVENTION_V1.md). Distinct from `./events.ts`,

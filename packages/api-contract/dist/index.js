@@ -28,6 +28,7 @@
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
+ *   - `@growthub/api-contract/local-intelligence-trace` — local model sandbox trace events
  */
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
 export { isExecutionEvent } from "./events.js";
@@ -36,6 +37,7 @@ export { WORKER_KIT_FAMILIES, WORKER_KIT_SUPPORTED_SCHEMA_VERSIONS, WORKER_KIT_L
 export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
 export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
+export { isLocalIntelligenceTraceEvent } from "./local-intelligence-trace.js";
 export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
 export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 // Version sentinel — surfaces may read this to confirm they are talking

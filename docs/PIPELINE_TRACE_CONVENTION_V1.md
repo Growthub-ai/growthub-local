@@ -100,6 +100,25 @@ can branch cleanly.
 
 ---
 
+## Local Intelligence adapter events (additive, kit / CLI)
+
+These names type the **local-intelligence** sandbox trace surface in
+[`@growthub/api-contract/local-intelligence-trace`](../packages/api-contract/src/local-intelligence-trace.ts).
+They are **not** `ExecutionEvent` hosted NDJSON events and **not** the
+`PipelineTraceEvent` pipeline-stage union.
+
+| Event name | When emitted |
+|---|---|
+| `local-intelligence-adapter-selected` | Adapter mode / endpoint metadata selected |
+| `local-model-sandbox-run-started` | Governed sandbox task started |
+| `local-model-sandbox-run-completed` | Sandbox task finished |
+| `local-model-tool-intent-proposed` | Model proposed a tool intent |
+| `local-model-tool-intent-rejected` | Validator rejected an intent |
+
+Legacy kit-local names such as `adapter-selected` remain valid for other kits.
+
+---
+
 ## What this specialization does NOT do
 
 - It does **not** require every kit to emit pipeline trace events —
@@ -116,3 +135,4 @@ can branch cleanly.
 - [`PIPELINE_KIT_CONTRACT_V1.md`](./PIPELINE_KIT_CONTRACT_V1.md) — pipeline kit specialization
 - [`packages/api-contract/src/pipeline-trace.ts`](../packages/api-contract/src/pipeline-trace.ts) — SDK types
 - [`packages/api-contract/src/events.ts`](../packages/api-contract/src/events.ts) — distinct hosted `ExecutionEvent` NDJSON contract
+- [`packages/api-contract/src/local-intelligence-trace.ts`](../packages/api-contract/src/local-intelligence-trace.ts) — local intelligence sandbox trace types

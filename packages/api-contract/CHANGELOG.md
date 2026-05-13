@@ -1,5 +1,21 @@
 # @growthub/api-contract
 
+## 1.3.0-alpha.3
+
+Additive patch. Declares **`local-intelligence`** as a standard `AdapterKind`,
+adds optional `LocalModelRuntimeRef` / `LocalModelAdapterOutputRef`, and ships
+a distinct **`local-intelligence-trace`** surface (re-exported from the root
+package) for governed local-model sandbox trace events.
+
+Pure type-only for adapter additions; `isLocalIntelligenceTraceEvent` is a
+runtime type guard for JSONL / NDJSON consumers.
+
+### Added
+
+- `AdapterKind` member `local-intelligence`
+- `LocalModelRuntimeRef`, `LocalModelAdapterOutputRef`
+- `local-intelligence-trace` module: trace event union + `isLocalIntelligenceTraceEvent`
+
 ## 1.3.0-alpha.2
 
 Additive patch. Adds descriptive hosted Agent Builder manifest contracts to

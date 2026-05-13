@@ -16,6 +16,7 @@
 import type { CmsCapabilityNode } from "../cms-capability-registry/index.js";
 import type { DynamicRegistryPipeline, DynamicRegistryPipelineNode } from "../dynamic-registry-pipeline/index.js";
 import type { WorkflowLabel } from "../workflow-hygiene/types.js";
+import type { LocalIntelligenceTraceEvent } from "@growthub/api-contract";
 // Import and re-export NodeContractSummary so it's both usable here and accessible to consumers
 import type { NodeContractSummary as _NodeContractSummary } from "../cms-node-contracts/types.js";
 export type { NodeContractSummary } from "../cms-node-contracts/types.js";
@@ -42,6 +43,95 @@ export type IntelligenceProviderType = "local" | "claude" | "openai" | "gemini" 
 // ---------------------------------------------------------------------------
 
 export type ExecutionModeContext = "local" | "hosted" | "hybrid";
+
+/**
+ * Declared local OpenAI-compatible backend lane for envelopes and config.
+ * Concrete model ids stay open-ended (see architecture doc).
+ */
+export type LocalIntelligenceAdapterMode =
+  | "ollama"
+  | "lmstudio"
+  | "vllm"
+  | "custom-openai-compatible"
+  | "hosted"
+  | (string & {});
+
+// ---------------------------------------------------------------------------
+// Governed local-model sandbox (adapter boundary — Phase 1 types)
+// ---------------------------------------------------------------------------
+
+export interface LocalIntelligenceSandboxContext {
+  taskId: string;
+  businessObjectType: string;
+  businessObjectId?: string;
+  executionMode: ExecutionModeContext;
+  allowedToolSlugs: string[];
+  availableContracts: NodeContractSummary[];
+  bindings?: Record<string, unknown>;
+  sourceRecordRefs?: string[];
+}
+
+export interface LocalIntelligenceToolPolicy {
+  mode: "disabled" | "propose-only" | "validate-and-dispatch";
+  allowedToolSlugs: string[];
+  requiresDeterministicValidation: true;
+  /** When set, intents below this confidence are rejected with a warning. */
+  minConfidence?: number;
+}
+
+export interface LocalModelToolIntent {
+  toolSlug: string;
+  reason: string;
+  input: Record<string, unknown>;
+  confidence: number;
+}
+
+export interface LocalModelSandboxResult {
+  text?: string;
+  json?: Record<string, unknown>;
+  toolIntents: LocalModelToolIntent[];
+  warnings: string[];
+  confidence: number;
+}
+
+export interface ValidatedLocalModelToolIntent extends LocalModelToolIntent {
+  validationNotes?: string[];
+}
+
+export interface RejectedLocalModelToolIntent {
+  intent: LocalModelToolIntent;
+  reasons: string[];
+}
+
+export interface LocalIntelligenceSandboxTaskInput {
+  taskId: string;
+  businessObjectType: string;
+  businessObjectId?: string;
+  userIntent: string;
+  context: LocalIntelligenceSandboxContext;
+  responseSchema?: Record<string, unknown>;
+}
+
+export interface LocalModelSandboxRunEnvelope {
+  version: "growthub-local-model-sandbox-v1";
+  taskId: string;
+  businessObjectType: string;
+  businessObjectId?: string;
+  adapter: {
+    kind: "local-intelligence";
+    mode: string;
+    modelId: string;
+    endpoint?: string;
+  };
+  result: LocalModelSandboxResult;
+  validatedToolIntents?: ValidatedLocalModelToolIntent[];
+  rejectedToolIntents?: RejectedLocalModelToolIntent[];
+  rawText?: string;
+  latencyMs: number;
+  createdAt: string;
+  /** Optional trace lines aligned with `@growthub/api-contract/local-intelligence-trace`. */
+  trace?: LocalIntelligenceTraceEvent[];
+}
 
 // ---------------------------------------------------------------------------
 // Workflow summary (what the model sees about saved workflows)
@@ -204,6 +294,10 @@ export interface ModelCompletionInput {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: "json" | "text";
+  /** Optional governed sandbox / business-object context (transport ignores). */
+  sandboxContext?: LocalIntelligenceSandboxContext;
+  /** Optional tool proposal policy (transport ignores; runner enforces). */
+  toolPolicy?: LocalIntelligenceToolPolicy;
 }
 
 export interface ModelCompletionResult {
@@ -255,6 +349,11 @@ export interface NativeIntelligenceConfig {
   providerType?: IntelligenceProviderType;
   /** Provider-specific model identifier (e.g. "claude-sonnet-4-6", "gpt-4o", "gemini-2.5-flash"). */
   providerModelId?: string;
+  /**
+   * Optional metadata: which local OpenAI-compatible lane is selected
+   * (ollama, lmstudio, vllm, custom). Used for envelopes and UI only.
+   */
+  localAdapterMode?: LocalIntelligenceAdapterMode;
 }
 
 export const DEFAULT_INTELLIGENCE_CONFIG: NativeIntelligenceConfig = {

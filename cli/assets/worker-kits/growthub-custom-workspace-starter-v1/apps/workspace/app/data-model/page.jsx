@@ -133,6 +133,8 @@ const SANDBOX_ROW_FIELDS = new Set([
   "runtime",
   "adapter",
   "agentHost",
+  "localModelId",
+  "localIntelligenceAdapterMode",
   "envRefs",
   "networkAllow",
   "allowList",
@@ -664,6 +666,31 @@ function SandboxRecordFields({
             />
           </label>
         )}
+
+        <label className="dm-record-field">
+          <span>Local Intelligence — model id (optional)</span>
+          <input
+            value={draft.localModelId ?? ""}
+            disabled={!table.mutable || saving}
+            placeholder="e.g. gemma3:4b — same id as Growthub CLI Local Intelligence"
+            onChange={(event) => setDraft((c) => ({ ...c, localModelId: event.target.value }))}
+            onBlur={(event) => patchFields({ localModelId: event.target.value })}
+          />
+          <span className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
+            Metadata for operators; execution still uses the adapter above. Configure the model in <code>growthub discover</code> → Local Intelligence.
+          </span>
+        </label>
+
+        <label className="dm-record-field">
+          <span>Local Intelligence — adapter mode (optional)</span>
+          <input
+            value={draft.localIntelligenceAdapterMode ?? ""}
+            disabled={!table.mutable || saving}
+            placeholder="ollama · lmstudio · vllm · custom-openai-compatible"
+            onChange={(event) => setDraft((c) => ({ ...c, localIntelligenceAdapterMode: event.target.value }))}
+            onBlur={(event) => patchFields({ localIntelligenceAdapterMode: event.target.value })}
+          />
+        </label>
 
         <label className="dm-record-field">
           <span>Runtime</span>

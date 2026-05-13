@@ -383,6 +383,8 @@ const OBJECT_TYPE_PRESETS = {
       "runtime",
       "adapter",
       "agentHost",
+      "localModelId",
+      "localIntelligenceAdapterMode",
       "envRefs",
       "networkAllow",
       "allowList",

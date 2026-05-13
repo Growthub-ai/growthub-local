@@ -29,7 +29,9 @@
  * `transcription`, `vector-store`) without an SDK release. The standard
  * families are enumerated for discoverability.
  */
-export type AdapterKind = "generative" | "persistence" | "auth" | "payment" | "integration" | "reporting" | "hosted-bridge" | "byo-api-key" | "external-repo-handoff" | (string & {});
+export type AdapterKind = "generative" | "persistence" | "auth" | "payment" | "integration" | "reporting" | "hosted-bridge" | "byo-api-key" | "external-repo-handoff"
+/** Native / local reasoning layer (OpenAI-compatible local runtimes + CLI intelligence). */
+ | "local-intelligence" | (string & {});
 /**
  * One mode within an adapter. The mode is selected at runtime via env
  * or config; multiple modes share the same normalized output shape.
@@ -89,6 +91,24 @@ export interface AdapterOutputRef {
      * (e.g. `output/<client>/<project>/generative/manifest.json`).
      */
     artifactPath?: string;
+}
+/**
+ * Resolved local OpenAI-compatible runtime metadata (type-only boundary).
+ * Kits and the CLI may attach this to normalized outputs for auditing;
+ * the SDK does not resolve or call endpoints.
+ */
+export interface LocalModelRuntimeRef {
+    provider: "ollama" | "lmstudio" | "vllm" | "openai-compatible" | (string & {});
+    endpoint: string;
+    modelId: string;
+    canonicalModelId?: string;
+    status?: "available" | "unavailable" | "unknown" | (string & {});
+}
+/**
+ * Optional extension for adapter outputs that routed through a local model.
+ */
+export interface LocalModelAdapterOutputRef extends AdapterOutputRef {
+    runtime?: LocalModelRuntimeRef;
 }
 /**
  * A resolved connection that the integration / hosted-bridge adapter

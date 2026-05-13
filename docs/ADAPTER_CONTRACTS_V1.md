@@ -123,8 +123,21 @@ Selects the path used to call image / video / text generation models.
 
 | Mode | Env selector pattern | Required env | Normalized output |
 |---|---|---|---|
-| `growthub-pipeline` | `<KIT>_GENERATIVE_ADAPTER=growthub-pipeline` | hosted bridge env + valid `growthub auth` session | kit-specific `manifest.json` (kitId, adapter, executionId, createdAt, artifacts[]) |
+| `growthub-pipeline` | `<KIT>_GENERATIVE_ADAPTER=growthub-pipeline` | hosted bridge env + valid `growthub auth` session | kit-specific `manifest.json` shape (kitId, adapter, executionId, createdAt, artifacts[]) |
 | `byo-api-key` | `<KIT>_GENERATIVE_ADAPTER=byo-api-key` | provider key + `<KIT>_MODEL_PROVIDER` | same `manifest.json` shape |
+
+### Local Intelligence
+
+Selects the model backend used for reasoning, normalization, summarization, JSON shaping, and **tool-intent proposal** (never direct tool execution from the model layer).
+
+| Mode | Required env | Runtime target |
+|---|---|---|
+| `ollama` | optional `OLLAMA_BASE_URL`, optional `NATIVE_INTELLIGENCE_LOCAL_MODEL` | Local OpenAI-compatible Ollama endpoint (`/v1/chat/completions`) |
+| `lmstudio` | optional `LMSTUDIO_BASE_URL`, optional `NATIVE_INTELLIGENCE_LOCAL_MODEL` | LM Studio OpenAI-compatible endpoint |
+| `vllm` | `VLLM_BASE_URL`, optional model env | vLLM OpenAI-compatible endpoint |
+| `custom-openai-compatible` | endpoint + model in Growthub Local Intelligence config | Any local OpenAI-compatible server |
+
+**Invariant:** Local-intelligence adapters may **propose** tool calls (validated downstream); they **must not** execute tools directly. Domain code consumes normalized envelopes only.
 
 ### External-repo handoff
 
