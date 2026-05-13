@@ -141,6 +141,19 @@ adapter is the **handoff artifact** itself.
 The kit MUST NOT inline external-repo logic. The artifact pair is
 the entire contract.
 
+### Local Intelligence
+
+Selects the **local reasoning** backend used for planning-style JSON, binding hints, summarization, and **tool-intent proposal** inside governed Growthub sandboxes (CLI + workspace kit). Transport is OpenAI-compatible `chat/completions`; concrete `localModel` ids remain open-ended.
+
+| Mode | Required env | Runtime target |
+|---|---|---|
+| `ollama` | optional `OLLAMA_BASE_URL`, optional `NATIVE_INTELLIGENCE_LOCAL_MODEL` | Local OpenAI-compatible Ollama endpoint |
+| `lmstudio` | optional `LMSTUDIO_BASE_URL`, optional `NATIVE_INTELLIGENCE_LOCAL_MODEL` | LM Studio OpenAI-compatible endpoint |
+| `vllm` | `VLLM_BASE_URL`, optional model env | vLLM OpenAI-compatible endpoint |
+| `custom-openai-compatible` | full chat-completions URL on the sandbox row + model id | Any local OpenAI-compatible server |
+
+**Invariant:** Local-intelligence adapters may **propose** tool calls (`toolIntents`), but **must not execute** tools or mutate hosted workflow state. Final compile / save / execute remains on the deterministic contract pipeline and hosted runtime where applicable.
+
 ---
 
 ## Reference adoption

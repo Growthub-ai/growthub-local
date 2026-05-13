@@ -478,7 +478,7 @@ function SandboxRecordFields({
 
   function setRunLocality(next) {
     const fields = { runLocality: next };
-    if (next === "serverless" && String(draft.adapter || "").trim() === "local-agent-host") {
+    if (next === "serverless" && ["local-agent-host", "local-intelligence"].includes(String(draft.adapter || "").trim())) {
       fields.adapter = "local-process";
     }
     patchFields(fields);
@@ -581,6 +581,54 @@ function SandboxRecordFields({
               onChange={(nextValue) => patchFields({ agentHost: nextValue })}
             />
           </label>
+        )}
+
+        {locality === "local" && String(draft.adapter || "").trim() === "local-intelligence" && (
+          <div className="dm-sandbox-local-intel" style={{ display: "grid", gap: 10 }}>
+            <label className="dm-record-field">
+              <span>Concrete model id</span>
+              <input
+                value={draft.localModel ?? ""}
+                disabled={!table.mutable || saving}
+                placeholder="gemma3:4b"
+                onChange={(event) => setDraft((c) => ({ ...c, localModel: event.target.value }))}
+                onBlur={(event) => patchFields({ localModel: event.target.value })}
+              />
+              <span className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
+                Open-ended tag aligned with CLI Local Intelligence. Falls back to <code>NATIVE_INTELLIGENCE_LOCAL_MODEL</code> or <code>OLLAMA_MODEL</code>.
+              </span>
+            </label>
+
+            <label className="dm-record-field">
+              <span>Chat completions URL (optional)</span>
+              <input
+                value={draft.localEndpoint ?? ""}
+                disabled={!table.mutable || saving}
+                placeholder="http://127.0.0.1:11434/v1/chat/completions"
+                onChange={(event) => setDraft((c) => ({ ...c, localEndpoint: event.target.value }))}
+                onBlur={(event) => patchFields({ localEndpoint: event.target.value })}
+              />
+            </label>
+
+            <label className="dm-record-field">
+              <span>Resolver mode</span>
+              <StaticSelect
+                value={String(draft.intelligenceAdapterMode || "ollama").trim().toLowerCase()}
+                disabled={!table.mutable || saving}
+                options={[
+                  { value: "ollama", label: "ollama (OLLAMA_BASE_URL + /v1/chat/completions)" },
+                  { value: "lmstudio", label: "lmstudio (LMSTUDIO_BASE_URL)" },
+                  { value: "vllm", label: "vllm (VLLM_BASE_URL required)" },
+                  { value: "custom-openai-compatible", label: "custom (use Chat completions URL above)" }
+                ]}
+                onChange={(nextValue) => patchFields({ intelligenceAdapterMode: nextValue })}
+              />
+            </label>
+
+            <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 0 }}>
+              Uses <strong>Instructions</strong> + <strong>Command</strong> as the task payload. Tool intents in the JSON response are proposals only and are not executed by the workspace.
+            </p>
+          </div>
         )}
 
         <label className="dm-record-field">

@@ -78,6 +78,15 @@ export type {
   ExecutionResultForIntelligence,
   ExecutionModeContext,
   WorkflowSummaryForIntelligence,
+  LocalIntelligenceAdapterMode,
+  LocalIntelligenceSandboxContext,
+  LocalIntelligenceToolPolicy,
+  LocalModelToolIntent,
+  LocalModelSandboxResult,
+  LocalIntelligenceSandboxTaskInput,
+  LocalModelSandboxRunEnvelope,
+  ValidatedLocalModelToolIntent,
+  RejectedLocalModelToolIntent,
 } from "./contract.js";
 
 export { DEFAULT_INTELLIGENCE_CONFIG } from "./contract.js";
@@ -88,6 +97,21 @@ export { recommendWorkflow, buildDeterministicRecommendation } from "./recommend
 export { planWorkflow, buildDeterministicPlan } from "./planner.js";
 export { buildMarketingContext, buildDeterministicContext } from "./marketing-context-builder.js";
 export type { MarketingContextInput, MarketingContextResult } from "./marketing-context-builder.js";
+
+export {
+  runLocalIntelligenceSandboxTask,
+  parseLocalModelSandboxResult,
+  buildLocalIntelligenceSandboxPrompts,
+} from "./sandbox-runner.js";
+export type { RunLocalIntelligenceSandboxOptions } from "./sandbox-runner.js";
+export { validateLocalModelToolIntents } from "./tool-intent-policy.js";
+export type { ValidateLocalModelToolIntentsResult } from "./tool-intent-policy.js";
+export {
+  sandboxEnvelopeToTraceRecord,
+  formatTraceRecordLine,
+  hashSystemPrompt,
+} from "./source-record-export.js";
+export type { LocalIntelligenceTraceRecordV1 } from "./source-record-export.js";
 
 // ---------------------------------------------------------------------------
 // Configuration persistence

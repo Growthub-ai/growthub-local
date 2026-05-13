@@ -63,6 +63,9 @@ Current options:
 - Manage local custom models.
 - Prompt local model (chat flow).
 - Run native-intelligence with your prompt.
+- Run sandboxed local model task (governed JSON envelope + validated tool intents; no execution).
+- Marketing Context Builder.
+- Configure API provider.
 - Back to main menu.
 The loop must return users to local intelligence after each action unless users explicitly exit.
 
@@ -327,6 +330,24 @@ Future adapters should implement equivalent backend interface:
 - report backend availability health.
 Keep planner/normalizer/recommender/summarizer contract stable.
 Transport and mapping should be adapter-specific.
+
+### 31.1 Governed Sandbox Adapter Extension
+The native-intelligence provider can be selected as a **governed sandbox adapter mode** (SDK `AdapterKind`: `local-intelligence`; CLI discovery: *Run sandboxed local model task*; exported workspace kit: sandbox adapter `local-intelligence`).
+The local model may:
+- reason over business object / contract context,
+- produce structured JSON,
+- normalize binding hints,
+- propose tool calls (`toolIntents`).
+The local model may not:
+- execute tools or hosted APIs directly,
+- access secrets or raw credentials,
+- bypass CMS node contracts,
+- write final workflow state without deterministic validation downstream.
+
+### 31.2 Distillation-Ready Trace Export
+The CLI does not train local models.
+The sandbox runner plus `source-record-export` can serialize run envelopes into **JSONL-ready** records (`growthub-local-intelligence-trace-v1`) for external QLoRA / fine-tuning tooling.
+After training, load the resulting weights into Ollama, LM Studio, or vLLM and select the concrete `localModel` id in Local Intelligence or the workspace sandbox row — no training loop ships inside the CLI runtime.
 
 ## 32. Coming Soon Areas
 Planned expansions:

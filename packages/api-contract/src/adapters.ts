@@ -44,6 +44,8 @@ export type AdapterKind =
   | "hosted-bridge"
   | "byo-api-key"
   | "external-repo-handoff"
+  /** Native / local reasoning over Growthub contracts — OpenAI-compatible transport; propose-only tool intents. */
+  | "local-intelligence"
   | (string & {});
 
 // ---------------------------------------------------------------------------
@@ -115,6 +117,26 @@ export interface AdapterOutputRef {
    * (e.g. `output/<client>/<project>/generative/manifest.json`).
    */
   artifactPath?: string;
+}
+
+/**
+ * Resolved local OpenAI-compatible runtime metadata (type-only boundary).
+ * Concrete model ids stay open-ended; canonical ids are optional hints.
+ */
+export interface LocalModelRuntimeRef {
+  provider: "ollama" | "lmstudio" | "vllm" | "openai-compatible" | (string & {});
+  endpoint: string;
+  modelId: string;
+  canonicalModelId?: string;
+  status?: "available" | "unavailable" | "unknown" | (string & {});
+}
+
+/**
+ * Normalized output ref for a local-intelligence adapter completion.
+ * Additive extension of {@link AdapterOutputRef}.
+ */
+export interface LocalModelAdapterOutputRef extends AdapterOutputRef {
+  runtime?: LocalModelRuntimeRef;
 }
 
 // ---------------------------------------------------------------------------
