@@ -36,6 +36,7 @@ import { listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { readWorkspaceConfig, writeWorkspaceSourceRecords } from "@/lib/workspace-config";
 import { loadAllResolvers } from "@/lib/adapters/integrations/resolver-loader";
 import { getSourceResolver } from "@/lib/adapters/integrations/source-resolver-registry";
+import { auditDataModelReferenceWarnings } from "@/lib/workspace-data-model";
 
 async function POST(request) {
   let body;
@@ -82,6 +83,7 @@ async function POST(request) {
 
   const refreshed = [];
   const skipped = [];
+  const refAudit = auditDataModelReferenceWarnings(workspaceConfig);
 
   for (const sourceId of sourceIds) {
     const obj = dataObjects.find((o) => o.id === sourceId);
@@ -121,7 +123,7 @@ async function POST(request) {
     }
   }
 
-  return NextResponse.json({ refreshed, skipped });
+  return NextResponse.json({ refreshed, skipped, dataModelRefAudit: refAudit });
 }
 
 export { POST };

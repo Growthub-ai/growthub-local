@@ -163,9 +163,76 @@ function normalizeManualObjects(workspaceConfig) {
   return Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
 }
 
+const DEFAULT_FIELD_SECTIONS = [
+  { id: "sec_main", label: "Fields", isCollapsed: false, order: 0 }
+];
+
+function usesGovernedFieldSchema(object) {
+  return (
+    Array.isArray(object?.fields) &&
+    object.fields.length > 0 &&
+    object.objectType !== "sandbox-environment"
+  );
+}
+
+function defaultCellValueForField(field) {
+  if (!field || typeof field !== "object") return null;
+  switch (field.type) {
+    case "multiSelect":
+    case "multiRef":
+      return [];
+    case "boolean":
+      return false;
+    case "number":
+    case "currency":
+    case "rating":
+      return null;
+    default:
+      return null;
+  }
+}
+
+function mintRowId() {
+  return `row_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeGovernedRows(object) {
+  const fields = Array.isArray(object.fields) ? object.fields : [];
+  const raw = Array.isArray(object.rows) ? object.rows : [];
+  return raw
+    .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    .map((row, index) => {
+      if (row.data && typeof row.data === "object" && !Array.isArray(row.data)) {
+        const data = { ...row.data };
+        for (const f of fields) {
+          if (data[f.id] === undefined) data[f.id] = defaultCellValueForField(f);
+        }
+        return { id: typeof row.id === "string" && row.id.trim() ? row.id : mintRowId(), data };
+      }
+      const data = {};
+      for (const f of fields) {
+        if (row[f.id] !== undefined) data[f.id] = row[f.id];
+        else data[f.id] = defaultCellValueForField(f);
+      }
+      return {
+        id: typeof row.id === "string" && row.id.trim() ? row.id : `row_legacy_${index}`,
+        data
+      };
+    });
+}
+
 function deriveManualObjectTable(object) {
-  const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
-  const rows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+  const usesFieldSchema = usesGovernedFieldSchema(object);
+  const fields = usesFieldSchema ? object.fields.filter((f) => f && typeof f.id === "string") : [];
+  const sections = usesFieldSchema
+    ? (Array.isArray(object.sections) && object.sections.length ? object.sections : DEFAULT_FIELD_SECTIONS)
+    : [];
+  const columns = usesFieldSchema
+    ? fields.filter((f) => f.isVisible !== false).map((f) => f.id)
+    : (Array.isArray(object.columns) ? object.columns.filter(Boolean) : []);
+  const rows = usesFieldSchema
+    ? normalizeGovernedRows(object)
+    : (Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : []);
   const source = object.source || object.label || object.name || "Manual object";
   return {
     id: `manual-object:${object.id || source}`,
@@ -175,6 +242,9 @@ function deriveManualObjectTable(object) {
     icon: object.icon || null,
     columns,
     rows,
+    fields,
+    sections,
+    usesFieldSchema,
     binding: object.binding || { mode: "manual", source: "Data Model" },
     relations: Array.isArray(object.relations) ? object.relations : [],
     mutable: true,
@@ -268,6 +338,18 @@ function applyTableMutation(workspaceConfig, table, mutate) {
           if (object.id !== table.objectId) return object;
           const current = deriveManualObjectTable(object);
           const next = mutate({ columns: current.columns, rows: current.rows });
+          if (current.usesFieldSchema) {
+            return {
+              ...object,
+              fields: object.fields,
+              sections: object.sections && object.sections.length ? object.sections : DEFAULT_FIELD_SECTIONS,
+              rows: next.rows,
+              fieldSettings: {
+                ...(object.fieldSettings || {}),
+                order: (object.fields || []).map((f) => f.id)
+              }
+            };
+          }
           return {
             ...object,
             columns: next.columns,
@@ -360,14 +442,133 @@ const OBJECT_TYPE_PRESETS = {
     label: "People",
     icon: "Users",
     description: "Contacts, leads, or team members with standard CRM fields.",
-    columns: ["Name", "Email", "Phone", "Company", "Status", "Role"],
+    fields: [
+      {
+        id: "fld_people_name",
+        type: "text",
+        label: "Name",
+        isVisible: true,
+        isRequired: true,
+        sectionId: "sec_identity",
+        defaultValue: null
+      },
+      {
+        id: "fld_people_email",
+        type: "email",
+        label: "Email",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_contact",
+        defaultValue: null
+      },
+      {
+        id: "fld_people_phone",
+        type: "phone",
+        label: "Phone",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_contact",
+        defaultValue: null
+      },
+      {
+        id: "fld_people_status",
+        type: "select",
+        label: "Status",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_pipeline",
+        defaultValue: "opt_new",
+        options: [
+          { id: "opt_new", label: "New", color: "#94a3b8" },
+          { id: "opt_contacted", label: "Contacted", color: "#60a5fa" },
+          { id: "opt_qualified", label: "Qualified", color: "#34d399" },
+          { id: "opt_disqualified", label: "Disqualified", color: "#f87171" }
+        ]
+      },
+      {
+        id: "fld_people_tags",
+        type: "multiSelect",
+        label: "Tags",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_pipeline",
+        defaultValue: [],
+        options: [
+          { id: "tag_vip", label: "VIP", color: "#a78bfa" },
+          { id: "tag_warm", label: "Warm Lead", color: "#fb923c" },
+          { id: "tag_partner", label: "Partner", color: "#38bdf8" }
+        ]
+      }
+    ],
+    sections: [
+      { id: "sec_identity", label: "Identity", isCollapsed: false, order: 0 },
+      { id: "sec_contact", label: "Contact", isCollapsed: false, order: 1 },
+      { id: "sec_pipeline", label: "Pipeline", isCollapsed: false, order: 2 }
+    ],
     relations: []
   },
   "tasks": {
     label: "Tasks",
     icon: "CheckSquare",
     description: "Action items, to-dos, or work items.",
-    columns: ["Name", "Status", "DueDate", "Assignee", "Priority"],
+    fields: [
+      {
+        id: "fld_tasks_name",
+        type: "text",
+        label: "Name",
+        isVisible: true,
+        isRequired: true,
+        sectionId: "sec_main",
+        defaultValue: null
+      },
+      {
+        id: "fld_tasks_status",
+        type: "select",
+        label: "Status",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_main",
+        defaultValue: "opt_todo",
+        options: [
+          { id: "opt_todo", label: "To do", color: "#94a3b8" },
+          { id: "opt_doing", label: "Doing", color: "#60a5fa" },
+          { id: "opt_done", label: "Done", color: "#34d399" }
+        ]
+      },
+      {
+        id: "fld_tasks_due",
+        type: "date",
+        label: "DueDate",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_main",
+        defaultValue: null
+      },
+      {
+        id: "fld_tasks_assignee",
+        type: "text",
+        label: "Assignee",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_main",
+        defaultValue: null
+      },
+      {
+        id: "fld_tasks_priority",
+        type: "select",
+        label: "Priority",
+        isVisible: true,
+        isRequired: false,
+        sectionId: "sec_main",
+        defaultValue: "opt_p2",
+        options: [
+          { id: "opt_p1", label: "P1", color: "#f87171" },
+          { id: "opt_p2", label: "P2", color: "#fbbf24" },
+          { id: "opt_p3", label: "P3", color: "#94a3b8" }
+        ]
+      }
+    ],
+    sections: [{ id: "sec_main", label: "Fields", isCollapsed: false, order: 0 }],
     relations: []
   },
   "sandbox-environment": {
@@ -410,7 +611,18 @@ const OBJECT_TYPE_PRESETS = {
     label: "Custom",
     icon: "Plus",
     description: "Start with a blank table — define your own fields and records.",
-    columns: ["Name"],
+    fields: [
+      {
+        id: "fld_custom_name",
+        type: "text",
+        label: "Name",
+        isVisible: true,
+        isRequired: true,
+        sectionId: "sec_main",
+        defaultValue: null
+      }
+    ],
+    sections: [{ id: "sec_main", label: "Fields", isCollapsed: false, order: 0 }],
     relations: []
   }
 };
@@ -424,24 +636,40 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
   const label = String(name || "").trim();
   if (!label) return workspaceConfig;
   const preset = OBJECT_TYPE_PRESETS[objectType] || OBJECT_TYPE_PRESETS.custom;
-  const columns = [...preset.columns];
+  const hasFieldSchema = Array.isArray(preset.fields) && preset.fields.length > 0;
   const dataModel =
     workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
       ? workspaceConfig.dataModel
       : {};
   const id = uniqueObjectId(workspaceConfig, label);
-  const object = {
-    id,
-    label,
-    source: label,
-    objectType,
-    icon: icon || preset.icon,
-    columns,
-    rows: [],
-    binding: { mode: "manual", source: "Data Model" },
-    relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
-    fieldSettings: { hidden: [], order: columns }
-  };
+  const object = hasFieldSchema
+    ? {
+        id,
+        label,
+        source: label,
+        objectType,
+        icon: icon || preset.icon,
+        fields: preset.fields.map((field) => structuredClone(field)),
+        sections: Array.isArray(preset.sections) && preset.sections.length
+          ? preset.sections.map((section) => ({ ...section }))
+          : DEFAULT_FIELD_SECTIONS,
+        rows: [],
+        binding: { mode: "manual", source: "Data Model" },
+        relations: preset.relations ? preset.relations.map((relation) => ({ ...relation })) : [],
+        fieldSettings: { hidden: [], order: preset.fields.map((field) => field.id) }
+      }
+    : {
+        id,
+        label,
+        source: label,
+        objectType,
+        icon: icon || preset.icon,
+        columns: [...preset.columns],
+        rows: [],
+        binding: { mode: "manual", source: "Data Model" },
+        relations: preset.relations ? preset.relations.map((relation) => ({ ...relation })) : [],
+        fieldSettings: { hidden: [], order: [...preset.columns] }
+      };
   return {
     ...workspaceConfig,
     dataModel: {
@@ -479,9 +707,128 @@ function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
   };
 }
 
+function updateManualObjectById(workspaceConfig, objectId, updater) {
+  const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+    ? workspaceConfig.dataModel
+    : {};
+  const objects = normalizeManualObjects(workspaceConfig).map((object) => {
+    if (object.id !== objectId) return object;
+    return updater({ ...object });
+  });
+  return {
+    ...workspaceConfig,
+    dataModel: {
+      ...dataModel,
+      objects
+    }
+  };
+}
+
+function addManualObjectField(workspaceConfig, objectId, newField) {
+  return updateManualObjectById(workspaceConfig, objectId, (object) => {
+    if (!usesGovernedFieldSchema(object)) return object;
+    const fields = [...(object.fields || []), newField];
+    const nextObject = { ...object, fields };
+    const rows = normalizeGovernedRows(nextObject);
+    return {
+      ...nextObject,
+      rows,
+      fieldSettings: { ...(object.fieldSettings || {}), order: fields.map((field) => field.id) }
+    };
+  });
+}
+
+function reorderManualObjectFields(workspaceConfig, objectId, dragFieldId, dropFieldId) {
+  return updateManualObjectById(workspaceConfig, objectId, (object) => {
+    if (!usesGovernedFieldSchema(object)) return object;
+    const fields = [...(object.fields || [])];
+    const fromIndex = fields.findIndex((field) => field.id === dragFieldId);
+    const toIndex = fields.findIndex((field) => field.id === dropFieldId);
+    if (fromIndex < 0 || toIndex < 0) return object;
+    const [moved] = fields.splice(fromIndex, 1);
+    fields.splice(toIndex, 0, moved);
+    return {
+      ...object,
+      fields,
+      fieldSettings: { ...(object.fieldSettings || {}), order: fields.map((field) => field.id) }
+    };
+  });
+}
+
+function setManualObjectFieldVisibility(workspaceConfig, objectId, fieldId, isVisible) {
+  return updateManualObjectById(workspaceConfig, objectId, (object) => {
+    if (!usesGovernedFieldSchema(object)) return object;
+    return {
+      ...object,
+      fields: (object.fields || []).map((field) =>
+        field.id === fieldId ? { ...field, isVisible: Boolean(isVisible) } : field
+      )
+    };
+  });
+}
+
+function deleteManualObjectField(workspaceConfig, objectId, fieldId) {
+  return updateManualObjectById(workspaceConfig, objectId, (object) => {
+    if (!usesGovernedFieldSchema(object)) return object;
+    const fields = (object.fields || []).filter((field) => field.id !== fieldId);
+    const nextObject = { ...object, fields };
+    const rows = normalizeGovernedRows(nextObject).map((row) => {
+      const data = { ...row.data };
+      delete data[fieldId];
+      return { id: row.id, data };
+    });
+    return {
+      ...nextObject,
+      rows,
+      fieldSettings: { ...(object.fieldSettings || {}), order: fields.map((field) => field.id) }
+    };
+  });
+}
+
+function updateManualObjectFieldDefinitions(workspaceConfig, objectId, fields, sections) {
+  return updateManualObjectById(workspaceConfig, objectId, (object) => {
+    if (!usesGovernedFieldSchema(object)) return object;
+    const next = { ...object, fields: Array.isArray(fields) ? fields : object.fields };
+    if (sections !== undefined) next.sections = sections;
+    const rows = normalizeGovernedRows(next);
+    return {
+      ...next,
+      rows,
+      fieldSettings: { ...(object.fieldSettings || {}), order: (next.fields || []).map((field) => field.id) }
+    };
+  });
+}
+
+function auditDataModelReferenceWarnings(workspaceConfig) {
+  const objects = normalizeManualObjects(workspaceConfig);
+  const byId = new Map(objects.map((object) => [object.id, object]));
+  const warnings = [];
+  objects.forEach((object) => {
+    if (!Array.isArray(object.fields)) return;
+    object.fields.forEach((field) => {
+      if (field.refConfig?.targetObjectId && !byId.has(field.refConfig.targetObjectId)) {
+        warnings.push(`Missing ref target ${field.refConfig.targetObjectId} for field ${field.id} on ${object.id}`);
+      }
+    });
+  });
+  return warnings;
+}
+
 function addTableField(workspaceConfig, table, fieldName) {
   const name = String(fieldName || "").trim();
   if (!name || !table.mutable) return workspaceConfig;
+  if (table.usesFieldSchema) {
+    const sectionId = (table.sections && table.sections[0]?.id) || "sec_main";
+    return addManualObjectField(workspaceConfig, table.objectId, {
+      id: `fld_${Date.now()}`,
+      type: "text",
+      label: name,
+      isVisible: true,
+      isRequired: false,
+      sectionId,
+      defaultValue: null
+    });
+  }
   return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
     if (columns.includes(name)) return { columns, rows };
     return { columns: [...columns, name], rows: rows.map((row) => ({ ...row, [name]: "" })) };
@@ -490,17 +837,30 @@ function addTableField(workspaceConfig, table, fieldName) {
 
 function addTableRow(workspaceConfig, table) {
   if (!table.mutable) return workspaceConfig;
-  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({
-    columns,
-    rows: [...rows, Object.fromEntries(columns.map((column) => [column, ""]))]
-  }));
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+    if (table.usesFieldSchema) {
+      const fields = table.fields || [];
+      const data = Object.fromEntries(fields.map((f) => [f.id, defaultCellValueForField(f)]));
+      return { columns, rows: [...rows, { id: mintRowId(), data }] };
+    }
+    return {
+      columns,
+      rows: [...rows, Object.fromEntries(columns.map((column) => [column, ""]))]
+    };
+  });
 }
 
 function updateTableCell(workspaceConfig, table, rowIndex, fieldName, value) {
   if (!table.mutable) return workspaceConfig;
   return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({
     columns,
-    rows: rows.map((row, index) => index === rowIndex ? { ...row, [fieldName]: value } : row)
+    rows: rows.map((row, index) => {
+      if (index !== rowIndex) return row;
+      if (table.usesFieldSchema && row.data) {
+        return { ...row, data: { ...row.data, [fieldName]: value } };
+      }
+      return { ...row, [fieldName]: value };
+    })
   }));
 }
 
@@ -516,14 +876,34 @@ function duplicateTableRow(workspaceConfig, table, rowIndex) {
   if (!table.mutable) return workspaceConfig;
   return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
     const next = [...rows];
-    if (rows[rowIndex]) next.splice(rowIndex + 1, 0, { ...rows[rowIndex] });
+    const source = rows[rowIndex];
+    if (!source) return { columns, rows: next };
+    if (table.usesFieldSchema) {
+      next.splice(rowIndex + 1, 0, { id: mintRowId(), data: { ...source.data } });
+    } else {
+      next.splice(rowIndex + 1, 0, { ...source });
+    }
     return { columns, rows: next };
   });
 }
 
 function appendRowsToTable(workspaceConfig, table, rowsToAppend) {
   if (!table.mutable || !Array.isArray(rowsToAppend)) return workspaceConfig;
-  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => ({ columns, rows: [...rows, ...rowsToAppend] }));
+  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+    if (table.usesFieldSchema) {
+      const appended = rowsToAppend.map((row) => {
+        if (row && typeof row.data === "object" && !Array.isArray(row.data)) {
+          return { id: typeof row.id === "string" && row.id.trim() ? row.id : mintRowId(), data: { ...row.data } };
+        }
+        return { id: mintRowId(), data: {} };
+      });
+      const merged = [...rows, ...appended];
+      const objectSlice = { fields: table.fields || [], rows: merged };
+      const normalized = normalizeGovernedRows(objectSlice);
+      return { columns, rows: normalized };
+    }
+    return { columns, rows: [...rows, ...rowsToAppend] };
+  });
 }
 
 function replaceTableContent(workspaceConfig, table, { columns = [], rows = [] } = {}) {
@@ -532,6 +912,20 @@ function replaceTableContent(workspaceConfig, table, { columns = [], rows = [] }
 }
 
 function exportTableAsCsv(table) {
+  if (table.usesFieldSchema && Array.isArray(table.fields) && table.fields.length) {
+    const cols = ["id", ...table.fields.map((f) => f.id)];
+    const csvRows = (table.rows || []).map((row) => {
+      const obj = { id: row.id || "" };
+      for (const f of table.fields) {
+        let v = row.data?.[f.id];
+        if (Array.isArray(v)) v = v.join(";");
+        if (v && typeof v === "object") v = JSON.stringify(v);
+        obj[f.id] = v ?? "";
+      }
+      return obj;
+    });
+    return toCsv(cols, csvRows);
+  }
   return toCsv(table.columns || [], table.rows || []);
 }
 
@@ -623,11 +1017,14 @@ function describeBindingMode(binding) {
 
 export {
   OBJECT_TYPE_PRESETS,
+  addManualObjectField,
   addTableField,
   addTableRow,
   appendRowsToTable,
+  auditDataModelReferenceWarnings,
   createManualBusinessObject,
   createTypedBusinessObject,
+  deleteManualObjectField,
   deleteTableRow,
   describeBindingLane,
   describeBindingMode,
@@ -638,7 +1035,10 @@ export {
   listWorkspaceDataModelTables,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
+  reorderManualObjectFields,
   replaceTableContent,
   sandboxRunSourceId,
+  setManualObjectFieldVisibility,
+  updateManualObjectFieldDefinitions,
   updateTableCell
 };

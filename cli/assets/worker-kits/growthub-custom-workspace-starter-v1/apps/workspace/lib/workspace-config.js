@@ -24,8 +24,10 @@ import {
   GRID_COLUMNS,
   GRID_ROWS,
   KNOWN_WIDGET_KINDS,
+  validateBrandKit,
   validateWorkspaceConfig
 } from "@/lib/workspace-schema";
+import { mergeBrandKitDefaults } from "@/lib/brand-kit-defaults";
 
 const PERSISTENCE_ADAPTERS = Object.freeze({
   FILESYSTEM: "filesystem",
@@ -187,7 +189,7 @@ function normalizeWorkspaceIdentityPatch(patch) {
       error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
       throw error;
     }
-    const brandingAllowed = new Set(["name", "logoUrl", "accent"]);
+    const brandingAllowed = new Set(["name", "logoUrl", "accent", "brandKit"]);
     const brandingUnknown = Object.keys(patch.branding).filter((key) => !brandingAllowed.has(key));
     if (brandingUnknown.length) {
       const error = new Error("branding patch contains unknown fields");
@@ -196,7 +198,7 @@ function normalizeWorkspaceIdentityPatch(patch) {
       throw error;
     }
     normalized.branding = {};
-    for (const key of brandingAllowed) {
+    for (const key of ["name", "logoUrl", "accent"]) {
       if (Object.prototype.hasOwnProperty.call(patch.branding, key)) {
         if (typeof patch.branding[key] !== "string") {
           const error = new Error(`branding.${key} must be a string`);
@@ -205,6 +207,17 @@ function normalizeWorkspaceIdentityPatch(patch) {
         }
         normalized.branding[key] = patch.branding[key].trim();
       }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch.branding, "brandKit")) {
+      const brandErrors = [];
+      validateBrandKit(patch.branding.brandKit, "branding.brandKit", brandErrors);
+      if (brandErrors.length) {
+        const error = new Error("invalid branding.brandKit");
+        error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+        error.details = brandErrors;
+        throw error;
+      }
+      normalized.branding.brandKit = mergeBrandKitDefaults(patch.branding.brandKit);
     }
   }
 
@@ -229,12 +242,19 @@ async function writeWorkspaceIdentitySettings(patch) {
     next.name = normalized.name;
   }
   if (normalized.branding) {
+    const prev = current.branding && typeof current.branding === "object" && !Array.isArray(current.branding)
+      ? current.branding
+      : {};
     next.branding = {
-      ...(current.branding && typeof current.branding === "object" && !Array.isArray(current.branding)
-        ? current.branding
-        : {}),
+      ...prev,
       ...normalized.branding
     };
+    if (normalized.branding.brandKit !== undefined) {
+      next.branding.brandKit = mergeBrandKitDefaults({
+        ...(prev.brandKit && typeof prev.brandKit === "object" && !Array.isArray(prev.brandKit) ? prev.brandKit : {}),
+        ...normalized.branding.brandKit
+      });
+    }
     if (!next.branding.name) {
       next.branding.name = next.name || "Growthub Workspace";
     }

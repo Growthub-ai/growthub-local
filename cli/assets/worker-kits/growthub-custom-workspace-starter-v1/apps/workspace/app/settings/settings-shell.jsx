@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 
 const SETTINGS_TABS = [
   { href: "/settings/general", label: "General" },
+  { href: "/settings/brand-kit", label: "Brand Kit" },
   { href: "/settings/apis-webhooks", label: "APIs & Webhooks" },
   { href: "/settings/apps", label: "Apps" }
 ];

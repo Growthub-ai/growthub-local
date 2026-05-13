@@ -5,7 +5,59 @@
   "branding": {
     "name": "Growthub Workspace",
     "logoUrl": "",
-    "accent": "#3f68ff"
+    "accent": "#3f68ff",
+    "brandKit": {
+      "version": "v1",
+      "colors": {
+        "primary": "#3f68ff",
+        "secondary": "#6366f1",
+        "accent": "#f59e0b",
+        "surface": "#ffffff",
+        "background": "#f8fafc",
+        "border": "#e2e8f0",
+        "textPrimary": "#0f172a",
+        "textMuted": "#64748b",
+        "success": "#22c55e",
+        "warning": "#f59e0b",
+        "danger": "#ef4444",
+        "darkMode": false
+      },
+      "typography": {
+        "fontFamily": "Inter, system-ui, sans-serif",
+        "fontSizeBase": "14px",
+        "fontWeightNormal": 400,
+        "fontWeightMedium": 500,
+        "fontWeightBold": 600,
+        "lineHeightBase": "1.5",
+        "letterSpacing": "0em"
+      },
+      "shape": {
+        "borderRadius": "8px",
+        "borderRadiusSm": "4px",
+        "borderRadiusLg": "12px",
+        "spacingBase": "4px"
+      },
+      "components": {
+        "sidebar": {
+          "background": "#1e293b",
+          "textColor": "#f1f5f9"
+        },
+        "header": {
+          "background": "#ffffff",
+          "borderBottom": "1px solid #e2e8f0"
+        },
+        "card": {
+          "background": "#ffffff",
+          "shadow": "0 1px 3px rgba(0,0,0,0.07)"
+        },
+        "statusChip": {
+          "borderRadius": "999px"
+        },
+        "tagChip": {
+          "borderRadius": "4px"
+        }
+      }
+    }
   },
   "capabilities": [
     "dashboards",
@@ -49,6 +101,188 @@
       "sessionContext": true,
       "configDrivenCanvas": true
     }
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "obj_companies_demo",
+        "label": "Companies",
+        "source": "Companies",
+        "objectType": "custom",
+        "icon": "Building2",
+        "fields": [
+          {
+            "id": "fld_company_name",
+            "type": "text",
+            "label": "Name",
+            "isVisible": true,
+            "isRequired": true,
+            "sectionId": "sec_main",
+            "defaultValue": null
+          },
+          {
+            "id": "fld_company_domain",
+            "type": "url",
+            "label": "Domain",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_main",
+            "defaultValue": null
+          }
+        ],
+        "sections": [
+          { "id": "sec_main", "label": "Fields", "isCollapsed": false, "order": 0 }
+        ],
+        "rows": [
+          {
+            "id": "row_c1",
+            "data": {
+              "fld_company_name": "Acme Corp",
+              "fld_company_domain": "https://acme.example"
+            }
+          },
+          {
+            "id": "row_c2",
+            "data": {
+              "fld_company_name": "Globex LLC",
+              "fld_company_domain": "https://globex.example"
+            }
+          }
+        ],
+        "binding": { "mode": "manual", "source": "Data Model" },
+        "relations": [],
+        "fieldSettings": {
+          "hidden": [],
+          "order": ["fld_company_name", "fld_company_domain"]
+        }
+      },
+      {
+        "id": "obj_people_demo",
+        "label": "People",
+        "source": "People",
+        "objectType": "people",
+        "icon": "Users",
+        "fields": [
+          {
+            "id": "fld_people_name",
+            "type": "text",
+            "label": "Name",
+            "isVisible": true,
+            "isRequired": true,
+            "sectionId": "sec_identity",
+            "defaultValue": null
+          },
+          {
+            "id": "fld_people_email",
+            "type": "email",
+            "label": "Email",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_contact",
+            "defaultValue": null
+          },
+          {
+            "id": "fld_people_phone",
+            "type": "phone",
+            "label": "Phone",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_contact",
+            "defaultValue": null
+          },
+          {
+            "id": "fld_people_company",
+            "type": "ref",
+            "label": "Company",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_relations",
+            "defaultValue": null,
+            "refConfig": {
+              "targetObjectType": "custom",
+              "targetObjectId": "obj_companies_demo",
+              "displayField": "fld_company_name",
+              "cardinality": "many-to-one"
+            }
+          },
+          {
+            "id": "fld_people_company_domain",
+            "type": "lookup",
+            "label": "Company domain",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_relations",
+            "defaultValue": null,
+            "lookupConfig": {
+              "throughFieldId": "fld_people_company",
+              "targetFieldId": "fld_company_domain"
+            }
+          },
+          {
+            "id": "fld_people_status",
+            "type": "select",
+            "label": "Status",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_pipeline",
+            "defaultValue": "opt_new",
+            "options": [
+              { "id": "opt_new", "label": "New", "color": "#94a3b8" },
+              { "id": "opt_contacted", "label": "Contacted", "color": "#60a5fa" },
+              { "id": "opt_qualified", "label": "Qualified", "color": "#34d399" },
+              { "id": "opt_disqualified", "label": "Disqualified", "color": "#f87171" }
+            ]
+          },
+          {
+            "id": "fld_people_tags",
+            "type": "multiSelect",
+            "label": "Tags",
+            "isVisible": true,
+            "isRequired": false,
+            "sectionId": "sec_pipeline",
+            "defaultValue": [],
+            "options": [
+              { "id": "tag_vip", "label": "VIP", "color": "#a78bfa" },
+              { "id": "tag_warm", "label": "Warm Lead", "color": "#fb923c" },
+              { "id": "tag_partner", "label": "Partner", "color": "#38bdf8" }
+            ]
+          }
+        ],
+        "sections": [
+          { "id": "sec_identity", "label": "Identity", "isCollapsed": false, "order": 0 },
+          { "id": "sec_contact", "label": "Contact", "isCollapsed": false, "order": 1 },
+          { "id": "sec_pipeline", "label": "Pipeline", "isCollapsed": false, "order": 2 },
+          { "id": "sec_relations", "label": "Relations", "isCollapsed": false, "order": 3 }
+        ],
+        "rows": [
+          {
+            "id": "row_p1",
+            "data": {
+              "fld_people_name": "Alice Example",
+              "fld_people_email": "alice@example.com",
+              "fld_people_phone": "+1 555-0100",
+              "fld_people_company": "row_c1",
+              "fld_people_status": "opt_new",
+              "fld_people_tags": ["tag_vip"]
+            }
+          }
+        ],
+        "binding": { "mode": "manual", "source": "Data Model" },
+        "relations": [],
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "fld_people_name",
+            "fld_people_email",
+            "fld_people_phone",
+            "fld_people_company",
+            "fld_people_company_domain",
+            "fld_people_status",
+            "fld_people_tags"
+          ]
+        }
+      }
+    ]
   },
   "provenance": {
     "createdBy": "cli",

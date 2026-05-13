@@ -38,10 +38,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   OBJECT_TYPE_PRESETS,
+  addManualObjectField,
   addTableField,
   addTableRow,
   appendRowsToTable,
   createTypedBusinessObject,
+  deleteManualObjectField,
   describeBindingLane,
   exportTableAsCsv,
   importTableFromCsv,
@@ -49,9 +51,14 @@ import {
   listWorkspaceDataModelTables,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
+  reorderManualObjectFields,
   replaceTableContent,
+  setManualObjectFieldVisibility,
   updateTableCell,
 } from "@/lib/workspace-data-model";
+import { AddFieldModal } from "@/app/components/data-model/AddFieldModal.jsx";
+import { FieldRow } from "@/app/components/data-model/FieldRow.jsx";
+import { GovernedRecordDrawer } from "@/app/components/data-model/GovernedRecordDrawer.jsx";
 
 // ─── Icon system ─────────────────────────────────────────────────────────────
 
@@ -208,6 +215,7 @@ function NavRail({ authority, workspaceConfig }) {
         <Link href="/">Dashboards</Link>
         <Link className="active" href="/data-model">Data Model</Link>
         <span className="workspace-nav-static">Management</span>
+        <Link className="workspace-nav-bottom" href="/settings/brand-kit">Brand Kit</Link>
         <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
       </nav>
       <div className="workspace-rail-status">
@@ -834,6 +842,19 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
 
   const isSandbox = table.objectType === "sandbox-environment";
 
+  if (table.usesFieldSchema) {
+    return (
+      <GovernedRecordDrawer
+        table={table}
+        workspaceConfig={workspaceConfig}
+        rowIndex={rowIndex}
+        row={row}
+        onSave={onSave}
+        onClose={onClose}
+      />
+    );
+  }
+
   function updateField(column, value) {
     setDraft((current) => ({ ...current, [column]: value }));
     onSave((config) => updateTableCell(config, table, rowIndex, column, value));
@@ -1034,10 +1055,25 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   );
 }
 
+function formatGovernedCell(field, rawValue) {
+  if (rawValue === null || rawValue === undefined || rawValue === "") return "";
+  if (field?.type === "select") {
+    const opt = field.options?.find((o) => o.id === rawValue);
+    return opt?.label || String(rawValue);
+  }
+  if (field?.type === "multiSelect" && Array.isArray(rawValue)) {
+    return rawValue.map((id) => field.options?.find((o) => o.id === id)?.label || id).join(", ");
+  }
+  if (field?.type === "boolean") return rawValue ? "Yes" : "No";
+  if (typeof rawValue === "object") return JSON.stringify(rawValue);
+  return String(rawValue);
+}
+
 function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave }) {
   const [selectedRow, setSelectedRow] = useState(null);
   const [addingField, setAddingField] = useState(false);
   const [fieldName, setFieldName] = useState("");
+  const [fieldModalOpen, setFieldModalOpen] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [mode, setMode] = useState("append");
@@ -1070,6 +1106,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
   }
 
   const selectedRecord = selectedRow === null ? null : table.rows[selectedRow];
+  const manualObjects = workspaceConfig?.dataModel?.objects || [];
 
   return (
     <div className="dm-db-surface">
@@ -1110,6 +1147,44 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
             <label><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /> Replace</label>
             <button type="button" className="dm-btn-primary-sm" disabled={!csvText.trim()} onClick={importCsv}>Import</button>
           </div>
+        </div>
+      )}
+      {table.usesFieldSchema && (
+        <div className="dm-field-schema-panel">
+          <div className="dm-field-schema-head">
+            <strong>Object schema</strong>
+            <button type="button" className="dm-btn-primary-sm" disabled={saving} onClick={() => setFieldModalOpen(true)}>Add field</button>
+          </div>
+          <div className="dm-field-row-list">
+            {(table.fields || []).map((field) => (
+              <FieldRow
+                key={field.id}
+                field={field}
+                onVisibilityToggle={(fieldId, isVisible) => {
+                  onSave((config) => setManualObjectFieldVisibility(config, table.objectId, fieldId, isVisible));
+                }}
+                onEditField={() => setFieldModalOpen(true)}
+                onDeleteField={(fieldId) => {
+                  onSave((config) => deleteManualObjectField(config, table.objectId, fieldId));
+                }}
+                onReorder={(dragId, dropId) => {
+                  onSave((config) => reorderManualObjectFields(config, table.objectId, dragId, dropId));
+                }}
+              />
+            ))}
+          </div>
+          <AddFieldModal
+            open={fieldModalOpen}
+            objectFields={table.fields || []}
+            objectSections={table.sections?.length ? table.sections : [{ id: "sec_main", label: "Fields", isCollapsed: false, order: 0 }]}
+            availableObjects={manualObjects}
+            excludeObjectId={table.objectId}
+            onCancel={() => setFieldModalOpen(false)}
+            onSave={(newField) => {
+              onSave((config) => addManualObjectField(config, table.objectId, newField));
+              setFieldModalOpen(false);
+            }}
+          />
         </div>
       )}
       <div className="dm-db-grid-wrap">
@@ -1153,6 +1228,8 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                 {table.columns.map((column) => {
                   const relation = relationForColumn(table, column);
                   const options = referenceOptions(tables, relation);
+                  const fieldMeta = table.usesFieldSchema ? (table.fields || []).find((f) => f.id === column) : null;
+                  const cellRaw = table.usesFieldSchema ? row?.data?.[column] : row?.[column];
                   return (
                   <td key={column}>
                     {relation ? (
@@ -1162,11 +1239,13 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                         disabled={!table.mutable || saving}
                         onChange={(nextValue) => onSave((config) => updateTableCell(config, table, rowIndex, column, nextValue))}
                       />
-                    ) : column.toLowerCase() === "status" ? (
+                    ) : column.toLowerCase() === "status" && !table.usesFieldSchema ? (
                       <ConnectionPill value={row?.[column]} />
                     ) : (
-                      <span className={row?.[column] ? "" : "dm-cell-empty"}>
-                        {formatCellValue(row?.[column], column) || "—"}
+                      <span className={cellRaw !== undefined && cellRaw !== null && cellRaw !== "" ? "" : "dm-cell-empty"}>
+                        {table.usesFieldSchema
+                          ? (formatGovernedCell(fieldMeta, cellRaw) || "—")
+                          : (formatCellValue(row?.[column], column) || "—")}
                       </span>
                     )}
                   </td>

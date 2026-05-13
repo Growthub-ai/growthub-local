@@ -37,6 +37,8 @@
  * them without parsing a stack trace.
  */
 
+import { FIELD_TYPES, REF_CARDINALITIES, ROLLUP_AGGREGATIONS } from "./field-type-registry.js";
+
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
@@ -493,6 +495,228 @@ function validateFieldSettings(fieldSettings, path, errors) {
   if (fieldSettings.order !== undefined) validateStringArray(fieldSettings.order, `${path}.order`, errors);
 }
 
+/**
+ * Validates growthub.config.json#branding.brandKit (additive under branding).
+ * @param {unknown} brandKit
+ * @param {string} path
+ * @param {string[]} errors
+ */
+function validateBrandKit(brandKit, path, errors) {
+  if (brandKit === undefined) return;
+  if (!isPlainObject(brandKit)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (brandKit.version !== undefined && typeof brandKit.version !== "string") {
+    errors.push(`${path}.version must be a string`);
+  }
+  if (brandKit.colors !== undefined) {
+    if (!isPlainObject(brandKit.colors)) {
+      errors.push(`${path}.colors must be a plain object`);
+    } else {
+      for (const [key, val] of Object.entries(brandKit.colors)) {
+        if (key === "darkMode") {
+          if (typeof val !== "boolean") errors.push(`${path}.colors.darkMode must be a boolean`);
+        } else if (typeof val !== "string") {
+          errors.push(`${path}.colors.${key} must be a string`);
+        }
+      }
+    }
+  }
+  if (brandKit.typography !== undefined && !isPlainObject(brandKit.typography)) {
+    errors.push(`${path}.typography must be a plain object`);
+  }
+  if (brandKit.shape !== undefined && !isPlainObject(brandKit.shape)) {
+    errors.push(`${path}.shape must be a plain object`);
+  }
+  if (brandKit.components !== undefined) {
+    if (!isPlainObject(brandKit.components)) {
+      errors.push(`${path}.components must be a plain object`);
+    } else {
+      for (const [slot, val] of Object.entries(brandKit.components)) {
+        if (!isPlainObject(val)) errors.push(`${path}.components.${slot} must be a plain object`);
+      }
+    }
+  }
+}
+
+function validateSelectOption(option, path, errors) {
+  if (!isPlainObject(option)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (typeof option.id !== "string" || !option.id.trim()) errors.push(`${path}.id must be a non-empty string`);
+  if (typeof option.label !== "string") errors.push(`${path}.label must be a string`);
+  if (option.color !== undefined && typeof option.color !== "string") {
+    errors.push(`${path}.color must be a string`);
+  }
+}
+
+function validateRefConfig(refConfig, path, errors) {
+  if (!isPlainObject(refConfig)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (typeof refConfig.targetObjectType !== "string" || !refConfig.targetObjectType.trim()) {
+    errors.push(`${path}.targetObjectType must be a non-empty string`);
+  }
+  if (typeof refConfig.targetObjectId !== "string" || !refConfig.targetObjectId.trim()) {
+    errors.push(`${path}.targetObjectId must be a non-empty string`);
+  }
+  if (typeof refConfig.displayField !== "string" || !refConfig.displayField.trim()) {
+    errors.push(`${path}.displayField must be a non-empty string`);
+  }
+  if (typeof refConfig.cardinality !== "string" || !REF_CARDINALITIES.includes(refConfig.cardinality)) {
+    errors.push(`${path}.cardinality must be one of ${REF_CARDINALITIES.join(", ")}`);
+  }
+}
+
+function validateLookupConfig(lookupConfig, path, errors) {
+  if (!isPlainObject(lookupConfig)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (typeof lookupConfig.throughFieldId !== "string" || !lookupConfig.throughFieldId.trim()) {
+    errors.push(`${path}.throughFieldId must be a non-empty string`);
+  }
+  if (typeof lookupConfig.targetFieldId !== "string" || !lookupConfig.targetFieldId.trim()) {
+    errors.push(`${path}.targetFieldId must be a non-empty string`);
+  }
+}
+
+function validateRollupConfig(rollupConfig, path, errors) {
+  if (!isPlainObject(rollupConfig)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (typeof rollupConfig.throughFieldId !== "string" || !rollupConfig.throughFieldId.trim()) {
+    errors.push(`${path}.throughFieldId must be a non-empty string`);
+  }
+  if (typeof rollupConfig.aggregation !== "string" || !ROLLUP_AGGREGATIONS.includes(rollupConfig.aggregation)) {
+    errors.push(`${path}.aggregation must be one of ${ROLLUP_AGGREGATIONS.join(", ")}`);
+  }
+}
+
+function validateDataModelField(field, path, errors) {
+  if (!isPlainObject(field)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  if (typeof field.id !== "string" || !field.id.trim()) errors.push(`${path}.id must be a non-empty string`);
+  if (typeof field.type !== "string" || !FIELD_TYPES.includes(field.type)) {
+    errors.push(`${path}.type must be one of ${FIELD_TYPES.join(", ")}`);
+  }
+  if (typeof field.label !== "string" || !field.label.trim()) errors.push(`${path}.label must be a non-empty string`);
+  if (field.isVisible !== undefined && typeof field.isVisible !== "boolean") {
+    errors.push(`${path}.isVisible must be a boolean`);
+  }
+  if (field.isRequired !== undefined && typeof field.isRequired !== "boolean") {
+    errors.push(`${path}.isRequired must be a boolean`);
+  }
+  if (field.isStandard !== undefined && typeof field.isStandard !== "boolean") {
+    errors.push(`${path}.isStandard must be a boolean`);
+  }
+  if (field.sectionId !== undefined && typeof field.sectionId !== "string") {
+    errors.push(`${path}.sectionId must be a string`);
+  }
+  if (["select", "multiSelect"].includes(field.type)) {
+    if (!Array.isArray(field.options)) {
+      errors.push(`${path}.options must be an array for type ${field.type}`);
+    } else {
+      field.options.forEach((opt, i) => validateSelectOption(opt, `${path}.options[${i}]`, errors));
+    }
+  }
+  if (field.type === "ref" || field.type === "multiRef") {
+    if (!field.refConfig) {
+      errors.push(`${path}.refConfig is required for type ${field.type}`);
+    } else {
+      validateRefConfig(field.refConfig, `${path}.refConfig`, errors);
+    }
+  }
+  if (field.type === "lookup") {
+    if (!field.lookupConfig) {
+      errors.push(`${path}.lookupConfig is required for type lookup`);
+    } else {
+      validateLookupConfig(field.lookupConfig, `${path}.lookupConfig`, errors);
+    }
+  }
+  if (field.type === "rollup") {
+    if (!field.rollupConfig) {
+      errors.push(`${path}.rollupConfig is required for type rollup`);
+    } else {
+      validateRollupConfig(field.rollupConfig, `${path}.rollupConfig`, errors);
+    }
+  }
+}
+
+function validateDataModelSections(sections, path, errors) {
+  if (sections === undefined) return;
+  if (!Array.isArray(sections)) {
+    errors.push(`${path} must be an array`);
+    return;
+  }
+  sections.forEach((section, index) => {
+    const p = `${path}[${index}]`;
+    if (!isPlainObject(section)) {
+      errors.push(`${p} must be a plain object`);
+      return;
+    }
+    if (typeof section.id !== "string" || !section.id.trim()) errors.push(`${p}.id must be a non-empty string`);
+    if (typeof section.label !== "string" || !section.label.trim()) errors.push(`${p}.label must be a non-empty string`);
+    if (section.isCollapsed !== undefined && typeof section.isCollapsed !== "boolean") {
+      errors.push(`${p}.isCollapsed must be a boolean`);
+    }
+    if (section.order !== undefined && (!Number.isFinite(section.order) || section.order < 0)) {
+      errors.push(`${p}.order must be a non-negative finite number`);
+    }
+  });
+}
+
+function objectUsesGovernedFieldSchema(object) {
+  return (
+    Array.isArray(object.fields) &&
+    object.fields.length > 0 &&
+    object.objectType !== "sandbox-environment"
+  );
+}
+
+function validateDataModelCrossReferences(objects, errors) {
+  const byId = new Map((objects || []).filter((o) => o && typeof o.id === "string").map((o) => [o.id, o]));
+  objects.forEach((object, objIndex) => {
+    if (!isPlainObject(object) || !Array.isArray(object.fields)) return;
+    const fieldById = new Map(object.fields.map((f) => (f && typeof f.id === "string" ? [f.id, f] : [null, null])).filter(([k]) => k));
+    object.fields.forEach((field, fi) => {
+      if (!isPlainObject(field)) return;
+      const prefix = `dataModel.objects[${objIndex}].fields[${fi}]`;
+      if (field.refConfig?.targetObjectId) {
+        const target = byId.get(field.refConfig.targetObjectId);
+        if (!target) errors.push(`${prefix}.refConfig.targetObjectId must reference an existing dataModel.objects[].id`);
+      }
+      if (field.type === "lookup" && field.lookupConfig) {
+        const through = fieldById.get(field.lookupConfig.throughFieldId);
+        if (!through || (through.type !== "ref" && through.type !== "multiRef")) {
+          errors.push(`${prefix}.lookupConfig.throughFieldId must name a ref or multiRef field on the same object`);
+        }
+        const refField = through;
+        const targetId = refField?.refConfig?.targetObjectId;
+        const targetObj = targetId ? byId.get(targetId) : null;
+        if (targetObj && Array.isArray(targetObj.fields)) {
+          const tf = targetObj.fields.find((f) => f && f.id === field.lookupConfig.targetFieldId);
+          if (!tf) {
+            errors.push(`${prefix}.lookupConfig.targetFieldId must exist on the referenced target object`);
+          }
+        }
+      }
+      if (field.type === "rollup" && field.rollupConfig) {
+        const through = fieldById.get(field.rollupConfig.throughFieldId);
+        if (!through || (through.type !== "ref" && through.type !== "multiRef")) {
+          errors.push(`${prefix}.rollupConfig.throughFieldId must name a ref or multiRef field on the same object`);
+        }
+      }
+    });
+  });
+}
+
 function validateSortClauses(sort, path, errors) {
   if (sort === undefined) return;
   if (!Array.isArray(sort)) {
@@ -907,7 +1131,18 @@ function validateDataModelConfig(dataModel, errors) {
     if (typeof object.label !== "string" || !object.label.trim()) errors.push(`${prefix}.label must be a non-empty string`);
     if (object.source !== undefined && typeof object.source !== "string") errors.push(`${prefix}.source must be a string`);
     if (object.sourceId !== undefined && typeof object.sourceId !== "string") errors.push(`${prefix}.sourceId must be a string`);
-    validateStringArray(object.columns, `${prefix}.columns`, errors);
+    if (objectUsesGovernedFieldSchema(object)) {
+      if (!Array.isArray(object.fields)) {
+        errors.push(`${prefix}.fields must be a non-empty array when using governed field schema`);
+      } else {
+        object.fields.forEach((field, fi) => {
+          validateDataModelField(field, `${prefix}.fields[${fi}]`, errors);
+        });
+      }
+      validateDataModelSections(object.sections, `${prefix}.sections`, errors);
+    } else {
+      validateStringArray(object.columns, `${prefix}.columns`, errors);
+    }
     if (!Array.isArray(object.rows)) {
       errors.push(`${prefix}.rows must be an array`);
     } else {
@@ -918,6 +1153,13 @@ function validateDataModelConfig(dataModel, errors) {
         }
         if (object.objectType === "sandbox-environment") {
           validateSandboxEnvironmentRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        } else if (objectUsesGovernedFieldSchema(object)) {
+          if (typeof row.id !== "string" || !row.id.trim()) {
+            errors.push(`${prefix}.rows[${rowIndex}].id must be a non-empty string`);
+          }
+          if (!isPlainObject(row.data)) {
+            errors.push(`${prefix}.rows[${rowIndex}].data must be a plain object`);
+          }
         }
       });
     }
@@ -927,6 +1169,7 @@ function validateDataModelConfig(dataModel, errors) {
     }
     validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
   });
+  validateDataModelCrossReferences(dataModel.objects, errors);
 }
 
 function validateTemplateWidgetArray(widgets, contextPath, errors) {
@@ -1201,5 +1444,7 @@ export {
   validateTemplateWidgetArray,
   validateWorkspaceConfig,
   validateWorkspaceTemplate,
+  validateBrandKit,
+  objectUsesGovernedFieldSchema,
   wrapWorkspaceTemplateExport
 };
