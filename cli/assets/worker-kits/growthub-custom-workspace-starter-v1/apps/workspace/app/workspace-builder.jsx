@@ -483,7 +483,22 @@ function findFreePosition(widgets) {
       if (!collides) return { ...DEFAULT_POSITION, x, y };
     }
   }
-  return { ...DEFAULT_POSITION };
+  for (let h = DEFAULT_POSITION.h; h >= 1; h -= 1) {
+    for (let w = DEFAULT_POSITION.w; w >= 1; w -= 1) {
+      for (let y = 0; y <= GRID_ROWS - h; y += 1) {
+        for (let x = 0; x <= GRID_COLUMNS - w; x += 1) {
+          let collides = false;
+          for (let dx = 0; dx < w && !collides; dx += 1) {
+            for (let dy = 0; dy < h && !collides; dy += 1) {
+              if (occupied.has(`${x + dx}:${y + dy}`)) collides = true;
+            }
+          }
+          if (!collides) return { x, y, w, h };
+        }
+      }
+    }
+  }
+  return { x: 0, y: 0, w: 1, h: 1 };
 }
 
 function normalizePosition(start, end) {
@@ -509,11 +524,13 @@ function positionsOverlap(a, b) {
 }
 
 function clampPositionToFreeSpace(position, widgets) {
+  const boundedX = Math.max(0, Math.min(position.x, GRID_COLUMNS - 1));
+  const boundedY = Math.max(0, Math.min(position.y, GRID_ROWS - 1));
   const bounded = {
-    x: Math.max(0, Math.min(position.x, GRID_COLUMNS - 1)),
-    y: Math.max(0, Math.min(position.y, GRID_ROWS - 1)),
-    w: Math.max(1, Math.min(position.w, GRID_COLUMNS - position.x)),
-    h: Math.max(1, Math.min(position.h, GRID_ROWS - position.y))
+    x: boundedX,
+    y: boundedY,
+    w: Math.max(1, Math.min(position.w, GRID_COLUMNS - boundedX)),
+    h: Math.max(1, Math.min(position.h, GRID_ROWS - boundedY))
   };
   const collides = widgets.some((widget) => positionsOverlap(bounded, widget.position));
   return collides ? findFreePosition(widgets) : bounded;
@@ -3359,7 +3376,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
-  const addSlot = dragPreview || selectedPosition;
+  const addSlot = useMemo(
+    () => clampPositionToFreeSpace(dragPreview || selectedPosition, activeWidgets),
+    [activeWidgets, dragPreview, selectedPosition]
+  );
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
   const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
   const dataModelTables = useMemo(() => listWorkspaceDataModelTables(config), [config]);
