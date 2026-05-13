@@ -442,12 +442,31 @@ async function POST(request) {
   const agentCommand = instructions
     ? `Instructions:\n${instructions}\n\nPrompt:\n${command}`
     : command;
+  const intelligenceSandbox =
+    adapterId === "local-intelligence"
+      ? {
+          userIntent: agentCommand,
+          localModel: typeof row.localModel === "string" ? row.localModel.trim() : "",
+          localEndpoint: typeof row.localEndpoint === "string" ? row.localEndpoint.trim() : "",
+          intelligenceAdapterMode:
+            typeof row.intelligenceAdapterMode === "string"
+              ? row.intelligenceAdapterMode.trim().toLowerCase()
+              : "ollama",
+        }
+      : undefined;
   const lifecycleStatus = String(row.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
   const version = row.version ?? "";
   const requestedTimeout = Number(row.timeoutMs);
   const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
     ? Math.min(requestedTimeout, SANDBOX_MAX_TIMEOUT_MS)
     : SANDBOX_DEFAULT_TIMEOUT_MS;
+
+  if (runLocality === "serverless" && adapterId === "local-intelligence") {
+    return NextResponse.json({
+      ok: false,
+      error: "`local-intelligence` applies only when runLocality is local. Switch run locality or choose a process adapter for serverless delegation.",
+    }, { status: 400 });
+  }
 
   if (runLocality === "serverless" && adapterId === "local-agent-host") {
     return NextResponse.json({
@@ -522,7 +541,7 @@ async function POST(request) {
         name: row.Name || name,
         runtime,
         agentHost,
-        command: adapterId === "local-agent-host" ? agentCommand : command,
+        command: adapterId === "local-agent-host" || adapterId === "local-intelligence" ? agentCommand : command,
         timeoutMs,
         networkAllow,
         allowList,
@@ -530,7 +549,8 @@ async function POST(request) {
         envRefSlugs,
         envRefsMissing,
         workdir,
-        ranAt
+        ranAt,
+        ...(intelligenceSandbox ? { intelligenceSandbox } : {}),
       });
     } catch (error) {
       result = {

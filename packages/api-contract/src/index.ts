@@ -251,6 +251,8 @@ export type {
   AdapterMode,
   AdapterInputRef,
   AdapterOutputRef,
+  LocalModelRuntimeRef,
+  LocalModelAdapterOutputRef,
   NormalizedConnectionRef,
   AdapterContractRef,
 } from "./adapters.js";

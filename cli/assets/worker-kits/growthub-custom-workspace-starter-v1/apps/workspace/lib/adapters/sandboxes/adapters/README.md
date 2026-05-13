@@ -2,10 +2,11 @@
 
 Drop one `.js` file per execution target here. Each file calls `registerSandboxAdapter()` once at module load.
 
-This is the thin agnostic extension point for the **`sandbox-environment` governed Data Model object**. Two default adapters ship eagerly with every workspace, loaded by `lib/adapters/sandboxes/index.js`:
+This is the thin agnostic extension point for the **`sandbox-environment` governed Data Model object**. Three default adapters ship eagerly with every workspace, loaded by `lib/adapters/sandboxes/index.js`:
 
-- **`local-process`** (`default-local-process.js`) — spawns python3 / node / bash inside an isolated `/tmp/growthub-sandbox-*` workdir with timeout + captured stdio. Use this when the row is a deterministic script.
-- **`local-agent-host`** (`default-local-agent-host.js`) — Paperclip thin local adapter. Routes the row through whichever local agent host CLI the operator has on PATH (Claude Code, Codex, Cursor, Gemini, OpenCode, Pi, Qwen, Hermes, OpenClaw Gateway). Cross-platform — works on macOS, Windows, and Linux. Slugs mirror the canonical `AGENT_ADAPTER_TYPES` enum so a row is portable to the upstream Paperclip server adapter registry without translation.
+- **`local-process`** (`../default-local-process.js`) — spawns python3 / node / bash inside an isolated `/tmp/growthub-sandbox-*` workdir with timeout + captured stdio. Use this when the row is a deterministic script.
+- **`local-agent-host`** (`../default-local-agent-host.js`) — Paperclip thin local adapter. Routes the row through whichever local agent host CLI the operator has on PATH (Claude Code, Codex, Cursor, Gemini, OpenCode, Pi, Qwen, Hermes, OpenClaw Gateway). Cross-platform — works on macOS, Windows, and Linux. Slugs mirror the canonical `AGENT_ADAPTER_TYPES` enum so a row is portable to the upstream Paperclip server adapter registry without translation.
+- **`local-intelligence`** (`../default-local-intelligence.js`) — OpenAI-compatible **JSON-only** chat-completions call to the operator's local stack (Ollama / LM Studio / vLLM / custom URL). The merged **Instructions + Command** field is the user task. Tool intents in the JSON response are **proposals only** — this adapter never executes them.
 
 Files added to this drop-zone are loaded by `adapter-loader.js` on the first sandbox-run route invocation. Use the drop-zone for hardened isolation primitives (firejail, gVisor, Docker, Fly Machines, e2b, modal.com) or for additional agent host targets the canonical catalog does not yet cover.
 
@@ -61,3 +62,4 @@ When the sandbox row’s **`runLocality`** is **`serverless`**, the sandbox-run 
 2. The route mints **`growthub-sandbox-run-v1`** JSON (no secrets inline) and **POST**s using the merged registry/request shape (parity with outbound test routes).
 3. The handler translates its own queue (KV, Postgres, cron tick, etc.) into a normal JSON or text reply; the route maps that reply into **`stdout`**, optional **`stderr`**, and **`exitCode`** — same **`lastResponse`** / sidecar semantics as **local**.
 4. Drop-zone adapters labelled **`locality: "serverless"`** are **not** used for delegation today; outbound HTTP replaces them so operators wire **already-supported** integrations + infra without a second resolver graph.
+5. Rows using **`local-intelligence`** must keep **`runLocality: "local"`** — that adapter performs an outbound HTTP call to the operator's machine only; it cannot be combined with serverless delegation.

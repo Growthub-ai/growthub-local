@@ -94,6 +94,10 @@ import {
   writeIntelligenceConfig,
   buildMarketingContext,
   buildDeterministicContext,
+  runLocalIntelligenceSandboxTask,
+  buildLocalIntelligenceSandboxPrompts,
+  sandboxEnvelopeToTraceRecord,
+  formatTraceRecordLine,
 } from "./runtime/native-intelligence/index.js";
 import type { NodeContractSummary } from "./runtime/cms-node-contracts/types.js";
 import { createCmsCapabilityRegistryClient } from "./runtime/cms-capability-registry/index.js";
@@ -344,6 +348,7 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
         { value: "models", label: "Manage local custom models", hint: "select active favorite/default model" },
         { value: "prompt", label: "Prompt local model (chat flow)", hint: "human first local prompt submissions" },
         { value: "flows", label: "Run native-intelligence with your prompt", hint: "planner/normalizer/recommender/summarizer" },
+        { value: "sandbox", label: "Run sandboxed local model task", hint: "governed JSON + validated tool intents (no execution)" },
         { value: "marketing-context", label: "Marketing Context Builder", hint: "auto-draft product-marketing-context from project artifacts" },
         { value: "provider-config", label: "Configure API provider", hint: "Claude, OpenAI, Gemini, OpenRouter, or local" },
         { value: "__back_to_hub", label: "← Back to main menu" },
@@ -478,6 +483,11 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
       continue;
     }
 
+    if (action === "sandbox") {
+      await runLocalIntelligenceSandboxDiscovery(baseUrl, defaultModel);
+      continue;
+    }
+
     const customPrompt = await p.text({
       message: "Enter your local intelligence prompt",
       placeholder: "Describe what you want to create/analyze",
@@ -489,6 +499,102 @@ async function runNativeIntelligenceHub(): Promise<"back"> {
       continue;
     }
     await runNativeIntelligenceFlowSuite(baseUrl, defaultModel, prompt);
+  }
+}
+
+async function runLocalIntelligenceSandboxDiscovery(baseUrl: string, defaultModel: string): Promise<void> {
+  const userIntent = await p.text({
+    message: "Describe the governed sandbox task",
+    placeholder: "e.g. Inspect bindings and propose safe next steps",
+  });
+  if (p.isCancel(userIntent)) return;
+  const intent = String(userIntent).trim();
+  if (!intent) {
+    p.note("Intent was empty.", "Sandboxed local model");
+    return;
+  }
+
+  const boRaw = await p.text({
+    message: "Business object type (metadata label)",
+    placeholder: "sandbox-environment",
+    defaultValue: "sandbox-environment",
+  });
+  if (p.isCancel(boRaw)) return;
+  const businessObjectType = String(boRaw || "sandbox-environment").trim() || "sandbox-environment";
+
+  const spinner = p.spinner();
+  spinner.start("Loading contracts and running governed local model sandbox…");
+  try {
+    const contracts = await loadRuntimeContracts();
+    const allowed = contracts.map((c) => c.slug);
+    const config = {
+      ...readIntelligenceConfig(),
+      backendType: "local" as const,
+      endpoint: `${baseUrl.replace(/\/$/, "")}/chat/completions`,
+      localModel: defaultModel,
+    };
+    const health = await checkBackendHealth(config);
+    const taskId = `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const taskInput = {
+      taskId,
+      businessObjectType,
+      userIntent: intent,
+      context: {
+        taskId,
+        businessObjectType,
+        executionMode: "local" as const,
+        allowedToolSlugs: allowed,
+        availableContracts: contracts,
+        toolPolicy: {
+          mode: "propose-only" as const,
+          allowedToolSlugs: allowed,
+          requiresDeterministicValidation: true as const,
+          minConfidence: 0.15,
+        },
+      },
+      adapterMode: "ollama" as const,
+    };
+    const envelope = await runLocalIntelligenceSandboxTask(taskInput, config);
+    spinner.stop(health.available ? "Sandbox run finished." : "Sandbox run finished (check backend health).");
+
+    const tracePreview = (envelope.trace ?? []).slice(-8).join("\n");
+    p.note(
+      [
+        `adapter: ${envelope.adapter.mode} · model: ${envelope.adapter.modelId}`,
+        `latencyMs: ${envelope.latencyMs}`,
+        `confidence: ${envelope.result.confidence}`,
+        `validated intents: ${envelope.validatedToolIntents?.length ?? 0} · rejected: ${envelope.rejectedToolIntents?.length ?? 0}`,
+        envelope.fallback ? "Note: deterministic fallback envelope after backend error." : "",
+        "",
+        "Trace (recent):",
+        tracePreview || "(none)",
+        "",
+        "Envelope JSON:",
+        JSON.stringify(envelope, null, 2).slice(0, 12_000),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      "Governed local model sandbox",
+    );
+
+    const exportChoice = await p.confirm({
+      message: "Print one JSONL distillation trace line to copy?",
+      initialValue: false,
+    });
+    if (!p.isCancel(exportChoice) && exportChoice) {
+      const prompts = buildLocalIntelligenceSandboxPrompts(taskInput);
+      const line = formatTraceRecordLine(
+        sandboxEnvelopeToTraceRecord(envelope, {
+          systemPrompt: prompts.systemPrompt,
+          userIntent: intent,
+          availableContracts: contracts.map((c) => ({ slug: c.slug, displayName: c.displayName })),
+        }),
+      );
+      p.note(line.trimEnd(), "JSONL trace record");
+    }
+  } catch (err) {
+    spinner.stop("Sandbox run failed.");
+    p.note(err instanceof Error ? err.message : String(err), "Governed local model sandbox");
   }
 }
 

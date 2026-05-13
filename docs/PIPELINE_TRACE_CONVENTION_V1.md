@@ -42,6 +42,25 @@ Single-skill kits and operator kits emit kit-level trace events
 `self-eval-pass`, `self-eval-retry`, etc.) — those continue to be
 valid. This document does not change them.
 
+### Local Intelligence adapter (optional kit-local NDJSON)
+
+Kits or Growthub Local MAY append kit-local trace lines for governed
+local-model sandbox runs. Recommended `type` strings (additive; readers
+ignore unknown types):
+
+| Event name | When emitted |
+|---|---|
+| `adapter-selected` | Local-intelligence adapter mode resolved |
+| `local-model-sandbox-run-started` | Before the OpenAI-compatible request |
+| `local-model-sandbox-run-completed` | After envelope assembly (success or fallback) |
+| `local-model-tool-intent-proposed` | For each raw `toolIntents[]` item from the model |
+| `local-model-tool-intent-rejected` | After policy rejects an intent |
+
+These follow the same hyphenated kit-local convention as
+`adapter-selected` and are **not** part of the v1 `PipelineTraceEvent`
+union in `@growthub/api-contract/pipeline-trace` (that union remains
+pipeline-stage-only).
+
 ---
 
 ## v1 event names

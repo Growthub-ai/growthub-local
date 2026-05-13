@@ -847,6 +847,18 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (row.agentHost !== undefined && row.agentHost !== "" && !KNOWN_SANDBOX_AGENT_HOSTS.includes(row.agentHost)) {
     errors.push(`${path}.agentHost must be one of ${KNOWN_SANDBOX_AGENT_HOSTS.join(", ")}`);
   }
+  const INTELLIGENCE_ADAPTER_MODES = ["ollama", "lmstudio", "vllm", "custom-openai-compatible"];
+  for (const field of ["localModel", "localEndpoint", "intelligenceAdapterMode"]) {
+    if (row[field] !== undefined && row[field] !== null && row[field] !== "" && typeof row[field] !== "string") {
+      errors.push(`${path}.${field} must be a string when set`);
+    }
+  }
+  if (row.intelligenceAdapterMode !== undefined && String(row.intelligenceAdapterMode).trim() !== "") {
+    const im = String(row.intelligenceAdapterMode).trim().toLowerCase();
+    if (!INTELLIGENCE_ADAPTER_MODES.includes(im)) {
+      errors.push(`${path}.intelligenceAdapterMode must be one of ${INTELLIGENCE_ADAPTER_MODES.join(", ")}`);
+    }
+  }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
     errors.push(`${path}.envRefs must be a comma-separated string or array of env-ref slugs (never values)`);
   }

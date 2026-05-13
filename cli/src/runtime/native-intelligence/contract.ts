@@ -44,6 +44,96 @@ export type IntelligenceProviderType = "local" | "claude" | "openai" | "gemini" 
 export type ExecutionModeContext = "local" | "hosted" | "hybrid";
 
 // ---------------------------------------------------------------------------
+// Governed local-model sandbox (adapter-contract aligned)
+// ---------------------------------------------------------------------------
+
+/** Named resolution path for local OpenAI-compatible backends (concrete model ids stay open). */
+export type LocalIntelligenceAdapterMode =
+  | "ollama"
+  | "lmstudio"
+  | "vllm"
+  | "custom-openai-compatible"
+  | "hosted"
+  | (string & {});
+
+export interface LocalIntelligenceSandboxContext {
+  taskId: string;
+  businessObjectType: string;
+  businessObjectId?: string;
+  executionMode: ExecutionModeContext;
+  allowedToolSlugs: string[];
+  availableContracts: NodeContractSummary[];
+  bindings?: Record<string, unknown>;
+  sourceRecordRefs?: string[];
+  toolPolicy?: LocalIntelligenceToolPolicy;
+}
+
+export interface LocalIntelligenceToolPolicy {
+  mode: "disabled" | "propose-only" | "validate-and-dispatch";
+  allowedToolSlugs: string[];
+  requiresDeterministicValidation: true;
+  /** When set, intents below this confidence become rejected proposals. */
+  minConfidence?: number;
+}
+
+export interface LocalModelToolIntent {
+  toolSlug: string;
+  reason: string;
+  input: Record<string, unknown>;
+  confidence: number;
+}
+
+export interface LocalModelSandboxResult {
+  text?: string;
+  json?: Record<string, unknown>;
+  toolIntents: LocalModelToolIntent[];
+  warnings: string[];
+  confidence: number;
+}
+
+export interface LocalIntelligenceSandboxTaskInput {
+  taskId: string;
+  businessObjectType: string;
+  businessObjectId?: string;
+  userIntent: string;
+  context: LocalIntelligenceSandboxContext;
+  responseSchema?: Record<string, unknown>;
+  adapterMode?: LocalIntelligenceAdapterMode;
+}
+
+export interface ValidatedLocalModelToolIntent extends LocalModelToolIntent {
+  warnings: string[];
+}
+
+export interface RejectedLocalModelToolIntent {
+  intent: LocalModelToolIntent;
+  reasons: string[];
+}
+
+export interface LocalModelSandboxRunEnvelope {
+  version: "growthub-local-model-sandbox-v1";
+  taskId: string;
+  businessObjectType: string;
+  businessObjectId?: string;
+  adapter: {
+    kind: "local-intelligence";
+    mode: string;
+    modelId: string;
+    endpoint?: string;
+  };
+  result: LocalModelSandboxResult;
+  validatedToolIntents?: ValidatedLocalModelToolIntent[];
+  rejectedToolIntents?: RejectedLocalModelToolIntent[];
+  rawText?: string;
+  latencyMs: number;
+  createdAt: string;
+  /** Optional NDJSON trace lines for kit-local / operator logs (not hosted ExecutionEvent). */
+  trace?: string[];
+  /** True when the model backend failed and a deterministic empty envelope was returned. */
+  fallback?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Workflow summary (what the model sees about saved workflows)
 // ---------------------------------------------------------------------------
 
@@ -204,6 +294,9 @@ export interface ModelCompletionInput {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: "json" | "text";
+  /** Optional governed sandbox framing; transports may ignore or attach to telemetry only. */
+  sandboxContext?: LocalIntelligenceSandboxContext;
+  toolPolicy?: LocalIntelligenceToolPolicy;
 }
 
 export interface ModelCompletionResult {
