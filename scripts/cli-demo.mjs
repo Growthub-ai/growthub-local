@@ -60,12 +60,14 @@ function printHelp() {
   bash scripts/demo-cli.sh interactive
   bash scripts/demo-cli.sh installer --profile gtm
   bash scripts/demo-cli.sh cli
+  bash scripts/demo-cli.sh awac-probe
   bash scripts/demo-cli.sh env
 
 Modes:
   interactive  Top-level preview menu for this branch
   installer    Real installer/onboarding preview using local branch CLI dist
   cli          Real branch CLI interactive hub
+  awac-probe   Headless API probes: CLI dist starter init → temp workspace → next dev → PATCH/reference-options/sandbox-run
   env          Show preview environment metadata`);
 }
 
@@ -484,6 +486,11 @@ if (command === "cli") {
 if (command === "template") {
   await runTemplatePreview();
   process.exit(0);
+}
+
+if (command === "awac-probe" || command === "workspace-api-probe") {
+  const probePath = path.join(repoRoot, "scripts", "awac-workspace-api-probe.mjs");
+  spawnNode([probePath, ...rest]);
 }
 
 console.error(`Unknown command '${command}'`);
