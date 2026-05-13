@@ -12,6 +12,11 @@
  *   entityTypes: string[],           // e.g. ["project.tasks", "workspace.users"]
  *   listEntities: async (config, connection) => NormalizedEntity[],
  *   fetchRecords: async (config, connection, binding) => Record[]
+ *   connectorKind?: string,          // http | mcp | chrome | tool | custom
+ *   templateId?: string,
+ *   capabilities?: string[],
+ *   configSchema?: SchemaField[],
+ *   referenceSchema?: Record<string, unknown>
  * }
  *
  * The route and the refresh button reference this registry only — they have
@@ -71,6 +76,7 @@ function listRegisteredResolvers() {
  *     entityTypes:   string[],           // declared by the resolver
  *     hasListEntities: boolean,          // true if resolver.listEntities is a function
  *     configSchema: SchemaField[] | null // optional declarative params schema
+ *     connectorKind, templateId, capabilities, referenceSchema — optional metadata
  *   }
  */
 function describeRegisteredResolvers() {
@@ -79,6 +85,13 @@ function describeRegisteredResolvers() {
     entityTypes: Array.isArray(resolver.entityTypes) ? resolver.entityTypes : [],
     hasListEntities: typeof resolver.listEntities === "function",
     configSchema: Array.isArray(resolver.configSchema) ? resolver.configSchema : null,
+    connectorKind: typeof resolver.connectorKind === "string" ? resolver.connectorKind : null,
+    templateId: typeof resolver.templateId === "string" ? resolver.templateId : null,
+    capabilities: Array.isArray(resolver.capabilities) ? resolver.capabilities : null,
+    referenceSchema:
+      resolver.referenceSchema && typeof resolver.referenceSchema === "object" && !Array.isArray(resolver.referenceSchema)
+        ? resolver.referenceSchema
+        : null
   }));
 }
 
