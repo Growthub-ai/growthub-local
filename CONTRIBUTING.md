@@ -150,7 +150,7 @@ When published package behavior changes, bump and align in one PR:
 
 - bump `cli/package.json` `version`
 - bump `packages/create-growthub-local/package.json` `version`
-- set `packages/create-growthub-local/package.json` `dependencies["@growthub/cli"]` to the **same** semver as the CLI
+- set `packages/create-growthub-local/package.json` `dependencies["@growthub/cli"]` to the **same** semver as the CLI before publish (inside this monorepo the pin is `workspace:*` so installs resolve the workspace package)
 
 Docs-only changes do not require a package bump.
 

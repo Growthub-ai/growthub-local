@@ -106,6 +106,7 @@ export {
   sandboxEnvelopeToTraceRecord,
   formatTraceRecordJsonl,
   LOCAL_INTELLIGENCE_TRACE_RECORD_VERSION,
+  redactForTraceExport,
 } from "./source-record-export.js";
 export type { LocalIntelligenceTraceExportRecord } from "./source-record-export.js";
 export { summarizeExecution, buildDeterministicSummary } from "./summarizer.js";

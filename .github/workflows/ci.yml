@@ -43,3 +43,46 @@ jobs:
 
       - name: Validate release packaging
         run: node scripts/release-check.mjs
+
+  workspace-http-probes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: corepack enable pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install
+
+      - name: Live Next.js + workspace API probes
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          export GROWTHUB_LOCAL_CLI_ENTRYPOINT="$ROOT/cli/dist/index.js"
+          export PAPERCLIP_HOME="${RUNNER_TEMP}/growthub-http-probe-pc"
+          OUT="${RUNNER_TEMP}/growthub-http-probe-ws"
+          rm -rf "$PAPERCLIP_HOME" "$OUT"
+          node "$ROOT/packages/create-growthub-local/bin/create-growthub-local.mjs" \
+            --profile workspace --out "$OUT" --remote-sync-mode off --json
+          cd "$OUT/apps/workspace"
+          npm install --no-fund --no-audit
+          PORT=4010 WORKSPACE_CONFIG_ALLOW_FS_WRITE=true npm run dev &
+          DEVPID=$!
+          trap 'kill "$DEVPID" 2>/dev/null || true' EXIT
+          READY=""
+          for _ in $(seq 1 120); do
+            if curl -sf "http://127.0.0.1:4010/api/workspace" >/dev/null; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          test -n "$READY" || { echo "Next.js dev server did not become ready"; exit 1; }
+          export WORKSPACE_PROBE_BASE_URL=http://127.0.0.1:4010
+          node "$ROOT/scripts/verify-exported-workspace-http-probes.mjs"

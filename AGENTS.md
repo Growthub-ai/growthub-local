@@ -175,6 +175,8 @@ Cloud agents blocked on `Cannot find name 'process'` or `Cannot find module 'vit
 - Do not run `node scripts/worktree-bootstrap.mjs` unless explicitly assigned by a maintainer.
 - Use `growthub worktree:make` when you need an isolated DB + port + instance.
 - Before push, run `bash scripts/pr-ready.sh`.
+- **Governed workspace HTTP contract** (production-style): after exporting the custom workspace starter, run `node scripts/verify-exported-workspace-http-probes.mjs` against a live `apps/workspace` dev server (see script header for `WORKSPACE_CONFIG_ALLOW_FS_WRITE` and `WORKSPACE_PROBE_BASE_URL`). CLI JSONL trace append is **fail-closed** unless `GROWTHUB_LOCAL_INTELLIGENCE_TRACE_APPEND=1` is set in the environment.
+- Some CI/agent sandboxes ship **minimal private `@paperclipai/*` stubs** under `packages/adapters/` (and related paths) solely so `pnpm install` resolves `server` / `ui` workspace deps; contributor machines with the full monorepo should replace them with real packages—stubs are not runtime adapters.
 
 Before destructive git commands, run:
 

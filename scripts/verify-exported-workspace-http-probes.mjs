@@ -28,6 +28,13 @@
  *   node scripts/verify-exported-workspace-http-probes.mjs
  *
  * Exit 1 if any probe expectation fails.
+ *
+ * ## Definition of done (production diligence)
+ *
+ * - Fresh export from **this branch’s** `cli/dist/index.js` via `GROWTHUB_LOCAL_CLI_ENTRYPOINT`.
+ * - `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true` so PATCH persists (same as operator dev).
+ * - All probes below exit 0; failures block merge when wired in CI.
+ * - Optional: `GROWTHUB_SANDBOX_RUN_LOG_JSON=1` on the dev server to verify one JSON log line per run in platform logs (no env values in that line).
  */
 
 const base = (process.env.WORKSPACE_PROBE_BASE_URL || "").replace(/\/$/, "");
@@ -76,7 +83,8 @@ function sandboxObject() {
         runLocality: "local",
         runtime: "node",
         adapter: "local-process",
-        command: "console.log('probe-stdout');",
+        command:
+          "console.log(String(process.env.GROWTHUB_SANDBOX_LOCAL_MODEL_ID||'')+'|'+String(process.env.GROWTHUB_SANDBOX_LOCAL_INTELLIGENCE_MODE||''));",
         localModelId: "gemma3:4b",
         localIntelligenceAdapterMode: "ollama",
         networkAllow: "false",
@@ -161,8 +169,15 @@ await probe("POST sandbox-run local-process → 200", async () => {
   if (res.status !== 200) throw new Error(`expected 200, got ${res.status} ${JSON.stringify(json)}`);
   if (!json.ok) throw new Error("ok false");
   if (json.exitCode !== 0) throw new Error(`exitCode ${json.exitCode}`);
-  if (!String(json.response?.stdout || "").includes("probe-stdout")) {
-    throw new Error(`unexpected stdout: ${JSON.stringify(json.response?.stdout)}`);
+  if (!String(json.response?.stdout || "").includes("gemma3:4b")) {
+    throw new Error(`expected model hint in stdout: ${JSON.stringify(json.response?.stdout)}`);
+  }
+  if (!String(json.response?.stdout || "").includes("ollama")) {
+    throw new Error(`expected mode hint in stdout: ${JSON.stringify(json.response?.stdout)}`);
+  }
+  const fp = json.response?.adapterMeta?.configFingerprint;
+  if (typeof fp !== "string" || !/^[a-f0-9]{64}$/.test(fp)) {
+    throw new Error(`configFingerprint missing or invalid: ${JSON.stringify(json.response?.adapterMeta)}`);
   }
 });
 

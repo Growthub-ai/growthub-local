@@ -1089,26 +1089,41 @@ async function runLocalIntelligenceSandboxMenuFlow(baseUrl: string, defaultModel
   }
 
   const save = await p.confirm({
-    message: "Append distillation-ready JSONL line to native-intelligence/sandbox-traces.jsonl?",
+    message:
+      "Append distillation-ready JSONL line to native-intelligence/sandbox-traces.jsonl? (writes require GROWTHUB_LOCAL_INTELLIGENCE_TRACE_APPEND=1)",
     initialValue: false,
   });
-  if (!p.isCancel(save) && save) {
-    const record = sandboxEnvelopeToTraceRecord(
-      {
-        taskId,
-        businessObjectType,
-        userIntent: String(userIntent).trim(),
-        context,
-      },
-      envelope,
+  if (p.isCancel(save) || !save) return;
+
+  const traceAppendFlag = String(process.env.GROWTHUB_LOCAL_INTELLIGENCE_TRACE_APPEND || "").trim().toLowerCase();
+  const traceAppendEnabled = traceAppendFlag === "1" || traceAppendFlag === "true" || traceAppendFlag === "yes";
+  if (!traceAppendEnabled) {
+    p.note(
+      [
+        "Trace file append is disabled by default (fail-closed for multi-tenant safety).",
+        "Export GROWTHUB_LOCAL_INTELLIGENCE_TRACE_APPEND=1 in your environment, then re-run this prompt to append.",
+        "Lines are redacted for common secret patterns before write.",
+      ].join("\n"),
+      "Trace append",
     );
-    const line = formatTraceRecordJsonl(record);
-    const outDir = path.resolve(resolvePaperclipHomeDir(), "native-intelligence");
-    const outPath = path.join(outDir, "sandbox-traces.jsonl");
-    fs.mkdirSync(outDir, { recursive: true });
-    fs.appendFileSync(outPath, line, "utf-8");
-    p.note(outPath, "Trace append");
+    return;
   }
+
+  const record = sandboxEnvelopeToTraceRecord(
+    {
+      taskId,
+      businessObjectType,
+      userIntent: String(userIntent).trim(),
+      context,
+    },
+    envelope,
+  );
+  const line = formatTraceRecordJsonl(record);
+  const outDir = path.resolve(resolvePaperclipHomeDir(), "native-intelligence");
+  const outPath = path.join(outDir, "sandbox-traces.jsonl");
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.appendFileSync(outPath, line, "utf-8");
+  p.note(outPath, "Trace append");
 }
 
 async function loadRuntimeContracts(): Promise<NodeContractSummary[]> {

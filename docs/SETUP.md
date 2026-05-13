@@ -70,7 +70,7 @@ Always read versions from these files on your branch — never quote from memory
 | Installer pin to CLI | `packages/create-growthub-local/package.json` | `dependencies["@growthub/cli"]` |
 | `@growthub/api-contract` | `packages/api-contract/package.json` | `version` |
 
-CI `smoke` enforces the installer pin matches `cli/package.json` exactly.
+CI `smoke` enforces the installer pin matches `cli/package.json` exactly (monorepo clones use `workspace:*` for that dependency).
 
 See [`docs/ARTIFACT_VERSIONS.md`](./ARTIFACT_VERSIONS.md) for the grounding rule.
 

@@ -68,9 +68,12 @@ function main() {
       `packages/create-growthub-local/package.json must publish @growthub/create-growthub-local, got ${createPkg.name}`,
     );
   }
-  if (createPkg.dependencies?.["@growthub/cli"] !== cliPkg.version) {
+  const cliPin = createPkg.dependencies?.["@growthub/cli"];
+  const usesWorkspaceCli =
+    typeof cliPin === "string" && (cliPin.startsWith("workspace:") || cliPin === "link:");
+  if (!usesWorkspaceCli && cliPin !== cliPkg.version) {
     throw new Error(
-      `Version pin mismatch: @growthub/create-growthub-local pins @growthub/cli@${createPkg.dependencies?.["@growthub/cli"]} but cli.version is ${cliPkg.version}`,
+      `Version pin mismatch: @growthub/create-growthub-local pins @growthub/cli@${cliPin} but cli.version is ${cliPkg.version}`,
     );
   }
 

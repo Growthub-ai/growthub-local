@@ -66,7 +66,9 @@ if [[ "$CLI_VERSION" == "MISSING" || "$CREATE_VERSION" == "MISSING" ]]; then
   fail "Cannot read package versions"
 else
   ok "cli@$CLI_VERSION  create@$CREATE_VERSION  pin@$PIN_VERSION"
-  if [[ "$CLI_VERSION" != "$PIN_VERSION" ]]; then
+  if [[ "$PIN_VERSION" == workspace:* ]]; then
+    ok "Installer uses workspace protocol for @growthub/cli (monorepo)"
+  elif [[ "$CLI_VERSION" != "$PIN_VERSION" ]]; then
     fail "Version mismatch: cli=$CLI_VERSION but dep pin=$PIN_VERSION"
   else
     ok "Dep pin matches cli version"

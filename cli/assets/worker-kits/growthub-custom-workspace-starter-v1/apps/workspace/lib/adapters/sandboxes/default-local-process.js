@@ -21,6 +21,10 @@
  *     adapterMeta and into a `GROWTHUB_SANDBOX_NET_ALLOW`/`_ALLOWLIST` env
  *     pair the user's script can consult.)
  *
+ * Optional operator hints (never secrets; local runLocality only; set by sandbox-run route):
+ *   - `GROWTHUB_SANDBOX_LOCAL_MODEL_ID` — opaque model tag from sandbox row (e.g. `gemma3:4b`)
+ *   - `GROWTHUB_SANDBOX_LOCAL_INTELLIGENCE_MODE` — lane label (e.g. `ollama`, `lmstudio`)
+ *
  * Forks that need a hardened isolation primitive (firejail, gVisor, Docker,
  * Fly Machines, e2b, modal.com, etc.) ship a sibling adapter file under
  * `lib/adapters/sandboxes/adapters/` and call `registerSandboxAdapter()`.

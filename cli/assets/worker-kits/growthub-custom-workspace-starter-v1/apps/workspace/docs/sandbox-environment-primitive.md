@@ -27,6 +27,27 @@ Sandbox rows reference **`authRef` / named env refs** — never literals in brow
 
 Workspace Builder excludes **`sandbox-environment`** from View widget bindings (execution records, not tabular KPI sources). See **`data-sources-api-registry.md`** in this folder.
 
+## Local Intelligence metadata vs sandbox execution (operator truth)
+
+Three surfaces stay **orthogonal by design** (safe at scale: no secret fan-out, no second workflow engine):
+
+| Surface | Persists where | What it does |
+| --- | --- | --- |
+| **Growthub CLI — Local Intelligence** | Paperclip home `native-intelligence/config.json` | Resolves and calls the OpenAI-compatible local model for planning / sandbox **CLI** tasks. |
+| **Sandbox row — `localModelId`, `localIntelligenceAdapterMode`** | `growthub.config.json` via `PATCH /api/workspace` (`dataModel`) | **Metadata** for audits, UI, and optional **non-secret** hints to local scripts (see below). Does not start Ollama from the browser. |
+| **`POST /api/workspace/sandbox-run`** | Sidecar source records + row `lastResponse` | Runs the selected **sandbox adapter** (`local-process`, `local-agent-host`, serverless, …). |
+
+When `runLocality` is **`local`**, the sandbox-run route may set **non-secret** process env for the adapter child only:
+
+- `GROWTHUB_SANDBOX_LOCAL_MODEL_ID`
+- `GROWTHUB_SANDBOX_LOCAL_INTELLIGENCE_MODE`
+
+Scripts opt in by reading these variables; values are length-capped and never include API keys. **Configure the actual model runtime in the CLI** (Local Intelligence); keep the row fields aligned for humans and automation.
+
+**Trace export (CLI):** appending JSONL requires `GROWTHUB_LOCAL_INTELLIGENCE_TRACE_APPEND=1` (fail-closed default). Exported lines are **redacted** for common secret patterns before append.
+
+**Server logs (workspace):** set `GROWTHUB_SANDBOX_RUN_LOG_JSON=1` to emit one JSON line per run (`type=growthub.sandbox.run`, `configFingerprint`, timing, **no** env values).
+
 ## Extension points
 
 - Custom adapters: `apps/workspace/lib/adapters/sandboxes/adapters/` (see `README.md` there).

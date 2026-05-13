@@ -322,7 +322,7 @@ After training:
 
 ### Distillation-ready trace export
 
-The CLI does **not** train local models. The sandbox runner can append **JSONL-ready** trace records (hashed prompt material, structured output, accepted/rejected tool intents) for external QLoRA / fine-tuning tooling. After training, load the resulting weights into Ollama, LM Studio, or vLLM and select the concrete `localModel` id in Local Intelligence — no parallel model system.
+The CLI does **not** train local models. The sandbox runner can append **JSONL-ready** trace records (hashed prompt material, structured output, accepted/rejected tool intents) for external QLoRA / fine-tuning tooling. Records are **deep-redacted** for common secret patterns before append. File append is **fail-closed** unless `GROWTHUB_LOCAL_INTELLIGENCE_TRACE_APPEND=1` is set in the environment. After training, load the resulting weights into Ollama, LM Studio, or vLLM and select the concrete `localModel` id in Local Intelligence — no parallel model system.
 
 ## 31. Adapter Expansion Strategy
 Future adapters should implement equivalent backend interface:
@@ -349,6 +349,27 @@ The local model may **not**:
 - write final workflow state without deterministic validation
 
 This preserves the rule that native intelligence is assistive and does not replace hosted workflow execution.
+
+### Configuration surfaces (CLI vs workspace row vs sandbox run)
+
+```text
+┌─────────────────────────────┐     ┌──────────────────────────────────┐
+│ CLI Local Intelligence      │     │ Sandbox row (growthub.config)    │
+│ (native-intelligence/       │     │ localModelId, localIntel…Mode    │
+│  config.json)               │     │ = operator metadata + audit      │
+└──────────────┬──────────────┘     └──────────────────┬───────────────┘
+               │ calls                                  │ PATCH /api/workspace
+               v                                        v
+     OpenAI-compatible                         ┌─────────────────────┐
+     local model HTTP                          │ POST sandbox-run   │
+                                               │ → adapter plane    │
+                                               └──────────┬──────────┘
+                                                          v
+                                               local-process / agent-host /
+                                               serverless (unchanged authority)
+```
+
+Row metadata does **not** replace CLI model configuration; sandbox adapters remain the only execution plane inside the workspace app.
 
 ## 32. Coming Soon Areas
 Planned expansions:

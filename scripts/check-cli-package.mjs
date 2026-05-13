@@ -24,7 +24,13 @@ const serviceModule = readText("cli/src/kits/service.ts");
 const cliReadme = readText("cli/README.md");
 
 assert(cliPkg.name === "@growthub/cli", "CLI package name must remain @growthub/cli");
-assert(createPkg.dependencies?.["@growthub/cli"] === cliPkg.version, "Installer pin must match CLI version");
+const cliPin = createPkg.dependencies?.["@growthub/cli"];
+const usesWorkspaceCli =
+  typeof cliPin === "string" && (cliPin.startsWith("workspace:") || cliPin === "link:");
+assert(
+  usesWorkspaceCli || cliPin === cliPkg.version,
+  "Installer pin must match CLI version (use workspace:* inside the monorepo)",
+);
 
 for (const requiredPath of [
   "cli/dist/index.js",

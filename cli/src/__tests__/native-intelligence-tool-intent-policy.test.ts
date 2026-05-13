@@ -76,17 +76,17 @@ describe("validateLocalModelToolIntents", () => {
     expect(r.rejected.length).toBe(1);
   });
 
-  it("respects minConfidence", () => {
+  it("rejects all intents when no contract slugs exist and policy allow list is empty", () => {
     const r = validateLocalModelToolIntents(
-      [{ toolSlug: "allowed-node", reason: "x", input: { prompt: "a" }, confidence: 0.1 }],
+      [{ toolSlug: "anything", reason: "x", input: {}, confidence: 1 }],
       {
         mode: "propose-only",
-        allowedToolSlugs: ["allowed-node"],
+        allowedToolSlugs: [],
         requiresDeterministicValidation: true,
-        minConfidence: 0.5,
       },
-      contracts,
+      [],
     );
     expect(r.accepted.length).toBe(0);
+    expect(r.rejected.length).toBe(1);
   });
 });

@@ -43,12 +43,21 @@
  *       envRefsMissing:  string[],
  *       networkAllow:    boolean,
  *       allowList:       string[],
- *       adapterMeta?:    Record<string, unknown>
+ *       adapterMeta?:    Record<string, unknown>  // may include configFingerprint (sha256 of non-secret row slice)
  *     }
  *   }
+ *
+ * Local-only hints (never secrets): when runLocality is local, resolved env may
+ * include GROWTHUB_SANDBOX_LOCAL_MODEL_ID and GROWTHUB_SANDBOX_LOCAL_INTELLIGENCE_MODE
+ * from the row for operator scripts (see default-local-process adapter header).
+ *
+ * Structured log line (stdout, one JSON object per run): set
+ *   GROWTHUB_SANDBOX_RUN_LOG_JSON=1
+ * to emit type=growthub.sandbox.run for platform log aggregation (no env values).
  */
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -344,8 +353,11 @@ function buildRunResponse({
   networkAllow,
   allowList,
   result,
-  timeoutMs
+  timeoutMs,
+  extraAdapterMeta
 }) {
+  const baseMeta = result.adapterMeta && typeof result.adapterMeta === "object" ? result.adapterMeta : {};
+  const mergedMeta = { ...baseMeta, ...(extraAdapterMeta || {}) };
   return {
     runId,
     ranAt,
@@ -368,7 +380,7 @@ function buildRunResponse({
     envRefsMissing,
     networkAllow,
     allowList,
-    adapterMeta: result.adapterMeta || null
+    adapterMeta: Object.keys(mergedMeta).length ? mergedMeta : null
   };
 }
 
@@ -469,6 +481,17 @@ async function POST(request) {
     }
   }
 
+  if (normalizeRunLocality(row) === "local") {
+    const lid = typeof row.localModelId === "string" ? row.localModelId.trim() : "";
+    if (lid) {
+      env.GROWTHUB_SANDBOX_LOCAL_MODEL_ID = lid.length > 256 ? lid.slice(0, 256) : lid;
+    }
+    const lim = typeof row.localIntelligenceAdapterMode === "string" ? row.localIntelligenceAdapterMode.trim() : "";
+    if (lim) {
+      env.GROWTHUB_SANDBOX_LOCAL_INTELLIGENCE_MODE = lim.length > 64 ? lim.slice(0, 64) : lim;
+    }
+  }
+
   const runId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const ranAt = new Date().toISOString();
 
@@ -547,6 +570,22 @@ async function POST(request) {
     }
   }
 
+  const sandboxRowName = String(row.Name || name).trim();
+  const configFingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        objectId,
+        name: sandboxRowName,
+        adapter: effectiveAdapterId,
+        runtime,
+        runLocality,
+        localModelId: row.localModelId != null ? String(row.localModelId).trim() : "",
+        localIntelligenceAdapterMode:
+          row.localIntelligenceAdapterMode != null ? String(row.localIntelligenceAdapterMode).trim() : ""
+      })
+    )
+    .digest("hex");
+
   const response = buildRunResponse({
     runId,
     ranAt,
@@ -564,8 +603,27 @@ async function POST(request) {
     networkAllow,
     allowList,
     result,
-    timeoutMs
+    timeoutMs,
+    extraAdapterMeta: { configFingerprint }
   });
+
+  const logFlag = String(process.env.GROWTHUB_SANDBOX_RUN_LOG_JSON || "").trim().toLowerCase();
+  if (logFlag === "1" || logFlag === "true" || logFlag === "yes") {
+    console.log(
+      JSON.stringify({
+        type: "growthub.sandbox.run",
+        runId,
+        objectId,
+        name: sandboxRowName,
+        adapter: effectiveAdapterId,
+        runtime,
+        runLocality,
+        exitCode: response.exitCode,
+        durationMs: response.durationMs,
+        configFingerprint
+      })
+    );
+  }
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);
   const persistence = describePersistenceMode();

@@ -677,7 +677,9 @@ function SandboxRecordFields({
             onBlur={(event) => patchFields({ localModelId: event.target.value })}
           />
           <span className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
-            Metadata for operators; execution still uses the adapter above. Configure the model in <code>growthub discover</code> → Local Intelligence.
+            Governed metadata only (audits, handoffs, automation). Does not start a model or send keys from the browser.
+            For local runs, the server may pass this tag to your script as <code>GROWTHUB_SANDBOX_LOCAL_MODEL_ID</code> together with <code>GROWTHUB_SANDBOX_LOCAL_INTELLIGENCE_MODE</code> — opt in from the command you run above.
+            Configure the real runtime in <code>growthub discover</code> → Local Intelligence; keep this field aligned for operators.
           </span>
         </label>
 
@@ -690,6 +692,9 @@ function SandboxRecordFields({
             onChange={(event) => setDraft((c) => ({ ...c, localIntelligenceAdapterMode: event.target.value }))}
             onBlur={(event) => patchFields({ localIntelligenceAdapterMode: event.target.value })}
           />
+          <span className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
+            Optional lane label (length-capped). Paired with model id for the same non-secret env hints; not validated against live endpoints here.
+          </span>
         </label>
 
         <label className="dm-record-field">

@@ -8,7 +8,7 @@ Agents and contributors **must not** treat version numbers in prose, chat logs, 
 |------|------|--------|
 | `@growthub/cli` semver | `cli/package.json` | `"version"` |
 | Installer package semver | `packages/create-growthub-local/package.json` | `"version"` |
-| Installer pin to CLI | `packages/create-growthub-local/package.json` | `dependencies["@growthub/cli"]` |
+| Installer pin to CLI | `packages/create-growthub-local/package.json` | `dependencies["@growthub/cli"]` (`workspace:*` in-repo; exact semver at publish) |
 | `@growthub/api-contract` semver | `packages/api-contract/package.json` | `"version"` |
 
 CI **`smoke`** already fails if the installer pin and `cli/package.json` **version** diverge.

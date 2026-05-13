@@ -43,9 +43,12 @@ const apiContractPkg = readJson("packages/api-contract/package.json");
 assert(cliPkg.name === "@growthub/cli", "cli/package.json must publish @growthub/cli");
 assert(createPkg.name === "@growthub/create-growthub-local", "packages/create-growthub-local/package.json must publish @growthub/create-growthub-local");
 assert(apiContractPkg.name === "@growthub/api-contract", "packages/api-contract/package.json must publish @growthub/api-contract");
+const cliPin = createPkg.dependencies?.["@growthub/cli"];
+const usesWorkspaceCli =
+  typeof cliPin === "string" && (cliPin.startsWith("workspace:") || cliPin === "link:");
 assert(
-  createPkg.dependencies?.["@growthub/cli"] === cliPkg.version,
-  `@growthub/create-growthub-local must depend on @growthub/cli@${cliPkg.version}`,
+  usesWorkspaceCli || cliPin === cliPkg.version,
+  `@growthub/create-growthub-local must depend on @growthub/cli@${cliPkg.version} (or workspace:* for monorepo installs)`,
 );
 
 for (const pkg of [cliPkg, createPkg]) {
