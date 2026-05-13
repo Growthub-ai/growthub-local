@@ -344,9 +344,10 @@ function buildRunResponse({
   networkAllow,
   allowList,
   result,
-  timeoutMs
+  timeoutMs,
+  row
 }) {
-  return {
+  const base = {
     runId,
     ranAt,
     runLocality,
@@ -370,6 +371,14 @@ function buildRunResponse({
     allowList,
     adapterMeta: result.adapterMeta || null
   };
+  if (row && (row.resolverTemplateId || row.connectorKind || row.executionLane)) {
+    base.templateTrace = {
+      resolverTemplateId: row.resolverTemplateId ? String(row.resolverTemplateId) : null,
+      connectorKind: row.connectorKind ? String(row.connectorKind) : null,
+      executionLane: row.executionLane ? String(row.executionLane) : null
+    };
+  }
+  return base;
 }
 
 function findSandboxRow(workspaceConfig, objectId, name) {
@@ -564,7 +573,8 @@ async function POST(request) {
     networkAllow,
     allowList,
     result,
-    timeoutMs
+    timeoutMs,
+    row
   });
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);

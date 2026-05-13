@@ -82,29 +82,34 @@ async function POST(request) {
 
   const refreshed = [];
   const skipped = [];
+  const skippedDetail = [];
 
   for (const sourceId of sourceIds) {
     const obj = dataObjects.find((o) => o.id === sourceId);
     if (!obj) {
       skipped.push(sourceId);
+      skippedDetail.push({ sourceId, reason: "unknown-object" });
       continue;
     }
 
     const binding = obj.binding;
     if (!binding || binding.sourceStorage !== "workspace-source-records") {
       skipped.push(sourceId);
+      skippedDetail.push({ sourceId, reason: "not-live-backed" });
       continue;
     }
 
     const integrationId = binding.integrationId;
     if (!integrationId) {
       skipped.push(sourceId);
+      skippedDetail.push({ sourceId, reason: "missing-integration-id" });
       continue;
     }
 
     const resolver = getSourceResolver(integrationId);
     if (!resolver) {
       skipped.push(sourceId);
+      skippedDetail.push({ sourceId, reason: "missing-resolver", integrationId });
       continue;
     }
 
@@ -116,12 +121,18 @@ async function POST(request) {
       const fetchedAt = new Date().toISOString();
       await writeWorkspaceSourceRecords(sourceId, records, { integrationId, fetchedAt });
       refreshed.push({ sourceId, integrationId, recordCount: records.length, fetchedAt });
-    } catch {
+    } catch (err) {
       skipped.push(sourceId);
+      skippedDetail.push({
+        sourceId,
+        reason: "fetch-error",
+        integrationId,
+        message: err?.message || "fetchRecords failed"
+      });
     }
   }
 
-  return NextResponse.json({ refreshed, skipped });
+  return NextResponse.json({ refreshed, skipped, skippedDetail });
 }
 
 export { POST };

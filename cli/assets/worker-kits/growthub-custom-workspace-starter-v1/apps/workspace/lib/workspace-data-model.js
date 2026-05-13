@@ -330,6 +330,16 @@ function uniqueObjectId(workspaceConfig, name) {
  *     targetObjectType:string,   // objectType of the referenced object
  *     type:            "belongs-to" | "has-many",
  *     description:     string
+ *     valueField?:     string,   // column on TARGET row used as stored FK value (default integrationId)
+ *     labelField?:     string,   // primary label column on target (default Name)
+ *     secondaryLabelField?: string,
+ *     statusField?:    string,   // default status
+ *     statusAllowlist?: string[] // when set, only rows whose status matches (case-insensitive) appear
+ *     searchable?:     boolean,
+ *     pageSize?:       number,
+ *     resolver?:       { integrationId: string } // optional listEntities-backed option source
+ *     referenceSource?: "workspace-rows" | "source-records" // default workspace-rows
+ *     sidecarSourceId?: string // when referenceSource is source-records
  *   }
  */
 const OBJECT_TYPE_PRESETS = {
@@ -337,7 +347,20 @@ const OBJECT_TYPE_PRESETS = {
     label: "Data Source",
     icon: "Globe",
     description: "Custom API, webhook, or external feed. References an API Registry record while credentials stay in workspace settings.",
-    columns: ["Name", "registryId", "endpoint", "authRef", "baseUrl", "status", "lastTested", "lastResponse"],
+    columns: [
+      "Name",
+      "registryId",
+      "endpoint",
+      "authRef",
+      "baseUrl",
+      "status",
+      "lastTested",
+      "lastResponse",
+      "entityType",
+      "sourceId",
+      "sourceStorage",
+      "resolverTemplateId"
+    ],
     relations: [
       {
         id: "resolver-binding",
@@ -345,7 +368,14 @@ const OBJECT_TYPE_PRESETS = {
         field: "registryId",
         targetObjectType: "api-registry",
         type: "belongs-to",
-        description: "The API Registry entry whose fetchRecords function resolves this source. Set registryId to match the resolver integrationId."
+        description: "The API Registry entry whose fetchRecords function resolves this source. Set registryId to match the resolver integrationId.",
+        valueField: "integrationId",
+        labelField: "Name",
+        secondaryLabelField: "endpoint",
+        statusField: "status",
+        statusAllowlist: null,
+        searchable: true,
+        pageSize: 25
       }
     ]
   },
@@ -353,7 +383,23 @@ const OBJECT_TYPE_PRESETS = {
     label: "API Registry",
     icon: "Code2",
     description: "HTTP API records with endpoint config, auth references, connection status, and stored test output.",
-    columns: ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description"],
+    columns: [
+      "integrationId",
+      "authRef",
+      "baseUrl",
+      "endpoint",
+      "method",
+      "status",
+      "lastTested",
+      "lastResponse",
+      "entityTypes",
+      "description",
+      "connectorKind",
+      "resolverTemplateId",
+      "schemaVersion",
+      "capabilities",
+      "executionLane"
+    ],
     relations: []
   },
   "people": {
@@ -393,7 +439,10 @@ const OBJECT_TYPE_PRESETS = {
       "lastTested",
       "lastRunId",
       "lastSourceId",
-      "lastResponse"
+      "lastResponse",
+      "resolverTemplateId",
+      "connectorKind",
+      "executionLane"
     ],
     relations: [
       {
@@ -402,7 +451,14 @@ const OBJECT_TYPE_PRESETS = {
         field: "schedulerRegistryId",
         targetObjectType: "api-registry",
         type: "belongs-to",
-        description: "When runLocality is serverless, POST /api/workspace/sandbox-run sends growthub-sandbox-run-v1 to this API Registry record (METHOD, baseUrl, endpoint, authRef resolved server-side). Use for Supabase Edge URL, QStash forwarder, Vercel-exposed webhook, cron targets, etc."
+        description: "When runLocality is serverless, POST /api/workspace/sandbox-run sends growthub-sandbox-run-v1 to this API Registry record (METHOD, baseUrl, endpoint, authRef resolved server-side). Use for Supabase Edge URL, QStash forwarder, Vercel-exposed webhook, cron targets, etc.",
+        valueField: "integrationId",
+        labelField: "Name",
+        secondaryLabelField: "endpoint",
+        statusField: "status",
+        statusAllowlist: ["connected", "approved", "ok", "success"],
+        searchable: true,
+        pageSize: 25
       }
     ]
   },
@@ -621,6 +677,163 @@ function describeBindingMode(binding) {
   return { label: "Manual local table", description: "Rows and fields live in the existing widget config and travel with workspace export/import." };
 }
 
+/**
+ * Normalize a reference option for API/UI interchange.
+ */
+function normalizeReferenceOption(option) {
+  if (!option || typeof option !== "object") return null;
+  const value = String(option.value ?? "").trim();
+  if (!value) return null;
+  const source = ["workspace-config", "source-records", "resolver"].includes(option.source)
+    ? option.source
+    : "workspace-config";
+  const out = {
+    value,
+    label: String(option.label ?? value).trim() || value,
+    source,
+    objectType: typeof option.objectType === "string" && option.objectType.trim() ? option.objectType.trim() : undefined,
+    provider: typeof option.provider === "string" && option.provider.trim() ? option.provider.trim() : undefined,
+    status: typeof option.status === "string" && option.status.trim() ? option.status.trim() : undefined
+  };
+  if (option.secondaryLabel !== undefined && option.secondaryLabel !== null && String(option.secondaryLabel).trim()) {
+    out.secondaryLabel = String(option.secondaryLabel).trim();
+  }
+  if (option.metadata && typeof option.metadata === "object" && !Array.isArray(option.metadata)) {
+    out.metadata = option.metadata;
+  }
+  return out;
+}
+
+/**
+ * Merge preset relation defaults with stored `object.relations[]` so older rows
+ * pick up new optional metadata (valueField, statusAllowlist, …).
+ */
+function effectiveRelations(object) {
+  const stored = Array.isArray(object?.relations) ? object.relations : [];
+  const presets =
+    object?.objectType && OBJECT_TYPE_PRESETS[object.objectType]?.relations
+      ? OBJECT_TYPE_PRESETS[object.objectType].relations
+      : [];
+  const presetFields = new Set(presets.map((p) => p.field).filter(Boolean));
+  const mergedByField = new Map();
+  for (const preset of presets) {
+    if (!preset?.field) continue;
+    const storedMatch = stored.find((s) => s?.field === preset.field);
+    mergedByField.set(preset.field, { ...preset, ...(storedMatch || {}) });
+  }
+  const extras = stored.filter((s) => s?.field && !presetFields.has(s.field));
+  return [...Array.from(mergedByField.values()), ...extras];
+}
+
+function findRelationForField(object, field) {
+  if (!field) return null;
+  return effectiveRelations(object).find((r) => r.field === field) || null;
+}
+
+function listReferenceFields(object) {
+  return effectiveRelations(object).map((r) => r.field).filter(Boolean);
+}
+
+function decodeRefCursor(cursor) {
+  if (typeof cursor !== "string" || !cursor.startsWith("o:")) return 0;
+  const n = Number(cursor.slice(2));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function encodeRefCursor(offset) {
+  return `o:${offset}`;
+}
+
+/**
+ * Resolve reference options from local `dataModel.objects[]` rows (workspace-config source).
+ */
+function resolveLocalReferenceOptions(workspaceConfig, {
+  objectId,
+  field,
+  query = "",
+  cursor = null,
+  limit = 25,
+  relation: relationOverride = null
+} = {}) {
+  const objects = normalizeManualObjects(workspaceConfig);
+  const objectItem = objects.find((o) => o.id === objectId) || null;
+  const relation = relationOverride || (objectItem && field ? findRelationForField(objectItem, field) : null);
+  if (!relation || !relation.targetObjectType) {
+    return { options: [], nextCursor: null, reason: objectItem ? "unknown-field" : "unknown-object" };
+  }
+
+  const valueField = typeof relation.valueField === "string" && relation.valueField.trim()
+    ? relation.valueField.trim()
+    : "integrationId";
+  const labelField = typeof relation.labelField === "string" && relation.labelField.trim()
+    ? relation.labelField.trim()
+    : "Name";
+  const secondaryLabelField =
+    typeof relation.secondaryLabelField === "string" && relation.secondaryLabelField.trim()
+      ? relation.secondaryLabelField.trim()
+      : "";
+  const statusField =
+    typeof relation.statusField === "string" && relation.statusField.trim()
+      ? relation.statusField.trim()
+      : "status";
+  const allowlist = Array.isArray(relation.statusAllowlist)
+    ? relation.statusAllowlist.map((s) => String(s).toLowerCase())
+    : null;
+
+  const pageSize = Math.min(100, Math.max(1, Number(relation.pageSize) || Number(limit) || 25));
+  const offset = decodeRefCursor(cursor);
+
+  const targets = objects.filter((o) => o.objectType === relation.targetObjectType);
+  const needle = String(query || "").trim().toLowerCase();
+
+  const candidates = [];
+  for (const target of targets) {
+    const rows = Array.isArray(target.rows) ? target.rows : [];
+    rows.forEach((row, index) => {
+      if (!row || typeof row !== "object") return;
+      const rawValue =
+        row[valueField] ??
+        row.integrationId ??
+        row.id ??
+        row.Name ??
+        `${target.id}:${index}`;
+      const value = String(rawValue ?? "").trim();
+      if (!value) return;
+      const label = String(row[labelField] ?? row.Name ?? row.integrationId ?? value).trim() || value;
+      const secondaryLabel = secondaryLabelField
+        ? String(row[secondaryLabelField] ?? "").trim()
+        : "";
+      const status = String(row[statusField] ?? "").trim();
+      if (allowlist && allowlist.length) {
+        const st = status.toLowerCase();
+        if (!st || !allowlist.includes(st)) return;
+      }
+      if (needle) {
+        const hay = `${value} ${label} ${secondaryLabel} ${status}`.toLowerCase();
+        if (!hay.includes(needle)) return;
+      }
+      candidates.push(
+        normalizeReferenceOption({
+          value,
+          label,
+          secondaryLabel: secondaryLabel || undefined,
+          source: "workspace-config",
+          objectType: relation.targetObjectType,
+          status: status || undefined,
+          metadata: { objectLabel: target.label || target.source }
+        })
+      );
+    });
+  }
+
+  const filtered = candidates.filter(Boolean);
+  const page = filtered.slice(offset, offset + pageSize);
+  const nextOffset = offset + page.length;
+  const nextCursor = nextOffset < filtered.length ? encodeRefCursor(nextOffset) : null;
+
+  return { options: page, nextCursor, reason: null, total: filtered.length };
+}
+
 export {
   OBJECT_TYPE_PRESETS,
   addTableField,
@@ -632,13 +845,19 @@ export {
   describeBindingLane,
   describeBindingMode,
   duplicateTableRow,
+  effectiveRelations,
   exportTableAsCsv,
+  findRelationForField,
   importTableFromCsv,
+  listReferenceFields,
   listSavedEnvRefs,
   listWorkspaceDataModelTables,
+  normalizeManualObjects,
+  normalizeReferenceOption,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   replaceTableContent,
+  resolveLocalReferenceOptions,
   sandboxRunSourceId,
   updateTableCell
 };

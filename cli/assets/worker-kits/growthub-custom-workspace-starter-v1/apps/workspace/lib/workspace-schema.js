@@ -820,6 +820,65 @@ function validateCanvasConfig(canvas, errors) {
   }
 }
 
+function validateDataModelRelation(relation, path, errors) {
+  if (!isPlainObject(relation)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  for (const key of ["id", "name", "field", "targetObjectType", "type"]) {
+    if (typeof relation[key] !== "string" || !relation[key].trim()) {
+      errors.push(`${path}.${key} must be a non-empty string`);
+    }
+  }
+  if (relation.type !== undefined && !["belongs-to", "has-many"].includes(relation.type)) {
+    errors.push(`${path}.type must be belongs-to or has-many`);
+  }
+  for (const opt of ["valueField", "labelField", "secondaryLabelField", "statusField"]) {
+    if (relation[opt] !== undefined && relation[opt] !== null && typeof relation[opt] !== "string") {
+      errors.push(`${path}.${opt} must be a string when present`);
+    }
+  }
+  if (relation.statusAllowlist !== undefined) {
+    if (!Array.isArray(relation.statusAllowlist)) {
+      errors.push(`${path}.statusAllowlist must be an array of strings when present`);
+    } else {
+      relation.statusAllowlist.forEach((entry, i) => {
+        if (typeof entry !== "string" || !entry.trim()) {
+          errors.push(`${path}.statusAllowlist[${i}] must be a non-empty string`);
+        }
+      });
+    }
+  }
+  if (relation.searchable !== undefined && typeof relation.searchable !== "boolean") {
+    errors.push(`${path}.searchable must be a boolean when present`);
+  }
+  if (relation.pageSize !== undefined && relation.pageSize !== "") {
+    const ps = Number(relation.pageSize);
+    if (!Number.isFinite(ps) || ps < 1 || ps > 500) {
+      errors.push(`${path}.pageSize must be a number between 1 and 500 when present`);
+    }
+  }
+  if (relation.referenceSource !== undefined) {
+    const rs = String(relation.referenceSource).trim();
+    if (!["workspace-rows", "source-records"].includes(rs)) {
+      errors.push(`${path}.referenceSource must be workspace-rows or source-records when present`);
+    }
+  }
+  if (relation.sidecarSourceId !== undefined && typeof relation.sidecarSourceId !== "string") {
+    errors.push(`${path}.sidecarSourceId must be a string when present`);
+  }
+  if (relation.resolver !== undefined) {
+    if (!isPlainObject(relation.resolver)) {
+      errors.push(`${path}.resolver must be a plain object when present`);
+    } else if (
+      relation.resolver.integrationId !== undefined
+      && (typeof relation.resolver.integrationId !== "string" || !relation.resolver.integrationId.trim())
+    ) {
+      errors.push(`${path}.resolver.integrationId must be a non-empty string when present`);
+    }
+  }
+}
+
 function validateSandboxEnvironmentRow(row, path, errors) {
   if (!isPlainObject(row)) return;
   const lifecycleStatus = String(row.lifecycleStatus || "").trim().toLowerCase();
@@ -877,6 +936,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.timeoutMs must be a finite number between 0 and ${SANDBOX_MAX_TIMEOUT_MS}`);
     }
   }
+  for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane"]) {
+    if (row[traceField] !== undefined && typeof row[traceField] !== "string") {
+      errors.push(`${path}.${traceField} must be a string when present`);
+    }
+  }
 }
 
 function validateDataModelConfig(dataModel, errors) {
@@ -924,6 +988,15 @@ function validateDataModelConfig(dataModel, errors) {
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
     if (object.binding?.sourceStorage === "workspace-source-records" && typeof object.sourceId !== "string") {
       errors.push(`${prefix}.sourceId is required when binding.sourceStorage is "workspace-source-records"`);
+    }
+    if (object.relations !== undefined) {
+      if (!Array.isArray(object.relations)) {
+        errors.push(`${prefix}.relations must be an array`);
+      } else {
+        object.relations.forEach((rel, relIndex) => {
+          validateDataModelRelation(rel, `${prefix}.relations[${relIndex}]`, errors);
+        });
+      }
     }
     validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
   });

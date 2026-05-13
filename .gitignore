@@ -23,8 +23,10 @@ docs/FROZEN_*.md
 # Observability snapshots (runtime data, not source)
 .paperclip/instances/default/observability-snapshots/
 
-# Local-only workspace artifacts
-.worktrees/
+# Next.js / local app build artifacts under shipped worker-kit workspace apps
+**/apps/workspace/.next/
+**/apps/workspace/node_modules/
+
 .paperclip/config.json
 .paperclip/config.json.backup
 *.tsbuildinfo
