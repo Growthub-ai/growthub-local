@@ -61,6 +61,7 @@ function printHelp() {
   bash scripts/demo-cli.sh installer --profile gtm
   bash scripts/demo-cli.sh cli
   bash scripts/demo-cli.sh awac-probe
+  bash scripts/demo-cli.sh golden-path-probe
   bash scripts/demo-cli.sh e2e-workspace-sandbox
   bash scripts/demo-cli.sh env
 
@@ -69,6 +70,7 @@ Modes:
   installer    Real installer/onboarding preview using local branch CLI dist
   cli          Real branch CLI interactive hub
   awac-probe   Headless API probes: CLI dist starter init → temp workspace → next dev → PATCH/reference-options/sandbox-run
+  golden-path-probe  Same assertions as awac-probe plus wall-clock timing (PLG KPI)
   e2e-workspace-sandbox  HTTP probes: PATCH /api/workspace + sandbox-run (temp Next app)
   env          Show preview environment metadata`);
 }
@@ -490,10 +492,14 @@ if (command === "template") {
   process.exit(0);
 }
 
-<<<<<<< HEAD
 if (command === "awac-probe" || command === "workspace-api-probe") {
   const probePath = path.join(repoRoot, "scripts", "awac-workspace-api-probe.mjs");
   spawnNode([probePath, ...rest]);
+}
+
+if (command === "golden-path-probe" || command === "awac-golden-path-probe") {
+  const goldenPath = path.join(repoRoot, "scripts", "awac-golden-path-probe.mjs");
+  spawnNode([goldenPath, ...rest]);
 }
 
 if (command === "e2e-workspace-sandbox") {

@@ -472,18 +472,30 @@ function findFreePosition(widgets) {
       }
     }
   }
-  for (let y = 0; y <= GRID_ROWS - DEFAULT_POSITION.h; y += 1) {
-    for (let x = 0; x <= GRID_COLUMNS - DEFAULT_POSITION.w; x += 1) {
-      let collides = false;
-      for (let dx = 0; dx < DEFAULT_POSITION.w && !collides; dx += 1) {
-        for (let dy = 0; dy < DEFAULT_POSITION.h && !collides; dy += 1) {
-          if (occupied.has(`${x + dx}:${y + dy}`)) collides = true;
+  const rectFree = (x, y, w, h) => {
+    for (let dx = 0; dx < w; dx += 1) {
+      for (let dy = 0; dy < h; dy += 1) {
+        if (occupied.has(`${x + dx}:${y + dy}`)) return false;
+      }
+    }
+    return true;
+  };
+  for (let h = DEFAULT_POSITION.h; h >= 1; h -= 1) {
+    for (let w = DEFAULT_POSITION.w; w >= 1; w -= 1) {
+      if (w > GRID_COLUMNS || h > GRID_ROWS) continue;
+      for (let y = 0; y <= GRID_ROWS - h; y += 1) {
+        for (let x = 0; x <= GRID_COLUMNS - w; x += 1) {
+          if (rectFree(x, y, w, h)) return { x, y, w, h };
         }
       }
-      if (!collides) return { ...DEFAULT_POSITION, x, y };
     }
   }
-  return { ...DEFAULT_POSITION };
+  for (let y = 0; y < GRID_ROWS; y += 1) {
+    for (let x = 0; x < GRID_COLUMNS; x += 1) {
+      if (!occupied.has(`${x}:${y}`)) return { x, y, w: 1, h: 1 };
+    }
+  }
+  return { ...DEFAULT_POSITION, x: 0, y: 0, w: 1, h: 1 };
 }
 
 function normalizePosition(start, end) {

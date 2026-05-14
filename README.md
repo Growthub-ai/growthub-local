@@ -12,7 +12,26 @@
 
 **Streamlined one-click deployment:** [Launch Growthub Local](https://www.growthub.ai/f/growthub-local)
 
-**Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
+**Quick links:** [Start here](#start-here) · [Golden path probe](#golden-path-plg-kpi) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
+
+**What this is (buyer-readable):** Growthub Local is an open-source **Agent Workspace as Code (AWaC)** stack — a governed workspace artifact (config + Next app + data model + sandbox execution + receipted runs), not a loose “AI builder.” The workspace plane gives you a **governed operational database and execution cockpit**; the CLI plane adds discovery, Local Intelligence, and kit export; optional hosted authority is additive when you need it. Canonical narrative and frozen invariants: [`docs/awac-source-of-truth-v2.md`](./docs/awac-source-of-truth-v2.md).
+
+---
+
+## Golden path (PLG KPI)
+
+Measure **time to first sandbox success** end-to-end (materialized starter → Next dev → `GET/PATCH /api/workspace` → `POST /api/workspace/reference-options` → `POST /api/workspace/sandbox-run` with receipt checks):
+
+```bash
+node scripts/awac-golden-path-probe.mjs
+```
+
+Export **local-intelligence** sandbox receipts from `growthub.source-records.json` to JSONL for offline QLoRA / distillation tooling (no new governed object types):
+
+```bash
+cd my-workspace/apps/workspace
+node /path/to/growthub-local/scripts/export-distillation-jsonl.mjs --out ./distillation.jsonl
+```
 
 ---
 
