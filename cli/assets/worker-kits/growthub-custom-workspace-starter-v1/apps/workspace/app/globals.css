@@ -4033,6 +4033,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-records-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .dm-btn-ghost { display: inline-flex; align-items: center; gap: 5px; height: 28px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #555; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; transition: background .1s, border-color .1s; }
 .dm-btn-ghost:hover { background: #f5f5f5; border-color: #ccc; color: #222; }
+.dm-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #475569; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; }
 .dm-btn-primary-sm { display: inline-flex; align-items: center; gap: 5px; height: 28px; border: 0; border-radius: 6px; background: #111; color: #fff; font: inherit; font-size: 12px; padding: 0 11px; cursor: pointer; font-weight: 500; transition: background .12s; }
 .dm-btn-primary-sm:hover { background: #333; }
 .dm-btn-primary-sm:disabled { opacity: .45; cursor: not-allowed; }
@@ -4061,16 +4062,21 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-db-toolbar-title span { font-size: 12px; color: #9ca3af; }
 .dm-inline-panel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid #dfe3e8; border-radius: 10px; background: #fbfdff; }
 .dm-inline-panel input { height: 32px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 10px; }
-.dm-filter-chip-row { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dm-filter-chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
 .dm-filter-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; border: 1px solid #c7d2fe; border-radius: 8px; background: #eef2ff; color: #3730a3; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; }
 .dm-filter-chip span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-filter-popover { position: absolute; z-index: 40; display: grid; gap: 8px; width: 320px; padding: 10px; border: 1px solid #dbe2ea; border-radius: 10px; background: #fff; box-shadow: 0 18px 42px rgba(15,23,42,.18), 0 3px 10px rgba(15,23,42,.08); }
+.dm-filter-popover input { height: 32px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 10px; }
+.dm-filter-popover-toolbar { top: 48px; right: 0; }
+.dm-filter-popover-column { top: calc(100% + 6px); left: 0; }
+.dm-filter-popover-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .dm-db-grid-wrap { flex: 1; min-height: 420px; overflow: auto; border: 1px solid #dfe3e8; border-radius: 7px; background: #fff; }
 .dm-db-grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; color: #1f2937; }
-.dm-db-grid th { position: sticky; top: 0; z-index: 1; height: 32px; background: #f8fafc; color: #475569; border-bottom: 1px solid #dfe3e8; border-right: 1px solid #edf0f3; padding: 0 10px; text-align: left; font-weight: 650; white-space: nowrap; }
+.dm-db-grid th { position: sticky; top: 0; z-index: 1; height: 32px; background: #f8fafc; color: #475569; border-bottom: 1px solid #dfe3e8; border-right: 1px solid #edf0f3; padding: 0; text-align: left; font-weight: 650; white-space: nowrap; }
 .dm-db-grid td { height: 32px; max-width: 260px; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .dm-db-grid tbody tr:hover td { background: #f8fafc; }
 .dm-db-grid tbody tr.selected td { background: #eef2ff; }
-.dm-db-head-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: inherit; padding: 0; cursor: pointer; }
+.dm-db-head-btn { display: inline-flex; align-items: center; justify-content: flex-start; width: 100%; height: 32px; gap: 6px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: inherit; padding: 0 10px; cursor: pointer; }
 .dm-db-rownum { width: 42px; min-width: 42px; text-align: center !important; color: #94a3b8 !important; background: #f8fafc; font-variant-numeric: tabular-nums; }
 .dm-db-field-type { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-right: 5px; border-radius: 4px; color: #64748b; background: #eef2f7; vertical-align: middle; }
 .dm-db-add-field { position: relative; min-width: 118px; }
@@ -4097,6 +4103,14 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-record-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(15,23,42,.12); }
 .dm-record-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; display: flex; flex-direction: column; width: min(440px, 100vw); background: #fff; border-left: 1px solid #dfe3e8; box-shadow: -10px 0 34px rgba(15,23,42,.16); }
 .dm-record-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid #edf0f3; }
+.dm-record-drawer-actions { display: inline-flex; align-items: center; gap: 8px; }
+.dm-record-drawer-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 16px; border-top: 1px solid #edf0f3; background: #fff; }
+.dm-drawer-field-editor { display: grid; gap: 8px; }
+.dm-drawer-field-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; gap: 8px; align-items: center; }
+.dm-drawer-field-row input { width: 100%; height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 10px; }
+.dm-drawer-hidden-fields { display: grid; gap: 8px; margin-top: 10px; }
+.dm-drawer-hidden-fields > span { color: #64748b; font-size: 12px; font-weight: 600; }
+.dm-drawer-hidden-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .dm-record-drawer-head p { margin: 0 0 3px; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .dm-record-drawer-head h2 { margin: 0; color: #111827; font-size: 16px; font-weight: 650; }
 .dm-record-testbar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid #edf0f3; background: #fbfdff; }

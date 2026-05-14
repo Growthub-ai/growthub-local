@@ -31,6 +31,7 @@ import {
   MoreHorizontal,
   Plus,
   Pin,
+  Pencil,
   Search,
   ShoppingCart,
   Tag,
@@ -58,6 +59,7 @@ import {
   parseSandboxEnvRefs,
   replaceTableContent,
   snapshotTableViewState,
+  transformTableSchema,
   updateTableFieldSettings,
   updateTableCell,
 } from "@/lib/workspace-data-model";
@@ -194,12 +196,23 @@ function applyRowsView(rows, settings) {
 }
 
 function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSave }) {
+  const pickerRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("all");
   const [newViewName, setNewViewName] = useState("");
   const [viewMenuId, setViewMenuId] = useState("");
   const currentViews = selectedTable?.fieldSettings?.views || [];
   const favoriteObjects = tables.filter((table) => table.fieldSettings?.favorite);
+
+  useEffect(() => {
+    function handlePointer(event) {
+      if (!pickerRef.current?.contains(event.target)) {
+        setViewMenuId("");
+      }
+    }
+    document.addEventListener("pointerdown", handlePointer);
+    return () => document.removeEventListener("pointerdown", handlePointer);
+  }, []);
 
   function applyView(view) {
     if (!selectedTable) return;
@@ -266,9 +279,13 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
 
   return (
     <div
+      ref={pickerRef}
       className={`dm-picker${open ? " open" : ""}`}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+          setViewMenuId("");
+        }
       }}
     >
       <button type="button" className="dm-picker-trigger" onClick={() => setOpen((current) => !current)}>
@@ -651,7 +668,7 @@ function groupRecordColumns(columns) {
   return groups;
 }
 
-function RecordFieldEditor({ table, tables, column, value, saving, onDraft, onCommit, onExpandJson }) {
+function RecordFieldEditor({ table, tables, column, value, saving, editable, onDraft, onCommit, onExpandJson }) {
   const relation = relationForColumn(table, column);
   const large = column === "lastResponse" || String(value ?? "").length > 120;
   if (relation) {
@@ -686,9 +703,8 @@ function RecordFieldEditor({ table, tables, column, value, saving, onDraft, onCo
         <textarea
           value={value}
           rows={10}
-          disabled={!table.mutable || saving}
+          readOnly={!editable}
           onChange={(event) => onDraft(column, event.target.value)}
-          onBlur={(event) => onCommit(column, event.target.value)}
         />
       </label>
     );
@@ -700,16 +716,14 @@ function RecordFieldEditor({ table, tables, column, value, saving, onDraft, onCo
         <textarea
           value={value}
           rows={4}
-          disabled={!table.mutable || saving}
+          readOnly={!editable}
           onChange={(event) => onDraft(column, event.target.value)}
-          onBlur={(event) => onCommit(column, event.target.value)}
         />
       ) : (
         <input
           value={value}
-          disabled={!table.mutable || saving}
+          readOnly={!editable}
           onChange={(event) => onDraft(column, event.target.value)}
-          onBlur={(event) => onCommit(column, event.target.value)}
         />
       )}
     </label>
@@ -1052,6 +1066,9 @@ function SandboxRecordFields({
 
 function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, saving, onClose, onSave }) {
   const [draft, setDraft] = useState(row || {});
+  const [editMode, setEditMode] = useState(false);
+  const [pendingColumns, setPendingColumns] = useState(table.columns || []);
+  const [pendingHidden, setPendingHidden] = useState(table.fieldSettings?.hidden || []);
   const [testing, setTesting] = useState(false);
   const [testMessage, setTestMessage] = useState("");
   const [sandboxRunning, setSandboxRunning] = useState(false);
@@ -1063,6 +1080,9 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
 
   useEffect(() => {
     setDraft(row || {});
+    setEditMode(false);
+    setPendingColumns(table.columns || []);
+    setPendingHidden(table.fieldSettings?.hidden || []);
     setTestMessage("");
     setSandboxMessage("");
     setSandboxHistory([]);
@@ -1073,10 +1093,60 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
   const isSandbox = table.objectType === "sandbox-environment";
+  const isDirty = JSON.stringify(draft || {}) !== JSON.stringify(row || {}) || JSON.stringify(pendingColumns) !== JSON.stringify(table.columns || []) || JSON.stringify(pendingHidden) !== JSON.stringify(table.fieldSettings?.hidden || []);
 
   function updateField(column, value) {
     setDraft((current) => ({ ...current, [column]: value }));
-    onSave((config) => updateTableCell(config, table, rowIndex, column, value));
+  }
+
+  function movePendingColumn(index, direction) {
+    setPendingColumns((current) => {
+      const next = [...current];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function renamePendingColumn(index, nextName) {
+    setPendingColumns((current) => current.map((column, columnIndex) => columnIndex === index ? nextName : column));
+  }
+
+  function cancelEdits() {
+    if (isDirty && !window.confirm("Discard unsaved drawer changes?")) return;
+    setDraft(row || {});
+    setPendingColumns(table.columns || []);
+    setPendingHidden(table.fieldSettings?.hidden || []);
+    setEditMode(false);
+  }
+
+  function closeDrawer() {
+    if (editMode && isDirty && !window.confirm("You have unsaved drawer changes. Close without saving?")) return;
+    onClose();
+  }
+
+  function saveDrawerEdits() {
+    const cleanColumns = pendingColumns.map((column) => String(column || "").trim()).filter(Boolean);
+    if (!cleanColumns.length) return;
+    const uniqueColumns = Array.from(new Set(cleanColumns));
+    const renameMap = {};
+    (table.columns || []).forEach((column, index) => {
+      const nextColumn = uniqueColumns[index];
+      if (nextColumn && nextColumn !== column) renameMap[column] = nextColumn;
+    });
+    onSave((config) => {
+      let next = transformTableSchema(config, table, { columns: uniqueColumns, renameMap });
+      next = updateTableFieldSettings(next, { ...table, columns: uniqueColumns }, (settings) => ({
+        ...settings,
+        hidden: pendingHidden.filter((column) => uniqueColumns.includes(column))
+      }));
+      uniqueColumns.forEach((column) => {
+        next = updateTableCell(next, { ...table, columns: uniqueColumns }, rowIndex, column, draft?.[column] ?? draft?.[Object.keys(renameMap).find((key) => renameMap[key] === column) || column] ?? "");
+      });
+      return next;
+    });
+    setEditMode(false);
   }
 
   async function testApiRecord() {
@@ -1196,9 +1266,16 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             <p>Record</p>
             <h2>{draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}</h2>
           </div>
-          <button type="button" className="dm-sidebar-close" onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </button>
+          <div className="dm-record-drawer-actions">
+            {!isSandbox && (
+              <button type="button" className="dm-sidebar-close" onClick={() => setEditMode((current) => !current)} aria-label="Toggle edit mode">
+                <Pencil size={16} />
+              </button>
+            )}
+            <button type="button" className="dm-sidebar-close" onClick={closeDrawer} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
         </header>
         {(table.objectType === "api-registry" || table.objectType === "data-source") && (
           <SourceTestPanel
@@ -1246,14 +1323,50 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
                   column={column}
                   value={String(draft?.[column] ?? "")}
                   saving={saving}
-                  onDraft={(field, nextValue) => setDraft((current) => ({ ...current, [field]: nextValue }))}
+                  editable={editMode}
+                  onDraft={(field, nextValue) => editMode && setDraft((current) => ({ ...current, [field]: nextValue }))}
                   onCommit={updateField}
                   onExpandJson={expandLastResponse}
                 />
               ))}
             </DrawerSection>
           ))}
+          {!isSandbox && editMode && (
+            <DrawerSection title="Fields" defaultOpen>
+              <div className="dm-drawer-field-editor">
+                {pendingColumns.map((column, index) => (
+                  <div key={`${column}-${index}`} className="dm-drawer-field-row">
+                    <input value={column} onChange={(event) => renamePendingColumn(index, event.target.value)} />
+                    <button type="button" className="dm-btn-ghost" onClick={() => setPendingHidden((current) => current.includes(column) ? current.filter((item) => item !== column) : [...current, column])}>
+                      {pendingHidden.includes(column) ? "Show" : "Hide"}
+                    </button>
+                    <button type="button" className="dm-btn-ghost" disabled={index === 0} onClick={() => movePendingColumn(index, "up")}>Up</button>
+                    <button type="button" className="dm-btn-ghost" disabled={index === pendingColumns.length - 1} onClick={() => movePendingColumn(index, "down")}>Down</button>
+                  </div>
+                ))}
+                {pendingHidden.length > 0 && (
+                  <div className="dm-drawer-hidden-fields">
+                    <span>Hidden fields</span>
+                    <div className="dm-drawer-hidden-list">
+                      {pendingHidden.map((column) => (
+                        <button key={`hidden-${column}`} type="button" className="dm-filter-chip" onClick={() => setPendingHidden((current) => current.filter((item) => item !== column))}>
+                          <span>{column}</span>
+                          <X size={12} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </DrawerSection>
+          )}
         </div>
+        {!isSandbox && editMode && (
+          <footer className="dm-record-drawer-foot">
+            <button type="button" className="dm-btn-outline" onClick={cancelEdits}>Cancel</button>
+            <button type="button" className="dm-btn-primary-sm" disabled={saving || !isDirty} onClick={saveDrawerEdits}>Save changes</button>
+          </footer>
+        )}
       </aside>
       {expandedJson !== null && (
         <div className="dm-json-modal-backdrop" onClick={() => setExpandedJson(null)}>
@@ -1284,7 +1397,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
   const [csvText, setCsvText] = useState("");
   const [mode, setMode] = useState("append");
   const [filterDraft, setFilterDraft] = useState({ fieldId: "", operator: "eq", value: "" });
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterTarget, setFilterTarget] = useState("");
   const [menuColumn, setMenuColumn] = useState("");
   const fieldInputRef = useRef(null);
 
@@ -1387,7 +1500,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
         ]
       }
     }));
-    setFilterOpen(false);
+    setFilterTarget("");
   }
 
   function removeFilter(fieldId) {
@@ -1439,12 +1552,18 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
         </div>
       )}
       <div className="dm-db-toolbar">
+        <div className="dm-filter-chip-row">
+          {settings.filter?.clauses?.map((clause) => (
+            <button key={`${clause.fieldId}:${clause.operator}`} type="button" className="dm-filter-chip" onClick={() => removeFilter(clause.fieldId)}>
+              <LucideIcon name={FIELD_TYPE_ICON_NAMES[settings.types?.[clause.fieldId] || inferFieldType(clause.fieldId)] || "Type"} size={12} />
+              <span>{clause.fieldId}: {clause.operator}{clause.value !== undefined ? ` ${clause.value}` : ""}</span>
+              <X size={12} />
+            </button>
+          ))}
+        </div>
         <div className="dm-records-actions">
-          <button type="button" className="dm-btn-ghost" onClick={() => setFilterOpen((current) => !current)}>
+          <button type="button" className="dm-btn-ghost" onClick={() => setFilterTarget((current) => current === "toolbar" ? "" : "toolbar")}>
             <Filter size={13} />Filter
-          </button>
-          <button type="button" className="dm-btn-ghost" onClick={resetView}>
-            Reset
           </button>
           {activeView ? (
             <button type="button" className="dm-btn-ghost" onClick={updateCurrentView}>
@@ -1470,27 +1589,19 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
               <Plus size={13} />Add record
             </button>
           )}
-          {settings.filter?.clauses?.length > 0 && (
-            <div className="dm-filter-chip-row">
-              {settings.filter.clauses.map((clause) => (
-                <button key={`${clause.fieldId}:${clause.operator}`} type="button" className="dm-filter-chip" onClick={() => removeFilter(clause.fieldId)}>
-                  <LucideIcon name={FIELD_TYPE_ICON_NAMES[settings.types?.[clause.fieldId] || inferFieldType(clause.fieldId)] || "Type"} size={12} />
-                  <span>{clause.fieldId}: {clause.operator}{clause.value !== undefined ? ` ${clause.value}` : ""}</span>
-                  <X size={12} />
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
-      {filterOpen && (
-        <div className="dm-inline-panel">
+      {filterTarget === "toolbar" && (
+        <div className="dm-filter-popover dm-filter-popover-toolbar">
           <StaticSelect value={filterDraft.fieldId} options={visibleColumns.map((column) => ({ value: column, label: column }))} onChange={(next) => setFilterDraft((current) => ({ ...current, fieldId: next }))} />
           <StaticSelect value={filterDraft.operator} options={FILTER_OPERATOR_OPTIONS.map((item) => ({ value: item.value, label: item.label }))} onChange={(next) => setFilterDraft((current) => ({ ...current, operator: next }))} />
           {!["isEmpty", "isNotEmpty"].includes(filterDraft.operator) && (
             <input value={filterDraft.value} placeholder="Value" onChange={(event) => setFilterDraft((current) => ({ ...current, value: event.target.value }))} />
           )}
-          <button type="button" className="dm-btn-primary-sm" onClick={applyFilter}>Apply</button>
+          <div className="dm-filter-popover-actions">
+            <button type="button" className="dm-btn-outline" onClick={() => setFilterTarget("")}>Cancel</button>
+            <button type="button" className="dm-btn-primary-sm" onClick={applyFilter}>Apply</button>
+          </div>
         </div>
       )}
       {csvOpen && (
@@ -1520,7 +1631,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                     <div className="dm-col-menu">
                       <button type="button" onClick={() => {
                         setFilterDraft({ fieldId: column, operator: "eq", value: "" });
-                        setFilterOpen(true);
+                        setFilterTarget(column);
                         setMenuColumn("");
                       }}><Filter size={13} />Filter</button>
                       <button type="button" onClick={() => setSort(column, "asc")}><ArrowUpAZ size={13} />Sort ascending</button>
@@ -1528,6 +1639,19 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                       <button type="button" onClick={() => moveColumn(column, "left")}><ArrowRight size={13} style={{ transform: "rotate(180deg)" }} />Move left</button>
                       <button type="button" onClick={() => moveColumn(column, "right")}><ArrowRight size={13} />Move right</button>
                       <button type="button" onClick={() => toggleColumnHidden(column)}><EyeOff size={13} />Hide</button>
+                    </div>
+                  )}
+                  {filterTarget === column && (
+                    <div className="dm-filter-popover dm-filter-popover-column">
+                      <StaticSelect value={filterDraft.fieldId} options={visibleColumns.map((item) => ({ value: item, label: item }))} onChange={(next) => setFilterDraft((current) => ({ ...current, fieldId: next }))} />
+                      <StaticSelect value={filterDraft.operator} options={FILTER_OPERATOR_OPTIONS.map((item) => ({ value: item.value, label: item.label }))} onChange={(next) => setFilterDraft((current) => ({ ...current, operator: next }))} />
+                      {!["isEmpty", "isNotEmpty"].includes(filterDraft.operator) && (
+                        <input value={filterDraft.value} placeholder="Value" onChange={(event) => setFilterDraft((current) => ({ ...current, value: event.target.value }))} />
+                      )}
+                      <div className="dm-filter-popover-actions">
+                        <button type="button" className="dm-btn-outline" onClick={() => setFilterTarget("")}>Cancel</button>
+                        <button type="button" className="dm-btn-primary-sm" onClick={applyFilter}>Apply</button>
+                      </div>
                     </div>
                   )}
                 </th>

@@ -180,7 +180,7 @@ function normalizeSortClauses(sort, columns) {
 }
 
 function normalizeFilterConfig(filter, columns) {
-  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return null;
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return undefined;
   const allowed = new Set(columns);
   const op = String(filter.op || "and").trim().toLowerCase() === "or" ? "or" : "and";
   const clauses = (Array.isArray(filter.clauses) ? filter.clauses : []).flatMap((clause) => {
@@ -193,7 +193,7 @@ function normalizeFilterConfig(filter, columns) {
     if (value === undefined || value === null || value === "") return [];
     return [{ fieldId, operator, value }];
   });
-  return clauses.length ? { op, clauses } : null;
+  return clauses.length ? { op, clauses } : undefined;
 }
 
 function normalizeFieldTypes(types, columns) {
@@ -214,7 +214,7 @@ function snapshotTableViewState(settings) {
     filter: settings?.filter ? {
       op: settings.filter.op,
       clauses: (settings.filter.clauses || []).map((clause) => ({ ...clause }))
-    } : null
+    } : undefined
   };
 }
 
@@ -392,6 +392,123 @@ function updateTableFieldSettings(workspaceConfig, table, updater) {
         fieldSettings: nextSettings,
         sort: nextSettings.sort,
         filter: nextSettings.filter
+      }
+    };
+  });
+
+  const dashboards = (workspaceConfig.dashboards || []).map((dashboard) => ({
+    ...dashboard,
+    tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) }))
+  }));
+  let canvas = workspaceConfig.canvas ? { ...workspaceConfig.canvas } : {};
+  if (Array.isArray(canvas.widgets)) canvas = { ...canvas, widgets: mutateWidgets(canvas.widgets) };
+  if (Array.isArray(canvas.tabs)) canvas = { ...canvas, tabs: canvas.tabs.map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) })) };
+  return { ...workspaceConfig, dashboards, canvas };
+}
+
+function remapFieldName(name, renameMap = {}) {
+  return renameMap[name] || name;
+}
+
+function remapFieldSettings(fieldSettings, columns, renameMap = {}) {
+  const mapList = (values) => normalizeStringList((values || []).map((value) => remapFieldName(value, renameMap))).filter((value) => columns.includes(value));
+  const mapSort = (sort) => normalizeSortClauses((sort || []).map((clause) => ({
+    ...clause,
+    fieldId: remapFieldName(clause.fieldId, renameMap)
+  })), columns);
+  const mapFilter = (filter) => normalizeFilterConfig(filter ? {
+    ...filter,
+    clauses: (filter.clauses || []).map((clause) => ({
+      ...clause,
+      fieldId: remapFieldName(clause.fieldId, renameMap)
+    }))
+  } : null, columns);
+  const sourceTypes = fieldSettings?.types && typeof fieldSettings.types === "object" && !Array.isArray(fieldSettings.types)
+    ? fieldSettings.types
+    : {};
+  const types = columns.reduce((acc, column) => {
+    const previousKey = Object.keys(renameMap).find((key) => renameMap[key] === column) || column;
+    const typeValue = sourceTypes[column] || sourceTypes[previousKey];
+    if (typeValue) acc[column] = typeValue;
+    return acc;
+  }, {});
+  const views = normalizeSavedViews((fieldSettings?.views || []).map((view) => ({
+    ...view,
+    hidden: mapList(view.hidden || []),
+    order: mapList(view.order || []),
+    sort: mapSort(view.sort || []),
+    filter: mapFilter(view.filter)
+  })), columns);
+  const activeViewId = String(fieldSettings?.activeViewId || "").trim();
+  return {
+    hidden: mapList(fieldSettings?.hidden || []),
+    order: mapList(fieldSettings?.order || columns),
+    sort: mapSort(fieldSettings?.sort || []),
+    filter: mapFilter(fieldSettings?.filter),
+    types,
+    views,
+    activeViewId: views.some((view) => view.id === activeViewId) ? activeViewId : "",
+    favorite: Boolean(fieldSettings?.favorite)
+  };
+}
+
+function renameRowFields(row, nextColumns, renameMap = {}) {
+  const reverseMap = Object.entries(renameMap).reduce((acc, [previous, next]) => {
+    acc[next] = previous;
+    return acc;
+  }, {});
+  return nextColumns.reduce((acc, column) => {
+    const previousKey = reverseMap[column] || column;
+    acc[column] = row?.[previousKey] ?? row?.[column] ?? "";
+    return acc;
+  }, {});
+}
+
+function transformTableSchema(workspaceConfig, table, { columns, renameMap = {} }) {
+  const nextColumns = Array.isArray(columns) ? columns.filter(Boolean) : table.columns;
+  if (!nextColumns.length) return workspaceConfig;
+
+  if (table.storage === "manual-object") {
+    const objects = normalizeManualObjects(workspaceConfig);
+    const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+    return {
+      ...workspaceConfig,
+      dataModel: {
+        ...dataModel,
+        objects: objects.map((object) => {
+          if (object.id !== table.objectId) return object;
+          const rows = (Array.isArray(object.rows) ? object.rows : []).map((row) => renameRowFields(row, nextColumns, renameMap));
+          return {
+            ...object,
+            columns: nextColumns,
+            rows,
+            fieldSettings: remapFieldSettings(object.fieldSettings || {}, nextColumns, renameMap)
+          };
+        })
+      }
+    };
+  }
+
+  const ids = new Set((table.widgetRefs || []).map((ref) => ref.widgetId));
+  const mutateWidgets = (widgets) => (widgets || []).map((widget) => {
+    if (!ids.has(widget.id)) return widget;
+    const current = deriveWidgetTable(widget, { widgetId: widget.id });
+    if (!current?.mutable) return widget;
+    const rows = (current.rows || []).map((row) => renameRowFields(row, nextColumns, renameMap));
+    const nextFieldSettings = remapFieldSettings({
+      ...(widget.config?.fieldSettings || {}),
+      sort: widget.config?.sort,
+      filter: widget.config?.filter
+    }, nextColumns, renameMap);
+    return {
+      ...widget,
+      config: {
+        ...writeTableConfig(widget.config || {}, current.storage, nextColumns, rows),
+        fieldSettings: nextFieldSettings,
+        sort: nextFieldSettings.sort,
+        filter: nextFieldSettings.filter
       }
     };
   });
@@ -1024,6 +1141,7 @@ export {
   resolveLocalReferenceOptions,
   sandboxRunSourceId,
   snapshotTableViewState,
+  transformTableSchema,
   normalizeFieldSettings,
   updateTableFieldSettings,
   updateTableCell
