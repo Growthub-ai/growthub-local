@@ -118,6 +118,21 @@ Rules:
 
 ---
 
+## Baseline object model freeze (V1)
+
+The **baseline governed object families** shipped in the custom workspace starter are enough to express most operator and integration stories without inventing new top-level object types:
+
+- **People**
+- **Tasks**
+- **Data Sources**
+- **API Registry**
+- **Sandbox Environment**
+- **Custom**
+
+**Additive rule:** new customer-specific shapes should prefer **fields**, **views**, **relations**, **templates**, **source records**, and **sandbox runs** before introducing additional first-class `objectType` values. This keeps the workspace explainable, preserves `PATCH /api/workspace` allowlisting, and avoids fragmenting the Data Model UI. Narrative compass: [`docs/BASELINE_FOUNDATION_V1.md`](./BASELINE_FOUNDATION_V1.md).
+
+---
+
 ## Reference contract
 
 The minimal field set an agent or buyer needs to inspect a governed workspace:

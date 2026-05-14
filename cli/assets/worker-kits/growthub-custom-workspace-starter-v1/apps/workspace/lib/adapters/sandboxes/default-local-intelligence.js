@@ -111,13 +111,17 @@ async function run(request) {
     const text = clampStream(buf);
     const durationMs = Date.now() - started;
     if (!res.ok) {
+      const hint =
+        res.status === 404
+          ? " (endpoint or model route not found — check localEndpoint / OLLAMA_BASE_URL)"
+          : "";
       return {
         ok: false,
         exitCode: 1,
         durationMs,
         stdout: text,
         stderr: "",
-        error: `local model HTTP ${res.status}`,
+        error: `local model HTTP ${res.status}${hint}`,
         adapterMeta: { adapter: "local-intelligence", endpoint, model },
       };
     }
@@ -129,8 +133,30 @@ async function run(request) {
     } catch {
       outer = null;
     }
+    if (outer && Array.isArray(outer.choices) && outer.choices.length === 0) {
+      return {
+        ok: false,
+        exitCode: 1,
+        durationMs,
+        stdout: text,
+        stderr: "",
+        error: "Local model returned no choices — verify the model id exists on this endpoint (localModel / OLLAMA_MODEL).",
+        adapterMeta: { adapter: "local-intelligence", endpoint, model },
+      };
+    }
     if (outer && Array.isArray(outer.choices) && outer.choices[0]?.message?.content) {
       const inner = String(outer.choices[0].message.content || "").trim();
+      if (!inner) {
+        return {
+          ok: false,
+          exitCode: 1,
+          durationMs,
+          stdout: text,
+          stderr: "",
+          error: "Local model returned an empty completion.",
+          adapterMeta: { adapter: "local-intelligence", endpoint, model },
+        };
+      }
       try {
         parsed = JSON.parse(inner);
       } catch {
@@ -140,6 +166,11 @@ async function run(request) {
       parsed = outer;
     } else {
       parsed = { text, warnings: ["invalid JSON from model"], toolIntents: [], confidence: 0 };
+    }
+
+    const mergedWarnings = Array.isArray(parsed.warnings) ? [...parsed.warnings] : [];
+    if (Array.isArray(parsed.toolIntents) && parsed.toolIntents.length) {
+      mergedWarnings.push("toolIntents are proposals only — nothing was executed in this sandbox run.");
     }
 
     const envelope = {
@@ -156,7 +187,7 @@ async function run(request) {
         text: typeof parsed.text === "string" ? parsed.text : undefined,
         json: parsed.json && typeof parsed.json === "object" ? parsed.json : undefined,
         toolIntents: Array.isArray(parsed.toolIntents) ? parsed.toolIntents : [],
-        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+        warnings: mergedWarnings,
         confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
       },
       rawText: text,
@@ -178,13 +209,18 @@ async function run(request) {
       },
     };
   } catch (err) {
+    const base = err.name === "AbortError" ? `timed out after ${ms}ms` : err.message || "fetch failed";
+    const hint =
+      /fetch failed|ECONNREFUSED|ENOTFOUND/i.test(String(err.message || err))
+        ? " — is the OpenAI-compatible endpoint reachable from the workspace server?"
+        : "";
     return {
       ok: false,
       exitCode: 1,
       durationMs: Date.now() - started,
       stdout: "",
       stderr: clampStream(Buffer.from(String(err.message || err), "utf8")),
-      error: err.name === "AbortError" ? `timed out after ${ms}ms` : err.message || "fetch failed",
+      error: `${base}${hint}`,
       adapterMeta: { adapter: "local-intelligence", endpoint, model },
     };
   } finally {

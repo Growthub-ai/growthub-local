@@ -12,7 +12,40 @@
 
 **Streamlined one-click deployment:** [Launch Growthub Local](https://www.growthub.ai/f/growthub-local)
 
-**Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
+**Quick links:** [Start here](#start-here-create-a-governed-workspace) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
+
+---
+
+## What Growthub Local is (and why AWaC)
+
+**Growthub Local** is the open-source reference implementation of **Agent Workspace as Code (AWaC)**: a **versioned workspace artifact** where teams model operations in a governed config, agents reason locally, references stay typed and server-resolved, sandbox runs produce **receipts** in source records, and **execution authority** stays explicit (browser UI edits config; it does not run hosted workflows or hold Bridge tokens).
+
+**Why AWaC matters:** the workspace is the owned product object—`growthub.config.json`, the exported Next.js app, `.growthub-fork/` lifecycle state, Data Model objects, adapters, and optional hosted authority move together. That reduces drift, makes audits possible, and keeps local-first work compatible with stricter org policy.
+
+### Five-minute quickstart
+
+1. **Install:** `npm create @growthub/growthub-local@latest` (or the one-liner under [Start here](#start-here-create-a-governed-workspace)).
+2. **Open the workspace app:** `cd …/apps/workspace` → `npm install` → `npm run dev`.
+3. **Open Data Model** in the UI → pick **Sandbox Environments** (and optionally **API Registry** rows for scheduler bindings).
+4. **Bind references** through the picker (no raw secret IDs in the browser—options come from `POST /api/workspace/reference-options`).
+5. **Run a sandbox** → inspect **status**, **lastResponse**, and **source-record** history (`POST /api/workspace/sandbox-run`).
+6. **Skim receipts:** `lastRunId`, `lastSourceId`, and saved run payloads are your proof loop.
+
+Step-by-step narration for demos and reviews: [**docs/DEMO_SCRIPT_5_MINUTES.md**](./docs/DEMO_SCRIPT_5_MINUTES.md).
+
+### Golden path (first “I get it” run)
+
+Canonical operator story: Data Model → Sandbox Environment row → API Registry reference (when needed) → sandbox run → read receipt → (optional) Local Intelligence for **advisory** JSON only. Deep dive: [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Baseline foundation compass](./docs/BASELINE_FOUNDATION_V1.md).
+
+### Visual strip
+
+| AWaC stack (diagram) | Where to go next |
+| --- | --- |
+| [![AWaC governed workspace stack](./docs/assets/awac-workspace-stack.jpg)](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) | [Topology](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace config contract](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Distillation export lane](./docs/DISTILLATION_EXPORT_LANE_V1.md) |
+
+### What Local Intelligence does **not** do
+
+Local Intelligence (CLI and workspace **local-intelligence** sandbox adapter) **assists** with planning, normalization, recommendations, and summaries over Growthub contracts. It does **not** replace deterministic workflow execution, **does not** execute `toolIntents` (they are **proposals only**), and **does not** train models inside the core runtime. Training and distillation are **export lanes**—see [Native Intelligence architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md) and [Distillation export lane](./docs/DISTILLATION_EXPORT_LANE_V1.md).
 
 ---
 
@@ -213,6 +246,9 @@ This keeps the mental model intact:
 - [**Source Import → Workspace Builder**](./docs/SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md) — source-type matrix
 - [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) — the canonical `growthub.config.json` shape
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — what's inside a Workspace + authority boundary
+- [**Baseline foundation (internal compass)**](./docs/BASELINE_FOUNDATION_V1.md) — frozen vs refined scope for AWaC v1
+- [**Five-minute demo script**](./docs/DEMO_SCRIPT_5_MINUTES.md) — golden-path narration for onboarding and reviews
+- [**Distillation export lane**](./docs/DISTILLATION_EXPORT_LANE_V1.md) — JSONL export narrative without a new Data Model object
 - [**Workspace Builder Runtime V1**](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md) — the no-code builder runtime
 - [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
 

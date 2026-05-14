@@ -16,6 +16,8 @@ function SearchableSelect({
   footer,
   loading,
   emptyHint,
+  /** When `value` is set but not present in `options`, show this label in the trigger (stale FK / filtered target). */
+  orphanLabel,
   serverDriven,
   onSearchChange
 }) {
@@ -30,6 +32,9 @@ function SearchableSelect({
   }, [query, serverDriven, onSearchChange]);
 
   const selected = options.find((option) => option.value === String(value || ""));
+  const orphanDisplay = !loading && !selected && value && orphanLabel ? String(orphanLabel) : "";
+  const triggerLabel = loading ? "Loading options…" : (selected?.label || orphanDisplay || placeholder);
+  const hasSelection = Boolean(loading || selected || orphanDisplay);
   const filtered = useMemo(() => {
     if (serverDriven) return options;
     const needle = query.trim().toLowerCase();
@@ -62,7 +67,7 @@ function SearchableSelect({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className={selected ? "" : "empty"}>{selected?.label || placeholder}</span>
+        <span className={hasSelection ? "" : "empty"}>{triggerLabel}</span>
         <ChevronDown size={15} aria-hidden="true" />
       </button>
       {open && (
@@ -79,7 +84,7 @@ function SearchableSelect({
               }}
             />
           </label>
-          {loading && <p className="dm-select-empty" style={{ padding: 8 }}>Loading…</p>}
+          {loading && <p className="dm-select-empty" style={{ padding: 8 }}>Loading options from the server…</p>}
           {!loading && (
             <div className="dm-select-list" role="listbox">
               <button
@@ -197,6 +202,10 @@ export function ReferencePicker({
     [options, value]
   );
   const showRepair = Boolean(value) && !valueInOptions && !loading;
+  const emptyHint =
+    !liveQuery.trim() && !loading
+      ? "No reference rows yet — create target records (for example API Registry), test connection status, or try a search."
+      : "No matches — try another search";
 
   return (
     <div className="dm-reference-picker">
@@ -204,9 +213,27 @@ export function ReferencePicker({
       {showRepair && (
         <p className="dm-validation-banner" style={{ fontSize: 11, marginBottom: 6 }}>
           <AlertTriangle size={12} aria-hidden />
-          <span>Selected reference is missing or filtered out. Pick a new row or adjust API Registry status.</span>
+          <span>Selected reference is missing or filtered out. Pick a new row, clear the field, or fix the target row status so it passes the relation allowlist.</span>
         </p>
       )}
+      {showRepair && (
+        <div style={{ marginBottom: 8 }}>
+          <button
+            type="button"
+            className="dm-btn-ghost"
+            style={{ fontSize: 11 }}
+            disabled={disabled}
+            onClick={() => onChange("")}
+          >
+            Clear reference
+          </button>
+        </div>
+      )}
+      <p className="dm-cell-empty" style={{ fontSize: 10, margin: "0 0 6px" }}>
+        Options load from <code style={{ fontSize: 10 }}>POST /api/workspace/reference-options</code>. Rows may be hidden when
+        {" "}
+        <strong>status</strong> does not match the relation allowlist (for example only <code>connected</code> API Registry rows).
+      </p>
       <SearchableSelect
         value={value || ""}
         options={options.map((o) => ({
@@ -218,7 +245,8 @@ export function ReferencePicker({
         placeholder={placeholder}
         pageSize={10}
         loading={loading}
-        emptyHint="No matches — try another search"
+        emptyHint={emptyHint}
+        orphanLabel={value && !valueInOptions ? `Stored id: ${String(value)}` : undefined}
         onChange={onChange}
         serverDriven
         onSearchChange={setLiveQuery}
