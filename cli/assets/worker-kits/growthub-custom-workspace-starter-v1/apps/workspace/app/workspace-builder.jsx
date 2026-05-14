@@ -463,7 +463,7 @@ function renameDashboardInConfig(config, dashboardId, name, activeDashboardId) {
   };
 }
 
-function findFreePosition(widgets) {
+function buildOccupiedCellSet(widgets) {
   const occupied = new Set();
   for (const widget of widgets) {
     for (let dx = 0; dx < widget.position.w; dx += 1) {
@@ -472,18 +472,43 @@ function findFreePosition(widgets) {
       }
     }
   }
-  for (let y = 0; y <= GRID_ROWS - DEFAULT_POSITION.h; y += 1) {
-    for (let x = 0; x <= GRID_COLUMNS - DEFAULT_POSITION.w; x += 1) {
-      let collides = false;
-      for (let dx = 0; dx < DEFAULT_POSITION.w && !collides; dx += 1) {
-        for (let dy = 0; dy < DEFAULT_POSITION.h && !collides; dy += 1) {
-          if (occupied.has(`${x + dx}:${y + dy}`)) collides = true;
-        }
-      }
-      if (!collides) return { ...DEFAULT_POSITION, x, y };
+  return occupied;
+}
+
+function rectFitsOccupied(occupied, x, y, w, h) {
+  if (x < 0 || y < 0 || x + w > GRID_COLUMNS || y + h > GRID_ROWS) return false;
+  for (let dx = 0; dx < w; dx += 1) {
+    for (let dy = 0; dy < h; dy += 1) {
+      if (occupied.has(`${x + dx}:${y + dy}`)) return false;
     }
   }
-  return { ...DEFAULT_POSITION };
+  return true;
+}
+
+/** Prefer default footprint; when the canvas is crowded (e.g. 9+ large widgets), fall back to smaller boxes so new widgets never overlap. */
+function findFreePosition(widgets) {
+  const occupied = buildOccupiedCellSet(widgets);
+  const sizeCandidates = [
+    { w: DEFAULT_POSITION.w, h: DEFAULT_POSITION.h },
+    { w: 4, h: 4 },
+    { w: 3, h: 4 },
+    { w: 4, h: 3 },
+    { w: 3, h: 3 },
+    { w: 2, h: 3 },
+    { w: 3, h: 2 },
+    { w: 2, h: 2 },
+    { w: 1, h: 2 },
+    { w: 2, h: 1 },
+    { w: 1, h: 1 }
+  ];
+  for (const { w, h } of sizeCandidates) {
+    for (let y = 0; y <= GRID_ROWS - h; y += 1) {
+      for (let x = 0; x <= GRID_COLUMNS - w; x += 1) {
+        if (rectFitsOccupied(occupied, x, y, w, h)) return { x, y, w, h };
+      }
+    }
+  }
+  return { x: 0, y: 0, w: 1, h: 1 };
 }
 
 function normalizePosition(start, end) {

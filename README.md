@@ -14,6 +14,8 @@
 
 **Quick links:** [Start here](#start-here) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
 
+**Golden path (measurable activation):** from the repo root, `node scripts/awac-golden-path-probe.mjs` (or `bash scripts/demo-cli.sh awac-golden-path`) boots a disposable exported workspace, runs `GET /api/workspace` → `POST /api/workspace/reference-options` → `POST /api/workspace/sandbox-run`, and asserts the normalized sandbox receipt plus `growthub.source-records.json` append behavior. Canonical product narrative for this release: [`docs/AWAC_SOURCE_OF_TRUTH_V2.md`](./docs/AWAC_SOURCE_OF_TRUTH_V2.md).
+
 ---
 
 ## Start here: create a governed Workspace

@@ -7,6 +7,7 @@
  *
  * Usage (from repo root):
  *   node scripts/awac-workspace-api-probe.mjs
+ *   node scripts/awac-golden-path-probe.mjs   # re-exports runAwacWorkspaceApiProbe({ goldenPath: true })
  *
  * Requires: network bind on 127.0.0.1 (local dev server only).
  */
@@ -52,6 +53,37 @@ async function waitForHttp(url, { tries = 60, delayMs = 500 } = {}) {
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
+}
+
+/** Normalized sandbox-run receipt persisted to rows and `growthub.source-records.json` (see `buildRunResponse` in sandbox-run route). */
+function assertGrowthubSandboxRunReceipt(runJson) {
+  assert(runJson && typeof runJson === "object", "sandbox-run top-level body must be an object");
+  assert(typeof runJson.runId === "string" && runJson.runId.length > 0, "sandbox-run.runId must be a non-empty string");
+  const r = runJson.response;
+  assert(r && typeof r === "object", "sandbox-run.response envelope missing");
+  for (const k of [
+    "runId",
+    "ranAt",
+    "runLocality",
+    "runtime",
+    "adapter",
+    "exitCode",
+    "durationMs",
+    "stdout",
+    "stderr",
+    "envRefsResolved",
+    "envRefsMissing",
+    "networkAllow",
+    "allowList"
+  ]) {
+    assert(Object.prototype.hasOwnProperty.call(r, k), `sandbox-run.response missing required field: ${k}`);
+  }
+  assert(["local", "serverless"].includes(r.runLocality), "response.runLocality must be local or serverless");
+  assert(Array.isArray(r.envRefsResolved), "response.envRefsResolved must be an array");
+  assert(Array.isArray(r.envRefsMissing), "response.envRefsMissing must be an array");
+  assert(Array.isArray(r.allowList), "response.allowList must be an array");
+  assert(typeof r.stdout === "string", "response.stdout must be a string");
+  assert(typeof r.stderr === "string", "response.stderr must be a string");
 }
 
 function parseStarterJson(stdout) {
@@ -206,7 +238,8 @@ function buildSeedDataModel() {
   };
 }
 
-async function main() {
+export async function runAwacWorkspaceApiProbe(options = {}) {
+  const goldenPath = options.goldenPath === true;
   const tmpBase = await fs.promises.mkdtemp(path.join(os.tmpdir(), "growthub-awac-probe-"));
   const forkRoot = tmpBase;
   console.log(`[probe] materializing starter → ${forkRoot}`);
@@ -262,6 +295,17 @@ async function main() {
     const patched = JSON.parse(patchText);
     assert(patched.workspaceConfig?.dataModel?.objects?.length === 2, "expected two data model objects after PATCH");
 
+    if (goldenPath) {
+      res = await fetch(`${base}/api/workspace`, { cache: "no-store" });
+      assert(res.ok, `GET /api/workspace golden path expected 2xx, got ${res.status}`);
+      const cfg = await res.json();
+      assert(cfg.workspaceConfig && typeof cfg.workspaceConfig === "object", "GET must include workspaceConfig");
+      assert(
+        Array.isArray(cfg.workspaceConfig.dataModel?.objects),
+        "GET golden path: dataModel.objects must be an array"
+      );
+    }
+
     // --- reference-options: negative unknown object ---
     res = await fetch(`${base}/api/workspace/reference-options`, {
       method: "POST",
@@ -289,6 +333,14 @@ async function main() {
     assert(values.includes("probe-scheduler"), `expected probe-scheduler in options, got ${JSON.stringify(values)}`);
     assert(!values.includes("probe-untrusted"), "untrusted api-registry row must not appear for sandbox scheduler field");
 
+    if (goldenPath) {
+      const opts = refPayload.options || [];
+      assert(opts.length > 0, "golden path: reference-options must return at least one option");
+      const sample = opts[0];
+      assert(typeof sample.value === "string" && sample.value.length > 0, "reference option must include value string");
+      assert(typeof sample.label === "string", "reference option must include label string");
+    }
+
     // --- sandbox-run: negative missing row ---
     res = await fetch(`${base}/api/workspace/sandbox-run`, {
       method: "POST",
@@ -309,7 +361,21 @@ async function main() {
     assert(String(runBody.response?.stdout || "").includes("growthub-probe-ok"), "expected echo output in stdout");
     assert(runBody.response?.templateTrace?.resolverTemplateId === "custom-http", "expected templateTrace from row");
 
-    console.log("[probe] all API probes passed");
+    if (goldenPath) {
+      assertGrowthubSandboxRunReceipt(runBody);
+      assert(runBody.persisted === true, "golden path expects sandbox receipt persisted to source-records");
+      const sidecarPath = path.join(appDir, "growthub.source-records.json");
+      assert(fs.existsSync(sidecarPath), `missing source-records sidecar at ${sidecarPath}`);
+      const sidecar = JSON.parse(await fs.promises.readFile(sidecarPath, "utf8"));
+      const sid = runBody.sourceId;
+      assert(typeof sid === "string" && sid.length > 0, "golden path: sourceId must be returned");
+      const bucket = sidecar[sid];
+      assert(bucket && Array.isArray(bucket.records) && bucket.records.length > 0, "golden path: sidecar must append receipt");
+      const last = bucket.records[bucket.records.length - 1];
+      assert(last.runId === runBody.runId, "golden path: last sidecar receipt runId must match POST response");
+    }
+
+    console.log(goldenPath ? "[probe] all API probes passed (golden path)" : "[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {
     child.kill("SIGTERM");
@@ -330,7 +396,12 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const resolvedEntry = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const thisFile = fileURLToPath(import.meta.url);
+const invokedDirectly = Boolean(resolvedEntry && resolvedEntry === thisFile);
+if (invokedDirectly) {
+  runAwacWorkspaceApiProbe({ goldenPath: false }).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
