@@ -18,6 +18,11 @@
  * sandbox PATCH route). **POST /api/workspace/sandbox-run** executes the persisted row; the Data Model
  * drawer / grid read the same `growthub.config.json` the probes mutate.
  *
+ * Also exercises **GET /api/workspace/distillation-traces** (SFT `messages[]` export from
+ * `growthub.source-records.json`), then **exports** `growthub.config.json` +
+ * `growthub.source-records.json` into a fresh temp copy and re-probes the same HTTP surface
+ * (workspace artifact round-trip).
+ *
  * Temp app + npm install live under `${CLI_DEMO_HOME:-$TMPDIR/growthub-cli-demo}/e2e-workspace-sandbox/`
  * when invoked via `demo-cli.sh` (free preview profile).
  */
@@ -218,6 +223,9 @@ async function main() {
   dev.stderr?.on("data", (c) => process.stderr.write(c));
   dev.unref();
 
+  let dev2 = null;
+  let cleanupPort2 = null;
+
   try {
     await waitForHttpReady(`${base}/api/workspace`);
 
@@ -363,8 +371,92 @@ async function main() {
       );
     }
 
-    process.stdout.write("[e2e] all API probes completed successfully.\n");
-  } finally {
+    // --- Distillation corpus: deterministic local-process row + GET export API ---
+    const distillPatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [
+            sandboxObject([
+              emptyRow({
+                Name: "api-probe-row",
+                adapter: "local-intelligence",
+                localModel: "gemma3:4b",
+                localEndpoint: "http://127.0.0.1:11434/v1/chat/completions",
+                intelligenceAdapterMode: "ollama",
+                instructions: "You reply with a single JSON object per system rules.",
+                command: "List one proposed toolIntent with toolSlug video-generation or empty array if unsure.",
+              }),
+              emptyRow({
+                Name: "dist-trace-row",
+                adapter: "local-process",
+                runtime: "node",
+                instructions:
+                  "ICP: B2B operators adopting governed AI workspaces (AWaC). Output JSON only with bantScore and followUp.",
+                command:
+                  'console.log(JSON.stringify({bantScore:7,followUp:"Schedule technical scoping - AWaC distillation track"}));',
+              }),
+            ]),
+          ],
+        },
+      }),
+    });
+    assert(distillPatch.status === 200, `distill PATCH expected 200, got ${distillPatch.status}`);
+
+    const runDist = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "dist-trace-row" }),
+    });
+    const runDistJson = await runDist.json();
+    assert(runDistJson.ok === true, `dist-trace sandbox-run must succeed, got ${JSON.stringify(runDistJson)}`);
+    assert(runDistJson.persisted === true, "dist-trace sandbox-run must persist to source-records sidecar");
+
+    const sidecarPath = path.join(tmp, "growthub.source-records.json");
+    assert(fs.existsSync(sidecarPath), "growthub.source-records.json must exist after persisted run");
+
+    const dtUrl = new URL(`${base}/api/workspace/distillation-traces`);
+    dtUrl.searchParams.set("objectId", "sandboxes-e2e");
+    dtUrl.searchParams.set("name", "dist-trace-row");
+    dtUrl.searchParams.set("role", "sdr-qualification");
+    dtUrl.searchParams.set("format", "json");
+    const dtRes = await fetch(dtUrl, { cache: "no-store" });
+    assert(dtRes.ok, `distillation-traces GET failed ${dtRes.status}`);
+    const dtJson = await dtRes.json();
+    assert(dtJson.ok === true, "distillation-traces must return ok: true");
+    assert(dtJson.traceCount >= 1, "expected at least one gold trace from dist-trace-row");
+    assert(dtJson.traces[0].role === "sdr-qualification", "role query param must echo on trace");
+    const msg0 = dtJson.messagesExamples[0];
+    assert(Array.isArray(msg0?.messages) && msg0.messages.length === 3, "messagesExamples must be chat-shaped");
+    assert(msg0.messages[0].role === "system" && msg0.messages[2].role === "assistant", "SFT message roles");
+
+    const ndUrl = new URL(`${base}/api/workspace/distillation-traces`);
+    ndUrl.searchParams.set("objectId", "sandboxes-e2e");
+    ndUrl.searchParams.set("name", "dist-trace-row");
+    ndUrl.searchParams.set("format", "ndjson");
+    const ndRes = await fetch(ndUrl, { cache: "no-store" });
+    assert(ndRes.ok, `distillation ndjson GET failed ${ndRes.status}`);
+    const ndCt = (ndRes.headers.get("content-type") || "").toLowerCase();
+    assert(ndCt.includes("ndjson"), `expected ndjson content-type, got ${ndCt}`);
+    const ndLines = (await ndRes.text()).trim().split("\n").filter(Boolean);
+    assert(ndLines.length >= 1, "ndjson must have ≥1 line");
+    const parsedNd = JSON.parse(ndLines[ndLines.length - 1]);
+    assert(parsedNd.messages?.[1]?.role === "user", "ndjson line must parse as chat example");
+
+    const allScope = await fetch(`${base}/api/workspace/distillation-traces?scope=all&format=json`, {
+      cache: "no-store",
+    });
+    assert(allScope.ok, `scope=all distillation GET failed ${allScope.status}`);
+    const allJson = await allScope.json();
+    assert(allJson.traceCount >= 1, "scope=all must include dist-trace receipts");
+
+    // --- Export workspace artifacts → fresh install → same distillation API ---
+    const exportDir = fs.mkdtempSync(path.join(demoHome, "ws-export-"));
+    fs.copyFileSync(cfgPath, path.join(exportDir, "growthub.config.json"));
+    fs.copyFileSync(sidecarPath, path.join(exportDir, "growthub.source-records.json"));
+    process.stdout.write(`[e2e] exported workspace snapshot → ${exportDir}\n`);
+
     try {
       dev.kill("SIGTERM");
     } catch {
@@ -374,6 +466,93 @@ async function main() {
       spawnSync("sh", ["-c", `pkill -f "next dev -p ${port}" 2>/dev/null || true`], { stdio: "ignore" });
     } catch {
       /* ignore */
+    }
+
+    const port2 = await pickFreePort();
+    cleanupPort2 = port2;
+    const base2 = `http://127.0.0.1:${port2}`;
+    const tmp2 = fs.mkdtempSync(path.join(demoHome, "ws-reimport-"));
+    fs.cpSync(kitWorkspace, tmp2, {
+      recursive: true,
+      filter: (src) => !src.split(path.sep).includes("node_modules"),
+    });
+    fs.copyFileSync(path.join(exportDir, "growthub.config.json"), path.join(tmp2, "growthub.config.json"));
+    fs.copyFileSync(path.join(exportDir, "growthub.source-records.json"), path.join(tmp2, "growthub.source-records.json"));
+
+    process.stdout.write("[e2e] npm install (reimported workspace)…\n");
+    const ni2 = spawnSync("npm", ["install", "--no-fund", "--no-audit"], {
+      cwd: tmp2,
+      stdio: "inherit",
+      env: { ...process.env, CI: "1" },
+    });
+    assert(ni2.status === 0, "npm install (reimport) failed");
+
+    process.stdout.write(`[e2e] starting next dev (reimport) on :${port2}…\n`);
+    dev2 = spawn("npx", ["next", "dev", "-p", String(port2)], {
+      cwd: tmp2,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true",
+        PORT: String(port2),
+      },
+    });
+    dev2.stdout?.on("data", () => {});
+    dev2.stderr?.on("data", (c) => process.stderr.write(c));
+    dev2.unref();
+
+    await waitForHttpReady(`${base2}/api/workspace`);
+
+    const dtRe = await fetch(
+      `${base2}/api/workspace/distillation-traces?objectId=sandboxes-e2e&name=dist-trace-row&format=json`,
+      { cache: "no-store" },
+    );
+    assert(dtRe.ok, `reimport distillation-traces GET failed ${dtRe.status}`);
+    const dtReJson = await dtRe.json();
+    assert(dtReJson.traceCount === dtJson.traceCount, "reimport must preserve trace count from export");
+
+    const allRe = await fetch(`${base2}/api/workspace/distillation-traces?scope=all&format=json`, {
+      cache: "no-store",
+    });
+    assert(allRe.ok, `reimport scope=all failed ${allRe.status}`);
+
+    try {
+      dev2.kill("SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    try {
+      spawnSync("sh", ["-c", `pkill -f "next dev -p ${port2}" 2>/dev/null || true`], { stdio: "ignore" });
+    } catch {
+      /* ignore */
+    }
+    dev2 = null;
+
+    process.stdout.write("[e2e] all API probes completed successfully.\n");
+  } finally {
+    try {
+      dev.kill("SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    try {
+      dev2?.kill("SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    try {
+      spawnSync("sh", ["-c", `pkill -f "next dev -p ${port}" 2>/dev/null || true`], { stdio: "ignore" });
+    } catch {
+      /* ignore */
+    }
+    if (cleanupPort2) {
+      try {
+        spawnSync("sh", ["-c", `pkill -f "next dev -p ${cleanupPort2}" 2>/dev/null || true`], { stdio: "ignore" });
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
