@@ -111,13 +111,17 @@ async function run(request) {
     const text = clampStream(buf);
     const durationMs = Date.now() - started;
     if (!res.ok) {
+      let hint = "";
+      if (res.status === 404) hint = " Check model id and URL (404 from chat completions).";
+      if (res.status === 401 || res.status === 403) hint = " Authentication failed for the OpenAI-compatible endpoint.";
+      if (res.status === 502 || res.status === 503) hint = " Upstream model server may be warming up or overloaded.";
       return {
         ok: false,
         exitCode: 1,
         durationMs,
         stdout: text,
         stderr: "",
-        error: `local model HTTP ${res.status}`,
+        error: `local model HTTP ${res.status}.${hint}`,
         adapterMeta: { adapter: "local-intelligence", endpoint, model },
       };
     }
@@ -129,17 +133,47 @@ async function run(request) {
     } catch {
       outer = null;
     }
-    if (outer && Array.isArray(outer.choices) && outer.choices[0]?.message?.content) {
+
+    if (outer && Array.isArray(outer.choices) && outer.choices.length === 0) {
+      return {
+        ok: false,
+        exitCode: 1,
+        durationMs,
+        stdout: text,
+        stderr: "",
+        error: "local model returned an empty choices array — verify the model is pulled/loaded and the endpoint URL.",
+        adapterMeta: { adapter: "local-intelligence", endpoint, model },
+      };
+    }
+
+    if (outer && Array.isArray(outer.choices) && outer.choices[0]?.message) {
       const inner = String(outer.choices[0].message.content || "").trim();
-      try {
-        parsed = JSON.parse(inner);
-      } catch {
-        parsed = { text: inner, warnings: ["model completion was not valid JSON"], toolIntents: [], confidence: 0 };
+      if (!inner) {
+        parsed = { text: "", warnings: ["model returned an empty message body"], toolIntents: [], confidence: 0 };
+      } else {
+        try {
+          parsed = JSON.parse(inner);
+        } catch {
+          parsed = {
+            text: inner,
+            warnings: ["model completion was not valid JSON — confirm the endpoint honors json_object / schema"],
+            toolIntents: [],
+            confidence: 0
+          };
+        }
       }
     } else if (outer && typeof outer === "object") {
       parsed = outer;
     } else {
       parsed = { text, warnings: ["invalid JSON from model"], toolIntents: [], confidence: 0 };
+    }
+
+    const toolIntents = Array.isArray(parsed.toolIntents) ? parsed.toolIntents : [];
+    const baseWarnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+    const mergedWarnings = [...baseWarnings];
+    const proposalNote = "toolIntents are proposals only — this adapter performs no tool execution or hosted calls.";
+    if (toolIntents.length > 0 && !mergedWarnings.some((w) => String(w).includes("proposals only"))) {
+      mergedWarnings.push(proposalNote);
     }
 
     const envelope = {
@@ -155,8 +189,8 @@ async function run(request) {
       result: {
         text: typeof parsed.text === "string" ? parsed.text : undefined,
         json: parsed.json && typeof parsed.json === "object" ? parsed.json : undefined,
-        toolIntents: Array.isArray(parsed.toolIntents) ? parsed.toolIntents : [],
-        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+        toolIntents,
+        warnings: mergedWarnings,
         confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
       },
       rawText: text,

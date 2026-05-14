@@ -349,6 +349,16 @@ The CLI does not train local models.
 The sandbox runner plus `source-record-export` can serialize run envelopes into **JSONL-ready** records (`growthub-local-intelligence-trace-v1`) for external QLoRA / fine-tuning tooling.
 After training, load the resulting weights into Ollama, LM Studio, or vLLM and select the concrete `localModel` id in Local Intelligence or the workspace sandbox row — no training loop ships inside the CLI runtime.
 
+**Distillation is not a runtime object.** Do not model “distillation jobs” as a new first-class `objectType` unless multiple customers need that business record repeatedly. For V1, treat distillation as an **export lane** on top of existing traces and source records.
+
+**Distillation is a source-record export lane.** Operators export JSONL (or equivalent) from append-only history; the core product stays validation, adapters, and receipts—not a bundled trainer.
+
+**Training happens outside Growthub Local.** Fine-tune in your own ML pipeline; keep heavy GPU work and dataset policy out of the Next workspace app and out of the CLI hot path.
+
+**Reloading happens by selecting a `localModel`.** After weights are available in Ollama / LM Studio / vLLM, point the sandbox row or Local Intelligence config at the new tag; concrete adapter ids remain open-ended by design.
+
+See also: [`docs/DISTILLATION_EXPORT_LANE_V1.md`](./DISTILLATION_EXPORT_LANE_V1.md).
+
 ## 32. Coming Soon Areas
 Planned expansions:
 - additional local adapter providers.

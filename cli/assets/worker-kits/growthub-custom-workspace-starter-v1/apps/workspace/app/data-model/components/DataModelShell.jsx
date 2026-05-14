@@ -1294,6 +1294,11 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             disabled={saving}
             canRun={Boolean(String(draft.Name || "").trim())}
             onRun={runSandbox}
+            runLocality={draft.runLocality}
+            lastRunId={draft.lastRunId}
+            lastSourceId={draft.lastSourceId}
+            lastResponse={draft.lastResponse}
+            onExpandLastResponse={expandLastResponse}
           />
         )}
         <div className="dm-record-fields">

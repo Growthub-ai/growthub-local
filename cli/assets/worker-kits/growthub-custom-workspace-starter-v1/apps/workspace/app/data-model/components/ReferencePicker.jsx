@@ -198,27 +198,59 @@ export function ReferencePicker({
   );
   const showRepair = Boolean(value) && !valueInOptions && !loading;
 
+  const pickerOptions = useMemo(() => {
+    const mapped = options.map((o) => ({
+      value: String(o.value),
+      label: String(o.label || o.value),
+      secondaryLabel: o.secondaryLabel
+    }));
+    if (value && !valueInOptions && !loading) {
+      const raw = String(value);
+      const short = raw.length > 30 ? `${raw.slice(0, 30)}…` : raw;
+      return [
+        {
+          value: raw,
+          label: `Unresolved target (${short})`,
+          secondaryLabel: "missing, deleted, or filtered by status allowlist"
+        },
+        ...mapped
+      ];
+    }
+    return mapped;
+  }, [options, value, valueInOptions, loading]);
+
+  const emptyHintText = liveQuery.trim()
+    ? "No matches for this search — try a shorter query or clear search."
+    : "No options yet. Create a matching row (for example API Registry), or fix status so it passes the relation allowlist (often connected / approved).";
+
   return (
-    <div className="dm-reference-picker">
+    <div className={`dm-reference-picker${loading ? " is-busy" : ""}`}>
       {error && <p className="dm-field-error" style={{ fontSize: 11 }}>{error}</p>}
       {showRepair && (
-        <p className="dm-validation-banner" style={{ fontSize: 11, marginBottom: 6 }}>
-          <AlertTriangle size={12} aria-hidden />
-          <span>Selected reference is missing or filtered out. Pick a new row or adjust API Registry status.</span>
-        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <p className="dm-validation-banner" style={{ fontSize: 11, margin: 0, flex: "1 1 220px" }}>
+            <AlertTriangle size={12} aria-hidden style={{ verticalAlign: "middle", marginRight: 4 }} />
+            <span>This value is not in the current option list (deleted row, wrong workspace, or status filtered out). Pick a valid row or clear the field.</span>
+          </p>
+          <button
+            type="button"
+            className="dm-btn-ghost"
+            style={{ fontSize: 11, whiteSpace: "nowrap" }}
+            disabled={disabled}
+            onClick={() => onChange("")}
+          >
+            Clear invalid reference
+          </button>
+        </div>
       )}
       <SearchableSelect
         value={value || ""}
-        options={options.map((o) => ({
-          value: String(o.value),
-          label: String(o.label || o.value),
-          secondaryLabel: o.secondaryLabel
-        }))}
+        options={pickerOptions}
         disabled={disabled}
-        placeholder={placeholder}
+        placeholder={loading ? "Loading options…" : placeholder}
         pageSize={10}
         loading={loading}
-        emptyHint="No matches — try another search"
+        emptyHint={emptyHintText}
         onChange={onChange}
         serverDriven
         onSearchChange={setLiveQuery}
@@ -237,6 +269,10 @@ export function ReferencePicker({
           ) : null
         }
       />
+      <p className="dm-reference-picker-hint">
+        Options load from <code style={{ fontSize: 10 }}>POST /api/workspace/reference-options</code> (server-side). Relations may hide rows whose{" "}
+        <strong>status</strong> is outside the allowlist — retest the registry row or widen defaults only when policy allows.
+      </p>
     </div>
   );
 }

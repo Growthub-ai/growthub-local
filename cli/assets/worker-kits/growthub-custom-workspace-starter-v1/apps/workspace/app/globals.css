@@ -4165,6 +4165,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-select-pager span { color: #64748b; font-size: 12px; font-weight: 650; }
 .dm-db-grid td:has(.dm-select) { overflow: visible; padding-top: 5px; padding-bottom: 5px; }
 .dm-db-grid td .dm-select { min-width: 230px; }
+.dm-reference-picker.is-busy .dm-select-trigger { opacity: 0.82; }
+.dm-reference-picker-hint { margin: 6px 0 0; font-size: 11px; line-height: 1.35; color: #64748b; }
+.dm-sandbox-run-meta { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; font-size: 11px; color: #334155; }
+.dm-sandbox-run-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
+.dm-sandbox-run-meta-row code { font-size: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 6px; max-width: 100%; overflow: auto; }
+.dm-sandbox-locality-note { margin: 0; font-size: 11px; color: #64748b; line-height: 1.4; }
 .dm-json-field { position: relative; }
 .dm-json-field > span { padding-right: 34px; }
 .dm-json-expand { position: absolute; top: 0; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #64748b; box-shadow: 0 1px 2px rgba(15,23,42,.05); opacity: 0; cursor: pointer; transition: opacity .12s, border-color .12s, color .12s, box-shadow .12s; }

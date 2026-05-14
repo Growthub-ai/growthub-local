@@ -116,6 +116,19 @@ Rules:
 5. Integration-backed source objects continue to use the integration resolver path; the browser stores references and normalized metadata, not provider credentials.
 6. **Sandbox Environment** (`objectType: "sandbox-environment"`) rows describe where and how workloads run (`runLocality`, adapter, optional `schedulerRegistryId` → API Registry). They persist in the same `dataModel.objects[]` surface as other governed objects. They are **not** bindable as View widget sources; execution is `POST /api/workspace/sandbox-run`. Details and the `growthub-sandbox-run-v1` envelope live in the starter kit at `apps/workspace/docs/sandbox-environment-primitive.md` (materialized path under `growthub-custom-workspace-starter-v1`).
 
+### Baseline object model freeze (V1)
+
+The **baseline governed families** shipped in the custom workspace starter are enough to express most operator workflows without inventing new top-level object types:
+
+- **People**
+- **Tasks**
+- **Data Sources**
+- **API Registry**
+- **Sandbox Environment**
+- **Custom** (generic manual objects)
+
+**Additive rule:** new customer scenarios should prefer extra **fields**, **views**, **relations**, **templates**, **source records**, and **sandbox runs** before introducing new first-class `objectType` values. That keeps the workspace easier to explain, validate, and upgrade while preserving the invariant that the **workspace artifact** remains the top-level product object.
+
 ---
 
 ## Reference contract

@@ -16,6 +16,22 @@
 
 ---
 
+## Product snapshot (buyers and builders)
+
+**What Growthub Local is.** An open-source **Agent Workspace as Code (AWaC)** stack: a versioned workspace artifact where teams model operations in a governed Data Model, bind references safely, run sandboxes that write **receipts** to source records, and use **local intelligence** for assistive reasoning—without the browser acting as workflow execution or secret authority.
+
+**Why AWaC matters.** The workspace is the owned product: portable `growthub.config.json`, the Next.js operator app, fork lifecycle under `.growthub-fork/`, agent contracts, and optional hosted authority stay one coherent unit instead of scattered repos, prompts, and dashboards.
+
+**Five-minute quickstart.** Follow the scripted walkthrough: [docs/DEMO_SCRIPT_5_MINUTES.md](./docs/DEMO_SCRIPT_5_MINUTES.md) (install → open Data Model → reference picker → sandbox run → receipt → execution boundary). For the deeper activation narrative, see [docs/WORKSPACE_STARTER_ACTIVATION_PATH.md](./docs/WORKSPACE_STARTER_ACTIVATION_PATH.md).
+
+**Visual strip.** Stack overview: ![AWaC governed workspace stack](./docs/assets/awac-workspace-stack.jpg) · Product compass (what is frozen vs refined): [docs/BASELINE_FOUNDATION_V1.md](./docs/BASELINE_FOUNDATION_V1.md) · Video: [YouTube walkthrough](https://youtu.be/DL38oRoIB3g).
+
+**Golden path demo (canonical story).** Data Model → Sandbox Environment row → API Registry via reference picker → **Run sandbox** (`POST /api/workspace/sandbox-run`) → read `lastResponse`, `lastSourceId`, and source-record history. Same path is regression-probed by maintainers: `node scripts/awac-golden-path-probe.mjs` (optional; spins a temp workspace app).
+
+**What Local Intelligence does *not* do.** It does not execute hosted workflows, run production tools on your behalf, or hold Bridge tokens. In the workspace kit it is an OpenAI-compatible **proposal-only** path: JSON envelopes and `toolIntents` are advisory; execution stays on deterministic routes. See [docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md) and [docs/DISTILLATION_EXPORT_LANE_V1.md](./docs/DISTILLATION_EXPORT_LANE_V1.md) (export / fine-tuning happens **outside** the runtime).
+
+---
+
 ## Start here: create a governed Workspace
 
 Power-user one-liner:
@@ -207,6 +223,9 @@ This keeps the mental model intact:
 
 ### Workspace 1.0 (the product object)
 
+- [**Baseline foundation (internal compass)**](./docs/BASELINE_FOUNDATION_V1.md) — frozen object model, refinement lanes, demo and validation hooks
+- [**Five-minute demo script**](./docs/DEMO_SCRIPT_5_MINUTES.md) — adoption path for operators and reviewers
+- [**Distillation / export lane**](./docs/DISTILLATION_EXPORT_LANE_V1.md) — traces → JSONL → external training → reload `localModel` (no new runtime object)
 - [**Setup**](./docs/SETUP.md) — one canonical install path
 - [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md) — 30-second mental model
 - [**Workspace Starter Activation Path**](./docs/WORKSPACE_STARTER_ACTIVATION_PATH.md) — full end-to-end journey
