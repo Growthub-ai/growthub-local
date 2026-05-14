@@ -76,6 +76,20 @@ import {
   getSandboxAdapter
 } from "@/lib/adapters/sandboxes";
 
+/**
+ * When GROWTHUB_SANDBOX_RUN_API_TOKEN is set, require Authorization: Bearer <token>.
+ * Local dev leaves this unset so the route stays open on localhost.
+ */
+function denyUnauthorizedSandboxRun(request) {
+  const expected = String(process.env.GROWTHUB_SANDBOX_RUN_API_TOKEN || "").trim();
+  if (!expected) return null;
+  const header = request.headers.get("authorization") || "";
+  const m = header.match(/^Bearer\s+(\S+)/i);
+  const token = m ? String(m[1]).trim() : "";
+  if (token === expected) return null;
+  return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+}
+
 function envKeyCandidates(ref) {
   const token = String(ref || "")
     .trim()
@@ -393,6 +407,9 @@ function findSandboxRow(workspaceConfig, objectId, name) {
 }
 
 async function GET(request) {
+  const denied = denyUnauthorizedSandboxRun(request);
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const objectId = String(searchParams.get("objectId") || "").trim();
   const name = String(searchParams.get("name") || "").trim();
@@ -416,6 +433,9 @@ async function GET(request) {
 }
 
 async function POST(request) {
+  const denied = denyUnauthorizedSandboxRun(request);
+  if (denied) return denied;
+
   let body;
   try {
     body = await request.json();
