@@ -27,10 +27,26 @@
     }
   ],
   "widgetTypes": [
-    { "kind": "chart", "label": "Chart", "icon": "C" },
-    { "kind": "view", "label": "View", "icon": "V" },
-    { "kind": "iframe", "label": "iFrame", "icon": "I" },
-    { "kind": "rich-text", "label": "Rich Text", "icon": "T" }
+    {
+      "kind": "chart",
+      "label": "Chart",
+      "icon": "C"
+    },
+    {
+      "kind": "view",
+      "label": "View",
+      "icon": "V"
+    },
+    {
+      "kind": "iframe",
+      "label": "iFrame",
+      "icon": "I"
+    },
+    {
+      "kind": "rich-text",
+      "label": "Rich Text",
+      "icon": "T"
+    }
   ],
   "canvas": {
     "id": "workspace-canvas",
@@ -54,5 +70,143 @@
     "createdBy": "cli",
     "mirrors": "growthub-custom-workspace-starter-v1",
     "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit inside a governed fork and validate through the starter export smoke path."
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "dist-1",
+        "label": "Distill",
+        "source": "Distill",
+        "objectType": "distillation-pipeline",
+        "icon": "Brain",
+        "excludeFromWidgetBinding": true,
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "targetSandboxId"
+        ],
+        "rows": [
+          {
+            "Name": "L1",
+            "lifecycleStatus": "draft",
+            "targetSandboxId": "LiveBox"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "relations": [
+          {
+            "id": "target-sandbox-binding",
+            "name": "Target sandbox",
+            "field": "targetSandboxId",
+            "targetObjectType": "sandbox-environment",
+            "type": "belongs-to",
+            "description": "ref",
+            "valueField": "Name",
+            "labelField": "Name",
+            "secondaryLabelField": "runtime",
+            "statusField": "lifecycleStatus",
+            "statusAllowlist": [
+              "live"
+            ],
+            "searchable": true,
+            "pageSize": 25
+          }
+        ],
+        "sidecar": {
+          "storage": "workspace-source-records",
+          "sourceId": "distillation-pipeline:dist-1",
+          "appendOnly": true,
+          "recordKind": "growthub-distillation-run-v1"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "targetSandboxId"
+          ],
+          "sort": [],
+          "views": [],
+          "activeViewId": "",
+          "favorite": false,
+          "types": {}
+        }
+      },
+      {
+        "id": "sandbox-1",
+        "label": "Sandbox",
+        "source": "Sandbox",
+        "objectType": "sandbox-environment",
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "runLocality",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "localModel",
+          "localEndpoint",
+          "intelligenceAdapterMode",
+          "schedulerRegistryId",
+          "instructions",
+          "command",
+          "timeoutMs",
+          "status"
+        ],
+        "rows": [
+          {
+            "Name": "LiveBox",
+            "lifecycleStatus": "live",
+            "runLocality": "local",
+            "runtime": "python",
+            "adapter": "distillation-adapter-serve",
+            "agentHost": "",
+            "localModel": "gemma",
+            "localEndpoint": "",
+            "intelligenceAdapterMode": "ollama",
+            "schedulerRegistryId": "",
+            "instructions": "TEST",
+            "command": "test local for intelligence.",
+            "timeoutMs": "60000",
+            "status": "connected",
+            "lastTested": "2026-05-14T07:38:51.510Z",
+            "lastRunId": "run_mp56g646_l6hz1v",
+            "lastSourceId": "sandbox:sandbox-1:livebox",
+            "lastResponse": "{\n  \"runId\": \"run_mp56g646_l6hz1v\",\n  \"ranAt\": \"2026-05-14T07:38:51.510Z\",\n  \"runLocality\": \"local\",\n  \"schedulerRegistryId\": null,\n  \"runtime\": \"python\",\n  \"adapter\": \"distillation-adapter-serve\",\n  \"agentHost\": null,\n  \"lifecycleStatus\": \"live\",\n  \"version\": \"\",\n  \"instructions\": \"TEST\",\n  \"command\": \"test local for intelligence.\",\n  \"timeoutMs\": 60000,\n  \"exitCode\": 0,\n  \"durationMs\": 1101,\n  \"stdout\": \"I understand the instruction. Here is the final answer to the prompt:\\n\\nI am unable to perform the requested test, as I do not have the necessary context or knowledge to assess intelligence.\",\n  \"stderr\": \"\",\n  \"envRefsResolved\": [],\n  \"envRefsMissing\": [],\n  \"networkAllow\": false,\n  \"allowList\": [],\n  \"adapterMeta\": {\n    \"adapter\": \"distillation-adapter-serve\",\n    \"mode\": \"ollama\",\n    \"endpoint\": \"http://127.0.0.1:11434/v1/chat/completions\",\n    \"model\": \"gemma\",\n    \"credentials\": \"none\"\n  }\n}"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "runLocality",
+            "runtime",
+            "adapter",
+            "agentHost",
+            "localModel",
+            "localEndpoint",
+            "intelligenceAdapterMode",
+            "schedulerRegistryId",
+            "instructions",
+            "command",
+            "timeoutMs",
+            "status"
+          ],
+          "sort": [],
+          "views": [],
+          "activeViewId": "",
+          "favorite": false,
+          "types": {}
+        }
+      }
+    ]
   }
 }

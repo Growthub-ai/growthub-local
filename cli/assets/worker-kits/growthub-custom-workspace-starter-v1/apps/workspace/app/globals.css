@@ -4226,6 +4226,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 
 /* Object type badges */
 .dm-badge-registry { background: #f5f5f5; color: #444; border-color: #e0e0e0; }
+.dm-badge-distillation { background: #f5f5f5; color: #444; border-color: #e0e0e0; }
+.dm-badge-sandbox { background: #f5f5f5; color: #444; border-color: #e0e0e0; }
 .dm-badge-people   { background: #f5f5f5; color: #444; border-color: #e0e0e0; }
 .dm-badge-tasks    { background: #f5f5f5; color: #444; border-color: #e0e0e0; }
 .dm-badge-manual   { background: #f5f5f5; color: #444; border-color: #e0e0e0; }

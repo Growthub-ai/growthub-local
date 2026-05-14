@@ -125,6 +125,7 @@ function hasTestedSavedRow(table) {
 
 function isSelectableDataModelSource(table) {
   if (table?.storage !== "manual-object") return false;
+  if (table.excludeFromWidgetBinding) return false;
   if (table.objectType === "api-registry") return false;
   if (table.objectType === "sandbox-environment") return hasTestedSavedRow(table);
   if (table.objectType === "data-source") return hasTestedSavedRow(table);

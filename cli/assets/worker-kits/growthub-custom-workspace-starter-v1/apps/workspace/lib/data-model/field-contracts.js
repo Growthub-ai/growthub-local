@@ -66,10 +66,42 @@ const DATA_SOURCE_FIELDS = {
   resolverTemplateId: { editor: "text" }
 };
 
+const DISTILLATION_PIPELINE_FIELDS = {
+  lifecycleStatus: {
+    editor: "select",
+    options: ["draft", "live", "archived"]
+  },
+  teacherProvider: {
+    editor: "select",
+    options: ["anthropic", "openai", "local-openai-compatible"]
+  },
+  trainingRuntime: {
+    editor: "select",
+    options: ["llamafactory", "custom"]
+  },
+  adapterProvider: {
+    editor: "select",
+    options: ["ollama", "vllm", "custom-openai-compatible"]
+  },
+  adapterEnvRefs: { editor: "env-ref-multiselect" },
+  targetSandboxId: {
+    editor: "reference",
+    targetObjectType: "sandbox-environment",
+    valueField: "Name",
+    statusAllowlist: ["live"]
+  },
+  lastResponse: { editor: "json-preview", readonly: true },
+  lastRunId: { editor: "readonly-text" },
+  lastSourceId: { editor: "readonly-text" },
+  createdAt: { editor: "readonly-text" },
+  updatedAt: { editor: "readonly-text" }
+};
+
 const BY_OBJECT_TYPE = {
   "sandbox-environment": SANDBOX_ENVIRONMENT_FIELDS,
   "api-registry": API_REGISTRY_FIELDS,
-  "data-source": DATA_SOURCE_FIELDS
+  "data-source": DATA_SOURCE_FIELDS,
+  "distillation-pipeline": DISTILLATION_PIPELINE_FIELDS
 };
 
 function getFieldContract(objectType, fieldName) {

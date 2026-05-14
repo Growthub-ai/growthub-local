@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart2,
   Box,
+  Brain,
   Building2,
   Calendar,
   CheckSquare,
@@ -29,7 +30,7 @@ import {
 import { OBJECT_TYPE_PRESETS } from "@/lib/workspace-data-model";
 
 const LUCIDE_MAP = {
-  Activity, BarChart2, Box, Building2, Calendar, CheckSquare, Code2,
+  Activity, BarChart2, Box, Brain, Building2, Calendar, CheckSquare, Code2,
   Database, FileText, Globe, Hash, Layers, Link2, List, Mail, Plus,
   ShoppingCart, Star, Tag, Terminal, ToggleLeft, Type, Users, Zap,
 };
@@ -37,13 +38,14 @@ const LUCIDE_MAP = {
 const ICON_PICKER_SET = [
   "Database", "Globe", "Code2", "Users", "CheckSquare", "Building2",
   "Tag", "Star", "Zap", "FileText", "Mail", "BarChart2",
-  "Layers", "Box", "Activity", "ShoppingCart", "Terminal",
+  "Layers", "Box", "Activity", "ShoppingCart", "Terminal", "Brain",
 ];
 
 const OBJECT_TYPE_BADGE = {
   "data-source":         { label: "Data Source",         cls: "dm-badge-datasource" },
   "api-registry":        { label: "API Registry",        cls: "dm-badge-registry" },
   "sandbox-environment": { label: "Sandbox Environment", cls: "dm-badge-sandbox" },
+  "distillation-pipeline": { label: "Distillation Pipeline", cls: "dm-badge-distillation" },
   people:                { label: "People",              cls: "dm-badge-people" },
   tasks:                 { label: "Tasks",               cls: "dm-badge-tasks" },
   custom:                { label: "Custom",              cls: "dm-badge-manual" },

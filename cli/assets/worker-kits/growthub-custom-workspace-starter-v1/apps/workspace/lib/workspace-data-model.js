@@ -283,7 +283,11 @@ function deriveManualObjectTable(object) {
     storage: "manual-object",
     objectId: object.id,
     widgetRefs: [],
-    fieldSettings: normalizeFieldSettings(object.fieldSettings, columns)
+    fieldSettings: normalizeFieldSettings(object.fieldSettings, columns),
+    ...(object.excludeFromWidgetBinding ? { excludeFromWidgetBinding: true } : {}),
+    ...(object.sidecar && typeof object.sidecar === "object" && !Array.isArray(object.sidecar)
+      ? { sidecar: object.sidecar }
+      : {})
   };
 }
 
@@ -588,7 +592,7 @@ function uniqueObjectId(workspaceConfig, name) {
 /**
  * Top-level object type presets.
  * Each entry defines: label, icon (Lucide name), description, default columns, and
- * any built-in relations.  These are the five first-class types the UI offers when
+ * any built-in relations.  These are the first-class governed types the UI offers when
  * a user clicks "New object" — they act like schema templates, not hard constraints.
  *
  * Relation shape:
@@ -734,6 +738,48 @@ const OBJECT_TYPE_PRESETS = {
       }
     ]
   },
+  "distillation-pipeline": {
+    label: "Distillation Pipeline",
+    icon: "Brain",
+    description: "Governed AWaC business object for sandbox trace corpus collection, teacher rationale augmentation, student fine-tuning, LoRA adapter versioning, and adapter-only serving through the existing sandbox execution plane.",
+    excludeFromWidgetBinding: true,
+    sidecar: {
+      storage: "workspace-source-records",
+      appendOnly: true,
+      recordKind: "growthub-distillation-run-v1"
+    },
+    columns: [
+      "Name",
+      "lifecycleStatus",
+      "teacherProvider",
+      "trainingRuntime",
+      "adapterProvider",
+      "adapterEnvRefs",
+      "targetSandboxId",
+      "lastResponse",
+      "lastRunId",
+      "lastSourceId",
+      "createdAt",
+      "updatedAt"
+    ],
+    relations: [
+      {
+        id: "target-sandbox-binding",
+        name: "Target sandbox",
+        field: "targetSandboxId",
+        targetObjectType: "sandbox-environment",
+        type: "belongs-to",
+        description: "Live sandbox environment row whose Name is stored in targetSandboxId; execution uses POST /api/workspace/sandbox-run with server-side credential resolution.",
+        valueField: "Name",
+        labelField: "Name",
+        secondaryLabelField: "runtime",
+        statusField: "lifecycleStatus",
+        statusAllowlist: ["live"],
+        searchable: true,
+        pageSize: 25
+      }
+    ]
+  },
   "custom": {
     label: "Custom",
     icon: "Plus",
@@ -768,7 +814,18 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
     relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
-    fieldSettings: normalizeFieldSettings({}, columns)
+    fieldSettings: normalizeFieldSettings({}, columns),
+    ...(preset.excludeFromWidgetBinding ? { excludeFromWidgetBinding: true } : {}),
+    ...(preset.sidecar
+      ? {
+          sidecar: {
+            ...preset.sidecar,
+            ...(typeof preset.sidecar.sourceId === "string" && preset.sidecar.sourceId.trim()
+              ? {}
+              : { sourceId: `${objectType}:${id}` })
+          }
+        }
+      : {})
   };
   return {
     ...workspaceConfig,

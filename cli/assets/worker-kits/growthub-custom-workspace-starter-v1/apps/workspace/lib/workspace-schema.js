@@ -51,6 +51,16 @@ const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
 /** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
 const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
 const KNOWN_SANDBOX_LIFECYCLE_STATUSES = ["draft", "live"];
+/** Governed manual-object kinds allowed in dataModel.objects[].objectType — mirrors OBJECT_TYPE_PRESETS + custom. */
+const KNOWN_DATA_MODEL_OBJECT_TYPES = [
+  "custom",
+  "data-source",
+  "api-registry",
+  "people",
+  "tasks",
+  "sandbox-environment",
+  "distillation-pipeline"
+];
 const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
@@ -1026,8 +1036,36 @@ function validateDataModelConfig(dataModel, errors) {
       ids.add(object.id);
     }
     if (typeof object.label !== "string" || !object.label.trim()) errors.push(`${prefix}.label must be a non-empty string`);
+    if (object.objectType !== undefined) {
+      if (typeof object.objectType !== "string" || !object.objectType.trim()) {
+        errors.push(`${prefix}.objectType must be a non-empty string when present`);
+      } else if (!KNOWN_DATA_MODEL_OBJECT_TYPES.includes(object.objectType)) {
+        errors.push(`${prefix}.objectType must be one of ${KNOWN_DATA_MODEL_OBJECT_TYPES.join(", ")}`);
+      }
+    }
     if (object.source !== undefined && typeof object.source !== "string") errors.push(`${prefix}.source must be a string`);
     if (object.sourceId !== undefined && typeof object.sourceId !== "string") errors.push(`${prefix}.sourceId must be a string`);
+    if (object.excludeFromWidgetBinding !== undefined && typeof object.excludeFromWidgetBinding !== "boolean") {
+      errors.push(`${prefix}.excludeFromWidgetBinding must be a boolean when present`);
+    }
+    if (object.sidecar !== undefined) {
+      if (!isPlainObject(object.sidecar)) {
+        errors.push(`${prefix}.sidecar must be a plain object when present`);
+      } else {
+        if (object.sidecar.storage !== undefined && object.sidecar.storage !== "workspace-source-records") {
+          errors.push(`${prefix}.sidecar.storage must be "workspace-source-records" when present`);
+        }
+        if (object.sidecar.sourceId !== undefined && (typeof object.sidecar.sourceId !== "string" || !object.sidecar.sourceId.trim())) {
+          errors.push(`${prefix}.sidecar.sourceId must be a non-empty string when present`);
+        }
+        if (object.sidecar.appendOnly !== undefined && typeof object.sidecar.appendOnly !== "boolean") {
+          errors.push(`${prefix}.sidecar.appendOnly must be a boolean when present`);
+        }
+        if (object.sidecar.recordKind !== undefined && (typeof object.sidecar.recordKind !== "string" || !object.sidecar.recordKind.trim())) {
+          errors.push(`${prefix}.sidecar.recordKind must be a non-empty string when present`);
+        }
+      }
+    }
     validateStringArray(object.columns, `${prefix}.columns`, errors);
     if (!Array.isArray(object.rows)) {
       errors.push(`${prefix}.rows must be an array`);
@@ -1303,6 +1341,7 @@ export {
   KNOWN_AGGREGATIONS,
   KNOWN_CHART_TYPES,
   KNOWN_DATA_BINDING_MODES,
+  KNOWN_DATA_MODEL_OBJECT_TYPES,
   DEFAULT_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_LIFECYCLE_STATUSES,
   KNOWN_FIELDS,

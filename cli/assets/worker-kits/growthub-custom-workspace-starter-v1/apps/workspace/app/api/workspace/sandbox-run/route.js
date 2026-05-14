@@ -484,6 +484,13 @@ async function POST(request) {
     }, { status: 400 });
   }
 
+  if (runLocality === "serverless" && adapterId === "distillation-adapter-serve") {
+    return NextResponse.json({
+      ok: false,
+      error: "`distillation-adapter-serve` applies only when runLocality is local. Switch run locality or use serverless delegation with a HTTP adapter.",
+    }, { status: 400 });
+  }
+
   const env = {};
   const envRefsResolved = [];
   const envRefsMissing = [];
@@ -545,12 +552,34 @@ async function POST(request) {
 
     const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-sandbox-"));
     try {
+      const distillCommand =
+        adapterId === "distillation-adapter-serve"
+          ? (instructions.trim() ? `Instructions:\n${instructions}\n\nPrompt:\n${command}` : command)
+          : command;
+      const adapterCommand =
+        adapterId === "local-agent-host" || adapterId === "local-intelligence"
+          ? agentCommand
+          : adapterId === "distillation-adapter-serve"
+            ? distillCommand
+            : command;
+      /** Drop-zone distilled serve — same drawer fields as local-intelligence (`localModel`, `localEndpoint`, `intelligenceAdapterMode`). */
+      const distillationAdapterRequest =
+        adapterId === "distillation-adapter-serve"
+          ? {
+              localModel: typeof row.localModel === "string" ? row.localModel.trim() : "",
+              localEndpoint: typeof row.localEndpoint === "string" ? row.localEndpoint.trim() : "",
+              adapterMode:
+                typeof row.intelligenceAdapterMode === "string"
+                  ? row.intelligenceAdapterMode.trim().toLowerCase()
+                  : "ollama",
+            }
+          : null;
       result = await adapter.run({
         runId,
         name: row.Name || name,
         runtime,
         agentHost,
-        command: adapterId === "local-agent-host" || adapterId === "local-intelligence" ? agentCommand : command,
+        command: adapterCommand,
         timeoutMs,
         networkAllow,
         allowList,
@@ -560,6 +589,7 @@ async function POST(request) {
         workdir,
         ranAt,
         ...(intelligenceSandbox ? { intelligenceSandbox } : {}),
+        ...(distillationAdapterRequest || {}),
       });
     } catch (error) {
       result = {
