@@ -43,6 +43,82 @@ import { scaffoldSessionMemory } from "./scaffold-session-memory.js";
 
 export const DEFAULT_STARTER_KIT_ID = "growthub-custom-workspace-starter-v1";
 
+interface SeededConfigShape {
+  dataModel?: {
+    objects?: Array<Record<string, unknown>>;
+  };
+  [key: string]: unknown;
+}
+
+function readJsonFile(filePath: string): SeededConfigShape {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function mergeDataModelObjects(
+  baseObjects: Array<Record<string, unknown>>,
+  seedObjects: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const readId = (value: Record<string, unknown>): string => {
+    const candidate = value.id;
+    return typeof candidate === "string" ? candidate : "";
+  };
+  const merged = [...baseObjects];
+  const indexById = new Map<string, number>();
+  for (let i = 0; i < merged.length; i += 1) {
+    const id = readId(merged[i]);
+    if (id) indexById.set(id, i);
+  }
+  for (const seedObject of seedObjects) {
+    const id = readId(seedObject);
+    if (id && indexById.has(id)) {
+      merged[indexById.get(id)!] = {
+        ...merged[indexById.get(id)!],
+        ...seedObject,
+      };
+      continue;
+    }
+    merged.push(seedObject);
+    if (id) indexById.set(id, merged.length - 1);
+  }
+  return merged;
+}
+
+function applySeededConfig(opts: { outPath: string; kitPath: string; seedConfig: string }): void {
+  const seedSlug = opts.seedConfig.trim();
+  if (!seedSlug) return;
+
+  const seedPath = path.join(opts.kitPath, "templates", "seeded-configs", `${seedSlug}.config.json`);
+  if (!fs.existsSync(seedPath)) {
+    throw new Error(
+      `Seeded config "${seedSlug}" was not found at ${seedPath}. ` +
+      "Create templates/seeded-configs/<slug>.config.json in the starter kit first.",
+    );
+  }
+
+  const outConfigPath = path.join(opts.outPath, "apps", "workspace", "growthub.config.json");
+  if (!fs.existsSync(outConfigPath)) {
+    throw new Error(`Expected workspace config at ${outConfigPath} while applying seeded config "${seedSlug}".`);
+  }
+
+  const baseConfig = readJsonFile(outConfigPath);
+  const seedConfig = readJsonFile(seedPath);
+  const mergedObjects = mergeDataModelObjects(
+    Array.isArray(baseConfig.dataModel?.objects) ? baseConfig.dataModel.objects : [],
+    Array.isArray(seedConfig.dataModel?.objects) ? seedConfig.dataModel.objects : [],
+  );
+  const mergedConfig: SeededConfigShape = {
+    ...baseConfig,
+    ...seedConfig,
+    dataModel: {
+      ...(baseConfig.dataModel || {}),
+      ...(seedConfig.dataModel || {}),
+      objects: mergedObjects,
+    },
+  };
+
+  fs.writeFileSync(outConfigPath, `${JSON.stringify(mergedConfig, null, 2)}\n`, "utf8");
+}
+
 export async function initStarterWorkspace(
   opts: StarterInitOptions,
 ): Promise<StarterInitResult> {
@@ -56,6 +132,13 @@ export async function initStarterWorkspace(
   // 1. Materialize bundled assets
   const info = getBundledKitSourceInfo(kitId);
   copyBundledKitSource(kitId, absOut);
+  if (opts.seedConfig) {
+    applySeededConfig({
+      outPath: absOut,
+      kitPath: info.assetRoot,
+      seedConfig: opts.seedConfig,
+    });
+  }
 
   // 2. Register as a kit-fork — canonical state inside the fork
   const reg = registerKitFork({

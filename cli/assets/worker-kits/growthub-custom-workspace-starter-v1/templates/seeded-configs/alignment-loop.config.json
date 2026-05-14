@@ -1,0 +1,264 @@
+{
+  "id": "workspace-builder-default",
+  "name": "Growthub Workspace",
+  "description": "Default no-code composition for the official Growthub Custom Workspace Starter. The interface starts as a governed dashboard workspace and can be customized by editing this file or by future governed UI controls.",
+  "branding": {
+    "name": "Growthub Workspace",
+    "logoUrl": "",
+    "accent": "#3f68ff"
+  },
+  "capabilities": [
+    "dashboards",
+    "canvas",
+    "widgets",
+    "bindings",
+    "integrations",
+    "settings"
+  ],
+  "pipelines": [],
+  "integrations": [],
+  "dashboards": [
+    {
+      "id": "untitled-dashboard",
+      "name": "Untitled",
+      "createdBy": "Workspace owner",
+      "updatedAt": "new",
+      "status": "draft"
+    }
+  ],
+  "widgetTypes": [
+    { "kind": "chart", "label": "Chart", "icon": "C" },
+    { "kind": "view", "label": "View", "icon": "V" },
+    { "kind": "iframe", "label": "iFrame", "icon": "I" },
+    { "kind": "rich-text", "label": "Rich Text", "icon": "T" }
+  ],
+  "canvas": {
+    "id": "workspace-canvas",
+    "name": "Tab 1",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "widgets": [],
+    "bindings": {
+      "chatToCanvas": true,
+      "workflowOutputsToArtifacts": true,
+      "sessionContext": true,
+      "configDrivenCanvas": true
+    }
+  },
+  "provenance": {
+    "createdBy": "cli",
+    "mirrors": "growthub-custom-workspace-starter-v1",
+    "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit inside a governed fork and validate through the starter export smoke path."
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "sandboxes-alignment-loop",
+        "label": "Alignment Sandboxes",
+        "source": "Sandboxes",
+        "objectType": "sandbox-environment",
+        "icon": "Terminal",
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "version",
+          "runLocality",
+          "schedulerRegistryId",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "intelligenceType",
+          "localModel",
+          "localEndpoint",
+          "intelligenceAdapterMode",
+          "envRefs",
+          "networkAllow",
+          "allowList",
+          "instructions",
+          "command",
+          "orchestrationConfig",
+          "timeoutMs",
+          "resolverTemplateId",
+          "connectorKind",
+          "executionLane",
+          "status",
+          "lastTested",
+          "lastRunId",
+          "lastSourceId",
+          "lastResponse"
+        ],
+        "rows": [
+          {
+            "Name": "workspace-expert",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-intelligence",
+            "agentHost": "",
+            "intelligenceType": "local-intelligence",
+            "localModel": "gemma3:4b",
+            "localEndpoint": "http://127.0.0.1:11434/v1/chat/completions",
+            "intelligenceAdapterMode": "ollama",
+            "envRefs": "",
+            "networkAllow": "false",
+            "allowList": "",
+            "instructions": "You are workspace-expert for Growthub AWaC V2 running on Antonio's local governed workspace. Anchor answers to AGENTS.md contract order, governed primitives, schema boundaries, and PATCH allowlist invariants. For any task, first map required primitive(s), list safety checks, then provide the safest executable path. If a request violates invariants or touches protected boundaries, explicitly block and explain the compliant alternative.",
+            "command": "As workspace-expert, explain the safest path for this task with exact primitives and constraints.",
+            "orchestrationConfig": "{\"version\":\"1\",\"graph\":{\"nodes\":[{\"id\":\"workspace-expert\",\"type\":\"thinAdapter\",\"sandbox\":\"workspace-expert\"},{\"id\":\"executor-worker\",\"type\":\"thinAdapter\",\"sandbox\":\"executor-worker\"},{\"id\":\"critic-grader\",\"type\":\"thinAdapter\",\"sandbox\":\"critic-grader\"}],\"edges\":[{\"from\":\"workspace-expert\",\"to\":\"executor-worker\"},{\"from\":\"executor-worker\",\"to\":\"critic-grader\"}]}}",
+            "timeoutMs": "60000",
+            "resolverTemplateId": "alignment-loop",
+            "connectorKind": "local-intelligence",
+            "executionLane": "planner",
+            "status": "connected",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          },
+          {
+            "Name": "executor-worker",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-agent-host",
+            "agentHost": "claude_local",
+            "intelligenceType": "agent-host",
+            "localModel": "",
+            "localEndpoint": "",
+            "intelligenceAdapterMode": "ollama",
+            "envRefs": "",
+            "networkAllow": "false",
+            "allowList": "",
+            "instructions": "Primary execution lane. Default agentHost is claude_local and can be overridden to cursor/codex_local or any supported local host on this machine.",
+            "command": "Execute the approved plan safely and report changed files, validation results, and open risks.",
+            "orchestrationConfig": "{\"version\":\"1\",\"graph\":{\"nodes\":[{\"id\":\"workspace-expert\",\"type\":\"thinAdapter\",\"sandbox\":\"workspace-expert\"},{\"id\":\"executor-worker\",\"type\":\"thinAdapter\",\"sandbox\":\"executor-worker\"},{\"id\":\"critic-grader\",\"type\":\"thinAdapter\",\"sandbox\":\"critic-grader\"}],\"edges\":[{\"from\":\"workspace-expert\",\"to\":\"executor-worker\"},{\"from\":\"executor-worker\",\"to\":\"critic-grader\"}]}}",
+            "timeoutMs": "180000",
+            "resolverTemplateId": "alignment-loop",
+            "connectorKind": "agent-host",
+            "executionLane": "executor",
+            "status": "connected",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          },
+          {
+            "Name": "critic-grader",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-intelligence",
+            "agentHost": "",
+            "intelligenceType": "local-intelligence",
+            "localModel": "gemma3:4b",
+            "localEndpoint": "http://127.0.0.1:11434/v1/chat/completions",
+            "intelligenceAdapterMode": "ollama",
+            "envRefs": "",
+            "networkAllow": "false",
+            "allowList": "",
+            "instructions": "Grade executor output against AWaC V2 invariants, repo structure, schema boundaries, and safety rules. Return only strict JSON: {\"score\": X, \"reason\": \"one sentence\"}.",
+            "command": "Score this output from 1-5 for invariant accuracy and safety.",
+            "orchestrationConfig": "{\"version\":\"1\",\"graph\":{\"nodes\":[{\"id\":\"workspace-expert\",\"type\":\"thinAdapter\",\"sandbox\":\"workspace-expert\"},{\"id\":\"executor-worker\",\"type\":\"thinAdapter\",\"sandbox\":\"executor-worker\"},{\"id\":\"critic-grader\",\"type\":\"thinAdapter\",\"sandbox\":\"critic-grader\"}],\"edges\":[{\"from\":\"workspace-expert\",\"to\":\"executor-worker\"},{\"from\":\"executor-worker\",\"to\":\"critic-grader\"}]}}",
+            "timeoutMs": "60000",
+            "resolverTemplateId": "alignment-loop",
+            "connectorKind": "local-intelligence",
+            "executionLane": "critic",
+            "status": "connected",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "relations": [
+          {
+            "id": "scheduler-registry-binding",
+            "name": "Scheduler (serverless)",
+            "field": "schedulerRegistryId",
+            "targetObjectType": "api-registry",
+            "type": "belongs-to",
+            "description": "When runLocality is serverless, sandbox-run posts growthub-sandbox-run-v1 to this API Registry record."
+          }
+        ],
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "version",
+            "runLocality",
+            "schedulerRegistryId",
+            "runtime",
+            "adapter",
+            "agentHost",
+            "intelligenceType",
+            "localModel",
+            "localEndpoint",
+            "intelligenceAdapterMode",
+            "envRefs",
+            "networkAllow",
+            "allowList",
+            "instructions",
+            "command",
+            "orchestrationConfig",
+            "timeoutMs",
+            "resolverTemplateId",
+            "connectorKind",
+            "executionLane",
+            "status",
+            "lastTested",
+            "lastRunId",
+            "lastSourceId",
+            "lastResponse"
+          ]
+        }
+      },
+      {
+        "id": "training-traces",
+        "label": "Training Traces",
+        "source": "Data Model",
+        "objectType": "custom",
+        "icon": "NotebookPen",
+        "columns": [
+          "sessionDate",
+          "inputPrompt",
+          "agentOutput",
+          "qualityScore",
+          "reason",
+          "exported"
+        ],
+        "rows": [],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "sessionDate",
+            "inputPrompt",
+            "agentOutput",
+            "qualityScore",
+            "reason",
+            "exported"
+          ]
+        }
+      }
+    ]
+  }
+}
