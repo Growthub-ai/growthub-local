@@ -34,9 +34,10 @@ jobs:
       - name: Validate PR title (conventional commits)
         run: |
           title="${{ github.event.pull_request.title }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude)(\(.+\))?: .{10,}'
+          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex)(\(.+\))?: .{10,}'
           if ! echo "$title" | grep -Eq "$pattern"; then
             echo "❌ PR title must follow conventional commits: type(scope): description"
+            echo "   Allowed types: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex"
             echo "   Examples: feat(server): add health endpoint"
             echo "             fix(ui): correct gtm surface routing"
             echo "             ci: add contribution pipeline"
