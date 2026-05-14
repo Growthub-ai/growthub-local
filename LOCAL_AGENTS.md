@@ -309,9 +309,9 @@ Preserve these invariants:
 - Normalized sandbox run output belongs in source-record sidecar storage with a source type accepted by the workspace source system.
 - Sandbox Environment rows are not directly bindable View widget sources; users consume normalized tested output through source records and governed references.
 
-### orchestrationConfig field (additive, optional)
+### orchestrationConfig field (additive, optional — Data Model only)
 
-The `orchestrationConfig` column is an optional JSON field (type: `"json"`) on every `sandbox-environment` row. When present, it turns the row into a visual agent orchestration surface. When absent the row runs in unchanged single-adapter mode.
+The `orchestrationConfig` column is an optional JSON field (type: `"json"`) on every `sandbox-environment` row. It is a governed Data Model field only — it stores canvas/graph configuration and is not yet interpreted by the execution layer.
 
 Shape:
 ```json
@@ -329,15 +329,12 @@ Shape:
 }
 ```
 
-Key behavioural contracts (mirrors API Registry test-before-use pattern):
+Invariants for this field:
 
-- `sandboxRef` resolves to another `sandbox-environment` row using format `"objectId/rowName"` or `"rowName"`. The run route uses the same `findSandboxRow` lookup pattern as `schedulerRegistryId → api-registry`.
-- `sandbox-run` validates `orchestrationConfig` before touching any adapter — invalid config returns 400 and the row never reaches `"connected"`.
-- `executeOrchestrationGraph` runs `thinAdapters` sequentially via `runLocalAdapterCore`, piping each node's stdout as context to the next. Final `exitCode = 0` only if all nodes exit 0.
-- `orchestrationConfigMeta` (`canvasType`, `nodeCount`, `diagnosticMode`, `lastValidated`) is appended to every `growthub-sandbox-run-v1` sidecar record so run history is always diagnostic-ready.
-- `applyPatch` (workspace-config.js) detects changes to `orchestrationConfig` on any sandbox row and resets `status → "draft"` — the same draft-on-change gate that API Registry uses for endpoint changes. The row only reaches `"connected"` after a successful sandbox run with the updated config.
-- Graph mode requires `runLocality=local`. Serverless delegation is rejected while orchestrationConfig is active.
+- `sandbox-run/route.js` is **not touched** by this addition. The core execution path remains pristine.
+- `applyPatch` (workspace-config.js) detects changes to `orchestrationConfig` on any sandbox row and resets `status → "draft"` — mirrors the API Registry draft-on-change gate. The row only returns to `"connected"` after a successful sandbox run.
 - `KNOWN_CANVAS_TYPES` in workspace-schema.js is the canonical allowlist for `canvasType` values.
+- Graph execution (iterating `thinAdapters[]` via a dedicated orchestration adapter or Local Intelligence module) is intentionally deferred to a follow-up PR that does not touch the core run handler. The field is designed to be ready when that layer is built.
 
 The Codex thin local adapter syntax is intentionally explicit:
 
