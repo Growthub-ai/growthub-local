@@ -688,7 +688,7 @@ const OBJECT_TYPE_PRESETS = {
   "sandbox-environment": {
     label: "Sandbox Environment",
     icon: "Terminal",
-    description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. Not a widget binding source.",
+    description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. GTM roles (gtmAgentForm) and trace labels feed GET /api/workspace/gtm-distillation-export for SFT corpora. Not a widget binding source.",
     columns: [
       "Name",
       "lifecycleStatus",
@@ -704,6 +704,8 @@ const OBJECT_TYPE_PRESETS = {
       "envRefs",
       "networkAllow",
       "allowList",
+      "gtmAgentForm",
+      "traceQualityLabel",
       "instructions",
       "command",
       "timeoutMs",

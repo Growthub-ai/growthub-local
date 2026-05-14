@@ -55,6 +55,19 @@ const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
 const SANDBOX_MAX_TIMEOUT_MS = 600000;
+
+/** GTM / sales distillation — maps sandbox row → training corpus role (operator-defined). */
+const KNOWN_GTM_AGENT_FORMS = [
+  "icp-qualifier",
+  "outbound-drafter",
+  "discovery-crm",
+  "gtm-planner",
+  "demo-personalizer",
+  "custom",
+];
+
+/** Human review signal for trace export (gold-only SFT batches). */
+const KNOWN_TRACE_QUALITY_LABELS = ["unset", "gold", "rejected", "needs-review"];
 /**
  * Canonical Paperclip local agent-host slugs — mirrors the upstream
  * `AGENT_ADAPTER_TYPES` enum in `packages/shared/src/constants.ts`. The
@@ -998,6 +1011,18 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.${traceField} must be a string when present`);
     }
   }
+  if (row.gtmAgentForm !== undefined && String(row.gtmAgentForm).trim() !== "") {
+    const gtm = String(row.gtmAgentForm).trim();
+    if (!KNOWN_GTM_AGENT_FORMS.includes(gtm)) {
+      errors.push(`${path}.gtmAgentForm must be one of ${KNOWN_GTM_AGENT_FORMS.join(", ")} when set`);
+    }
+  }
+  if (row.traceQualityLabel !== undefined && String(row.traceQualityLabel).trim() !== "") {
+    const ql = String(row.traceQualityLabel).trim().toLowerCase();
+    if (!KNOWN_TRACE_QUALITY_LABELS.includes(ql)) {
+      errors.push(`${path}.traceQualityLabel must be one of ${KNOWN_TRACE_QUALITY_LABELS.join(", ")} when set`);
+    }
+  }
 }
 
 function validateDataModelConfig(dataModel, errors) {
@@ -1316,6 +1341,8 @@ export {
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,
+  KNOWN_GTM_AGENT_FORMS,
+  KNOWN_TRACE_QUALITY_LABELS,
   NORMALIZED_OBJECT_FIELD_IDS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,

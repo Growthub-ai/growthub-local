@@ -50,6 +50,8 @@ const sandboxColumns = [
   "envRefs",
   "networkAllow",
   "allowList",
+  "gtmAgentForm",
+  "traceQualityLabel",
   "instructions",
   "command",
   "timeoutMs",
@@ -96,6 +98,8 @@ function emptyRow(overrides = {}) {
     lastRunId: "",
     lastSourceId: "",
     lastResponse: "",
+    gtmAgentForm: "",
+    traceQualityLabel: "",
     ...overrides,
   };
 }
@@ -297,6 +301,56 @@ async function main() {
     const adaptersJson = await adaptersRes.json();
     const ids = (adaptersJson.adapters || []).map((a) => a.id);
     assert(ids.includes("local-intelligence"), `expected local-intelligence in adapters, got ${ids.join(",")}`);
+
+    // --- GTM distillation export: local-process row → source-records → GET export (gold-only SFT JSONL) ---
+    const gtmPatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [
+            sandboxObject([
+              emptyRow({
+                adapter: "local-intelligence",
+                localModel: "gemma3:4b",
+                localEndpoint: "http://127.0.0.1:11434/v1/chat/completions",
+                intelligenceAdapterMode: "ollama",
+                instructions: "You reply with a single JSON object per system rules.",
+                command: "List one proposed toolIntent with toolSlug video-generation or empty array if unsure.",
+              }),
+              emptyRow({
+                Name: "gtm-corpus-probe",
+                adapter: "local-process",
+                runtime: "node",
+                instructions: "ICP teacher (governed).",
+                command: "console.log(JSON.stringify({bant:{score:8},followUp:\"gtm-export-probe\"}))",
+                gtmAgentForm: "icp-qualifier",
+                traceQualityLabel: "gold",
+              }),
+            ]),
+          ],
+        },
+      }),
+    });
+    assert(gtmPatch.status === 200, `GTM corpus PATCH failed ${gtmPatch.status} ${await gtmPatch.text()}`);
+    const gtmRun = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "gtm-corpus-probe" }),
+    });
+    const gtmRunJson = await gtmRun.json();
+    assert(gtmRunJson.ok === true, `gtm-corpus-probe sandbox-run must succeed (local-process): ${JSON.stringify(gtmRunJson)}`);
+    const exportUrl = `${base}/api/workspace/gtm-distillation-export?objectId=sandboxes-e2e&name=${encodeURIComponent("gtm-corpus-probe")}&format=sft&goldOnly=1`;
+    const exportRes = await fetch(exportUrl, { cache: "no-store" });
+    assert(exportRes.ok, `gtm-distillation-export GET failed ${exportRes.status}`);
+    const exportText = await exportRes.text();
+    const lines = exportText.trim().split("\n").filter(Boolean);
+    assert(lines.length >= 1, "export must emit at least one JSONL line");
+    const first = JSON.parse(lines[lines.length - 1]);
+    assert(Array.isArray(first.messages) && first.messages.length === 3, "SFT line must have messages[3]");
+    assert(first.messages[0].role === "system", "first message must be system");
+    assert(String(first.messages[2].content || "").includes("gtm-export-probe"), "assistant content must echo probe stdout");
+    process.stdout.write("[e2e] gtm-distillation-export: OK\n");
 
     // --- Negative: serverless + local-intelligence must be rejected at POST ---
     const srvlessPatch = await fetch(`${base}/api/workspace`, {

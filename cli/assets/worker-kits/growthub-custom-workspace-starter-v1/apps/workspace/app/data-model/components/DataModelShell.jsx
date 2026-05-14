@@ -122,6 +122,24 @@ const OBJECT_TYPE_DEFS = [
 // ─── Lane / badge meta (objectTypeBadge from dm-shared) ────────────────────────
 
 const SANDBOX_RUNTIME_OPTIONS = ["python", "node", "bash"];
+
+const GTM_AGENT_FORM_SELECT_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "icp-qualifier", label: "ICP qualifier" },
+  { value: "outbound-drafter", label: "Outbound sequence drafter" },
+  { value: "discovery-crm", label: "Discovery → CRM / PATCH" },
+  { value: "gtm-planner", label: "GTM planner" },
+  { value: "demo-personalizer", label: "Demo personalizer" },
+  { value: "custom", label: "Custom" },
+];
+
+const TRACE_QUALITY_SELECT_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "unset", label: "unset" },
+  { value: "gold", label: "gold (SFT-ready)" },
+  { value: "rejected", label: "rejected" },
+  { value: "needs-review", label: "needs-review" },
+];
 const FIELD_TYPE_CHOICES = [
   { value: "text", label: "Text", icon: "Type", sample: "Field name" },
   { value: "number", label: "Number", icon: "Hash", sample: "Amount" },
@@ -783,6 +801,30 @@ function SandboxRecordFields({
 
   const netOn = ["true", "1", "on", "yes"].includes(String(draft.networkAllow || "").trim().toLowerCase());
 
+  const gtmExportSftHref = useMemo(() => {
+    const oid = String(table.objectId || "").trim();
+    const rn = String(draft.Name || "").trim();
+    if (!oid || !rn) return "";
+    const qs = new URLSearchParams({ objectId: oid, name: rn, format: "sft" });
+    if (String(draft.traceQualityLabel || "").trim().toLowerCase() === "gold") qs.set("goldOnly", "1");
+    return `/api/workspace/gtm-distillation-export?${qs.toString()}`;
+  }, [table.objectId, draft.Name, draft.traceQualityLabel]);
+
+  const gtmExportEnvelopeHref = useMemo(() => {
+    const oid = String(table.objectId || "").trim();
+    const rn = String(draft.Name || "").trim();
+    if (!oid || !rn) return "";
+    const qs = new URLSearchParams({ objectId: oid, name: rn, format: "envelope" });
+    if (String(draft.traceQualityLabel || "").trim().toLowerCase() === "gold") qs.set("goldOnly", "1");
+    return `/api/workspace/gtm-distillation-export?${qs.toString()}`;
+  }, [table.objectId, draft.Name, draft.traceQualityLabel]);
+
+  const gtmCurlSft = useMemo(() => {
+    const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "http://127.0.0.1:3000";
+    if (!gtmExportSftHref) return "";
+    return `curl -sS "${origin}${gtmExportSftHref}" -o gtm-sft-corpus.jsonl`;
+  }, [gtmExportSftHref]);
+
   return (
     <div className="dm-sandbox-config">
       <DrawerSection title="Identity & Mode">
@@ -1007,6 +1049,53 @@ function SandboxRecordFields({
             onBlur={(event) => patchFields({ timeoutMs: event.target.value })}
           />
         </label>
+      </DrawerSection>
+
+      <DrawerSection title="GTM distillation · UNIX corpus">
+        <p className="dm-cell-empty" style={{ fontSize: 11, marginBottom: 8 }}>
+          Classify this row as a <strong>GTM agent form</strong>, set <strong>trace quality</strong> after human review, then export sandbox receipts from{" "}
+          <code>growthub.source-records.json</code> into JSONL for SFT / distillation tooling.
+        </p>
+        <label className="dm-record-field">
+          <span>GTM agent form</span>
+          <StaticSelect
+            value={String(draft.gtmAgentForm || "").trim()}
+            disabled={!table.mutable || saving}
+            placeholder="Select role…"
+            options={GTM_AGENT_FORM_SELECT_OPTIONS}
+            onChange={(next) => patchFields({ gtmAgentForm: next })}
+          />
+        </label>
+        <label className="dm-record-field">
+          <span>Trace quality label</span>
+          <StaticSelect
+            value={String(draft.traceQualityLabel || "").trim().toLowerCase()}
+            disabled={!table.mutable || saving}
+            placeholder="Label for export filters…"
+            options={TRACE_QUALITY_SELECT_OPTIONS}
+            onChange={(next) => patchFields({ traceQualityLabel: next })}
+          />
+        </label>
+        <div className="dm-gtm-unix-terminal" aria-label="GTM export UNIX hints">
+          <div className="dm-gtm-unix-header">growthub@awac — ./export-corpus.sh</div>
+          <pre className="dm-gtm-unix-body">{gtmCurlSft || "# Save row Name first — export URLs need objectId + name."}</pre>
+          <div className="dm-gtm-unix-actions">
+            {gtmExportSftHref ? (
+              <a className="dm-btn-ghost" href={gtmExportSftHref} download>
+                Download SFT JSONL
+              </a>
+            ) : (
+              <span className="dm-btn-ghost dm-gtm-export-disabled">Download SFT JSONL</span>
+            )}
+            {gtmExportEnvelopeHref ? (
+              <a className="dm-btn-ghost" href={gtmExportEnvelopeHref} download>
+                Download envelope JSONL
+              </a>
+            ) : (
+              <span className="dm-btn-ghost dm-gtm-export-disabled">Download envelope JSONL</span>
+            )}
+          </div>
+        </div>
       </DrawerSection>
 
       <DrawerSection title="Response & History">

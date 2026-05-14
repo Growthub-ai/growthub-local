@@ -490,7 +490,6 @@ if (command === "template") {
   process.exit(0);
 }
 
-<<<<<<< HEAD
 if (command === "awac-probe" || command === "workspace-api-probe") {
   const probePath = path.join(repoRoot, "scripts", "awac-workspace-api-probe.mjs");
   spawnNode([probePath, ...rest]);

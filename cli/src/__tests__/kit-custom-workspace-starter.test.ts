@@ -14,7 +14,7 @@
  *   3. Workspace schema — positive probes (valid configs validate cleanly)
  *   4. New file presence: refresh-sources route, source-resolver-registry,
  *      resolver-loader, test-source route, register-resolver route,
- *      resolvers listing route, resolvers README
+ *      resolvers listing route, gtm-distillation-export route, gtm lib, resolvers README
  *   5. kit.json frozen asset paths include all new primitives
  *   6. Source-resolver-registry module contract
  *   7. Workspace-config source records API
@@ -22,7 +22,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, beforeEach } from "vitest";
 
 import { BUNDLED_KIT_CATALOG } from "../kits/catalog.js";
@@ -213,6 +213,30 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
     expect(err!.details!.some((d) => d.includes("sourceId is required"))).toBe(true);
   });
 
+  it("invalid sandbox gtmAgentForm → INVALID_WORKSPACE_CONFIG", () => {
+    let err: Error & { details?: string[] } | null = null;
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "sb1",
+            label: "Sand",
+            source: "Sand",
+            objectType: "sandbox-environment",
+            icon: "Terminal",
+            columns: ["Name", "gtmAgentForm"],
+            rows: [{ Name: "r1", gtmAgentForm: "not-a-real-form" }],
+            binding: { mode: "manual", source: "Data Model" },
+            relations: [],
+            fieldSettings: { hidden: [], order: ["Name", "gtmAgentForm"] },
+          }],
+        },
+      });
+    } catch (e) { err = e as typeof err; }
+    expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(err!.details!.some((d) => d.includes("gtmAgentForm"))).toBe(true);
+  });
+
   it("duplicate dataModel object ID → error detail mentions duplicate", () => {
     let err: Error & { details?: string[] } | null = null;
     try {
@@ -299,6 +323,36 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
     ).not.toThrow();
   });
 
+  it("sandbox-environment row with GTM distillation fields passes", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "sb_gtm",
+            label: "GTM Sandboxes",
+            source: "GTM Sandboxes",
+            objectType: "sandbox-environment",
+            icon: "Terminal",
+            columns: ["Name", "gtmAgentForm", "traceQualityLabel", "instructions", "command"],
+            rows: [{
+              Name: "qualifier-1",
+              runLocality: "local",
+              adapter: "local-process",
+              runtime: "node",
+              gtmAgentForm: "icp-qualifier",
+              traceQualityLabel: "gold",
+              instructions: "ICP…",
+              command: "{}",
+            }],
+            binding: { mode: "manual", source: "Data Model" },
+            relations: [],
+            fieldSettings: { hidden: [], order: ["Name", "gtmAgentForm", "traceQualityLabel", "instructions", "command"] },
+          }],
+        },
+      })
+    ).not.toThrow();
+  });
+
   it("empty dashboards + empty canvas passes", () => {
     expect(() =>
       validateWorkspaceConfig({
@@ -352,6 +406,14 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
+
+  it("app/api/workspace/gtm-distillation-export/route.js ships", () => {
+    expect(appExists("app/api/workspace/gtm-distillation-export/route.js")).toBe(true);
+  });
+
+  it("lib/gtm-distillation-export.js ships", () => {
+    expect(appExists("lib/gtm-distillation-export.js")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -367,8 +429,10 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/test-source/route.js",
     "apps/workspace/app/api/workspace/register-resolver/route.js",
     "apps/workspace/app/api/workspace/resolvers/route.js",
+    "apps/workspace/app/api/workspace/gtm-distillation-export/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
+    "apps/workspace/lib/gtm-distillation-export.js",
   ];
 
   for (const p of requiredPaths) {
@@ -376,6 +440,70 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
       expect(frozen).toContain(p);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 5b. GTM distillation export builder (sidecar → JSONL)
+// ---------------------------------------------------------------------------
+
+describe("gtm-distillation-export — builder", () => {
+  it("emits SFT JSONL and honors goldOnly on row.traceQualityLabel", async () => {
+    const modPath = path.join(APP_ROOT, "lib/gtm-distillation-export.js");
+    const { buildGtmDistillationExport } = await import(`${pathToFileURL(modPath).href}?t=${Date.now()}`);
+    const workspaceConfig = {
+      dataModel: {
+        objects: [{
+          id: "sb1",
+          label: "S",
+          source: "S",
+          objectType: "sandbox-environment",
+          icon: "Terminal",
+          columns: ["Name"],
+          rows: [{
+            Name: "r1",
+            traceQualityLabel: "gold",
+            gtmAgentForm: "icp-qualifier",
+            localModel: "gemma3:4b",
+          }],
+          binding: { mode: "manual", source: "Data Model" },
+          relations: [],
+          fieldSettings: { hidden: [], order: ["Name"] },
+        }],
+      },
+    };
+    const sourceRecords = {
+      "sandbox:sb1:r1": {
+        records: [
+          { runId: "run_x", instructions: "sys", command: "user", stdout: "out", exitCode: 0 },
+        ],
+      },
+    };
+    const ok = buildGtmDistillationExport(workspaceConfig, sourceRecords, {
+      objectId: "sb1",
+      name: "r1",
+      format: "sft",
+      goldOnly: true,
+    });
+    expect(ok.lines.length).toBe(1);
+    const parsed = JSON.parse(ok.lines[0]);
+    expect(parsed.messages[2].content).toBe("out");
+
+    const rejected = buildGtmDistillationExport(
+      {
+        ...workspaceConfig,
+        dataModel: {
+          objects: [{
+            ...workspaceConfig.dataModel.objects[0],
+            rows: [{ ...workspaceConfig.dataModel.objects[0].rows[0], traceQualityLabel: "unset" }],
+          }],
+        },
+      },
+      sourceRecords,
+      { objectId: "sb1", name: "r1", format: "sft", goldOnly: true },
+    );
+    expect(rejected.lines.length).toBe(0);
+    expect(rejected.rejectedReason || "").toContain("gold");
+  });
 });
 
 // ---------------------------------------------------------------------------

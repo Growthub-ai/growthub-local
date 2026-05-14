@@ -4133,6 +4133,44 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-drawer-section.open .dm-drawer-section-toggle svg { transform: rotate(90deg); }
 .dm-drawer-section-body { display: grid; gap: 10px; padding: 11px; }
 .dm-sandbox-config { display: grid; gap: 8px; }
+
+.dm-gtm-unix-terminal {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #020617;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  overflow: hidden;
+}
+.dm-gtm-unix-header {
+  padding: 6px 10px;
+  background: #0f172a;
+  color: var(--good);
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0.02em;
+}
+.dm-gtm-unix-body {
+  margin: 0;
+  padding: 10px;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow: auto;
+}
+.dm-gtm-unix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.6);
+}
+.dm-gtm-export-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .dm-radio-row { display: grid; gap: 8px; }
 .dm-radio-row label, .dm-check-row { display: grid; grid-template-columns: 16px minmax(0,1fr); align-items: start; column-gap: 8px; color: #1f2937; font-size: 12px; line-height: 1.35; }
 .dm-radio-row input[type="radio"], .dm-check-row input[type="checkbox"] { width: 14px; height: 14px; margin: 1px 0 0; padding: 0; box-shadow: none; accent-color: #111827; }

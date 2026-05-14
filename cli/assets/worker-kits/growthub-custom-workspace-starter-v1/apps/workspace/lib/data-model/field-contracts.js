@@ -31,7 +31,23 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
   lastSourceId: { editor: "readonly-text" },
   resolverTemplateId: { editor: "readonly-text" },
   connectorKind: { editor: "readonly-text" },
-  executionLane: { editor: "readonly-text" }
+  executionLane: { editor: "readonly-text" },
+  gtmAgentForm: {
+    editor: "select",
+    options: [
+      "",
+      "icp-qualifier",
+      "outbound-drafter",
+      "discovery-crm",
+      "gtm-planner",
+      "demo-personalizer",
+      "custom",
+    ],
+  },
+  traceQualityLabel: {
+    editor: "select",
+    options: ["", "unset", "gold", "rejected", "needs-review"],
+  },
 };
 
 const API_REGISTRY_FIELDS = {
