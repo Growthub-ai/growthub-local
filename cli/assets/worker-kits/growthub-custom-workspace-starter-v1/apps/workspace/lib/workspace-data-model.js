@@ -275,6 +275,7 @@ function deriveManualObjectTable(object) {
     source,
     objectType: object.objectType || "custom",
     icon: object.icon || null,
+    pickerHidden: Boolean(object.pickerHidden),
     columns,
     rows,
     binding: object.binding || { mode: "manual", source: "Data Model" },
@@ -1064,7 +1065,13 @@ function resolveLocalReferenceOptions(workspaceConfig, {
   const pageSize = Math.min(100, Math.max(1, Number(relation.pageSize) || Number(limit) || 25));
   const offset = decodeRefCursor(cursor);
 
-  const targets = objects.filter((o) => o.objectType === relation.targetObjectType);
+  const targetObjectId = typeof relation.targetObjectId === "string" && relation.targetObjectId.trim()
+    ? relation.targetObjectId.trim()
+    : "";
+  const targets = objects.filter((o) => (
+    o.objectType === relation.targetObjectType
+    && (!targetObjectId || o.id === targetObjectId)
+  ));
   const needle = String(query || "").trim().toLowerCase();
 
   const candidates = [];
