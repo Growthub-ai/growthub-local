@@ -163,6 +163,108 @@ function normalizeManualObjects(workspaceConfig) {
   return Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
 }
 
+function normalizeStringList(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)));
+}
+
+function normalizeSortClauses(sort, columns) {
+  const allowed = new Set(columns);
+  return (Array.isArray(sort) ? sort : []).flatMap((clause) => {
+    if (!clause || typeof clause !== "object" || Array.isArray(clause)) return [];
+    const fieldId = String(clause.fieldId || "").trim();
+    const direction = String(clause.direction || "asc").trim().toLowerCase() === "desc" ? "desc" : "asc";
+    return allowed.has(fieldId) ? [{ fieldId, direction }] : [];
+  });
+}
+
+function normalizeFilterConfig(filter, columns) {
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return null;
+  const allowed = new Set(columns);
+  const op = String(filter.op || "and").trim().toLowerCase() === "or" ? "or" : "and";
+  const clauses = (Array.isArray(filter.clauses) ? filter.clauses : []).flatMap((clause) => {
+    if (!clause || typeof clause !== "object" || Array.isArray(clause)) return [];
+    const fieldId = String(clause.fieldId || "").trim();
+    const operator = String(clause.operator || "eq").trim();
+    if (!allowed.has(fieldId)) return [];
+    if (["isEmpty", "isNotEmpty"].includes(operator)) return [{ fieldId, operator }];
+    const value = clause.value;
+    if (value === undefined || value === null || value === "") return [];
+    return [{ fieldId, operator, value }];
+  });
+  return clauses.length ? { op, clauses } : null;
+}
+
+function normalizeFieldTypes(types, columns) {
+  const result = {};
+  const source = types && typeof types === "object" && !Array.isArray(types) ? types : {};
+  columns.forEach((column) => {
+    const value = String(source[column] || "").trim();
+    if (value) result[column] = value;
+  });
+  return result;
+}
+
+function snapshotTableViewState(settings) {
+  return {
+    hidden: normalizeStringList(settings?.hidden),
+    order: normalizeStringList(settings?.order),
+    sort: Array.isArray(settings?.sort) ? settings.sort.map((clause) => ({ ...clause })) : [],
+    filter: settings?.filter ? {
+      op: settings.filter.op,
+      clauses: (settings.filter.clauses || []).map((clause) => ({ ...clause }))
+    } : null
+  };
+}
+
+function normalizeSavedViews(views, columns) {
+  return (Array.isArray(views) ? views : []).flatMap((view, index) => {
+    if (!view || typeof view !== "object" || Array.isArray(view)) return [];
+    const id = String(view.id || "").trim() || `view-${index + 1}`;
+    const name = String(view.name || "").trim();
+    if (!name) return [];
+    const state = normalizeFieldSettings({
+      hidden: view.hidden,
+      order: view.order,
+      sort: view.sort,
+      filter: view.filter,
+    }, columns);
+    return [{
+      id,
+      name,
+      favorite: Boolean(view.favorite),
+      locked: Boolean(view.locked),
+      hidden: state.hidden,
+      order: state.order,
+      sort: state.sort,
+      filter: state.filter
+    }];
+  });
+}
+
+function normalizeFieldSettings(fieldSettings, columns) {
+  const order = normalizeStringList([
+    ...(Array.isArray(fieldSettings?.order) ? fieldSettings.order : []),
+    ...columns
+  ]).filter((column) => columns.includes(column));
+  const hidden = normalizeStringList(fieldSettings?.hidden).filter((column) => columns.includes(column));
+  const sort = normalizeSortClauses(fieldSettings?.sort, columns);
+  const filter = normalizeFilterConfig(fieldSettings?.filter, columns);
+  const views = normalizeSavedViews(fieldSettings?.views, columns);
+  const activeViewId = String(fieldSettings?.activeViewId || "").trim();
+  return {
+    hidden,
+    order,
+    sort,
+    filter,
+    types: normalizeFieldTypes(fieldSettings?.types, columns),
+    views,
+    activeViewId: views.some((view) => view.id === activeViewId) ? activeViewId : "",
+    favorite: Boolean(fieldSettings?.favorite)
+  };
+}
+
 function deriveManualObjectTable(object) {
   const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
   const rows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
@@ -181,10 +283,7 @@ function deriveManualObjectTable(object) {
     storage: "manual-object",
     objectId: object.id,
     widgetRefs: [],
-    fieldSettings: {
-      hidden: Array.isArray(object.fieldSettings?.hidden) ? object.fieldSettings.hidden : [],
-      order: Array.isArray(object.fieldSettings?.order) ? object.fieldSettings.order : columns
-    }
+    fieldSettings: normalizeFieldSettings(object.fieldSettings, columns)
   };
 }
 
@@ -224,10 +323,11 @@ function listWorkspaceDataModelTables(workspaceConfig) {
           widgetTitle: widget.title,
           widgetKind: widget.kind
         }],
-        fieldSettings: {
-          hidden: Array.isArray(widget.config?.fieldSettings?.hidden) ? widget.config.fieldSettings.hidden : [],
-          order: Array.isArray(widget.config?.fieldSettings?.order) ? widget.config.fieldSettings.order : table.columns
-        }
+        fieldSettings: normalizeFieldSettings({
+          ...(widget.config?.fieldSettings || {}),
+          sort: widget.config?.sort,
+          filter: widget.config?.filter
+        }, table.columns)
       };
     })
     .filter(Boolean);
@@ -235,23 +335,75 @@ function listWorkspaceDataModelTables(workspaceConfig) {
 }
 
 function writeTableConfig(config, storage, columns, rows) {
+  const fieldSettings = normalizeFieldSettings({
+    ...(config.fieldSettings || {}),
+    sort: config.sort,
+    filter: config.filter
+  }, columns);
   if (storage === "view") {
     const binding = config.binding?.mode === "manual" ? { ...config.binding, rows } : config.binding;
-    return { ...config, columns, rows, binding, fieldSettings: { hidden: config.fieldSettings?.hidden || [], order: columns } };
+    return { ...config, columns, rows, binding, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "json") {
-    return { ...config, binding: { ...config.binding, json: JSON.stringify(rows, null, 2) } };
+    return { ...config, binding: { ...config.binding, json: JSON.stringify(rows, null, 2) }, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "csv") {
-    return { ...config, binding: { ...config.binding, csv: toCsv(columns, rows) } };
+    return { ...config, binding: { ...config.binding, csv: toCsv(columns, rows) }, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "manual-binding") {
-    return { ...config, binding: { ...config.binding, rows } };
+    return { ...config, binding: { ...config.binding, rows }, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "chart-values") {
-    return { ...config, values: rows.map((row) => Number(row.Value)).filter((value) => Number.isFinite(value)) };
+    return { ...config, values: rows.map((row) => Number(row.Value)).filter((value) => Number.isFinite(value)), fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   return config;
+}
+
+function updateTableFieldSettings(workspaceConfig, table, updater) {
+  const nextSettings = normalizeFieldSettings(
+    updater(normalizeFieldSettings(table.fieldSettings, table.columns)),
+    table.columns
+  );
+  if (table.storage === "manual-object") {
+    const objects = normalizeManualObjects(workspaceConfig);
+    const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+    return {
+      ...workspaceConfig,
+      dataModel: {
+        ...dataModel,
+        objects: objects.map((object) => object.id === table.objectId
+          ? { ...object, fieldSettings: nextSettings }
+          : object)
+      }
+    };
+  }
+
+  const ids = new Set((table.widgetRefs || []).map((ref) => ref.widgetId));
+  const mutateWidgets = (widgets) => (widgets || []).map((widget) => {
+    if (!ids.has(widget.id)) return widget;
+    const current = deriveWidgetTable(widget, { widgetId: widget.id });
+    if (!current?.mutable) return widget;
+    return {
+      ...widget,
+      config: {
+        ...(widget.config || {}),
+        fieldSettings: nextSettings,
+        sort: nextSettings.sort,
+        filter: nextSettings.filter
+      }
+    };
+  });
+
+  const dashboards = (workspaceConfig.dashboards || []).map((dashboard) => ({
+    ...dashboard,
+    tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) }))
+  }));
+  let canvas = workspaceConfig.canvas ? { ...workspaceConfig.canvas } : {};
+  if (Array.isArray(canvas.widgets)) canvas = { ...canvas, widgets: mutateWidgets(canvas.widgets) };
+  if (Array.isArray(canvas.tabs)) canvas = { ...canvas, tabs: canvas.tabs.map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) })) };
+  return { ...workspaceConfig, dashboards, canvas };
 }
 
 function applyTableMutation(workspaceConfig, table, mutate) {
@@ -499,7 +651,7 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
     relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
-    fieldSettings: { hidden: [], order: columns }
+    fieldSettings: normalizeFieldSettings({}, columns)
   };
   return {
     ...workspaceConfig,
@@ -527,7 +679,7 @@ function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
     columns,
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
-    fieldSettings: { hidden: [], order: columns }
+    fieldSettings: normalizeFieldSettings({}, columns)
   };
   return {
     ...workspaceConfig,
@@ -538,13 +690,22 @@ function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
   };
 }
 
-function addTableField(workspaceConfig, table, fieldName) {
-  const name = String(fieldName || "").trim();
+function addTableField(workspaceConfig, table, fieldSpec) {
+  const spec = fieldSpec && typeof fieldSpec === "object" && !Array.isArray(fieldSpec)
+    ? fieldSpec
+    : { name: fieldSpec };
+  const name = String(spec.name || "").trim();
+  const fieldType = String(spec.type || "").trim();
   if (!name || !table.mutable) return workspaceConfig;
-  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+  const nextConfig = applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
     if (columns.includes(name)) return { columns, rows };
     return { columns: [...columns, name], rows: rows.map((row) => ({ ...row, [name]: "" })) };
   });
+  return updateTableFieldSettings(nextConfig, { ...table, columns: table.columns.includes(name) ? table.columns : [...table.columns, name] }, (settings) => ({
+    ...settings,
+    order: settings.order.includes(name) ? settings.order : [...settings.order, name],
+    types: fieldType ? { ...(settings.types || {}), [name]: fieldType } : settings.types
+  }));
 }
 
 function addTableRow(workspaceConfig, table) {
@@ -862,5 +1023,8 @@ export {
   replaceTableContent,
   resolveLocalReferenceOptions,
   sandboxRunSourceId,
+  snapshotTableViewState,
+  normalizeFieldSettings,
+  updateTableFieldSettings,
   updateTableCell
 };

@@ -132,7 +132,13 @@ const WIDGET_SCHEMA_CONTRACTS = {
   },
   FieldSettingsConfig: {
     hidden: "string[] of column names hidden from preview",
-    order: "string[] of column names defining custom order"
+    order: "string[] of column names defining custom order",
+    sort: "SortClause[] optional",
+    filter: "FilterConfig optional",
+    types: "record<string,string> optional — client field-type hints",
+    views: "saved view snapshots optional",
+    activeViewId: "string optional",
+    favorite: "boolean optional"
   },
   SortClause: {
     fieldId: "non-empty string (column name)",
@@ -491,6 +497,45 @@ function validateFieldSettings(fieldSettings, path, errors) {
   }
   if (fieldSettings.hidden !== undefined) validateStringArray(fieldSettings.hidden, `${path}.hidden`, errors);
   if (fieldSettings.order !== undefined) validateStringArray(fieldSettings.order, `${path}.order`, errors);
+  validateSortClauses(fieldSettings.sort, `${path}.sort`, errors);
+  validateFilterClauses(fieldSettings.filter, `${path}.filter`, errors);
+  if (fieldSettings.types !== undefined) {
+    if (!isPlainObject(fieldSettings.types)) {
+      errors.push(`${path}.types must be a plain object`);
+    } else {
+      Object.entries(fieldSettings.types).forEach(([key, value]) => {
+        if (typeof key !== "string" || !key.trim()) errors.push(`${path}.types keys must be non-empty strings`);
+        if (typeof value !== "string" || !value.trim()) errors.push(`${path}.types.${key} must be a non-empty string`);
+      });
+    }
+  }
+  if (fieldSettings.activeViewId !== undefined && typeof fieldSettings.activeViewId !== "string") {
+    errors.push(`${path}.activeViewId must be a string`);
+  }
+  if (fieldSettings.favorite !== undefined && typeof fieldSettings.favorite !== "boolean") {
+    errors.push(`${path}.favorite must be a boolean`);
+  }
+  if (fieldSettings.views !== undefined) {
+    if (!Array.isArray(fieldSettings.views)) {
+      errors.push(`${path}.views must be an array`);
+    } else {
+      fieldSettings.views.forEach((view, index) => {
+        const prefix = `${path}.views[${index}]`;
+        if (!isPlainObject(view)) {
+          errors.push(`${prefix} must be a plain object`);
+          return;
+        }
+        if (typeof view.id !== "string" || !view.id.trim()) errors.push(`${prefix}.id must be a non-empty string`);
+        if (typeof view.name !== "string" || !view.name.trim()) errors.push(`${prefix}.name must be a non-empty string`);
+        if (view.favorite !== undefined && typeof view.favorite !== "boolean") errors.push(`${prefix}.favorite must be a boolean`);
+        if (view.locked !== undefined && typeof view.locked !== "boolean") errors.push(`${prefix}.locked must be a boolean`);
+        if (view.hidden !== undefined) validateStringArray(view.hidden, `${prefix}.hidden`, errors);
+        if (view.order !== undefined) validateStringArray(view.order, `${prefix}.order`, errors);
+        validateSortClauses(view.sort, `${prefix}.sort`, errors);
+        validateFilterClauses(view.filter, `${prefix}.filter`, errors);
+      });
+    }
+  }
 }
 
 function validateSortClauses(sort, path, errors) {

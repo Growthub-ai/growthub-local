@@ -4,6 +4,8 @@ import Link from "next/link";
 import {
   Activity,
   AlertCircle,
+  ArrowDownAZ,
+  ArrowUpAZ,
   ArrowRight,
   BarChart2,
   Box,
@@ -14,18 +16,23 @@ import {
   ChevronRight,
   Code2,
   Database,
+  EyeOff,
   FileText,
+  Filter,
   Globe,
+  GripVertical,
   Hash,
   Layers,
   Link2,
+  Lock,
   List,
   Mail,
   Maximize2,
+  MoreHorizontal,
   Plus,
+  Pin,
   Search,
   ShoppingCart,
-  Star,
   Tag,
   Terminal,
   ToggleLeft,
@@ -50,13 +57,15 @@ import {
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   replaceTableContent,
+  snapshotTableViewState,
+  updateTableFieldSettings,
   updateTableCell,
 } from "@/lib/workspace-data-model";
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
+import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
-import { ObjectSidebar } from "./ObjectSidebar.jsx";
 import {
   FIELD_TYPE_ICON_NAMES,
   ICON_PICKER_SET,
@@ -111,6 +120,273 @@ const OBJECT_TYPE_DEFS = [
 // ─── Lane / badge meta (objectTypeBadge from dm-shared) ────────────────────────
 
 const SANDBOX_RUNTIME_OPTIONS = ["python", "node", "bash"];
+const FIELD_TYPE_CHOICES = [
+  { value: "text", label: "Text", icon: "Type", sample: "Field name" },
+  { value: "number", label: "Number", icon: "Hash", sample: "Amount" },
+  { value: "date", label: "Date", icon: "Calendar", sample: "Created at" },
+  { value: "url", label: "URL", icon: "Link2", sample: "Website" },
+  { value: "select", label: "Select", icon: "List", sample: "Status" },
+  { value: "boolean", label: "Boolean", icon: "ToggleLeft", sample: "Active" },
+];
+const FILTER_OPERATOR_OPTIONS = [
+  { value: "eq", label: "Is" },
+  { value: "ne", label: "Is not" },
+  { value: "contains", label: "Contains" },
+  { value: "gt", label: "Greater than" },
+  { value: "lt", label: "Less than" },
+  { value: "isEmpty", label: "Is empty" },
+  { value: "isNotEmpty", label: "Is not empty" },
+];
+
+function mergeColumnOrder(order, columns) {
+  return Array.from(new Set([...(order || []), ...columns])).filter((column) => columns.includes(column));
+}
+
+function isLockedObject(table) {
+  return Boolean(table?.objectType && table.objectType !== "custom");
+}
+
+function compareCellValues(left, right) {
+  const a = left ?? "";
+  const b = right ?? "";
+  const aNum = Number(a);
+  const bNum = Number(b);
+  if (Number.isFinite(aNum) && Number.isFinite(bNum) && `${a}`.trim() !== "" && `${b}`.trim() !== "") {
+    return aNum - bNum;
+  }
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function rowMatchesFilter(row, filter) {
+  if (!filter?.clauses?.length) return true;
+  const results = filter.clauses.map((clause) => {
+    const raw = row?.[clause.fieldId];
+    const value = raw ?? "";
+    const text = String(value).toLowerCase();
+    const needle = String(clause.value ?? "").toLowerCase();
+    switch (clause.operator) {
+      case "ne": return text !== needle;
+      case "contains": return text.includes(needle);
+      case "gt": return compareCellValues(value, clause.value) > 0;
+      case "lt": return compareCellValues(value, clause.value) < 0;
+      case "isEmpty": return value === null || value === undefined || value === "";
+      case "isNotEmpty": return !(value === null || value === undefined || value === "");
+      case "eq":
+      default:
+        return text === needle;
+    }
+  });
+  return filter.op === "or" ? results.some(Boolean) : results.every(Boolean);
+}
+
+function applyRowsView(rows, settings) {
+  const filtered = (rows || []).filter((row) => rowMatchesFilter(row, settings.filter));
+  if (!settings.sort?.length) return filtered;
+  const clauses = settings.sort;
+  return [...filtered].sort((left, right) => {
+    for (const clause of clauses) {
+      const direction = clause.direction === "desc" ? -1 : 1;
+      const diff = compareCellValues(left?.[clause.fieldId], right?.[clause.fieldId]);
+      if (diff !== 0) return diff * direction;
+    }
+    return 0;
+  });
+}
+
+function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState("all");
+  const [newViewName, setNewViewName] = useState("");
+  const [viewMenuId, setViewMenuId] = useState("");
+  const currentViews = selectedTable?.fieldSettings?.views || [];
+  const favoriteObjects = tables.filter((table) => table.fieldSettings?.favorite);
+
+  function applyView(view) {
+    if (!selectedTable) return;
+    const nextState = view
+      ? { ...snapshotTableViewState(view), activeViewId: view.id }
+      : { activeViewId: "", hidden: [], order: selectedTable.columns, sort: [], filter: null };
+    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
+      ...settings,
+      ...nextState
+    })));
+    setOpen(false);
+  }
+
+  function createView() {
+    const name = newViewName.trim();
+    if (!selectedTable || !name) return;
+    const viewId = `view_${Date.now().toString(36)}`;
+    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
+      ...settings,
+      activeViewId: viewId,
+      views: [...(settings.views || []), {
+        id: viewId,
+        name,
+        favorite: false,
+        locked: false,
+        ...snapshotTableViewState(settings)
+      }]
+    })));
+    setNewViewName("");
+  }
+
+  function toggleViewFavorite(viewId) {
+    if (!selectedTable) return;
+    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
+      ...settings,
+      views: (settings.views || []).map((view) => view.id === viewId ? { ...view, favorite: !view.favorite } : view)
+    })));
+  }
+
+  function deleteView(viewId) {
+    if (!selectedTable) return;
+    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
+      ...settings,
+      activeViewId: settings.activeViewId === viewId ? "" : settings.activeViewId,
+      views: (settings.views || []).filter((view) => view.id !== viewId)
+    })));
+    setViewMenuId("");
+  }
+
+  function renameView(view) {
+    if (!selectedTable) return;
+    const nextName = window.prompt("Rename view", view.name);
+    if (!nextName?.trim()) return;
+    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
+      ...settings,
+      views: (settings.views || []).map((candidate) => candidate.id === view.id ? { ...candidate, name: nextName.trim() } : candidate)
+    })));
+    setViewMenuId("");
+  }
+
+  const activeView = currentViews.find((view) => view.id === selectedTable?.fieldSettings?.activeViewId) || null;
+  const objects = mode === "views" ? [] : tables;
+  const views = mode === "objects" ? [] : currentViews;
+
+  return (
+    <div
+      className={`dm-picker${open ? " open" : ""}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button type="button" className="dm-picker-trigger" onClick={() => setOpen((current) => !current)}>
+        <LucideIcon name={selectedTable?.icon || OBJECT_TYPE_PRESETS[selectedTable?.objectType]?.icon || "Database"} size={14} />
+        <span className="dm-picker-trigger-copy">
+          <strong>{activeView?.name || selectedTable?.label || "Object"}</strong>
+          <em>{pluralize(selectedTable?.columns?.length || 0, "field")} · {pluralize(selectedTable?.rows?.length || 0, "record")}</em>
+        </span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="dm-picker-popover">
+          {favoriteObjects.length > 0 && (
+            <div className="dm-picker-section">
+              <p>Favorites</p>
+              {favoriteObjects.map((table) => (
+                <button key={`favorite-${table.source}`} type="button" className="dm-picker-row" onClick={() => onSelectSource(table.source)}>
+                  <Pin size={14} />
+                  <span>{table.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="dm-picker-tabs">
+            {["all", "objects", "views"].map((item) => (
+              <button key={item} type="button" className={mode === item ? "active" : ""} onClick={() => setMode(item)}>
+                {item}
+              </button>
+            ))}
+          </div>
+          {objects.length > 0 && (
+            <div className="dm-picker-section">
+              <p>Objects</p>
+              <div className="dm-picker-scroll">
+                {objects.map((table) => (
+                  <div key={table.source} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
+                    <button type="button" className="dm-picker-row" onClick={() => {
+                      onSelectSource(table.source);
+                      setOpen(false);
+                    }}>
+                      <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
+                      <span>{table.label}</span>
+                      {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {selectedTable && (
+            <div className="dm-picker-section">
+              <p>Views</p>
+              <button type="button" className={`dm-picker-row${!activeView ? " active" : ""}`} onClick={() => applyView(null)}>
+                <List size={14} />
+                <span>{selectedTable.label}</span>
+                {isLockedObject(selectedTable) && <Lock size={12} className="dm-picker-lock" />}
+              </button>
+              <div className="dm-picker-scroll">
+                {views.map((view) => (
+                  <div key={view.id} className={`dm-picker-item${activeView?.id === view.id ? " active" : ""}`}>
+                    <button type="button" className="dm-picker-row" onClick={() => applyView(view)}>
+                      <List size={14} />
+                      <span>{view.name}</span>
+                    </button>
+                    <div className="dm-picker-actions">
+                      <button
+                        type="button"
+                        className="dm-picker-icon-btn"
+                        aria-label="View actions"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setViewMenuId((current) => current === view.id ? "" : view.id);
+                        }}
+                      >
+                        <MoreHorizontal size={12} style={{ transform: "rotate(90deg)" }} />
+                      </button>
+                      {viewMenuId === view.id && (
+                        <div className="dm-picker-menu">
+                          <button type="button" onClick={() => toggleViewFavorite(view.id)}>
+                            <Pin size={13} />
+                            {view.favorite ? "Unpin" : "Pin"}
+                          </button>
+                          <button type="button" onClick={() => renameView(view)}>
+                            <Type size={13} />
+                            Rename
+                          </button>
+                          {!view.locked && (
+                            <button type="button" className="danger" onClick={() => deleteView(view.id)}>
+                              <X size={13} />
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="dm-picker-create">
+                <input
+                  value={newViewName}
+                  placeholder="New view name"
+                  onChange={(event) => setNewViewName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") createView();
+                  }}
+                />
+                <button type="button" className="dm-btn-outline" disabled={saving || !newViewName.trim()} onClick={createView}>
+                  <Plus size={13} />Add view
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Shared micro-components ──────────────────────────────────────────────────
 
@@ -1001,15 +1277,46 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
 
 function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave }) {
   const [selectedRow, setSelectedRow] = useState(null);
-  const [addingField, setAddingField] = useState(false);
   const [fieldName, setFieldName] = useState("");
+  const [fieldType, setFieldType] = useState("text");
+  const [addingField, setAddingField] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [mode, setMode] = useState("append");
+  const [filterDraft, setFilterDraft] = useState({ fieldId: "", operator: "eq", value: "" });
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [menuColumn, setMenuColumn] = useState("");
   const fieldInputRef = useRef(null);
 
   useEffect(() => { if (addingField) fieldInputRef.current?.focus(); }, [addingField]);
   useEffect(() => { setSelectedRow(null); }, [table.id]);
+  useEffect(() => {
+    setFieldName("");
+    setFieldType("text");
+    setFilterDraft({ fieldId: table.columns[0] || "", operator: "eq", value: "" });
+  }, [table.id, table.columns]);
+
+  const settings = table.fieldSettings || { hidden: [], order: table.columns, sort: [], filter: null, views: [], activeViewId: "" };
+  const orderedColumns = useMemo(() => mergeColumnOrder(settings.order, table.columns), [settings.order, table.columns]);
+  const visibleColumns = useMemo(() => orderedColumns.filter((column) => !settings.hidden.includes(column)), [orderedColumns, settings.hidden]);
+  const rowEntries = useMemo(() => {
+    const indexed = (table.rows || []).map((row, originalIndex) => ({ row, originalIndex }));
+    const filtered = indexed.filter((entry) => rowMatchesFilter(entry.row, settings.filter));
+    if (!settings.sort?.length) return filtered;
+    const clauses = settings.sort;
+    return [...filtered].sort((left, right) => {
+      for (const clause of clauses) {
+        const direction = clause.direction === "desc" ? -1 : 1;
+        const diff = compareCellValues(left.row?.[clause.fieldId], right.row?.[clause.fieldId]);
+        if (diff !== 0) return diff * direction;
+      }
+      return 0;
+    });
+  }, [table.rows, settings]);
+  const activeView = useMemo(
+    () => (settings.views || []).find((view) => view.id === settings.activeViewId) || null,
+    [settings.views, settings.activeViewId]
+  );
 
   function commitField() {
     const name = fieldName.trim();
@@ -1019,10 +1326,11 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
       return;
     }
     if (!table.columns.includes(name)) {
-      onSave((config) => addTableField(config, table, name));
+      onSave((config) => addTableField(config, table, { name, type: fieldType }));
     }
     setAddingField(false);
     setFieldName("");
+    setFieldType("text");
   }
 
   function importCsv() {
@@ -1034,7 +1342,93 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
     setCsvOpen(false);
   }
 
-  const selectedRecord = selectedRow === null ? null : table.rows[selectedRow];
+  function updateSettings(updater) {
+    onSave((config) => updateTableFieldSettings(config, table, updater));
+  }
+
+  function moveColumn(column, direction) {
+    updateSettings((current) => {
+      const order = [...mergeColumnOrder(current.order, table.columns)];
+      const index = order.indexOf(column);
+      const nextIndex = direction === "left" ? index - 1 : index + 1;
+      if (index < 0 || nextIndex < 0 || nextIndex >= order.length) return current;
+      [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+      return { ...current, order };
+    });
+  }
+
+  function toggleColumnHidden(column) {
+    updateSettings((current) => ({
+      ...current,
+      hidden: current.hidden.includes(column)
+        ? current.hidden.filter((item) => item !== column)
+        : [...current.hidden, column]
+    }));
+  }
+
+  function setSort(column, direction) {
+    updateSettings((current) => ({ ...current, sort: [{ fieldId: column, direction }] }));
+    setMenuColumn("");
+  }
+
+  function applyFilter() {
+    if (!filterDraft.fieldId) return;
+    updateSettings((current) => ({
+      ...current,
+      filter: {
+        op: "and",
+        clauses: [
+          ...((current.filter?.clauses || []).filter((clause) => clause.fieldId !== filterDraft.fieldId)),
+          ...(filterDraft.operator === "isEmpty" || filterDraft.operator === "isNotEmpty"
+            ? [{ fieldId: filterDraft.fieldId, operator: filterDraft.operator }]
+            : filterDraft.value !== ""
+              ? [{ fieldId: filterDraft.fieldId, operator: filterDraft.operator, value: filterDraft.value }]
+              : [])
+        ]
+      }
+    }));
+    setFilterOpen(false);
+  }
+
+  function removeFilter(fieldId) {
+    updateSettings((current) => {
+      const clauses = (current.filter?.clauses || []).filter((clause) => clause.fieldId !== fieldId);
+      return { ...current, filter: clauses.length ? { op: "and", clauses } : null };
+    });
+  }
+
+  function resetView() {
+    updateSettings((current) => ({
+      ...current,
+      hidden: [],
+      order: table.columns,
+      sort: [],
+      filter: null,
+      activeViewId: ""
+    }));
+  }
+
+  function saveCurrentAsNewView() {
+    const name = window.prompt("View name");
+    if (!name?.trim()) return;
+    const viewId = `view_${Date.now().toString(36)}`;
+    updateSettings((current) => ({
+      ...current,
+      activeViewId: viewId,
+      views: [...(current.views || []), { id: viewId, name: name.trim(), favorite: false, locked: false, ...snapshotTableViewState(current) }]
+    }));
+  }
+
+  function updateCurrentView() {
+    if (!activeView) return;
+    updateSettings((current) => ({
+      ...current,
+      views: (current.views || []).map((view) => view.id === activeView.id ? { ...view, ...snapshotTableViewState(current) } : view)
+    }));
+  }
+
+  const selectedEntry = selectedRow === null ? null : rowEntries[selectedRow];
+  const selectedRecord = selectedEntry?.row || null;
 
   return (
     <div className="dm-db-surface">
@@ -1045,11 +1439,22 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
         </div>
       )}
       <div className="dm-db-toolbar">
-        <div className="dm-db-toolbar-title">
-          <strong>{table.label}</strong>
-          <span>{pluralize(table.columns.length, "field")} · {pluralize(table.rows.length, "record")}</span>
-        </div>
         <div className="dm-records-actions">
+          <button type="button" className="dm-btn-ghost" onClick={() => setFilterOpen((current) => !current)}>
+            <Filter size={13} />Filter
+          </button>
+          <button type="button" className="dm-btn-ghost" onClick={resetView}>
+            Reset
+          </button>
+          {activeView ? (
+            <button type="button" className="dm-btn-ghost" onClick={updateCurrentView}>
+              Update view
+            </button>
+          ) : (
+            <button type="button" className="dm-btn-ghost" onClick={saveCurrentAsNewView}>
+              Save as new view
+            </button>
+          )}
           {table.rows.length > 0 && (
             <button type="button" className="dm-btn-ghost" onClick={() => {
               const blob = new Blob([exportTableAsCsv(table)], { type: "text/csv" });
@@ -1065,8 +1470,29 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
               <Plus size={13} />Add record
             </button>
           )}
+          {settings.filter?.clauses?.length > 0 && (
+            <div className="dm-filter-chip-row">
+              {settings.filter.clauses.map((clause) => (
+                <button key={`${clause.fieldId}:${clause.operator}`} type="button" className="dm-filter-chip" onClick={() => removeFilter(clause.fieldId)}>
+                  <LucideIcon name={FIELD_TYPE_ICON_NAMES[settings.types?.[clause.fieldId] || inferFieldType(clause.fieldId)] || "Type"} size={12} />
+                  <span>{clause.fieldId}: {clause.operator}{clause.value !== undefined ? ` ${clause.value}` : ""}</span>
+                  <X size={12} />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+      {filterOpen && (
+        <div className="dm-inline-panel">
+          <StaticSelect value={filterDraft.fieldId} options={visibleColumns.map((column) => ({ value: column, label: column }))} onChange={(next) => setFilterDraft((current) => ({ ...current, fieldId: next }))} />
+          <StaticSelect value={filterDraft.operator} options={FILTER_OPERATOR_OPTIONS.map((item) => ({ value: item.value, label: item.label }))} onChange={(next) => setFilterDraft((current) => ({ ...current, operator: next }))} />
+          {!["isEmpty", "isNotEmpty"].includes(filterDraft.operator) && (
+            <input value={filterDraft.value} placeholder="Value" onChange={(event) => setFilterDraft((current) => ({ ...current, value: event.target.value }))} />
+          )}
+          <button type="button" className="dm-btn-primary-sm" onClick={applyFilter}>Apply</button>
+        </div>
+      )}
       {csvOpen && (
         <div className="dm-csv-panel">
           <textarea className="dm-csv-textarea" rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} placeholder={"Name,Status\nAcme,Active"} />
@@ -1082,40 +1508,72 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
           <thead>
             <tr>
               <th className="dm-db-rownum">#</th>
-              {table.columns.map((column) => (
+              {visibleColumns.map((column) => (
                 <th key={column}>
-                  <span className="dm-db-field-type"><LucideIcon name={FIELD_TYPE_ICON_NAMES[inferFieldType(column)] || "Type"} size={12} /></span>
-                  {column}
+                  <button type="button" className="dm-db-head-btn" onClick={() => setMenuColumn((current) => current === column ? "" : column)}>
+                    <span className="dm-db-field-type"><LucideIcon name={FIELD_TYPE_ICON_NAMES[settings.types?.[column] || inferFieldType(column)] || "Type"} size={12} /></span>
+                    {column}
+                    {settings.sort?.[0]?.fieldId === column && (settings.sort[0].direction === "desc" ? <ArrowDownAZ size={12} /> : <ArrowUpAZ size={12} />)}
+                    <MoreHorizontal size={12} />
+                  </button>
+                  {menuColumn === column && (
+                    <div className="dm-col-menu">
+                      <button type="button" onClick={() => {
+                        setFilterDraft({ fieldId: column, operator: "eq", value: "" });
+                        setFilterOpen(true);
+                        setMenuColumn("");
+                      }}><Filter size={13} />Filter</button>
+                      <button type="button" onClick={() => setSort(column, "asc")}><ArrowUpAZ size={13} />Sort ascending</button>
+                      <button type="button" onClick={() => setSort(column, "desc")}><ArrowDownAZ size={13} />Sort descending</button>
+                      <button type="button" onClick={() => moveColumn(column, "left")}><ArrowRight size={13} style={{ transform: "rotate(180deg)" }} />Move left</button>
+                      <button type="button" onClick={() => moveColumn(column, "right")}><ArrowRight size={13} />Move right</button>
+                      <button type="button" onClick={() => toggleColumnHidden(column)}><EyeOff size={13} />Hide</button>
+                    </div>
+                  )}
                 </th>
               ))}
               {table.mutable && (
                 <th className="dm-db-add-field">
-                  {addingField ? (
-                    <input
-                      ref={fieldInputRef}
-                      value={fieldName}
-                      placeholder="Field name"
-                      onChange={(event) => setFieldName(event.target.value)}
-                      onBlur={commitField}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") commitField();
-                        if (event.key === "Escape") { setAddingField(false); setFieldName(""); }
-                      }}
-                    />
-                  ) : (
-                    <button type="button" onClick={() => setAddingField(true)}>
-                      <Plus size={13} />Field
-                    </button>
+                  <button type="button" onClick={() => setAddingField(true)}>
+                    <Plus size={13} />Field
+                  </button>
+                  {addingField && (
+                    <div className="dm-field-creator-popover">
+                      <div className="dm-field-creator">
+                        <input
+                          ref={fieldInputRef}
+                          value={fieldName}
+                          placeholder={FIELD_TYPE_CHOICES.find((choice) => choice.value === fieldType)?.sample || "Field name"}
+                          onChange={(event) => setFieldName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") commitField();
+                            if (event.key === "Escape") { setAddingField(false); setFieldName(""); }
+                          }}
+                        />
+                        <div className="dm-field-type-grid">
+                          {FIELD_TYPE_CHOICES.map((choice) => (
+                            <button key={choice.value} type="button" className={fieldType === choice.value ? "active" : ""} onClick={() => setFieldType(choice.value)}>
+                              <LucideIcon name={choice.icon} size={12} />
+                              <span>{choice.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="dm-field-creator-actions">
+                          <button type="button" className="dm-btn-outline" onClick={() => { setAddingField(false); setFieldName(""); }}>Cancel</button>
+                          <button type="button" className="dm-btn-primary-sm" onClick={commitField}>Create</button>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </th>
               )}
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row, rowIndex) => (
+            {rowEntries.map(({ row, originalIndex }, rowIndex) => (
               <tr key={rowIndex} className={selectedRow === rowIndex ? "selected" : ""} onClick={() => setSelectedRow(rowIndex)}>
                 <td className="dm-db-rownum">{rowIndex + 1}</td>
-                {table.columns.map((column) => {
+                {visibleColumns.map((column) => {
                   const relation = relationForColumn(table, column);
                   return (
                   <td key={column}>
@@ -1126,7 +1584,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                         column={column}
                         value={String(row?.[column] || "")}
                         disabled={!table.mutable || saving}
-                        onChange={(nextValue) => onSave((config) => updateTableCell(config, table, rowIndex, column, nextValue))}
+                        onChange={(nextValue) => onSave((config) => updateTableCell(config, table, originalIndex, column, nextValue))}
                       />
                     ) : column.toLowerCase() === "status" ? (
                       <StatusPill value={row?.[column]} />
@@ -1143,7 +1601,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
             {table.mutable && (
               <tr className="dm-db-new-row" onClick={() => onSave((config) => addTableRow(config, table))}>
                 <td className="dm-db-rownum">+</td>
-                <td colSpan={Math.max(table.columns.length, 1) + 1}>Add record</td>
+                <td colSpan={Math.max(visibleColumns.length, 1) + 1}>Add record</td>
               </tr>
             )}
           </tbody>
@@ -1153,7 +1611,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
         table={table}
         tables={tables}
         workspaceConfig={workspaceConfig}
-        rowIndex={selectedRow}
+        rowIndex={selectedEntry?.originalIndex ?? null}
         row={selectedRecord}
         saving={saving}
         onClose={() => setSelectedRow(null)}
@@ -1435,38 +1893,17 @@ export default function DataModelShell() {
         )}
 
         {!loading && !error && tables.length > 0 && (
-          <div className="dm-layout-v2">
-            <ObjectSidebar
-              tables={tables}
-              selectedTable={selectedTable}
-              onSelectSource={setSelectedSource}
-              onAddObject={() => setAddOpen(true)}
-            />
-
-            {selectedTable && (
-              <section className="dm-detail-v2">
-                <div className="dm-detail-v2-head">
-                  <div className="dm-detail-v2-title">
-                    <LucideIcon
-                      name={selectedTable.icon || OBJECT_TYPE_PRESETS[selectedTable.objectType]?.icon || "Database"}
-                      size={14}
-                      className="dm-detail-icon"
-                    />
-                    <h2>{selectedTable.label}</h2>
-                    <span className={`dm-badge ${objectTypeBadge(selectedTable.objectType).cls}`}>
-                      {objectTypeBadge(selectedTable.objectType).label}
-                    </span>
-                  </div>
-                  <div className="dm-detail-v2-meta">
-                    <code>{selectedTable.source}</code>
-                    <span>{pluralize(selectedTable.columns.length, "field")} · {pluralize(selectedTable.rows.length, "record")}</span>
-                  </div>
-                  <SourceValidationBanner table={selectedTable} />
+          selectedTable && (
+            <section className="dm-detail-v2 dm-detail-v3">
+              <div className="dm-detail-v2-head dm-detail-v3-head">
+                <div className="dm-detail-v2-title">
+                  <ObjectViewPicker tables={tables} selectedTable={selectedTable} saving={saving} onSelectSource={setSelectedSource} onSave={save} />
                 </div>
-                <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} />
-              </section>
-            )}
-          </div>
+                <SourceValidationBanner table={selectedTable} />
+              </div>
+              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} />
+            </section>
+          )
         )}
 
         {!loading && !error && tables.length === 0 && (

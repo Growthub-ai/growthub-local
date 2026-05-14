@@ -1,8 +1,10 @@
 "use client";
 
 import { ChevronDown, Search, AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchReferenceOptions } from "@/lib/data-model/reference-options";
+
+const EMPTY_CONTEXT = Object.freeze({});
 
 function SearchableSelect({
   value,
@@ -136,16 +138,27 @@ export function ReferencePicker({
   onChange,
   disabled,
   placeholder = "Select reference…",
-  context = {}
+  context = EMPTY_CONTEXT
 }) {
   const [options, setOptions] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [liveQuery, setLiveQuery] = useState("");
+  const mountedRef = useRef(false);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const loadPage = useCallback(async ({ query, cursor, append }) => {
     if (!objectId || !field) return;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoading(true);
     setError("");
     try {
@@ -157,13 +170,16 @@ export function ReferencePicker({
         limit: 25,
         context
       });
+      if (!mountedRef.current || requestId !== requestIdRef.current) return;
       const next = Array.isArray(payload.options) ? payload.options : [];
       setOptions((prev) => (append ? [...prev, ...next] : next));
       setNextCursor(payload.nextCursor || null);
     } catch (err) {
+      if (!mountedRef.current || requestId !== requestIdRef.current) return;
       setError(err?.message || "Failed to load options");
       if (!append) setOptions([]);
     } finally {
+      if (!mountedRef.current || requestId !== requestIdRef.current) return;
       setLoading(false);
     }
   }, [objectId, field, context]);
