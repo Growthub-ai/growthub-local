@@ -378,6 +378,19 @@ function buildRunResponse({
       executionLane: row.executionLane ? String(row.executionLane) : null
     };
   }
+  if (row) {
+    const localModel = typeof row.localModel === "string" ? row.localModel.trim() : "";
+    const localEndpoint = typeof row.localEndpoint === "string" ? row.localEndpoint.trim() : "";
+    const intelligenceAdapterMode =
+      typeof row.intelligenceAdapterMode === "string" ? row.intelligenceAdapterMode.trim().toLowerCase() : "";
+    if (localModel || localEndpoint || intelligenceAdapterMode) {
+      base.localIntelligence = {
+        ...(localModel ? { localModel } : {}),
+        ...(localEndpoint ? { localEndpoint } : {}),
+        ...(intelligenceAdapterMode ? { intelligenceAdapterMode } : {})
+      };
+    }
+  }
   return base;
 }
 
