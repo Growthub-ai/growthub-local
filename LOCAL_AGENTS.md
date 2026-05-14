@@ -309,9 +309,11 @@ Preserve these invariants:
 - Normalized sandbox run output belongs in source-record sidecar storage with a source type accepted by the workspace source system.
 - Sandbox Environment rows are not directly bindable View widget sources; users consume normalized tested output through source records and governed references.
 
-### orchestrationConfig field (additive, optional — Data Model only)
+### orchestrationConfig field + orchestration-graph adapter
 
-The `orchestrationConfig` column is an optional JSON field (type: `"json"`) on every `sandbox-environment` row. It is a governed Data Model field only — it stores canvas/graph configuration and is not yet interpreted by the execution layer.
+The `orchestrationConfig` column is an optional JSON field (type: `"json"`) on every `sandbox-environment` row. When the row also sets `adapter: "orchestration-graph"`, the dedicated `orchestration-graph` sandbox adapter (at `lib/adapters/sandboxes/orchestration-graph.js`) reads this field and executes the graph. When the field is absent the row runs in unchanged single-adapter mode.
+
+`sandbox-run/route.js` is **not touched**. The route dispatches to `orchestration-graph` through the identical `getSandboxAdapter(id).run(request)` path it already uses for `local-process`, `local-intelligence`, and `local-agent-host`.
 
 Shape:
 ```json
@@ -329,12 +331,15 @@ Shape:
 }
 ```
 
-Invariants for this field:
+Key contracts:
 
-- `sandbox-run/route.js` is **not touched** by this addition. The core execution path remains pristine.
-- `applyPatch` (workspace-config.js) detects changes to `orchestrationConfig` on any sandbox row and resets `status → "draft"` — mirrors the API Registry draft-on-change gate. The row only returns to `"connected"` after a successful sandbox run.
-- `KNOWN_CANVAS_TYPES` in workspace-schema.js is the canonical allowlist for `canvasType` values.
-- Graph execution (iterating `thinAdapters[]` via a dedicated orchestration adapter or Local Intelligence module) is intentionally deferred to a follow-up PR that does not touch the core run handler. The field is designed to be ready when that layer is built.
+- `sandboxRef` format: `"objectId/rowName"` or `"rowName"` (searched across all sandbox-environment objects). Same lookup pattern as `schedulerRegistryId → api-registry`.
+- `thinAdapters[]` executes sequentially; prior node stdout piped as context to next node (v1 pass-through; `nodes`/`edges` stored for future visual rendering).
+- Recursive self-reference (`adapter: "orchestration-graph"` inside `thinAdapters`) is rejected.
+- `applyPatch` (workspace-config.js) resets `status → "draft"` whenever `orchestrationConfig` changes — mirrors the API Registry draft-on-change gate. Row only reaches `"connected"` after a successful run.
+- Per-node diagnostics live in `adapterMeta.nodeResults` in the `growthub-sandbox-run-v1` sidecar record.
+- `KNOWN_CANVAS_TYPES` in workspace-schema.js is the canonical allowlist for `canvasType`.
+- Adapter is eagerly registered via `lib/adapters/sandboxes/index.js` (same pattern as the three default adapters).
 
 The Codex thin local adapter syntax is intentionally explicit:
 
