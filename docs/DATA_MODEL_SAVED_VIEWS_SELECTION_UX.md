@@ -76,6 +76,25 @@ The table UI should support multi-record work without changing persistence seman
 - Delete controls appear only while rows are selected and require a second confirm action.
 - Pagination appears at the bottom of the grid with 25 rows by default and 50/100 row options.
 
+## L4.1 Safe UI/UX Fix Guardrails
+
+When adding pagination or bulk-selection controls, preserve the existing Data Model container ownership. The outer table/grid wrapper should continue to own the visible border and rounded corners. Do not add nested bordered frames, arbitrary divider lines above pagination, or separate footer boxes that visually cut off the parent card corners.
+
+Safe footer behavior:
+
+- Keep pagination inside the existing bordered grid/table container when it is visually part of the table.
+- Use internal spacing on pagination controls instead of shrinking or offsetting the border box.
+- Do not add a divider line above pagination unless the existing design system already uses that divider in the same table pattern.
+- Preserve parent card bottom radius by ensuring child surfaces do not square off or visually cover the parent corners.
+- Verify left and right bottom corners at the rendered page level, not only by checking JSX structure.
+
+Unsafe patterns to avoid:
+
+- Wrapping the table in a second arbitrary border frame.
+- Moving pagination outside the table container while trying to align borders with negative margins.
+- Adding a full-width border-top divider that creates an extra horizontal rule unrelated to existing table chrome.
+- Changing unrelated button, source, or live-feed padding while fixing Data Model table layout.
+
 ## L5 Implementation Boundaries
 
 This work should stay inside the worker-kit Data Model surface:
