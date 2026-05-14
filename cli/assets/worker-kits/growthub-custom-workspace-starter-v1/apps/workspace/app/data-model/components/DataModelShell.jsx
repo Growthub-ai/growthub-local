@@ -1404,7 +1404,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
   const [confirmDeleteSelection, setConfirmDeleteSelection] = useState(false);
   const [lastSelectedRowIndex, setLastSelectedRowIndex] = useState(null);
   const [selectMenuOpen, setSelectMenuOpen] = useState(false);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(15);
   const [pageIndex, setPageIndex] = useState(0);
   const fieldInputRef = useRef(null);
 
@@ -1883,6 +1883,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
             <label className="dm-page-size-control">
               <span>Rows</span>
               <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageIndex(0); }}>
+                <option value={15}>15</option>
                 <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
