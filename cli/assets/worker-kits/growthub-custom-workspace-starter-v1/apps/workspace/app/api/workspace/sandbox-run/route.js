@@ -76,6 +76,31 @@ import {
   getSandboxAdapter
 } from "@/lib/adapters/sandboxes";
 
+/**
+ * When `GROWTHUB_WORKSPACE_SANDBOX_RUN_TOKEN` is set (e.g. on a public deploy),
+ * POST/GET on this route require `Authorization: Bearer <same value>`.
+ * Unset = no gate (local dev and default probes).
+ */
+function sandboxRunAuthDenied(request) {
+  const secret = String(process.env.GROWTHUB_WORKSPACE_SANDBOX_RUN_TOKEN || "").trim();
+  if (!secret) return null;
+  const raw = request.headers.get("authorization");
+  const value = typeof raw === "string" ? raw.trim() : "";
+  const match = /^Bearer\s+(\S+)/i.exec(value);
+  const token = match ? match[1].trim() : "";
+  if (token !== secret) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Unauthorized — set Authorization: Bearer <token> matching GROWTHUB_WORKSPACE_SANDBOX_RUN_TOKEN",
+      },
+      { status: 401 },
+    );
+  }
+  return null;
+}
+
 function envKeyCandidates(ref) {
   const token = String(ref || "")
     .trim()
@@ -393,6 +418,9 @@ function findSandboxRow(workspaceConfig, objectId, name) {
 }
 
 async function GET(request) {
+  const denied = sandboxRunAuthDenied(request);
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const objectId = String(searchParams.get("objectId") || "").trim();
   const name = String(searchParams.get("name") || "").trim();
@@ -416,6 +444,9 @@ async function GET(request) {
 }
 
 async function POST(request) {
+  const denied = sandboxRunAuthDenied(request);
+  if (denied) return denied;
+
   let body;
   try {
     body = await request.json();
