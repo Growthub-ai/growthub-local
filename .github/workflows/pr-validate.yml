@@ -25,9 +25,9 @@ jobs:
       - name: Validate branch name
         run: |
           branch="${{ github.head_ref }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor)/.+'
+          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex)/.+'
           if ! echo "$branch" | grep -Eq "$pattern"; then
-            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor/<name>"
+            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex/<name>"
             exit 1
           fi
 
@@ -83,6 +83,8 @@ jobs:
             if (branch.startsWith('refactor/')) labels.push('refactor');
             if (branch.startsWith('sync/'))     labels.push('sync');
             if (branch.startsWith('claude/'))   labels.push('agent-pr');
+            if (branch.startsWith('cursor/'))   labels.push('agent-pr');
+            if (branch.startsWith('codex/'))    labels.push('agent-pr');
             // Detect agent PRs
             const actor = context.payload.pull_request.user.login;
             const agentActors = ['github-actions[bot]', 'copilot[bot]', 'codex-bot'];
