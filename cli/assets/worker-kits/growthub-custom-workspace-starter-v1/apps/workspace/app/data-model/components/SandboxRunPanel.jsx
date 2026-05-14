@@ -43,7 +43,7 @@ export function SandboxRunPanel({
       .toLowerCase() || null;
   const durationLabel = formatDuration(durationMs);
 
-  async function copyText(label, value) {
+  async function copyText(value) {
     const v = String(value || "").trim();
     if (!v) return;
     try {
@@ -123,7 +123,7 @@ export function SandboxRunPanel({
                   className="dm-btn-ghost"
                   aria-label="Copy lastSourceId"
                   style={{ padding: 4 }}
-                  onClick={() => copyText("lastSourceId", lastSourceId)}
+                  onClick={() => copyText(lastSourceId)}
                 >
                   <Copy size={14} aria-hidden />
                 </button>
