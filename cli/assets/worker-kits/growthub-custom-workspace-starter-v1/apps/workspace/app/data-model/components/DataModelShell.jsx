@@ -311,9 +311,13 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
             </div>
           )}
           <div className="dm-picker-tabs">
-            {["all", "objects", "views"].map((item) => (
-              <button key={item} type="button" className={mode === item ? "active" : ""} onClick={() => setMode(item)}>
-                {item}
+            {[
+              { id: "all", label: "All" },
+              { id: "objects", label: "Objects" },
+              { id: "views", label: "Views" },
+            ].map((item) => (
+              <button key={item.id} type="button" className={mode === item.id ? "active" : ""} onClick={() => setMode(item.id)}>
+                {item.label}
               </button>
             ))}
           </div>
@@ -1672,9 +1676,24 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
           ))}
         </div>
         <div className="dm-records-actions">
-          <button type="button" className="dm-btn-ghost" onClick={() => setFilterTarget((current) => current === "toolbar" ? "" : "toolbar")}>
-            <Filter size={13} />Filter
-          </button>
+          <span className="dm-filter-anchor">
+            <button type="button" className="dm-btn-ghost" onClick={() => setFilterTarget((current) => current === "toolbar" ? "" : "toolbar")}>
+              <Filter size={13} />Filter
+            </button>
+            {filterTarget === "toolbar" && (
+              <div className="dm-filter-popover dm-filter-popover-toolbar">
+                <StaticSelect value={filterDraft.fieldId} options={visibleColumns.map((column) => ({ value: column, label: column }))} onChange={(next) => setFilterDraft((current) => ({ ...current, fieldId: next }))} />
+                <StaticSelect value={filterDraft.operator} options={FILTER_OPERATOR_OPTIONS.map((item) => ({ value: item.value, label: item.label }))} onChange={(next) => setFilterDraft((current) => ({ ...current, operator: next }))} />
+                {!["isEmpty", "isNotEmpty"].includes(filterDraft.operator) && (
+                  <input value={filterDraft.value} placeholder="Value" onChange={(event) => setFilterDraft((current) => ({ ...current, value: event.target.value }))} />
+                )}
+                <div className="dm-filter-popover-actions">
+                  <button type="button" className="dm-btn-outline" onClick={() => setFilterTarget("")}>Cancel</button>
+                  <button type="button" className="dm-btn-primary-sm" onClick={applyFilter}>Apply</button>
+                </div>
+              </div>
+            )}
+          </span>
           {activeView ? (
             <button type="button" className="dm-btn-ghost" onClick={updateCurrentView}>
               Update view
@@ -1709,19 +1728,6 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
           )}
         </div>
       </div>
-      {filterTarget === "toolbar" && (
-        <div className="dm-filter-popover dm-filter-popover-toolbar">
-          <StaticSelect value={filterDraft.fieldId} options={visibleColumns.map((column) => ({ value: column, label: column }))} onChange={(next) => setFilterDraft((current) => ({ ...current, fieldId: next }))} />
-          <StaticSelect value={filterDraft.operator} options={FILTER_OPERATOR_OPTIONS.map((item) => ({ value: item.value, label: item.label }))} onChange={(next) => setFilterDraft((current) => ({ ...current, operator: next }))} />
-          {!["isEmpty", "isNotEmpty"].includes(filterDraft.operator) && (
-            <input value={filterDraft.value} placeholder="Value" onChange={(event) => setFilterDraft((current) => ({ ...current, value: event.target.value }))} />
-          )}
-          <div className="dm-filter-popover-actions">
-            <button type="button" className="dm-btn-outline" onClick={() => setFilterTarget("")}>Cancel</button>
-            <button type="button" className="dm-btn-primary-sm" onClick={applyFilter}>Apply</button>
-          </div>
-        </div>
-      )}
       {csvOpen && (
         <div className="dm-csv-panel">
           <textarea className="dm-csv-textarea" rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} placeholder={"Name,Status\nAcme,Active"} />
@@ -1733,6 +1739,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
         </div>
       )}
       <div className="dm-db-grid-wrap">
+        <div className="dm-db-grid-scroll">
         <table className="dm-db-grid">
           <thead>
             <tr>
@@ -1877,6 +1884,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
             )}
           </tbody>
         </table>
+        </div>
         <div className="dm-pagination-bar">
           <span className="dm-pagination-summary">Showing {rowEntries.length ? pageStart + 1 : 0}-{pageEnd} of {rowEntries.length}</span>
           <div className="dm-pagination-controls">
@@ -2075,6 +2083,12 @@ function AddObjectSidebar({ open, saving, onClose, onCreate, allTables }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// Auto-save tempo: hold local edits in memory + localStorage, only PATCH the
+// server after this idle window. Keeps growthub.config.json from rewriting on
+// every keystroke and lets the UI stay snappy on slow disks.
+const SAVE_DEBOUNCE_MS = 20000;
+const LOCAL_CACHE_KEY = "growthub.workspace.dataModel.localDraft.v1";
+
 export default function DataModelShell() {
   const [workspaceConfig, setWorkspaceConfig] = useState(null);
   const [authority, setAuthority] = useState(null);
@@ -2084,6 +2098,8 @@ export default function DataModelShell() {
   const [message, setMessage] = useState("");
   const [selectedSource, setSelectedSource] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const pendingPatchRef = useRef({});
+  const saveTimerRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2114,16 +2130,19 @@ export default function DataModelShell() {
     if (!selectedSource && tables[0]) setSelectedSource(tables[0].source);
   }, [selectedSource, tables]);
 
-  const save = useCallback(async (mutate) => {
-    if (!workspaceConfig) return;
+  // Flush any accumulated patch keys to the server. Called by the debounce
+  // timer and on visibilitychange/beforeunload so no local edit is lost.
+  const flushPendingPatch = useCallback(async () => {
+    const patch = pendingPatchRef.current;
+    pendingPatchRef.current = {};
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (Object.keys(patch).length === 0) return;
     setSaving(true);
     setMessage("");
-    const next = mutate(workspaceConfig);
     try {
-      const patch = {};
-      for (const key of ["dashboards", "widgetTypes", "canvas", "dataModel"]) {
-        if (next[key] !== workspaceConfig[key]) patch[key] = next[key];
-      }
       const res = await fetch("/api/workspace", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -2133,12 +2152,58 @@ export default function DataModelShell() {
       if (!res.ok) throw new Error(payload.error || "Save failed");
       setWorkspaceConfig(payload.workspaceConfig);
       setMessage("Saved");
+      try { window.localStorage.removeItem(LOCAL_CACHE_KEY); } catch {}
     } catch (err) {
       setMessage(`Error: ${err.message || "Save failed"}`);
     } finally {
       setSaving(false);
     }
-  }, [workspaceConfig]);
+  }, []);
+
+  // Mutate-in-memory immediately so the UI feels instant, persist a draft to
+  // localStorage every change, and only PATCH the server after SAVE_DEBOUNCE_MS
+  // of idleness. Sandbox-environment objects' lastRunId/lastResponse fields
+  // bypass the debounce (they need durability for run telemetry).
+  const save = useCallback((mutate) => {
+    setWorkspaceConfig((current) => {
+      if (!current) return current;
+      const next = mutate(current);
+      const patch = pendingPatchRef.current;
+      let touchedSandboxRun = false;
+      for (const key of ["dashboards", "widgetTypes", "canvas", "dataModel"]) {
+        if (next[key] !== current[key]) patch[key] = next[key];
+      }
+      try {
+        const sandboxKey = JSON.stringify((next.dataModel?.objects || []).find((o) => o.objectType === "sandbox-environment")?.rows || []);
+        const prevSandboxKey = JSON.stringify((current.dataModel?.objects || []).find((o) => o.objectType === "sandbox-environment")?.rows || []);
+        if (sandboxKey !== prevSandboxKey) touchedSandboxRun = true;
+      } catch {}
+      try {
+        window.localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), patch }));
+      } catch {}
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (touchedSandboxRun) {
+        // immediate flush: durable sandbox run state must persist
+        Promise.resolve().then(flushPendingPatch);
+      } else {
+        saveTimerRef.current = setTimeout(flushPendingPatch, SAVE_DEBOUNCE_MS);
+      }
+      return next;
+    });
+  }, [flushPendingPatch]);
+
+  // Flush before navigation / tab close so the 20s window never silently drops a draft.
+  useEffect(() => {
+    function handleBeforeUnload() { flushPendingPatch(); }
+    function handleVisibility() { if (document.visibilityState === "hidden") flushPendingPatch(); }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      flushPendingPatch();
+    };
+  }, [flushPendingPatch]);
 
   const createObject = useCallback(({ name, objectType, icon }) => {
     save((config) => createTypedBusinessObject(config, { name, objectType, icon }));
