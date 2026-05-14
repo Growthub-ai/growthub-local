@@ -49,6 +49,7 @@ import {
   addTableRow,
   appendRowsToTable,
   createTypedBusinessObject,
+  deleteTableRow,
   describeBindingLane,
   effectiveRelations,
   exportTableAsCsv,
@@ -1399,10 +1400,23 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
   const [filterDraft, setFilterDraft] = useState({ fieldId: "", operator: "eq", value: "" });
   const [filterTarget, setFilterTarget] = useState("");
   const [menuColumn, setMenuColumn] = useState("");
+  const [selectedRows, setSelectedRows] = useState(() => new Set());
+  const [confirmDeleteSelection, setConfirmDeleteSelection] = useState(false);
+  const [lastSelectedRowIndex, setLastSelectedRowIndex] = useState(null);
+  const [selectMenuOpen, setSelectMenuOpen] = useState(false);
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
   const fieldInputRef = useRef(null);
 
   useEffect(() => { if (addingField) fieldInputRef.current?.focus(); }, [addingField]);
-  useEffect(() => { setSelectedRow(null); }, [table.id]);
+  useEffect(() => {
+    setSelectedRow(null);
+    setSelectedRows(new Set());
+    setConfirmDeleteSelection(false);
+    setLastSelectedRowIndex(null);
+    setSelectMenuOpen(false);
+    setPageIndex(0);
+  }, [table.id]);
   useEffect(() => {
     setFieldName("");
     setFieldType("text");
@@ -1430,6 +1444,25 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
     () => (settings.views || []).find((view) => view.id === settings.activeViewId) || null,
     [settings.views, settings.activeViewId]
   );
+  const selectedRowCount = selectedRows.size;
+  const pageCount = Math.max(1, Math.ceil(rowEntries.length / pageSize));
+  const safePageIndex = Math.min(pageIndex, pageCount - 1);
+  const pageStart = safePageIndex * pageSize;
+  const pageEntries = rowEntries.slice(pageStart, pageStart + pageSize);
+  const pageEnd = Math.min(pageStart + pageSize, rowEntries.length);
+  const pageSelectedCount = pageEntries.filter((entry) => selectedRows.has(entry.originalIndex)).length;
+  const allPageSelected = pageEntries.length > 0 && pageSelectedCount === pageEntries.length;
+
+  useEffect(() => {
+    setPageIndex((current) => Math.min(current, pageCount - 1));
+  }, [pageCount]);
+
+  useEffect(() => {
+    setPageIndex(0);
+    setSelectedRow(null);
+    setLastSelectedRowIndex(null);
+    setSelectMenuOpen(false);
+  }, [settings.filter, settings.sort, pageSize]);
 
   function commitField() {
     const name = fieldName.trim();
@@ -1540,6 +1573,78 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
     }));
   }
 
+  function toggleRowSelection(originalIndex, visibleIndex, event) {
+    setConfirmDeleteSelection(false);
+    setSelectMenuOpen(false);
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      if (event?.shiftKey && lastSelectedRowIndex !== null) {
+        const start = Math.min(lastSelectedRowIndex, visibleIndex);
+        const end = Math.max(lastSelectedRowIndex, visibleIndex);
+        rowEntries.slice(start, end + 1).forEach((entry) => next.add(entry.originalIndex));
+      } else if (next.has(originalIndex)) {
+        next.delete(originalIndex);
+      } else {
+        next.add(originalIndex);
+      }
+      return next;
+    });
+    setLastSelectedRowIndex(visibleIndex);
+  }
+
+  function clearRowSelection() {
+    setSelectedRows(new Set());
+    setConfirmDeleteSelection(false);
+    setLastSelectedRowIndex(null);
+    setSelectMenuOpen(false);
+  }
+
+  function selectCurrentPage() {
+    setConfirmDeleteSelection(false);
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      pageEntries.forEach((entry) => next.add(entry.originalIndex));
+      return next;
+    });
+    setLastSelectedRowIndex(pageEntries.length ? pageStart : null);
+    setSelectMenuOpen(false);
+  }
+
+  function toggleCurrentPageSelection() {
+    setConfirmDeleteSelection(false);
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      if (allPageSelected) pageEntries.forEach((entry) => next.delete(entry.originalIndex));
+      else pageEntries.forEach((entry) => next.add(entry.originalIndex));
+      return next;
+    });
+    setLastSelectedRowIndex(pageEntries.length ? pageStart : null);
+    setSelectMenuOpen(false);
+  }
+
+  function selectAllFilteredRows() {
+    setConfirmDeleteSelection(false);
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      rowEntries.forEach((entry) => next.add(entry.originalIndex));
+      return next;
+    });
+    setLastSelectedRowIndex(rowEntries.length ? 0 : null);
+    setSelectMenuOpen(false);
+  }
+
+  function deleteSelectedRows() {
+    if (!selectedRows.size) return;
+    if (!confirmDeleteSelection) {
+      setConfirmDeleteSelection(true);
+      return;
+    }
+    const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
+    onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
+    setSelectedRow(null);
+    clearRowSelection();
+  }
+
   const selectedEntry = selectedRow === null ? null : rowEntries[selectedRow];
   const selectedRecord = selectedEntry?.row || null;
 
@@ -1553,6 +1658,11 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
       )}
       <div className="dm-db-toolbar">
         <div className="dm-filter-chip-row">
+          {selectedRowCount > 0 && (
+            <span className="dm-filter-chip dm-selection-count">
+              {pluralize(selectedRowCount, "record")} selected
+            </span>
+          )}
           {settings.filter?.clauses?.map((clause) => (
             <button key={`${clause.fieldId}:${clause.operator}`} type="button" className="dm-filter-chip" onClick={() => removeFilter(clause.fieldId)}>
               <LucideIcon name={FIELD_TYPE_ICON_NAMES[settings.types?.[clause.fieldId] || inferFieldType(clause.fieldId)] || "Type"} size={12} />
@@ -1589,6 +1699,14 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
               <Plus size={13} />Add record
             </button>
           )}
+          {table.mutable && selectedRowCount > 0 && (
+            <>
+              <button type="button" className="dm-btn-ghost" disabled={saving} onClick={clearRowSelection}>Cancel selection</button>
+              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={deleteSelectedRows}>
+                {confirmDeleteSelection ? `Confirm delete ${selectedRowCount}` : "Delete"}
+              </button>
+            </>
+          )}
         </div>
       </div>
       {filterTarget === "toolbar" && (
@@ -1618,7 +1736,26 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
         <table className="dm-db-grid">
           <thead>
             <tr>
-              <th className="dm-db-rownum">#</th>
+              <th className="dm-db-rownum dm-db-rownum-head">
+                {table.mutable ? (
+                  <div className="dm-row-select-head-wrap">
+                    <button type="button" className="dm-row-select dm-row-select-all" aria-label={allPageSelected ? "Clear page selection" : "Select current page"} aria-pressed={allPageSelected} onClick={(event) => { event.stopPropagation(); toggleCurrentPageSelection(); }}>
+                      <span className="dm-row-select-box" />
+                      <span className="dm-row-number">#</span>
+                    </button>
+                    <button type="button" className="dm-row-select-menu-btn" aria-label="Selection options" aria-expanded={selectMenuOpen} onClick={(event) => { event.stopPropagation(); setSelectMenuOpen((open) => !open); }}>
+                      <ChevronDown size={11} />
+                    </button>
+                    {selectMenuOpen && (
+                      <div className="dm-row-select-menu">
+                        <button type="button" onClick={selectCurrentPage}>Select page</button>
+                        <button type="button" onClick={selectAllFilteredRows}>Select all filtered</button>
+                        <button type="button" disabled={!selectedRowCount} onClick={clearRowSelection}>Clear selection</button>
+                      </div>
+                    )}
+                  </div>
+                ) : "#"}
+              </th>
               {visibleColumns.map((column) => (
                 <th key={column}>
                   <button type="button" className="dm-db-head-btn" onClick={() => setMenuColumn((current) => current === column ? "" : column)}>
@@ -1694,9 +1831,19 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
             </tr>
           </thead>
           <tbody>
-            {rowEntries.map(({ row, originalIndex }, rowIndex) => (
-              <tr key={rowIndex} className={selectedRow === rowIndex ? "selected" : ""} onClick={() => setSelectedRow(rowIndex)}>
-                <td className="dm-db-rownum">{rowIndex + 1}</td>
+            {pageEntries.map(({ row, originalIndex }, rowIndex) => {
+              const visibleIndex = pageStart + rowIndex;
+              const displayIndex = visibleIndex + 1;
+              return (
+              <tr key={`${originalIndex}:${visibleIndex}`} className={`${selectedRow === visibleIndex ? "selected" : ""}${selectedRows.has(originalIndex) ? " multi-selected" : ""}`} onClick={() => setSelectedRow(visibleIndex)}>
+                <td className="dm-db-rownum">
+                  {table.mutable ? (
+                    <button type="button" className="dm-row-select" aria-label={selectedRows.has(originalIndex) ? `Deselect row ${displayIndex}` : `Select row ${displayIndex}`} aria-pressed={selectedRows.has(originalIndex)} onClick={(event) => { event.stopPropagation(); toggleRowSelection(originalIndex, visibleIndex, event); }}>
+                      <span className="dm-row-select-box" />
+                      <span className="dm-row-number">{displayIndex}</span>
+                    </button>
+                  ) : displayIndex}
+                </td>
                 {visibleColumns.map((column) => {
                   const relation = relationForColumn(table, column);
                   return (
@@ -1721,7 +1868,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                 );})}
                 {table.mutable && <td className="dm-db-empty-cell" />}
               </tr>
-            ))}
+            );})}
             {table.mutable && (
               <tr className="dm-db-new-row" onClick={() => onSave((config) => addTableRow(config, table))}>
                 <td className="dm-db-rownum">+</td>
@@ -1730,6 +1877,22 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
             )}
           </tbody>
         </table>
+        <div className="dm-pagination-bar">
+          <span className="dm-pagination-summary">Showing {rowEntries.length ? pageStart + 1 : 0}-{pageEnd} of {rowEntries.length}</span>
+          <div className="dm-pagination-controls">
+            <label className="dm-page-size-control">
+              <span>Rows</span>
+              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageIndex(0); }}>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+            <button type="button" className="dm-pagination-btn" disabled={safePageIndex === 0} onClick={() => setPageIndex((current) => Math.max(0, current - 1))}>Previous</button>
+            <span className="dm-pagination-page">{safePageIndex + 1} / {pageCount}</span>
+            <button type="button" className="dm-pagination-btn" disabled={safePageIndex >= pageCount - 1} onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}>Next</button>
+          </div>
+        </div>
       </div>
       <DataModelRecordDrawer
         table={table}
