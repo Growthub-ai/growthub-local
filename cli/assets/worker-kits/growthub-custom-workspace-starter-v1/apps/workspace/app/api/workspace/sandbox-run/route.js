@@ -62,11 +62,13 @@ import {
 import {
   DEFAULT_SANDBOX_ADAPTER,
   DEFAULT_SANDBOX_RUN_LOCALITY,
+  KNOWN_CANVAS_TYPES,
   KNOWN_SANDBOX_RUNTIMES,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS
 } from "@/lib/workspace-schema";
 import {
+  parseOrchestrationConfig,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   sandboxRunSourceId
@@ -327,6 +329,280 @@ async function runServerlessScheduler({
   }
 }
 
+/**
+ * Validate the parsed orchestrationConfig object before execution.
+ * Returns { valid: true } or { valid: false, errors: string[] }.
+ * Mirrors the test-api-record pattern: validation must pass or the run is
+ * rejected before any adapter is touched — the row never reaches "connected".
+ */
+function validateOrchestrationConfig(config) {
+  const errors = [];
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return { valid: false, errors: ["orchestrationConfig must be a JSON object"] };
+  }
+  const canvasType = String(config.canvasType || "").trim();
+  if (canvasType && !KNOWN_CANVAS_TYPES.includes(canvasType)) {
+    errors.push(`orchestrationConfig.canvasType must be one of: ${KNOWN_CANVAS_TYPES.join(", ")}`);
+  }
+  if (config.thinAdapters !== undefined) {
+    if (!Array.isArray(config.thinAdapters)) {
+      errors.push("orchestrationConfig.thinAdapters must be an array");
+    } else {
+      config.thinAdapters.forEach((adapter, index) => {
+        if (!adapter || typeof adapter !== "object" || Array.isArray(adapter)) {
+          errors.push(`orchestrationConfig.thinAdapters[${index}] must be a plain object`);
+          return;
+        }
+        if (!adapter.id || typeof adapter.id !== "string") {
+          errors.push(`orchestrationConfig.thinAdapters[${index}].id must be a non-empty string`);
+        }
+        if (!adapter.sandboxRef || typeof adapter.sandboxRef !== "string") {
+          errors.push(`orchestrationConfig.thinAdapters[${index}].sandboxRef must be a non-empty string`);
+        }
+      });
+    }
+  }
+  return errors.length ? { valid: false, errors } : { valid: true };
+}
+
+/**
+ * Resolve a sandboxRef ("objectId/rowName" or "rowName") to a sandbox row.
+ * Mirrors the findRegistryRecord pattern used for schedulerRegistryId lookups.
+ */
+function findSandboxRowByRef(workspaceConfig, sandboxRef) {
+  const ref = String(sandboxRef || "").trim();
+  if (!ref) return null;
+  const slashIndex = ref.indexOf("/");
+  const objectIdHint = slashIndex !== -1 ? ref.slice(0, slashIndex) : null;
+  const rowName = slashIndex !== -1 ? ref.slice(slashIndex + 1) : ref;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const obj of objects) {
+    if (obj?.objectType !== "sandbox-environment") continue;
+    if (objectIdHint && obj.id !== objectIdHint) continue;
+    const rows = Array.isArray(obj.rows) ? obj.rows : [];
+    const match = rows.find((r) => String(r?.Name || "").trim() === rowName);
+    if (match) return { object: obj, row: match };
+  }
+  return null;
+}
+
+/**
+ * Execute a single adapter invocation — extracted from the POST handler so
+ * both single-row and graph-node execution share the same code path.
+ * Returns the same shape as adapter.run(): { ok, exitCode, durationMs, stdout, stderr, error?, adapterMeta? }
+ */
+async function runLocalAdapterCore({
+  adapterId,
+  row,
+  runtime,
+  agentHost,
+  command,
+  instructions,
+  timeoutMs,
+  networkAllow,
+  allowList,
+  env,
+  envRefSlugs,
+  envRefsMissing,
+  runId,
+  ranAt
+}) {
+  const agentCommand = instructions
+    ? `Instructions:\n${instructions}\n\nPrompt:\n${command}`
+    : command;
+  const intelligenceSandbox =
+    adapterId === "local-intelligence"
+      ? {
+          userIntent: agentCommand,
+          localModel: typeof row.localModel === "string" ? row.localModel.trim() : "",
+          localEndpoint: typeof row.localEndpoint === "string" ? row.localEndpoint.trim() : "",
+          intelligenceAdapterMode:
+            typeof row.intelligenceAdapterMode === "string"
+              ? row.intelligenceAdapterMode.trim().toLowerCase()
+              : "ollama"
+        }
+      : undefined;
+
+  await ensureSandboxAdaptersLoaded();
+  const adapter = getSandboxAdapter(adapterId);
+  if (!adapter) {
+    return {
+      ok: false,
+      exitCode: null,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `sandbox adapter not registered: ${adapterId}`,
+      adapterMeta: { adapter: adapterId }
+    };
+  }
+  if (Array.isArray(adapter.supportedRuntimes) && adapter.supportedRuntimes.length && !adapter.supportedRuntimes.includes(runtime)) {
+    return {
+      ok: false,
+      exitCode: null,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `adapter ${adapterId} does not support runtime ${runtime}`,
+      adapterMeta: { adapter: adapterId, supportedRuntimes: adapter.supportedRuntimes }
+    };
+  }
+
+  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-sandbox-"));
+  try {
+    return await adapter.run({
+      runId,
+      name: row.Name || "",
+      runtime,
+      agentHost,
+      command: adapterId === "local-agent-host" || adapterId === "local-intelligence" ? agentCommand : command,
+      timeoutMs,
+      networkAllow,
+      allowList,
+      env,
+      envRefSlugs,
+      envRefsMissing,
+      workdir,
+      ranAt,
+      ...(intelligenceSandbox ? { intelligenceSandbox } : {})
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      exitCode: null,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: error?.message || "adapter threw",
+      adapterMeta: { adapter: adapterId }
+    };
+  } finally {
+    fs.rm(workdir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Execute an orchestrationConfig graph by running each thinAdapter in
+ * sequence via the existing local adapter mechanism.  Uses the same
+ * runLocalAdapterCore path — no new primitives.
+ *
+ * The previous node's stdout is appended to the next node's command as
+ * context (v1 pass-through mapping).  The final exitCode is 0 only if
+ * all nodes exit 0.  Per-node results are captured in adapterMeta so the
+ * sidecar record has full step-level diagnostics.
+ *
+ * Returns: { ok, exitCode, durationMs, stdout, stderr, error?, adapterMeta }
+ */
+async function executeOrchestrationGraph({
+  orchestrationConfig,
+  workspaceConfig,
+  runId,
+  ranAt,
+  env,
+  timeoutMs,
+  networkAllow,
+  allowList
+}) {
+  const thinAdapters = Array.isArray(orchestrationConfig.thinAdapters) ? orchestrationConfig.thinAdapters : [];
+  if (!thinAdapters.length) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: "orchestrationConfig has no thinAdapters to execute",
+      adapterMeta: { mode: "graph", canvasType: orchestrationConfig.canvasType || null, nodeCount: 0 }
+    };
+  }
+
+  const nodeResults = [];
+  let cumulativeDurationMs = 0;
+  let previousStdout = "";
+  let overallExitCode = 0;
+
+  for (const thinAdapter of thinAdapters) {
+    const resolved = findSandboxRowByRef(workspaceConfig, thinAdapter.sandboxRef);
+    if (!resolved) {
+      const nodeResult = {
+        id: thinAdapter.id,
+        sandboxRef: thinAdapter.sandboxRef,
+        ok: false,
+        exitCode: 1,
+        durationMs: 0,
+        stdout: "",
+        stderr: "",
+        error: `sandboxRef not found: ${thinAdapter.sandboxRef}`
+      };
+      nodeResults.push(nodeResult);
+      overallExitCode = 1;
+      break;
+    }
+
+    const { row: nodeRow } = resolved;
+    const nodeAdapterId = (typeof nodeRow.adapter === "string" && nodeRow.adapter.trim())
+      ? nodeRow.adapter.trim()
+      : DEFAULT_SANDBOX_ADAPTER;
+    const nodeRuntime = KNOWN_SANDBOX_RUNTIMES.includes(nodeRow.runtime) ? nodeRow.runtime : "node";
+    const nodeAgentHost = typeof nodeRow.agentHost === "string" ? nodeRow.agentHost.trim() : "";
+    const baseCommand = typeof nodeRow.command === "string" ? nodeRow.command : "";
+    const nodeInstructions = typeof nodeRow.instructions === "string" ? nodeRow.instructions.trim() : "";
+    const nodeEnvRefSlugs = parseSandboxEnvRefs(nodeRow.envRefs);
+    const nodeEnvRefsMissing = nodeEnvRefSlugs.filter((slug) => !env[slug.toUpperCase().replace(/[^A-Z0-9]+/g, "_")] && !env[`${slug.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`]);
+
+    const contextCommand = previousStdout
+      ? `${baseCommand}\n\n[Previous node output]:\n${previousStdout.slice(0, 2000)}`
+      : baseCommand;
+
+    const nodeResult = await runLocalAdapterCore({
+      adapterId: nodeAdapterId,
+      row: nodeRow,
+      runtime: nodeRuntime,
+      agentHost: nodeAgentHost,
+      command: contextCommand,
+      instructions: nodeInstructions,
+      timeoutMs,
+      networkAllow,
+      allowList,
+      env,
+      envRefSlugs: nodeEnvRefSlugs,
+      envRefsMissing: nodeEnvRefsMissing,
+      runId: `${runId}_node_${thinAdapter.id}`,
+      ranAt
+    });
+
+    nodeResults.push({ id: thinAdapter.id, sandboxRef: thinAdapter.sandboxRef, ...nodeResult });
+    cumulativeDurationMs += nodeResult.durationMs || 0;
+
+    if (nodeResult.exitCode !== 0 || nodeResult.error) {
+      overallExitCode = nodeResult.exitCode ?? 1;
+      break;
+    }
+    previousStdout = nodeResult.stdout || "";
+  }
+
+  const allStdout = nodeResults.map((r) => `[${r.id}]:\n${r.stdout || ""}`).join("\n\n---\n\n");
+  const allStderr = nodeResults.map((r) => (r.stderr ? `[${r.id}]: ${r.stderr}` : "")).filter(Boolean).join("\n");
+  const lastError = nodeResults.slice().reverse().find((r) => r.error)?.error;
+
+  return {
+    ok: overallExitCode === 0,
+    exitCode: overallExitCode,
+    durationMs: cumulativeDurationMs,
+    stdout: allStdout,
+    stderr: allStderr,
+    error: lastError,
+    adapterMeta: {
+      mode: "graph",
+      canvasType: orchestrationConfig.canvasType || null,
+      nodeCount: thinAdapters.length,
+      nodesExecuted: nodeResults.length,
+      diagnosticMode: orchestrationConfig.diagnosticMode === true,
+      nodeResults
+    }
+  };
+}
+
 function buildRunResponse({
   runId,
   ranAt,
@@ -345,7 +621,8 @@ function buildRunResponse({
   allowList,
   result,
   timeoutMs,
-  row
+  row,
+  orchestrationConfig
 }) {
   const base = {
     runId,
@@ -371,6 +648,15 @@ function buildRunResponse({
     allowList,
     adapterMeta: result.adapterMeta || null
   };
+  if (orchestrationConfig) {
+    base.orchestrationConfigMeta = {
+      canvasType: orchestrationConfig.canvasType || null,
+      nodeCount: Array.isArray(orchestrationConfig.thinAdapters) ? orchestrationConfig.thinAdapters.length : 0,
+      diagnosticMode: orchestrationConfig.diagnosticMode === true,
+      version: orchestrationConfig.version || null,
+      lastValidated: new Date().toISOString()
+    };
+  }
   if (row && (row.resolverTemplateId || row.connectorKind || row.executionLane)) {
     base.templateTrace = {
       resolverTemplateId: row.resolverTemplateId ? String(row.resolverTemplateId) : null,
@@ -448,21 +734,6 @@ async function POST(request) {
   const envRefSlugs = parseSandboxEnvRefs(row.envRefs);
   const command = typeof row.command === "string" ? row.command : "";
   const instructions = typeof row.instructions === "string" ? row.instructions.trim() : "";
-  const agentCommand = instructions
-    ? `Instructions:\n${instructions}\n\nPrompt:\n${command}`
-    : command;
-  const intelligenceSandbox =
-    adapterId === "local-intelligence"
-      ? {
-          userIntent: agentCommand,
-          localModel: typeof row.localModel === "string" ? row.localModel.trim() : "",
-          localEndpoint: typeof row.localEndpoint === "string" ? row.localEndpoint.trim() : "",
-          intelligenceAdapterMode:
-            typeof row.intelligenceAdapterMode === "string"
-              ? row.intelligenceAdapterMode.trim().toLowerCase()
-              : "ollama",
-        }
-      : undefined;
   const lifecycleStatus = String(row.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
   const version = row.version ?? "";
   const requestedTimeout = Number(row.timeoutMs);
@@ -500,10 +771,46 @@ async function POST(request) {
   const runId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const ranAt = new Date().toISOString();
 
+  // Parse orchestrationConfig (optional JSON field on the sandbox row).
+  // When present, validate before any adapter is touched — mirrors the
+  // test-api-record pattern where a malformed config never reaches "connected".
+  const orchestrationConfig = parseOrchestrationConfig(row.orchestrationConfig);
+  const isGraphMode = orchestrationConfig !== null;
+
+  if (isGraphMode) {
+    const { valid, errors } = validateOrchestrationConfig(orchestrationConfig);
+    if (!valid) {
+      return NextResponse.json({
+        ok: false,
+        error: "orchestrationConfig validation failed",
+        details: errors,
+        hint: "Fix the orchestrationConfig field in the record drawer and re-run."
+      }, { status: 400 });
+    }
+    if (runLocality === "serverless") {
+      return NextResponse.json({
+        ok: false,
+        error: "orchestrationConfig graph mode requires runLocality=local. Serverless delegation is not supported for graph execution."
+      }, { status: 400 });
+    }
+  }
+
   let result;
   let effectiveAdapterId = adapterId;
 
-  if (runLocality === "serverless") {
+  if (isGraphMode) {
+    effectiveAdapterId = `graph:${orchestrationConfig.canvasType || "custom"}`;
+    result = await executeOrchestrationGraph({
+      orchestrationConfig,
+      workspaceConfig,
+      runId,
+      ranAt,
+      env,
+      timeoutMs,
+      networkAllow,
+      allowList
+    });
+  } else if (runLocality === "serverless") {
     effectiveAdapterId = "serverless";
     result = await runServerlessScheduler({
       workspaceConfig,
@@ -526,54 +833,30 @@ async function POST(request) {
       envRefsMissing
     });
   } else {
-    await ensureSandboxAdaptersLoaded();
-    const adapter = getSandboxAdapter(adapterId);
-    if (!adapter) {
+    const localResult = await runLocalAdapterCore({
+      adapterId,
+      row,
+      runtime,
+      agentHost,
+      command,
+      instructions,
+      timeoutMs,
+      networkAllow,
+      allowList,
+      env,
+      envRefSlugs,
+      envRefsMissing: envRefsMissing,
+      runId,
+      ranAt
+    });
+    if (localResult.error === `sandbox adapter not registered: ${adapterId}`) {
       return NextResponse.json({
         ok: false,
-        error: `sandbox adapter not registered: ${adapterId}`,
+        error: localResult.error,
         hint: "Drop a file under lib/adapters/sandboxes/adapters/ that calls registerSandboxAdapter()"
       }, { status: 404 });
     }
-    if (Array.isArray(adapter.supportedRuntimes) && adapter.supportedRuntimes.length && !adapter.supportedRuntimes.includes(runtime)) {
-      return NextResponse.json({
-        ok: false,
-        error: `adapter ${adapterId} does not support runtime ${runtime}`,
-        supportedRuntimes: adapter.supportedRuntimes
-      }, { status: 400 });
-    }
-
-    const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-sandbox-"));
-    try {
-      result = await adapter.run({
-        runId,
-        name: row.Name || name,
-        runtime,
-        agentHost,
-        command: adapterId === "local-agent-host" || adapterId === "local-intelligence" ? agentCommand : command,
-        timeoutMs,
-        networkAllow,
-        allowList,
-        env,
-        envRefSlugs,
-        envRefsMissing,
-        workdir,
-        ranAt,
-        ...(intelligenceSandbox ? { intelligenceSandbox } : {}),
-      });
-    } catch (error) {
-      result = {
-        ok: false,
-        exitCode: null,
-        durationMs: 0,
-        stdout: "",
-        stderr: "",
-        error: error?.message || "adapter threw",
-        adapterMeta: { adapter: adapterId }
-      };
-    } finally {
-      fs.rm(workdir, { recursive: true, force: true }).catch(() => {});
-    }
+    result = localResult;
   }
 
   const response = buildRunResponse({
@@ -594,7 +877,8 @@ async function POST(request) {
     allowList,
     result,
     timeoutMs,
-    row
+    row,
+    orchestrationConfig: isGraphMode ? orchestrationConfig : null
   });
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);

@@ -89,11 +89,53 @@ function describePersistenceMode() {
   return baseFilesystem("Local development");
 }
 
+/**
+ * When a sandbox-environment row's `orchestrationConfig` field changes
+ * (detected by strict string equality after normalisation), reset that row's
+ * `status` to `"draft"` so the operator must re-run before the row reads as
+ * "connected".  Mirrors the API Registry pattern where any endpoint/auth
+ * change requires a re-test before the row is trusted as a live source.
+ *
+ * Only runs when `dataModel` is in the patch.  Rows with no prior value and
+ * no new value are left untouched.  Rows where orchestrationConfig is
+ * REMOVED (cleared to empty) are also reset to "draft" so stale "connected"
+ * state from a previous graph run is cleared.
+ */
+function resetSandboxOrchestrationStatus(currentDataModel, nextDataModel) {
+  if (!nextDataModel || typeof nextDataModel !== "object" || !Array.isArray(nextDataModel.objects)) {
+    return nextDataModel;
+  }
+  const currentObjects = Array.isArray(currentDataModel?.objects) ? currentDataModel.objects : [];
+  const nextObjects = nextDataModel.objects.map((nextObj) => {
+    if (!nextObj || nextObj.objectType !== "sandbox-environment") return nextObj;
+    const currentObj = currentObjects.find((o) => o.id === nextObj.id);
+    if (!currentObj) return nextObj;
+    const currentRows = Array.isArray(currentObj.rows) ? currentObj.rows : [];
+    const nextRows = Array.isArray(nextObj.rows)
+      ? nextObj.rows.map((nextRow, index) => {
+          if (!nextRow || typeof nextRow !== "object") return nextRow;
+          const currentRow = currentRows[index];
+          if (!currentRow || typeof currentRow !== "object") return nextRow;
+          const prevRaw = String(currentRow.orchestrationConfig ?? "").trim();
+          const newRaw = String(nextRow.orchestrationConfig ?? "").trim();
+          if (newRaw !== prevRaw) {
+            return { ...nextRow, status: "draft" };
+          }
+          return nextRow;
+        })
+      : nextObj.rows;
+    return { ...nextObj, rows: nextRows };
+  });
+  return { ...nextDataModel, objects: nextObjects };
+}
+
 function applyPatch(currentConfig, patch) {
   const next = { ...currentConfig };
   if (patch.dashboards !== undefined) next.dashboards = patch.dashboards;
   if (patch.widgetTypes !== undefined) next.widgetTypes = patch.widgetTypes;
-  if (patch.dataModel !== undefined) next.dataModel = patch.dataModel;
+  if (patch.dataModel !== undefined) {
+    next.dataModel = resetSandboxOrchestrationStatus(currentConfig.dataModel, patch.dataModel);
+  }
   if (patch.canvas !== undefined && patch.canvas !== null) {
     const patchCanvas = { ...patch.canvas };
     if (Array.isArray(patchCanvas.tabs)) {

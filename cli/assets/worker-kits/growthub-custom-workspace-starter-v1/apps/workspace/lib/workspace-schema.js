@@ -50,6 +50,16 @@ const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
 const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
 /** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
 const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
+/**
+ * Canvas types accepted by `orchestrationConfig.canvasType` on a
+ * sandbox-environment row.  The field is optional JSON — when absent the row
+ * runs in standard single-adapter mode.  When present the sandbox-run route
+ * validates the canvasType, then executes thinAdapters[] sequentially using
+ * the existing local adapter mechanism, producing the same
+ * growthub-sandbox-run-v1 envelope.  Status resets to "draft" on every
+ * config change and only reaches "connected" after a successful run.
+ */
+const KNOWN_CANVAS_TYPES = ["langflow", "crewai", "n8n", "zapier", "growthub-canvas", "custom"];
 const KNOWN_SANDBOX_LIFECYCLE_STATUSES = ["draft", "live"];
 const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
@@ -1310,6 +1320,7 @@ export {
   KNOWN_FILTER_OPERATORS,
   KNOWN_SANDBOX_AGENT_HOSTS,
   KNOWN_SANDBOX_RUN_LOCALITY,
+  KNOWN_CANVAS_TYPES,
   KNOWN_SANDBOX_RUNTIMES,
   KNOWN_SORT_DIRECTIONS,
   KNOWN_WIDGET_KINDS,

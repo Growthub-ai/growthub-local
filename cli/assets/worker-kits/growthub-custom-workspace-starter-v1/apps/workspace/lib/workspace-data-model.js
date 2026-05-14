@@ -688,7 +688,7 @@ const OBJECT_TYPE_PRESETS = {
   "sandbox-environment": {
     label: "Sandbox Environment",
     icon: "Terminal",
-    description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. Not a widget binding source.",
+    description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. Not a widget binding source. Optional orchestrationConfig field enables visual agent graph mode (Langflow / CrewAI / n8n / Zapier / Growthub canvas) — status resets to draft whenever the field changes and is re-validated on the next sandbox run.",
     columns: [
       "Name",
       "lifecycleStatus",
@@ -714,8 +714,12 @@ const OBJECT_TYPE_PRESETS = {
       "lastResponse",
       "resolverTemplateId",
       "connectorKind",
-      "executionLane"
+      "executionLane",
+      "orchestrationConfig"
     ],
+    fieldTypeDefaults: {
+      orchestrationConfig: "json"
+    },
     relations: [
       {
         id: "scheduler-registry-binding",
@@ -768,7 +772,10 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
     relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
-    fieldSettings: normalizeFieldSettings({}, columns)
+    fieldSettings: normalizeFieldSettings(
+      { types: preset.fieldTypeDefaults && typeof preset.fieldTypeDefaults === "object" ? { ...preset.fieldTypeDefaults } : {} },
+      columns
+    )
   };
   return {
     ...workspaceConfig,
@@ -948,6 +955,45 @@ function sandboxRunSourceId(objectId, name) {
   const slug = String(name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (!objectId || !slug) return null;
   return `sandbox:${objectId}:${slug}`;
+}
+
+/**
+ * Parse a sandbox-environment row's `orchestrationConfig` column into a plain object.
+ * Stored as a JSON string (type: "json") in the governed Data Model row so it
+ * travels with the workspace config and export — same flat-column pattern as
+ * `envRefs` and `allowList`. Returns null when the field is absent or unparseable.
+ *
+ * Shape (all fields optional except canvasType when present):
+ *   {
+ *     canvasType: "langflow" | "crewai" | "n8n" | "zapier" | "growthub-canvas" | "custom",
+ *     graph:        object  — Langflow / CrewAI / n8n flow definition (nodes + edges),
+ *     nodes:        array   — thin adapter node descriptors,
+ *     edges:        array   — directed connections between nodes,
+ *     thinAdapters: [{ id, sandboxRef, inputMapping, outputMapping }],
+ *     diagnosticMode: boolean,
+ *     version:      string,
+ *     lastValidated: ISO datetime string
+ *   }
+ *
+ * sandboxRef format: "objectId/rowName" or just "rowName" (searched across all
+ * sandbox-environment objects in the same workspace config).
+ *
+ * Status lifecycle: the sandbox-run route validates this field before
+ * executing. Any change detected by applyPatch resets the row status to
+ * "draft" so the operator must re-run before the row reads as "connected".
+ */
+function parseOrchestrationConfig(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function describeBindingMode(binding) {
@@ -1135,6 +1181,7 @@ export {
   listWorkspaceDataModelTables,
   normalizeManualObjects,
   normalizeReferenceOption,
+  parseOrchestrationConfig,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   replaceTableContent,
