@@ -132,7 +132,13 @@ const WIDGET_SCHEMA_CONTRACTS = {
   },
   FieldSettingsConfig: {
     hidden: "string[] of column names hidden from preview",
-    order: "string[] of column names defining custom order"
+    order: "string[] of column names defining custom order",
+    sort: "SortClause[] optional",
+    filter: "FilterConfig optional",
+    types: "record<string,string> optional — client field-type hints",
+    views: "saved view snapshots optional",
+    activeViewId: "string optional",
+    favorite: "boolean optional"
   },
   SortClause: {
     fieldId: "non-empty string (column name)",
@@ -491,6 +497,45 @@ function validateFieldSettings(fieldSettings, path, errors) {
   }
   if (fieldSettings.hidden !== undefined) validateStringArray(fieldSettings.hidden, `${path}.hidden`, errors);
   if (fieldSettings.order !== undefined) validateStringArray(fieldSettings.order, `${path}.order`, errors);
+  validateSortClauses(fieldSettings.sort, `${path}.sort`, errors);
+  validateFilterClauses(fieldSettings.filter, `${path}.filter`, errors);
+  if (fieldSettings.types !== undefined) {
+    if (!isPlainObject(fieldSettings.types)) {
+      errors.push(`${path}.types must be a plain object`);
+    } else {
+      Object.entries(fieldSettings.types).forEach(([key, value]) => {
+        if (typeof key !== "string" || !key.trim()) errors.push(`${path}.types keys must be non-empty strings`);
+        if (typeof value !== "string" || !value.trim()) errors.push(`${path}.types.${key} must be a non-empty string`);
+      });
+    }
+  }
+  if (fieldSettings.activeViewId !== undefined && typeof fieldSettings.activeViewId !== "string") {
+    errors.push(`${path}.activeViewId must be a string`);
+  }
+  if (fieldSettings.favorite !== undefined && typeof fieldSettings.favorite !== "boolean") {
+    errors.push(`${path}.favorite must be a boolean`);
+  }
+  if (fieldSettings.views !== undefined) {
+    if (!Array.isArray(fieldSettings.views)) {
+      errors.push(`${path}.views must be an array`);
+    } else {
+      fieldSettings.views.forEach((view, index) => {
+        const prefix = `${path}.views[${index}]`;
+        if (!isPlainObject(view)) {
+          errors.push(`${prefix} must be a plain object`);
+          return;
+        }
+        if (typeof view.id !== "string" || !view.id.trim()) errors.push(`${prefix}.id must be a non-empty string`);
+        if (typeof view.name !== "string" || !view.name.trim()) errors.push(`${prefix}.name must be a non-empty string`);
+        if (view.favorite !== undefined && typeof view.favorite !== "boolean") errors.push(`${prefix}.favorite must be a boolean`);
+        if (view.locked !== undefined && typeof view.locked !== "boolean") errors.push(`${prefix}.locked must be a boolean`);
+        if (view.hidden !== undefined) validateStringArray(view.hidden, `${prefix}.hidden`, errors);
+        if (view.order !== undefined) validateStringArray(view.order, `${prefix}.order`, errors);
+        validateSortClauses(view.sort, `${prefix}.sort`, errors);
+        validateFilterClauses(view.filter, `${prefix}.filter`, errors);
+      });
+    }
+  }
 }
 
 function validateSortClauses(sort, path, errors) {
@@ -820,6 +865,65 @@ function validateCanvasConfig(canvas, errors) {
   }
 }
 
+function validateDataModelRelation(relation, path, errors) {
+  if (!isPlainObject(relation)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  for (const key of ["id", "name", "field", "targetObjectType", "type"]) {
+    if (typeof relation[key] !== "string" || !relation[key].trim()) {
+      errors.push(`${path}.${key} must be a non-empty string`);
+    }
+  }
+  if (relation.type !== undefined && !["belongs-to", "has-many"].includes(relation.type)) {
+    errors.push(`${path}.type must be belongs-to or has-many`);
+  }
+  for (const opt of ["valueField", "labelField", "secondaryLabelField", "statusField"]) {
+    if (relation[opt] !== undefined && relation[opt] !== null && typeof relation[opt] !== "string") {
+      errors.push(`${path}.${opt} must be a string when present`);
+    }
+  }
+  if (relation.statusAllowlist !== undefined) {
+    if (!Array.isArray(relation.statusAllowlist)) {
+      errors.push(`${path}.statusAllowlist must be an array of strings when present`);
+    } else {
+      relation.statusAllowlist.forEach((entry, i) => {
+        if (typeof entry !== "string" || !entry.trim()) {
+          errors.push(`${path}.statusAllowlist[${i}] must be a non-empty string`);
+        }
+      });
+    }
+  }
+  if (relation.searchable !== undefined && typeof relation.searchable !== "boolean") {
+    errors.push(`${path}.searchable must be a boolean when present`);
+  }
+  if (relation.pageSize !== undefined && relation.pageSize !== "") {
+    const ps = Number(relation.pageSize);
+    if (!Number.isFinite(ps) || ps < 1 || ps > 500) {
+      errors.push(`${path}.pageSize must be a number between 1 and 500 when present`);
+    }
+  }
+  if (relation.referenceSource !== undefined) {
+    const rs = String(relation.referenceSource).trim();
+    if (!["workspace-rows", "source-records"].includes(rs)) {
+      errors.push(`${path}.referenceSource must be workspace-rows or source-records when present`);
+    }
+  }
+  if (relation.sidecarSourceId !== undefined && typeof relation.sidecarSourceId !== "string") {
+    errors.push(`${path}.sidecarSourceId must be a string when present`);
+  }
+  if (relation.resolver !== undefined) {
+    if (!isPlainObject(relation.resolver)) {
+      errors.push(`${path}.resolver must be a plain object when present`);
+    } else if (
+      relation.resolver.integrationId !== undefined
+      && (typeof relation.resolver.integrationId !== "string" || !relation.resolver.integrationId.trim())
+    ) {
+      errors.push(`${path}.resolver.integrationId must be a non-empty string when present`);
+    }
+  }
+}
+
 function validateSandboxEnvironmentRow(row, path, errors) {
   if (!isPlainObject(row)) return;
   const lifecycleStatus = String(row.lifecycleStatus || "").trim().toLowerCase();
@@ -846,6 +950,18 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   }
   if (row.agentHost !== undefined && row.agentHost !== "" && !KNOWN_SANDBOX_AGENT_HOSTS.includes(row.agentHost)) {
     errors.push(`${path}.agentHost must be one of ${KNOWN_SANDBOX_AGENT_HOSTS.join(", ")}`);
+  }
+  const INTELLIGENCE_ADAPTER_MODES = ["ollama", "lmstudio", "vllm", "custom-openai-compatible"];
+  for (const field of ["localModel", "localEndpoint", "intelligenceAdapterMode"]) {
+    if (row[field] !== undefined && row[field] !== null && row[field] !== "" && typeof row[field] !== "string") {
+      errors.push(`${path}.${field} must be a string when set`);
+    }
+  }
+  if (row.intelligenceAdapterMode !== undefined && String(row.intelligenceAdapterMode).trim() !== "") {
+    const im = String(row.intelligenceAdapterMode).trim().toLowerCase();
+    if (!INTELLIGENCE_ADAPTER_MODES.includes(im)) {
+      errors.push(`${path}.intelligenceAdapterMode must be one of ${INTELLIGENCE_ADAPTER_MODES.join(", ")}`);
+    }
   }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
     errors.push(`${path}.envRefs must be a comma-separated string or array of env-ref slugs (never values)`);
@@ -875,6 +991,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
     const ms = Number(row.timeoutMs);
     if (!Number.isFinite(ms) || ms < 0 || ms > SANDBOX_MAX_TIMEOUT_MS) {
       errors.push(`${path}.timeoutMs must be a finite number between 0 and ${SANDBOX_MAX_TIMEOUT_MS}`);
+    }
+  }
+  for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane"]) {
+    if (row[traceField] !== undefined && typeof row[traceField] !== "string") {
+      errors.push(`${path}.${traceField} must be a string when present`);
     }
   }
 }
@@ -924,6 +1045,15 @@ function validateDataModelConfig(dataModel, errors) {
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
     if (object.binding?.sourceStorage === "workspace-source-records" && typeof object.sourceId !== "string") {
       errors.push(`${prefix}.sourceId is required when binding.sourceStorage is "workspace-source-records"`);
+    }
+    if (object.relations !== undefined) {
+      if (!Array.isArray(object.relations)) {
+        errors.push(`${prefix}.relations must be an array`);
+      } else {
+        object.relations.forEach((rel, relIndex) => {
+          validateDataModelRelation(rel, `${prefix}.relations[${relIndex}]`, errors);
+        });
+      }
     }
     validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
   });

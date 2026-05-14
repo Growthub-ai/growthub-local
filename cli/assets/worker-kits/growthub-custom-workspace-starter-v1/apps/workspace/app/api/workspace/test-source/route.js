@@ -117,13 +117,27 @@ async function POST(request) {
   const columns = inferColumns(records);
   const preview = records.slice(0, PREVIEW_ROW_LIMIT);
 
+  const resolverMeta = {
+    entityTypes: Array.isArray(resolver.entityTypes) ? resolver.entityTypes : [],
+    configSchema: Array.isArray(resolver.configSchema) ? resolver.configSchema : null,
+    hasListEntities: typeof resolver.listEntities === "function",
+    connectorKind: typeof resolver.connectorKind === "string" ? resolver.connectorKind : null,
+    templateId: typeof resolver.templateId === "string" ? resolver.templateId : null,
+    capabilities: Array.isArray(resolver.capabilities) ? resolver.capabilities : null,
+    referenceSchema:
+      resolver.referenceSchema && typeof resolver.referenceSchema === "object" && !Array.isArray(resolver.referenceSchema)
+        ? resolver.referenceSchema
+        : null
+  };
+
   return NextResponse.json({
     ok: true,
     integrationId: integrationId.trim(),
     recordCount: records.length,
     columns,
     preview,
-    entityTypes: resolver.entityTypes || []
+    entityTypes: resolverMeta.entityTypes,
+    resolverMeta
   });
 }
 

@@ -39,7 +39,7 @@ The OSS tree is a **partial view** of the real workspace. Feature PRs live in th
 
 Land the feature as a source-only change. Do **not** rebuild `cli/dist/index.js` here; the super-admin rebuilds in Phase B.
 
-1. **Branch naming** — must match `^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
+1. **Branch naming** — must match `^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|cursor|codex)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
 2. **Implement** the change in `cli/src/**`. Add unit tests in `cli/src/__tests__/**`.
 3. **Version bump** (required by `check-version-sync --require-bump-if-source-changed` whenever `cli/src/**` changes):
    - `cli/package.json` → bump minor for additive feature, patch for fix
@@ -162,7 +162,7 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
 |---|---|---|
 | `pnpm --filter @growthub/cli run build` fails with `ENOENT packages/db/package.json` | Running on OSS tree, not full workspace | Switch to full workspace; the OSS tree does not ship adapter/plugin/db packages. |
 | Release workflow publishes vX but `growthub --version` on npm shows v(X-1) behavior | `cli/dist/index.js` is stale — source bumped, dist not rebuilt in Phase B | Re-run Phase B; ship a patch release with fresh dist. |
-| `pr-validate` fails on `Validate branch name` | Branch doesn't match regex | Push the commit to a compliant branch name (`feat/<slug>`, etc.) and open a new PR. |
+| `pr-validate` fails on `Validate branch name` | Branch doesn't match regex | Push the commit to a compliant branch name (`feat/<slug>`, `cursor/<slug>`, `codex/<slug>`, etc.) and open a new PR. |
 | `check-version-sync` fails `--require-bump-if-source-changed` | `cli/src/**` changed without `cli/package.json` version bump | Bump cli and create-growthub-local in lockstep; realign the pin. |
 | `release-check` fails `raw .ts source file detected in tarball` | `cli/package.json.files` mis-includes `src/` | Keep `files` at `["dist", "assets"]` only. |
 | Duplicate shebang (`#!/usr/bin/env node` appears twice in `cli/dist/index.js`) | esbuild `banner.js` + source `#!/...` collision (see `2087b26`) | Strip shebang from `cli/src/index.ts` OR remove `banner.js`; never both. |

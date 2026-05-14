@@ -163,6 +163,108 @@ function normalizeManualObjects(workspaceConfig) {
   return Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
 }
 
+function normalizeStringList(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)));
+}
+
+function normalizeSortClauses(sort, columns) {
+  const allowed = new Set(columns);
+  return (Array.isArray(sort) ? sort : []).flatMap((clause) => {
+    if (!clause || typeof clause !== "object" || Array.isArray(clause)) return [];
+    const fieldId = String(clause.fieldId || "").trim();
+    const direction = String(clause.direction || "asc").trim().toLowerCase() === "desc" ? "desc" : "asc";
+    return allowed.has(fieldId) ? [{ fieldId, direction }] : [];
+  });
+}
+
+function normalizeFilterConfig(filter, columns) {
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return undefined;
+  const allowed = new Set(columns);
+  const op = String(filter.op || "and").trim().toLowerCase() === "or" ? "or" : "and";
+  const clauses = (Array.isArray(filter.clauses) ? filter.clauses : []).flatMap((clause) => {
+    if (!clause || typeof clause !== "object" || Array.isArray(clause)) return [];
+    const fieldId = String(clause.fieldId || "").trim();
+    const operator = String(clause.operator || "eq").trim();
+    if (!allowed.has(fieldId)) return [];
+    if (["isEmpty", "isNotEmpty"].includes(operator)) return [{ fieldId, operator }];
+    const value = clause.value;
+    if (value === undefined || value === null || value === "") return [];
+    return [{ fieldId, operator, value }];
+  });
+  return clauses.length ? { op, clauses } : undefined;
+}
+
+function normalizeFieldTypes(types, columns) {
+  const result = {};
+  const source = types && typeof types === "object" && !Array.isArray(types) ? types : {};
+  columns.forEach((column) => {
+    const value = String(source[column] || "").trim();
+    if (value) result[column] = value;
+  });
+  return result;
+}
+
+function snapshotTableViewState(settings) {
+  return {
+    hidden: normalizeStringList(settings?.hidden),
+    order: normalizeStringList(settings?.order),
+    sort: Array.isArray(settings?.sort) ? settings.sort.map((clause) => ({ ...clause })) : [],
+    filter: settings?.filter ? {
+      op: settings.filter.op,
+      clauses: (settings.filter.clauses || []).map((clause) => ({ ...clause }))
+    } : undefined
+  };
+}
+
+function normalizeSavedViews(views, columns) {
+  return (Array.isArray(views) ? views : []).flatMap((view, index) => {
+    if (!view || typeof view !== "object" || Array.isArray(view)) return [];
+    const id = String(view.id || "").trim() || `view-${index + 1}`;
+    const name = String(view.name || "").trim();
+    if (!name) return [];
+    const state = normalizeFieldSettings({
+      hidden: view.hidden,
+      order: view.order,
+      sort: view.sort,
+      filter: view.filter,
+    }, columns);
+    return [{
+      id,
+      name,
+      favorite: Boolean(view.favorite),
+      locked: Boolean(view.locked),
+      hidden: state.hidden,
+      order: state.order,
+      sort: state.sort,
+      filter: state.filter
+    }];
+  });
+}
+
+function normalizeFieldSettings(fieldSettings, columns) {
+  const order = normalizeStringList([
+    ...(Array.isArray(fieldSettings?.order) ? fieldSettings.order : []),
+    ...columns
+  ]).filter((column) => columns.includes(column));
+  const hidden = normalizeStringList(fieldSettings?.hidden).filter((column) => columns.includes(column));
+  const sort = normalizeSortClauses(fieldSettings?.sort, columns);
+  const filter = normalizeFilterConfig(fieldSettings?.filter, columns);
+  const views = normalizeSavedViews(fieldSettings?.views, columns);
+  const activeViewId = String(fieldSettings?.activeViewId || "").trim();
+  return {
+    hidden,
+    order,
+    sort,
+    filter,
+    types: normalizeFieldTypes(fieldSettings?.types, columns),
+    views,
+    activeViewId: views.some((view) => view.id === activeViewId) ? activeViewId : "",
+    favorite: Boolean(fieldSettings?.favorite)
+  };
+}
+
 function deriveManualObjectTable(object) {
   const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
   const rows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
@@ -181,10 +283,7 @@ function deriveManualObjectTable(object) {
     storage: "manual-object",
     objectId: object.id,
     widgetRefs: [],
-    fieldSettings: {
-      hidden: Array.isArray(object.fieldSettings?.hidden) ? object.fieldSettings.hidden : [],
-      order: Array.isArray(object.fieldSettings?.order) ? object.fieldSettings.order : columns
-    }
+    fieldSettings: normalizeFieldSettings(object.fieldSettings, columns)
   };
 }
 
@@ -224,10 +323,11 @@ function listWorkspaceDataModelTables(workspaceConfig) {
           widgetTitle: widget.title,
           widgetKind: widget.kind
         }],
-        fieldSettings: {
-          hidden: Array.isArray(widget.config?.fieldSettings?.hidden) ? widget.config.fieldSettings.hidden : [],
-          order: Array.isArray(widget.config?.fieldSettings?.order) ? widget.config.fieldSettings.order : table.columns
-        }
+        fieldSettings: normalizeFieldSettings({
+          ...(widget.config?.fieldSettings || {}),
+          sort: widget.config?.sort,
+          filter: widget.config?.filter
+        }, table.columns)
       };
     })
     .filter(Boolean);
@@ -235,23 +335,192 @@ function listWorkspaceDataModelTables(workspaceConfig) {
 }
 
 function writeTableConfig(config, storage, columns, rows) {
+  const fieldSettings = normalizeFieldSettings({
+    ...(config.fieldSettings || {}),
+    sort: config.sort,
+    filter: config.filter
+  }, columns);
   if (storage === "view") {
     const binding = config.binding?.mode === "manual" ? { ...config.binding, rows } : config.binding;
-    return { ...config, columns, rows, binding, fieldSettings: { hidden: config.fieldSettings?.hidden || [], order: columns } };
+    return { ...config, columns, rows, binding, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "json") {
-    return { ...config, binding: { ...config.binding, json: JSON.stringify(rows, null, 2) } };
+    return { ...config, binding: { ...config.binding, json: JSON.stringify(rows, null, 2) }, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "csv") {
-    return { ...config, binding: { ...config.binding, csv: toCsv(columns, rows) } };
+    return { ...config, binding: { ...config.binding, csv: toCsv(columns, rows) }, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "manual-binding") {
-    return { ...config, binding: { ...config.binding, rows } };
+    return { ...config, binding: { ...config.binding, rows }, fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   if (storage === "chart-values") {
-    return { ...config, values: rows.map((row) => Number(row.Value)).filter((value) => Number.isFinite(value)) };
+    return { ...config, values: rows.map((row) => Number(row.Value)).filter((value) => Number.isFinite(value)), fieldSettings, sort: fieldSettings.sort, filter: fieldSettings.filter };
   }
   return config;
+}
+
+function updateTableFieldSettings(workspaceConfig, table, updater) {
+  const nextSettings = normalizeFieldSettings(
+    updater(normalizeFieldSettings(table.fieldSettings, table.columns)),
+    table.columns
+  );
+  if (table.storage === "manual-object") {
+    const objects = normalizeManualObjects(workspaceConfig);
+    const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+    return {
+      ...workspaceConfig,
+      dataModel: {
+        ...dataModel,
+        objects: objects.map((object) => object.id === table.objectId
+          ? { ...object, fieldSettings: nextSettings }
+          : object)
+      }
+    };
+  }
+
+  const ids = new Set((table.widgetRefs || []).map((ref) => ref.widgetId));
+  const mutateWidgets = (widgets) => (widgets || []).map((widget) => {
+    if (!ids.has(widget.id)) return widget;
+    const current = deriveWidgetTable(widget, { widgetId: widget.id });
+    if (!current?.mutable) return widget;
+    return {
+      ...widget,
+      config: {
+        ...(widget.config || {}),
+        fieldSettings: nextSettings,
+        sort: nextSettings.sort,
+        filter: nextSettings.filter
+      }
+    };
+  });
+
+  const dashboards = (workspaceConfig.dashboards || []).map((dashboard) => ({
+    ...dashboard,
+    tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) }))
+  }));
+  let canvas = workspaceConfig.canvas ? { ...workspaceConfig.canvas } : {};
+  if (Array.isArray(canvas.widgets)) canvas = { ...canvas, widgets: mutateWidgets(canvas.widgets) };
+  if (Array.isArray(canvas.tabs)) canvas = { ...canvas, tabs: canvas.tabs.map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) })) };
+  return { ...workspaceConfig, dashboards, canvas };
+}
+
+function remapFieldName(name, renameMap = {}) {
+  return renameMap[name] || name;
+}
+
+function remapFieldSettings(fieldSettings, columns, renameMap = {}) {
+  const mapList = (values) => normalizeStringList((values || []).map((value) => remapFieldName(value, renameMap))).filter((value) => columns.includes(value));
+  const mapSort = (sort) => normalizeSortClauses((sort || []).map((clause) => ({
+    ...clause,
+    fieldId: remapFieldName(clause.fieldId, renameMap)
+  })), columns);
+  const mapFilter = (filter) => normalizeFilterConfig(filter ? {
+    ...filter,
+    clauses: (filter.clauses || []).map((clause) => ({
+      ...clause,
+      fieldId: remapFieldName(clause.fieldId, renameMap)
+    }))
+  } : null, columns);
+  const sourceTypes = fieldSettings?.types && typeof fieldSettings.types === "object" && !Array.isArray(fieldSettings.types)
+    ? fieldSettings.types
+    : {};
+  const types = columns.reduce((acc, column) => {
+    const previousKey = Object.keys(renameMap).find((key) => renameMap[key] === column) || column;
+    const typeValue = sourceTypes[column] || sourceTypes[previousKey];
+    if (typeValue) acc[column] = typeValue;
+    return acc;
+  }, {});
+  const views = normalizeSavedViews((fieldSettings?.views || []).map((view) => ({
+    ...view,
+    hidden: mapList(view.hidden || []),
+    order: mapList(view.order || []),
+    sort: mapSort(view.sort || []),
+    filter: mapFilter(view.filter)
+  })), columns);
+  const activeViewId = String(fieldSettings?.activeViewId || "").trim();
+  return {
+    hidden: mapList(fieldSettings?.hidden || []),
+    order: mapList(fieldSettings?.order || columns),
+    sort: mapSort(fieldSettings?.sort || []),
+    filter: mapFilter(fieldSettings?.filter),
+    types,
+    views,
+    activeViewId: views.some((view) => view.id === activeViewId) ? activeViewId : "",
+    favorite: Boolean(fieldSettings?.favorite)
+  };
+}
+
+function renameRowFields(row, nextColumns, renameMap = {}) {
+  const reverseMap = Object.entries(renameMap).reduce((acc, [previous, next]) => {
+    acc[next] = previous;
+    return acc;
+  }, {});
+  return nextColumns.reduce((acc, column) => {
+    const previousKey = reverseMap[column] || column;
+    acc[column] = row?.[previousKey] ?? row?.[column] ?? "";
+    return acc;
+  }, {});
+}
+
+function transformTableSchema(workspaceConfig, table, { columns, renameMap = {} }) {
+  const nextColumns = Array.isArray(columns) ? columns.filter(Boolean) : table.columns;
+  if (!nextColumns.length) return workspaceConfig;
+
+  if (table.storage === "manual-object") {
+    const objects = normalizeManualObjects(workspaceConfig);
+    const dataModel = workspaceConfig.dataModel && typeof workspaceConfig.dataModel === "object" && !Array.isArray(workspaceConfig.dataModel)
+      ? workspaceConfig.dataModel
+      : {};
+    return {
+      ...workspaceConfig,
+      dataModel: {
+        ...dataModel,
+        objects: objects.map((object) => {
+          if (object.id !== table.objectId) return object;
+          const rows = (Array.isArray(object.rows) ? object.rows : []).map((row) => renameRowFields(row, nextColumns, renameMap));
+          return {
+            ...object,
+            columns: nextColumns,
+            rows,
+            fieldSettings: remapFieldSettings(object.fieldSettings || {}, nextColumns, renameMap)
+          };
+        })
+      }
+    };
+  }
+
+  const ids = new Set((table.widgetRefs || []).map((ref) => ref.widgetId));
+  const mutateWidgets = (widgets) => (widgets || []).map((widget) => {
+    if (!ids.has(widget.id)) return widget;
+    const current = deriveWidgetTable(widget, { widgetId: widget.id });
+    if (!current?.mutable) return widget;
+    const rows = (current.rows || []).map((row) => renameRowFields(row, nextColumns, renameMap));
+    const nextFieldSettings = remapFieldSettings({
+      ...(widget.config?.fieldSettings || {}),
+      sort: widget.config?.sort,
+      filter: widget.config?.filter
+    }, nextColumns, renameMap);
+    return {
+      ...widget,
+      config: {
+        ...writeTableConfig(widget.config || {}, current.storage, nextColumns, rows),
+        fieldSettings: nextFieldSettings,
+        sort: nextFieldSettings.sort,
+        filter: nextFieldSettings.filter
+      }
+    };
+  });
+
+  const dashboards = (workspaceConfig.dashboards || []).map((dashboard) => ({
+    ...dashboard,
+    tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) }))
+  }));
+  let canvas = workspaceConfig.canvas ? { ...workspaceConfig.canvas } : {};
+  if (Array.isArray(canvas.widgets)) canvas = { ...canvas, widgets: mutateWidgets(canvas.widgets) };
+  if (Array.isArray(canvas.tabs)) canvas = { ...canvas, tabs: canvas.tabs.map((tab) => ({ ...tab, widgets: mutateWidgets(tab.widgets) })) };
+  return { ...workspaceConfig, dashboards, canvas };
 }
 
 function applyTableMutation(workspaceConfig, table, mutate) {
@@ -330,6 +599,16 @@ function uniqueObjectId(workspaceConfig, name) {
  *     targetObjectType:string,   // objectType of the referenced object
  *     type:            "belongs-to" | "has-many",
  *     description:     string
+ *     valueField?:     string,   // column on TARGET row used as stored FK value (default integrationId)
+ *     labelField?:     string,   // primary label column on target (default Name)
+ *     secondaryLabelField?: string,
+ *     statusField?:    string,   // default status
+ *     statusAllowlist?: string[] // when set, only rows whose status matches (case-insensitive) appear
+ *     searchable?:     boolean,
+ *     pageSize?:       number,
+ *     resolver?:       { integrationId: string } // optional listEntities-backed option source
+ *     referenceSource?: "workspace-rows" | "source-records" // default workspace-rows
+ *     sidecarSourceId?: string // when referenceSource is source-records
  *   }
  */
 const OBJECT_TYPE_PRESETS = {
@@ -337,7 +616,20 @@ const OBJECT_TYPE_PRESETS = {
     label: "Data Source",
     icon: "Globe",
     description: "Custom API, webhook, or external feed. References an API Registry record while credentials stay in workspace settings.",
-    columns: ["Name", "registryId", "endpoint", "authRef", "baseUrl", "status", "lastTested", "lastResponse"],
+    columns: [
+      "Name",
+      "registryId",
+      "endpoint",
+      "authRef",
+      "baseUrl",
+      "status",
+      "lastTested",
+      "lastResponse",
+      "entityType",
+      "sourceId",
+      "sourceStorage",
+      "resolverTemplateId"
+    ],
     relations: [
       {
         id: "resolver-binding",
@@ -345,7 +637,14 @@ const OBJECT_TYPE_PRESETS = {
         field: "registryId",
         targetObjectType: "api-registry",
         type: "belongs-to",
-        description: "The API Registry entry whose fetchRecords function resolves this source. Set registryId to match the resolver integrationId."
+        description: "The API Registry entry whose fetchRecords function resolves this source. Set registryId to match the resolver integrationId.",
+        valueField: "integrationId",
+        labelField: "Name",
+        secondaryLabelField: "endpoint",
+        statusField: "status",
+        statusAllowlist: null,
+        searchable: true,
+        pageSize: 25
       }
     ]
   },
@@ -353,7 +652,23 @@ const OBJECT_TYPE_PRESETS = {
     label: "API Registry",
     icon: "Code2",
     description: "HTTP API records with endpoint config, auth references, connection status, and stored test output.",
-    columns: ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description"],
+    columns: [
+      "integrationId",
+      "authRef",
+      "baseUrl",
+      "endpoint",
+      "method",
+      "status",
+      "lastTested",
+      "lastResponse",
+      "entityTypes",
+      "description",
+      "connectorKind",
+      "resolverTemplateId",
+      "schemaVersion",
+      "capabilities",
+      "executionLane"
+    ],
     relations: []
   },
   "people": {
@@ -383,6 +698,9 @@ const OBJECT_TYPE_PRESETS = {
       "runtime",
       "adapter",
       "agentHost",
+      "localModel",
+      "localEndpoint",
+      "intelligenceAdapterMode",
       "envRefs",
       "networkAllow",
       "allowList",
@@ -393,7 +711,10 @@ const OBJECT_TYPE_PRESETS = {
       "lastTested",
       "lastRunId",
       "lastSourceId",
-      "lastResponse"
+      "lastResponse",
+      "resolverTemplateId",
+      "connectorKind",
+      "executionLane"
     ],
     relations: [
       {
@@ -402,7 +723,14 @@ const OBJECT_TYPE_PRESETS = {
         field: "schedulerRegistryId",
         targetObjectType: "api-registry",
         type: "belongs-to",
-        description: "When runLocality is serverless, POST /api/workspace/sandbox-run sends growthub-sandbox-run-v1 to this API Registry record (METHOD, baseUrl, endpoint, authRef resolved server-side). Use for Supabase Edge URL, QStash forwarder, Vercel-exposed webhook, cron targets, etc."
+        description: "When runLocality is serverless, POST /api/workspace/sandbox-run sends growthub-sandbox-run-v1 to this API Registry record (METHOD, baseUrl, endpoint, authRef resolved server-side). Use for Supabase Edge URL, QStash forwarder, Vercel-exposed webhook, cron targets, etc.",
+        valueField: "integrationId",
+        labelField: "Name",
+        secondaryLabelField: "endpoint",
+        statusField: "status",
+        statusAllowlist: ["connected", "approved", "ok", "success"],
+        searchable: true,
+        pageSize: 25
       }
     ]
   },
@@ -440,7 +768,7 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
     relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
-    fieldSettings: { hidden: [], order: columns }
+    fieldSettings: normalizeFieldSettings({}, columns)
   };
   return {
     ...workspaceConfig,
@@ -468,7 +796,7 @@ function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
     columns,
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
-    fieldSettings: { hidden: [], order: columns }
+    fieldSettings: normalizeFieldSettings({}, columns)
   };
   return {
     ...workspaceConfig,
@@ -479,13 +807,22 @@ function createManualBusinessObject(workspaceConfig, { name, fields } = {}) {
   };
 }
 
-function addTableField(workspaceConfig, table, fieldName) {
-  const name = String(fieldName || "").trim();
+function addTableField(workspaceConfig, table, fieldSpec) {
+  const spec = fieldSpec && typeof fieldSpec === "object" && !Array.isArray(fieldSpec)
+    ? fieldSpec
+    : { name: fieldSpec };
+  const name = String(spec.name || "").trim();
+  const fieldType = String(spec.type || "").trim();
   if (!name || !table.mutable) return workspaceConfig;
-  return applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
+  const nextConfig = applyTableMutation(workspaceConfig, table, ({ columns, rows }) => {
     if (columns.includes(name)) return { columns, rows };
     return { columns: [...columns, name], rows: rows.map((row) => ({ ...row, [name]: "" })) };
   });
+  return updateTableFieldSettings(nextConfig, { ...table, columns: table.columns.includes(name) ? table.columns : [...table.columns, name] }, (settings) => ({
+    ...settings,
+    order: settings.order.includes(name) ? settings.order : [...settings.order, name],
+    types: fieldType ? { ...(settings.types || {}), [name]: fieldType } : settings.types
+  }));
 }
 
 function addTableRow(workspaceConfig, table) {
@@ -621,6 +958,163 @@ function describeBindingMode(binding) {
   return { label: "Manual local table", description: "Rows and fields live in the existing widget config and travel with workspace export/import." };
 }
 
+/**
+ * Normalize a reference option for API/UI interchange.
+ */
+function normalizeReferenceOption(option) {
+  if (!option || typeof option !== "object") return null;
+  const value = String(option.value ?? "").trim();
+  if (!value) return null;
+  const source = ["workspace-config", "source-records", "resolver"].includes(option.source)
+    ? option.source
+    : "workspace-config";
+  const out = {
+    value,
+    label: String(option.label ?? value).trim() || value,
+    source,
+    objectType: typeof option.objectType === "string" && option.objectType.trim() ? option.objectType.trim() : undefined,
+    provider: typeof option.provider === "string" && option.provider.trim() ? option.provider.trim() : undefined,
+    status: typeof option.status === "string" && option.status.trim() ? option.status.trim() : undefined
+  };
+  if (option.secondaryLabel !== undefined && option.secondaryLabel !== null && String(option.secondaryLabel).trim()) {
+    out.secondaryLabel = String(option.secondaryLabel).trim();
+  }
+  if (option.metadata && typeof option.metadata === "object" && !Array.isArray(option.metadata)) {
+    out.metadata = option.metadata;
+  }
+  return out;
+}
+
+/**
+ * Merge preset relation defaults with stored `object.relations[]` so older rows
+ * pick up new optional metadata (valueField, statusAllowlist, …).
+ */
+function effectiveRelations(object) {
+  const stored = Array.isArray(object?.relations) ? object.relations : [];
+  const presets =
+    object?.objectType && OBJECT_TYPE_PRESETS[object.objectType]?.relations
+      ? OBJECT_TYPE_PRESETS[object.objectType].relations
+      : [];
+  const presetFields = new Set(presets.map((p) => p.field).filter(Boolean));
+  const mergedByField = new Map();
+  for (const preset of presets) {
+    if (!preset?.field) continue;
+    const storedMatch = stored.find((s) => s?.field === preset.field);
+    mergedByField.set(preset.field, { ...preset, ...(storedMatch || {}) });
+  }
+  const extras = stored.filter((s) => s?.field && !presetFields.has(s.field));
+  return [...Array.from(mergedByField.values()), ...extras];
+}
+
+function findRelationForField(object, field) {
+  if (!field) return null;
+  return effectiveRelations(object).find((r) => r.field === field) || null;
+}
+
+function listReferenceFields(object) {
+  return effectiveRelations(object).map((r) => r.field).filter(Boolean);
+}
+
+function decodeRefCursor(cursor) {
+  if (typeof cursor !== "string" || !cursor.startsWith("o:")) return 0;
+  const n = Number(cursor.slice(2));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function encodeRefCursor(offset) {
+  return `o:${offset}`;
+}
+
+/**
+ * Resolve reference options from local `dataModel.objects[]` rows (workspace-config source).
+ */
+function resolveLocalReferenceOptions(workspaceConfig, {
+  objectId,
+  field,
+  query = "",
+  cursor = null,
+  limit = 25,
+  relation: relationOverride = null
+} = {}) {
+  const objects = normalizeManualObjects(workspaceConfig);
+  const objectItem = objects.find((o) => o.id === objectId) || null;
+  const relation = relationOverride || (objectItem && field ? findRelationForField(objectItem, field) : null);
+  if (!relation || !relation.targetObjectType) {
+    return { options: [], nextCursor: null, reason: objectItem ? "unknown-field" : "unknown-object" };
+  }
+
+  const valueField = typeof relation.valueField === "string" && relation.valueField.trim()
+    ? relation.valueField.trim()
+    : "integrationId";
+  const labelField = typeof relation.labelField === "string" && relation.labelField.trim()
+    ? relation.labelField.trim()
+    : "Name";
+  const secondaryLabelField =
+    typeof relation.secondaryLabelField === "string" && relation.secondaryLabelField.trim()
+      ? relation.secondaryLabelField.trim()
+      : "";
+  const statusField =
+    typeof relation.statusField === "string" && relation.statusField.trim()
+      ? relation.statusField.trim()
+      : "status";
+  const allowlist = Array.isArray(relation.statusAllowlist)
+    ? relation.statusAllowlist.map((s) => String(s).toLowerCase())
+    : null;
+
+  const pageSize = Math.min(100, Math.max(1, Number(relation.pageSize) || Number(limit) || 25));
+  const offset = decodeRefCursor(cursor);
+
+  const targets = objects.filter((o) => o.objectType === relation.targetObjectType);
+  const needle = String(query || "").trim().toLowerCase();
+
+  const candidates = [];
+  for (const target of targets) {
+    const rows = Array.isArray(target.rows) ? target.rows : [];
+    rows.forEach((row, index) => {
+      if (!row || typeof row !== "object") return;
+      const rawValue =
+        row[valueField] ??
+        row.integrationId ??
+        row.id ??
+        row.Name ??
+        `${target.id}:${index}`;
+      const value = String(rawValue ?? "").trim();
+      if (!value) return;
+      const label = String(row[labelField] ?? row.Name ?? row.integrationId ?? value).trim() || value;
+      const secondaryLabel = secondaryLabelField
+        ? String(row[secondaryLabelField] ?? "").trim()
+        : "";
+      const status = String(row[statusField] ?? "").trim();
+      if (allowlist && allowlist.length) {
+        const st = status.toLowerCase();
+        if (!st || !allowlist.includes(st)) return;
+      }
+      if (needle) {
+        const hay = `${value} ${label} ${secondaryLabel} ${status}`.toLowerCase();
+        if (!hay.includes(needle)) return;
+      }
+      candidates.push(
+        normalizeReferenceOption({
+          value,
+          label,
+          secondaryLabel: secondaryLabel || undefined,
+          source: "workspace-config",
+          objectType: relation.targetObjectType,
+          status: status || undefined,
+          metadata: { objectLabel: target.label || target.source }
+        })
+      );
+    });
+  }
+
+  const filtered = candidates.filter(Boolean);
+  const page = filtered.slice(offset, offset + pageSize);
+  const nextOffset = offset + page.length;
+  const nextCursor = nextOffset < filtered.length ? encodeRefCursor(nextOffset) : null;
+
+  return { options: page, nextCursor, reason: null, total: filtered.length };
+}
+
 export {
   OBJECT_TYPE_PRESETS,
   addTableField,
@@ -632,13 +1126,23 @@ export {
   describeBindingLane,
   describeBindingMode,
   duplicateTableRow,
+  effectiveRelations,
   exportTableAsCsv,
+  findRelationForField,
   importTableFromCsv,
+  listReferenceFields,
   listSavedEnvRefs,
   listWorkspaceDataModelTables,
+  normalizeManualObjects,
+  normalizeReferenceOption,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   replaceTableContent,
+  resolveLocalReferenceOptions,
   sandboxRunSourceId,
+  snapshotTableViewState,
+  transformTableSchema,
+  normalizeFieldSettings,
+  updateTableFieldSettings,
   updateTableCell
 };

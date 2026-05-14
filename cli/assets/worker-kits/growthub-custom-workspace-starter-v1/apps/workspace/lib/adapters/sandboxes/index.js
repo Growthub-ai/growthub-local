@@ -9,6 +9,7 @@
 
 import "./default-local-process.js";
 import "./default-local-agent-host.js";
+import "./default-local-intelligence.js";
 import { loadAllSandboxAdapters } from "./adapter-loader.js";
 
 let baseLoaded = true; // default-local-process registered via static import

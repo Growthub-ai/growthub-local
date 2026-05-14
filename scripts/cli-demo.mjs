@@ -60,12 +60,16 @@ function printHelp() {
   bash scripts/demo-cli.sh interactive
   bash scripts/demo-cli.sh installer --profile gtm
   bash scripts/demo-cli.sh cli
+  bash scripts/demo-cli.sh awac-probe
+  bash scripts/demo-cli.sh e2e-workspace-sandbox
   bash scripts/demo-cli.sh env
 
 Modes:
   interactive  Top-level preview menu for this branch
   installer    Real installer/onboarding preview using local branch CLI dist
   cli          Real branch CLI interactive hub
+  awac-probe   Headless API probes: CLI dist starter init → temp workspace → next dev → PATCH/reference-options/sandbox-run
+  e2e-workspace-sandbox  HTTP probes: PATCH /api/workspace + sandbox-run (temp Next app)
   env          Show preview environment metadata`);
 }
 
@@ -484,6 +488,28 @@ if (command === "cli") {
 if (command === "template") {
   await runTemplatePreview();
   process.exit(0);
+}
+
+<<<<<<< HEAD
+if (command === "awac-probe" || command === "workspace-api-probe") {
+  const probePath = path.join(repoRoot, "scripts", "awac-workspace-api-probe.mjs");
+  spawnNode([probePath, ...rest]);
+}
+
+if (command === "e2e-workspace-sandbox") {
+  const probe = path.join(repoRoot, "scripts", "e2e-workspace-sandbox-api-probe.mjs");
+  const demoHome = resolveDemoHome();
+  const result = spawnSync(process.execPath, [probe, ...rest], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    env: {
+      ...getBaseEnv(),
+      ...process.env,
+      /** Same default tree as interactive / installer preview — temp workspace + probes stay under one profile. */
+      CLI_DEMO_HOME: process.env.CLI_DEMO_HOME?.trim() || demoHome,
+    },
+  });
+  process.exit(result.status ?? 1);
 }
 
 console.error(`Unknown command '${command}'`);

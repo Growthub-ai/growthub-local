@@ -9,6 +9,9 @@ growthub-local/instances
 tmp
 .npm-cache/
 
+# Local git worktrees (nested repos — never track as submodules)
+.worktrees/
+
 # Claude Code — personal overrides only. Everything else under .claude/
 # (skills/, agents/, commands/, settings.json) is tracked so every agent
 # landing in the repo gets the same CLI skills and pathways.
@@ -23,8 +26,10 @@ docs/FROZEN_*.md
 # Observability snapshots (runtime data, not source)
 .paperclip/instances/default/observability-snapshots/
 
-# Local-only workspace artifacts
-.worktrees/
+# Next.js / local app build artifacts under shipped worker-kit workspace apps
+**/apps/workspace/.next/
+**/apps/workspace/node_modules/
+
 .paperclip/config.json
 .paperclip/config.json.backup
 *.tsbuildinfo
