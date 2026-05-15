@@ -21,6 +21,7 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, beforeEach } from "vitest";
@@ -31,6 +32,7 @@ import {
   listBundledKits,
   validateBundledKitAssetRoot,
 } from "../kits/service.js";
+import { initStarterWorkspace } from "../starter/init.js";
 
 const KIT_ID = "growthub-custom-workspace-starter-v1";
 
@@ -310,6 +312,15 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
       })
     ).not.toThrow();
   });
+
+  it("served-agent seed Data Model passes the PATCH validator boundary", () => {
+    const seed = JSON.parse(readText("templates/seeded-configs/served-agent.config.json"));
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: seed.dataModel,
+      })
+    ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -352,6 +363,40 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
+
+  it("served-agent seed overlay ships service and SDK entrypoints", () => {
+    expect(fs.existsSync(path.join(KIT_ROOT, "templates/seeded-configs/served-agent/apps/agent-service/src/server.mjs"))).toBe(true);
+    expect(fs.existsSync(path.join(KIT_ROOT, "templates/seeded-configs/served-agent/packages/agent-sdk/src/index.js"))).toBe(true);
+    expect(fs.existsSync(path.join(KIT_ROOT, "templates/seeded-configs/served-agent/docs/served-agent-service.md"))).toBe(true);
+  });
+});
+
+describe("starter init — served-agent seed overlay", () => {
+  it("materializes service files and governed config objects", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "growthub-served-agent-"));
+    const previousForksHome = process.env.GROWTHUB_KIT_FORKS_HOME;
+    process.env.GROWTHUB_KIT_FORKS_HOME = path.join(tempRoot, "kit-forks");
+    try {
+      const out = path.join(tempRoot, "agent-service");
+      await initStarterWorkspace({
+        out,
+        name: "Growthub Agent Service",
+        seedConfig: "served-agent",
+      });
+
+      expect(fs.existsSync(path.join(out, "apps/agent-service/src/server.mjs"))).toBe(true);
+      expect(fs.existsSync(path.join(out, "packages/agent-sdk/src/index.js"))).toBe(true);
+      const config = JSON.parse(fs.readFileSync(path.join(out, "apps/workspace/growthub.config.json"), "utf8"));
+      const objectIds = config.dataModel.objects.map((object: { id: string }) => object.id);
+      expect(objectIds).toContain("agent-service-api-registry");
+      expect(objectIds).toContain("sandboxes-served-agent");
+      expect(objectIds).toContain("served-agent-model-artifacts");
+    } finally {
+      if (previousForksHome === undefined) delete process.env.GROWTHUB_KIT_FORKS_HOME;
+      else process.env.GROWTHUB_KIT_FORKS_HOME = previousForksHome;
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -369,6 +414,10 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/resolvers/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
+    "templates/seeded-configs/served-agent.config.json",
+    "templates/seeded-configs/served-agent/apps/agent-service/src/server.mjs",
+    "templates/seeded-configs/served-agent/packages/agent-sdk/src/index.js",
+    "helpers/publish-served-agent-model.mjs",
   ];
 
   for (const p of requiredPaths) {

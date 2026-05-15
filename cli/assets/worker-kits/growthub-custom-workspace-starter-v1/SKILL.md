@@ -29,6 +29,21 @@ helpers:
   - path: helpers/check-self-improving-health.sh
     verb: check-self-improving-health
     description: Validate self-improving workspace primitives and proposal dirs.
+  - path: helpers/harvest-cursor-traces.mjs
+    verb: harvest-cursor-traces
+    description: Harvest high-signal Cursor session traces for grading.
+  - path: helpers/grade-raw-pairs.mjs
+    verb: grade-raw-pairs
+    description: Grade harvested prompt/output pairs for distillation eligibility.
+  - path: helpers/upload-graded-traces.mjs
+    verb: upload-graded-traces
+    description: Append eligible graded traces into the governed workspace Data Model.
+  - path: helpers/export-training-traces.mjs
+    verb: export-training-traces
+    description: Export eligible training traces as Unsloth-ready JSONL.
+  - path: helpers/publish-served-agent-model.mjs
+    verb: publish-served-agent-model
+    description: Promote a distilled GGUF into the served-agent workspace and optional service repo.
 subSkills: []
 mcpTools: []
 ---
@@ -43,7 +58,7 @@ Every Growthub governed Workspace is materialised from this kit. The kit ships t
 2. **`skills.md`** — the deep operator runbook. Everything the operator agent needs to actually customise the workspace. Unchanged from v1.
 3. **`templates/project.md`** — session-memory template. On `growthub starter init` and `growthub starter import-*`, the CLI copies this to `.growthub-fork/project.md` so every fork starts with an append-only editing history alongside the machine-readable `trace.jsonl`.
 4. **`templates/self-eval.md`** — self-evaluation pattern. Describes the generate → render → evaluate → retry (≤3) loop that mirrors the Fork Sync Agent's preview → apply → trace lifecycle.
-5. **`helpers/`** — safe shell tool layer. Scripts an agent calls via one shell invocation instead of reconstructing raw commands. Populated per fork; the baseline ships conventions only.
+5. **`helpers/`** — safe shell tool layer. Scripts an agent calls via one shell invocation instead of reconstructing raw commands. The baseline includes self-improving and distillation helpers; forks can add narrower helpers.
 6. **`skills/`** — nested sub-skill convention. Each sub-directory is a full `SKILL.md`-addressable sub-skill that a parent agent can spawn in parallel for heavy or narrow tasks.
 
 ## When to use this skill
@@ -100,7 +115,7 @@ If this fork declares sub-skills under `skills/<slug>/SKILL.md`, list them below
 
 Helpers live under `helpers/`. When an existing shell snippet in `skills.md` is re-used in multiple sessions, extract it into `helpers/<verb>.sh`, add a row to `helpers/README.md`, and add an entry to this frontmatter's `helpers[]` array. Agents then call one shell file rather than reconstructing the snippet — safer, reviewable, consistent.
 
-(None declared at the baseline; see `helpers/README.md` for the pattern.)
+The baseline declares self-improving helpers, Distillation Pipeline V1 trace helpers, and `publish-served-agent-model.mjs` for moving a promoted GGUF into the served-agent runtime.
 
 ## Self-improving feature (optional extension)
 

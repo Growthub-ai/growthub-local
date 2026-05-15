@@ -30,7 +30,7 @@ export interface StarterInitOptions {
   remoteSyncMode?: "off" | "branch" | "pr";
   /** Emit machine-readable JSON output. */
   json?: boolean;
-  /** Optional seeded config slug from templates/seeded-configs/<slug>.config.json. */
+  /** Optional seeded config slug from templates/seeded-configs/<slug>.config.json plus additive overlay directory. */
   seedConfig?: string;
 }
 

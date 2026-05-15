@@ -339,7 +339,7 @@ export function registerStarterCommands(program: Command): void {
     .description("Scaffold a new custom workspace from the starter kit and auto-register it as a fork.")
     .requiredOption("--out <path>", "Destination directory for the new workspace")
     .option("--kit <kit-id>", `Source kit id (default: ${DEFAULT_STARTER_KIT_ID})`)
-    .option("--seed-config <slug>", "Named seeded config from templates/seeded-configs/<slug>.config.json")
+    .option("--seed-config <slug>", "Named seeded config/overlay from templates/seeded-configs/<slug>")
     .option("--name <label>", "Human label for the fork")
     .option("--upstream <owner/repo>", "Upstream GitHub repo — when set, also creates a remote fork")
     .option("--destination-org <org>", "Create the GitHub fork under an org")

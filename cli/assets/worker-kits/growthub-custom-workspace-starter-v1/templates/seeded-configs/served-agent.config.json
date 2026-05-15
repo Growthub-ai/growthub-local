@@ -1,0 +1,286 @@
+{
+  "id": "growthub-served-agent",
+  "name": "Growthub Served Agent",
+  "description": "Governed starter seed for packaging growthub-local-expert as a persistent service with an OpenAI-compatible API, workspace query endpoint, SDK stub, and model promotion manifest.",
+  "capabilities": [
+    "dashboards",
+    "canvas",
+    "widgets",
+    "bindings",
+    "integrations",
+    "settings",
+    "served-agent",
+    "distillation"
+  ],
+  "dataModel": {
+    "objects": [
+      {
+        "id": "agent-service-api-registry",
+        "label": "Agent Service API Registry",
+        "source": "Data Model",
+        "objectType": "api-registry",
+        "icon": "Webhook",
+        "columns": [
+          "Name",
+          "integrationId",
+          "authRef",
+          "baseUrl",
+          "endpoint",
+          "method",
+          "status",
+          "description"
+        ],
+        "rows": [
+          {
+            "Name": "Growthub Agent Service",
+            "integrationId": "growthub-agent-service",
+            "authRef": "GROWTHUB_AGENT_SERVICE",
+            "baseUrl": "https://agent-service.example.com",
+            "endpoint": "/workspace/query",
+            "method": "POST",
+            "status": "untested",
+            "description": "Persistent growthub-local-expert service. Store bearer/API keys under the GROWTHUB_AGENT_SERVICE env authority, never in this row."
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "integrationId",
+            "authRef",
+            "baseUrl",
+            "endpoint",
+            "method",
+            "status",
+            "description"
+          ]
+        }
+      },
+      {
+        "id": "sandboxes-served-agent",
+        "label": "Served Agent Sandboxes",
+        "source": "Sandboxes",
+        "objectType": "sandbox-environment",
+        "icon": "Bot",
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "version",
+          "runLocality",
+          "schedulerRegistryId",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "intelligenceType",
+          "localModel",
+          "localEndpoint",
+          "intelligenceAdapterMode",
+          "envRefs",
+          "networkAllow",
+          "allowList",
+          "instructions",
+          "command",
+          "orchestrationConfig",
+          "timeoutMs",
+          "resolverTemplateId",
+          "connectorKind",
+          "executionLane",
+          "status",
+          "lastTested",
+          "lastRunId",
+          "lastSourceId",
+          "lastResponse"
+        ],
+        "rows": [
+          {
+            "Name": "served-agent-dev",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-intelligence",
+            "agentHost": "",
+            "intelligenceType": "local-intelligence",
+            "localModel": "growthub-local-expert:latest",
+            "localEndpoint": "http://127.0.0.1:11434/v1/chat/completions",
+            "intelligenceAdapterMode": "ollama",
+            "envRefs": "OLLAMA_BASE_URL,GROWTHUB_AGENT_MODEL",
+            "networkAllow": "false",
+            "allowList": "",
+            "instructions": "You are growthub-local-expert as a local first responder. Return schema-native Growthub guidance, PATCH-safe shapes, orchestration graphs, and explicit invariant checks. Never emit secrets or mutate protected paths.",
+            "command": "Answer the workspace request with governed output that can be validated before application.",
+            "orchestrationConfig": "{\"version\":\"1\",\"graph\":{\"nodes\":[{\"id\":\"served-agent-dev\",\"type\":\"thinAdapter\",\"sandbox\":\"served-agent-dev\"},{\"id\":\"schema-critic\",\"type\":\"thinAdapter\",\"sandbox\":\"served-agent-dev\"}],\"edges\":[{\"from\":\"served-agent-dev\",\"to\":\"schema-critic\"}]}}",
+            "timeoutMs": "60000",
+            "resolverTemplateId": "served-agent",
+            "connectorKind": "local-intelligence",
+            "executionLane": "first-responder",
+            "status": "connected",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          },
+          {
+            "Name": "served-agent-prod",
+            "lifecycleStatus": "draft",
+            "version": "1",
+            "runLocality": "serverless",
+            "schedulerRegistryId": "growthub-agent-service",
+            "runtime": "node",
+            "adapter": "api-registry",
+            "agentHost": "",
+            "intelligenceType": "served-agent",
+            "localModel": "growthub-local-expert:latest",
+            "localEndpoint": "https://agent-service.example.com/v1/chat/completions",
+            "intelligenceAdapterMode": "custom-openai-compatible",
+            "envRefs": "GROWTHUB_AGENT_SERVICE",
+            "networkAllow": "true",
+            "allowList": "agent-service.example.com",
+            "instructions": "Call the persistent Growthub Agent Service through the API Registry row. Validate returned governed envelopes before applying PATCHes or orchestration graphs.",
+            "command": "POST a workspace query to the served growthub-local-expert and return the governed response envelope.",
+            "orchestrationConfig": "{\"version\":\"1\",\"graph\":{\"nodes\":[{\"id\":\"served-agent-prod\",\"type\":\"thinAdapter\",\"sandbox\":\"served-agent-prod\"}],\"edges\":[]}}",
+            "timeoutMs": "120000",
+            "resolverTemplateId": "served-agent",
+            "connectorKind": "api-registry",
+            "executionLane": "first-responder",
+            "status": "untested",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "relations": [
+          {
+            "id": "served-agent-scheduler-registry-binding",
+            "name": "Served Agent API",
+            "field": "schedulerRegistryId",
+            "targetObjectType": "api-registry",
+            "type": "belongs-to",
+            "description": "Serverless served-agent runs POST through the Growthub Agent Service API Registry row."
+          }
+        ],
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "version",
+            "runLocality",
+            "schedulerRegistryId",
+            "runtime",
+            "adapter",
+            "agentHost",
+            "intelligenceType",
+            "localModel",
+            "localEndpoint",
+            "intelligenceAdapterMode",
+            "envRefs",
+            "networkAllow",
+            "allowList",
+            "instructions",
+            "command",
+            "orchestrationConfig",
+            "timeoutMs",
+            "resolverTemplateId",
+            "connectorKind",
+            "executionLane",
+            "status",
+            "lastTested",
+            "lastRunId",
+            "lastSourceId",
+            "lastResponse"
+          ]
+        }
+      },
+      {
+        "id": "served-agent-model-artifacts",
+        "label": "Served Agent Model Artifacts",
+        "source": "Data Model",
+        "objectType": "custom",
+        "icon": "Brain",
+        "columns": [
+          "modelSlug",
+          "version",
+          "ggufPath",
+          "servingBackend",
+          "sha256",
+          "sourceTraceExport",
+          "promotedAt",
+          "status"
+        ],
+        "rows": [
+          {
+            "modelSlug": "growthub-local-expert",
+            "version": "latest",
+            "ggufPath": "apps/agent-service/models/growthub-local-expert-latest.gguf",
+            "servingBackend": "ollama-dev-vllm-prod",
+            "sha256": "",
+            "sourceTraceExport": "",
+            "promotedAt": "",
+            "status": "awaiting-model"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "modelSlug",
+            "version",
+            "ggufPath",
+            "servingBackend",
+            "sha256",
+            "sourceTraceExport",
+            "promotedAt",
+            "status"
+          ]
+        }
+      },
+      {
+        "id": "served-agent-feedback-traces",
+        "label": "Served Agent Feedback Traces",
+        "source": "Data Model",
+        "objectType": "custom",
+        "icon": "NotebookPen",
+        "columns": [
+          "capturedAt",
+          "workspaceId",
+          "intent",
+          "responseKind",
+          "qualityScore",
+          "optIn",
+          "exported"
+        ],
+        "rows": [],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "capturedAt",
+            "workspaceId",
+            "intent",
+            "responseKind",
+            "qualityScore",
+            "optIn",
+            "exported"
+          ]
+        }
+      }
+    ]
+  }
+}

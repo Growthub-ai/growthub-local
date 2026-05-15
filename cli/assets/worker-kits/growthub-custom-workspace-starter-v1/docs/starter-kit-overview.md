@@ -19,8 +19,28 @@ Users who want to customize one worker kit shouldn't have to fork the whole `gro
 ```
 growthub starter init --name my-workspace --out ./my-workspace
   └→ copyBundledKitSource('growthub-custom-workspace-starter-v1', './my-workspace')
+  └→ (optional) apply templates/seeded-configs/<slug>.config.json + additive overlay files
   └→ registerKitFork({ forkPath: './my-workspace', kitId: '...', baseVersion: '1.0.0' })
   └→ writeKitForkPolicy(forkPath, default)
   └→ appendKitForkTraceEvent(forkPath, 'registered')
   └→ (optional) growthub kit fork create --upstream owner/repo  → GitHub remote
+```
+
+## Seeded configs
+
+Seeded configs are named overlays under `templates/seeded-configs/`:
+
+- `<slug>.config.json` merges into `apps/workspace/growthub.config.json`.
+- Optional `<slug>/` directory copies additive files into the generated fork.
+
+Shipped seeds:
+
+- `alignment-loop` — local `workspace-expert` / executor / critic sandboxes plus training traces.
+- `served-agent` — persistent Growthub Agent Service scaffold (`apps/agent-service`), SDK stub (`packages/agent-sdk`), service API Registry row, served-agent sandbox rows, and model artifact tracking.
+
+```bash
+growthub starter init \
+  --seed-config served-agent \
+  --name "Growthub Agent Service" \
+  --out ./growthub-agent-service
 ```

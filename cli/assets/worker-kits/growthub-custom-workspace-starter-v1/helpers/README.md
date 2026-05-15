@@ -39,6 +39,13 @@ Promote when any of these are true:
 - The snippet calls a side-effecting binary (`ffmpeg`, `git`, `gh`, `osascript`, `npm install`).
 - Multiple sub-skills invoke the same snippet.
 
-## Baseline ships zero helpers on purpose
+## Baseline helpers
 
-The starter kit carries the convention only. Individual worker kits (creative-strategist, hyperframes, video-use, etc.) populate `helpers/` with concrete scripts — those are the reference implementations. This keeps the baseline surface minimal and predictable.
+The starter kit ships only helpers that support governed workspace primitives directly:
+
+- `propose-capability.mjs` / `promote-capability.mjs` — self-improving capability lifecycle.
+- `check-self-improving-health.sh` — local primitive health check.
+- `harvest-cursor-traces.mjs` / `grade-raw-pairs.mjs` / `upload-graded-traces.mjs` / `export-training-traces.mjs` — Distillation Pipeline V1 trace flow.
+- `publish-served-agent-model.mjs` — promote a distilled GGUF into the served-agent workspace and optional standalone service repo.
+
+Individual worker kits can add narrower helpers, but keep them reviewable, deterministic, and routed through their own `SKILL.md` frontmatter.

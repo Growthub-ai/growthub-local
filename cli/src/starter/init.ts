@@ -88,6 +88,7 @@ function applySeededConfig(opts: { outPath: string; kitPath: string; seedConfig:
   if (!seedSlug) return;
 
   const seedPath = path.join(opts.kitPath, "templates", "seeded-configs", `${seedSlug}.config.json`);
+  const seedOverlayPath = path.join(opts.kitPath, "templates", "seeded-configs", seedSlug);
   if (!fs.existsSync(seedPath)) {
     throw new Error(
       `Seeded config "${seedSlug}" was not found at ${seedPath}. ` +
@@ -117,6 +118,36 @@ function applySeededConfig(opts: { outPath: string; kitPath: string; seedConfig:
   };
 
   fs.writeFileSync(outConfigPath, `${JSON.stringify(mergedConfig, null, 2)}\n`, "utf8");
+
+  if (fs.existsSync(seedOverlayPath)) {
+    copySeededConfigOverlay(seedOverlayPath, opts.outPath);
+  }
+}
+
+function copySeededConfigOverlay(sourceRoot: string, targetRoot: string): void {
+  const copyEntry = (sourcePath: string, relativePath: string): void => {
+    const targetPath = path.join(targetRoot, relativePath);
+    const stat = fs.statSync(sourcePath);
+    if (stat.isDirectory()) {
+      fs.mkdirSync(targetPath, { recursive: true });
+      for (const entry of fs.readdirSync(sourcePath)) {
+        copyEntry(path.join(sourcePath, entry), path.join(relativePath, entry));
+      }
+      return;
+    }
+    if (fs.existsSync(targetPath)) {
+      throw new Error(
+        `Seeded config overlay would overwrite existing path: ${targetPath}. ` +
+        "Seed overlays must be additive.",
+      );
+    }
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+  };
+
+  for (const entry of fs.readdirSync(sourceRoot)) {
+    copyEntry(path.join(sourceRoot, entry), entry);
+  }
 }
 
 export async function initStarterWorkspace(

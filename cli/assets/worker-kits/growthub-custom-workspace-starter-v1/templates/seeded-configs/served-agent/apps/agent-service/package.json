@@ -1,0 +1,17 @@
+{
+  "name": "growthub-agent-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Persistent Growthub Agent service wrapper for growthub-local-expert GGUF serving backends.",
+  "scripts": {
+    "dev": "node --watch src/server.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "express": "latest"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

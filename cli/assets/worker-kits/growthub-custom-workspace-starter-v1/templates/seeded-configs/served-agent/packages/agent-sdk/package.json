@@ -1,0 +1,13 @@
+{
+  "name": "@growthub/agent-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Small client SDK for Growthub Agent Service workspace queries.",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

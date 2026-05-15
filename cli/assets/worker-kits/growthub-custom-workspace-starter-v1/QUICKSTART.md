@@ -10,6 +10,18 @@ This kit is the canonical v1 starter primitive. Run `growthub starter init --nam
 
 After that, every customization you make stays yours — the Self-Healing Fork Sync Agent will propose upstream additions non-destructively, honouring your policy.
 
+## Optional seeded configs
+
+```bash
+# Local alignment/distillation loop
+growthub starter init --seed-config alignment-loop --name alignment-loop --out ./alignment-loop
+
+# Persistent served growthub-local-expert service + SDK scaffold
+growthub starter init --seed-config served-agent --name growthub-agent-service --out ./growthub-agent-service
+```
+
+Seeded configs merge governed Data Model objects into `apps/workspace/growthub.config.json`. Seeds can also ship additive overlay files; `served-agent` adds `apps/agent-service/`, `packages/agent-sdk/`, and `docs/served-agent-service.md`.
+
 ## Run the bundled Vite UI shell
 
 ```bash
