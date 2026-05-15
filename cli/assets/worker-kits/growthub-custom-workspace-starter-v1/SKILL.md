@@ -29,6 +29,21 @@ helpers:
   - path: helpers/check-self-improving-health.sh
     verb: check-self-improving-health
     description: Validate self-improving workspace primitives and proposal dirs.
+  - path: helpers/harvest-cursor-traces.mjs
+    verb: harvest-cursor-traces
+    description: Distillation Phase 1. Pair Cursor user/assistant turns into raw-pairs.jsonl, with squash-merged-to-main as the highest-signal heuristic.
+  - path: helpers/grade-raw-pairs.mjs
+    verb: grade-raw-pairs
+    description: Distillation Phase 2. Route raw pairs through the live critic-grader sandbox row, emit graded-batch JSONL with qualityScore + reason.
+  - path: helpers/upload-graded-traces.mjs
+    verb: upload-graded-traces
+    description: Distillation Phase 2.5. PATCH graded pairs into the training-traces Data Model object via /api/workspace.
+  - path: helpers/export-training-traces.mjs
+    verb: export-training-traces
+    description: Distillation Phase 3. Emit Unsloth-ready {instruction,input,output} JSONL from training-traces rows with qualityScore >= min-score, then mark exported.
+  - path: helpers/dispatch-background-agent.mjs
+    verb: dispatch-background-agent
+    description: Background dispatch primitive. Turn a high-level task (e.g. build-served-agent-service) into a scaffolded target repo + the matching seeded config, without introducing new primitive types.
 subSkills: []
 mcpTools: []
 ---
