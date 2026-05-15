@@ -77,6 +77,7 @@ import { registerSkillsCommands } from "./commands/skills.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { registerSetupCommands } from "./commands/setup.js";
 import { registerWorkspaceImproveCommands } from "./commands/workspace-improve.js";
+import { registerWorkspaceHelperCommands } from "./commands/workspace-helper.js";
 import { registerWorkspaceDeployCommands } from "./commands/workspace-deploy.js";
 import { registerWorkspaceStatusCommands } from "./commands/workspace-status.js";
 import { registerWorkspaceQaCommands } from "./commands/workspace-qa.js";

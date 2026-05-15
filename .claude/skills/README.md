@@ -31,6 +31,7 @@ Every skill here plugs into that journey.
 | [`growthub-t3code-harness`](./growthub-t3code-harness/SKILL.md) | T3 Code health, prompt, session, and generic Growthub profile primitive | `cli/src/commands/t3code.ts`, `cli/src/runtime/t3code/`, `cli/src/runtime/agent-harness/harness-profile.ts` |
 | [`growthub-marketing-operator`](./growthub-marketing-operator/SKILL.md) | Dispatch marketing intents to the correct skill + framework + template | `cli/assets/worker-kits/growthub-marketing-skills-v1/` |
 | [`growthub-worker-kits`](./growthub-worker-kits/SKILL.md) | Umbrella skill for operating any worker kit — workspace resolution via `${<KIT>_HOME}`, QUICKSTART pattern, kit-wide CLI entries | `cli/assets/worker-kits/`, `scripts/export-worker-kit.mjs` |
+| [`growthub-workspace-helper`](./growthub-workspace-helper/SKILL.md) | Draft dashboards, widget layouts, API registry rows, and custom objects via the workspace helper endpoint; returns governed proposals for explicit review and apply | `apps/workspace/app/api/workspace/helper/`, `apps/workspace/lib/workspace-helper.js`, `packages/api-contract/src/helper.ts` |
 
 ## Core loop — every agent follows this order
 

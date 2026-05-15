@@ -39,10 +39,13 @@ import {
   ToggleLeft,
   Type,
   Users,
+  PanelRight,
+  PanelRightClose,
   X,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HelperSidecar } from "./HelperSidecar.jsx";
 import {
   OBJECT_TYPE_PRESETS,
   addTableField,
@@ -418,7 +421,7 @@ function SaveToast({ saving, message }) {
   return <span className={`dm-toast ${message.startsWith("Error") ? "error" : "ok"}`}>{message}</span>;
 }
 
-function NavRail({ authority, workspaceConfig }) {
+function NavRail({ authority, workspaceConfig, helperOpen, onHelperToggle }) {
   const branding = workspaceConfig?.branding || {};
   const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
   return (
@@ -441,6 +444,17 @@ function NavRail({ authority, workspaceConfig }) {
         <span className="workspace-nav-static">Management</span>
         <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
       </nav>
+      <div className="workspace-rail-helper-toggle">
+        <button
+          type="button"
+          className={"workspace-rail-helper-btn" + (helperOpen ? " active" : "")}
+          onClick={onHelperToggle}
+          aria-label={helperOpen ? "Close workspace helper" : "Open workspace helper"}
+          title={helperOpen ? "Close helper" : "Open workspace helper"}
+        >
+          {helperOpen ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
+        </button>
+      </div>
       <div className="workspace-rail-status">
         <span className="status-dot" />
         {authority || "local-catalog"}
@@ -2081,6 +2095,93 @@ function AddObjectSidebar({ open, saving, onClose, onCreate, allTables }) {
   );
 }
 
+
+// ─── Command Palette ──────────────────────────────────────────────────────────
+
+function DataModelCommandPalette({ commands, onClose }) {
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return commands;
+    return commands.filter((c) =>
+      `${c.label} ${c.group || ""} ${(c.aliases || []).join(" ")}`.toLowerCase().includes(q)
+    );
+  }, [commands, query]);
+  useEffect(() => {
+    setHighlight((v) => Math.min(v, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+  const handleKey = (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((v) => Math.min(filtered.length - 1, v + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((v) => Math.max(0, v - 1)); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const cmd = filtered[highlight];
+      if (cmd && !cmd.disabled) { cmd.run(); onClose(); }
+    } else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+  };
+  const groups = useMemo(() => {
+    const map = new Map();
+    filtered.forEach((c) => {
+      const key = c.group || "General";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(c);
+    });
+    return Array.from(map.entries());
+  }, [filtered]);
+  return (
+    <div className="workspace-command-palette" role="dialog" aria-modal="true" aria-label="Command palette" data-palette="">
+      <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+      <section className="workspace-command-palette-panel" onKeyDown={handleKey}>
+        <header className="workspace-command-palette-input">
+          <span aria-hidden="true">⌘</span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type a command or ask helper…"
+            aria-label="Command palette search"
+          />
+          <kbd>esc</kbd>
+        </header>
+        <div className="workspace-command-palette-list" role="listbox">
+          {filtered.length === 0 ? <p className="workspace-panel-hint">No matching commands.</p> : null}
+          {groups.map(([group, items]) => (
+            <div key={group} className="workspace-command-palette-group">
+              <p className="workspace-panel-label">{group}</p>
+              {items.map((cmd) => {
+                const gi = filtered.indexOf(cmd);
+                const isHL = gi === highlight;
+                return (
+                  <button
+                    key={cmd.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isHL}
+                    className={"workspace-command-palette-item" + (isHL ? " active" : "") + (cmd.disabled ? " disabled" : "")}
+                    disabled={cmd.disabled}
+                    onMouseEnter={() => setHighlight(gi)}
+                    onClick={() => { if (!cmd.disabled) { cmd.run(); onClose(); } }}
+                  >
+                    <span aria-hidden="true"><Zap size={14} /></span>
+                    <span className="workspace-command-palette-label">{cmd.label}</span>
+                    {cmd.shortcut ? <kbd>{cmd.shortcut}</kbd> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <footer className="workspace-command-palette-footer">
+          <span>↑ ↓ navigate</span><span>↵ run</span><span>esc close</span>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 // Auto-save tempo: hold local edits in memory + localStorage, only PATCH the
@@ -2098,6 +2199,9 @@ export default function DataModelShell() {
   const [message, setMessage] = useState("");
   const [selectedSource, setSelectedSource] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [helperOpen, setHelperOpen] = useState(false);
+  const [helperIntent, setHelperIntent] = useState("create_object");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
 
@@ -2118,6 +2222,19 @@ export default function DataModelShell() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Cmd+K opens command palette
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setCommandPaletteOpen((v) => !v);
+      }
+      if (e.key === "Escape" && commandPaletteOpen) setCommandPaletteOpen(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [commandPaletteOpen]);
 
   const tables = useMemo(
     () => (workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig) : []),
@@ -2211,15 +2328,73 @@ export default function DataModelShell() {
     setAddOpen(false);
   }, [save]);
 
+  const INTENT_FOR_TYPE = {
+    people: "edit_view",
+    tasks: "edit_view",
+    "api-registry": "register_api",
+    "sandbox-environment": "create_object",
+    "data-source": "explain",
+    custom: "create_object",
+  };
+
+  const openHelperForTable = (table) => {
+    setHelperIntent(INTENT_FOR_TYPE[table?.objectType] || "create_object");
+    setHelperOpen(true);
+  };
+
+  const paletteCommands = [
+    {
+      id: "helper.build_dashboard", group: "Ask helper", label: "Build a dashboard",
+      run: () => { setHelperIntent("build_dashboard"); setHelperOpen(true); }
+    },
+    {
+      id: "helper.create_object", group: "Ask helper", label: "Create a custom object",
+      run: () => { setHelperIntent("create_object"); setHelperOpen(true); }
+    },
+    {
+      id: "helper.register_api", group: "Ask helper", label: "Register an API",
+      run: () => { setHelperIntent("register_api"); setHelperOpen(true); }
+    },
+    {
+      id: "helper.repair", group: "Ask helper", label: "Repair workspace",
+      run: () => { setHelperIntent("repair"); setHelperOpen(true); }
+    },
+    {
+      id: "object.new", group: "Data Model", label: "New object",
+      run: () => setAddOpen(true)
+    },
+    {
+      id: "nav.dashboards", group: "Navigation", label: "Go to Dashboards",
+      run: () => { window.location.href = "/"; }
+    },
+    {
+      id: "nav.settings", group: "Navigation", label: "Go to Settings",
+      run: () => { window.location.href = "/settings/general"; }
+    },
+  ];
+
   return (
     <main className="workspace-builder workspace-settings-page">
-      <NavRail authority={authority} workspaceConfig={workspaceConfig} />
+      <NavRail
+        authority={authority}
+        workspaceConfig={workspaceConfig}
+        helperOpen={helperOpen}
+        onHelperToggle={() => setHelperOpen((v) => !v)}
+      />
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">
           <div><p>Workspace</p><h1>Data Model</h1></div>
           <div className="workspace-toolbar-actions">
             <SaveToast saving={saving} message={message} />
+            <button
+              type="button"
+              className="dm-btn-outline"
+              onClick={() => setHelperOpen((v) => !v)}
+              title="Ask the workspace helper"
+            >
+              <Zap size={14} />Ask helper
+            </button>
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
               <Plus size={14} />New object
             </button>
@@ -2233,6 +2408,23 @@ export default function DataModelShell() {
           onCreate={createObject}
           allTables={tables}
         />
+
+        <HelperSidecar
+          open={helperOpen}
+          onClose={() => setHelperOpen(false)}
+          workspaceConfig={workspaceConfig}
+          initialIntent={helperIntent}
+          onApplied={(updatedConfig) => {
+            setWorkspaceConfig(updatedConfig);
+          }}
+        />
+
+        {commandPaletteOpen && (
+          <DataModelCommandPalette
+            commands={paletteCommands}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
+        )}
 
         {loading && <div className="dm-loading">Loading workspace…</div>}
 
@@ -2252,6 +2444,18 @@ export default function DataModelShell() {
                 <div className="dm-detail-v2-title">
                   <ObjectViewPicker tables={tables} selectedTable={selectedTable} saving={saving} onSelectSource={setSelectedSource} onSave={save} />
                 </div>
+                <div className="dm-detail-helper-trigger">
+                  <button
+                    type="button"
+                    className="dm-btn-outline dm-helper-row-btn"
+                    data-helper-trigger=""
+                    data-object-type={selectedTable.objectType || "custom"}
+                    onClick={() => openHelperForTable(selectedTable)}
+                    title="Ask helper about this object"
+                  >
+                    <Zap size={13} />Ask helper
+                  </button>
+                </div>
                 <SourceValidationBanner table={selectedTable} />
               </div>
               <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} />
@@ -2263,10 +2467,22 @@ export default function DataModelShell() {
           <div className="dm-page-empty">
             <Database size={32} />
             <strong>No objects yet</strong>
-            <p>Create a Data Source, API Registry, People, Tasks, or Custom object to get started.</p>
-            <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
-              <Plus size={14} />New object
-            </button>
+            <p>Create your first Data Source, API Registry, People list, or custom object to get started.</p>
+            <div className="dm-page-empty-actions">
+              <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
+                <Plus size={14} />New object
+              </button>
+              <button
+                type="button"
+                className="dm-btn-outline"
+                onClick={() => {
+                  setHelperIntent("create_object");
+                  setHelperOpen(true);
+                }}
+              >
+                <Zap size={14} />Try the helper
+              </button>
+            </div>
           </div>
         )}
       </section>

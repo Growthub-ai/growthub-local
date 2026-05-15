@@ -137,6 +137,33 @@ Sandbox Environment rows:
 
 The local agent host adapter is the handoff point for Codex and other local CLIs. Keep its command syntax and stdin prompt/instructions handoff aligned with `apps/workspace/lib/adapters/sandboxes/default-local-agent-host.js`.
 
+## Workspace Helper
+
+The workspace helper is a governed, workspace-grammar-aware planning engine that drafts proposals for dashboards, widgets, API registry rows, and custom business objects. It operates in propose-only mode — mutations require an explicit apply step.
+
+**Helper CLI surface (`growthub workspace helper`):**
+
+```bash
+# Query — no writes, returns proposals[]
+growthub workspace helper query --intent <intent> --prompt "<brief>" [--json > proposals.json]
+
+# Apply — validates + writes accepted proposals
+growthub workspace helper apply --proposal-file proposals.json [--yes]
+
+# Receipt history (fine-tune loop seeding)
+growthub workspace helper receipts [--limit 25]
+```
+
+Intents: `build_dashboard` | `create_widget` | `register_api` | `create_object` | `edit_view` | `repair` | `explain`
+
+**Helper API surface (requires running workspace dev server):**
+
+- `POST /api/workspace/helper/query` — returns `{ summary, proposals[], warnings[], receipts }` (no writes)
+- `POST /api/workspace/helper/apply` — validates + applies proposals, returns `{ applied[], skipped[], workspaceConfig }`
+- `GET /api/workspace/helper/receipts` — apply receipt history
+
+**Boundaries:** The PATCH allowlist (`dashboards`, `widgetTypes`, `canvas`, `dataModel`) is the hard ceiling. Credentials never enter the prompt. Every apply appends a receipt to source-records. See `docs/WORKSPACE_HELPER_CONTRACT_V1.md` for the full contract.
+
 ## Worker-kit workspace convention
 
 Every worker kit with a local fork or tool clone uses the uniform env-var convention: `${<KIT>_HOME:-$HOME/<default>}`. The canonical var per kit is tabulated in `.claude/skills/growthub-worker-kits/SKILL.md`. Legacy env-var names (e.g. `<KIT>_FORK_PATH`) remain accepted by setup scripts as aliases, but docs and new code should emit only the canonical `<KIT>_HOME` form. Kit exports use `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}`. Never hardcode `/Users/<name>/…` or `/home/<name>/…` inside kit docs, templates, or fixtures.

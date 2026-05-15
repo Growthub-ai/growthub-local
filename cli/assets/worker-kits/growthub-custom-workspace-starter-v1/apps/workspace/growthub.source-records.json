@@ -1,0 +1,26 @@
+{
+  "helper:apply:receipts": {
+    "records": [
+      {
+        "type": "dashboard.create",
+        "affectedField": "dashboards",
+        "rationale": "test",
+        "appliedAt": "2026-05-15T22:26:58.846Z",
+        "reviewedBy": "probe",
+        "sessionId": null
+      },
+      {
+        "type": "dashboard.create",
+        "affectedField": "dashboards",
+        "rationale": "Smoke",
+        "appliedAt": "2026-05-15T22:40:38.781Z",
+        "ranAt": "2026-05-15T22:40:38.781Z",
+        "reviewedBy": "smoke-test",
+        "sessionId": null
+      }
+    ],
+    "integrationId": "helper:apply:receipts",
+    "fetchedAt": "2026-05-15T22:40:38.781Z",
+    "recordCount": 2
+  }
+}
