@@ -1,0 +1,231 @@
+{
+  "id": "workspace-builder-default",
+  "name": "Growthub Workspace",
+  "description": "Served-agent seeded config for the official Growthub Custom Workspace Starter. Adds the persistent microservice lane (growthub-agent-service) that hosts the distilled growthub-local-expert GGUF behind an OpenAI-compatible endpoint, and exposes a governed Data Model object (service-registry) that tracks live deployments.",
+  "branding": {
+    "name": "Growthub Workspace",
+    "logoUrl": "",
+    "accent": "#3f68ff"
+  },
+  "capabilities": [
+    "dashboards",
+    "canvas",
+    "widgets",
+    "bindings",
+    "integrations",
+    "settings"
+  ],
+  "pipelines": [],
+  "integrations": [],
+  "dashboards": [
+    {
+      "id": "untitled-dashboard",
+      "name": "Untitled",
+      "createdBy": "Workspace owner",
+      "updatedAt": "new",
+      "status": "draft"
+    }
+  ],
+  "widgetTypes": [
+    { "kind": "chart", "label": "Chart", "icon": "C" },
+    { "kind": "view", "label": "View", "icon": "V" },
+    { "kind": "iframe", "label": "iFrame", "icon": "I" },
+    { "kind": "rich-text", "label": "Rich Text", "icon": "T" }
+  ],
+  "canvas": {
+    "id": "workspace-canvas",
+    "name": "Tab 1",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "widgets": [],
+    "bindings": {
+      "chatToCanvas": true,
+      "workflowOutputsToArtifacts": true,
+      "sessionContext": true,
+      "configDrivenCanvas": true
+    }
+  },
+  "provenance": {
+    "createdBy": "cli",
+    "mirrors": "growthub-custom-workspace-starter-v1",
+    "note": "Shipped with growthub-custom-workspace-starter-v1; seeded-config served-agent. Sibling to alignment-loop. Materializes the persistent microservice lane that serves the distilled growthub-local-expert GGUF (OpenAI-compatible). Safe to edit inside a governed fork and validate through the starter export smoke path."
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "sandboxes-served-agent",
+        "label": "Served Agent Sandboxes",
+        "source": "Sandboxes",
+        "objectType": "sandbox-environment",
+        "icon": "Server",
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "version",
+          "runLocality",
+          "schedulerRegistryId",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "intelligenceType",
+          "localModel",
+          "localEndpoint",
+          "intelligenceAdapterMode",
+          "envRefs",
+          "networkAllow",
+          "allowList",
+          "instructions",
+          "command",
+          "orchestrationConfig",
+          "timeoutMs",
+          "resolverTemplateId",
+          "connectorKind",
+          "executionLane",
+          "status",
+          "lastTested",
+          "lastRunId",
+          "lastSourceId",
+          "lastResponse"
+        ],
+        "rows": [
+          {
+            "Name": "growthub-agent-service",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "runLocality": "service",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "remote-intelligence",
+            "agentHost": "",
+            "intelligenceType": "remote-intelligence",
+            "localModel": "growthub-local-expert",
+            "localEndpoint": "http://127.0.0.1:8787/v1/chat/completions",
+            "intelligenceAdapterMode": "openai-compatible",
+            "envRefs": "GROWTHUB_AGENT_SERVICE_URL,GROWTHUB_AGENT_SERVICE_API_KEY",
+            "networkAllow": "true",
+            "allowList": "127.0.0.1:8787,localhost:8787",
+            "instructions": "You are the persistent growthub-agent-service. Anchor every answer to AWaC V2 invariants (AGENTS.md contract order, governed primitives, schema boundaries, PATCH allowlist). The model loaded behind this endpoint is growthub-local-expert (distilled from harvested Cursor traces graded >= 4/5). Return schema-native, low-entropy, directly-executable output. Refuse and explain when a request crosses the PATCH allowlist or governed primitive boundary.",
+            "command": "As growthub-agent-service, respond to this workspace query with the safest executable path and the exact primitives involved.",
+            "orchestrationConfig": "{\"version\":\"1\",\"graph\":{\"nodes\":[{\"id\":\"served-agent\",\"type\":\"thinAdapter\",\"sandbox\":\"growthub-agent-service\"}],\"edges\":[]}}",
+            "timeoutMs": "60000",
+            "resolverTemplateId": "served-agent",
+            "connectorKind": "remote-intelligence",
+            "executionLane": "served",
+            "status": "connected",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": ""
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "relations": [
+          {
+            "id": "served-agent-deployment-binding",
+            "name": "Deployment record",
+            "field": "lastSourceId",
+            "targetObjectType": "custom",
+            "targetObjectId": "service-registry",
+            "type": "belongs-to",
+            "description": "Each served-agent row points at its live deployment record in service-registry (baseUrl, ggufVersion, health)."
+          }
+        ],
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "version",
+            "runLocality",
+            "schedulerRegistryId",
+            "runtime",
+            "adapter",
+            "agentHost",
+            "intelligenceType",
+            "localModel",
+            "localEndpoint",
+            "intelligenceAdapterMode",
+            "envRefs",
+            "networkAllow",
+            "allowList",
+            "instructions",
+            "command",
+            "orchestrationConfig",
+            "timeoutMs",
+            "resolverTemplateId",
+            "connectorKind",
+            "executionLane",
+            "status",
+            "lastTested",
+            "lastRunId",
+            "lastSourceId",
+            "lastResponse"
+          ]
+        }
+      },
+      {
+        "id": "service-registry",
+        "label": "Agent Service Registry",
+        "source": "Data Model",
+        "objectType": "custom",
+        "icon": "Server",
+        "columns": [
+          "serviceId",
+          "repoUrl",
+          "baseUrl",
+          "modelId",
+          "ggufVersion",
+          "ggufUrl",
+          "serverRuntime",
+          "deploymentTarget",
+          "status",
+          "lastHealthcheckAt",
+          "lastResponse"
+        ],
+        "rows": [
+          {
+            "serviceId": "growthub-agent-service",
+            "repoUrl": "https://github.com/growthub-ai/growthub-agent-service",
+            "baseUrl": "http://127.0.0.1:8787",
+            "modelId": "growthub-local-expert",
+            "ggufVersion": "v0",
+            "ggufUrl": "",
+            "serverRuntime": "ollama",
+            "deploymentTarget": "local",
+            "status": "scaffolded",
+            "lastHealthcheckAt": "",
+            "lastResponse": ""
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "serviceId",
+            "repoUrl",
+            "baseUrl",
+            "modelId",
+            "ggufVersion",
+            "ggufUrl",
+            "serverRuntime",
+            "deploymentTarget",
+            "status",
+            "lastHealthcheckAt",
+            "lastResponse"
+          ]
+        }
+      }
+    ]
+  }
+}
