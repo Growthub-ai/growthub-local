@@ -8,14 +8,15 @@
  * declared here; do not rename them without updating the test suite.
  *
  * Props:
- *   open           boolean  — controlled by page-level state
- *   onClose        fn       — called when sidecar should close
- *   workspaceConfig object  — live config (for Setup tab: localModel, localEndpoint)
- *   initialIntent  string   — pre-set intent based on the object that triggered open
- *   onApplied      fn(cfg)  — called with updated workspaceConfig after apply
+ *   open            boolean  — controlled by page-level state
+ *   onClose         fn       — called when sidecar should close
+ *   workspaceConfig object   — live config (for Setup tab: localModel, localEndpoint)
+ *   initialIntent   string   — pre-set intent based on the object that triggered open
+ *   initialPrompt   string   — optional starter prompt seeded into the textarea
+ *   onApplied       fn(cfg)  — called with updated workspaceConfig after apply
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckSquare, Settings, Zap, X } from "lucide-react";
 
 const HELPER_INTENTS = [
@@ -27,6 +28,17 @@ const HELPER_INTENTS = [
   { value: "repair",         label: "Repair workspace" },
   { value: "explain",        label: "Explain object" },
 ];
+
+// Plain-language intent descriptions surfaced to no-code users.
+const HELPER_INTENT_HINTS = {
+  build_dashboard: "Draft a dashboard with widgets you can review before applying.",
+  create_widget:   "Suggest widgets that fit the data you already have.",
+  register_api:    "Draft an API Registry entry with the fields needed to connect.",
+  create_object:   "Translate a plain-language description into a new business object.",
+  edit_view:       "Adjust an existing dashboard or layout — review the change before saving.",
+  repair:          "Find missing references or broken bindings and propose the smallest fix.",
+  explain:         "Explain what a workspace object is and how it is wired up.",
+};
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH_VW = 0.80;
@@ -43,10 +55,40 @@ function resolveSandboxEnvRow(workspaceConfig) {
   return null;
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, onApplied }) {
+// Render a tiny payload preview chip line so non-technical users see what
+// will be changed without staring at raw JSON.
+function summarizePayload(proposal) {
+  const p = proposal?.payload || {};
+  if (typeof p !== "object") return "";
+  switch (proposal.type) {
+    case "dashboard.create":
+    case "dashboard.update":
+      return p.name ? `name: ${p.name}` : (p.id ? `id: ${p.id}` : "");
+    case "widgetType.bind":
+      return p.kind ? `kind: ${p.kind}${p.label ? ` · label: ${p.label}` : ""}` : "";
+    case "canvas.widget.add":
+      return [p.kind ? `kind: ${p.kind}` : null, p.title ? `title: ${p.title}` : null].filter(Boolean).join(" · ");
+    case "canvas.tab.create":
+      return p.name ? `tab: ${p.name}` : "";
+    case "dataModel.object.create":
+      return [p.label ? `label: ${p.label}` : null, p.objectType ? `type: ${p.objectType}` : null, Array.isArray(p.columns) ? `${p.columns.length} fields` : null].filter(Boolean).join(" · ");
+    case "dataModel.object.update":
+      return p.id ? `id: ${p.id}` : "";
+    case "dataModel.row.add":
+      return p.objectId ? `into: ${p.objectId}` : "";
+    case "repair.binding":
+      return p.objectId ? `binding for: ${p.objectId}` : "";
+    case "explain.object":
+      return p.target ? `about: ${p.target}` : "informational";
+    default:
+      return "";
+  }
+}
+
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, onApplied }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt || "");
   const [streaming, setStreaming] = useState(false);
   const [streamBuffer, setStreamBuffer] = useState("");
   const [result, setResult] = useState(null);
@@ -63,10 +105,27 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
   const [panelWidth, setPanelWidth] = useState(persistedWidth);
   const dragRef = useRef({ dragging: false, startX: 0, startWidth: 0 });
   const sidecarRef = useRef(null);
+  const promptRef = useRef(null);
 
   useEffect(() => {
     if (initialIntent) setIntent(initialIntent);
   }, [initialIntent]);
+
+  // Seed the prompt textarea when the helper opens with a starter prompt
+  // (empty state CTA, palette intents). Only re-seeds when opening.
+  useEffect(() => {
+    if (open && initialPrompt) setPrompt(initialPrompt);
+  }, [open, initialPrompt]);
+
+  // Move focus to the prompt textarea when the sidecar opens so the keyboard
+  // flow lands somewhere useful. Run after paint so the input is mounted.
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => {
+      try { promptRef.current?.focus(); } catch {}
+    }, 30);
+    return () => clearTimeout(t);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -89,25 +148,29 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  // Cmd+Enter fires apply
+  // Cmd+Enter at the window level fires apply when there is a result with
+  // accepted proposals. The textarea handler stops propagation when the
+  // user is still composing a prompt, so submit and apply never collide.
+  const acceptedHasAny = Object.values(accepted).some(Boolean);
   useEffect(() => {
     if (!open) return undefined;
     const handler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        if (!applying && result && Object.values(accepted).some(Boolean)) {
-          handleApply();
-        }
-      }
+      if (!((e.metaKey || e.ctrlKey) && e.key === "Enter")) return;
+      if (applying || !result || !acceptedHasAny) return;
+      e.preventDefault();
+      handleApply();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  });
+  }, [open, applying, result, acceptedHasAny]);
 
   // Drag handlers
   const handleDragStart = useCallback((e) => {
     e.preventDefault();
     dragRef.current = { dragging: true, startX: e.clientX, startWidth: panelWidth };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "ew-resize";
+    let currentWidth = panelWidth;
     const onMove = (me) => {
       if (!dragRef.current.dragging) return;
       const dx = dragRef.current.startX - me.clientX;
@@ -115,11 +178,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
         Math.max(dragRef.current.startWidth + dx, MIN_WIDTH),
         window.innerWidth * MAX_WIDTH_VW
       );
+      currentWidth = next;
       setPanelWidth(next);
     };
     const onUp = () => {
       dragRef.current.dragging = false;
-      persistedWidth = panelWidth;
+      persistedWidth = currentWidth;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -169,7 +235,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
 
         if (parsed && typeof parsed === "object") {
           if (!parsed.ok) {
-            setQueryError(parsed.error || "Helper returned an error");
+            setQueryError(parsed.error || "The helper could not complete this request.");
           } else {
             setResult(parsed);
             const init = {};
@@ -177,13 +243,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
             setAccepted(init);
           }
         } else {
-          setQueryError("Could not parse helper response.");
+          setQueryError("The helper response could not be read. Try again or open the Setup tab.");
         }
       } else {
         // Non-streaming fallback
         const data = await res.json();
         if (!data.ok) {
-          setQueryError(data.error || "Helper returned an error");
+          setQueryError(data.error || "The helper could not complete this request.");
         } else {
           setResult(data);
           const init = {};
@@ -193,7 +259,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
         }
       }
     } catch (err) {
-      setQueryError(err.message || "Request failed");
+      setQueryError(humanizeError(err?.message));
     } finally {
       setStreaming(false);
     }
@@ -215,7 +281,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
       setApplyResult(data);
       if (data.workspaceConfig && onApplied) onApplied(data.workspaceConfig);
     } catch (err) {
-      setApplyResult({ ok: false, error: err.message, applied: [], skipped: [] });
+      setApplyResult({ ok: false, error: humanizeError(err?.message), applied: [], skipped: [] });
     } finally {
       setApplying(false);
     }
@@ -227,9 +293,17 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
     if (!endpoint) { setConnectionStatus("unconfigured"); return; }
     setPingLoading(true);
     try {
-      const pingUrl = endpoint.replace(/\/+$/, "") + "/health";
-      const res = await fetch(pingUrl, { method: "GET", signal: AbortSignal.timeout(4000) });
-      setConnectionStatus(res.ok ? "connected" : "unreachable");
+      // Probe a list-models style URL. Treat any 2xx/4xx response as
+      // "reachable" — the server is responding even if the path is unknown.
+      const candidates = candidatePingUrls(endpoint);
+      let reachable = false;
+      for (const url of candidates) {
+        try {
+          const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(3500) });
+          if (res.status > 0 && res.status < 600) { reachable = true; break; }
+        } catch { /* try next candidate */ }
+      }
+      setConnectionStatus(reachable ? "connected" : "unreachable");
     } catch {
       setConnectionStatus("unreachable");
     } finally {
@@ -242,6 +316,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
       setConnectionStatus(null);
       pingConnection();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, activeTab]);
 
   const sandboxRow = resolveSandboxEnvRow(workspaceConfig);
@@ -252,6 +327,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
 
   const acceptedCount = Object.values(accepted).filter(Boolean).length;
   const skippedCount = applyResult?.skipped?.length || 0;
+  const hasProposals = result && (result.proposals || []).length > 0;
+
+  const intentHint = HELPER_INTENT_HINTS[intent] || "";
 
   if (!open) return null;
 
@@ -334,12 +412,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                   <option key={i.value} value={i.value}>{i.label}</option>
                 ))}
               </select>
+              {intentHint ? <p className="dm-field-hint" data-helper-intent-hint="">{intentHint}</p> : null}
             </div>
 
             <div className="dm-field-group">
               <label className="dm-field-label" htmlFor="helper-prompt">What do you need?</label>
               <textarea
                 id="helper-prompt"
+                ref={promptRef}
                 className="dm-field-textarea"
                 rows={4}
                 placeholder='e.g. "A sales ops dashboard for a local agency with pipeline stages and weekly revenue chart"'
@@ -350,11 +430,16 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                     e.preventDefault();
+                    // Stop the window-level apply handler from firing on the
+                    // same keystroke while the user is still drafting.
+                    e.stopPropagation();
                     runQuery();
                   }
                 }}
               />
-              <p className="dm-field-hint">⌘+Enter to submit · ⌘+Enter again to apply</p>
+              <p className="dm-field-hint">
+                ⌘+Enter inside the prompt asks the helper. ⌘+Enter again (outside the prompt) applies your accepted proposals.
+              </p>
             </div>
 
             <button
@@ -369,7 +454,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
             </button>
 
             {queryError && (
-              <div className="dm-helper-error">
+              <div className="dm-helper-error" role="alert">
                 <AlertCircle size={13} />
                 <span>{queryError}</span>
               </div>
@@ -377,9 +462,16 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
 
             {/* Streaming surface */}
             {(streaming || streamBuffer) && !result && (
-              <div className="dm-helper-stream">
+              <div className="dm-helper-stream" data-helper-stream="">
                 <span>{streamBuffer}</span>
                 {streaming && <span className="dm-stream-cursor" aria-hidden="true">|</span>}
+              </div>
+            )}
+
+            {/* Empty proposal hint (only before first query) */}
+            {!streaming && !result && !queryError && !streamBuffer && (
+              <div className="dm-helper-empty-hint" data-helper-empty-hint="">
+                <p>Describe what you need. The helper drafts a list of proposed changes — review each one before applying.</p>
               </div>
             )}
 
@@ -402,42 +494,56 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                   </div>
                 )}
 
-                {(result.proposals || []).length > 0 && (
+                {hasProposals && (
                   <>
                     <div className="dm-helper-proposals-header">
-                      <span className="dm-field-label">Proposals ({result.proposals.length})</span>
-                      <span className="dm-field-hint">{acceptedCount} selected</span>
+                      <span className="dm-field-label">Proposals · review before applying</span>
+                      <span className="dm-field-hint">{acceptedCount} of {result.proposals.length} selected</span>
                     </div>
                     <div
                       className="dm-helper-proposals"
                       role="group"
                       aria-label="Proposals"
                     >
-                      {result.proposals.map((proposal, i) => (
-                        <label
-                          key={i}
-                          className={`dm-helper-proposal${accepted[i] ? " accepted" : ""}`}
-                          data-proposal-item=""
-                          tabIndex={0}
-                          onKeyDown={(e) => handleProposalKeyDown(e, i)}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!!accepted[i]}
-                            onChange={(e) =>
-                              setAccepted((prev) => ({ ...prev, [i]: e.target.checked }))
-                            }
-                            disabled={applying}
-                            data-proposal-accept=""
-                            tabIndex={-1}
-                          />
-                          <div className="dm-helper-proposal-body">
-                            <span className="dm-helper-proposal-type">{proposal.type}</span>
-                            <span className="dm-helper-proposal-field">→ {proposal.affectedField}</span>
-                            <p className="dm-helper-proposal-rationale">{proposal.rationale}</p>
-                          </div>
-                        </label>
-                      ))}
+                      {result.proposals.map((proposal, i) => {
+                        const summary = summarizePayload(proposal);
+                        const conf = typeof proposal.confidence === "number" ? Math.round(proposal.confidence * 100) : null;
+                        return (
+                          <label
+                            key={i}
+                            className={`dm-helper-proposal${accepted[i] ? " accepted" : ""}`}
+                            data-proposal-item=""
+                            tabIndex={0}
+                            onKeyDown={(e) => handleProposalKeyDown(e, i)}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!accepted[i]}
+                              onChange={(e) =>
+                                setAccepted((prev) => ({ ...prev, [i]: e.target.checked }))
+                              }
+                              disabled={applying}
+                              data-proposal-accept=""
+                              tabIndex={-1}
+                            />
+                            <div className="dm-helper-proposal-body">
+                              <div className="dm-helper-proposal-row">
+                                <span className="dm-helper-proposal-type">{proposal.type}</span>
+                                <span className="dm-helper-proposal-field">→ {proposal.affectedField}</span>
+                                {conf !== null && (
+                                  <span className="dm-helper-proposal-confidence" data-proposal-confidence={conf}>
+                                    {conf}%
+                                  </span>
+                                )}
+                              </div>
+                              {summary && (
+                                <p className="dm-helper-proposal-payload" data-proposal-payload="">{summary}</p>
+                              )}
+                              <p className="dm-helper-proposal-rationale">{proposal.rationale}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
 
                     {!applyResult && (
@@ -447,6 +553,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                         style={{ width: "100%", marginTop: 8 }}
                         onClick={handleApply}
                         disabled={applying || acceptedCount === 0}
+                        data-helper-apply=""
                       >
                         {applying
                           ? "Applying…"
@@ -456,8 +563,18 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                   </>
                 )}
 
+                {result && !hasProposals && !queryError && (
+                  <div className="dm-helper-empty-hint">
+                    <p>The helper did not produce any proposals for this request. Try rewording or pick a different intent.</p>
+                  </div>
+                )}
+
                 {applyResult && (
-                  <div className="dm-helper-apply-result">
+                  <div
+                    className={`dm-helper-apply-result${applyResult.ok ? "" : " is-error"}`}
+                    data-helper-apply-result=""
+                    role="status"
+                  >
                     {applyResult.ok ? (
                       <>
                         <CheckSquare size={14} />
@@ -484,11 +601,23 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                   </div>
                 )}
 
+                {applyResult?.skipped?.length > 0 && (
+                  <div className="dm-helper-skipped" data-helper-skipped="">
+                    <span className="dm-field-label">Skipped</span>
+                    {applyResult.skipped.map((s, i) => (
+                      <div key={i} className="dm-helper-skipped-row">
+                        <span className="dm-helper-proposal-type">{s.proposal?.type || "unknown"}</span>
+                        <span className="dm-helper-skipped-reason">{s.reason || "no reason"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {result.receipts && (
-                  <p className="dm-field-hint" style={{ marginTop: 8 }}>
-                    model: {result.receipts.model} · confidence:{" "}
+                  <p className="dm-field-hint" style={{ marginTop: 8 }} data-helper-receipt="">
+                    Run: {result.receipts.model} · confidence{" "}
                     {typeof result.receipts.confidence === "number"
-                      ? result.receipts.confidence.toFixed(2)
+                      ? `${Math.round(result.receipts.confidence * 100)}%`
                       : "n/a"}{" "}
                     · {result.receipts.latencyMs}ms
                   </p>
@@ -501,6 +630,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
         {/* Setup tab */}
         {activeTab === "setup" && (
           <div className="dm-sidecar-body">
+            <p className="dm-field-hint" style={{ margin: 0 }}>
+              The helper sends your prompt to a local model. Credentials are never stored in the workspace.
+            </p>
+
             <div className="dm-helper-setup-section">
               <p className="dm-field-label">Local Model</p>
               <code className="dm-helper-setup-value" data-local-model="">
@@ -517,7 +650,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
 
             <div className="dm-helper-setup-section">
               <p className="dm-field-label">Connection Status</p>
-              <div className="dm-helper-connection-row" data-connection-status="">
+              <div className="dm-helper-connection-row" data-connection-status="" data-connection-state={connectionStatus || (pingLoading ? "checking" : "idle")}>
                 {pingLoading ? (
                   <span className="dm-connection-dot dm-connection-checking" />
                 ) : connectionStatus === "connected" ? (
@@ -531,10 +664,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                   {pingLoading
                     ? "Checking…"
                     : connectionStatus === "connected"
-                    ? "Connected"
+                    ? "Connected to your local model"
                     : connectionStatus === "unconfigured"
-                    ? "No endpoint configured"
-                    : "Unreachable"}
+                    ? "No endpoint configured yet"
+                    : "Could not reach your local model"}
                 </span>
                 <button
                   type="button"
@@ -545,11 +678,16 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
                   Re-check
                 </button>
               </div>
+              {connectionStatus === "unreachable" && (
+                <p className="dm-field-hint" style={{ marginTop: 4 }}>
+                  Run the setup command below in your terminal, or start your local Ollama / LM Studio model.
+                </p>
+              )}
             </div>
 
             <div className="dm-helper-setup-section">
               <p className="dm-field-label">Deployment Mode</p>
-              <span className="dm-helper-setup-badge">
+              <span className="dm-helper-setup-badge" data-deployment-mode={deploymentMode}>
                 {deploymentMode}
               </span>
             </div>
@@ -577,4 +715,28 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, o
       </aside>
     </>
   );
+}
+
+// Produce a short, non-leaky error label from a thrown message.
+function humanizeError(msg) {
+  const text = String(msg || "").trim();
+  if (!text) return "Request failed";
+  if (text.length < 140) return text;
+  return "Request failed. Try again or check the Setup tab.";
+}
+
+// Build candidate URLs for probing a local model endpoint. We accept any
+// 2xx/4xx as "reachable" because the server is alive even when the probed
+// path is unknown (different vendors use different routes).
+function candidatePingUrls(endpoint) {
+  const base = String(endpoint || "").trim().replace(/\/+$/, "");
+  if (!base) return [];
+  const isV1 = /\/v1$/.test(base);
+  const root = isV1 ? base.replace(/\/v1$/, "") : base;
+  const urls = new Set();
+  urls.add(`${base}/models`);     // OpenAI-compatible (Ollama /v1/models, LM Studio, vLLM)
+  urls.add(`${root}/api/tags`);   // Ollama native
+  urls.add(`${root}/`);           // generic root probe
+  urls.add(`${base}/`);
+  return Array.from(urls);
 }
