@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckSquare, Settings, Zap, X } from "lucide-react";
+import { AlertCircle, CheckSquare, ChevronDown, Settings, Zap, X } from "lucide-react";
 
 const HELPER_INTENTS = [
   { value: "build_dashboard", label: "Build dashboard" },
@@ -29,6 +29,10 @@ const HELPER_INTENTS = [
   { value: "explain",        label: "Explain object" },
 ];
 
+// 4 primary + 3 in the "More" dropdown — chosen by no-code usage frequency.
+const PRIMARY_INTENT_VALUES = ["build_dashboard", "create_object", "edit_view", "repair"];
+const MORE_INTENT_VALUES   = ["create_widget", "register_api", "explain"];
+
 // Plain-language intent descriptions surfaced to no-code users.
 const HELPER_INTENT_HINTS = {
   build_dashboard: "Draft a dashboard with widgets you can review before applying.",
@@ -39,6 +43,11 @@ const HELPER_INTENT_HINTS = {
   repair:          "Find missing references or broken bindings and propose the smallest fix.",
   explain:         "Explain what a workspace object is and how it is wired up.",
 };
+
+function intentLabel(value) {
+  const found = HELPER_INTENTS.find((i) => i.value === value);
+  return found ? found.label : value;
+}
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH_VW = 0.80;
@@ -100,6 +109,16 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // sidecar is opened with initialThread (reopen flow). Sent on apply so
   // the same governed row records both the proposal turn and its outcome.
   const [threadId, setThreadId] = useState(null);
+  // Full multi-turn message history for the active thread. Drives the
+  // conversation UI and locks the pill row once the user has sent at
+  // least one message in this thread.
+  const [messages, setMessages] = useState([]);
+  // Active intent for this thread (locked once the first user message
+  // has been sent). Pills disappear after lock.
+  const [activeIntent, setActiveIntent] = useState(initialIntent || "create_object");
+  // "More" dropdown open state for the pill row.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreMenuRef = useRef(null);
 
   // Setup tab state
   const [connectionStatus, setConnectionStatus] = useState(null);
@@ -112,7 +131,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const promptRef = useRef(null);
 
   useEffect(() => {
-    if (initialIntent) setIntent(initialIntent);
+    if (initialIntent) { setIntent(initialIntent); setActiveIntent(initialIntent); }
   }, [initialIntent]);
 
   // Seed the prompt textarea when the helper opens with a starter prompt
@@ -123,13 +142,22 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   // Rehydrate the sidecar from a thread row when the user clicks Reopen
   // inside the Helper Threads Data Model object. The whole prior turn —
-  // intent, prompt, summary, proposals, warnings, receipts — is restored
-  // so the user re-enters the conversation exactly where they left it.
+  // intent, prompt, summary, proposals, warnings, receipts, and the
+  // multi-turn message history — is restored so the user re-enters the
+  // conversation exactly where they left it.
   useEffect(() => {
     if (!open || !initialThread) return;
-    if (initialThread.intent) setIntent(initialThread.intent);
-    if (typeof initialThread.prompt === "string") setPrompt(initialThread.prompt);
+    if (initialThread.intent) {
+      setIntent(initialThread.intent);
+      setActiveIntent(initialThread.intent);
+    }
+    if (typeof initialThread.prompt === "string") setPrompt("");
     if (initialThread.id) setThreadId(initialThread.id);
+    if (Array.isArray(initialThread.messages)) {
+      setMessages(initialThread.messages);
+    } else {
+      setMessages([]);
+    }
     if (initialThread.result && typeof initialThread.result === "object") {
       setResult(initialThread.result);
       const init = {};
@@ -166,8 +194,21 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       setActiveTab("assistant");
       setConnectionStatus(null);
       setThreadId(null);
+      setMessages([]);
+      setMoreOpen(false);
     }
   }, [open]);
+
+  // Close the "More" pill dropdown on outside click.
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    function onPointerDown(e) {
+      if (!moreMenuRef.current) return;
+      if (!moreMenuRef.current.contains(e.target)) setMoreOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [moreOpen]);
 
   // Escape key
   useEffect(() => {
@@ -238,12 +279,18 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     setAccepted({});
     setApplyResult(null);
     setStreaming(true);
+    // Optimistically append the user's turn to the local message list so
+    // the conversation renders immediately while we wait for the assistant.
+    const userTurn = { role: "user", content: prompt.trim(), ts: new Date().toISOString() };
+    setMessages((prev) => [...prev, userTurn]);
+    const submittedPrompt = prompt.trim();
+    setPrompt("");
 
     try {
       const res = await fetch("/api/workspace/helper/query", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ intent, userPrompt: prompt.trim(), threadId: threadId || undefined }),
+        body: JSON.stringify({ intent: activeIntent, userPrompt: submittedPrompt, threadId: threadId || undefined }),
       });
 
       // Try streaming first
@@ -268,6 +315,8 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           } else {
             setResult(parsed);
             if (parsed.threadId) setThreadId(parsed.threadId);
+            if (parsed.intent && parsed.intent !== activeIntent) setActiveIntent(parsed.intent);
+            if (Array.isArray(parsed.messages)) setMessages(parsed.messages);
             const init = {};
             (parsed.proposals || []).forEach((_, i) => { init[i] = true; });
             setAccepted(init);
@@ -283,6 +332,8 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         } else {
           setResult(data);
           if (data.threadId) setThreadId(data.threadId);
+          if (data.intent && data.intent !== activeIntent) setActiveIntent(data.intent);
+          if (Array.isArray(data.messages)) setMessages(data.messages);
           const init = {};
           (data.proposals || []).forEach((_, i) => { init[i] = true; });
           setAccepted(init);
@@ -310,6 +361,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       });
       const data = await res.json();
       setApplyResult(data);
+      if (Array.isArray(data.messages)) setMessages(data.messages);
       if (data.workspaceConfig && onApplied) onApplied(data.workspaceConfig);
     } catch (err) {
       setApplyResult({ ok: false, error: humanizeError(err?.message), applied: [], skipped: [] });
@@ -360,7 +412,18 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const skippedCount = applyResult?.skipped?.length || 0;
   const hasProposals = result && (result.proposals || []).length > 0;
 
-  const intentHint = HELPER_INTENT_HINTS[intent] || "";
+  // Thread is "active" the moment the user has sent at least one message,
+  // OR we have rehydrated a prior thread row. Pills only show on the
+  // initial empty state of a brand-new thread.
+  const threadActive = messages.some((m) => m?.role === "user");
+  const intentHint = HELPER_INTENT_HINTS[activeIntent] || "";
+
+  const onPickIntent = (next) => {
+    setIntent(next);
+    setActiveIntent(next);
+    setMoreOpen(false);
+    try { promptRef.current?.focus(); } catch {}
+  };
 
   if (!open) return null;
 
@@ -429,31 +492,119 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Assistant tab */}
         {activeTab === "assistant" && (
           <div className="dm-sidecar-body">
-            <div className="dm-field-group">
-              <label className="dm-field-label" htmlFor="helper-intent">Intent</label>
-              <select
-                id="helper-intent"
-                className="dm-field-select"
-                value={intent}
-                onChange={(e) => setIntent(e.target.value)}
-                disabled={streaming}
-                data-helper-intent=""
-              >
-                {HELPER_INTENTS.map((i) => (
-                  <option key={i.value} value={i.value}>{i.label}</option>
-                ))}
-              </select>
-              {intentHint ? <p className="dm-field-hint" data-helper-intent-hint="">{intentHint}</p> : null}
-            </div>
+            {/* Intent pills — only on a brand-new thread, before any user
+                message has been sent. 4 primary + a "More" dropdown for
+                the remaining 3 of the 7 supported intents. */}
+            {!threadActive && (
+              <div className="dm-helper-intent-pills" role="group" aria-label="Pick an intent">
+                {PRIMARY_INTENT_VALUES.map((value) => {
+                  const label = intentLabel(value);
+                  const isActive = activeIntent === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`dm-helper-pill${isActive ? " active" : ""}`}
+                      data-helper-pill={value}
+                      aria-pressed={isActive}
+                      disabled={streaming}
+                      onClick={() => onPickIntent(value)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+                <span className="dm-helper-pill-more-wrap" ref={moreMenuRef}>
+                  <button
+                    type="button"
+                    className={`dm-helper-pill dm-helper-pill-more${MORE_INTENT_VALUES.includes(activeIntent) ? " active" : ""}`}
+                    data-helper-pill="more"
+                    aria-haspopup="listbox"
+                    aria-expanded={moreOpen}
+                    disabled={streaming}
+                    onClick={() => setMoreOpen((v) => !v)}
+                  >
+                    {MORE_INTENT_VALUES.includes(activeIntent) ? intentLabel(activeIntent) : "More"}
+                    <ChevronDown size={11} style={{ marginLeft: 2 }} />
+                  </button>
+                  {moreOpen && (
+                    <div className="dm-helper-pill-menu" role="listbox" data-helper-pill-menu="">
+                      {MORE_INTENT_VALUES.map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`dm-helper-pill-menu-item${activeIntent === value ? " active" : ""}`}
+                          data-helper-pill={value}
+                          role="option"
+                          aria-selected={activeIntent === value}
+                          onClick={() => onPickIntent(value)}
+                        >
+                          {intentLabel(value)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </span>
+              </div>
+            )}
+            {!threadActive && intentHint ? (
+              <p className="dm-field-hint" data-helper-intent-hint="">{intentHint}</p>
+            ) : null}
+
+            {/* Active-mode indicator — shown once the thread has activated.
+                Tells the user which intent is locked for this conversation. */}
+            {threadActive && (
+              <div className="dm-helper-mode-row" data-helper-mode="">
+                <span className="dm-helper-mode-label">Mode</span>
+                <span className="dm-helper-mode-value">{intentLabel(activeIntent)}</span>
+              </div>
+            )}
+
+            {/* Conversation — rendered once the user has sent at least
+                one message. User turns right, assistant turns left,
+                system apply-receipts as compact centered tags. The
+                latest assistant turn is also surfaced as the structured
+                Proposals review block below. */}
+            {threadActive && messages.length > 0 && (
+              <div className="dm-helper-messages" data-helper-messages="">
+                {messages.map((m, i) => {
+                  if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") return null;
+                  const text = m.role === "user"
+                    ? (m.content || "")
+                    : (m.role === "assistant"
+                      ? (m.summary || extractAssistantSummary(m.content) || "")
+                      : (m.content || ""));
+                  return (
+                    <div
+                      key={i}
+                      className={`dm-helper-message role-${m.role}`}
+                      data-helper-message={m.role}
+                    >
+                      <span className="dm-helper-message-content">{text}</span>
+                    </div>
+                  );
+                })}
+                {streaming && (
+                  <div className="dm-helper-message role-assistant" data-helper-message="assistant-pending">
+                    <span className="dm-helper-message-content">
+                      Thinking
+                      <span className="dm-stream-cursor" aria-hidden="true">|</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="dm-field-group">
-              <label className="dm-field-label" htmlFor="helper-prompt">What do you need?</label>
+              <label className="dm-field-label" htmlFor="helper-prompt">{threadActive ? "Reply" : "What do you need?"}</label>
               <textarea
                 id="helper-prompt"
                 ref={promptRef}
                 className="dm-field-textarea"
-                rows={4}
-                placeholder='e.g. "A sales ops dashboard for a local agency with pipeline stages and weekly revenue chart"'
+                rows={threadActive ? 2 : 4}
+                placeholder={threadActive
+                  ? 'Continue the conversation…'
+                  : 'e.g. "A sales ops dashboard for a local agency with pipeline stages and weekly revenue chart"'}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 disabled={streaming}
@@ -469,7 +620,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 }}
               />
               <p className="dm-field-hint">
-                ⌘+Enter inside the prompt asks the helper. ⌘+Enter again (outside the prompt) applies your accepted proposals.
+                ⌘+Enter in the prompt sends. ⌘+Enter outside the prompt applies your accepted proposals.
               </p>
             </div>
 
@@ -481,7 +632,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               disabled={streaming || !prompt.trim()}
               data-helper-submit=""
             >
-              {streaming ? "Thinking…" : "Ask helper"}
+              {streaming ? "Thinking…" : (threadActive ? "Send" : "Ask helper")}
             </button>
 
             {queryError && (
@@ -491,18 +642,20 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               </div>
             )}
 
-            {/* Streaming surface */}
-            {(streaming || streamBuffer) && !result && (
+            {/* Streaming surface — only used before the thread activates
+                (first turn). After activation the conversation list owns
+                the live-thinking affordance via its pending bubble. */}
+            {!threadActive && (streaming || streamBuffer) && !result && (
               <div className="dm-helper-stream" data-helper-stream="">
                 <span>{streamBuffer}</span>
                 {streaming && <span className="dm-stream-cursor" aria-hidden="true">|</span>}
               </div>
             )}
 
-            {/* Empty proposal hint (only before first query) */}
-            {!streaming && !result && !queryError && !streamBuffer && (
+            {/* Empty hint (only before any conversation exists). */}
+            {!threadActive && !streaming && !result && !queryError && !streamBuffer && (
               <div className="dm-helper-empty-hint" data-helper-empty-hint="">
-                <p>Describe what you need. The helper drafts a list of proposed changes — review each one before applying.</p>
+                <p>Pick a mode, then describe what you need. The helper drafts proposed changes — review each one before applying.</p>
               </div>
             )}
 
@@ -754,6 +907,24 @@ function humanizeError(msg) {
   if (!text) return "Request failed";
   if (text.length < 140) return text;
   return "Request failed. Try again or check the Setup tab.";
+}
+
+// Assistant turns are stored as a JSON envelope string. Pull the human
+// `summary` line out for the conversation list. Falls back to the raw
+// content when the envelope is unparseable.
+function extractAssistantSummary(raw) {
+  if (typeof raw !== "string") return "";
+  const text = raw.trim();
+  if (!text) return "";
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const obj = JSON.parse(text);
+      if (obj && typeof obj.summary === "string" && obj.summary.trim()) return obj.summary.trim();
+    } catch {
+      // fall through
+    }
+  }
+  return text;
 }
 
 // Build candidate URLs for probing a local model endpoint. We accept any

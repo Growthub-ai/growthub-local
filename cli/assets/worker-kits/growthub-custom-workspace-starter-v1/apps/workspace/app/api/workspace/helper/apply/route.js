@@ -120,6 +120,11 @@ async function POST(request) {
   // CLI flow applies a proposals.json that carries a fresh threadId
   // (no prior in-session query). Both query and apply land on the same
   // governed object so the user sees one row per conversation.
+  //
+  // Apply outcomes are also appended to the row's messages[] as a
+  // `system` turn so the conversation captures both proposals and their
+  // governed apply receipts. The conversation tail stays under the cap
+  // (~40 entries) via upsertHelperThreadRow's slicing.
   if (threadId) {
     try {
       const existingRows = (workingConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads")?.rows || [];
@@ -127,10 +132,60 @@ async function POST(request) {
       const firstProposal = body.proposals?.[0];
       const seedTitle = existingRow.title
         || (firstProposal?.rationale ? String(firstProposal.rationale).slice(0, 72) : "Helper thread");
+
+      // Build a short, plain-language system message describing the apply
+      // outcome. This is what the user sees in the conversation panel
+      // after their accepted proposals are written.
+      const applyLines = [];
+      if (applied.length > 0) {
+        const summary = applied
+          .map((a) => `${a.type}${a.affectedField ? ` → ${a.affectedField}` : ""}`)
+          .join(", ");
+        applyLines.push(`Applied ${applied.length} change${applied.length === 1 ? "" : "s"}: ${summary}.`);
+      }
+      if (skipped.length > 0) {
+        const skipSummary = skipped
+          .slice(0, 4)
+          .map((s) => `${s.proposal?.type || "unknown"} (${s.reason || "no reason"})`)
+          .join("; ");
+        applyLines.push(`Skipped ${skipped.length}: ${skipSummary}${skipped.length > 4 ? "; …" : ""}.`);
+      }
+      if (applyLines.length === 0) {
+        applyLines.push("Apply completed with no changes.");
+      }
+      const applySystemMessage = {
+        role: "system",
+        content: applyLines.join(" "),
+        ts: appliedAt,
+        kind: "apply-receipt",
+        appliedCount: applied.length,
+        skippedCount: skipped.length,
+      };
+      const priorMessages = Array.isArray(existingRow.messages) ? existingRow.messages : [];
+      const nextMessages = [...priorMessages, applySystemMessage].slice(-40);
+
+      // Intent fallback — affectedField is in the PATCH-allowlist vocabulary
+      // (dashboards | widgetTypes | canvas | dataModel) and is NOT a member
+      // of the 7-intent vocabulary. Never assign it as a thread intent.
+      // Walk the proposal type back to its intent only when it's safe.
+      const TYPE_TO_INTENT_HINT = {
+        "dashboard.create": "build_dashboard",
+        "dashboard.update": "edit_view",
+        "widgetType.bind": "create_widget",
+        "canvas.widget.add": "create_widget",
+        "canvas.tab.create": "edit_view",
+        "dataModel.object.create": "create_object",
+        "dataModel.object.update": "edit_view",
+        "dataModel.row.add": "create_object",
+        "repair.binding": "repair",
+        "explain.object": "explain",
+      };
+      const proposalIntent = firstProposal?.type ? TYPE_TO_INTENT_HINT[firstProposal.type] : null;
+      const safeIntent = existingRow.intent || proposalIntent || "explain";
       workingConfig = upsertHelperThreadRow(workingConfig, {
         id: threadId,
         title: seedTitle,
-        intent: existingRow.intent || firstProposal?.affectedField || "explain",
+        intent: safeIntent,
         prompt: existingRow.prompt || "",
         summary: existingRow.summary || "",
         proposals: existingRow.proposals || body.proposals || [],
@@ -142,6 +197,7 @@ async function POST(request) {
         lastApplied: applied.map((a) => ({ type: a.type, affectedField: a.affectedField, rationale: a.rationale })),
         lastSkipped: skipped.map((s) => ({ type: s.proposal?.type, affectedField: s.proposal?.affectedField, reason: s.reason })),
         turnCount: (existingRow.turnCount || 0) + 1,
+        messages: nextMessages,
         updatedAt: appliedAt,
       });
     } catch {
@@ -209,12 +265,23 @@ async function POST(request) {
     }
   }
 
+  // If we updated a thread row, return the new conversation tail so the
+  // sidecar can render the apply-receipt system message in-place without
+  // a separate fetch.
+  let messagesAfterApply;
+  if (threadId) {
+    const ht = (workingConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
+    const row = ht?.rows?.find((r) => r?.id === threadId);
+    if (row && Array.isArray(row.messages)) messagesAfterApply = row.messages;
+  }
+
   return NextResponse.json({
     ok: true,
     threadId,
     applied,
     skipped,
     workspaceConfig: workingConfig,
+    messages: messagesAfterApply,
   });
 }
 
