@@ -444,6 +444,33 @@ function parseHelperEnvelope(rawEnvelope, intent) {
       parsed = null;
     }
   }
+  // rawText fallback — same pattern `helpers/grade-raw-pairs.mjs` uses
+  // when the adapter doesn't shape the inner gemma output under
+  // result.text / result.json. Pull the chat-completion content out of
+  // the raw response and try to parse it directly. This is what makes
+  // gemma3:4b output reliably reach the helper across every turn.
+  if (!parsed && typeof envelope?.rawText === "string") {
+    try {
+      const outer = JSON.parse(envelope.rawText);
+      const content = outer?.choices?.[0]?.message?.content;
+      if (typeof content === "string") {
+        const inner = JSON.parse(content);
+        if (inner && typeof inner === "object") {
+          // If the model emitted the canonical adapter envelope, descend
+          // into `json`. Otherwise treat the entire object as the helper
+          // envelope (model dropped the wrapper level — common with small
+          // models when response_format is set to json_object).
+          if (inner.json && typeof inner.json === "object") {
+            parsed = inner.json;
+          } else if (inner.summary !== undefined || inner.proposals !== undefined) {
+            parsed = inner;
+          }
+        }
+      }
+    } catch {
+      // fall through — caller surfaces "No structured response"
+    }
+  }
 
   if (!parsed || typeof parsed !== "object") {
     return {
