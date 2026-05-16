@@ -86,12 +86,27 @@ async function run(request) {
     || String(process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "").trim()
     || "gemma3:4b";
 
+  // Two calling modes (both governed, both JSON-only):
+  // 1. Legacy single-turn: caller passes `userIntent` and gets the canonical
+  //    workspace-sandbox system prompt + one user message.
+  // 2. Structured chat: caller passes `messages: [{role, content}, ...]` and
+  //    the adapter forwards the full conversation to the OpenAI-compatible
+  //    chat completions endpoint. This is what the workspace helper uses to
+  //    carry thread context across turns so the local model can resume work
+  //    inside one conversation. The caller is responsible for keeping the
+  //    leading system message stable across turns (KV-cache friendly).
+  const explicitMessages = Array.isArray(box.messages)
+    ? box.messages.filter((m) => m && typeof m.role === "string" && typeof m.content === "string")
+    : null;
+  const messages = explicitMessages && explicitMessages.length > 0
+    ? explicitMessages
+    : [
+        { role: "system", content: buildSystemPrompt() },
+        { role: "user", content: box.userIntent },
+      ];
   const body = {
     model,
-    messages: [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: box.userIntent },
-    ],
+    messages,
     temperature: 0.3,
     response_format: { type: "json_object" },
   };

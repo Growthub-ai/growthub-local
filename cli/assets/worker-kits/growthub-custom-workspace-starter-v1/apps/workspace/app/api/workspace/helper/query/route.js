@@ -48,7 +48,8 @@ import {
 } from "@/lib/workspace-config";
 import {
   sanitizeWorkspaceSnapshot,
-  buildHelperSystemPrompt,
+  buildChatMessages,
+  inferIntentFromPrompt,
   parseHelperEnvelope,
   validateProposals,
 } from "@/lib/workspace-helper";
@@ -108,15 +109,65 @@ async function POST(request) {
   // envRefs values, credentials, and row data can never travel into the
   // inference prompt regardless of how a caller frames the request.
   let snapshot;
+  let liveConfigForThread = null;
   if (body?.workspaceSnapshot && typeof body.workspaceSnapshot === "object") {
     snapshot = sanitizeWorkspaceSnapshot(body.workspaceSnapshot);
   } else {
     const liveConfig = await readWorkspaceConfig();
     snapshot = sanitizeWorkspaceSnapshot(liveConfig);
+    liveConfigForThread = liveConfig;
   }
 
-  const systemPrompt = buildHelperSystemPrompt(snapshot, intent);
-  const userIntent = [systemPrompt, "", "---", "", `User request: ${userPrompt}`].join("\n");
+  // Thread continuity — pull prior messages from the governed helper-threads
+  // row when the caller supplied a threadId so the chat completion gets the
+  // full conversation context.
+  const incomingThreadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
+  let priorMessages = [];
+  let priorThreadIntent = null;
+  if (incomingThreadId) {
+    try {
+      if (!liveConfigForThread) liveConfigForThread = await readWorkspaceConfig();
+      const ht = (liveConfigForThread?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
+      const row = ht?.rows?.find((r) => r?.id === incomingThreadId);
+      if (row) {
+        priorMessages = Array.isArray(row.messages) ? row.messages : [];
+        priorThreadIntent = typeof row.intent === "string" ? row.intent : null;
+      }
+    } catch {
+      // Non-fatal — fall through with no prior context.
+    }
+  }
+
+  // L3 heuristic intent routing.
+  //
+  // If the caller is continuing a thread, the original intent is locked
+  // for the rest of the thread (the UI surfaces it as the active mode).
+  // For a brand-new thread we only override the caller's chosen intent
+  // when the prompt produces a strong, unambiguous signal that conflicts.
+  let resolvedIntent = priorThreadIntent || intent;
+  let intentInference = null;
+  if (!priorThreadIntent) {
+    intentInference = inferIntentFromPrompt(userPrompt, intent);
+    if (
+      intentInference.confidence >= 2 &&
+      intentInference.intent !== intent &&
+      // Only override the safest defaults — never blow away a deliberate pick.
+      (intent === "create_object" || intent === "explain")
+    ) {
+      resolvedIntent = intentInference.intent;
+    }
+  }
+
+  const chatMessages = buildChatMessages({
+    snapshot,
+    intent: resolvedIntent,
+    priorMessages,
+    newUserPrompt: userPrompt,
+  });
+  // Keep the userIntent fallback populated for adapter compatibility — the
+  // adapter prefers `messages` when present and only reads `userIntent`
+  // when `messages` is empty.
+  const userIntent = userPrompt;
 
   await ensureSandboxAdaptersLoaded();
   const adapter = getSandboxAdapter("local-intelligence");
@@ -137,7 +188,7 @@ async function POST(request) {
   try {
     adapterResult = await adapter.run({
       runId,
-      name: `workspace-helper-${intent}`,
+      name: `workspace-helper-${resolvedIntent}`,
       runtime: "node",
       agentHost: "",
       command: userIntent,
@@ -150,6 +201,11 @@ async function POST(request) {
       workdir: "/tmp",
       ranAt,
       intelligenceSandbox: {
+        // Structured multi-turn message array — the adapter passes this
+        // straight through to the chat completions endpoint so the model
+        // sees the full conversation history with stable system prefix
+        // (KV-cache friendly).
+        messages: chatMessages,
         userIntent,
         localModel: modelOverride || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "gemma3:4b",
         localEndpoint: localEndpointOverride || "",
@@ -206,17 +262,34 @@ async function POST(request) {
   // Thread row — every governed conversation turn lands here so the user
   // can reopen it from /data-model → Helper Threads. Either continue an
   // existing thread (when the caller supplies threadId) or start a new one.
-  const incomingThreadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
   const threadId = incomingThreadId || nextThreadId();
   const turnCount = 1;
+
+  // Build the new messages tail — one user turn (raw prompt) and one
+  // assistant turn (the JSON envelope we just returned). This is the
+  // conversation history that gets replayed on the next turn.
+  const nowIso = new Date().toISOString();
+  const assistantEnvelope = JSON.stringify({
+    summary: parsed.summary,
+    proposals: validProposals,
+    warnings,
+  });
+  const newTurn = [
+    { role: "user", content: userPrompt, ts: nowIso },
+    { role: "assistant", content: assistantEnvelope, ts: nowIso, summary: parsed.summary, proposals: validProposals, warnings },
+  ];
+  const nextMessages = [...priorMessages, ...newTurn].slice(-40);
 
   const response = {
     ok: true,
     threadId,
+    intent: resolvedIntent,
+    intentInference,
     summary: parsed.summary,
     proposals: validProposals,
     warnings,
     receipts,
+    messages: nextMessages,
   };
 
   const persistence = describePersistenceMode();
@@ -224,13 +297,14 @@ async function POST(request) {
     // Audit-trail (source-records) — preserved exactly as before for the
     // distillation pipeline.
     try {
-      const sourceId = helperSourceId(intent, runId);
+      const sourceId = helperSourceId(resolvedIntent, runId);
       const existing = await readWorkspaceSourceRecords(sourceId);
       const priorRecords = Array.isArray(existing?.records) ? existing.records : [];
       const record = {
         runId,
         ranAt,
-        intent,
+        intent: resolvedIntent,
+        intentRequested: intent,
         userPrompt,
         summary: parsed.summary,
         proposalCount: validProposals.length,
@@ -240,6 +314,7 @@ async function POST(request) {
         confidence: parsed.confidence,
         latencyMs: parsed.latencyMs,
         threadId,
+        turnIndex: priorMessages.filter((m) => m?.role === "user").length + 1,
       };
       await writeWorkspaceSourceRecords(sourceId, [...priorRecords, record].slice(-50), {
         integrationId: sourceId,
@@ -250,16 +325,19 @@ async function POST(request) {
     }
 
     // Governed thread row — visible to the user as a Data Model row with a
-    // "Reopen" hyperlink that re-hydrates the sidecar.
+    // "Reopen" hyperlink that re-hydrates the sidecar. The row carries the
+    // full multi-turn message history; the assistant's latest turn is also
+    // surfaced as `summary` / `proposals` / `receipts` on the row for
+    // quick triage from the Data Model surface.
     try {
-      const liveConfig = await readWorkspaceConfig();
+      const liveConfig = liveConfigForThread || (await readWorkspaceConfig());
       const existingRows = (liveConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads")?.rows || [];
       const existingRow = existingRows.find((r) => r?.id === threadId) || {};
       const merged = upsertHelperThreadRow(liveConfig, {
         id: threadId,
         title: existingRow.title || truncateRowTitle(userPrompt),
-        intent,
-        prompt: userPrompt,
+        intent: resolvedIntent,
+        prompt: existingRow.prompt || userPrompt,
         summary: parsed.summary,
         proposals: validProposals,
         warnings,
@@ -268,6 +346,7 @@ async function POST(request) {
         applied: existingRow.applied || 0,
         skipped: existingRow.skipped || 0,
         turnCount: (existingRow.turnCount || 0) + turnCount,
+        messages: nextMessages,
         updatedAt: ranAt,
       });
       await writeWorkspaceConfig({ dataModel: merged.dataModel });

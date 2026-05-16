@@ -74,6 +74,195 @@ const INTENT_DESCRIPTIONS = {
 };
 
 /**
+ * L3 heuristic intent router.
+ *
+ * Pure regex, safe, non-destructive. Used when the caller did not explicitly
+ * pick a pill — or when the user's prompt strongly contradicts the default
+ * intent. Returns the inferred intent and a small confidence score (number
+ * of matched signals). The caller decides whether to honor it.
+ *
+ * Order matters: more specific intents come first so `register_api` wins over
+ * `create_object` when the prompt mentions both "object" and "API".
+ */
+const INTENT_HEURISTIC_PATTERNS = [
+  { intent: "register_api", patterns: [
+    /\b(api|endpoint|webhook|integration|connector|oauth|bearer\s+token|auth\s+header)\b/i,
+    /\b(register|connect|wire|hook\s*up)\b.*\b(api|endpoint|webhook|service|integration)\b/i,
+    /\b(rest|graphql|grpc)\b/i,
+  ]},
+  { intent: "repair", patterns: [
+    /\b(repair|fix|broken|missing|orphan|incomplete|dangling|stale|drift)\b/i,
+    /\b(why\s+is(n'?t)?|what'?s\s+wrong\s+with)\b/i,
+    /\bbroken\s+(binding|reference|link|widget|view)\b/i,
+  ]},
+  { intent: "explain", patterns: [
+    /\b(explain|describe|summari[sz]e|what\s+(is|does|are)\b|how\s+(does|do|is|are)\b|tell\s+me\s+about)\b/i,
+    /\bwhy\s+does\b/i,
+  ]},
+  { intent: "build_dashboard", patterns: [
+    /\b(dashboard|kpi|metric|report(ing)?|overview|home\s*page)\b/i,
+    /\b(build|create|draft|design|set\s*up|spin\s*up)\b.*\b(dashboard|view|page|report)\b/i,
+  ]},
+  { intent: "create_widget", patterns: [
+    /\b(widget|chart|graph|tile|card|visuali[sz]ation|plot|figure)\b/i,
+    /\b(add|create|insert|place)\b.*\b(widget|chart|graph|tile|card)\b/i,
+  ]},
+  { intent: "edit_view", patterns: [
+    /\b(edit|update|change|modify|tweak|adjust|rename|reorder|move|resize|recolor|relayout|tidy)\b/i,
+    /\b(rearrange|reorganize|polish|improve)\b.*\b(view|layout|dashboard|tab|page)\b/i,
+  ]},
+  { intent: "create_object", patterns: [
+    /\b(object|table|list|collection|entity|record(s)?|database|schema|model)\b/i,
+    /\btrack(ing)?\b/i,
+    /\b(create|add|build|spin\s*up|set\s*up)\b.*\b(object|table|list|entity|catalog)\b/i,
+  ]},
+];
+
+const VALID_INTENT_VALUES = Object.keys(INTENT_DESCRIPTIONS);
+
+/**
+ * Infer the user's intent from free-form prompt text. The fallback is
+ * returned when no pattern matches. Returns:
+ *   { intent: <one of VALID_INTENT_VALUES>, confidence: number, matched: string[] }
+ *
+ * Confidence is just the count of matched patterns across all intent groups
+ * for the winning intent. Zero means "no signal, keep the caller's choice".
+ *
+ * This is L3 of the helper routing ladder: L1 = user prompt init,
+ * L2 = parse, L3 = heuristic regex. All three stages run server-side; the
+ * client never has to interpret the prompt itself.
+ */
+function inferIntentFromPrompt(prompt, fallback) {
+  const text = typeof prompt === "string" ? prompt.trim() : "";
+  const safeFallback = VALID_INTENT_VALUES.includes(fallback) ? fallback : "create_object";
+  if (!text) return { intent: safeFallback, confidence: 0, matched: [] };
+  const counts = new Map();
+  const matched = [];
+  for (const { intent, patterns } of INTENT_HEURISTIC_PATTERNS) {
+    for (const re of patterns) {
+      if (re.test(text)) {
+        counts.set(intent, (counts.get(intent) || 0) + 1);
+        matched.push(`${intent}::${re.source}`);
+      }
+    }
+  }
+  if (counts.size === 0) return { intent: safeFallback, confidence: 0, matched: [] };
+  let bestIntent = safeFallback;
+  let best = 0;
+  for (const [intent, count] of counts) {
+    if (count > best) { best = count; bestIntent = intent; }
+  }
+  return { intent: bestIntent, confidence: best, matched };
+}
+
+/**
+ * Build a stable system message for chat completions.
+ *
+ * Intentionally split from the snapshot-aware system prompt so the system
+ * message stays IDENTICAL across all turns of the same intent inside one
+ * thread — this is what lets the local-intelligence endpoint's KV cache
+ * reuse the prefix on consecutive turns. Snapshot state travels as a
+ * regular message at the start of the conversation, not in the system slot.
+ */
+function buildStableSystemPrompt(intent) {
+  const intentDesc = INTENT_DESCRIPTIONS[intent] || INTENT_DESCRIPTIONS["explain"];
+  return [
+    "You are the Growthub Workspace Helper — a governed, workspace-grammar-aware planning engine.",
+    "",
+    "## Operating contract",
+    "- You are propose-only. Mutation happens through a separate governed apply step the user explicitly triggers.",
+    "- You speak in valid JSON only. The user-facing UI extracts `summary` and `proposals` from your output.",
+    "- On the FIRST user turn of a thread, briefly confirm what you understood and, if necessary, ask ONE clarifying question via the `summary` field with `proposals: []`. Otherwise, propose immediately.",
+    "- On every subsequent turn, react to the delta between the user's latest message and the conversation so far.",
+    "- Never invent proposal types. Never invent affectedField values outside the PATCH allowlist.",
+    "- Never include credentials, env-ref values, provider tokens, or secrets in any payload.",
+    "",
+    "## Current intent",
+    `${intent} — ${intentDesc}`,
+    "",
+    "## Growthub workspace grammar",
+    `Known widget kinds: ${KNOWN_WIDGET_KINDS.join(", ")}`,
+    `Known object types: ${KNOWN_OBJECT_TYPES.join(", ")}`,
+    `PATCH allowlist (only these top-level keys can be mutated): ${PATCH_ALLOWLIST.join(", ")}`,
+    "",
+    "## Valid proposal types and their target patch field",
+    WORKSPACE_HELPER_PROPOSAL_TYPES.map(
+      (t) => `  ${t} → ${PROPOSAL_TYPE_TO_PATCH_FIELD[t]}`
+    ).join("\n"),
+    "",
+    "## Output envelope — ALWAYS one JSON object",
+    JSON.stringify({
+      summary: "One sentence: what you understood, or what you are proposing and why",
+      proposals: [
+        {
+          type: "<proposal type from the list above>",
+          affectedField: "<dashboards | widgetTypes | canvas | dataModel>",
+          payload: { "...": "partial config fragment for this patch field" },
+          rationale: "Why this change helps the user",
+          confidence: 0.9,
+        },
+      ],
+      warnings: ["any non-blocking issues or caveats"],
+    }),
+  ].join("\n");
+}
+
+/**
+ * Build a workspace-state user message for the start of a conversation.
+ *
+ * Travels as a regular `user` message (not a system message) so the static
+ * system prompt above stays cacheable. The model is instructed in the
+ * stable system message to treat the first user message as state context.
+ */
+function buildWorkspaceStateMessage(snapshot) {
+  const summary = snapshot
+    ? [
+        snapshot.workspaceName ? `Workspace: "${snapshot.workspaceName}"` : null,
+        snapshot.dashboards?.length
+          ? `Dashboards: ${snapshot.dashboards.map((d) => `"${d.name}" (${d.status || "draft"})`).join(", ")}`
+          : "Dashboards: none yet",
+        snapshot.widgetTypes?.length
+          ? `Widget types registered: ${snapshot.widgetTypes.map((w) => w.kind).join(", ")}`
+          : "Widget types: none yet",
+        snapshot.dataModelObjects?.length
+          ? `Data model objects: ${snapshot.dataModelObjects.map((o) => `"${o.label}" [${o.objectType || "custom"}] (${o.rowCount} rows)`).join("; ")}`
+          : "Data model objects: none yet",
+        snapshot.canvasSummary
+          ? `Canvas: ${snapshot.canvasSummary.widgetCount} widgets across ${snapshot.canvasSummary.tabCount} tab(s)`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "No existing workspace context provided.";
+  return `Workspace state (read-only context — do not echo back):\n${summary}`;
+}
+
+/**
+ * Assemble the full chat-completion message array for one turn of a
+ * helper thread. Includes the stable system prompt, the workspace-state
+ * user message, all prior turns from the thread row's `messages[]`
+ * (capped to the most recent N), and the new user message at the end.
+ *
+ * This is what gets passed to the local-intelligence adapter via
+ * `intelligenceSandbox.messages`. The adapter forwards it verbatim to
+ * the OpenAI-compatible chat completions endpoint.
+ */
+function buildChatMessages({ snapshot, intent, priorMessages, newUserPrompt, maxPriorTurns = 20 }) {
+  const out = [];
+  out.push({ role: "system", content: buildStableSystemPrompt(intent) });
+  out.push({ role: "user", content: buildWorkspaceStateMessage(snapshot) });
+  out.push({ role: "assistant", content: '{"summary":"Acknowledged the workspace state. Ready to help.","proposals":[],"warnings":[]}' });
+  // Replay history (capped). Filter to clean user/assistant turns only.
+  const prior = Array.isArray(priorMessages) ? priorMessages : [];
+  const cleaned = prior
+    .filter((m) => m && typeof m.role === "string" && typeof m.content === "string" && (m.role === "user" || m.role === "assistant"));
+  const capped = cleaned.slice(Math.max(0, cleaned.length - maxPriorTurns));
+  for (const m of capped) out.push({ role: m.role, content: m.content });
+  out.push({ role: "user", content: newUserPrompt });
+  return out;
+}
+
+/**
  * Strip envRefs values, credentials, and row data from the live config.
  * Only schema shape (column names, object types, dashboard ids/names) travels
  * into the inference prompt.
@@ -352,6 +541,10 @@ function validateProposals(proposals) {
 export {
   sanitizeWorkspaceSnapshot,
   buildHelperSystemPrompt,
+  buildStableSystemPrompt,
+  buildWorkspaceStateMessage,
+  buildChatMessages,
+  inferIntentFromPrompt,
   parseHelperEnvelope,
   validateProposals,
   WORKSPACE_HELPER_PROPOSAL_TYPES,
@@ -359,4 +552,5 @@ export {
   KNOWN_WIDGET_KINDS,
   KNOWN_OBJECT_TYPES,
   PATCH_ALLOWLIST,
+  VALID_INTENT_VALUES,
 };
