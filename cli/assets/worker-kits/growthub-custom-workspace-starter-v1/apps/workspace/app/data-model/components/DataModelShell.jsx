@@ -2201,6 +2201,7 @@ export default function DataModelShell() {
   const [addOpen, setAddOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
   const [helperIntent, setHelperIntent] = useState("create_object");
+  const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
@@ -2223,18 +2224,34 @@ export default function DataModelShell() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Cmd+K opens command palette
+  // Cmd+K opens command palette. Slash opens it too, but only when no
+  // editable element is focused — matches the dashboard builder.
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
         setCommandPaletteOpen((v) => !v);
+        return;
+      }
+      if (e.key === "/" && !commandPaletteOpen && !addOpen && !helperOpen) {
+        const t = e.target;
+        const editable = t instanceof HTMLElement && (
+          t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable
+        );
+        if (!editable) {
+          e.preventDefault();
+          setCommandPaletteOpen(true);
+          return;
+        }
       }
       if (e.key === "Escape" && commandPaletteOpen) setCommandPaletteOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [commandPaletteOpen]);
+  }, [commandPaletteOpen, addOpen, helperOpen]);
 
   const tables = useMemo(
     () => (workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig) : []),
@@ -2337,27 +2354,52 @@ export default function DataModelShell() {
     custom: "create_object",
   };
 
+  // Starter prompt seeded into the textarea when the user asks the helper
+  // about a specific Data Model object. Non-technical users see context-
+  // appropriate guidance instead of an empty box.
+  const STARTER_PROMPT_FOR_TYPE = {
+    people: (name) => `Improve the "${name}" people list. Suggest fields and a view layout that fit a sales / outreach workflow.`,
+    tasks: (name) => `Improve the "${name}" tasks board. Suggest status fields, owners, and a sensible view layout.`,
+    "api-registry": (name) => `Register a new API integration for "${name}". Draft the row with integration label, base URL, endpoint, auth header, and method.`,
+    "sandbox-environment": (name) => `Configure the "${name}" sandbox environment. Suggest runtime, prompt, instructions, and lifecycle status fields.`,
+    "data-source": (name) => `Explain how the "${name}" data source is wired up and what changes would make it more reliable.`,
+    custom: (name) => `Improve the "${name}" object. Suggest fields, relations, and starter rows that fit my use case.`,
+  };
+
   const openHelperForTable = (table) => {
-    setHelperIntent(INTENT_FOR_TYPE[table?.objectType] || "create_object");
+    const intent = INTENT_FOR_TYPE[table?.objectType] || "create_object";
+    const fill = STARTER_PROMPT_FOR_TYPE[table?.objectType];
+    setHelperIntent(intent);
+    setHelperInitialPrompt(fill ? fill(table?.label || table?.source || "this object") : "");
+    setHelperOpen(true);
+  };
+
+  const openHelperWith = (intent, prompt) => {
+    setHelperIntent(intent);
+    setHelperInitialPrompt(prompt || "");
     setHelperOpen(true);
   };
 
   const paletteCommands = [
     {
-      id: "helper.build_dashboard", group: "Ask helper", label: "Build a dashboard",
-      run: () => { setHelperIntent("build_dashboard"); setHelperOpen(true); }
+      id: "helper.build_dashboard", group: "Ask helper", label: "Ask helper — build a dashboard",
+      run: () => openHelperWith("build_dashboard", "Draft a dashboard for a local agency with pipeline stages, weekly revenue, and a leaderboard widget.")
     },
     {
-      id: "helper.create_object", group: "Ask helper", label: "Create a custom object",
-      run: () => { setHelperIntent("create_object"); setHelperOpen(true); }
+      id: "helper.create_object", group: "Ask helper", label: "Ask helper — create a custom object",
+      run: () => openHelperWith("create_object", "Create a custom object for tracking client engagements: name, owner, status, value, next step.")
     },
     {
-      id: "helper.register_api", group: "Ask helper", label: "Register an API",
-      run: () => { setHelperIntent("register_api"); setHelperOpen(true); }
+      id: "helper.register_api", group: "Ask helper", label: "Ask helper — register an API",
+      run: () => openHelperWith("register_api", "Register an API integration: integration label, base URL, endpoint, auth header, and method.")
     },
     {
-      id: "helper.repair", group: "Ask helper", label: "Repair workspace",
-      run: () => { setHelperIntent("repair"); setHelperOpen(true); }
+      id: "helper.repair", group: "Ask helper", label: "Ask helper — repair workspace",
+      run: () => openHelperWith("repair", "Inspect this workspace for missing references, broken bindings, or incomplete views. Propose the smallest fix for each issue.")
+    },
+    {
+      id: "helper.explain", group: "Ask helper", label: "Ask helper — explain this workspace",
+      run: () => openHelperWith("explain", "Explain what this workspace contains and how the objects, dashboards, and bindings relate to each other.")
     },
     {
       id: "object.new", group: "Data Model", label: "New object",
@@ -2390,7 +2432,17 @@ export default function DataModelShell() {
             <button
               type="button"
               className="dm-btn-outline"
-              onClick={() => setHelperOpen((v) => !v)}
+              onClick={() => {
+                if (helperOpen) { setHelperOpen(false); return; }
+                if (selectedTable) {
+                  openHelperForTable(selectedTable);
+                } else {
+                  openHelperWith(
+                    "create_object",
+                    "Create my first business object: a client list with name, owner, status, deal value, and next step."
+                  );
+                }
+              }}
               title="Ask the workspace helper"
             >
               <Zap size={14} />Ask helper
@@ -2414,6 +2466,7 @@ export default function DataModelShell() {
           onClose={() => setHelperOpen(false)}
           workspaceConfig={workspaceConfig}
           initialIntent={helperIntent}
+          initialPrompt={helperInitialPrompt}
           onApplied={(updatedConfig) => {
             setWorkspaceConfig(updatedConfig);
           }}
@@ -2475,10 +2528,10 @@ export default function DataModelShell() {
               <button
                 type="button"
                 className="dm-btn-outline"
-                onClick={() => {
-                  setHelperIntent("create_object");
-                  setHelperOpen(true);
-                }}
+                onClick={() => openHelperWith(
+                  "create_object",
+                  "I run a local agency. Create my first business object: a client list with name, owner, status, deal value, and next step. Then suggest a starter dashboard."
+                )}
               >
                 <Zap size={14} />Try the helper
               </button>
