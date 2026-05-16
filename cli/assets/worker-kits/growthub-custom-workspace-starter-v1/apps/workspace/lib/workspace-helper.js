@@ -247,7 +247,7 @@ function buildWorkspaceStateMessage(snapshot) {
  * `intelligenceSandbox.messages`. The adapter forwards it verbatim to
  * the OpenAI-compatible chat completions endpoint.
  */
-function buildChatMessages({ snapshot, intent, priorMessages, newUserPrompt, maxPriorTurns = 20 }) {
+function buildChatMessages({ snapshot, intent, priorMessages, newUserPrompt, maxPriorTurns = 200 }) {
   const out = [];
   out.push({ role: "system", content: buildStableSystemPrompt(intent) });
   out.push({ role: "user", content: buildWorkspaceStateMessage(snapshot) });

@@ -109,12 +109,90 @@ function applyProposalToConfig(currentConfig, proposal) {
     case "canvas.widget.add": {
       const canvas = config.canvas ? { ...config.canvas } : {};
       const widgets = Array.isArray(canvas.widgets) ? [...canvas.widgets] : [];
+      // Normalize either grammar — canonical {x,y,w,h} OR helper-spoken
+      // {col,row,width,height}/{layout:{...}} — into the validator-expected
+      // `position: {x, y, w, h}`. Also auto-pack to the first non-colliding
+      // slot when the helper doesn't pick one so the widget actually lands
+      // instead of hard-colliding at 0:0 with whatever existed first.
+      const pl = proposal.payload || {};
+      const layoutSrc = pl.position || pl.layout || pl;
+      let pos = {
+        x: Number.isFinite(layoutSrc.x) ? layoutSrc.x
+          : Number.isFinite(layoutSrc.col) ? layoutSrc.col : undefined,
+        y: Number.isFinite(layoutSrc.y) ? layoutSrc.y
+          : Number.isFinite(layoutSrc.row) ? layoutSrc.row : undefined,
+        w: Number.isFinite(layoutSrc.w) ? layoutSrc.w
+          : Number.isFinite(layoutSrc.width) ? layoutSrc.width : 6,
+        h: Number.isFinite(layoutSrc.h) ? layoutSrc.h
+          : Number.isFinite(layoutSrc.height) ? layoutSrc.height : 4,
+      };
+      if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+        // Auto-pack: scan grid (12 cols × 16 rows) row-by-row for the first
+        // empty rectangle of size w×h that doesn't overlap an existing widget.
+        const GRID_COLS = 12;
+        const GRID_ROWS = 16;
+        const occupied = new Set();
+        for (const w of widgets) {
+          const p = w?.position;
+          if (!p) continue;
+          for (let dx = 0; dx < (p.w || 0); dx += 1) {
+            for (let dy = 0; dy < (p.h || 0); dy += 1) {
+              occupied.add(`${p.x + dx}:${p.y + dy}`);
+            }
+          }
+        }
+        const fits = (x, y) => {
+          if (x + pos.w > GRID_COLS) return false;
+          if (y + pos.h > GRID_ROWS) return false;
+          for (let dx = 0; dx < pos.w; dx += 1) {
+            for (let dy = 0; dy < pos.h; dy += 1) {
+              if (occupied.has(`${x + dx}:${y + dy}`)) return false;
+            }
+          }
+          return true;
+        };
+        outer: for (let y = 0; y < GRID_ROWS; y += 1) {
+          for (let x = 0; x <= GRID_COLS - pos.w; x += 1) {
+            if (fits(x, y)) { pos = { ...pos, x, y }; break outer; }
+          }
+        }
+        if (!Number.isFinite(pos.x)) { pos.x = 0; pos.y = 0; }
+      }
+      // Bind the widget to a Data Model object. The kit's view/chart
+      // widgets read their data INLINE from `config.source` (label),
+      // `config.columns`, and `config.rows` (see lib/workspace-data-model.js
+      // deriveWidgetTable). They do NOT dynamically resolve a runtime
+      // `sourceObjectId` reference. So to make a widget actually render
+      // real data the moment it lands, we SNAPSHOT the bound object's
+      // columns + rows into the widget config at apply time. The top-level
+      // `sourceObjectId` is preserved as provenance so the helper / future
+      // refresh action can re-pull, and so listWorkspaceDataModelTables
+      // can attribute widgetRefs back to the source object.
+      const sourceObjectId = pl.sourceObjectId || pl.objectId || null;
+      const incomingConfig = pl.config || {};
+      let injectedConfig = incomingConfig;
+      if (sourceObjectId) {
+        const dmObj = (config.dataModel?.objects || []).find((o) => o?.id === sourceObjectId);
+        if (dmObj) {
+          const requestedCols = Array.isArray(incomingConfig.columns) && incomingConfig.columns.length
+            ? incomingConfig.columns
+            : (Array.isArray(dmObj.columns) ? dmObj.columns : []);
+          const objectRows = Array.isArray(dmObj.rows) ? dmObj.rows : [];
+          injectedConfig = {
+            ...incomingConfig,
+            source: incomingConfig.source || dmObj.label || dmObj.source || sourceObjectId,
+            columns: requestedCols,
+            rows: objectRows,
+          };
+        }
+      }
       const newWidget = {
-        id: proposal.payload.id || `widget-${Date.now().toString(36)}`,
-        kind: proposal.payload.kind || "view",
-        title: proposal.payload.title || "Untitled Widget",
-        position: proposal.payload.position || { x: 0, y: 0, w: 6, h: 4 },
-        config: proposal.payload.config || {},
+        id: pl.id || `widget-${Date.now().toString(36)}`,
+        kind: pl.kind || "view",
+        title: pl.title || "Untitled Widget",
+        position: pos,
+        config: injectedConfig,
+        ...(sourceObjectId ? { sourceObjectId } : {}),
       };
       canvas.widgets = [...widgets, newWidget];
       config.canvas = canvas;

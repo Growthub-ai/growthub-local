@@ -44,6 +44,7 @@ import {
   Pencil,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 
 function textColorForAccent(accent) {
@@ -111,7 +112,10 @@ export function WorkspaceRail({
   onConfigChange,
   dashboardsSlot,
   dataModelSlot,
-  managementSlot,
+  // `managementSlot` retained as accepted-but-ignored prop for backward
+  // compatibility with callers that still pass it. The Management item
+  // moved to the Workspace Settings → Ownership tab.
+  managementSlot: _managementSlotDeprecated,
   settingsSlot,
 }) {
   const branding = workspaceConfig?.branding || {};
@@ -123,7 +127,10 @@ export function WorkspaceRail({
   const [openMenuId, setOpenMenuId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [chatSearch, setChatSearch] = useState("");
+  const [chatExpanded, setChatExpanded] = useState(false);
   const menuWrapRef = useRef(null);
+  const CHAT_PREVIEW_COUNT = 10;
 
   useEffect(() => {
     if (!openMenuId) return undefined;
@@ -293,7 +300,10 @@ export function WorkspaceRail({
         </button>
       </div>
 
-      {/* Body: switches by tab */}
+      {/* Body: switches by tab. The legacy `Management` nav item now
+          lives as the 4th Workspace Settings tab (`/settings/ownership`).
+          The Data Model link is renamed to `Management` since the data
+          model surface IS the user-facing object/list management. */}
       {activeTab === "home" ? (
         <nav className="workspace-nav" aria-label="Workspace pages">
           {dashboardsSlot ?? (
@@ -306,10 +316,9 @@ export function WorkspaceRail({
               href="/data-model"
               className={pathname.startsWith("/data-model") ? "active" : undefined}
             >
-              Data Model
+              Management
             </Link>
           )}
-          {managementSlot ?? <span className="workspace-nav-static">Management</span>}
           {settingsSlot ?? (
             <Link
               href="/settings/general"
@@ -321,14 +330,47 @@ export function WorkspaceRail({
         </nav>
       ) : (
         <div className="workspace-rail-chat" aria-label="Helper conversation threads">
+          <div className="workspace-rail-chat-search">
+            <Search size={12} aria-hidden="true" />
+            <input
+              type="text"
+              className="workspace-rail-chat-search-input"
+              placeholder="Search chats"
+              value={chatSearch}
+              onChange={(e) => setChatSearch(e.target.value)}
+              aria-label="Search helper conversations"
+            />
+            {chatSearch && (
+              <button
+                type="button"
+                className="workspace-rail-chat-search-clear"
+                onClick={() => setChatSearch("")}
+                aria-label="Clear search"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
           <div className="workspace-rail-section-label">Latest</div>
-          {threads.length === 0 ? (
-            <p className="workspace-rail-chat-empty">
-              No helper conversations yet. Open one with Ask helper.
-            </p>
-          ) : (
-            <ul className="workspace-rail-thread-list" role="list">
-              {threads.map((row) => {
+          {(() => {
+            const q = chatSearch.trim().toLowerCase();
+            const filtered = q
+              ? threads.filter((r) => deriveThreadTitle(r).toLowerCase().includes(q))
+              : threads;
+            if (filtered.length === 0) {
+              return (
+                <p className="workspace-rail-chat-empty">
+                  {q ? `No threads match “${chatSearch.trim()}”.` : "No helper conversations yet. Open one with Ask helper."}
+                </p>
+              );
+            }
+            const truncate = !chatExpanded && !q && filtered.length > CHAT_PREVIEW_COUNT;
+            const visible = truncate ? filtered.slice(0, CHAT_PREVIEW_COUNT) : filtered;
+            return (
+              <>
+                <div className={`workspace-rail-thread-scroll${truncate ? " is-truncated" : ""}`}>
+                  <ul className="workspace-rail-thread-list" role="list">
+                    {visible.map((row) => {
                 const title = deriveThreadTitle(row);
                 const isRenaming = renamingId === row.id;
                 const isMenuOpen = openMenuId === row.id;
@@ -417,11 +459,32 @@ export function WorkspaceRail({
                         </div>
                       )}
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                      </li>
+                    );
+                  })}
+                </ul>
+                </div>
+                {truncate && (
+                  <button
+                    type="button"
+                    className="workspace-rail-chat-show-more"
+                    onClick={() => setChatExpanded(true)}
+                  >
+                    Show {filtered.length - CHAT_PREVIEW_COUNT} more
+                  </button>
+                )}
+                {!truncate && filtered.length > CHAT_PREVIEW_COUNT && chatExpanded && (
+                  <button
+                    type="button"
+                    className="workspace-rail-chat-show-more"
+                    onClick={() => setChatExpanded(false)}
+                  >
+                    Show less
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

@@ -2387,6 +2387,7 @@ export default function DataModelShell() {
     const fill = STARTER_PROMPT_FOR_TYPE[table?.objectType];
     setHelperIntent(intent);
     setHelperInitialPrompt(fill ? fill(table?.label || table?.source || "this object") : "");
+    setHelperInitialThread(null);
     setHelperOpen(true);
   };
 
@@ -2466,14 +2467,13 @@ export default function DataModelShell() {
         helperOpen={helperOpen}
         onOpenHelper={() => {
           if (helperOpen) { setHelperOpen(false); return; }
-          if (selectedTable) {
-            openHelperForTable(selectedTable);
-          } else {
-            openHelperWith(
-              "create_object",
-              "Create my first business object: a client list with name, owner, status, deal value, and next step."
-            );
-          }
+          // Rail pill ALWAYS opens a fresh thread (empty state, chip
+          // stack visible). Reopening a specific conversation goes
+          // through onOpenThread from the Chat tab.
+          setHelperInitialThread(null);
+          setHelperIntent("create_object");
+          setHelperInitialPrompt("");
+          setHelperOpen(true);
         }}
         onOpenThread={(row) => {
           setHelperInitialThread(row);
@@ -2538,6 +2538,22 @@ export default function DataModelShell() {
           initialIntent={helperIntent}
           initialPrompt={helperInitialPrompt}
           initialThread={helperInitialThread}
+          onOpenArtifact={(target) => {
+            // Close the chat and route the user to the artifact they
+            // just created — data-model object/row stays in-page, a
+            // dashboard navigates to the workspace home with a query
+            // param the builder reads to focus it.
+            if (!target) return;
+            if (target.surface === "data-model" && target.source) {
+              setSelectedSource(target.source);
+              setHelperOpen(false);
+              return;
+            }
+            if (target.surface === "dashboard" && target.dashboardId) {
+              setHelperOpen(false);
+              router.push(`/?dashboard=${encodeURIComponent(target.dashboardId)}`);
+            }
+          }}
           onApplied={(updatedConfig) => {
             // Anchor the user on the most recently created/updated Data Model
             // object so a helper-driven object.create lands on the surface

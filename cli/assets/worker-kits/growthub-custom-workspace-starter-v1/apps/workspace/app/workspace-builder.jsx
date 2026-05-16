@@ -268,7 +268,7 @@ const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const GRID_CELL_COUNT = GRID_COLUMNS * GRID_ROWS;
 const DEFAULT_TAB_ID = "tab-default";
-const COLLAPSED_GRID_COLUMNS = "220px minmax(0, 1fr)";
+const COLLAPSED_GRID_COLUMNS = "264px minmax(0, 1fr)";
 
 function generateId(prefix) {
   if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
@@ -4327,13 +4327,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         helperOpen={helperOpen}
         onOpenHelper={() => {
           if (helperOpen) { setHelperOpen(false); return; }
-          const dashName = activeDashboard?.name || "Untitled";
-          setHelperIntent(workspaceView === "builder" ? "edit_view" : "build_dashboard");
-          setHelperInitialPrompt(
-            workspaceView === "builder"
-              ? `Improve the "${dashName}" dashboard. Suggest widget placements and bindings that match the data already in the workspace.`
-              : "Draft a new dashboard for a local agency: pipeline overview, weekly revenue, and a leaderboard widget."
-          );
+          // Rail pill ALWAYS lands on a fresh thread (chip stack +
+          // empty composer). Reopen specific threads via the Chat tab.
+          setHelperIntent("build_dashboard");
+          setHelperInitialPrompt("");
           setHelperInitialThread(null);
           setHelperOpen(true);
         }}
@@ -4594,6 +4591,23 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         initialIntent={helperIntent}
         initialPrompt={helperInitialPrompt}
         initialThread={helperInitialThread}
+        onOpenArtifact={(target) => {
+          if (!target) return;
+          // dashboards surface — focus the created dashboard inline.
+          if (target.surface === "dashboard" && target.dashboardId) {
+            setActiveDashboardId?.(target.dashboardId);
+            setWorkspaceView?.("builder");
+            setHelperOpen(false);
+            return;
+          }
+          // a data-model artifact was applied — navigate to that surface.
+          if (target.surface === "data-model" && target.source) {
+            setHelperOpen(false);
+            if (typeof window !== "undefined") {
+              window.location.href = `/data-model?source=${encodeURIComponent(target.source)}`;
+            }
+          }
+        }}
         onApplied={(updatedConfig) => {
           if (!updatedConfig) return;
           // Re-seat canvas from the dashboard the user is currently viewing.

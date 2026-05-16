@@ -288,6 +288,15 @@ function deriveManualObjectTable(object) {
   };
 }
 
+// Helper-owned hidden objects — system-managed, never surfaced in the
+// user-facing Data Model picker / object list / dynamic title. The
+// workspace-helper-sandbox row backs the helper's local-intelligence
+// sandbox primitive (helper-tuned instructions live there); users
+// interact with it only through the helper Setup tab.
+const HIDDEN_HELPER_OBJECT_IDS = new Set([
+  "workspace-helper-sandbox",
+]);
+
 function listWorkspaceDataModelTables(workspaceConfig) {
   const widgetEntries = listWidgetEntries(workspaceConfig);
   const refsByObjectId = widgetEntries.reduce((map, { widget, location }) => {
@@ -302,10 +311,12 @@ function listWorkspaceDataModelTables(workspaceConfig) {
     map.set(binding.objectId, refs);
     return map;
   }, new Map());
-  const manualObjects = normalizeManualObjects(workspaceConfig).map((object) => {
-    const table = deriveManualObjectTable(object);
-    return { ...table, widgetRefs: refsByObjectId.get(object.id) || [] };
-  });
+  const manualObjects = normalizeManualObjects(workspaceConfig)
+    .filter((object) => !HIDDEN_HELPER_OBJECT_IDS.has(object?.id))
+    .map((object) => {
+      const table = deriveManualObjectTable(object);
+      return { ...table, widgetRefs: refsByObjectId.get(object.id) || [] };
+    });
   const widgetTables = widgetEntries
     .map(({ widget, location }) => {
       const table = deriveWidgetTable(widget, location);

@@ -162,7 +162,11 @@ async function POST(request) {
         skippedCount: skipped.length,
       };
       const priorMessages = Array.isArray(existingRow.messages) ? existingRow.messages : [];
-      const nextMessages = [...priorMessages, applySystemMessage].slice(-40);
+      // Effectively unlimited cap — keeps the full multi-turn dashboard
+      // construction history. The user explicitly removed the 40-turn
+      // arbitrary limit so the helper can do complex multi-step real-data
+      // builds without losing context.
+      const nextMessages = [...priorMessages, applySystemMessage].slice(-400);
 
       // Intent fallback — affectedField is in the PATCH-allowlist vocabulary
       // (dashboards | widgetTypes | canvas | dataModel) and is NOT a member
@@ -194,8 +198,23 @@ async function POST(request) {
         model: existingRow.model || "external-apply",
         applied: (existingRow.applied || 0) + applied.length,
         skipped: (existingRow.skipped || 0) + skipped.length,
-        lastApplied: applied.map((a) => ({ type: a.type, affectedField: a.affectedField, rationale: a.rationale })),
-        lastSkipped: skipped.map((s) => ({ type: s.proposal?.type, affectedField: s.proposal?.affectedField, reason: s.reason })),
+        // Persist the full proposal payload alongside the receipt so the
+        // sidecar can rehydrate ToolCallCard rows (icon + title + JSON
+        // metadata + Open link) on page refresh — without this the
+        // chevron-accordion would show nothing useful after a reload.
+        lastApplied: applied.map((a, idx) => ({
+          type: a.type,
+          affectedField: a.affectedField,
+          rationale: a.rationale,
+          confidence: a.confidence,
+          payload: body.proposals?.[idx]?.payload ?? null,
+        })),
+        lastSkipped: skipped.map((s) => ({
+          type: s.proposal?.type,
+          affectedField: s.proposal?.affectedField,
+          reason: s.reason,
+          payload: s.proposal?.payload ?? null,
+        })),
         turnCount: (existingRow.turnCount || 0) + 1,
         messages: nextMessages,
         updatedAt: appliedAt,

@@ -4,7 +4,8 @@ import { X } from "lucide-react";
 const SETTINGS_TABS = [
   { href: "/settings/general", label: "General" },
   { href: "/settings/apis-webhooks", label: "APIs & Webhooks" },
-  { href: "/settings/apps", label: "Apps" }
+  { href: "/settings/apps", label: "Apps" },
+  { href: "/settings/ownership", label: "Ownership" }
 ];
 
 function SettingsShell({ active, eyebrow, title, children, aside }) {

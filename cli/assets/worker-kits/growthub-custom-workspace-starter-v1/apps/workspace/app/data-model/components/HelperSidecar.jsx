@@ -21,11 +21,17 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowUp,
+  ArrowUpRight,
+  Box,
   CheckSquare,
   ChevronDown,
+  ChevronRight,
+  Database,
   HelpCircle,
   LayoutDashboard,
+  ListPlus,
   Paperclip,
   Plug,
   Plus,
@@ -33,8 +39,119 @@ import {
   SquareDashedMousePointer,
   SquarePen,
   Wrench,
+  Wrench as RepairIcon,
   X,
 } from "lucide-react";
+
+// Generic "Tool Call Output" title matches the reference grammar — the
+// user already sees the prompt + assistant response in the chat above,
+// so the tool-call card just needs a clean, neutral header that reads
+// as a metadata accordion. The wrench icon is used for every type.
+
+// Thin, agnostic tool-call card. One per applied proposal. Renders the
+// success confirmation the user needs to close the no-code loop. The
+// chevron accordion exposes raw payload JSON for inspection; the Open
+// button navigates to the created artifact (via onOpenArtifact, owned
+// by the page-level shell). Pure presentational — no state above an
+// expanded/collapsed flag.
+function ToolCallCard({ proposal, content, onOpenArtifact }) {
+  const [open, setOpen] = useState(false);
+  const canNavigate = typeof onOpenArtifact === "function" && resolveArtifactTarget(proposal) != null;
+  const meta = {
+    type: proposal?.type,
+    affectedField: proposal?.affectedField,
+    payload: proposal?.payload,
+    rationale: proposal?.rationale,
+    confidence: proposal?.confidence,
+  };
+  return (
+    <div className="dm-helper-toolcall" data-toolcall-type={proposal?.type}>
+      <button
+        type="button"
+        className="dm-helper-toolcall-row"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={`${open ? "Hide" : "Show"} tool call output`}
+      >
+        <Wrench size={14} className="dm-helper-toolcall-icon" aria-hidden="true" />
+        <span className="dm-helper-toolcall-title">Tool Call Output</span>
+        <ChevronDown
+          size={14}
+          className={`dm-helper-toolcall-chevron${open ? " is-open" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      {open && (
+        <div className="dm-helper-toolcall-body">
+          {content && <div className="dm-helper-toolcall-content">{content}</div>}
+          <pre className="dm-helper-toolcall-json">
+            {JSON.stringify(meta, null, 2)}
+          </pre>
+        </div>
+      )}
+      {canNavigate && (
+        <button
+          type="button"
+          className="dm-helper-toolcall-open"
+          onClick={() => onOpenArtifact(proposal)}
+        >
+          Open
+          <ArrowUpRight size={12} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Pair a system apply-receipt message with the actual proposal payload
+// it confirms. The applyResult (rehydrated from row.lastApplied at thread
+// load time) carries the typed payloads keyed in order — we walk the
+// system messages in order and pop the matching applied entry. Falls
+// back to a content-only render when no payload is available.
+function resolveSystemReceipt(message, applyResult) {
+  if (!message || message.role !== "system") return null;
+  // Direct attachment (when the message itself carries proposal data).
+  if (message.proposal) return message.proposal;
+  if (message.payload) {
+    return { type: message.kind || "system", payload: message.payload };
+  }
+  // Pull from rehydrated applyResult.applied[] — first non-consumed entry.
+  const applied = applyResult && Array.isArray(applyResult.applied) ? applyResult.applied : [];
+  // Heuristic match: the system message content contains the proposal
+  // type when the apply receipt is "Applied N: <type> → <field>".
+  for (const a of applied) {
+    const p = a?.proposal || a;
+    if (!p?.type) continue;
+    if (typeof message.content === "string" && message.content.includes(p.type)) {
+      return p;
+    }
+  }
+  // Otherwise return the first applied as a best-effort.
+  if (applied.length > 0) return applied[0].proposal || applied[0];
+  return { type: message.kind || "apply-receipt", payload: null };
+}
+
+// Resolve where the Open button should navigate based on the proposal
+// shape. Returns null when no navigation makes sense (e.g. explain.object).
+function resolveArtifactTarget(proposal) {
+  const pl = proposal?.payload || {};
+  switch (proposal?.type) {
+    case "dataModel.object.create":
+    case "dataModel.object.update":
+      return pl.label || pl.id ? { surface: "data-model", source: pl.label || pl.id } : null;
+    case "dataModel.row.add":
+      return pl.objectId ? { surface: "data-model", source: pl.objectId } : null;
+    case "dashboard.create":
+    case "dashboard.update":
+      return pl.id ? { surface: "dashboard", dashboardId: pl.id } : null;
+    case "canvas.widget.add":
+      return pl.sourceObjectId ? { surface: "data-model", source: pl.sourceObjectId } : null;
+    case "repair.binding":
+      return pl.objectId ? { surface: "data-model", source: pl.objectId } : null;
+    default:
+      return null;
+  }
+}
 
 // Derive a short, human title for a thread row using the same fallback
 // chain as the rail's chat tab (title → first summary clause → intent →
@@ -150,7 +267,7 @@ function summarizePayload(proposal) {
   }
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied }) {
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied, onOpenArtifact }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
   const [prompt, setPrompt] = useState(initialPrompt || "");
@@ -246,7 +363,22 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       setStreamBuffer("");
     }
     setQueryError("");
-    setApplyResult(null);
+    // Rehydrate the last apply outcome from the governed thread row so
+    // ToolCallCard rows render after page refresh / Reopen, not just
+    // inside the live session. The apply route persists lastApplied[]
+    // with full payload, confidence, rationale per receipt.
+    const lastApplied = Array.isArray(initialThread.lastApplied) ? initialThread.lastApplied : [];
+    const lastSkipped = Array.isArray(initialThread.lastSkipped) ? initialThread.lastSkipped : [];
+    if (lastApplied.length > 0 || lastSkipped.length > 0) {
+      setApplyResult({
+        ok: true,
+        rehydrated: true,
+        applied: lastApplied.map((r) => ({ proposal: { ...r }, ...r })),
+        skipped: lastSkipped.map((s) => ({ proposal: { type: s.type, affectedField: s.affectedField, payload: s.payload || null }, reason: s.reason })),
+      });
+    } else {
+      setApplyResult(null);
+    }
   }, [open, initialThread]);
 
   // Move focus to the prompt textarea when the sidecar opens so the keyboard
@@ -643,7 +775,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           aria-hidden="true"
         />
 
-        {/* Header — shows the thread title once a conversation is active. */}
+        {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
             <span className="dm-sidecar-title" data-helper-title="">
@@ -652,39 +784,27 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 : "Workspace Helper"}
             </span>
           </div>
-          <button
-            type="button"
-            className="dm-sidecar-close"
-            onClick={onClose}
-            aria-label="Close workspace helper"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div className="dm-sidecar-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "assistant"}
-            className={`dm-sidecar-tab${activeTab === "assistant" ? " active" : ""}`}
-            data-tab="assistant"
-            onClick={() => setActiveTab("assistant")}
-          >
-            Assistant
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "setup"}
-            className={`dm-sidecar-tab${activeTab === "setup" ? " active" : ""}`}
-            data-tab="setup"
-            onClick={() => setActiveTab("setup")}
-          >
-            <Settings size={13} style={{ marginRight: 4 }} />
-            Setup
-          </button>
+          <div className="dm-sidecar-header-right">
+            <button
+              type="button"
+              className="dm-sidecar-icon-btn"
+              onClick={() => setActiveTab((current) => (current === "setup" ? "assistant" : "setup"))}
+              aria-label={activeTab === "setup" ? "Back" : "Setup"}
+              title={activeTab === "setup" ? "Back" : "Setup"}
+              data-tab={activeTab === "setup" ? "assistant" : "setup"}
+            >
+              {activeTab === "setup" ? <ArrowLeft size={14} /> : <Settings size={14} />}
+            </button>
+            <button
+              type="button"
+              className="dm-sidecar-icon-btn"
+              onClick={onClose}
+              aria-label="Close workspace helper"
+              title="Close"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
@@ -706,7 +826,34 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                     const assistantMarkdown = m.role === "assistant"
                       ? (m.summary || extractAssistantSummary(m.content) || "")
                       : "";
-                    const systemText = m.role === "system" ? (m.content || "") : "";
+                    // System turns are governed apply-receipts emitted by
+                    // /api/workspace/helper/apply. We render them as a
+                    // ToolCallCard sitting BELOW the preceding assistant
+                    // reply (OpenAI tool-call grammar) — the chevron
+                    // accordion exposes the receipt's full payload so the
+                    // user can audit what was actually applied. The
+                    // matching proposal payload comes from the row's
+                    // `lastApplied[]` we rehydrated into applyResult.
+                    if (m.role === "system") {
+                      const receipt = resolveSystemReceipt(m, applyResult);
+                      return (
+                        <div
+                          key={i}
+                          className="dm-helper-turn role-system"
+                          data-helper-message="system"
+                        >
+                          <ToolCallCard
+                            proposal={receipt}
+                            content={m.content || ""}
+                            onOpenArtifact={(p) => {
+                              if (typeof onOpenArtifact === "function") {
+                                onOpenArtifact(resolveArtifactTarget(p), p);
+                              }
+                            }}
+                          />
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={i}
@@ -723,16 +870,17 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                             </ReactMarkdown>
                           </div>
                         )}
-                        {m.role === "system" && (
-                          <div className="dm-helper-bubble dm-helper-bubble-system">{systemText}</div>
-                        )}
                       </div>
                     );
                   })}
                   {streaming && (
                     <div className="dm-helper-turn role-assistant" data-helper-message="assistant-pending">
                       <div className="dm-helper-bubble dm-helper-bubble-assistant dm-helper-bubble-pending">
-                        Thinking<span className="dm-stream-cursor" aria-hidden="true">|</span>
+                        <span className="dm-helper-typing" aria-label="Assistant is thinking">
+                          <span className="dm-helper-typing-dot" />
+                          <span className="dm-helper-typing-dot" />
+                          <span className="dm-helper-typing-dot" />
+                        </span>
                       </div>
                     </div>
                   )}
@@ -881,6 +1029,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   </div>
                 )}
 
+                {/* No separate tool-call stack — each apply receipt is a
+                    `system` message in the conversation above and renders
+                    as a ToolCallCard inline (OpenAI tool-call grammar). */}
+
                 {applyResult?.skipped?.length > 0 && (
                   <div className="dm-helper-skipped" data-helper-skipped="">
                     <span className="dm-field-label">Skipped</span>
@@ -970,12 +1122,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                     </span>
                   </div>
                 </>
-              ) : (
-                <div className="dm-helper-mode-row" data-helper-mode="">
-                  <span className="dm-helper-mode-label">Mode</span>
-                  <span className="dm-helper-mode-value">{intentLabel(activeIntent)}</span>
-                </div>
-              )}
+              ) : null}
 
               <div className="dm-helper-composer-input">
                 <textarea
@@ -1012,9 +1159,6 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                     <Paperclip size={14} aria-hidden="true" />
                   </button>
                   <div className="dm-helper-composer-actions-right">
-                    <span className="dm-helper-composer-mode-pill" title="Active intent">
-                      {intentLabel(activeIntent)}
-                    </span>
                     <button
                       type="button"
                       className="dm-helper-composer-send"
@@ -1022,7 +1166,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                       disabled={streaming || !prompt.trim()}
                       data-helper-submit=""
                       aria-label={streaming ? "Sending" : "Send (⌘+Enter)"}
-                      title={streaming ? "Sending…" : "Send (⌘+Enter)"}
+                      title={streaming ? "Sending…" : `Send · ${intentLabel(activeIntent)} (⌘+Enter)`}
                     >
                       {streaming ? (
                         <span className="dm-stream-cursor" aria-hidden="true">…</span>
