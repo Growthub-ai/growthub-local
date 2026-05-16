@@ -43,6 +43,9 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HelperSidecar } from "./HelperSidecar.jsx";
+import { WorkspaceRail } from "../../workspace-rail.jsx";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   OBJECT_TYPE_PRESETS,
   addTableField,
@@ -302,8 +305,8 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
           {favoriteObjects.length > 0 && (
             <div className="dm-picker-section">
               <p>Favorites</p>
-              {favoriteObjects.map((table) => (
-                <button key={`favorite-${table.source}`} type="button" className="dm-picker-row" onClick={() => onSelectSource(table.source)}>
+              {favoriteObjects.map((table, favIdx) => (
+                <button key={`favorite-${table.id || table.source}-${favIdx}`} type="button" className="dm-picker-row" onClick={() => onSelectSource(table.source)}>
                   <Pin size={14} />
                   <span>{table.label}</span>
                 </button>
@@ -325,8 +328,8 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
             <div className="dm-picker-section">
               <p>Objects</p>
               <div className="dm-picker-scroll">
-                {objects.map((table) => (
-                  <div key={table.source} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
+                {objects.map((table, objIdx) => (
+                  <div key={`${table.id || table.source}:${objIdx}`} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
                     <button type="button" className="dm-picker-row" onClick={() => {
                       onSelectSource(table.source);
                       setOpen(false);
@@ -418,36 +421,9 @@ function SaveToast({ saving, message }) {
   return <span className={`dm-toast ${message.startsWith("Error") ? "error" : "ok"}`}>{message}</span>;
 }
 
-function NavRail({ authority, workspaceConfig }) {
-  const branding = workspaceConfig?.branding || {};
-  const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
-  return (
-    <aside className="workspace-rail" aria-label="Workspace navigation">
-      <div className="workspace-brand">
-        <span
-          className="workspace-mark"
-          style={{
-            background: branding.logoUrl ? undefined : branding.accent || undefined,
-            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent),
-          }}
-        >
-          {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : workspaceName.slice(0, 1).toUpperCase()}
-        </span>
-        <span>{workspaceName}</span>
-      </div>
-      <nav className="workspace-nav">
-        <Link href="/">Dashboards</Link>
-        <Link className="active" href="/data-model">Data Model</Link>
-        <span className="workspace-nav-static">Management</span>
-        <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
-      </nav>
-      <div className="workspace-rail-status">
-        <span className="status-dot" />
-        {authority || "local-catalog"}
-      </div>
-    </aside>
-  );
-}
+// NavRail extracted to `app/workspace-rail.jsx` (shared across all
+// governed-workspace pages). The legacy local definition has been
+// removed — every surface now renders <WorkspaceRail />.
 
 // ─── Object list (sidebar lives in ./ObjectSidebar.jsx) ───────────────────────
 
@@ -1393,7 +1369,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   );
 }
 
-function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave }) {
+function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave, onOpenThread }) {
   const [selectedRow, setSelectedRow] = useState(null);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState("text");
@@ -1853,9 +1829,27 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                 </td>
                 {visibleColumns.map((column) => {
                   const relation = relationForColumn(table, column);
+                  // The Helper Threads object is a normal custom-typed
+                  // governed object. We opt the "open" column into a
+                  // Reopen link based on the stable well-known object id
+                  // so we don't need a dedicated object type.
+                  const isHelperThreadOpenCol = table.objectId === "helper-threads" && column === "open";
                   return (
                   <td key={column}>
-                    {relation ? (
+                    {isHelperThreadOpenCol ? (
+                      <button
+                        type="button"
+                        className="dm-thread-open-link"
+                        data-helper-thread-open=""
+                        data-thread-id={row?.id || ""}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (typeof onOpenThread === "function") onOpenThread(row);
+                        }}
+                      >
+                        <Zap size={11} />Reopen
+                      </button>
+                    ) : relation ? (
                       <RelationPickerOrSelect
                         table={table}
                         tables={tables}
@@ -2081,6 +2075,93 @@ function AddObjectSidebar({ open, saving, onClose, onCreate, allTables }) {
   );
 }
 
+
+// ─── Command Palette ──────────────────────────────────────────────────────────
+
+function DataModelCommandPalette({ commands, onClose }) {
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return commands;
+    return commands.filter((c) =>
+      `${c.label} ${c.group || ""} ${(c.aliases || []).join(" ")}`.toLowerCase().includes(q)
+    );
+  }, [commands, query]);
+  useEffect(() => {
+    setHighlight((v) => Math.min(v, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+  const handleKey = (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((v) => Math.min(filtered.length - 1, v + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((v) => Math.max(0, v - 1)); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const cmd = filtered[highlight];
+      if (cmd && !cmd.disabled) { cmd.run(); onClose(); }
+    } else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+  };
+  const groups = useMemo(() => {
+    const map = new Map();
+    filtered.forEach((c) => {
+      const key = c.group || "General";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(c);
+    });
+    return Array.from(map.entries());
+  }, [filtered]);
+  return (
+    <div className="workspace-command-palette" role="dialog" aria-modal="true" aria-label="Command palette" data-palette="">
+      <div className="workspace-overlay-backdrop" onClick={onClose} aria-hidden="true" />
+      <section className="workspace-command-palette-panel" onKeyDown={handleKey}>
+        <header className="workspace-command-palette-input">
+          <span aria-hidden="true">⌘</span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type a command or ask helper…"
+            aria-label="Command palette search"
+          />
+          <kbd>esc</kbd>
+        </header>
+        <div className="workspace-command-palette-list" role="listbox">
+          {filtered.length === 0 ? <p className="workspace-panel-hint">No matching commands.</p> : null}
+          {groups.map(([group, items]) => (
+            <div key={group} className="workspace-command-palette-group">
+              <p className="workspace-panel-label">{group}</p>
+              {items.map((cmd) => {
+                const gi = filtered.indexOf(cmd);
+                const isHL = gi === highlight;
+                return (
+                  <button
+                    key={cmd.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isHL}
+                    className={"workspace-command-palette-item" + (isHL ? " active" : "") + (cmd.disabled ? " disabled" : "")}
+                    disabled={cmd.disabled}
+                    onMouseEnter={() => setHighlight(gi)}
+                    onClick={() => { if (!cmd.disabled) { cmd.run(); onClose(); } }}
+                  >
+                    <span aria-hidden="true"><Zap size={14} /></span>
+                    <span className="workspace-command-palette-label">{cmd.label}</span>
+                    {cmd.shortcut ? <kbd>{cmd.shortcut}</kbd> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <footer className="workspace-command-palette-footer">
+          <span>↑ ↓ navigate</span><span>↵ run</span><span>esc close</span>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 // Auto-save tempo: hold local edits in memory + localStorage, only PATCH the
@@ -2098,8 +2179,43 @@ export default function DataModelShell() {
   const [message, setMessage] = useState("");
   const [selectedSource, setSelectedSource] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [helperOpen, setHelperOpen] = useState(false);
+  const [helperIntent, setHelperIntent] = useState("create_object");
+  const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
+  const [helperInitialThread, setHelperInitialThread] = useState(null);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
+
+  // Cross-page rail entrypoints. Settings / integrations pages render
+  // <WorkspaceRail> without an in-process helper handler — clicking the
+  // pill or a chat thread there navigates to `/data-model?helper=open`
+  // or `/data-model?thread=<id>`. We consume those query params here
+  // exactly once per change and strip them so refreshes are idempotent.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (!workspaceConfig) return;
+    const helperParam = searchParams?.get("helper");
+    const threadParam = searchParams?.get("thread");
+    if (!helperParam && !threadParam) return;
+    if (threadParam) {
+      const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
+      const row = (ht?.rows || []).find((r) => r?.id === threadParam);
+      if (row) {
+        setHelperInitialThread(row);
+        setHelperOpen(true);
+      }
+    } else if (helperParam === "open") {
+      setHelperInitialThread(null);
+      setHelperOpen(true);
+    }
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("helper");
+    next.delete("thread");
+    const query = next.toString();
+    router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
+  }, [workspaceConfig, searchParams, router]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2118,6 +2234,40 @@ export default function DataModelShell() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Cmd+K opens command palette. Slash opens it too, but only when no
+  // editable element is focused — matches the dashboard builder.
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setCommandPaletteOpen((v) => !v);
+        return;
+      }
+      if (e.key === "/" && !commandPaletteOpen && !addOpen && !helperOpen) {
+        const t = e.target;
+        const editable = t instanceof HTMLElement && (
+          t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable
+        );
+        if (!editable) {
+          e.preventDefault();
+          setCommandPaletteOpen(true);
+          return;
+        }
+      }
+      if (e.key === "Escape" && commandPaletteOpen) setCommandPaletteOpen(false);
+    };
+    const railOpen = () => setCommandPaletteOpen(true);
+    window.addEventListener("keydown", handler);
+    window.addEventListener("growthub:open-command-palette", railOpen);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("growthub:open-command-palette", railOpen);
+    };
+  }, [commandPaletteOpen, addOpen, helperOpen]);
 
   const tables = useMemo(
     () => (workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig) : []),
@@ -2211,15 +2361,162 @@ export default function DataModelShell() {
     setAddOpen(false);
   }, [save]);
 
+  const INTENT_FOR_TYPE = {
+    people: "edit_view",
+    tasks: "edit_view",
+    "api-registry": "register_api",
+    "sandbox-environment": "create_object",
+    "data-source": "explain",
+    custom: "create_object",
+  };
+
+  // Starter prompt seeded into the textarea when the user asks the helper
+  // about a specific Data Model object. Non-technical users see context-
+  // appropriate guidance instead of an empty box.
+  const STARTER_PROMPT_FOR_TYPE = {
+    people: (name) => `Improve the "${name}" people list. Suggest fields and a view layout that fit a sales / outreach workflow.`,
+    tasks: (name) => `Improve the "${name}" tasks board. Suggest status fields, owners, and a sensible view layout.`,
+    "api-registry": (name) => `Register a new API integration for "${name}". Draft the row with integration label, base URL, endpoint, auth header, and method.`,
+    "sandbox-environment": (name) => `Configure the "${name}" sandbox environment. Suggest runtime, prompt, instructions, and lifecycle status fields.`,
+    "data-source": (name) => `Explain how the "${name}" data source is wired up and what changes would make it more reliable.`,
+    custom: (name) => `Improve the "${name}" object. Suggest fields, relations, and starter rows that fit my use case.`,
+  };
+
+  const openHelperForTable = (table) => {
+    const intent = INTENT_FOR_TYPE[table?.objectType] || "create_object";
+    const fill = STARTER_PROMPT_FOR_TYPE[table?.objectType];
+    setHelperIntent(intent);
+    setHelperInitialPrompt(fill ? fill(table?.label || table?.source || "this object") : "");
+    setHelperInitialThread(null);
+    setHelperOpen(true);
+  };
+
+  const openHelperWith = (intent, prompt) => {
+    setHelperIntent(intent);
+    setHelperInitialPrompt(prompt || "");
+    setHelperInitialThread(null);
+    setHelperOpen(true);
+  };
+
+  // Reopen a helper thread row from the Helper Threads Data Model object.
+  // The row already holds the full prior turn (intent, prompt, proposals,
+  // warnings, receipts) — passing it through initialThread rehydrates the
+  // sidecar state so the user reads the conversation exactly where it ended.
+  const openHelperThreadFromRow = (row) => {
+    if (!row || !row.id) return;
+    const proposals = Array.isArray(row.proposals) ? row.proposals : [];
+    const warnings = Array.isArray(row.warnings) ? row.warnings : [];
+    const result = {
+      summary: row.summary || "",
+      proposals,
+      warnings,
+      receipts: row.receipts || null,
+      threadId: row.id,
+    };
+    setHelperIntent(row.intent || "explain");
+    setHelperInitialPrompt(typeof row.prompt === "string" ? row.prompt : "");
+    setHelperInitialThread({
+      id: row.id,
+      intent: row.intent || "explain",
+      prompt: typeof row.prompt === "string" ? row.prompt : "",
+      result,
+    });
+    setHelperOpen(true);
+  };
+
+  const paletteCommands = [
+    {
+      id: "helper.build_dashboard", group: "Ask helper", label: "Ask helper — build a dashboard",
+      run: () => openHelperWith("build_dashboard", "Draft a dashboard for a local agency with pipeline stages, weekly revenue, and a leaderboard widget.")
+    },
+    {
+      id: "helper.create_object", group: "Ask helper", label: "Ask helper — create a custom object",
+      run: () => openHelperWith("create_object", "Create a custom object for tracking client engagements: name, owner, status, value, next step.")
+    },
+    {
+      id: "helper.register_api", group: "Ask helper", label: "Ask helper — register an API",
+      run: () => openHelperWith("register_api", "Register an API integration: integration label, base URL, endpoint, auth header, and method.")
+    },
+    {
+      id: "helper.repair", group: "Ask helper", label: "Ask helper — repair workspace",
+      run: () => openHelperWith("repair", "Inspect this workspace for missing references, broken bindings, or incomplete views. Propose the smallest fix for each issue.")
+    },
+    {
+      id: "helper.explain", group: "Ask helper", label: "Ask helper — explain this workspace",
+      run: () => openHelperWith("explain", "Explain what this workspace contains and how the objects, dashboards, and bindings relate to each other.")
+    },
+    {
+      id: "object.new", group: "Data Model", label: "New object",
+      run: () => setAddOpen(true)
+    },
+    {
+      id: "nav.dashboards", group: "Navigation", label: "Go to Dashboards",
+      run: () => { window.location.href = "/"; }
+    },
+    {
+      id: "nav.settings", group: "Navigation", label: "Go to Settings",
+      run: () => { window.location.href = "/settings/general"; }
+    },
+  ];
+
   return (
     <main className="workspace-builder workspace-settings-page">
-      <NavRail authority={authority} workspaceConfig={workspaceConfig} />
+      <WorkspaceRail
+        authority={authority}
+        workspaceConfig={workspaceConfig}
+        helperOpen={helperOpen}
+        onOpenHelper={() => {
+          if (helperOpen) { setHelperOpen(false); return; }
+          // Rail pill ALWAYS opens a fresh thread (empty state, chip
+          // stack visible). Reopening a specific conversation goes
+          // through onOpenThread from the Chat tab.
+          setHelperInitialThread(null);
+          setHelperIntent("create_object");
+          setHelperInitialPrompt("");
+          setHelperOpen(true);
+        }}
+        onOpenThread={(row) => {
+          setHelperInitialThread(row);
+          setHelperOpen(true);
+        }}
+        onConfigChange={(next) => {
+          if (typeof setWorkspaceConfig === "function") setWorkspaceConfig(next);
+        }}
+      />
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">
-          <div><p>Workspace</p><h1>Data Model</h1></div>
+          {selectedTable ? (
+            <div className="workspace-toolbar-object">
+              <div className="workspace-toolbar-object-title">
+                <span className="workspace-toolbar-object-icon" aria-hidden="true">
+                  <LucideIcon
+                    name={selectedTable.icon || OBJECT_TYPE_PRESETS[selectedTable.objectType]?.icon || "Database"}
+                    size={16}
+                  />
+                </span>
+                <h1>{selectedTable.label}</h1>
+              </div>
+              <p className="workspace-toolbar-object-meta">
+                {(selectedTable.columns?.length || 0)} {(selectedTable.columns?.length || 0) === 1 ? "Field" : "Fields"}
+                {" · "}
+                {(selectedTable.rows?.length || 0)} {(selectedTable.rows?.length || 0) === 1 ? "Record" : "Records"}
+              </p>
+            </div>
+          ) : (
+            <div><p>Workspace</p><h1>Data Model</h1></div>
+          )}
           <div className="workspace-toolbar-actions">
             <SaveToast saving={saving} message={message} />
+            {selectedTable && (
+              <ObjectViewPicker
+                tables={tables}
+                selectedTable={selectedTable}
+                saving={saving}
+                onSelectSource={setSelectedSource}
+                onSave={save}
+              />
+            )}
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
               <Plus size={14} />New object
             </button>
@@ -2233,6 +2530,55 @@ export default function DataModelShell() {
           onCreate={createObject}
           allTables={tables}
         />
+
+        <HelperSidecar
+          open={helperOpen}
+          onClose={() => setHelperOpen(false)}
+          workspaceConfig={workspaceConfig}
+          initialIntent={helperIntent}
+          initialPrompt={helperInitialPrompt}
+          initialThread={helperInitialThread}
+          onOpenArtifact={(target) => {
+            // Close the chat and route the user to the artifact they
+            // just created — data-model object/row stays in-page, a
+            // dashboard navigates to the workspace home with a query
+            // param the builder reads to focus it.
+            if (!target) return;
+            if (target.surface === "data-model" && target.source) {
+              setSelectedSource(target.source);
+              setHelperOpen(false);
+              return;
+            }
+            if (target.surface === "dashboard" && target.dashboardId) {
+              setHelperOpen(false);
+              router.push(`/?dashboard=${encodeURIComponent(target.dashboardId)}`);
+            }
+          }}
+          onApplied={(updatedConfig) => {
+            // Anchor the user on the most recently created/updated Data Model
+            // object so a helper-driven object.create lands on the surface
+            // instead of needing a manual click.
+            setWorkspaceConfig(updatedConfig);
+            const nextObjects = updatedConfig?.dataModel?.objects || [];
+            const prevIds = new Set(
+              (workspaceConfig?.dataModel?.objects || []).map((o) => o?.id).filter(Boolean)
+            );
+            const newlyCreated = nextObjects.find((o) => o?.id && !prevIds.has(o.id));
+            const nextSource = (newlyCreated?.label || newlyCreated?.id)
+              ? (newlyCreated.label || newlyCreated.id)
+              : selectedSource;
+            if (nextSource && nextSource !== selectedSource) {
+              setSelectedSource(nextSource);
+            }
+          }}
+        />
+
+        {commandPaletteOpen && (
+          <DataModelCommandPalette
+            commands={paletteCommands}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
+        )}
 
         {loading && <div className="dm-loading">Loading workspace…</div>}
 
@@ -2248,13 +2594,8 @@ export default function DataModelShell() {
         {!loading && !error && tables.length > 0 && (
           selectedTable && (
             <section className="dm-detail-v2 dm-detail-v3">
-              <div className="dm-detail-v2-head dm-detail-v3-head">
-                <div className="dm-detail-v2-title">
-                  <ObjectViewPicker tables={tables} selectedTable={selectedTable} saving={saving} onSelectSource={setSelectedSource} onSave={save} />
-                </div>
-                <SourceValidationBanner table={selectedTable} />
-              </div>
-              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} />
+              <SourceValidationBanner table={selectedTable} />
+              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} onOpenThread={openHelperThreadFromRow} />
             </section>
           )
         )}
@@ -2263,10 +2604,22 @@ export default function DataModelShell() {
           <div className="dm-page-empty">
             <Database size={32} />
             <strong>No objects yet</strong>
-            <p>Create a Data Source, API Registry, People, Tasks, or Custom object to get started.</p>
-            <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
-              <Plus size={14} />New object
-            </button>
+            <p>Create your first Data Source, API Registry, People list, or custom object to get started.</p>
+            <div className="dm-page-empty-actions">
+              <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
+                <Plus size={14} />New object
+              </button>
+              <button
+                type="button"
+                className="dm-btn-outline"
+                onClick={() => openHelperWith(
+                  "create_object",
+                  "I run a local agency. Create my first business object: a client list with name, owner, status, deal value, and next step. Then suggest a starter dashboard."
+                )}
+              >
+                <Zap size={14} />Try the helper
+              </button>
+            </div>
           </div>
         )}
       </section>

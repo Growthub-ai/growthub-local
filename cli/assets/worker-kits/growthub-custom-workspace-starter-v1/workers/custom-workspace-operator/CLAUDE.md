@@ -49,6 +49,44 @@ You are the Custom Workspace Operator — the agent wired to this Growthub custo
 - `growthub skills validate` — check SKILL.md frontmatter + helper/sub-skill paths
 - `growthub skills session show` — print the current `.growthub-fork/project.md`
 
+## Workspace Helper verbs (propose → review → apply loop)
+
+The workspace helper is a governed, workspace-grammar-aware planning engine. It returns structured proposals — never silent mutations. Always use `mode: propose` and present proposals to the user before applying.
+
+**Query (propose only — no writes):**
+```
+POST /api/workspace/helper/query
+{ "intent": "build_dashboard|create_widget|register_api|create_object|edit_view|repair|explain",
+  "userPrompt": "<business brief>",
+  "mode": "propose" }
+→ { "ok": true, "summary": "...", "proposals": [...], "warnings": [...], "receipts": {...} }
+```
+
+**Apply (explicit governed action — requires prior query):**
+```
+POST /api/workspace/helper/apply
+{ "proposals": [...accepted proposals from query response...], "reviewedBy": "<agent-slug>" }
+→ { "ok": true, "applied": [...receipts...], "skipped": [...], "workspaceConfig": {...} }
+```
+
+**Receipt history:**
+```
+GET /api/workspace/helper/receipts?limit=25
+→ { "ok": true, "records": [...apply receipts...] }
+```
+
+**CLI equivalents:**
+- `growthub workspace helper query --intent <intent> --prompt "..." [--json > proposals.json]`
+- `growthub workspace helper apply --proposal-file proposals.json [--yes]`
+- `growthub workspace helper receipts [--limit 25]`
+
+**Helper apply rules for this operator:**
+- Never call `/api/workspace/helper/apply` without first presenting proposals to the user.
+- Every apply appends a receipt to `trace.jsonl` — do not bypass this with direct PATCH calls.
+- The PATCH allowlist (`dashboards`, `widgetTypes`, `canvas`, `dataModel`) is the hard ceiling. Proposals outside this boundary are rejected by the apply route automatically.
+- `explain.object` proposals are informational — no config write occurs.
+- After a successful apply, refresh the workspace config snapshot before generating new proposals.
+
 ## Output contract
 
 All user-facing artifacts for a custom workspace run write to `output/<client-slug>/<project-slug>/`. Machine-readable manifests should be shape-compatible with the bundle descriptor in `bundles/`.

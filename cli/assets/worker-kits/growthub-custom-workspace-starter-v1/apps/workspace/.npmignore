@@ -1,0 +1,17 @@
+# Kit-scoped gitignore (defense-in-depth alongside the root .gitignore
+# which already covers these globs). Belt-and-suspenders so a fork or a
+# fresh contributor running `npm run dev` inside the kit source never
+# accidentally tracks a secret or build artifact.
+.env
+.env.*
+!.env.example
+
+node_modules/
+.next/
+.turbo/
+.vercel/
+.DS_Store
+
+# Runtime workspace state — written by the dev server, not part of the
+# shipped kit. growthub.config.json IS tracked (it is the seeded default).
+growthub.source-records.json

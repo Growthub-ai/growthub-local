@@ -27,10 +27,26 @@
     }
   ],
   "widgetTypes": [
-    { "kind": "chart", "label": "Chart", "icon": "C" },
-    { "kind": "view", "label": "View", "icon": "V" },
-    { "kind": "iframe", "label": "iFrame", "icon": "I" },
-    { "kind": "rich-text", "label": "Rich Text", "icon": "T" }
+    {
+      "kind": "chart",
+      "label": "Chart",
+      "icon": "C"
+    },
+    {
+      "kind": "view",
+      "label": "View",
+      "icon": "V"
+    },
+    {
+      "kind": "iframe",
+      "label": "iFrame",
+      "icon": "I"
+    },
+    {
+      "kind": "rich-text",
+      "label": "Rich Text",
+      "icon": "T"
+    }
   ],
   "canvas": {
     "id": "workspace-canvas",

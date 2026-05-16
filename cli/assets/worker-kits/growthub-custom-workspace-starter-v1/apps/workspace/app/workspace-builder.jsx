@@ -76,6 +76,8 @@ import {
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
+import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
+import { WorkspaceRail } from "./workspace-rail.jsx";
 
 const DEFAULT_CHART_TYPE = "bar-vertical";
 const DEFAULT_FILTER_OP = "and";
@@ -266,7 +268,7 @@ const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const GRID_CELL_COUNT = GRID_COLUMNS * GRID_ROWS;
 const DEFAULT_TAB_ID = "tab-default";
-const COLLAPSED_GRID_COLUMNS = "220px minmax(0, 1fr)";
+const COLLAPSED_GRID_COLUMNS = "264px minmax(0, 1fr)";
 
 function generateId(prefix) {
   if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
@@ -1003,7 +1005,7 @@ function widgetKindFill(kind) {
   switch (kind) {
     case "chart": return "#dbeafe";
     case "view": return "#fef3c7";
-    case "iframe": return "#ede9fe";
+    case "iframe": return "#e0f2fe";
     case "rich-text": return "#dcfce7";
     default: return "#e5e7eb";
   }
@@ -2213,7 +2215,7 @@ function FieldsSubPanel({ widget, dataModelTable, onChange, onBack }) {
       <SubPanelHeader title="Fields" breadcrumb={widget.title} onBack={onBack} />
       {isBound && (
         <p className="workspace-panel-hint">
-          Fields come from the bound object. Manage them on the <a href="/data-model" style={{ color: "#6366f1" }}>Data Model page</a>.
+          Fields come from the bound object. Manage them on the <a href="/data-model" style={{ color: "#3f68ff" }}>Data Model page</a>.
         </p>
       )}
 
@@ -3352,6 +3354,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [configMessage, setConfigMessage] = useState("");
   const [inspectorPath, setInspectorPath] = useState(SUB_PANEL_ROOT);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [helperOpen, setHelperOpen] = useState(false);
+  const [helperIntent, setHelperIntent] = useState("build_dashboard");
+  const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
+  const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [templateFilter, setTemplateFilter] = useState({ category: "all", tag: "all", query: "" });
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -4158,6 +4164,29 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
 
   const paletteCommands = useMemo(() => {
     const list = [];
+    const openHelperWith = (i, p) => {
+      setHelperIntent(i);
+      setHelperInitialPrompt(p);
+      setHelperInitialThread(null);
+      setHelperOpen(true);
+    };
+    list.push({
+      id: "helper.build_dashboard", group: "Ask helper", icon: Zap, label: "Ask helper — build a dashboard",
+      run: () => openHelperWith("build_dashboard", "Draft a dashboard for a local agency: pipeline overview, weekly revenue, and a leaderboard widget.")
+    });
+    list.push({
+      id: "helper.edit_view", group: "Ask helper", icon: Zap, label: "Ask helper — improve this dashboard",
+      disabled: !activeDashboard,
+      run: () => openHelperWith("edit_view", `Improve the "${activeDashboard?.name || "current"}" dashboard. Suggest widget placements that match the data already in the workspace.`)
+    });
+    list.push({
+      id: "helper.create_widget", group: "Ask helper", icon: Zap, label: "Ask helper — suggest widgets",
+      run: () => openHelperWith("create_widget", "Suggest widgets that fit the data already in this workspace.")
+    });
+    list.push({
+      id: "helper.repair", group: "Ask helper", icon: Zap, label: "Ask helper — repair workspace",
+      run: () => openHelperWith("repair", "Inspect this workspace for missing references, broken bindings, or incomplete views. Propose the smallest fix for each issue.")
+    });
     list.push({
       id: "dashboard.new", group: "Dashboard", icon: Plus, label: "Create dashboard", shortcut: "N",
       run: () => addDashboard()
@@ -4292,27 +4321,45 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   ]);
 
   return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
-      <aside className="workspace-rail" aria-label="Workspace navigation">
-        <div className="workspace-brand">
-          <span className="workspace-mark" style={{
-            background: branding.logoUrl ? undefined : branding.accent || undefined,
-            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent)
-          }}>
-            {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : (branding.name || config.name || "Growthub Workspace").slice(0, 1).toUpperCase()}
-          </span>
-          <span>{branding.name || config.name || "Growthub Workspace"}</span>
-        </div>
-        <nav className="workspace-nav">
-          <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
-          <Link href="/data-model">Data Model</Link>
-          <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
-          <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
-        </nav>
-        <div className="workspace-rail-status">
-          <span className="status-dot" />
-          {integrationAdapter.authority}
-        </div>
-      </aside>
+      <WorkspaceRail
+        workspaceConfig={config}
+        authority={integrationAdapter.authority}
+        helperOpen={helperOpen}
+        onOpenHelper={() => {
+          if (helperOpen) { setHelperOpen(false); return; }
+          // Rail pill ALWAYS lands on a fresh thread (chip stack +
+          // empty composer). Reopen specific threads via the Chat tab.
+          setHelperIntent("build_dashboard");
+          setHelperInitialPrompt("");
+          setHelperInitialThread(null);
+          setHelperOpen(true);
+        }}
+        onOpenThread={(row) => {
+          setHelperInitialThread(row);
+          setHelperOpen(true);
+        }}
+        onConfigChange={(nextConfig) => {
+          if (typeof setConfig === "function") setConfig(nextConfig);
+        }}
+        dashboardsSlot={(
+          <button
+            type="button"
+            className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"}
+            onClick={showDashboardHome}
+          >
+            Dashboards
+          </button>
+        )}
+        managementSlot={(
+          <button
+            type="button"
+            className="workspace-nav-button"
+            onClick={() => setManagementOpen(true)}
+          >
+            Management
+          </button>
+        )}
+      />
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">
@@ -4536,6 +4583,51 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         adapterConfig={adapterConfig}
         onClose={closeManagement}
       /> : null}
+
+      <HelperSidecar
+        open={helperOpen}
+        onClose={() => setHelperOpen(false)}
+        workspaceConfig={config}
+        initialIntent={helperIntent}
+        initialPrompt={helperInitialPrompt}
+        initialThread={helperInitialThread}
+        onOpenArtifact={(target) => {
+          if (!target) return;
+          // dashboards surface — focus the created dashboard inline.
+          if (target.surface === "dashboard" && target.dashboardId) {
+            setActiveDashboardId?.(target.dashboardId);
+            setWorkspaceView?.("builder");
+            setHelperOpen(false);
+            return;
+          }
+          // a data-model artifact was applied — navigate to that surface.
+          if (target.surface === "data-model" && target.source) {
+            setHelperOpen(false);
+            if (typeof window !== "undefined") {
+              window.location.href = `/data-model?source=${encodeURIComponent(target.source)}`;
+            }
+          }
+        }}
+        onApplied={(updatedConfig) => {
+          if (!updatedConfig) return;
+          // Re-seat canvas from the dashboard the user is currently viewing.
+          // If the helper created a new dashboard we still keep the user
+          // anchored where they were unless they had no active dashboard yet.
+          setConfig((current) => {
+            const nextDashboards = Array.isArray(updatedConfig.dashboards) && updatedConfig.dashboards.length
+              ? updatedConfig.dashboards
+              : current.dashboards;
+            const stillActive = nextDashboards.find((d) => d?.id === resolvedActiveDashboardId);
+            const anchor = stillActive || nextDashboards[0];
+            return {
+              ...current,
+              ...updatedConfig,
+              dashboards: nextDashboards,
+              canvas: dashboardCanvasFrom(anchor, updatedConfig.canvas || current.canvas)
+            };
+          });
+        }}
+      />
 
       {workspaceView === "builder" && panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
         <div className="workspace-panel-title">

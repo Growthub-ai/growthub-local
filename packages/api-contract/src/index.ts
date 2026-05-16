@@ -284,6 +284,33 @@ export type {
 } from "./health.js";
 export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 
+// Workspace Helper (governed, workspace-grammar-aware planning engine —
+// propose + apply loop for dashboards, widgets, API registry rows, and
+// custom business objects. docs/WORKSPACE_HELPER_CONTRACT_V1.md)
+export type {
+  WorkspaceHelperIntent,
+  WorkspaceHelperProposal,
+  WorkspaceProposalType,
+  WorkspaceHelperReceipt,
+  WorkspaceHelperSnapshot,
+  WorkspaceHelperQuery,
+  WorkspaceHelperResponse,
+  WorkspaceHelperApplyRequest,
+  WorkspaceHelperApplyReceipt,
+  WorkspaceHelperApplyResponse,
+  WorkspaceHelperNodeInput,
+  WorkspaceHelperNodeOutput,
+  WorkspaceHelperCapabilityManifest,
+} from "./helper.js";
+export {
+  WORKSPACE_HELPER_INTENT_VALUES,
+  WORKSPACE_HELPER_PROPOSAL_TYPES,
+  PROPOSAL_TYPE_TO_PATCH_FIELD,
+  isWorkspaceHelperResponse,
+  isWorkspaceProposal,
+  WORKSPACE_HELPER_CONTRACT_VERSION,
+} from "./helper.js";
+
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1 as const;

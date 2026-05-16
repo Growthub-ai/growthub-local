@@ -1,3 +1,19 @@
 # Next.js build output and installed deps inside shipped starter kits must not enter the npm tarball.
 assets/**/.next/
 assets/**/node_modules/
+
+# Playwright/test specs inside shipped starter kits must not enter the npm tarball
+# (scripts/release-check.mjs rejects raw .ts source files inside the @growthub/cli pack).
+# Specs are end-user E2E tooling that get authored per-export, not shipped to npm consumers.
+# Catch-all spec patterns first (works regardless of nesting depth) then the
+# directory-anchored rules as belt-and-suspenders.
+**/*.spec.ts
+**/*.spec.tsx
+**/*.test.ts
+**/*.test.tsx
+assets/**/tests/**/*.ts
+assets/**/tests/**/*.tsx
+assets/**/tests/**
+assets/**/__tests__/**/*.ts
+assets/**/__tests__/**/*.tsx
+assets/**/__tests__/**
