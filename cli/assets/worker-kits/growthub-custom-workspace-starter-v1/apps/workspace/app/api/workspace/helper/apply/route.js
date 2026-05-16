@@ -39,6 +39,7 @@ import {
   applyProposalToConfig,
   validateProposalForApply,
   buildApplyReceipt,
+  upsertHelperThreadRow,
 } from "@/lib/workspace-helper-apply";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
@@ -60,6 +61,7 @@ async function POST(request) {
 
   const reviewedBy = typeof body.reviewedBy === "string" ? body.reviewedBy.trim() : "user";
   const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : null;
+  const threadId = typeof body.threadId === "string" && body.threadId.trim() ? body.threadId.trim() : null;
   const appliedAt = new Date().toISOString();
 
   let currentConfig;
@@ -108,10 +110,52 @@ async function POST(request) {
     }
   }
 
-  // Only write if at least one non-explain proposal was applied
+  // Patch — collect every affected field from accepted proposals AND
+  // append the thread row update (so the user-visible Helper Threads object
+  // refreshes in the same atomic write as the proposed mutations).
   const mutatingApplied = applied.filter((r) => r.type !== "explain.object");
-  if (mutatingApplied.length > 0) {
-    const patchFields = [...new Set(mutatingApplied.map((r) => r.affectedField))];
+
+  // Upsert the thread row so audit history reflects this apply turn even
+  // when nothing mutated (all skipped / explain-only) and even when the
+  // CLI flow applies a proposals.json that carries a fresh threadId
+  // (no prior in-session query). Both query and apply land on the same
+  // governed object so the user sees one row per conversation.
+  if (threadId) {
+    try {
+      const existingRows = (workingConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads")?.rows || [];
+      const existingRow = existingRows.find((r) => r?.id === threadId) || {};
+      const firstProposal = body.proposals?.[0];
+      const seedTitle = existingRow.title
+        || (firstProposal?.rationale ? String(firstProposal.rationale).slice(0, 72) : "Helper thread");
+      workingConfig = upsertHelperThreadRow(workingConfig, {
+        id: threadId,
+        title: seedTitle,
+        intent: existingRow.intent || firstProposal?.affectedField || "explain",
+        prompt: existingRow.prompt || "",
+        summary: existingRow.summary || "",
+        proposals: existingRow.proposals || body.proposals || [],
+        warnings: existingRow.warnings || [],
+        receipts: existingRow.receipts || null,
+        model: existingRow.model || "external-apply",
+        applied: (existingRow.applied || 0) + applied.length,
+        skipped: (existingRow.skipped || 0) + skipped.length,
+        lastApplied: applied.map((a) => ({ type: a.type, affectedField: a.affectedField, rationale: a.rationale })),
+        lastSkipped: skipped.map((s) => ({ type: s.proposal?.type, affectedField: s.proposal?.affectedField, reason: s.reason })),
+        turnCount: (existingRow.turnCount || 0) + 1,
+        updatedAt: appliedAt,
+      });
+    } catch {
+      // Non-fatal — thread row update failures do not block the apply response.
+    }
+  }
+
+  // Build PATCH from affected fields. If the thread row was updated above,
+  // dataModel will already reflect it. Otherwise only mutating proposals
+  // contribute fields.
+  const threadTouched = threadId && mutatingApplied.every((r) => r.affectedField !== "dataModel");
+  if (mutatingApplied.length > 0 || threadTouched) {
+    const patchFields = new Set(mutatingApplied.map((r) => r.affectedField));
+    if (threadId) patchFields.add("dataModel");
     const patch = {};
     for (const field of patchFields) {
       patch[field] = workingConfig[field];
@@ -167,6 +211,7 @@ async function POST(request) {
 
   return NextResponse.json({
     ok: true,
+    threadId,
     applied,
     skipped,
     workspaceConfig: workingConfig,

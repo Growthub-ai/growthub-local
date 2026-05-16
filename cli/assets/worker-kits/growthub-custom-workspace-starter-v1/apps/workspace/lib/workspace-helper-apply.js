@@ -32,6 +32,22 @@ import { validateWorkspaceConfig } from "@/lib/workspace-schema";
 
 const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"]);
 
+// Re-declared locally so the apply layer stays leaf-agnostic and does not
+// pull from workspace-helper.js's runtime exports. Must stay in sync with
+// the same mapping in lib/workspace-helper.js and packages/api-contract.
+const PROPOSAL_TYPE_TO_PATCH_FIELD = {
+  "dashboard.create": "dashboards",
+  "dashboard.update": "dashboards",
+  "widgetType.bind": "widgetTypes",
+  "canvas.widget.add": "canvas",
+  "canvas.tab.create": "canvas",
+  "dataModel.object.create": "dataModel",
+  "dataModel.object.update": "dataModel",
+  "dataModel.row.add": "dataModel",
+  "repair.binding": "dataModel",
+  "explain.object": "dataModel",
+};
+
 /**
  * Merge a proposal payload into the relevant section of currentConfig.
  * Returns a new config object — does not mutate.
@@ -64,6 +80,9 @@ function applyProposalToConfig(currentConfig, proposal) {
       const existing = Array.isArray(config.dashboards) ? config.dashboards : [];
       const targetId = proposal.payload.id;
       if (!targetId) throw new Error("dashboard.update requires payload.id");
+      if (!existing.some((d) => d.id === targetId)) {
+        throw new Error(`dashboard.update target dashboard "${targetId}" not found`);
+      }
       config.dashboards = existing.map((d) =>
         d.id === targetId
           ? { ...d, ...proposal.payload, updatedAt: new Date().toISOString() }
@@ -139,6 +158,9 @@ function applyProposalToConfig(currentConfig, proposal) {
       const objects = Array.isArray(dm.objects) ? dm.objects : [];
       const targetId = proposal.payload.id;
       if (!targetId) throw new Error("dataModel.object.update requires payload.id");
+      if (!objects.some((obj) => obj.id === targetId)) {
+        throw new Error(`dataModel.object.update target object "${targetId}" not found`);
+      }
       dm.objects = objects.map((obj) =>
         obj.id === targetId
           ? {
@@ -157,6 +179,9 @@ function applyProposalToConfig(currentConfig, proposal) {
       const objects = Array.isArray(dm.objects) ? dm.objects : [];
       const targetId = proposal.payload.objectId;
       if (!targetId) throw new Error("dataModel.row.add requires payload.objectId");
+      if (!objects.some((obj) => obj.id === targetId)) {
+        throw new Error(`dataModel.row.add target object "${targetId}" not found`);
+      }
       const newRow = proposal.payload.row || {};
       dm.objects = objects.map((obj) =>
         obj.id === targetId
@@ -172,6 +197,9 @@ function applyProposalToConfig(currentConfig, proposal) {
       const objects = Array.isArray(dm.objects) ? dm.objects : [];
       const targetId = proposal.payload.objectId;
       if (!targetId) throw new Error("repair.binding requires payload.objectId");
+      if (!objects.some((obj) => obj.id === targetId)) {
+        throw new Error(`repair.binding target object "${targetId}" not found`);
+      }
       dm.objects = objects.map((obj) =>
         obj.id === targetId
           ? { ...obj, binding: { ...obj.binding, ...proposal.payload.binding } }
@@ -201,6 +229,14 @@ function validateProposalForApply(proposal, currentConfig) {
     return {
       ok: false,
       error: `affectedField "${proposal.affectedField}" is not in the PATCH allowlist`,
+    };
+  }
+
+  const expectedField = PROPOSAL_TYPE_TO_PATCH_FIELD[proposal.type];
+  if (expectedField && proposal.affectedField !== expectedField) {
+    return {
+      ok: false,
+      error: `proposal type "${proposal.type}" requires affectedField "${expectedField}", got "${proposal.affectedField}"`,
     };
   }
 
@@ -246,4 +282,114 @@ function buildApplyReceipt(proposal, appliedAt, reviewedBy, sessionId) {
   };
 }
 
-export { applyProposalToConfig, validateProposalForApply, buildApplyReceipt, ALLOWED_PATCH_FIELDS };
+/**
+ * Threads — governed conversation history compounded onto an EXISTING
+ * custom-typed Data Model object.
+ *
+ * There is no new object type, no new schema namespace, no parallel chat
+ * store, and no separate AI memory layer. Each helper turn upserts one
+ * row inside a single custom-typed object identified by the well-known
+ * id "helper-threads". The row is structurally identical to any other
+ * row in dataModel.objects[]: it persists in growthub.config.json, is
+ * validated by validateWorkspaceConfig on write, ships into the exported
+ * runtime, and survives redeploy. The user can rename the label, add
+ * fields, or delete the object entirely — the helper will re-seed it on
+ * the next turn if missing.
+ *
+ * The legacy source-records audit trail (helper:<intent>:<runId>,
+ * helper:apply:receipts) is preserved as-is and remains the long-tail
+ * signal for the distillation pipeline.
+ */
+
+const HELPER_THREADS_OBJECT_ID = "helper-threads";
+const HELPER_THREADS_LABEL = "Helper Threads";
+
+function ensureHelperThreadsObject(config) {
+  const dm = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects.slice() : [];
+  const idx = objects.findIndex((o) => o?.id === HELPER_THREADS_OBJECT_ID);
+  if (idx >= 0) {
+    // Ensure rows is an array; never overwrite an existing object's fields.
+    const existing = objects[idx];
+    if (!Array.isArray(existing.rows)) {
+      objects[idx] = { ...existing, rows: [] };
+    }
+    return { ...config, dataModel: { ...dm, objects } };
+  }
+  // Helper Threads is a normal custom-typed governed object. Identity
+  // stays stable through the well-known id "helper-threads" so the cell
+  // renderer in DataModelShell can opt the "open" column into the Reopen
+  // hyperlink without inventing a new object type.
+  const seeded = {
+    id: HELPER_THREADS_OBJECT_ID,
+    label: HELPER_THREADS_LABEL,
+    source: HELPER_THREADS_LABEL,
+    objectType: "custom",
+    icon: "MessageSquare",
+    columns: ["title", "intent", "model", "applied", "skipped", "updatedAt", "open"],
+    rows: [],
+    binding: { mode: "manual", source: HELPER_THREADS_LABEL },
+  };
+  return { ...config, dataModel: { ...dm, objects: [...objects, seeded] } };
+}
+
+function truncateTitle(prompt, max = 72) {
+  const text = String(prompt || "").replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
+ * Upsert a thread row into the Helper Threads governed object.
+ * If a row with matching id exists, merge fields onto it.
+ * If not, append a new row.
+ *
+ * Returns the updated config. Caller writes via writeWorkspaceConfig.
+ */
+function upsertHelperThreadRow(config, threadPatch) {
+  if (!threadPatch || typeof threadPatch !== "object" || !threadPatch.id) {
+    throw new Error("upsertHelperThreadRow requires a thread patch with an id");
+  }
+  const withObject = ensureHelperThreadsObject(config);
+  const dm = withObject.dataModel;
+  const objects = dm.objects.slice();
+  const idx = objects.findIndex((o) => o?.id === HELPER_THREADS_OBJECT_ID);
+  if (idx === -1) {
+    // Should be impossible after ensureHelperThreadsObject.
+    return withObject;
+  }
+  const obj = objects[idx];
+  const rows = Array.isArray(obj.rows) ? obj.rows.slice() : [];
+  const rowIdx = rows.findIndex((r) => r && r.id === threadPatch.id);
+  const nowIso = threadPatch.updatedAt || new Date().toISOString();
+  const merged = {
+    ...(rowIdx >= 0 ? rows[rowIdx] : {}),
+    ...threadPatch,
+    updatedAt: nowIso,
+    open: "Reopen", // display-only string; the cell renderer turns it into a link
+  };
+  if (rowIdx >= 0) {
+    rows[rowIdx] = merged;
+  } else {
+    rows.push(merged);
+  }
+  // Cap thread history so the config file does not grow unbounded.
+  const capped = rows.length > 100 ? rows.slice(-100) : rows;
+  objects[idx] = { ...obj, rows: capped };
+  return { ...withObject, dataModel: { ...dm, objects } };
+}
+
+function nextThreadId() {
+  return `thr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export {
+  applyProposalToConfig,
+  validateProposalForApply,
+  buildApplyReceipt,
+  ensureHelperThreadsObject,
+  upsertHelperThreadRow,
+  nextThreadId,
+  HELPER_THREADS_OBJECT_ID,
+  ALLOWED_PATCH_FIELDS,
+};

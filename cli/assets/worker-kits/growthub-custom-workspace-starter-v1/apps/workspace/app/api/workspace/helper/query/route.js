@@ -41,6 +41,7 @@
 import { NextResponse } from "next/server";
 import {
   readWorkspaceConfig,
+  writeWorkspaceConfig,
   readWorkspaceSourceRecords,
   writeWorkspaceSourceRecords,
   describePersistenceMode,
@@ -55,6 +56,10 @@ import {
   ensureSandboxAdaptersLoaded,
   getSandboxAdapter,
 } from "@/lib/adapters/sandboxes";
+import {
+  upsertHelperThreadRow,
+  nextThreadId,
+} from "@/lib/workspace-helper-apply";
 
 const VALID_INTENTS = [
   "build_dashboard",
@@ -198,8 +203,16 @@ async function POST(request) {
     runId,
   };
 
+  // Thread row — every governed conversation turn lands here so the user
+  // can reopen it from /data-model → Helper Threads. Either continue an
+  // existing thread (when the caller supplies threadId) or start a new one.
+  const incomingThreadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
+  const threadId = incomingThreadId || nextThreadId();
+  const turnCount = 1;
+
   const response = {
     ok: true,
+    threadId,
     summary: parsed.summary,
     proposals: validProposals,
     warnings,
@@ -208,6 +221,8 @@ async function POST(request) {
 
   const persistence = describePersistenceMode();
   if (persistence.canSave) {
+    // Audit-trail (source-records) — preserved exactly as before for the
+    // distillation pipeline.
     try {
       const sourceId = helperSourceId(intent, runId);
       const existing = await readWorkspaceSourceRecords(sourceId);
@@ -224,6 +239,7 @@ async function POST(request) {
         adapterMode: parsed.adapterMode,
         confidence: parsed.confidence,
         latencyMs: parsed.latencyMs,
+        threadId,
       };
       await writeWorkspaceSourceRecords(sourceId, [...priorRecords, record].slice(-50), {
         integrationId: sourceId,
@@ -232,9 +248,46 @@ async function POST(request) {
     } catch {
       // Non-fatal — source record write failure does not block the response
     }
+
+    // Governed thread row — visible to the user as a Data Model row with a
+    // "Reopen" hyperlink that re-hydrates the sidecar.
+    try {
+      const liveConfig = await readWorkspaceConfig();
+      const existingRows = (liveConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads")?.rows || [];
+      const existingRow = existingRows.find((r) => r?.id === threadId) || {};
+      const merged = upsertHelperThreadRow(liveConfig, {
+        id: threadId,
+        title: existingRow.title || truncateRowTitle(userPrompt),
+        intent,
+        prompt: userPrompt,
+        summary: parsed.summary,
+        proposals: validProposals,
+        warnings,
+        receipts,
+        model: parsed.model || "unknown",
+        applied: existingRow.applied || 0,
+        skipped: existingRow.skipped || 0,
+        turnCount: (existingRow.turnCount || 0) + turnCount,
+        updatedAt: ranAt,
+      });
+      await writeWorkspaceConfig({ dataModel: merged.dataModel });
+    } catch (err) {
+      // Non-fatal — the helper response is still returned even if the row
+      // write fails (e.g. read-only runtime). The audit trail above is
+      // unaffected.
+      if (err && err.code !== "WORKSPACE_PERSISTENCE_READ_ONLY") {
+        // swallow but do not propagate; users still receive the proposals
+      }
+    }
   }
 
   return NextResponse.json(response);
+}
+
+function truncateRowTitle(prompt, max = 72) {
+  const text = String(prompt || "").replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
 export { POST };
