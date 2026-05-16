@@ -213,3 +213,168 @@ test.describe('Workspace helper — keyboard shortcuts + sidecar UX', () => {
   });
 
 });
+
+// ─── Rail chat tab — thread list + governed mutations ─────────────────────────
+// The rail's Chat tab reads from / writes to the governed `helper-threads`
+// custom object via PATCH /api/workspace. Each test seeds two thread rows
+// directly through the canonical PATCH path before driving the UI.
+
+async function seedThreads(request: any, rows: any[]) {
+  await request.patch(`${BASE}/api/workspace`, {
+    data: {
+      dataModel: {
+        objects: [
+          {
+            id: 'helper-threads',
+            label: 'Helper Threads',
+            objectType: 'custom',
+            columns: ['title', 'intent', 'updatedAt', 'open'],
+            rows,
+            binding: { mode: 'manual', source: 'Helper Threads' },
+          },
+        ],
+      },
+    },
+  });
+}
+
+async function clearThreads(request: any) {
+  await seedThreads(request, []);
+}
+
+test.describe('Workspace helper rail — chat tab + governed mutations', () => {
+
+  test.beforeEach(async ({ request }) => {
+    await seedThreads(request, [
+      {
+        id: 'thr_rail_alpha',
+        title: 'Best Skills Discussion',
+        intent: 'explain',
+        summary: 'Walked through helper skills',
+        updatedAt: new Date().toISOString(),
+        open: 'Reopen',
+      },
+      {
+        id: 'thr_rail_beta',
+        title: 'Casual Greeting',
+        intent: 'explain',
+        summary: 'Just saying hi',
+        updatedAt: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
+        open: 'Reopen',
+      },
+    ]);
+  });
+
+  test.afterEach(async ({ request }) => {
+    await clearThreads(request);
+  });
+
+  test('Chat tab lists threads from helper-threads object', async ({ page }) => {
+    await page.goto(`${BASE}/data-model`);
+    await page.locator('[aria-label="Helper conversations"]').click();
+    await expect(page.locator('[data-thread-id="thr_rail_alpha"]')).toBeVisible();
+    await expect(page.locator('[data-thread-id="thr_rail_beta"]')).toBeVisible();
+    await expect(page.locator('[data-thread-id="thr_rail_alpha"]'))
+      .toContainText('Best Skills Discussion');
+  });
+
+  test('Clicking a thread row rehydrates the sidecar with its title', async ({ page }) => {
+    await page.goto(`${BASE}/data-model`);
+    await page.locator('[aria-label="Helper conversations"]').click();
+    await page.locator('[data-thread-id="thr_rail_alpha"] button').first().click();
+    await expect(page.locator('[data-helper-sidecar]')).toBeVisible({ timeout: 500 });
+    await expect(page.locator('[data-helper-title]')).toContainText('Best Skills Discussion');
+  });
+
+  test('Rename action commits via PATCH /api/workspace', async ({ page, request }) => {
+    await page.goto(`${BASE}/data-model`);
+    await page.locator('[aria-label="Helper conversations"]').click();
+    const row = page.locator('[data-thread-id="thr_rail_alpha"]');
+    await row.hover();
+    await row.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole('menuitem', { name: /Rename/ }).click();
+    const input = row.locator('input.workspace-rail-thread-rename');
+    await input.fill('Renamed via Playwright');
+    await input.press('Enter');
+    await expect(row.locator('.workspace-rail-thread-title')).toContainText('Renamed via Playwright');
+
+    const live = await request.get(`${BASE}/api/workspace`);
+    const body = await live.json();
+    const ht = (body?.workspaceConfig?.dataModel?.objects || [])
+      .find((o: any) => o?.id === 'helper-threads');
+    const renamed = (ht?.rows || []).find((r: any) => r?.id === 'thr_rail_alpha');
+    expect(renamed?.title).toBe('Renamed via Playwright');
+  });
+
+  test('Archive action hides the thread but keeps the row in storage', async ({ page, request }) => {
+    await page.goto(`${BASE}/data-model`);
+    await page.locator('[aria-label="Helper conversations"]').click();
+    const row = page.locator('[data-thread-id="thr_rail_beta"]');
+    await row.hover();
+    await row.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole('menuitem', { name: /Archive/ }).click();
+    await expect(page.locator('[data-thread-id="thr_rail_beta"]')).not.toBeVisible();
+
+    const live = await request.get(`${BASE}/api/workspace`);
+    const body = await live.json();
+    const ht = (body?.workspaceConfig?.dataModel?.objects || [])
+      .find((o: any) => o?.id === 'helper-threads');
+    const archived = (ht?.rows || []).find((r: any) => r?.id === 'thr_rail_beta');
+    expect(archived?.archived).toBe(true);
+  });
+
+  test('Delete action removes the row entirely from storage', async ({ page, request }) => {
+    await page.goto(`${BASE}/data-model`);
+    await page.locator('[aria-label="Helper conversations"]').click();
+    const row = page.locator('[data-thread-id="thr_rail_beta"]');
+    await row.hover();
+    await row.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole('menuitem', { name: /Delete/ }).click();
+    await expect(page.locator('[data-thread-id="thr_rail_beta"]')).not.toBeVisible();
+
+    const live = await request.get(`${BASE}/api/workspace`);
+    const body = await live.json();
+    const ht = (body?.workspaceConfig?.dataModel?.objects || [])
+      .find((o: any) => o?.id === 'helper-threads');
+    const deleted = (ht?.rows || []).find((r: any) => r?.id === 'thr_rail_beta');
+    expect(deleted).toBeUndefined();
+  });
+
+  test('Rail Ask helper pill opens sidecar from any page (settings → data-model)', async ({ page }) => {
+    await page.goto(`${BASE}/settings/integrations`);
+    await page.locator('[data-helper-trigger="rail"]').click();
+    await page.waitForURL(/\/data-model/, { timeout: 2000 });
+    await expect(page.locator('[data-helper-sidecar]')).toBeVisible({ timeout: 500 });
+  });
+
+  test('Assistant turn renders markdown (lists, bold, headings)', async ({ page }) => {
+    await page.route('**/api/workspace/helper/query', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          summary: '## My Agent Makeup\n\n- **Brain**: LLM-powered\n- **Tools**: governed PATCH allowlist\n\nLet me know what you want to build next.',
+          intent: 'explain',
+          proposals: [],
+          warnings: [],
+          messages: [
+            { role: 'user', content: 'what is your makeup', ts: new Date().toISOString() },
+            { role: 'assistant', summary: '## My Agent Makeup\n\n- **Brain**: LLM-powered\n- **Tools**: governed PATCH allowlist\n\nLet me know what you want to build next.', ts: new Date().toISOString() },
+          ],
+          receipts: { model: 'test', adapterMode: 'ollama', endpoint: '', confidence: 0.9, latencyMs: 50, ranAt: new Date().toISOString(), runId: 'r1' },
+        }),
+      });
+    });
+
+    await page.goto(`${BASE}/data-model`);
+    await page.locator('[data-helper-trigger="rail"]').click();
+    await page.locator('[data-helper-prompt]').fill('what is your makeup');
+    await page.locator('[data-helper-submit]').click();
+    const assistant = page.locator('.dm-helper-bubble-assistant').last();
+    await expect(assistant.locator('h2')).toContainText('My Agent Makeup');
+    await expect(assistant.locator('li')).toContainText(['Brain', 'Tools']);
+    await expect(assistant.locator('strong').first()).toContainText('Brain');
+  });
+
+});

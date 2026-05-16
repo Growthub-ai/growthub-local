@@ -39,13 +39,13 @@ import {
   ToggleLeft,
   Type,
   Users,
-  PanelRight,
-  PanelRightClose,
   X,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HelperSidecar } from "./HelperSidecar.jsx";
+import { WorkspaceRail } from "../../workspace-rail.jsx";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   OBJECT_TYPE_PRESETS,
   addTableField,
@@ -421,47 +421,9 @@ function SaveToast({ saving, message }) {
   return <span className={`dm-toast ${message.startsWith("Error") ? "error" : "ok"}`}>{message}</span>;
 }
 
-function NavRail({ authority, workspaceConfig, helperOpen, onHelperToggle }) {
-  const branding = workspaceConfig?.branding || {};
-  const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
-  return (
-    <aside className="workspace-rail" aria-label="Workspace navigation">
-      <div className="workspace-brand">
-        <span
-          className="workspace-mark"
-          style={{
-            background: branding.logoUrl ? undefined : branding.accent || undefined,
-            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent),
-          }}
-        >
-          {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : workspaceName.slice(0, 1).toUpperCase()}
-        </span>
-        <span>{workspaceName}</span>
-      </div>
-      <nav className="workspace-nav">
-        <Link href="/">Dashboards</Link>
-        <Link className="active" href="/data-model">Data Model</Link>
-        <span className="workspace-nav-static">Management</span>
-        <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
-      </nav>
-      <div className="workspace-rail-helper-toggle">
-        <button
-          type="button"
-          className={"workspace-rail-helper-btn" + (helperOpen ? " active" : "")}
-          onClick={onHelperToggle}
-          aria-label={helperOpen ? "Close workspace helper" : "Open workspace helper"}
-          title={helperOpen ? "Close helper" : "Open workspace helper"}
-        >
-          {helperOpen ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
-        </button>
-      </div>
-      <div className="workspace-rail-status">
-        <span className="status-dot" />
-        {authority || "local-catalog"}
-      </div>
-    </aside>
-  );
-}
+// NavRail extracted to `app/workspace-rail.jsx` (shared across all
+// governed-workspace pages). The legacy local definition has been
+// removed — every surface now renders <WorkspaceRail />.
 
 // ─── Object list (sidebar lives in ./ObjectSidebar.jsx) ───────────────────────
 
@@ -2225,6 +2187,36 @@ export default function DataModelShell() {
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
 
+  // Cross-page rail entrypoints. Settings / integrations pages render
+  // <WorkspaceRail> without an in-process helper handler — clicking the
+  // pill or a chat thread there navigates to `/data-model?helper=open`
+  // or `/data-model?thread=<id>`. We consume those query params here
+  // exactly once per change and strip them so refreshes are idempotent.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (!workspaceConfig) return;
+    const helperParam = searchParams?.get("helper");
+    const threadParam = searchParams?.get("thread");
+    if (!helperParam && !threadParam) return;
+    if (threadParam) {
+      const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
+      const row = (ht?.rows || []).find((r) => r?.id === threadParam);
+      if (row) {
+        setHelperInitialThread(row);
+        setHelperOpen(true);
+      }
+    } else if (helperParam === "open") {
+      setHelperInitialThread(null);
+      setHelperOpen(true);
+    }
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("helper");
+    next.delete("thread");
+    const query = next.toString();
+    router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
+  }, [workspaceConfig, searchParams, router]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -2268,8 +2260,13 @@ export default function DataModelShell() {
       }
       if (e.key === "Escape" && commandPaletteOpen) setCommandPaletteOpen(false);
     };
+    const railOpen = () => setCommandPaletteOpen(true);
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("growthub:open-command-palette", railOpen);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("growthub:open-command-palette", railOpen);
+    };
   }, [commandPaletteOpen, addOpen, helperOpen]);
 
   const tables = useMemo(
@@ -2463,36 +2460,63 @@ export default function DataModelShell() {
 
   return (
     <main className="workspace-builder workspace-settings-page">
-      <NavRail
+      <WorkspaceRail
         authority={authority}
         workspaceConfig={workspaceConfig}
         helperOpen={helperOpen}
-        onHelperToggle={() => setHelperOpen((v) => !v)}
+        onOpenHelper={() => {
+          if (helperOpen) { setHelperOpen(false); return; }
+          if (selectedTable) {
+            openHelperForTable(selectedTable);
+          } else {
+            openHelperWith(
+              "create_object",
+              "Create my first business object: a client list with name, owner, status, deal value, and next step."
+            );
+          }
+        }}
+        onOpenThread={(row) => {
+          setHelperInitialThread(row);
+          setHelperOpen(true);
+        }}
+        onConfigChange={(next) => {
+          if (typeof setWorkspaceConfig === "function") setWorkspaceConfig(next);
+        }}
       />
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">
-          <div><p>Workspace</p><h1>Data Model</h1></div>
+          {selectedTable ? (
+            <div className="workspace-toolbar-object">
+              <div className="workspace-toolbar-object-title">
+                <span className="workspace-toolbar-object-icon" aria-hidden="true">
+                  <LucideIcon
+                    name={selectedTable.icon || OBJECT_TYPE_PRESETS[selectedTable.objectType]?.icon || "Database"}
+                    size={16}
+                  />
+                </span>
+                <h1>{selectedTable.label}</h1>
+              </div>
+              <p className="workspace-toolbar-object-meta">
+                {(selectedTable.columns?.length || 0)} {(selectedTable.columns?.length || 0) === 1 ? "Field" : "Fields"}
+                {" · "}
+                {(selectedTable.rows?.length || 0)} {(selectedTable.rows?.length || 0) === 1 ? "Record" : "Records"}
+              </p>
+            </div>
+          ) : (
+            <div><p>Workspace</p><h1>Data Model</h1></div>
+          )}
           <div className="workspace-toolbar-actions">
             <SaveToast saving={saving} message={message} />
-            <button
-              type="button"
-              className="dm-btn-outline"
-              onClick={() => {
-                if (helperOpen) { setHelperOpen(false); return; }
-                if (selectedTable) {
-                  openHelperForTable(selectedTable);
-                } else {
-                  openHelperWith(
-                    "create_object",
-                    "Create my first business object: a client list with name, owner, status, deal value, and next step."
-                  );
-                }
-              }}
-              title="Ask the workspace helper"
-            >
-              <Zap size={14} />Ask helper
-            </button>
+            {selectedTable && (
+              <ObjectViewPicker
+                tables={tables}
+                selectedTable={selectedTable}
+                saving={saving}
+                onSelectSource={setSelectedSource}
+                onSave={save}
+              />
+            )}
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
               <Plus size={14} />New object
             </button>
@@ -2554,24 +2578,7 @@ export default function DataModelShell() {
         {!loading && !error && tables.length > 0 && (
           selectedTable && (
             <section className="dm-detail-v2 dm-detail-v3">
-              <div className="dm-detail-v2-head dm-detail-v3-head">
-                <div className="dm-detail-v2-title">
-                  <ObjectViewPicker tables={tables} selectedTable={selectedTable} saving={saving} onSelectSource={setSelectedSource} onSave={save} />
-                </div>
-                <div className="dm-detail-helper-trigger">
-                  <button
-                    type="button"
-                    className="dm-btn-outline dm-helper-row-btn"
-                    data-helper-trigger=""
-                    data-object-type={selectedTable.objectType || "custom"}
-                    onClick={() => openHelperForTable(selectedTable)}
-                    title="Ask helper about this object"
-                  >
-                    <Zap size={13} />Ask helper
-                  </button>
-                </div>
-                <SourceValidationBanner table={selectedTable} />
-              </div>
+              <SourceValidationBanner table={selectedTable} />
               <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} onOpenThread={openHelperThreadFromRow} />
             </section>
           )

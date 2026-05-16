@@ -3,6 +3,7 @@ import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { WorkspaceRail } from "../../workspace-rail.jsx";
 
 function countConnected(rows) {
   return rows.filter((item) => item.isConnected || item.status === "connected").length;
@@ -57,28 +58,13 @@ async function IntegrationsSettingsPage() {
   const allRows = [...grouped.dataSources, ...grouped.workspaceIntegrations];
 
   return <main className="workspace-builder workspace-settings-page">
-      <aside className="workspace-rail" aria-label="Workspace navigation">
-        <div className="workspace-brand">
-          <span className="workspace-mark" style={{
-            background: branding.logoUrl ? undefined : branding.accent || undefined,
-            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent)
-          }}>
-            {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : workspaceName.slice(0, 1).toUpperCase()}
-          </span>
-          <span>{workspaceName}</span>
-        </div>
-        <nav className="workspace-nav">
-          <Link href="/">Dashboards</Link>
-          <Link href="/data-model">Data Model</Link>
+      <WorkspaceRail
+        workspaceConfig={workspaceConfig}
+        authority={adapter.authority}
+        managementSlot={(
           <Link className="active" href="/settings/integrations">Integrations</Link>
-          <span className="workspace-nav-static">Management</span>
-          <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
-        </nav>
-        <div className="workspace-rail-status">
-          <span className="status-dot" />
-          {adapter.authority}
-        </div>
-      </aside>
+        )}
+      />
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">

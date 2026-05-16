@@ -17,7 +17,53 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckSquare, ChevronDown, Settings, Zap, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  AlertCircle,
+  ArrowUp,
+  CheckSquare,
+  ChevronDown,
+  HelpCircle,
+  LayoutDashboard,
+  Paperclip,
+  Plug,
+  Plus,
+  Settings,
+  SquareDashedMousePointer,
+  SquarePen,
+  Wrench,
+  X,
+} from "lucide-react";
+
+// Derive a short, human title for a thread row using the same fallback
+// chain as the rail's chat tab (title → first summary clause → intent →
+// generic label). Keeps the sidecar header title aligned with what the
+// user sees in the rail thread list.
+function deriveThreadDisplayTitle(threadOrRow, fallback = "Workspace Helper") {
+  if (!threadOrRow) return fallback;
+  const title = typeof threadOrRow.title === "string" ? threadOrRow.title.trim() : "";
+  if (title) return title;
+  const summary = typeof threadOrRow.summary === "string" ? threadOrRow.summary.trim() : "";
+  if (summary) {
+    const firstClause = summary.split(/[\n\.]/)[0].trim();
+    if (firstClause) return firstClause.length > 56 ? `${firstClause.slice(0, 55)}…` : firstClause;
+  }
+  return fallback;
+}
+
+// Lucide-react icon per intent. Used by the empty-state chip stack to give
+// each governance lane a recognizable mark matching the Twenty/Ask AI
+// reference grammar (icon-left, plain label).
+const INTENT_ICON = {
+  build_dashboard: LayoutDashboard,
+  create_object:   Plus,
+  edit_view:       SquarePen,
+  repair:          Wrench,
+  create_widget:   SquareDashedMousePointer,
+  register_api:    Plug,
+  explain:         HelpCircle,
+};
 
 const HELPER_INTENTS = [
   { value: "build_dashboard", label: "Build dashboard" },
@@ -32,6 +78,16 @@ const HELPER_INTENTS = [
 // 4 primary + 3 in the "More" dropdown — chosen by no-code usage frequency.
 const PRIMARY_INTENT_VALUES = ["build_dashboard", "create_object", "edit_view", "repair"];
 const MORE_INTENT_VALUES   = ["create_widget", "register_api", "explain"];
+
+// Quick-swap suggestions surfaced under the Local Model input in the Setup
+// tab. Click → swaps the draft value; user still needs to hit Save & connect.
+const SETUP_QUICK_MODELS = [
+  "gemma3:4b",
+  "llama3.1:8b",
+  "qwen2.5:7b",
+  "mistral:7b",
+  "phi3:14b",
+];
 
 // Plain-language intent descriptions surfaced to no-code users.
 const HELPER_INTENT_HINTS = {
@@ -123,12 +179,32 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // Setup tab state
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [pingLoading, setPingLoading] = useState(false);
+  // Editable draft for local-model / endpoint / adapter mode. Seeded from
+  // the live sandbox-environment row whenever the sidecar opens; writes
+  // back via PATCH /api/workspace { dataModel } and re-pings on save.
+  const [modelDraft, setModelDraft] = useState("");
+  const [endpointDraft, setEndpointDraft] = useState("");
+  const [adapterDraft, setAdapterDraft] = useState("ollama");
+  const [savingSetup, setSavingSetup] = useState(false);
+  const [setupSaveError, setSetupSaveError] = useState("");
+  const [setupSaveOk, setSetupSaveOk] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState(false);
 
   // Drag state
   const [panelWidth, setPanelWidth] = useState(persistedWidth);
   const dragRef = useRef({ dragging: false, startX: 0, startWidth: 0 });
   const sidecarRef = useRef(null);
   const promptRef = useRef(null);
+
+  // Auto-anchor the conversation to the latest turn whenever a new
+  // message arrives or the assistant starts streaming. ChatGPT pattern —
+  // no scroll-to-bottom affordance, browser scroll behaviour is enough.
+  const conversationRef = useRef(null);
+  useEffect(() => {
+    const el = conversationRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages.length, streaming]);
 
   useEffect(() => {
     if (initialIntent) { setIntent(initialIntent); setActiveIntent(initialIntent); }
@@ -403,10 +479,129 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   }, [open, activeTab]);
 
   const sandboxRow = resolveSandboxEnvRow(workspaceConfig);
-  const localModel = sandboxRow?.localModel || process.env.NEXT_PUBLIC_OLLAMA_MODEL || "gemma3:4b (default)";
-  const localEndpoint = sandboxRow?.localEndpoint || "http://127.0.0.1:11434/v1 (default)";
-  const adapterMode = sandboxRow?.intelligenceAdapterMode || "ollama";
-  const deploymentMode = adapterMode === "custom-openai-compatible" || adapterMode === "vllm" ? "hosted" : "local";
+  const liveModel = sandboxRow?.localModel || "";
+  const liveEndpoint = sandboxRow?.localEndpoint || "";
+  const liveAdapter = sandboxRow?.intelligenceAdapterMode || "ollama";
+  const deploymentMode = liveAdapter === "custom-openai-compatible" || liveAdapter === "vllm" ? "hosted" : "local";
+  const isUnconfigured = !liveEndpoint;
+  const setupIsDirty =
+    modelDraft.trim() !== liveModel ||
+    endpointDraft.trim() !== liveEndpoint ||
+    adapterDraft !== liveAdapter;
+  const setupStatusState = pingLoading
+    ? "checking"
+    : connectionStatus === "connected"
+      ? "connected"
+      : isUnconfigured
+        ? "unconfigured"
+        : "unreachable";
+  const setupStatusLabel = {
+    checking: "Checking connection…",
+    connected: "Connected to your local model",
+    unconfigured: "No local model configured yet",
+    unreachable: "Could not reach your local model",
+  }[setupStatusState];
+  const setupStatusMeta = {
+    checking: "",
+    connected: liveModel && liveEndpoint ? `${liveModel} · ${liveEndpoint}` : "",
+    unconfigured: "Configure your local model below to start using the helper.",
+    unreachable: "Start your local Ollama / LM Studio server, or verify the endpoint URL.",
+  }[setupStatusState];
+
+  // Seed setup-tab drafts whenever the sidecar opens or the underlying
+  // sandbox row changes. Drafts mirror the live row on open and diverge
+  // only after the user edits a field.
+  useEffect(() => {
+    if (!open) return;
+    setModelDraft(liveModel);
+    setEndpointDraft(liveEndpoint);
+    setAdapterDraft(liveAdapter || "ollama");
+    setSetupSaveError("");
+    setSetupSaveOk(false);
+  }, [open, liveModel, liveEndpoint, liveAdapter]);
+
+  async function saveSetup() {
+    if (savingSetup) return;
+    setSavingSetup(true);
+    setSetupSaveError("");
+    setSetupSaveOk(false);
+    try {
+      const dm = workspaceConfig?.dataModel || {};
+      const objects = Array.isArray(dm.objects) ? dm.objects.slice() : [];
+      const sbIdx = objects.findIndex(
+        (o) => o?.objectType === "sandbox-environment" && Array.isArray(o?.rows) && o.rows.length > 0,
+      );
+      let nextObjects;
+      if (sbIdx >= 0) {
+        const obj = objects[sbIdx];
+        const rows = obj.rows.slice();
+        rows[0] = {
+          ...rows[0],
+          localModel: modelDraft.trim(),
+          localEndpoint: endpointDraft.trim(),
+          intelligenceAdapterMode: adapterDraft,
+        };
+        objects[sbIdx] = { ...obj, rows };
+        nextObjects = objects;
+      } else {
+        // First-time setup: seed a minimal sandbox-environment object so the
+        // helper has a row to read at request time.
+        objects.push({
+          id: "workspace-helper-sandbox",
+          label: "Workspace Helper Sandbox",
+          source: "Workspace Helper Sandbox",
+          objectType: "sandbox-environment",
+          icon: "Terminal",
+          columns: [
+            "Name", "lifecycleStatus", "runLocality", "runtime",
+            "intelligenceType", "localModel", "localEndpoint", "intelligenceAdapterMode",
+          ],
+          rows: [{
+            Name: "workspace-helper",
+            lifecycleStatus: "live",
+            runLocality: "local",
+            runtime: "node",
+            intelligenceType: "local-intelligence",
+            localModel: modelDraft.trim(),
+            localEndpoint: endpointDraft.trim(),
+            intelligenceAdapterMode: adapterDraft,
+          }],
+          binding: { mode: "manual", source: "Workspace Helper Sandbox" },
+        });
+        nextObjects = objects;
+      }
+      const res = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: { ...dm, objects: nextObjects } }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSetupSaveError(body?.error || "Could not save. Try again or check the workspace persistence mode.");
+        return;
+      }
+      if (body?.workspaceConfig && onApplied) {
+        onApplied(body.workspaceConfig);
+      }
+      setSetupSaveOk(true);
+      setConnectionStatus(null);
+      await pingConnection();
+    } catch (err) {
+      setSetupSaveError(err?.message || "Save failed");
+    } finally {
+      setSavingSetup(false);
+    }
+  }
+
+  function copyCommand() {
+    try {
+      navigator.clipboard.writeText("growthub workspace setup --open");
+      setCopiedCommand(true);
+      window.setTimeout(() => setCopiedCommand(false), 1200);
+    } catch {
+      // Clipboard API unavailable — surface no feedback; users can copy by hand.
+    }
+  }
 
   const acceptedCount = Object.values(accepted).filter(Boolean).length;
   const skippedCount = applyResult?.skipped?.length || 0;
@@ -448,11 +643,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           aria-hidden="true"
         />
 
-        {/* Header */}
+        {/* Header — shows the thread title once a conversation is active. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            <Zap size={15} className="dm-sidecar-icon" />
-            <span className="dm-sidecar-title">Workspace Helper</span>
+            <span className="dm-sidecar-title" data-helper-title="">
+              {threadActive
+                ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                : "Workspace Helper"}
+            </span>
           </div>
           <button
             type="button"
@@ -489,181 +687,79 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </button>
         </div>
 
-        {/* Assistant tab */}
+        {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
+            conversation/result area on top (flex:1), bottom-anchored composer
+            holds chip stack (empty state) → mode row (active thread) →
+            textarea with attach + mode + send-arrow action row. */}
         {activeTab === "assistant" && (
-          <div className="dm-sidecar-body">
-            {/* Intent pills — only on a brand-new thread, before any user
-                message has been sent. 4 primary + a "More" dropdown for
-                the remaining 3 of the 7 supported intents. */}
-            {!threadActive && (
-              <div className="dm-helper-intent-pills" role="group" aria-label="Pick an intent">
-                {PRIMARY_INTENT_VALUES.map((value) => {
-                  const label = intentLabel(value);
-                  const isActive = activeIntent === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`dm-helper-pill${isActive ? " active" : ""}`}
-                      data-helper-pill={value}
-                      aria-pressed={isActive}
-                      disabled={streaming}
-                      onClick={() => onPickIntent(value)}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-                <span className="dm-helper-pill-more-wrap" ref={moreMenuRef}>
-                  <button
-                    type="button"
-                    className={`dm-helper-pill dm-helper-pill-more${MORE_INTENT_VALUES.includes(activeIntent) ? " active" : ""}`}
-                    data-helper-pill="more"
-                    aria-haspopup="listbox"
-                    aria-expanded={moreOpen}
-                    disabled={streaming}
-                    onClick={() => setMoreOpen((v) => !v)}
-                  >
-                    {MORE_INTENT_VALUES.includes(activeIntent) ? intentLabel(activeIntent) : "More"}
-                    <ChevronDown size={11} style={{ marginLeft: 2 }} />
-                  </button>
-                  {moreOpen && (
-                    <div className="dm-helper-pill-menu" role="listbox" data-helper-pill-menu="">
-                      {MORE_INTENT_VALUES.map((value) => (
-                        <button
-                          key={value}
-                          type="button"
-                          className={`dm-helper-pill-menu-item${activeIntent === value ? " active" : ""}`}
-                          data-helper-pill={value}
-                          role="option"
-                          aria-selected={activeIntent === value}
-                          onClick={() => onPickIntent(value)}
-                        >
-                          {intentLabel(value)}
-                        </button>
-                      ))}
+          <div className="dm-sidecar-body dm-helper-body">
+            <div className="dm-helper-conversation" ref={conversationRef}>
+              {/* Conversation — ChatGPT-grade multi-turn. User bubble
+                  right (grey, fits-content), assistant turn left (no
+                  chip, full-width markdown via react-markdown + GFM).
+                  Subtle dividers between turns. */}
+              {threadActive && messages.length > 0 && (
+                <div className="dm-helper-messages" data-helper-messages="">
+                  {messages.map((m, i) => {
+                    if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") return null;
+                    const userText = m.role === "user" ? (m.content || "") : "";
+                    const assistantMarkdown = m.role === "assistant"
+                      ? (m.summary || extractAssistantSummary(m.content) || "")
+                      : "";
+                    const systemText = m.role === "system" ? (m.content || "") : "";
+                    return (
+                      <div
+                        key={i}
+                        className={`dm-helper-turn role-${m.role}`}
+                        data-helper-message={m.role}
+                      >
+                        {m.role === "user" && (
+                          <div className="dm-helper-bubble dm-helper-bubble-user">{userText}</div>
+                        )}
+                        {m.role === "assistant" && (
+                          <div className="dm-helper-bubble dm-helper-bubble-assistant">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {assistantMarkdown || "_(no response)_"}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                        {m.role === "system" && (
+                          <div className="dm-helper-bubble dm-helper-bubble-system">{systemText}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {streaming && (
+                    <div className="dm-helper-turn role-assistant" data-helper-message="assistant-pending">
+                      <div className="dm-helper-bubble dm-helper-bubble-assistant dm-helper-bubble-pending">
+                        Thinking<span className="dm-stream-cursor" aria-hidden="true">|</span>
+                      </div>
                     </div>
                   )}
-                </span>
-              </div>
-            )}
-            {!threadActive && intentHint ? (
-              <p className="dm-field-hint" data-helper-intent-hint="">{intentHint}</p>
-            ) : null}
+                </div>
+              )}
 
-            {/* Active-mode indicator — shown once the thread has activated.
-                Tells the user which intent is locked for this conversation. */}
-            {threadActive && (
-              <div className="dm-helper-mode-row" data-helper-mode="">
-                <span className="dm-helper-mode-label">Mode</span>
-                <span className="dm-helper-mode-value">{intentLabel(activeIntent)}</span>
-              </div>
-            )}
+              {queryError && (
+                <div className="dm-helper-error" role="alert">
+                  <AlertCircle size={13} />
+                  <span>{queryError}</span>
+                </div>
+              )}
 
-            {/* Conversation — rendered once the user has sent at least
-                one message. User turns right, assistant turns left,
-                system apply-receipts as compact centered tags. The
-                latest assistant turn is also surfaced as the structured
-                Proposals review block below. */}
-            {threadActive && messages.length > 0 && (
-              <div className="dm-helper-messages" data-helper-messages="">
-                {messages.map((m, i) => {
-                  if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") return null;
-                  const text = m.role === "user"
-                    ? (m.content || "")
-                    : (m.role === "assistant"
-                      ? (m.summary || extractAssistantSummary(m.content) || "")
-                      : (m.content || ""));
-                  return (
-                    <div
-                      key={i}
-                      className={`dm-helper-message role-${m.role}`}
-                      data-helper-message={m.role}
-                    >
-                      <span className="dm-helper-message-content">{text}</span>
-                    </div>
-                  );
-                })}
-                {streaming && (
-                  <div className="dm-helper-message role-assistant" data-helper-message="assistant-pending">
-                    <span className="dm-helper-message-content">
-                      Thinking
-                      <span className="dm-stream-cursor" aria-hidden="true">|</span>
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+              {/* Streaming surface — only used before the thread activates
+                  (first turn). After activation the conversation list owns
+                  the live-thinking affordance via its pending bubble. */}
+              {!threadActive && (streaming || streamBuffer) && !result && (
+                <div className="dm-helper-stream" data-helper-stream="">
+                  <span>{streamBuffer}</span>
+                  {streaming && <span className="dm-stream-cursor" aria-hidden="true">|</span>}
+                </div>
+              )}
 
-            <div className="dm-field-group">
-              <label className="dm-field-label" htmlFor="helper-prompt">{threadActive ? "Reply" : "What do you need?"}</label>
-              <textarea
-                id="helper-prompt"
-                ref={promptRef}
-                className="dm-field-textarea"
-                rows={threadActive ? 2 : 4}
-                placeholder={threadActive
-                  ? 'Continue the conversation…'
-                  : 'e.g. "A sales ops dashboard for a local agency with pipeline stages and weekly revenue chart"'}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                disabled={streaming}
-                data-helper-prompt=""
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                    e.preventDefault();
-                    // Stop the window-level apply handler from firing on the
-                    // same keystroke while the user is still drafting.
-                    e.stopPropagation();
-                    runQuery();
-                  }
-                }}
-              />
-              <p className="dm-field-hint">
-                ⌘+Enter in the prompt sends. ⌘+Enter outside the prompt applies your accepted proposals.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className="dm-btn-primary"
-              style={{ width: "100%" }}
-              onClick={runQuery}
-              disabled={streaming || !prompt.trim()}
-              data-helper-submit=""
-            >
-              {streaming ? "Thinking…" : (threadActive ? "Send" : "Ask helper")}
-            </button>
-
-            {queryError && (
-              <div className="dm-helper-error" role="alert">
-                <AlertCircle size={13} />
-                <span>{queryError}</span>
-              </div>
-            )}
-
-            {/* Streaming surface — only used before the thread activates
-                (first turn). After activation the conversation list owns
-                the live-thinking affordance via its pending bubble. */}
-            {!threadActive && (streaming || streamBuffer) && !result && (
-              <div className="dm-helper-stream" data-helper-stream="">
-                <span>{streamBuffer}</span>
-                {streaming && <span className="dm-stream-cursor" aria-hidden="true">|</span>}
-              </div>
-            )}
-
-            {/* Empty hint (only before any conversation exists). */}
-            {!threadActive && !streaming && !result && !queryError && !streamBuffer && (
-              <div className="dm-helper-empty-hint" data-helper-empty-hint="">
-                <p>Pick a mode, then describe what you need. The helper drafts proposed changes — review each one before applying.</p>
-              </div>
-            )}
-
-            {/* Proposals */}
-            {result && (
-              <div className="dm-helper-result">
+              {/* Proposals */}
+              {result && (
+                <div className="dm-helper-result">
                 <div className="dm-helper-summary">
-                  <Zap size={13} />
                   <span>{result.summary}</span>
                 </div>
 
@@ -807,91 +903,278 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   </p>
                 )}
               </div>
-            )}
+              )}
+            </div>
+
+            {/* Composer — pinned at the bottom of the sidecar body. Empty
+                state surfaces a chip stack of intents (Twenty Ask AI
+                grammar); active thread shows the locked mode + a textarea
+                with attach (left) + mode + send (right). */}
+            <div className="dm-helper-composer" data-helper-composer="">
+              {!threadActive ? (
+                <>
+                  <p className="dm-helper-composer-prompt">What can I help you with?</p>
+                  <div className="dm-helper-chip-stack" role="group" aria-label="Pick an intent">
+                    {PRIMARY_INTENT_VALUES.map((value) => {
+                      const Icon = INTENT_ICON[value] || Plus;
+                      const isActive = activeIntent === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`dm-helper-chip${isActive ? " active" : ""}`}
+                          data-helper-pill={value}
+                          aria-pressed={isActive}
+                          disabled={streaming}
+                          onClick={() => onPickIntent(value)}
+                        >
+                          <Icon size={15} aria-hidden="true" />
+                          <span>{intentLabel(value)}</span>
+                        </button>
+                      );
+                    })}
+                    <span className="dm-helper-chip-more-wrap" ref={moreMenuRef}>
+                      <button
+                        type="button"
+                        className={`dm-helper-chip dm-helper-chip-more${MORE_INTENT_VALUES.includes(activeIntent) ? " active" : ""}`}
+                        data-helper-pill="more"
+                        aria-haspopup="listbox"
+                        aria-expanded={moreOpen}
+                        disabled={streaming}
+                        onClick={() => setMoreOpen((v) => !v)}
+                      >
+                        <span>{MORE_INTENT_VALUES.includes(activeIntent) ? intentLabel(activeIntent) : "More"}</span>
+                        <ChevronDown size={12} aria-hidden="true" />
+                      </button>
+                      {moreOpen && (
+                        <div className="dm-helper-pill-menu" role="listbox" data-helper-pill-menu="">
+                          {MORE_INTENT_VALUES.map((value) => {
+                            const Icon = INTENT_ICON[value] || Plus;
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                className={`dm-helper-pill-menu-item${activeIntent === value ? " active" : ""}`}
+                                data-helper-pill={value}
+                                role="option"
+                                aria-selected={activeIntent === value}
+                                onClick={() => onPickIntent(value)}
+                              >
+                                <Icon size={13} aria-hidden="true" />
+                                {intentLabel(value)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="dm-helper-mode-row" data-helper-mode="">
+                  <span className="dm-helper-mode-label">Mode</span>
+                  <span className="dm-helper-mode-value">{intentLabel(activeIntent)}</span>
+                </div>
+              )}
+
+              <div className="dm-helper-composer-input">
+                <textarea
+                  id="helper-prompt"
+                  ref={promptRef}
+                  className="dm-helper-composer-textarea"
+                  rows={threadActive ? 2 : 3}
+                  placeholder={threadActive
+                    ? 'Continue the conversation…'
+                    : 'Ask, search or make anything…'}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  disabled={streaming}
+                  data-helper-prompt=""
+                  aria-label="Helper prompt"
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      // Stop the window-level apply handler from firing on the
+                      // same keystroke while the user is still drafting.
+                      e.stopPropagation();
+                      runQuery();
+                    }
+                  }}
+                />
+                <div className="dm-helper-composer-actions">
+                  <button
+                    type="button"
+                    className="dm-helper-composer-attach"
+                    aria-label="Attach files (coming soon)"
+                    title="Attach files — coming soon"
+                    disabled
+                  >
+                    <Paperclip size={14} aria-hidden="true" />
+                  </button>
+                  <div className="dm-helper-composer-actions-right">
+                    <span className="dm-helper-composer-mode-pill" title="Active intent">
+                      {intentLabel(activeIntent)}
+                    </span>
+                    <button
+                      type="button"
+                      className="dm-helper-composer-send"
+                      onClick={runQuery}
+                      disabled={streaming || !prompt.trim()}
+                      data-helper-submit=""
+                      aria-label={streaming ? "Sending" : "Send (⌘+Enter)"}
+                      title={streaming ? "Sending…" : "Send (⌘+Enter)"}
+                    >
+                      {streaming ? (
+                        <span className="dm-stream-cursor" aria-hidden="true">…</span>
+                      ) : (
+                        <ArrowUp size={14} aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {!threadActive && intentHint && (
+                <p className="dm-helper-composer-hint" data-helper-intent-hint="">
+                  {intentHint}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Setup tab */}
+        {/* Setup tab — state-driven status hero + editable form + quick
+            model swap + reconnect-on-save. Matches the Assistant tab's
+            ChatGPT-clean rhythm; no bloat, no novelty. */}
         {activeTab === "setup" && (
-          <div className="dm-sidecar-body">
-            <p className="dm-field-hint" style={{ margin: 0 }}>
+          <div className="dm-sidecar-body dm-helper-setup-body">
+            <p className="dm-helper-setup-intro">
               The helper sends your prompt to a local model. Credentials are never stored in the workspace.
             </p>
 
-            <div className="dm-helper-setup-section">
-              <p className="dm-field-label">Local Model</p>
-              <code className="dm-helper-setup-value" data-local-model="">
-                {localModel}
-              </code>
-            </div>
-
-            <div className="dm-helper-setup-section">
-              <p className="dm-field-label">Inference Endpoint</p>
-              <code className="dm-helper-setup-value" data-local-endpoint="">
-                {localEndpoint}
-              </code>
-            </div>
-
-            <div className="dm-helper-setup-section">
-              <p className="dm-field-label">Connection Status</p>
-              <div className="dm-helper-connection-row" data-connection-status="" data-connection-state={connectionStatus || (pingLoading ? "checking" : "idle")}>
-                {pingLoading ? (
-                  <span className="dm-connection-dot dm-connection-checking" />
-                ) : connectionStatus === "connected" ? (
-                  <span className="dm-connection-dot dm-connection-ok" />
-                ) : connectionStatus === "unconfigured" ? (
-                  <span className="dm-connection-dot dm-connection-amber" />
-                ) : (
-                  <span className="dm-connection-dot dm-connection-amber" />
-                )}
-                <span className="dm-helper-connection-label">
-                  {pingLoading
-                    ? "Checking…"
-                    : connectionStatus === "connected"
-                    ? "Connected to your local model"
-                    : connectionStatus === "unconfigured"
-                    ? "No endpoint configured yet"
-                    : "Could not reach your local model"}
-                </span>
+            <div
+              className={`dm-helper-setup-status state-${setupStatusState}`}
+              data-connection-status=""
+              data-connection-state={setupStatusState}
+            >
+              <div className="dm-helper-setup-status-row">
+                <span className={`dm-connection-dot dm-connection-${
+                  setupStatusState === "connected"
+                    ? "ok"
+                    : setupStatusState === "checking"
+                      ? "checking"
+                      : "amber"
+                }`} />
+                <span className="dm-helper-setup-status-label">{setupStatusLabel}</span>
                 <button
                   type="button"
-                  className="dm-btn-outline dm-helper-recheck"
+                  className="dm-helper-setup-recheck"
                   onClick={() => { setConnectionStatus(null); pingConnection(); }}
                   disabled={pingLoading}
+                  aria-label="Re-check connection"
                 >
-                  Re-check
+                  {pingLoading ? "Checking…" : "Re-check"}
                 </button>
               </div>
-              {connectionStatus === "unreachable" && (
-                <p className="dm-field-hint" style={{ marginTop: 4 }}>
-                  Run the setup command below in your terminal, or start your local Ollama / LM Studio model.
-                </p>
+              {setupStatusMeta && (
+                <span className="dm-helper-setup-status-meta">{setupStatusMeta}</span>
               )}
             </div>
 
             <div className="dm-helper-setup-section">
-              <p className="dm-field-label">Deployment Mode</p>
-              <span className="dm-helper-setup-badge" data-deployment-mode={deploymentMode}>
-                {deploymentMode}
-              </span>
+              <label className="dm-helper-setup-label" htmlFor="setup-model">Local Model</label>
+              <input
+                id="setup-model"
+                type="text"
+                className="dm-helper-setup-input"
+                value={modelDraft}
+                onChange={(e) => setModelDraft(e.target.value)}
+                placeholder="e.g. gemma3:4b"
+                autoComplete="off"
+                spellCheck={false}
+                data-local-model=""
+              />
+              <div className="dm-helper-setup-quick-row" role="group" aria-label="Quick model swap">
+                <span className="dm-helper-setup-quick-label">Quick swap</span>
+                {SETUP_QUICK_MODELS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`dm-helper-setup-quick-pill${modelDraft === m ? " active" : ""}`}
+                    onClick={() => setModelDraft(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="dm-helper-setup-section">
-              <p className="dm-field-label">Run Setup Guide</p>
-              <pre className="dm-helper-setup-command" data-setup-command="">
-                growthub workspace setup --open
-              </pre>
+              <label className="dm-helper-setup-label" htmlFor="setup-endpoint">Inference Endpoint</label>
+              <input
+                id="setup-endpoint"
+                type="text"
+                className="dm-helper-setup-input"
+                value={endpointDraft}
+                onChange={(e) => setEndpointDraft(e.target.value)}
+                placeholder="http://127.0.0.1:11434/v1"
+                autoComplete="off"
+                spellCheck={false}
+                data-local-endpoint=""
+              />
+            </div>
+
+            <div className="dm-helper-setup-section">
+              <label className="dm-helper-setup-label" htmlFor="setup-adapter">Adapter Mode</label>
+              <select
+                id="setup-adapter"
+                className="dm-helper-setup-select"
+                value={adapterDraft}
+                onChange={(e) => setAdapterDraft(e.target.value)}
+                data-adapter-mode={adapterDraft}
+              >
+                <option value="ollama">Ollama</option>
+                <option value="lmstudio">LM Studio</option>
+                <option value="vllm">vLLM</option>
+                <option value="custom-openai-compatible">Custom OpenAI-compatible</option>
+              </select>
+              <span className="dm-helper-setup-helper-text" data-deployment-mode={deploymentMode}>
+                Deployment: <strong>{deploymentMode}</strong>
+              </span>
+            </div>
+
+            <div className="dm-helper-setup-actions">
               <button
                 type="button"
-                className="dm-btn-outline"
-                style={{ marginTop: 6 }}
-                onClick={() => {
-                  try {
-                    navigator.clipboard.writeText("growthub workspace setup --open");
-                  } catch {}
-                }}
+                className="dm-helper-setup-save"
+                onClick={saveSetup}
+                disabled={savingSetup || !setupIsDirty || (!modelDraft.trim() || !endpointDraft.trim())}
+                data-setup-save=""
               >
-                Copy command
+                {savingSetup
+                  ? "Saving…"
+                  : isUnconfigured
+                    ? "Save & connect"
+                    : "Save changes"}
+              </button>
+              {setupSaveOk && !setupIsDirty && (
+                <span className="dm-helper-setup-save-ok">Saved</span>
+              )}
+              {setupSaveError && (
+                <span className="dm-helper-setup-save-error" role="alert">{setupSaveError}</span>
+              )}
+            </div>
+
+            <div className="dm-helper-setup-guide">
+              <p className="dm-helper-setup-label">Need help getting set up?</p>
+              <pre className="dm-helper-setup-command" data-setup-command="">growthub workspace setup --open</pre>
+              <button
+                type="button"
+                className="dm-helper-setup-copy"
+                onClick={copyCommand}
+                aria-label="Copy setup command"
+              >
+                {copiedCommand ? "Copied" : "Copy command"}
               </button>
             </div>
           </div>

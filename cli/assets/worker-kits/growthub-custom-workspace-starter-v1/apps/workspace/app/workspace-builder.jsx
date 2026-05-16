@@ -77,6 +77,7 @@ import {
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
+import { WorkspaceRail } from "./workspace-rail.jsx";
 
 const DEFAULT_CHART_TYPE = "bar-vertical";
 const DEFAULT_FILTER_OP = "and";
@@ -4320,27 +4321,48 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   ]);
 
   return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
-      <aside className="workspace-rail" aria-label="Workspace navigation">
-        <div className="workspace-brand">
-          <span className="workspace-mark" style={{
-            background: branding.logoUrl ? undefined : branding.accent || undefined,
-            color: branding.logoUrl ? undefined : textColorForAccent(branding.accent)
-          }}>
-            {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : (branding.name || config.name || "Growthub Workspace").slice(0, 1).toUpperCase()}
-          </span>
-          <span>{branding.name || config.name || "Growthub Workspace"}</span>
-        </div>
-        <nav className="workspace-nav">
-          <button type="button" className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"} onClick={showDashboardHome}>Dashboards</button>
-          <Link href="/data-model">Data Model</Link>
-          <button type="button" className="workspace-nav-button" onClick={() => setManagementOpen(true)}>Management</button>
-          <Link className="workspace-nav-bottom" href="/settings/general">Workspace Settings</Link>
-        </nav>
-        <div className="workspace-rail-status">
-          <span className="status-dot" />
-          {integrationAdapter.authority}
-        </div>
-      </aside>
+      <WorkspaceRail
+        workspaceConfig={config}
+        authority={integrationAdapter.authority}
+        helperOpen={helperOpen}
+        onOpenHelper={() => {
+          if (helperOpen) { setHelperOpen(false); return; }
+          const dashName = activeDashboard?.name || "Untitled";
+          setHelperIntent(workspaceView === "builder" ? "edit_view" : "build_dashboard");
+          setHelperInitialPrompt(
+            workspaceView === "builder"
+              ? `Improve the "${dashName}" dashboard. Suggest widget placements and bindings that match the data already in the workspace.`
+              : "Draft a new dashboard for a local agency: pipeline overview, weekly revenue, and a leaderboard widget."
+          );
+          setHelperInitialThread(null);
+          setHelperOpen(true);
+        }}
+        onOpenThread={(row) => {
+          setHelperInitialThread(row);
+          setHelperOpen(true);
+        }}
+        onConfigChange={(nextConfig) => {
+          if (typeof setConfig === "function") setConfig(nextConfig);
+        }}
+        dashboardsSlot={(
+          <button
+            type="button"
+            className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"}
+            onClick={showDashboardHome}
+          >
+            Dashboards
+          </button>
+        )}
+        managementSlot={(
+          <button
+            type="button"
+            className="workspace-nav-button"
+            onClick={() => setManagementOpen(true)}
+          >
+            Management
+          </button>
+        )}
+      />
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">
@@ -4354,26 +4376,6 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             </>}
           </div>
           <div className="workspace-toolbar-actions">
-            <button
-              type="button"
-              className={"dm-btn-outline" + (helperOpen ? " active" : "")}
-              data-helper-trigger="dashboard-builder"
-              data-object-type="dashboard"
-              onClick={() => {
-                const dashName = activeDashboard?.name || "Untitled";
-                setHelperIntent(workspaceView === "builder" ? "edit_view" : "build_dashboard");
-                setHelperInitialPrompt(
-                  workspaceView === "builder"
-                    ? `Improve the "${dashName}" dashboard. Suggest widget placements and bindings that match the data already in the workspace.`
-                    : "Draft a new dashboard for a local agency: pipeline overview, weekly revenue, and a leaderboard widget."
-                );
-                setHelperInitialThread(null);
-                setHelperOpen(true);
-              }}
-              title="Ask the workspace helper"
-            >
-              <Zap size={14} />Ask helper
-            </button>
             <button type="button" onClick={() => setTemplateGalleryOpen(true)}><Grid2X2 size={15} />Templates</button>
             <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
             <button type="button" onClick={duplicateDashboard}><Copy size={15} />Duplicate Dashboard</button>
