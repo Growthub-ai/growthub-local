@@ -77,50 +77,70 @@ const INTENT_DESCRIPTIONS = {
  * Strip envRefs values, credentials, and row data from the live config.
  * Only schema shape (column names, object types, dashboard ids/names) travels
  * into the inference prompt.
+ *
+ * Accepts both shapes:
+ *   - a full workspaceConfig (with `dataModel.objects`, `dashboards`, `canvas`).
+ *   - an already-sanitized snapshot (with `dataModelObjects`, `canvasSummary`).
+ * In both cases the output is a fresh snapshot containing only schema shape.
  */
-function sanitizeWorkspaceSnapshot(workspaceConfig) {
-  if (!workspaceConfig || typeof workspaceConfig !== "object") return {};
+function sanitizeWorkspaceSnapshot(input) {
+  if (!input || typeof input !== "object") return {};
 
-  const dashboards = Array.isArray(workspaceConfig.dashboards)
-    ? workspaceConfig.dashboards.map((d) => ({
-        id: d.id,
-        name: d.name,
-        status: d.status,
+  const isSnapshotShape =
+    Array.isArray(input.dataModelObjects) ||
+    typeof input.canvasSummary === "object";
+
+  const dashboards = Array.isArray(input.dashboards)
+    ? input.dashboards.map((d) => ({
+        id: typeof d?.id === "string" ? d.id : undefined,
+        name: typeof d?.name === "string" ? d.name : undefined,
+        status: typeof d?.status === "string" ? d.status : undefined,
       }))
     : [];
 
-  const widgetTypes = Array.isArray(workspaceConfig.widgetTypes)
-    ? workspaceConfig.widgetTypes.map((w) => ({ kind: w.kind, label: w.label }))
-    : [];
-
-  const canvas = workspaceConfig.canvas
-    ? {
-        widgetCount: Array.isArray(workspaceConfig.canvas.widgets)
-          ? workspaceConfig.canvas.widgets.length
-          : 0,
-        tabCount: Array.isArray(workspaceConfig.canvas.tabs)
-          ? workspaceConfig.canvas.tabs.length
-          : 1,
-        activeTabId: workspaceConfig.canvas.activeTabId,
-      }
-    : { widgetCount: 0, tabCount: 1 };
-
-  const dataModelObjects = Array.isArray(workspaceConfig.dataModel?.objects)
-    ? workspaceConfig.dataModel.objects.map((obj) => ({
-        id: obj.id,
-        label: obj.label,
-        objectType: obj.objectType,
-        columns: Array.isArray(obj.columns) ? obj.columns : [],
-        rowCount: Array.isArray(obj.rows) ? obj.rows.length : 0,
+  const widgetTypes = Array.isArray(input.widgetTypes)
+    ? input.widgetTypes.map((w) => ({
+        kind: typeof w?.kind === "string" ? w.kind : undefined,
+        label: typeof w?.label === "string" ? w.label : undefined,
       }))
     : [];
+
+  let canvasSummary;
+  if (isSnapshotShape && input.canvasSummary && typeof input.canvasSummary === "object") {
+    canvasSummary = {
+      widgetCount: Number.isFinite(input.canvasSummary.widgetCount) ? input.canvasSummary.widgetCount : 0,
+      tabCount: Number.isFinite(input.canvasSummary.tabCount) ? input.canvasSummary.tabCount : 1,
+      activeTabId: typeof input.canvasSummary.activeTabId === "string" ? input.canvasSummary.activeTabId : undefined,
+    };
+  } else if (input.canvas && typeof input.canvas === "object") {
+    canvasSummary = {
+      widgetCount: Array.isArray(input.canvas.widgets) ? input.canvas.widgets.length : 0,
+      tabCount: Array.isArray(input.canvas.tabs) ? input.canvas.tabs.length : 1,
+      activeTabId: typeof input.canvas.activeTabId === "string" ? input.canvas.activeTabId : undefined,
+    };
+  } else {
+    canvasSummary = { widgetCount: 0, tabCount: 1 };
+  }
+
+  const rawObjects = isSnapshotShape
+    ? (Array.isArray(input.dataModelObjects) ? input.dataModelObjects : [])
+    : (Array.isArray(input.dataModel?.objects) ? input.dataModel.objects : []);
+  const dataModelObjects = rawObjects.map((obj) => ({
+    id: typeof obj?.id === "string" ? obj.id : undefined,
+    label: typeof obj?.label === "string" ? obj.label : undefined,
+    objectType: typeof obj?.objectType === "string" ? obj.objectType : undefined,
+    columns: Array.isArray(obj?.columns) ? obj.columns.filter((c) => typeof c === "string") : [],
+    rowCount: Number.isFinite(obj?.rowCount)
+      ? obj.rowCount
+      : (Array.isArray(obj?.rows) ? obj.rows.length : 0),
+  }));
 
   return {
-    workspaceId: workspaceConfig.id,
-    workspaceName: workspaceConfig.name,
+    workspaceId: typeof input.workspaceId === "string" ? input.workspaceId : (typeof input.id === "string" ? input.id : undefined),
+    workspaceName: typeof input.workspaceName === "string" ? input.workspaceName : (typeof input.name === "string" ? input.name : undefined),
     dashboards,
     widgetTypes,
-    canvasSummary: canvas,
+    canvasSummary,
     dataModelObjects,
   };
 }

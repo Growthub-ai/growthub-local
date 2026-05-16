@@ -99,9 +99,12 @@ async function POST(request) {
   const adapterModeOverride = typeof body?.adapterMode === "string" ? body.adapterMode.trim() : "";
   const localEndpointOverride = typeof body?.localEndpoint === "string" ? body.localEndpoint.trim() : "";
 
+  // Always sanitize the snapshot — even when supplied by the client — so
+  // envRefs values, credentials, and row data can never travel into the
+  // inference prompt regardless of how a caller frames the request.
   let snapshot;
   if (body?.workspaceSnapshot && typeof body.workspaceSnapshot === "object") {
-    snapshot = body.workspaceSnapshot;
+    snapshot = sanitizeWorkspaceSnapshot(body.workspaceSnapshot);
   } else {
     const liveConfig = await readWorkspaceConfig();
     snapshot = sanitizeWorkspaceSnapshot(liveConfig);
