@@ -12,7 +12,7 @@ Authoritative reference for the Growthub workspace-native helper: a governed, wo
 
 4. **Receipts for every accepted change.** Every apply writes a durable receipt to source-records. These receipts seed the fine-tune loop: accepted workspace-building traces are the highest-weight training signal for future distillation.
 
-5. **No credentials in the prompt.** `sanitizeWorkspaceSnapshot` strips `envRefs` values, credentials, and row data before any snapshot enters the inference call. Only schema shape (column names, object types, dashboard ids) travels to the model.
+5. **No credentials in the prompt.** `sanitizeWorkspaceSnapshot` strips `envRefs` values, credentials, and row data before any snapshot enters the inference call — including snapshots supplied by the client. The query route always re-sanitizes regardless of caller. Only schema shape (column names, object types, dashboard ids) travels to the model.
 
 ## Endpoint reference
 
@@ -186,6 +186,19 @@ growthub workspace helper apply \
 growthub workspace helper receipts --limit 25
 ```
 
+## UX touchpoints
+
+The helper is reachable from every governed builder surface a no-code user can land on:
+
+- **Data Model page** — top-right `Ask helper` button, per-object trigger inside `ObjectViewPicker`, empty-state `Try the helper` CTA. All three pre-fill a context-appropriate starter prompt and select a scoped intent (People / Tasks / API Registry / sandbox / data-source / custom).
+- **Dashboard Builder page** — toolbar `Ask helper` button + command palette "Ask helper" group (build dashboard, edit current view, suggest widgets, repair). Builder integration uses the same `HelperSidecar` component, so wire shape and design system stay identical across both pages.
+- **Command palette** — `Cmd/Ctrl+K` everywhere. The `/` key also opens the palette when no `INPUT`/`TEXTAREA`/`SELECT`/contenteditable is focused.
+- **Sidebar rail icon** — `PanelRight` when closed and `PanelRightClose` when open. The `Escape` key closes the sidecar.
+- **Keyboard apply** — `Cmd/Ctrl+Enter` inside the prompt asks the helper; `Cmd/Ctrl+Enter` outside the prompt applies accepted proposals. The textarea handler stops propagation so submit and apply never collide on the same keystroke.
+- **Drag handle** — left edge of the sidecar, `ew-resize` cursor, clamped to `[320px, 80vw]`. While dragging, text selection is suppressed and width is held in memory (no localStorage).
+- **Proposal review** — each row shows the proposal type, target PATCH field, a short payload summary chip (no raw JSON), a rationale, and a confidence percent when the model provided one. Skipped proposals render their reason inline.
+- **Setup tab** — local model, inference endpoint, deployment mode (`local` / `hosted`), connection status (green = reachable, amber = unreachable / unconfigured), and a copyable `growthub workspace setup --open` command. Ping runs only when the Setup tab opens.
+
 ## Adapter contract
 
 The query route dispatches through the `local-intelligence` sandbox adapter:
@@ -222,7 +235,9 @@ The receipts are the training signal for future distillation. Accepted workspace
 | `apps/workspace/app/api/workspace/helper/query/route.js` | POST /api/workspace/helper/query |
 | `apps/workspace/app/api/workspace/helper/apply/route.js` | POST /api/workspace/helper/apply |
 | `apps/workspace/app/api/workspace/helper/receipts/route.js` | GET /api/workspace/helper/receipts |
-| `apps/workspace/app/data-model/components/DataModelShell.jsx` | "Ask helper" button + WorkspaceHelperPanel component |
+| `apps/workspace/app/data-model/components/DataModelShell.jsx` | "Ask helper" trigger + Cmd+K / slash palette + empty-state CTA |
+| `apps/workspace/app/data-model/components/HelperSidecar.jsx` | Right-side sidecar (Assistant + Setup tabs, drag handle, per-proposal confidence, skipped reasons) |
+| `apps/workspace/app/workspace-builder.jsx` | Dashboard builder "Ask helper" trigger + palette "Ask helper" group |
 | `packages/api-contract/src/helper.ts` | SDK type surface |
 | `cli/src/commands/workspace-helper.ts` | CLI command surface |
 | `.claude/skills/growthub-workspace-helper/SKILL.md` | Claude skill entry |
