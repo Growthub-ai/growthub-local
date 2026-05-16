@@ -4372,6 +4372,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .dm-helper-skipped { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; }
 .dm-helper-skipped-row { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: #92400e; }
 .dm-helper-skipped-reason { color: #b45309; }
+.dm-thread-open-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: #3f68ff; background: transparent; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.dm-thread-open-link:hover { color: #1e40af; }
+.dm-thread-open-link:focus-visible { outline: 2px solid #bfdbfe; outline-offset: 2px; border-radius: 3px; }
 
 /* Setup tab */
 .dm-helper-setup-section { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }

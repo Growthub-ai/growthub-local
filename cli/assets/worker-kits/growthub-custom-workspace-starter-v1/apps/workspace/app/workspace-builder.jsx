@@ -3356,6 +3356,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [helperOpen, setHelperOpen] = useState(false);
   const [helperIntent, setHelperIntent] = useState("build_dashboard");
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
+  const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [templateFilter, setTemplateFilter] = useState({ category: "all", tag: "all", query: "" });
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -4165,6 +4166,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     const openHelperWith = (i, p) => {
       setHelperIntent(i);
       setHelperInitialPrompt(p);
+      setHelperInitialThread(null);
       setHelperOpen(true);
     };
     list.push({
@@ -4365,6 +4367,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                     ? `Improve the "${dashName}" dashboard. Suggest widget placements and bindings that match the data already in the workspace.`
                     : "Draft a new dashboard for a local agency: pipeline overview, weekly revenue, and a leaderboard widget."
                 );
+                setHelperInitialThread(null);
                 setHelperOpen(true);
               }}
               title="Ask the workspace helper"
@@ -4588,16 +4591,25 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         workspaceConfig={config}
         initialIntent={helperIntent}
         initialPrompt={helperInitialPrompt}
+        initialThread={helperInitialThread}
         onApplied={(updatedConfig) => {
           if (!updatedConfig) return;
-          setConfig((current) => ({
-            ...current,
-            ...updatedConfig,
-            canvas: dashboardCanvasFrom(
-              (updatedConfig.dashboards || current.dashboards)?.[0],
-              updatedConfig.canvas || current.canvas
-            )
-          }));
+          // Re-seat canvas from the dashboard the user is currently viewing.
+          // If the helper created a new dashboard we still keep the user
+          // anchored where they were unless they had no active dashboard yet.
+          setConfig((current) => {
+            const nextDashboards = Array.isArray(updatedConfig.dashboards) && updatedConfig.dashboards.length
+              ? updatedConfig.dashboards
+              : current.dashboards;
+            const stillActive = nextDashboards.find((d) => d?.id === resolvedActiveDashboardId);
+            const anchor = stillActive || nextDashboards[0];
+            return {
+              ...current,
+              ...updatedConfig,
+              dashboards: nextDashboards,
+              canvas: dashboardCanvasFrom(anchor, updatedConfig.canvas || current.canvas)
+            };
+          });
         }}
       />
 

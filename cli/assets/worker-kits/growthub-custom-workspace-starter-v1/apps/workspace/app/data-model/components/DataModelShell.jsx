@@ -1407,7 +1407,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   );
 }
 
-function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave }) {
+function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave, onOpenThread }) {
   const [selectedRow, setSelectedRow] = useState(null);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState("text");
@@ -1867,9 +1867,27 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave 
                 </td>
                 {visibleColumns.map((column) => {
                   const relation = relationForColumn(table, column);
+                  // The Helper Threads object is a normal custom-typed
+                  // governed object. We opt the "open" column into a
+                  // Reopen link based on the stable well-known object id
+                  // so we don't need a dedicated object type.
+                  const isHelperThreadOpenCol = table.objectId === "helper-threads" && column === "open";
                   return (
                   <td key={column}>
-                    {relation ? (
+                    {isHelperThreadOpenCol ? (
+                      <button
+                        type="button"
+                        className="dm-thread-open-link"
+                        data-helper-thread-open=""
+                        data-thread-id={row?.id || ""}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (typeof onOpenThread === "function") onOpenThread(row);
+                        }}
+                      >
+                        <Zap size={11} />Reopen
+                      </button>
+                    ) : relation ? (
                       <RelationPickerOrSelect
                         table={table}
                         tables={tables}
@@ -2202,6 +2220,7 @@ export default function DataModelShell() {
   const [helperOpen, setHelperOpen] = useState(false);
   const [helperIntent, setHelperIntent] = useState("create_object");
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
+  const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
@@ -2377,6 +2396,33 @@ export default function DataModelShell() {
   const openHelperWith = (intent, prompt) => {
     setHelperIntent(intent);
     setHelperInitialPrompt(prompt || "");
+    setHelperInitialThread(null);
+    setHelperOpen(true);
+  };
+
+  // Reopen a helper thread row from the Helper Threads Data Model object.
+  // The row already holds the full prior turn (intent, prompt, proposals,
+  // warnings, receipts) — passing it through initialThread rehydrates the
+  // sidecar state so the user reads the conversation exactly where it ended.
+  const openHelperThreadFromRow = (row) => {
+    if (!row || !row.id) return;
+    const proposals = Array.isArray(row.proposals) ? row.proposals : [];
+    const warnings = Array.isArray(row.warnings) ? row.warnings : [];
+    const result = {
+      summary: row.summary || "",
+      proposals,
+      warnings,
+      receipts: row.receipts || null,
+      threadId: row.id,
+    };
+    setHelperIntent(row.intent || "explain");
+    setHelperInitialPrompt(typeof row.prompt === "string" ? row.prompt : "");
+    setHelperInitialThread({
+      id: row.id,
+      intent: row.intent || "explain",
+      prompt: typeof row.prompt === "string" ? row.prompt : "",
+      result,
+    });
     setHelperOpen(true);
   };
 
@@ -2467,8 +2513,23 @@ export default function DataModelShell() {
           workspaceConfig={workspaceConfig}
           initialIntent={helperIntent}
           initialPrompt={helperInitialPrompt}
+          initialThread={helperInitialThread}
           onApplied={(updatedConfig) => {
+            // Anchor the user on the most recently created/updated Data Model
+            // object so a helper-driven object.create lands on the surface
+            // instead of needing a manual click.
             setWorkspaceConfig(updatedConfig);
+            const nextObjects = updatedConfig?.dataModel?.objects || [];
+            const prevIds = new Set(
+              (workspaceConfig?.dataModel?.objects || []).map((o) => o?.id).filter(Boolean)
+            );
+            const newlyCreated = nextObjects.find((o) => o?.id && !prevIds.has(o.id));
+            const nextSource = (newlyCreated?.label || newlyCreated?.id)
+              ? (newlyCreated.label || newlyCreated.id)
+              : selectedSource;
+            if (nextSource && nextSource !== selectedSource) {
+              setSelectedSource(nextSource);
+            }
           }}
         />
 
@@ -2511,7 +2572,7 @@ export default function DataModelShell() {
                 </div>
                 <SourceValidationBanner table={selectedTable} />
               </div>
-              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} />
+              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} onOpenThread={openHelperThreadFromRow} />
             </section>
           )
         )}

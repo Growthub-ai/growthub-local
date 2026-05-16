@@ -85,7 +85,7 @@ function summarizePayload(proposal) {
   }
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, onApplied }) {
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
   const [prompt, setPrompt] = useState(initialPrompt || "");
@@ -96,6 +96,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const [accepted, setAccepted] = useState({});
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
+  // Active thread id — set when a query response carries it, or when the
+  // sidecar is opened with initialThread (reopen flow). Sent on apply so
+  // the same governed row records both the proposal turn and its outcome.
+  const [threadId, setThreadId] = useState(null);
 
   // Setup tab state
   const [connectionStatus, setConnectionStatus] = useState(null);
@@ -117,6 +121,30 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     if (open && initialPrompt) setPrompt(initialPrompt);
   }, [open, initialPrompt]);
 
+  // Rehydrate the sidecar from a thread row when the user clicks Reopen
+  // inside the Helper Threads Data Model object. The whole prior turn —
+  // intent, prompt, summary, proposals, warnings, receipts — is restored
+  // so the user re-enters the conversation exactly where they left it.
+  useEffect(() => {
+    if (!open || !initialThread) return;
+    if (initialThread.intent) setIntent(initialThread.intent);
+    if (typeof initialThread.prompt === "string") setPrompt(initialThread.prompt);
+    if (initialThread.id) setThreadId(initialThread.id);
+    if (initialThread.result && typeof initialThread.result === "object") {
+      setResult(initialThread.result);
+      const init = {};
+      (initialThread.result.proposals || []).forEach((_, i) => { init[i] = false; });
+      setAccepted(init);
+      setStreamBuffer(initialThread.result.summary || "");
+    } else {
+      setResult(null);
+      setAccepted({});
+      setStreamBuffer("");
+    }
+    setQueryError("");
+    setApplyResult(null);
+  }, [open, initialThread]);
+
   // Move focus to the prompt textarea when the sidecar opens so the keyboard
   // flow lands somewhere useful. Run after paint so the input is mounted.
   useEffect(() => {
@@ -137,6 +165,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       setApplyResult(null);
       setActiveTab("assistant");
       setConnectionStatus(null);
+      setThreadId(null);
     }
   }, [open]);
 
@@ -214,7 +243,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       const res = await fetch("/api/workspace/helper/query", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ intent, userPrompt: prompt.trim() }),
+        body: JSON.stringify({ intent, userPrompt: prompt.trim(), threadId: threadId || undefined }),
       });
 
       // Try streaming first
@@ -238,6 +267,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             setQueryError(parsed.error || "The helper could not complete this request.");
           } else {
             setResult(parsed);
+            if (parsed.threadId) setThreadId(parsed.threadId);
             const init = {};
             (parsed.proposals || []).forEach((_, i) => { init[i] = true; });
             setAccepted(init);
@@ -252,6 +282,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           setQueryError(data.error || "The helper could not complete this request.");
         } else {
           setResult(data);
+          if (data.threadId) setThreadId(data.threadId);
           const init = {};
           (data.proposals || []).forEach((_, i) => { init[i] = true; });
           setAccepted(init);
@@ -275,7 +306,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       const res = await fetch("/api/workspace/helper/apply", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ proposals, reviewedBy: "user" }),
+        body: JSON.stringify({ proposals, reviewedBy: "user", threadId: threadId || undefined }),
       });
       const data = await res.json();
       setApplyResult(data);
