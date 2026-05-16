@@ -215,6 +215,7 @@ This keeps the mental model intact:
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — what's inside a Workspace + authority boundary
 - [**Workspace Builder Runtime V1**](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md) — the no-code builder runtime
 - [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
+- [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md) — governed multi-turn AI chat inside every exported workspace: rail trigger, real-data widget snapshotting, ToolCallCard receipts, refresh-safe thread persistence, hidden local-intelligence sandbox primitive
 
 ### Workspace Templates
 

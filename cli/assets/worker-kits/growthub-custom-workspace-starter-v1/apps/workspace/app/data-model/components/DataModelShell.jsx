@@ -306,7 +306,7 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
             <div className="dm-picker-section">
               <p>Favorites</p>
               {favoriteObjects.map((table) => (
-                <button key={`favorite-${table.source}`} type="button" className="dm-picker-row" onClick={() => onSelectSource(table.source)}>
+                <button key={`favorite-${table.id || table.source}`} type="button" className="dm-picker-row" onClick={() => onSelectSource(table.source)}>
                   <Pin size={14} />
                   <span>{table.label}</span>
                 </button>
@@ -329,7 +329,7 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
               <p>Objects</p>
               <div className="dm-picker-scroll">
                 {objects.map((table) => (
-                  <div key={table.source} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
+                  <div key={table.id || table.source} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
                     <button type="button" className="dm-picker-row" onClick={() => {
                       onSelectSource(table.source);
                       setOpen(false);
