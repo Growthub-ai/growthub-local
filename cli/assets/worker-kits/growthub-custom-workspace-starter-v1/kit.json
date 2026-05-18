@@ -115,6 +115,7 @@
     "apps/workspace/app/data-model/page.jsx",
     "apps/workspace/app/data-model/components/DataModelShell.jsx",
     "apps/workspace/app/data-model/components/HelperSidecar.jsx",
+    "apps/workspace/app/views/[viewId]/page.jsx",
     "apps/workspace/lib/adapters/payments/index.js",
     "apps/workspace/lib/adapters/persistence/index.js",
     "apps/workspace/lib/adapters/persistence/postgres.js",

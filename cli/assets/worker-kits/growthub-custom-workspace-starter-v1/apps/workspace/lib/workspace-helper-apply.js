@@ -461,6 +461,92 @@ function nextThreadId() {
   return `thr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Custom Folders Navigation — governed end-user organization layer.
+ *
+ * Same well-known custom-typed Data Model object pattern as
+ * `helper-threads`: one object (id = "nav-folders") whose `rows[]` carry
+ * the user's folder structure. Each row is a folder. Folder items
+ * (dashboard links, lightweight views of governed objects) are nested
+ * inside the row as a JSON-serialisable `items[]` array.
+ *
+ * Persists through the existing PATCH allowlist on `/api/workspace`
+ * (`dataModel`), is round-trip validated by `validateWorkspaceConfig`,
+ * is hidden from the user-facing Data Model picker via
+ * `HIDDEN_HELPER_OBJECT_IDS` in `lib/workspace-data-model.js`, and is
+ * fully backwards compatible — if the object is missing the rail simply
+ * shows zero folders and the user can add one with the `+` button.
+ *
+ * Row shape (validated in `lib/workspace-schema.js`):
+ *
+ *   {
+ *     id: "fld_…",
+ *     name: "Sales Pipeline",
+ *     order: 0,
+ *     collapsed: false,
+ *     items: [
+ *       { id: "item_…", type: "dashboard", refId: "dash-abc",
+ *         label: "Revenue Overview" },
+ *       { id: "item_…", type: "view", objectId: "prospects",
+ *         label: "Active Prospects",
+ *         viewConfig: { columns: [...], filters: [...], sort: {...} } }
+ *     ]
+ *   }
+ */
+
+const NAV_FOLDERS_OBJECT_ID = "nav-folders";
+const NAV_FOLDERS_LABEL = "Custom Folders";
+const NAV_FOLDER_NAME_MAX = 60;
+const NAV_ITEM_LABEL_MAX = 80;
+const NAV_ITEM_TYPES = new Set(["dashboard", "view"]);
+
+function ensureNavFoldersObject(config) {
+  const dm = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects.slice() : [];
+  const idx = objects.findIndex((o) => o?.id === NAV_FOLDERS_OBJECT_ID);
+  if (idx >= 0) {
+    const existing = objects[idx];
+    if (!Array.isArray(existing.rows)) {
+      objects[idx] = { ...existing, rows: [] };
+    }
+    return { ...config, dataModel: { ...dm, objects } };
+  }
+  const seeded = {
+    id: NAV_FOLDERS_OBJECT_ID,
+    label: NAV_FOLDERS_LABEL,
+    source: NAV_FOLDERS_LABEL,
+    objectType: "custom",
+    icon: "Folder",
+    columns: ["name", "order", "collapsed", "items"],
+    rows: [],
+    binding: { mode: "manual", source: NAV_FOLDERS_LABEL },
+  };
+  return { ...config, dataModel: { ...dm, objects: [...objects, seeded] } };
+}
+
+function nextNavFolderId() {
+  return `fld_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function nextNavItemId() {
+  return `item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function getNavFolderRows(config) {
+  const obj = (config?.dataModel?.objects || []).find((o) => o?.id === NAV_FOLDERS_OBJECT_ID);
+  return Array.isArray(obj?.rows) ? obj.rows : [];
+}
+
+function writeNavFolderRows(config, rows) {
+  const withObject = ensureNavFoldersObject(config);
+  const dm = withObject.dataModel;
+  const objects = dm.objects.slice();
+  const idx = objects.findIndex((o) => o?.id === NAV_FOLDERS_OBJECT_ID);
+  if (idx === -1) return withObject;
+  objects[idx] = { ...objects[idx], rows: rows.map((row, i) => ({ ...row, order: i })) };
+  return { ...withObject, dataModel: { ...dm, objects } };
+}
+
 export {
   applyProposalToConfig,
   validateProposalForApply,
@@ -470,4 +556,14 @@ export {
   nextThreadId,
   HELPER_THREADS_OBJECT_ID,
   ALLOWED_PATCH_FIELDS,
+  NAV_FOLDERS_OBJECT_ID,
+  NAV_FOLDERS_LABEL,
+  NAV_FOLDER_NAME_MAX,
+  NAV_ITEM_LABEL_MAX,
+  NAV_ITEM_TYPES,
+  ensureNavFoldersObject,
+  nextNavFolderId,
+  nextNavItemId,
+  getNavFolderRows,
+  writeNavFolderRows,
 };

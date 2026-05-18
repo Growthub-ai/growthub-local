@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -3307,6 +3308,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
 }
 
 function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, integrationSettings, persistence }) {
+  const searchParams = useSearchParams();
   const [config, setConfig] = useState(() => {
     const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
       ? initialConfig.dashboards.map((dashboard, index) =>
@@ -3526,6 +3528,15 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       };
     });
   }, [activeDashboardId]);
+
+  useEffect(() => {
+    const dashboardParam = searchParams?.get("dashboard");
+    if (!dashboardParam || dashboards.length === 0) return;
+    const targetIndex = dashboards.findIndex((dashboard) => dashboard.id === dashboardParam);
+    if (targetIndex < 0) return;
+    if (dashboards[targetIndex]?.id === resolvedActiveDashboardId && workspaceView === "builder") return;
+    selectDashboard(targetIndex);
+  }, [dashboards, resolvedActiveDashboardId, searchParams, selectDashboard, workspaceView]);
 
   const enterDashboardTitleEdit = useCallback((dashboard) => {
     if (!dashboard) return;

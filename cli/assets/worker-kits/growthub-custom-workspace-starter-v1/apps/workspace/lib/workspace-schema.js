@@ -1000,6 +1000,101 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   }
 }
 
+const NAV_FOLDERS_OBJECT_ID = "nav-folders";
+const NAV_FOLDER_NAME_MAX = 60;
+const NAV_ITEM_LABEL_MAX = 80;
+const NAV_ITEM_TYPES = ["dashboard", "view"];
+
+function validateNavFolderRow(row, path, errors) {
+  if (!isPlainObject(row)) return;
+  if (typeof row.id !== "string" || !row.id.trim()) {
+    errors.push(`${path}.id must be a non-empty string`);
+  }
+  if (typeof row.name !== "string" || !row.name.trim()) {
+    errors.push(`${path}.name must be a non-empty string`);
+  } else if (row.name.length > NAV_FOLDER_NAME_MAX) {
+    errors.push(`${path}.name must be ${NAV_FOLDER_NAME_MAX} characters or fewer`);
+  }
+  if (row.order !== undefined && !isFiniteInt(row.order)) {
+    errors.push(`${path}.order must be a finite integer when present`);
+  }
+  if (row.collapsed !== undefined && typeof row.collapsed !== "boolean") {
+    errors.push(`${path}.collapsed must be a boolean when present`);
+  }
+  if (row.icon !== undefined && typeof row.icon !== "string") {
+    errors.push(`${path}.icon must be a string when present`);
+  }
+  if (row.color !== undefined && typeof row.color !== "string") {
+    errors.push(`${path}.color must be a string when present`);
+  }
+  if (row.iconBg !== undefined && typeof row.iconBg !== "string") {
+    errors.push(`${path}.iconBg must be a string when present`);
+  }
+  if (row.items === undefined) return;
+  if (!Array.isArray(row.items)) {
+    errors.push(`${path}.items must be an array`);
+    return;
+  }
+  const seenItemIds = new Set();
+  row.items.forEach((item, index) => {
+    const ipfx = `${path}.items[${index}]`;
+    if (!isPlainObject(item)) {
+      errors.push(`${ipfx} must be a plain object`);
+      return;
+    }
+    if (typeof item.id !== "string" || !item.id.trim()) {
+      errors.push(`${ipfx}.id must be a non-empty string`);
+    } else if (seenItemIds.has(item.id)) {
+      errors.push(`${ipfx}.id duplicates an earlier item id in this folder`);
+    } else {
+      seenItemIds.add(item.id);
+    }
+    if (!NAV_ITEM_TYPES.includes(item.type)) {
+      errors.push(`${ipfx}.type must be one of ${NAV_ITEM_TYPES.join(", ")}`);
+    }
+    if (item.label !== undefined) {
+      if (typeof item.label !== "string") {
+        errors.push(`${ipfx}.label must be a string when present`);
+      } else if (item.label.length > NAV_ITEM_LABEL_MAX) {
+        errors.push(`${ipfx}.label must be ${NAV_ITEM_LABEL_MAX} characters or fewer`);
+      }
+    }
+    if (item.icon !== undefined && typeof item.icon !== "string") {
+      errors.push(`${ipfx}.icon must be a string when present`);
+    }
+    if (item.color !== undefined && typeof item.color !== "string") {
+      errors.push(`${ipfx}.color must be a string when present`);
+    }
+    if (item.iconBg !== undefined && typeof item.iconBg !== "string") {
+      errors.push(`${ipfx}.iconBg must be a string when present`);
+    }
+    if (item.type === "dashboard") {
+      if (typeof item.refId !== "string" || !item.refId.trim()) {
+        errors.push(`${ipfx}.refId must be a non-empty string for dashboard items`);
+      }
+    } else if (item.type === "view") {
+      if (typeof item.objectId !== "string" || !item.objectId.trim()) {
+        errors.push(`${ipfx}.objectId must be a non-empty string for view items`);
+      }
+      if (item.viewConfig !== undefined) {
+        if (!isPlainObject(item.viewConfig)) {
+          errors.push(`${ipfx}.viewConfig must be a plain object when present`);
+        } else {
+          if (item.viewConfig.columns !== undefined) {
+            validateStringArray(item.viewConfig.columns, `${ipfx}.viewConfig.columns`, errors);
+          }
+          if (item.viewConfig.filters !== undefined && !Array.isArray(item.viewConfig.filters)) {
+            errors.push(`${ipfx}.viewConfig.filters must be an array when present`);
+          }
+          if (item.viewConfig.sort !== undefined && !isPlainObject(item.viewConfig.sort)) {
+            errors.push(`${ipfx}.viewConfig.sort must be a plain object when present`);
+          }
+        }
+      }
+    }
+  });
+}
+
 function validateDataModelConfig(dataModel, errors) {
   if (dataModel === undefined) return;
   if (!isPlainObject(dataModel)) {
@@ -1039,6 +1134,9 @@ function validateDataModelConfig(dataModel, errors) {
         }
         if (object.objectType === "sandbox-environment") {
           validateSandboxEnvironmentRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        }
+        if (object.id === NAV_FOLDERS_OBJECT_ID) {
+          validateNavFolderRow(row, `${prefix}.rows[${rowIndex}]`, errors);
         }
       });
     }
@@ -1316,6 +1414,10 @@ export {
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,
+  NAV_FOLDERS_OBJECT_ID,
+  NAV_FOLDER_NAME_MAX,
+  NAV_ITEM_LABEL_MAX,
+  NAV_ITEM_TYPES,
   NORMALIZED_OBJECT_FIELD_IDS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
