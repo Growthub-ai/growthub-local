@@ -36,10 +36,10 @@ fi
 BRANCH="$(git branch --show-current 2>/dev/null || echo '')"
 if [[ -z "$BRANCH" ]]; then
   fail "Detached HEAD — no branch name"
-elif [[ "$BRANCH" =~ ^(fix|feat|chore|refactor|docs|ci|test|perf|adapter|sync|cursor|codex)/ ]]; then
+elif [[ "$BRANCH" =~ ^(fix|feat|feature|chore|refactor|docs|ci|test|perf|adapter|sync|cursor|codex)/ ]]; then
   ok "Branch name follows convention: $BRANCH"
 else
-  fail "Branch name '$BRANCH' does not match convention (fix/|feat/|chore/|...)"
+  fail "Branch name '$BRANCH' does not match convention (fix/|feat/|feature/|chore/|...)"
 fi
 
 # ── 3. Remote check ───────────────────────────────────────────────────────

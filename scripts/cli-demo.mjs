@@ -60,17 +60,21 @@ function printHelp() {
   bash scripts/demo-cli.sh interactive
   bash scripts/demo-cli.sh installer --profile gtm
   bash scripts/demo-cli.sh cli
+  bash scripts/demo-cli.sh memory-plg [--use-real-home] [--project <slug>]
   bash scripts/demo-cli.sh awac-probe
   bash scripts/demo-cli.sh e2e-workspace-sandbox
   bash scripts/demo-cli.sh env
 
 Modes:
-  interactive  Top-level preview menu for this branch
-  installer    Real installer/onboarding preview using local branch CLI dist
-  cli          Real branch CLI interactive hub
-  awac-probe   Headless API probes: CLI dist starter init → temp workspace → next dev → PATCH/reference-options/sandbox-run
+  interactive            Top-level preview menu for this branch
+  installer              Real installer/onboarding preview using local branch CLI dist
+  cli                    Real branch CLI interactive hub
+  memory-plg             1:1 parity preview for Memory & Knowledge ↔ free Growthub profile
+                         (sandboxed PAPERCLIP_HOME by default — pass --use-real-home to run
+                         against the user's actual ~/.paperclip and hosted session)
+  awac-probe             Headless API probes: CLI dist starter init → temp workspace → next dev → PATCH/reference-options/sandbox-run
   e2e-workspace-sandbox  HTTP probes: PATCH /api/workspace + sandbox-run (temp Next app)
-  env          Show preview environment metadata`);
+  env                    Show preview environment metadata`);
 }
 
 function printEnv() {
@@ -349,7 +353,7 @@ async function runInteractive() {
       },
       {
         value: "source-import",
-        label: "🔁 Import Repo or Skill Preview",
+        label: "Source Import Preview",
         hint: "Portable Source → governed workspace path (GitHub repo + skills.sh skill)",
       },
       {
@@ -490,7 +494,54 @@ if (command === "template") {
   process.exit(0);
 }
 
-<<<<<<< HEAD
+if (command === "memory-plg") {
+  // 1:1 parity preview for the Memory & Knowledge ↔ Growthub profile binding.
+  // Runs against the LOCAL CLI dist with a sandboxed CLI_DEMO_HOME so the
+  // unauthed onboarding path is exercised by default — pass --use-real-home
+  // to run against the user's actual ~/.paperclip and hosted session.
+  const useRealHome = rest.includes("--use-real-home");
+  const memoryProject = rest.includes("--project")
+    ? rest[rest.indexOf("--project") + 1]
+    : "growthub-memory-plg-preview";
+
+  const cliPath = cliDistPath;
+  if (!fs.existsSync(cliPath)) {
+    console.error(`cli/dist/index.js missing at ${cliPath}.`);
+    console.error("Run scripts/agent-dist-verify.sh smoke-dist first, or rebuild via Phase B.");
+    process.exit(1);
+  }
+
+  const env = useRealHome
+    ? { ...process.env }
+    : { ...getBaseEnv() };
+
+  console.log(`── Memory & Knowledge ↔ Growthub Profile · 1:1 parity preview`);
+  console.log(`   CLI dist:      ${cliPath}`);
+  console.log(`   PAPERCLIP_HOME: ${env.PAPERCLIP_HOME ?? "(user default ~/.paperclip)"}`);
+  console.log(`   Project:       ${memoryProject}`);
+  console.log("");
+
+  console.log("── 1. growthub --version");
+  spawnSync(process.execPath, [cliPath, "--version"], { stdio: "inherit", env });
+  console.log("");
+
+  console.log("── 2. growthub auth whoami --json (PLG identity)");
+  spawnSync(process.execPath, [cliPath, "auth", "whoami", "--json"], { stdio: "inherit", env });
+  console.log("");
+
+  console.log("── 3. growthub workspace status --json (machine state)");
+  spawnSync(process.execPath, [cliPath, "workspace", "status", "--json"], { stdio: "inherit", env });
+  console.log("");
+
+  console.log("── 4. Memory & Knowledge hub (interactive)");
+  console.log("   This is the surface you ship to users. Watch for:");
+  console.log("     · Unauthed → 'Connect Growthub (free)' onboarding pane");
+  console.log("     · Authed   → '<email>' identity pill + delta-aware sync action");
+  console.log("     · Authed   → '⚡ Auto-sync · ON/OFF' option in the menu");
+  console.log("");
+  spawnNode([cliPath, "discover"], useRealHome ? {} : { PAPERCLIP_HOME: env.PAPERCLIP_HOME });
+}
+
 if (command === "awac-probe" || command === "workspace-api-probe") {
   const probePath = path.join(repoRoot, "scripts", "awac-workspace-api-probe.mjs");
   spawnNode([probePath, ...rest]);

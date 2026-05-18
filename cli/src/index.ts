@@ -74,6 +74,7 @@ import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerSkillsCommands } from "./commands/skills.js";
+import { registerMemoryCommands } from "./commands/memory.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { registerSetupCommands } from "./commands/setup.js";
 import { registerWorkspaceImproveCommands } from "./commands/workspace-improve.js";
@@ -121,6 +122,11 @@ import {
   syncMemoriesToHosted,
   readProviderConfig,
   writeProviderConfig,
+  inspectMemoryProfileBinding,
+  setAutoSyncEnabled,
+  syncProjectToProfile,
+  autoSyncProjectIfReady,
+  pullProjectMemoriesIfAvailable,
 } from "./runtime/memory/index.js";
 import type { ObservationType, ConceptCategory } from "./runtime/memory/index.js";
 import { promptExtendedProvider } from "./prompts/llm.js";
@@ -1160,53 +1166,134 @@ function resolveCurrentProject(): string {
   return path.basename(process.cwd());
 }
 
-async function runMemoryKnowledgeHub(): Promise<"back"> {
+async function runMemoryKnowledgeHub(opts?: {
+  config?: string;
+  dataDir?: string;
+}): Promise<"back"> {
   const project = resolveCurrentProject();
+
+  // PLG onboarding: when the user hasn't connected their free Growthub account,
+  // surface the value proposition first and route them through `auth login`.
+  // This is the same browser flow that hits https://www.growthub.ai/auth.
+  if (!isDiscoveryAuthenticated()) {
+    p.note(
+      [
+        pc.bold("Make your CLI/workspace work persistent — for free."),
+        "",
+        "Memory & Knowledge already captures what you and your agents do in",
+        "this CLI (observations, session summaries, search). Connect a free",
+        "Growthub account and every memory + summary can sync to your hosted",
+        "knowledge base — searchable from any machine, replayable by agents.",
+        "",
+        pc.dim("Local data stays on your machine until you choose to sync."),
+      ].join("\n"),
+      "Connect Growthub (free)",
+    );
+    const connectChoice = await p.select({
+      message: "Connect your free Growthub profile?",
+      options: [
+        { value: "connect", label: "🔐 Connect Growthub Account", hint: "opens https://www.growthub.ai/auth in your browser" },
+        { value: "continue", label: "Continue without account", hint: "memories stay local, no sync" },
+        { value: "__back_to_hub", label: "← Back to main menu" },
+      ],
+      initialValue: "connect",
+    });
+    if (p.isCancel(connectChoice) || connectChoice === "__back_to_hub") return "back";
+    if (connectChoice === "connect") {
+      await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
+      // After login attempt, fall through to the normal hub.
+    }
+    // If "continue" or post-connect, drop into the normal hub below.
+  }
 
   while (true) {
     const stats = getMemoryStats(project);
     const syncStatus = canSync();
     const providerConfig = readProviderConfig();
 
+    // PLG binding snapshot — single read that gives the hub everything it
+    // needs to render the "one identity" status pill + delta-aware sync.
+    const binding = inspectMemoryProfileBinding(project);
+    const pendingTotal = binding.pendingObservations + binding.pendingSummaries;
+    const titleSuffix = binding.authenticated
+      ? ` · ${binding.hostedEmail ?? binding.hostedUserId ?? "Growthub account"}`
+      : " (local-only)";
+    const syncHint = !binding.authenticated
+      ? "connect your free Growthub account to enable sync"
+      : pendingTotal === 0
+        ? `up to date · last push ${binding.syncState.lastPushedAt ? binding.syncState.lastPushedAt.split("T")[0] : "never"}`
+        : `${binding.pendingObservations} new observations · ${binding.pendingSummaries} new summaries pending`;
+
     const action = await p.select({
-      message: "Memory & Knowledge",
+      message: `Memory & Knowledge · ${binding.observationCount} obs${titleSuffix}`,
       options: [
         {
           value: "search",
-          label: "Search memories",
+          label: "🔍 Search memories",
           hint: `${stats.observationCount} observations stored`,
         },
         {
           value: "timeline",
-          label: "View timeline",
+          label: "🕘 View timeline",
           hint: stats.newestObservation
             ? `latest: ${stats.newestObservation.split("T")[0]}`
             : "no observations yet",
         },
         {
           value: "projects",
-          label: "Browse projects",
+          label: "📂 Browse projects",
           hint: "view all projects with stored memories",
         },
         {
           value: "provider",
-          label: "Configure AI provider",
+          label: "🧠 Configure AI provider",
           hint: `current: ${providerConfig.provider}${providerConfig.modelId ? ` (${providerConfig.modelId})` : ""}`,
         },
         {
           value: "sync",
-          label: syncStatus.available
-            ? "Sync to Growthub"
-            : "Sync to Growthub" + pc.dim(" (unavailable)"),
-          hint: syncStatus.available
-            ? "push memories to hosted account"
-            : syncStatus.reason,
+          label: binding.authenticated
+            ? (pendingTotal > 0
+              ? `☁️  Sync ${pendingTotal} change${pendingTotal === 1 ? "" : "s"} to Growthub`
+              : "☁️  Sync to Growthub")
+            : "☁️  Sync to Growthub" + pc.dim(" (connect account)"),
+          hint: syncHint,
         },
+        ...(binding.authenticated ? [
+          {
+            value: "auto-sync",
+            label: binding.autoSyncEnabled ? "⚡ Auto-sync · ON" : "⚡ Auto-sync · OFF",
+            hint: binding.autoSyncEnabled
+              ? "syncs deltas to Growthub automatically on session end"
+              : "enable to keep this project in lockstep with your hosted profile",
+          },
+          {
+            value: "pull",
+            label: "⬇️  Pull from Growthub" + pc.dim(" (preview)"),
+            hint: binding.syncState.lastPullStatus === "unavailable"
+              ? "hosted pull endpoint not live yet — local-first stays in effect"
+              : "fetch hosted-side memories for this project (forward-compat)",
+          },
+        ] : []),
         { value: "__back_to_hub", label: "← Back to main menu" },
       ],
     });
 
-    if (p.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p.isCancel(action) || action === "__back_to_hub") {
+      // Seamless one-identity model: when the user leaves Memory & Knowledge
+      // and auto-sync is opted in, push any pending deltas before returning
+      // to the main menu. Silent and best-effort — never blocks navigation.
+      try {
+        const auto = await autoSyncProjectIfReady(project);
+        if (auto.ran && auto.result?.status === "ok" && (auto.result.pushedObservations + auto.result.pushedSummaries) > 0) {
+          p.log.message(
+            pc.dim(`⚡ Auto-synced ${auto.result.pushedObservations} obs + ${auto.result.pushedSummaries} summaries to Growthub.`),
+          );
+        }
+      } catch {
+        // Auto-sync is best-effort — never block return-to-hub.
+      }
+      return "back";
+    }
 
     if (action === "search") {
       const query = await p.text({
@@ -1309,20 +1396,85 @@ async function runMemoryKnowledgeHub(): Promise<"back"> {
     }
 
     if (action === "sync") {
-      if (!syncStatus.available) {
-        p.note(syncStatus.reason ?? "Sync unavailable", "Sync");
+      if (!binding.authenticated) {
+        const connectNow = await p.confirm({
+          message: `${syncStatus.reason ?? "Sync unavailable"}. Connect your free Growthub account now?`,
+          initialValue: true,
+        });
+        if (p.isCancel(connectNow) || !connectNow) continue;
+        await runHostedBridgeEntry({ config: opts?.config, dataDir: opts?.dataDir });
         continue;
       }
       const syncSpinner = p.spinner();
       syncSpinner.start("Syncing memories to Growthub...");
-      const syncResult = await syncMemoriesToHosted(project);
-      if (syncResult.success) {
+      const result = await syncProjectToProfile(project);
+      if (result.status === "ok") {
         syncSpinner.stop(
-          `Synced ${syncResult.syncedObservations} observations and ${syncResult.syncedSummaries} summaries.`,
+          `Synced ${result.pushedObservations} observations and ${result.pushedSummaries} summaries.`,
         );
+      } else if (result.status === "no-changes") {
+        syncSpinner.stop("Already up to date — no new memories to push.");
+      } else if (result.status === "unavailable") {
+        syncSpinner.stop("Sync unavailable.");
+        p.note(result.reason ?? "Hosted session missing", "Sync");
       } else {
         syncSpinner.stop("Sync failed.");
-        p.note(syncResult.error ?? "Unknown error", "Sync Error");
+        p.note(result.reason ?? "Unknown error", "Sync Error");
+      }
+      continue;
+    }
+
+    if (action === "auto-sync") {
+      const next = !binding.autoSyncEnabled;
+      setAutoSyncEnabled(project, next);
+      if (next) {
+        // Run an immediate sync so the user sees value right away.
+        const result = await syncProjectToProfile(project);
+        if (result.status === "ok") {
+          p.note(
+            [
+              "Auto-sync enabled for this project.",
+              `Initial push: ${result.pushedObservations} observations · ${result.pushedSummaries} summaries.`,
+              "",
+              "Future sessions will sync deltas automatically when you return to the main menu.",
+            ].join("\n"),
+            "⚡ Auto-sync · ON",
+          );
+        } else if (result.status === "no-changes") {
+          p.note("Auto-sync enabled. No new memories to push right now.", "⚡ Auto-sync · ON");
+        } else {
+          p.note(
+            `Auto-sync enabled, but the initial push could not complete: ${result.reason ?? "unknown"}.`,
+            "⚡ Auto-sync · ON",
+          );
+        }
+      } else {
+        p.note("Auto-sync disabled. You can still trigger a manual sync any time.", "⚡ Auto-sync · OFF");
+      }
+      continue;
+    }
+
+    if (action === "pull") {
+      const pullSpinner = p.spinner();
+      pullSpinner.start("Asking Growthub for hosted-side memories...");
+      const result = await pullProjectMemoriesIfAvailable(project);
+      if (result.status === "ok") {
+        pullSpinner.stop(
+          `Pulled ${result.pulledObservations} observations and ${result.pulledSummaries} summaries.`,
+        );
+      } else if (result.status === "unavailable") {
+        pullSpinner.stop("Hosted pull endpoint not live yet.");
+        p.note(
+          [
+            result.reason ?? "Pull endpoint unavailable.",
+            "",
+            "Local-first stays in effect. Push (Sync to Growthub) works today; pull lands in a follow-up release.",
+          ].join("\n"),
+          "⬇️  Pull from Growthub",
+        );
+      } else {
+        pullSpinner.stop("Pull failed.");
+        p.note(result.reason ?? "Unknown error", "Pull Error");
       }
       continue;
     }
@@ -1640,6 +1792,118 @@ async function runCreateGovernedWorkspaceFlow(opts?: {
   }
 }
 
+/**
+ * Advanced → Agent Harness submenu.
+ *
+ * Preserves the full original Agent Harness flow (Paperclip Local App
+ * create/load + Open Agents + Qwen Code + T3 Code). Lives as a function
+ * so it can be invoked from the new Advanced nav without duplicating the
+ * inline block in runDiscoveryHub.
+ */
+async function runAgentHarnessFromAdvanced(opts: {
+  config?: string;
+  run?: boolean;
+}): Promise<"back" | "done"> {
+  while (true) {
+    const harnessType = await p.select({
+      message: "Filter by type",
+      options: [
+        { value: "paperclip", label: "📦 Paperclip Local App", hint: "Create or load a GTM/DX profile on this machine" },
+        { value: "open-agents", label: "🌐 Open Agents", hint: "Durable workflow orchestration with prompt + chat session flow" },
+        { value: "qwen-code", label: "🤖 Qwen Code CLI", hint: "Open-source coding harness with prompt + interactive chat session" },
+        { value: "t3code", label: "△ T3 Code CLI", hint: "T3 stack coding agent — prompt, session, Growthub profile (pingdotgg/t3code)" },
+        { value: "__back", label: "← Back to Advanced" },
+      ],
+    });
+    if (p.isCancel(harnessType)) { p.cancel("Cancelled."); process.exit(0); }
+    if (harnessType === "__back") return "back";
+
+    // -- Paperclip Local App -----------------------------------------------
+    if (harnessType === "paperclip") {
+      while (true) {
+        const appModeChoice = await p.select({
+          message: "How do you want to open Growthub Local?",
+          options: [
+            { value: "create", label: "🆕 Create New Profile", hint: "Build a new local app surface." },
+            { value: "load", label: "📂 Load Existing Profile", hint: "Work from a profile already on this machine." },
+            { value: "__back_to_harness", label: "← Back to harness type" },
+          ],
+        });
+        if (p.isCancel(appModeChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        if (appModeChoice === "__back_to_harness") break;
+
+        if (appModeChoice === "load") {
+          const existingSurfaces = listLocalSurfaces();
+          if (existingSurfaces.length === 0) {
+            p.note("No existing local app profiles were found on this machine.", "Nothing found");
+            continue;
+          }
+          const existingChoice = await p.select({
+            message: "Select an existing app surface",
+            options: [
+              ...existingSurfaces.map((surface) => ({
+                value: surface.instanceId,
+                label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
+                hint: surface.configPath,
+              })),
+              { value: "__back_to_app_mode", label: "← Back to app options" },
+            ],
+          });
+          if (p.isCancel(existingChoice)) { p.cancel("Cancelled."); process.exit(0); }
+          if (existingChoice === "__back_to_app_mode") continue;
+
+          const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
+          if (!selectedSurface) { p.cancel("Selected profile not found."); process.exit(1); }
+          process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
+          await runCommand({
+            config: selectedSurface.configPath,
+            instance: selectedSurface.instanceId,
+            repair: true,
+            yes: true,
+          });
+          return "done";
+        }
+
+        const profileChoice = await p.select({
+          message: "Which new app surface do you want to create?",
+          options: [
+            { value: "gtm", label: "📈 GTM", hint: "Go-to-Market surface." },
+            { value: "dx", label: "🧠 DX", hint: "Developer Experience surface." },
+            { value: "__back_to_app_mode", label: "← Back to app options" },
+          ],
+        });
+        if (p.isCancel(profileChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        if (profileChoice === "__back_to_app_mode") continue;
+
+        process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
+        await onboard({
+          config: opts.config,
+          run: opts.run ?? isInstallerMode(),
+          yes: isInstallerMode(),
+        });
+        return "done";
+      }
+      continue;
+    }
+
+    if (harnessType === "open-agents") {
+      const result = await runOpenAgentsHub({ allowBackToHub: true });
+      if (result === "back") continue;
+      return "done";
+    }
+    if (harnessType === "qwen-code") {
+      const result = await runQwenCodeHub({ allowBackToHub: true });
+      if (result === "back") continue;
+      return "done";
+    }
+    if (harnessType === "t3code") {
+      const result = await runT3CodeHub({ allowBackToHub: true });
+      if (result === "back") continue;
+      return "done";
+    }
+  }
+}
+
 async function runDiscoveryHub(opts?: {
   config?: string;
   dataDir?: string;
@@ -1657,46 +1921,36 @@ async function runDiscoveryHub(opts?: {
 
   while (true) {
     const workflowAccess = getWorkflowAccess();
+    const hostedSession = readSession();
+    const growthubConnected = Boolean(hostedSession && !isSessionExpired(hostedSession));
     const surfaceChoice = await p.select({
       message: "What do you want to do first?",
       options: [
         {
           value: "create-workspace",
-          label: "🚀  Custom AI Governed Workspace",
+          label: "🚀 Custom AI Governed Workspace",
+          hint: "Agent Workspace as Code",
         },
         {
           value: "workspace-ops",
-          label: "🏗️  Workspace Operations",
-          hint: "status · qa · deploy check · upstream · surface · portal",
-        },
-        {
-          value: "kits",
-          label: "🧰  Browse Worker Kits",
-          hint: "Self-contained workspace environments for agents",
-        },
-        {
-          value: "import-source",
-          label: "🔁  Import Repo or Skill",
-          hint: "Build a governed workspace from GitHub or skills.sh",
-        },
-        {
-          value: "memory-knowledge",
-          label: "📖  Memory & Knowledge",
-          hint: "persistent memory, search, multi-provider config, Growthub sync",
-        },
-        {
-          value: "agent-harness",
-          label: "🤖  Agent Harness",
-          hint: "Paperclip Local App + Open Agents + Qwen Code + T3 Code",
+          label: "🏗  Workspace Operations",
+          hint: "Status · QA · memory · deploy · sync",
         },
         {
           value: "settings",
           label: "⚙️  Settings",
-          hint: "GitHub, Fork Sync, workflows, templates, local models, service status",
+          hint: growthubConnected
+            ? "Your Growthub profile, workspace agents, GitHub, Fork Sync"
+            : "Connect free Growthub account (PLG) · profile · workspace agents",
+        },
+        {
+          value: "advanced",
+          label: "🔧 Advanced Tools",
+          hint: "Worker Kits · Workflows · Templates · Agent Harness · Local Intel · Fleet · Skills · Status",
         },
         {
           value: "help",
-          label: "❓  Help CLI",
+          label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
         },
       ],
@@ -1712,10 +1966,9 @@ async function runDiscoveryHub(opts?: {
         [
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
+          "🏗️ Workspace Operations: status, QA, persistent memory, deploy checks, upstream sync, and portal prep.",
           "🧰 Browse Worker Kits: browse specialized agents and custom workspaces.",
-          "🔁 Import Repo or Skill: route directly into the Source Import Agent.",
           "⚙️ Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
-          "📖 Memory & Knowledge: persistent cross-session memory, search observations, multi-provider AI config, sync to Growthub.",
           `   Locked state: ${workflowAccess.reason}.`,
           "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
@@ -1750,217 +2003,240 @@ async function runDiscoveryHub(opts?: {
     }
 
     if (surfaceChoice === "workspace-ops") {
-      p.note(
-        [
-          "Workspace commands (run directly):",
-          "",
-          "  growthub workspace status --json",
-          "    Unified health: bridge, GitHub, fork, agents, config, apps",
-          "",
-          "  growthub workspace qa --json",
-          "    Validate: config, env, deps, fork, routes, skills",
-          "",
-          "  growthub workspace deploy check --json",
-          "    Readiness gate: canDeploy, missingSteps, appRoot, envVarsNeeded",
-          "",
-          "  growthub workspace deploy vercel --print-env --json",
-          "    Print required env var names from .env.example",
-          "",
-          "  growthub workspace upstream check --json",
-          "    Fork drift state + recommended sync commands",
-          "",
-          "  growthub workspace upstream heal --dry-run --json",
-          "    Preview upstream heal without applying",
-          "",
-          "  growthub workspace surface list --json",
-          "    Discover apps/workspace, apps/agency-portal, studio",
-          "",
-          "  growthub workspace portal prepare --client <slug> --json",
-          "    Scaffold client brand config, env template, handoff doc",
-        ].join("\n"),
-        "Workspace Operations",
-      );
-      continue;
-    }
+      const { computeWorkspaceStatus } = await import("./commands/workspace-status.js");
+      const { computeWorkspaceQa } = await import("./commands/workspace-qa.js");
 
-    if (surfaceChoice === "import-source") {
-      const result = await runCreateGovernedWorkspaceFlow({ importOnly: true, title: "Import Repo or Skill" });
-      if (result === "done") return;
-      continue;
-    }
+      // Resolve target workspace — smart default: cwd if it looks governed,
+      // otherwise let the operator pick from registered fork registrations.
+      const looksLikeWorkspace = (candidate: string): boolean =>
+        fs.existsSync(path.resolve(candidate, ".growthub-fork")) ||
+        fs.existsSync(path.resolve(candidate, "growthub.config.json")) ||
+        fs.existsSync(path.resolve(candidate, "apps/workspace/growthub.config.json")) ||
+        fs.existsSync(path.resolve(candidate, "apps/workspace/package.json"));
 
-    if (surfaceChoice === "agent-harness") {
-      while (true) {
-        const harnessType = await p.select({
-          message: "Filter by type",
+      let target: string | null = looksLikeWorkspace(process.cwd()) ? process.cwd() : null;
+      if (!target) {
+        const forks = listKitForkRegistrations();
+        if (forks.length === 0) {
+          p.note(
+            [
+              "No governed workspace detected here, and no registered forks were found.",
+              "",
+              "Create or register one first:",
+              "  growthub starter init --out ./my-workspace",
+              "  growthub kit fork register --path ./my-workspace --kit <kit-id>",
+            ].join("\n"),
+            "Workspace Operations",
+          );
+          continue;
+        }
+        const pick = await p.select({
+          message: "Pick a workspace to operate on",
           options: [
+            { value: process.cwd(), label: `📁 Current directory  ${pc.dim(process.cwd())}`, hint: "may not be a governed workspace" },
+            ...forks.map((fork) => ({
+              value: fork.forkPath,
+              label: `${fork.label ?? fork.forkId}  ${pc.dim(fork.kitId)}`,
+              hint: fork.forkPath,
+            })),
+            { value: "__back", label: "← Back" },
+          ],
+        });
+        if (p.isCancel(pick) || pick === "__back") continue;
+        target = String(pick);
+      }
+
+      // Inner loop: status snapshot + actionable submenu against `target`.
+      let stayInOps = true;
+      while (stayInOps) {
+        const status = computeWorkspaceStatus(target);
+        const tick = (ok: boolean) => (ok ? pc.green("✓") : pc.dim("○"));
+        const overallColor = status.overall === "healthy" ? pc.green : status.overall === "needs_action" ? pc.yellow : pc.red;
+        const lines: string[] = [
+          `Path: ${pc.cyan(target)}`,
+          "",
+          `${tick(status.config.valid)} Config          ${status.config.found ? (status.config.valid ? pc.green("valid") : pc.red("invalid")) : pc.dim("not found")}`,
+          `${tick(status.bridge.connected)} Growthub Bridge ${status.bridge.connected ? pc.green(`connected${status.bridge.email ? ` · ${status.bridge.email}` : ""}`) : pc.dim("not connected")}`,
+          `${tick(status.github.connected)} GitHub          ${status.github.connected ? pc.green(`connected${status.github.login ? ` · ${status.github.login}` : ""}`) : pc.dim("not connected")}`,
+          `${tick(status.fork.registered)} Fork registered ${status.fork.registered ? pc.green(status.fork.forkId ?? "yes") : pc.dim("no")}`,
+          `${tick(status.agentBindings.count > 0)} Agent bindings  ${status.agentBindings.count > 0 ? pc.green(`${status.agentBindings.count} bound`) : pc.dim("none")}`,
+          `${tick(status.apps.detected.length > 0)} Apps detected   ${status.apps.detected.length > 0 ? pc.dim(status.apps.detected.join(", ")) : pc.dim("none")}`,
+          "",
+          `Overall: ${overallColor(status.overall.replace("_", " "))}`,
+        ];
+        if (status.issues.length > 0) {
+          lines.push("", pc.yellow("Issues:"));
+          for (const issue of status.issues.slice(0, 4)) lines.push(pc.dim(`  · ${issue}`));
+        }
+        p.note(lines.join("\n"), "🏗️  Workspace Operations");
+
+        const action = await p.select({
+          message: "What do you want to run?",
+          options: [
+            { value: "status", label: "🔍 Re-run status snapshot", hint: "growthub workspace status" },
+            { value: "qa", label: "🧪 QA validate", hint: "config, env, deps, fork, routes, skills" },
             {
-              value: "paperclip",
-              label: "📦 Paperclip Local App",
-              hint: "Create or load a GTM/DX profile on this machine",
+              value: "memory-knowledge",
+              label: "📖 Memory & Knowledge",
+              hint: growthubConnected
+                ? "persistent memory · search · sync to Growthub"
+                : "persistent memory · connect free Growthub to sync",
             },
-            {
-              value: "open-agents",
-              label: "🌐 Open Agents",
-              hint: "Durable workflow orchestration with prompt + chat session flow",
-            },
-            {
-              value: "qwen-code",
-              label: "🤖 Qwen Code CLI",
-              hint: "Open-source coding harness with prompt + interactive chat session",
-            },
-            {
-              value: "t3code",
-              label: "△ T3 Code CLI",
-              hint: "T3 stack coding agent — prompt, session, Growthub profile (pingdotgg/t3code)",
-            },
-            {
-              value: "__back_to_hub",
-              label: "← Back to main menu",
-            },
+            { value: "deploy-check", label: "🚀 Deploy readiness check", hint: "growthub workspace deploy check" },
+            { value: "deploy-env", label: "📜 Print Vercel env vars", hint: "growthub workspace deploy vercel --print-env" },
+            { value: "upstream-check", label: "🔁 Upstream drift check", hint: "growthub workspace upstream check" },
+            { value: "upstream-heal", label: "🩹 Upstream heal (dry-run)", hint: "growthub workspace upstream heal --dry-run" },
+            { value: "surface-list", label: "🪟 Surface list", hint: "apps/workspace · apps/agency-portal · studio" },
+            { value: "portal-prepare", label: "🤝 Portal prepare", hint: "growthub workspace portal prepare --client <slug>" },
+            { value: "__back", label: "← Back to main menu" },
           ],
         });
 
-        if (p.isCancel(harnessType)) {
-          p.cancel("Cancelled.");
-          process.exit(0);
-        }
-        if (harnessType === "__back_to_hub") break;
+        if (p.isCancel(action) || action === "__back") { stayInOps = false; continue; }
 
-        // -- Paperclip Local App ---------------------------------------------
-        if (harnessType === "paperclip") {
-          let paperclipDone = false;
-          while (!paperclipDone) {
-            const appModeChoice = await p.select({
-              message: "How do you want to open Growthub Local?",
-              options: [
-                {
-                  value: "create",
-                  label: "🆕 Create New Profile",
-                  hint: "Build a new local app surface.",
-                },
-                {
-                  value: "load",
-                  label: "📂 Load Existing Profile",
-                  hint: "Work from a profile already on this machine.",
-                },
-                {
-                  value: "__back_to_harness",
-                  label: "← Back to harness type",
-                },
-              ],
-            });
-
-            if (p.isCancel(appModeChoice)) {
-              p.cancel("Cancelled.");
-              process.exit(0);
-            }
-            if (appModeChoice === "__back_to_harness") break;
-
-            if (appModeChoice === "load") {
-              const existingSurfaces = listLocalSurfaces();
-              if (existingSurfaces.length === 0) {
-                p.note("No existing local app profiles were found on this machine.", "Nothing found");
-                continue;
-              }
-
-              const existingChoice = await p.select({
-                message: "Select an existing app surface",
-                options: [
-                  ...existingSurfaces.map((surface) => ({
-                    value: surface.instanceId,
-                    label: `${surface.profile === "gtm" ? "📈" : "🧠"} ${surface.profile.toUpperCase()} · ${surface.instanceId}`,
-                    hint: surface.configPath,
-                  })),
-                  { value: "__back_to_app_mode", label: "← Back to app options" },
-                ],
-              });
-
-              if (p.isCancel(existingChoice)) {
-                p.cancel("Cancelled.");
-                process.exit(0);
-              }
-              if (existingChoice === "__back_to_app_mode") {
-                continue;
-              }
-
-              const selectedSurface = existingSurfaces.find((surface) => surface.instanceId === existingChoice);
-              if (!selectedSurface) {
-                p.cancel("Selected profile not found.");
-                process.exit(1);
-              }
-
-              process.env.PAPERCLIP_SURFACE_PROFILE = selectedSurface.profile;
-              await runCommand({
-                config: selectedSurface.configPath,
-                instance: selectedSurface.instanceId,
-                repair: true,
-                yes: true,
-              });
-              return;
-            }
-
-            const profileChoice = await p.select({
-              message: "Which new app surface do you want to create?",
-              options: [
-                {
-                  value: "gtm",
-                  label: "📈 GTM",
-                  hint: "Go-to-Market surface.",
-                },
-                {
-                  value: "dx",
-                  label: "🧠 DX",
-                  hint: "Developer Experience surface.",
-                },
-                {
-                  value: "__back_to_app_mode",
-                  label: "← Back to app options",
-                },
-              ],
-            });
-
-            if (p.isCancel(profileChoice)) {
-              p.cancel("Cancelled.");
-              process.exit(0);
-            }
-            if (profileChoice === "__back_to_app_mode") {
-              continue;
-            }
-
-            process.env.PAPERCLIP_SURFACE_PROFILE = profileChoice;
-            await onboard({
-              config: opts?.config,
-              run: opts?.run ?? isInstallerMode(),
-              yes: isInstallerMode(),
-            });
-            return;
+        const runChild = (args: string[]): void => {
+          const result = spawnSync(process.execPath, [process.argv[1], ...args], {
+            stdio: "inherit",
+            env: process.env,
+            cwd: process.cwd(),
+          });
+          if ((result.status ?? 1) !== 0) {
+            p.log.warn(pc.dim(`Command exited with status ${result.status ?? "unknown"}.`));
           }
+        };
 
+        if (action === "status") continue;
+        if (action === "memory-knowledge") {
+          const result = await runMemoryKnowledgeHub({ config: opts?.config, dataDir: opts?.dataDir });
+          if (result === "back") continue;
+          return;
+        }
+        if (action === "qa") {
+          const result = computeWorkspaceQa(target);
+          const icon = (s: string) => s === "pass" ? pc.green("✓") : s === "fail" ? pc.red("✗") : s === "warn" ? pc.yellow("!") : pc.dim("○");
+          const qaLines: string[] = [];
+          for (const check of result.checks) {
+            qaLines.push(`  ${icon(check.status)} ${check.name.padEnd(22)} ${check.detail ? pc.dim(check.detail) : ""}`);
+            if (check.fix && check.status !== "pass" && check.status !== "skip") {
+              qaLines.push(pc.dim(`      Fix: ${pc.cyan(check.fix)}`));
+            }
+          }
+          qaLines.push("");
+          qaLines.push(`${pc.green(String(result.passCount))} pass · ${pc.yellow(String(result.warnCount))} warn · ${pc.red(String(result.failCount))} fail`);
+          p.note(qaLines.join("\n"), "🧪 Workspace QA");
           continue;
         }
-
-        // -- Open Agents -----------------------------------------------------
-        if (harnessType === "open-agents") {
-          const oaResult = await runOpenAgentsHub({ allowBackToHub: true });
-          if (oaResult === "back") continue;
-          return;
-        }
-
-        if (harnessType === "qwen-code") {
-          const qwenResult = await runQwenCodeHub({ allowBackToHub: true });
-          if (qwenResult === "back") continue;
-          return;
-        }
-
-        // -- T3 Code CLI -----------------------------------------------------
-        if (harnessType === "t3code") {
-          const t3Result = await runT3CodeHub({ allowBackToHub: true });
-          if (t3Result === "back") continue;
-          return;
+        if (action === "deploy-check") { runChild(["workspace", "deploy", "check", "--fork", target]); continue; }
+        if (action === "deploy-env") { runChild(["workspace", "deploy", "vercel", "--print-env", "--fork", target]); continue; }
+        if (action === "upstream-check") { runChild(["workspace", "upstream", "check", "--fork", target]); continue; }
+        if (action === "upstream-heal") { runChild(["workspace", "upstream", "heal", "--dry-run", "--fork", target]); continue; }
+        if (action === "surface-list") { runChild(["workspace", "surface", "list", "--fork", target]); continue; }
+        if (action === "portal-prepare") {
+          const slug = await p.text({ message: "Client slug to prepare (e.g. acme-co):", placeholder: "acme-co" });
+          if (p.isCancel(slug) || !slug) continue;
+          runChild(["workspace", "portal", "prepare", "--client", String(slug), "--fork", target]);
+          continue;
         }
       }
+      continue;
+    }
+    if (surfaceChoice === "advanced") {
+      let stayInAdvanced = true;
+      while (stayInAdvanced) {
+        const advancedChoice = await p.select({
+          message: "Advanced — capabilities & admin",
+          options: [
+            { value: "kits", label: "🧰 Browse Worker Kits", hint: "Self-contained workspace environments for agents" },
+            {
+              value: "workflows",
+              label: workflowAccess.state === "ready" ? "🔗 Workflows" : "🔗 Workflows" + pc.dim(" (locked)"),
+              hint: workflowAccess.state === "ready"
+                ? "CMS contracts, dynamic pipelines, and saved workflows"
+                : workflowAccess.reason,
+            },
+            { value: "templates", label: "📚 Templates", hint: "Artifact template library" },
+            { value: "agent-harness", label: "🤖 Agent Harness", hint: "Paperclip Local App · Open Agents · Qwen Code · T3 Code" },
+            { value: "native-intelligence", label: "🧠 Local Intelligence", hint: "Local custom model adapters (Ollama / API providers)" },
+            { value: "fork-sync", label: "🔀 Fork Sync Agent", hint: "Register, track, and heal your forked worker kits" },
+            { value: "github", label: "🐙 GitHub Integration", hint: "Powers one-click fork creation & remote heal sync" },
+            { value: "fleet-ops", label: "🚢 Fleet Operations", hint: "Fleet-level fork view · drift · policy matrix" },
+            { value: "skills-catalog", label: "📇 Skills Catalog", hint: "Enumerate SKILL.md across this tree" },
+            { value: "service-status", label: "🟢 Service Status", hint: "Statuspage-style health of every CLI service" },
+            { value: "__back_to_hub", label: "← Back to main menu" },
+          ],
+        });
 
+        if (p.isCancel(advancedChoice)) { p.cancel("Cancelled."); process.exit(0); }
+        if (advancedChoice === "__back_to_hub") { stayInAdvanced = false; continue; }
+
+        if (advancedChoice === "kits") {
+          const result = await runInteractivePicker({ allowBackToHub: true });
+          if (result === "back") continue;
+          return;
+        }
+        if (advancedChoice === "workflows") {
+          const result = await runWorkflowPicker({ allowBackToHub: true });
+          if (result === "back") continue;
+          return;
+        }
+        if (advancedChoice === "templates") {
+          const result = await runTemplatePicker({ allowBackToHub: true });
+          if (result === "back") continue;
+          return;
+        }
+        if (advancedChoice === "native-intelligence") {
+          const result = await runNativeIntelligenceHub();
+          if (result === "back") continue;
+          return;
+        }
+        if (advancedChoice === "fork-sync") {
+          const result = await runKitForkHub({ allowBackToHub: true });
+          if (result === "back") continue;
+          return;
+        }
+        if (advancedChoice === "github") {
+          const { githubWhoami } = await import("./commands/github.js");
+          await githubWhoami({});
+          continue;
+        }
+        if (advancedChoice === "fleet-ops") {
+          await fleetView({});
+          continue;
+        }
+        if (advancedChoice === "service-status") {
+          await runStatuspage({});
+          continue;
+        }
+        if (advancedChoice === "skills-catalog") {
+          const { readSkillCatalog } = await import("./skills/catalog.js");
+          const catalog = readSkillCatalog({ root: process.cwd() });
+          p.note(
+            [
+              `Root: ${pc.cyan(catalog.catalog.root ?? process.cwd())}`,
+              `Skills discovered: ${pc.bold(String(catalog.entries.length))}`,
+              catalog.warnings.length > 0
+                ? `Warnings: ${pc.yellow(String(catalog.warnings.length))}`
+                : `Warnings: 0`,
+              "",
+              "Invoke directly:",
+              "  growthub skills list --json",
+              "  growthub skills validate",
+              "  growthub skills session show",
+              "  growthub skills session init --kit <kit-id>",
+            ].join("\n"),
+            "Skills Catalog",
+          );
+          continue;
+        }
+        if (advancedChoice === "agent-harness") {
+          const harnessResult = await runAgentHarnessFromAdvanced({
+            config: opts?.config,
+            run: opts?.run,
+          });
+          if (harnessResult === "back") continue;
+          if (harnessResult === "done") return;
+        }
+      }
       continue;
     }
 
@@ -2122,18 +2398,6 @@ async function runDiscoveryHub(opts?: {
         }
       }
       continue;
-    }
-
-    if (surfaceChoice === "kits") {
-      const result = await runInteractivePicker({ allowBackToHub: true });
-      if (result === "back") continue;
-      return;
-    }
-
-    if (surfaceChoice === "memory-knowledge") {
-      const result = await runMemoryKnowledgeHub();
-      if (result === "back") continue;
-      return;
     }
   }
 }
@@ -2349,6 +2613,7 @@ registerIntegrationsCommands(program);
 registerStatusCommands(program);
 registerStarterCommands(program);
 registerSkillsCommands(program);
+registerMemoryCommands(program);
 registerFleetCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
