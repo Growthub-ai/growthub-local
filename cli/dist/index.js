@@ -42010,27 +42010,27 @@ async function runDiscoveryHub(opts) {
       options: [
         {
           value: "create-workspace",
-          label: "\u{1F680}  Custom AI Governed Workspace",
-          hint: "Starter, repo, skill, or kit"
+          label: "\u{1F680} Custom AI Governed Workspace",
+          hint: "Agent Workspace as Code"
         },
         {
           value: "workspace-ops",
-          label: "\u{1F3D7}\uFE0F  Workspace Operations",
+          label: "\u{1F3D7}\uFE0F Workspace Operations",
           hint: "Status \xB7 QA \xB7 memory \xB7 deploy \xB7 sync"
         },
         {
           value: "settings",
-          label: "\u2699\uFE0F  Settings",
+          label: "\u2699\uFE0F Settings",
           hint: growthubConnected ? "Your Growthub profile, workspace agents, GitHub, Fork Sync" : "Connect free Growthub account (PLG) \xB7 profile \xB7 workspace agents"
         },
         {
           value: "advanced",
-          label: "\u{1F527}  Advanced Tools",
+          label: "\u{1F527} Advanced Tools",
           hint: "Worker Kits \xB7 Workflows \xB7 Templates \xB7 Agent Harness \xB7 Local Intel \xB7 Fleet \xB7 Skills \xB7 Status"
         },
         {
           value: "help",
-          label: "\u2753  Help CLI",
+          label: "\u2753 Help CLI",
           hint: "See the main commands and what each path does"
         }
       ]

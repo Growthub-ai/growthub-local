@@ -1928,29 +1928,29 @@ async function runDiscoveryHub(opts?: {
       options: [
         {
           value: "create-workspace",
-          label: "🚀  Custom AI Governed Workspace",
-          hint: "Starter, repo, skill, or kit",
+          label: "🚀 Custom AI Governed Workspace",
+          hint: "Agent Workspace as Code",
         },
         {
           value: "workspace-ops",
-          label: "🏗️  Workspace Operations",
+          label: "🏗️ Workspace Operations",
           hint: "Status · QA · memory · deploy · sync",
         },
         {
           value: "settings",
-          label: "⚙️  Settings",
+          label: "⚙️ Settings",
           hint: growthubConnected
             ? "Your Growthub profile, workspace agents, GitHub, Fork Sync"
             : "Connect free Growthub account (PLG) · profile · workspace agents",
         },
         {
           value: "advanced",
-          label: "🔧  Advanced Tools",
+          label: "🔧 Advanced Tools",
           hint: "Worker Kits · Workflows · Templates · Agent Harness · Local Intel · Fleet · Skills · Status",
         },
         {
           value: "help",
-          label: "❓  Help CLI",
+          label: "❓ Help CLI",
           hint: "See the main commands and what each path does",
         },
       ],
