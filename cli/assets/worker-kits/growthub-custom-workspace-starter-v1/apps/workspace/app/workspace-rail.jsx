@@ -31,6 +31,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -353,6 +354,30 @@ function NavCustomizePanel({
         </button>
       </div>
     </div>
+  );
+}
+
+function NavCustomizeOverlay({ children, panelRef }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack is-customize"
+      role="menu"
+      ref={panelRef}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+function NavFolderPickerOverlay({ children, onClose }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="workspace-rail-folder-picker-backdrop" onClick={onClose}>
+      {children}
+    </div>,
+    document.body,
   );
 }
 
@@ -785,54 +810,51 @@ function NavFoldersSection({
         >
           <MoreVertical size={14} />
         </button>
-        {isMenuOpen && (
+        {isMenuOpen && (isCustomizing ? (
+          <NavCustomizeOverlay panelRef={customizePanelRef}>
+            <NavCustomizePanel
+              nameLabel="Display name"
+              nameMax={NAV_ITEM_LABEL_MAX}
+              draft={customizeTarget.draft}
+              setDraft={(updater) => setCustomizeTarget((t) => ({
+                ...t,
+                draft: typeof updater === "function" ? updater(t.draft) : updater,
+              }))}
+              discardWarn={discardWarn}
+              onSave={saveCustomize}
+              onCancel={() => {
+                if (navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft) && !discardWarn) {
+                  setDiscardWarn(true);
+                  return;
+                }
+                closeCustomize();
+              }}
+            />
+          </NavCustomizeOverlay>
+        ) : (
           <div
-            className={"workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack" + (isCustomizing ? " is-customize" : "")}
+            className="workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack"
             role="menu"
-            ref={isCustomizing ? customizePanelRef : null}
-            style={!isCustomizing && menuAnchor ? { top: `${menuAnchor.top}px`, left: `${menuAnchor.left}px` } : undefined}
+            style={menuAnchor ? { top: `${menuAnchor.top}px`, left: `${menuAnchor.left}px` } : undefined}
           >
-            {isCustomizing ? (
-              <NavCustomizePanel
-                nameLabel="Display name"
-                nameMax={NAV_ITEM_LABEL_MAX}
-                draft={customizeTarget.draft}
-                setDraft={(updater) => setCustomizeTarget((t) => ({
-                  ...t,
-                  draft: typeof updater === "function" ? updater(t.draft) : updater,
-                }))}
-                discardWarn={discardWarn}
-                onSave={saveCustomize}
-                onCancel={() => {
-                  if (navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft) && !discardWarn) {
-                    setDiscardWarn(true);
-                    return;
-                  }
-                  closeCustomize();
-                }}
-              />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-rail-thread-menu-item"
-                  onClick={() => startCustomizeItem(folder, item)}
-                >
-                  <Pencil size={13} aria-hidden="true" /> Customize
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-rail-thread-menu-item is-destructive"
-                  onClick={() => deleteItem(folder.id, item.id)}
-                >
-                  <Trash2 size={13} aria-hidden="true" /> Remove
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              role="menuitem"
+              className="workspace-rail-thread-menu-item"
+              onClick={() => startCustomizeItem(folder, item)}
+            >
+              <Pencil size={13} aria-hidden="true" /> Customize
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="workspace-rail-thread-menu-item is-destructive"
+              onClick={() => deleteItem(folder.id, item.id)}
+            >
+              <Trash2 size={13} aria-hidden="true" /> Remove
+            </button>
           </div>
-        )}
+        ))}
       </div>
     );
   };
@@ -901,72 +923,77 @@ function NavFoldersSection({
         >
           <MoreVertical size={14} />
         </button>
-        {isMenuOpen && (
+        {isMenuOpen && (isCustomizing ? (
+          <NavCustomizeOverlay panelRef={customizePanelRef}>
+            <NavCustomizePanel
+              nameLabel="Folder name"
+              nameMax={NAV_FOLDER_NAME_MAX}
+              draft={customizeTarget.draft}
+              setDraft={(updater) => setCustomizeTarget((t) => ({
+                ...t,
+                draft: typeof updater === "function" ? updater(t.draft) : updater,
+              }))}
+              discardWarn={discardWarn}
+              onSave={saveCustomize}
+              onCancel={() => {
+                if (navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft) && !discardWarn) {
+                  setDiscardWarn(true);
+                  return;
+                }
+                closeCustomize();
+              }}
+            />
+          </NavCustomizeOverlay>
+        ) : (
           <div
-            className={"workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack" + (isCustomizing ? " is-customize" : "")}
+            className="workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack"
             role="menu"
-            ref={isCustomizing ? customizePanelRef : null}
-            style={!isCustomizing && menuAnchor ? { top: `${menuAnchor.top}px`, left: `${menuAnchor.left}px` } : undefined}
+            style={menuAnchor ? { top: `${menuAnchor.top}px`, left: `${menuAnchor.left}px` } : undefined}
           >
-            {isCustomizing ? (
-              <NavCustomizePanel
-                nameLabel="Folder name"
-                nameMax={NAV_FOLDER_NAME_MAX}
-                draft={customizeTarget.draft}
-                setDraft={(updater) => setCustomizeTarget((t) => ({
-                  ...t,
-                  draft: typeof updater === "function" ? updater(t.draft) : updater,
-                }))}
-                discardWarn={discardWarn}
-                onSave={saveCustomize}
-                onCancel={() => {
-                  if (navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft) && !discardWarn) {
-                    setDiscardWarn(true);
-                    return;
-                  }
-                  closeCustomize();
-                }}
-              />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-rail-thread-menu-item"
-                  onClick={() => startCustomizeFolder(folder)}
-                >
-                  <Pencil size={13} aria-hidden="true" /> Customize
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
+            <button
+              type="button"
+              role="menuitem"
+              className="workspace-rail-thread-menu-item"
+              onClick={() => startCustomizeFolder(folder)}
+            >
+              <Pencil size={13} aria-hidden="true" /> Customize
+            </button>
+            <button
+              type="button"
+              role="menuitem"
                   className="workspace-rail-thread-menu-item"
                   disabled={dashboards.length === 0}
-                  onClick={() => setAddPickerFor({ folderId: folder.id, kind: "dashboard" })}
+                  onClick={() => {
+                    setOpenMenuId(null);
+                    setMenuAnchor(null);
+                    setAddPickerFor({ folderId: folder.id, kind: "dashboard" });
+                  }}
                 >
                   <LayoutDashboard size={13} aria-hidden="true" /> Add dashboard
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
+            <button
+              type="button"
+              role="menuitem"
                   className="workspace-rail-thread-menu-item"
                   disabled={viewableObjects.length === 0}
-                  onClick={() => setAddPickerFor({ folderId: folder.id, kind: "view" })}
+                  onClick={() => {
+                    setOpenMenuId(null);
+                    setMenuAnchor(null);
+                    setAddPickerFor({ folderId: folder.id, kind: "view" });
+                  }}
                 >
                   <TableIcon size={13} aria-hidden="true" /> Add view
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-rail-thread-menu-item is-destructive"
-                  onClick={() => deleteFolder(folder.id)}
-                >
-                  <Trash2 size={13} aria-hidden="true" /> Delete
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              role="menuitem"
+              className="workspace-rail-thread-menu-item is-destructive"
+              onClick={() => deleteFolder(folder.id)}
+            >
+              <Trash2 size={13} aria-hidden="true" /> Delete
+            </button>
           </div>
-        )}
+        ))}
       </div>
     );
   };
@@ -1030,7 +1057,7 @@ function NavFoldersSection({
   };
 
   const picker = addPickerFor ? (
-    <div className="workspace-rail-folder-picker-backdrop" onClick={() => setAddPickerFor(null)}>
+    <NavFolderPickerOverlay onClose={() => setAddPickerFor(null)}>
       <div className="workspace-rail-folder-picker" onClick={(e) => e.stopPropagation()}>
         <div className="workspace-rail-folder-picker-head">
           <strong>{addPickerFor.kind === "dashboard" ? "Add dashboard" : "Add view"}</strong>
@@ -1080,7 +1107,7 @@ function NavFoldersSection({
               ))}
         </ul>
       </div>
-    </div>
+    </NavFolderPickerOverlay>
   ) : null;
 
   const folderOverflow = filteredEntries.length > NAV_MAX_VISIBLE_FOLDERS;
