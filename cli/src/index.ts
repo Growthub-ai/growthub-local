@@ -1929,24 +1929,12 @@ async function runDiscoveryHub(opts?: {
         {
           value: "create-workspace",
           label: "🚀  Custom AI Governed Workspace",
-          hint: "Start a governed workspace from a starter, repo, skill, or worker kit",
+          hint: "Starter, repo, skill, or kit",
         },
         {
           value: "workspace-ops",
           label: "🏗️  Workspace Operations",
-          hint: "Live status · QA · deploy · upstream · surface · portal",
-        },
-        {
-          value: "import-source",
-          label: "🔁  Import Repo or Skill",
-          hint: "Build a governed workspace from GitHub or skills.sh",
-        },
-        {
-          value: "memory-knowledge",
-          label: "📖  Memory & Knowledge",
-          hint: growthubConnected
-            ? "Persistent memory · search · sync to your Growthub account"
-            : "Persistent memory · connect free Growthub to sync remotely",
+          hint: "Status · QA · memory · deploy · sync",
         },
         {
           value: "settings",
@@ -1957,7 +1945,7 @@ async function runDiscoveryHub(opts?: {
         },
         {
           value: "advanced",
-          label: "🔧  Advanced",
+          label: "🔧  Advanced Tools",
           hint: "Worker Kits · Workflows · Templates · Agent Harness · Local Intel · Fleet · Skills · Status",
         },
         {
@@ -1978,10 +1966,9 @@ async function runDiscoveryHub(opts?: {
         [
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
+          "🏗️ Workspace Operations: status, QA, persistent memory, deploy checks, upstream sync, and portal prep.",
           "🧰 Browse Worker Kits: browse specialized agents and custom workspaces.",
-          "🔁 Import Repo or Skill: route directly into the Source Import Agent.",
           "⚙️ Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
-          "📖 Memory & Knowledge: persistent cross-session memory, search observations, multi-provider AI config, sync to Growthub.",
           `   Locked state: ${workflowAccess.reason}.`,
           "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
           "🔐 Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
@@ -2088,6 +2075,13 @@ async function runDiscoveryHub(opts?: {
           options: [
             { value: "status", label: "🔍 Re-run status snapshot", hint: "growthub workspace status" },
             { value: "qa", label: "🧪 QA validate", hint: "config, env, deps, fork, routes, skills" },
+            {
+              value: "memory-knowledge",
+              label: "📖 Memory & Knowledge",
+              hint: growthubConnected
+                ? "persistent memory · search · sync to Growthub"
+                : "persistent memory · connect free Growthub to sync",
+            },
             { value: "deploy-check", label: "🚀 Deploy readiness check", hint: "growthub workspace deploy check" },
             { value: "deploy-env", label: "📜 Print Vercel env vars", hint: "growthub workspace deploy vercel --print-env" },
             { value: "upstream-check", label: "🔁 Upstream drift check", hint: "growthub workspace upstream check" },
@@ -2112,6 +2106,11 @@ async function runDiscoveryHub(opts?: {
         };
 
         if (action === "status") continue;
+        if (action === "memory-knowledge") {
+          const result = await runMemoryKnowledgeHub({ config: opts?.config, dataDir: opts?.dataDir });
+          if (result === "back") continue;
+          return;
+        }
         if (action === "qa") {
           const result = computeWorkspaceQa(target);
           const icon = (s: string) => s === "pass" ? pc.green("✓") : s === "fail" ? pc.red("✗") : s === "warn" ? pc.yellow("!") : pc.dim("○");
@@ -2141,13 +2140,6 @@ async function runDiscoveryHub(opts?: {
       }
       continue;
     }
-
-    if (surfaceChoice === "import-source") {
-      const result = await runCreateGovernedWorkspaceFlow({ importOnly: true, title: "Import Repo or Skill" });
-      if (result === "done") return;
-      continue;
-    }
-
     if (surfaceChoice === "advanced") {
       let stayInAdvanced = true;
       while (stayInAdvanced) {
@@ -2406,12 +2398,6 @@ async function runDiscoveryHub(opts?: {
         }
       }
       continue;
-    }
-
-    if (surfaceChoice === "memory-knowledge") {
-      const result = await runMemoryKnowledgeHub({ config: opts?.config, dataDir: opts?.dataDir });
-      if (result === "back") continue;
-      return;
     }
   }
 }

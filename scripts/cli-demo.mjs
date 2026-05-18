@@ -353,7 +353,7 @@ async function runInteractive() {
       },
       {
         value: "source-import",
-        label: "🔁 Import Repo or Skill Preview",
+        label: "Source Import Preview",
         hint: "Portable Source → governed workspace path (GitHub repo + skills.sh skill)",
       },
       {

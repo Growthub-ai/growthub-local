@@ -42011,22 +42011,12 @@ async function runDiscoveryHub(opts) {
         {
           value: "create-workspace",
           label: "\u{1F680}  Custom AI Governed Workspace",
-          hint: "Start a governed workspace from a starter, repo, skill, or worker kit"
+          hint: "Starter, repo, skill, or kit"
         },
         {
           value: "workspace-ops",
           label: "\u{1F3D7}\uFE0F  Workspace Operations",
-          hint: "Live status \xB7 QA \xB7 deploy \xB7 upstream \xB7 surface \xB7 portal"
-        },
-        {
-          value: "import-source",
-          label: "\u{1F501}  Import Repo or Skill",
-          hint: "Build a governed workspace from GitHub or skills.sh"
-        },
-        {
-          value: "memory-knowledge",
-          label: "\u{1F4D6}  Memory & Knowledge",
-          hint: growthubConnected ? "Persistent memory \xB7 search \xB7 sync to your Growthub account" : "Persistent memory \xB7 connect free Growthub to sync remotely"
+          hint: "Status \xB7 QA \xB7 memory \xB7 deploy \xB7 sync"
         },
         {
           value: "settings",
@@ -42035,7 +42025,7 @@ async function runDiscoveryHub(opts) {
         },
         {
           value: "advanced",
-          label: "\u{1F527}  Advanced",
+          label: "\u{1F527}  Advanced Tools",
           hint: "Worker Kits \xB7 Workflows \xB7 Templates \xB7 Agent Harness \xB7 Local Intel \xB7 Fleet \xB7 Skills \xB7 Status"
         },
         {
@@ -42054,10 +42044,9 @@ async function runDiscoveryHub(opts) {
         [
           "\u{1F916} Agent Harness: filter by type \u2014 Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
+          "\u{1F3D7}\uFE0F Workspace Operations: status, QA, persistent memory, deploy checks, upstream sync, and portal prep.",
           "\u{1F9F0} Browse Worker Kits: browse specialized agents and custom workspaces.",
-          "\u{1F501} Import Repo or Skill: route directly into the Source Import Agent.",
           "\u2699\uFE0F Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
-          "\u{1F4D6} Memory & Knowledge: persistent cross-session memory, search observations, multi-provider AI config, sync to Growthub.",
           `   Locked state: ${workflowAccess.reason}.`,
           "\u{1F500} Fork Sync Agent: register, track, and heal your forked worker kits \u2014 preserves all customisations while syncing to the latest upstream version.",
           "\u{1F510} Connect Growthub Account: open the canonical hosted auth flow for this CLI.",
@@ -42151,6 +42140,11 @@ async function runDiscoveryHub(opts) {
           options: [
             { value: "status", label: "\u{1F50D} Re-run status snapshot", hint: "growthub workspace status" },
             { value: "qa", label: "\u{1F9EA} QA validate", hint: "config, env, deps, fork, routes, skills" },
+            {
+              value: "memory-knowledge",
+              label: "\u{1F4D6} Memory & Knowledge",
+              hint: growthubConnected ? "persistent memory \xB7 search \xB7 sync to Growthub" : "persistent memory \xB7 connect free Growthub to sync"
+            },
             { value: "deploy-check", label: "\u{1F680} Deploy readiness check", hint: "growthub workspace deploy check" },
             { value: "deploy-env", label: "\u{1F4DC} Print Vercel env vars", hint: "growthub workspace deploy vercel --print-env" },
             { value: "upstream-check", label: "\u{1F501} Upstream drift check", hint: "growthub workspace upstream check" },
@@ -42175,6 +42169,11 @@ async function runDiscoveryHub(opts) {
           }
         };
         if (action === "status") continue;
+        if (action === "memory-knowledge") {
+          const result = await runMemoryKnowledgeHub({ config: opts?.config, dataDir: opts?.dataDir });
+          if (result === "back") continue;
+          return;
+        }
         if (action === "qa") {
           const result = computeWorkspaceQa2(target);
           const icon = (s) => s === "pass" ? pc63.green("\u2713") : s === "fail" ? pc63.red("\u2717") : s === "warn" ? pc63.yellow("!") : pc63.dim("\u25CB");
@@ -42217,11 +42216,6 @@ async function runDiscoveryHub(opts) {
           continue;
         }
       }
-      continue;
-    }
-    if (surfaceChoice === "import-source") {
-      const result = await runCreateGovernedWorkspaceFlow({ importOnly: true, title: "Import Repo or Skill" });
-      if (result === "done") return;
       continue;
     }
     if (surfaceChoice === "advanced") {
@@ -42464,11 +42458,6 @@ async function runDiscoveryHub(opts) {
         }
       }
       continue;
-    }
-    if (surfaceChoice === "memory-knowledge") {
-      const result = await runMemoryKnowledgeHub({ config: opts?.config, dataDir: opts?.dataDir });
-      if (result === "back") continue;
-      return;
     }
   }
 }
