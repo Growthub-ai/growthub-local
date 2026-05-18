@@ -44,6 +44,7 @@ import {
   MessageCircle,
   MessageCirclePlus,
   MoreHorizontal,
+  MoreVertical,
   PanelLeftClose,
   Pencil,
   Plus,
@@ -60,6 +61,7 @@ import {
   nextNavFolderId,
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
+import { ICON_PICKER_SET, LucideIcon } from "./data-model/components/dm-shared.jsx";
 
 function textColorForAccent(accent) {
   const hex = String(accent || "").replace("#", "");
@@ -153,6 +155,200 @@ function getHelperThreadRows(workspaceConfig) {
     .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 }
 
+/** Preset swatches for folder / nav-item icon badges (Twenty-style). */
+const NAV_COLOR_SWATCHES = [
+  { color: "#f97316", iconBg: "#fff7ed", label: "Orange" },
+  { color: "#3b82f6", iconBg: "#eff6ff", label: "Blue" },
+  { color: "#14b8a6", iconBg: "#f0fdfa", label: "Teal" },
+  { color: "#8b5cf6", iconBg: "#f5f3ff", label: "Violet" },
+  { color: "#ec4899", iconBg: "#fdf2f8", label: "Pink" },
+  { color: "#64748b", iconBg: "#f8fafc", label: "Slate" },
+];
+
+const NAV_FOLDER_STYLE_DEFAULT = { icon: "Folder", color: "#f97316", iconBg: "#fff7ed" };
+const NAV_ITEM_STYLE_DEFAULT = {
+  dashboard: { icon: "LayoutDashboard", color: "#3b82f6", iconBg: "#eff6ff" },
+  view: { icon: "Table", color: "#14b8a6", iconBg: "#f0fdfa" },
+};
+
+/** Default visible rows before scroll — keeps the rail from growing unbounded. */
+const NAV_MAX_VISIBLE_FOLDERS = 10;
+const NAV_MAX_VISIBLE_ITEMS = 10;
+
+function navFolderStyle(folder) {
+  return {
+    icon: folder?.icon || NAV_FOLDER_STYLE_DEFAULT.icon,
+    color: folder?.color || NAV_FOLDER_STYLE_DEFAULT.color,
+    iconBg: folder?.iconBg || NAV_FOLDER_STYLE_DEFAULT.iconBg,
+  };
+}
+
+function navItemStyle(item) {
+  const base = NAV_ITEM_STYLE_DEFAULT[item?.type] || NAV_ITEM_STYLE_DEFAULT.view;
+  return {
+    icon: item?.icon || base.icon,
+    color: item?.color || base.color,
+    iconBg: item?.iconBg || base.iconBg,
+  };
+}
+
+function filterNavFolderRows(rows, query, typeFilter) {
+  const q = query.trim().toLowerCase();
+  const typeActive = typeFilter !== "all";
+  if (!q && !typeActive) {
+    return rows.map((folder) => ({
+      folder,
+      items: Array.isArray(folder.items) ? folder.items : [],
+      expand: false,
+    }));
+  }
+  return rows.flatMap((folder) => {
+    const items = Array.isArray(folder.items) ? folder.items : [];
+    const folderNameMatch = !q || String(folder.name || "").toLowerCase().includes(q);
+    const filteredItems = items.filter((item) => {
+      if (typeActive && item.type !== typeFilter) return false;
+      if (!q || folderNameMatch) return true;
+      const label = String(item.label || item.refId || item.objectId || "").toLowerCase();
+      return label.includes(q);
+    });
+    if (typeActive && !filteredItems.length && !folderNameMatch) return [];
+    if (q && !folderNameMatch && !filteredItems.length) return [];
+    return [{
+      folder,
+      items: typeActive || q ? filteredItems : items,
+      expand: Boolean(q || typeActive),
+    }];
+  });
+}
+
+function hexToTintBg(hex, alpha = 0.1) {
+  const h = String(hex || "").replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(h)) return "#f5f5f5";
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function navCustomizeDirty(snapshot, draft) {
+  return (
+    snapshot.name !== draft.name
+    || snapshot.icon !== draft.icon
+    || snapshot.color !== draft.color
+    || snapshot.iconBg !== draft.iconBg
+  );
+}
+
+function NavIconBadge({ icon, color, iconBg }) {
+  return (
+    <span
+      className="workspace-rail-nav-icon-badge"
+      style={{ background: iconBg, color }}
+    >
+      <LucideIcon name={icon} size={14} />
+    </span>
+  );
+}
+
+function NavColorPicker({ color, iconBg, onPick }) {
+  return (
+    <div className="workspace-rail-nav-color-picker">
+      <div className="workspace-rail-nav-color-swatches" role="listbox" aria-label="Icon color">
+        {NAV_COLOR_SWATCHES.map((swatch) => (
+          <button
+            key={swatch.color}
+            type="button"
+            role="option"
+            aria-selected={color === swatch.color}
+            className={"workspace-rail-nav-color-swatch" + (color === swatch.color ? " active" : "")}
+            title={swatch.label}
+            style={{ background: swatch.iconBg, color: swatch.color }}
+            onClick={() => onPick(swatch)}
+          >
+            <span className="workspace-rail-nav-color-swatch-dot" style={{ background: swatch.color }} />
+          </button>
+        ))}
+      </div>
+      <label className="workspace-rail-nav-color-custom">
+        <span>Custom</span>
+        <input
+          type="color"
+          value={color}
+          onChange={(e) => {
+            const hex = e.target.value;
+            onPick({ color: hex, iconBg: hexToTintBg(hex) });
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
+function NavCustomizePanel({
+  nameLabel,
+  nameMax,
+  draft,
+  setDraft,
+  discardWarn,
+  onSave,
+  onCancel,
+}) {
+  return (
+    <div className="workspace-rail-nav-customize" onClick={(e) => e.stopPropagation()}>
+      {discardWarn ? (
+        <p className="workspace-rail-nav-discard-warn" role="status">
+          Unsaved changes. Click outside again to discard, or save below.
+        </p>
+      ) : null}
+      <label className="workspace-rail-nav-customize-field">
+        <span>{nameLabel}</span>
+        <input
+          type="text"
+          value={draft.name}
+          maxLength={nameMax}
+          onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); onSave(); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+          }}
+        />
+      </label>
+      <span className="workspace-rail-nav-customize-label">Icon</span>
+      <div className="dm-icon-picker workspace-rail-nav-icon-picker">
+        {ICON_PICKER_SET.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={"dm-icon-picker-btn" + (draft.icon === name ? " active" : "")}
+            title={name}
+            onClick={() => setDraft((d) => ({ ...d, icon: name }))}
+          >
+            <LucideIcon name={name} size={16} />
+          </button>
+        ))}
+      </div>
+      <span className="workspace-rail-nav-customize-label">Color</span>
+      <NavColorPicker
+        color={draft.color}
+        iconBg={draft.iconBg}
+        onPick={(swatch) => setDraft((d) => ({
+          ...d,
+          color: swatch.color,
+          iconBg: swatch.iconBg || d.iconBg,
+        }))}
+      />
+      <div className="workspace-rail-nav-customize-actions">
+        <button type="button" className="workspace-rail-nav-btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="workspace-rail-nav-btn-primary" onClick={onSave}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Custom Folders Navigation Module — mirrors Twenty CRM's drag-to-reorder,
  * user-named folders that group Dashboard links and lightweight Views of
@@ -166,29 +362,89 @@ function NavFoldersSection({
   onPatchNavFolders,
 }) {
   const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  const [createDraft, setCreateDraft] = useState("");
+  const [createDiscardWarn, setCreateDiscardWarn] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null); // folderId or `${folderId}::${itemId}`
+  const [customizeTarget, setCustomizeTarget] = useState(null);
+  const [discardWarn, setDiscardWarn] = useState(false);
+  const [addPickerFor, setAddPickerFor] = useState(null); // { folderId, kind: "dashboard"|"view" }
+  const [filterQuery, setFilterQuery] = useState("");
+  const [filterType, setFilterType] = useState("all"); // all | dashboard | view
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
+
   const rows = useMemo(() => getNavFolderRows(workspaceConfig), [workspaceConfig]);
   const dashboards = useMemo(() => listAvailableDashboards(workspaceConfig), [workspaceConfig]);
   const viewableObjects = useMemo(() => listAvailableObjectsForViews(workspaceConfig), [workspaceConfig]);
-
-  const [creating, setCreating] = useState(false);
-  const [createDraft, setCreateDraft] = useState("");
-  const [openMenuId, setOpenMenuId] = useState(null); // folderId or `${folderId}::${itemId}`
-  const [renamingFolderId, setRenamingFolderId] = useState(null);
-  const [renamingItemId, setRenamingItemId] = useState(null); // `${folderId}::${itemId}`
-  const [renameDraft, setRenameDraft] = useState("");
-  const [addPickerFor, setAddPickerFor] = useState(null); // { folderId, kind: "dashboard"|"view" }
+  const filteredEntries = useMemo(
+    () => filterNavFolderRows(rows, filterQuery, filterType),
+    [rows, filterQuery, filterType],
+  );
+  const filterActive = Boolean(filterQuery.trim()) || filterType !== "all";
   const menuWrapRef = useRef(null);
+  const customizePanelRef = useRef(null);
+  const createInputRef = useRef(null);
   const dragState = useRef(null);
 
+  const closeCustomize = useCallback(() => {
+    setCustomizeTarget(null);
+    setDiscardWarn(false);
+    setOpenMenuId(null);
+  }, []);
+
+  const requestDiscardCustomize = useCallback(() => {
+    if (!customizeTarget) return;
+    if (!navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft)) {
+      closeCustomize();
+      return;
+    }
+    if (!discardWarn) {
+      setDiscardWarn(true);
+      return;
+    }
+    closeCustomize();
+  }, [customizeTarget, discardWarn, closeCustomize]);
+
   useEffect(() => {
-    if (!openMenuId) return undefined;
+    if (!openMenuId && !customizeTarget) return undefined;
     const onPointerDown = (e) => {
-      if (!menuWrapRef.current) return;
-      if (!menuWrapRef.current.contains(e.target)) setOpenMenuId(null);
+      if (menuWrapRef.current?.contains(e.target)) return;
+      if (customizePanelRef.current?.contains(e.target)) return;
+      if (customizeTarget) {
+        requestDiscardCustomize();
+        return;
+      }
+      setOpenMenuId(null);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [openMenuId]);
+  }, [openMenuId, customizeTarget, requestDiscardCustomize]);
+
+  useEffect(() => {
+    if (!creating) {
+      setCreateDiscardWarn(false);
+      return undefined;
+    }
+    const onPointerDown = (e) => {
+      if (createInputRef.current?.contains(e.target)) return;
+      const trimmed = createDraft.trim();
+      if (!trimmed) {
+        setCreating(false);
+        setCreateDraft("");
+        setCreateDiscardWarn(false);
+        return;
+      }
+      if (!createDiscardWarn) {
+        setCreateDiscardWarn(true);
+        return;
+      }
+      setCreating(false);
+      setCreateDraft("");
+      setCreateDiscardWarn(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [creating, createDraft, createDiscardWarn]);
 
   useEffect(() => {
     if (!addPickerFor) return undefined;
@@ -203,40 +459,104 @@ function NavFoldersSection({
 
   const createFolder = useCallback(async () => {
     const trimmed = createDraft.trim();
-    setCreating(false);
-    setCreateDraft("");
-    if (!trimmed) return;
+    if (!trimmed) {
+      setCreating(false);
+      setCreateDraft("");
+      setCreateDiscardWarn(false);
+      return;
+    }
     const name = trimmed.length > NAV_FOLDER_NAME_MAX ? trimmed.slice(0, NAV_FOLDER_NAME_MAX) : trimmed;
     const next = [
       ...rows,
-      { id: nextNavFolderId(), name, order: rows.length, collapsed: false, items: [] },
+      {
+        id: nextNavFolderId(),
+        name,
+        order: rows.length,
+        collapsed: false,
+        items: [],
+        ...NAV_FOLDER_STYLE_DEFAULT,
+      },
     ];
+    setCreating(false);
+    setCreateDraft("");
+    setCreateDiscardWarn(false);
     await writeRows(next);
   }, [createDraft, rows, writeRows]);
 
-  const renameFolder = useCallback(async (folderId) => {
-    const trimmed = renameDraft.trim();
-    setRenamingFolderId(null);
-    setRenameDraft("");
-    if (!trimmed) return;
-    const name = trimmed.length > NAV_FOLDER_NAME_MAX ? trimmed.slice(0, NAV_FOLDER_NAME_MAX) : trimmed;
-    const next = rows.map((row) => (row.id === folderId ? { ...row, name } : row));
-    await writeRows(next);
-  }, [renameDraft, rows, writeRows]);
-
-  const renameItem = useCallback(async (folderId, itemId) => {
-    const trimmed = renameDraft.trim();
-    setRenamingItemId(null);
-    setRenameDraft("");
-    if (!trimmed) return;
-    const label = trimmed.length > NAV_ITEM_LABEL_MAX ? trimmed.slice(0, NAV_ITEM_LABEL_MAX) : trimmed;
-    const next = rows.map((row) => {
-      if (row.id !== folderId) return row;
-      const items = (row.items || []).map((it) => (it.id === itemId ? { ...it, label } : it));
-      return { ...row, items };
+  const startCustomizeFolder = useCallback((folder) => {
+    const style = navFolderStyle(folder);
+    const snapshot = {
+      name: folder.name,
+      icon: style.icon,
+      color: style.color,
+      iconBg: style.iconBg,
+    };
+    setCustomizeTarget({
+      scope: "folder",
+      folderId: folder.id,
+      snapshot,
+      draft: { ...snapshot },
     });
-    await writeRows(next);
-  }, [renameDraft, rows, writeRows]);
+    setDiscardWarn(false);
+    setOpenMenuId(folder.id);
+  }, []);
+
+  const startCustomizeItem = useCallback((folder, item) => {
+    const style = navItemStyle(item);
+    const snapshot = {
+      name: item.label || item.refId || item.objectId || "",
+      icon: style.icon,
+      color: style.color,
+      iconBg: style.iconBg,
+    };
+    const composedId = `${folder.id}::${item.id}`;
+    setCustomizeTarget({
+      scope: "item",
+      folderId: folder.id,
+      itemId: item.id,
+      snapshot,
+      draft: { ...snapshot },
+    });
+    setDiscardWarn(false);
+    setOpenMenuId(composedId);
+  }, []);
+
+  const saveCustomize = useCallback(async () => {
+    if (!customizeTarget) return;
+    const trimmed = customizeTarget.draft.name.trim();
+    if (!trimmed) return;
+    if (customizeTarget.scope === "folder") {
+      const next = rows.map((row) => (row.id === customizeTarget.folderId
+        ? {
+            ...row,
+            name: trimmed.slice(0, NAV_FOLDER_NAME_MAX),
+            icon: customizeTarget.draft.icon,
+            color: customizeTarget.draft.color,
+            iconBg: customizeTarget.draft.iconBg,
+          }
+        : row));
+      await writeRows(next);
+    } else {
+      const label = trimmed.slice(0, NAV_ITEM_LABEL_MAX);
+      const next = rows.map((row) => {
+        if (row.id !== customizeTarget.folderId) return row;
+        return {
+          ...row,
+          items: (row.items || []).map((it) => (it.id === customizeTarget.itemId
+            ? {
+                ...it,
+                label,
+                icon: customizeTarget.draft.icon,
+                color: customizeTarget.draft.color,
+                iconBg: customizeTarget.draft.iconBg,
+              }
+            : it)),
+        };
+      });
+      await writeRows(next);
+    }
+    closeCustomize();
+  }, [customizeTarget, rows, writeRows, closeCustomize]);
 
   const toggleCollapsed = useCallback(async (folderId) => {
     const next = rows.map((row) => (row.id === folderId ? { ...row, collapsed: !row.collapsed } : row));
@@ -260,11 +580,15 @@ function NavFoldersSection({
   const addDashboardItem = useCallback(async (folderId, dashboard) => {
     setAddPickerFor(null);
     setOpenMenuId(null);
+    const style = NAV_ITEM_STYLE_DEFAULT.dashboard;
     const item = {
       id: nextNavItemId(),
       type: "dashboard",
       refId: dashboard.id,
       label: dashboard.name,
+      icon: style.icon,
+      color: style.color,
+      iconBg: style.iconBg,
     };
     const next = rows.map((row) => {
       if (row.id !== folderId) return row;
@@ -276,11 +600,15 @@ function NavFoldersSection({
   const addViewItem = useCallback(async (folderId, dmObject) => {
     setAddPickerFor(null);
     setOpenMenuId(null);
+    const style = NAV_ITEM_STYLE_DEFAULT.view;
     const item = {
       id: nextNavItemId(),
       type: "view",
       objectId: dmObject.id,
       label: dmObject.label,
+      icon: style.icon,
+      color: style.color,
+      iconBg: style.iconBg,
       viewConfig: {
         columns: dmObject.columns,
       },
@@ -391,161 +719,180 @@ function NavFoldersSection({
     router.push(`/views/${encodeURIComponent(item.id)}`);
   };
 
+  const renderItemMenu = (folder, item) => {
+    const composedId = `${folder.id}::${item.id}`;
+    const isMenuOpen = openMenuId === composedId;
+    const isCustomizing = customizeTarget?.scope === "item"
+      && customizeTarget.folderId === folder.id
+      && customizeTarget.itemId === item.id;
+    return (
+      <div className="workspace-rail-thread-menu-wrap workspace-rail-nav-menu-wrap"
+        ref={isMenuOpen ? menuWrapRef : null}
+      >
+        <button
+          type="button"
+          className="workspace-rail-thread-menu-btn workspace-rail-nav-menu-btn"
+          aria-label={`Actions for ${item.label || "item"}`}
+          aria-haspopup="menu"
+          aria-expanded={isMenuOpen}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isMenuOpen) {
+              if (isCustomizing) requestDiscardCustomize();
+              else setOpenMenuId(null);
+            } else {
+              setOpenMenuId(composedId);
+            }
+          }}
+        >
+          <MoreVertical size={14} />
+        </button>
+        {isMenuOpen && (
+          <div
+            className={"workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack" + (isCustomizing ? " is-customize" : "")}
+            role="menu"
+            ref={isCustomizing ? customizePanelRef : null}
+          >
+            {isCustomizing ? (
+              <NavCustomizePanel
+                nameLabel="Display name"
+                nameMax={NAV_ITEM_LABEL_MAX}
+                draft={customizeTarget.draft}
+                setDraft={(updater) => setCustomizeTarget((t) => ({
+                  ...t,
+                  draft: typeof updater === "function" ? updater(t.draft) : updater,
+                }))}
+                discardWarn={discardWarn}
+                onSave={saveCustomize}
+                onCancel={() => {
+                  if (navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft) && !discardWarn) {
+                    setDiscardWarn(true);
+                    return;
+                  }
+                  closeCustomize();
+                }}
+              />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="workspace-rail-thread-menu-item"
+                  onClick={() => startCustomizeItem(folder, item)}
+                >
+                  <Pencil size={13} aria-hidden="true" /> Customize
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="workspace-rail-thread-menu-item is-destructive"
+                  onClick={() => deleteItem(folder.id, item.id)}
+                >
+                  <Trash2 size={13} aria-hidden="true" /> Remove
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderItemRow = (folder, item) => {
     const composedId = `${folder.id}::${item.id}`;
-    const isRenaming = renamingItemId === composedId;
     const isMenuOpen = openMenuId === composedId;
     const isActive = item.type === "view" && pathname.startsWith(`/views/${encodeURIComponent(item.id)}`);
+    const style = navItemStyle(item);
+    const typeHint = item.type === "dashboard" ? "Dashboard" : "View";
     return (
       <li
         key={item.id}
-        className={`workspace-rail-folder-item${isActive ? " is-active" : ""}`}
+        className={`workspace-rail-folder-item workspace-rail-nav-row${isActive ? " is-active" : ""}${isMenuOpen ? " is-menu-open" : ""}`}
         draggable
         onDragStart={(e) => handleItemDragStart(e, folder.id, item.id)}
         onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}
         onDrop={(e) => handleItemDrop(e, folder.id, item.id)}
       >
-        <button
-          type="button"
-          className="workspace-rail-folder-item-main"
-          onClick={() => (item.type === "dashboard" ? openDashboardItem(item) : openViewItem(item))}
-          title={item.label || item.refId || item.objectId}
-        >
-          {item.type === "dashboard"
-            ? <LayoutDashboard size={13} className="workspace-rail-folder-item-icon" />
-            : <TableIcon size={13} className="workspace-rail-folder-item-icon" />}
-          {isRenaming ? (
-            <input
-              autoFocus
-              className="workspace-rail-thread-rename"
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); renameItem(folder.id, item.id); }
-                if (e.key === "Escape") { setRenamingItemId(null); setRenameDraft(""); }
-              }}
-              onBlur={() => renameItem(folder.id, item.id)}
-            />
-          ) : (
-            <span className="workspace-rail-folder-item-label">{item.label || item.refId || item.objectId}</span>
-          )}
-        </button>
-        <div className="workspace-rail-thread-menu-wrap" ref={isMenuOpen ? menuWrapRef : null}>
+        <span className="workspace-rail-tree-guide" aria-hidden="true" />
+        <div className="workspace-rail-nav-row-body">
           <button
             type="button"
-            className="workspace-rail-thread-menu-btn"
-            aria-label={`Actions for ${item.label || "item"}`}
-            aria-haspopup="menu"
-            aria-expanded={isMenuOpen}
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpenMenuId(isMenuOpen ? null : composedId);
-            }}
+            className="workspace-rail-nav-row-main"
+            onClick={() => (item.type === "dashboard" ? openDashboardItem(item) : openViewItem(item))}
+            title={`${item.label || item.refId || item.objectId} · ${typeHint}`}
           >
-            <MoreHorizontal size={14} />
+            <NavIconBadge icon={style.icon} color={style.color} iconBg={style.iconBg} />
+            <span className="workspace-rail-nav-row-text">
+              <span className="workspace-rail-folder-item-label">{item.label || item.refId || item.objectId}</span>
+              <span className="workspace-rail-nav-row-meta">{typeHint}</span>
+            </span>
           </button>
-          {isMenuOpen && (
-            <div className="workspace-rail-thread-menu" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                className="workspace-rail-thread-menu-item"
-                onClick={() => {
-                  setOpenMenuId(null);
-                  setRenamingItemId(composedId);
-                  setRenameDraft(item.label || "");
-                }}
-              >
-                <Pencil size={13} aria-hidden="true" /> Rename
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="workspace-rail-thread-menu-item is-destructive"
-                onClick={() => deleteItem(folder.id, item.id)}
-              >
-                <Trash2 size={13} aria-hidden="true" /> Remove
-              </button>
-            </div>
-          )}
+          {renderItemMenu(folder, item)}
         </div>
       </li>
     );
   };
 
-  const renderFolder = (folder) => {
+  const renderFolderMenu = (folder) => {
     const isMenuOpen = openMenuId === folder.id;
-    const isRenaming = renamingFolderId === folder.id;
-    const collapsed = Boolean(folder.collapsed);
-    const items = Array.isArray(folder.items) ? folder.items : [];
+    const isCustomizing = customizeTarget?.scope === "folder" && customizeTarget.folderId === folder.id;
     return (
-      <li
-        key={folder.id}
-        className="workspace-rail-folder"
-        draggable={!isRenaming}
-        onDragStart={(e) => handleFolderDragStart(e, folder.id)}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-        onDrop={(e) => handleFolderDrop(e, folder.id)}
+      <div className="workspace-rail-thread-menu-wrap workspace-rail-nav-menu-wrap"
+        ref={isMenuOpen ? menuWrapRef : null}
       >
-        <div className="workspace-rail-folder-header">
-          <button
-            type="button"
-            className="workspace-rail-folder-toggle"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
-            onClick={() => toggleCollapsed(folder.id)}
+        <button
+          type="button"
+          className="workspace-rail-thread-menu-btn workspace-rail-nav-menu-btn"
+          aria-label={`Actions for folder ${folder.name}`}
+          aria-haspopup="menu"
+          aria-expanded={isMenuOpen}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isMenuOpen) {
+              if (isCustomizing) requestDiscardCustomize();
+              else setOpenMenuId(null);
+            } else {
+              setOpenMenuId(folder.id);
+            }
+          }}
+        >
+          <MoreVertical size={14} />
+        </button>
+        {isMenuOpen && (
+          <div
+            className={"workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack" + (isCustomizing ? " is-customize" : "")}
+            role="menu"
+            ref={isCustomizing ? customizePanelRef : null}
           >
-            {collapsed
-              ? <ChevronRight size={12} aria-hidden="true" />
-              : <ChevronDown size={12} aria-hidden="true" />}
-            <Folder size={13} className="workspace-rail-folder-icon" aria-hidden="true" />
-            {isRenaming ? (
-              <input
-                autoFocus
-                className="workspace-rail-thread-rename"
-                value={renameDraft}
-                onChange={(e) => setRenameDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); renameFolder(folder.id); }
-                  if (e.key === "Escape") { setRenamingFolderId(null); setRenameDraft(""); }
+            {isCustomizing ? (
+              <NavCustomizePanel
+                nameLabel="Folder name"
+                nameMax={NAV_FOLDER_NAME_MAX}
+                draft={customizeTarget.draft}
+                setDraft={(updater) => setCustomizeTarget((t) => ({
+                  ...t,
+                  draft: typeof updater === "function" ? updater(t.draft) : updater,
+                }))}
+                discardWarn={discardWarn}
+                onSave={saveCustomize}
+                onCancel={() => {
+                  if (navCustomizeDirty(customizeTarget.snapshot, customizeTarget.draft) && !discardWarn) {
+                    setDiscardWarn(true);
+                    return;
+                  }
+                  closeCustomize();
                 }}
-                onBlur={() => renameFolder(folder.id)}
               />
             ) : (
-              <span className="workspace-rail-folder-name">{folder.name}</span>
-            )}
-          </button>
-          <div className="workspace-rail-thread-menu-wrap" ref={isMenuOpen ? menuWrapRef : null}>
-            <button
-              type="button"
-              className="workspace-rail-thread-menu-btn"
-              aria-label={`Actions for folder ${folder.name}`}
-              aria-haspopup="menu"
-              aria-expanded={isMenuOpen}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenuId(isMenuOpen ? null : folder.id);
-              }}
-            >
-              <MoreHorizontal size={14} />
-            </button>
-            {isMenuOpen && (
-              <div className="workspace-rail-thread-menu" role="menu">
+              <>
                 <button
                   type="button"
                   role="menuitem"
                   className="workspace-rail-thread-menu-item"
-                  onClick={() => {
-                    setOpenMenuId(null);
-                    setRenamingFolderId(folder.id);
-                    setRenameDraft(folder.name);
-                  }}
+                  onClick={() => startCustomizeFolder(folder)}
                 >
-                  <Pencil size={13} aria-hidden="true" /> Rename
+                  <Pencil size={13} aria-hidden="true" /> Customize
                 </button>
                 <button
                   type="button"
@@ -573,16 +920,60 @@ function NavFoldersSection({
                 >
                   <Trash2 size={13} aria-hidden="true" /> Delete
                 </button>
-              </div>
+              </>
             )}
           </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderFolder = (entry) => {
+    const { folder, items, expand: forceExpand } = entry;
+    const isMenuOpen = openMenuId === folder.id;
+    const isCustomizing = customizeTarget?.scope === "folder" && customizeTarget.folderId === folder.id;
+    const collapsed = Boolean(folder.collapsed) && !forceExpand;
+    const style = navFolderStyle(folder);
+    const visibleItems = items;
+    const itemOverflow = visibleItems.length > NAV_MAX_VISIBLE_ITEMS;
+    return (
+      <li
+        key={folder.id}
+        className={"workspace-rail-folder workspace-rail-nav-row" + (isMenuOpen ? " is-menu-open" : "")}
+        draggable={!isCustomizing}
+        onDragStart={(e) => handleFolderDragStart(e, folder.id)}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDrop={(e) => handleFolderDrop(e, folder.id)}
+      >
+        <div className="workspace-rail-nav-row-body workspace-rail-folder-header">
+          <button
+            type="button"
+            className="workspace-rail-nav-row-main workspace-rail-folder-toggle"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
+            onClick={() => toggleCollapsed(folder.id)}
+          >
+            {collapsed
+              ? <ChevronRight size={12} className="workspace-rail-folder-chevron" aria-hidden="true" />
+              : <ChevronDown size={12} className="workspace-rail-folder-chevron" aria-hidden="true" />}
+            <NavIconBadge icon={style.icon} color={style.color} iconBg={style.iconBg} />
+            <span className="workspace-rail-folder-name">{folder.name}</span>
+          </button>
+          {renderFolderMenu(folder)}
         </div>
         {!collapsed && (
-          <ul className="workspace-rail-folder-items" role="list">
-            {items.length === 0 ? (
-              <li className="workspace-rail-folder-empty">Empty folder — use ⋯ to add a dashboard or view.</li>
+          <ul
+            className={"workspace-rail-folder-items" + (itemOverflow ? " is-scrollable" : "")}
+            role="list"
+            aria-label={`Items in ${folder.name}`}
+          >
+            {visibleItems.length === 0 ? (
+              <li className="workspace-rail-folder-empty">
+                {filterActive ? "No items match this filter." : "Empty folder — use ⋯ to add a dashboard or view."}
+              </li>
             ) : (
-              items.map((item) => renderItemRow(folder, item))
+              visibleItems.map((item) => renderItemRow(folder, item))
             )}
           </ul>
         )}
@@ -613,7 +1004,11 @@ function NavFoldersSection({
                     className="workspace-rail-folder-picker-item"
                     onClick={() => addDashboardItem(addPickerFor.folderId, d)}
                   >
-                    <LayoutDashboard size={13} aria-hidden="true" />
+                    <NavIconBadge
+                      icon={NAV_ITEM_STYLE_DEFAULT.dashboard.icon}
+                      color={NAV_ITEM_STYLE_DEFAULT.dashboard.color}
+                      iconBg={NAV_ITEM_STYLE_DEFAULT.dashboard.iconBg}
+                    />
                     <span>{d.name}</span>
                   </button>
                 </li>
@@ -625,7 +1020,11 @@ function NavFoldersSection({
                     className="workspace-rail-folder-picker-item"
                     onClick={() => addViewItem(addPickerFor.folderId, o)}
                   >
-                    <TableIcon size={13} aria-hidden="true" />
+                    <NavIconBadge
+                      icon={NAV_ITEM_STYLE_DEFAULT.view.icon}
+                      color={NAV_ITEM_STYLE_DEFAULT.view.color}
+                      iconBg={NAV_ITEM_STYLE_DEFAULT.view.iconBg}
+                    />
                     <span>{o.label}</span>
                     <span className="workspace-rail-folder-picker-hint">{o.columns.length} field{o.columns.length === 1 ? "" : "s"}</span>
                   </button>
@@ -636,47 +1035,145 @@ function NavFoldersSection({
     </div>
   ) : null;
 
+  const folderOverflow = filteredEntries.length > NAV_MAX_VISIBLE_FOLDERS;
+
   return (
-    <div className="workspace-rail-folders" aria-label="Custom folders">
+    <div
+      className={"workspace-rail-folders" + (sectionCollapsed ? " is-section-collapsed" : "")}
+      aria-label="Custom folders"
+    >
       <div className="workspace-rail-folders-head">
-        <span className="workspace-rail-section-label">Folders</span>
+        <button
+          type="button"
+          className="workspace-rail-folders-section-toggle"
+          aria-expanded={!sectionCollapsed}
+          onClick={() => setSectionCollapsed((v) => !v)}
+        >
+          {sectionCollapsed
+            ? <ChevronRight size={12} aria-hidden="true" />
+            : <ChevronDown size={12} aria-hidden="true" />}
+          <span className="workspace-rail-section-label">Folders</span>
+          {rows.length > 0 ? (
+            <span className="workspace-rail-folders-count">{filteredEntries.length}</span>
+          ) : null}
+        </button>
         <button
           type="button"
           className="workspace-rail-folders-add-btn"
           aria-label="Create folder"
           title="New folder"
-          onClick={() => { setCreating(true); setCreateDraft(""); }}
+          onClick={() => {
+            setSectionCollapsed(false);
+            setCreating(true);
+            setCreateDraft("");
+          }}
         >
           <FolderPlus size={13} aria-hidden="true" />
         </button>
       </div>
-      {creating && (
-        <div className="workspace-rail-folder-create">
-          <Plus size={12} aria-hidden="true" />
+      {!sectionCollapsed ? (
+        <>
+      <div className="workspace-rail-folders-filters">
+        <div className="workspace-rail-folders-search">
+          <Search size={12} aria-hidden="true" />
           <input
+            type="search"
+            className="workspace-rail-folders-search-input"
+            placeholder="Filter folders & views"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            aria-label="Filter folders and views by name"
+          />
+          {filterQuery ? (
+            <button
+              type="button"
+              className="workspace-rail-chat-search-clear"
+              onClick={() => setFilterQuery("")}
+              aria-label="Clear filter"
+            >
+              <X size={11} />
+            </button>
+          ) : null}
+        </div>
+        <div className="workspace-rail-folders-type-filters" role="group" aria-label="Filter by item type">
+          {[
+            { id: "all", label: "All" },
+            { id: "dashboard", label: "Dashboards" },
+            { id: "view", label: "Views" },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              className={"workspace-rail-folders-type-chip" + (filterType === opt.id ? " active" : "")}
+              aria-pressed={filterType === opt.id}
+              onClick={() => setFilterType(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {creating ? (
+        <div className="workspace-rail-folder-create">
+          <NavIconBadge
+            icon={NAV_FOLDER_STYLE_DEFAULT.icon}
+            color={NAV_FOLDER_STYLE_DEFAULT.color}
+            iconBg={NAV_FOLDER_STYLE_DEFAULT.iconBg}
+          />
+          <input
+            ref={createInputRef}
             autoFocus
             className="workspace-rail-thread-rename"
             value={createDraft}
-            onChange={(e) => setCreateDraft(e.target.value)}
+            onChange={(e) => {
+              setCreateDraft(e.target.value);
+              setCreateDiscardWarn(false);
+            }}
             placeholder="Folder name"
             onKeyDown={(e) => {
               if (e.key === "Enter") { e.preventDefault(); createFolder(); }
-              if (e.key === "Escape") { setCreating(false); setCreateDraft(""); }
+              if (e.key === "Escape") {
+                setCreating(false);
+                setCreateDraft("");
+                setCreateDiscardWarn(false);
+              }
             }}
-            onBlur={createFolder}
           />
+          <button type="button" className="workspace-rail-nav-btn-primary is-compact" onClick={createFolder}>
+            Save
+          </button>
+          {createDiscardWarn ? (
+            <p className="workspace-rail-nav-discard-warn is-inline" role="status">
+              Click outside again to discard
+            </p>
+          ) : null}
         </div>
-      )}
+      ) : null}
       {rows.length === 0 && !creating ? (
         <p className="workspace-rail-folders-empty">
           No folders yet. Create one to organize dashboards and table views.
         </p>
+      ) : filteredEntries.length === 0 ? (
+        <p className="workspace-rail-folders-empty">No folders or views match this filter.</p>
       ) : (
-        <ul className="workspace-rail-folders-list" role="list">
-          {rows.map(renderFolder)}
-        </ul>
+        <div
+          className={"workspace-rail-folders-scroll" + (folderOverflow ? " is-scrollable" : "")}
+          role="region"
+          aria-label="Folder list"
+        >
+          <ul className="workspace-rail-folders-list" role="list">
+            {filteredEntries.map(renderFolder)}
+          </ul>
+          {folderOverflow ? (
+            <p className="workspace-rail-folders-scroll-hint">
+              {filteredEntries.length} folders · scroll for more
+            </p>
+          ) : null}
+        </div>
       )}
       {picker}
+        </>
+      ) : null}
     </div>
   );
 }

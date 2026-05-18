@@ -1021,6 +1021,15 @@ function validateNavFolderRow(row, path, errors) {
   if (row.collapsed !== undefined && typeof row.collapsed !== "boolean") {
     errors.push(`${path}.collapsed must be a boolean when present`);
   }
+  if (row.icon !== undefined && typeof row.icon !== "string") {
+    errors.push(`${path}.icon must be a string when present`);
+  }
+  if (row.color !== undefined && typeof row.color !== "string") {
+    errors.push(`${path}.color must be a string when present`);
+  }
+  if (row.iconBg !== undefined && typeof row.iconBg !== "string") {
+    errors.push(`${path}.iconBg must be a string when present`);
+  }
   if (row.items === undefined) return;
   if (!Array.isArray(row.items)) {
     errors.push(`${path}.items must be an array`);
@@ -1049,6 +1058,15 @@ function validateNavFolderRow(row, path, errors) {
       } else if (item.label.length > NAV_ITEM_LABEL_MAX) {
         errors.push(`${ipfx}.label must be ${NAV_ITEM_LABEL_MAX} characters or fewer`);
       }
+    }
+    if (item.icon !== undefined && typeof item.icon !== "string") {
+      errors.push(`${ipfx}.icon must be a string when present`);
+    }
+    if (item.color !== undefined && typeof item.color !== "string") {
+      errors.push(`${ipfx}.color must be a string when present`);
+    }
+    if (item.iconBg !== undefined && typeof item.iconBg !== "string") {
+      errors.push(`${ipfx}.iconBg must be a string when present`);
     }
     if (item.type === "dashboard") {
       if (typeof item.refId !== "string" || !item.refId.trim()) {

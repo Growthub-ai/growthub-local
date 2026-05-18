@@ -10,15 +10,19 @@ import {
   Code2,
   Database,
   FileText,
+  Folder,
+  FolderOpen,
   Globe,
   Hash,
   Layers,
+  LayoutDashboard,
   Link2,
   List,
   Mail,
   Plus,
   ShoppingCart,
   Star,
+  Table,
   Tag,
   Terminal,
   ToggleLeft,
@@ -30,14 +34,16 @@ import { OBJECT_TYPE_PRESETS } from "@/lib/workspace-data-model";
 
 const LUCIDE_MAP = {
   Activity, BarChart2, Box, Building2, Calendar, CheckSquare, Code2,
-  Database, FileText, Globe, Hash, Layers, Link2, List, Mail, Plus,
-  ShoppingCart, Star, Tag, Terminal, ToggleLeft, Type, Users, Zap,
+  Database, FileText, Folder, FolderOpen, Globe, Hash, Layers,
+  LayoutDashboard, Link2, List, Mail, Plus, ShoppingCart, Star, Table,
+  Tag, Terminal, ToggleLeft, Type, Users, Zap,
 };
 
 const ICON_PICKER_SET = [
   "Database", "Globe", "Code2", "Users", "CheckSquare", "Building2",
   "Tag", "Star", "Zap", "FileText", "Mail", "BarChart2",
   "Layers", "Box", "Activity", "ShoppingCart", "Terminal",
+  "Folder", "FolderOpen", "LayoutDashboard", "Table", "List",
 ];
 
 const OBJECT_TYPE_BADGE = {
