@@ -108,6 +108,11 @@ export default function ViewPage() {
     [workspaceConfig, located]
   );
 
+  useEffect(() => {
+    if (!located?.item?.objectId || !dmObject) return;
+    router.replace(`/data-model?object=${encodeURIComponent(located.item.objectId)}`, { scroll: false });
+  }, [dmObject, located, router]);
+
   const { columns, rows } = useMemo(() => {
     if (!dmObject || !located) return { columns: [], rows: [] };
     const objectColumns = Array.isArray(dmObject.columns) ? dmObject.columns : [];

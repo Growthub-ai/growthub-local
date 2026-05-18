@@ -49,6 +49,8 @@ import {
   Pencil,
   Plus,
   Search,
+  Settings,
+  SlidersHorizontal,
   Table as TableIcon,
   Trash2,
   X,
@@ -371,12 +373,14 @@ function NavFoldersSection({
   const [createDraft, setCreateDraft] = useState("");
   const [createDiscardWarn, setCreateDiscardWarn] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null); // folderId or `${folderId}::${itemId}`
+  const [menuAnchor, setMenuAnchor] = useState(null);
   const [customizeTarget, setCustomizeTarget] = useState(null);
   const [discardWarn, setDiscardWarn] = useState(false);
   const [addPickerFor, setAddPickerFor] = useState(null); // { folderId, kind: "dashboard"|"view" }
   const [filterQuery, setFilterQuery] = useState("");
   const [filterType, setFilterType] = useState("all"); // all | dashboard | view
-  const [sectionCollapsed, setSectionCollapsed] = useState(false);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [sectionCollapsed, setSectionCollapsed] = useState(true);
 
   const rows = useMemo(() => getNavFolderRows(workspaceConfig), [workspaceConfig]);
   const dashboards = useMemo(() => listAvailableDashboards(workspaceConfig), [workspaceConfig]);
@@ -387,6 +391,7 @@ function NavFoldersSection({
   );
   const filterActive = Boolean(filterQuery.trim()) || filterType !== "all";
   const menuWrapRef = useRef(null);
+  const filterMenuRef = useRef(null);
   const customizePanelRef = useRef(null);
   const createInputRef = useRef(null);
   const dragState = useRef(null);
@@ -395,6 +400,16 @@ function NavFoldersSection({
     setCustomizeTarget(null);
     setDiscardWarn(false);
     setOpenMenuId(null);
+    setMenuAnchor(null);
+  }, []);
+
+  const openAnchoredMenu = useCallback((menuId, trigger) => {
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 188;
+    const top = Math.min(rect.bottom + 4, window.innerHeight - 86);
+    const left = Math.max(10, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    setMenuAnchor({ top, left });
+    setOpenMenuId(menuId);
   }, []);
 
   const requestDiscardCustomize = useCallback(() => {
@@ -420,10 +435,21 @@ function NavFoldersSection({
         return;
       }
       setOpenMenuId(null);
+      setMenuAnchor(null);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [openMenuId, customizeTarget, requestDiscardCustomize]);
+
+  useEffect(() => {
+    if (!filterMenuOpen) return undefined;
+    const onPointerDown = (e) => {
+      if (filterMenuRef.current?.contains(e.target)) return;
+      setFilterMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [filterMenuOpen]);
 
   useEffect(() => {
     if (!creating) {
@@ -725,7 +751,7 @@ function NavFoldersSection({
   };
 
   const openViewItem = (item) => {
-    router.push(`/views/${encodeURIComponent(item.id)}`);
+    router.push(`/data-model?object=${encodeURIComponent(item.objectId || "")}`);
   };
 
   const renderItemMenu = (folder, item) => {
@@ -748,9 +774,12 @@ function NavFoldersSection({
             e.stopPropagation();
             if (isMenuOpen) {
               if (isCustomizing) requestDiscardCustomize();
-              else setOpenMenuId(null);
+              else {
+                setOpenMenuId(null);
+                setMenuAnchor(null);
+              }
             } else {
-              setOpenMenuId(composedId);
+              openAnchoredMenu(composedId, e.currentTarget);
             }
           }}
         >
@@ -761,6 +790,7 @@ function NavFoldersSection({
             className={"workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack" + (isCustomizing ? " is-customize" : "")}
             role="menu"
             ref={isCustomizing ? customizePanelRef : null}
+            style={!isCustomizing && menuAnchor ? { top: `${menuAnchor.top}px`, left: `${menuAnchor.left}px` } : undefined}
           >
             {isCustomizing ? (
               <NavCustomizePanel
@@ -860,9 +890,12 @@ function NavFoldersSection({
             e.stopPropagation();
             if (isMenuOpen) {
               if (isCustomizing) requestDiscardCustomize();
-              else setOpenMenuId(null);
+              else {
+                setOpenMenuId(null);
+                setMenuAnchor(null);
+              }
             } else {
-              setOpenMenuId(folder.id);
+              openAnchoredMenu(folder.id, e.currentTarget);
             }
           }}
         >
@@ -873,6 +906,7 @@ function NavFoldersSection({
             className={"workspace-rail-thread-menu workspace-rail-nav-menu workspace-rail-nav-menu-stack" + (isCustomizing ? " is-customize" : "")}
             role="menu"
             ref={isCustomizing ? customizePanelRef : null}
+            style={!isCustomizing && menuAnchor ? { top: `${menuAnchor.top}px`, left: `${menuAnchor.left}px` } : undefined}
           >
             {isCustomizing ? (
               <NavCustomizePanel
@@ -968,7 +1002,6 @@ function NavFoldersSection({
             aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
             onClick={() => toggleCollapsed(folder.id)}
           >
-            <ChevronRight size={12} className="workspace-rail-folder-chevron" aria-hidden="true" />
             <NavIconBadge icon={style.icon} color={style.color} iconBg={style.iconBg} />
             <span className="workspace-rail-folder-name">{folder.name}</span>
           </button>
@@ -985,9 +1018,7 @@ function NavFoldersSection({
               aria-label={`Items in ${folder.name}`}
             >
               {visibleItems.length === 0 ? (
-                <li className="workspace-rail-folder-empty">
-                  {filterActive ? "No items match this filter." : "Empty folder — use ⋯ to add a dashboard or view."}
-                </li>
+                <li className="workspace-rail-folder-empty-spacer" aria-hidden="true" />
               ) : (
                 visibleItems.map((item) => renderItemRow(folder, item))
               )}
@@ -1064,15 +1095,15 @@ function NavFoldersSection({
           type="button"
           className="workspace-rail-folders-section-toggle"
           aria-expanded={!sectionCollapsed}
-          onClick={() => setSectionCollapsed((v) => !v)}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            setSectionCollapsed((v) => !v);
+          }}
         >
-          {sectionCollapsed
-            ? <ChevronRight size={12} aria-hidden="true" />
-            : <ChevronDown size={12} aria-hidden="true" />}
           <span className="workspace-rail-section-label">Folders</span>
-          {rows.length > 0 ? (
-            <span className="workspace-rail-folders-count">{filteredEntries.length}</span>
-          ) : null}
+          {sectionCollapsed
+            ? <ChevronRight size={12} className="workspace-rail-folders-section-chevron" aria-hidden="true" />
+            : <ChevronDown size={12} className="workspace-rail-folders-section-chevron" aria-hidden="true" />}
         </button>
         <button
           type="button"
@@ -1112,22 +1143,91 @@ function NavFoldersSection({
             </button>
           ) : null}
         </div>
-        <div className="workspace-rail-folders-type-filters" role="group" aria-label="Filter by item type">
-          {[
-            { id: "all", label: "All" },
-            { id: "dashboard", label: "Dashboards" },
-            { id: "view", label: "Views" },
-          ].map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              className={"workspace-rail-folders-type-chip" + (filterType === opt.id ? " active" : "")}
-              aria-pressed={filterType === opt.id}
-              onClick={() => setFilterType(opt.id)}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="workspace-rail-folders-filter-menu-wrap" ref={filterMenuRef}>
+          <button
+            type="button"
+            className={
+              "workspace-rail-folders-filter-btn"
+              + (filterMenuOpen ? " is-open" : "")
+              + (filterActive ? " has-live-state" : "")
+              + (rows.length === 0 ? " is-disabled" : "")
+            }
+            aria-label="Folder display options"
+            aria-haspopup="menu"
+            aria-expanded={filterMenuOpen}
+            aria-disabled={rows.length === 0}
+            title={rows.length === 0
+              ? "No folders yet. Create one to organize dashboards and table views."
+              : "Folder display options"}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              if (rows.length === 0) return;
+              setFilterMenuOpen((v) => !v);
+            }}
+          >
+            <SlidersHorizontal size={14} aria-hidden="true" />
+            {filterActive ? <span className="workspace-rail-folders-filter-state-dot" aria-hidden="true" /> : null}
+          </button>
+          {filterMenuOpen && rows.length > 0 ? (
+            <div className="workspace-rail-folders-filter-menu" role="menu">
+              <div className="workspace-rail-folders-filter-menu-group">
+                <p className="workspace-rail-folders-filter-menu-label">Type</p>
+                {[
+                  { id: "all", label: "All" },
+                  { id: "dashboard", label: "Dashboards" },
+                  { id: "view", label: "Views" },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={filterType === opt.id}
+                    className="workspace-rail-folders-filter-menu-item"
+                    onClick={() => {
+                      setFilterType(opt.id);
+                      setFilterMenuOpen(false);
+                    }}
+                  >
+                    <span>{opt.label}</span>
+                    <span className="workspace-rail-folders-filter-menu-value">
+                      {filterType === opt.id ? "Active" : ""}
+                    </span>
+                    <ChevronRight size={13} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+              {filterActive ? (
+                <div className="workspace-rail-folders-filter-menu-group">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="workspace-rail-folders-filter-menu-item is-reset"
+                    onClick={() => {
+                      setFilterQuery("");
+                      setFilterType("all");
+                      setFilterMenuOpen(false);
+                    }}
+                  >
+                    <span>Clear folder config</span>
+                    <span className="workspace-rail-folders-filter-menu-value">Reset</span>
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
+              <div className="workspace-rail-folders-filter-menu-group">
+                <button type="button" role="menuitem" className="workspace-rail-folders-filter-menu-item">
+                  <span>Group by</span>
+                  <span className="workspace-rail-folders-filter-menu-value">Folder</span>
+                  <ChevronRight size={13} aria-hidden="true" />
+                </button>
+                <button type="button" role="menuitem" className="workspace-rail-folders-filter-menu-item">
+                  <span>Sort by</span>
+                  <span className="workspace-rail-folders-filter-menu-value">Custom order</span>
+                  <ChevronRight size={13} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       {creating ? (
@@ -1166,11 +1266,7 @@ function NavFoldersSection({
           ) : null}
         </div>
       ) : null}
-      {rows.length === 0 && !creating ? (
-        <p className="workspace-rail-folders-empty">
-          No folders yet. Create one to organize dashboards and table views.
-        </p>
-      ) : filteredEntries.length === 0 ? (
+      {rows.length === 0 && !creating ? null : filteredEntries.length === 0 ? (
         <p className="workspace-rail-folders-empty">No folders or views match this filter.</p>
       ) : (
         <div
@@ -1216,6 +1312,7 @@ export function WorkspaceRail({
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState("home");
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -1235,6 +1332,12 @@ export function WorkspaceRail({
   }, [openMenuId]);
 
   const threads = useMemo(() => getHelperThreadRows(workspaceConfig), [workspaceConfig]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    document.body.classList.toggle("workspace-rail-collapsed", railCollapsed);
+    return () => document.body.classList.remove("workspace-rail-collapsed");
+  }, [railCollapsed]);
 
   const handleAskHelperClick = () => {
     if (onOpenHelper) {
@@ -1332,7 +1435,7 @@ export function WorkspaceRail({
   };
 
   return (
-    <aside className="workspace-rail" aria-label="Workspace navigation">
+    <aside className={"workspace-rail" + (railCollapsed ? " is-collapsed" : "")} aria-label="Workspace navigation">
       {/* Row 1: brand + utility actions */}
       <div className="workspace-rail-topbar">
         <button type="button" className="workspace-rail-brand-button" aria-label={`Workspace ${workspaceName}`}>
@@ -1369,10 +1472,21 @@ export function WorkspaceRail({
           <button
             type="button"
             className="workspace-rail-icon-btn"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
+            aria-label={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-pressed={railCollapsed}
+            onClick={() => setRailCollapsed((v) => !v)}
           >
             <PanelLeftClose size={13} />
+          </button>
+          <button
+            type="button"
+            className="workspace-rail-icon-btn"
+            aria-label="Workspace settings"
+            title="Workspace settings"
+            onClick={() => router.push("/settings/general")}
+          >
+            <Settings size={13} />
           </button>
         </div>
       </div>

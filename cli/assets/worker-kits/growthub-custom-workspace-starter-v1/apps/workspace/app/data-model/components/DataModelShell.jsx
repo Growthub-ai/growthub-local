@@ -25,12 +25,10 @@ import {
   Layers,
   Link2,
   Lock,
-  List,
   Mail,
   Maximize2,
   MoreHorizontal,
   Plus,
-  Pin,
   Pencil,
   Search,
   ShoppingCart,
@@ -62,7 +60,6 @@ import {
   parseSandboxAllowList,
   parseSandboxEnvRefs,
   replaceTableContent,
-  snapshotTableViewState,
   transformTableSchema,
   updateTableFieldSettings,
   updateTableCell,
@@ -199,87 +196,19 @@ function applyRowsView(rows, settings) {
   });
 }
 
-function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSave }) {
+function ObjectViewPicker({ tables, selectedTable, onSelectSource }) {
   const pickerRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState("all");
-  const [newViewName, setNewViewName] = useState("");
-  const [viewMenuId, setViewMenuId] = useState("");
-  const currentViews = selectedTable?.fieldSettings?.views || [];
-  const favoriteObjects = tables.filter((table) => table.fieldSettings?.favorite);
 
   useEffect(() => {
     function handlePointer(event) {
       if (!pickerRef.current?.contains(event.target)) {
-        setViewMenuId("");
+        setOpen(false);
       }
     }
     document.addEventListener("pointerdown", handlePointer);
     return () => document.removeEventListener("pointerdown", handlePointer);
   }, []);
-
-  function applyView(view) {
-    if (!selectedTable) return;
-    const nextState = view
-      ? { ...snapshotTableViewState(view), activeViewId: view.id }
-      : { activeViewId: "", hidden: [], order: selectedTable.columns, sort: [], filter: null };
-    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
-      ...settings,
-      ...nextState
-    })));
-    setOpen(false);
-  }
-
-  function createView() {
-    const name = newViewName.trim();
-    if (!selectedTable || !name) return;
-    const viewId = `view_${Date.now().toString(36)}`;
-    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
-      ...settings,
-      activeViewId: viewId,
-      views: [...(settings.views || []), {
-        id: viewId,
-        name,
-        favorite: false,
-        locked: false,
-        ...snapshotTableViewState(settings)
-      }]
-    })));
-    setNewViewName("");
-  }
-
-  function toggleViewFavorite(viewId) {
-    if (!selectedTable) return;
-    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
-      ...settings,
-      views: (settings.views || []).map((view) => view.id === viewId ? { ...view, favorite: !view.favorite } : view)
-    })));
-  }
-
-  function deleteView(viewId) {
-    if (!selectedTable) return;
-    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
-      ...settings,
-      activeViewId: settings.activeViewId === viewId ? "" : settings.activeViewId,
-      views: (settings.views || []).filter((view) => view.id !== viewId)
-    })));
-    setViewMenuId("");
-  }
-
-  function renameView(view) {
-    if (!selectedTable) return;
-    const nextName = window.prompt("Rename view", view.name);
-    if (!nextName?.trim()) return;
-    onSave((config) => updateTableFieldSettings(config, selectedTable, (settings) => ({
-      ...settings,
-      views: (settings.views || []).map((candidate) => candidate.id === view.id ? { ...candidate, name: nextName.trim() } : candidate)
-    })));
-    setViewMenuId("");
-  }
-
-  const activeView = currentViews.find((view) => view.id === selectedTable?.fieldSettings?.activeViewId) || null;
-  const objects = mode === "views" ? [] : tables;
-  const views = mode === "objects" ? [] : currentViews;
 
   return (
     <div
@@ -288,125 +217,36 @@ function ObjectViewPicker({ tables, selectedTable, saving, onSelectSource, onSav
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           setOpen(false);
-          setViewMenuId("");
         }
       }}
     >
       <button type="button" className="dm-picker-trigger" onClick={() => setOpen((current) => !current)}>
         <LucideIcon name={selectedTable?.icon || OBJECT_TYPE_PRESETS[selectedTable?.objectType]?.icon || "Database"} size={14} />
         <span className="dm-picker-trigger-copy">
-          <strong>{activeView?.name || selectedTable?.label || "Object"}</strong>
+          <strong>{selectedTable?.label || "Object"}</strong>
           <em>{pluralize(selectedTable?.columns?.length || 0, "field")} · {pluralize(selectedTable?.rows?.length || 0, "record")}</em>
         </span>
         <ChevronDown size={14} />
       </button>
       {open && (
         <div className="dm-picker-popover">
-          {favoriteObjects.length > 0 && (
-            <div className="dm-picker-section">
-              <p>Favorites</p>
-              {favoriteObjects.map((table, favIdx) => (
-                <button key={`favorite-${table.id || table.source}-${favIdx}`} type="button" className="dm-picker-row" onClick={() => onSelectSource(table.source)}>
-                  <Pin size={14} />
-                  <span>{table.label}</span>
-                </button>
+          <div className="dm-picker-section">
+            <p>Objects</p>
+            <div className="dm-picker-scroll">
+              {tables.map((table, objIdx) => (
+                <div key={`${table.id || table.source}:${objIdx}`} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
+                  <button type="button" className="dm-picker-row" onClick={() => {
+                    onSelectSource(table.source);
+                    setOpen(false);
+                  }}>
+                    <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
+                    <span>{table.label}</span>
+                    {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
+                  </button>
+                </div>
               ))}
             </div>
-          )}
-          <div className="dm-picker-tabs">
-            {[
-              { id: "all", label: "All" },
-              { id: "objects", label: "Objects" },
-              { id: "views", label: "Views" },
-            ].map((item) => (
-              <button key={item.id} type="button" className={mode === item.id ? "active" : ""} onClick={() => setMode(item.id)}>
-                {item.label}
-              </button>
-            ))}
           </div>
-          {objects.length > 0 && (
-            <div className="dm-picker-section">
-              <p>Objects</p>
-              <div className="dm-picker-scroll">
-                {objects.map((table, objIdx) => (
-                  <div key={`${table.id || table.source}:${objIdx}`} className={`dm-picker-item${selectedTable?.source === table.source ? " active" : ""}`}>
-                    <button type="button" className="dm-picker-row" onClick={() => {
-                      onSelectSource(table.source);
-                      setOpen(false);
-                    }}>
-                      <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
-                      <span>{table.label}</span>
-                      {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {selectedTable && (
-            <div className="dm-picker-section">
-              <p>Views</p>
-              <button type="button" className={`dm-picker-row${!activeView ? " active" : ""}`} onClick={() => applyView(null)}>
-                <List size={14} />
-                <span>{selectedTable.label}</span>
-                {isLockedObject(selectedTable) && <Lock size={12} className="dm-picker-lock" />}
-              </button>
-              <div className="dm-picker-scroll">
-                {views.map((view) => (
-                  <div key={view.id} className={`dm-picker-item${activeView?.id === view.id ? " active" : ""}`}>
-                    <button type="button" className="dm-picker-row" onClick={() => applyView(view)}>
-                      <List size={14} />
-                      <span>{view.name}</span>
-                    </button>
-                    <div className="dm-picker-actions">
-                      <button
-                        type="button"
-                        className="dm-picker-icon-btn"
-                        aria-label="View actions"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setViewMenuId((current) => current === view.id ? "" : view.id);
-                        }}
-                      >
-                        <MoreHorizontal size={12} style={{ transform: "rotate(90deg)" }} />
-                      </button>
-                      {viewMenuId === view.id && (
-                        <div className="dm-picker-menu">
-                          <button type="button" onClick={() => toggleViewFavorite(view.id)}>
-                            <Pin size={13} />
-                            {view.favorite ? "Unpin" : "Pin"}
-                          </button>
-                          <button type="button" onClick={() => renameView(view)}>
-                            <Type size={13} />
-                            Rename
-                          </button>
-                          {!view.locked && (
-                            <button type="button" className="danger" onClick={() => deleteView(view.id)}>
-                              <X size={13} />
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="dm-picker-create">
-                <input
-                  value={newViewName}
-                  placeholder="New view name"
-                  onChange={(event) => setNewViewName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") createView();
-                  }}
-                />
-                <button type="button" className="dm-btn-outline" disabled={saving || !newViewName.trim()} onClick={createView}>
-                  <Plus size={13} />Add view
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -1403,7 +1243,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
     setFilterDraft({ fieldId: table.columns[0] || "", operator: "eq", value: "" });
   }, [table.id, table.columns]);
 
-  const settings = table.fieldSettings || { hidden: [], order: table.columns, sort: [], filter: null, views: [], activeViewId: "" };
+  const settings = table.fieldSettings || { hidden: [], order: table.columns, sort: [], filter: null };
   const orderedColumns = useMemo(() => mergeColumnOrder(settings.order, table.columns), [settings.order, table.columns]);
   const visibleColumns = useMemo(() => orderedColumns.filter((column) => !settings.hidden.includes(column)), [orderedColumns, settings.hidden]);
   const rowEntries = useMemo(() => {
@@ -1420,10 +1260,6 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
       return 0;
     });
   }, [table.rows, settings]);
-  const activeView = useMemo(
-    () => (settings.views || []).find((view) => view.id === settings.activeViewId) || null,
-    [settings.views, settings.activeViewId]
-  );
   const selectedRowCount = selectedRows.size;
   const pageCount = Math.max(1, Math.ceil(rowEntries.length / pageSize));
   const safePageIndex = Math.min(pageIndex, pageCount - 1);
@@ -1529,27 +1365,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
       hidden: [],
       order: table.columns,
       sort: [],
-      filter: null,
-      activeViewId: ""
-    }));
-  }
-
-  function saveCurrentAsNewView() {
-    const name = window.prompt("View name");
-    if (!name?.trim()) return;
-    const viewId = `view_${Date.now().toString(36)}`;
-    updateSettings((current) => ({
-      ...current,
-      activeViewId: viewId,
-      views: [...(current.views || []), { id: viewId, name: name.trim(), favorite: false, locked: false, ...snapshotTableViewState(current) }]
-    }));
-  }
-
-  function updateCurrentView() {
-    if (!activeView) return;
-    updateSettings((current) => ({
-      ...current,
-      views: (current.views || []).map((view) => view.id === activeView.id ? { ...view, ...snapshotTableViewState(current) } : view)
+      filter: null
     }));
   }
 
@@ -1670,15 +1486,6 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
               </div>
             )}
           </span>
-          {activeView ? (
-            <button type="button" className="dm-btn-ghost" onClick={updateCurrentView}>
-              Update view
-            </button>
-          ) : (
-            <button type="button" className="dm-btn-ghost" onClick={saveCurrentAsNewView}>
-              Save as new view
-            </button>
-          )}
           {table.rows.length > 0 && (
             <button type="button" className="dm-btn-ghost" onClick={() => {
               const blob = new Blob([exportTableAsCsv(table)], { type: "text/csv" });
@@ -2280,6 +2087,20 @@ export default function DataModelShell() {
     if (!selectedSource && tables[0]) setSelectedSource(tables[0].source);
   }, [selectedSource, tables]);
 
+  useEffect(() => {
+    const objectParam = searchParams?.get("object");
+    if (!objectParam || !tables.length) return;
+    const target = tables.find((table) => (
+      table.objectId === objectParam
+      || table.id === objectParam
+      || table.source === objectParam
+      || table.label === objectParam
+    ));
+    if (target && target.source !== selectedSource) {
+      setSelectedSource(target.source);
+    }
+  }, [searchParams, selectedSource, tables]);
+
   // Flush any accumulated patch keys to the server. Called by the debounce
   // timer and on visibilitychange/beforeunload so no local edit is lost.
   const flushPendingPatch = useCallback(async () => {
@@ -2439,7 +2260,7 @@ export default function DataModelShell() {
     },
     {
       id: "helper.repair", group: "Ask helper", label: "Ask helper — repair workspace",
-      run: () => openHelperWith("repair", "Inspect this workspace for missing references, broken bindings, or incomplete views. Propose the smallest fix for each issue.")
+      run: () => openHelperWith("repair", "Inspect this workspace for missing references, broken bindings, or incomplete object configuration. Propose the smallest fix for each issue.")
     },
     {
       id: "helper.explain", group: "Ask helper", label: "Ask helper — explain this workspace",
