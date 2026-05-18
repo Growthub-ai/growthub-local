@@ -218,6 +218,11 @@ function filterNavFolderRows(rows, query, typeFilter) {
       items: typeActive || q ? filteredItems : items,
       expand: Boolean(q || typeActive),
     }];
+  }).map((entry, index, list) => {
+    if (!entry.expand) return entry;
+    const firstExpandIdx = list.findIndex((e) => e.expand);
+    if (index !== firstExpandIdx) return { ...entry, expand: false };
+    return entry;
   });
 }
 
@@ -559,7 +564,11 @@ function NavFoldersSection({
   }, [customizeTarget, rows, writeRows, closeCustomize]);
 
   const toggleCollapsed = useCallback(async (folderId) => {
-    const next = rows.map((row) => (row.id === folderId ? { ...row, collapsed: !row.collapsed } : row));
+    const target = rows.find((row) => row.id === folderId);
+    const isOpen = target && !target.collapsed;
+    const next = isOpen
+      ? rows.map((row) => (row.id === folderId ? { ...row, collapsed: true } : row))
+      : rows.map((row) => ({ ...row, collapsed: row.id !== folderId }));
     await writeRows(next);
   }, [rows, writeRows]);
 
@@ -933,13 +942,18 @@ function NavFoldersSection({
     const isMenuOpen = openMenuId === folder.id;
     const isCustomizing = customizeTarget?.scope === "folder" && customizeTarget.folderId === folder.id;
     const collapsed = Boolean(folder.collapsed) && !forceExpand;
+    const isExpanded = !collapsed;
     const style = navFolderStyle(folder);
     const visibleItems = items;
     const itemOverflow = visibleItems.length > NAV_MAX_VISIBLE_ITEMS;
     return (
       <li
         key={folder.id}
-        className={"workspace-rail-folder workspace-rail-nav-row" + (isMenuOpen ? " is-menu-open" : "")}
+        className={
+          "workspace-rail-folder workspace-rail-nav-row"
+          + (isExpanded ? " is-expanded" : "")
+          + (isMenuOpen ? " is-menu-open" : "")
+        }
         draggable={!isCustomizing}
         onDragStart={(e) => handleFolderDragStart(e, folder.id)}
         onDragEnd={handleDragEnd}
@@ -950,33 +964,36 @@ function NavFoldersSection({
           <button
             type="button"
             className="workspace-rail-nav-row-main workspace-rail-folder-toggle"
-            aria-expanded={!collapsed}
+            aria-expanded={isExpanded}
             aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
             onClick={() => toggleCollapsed(folder.id)}
           >
-            {collapsed
-              ? <ChevronRight size={12} className="workspace-rail-folder-chevron" aria-hidden="true" />
-              : <ChevronDown size={12} className="workspace-rail-folder-chevron" aria-hidden="true" />}
+            <ChevronRight size={12} className="workspace-rail-folder-chevron" aria-hidden="true" />
             <NavIconBadge icon={style.icon} color={style.color} iconBg={style.iconBg} />
             <span className="workspace-rail-folder-name">{folder.name}</span>
           </button>
           {renderFolderMenu(folder)}
         </div>
-        {!collapsed && (
-          <ul
-            className={"workspace-rail-folder-items" + (itemOverflow ? " is-scrollable" : "")}
-            role="list"
-            aria-label={`Items in ${folder.name}`}
-          >
-            {visibleItems.length === 0 ? (
-              <li className="workspace-rail-folder-empty">
-                {filterActive ? "No items match this filter." : "Empty folder — use ⋯ to add a dashboard or view."}
-              </li>
-            ) : (
-              visibleItems.map((item) => renderItemRow(folder, item))
-            )}
-          </ul>
-        )}
+        <div
+          className="workspace-rail-folder-accordion-panel"
+          aria-hidden={collapsed}
+        >
+          <div className="workspace-rail-folder-accordion-inner">
+            <ul
+              className={"workspace-rail-folder-items" + (itemOverflow ? " is-scrollable" : "")}
+              role="list"
+              aria-label={`Items in ${folder.name}`}
+            >
+              {visibleItems.length === 0 ? (
+                <li className="workspace-rail-folder-empty">
+                  {filterActive ? "No items match this filter." : "Empty folder — use ⋯ to add a dashboard or view."}
+                </li>
+              ) : (
+                visibleItems.map((item) => renderItemRow(folder, item))
+              )}
+            </ul>
+          </div>
+        </div>
       </li>
     );
   };

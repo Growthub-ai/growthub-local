@@ -5633,6 +5633,23 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   display: flex;
   flex-direction: column;
 }
+
+.workspace-rail-folder-accordion-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.18s ease;
+}
+.workspace-rail-folder.is-expanded .workspace-rail-folder-accordion-panel {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.workspace-rail-folder-accordion-inner {
+  overflow: hidden;
+  min-height: 0;
+}
 .workspace-rail-folder.is-drop-target {
   outline: 1px dashed #9ca3af;
   outline-offset: -1px;
@@ -6020,6 +6037,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .workspace-rail-folder-chevron {
   flex-shrink: 0;
   color: #9ca3af;
+  transition: transform 0.2s ease, color 0.12s ease;
+}
+.workspace-rail-folder.is-expanded .workspace-rail-folder-chevron {
+  transform: rotate(90deg);
 }
 .workspace-rail-folder-create {
   flex-wrap: wrap;
