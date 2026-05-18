@@ -78,3 +78,25 @@ export {
   canSync,
   syncMemoriesToHosted,
 } from "./sync.js";
+
+// ---------------------------------------------------------------------------
+// Memory ↔ Growthub profile binding (PLG one-identity model)
+// ---------------------------------------------------------------------------
+
+export {
+  inspectMemoryProfileBinding,
+  setAutoSyncEnabled,
+  syncProjectToProfile,
+  autoSyncProjectIfReady,
+  pullProjectMemoriesIfAvailable,
+  readMemoryProjectSyncState,
+  writeMemoryProjectSyncState,
+} from "./profile-binding.js";
+
+export type {
+  MemoryProjectSyncState,
+  MemoryProfileBindingSnapshot,
+  BoundSyncResult,
+  PullResult,
+  PullItem,
+} from "./profile-binding.js";

@@ -7,10 +7,12 @@ import type {
   BridgeBrandAssetListResponse,
   BridgeBrandKit,
   BridgeBrandKitListResponse,
+  BridgeKnowledgeItem,
   BridgeKnowledgeListResponse,
   BridgeKnowledgeMetadataPatchInput,
   BridgeKnowledgeSaveInput,
   BridgeKnowledgeSaveResponse,
+  BridgeKnowledgeTable,
   BridgeKnowledgeTableListResponse,
   BridgeHostedAgentManifestListResponse,
   BridgeHostedAgentManifestResponse,
@@ -123,6 +125,80 @@ async function requestJsonWithSessionCookie<T>(session: CliAuthSession, url: URL
   return parsed as T;
 }
 
+async function requestKnowledgeUpload(
+  session: CliAuthSession,
+  input: BridgeKnowledgeSaveInput,
+): Promise<BridgeKnowledgeSaveResponse> {
+  const url = bridgeUrl(session, "/api/knowledge/upload");
+  const title = input.title?.trim() || input.fileName?.trim() || "Growthub CLI knowledge item";
+  const fileName = input.fileName?.trim() || `${title.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-|-$/g, "") || "knowledge"}.md`;
+  const content = input.content ?? [
+    `# ${title}`,
+    "",
+    input.notes ?? "Created by the Growthub Local CLI bridge.",
+  ].join("\n");
+
+  const form = new FormData();
+  form.set("file", new Blob([content], { type: "text/markdown" }), fileName);
+  form.set("agent_slug", input.agentSlug ?? "growthub_local_bridge");
+  form.set("title", title);
+  form.set("file_name", fileName);
+  const sourceType = String(input.metadata?.source_type ?? "markdown");
+  form.set("source_type", sourceType);
+  if (input.tableId) form.set("table_id", input.tableId);
+  if (input.notes) form.set("notes", input.notes);
+  form.set("metadata", JSON.stringify({
+    ...(input.metadata ?? {}),
+    ...(input.tableId ? { table_id: input.tableId } : {}),
+  }));
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${session.accessToken}`,
+      cookie: buildSupabaseSessionCookie(session),
+      "x-user-id": session.userId ?? "",
+    },
+    body: form,
+  });
+  const text = await response.text();
+  const parsed = text.trim() ? safeJson(text) : null;
+  if (!response.ok) {
+    const message = typeof parsed === "object" && parsed && "error" in parsed
+      ? String((parsed as { error: unknown }).error)
+      : `Growthub knowledge upload failed (${response.status})`;
+    throw new Error(message);
+  }
+  if (!parsed || typeof parsed !== "object" || (parsed as { success?: unknown }).success !== true) {
+    throw new Error("Growthub knowledge upload did not return success.");
+  }
+  const record = parsed as {
+    knowledge_item_id?: string;
+    id?: string;
+    storage_path?: string;
+    source_type?: string;
+  };
+  const id = record.knowledge_item_id ?? record.id;
+  return {
+    success: true,
+    id,
+    created: true,
+    item: id ? {
+      id,
+      user_id: session.userId ?? "",
+      agent_slug: input.agentSlug ?? "growthub_local_bridge",
+      file_name: fileName,
+      storage_path: record.storage_path ?? "",
+      source_type: record.source_type ?? sourceType,
+      metadata: {
+        ...(input.metadata ?? {}),
+        ...(input.tableId ? { table_id: input.tableId } : {}),
+      },
+    } : undefined,
+  };
+}
+
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -216,66 +292,70 @@ export class GrowthubBridgeClient {
     };
   }
 
+  // Growthub Local knowledge surface. The hosted profile advertises the
+  // growthub_local_* tool slugs, while the live route layer persists markdown
+  // through /api/knowledge/upload and reads through /api/knowledge-base/list.
+  // These routes require the CLI session projected as the Supabase session
+  // cookie shape; Bearer-only auth is not enough for this surface.
+
   async listKnowledge(query: BridgeKnowledgeQuery = {}): Promise<BridgeKnowledgeListResponse> {
-    const url = bridgeUrl(this.session, "/api/cli/profile", {
-      view: "knowledge",
-      type: query.type,
-      agentSlug: query.agentSlug,
-      tableId: query.tableId,
+    const url = bridgeUrl(this.session, "/api/knowledge-base/list");
+    const result = await requestJsonWithSessionCookie<unknown>(this.session, url);
+    if (!isKnowledgeBaseListResponse(result)) {
+      throw new Error("Growthub knowledge list did not return the knowledge contract.");
+    }
+    const items = result.items.filter((item) => {
+      const metadata = (item.metadata ?? {}) as Record<string, unknown>;
+      if (query.type && item.source_type !== query.type) return false;
+      if (query.agentSlug && item.agent_slug !== query.agentSlug) return false;
+      if (query.tableId && metadata.table_id !== query.tableId) return false;
+      return true;
     });
-    const result = await requestJson<unknown>(this.session, url);
-    if (isKnowledgeListResponse(result)) return result;
-    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items", {
-      type: query.type,
-      agentSlug: query.agentSlug,
-      tableId: query.tableId,
-    });
-    const providerResult = await requestJson<unknown>(this.session, providerUrl);
-    if (isKnowledgeListResponse(providerResult)) return providerResult;
-    throw new Error("Growthub bridge knowledge list did not return the knowledge contract.");
+    return {
+      success: true,
+      userId: this.session.userId,
+      items,
+      count: items.length,
+    };
   }
 
   async listKnowledgeTables(query: BridgeKnowledgeTableQuery = {}): Promise<BridgeKnowledgeTableListResponse> {
-    const url = bridgeUrl(this.session, "/api/cli/profile", {
-      view: "knowledge-tables",
-      origin: query.origin,
-      connectorType: query.connectorType,
-    });
-    const result = await requestJson<unknown>(this.session, url);
-    if (isKnowledgeTableListResponse(result)) return result;
-    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/tables", {
-      origin: query.origin,
-      connectorType: query.connectorType,
-    });
-    const providerResult = await requestJson<unknown>(this.session, providerUrl);
-    if (isKnowledgeTableListResponse(providerResult)) return providerResult;
-    throw new Error("Growthub bridge knowledge table list did not return the knowledge table contract.");
+    const url = bridgeUrl(this.session, "/api/knowledge-base/list");
+    const result = await requestJsonWithSessionCookie<unknown>(this.session, url);
+    if (!isKnowledgeBaseListResponse(result)) {
+      throw new Error("Growthub knowledge table list did not return the knowledge table contract.");
+    }
+    const tables = result.items.filter((item): item is BridgeKnowledgeTable => {
+      const metadata = (item.metadata ?? {}) as Record<string, unknown>;
+      const isTable =
+        item.source_type === "table" ||
+        item.file_name.startsWith("growthub-cli-memory-") ||
+        metadata.origin === "table";
+      if (!isTable) return false;
+      if (query.origin && metadata.origin !== query.origin) return false;
+      if (query.connectorType && metadata.connector_type !== query.connectorType) return false;
+      return true;
+    }).map((item) => ({
+      ...item,
+      source_type: "table" as const,
+      child_count: item.item_count ?? 0,
+    }));
+    return {
+      success: true,
+      userId: this.session.userId,
+      tables,
+      count: tables.length,
+    };
   }
 
   async saveKnowledge(input: BridgeKnowledgeSaveInput): Promise<BridgeKnowledgeSaveResponse> {
-    const url = bridgeUrl(this.session, "/api/cli/profile", { action: "save-knowledge" });
-    const result = await requestJson<unknown>(this.session, url, {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    if (result && typeof result === "object" && "success" in result) {
-      return result as BridgeKnowledgeSaveResponse;
-    }
-    const providerUrl = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items");
-    const providerResult = await requestJson<unknown>(this.session, providerUrl, {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    if (providerResult && typeof providerResult === "object" && "success" in providerResult) {
-      return providerResult as BridgeKnowledgeSaveResponse;
-    }
-    throw new Error("Growthub bridge knowledge save did not return the knowledge save contract.");
+    return requestKnowledgeUpload(this.session, input);
   }
 
   deleteKnowledge(id: string): Promise<{ success: boolean; id?: string; deleted?: boolean; error?: string }> {
-    const url = bridgeUrl(this.session, "/api/cli/profile", { action: "delete-knowledge" });
+    const url = bridgeUrl(this.session, "/api/providers/growthub-local/knowledge/items");
     return requestJson(this.session, url, {
-      method: "POST",
+      method: "DELETE",
       body: JSON.stringify({ id }),
     });
   }
@@ -325,6 +405,7 @@ export class GrowthubBridgeClient {
     const response = await fetch(url, {
       headers: {
         authorization: `Bearer ${this.session.accessToken}`,
+        cookie: buildSupabaseSessionCookie(this.session),
         "x-user-id": this.session.userId ?? "",
       },
     });
@@ -338,7 +419,7 @@ export class GrowthubBridgeClient {
   }
 
   async downloadKnowledge(id: string, outPath: string): Promise<number> {
-    const url = bridgeUrl(this.session, "/api/cli/profile", { view: "knowledge-download", id });
+    const url = bridgeUrl(this.session, `/api/knowledge-base/download/${encodeURIComponent(id)}`);
     const response = await fetch(url, {
       headers: {
         authorization: `Bearer ${this.session.accessToken}`,
@@ -404,6 +485,14 @@ function isKnowledgeListResponse(value: unknown): value is BridgeKnowledgeListRe
     typeof value === "object" &&
     Array.isArray((value as { items?: unknown }).items) &&
     typeof (value as { count?: unknown }).count === "number",
+  );
+}
+
+function isKnowledgeBaseListResponse(value: unknown): value is { success?: boolean; items: BridgeKnowledgeItem[] } {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as { items?: unknown }).items),
   );
 }
 

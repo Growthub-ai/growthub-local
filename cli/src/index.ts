@@ -74,6 +74,7 @@ import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerSkillsCommands } from "./commands/skills.js";
+import { registerMemoryCommands } from "./commands/memory.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { registerSetupCommands } from "./commands/setup.js";
 import { registerWorkspaceImproveCommands } from "./commands/workspace-improve.js";
@@ -121,6 +122,11 @@ import {
   syncMemoriesToHosted,
   readProviderConfig,
   writeProviderConfig,
+  inspectMemoryProfileBinding,
+  setAutoSyncEnabled,
+  syncProjectToProfile,
+  autoSyncProjectIfReady,
+  pullProjectMemoriesIfAvailable,
 } from "./runtime/memory/index.js";
 import type { ObservationType, ConceptCategory } from "./runtime/memory/index.js";
 import { promptExtendedProvider } from "./prompts/llm.js";
@@ -1205,45 +1211,89 @@ async function runMemoryKnowledgeHub(opts?: {
     const syncStatus = canSync();
     const providerConfig = readProviderConfig();
 
+    // PLG binding snapshot — single read that gives the hub everything it
+    // needs to render the "one identity" status pill + delta-aware sync.
+    const binding = inspectMemoryProfileBinding(project);
+    const pendingTotal = binding.pendingObservations + binding.pendingSummaries;
+    const titleSuffix = binding.authenticated
+      ? ` · ${binding.hostedEmail ?? binding.hostedUserId ?? "Growthub account"}`
+      : " (local-only)";
+    const syncHint = !binding.authenticated
+      ? "connect your free Growthub account to enable sync"
+      : pendingTotal === 0
+        ? `up to date · last push ${binding.syncState.lastPushedAt ? binding.syncState.lastPushedAt.split("T")[0] : "never"}`
+        : `${binding.pendingObservations} new observations · ${binding.pendingSummaries} new summaries pending`;
+
     const action = await p.select({
-      message: "Memory & Knowledge",
+      message: `Memory & Knowledge · ${binding.observationCount} obs${titleSuffix}`,
       options: [
         {
           value: "search",
-          label: "Search memories",
+          label: "🔍 Search memories",
           hint: `${stats.observationCount} observations stored`,
         },
         {
           value: "timeline",
-          label: "View timeline",
+          label: "🕘 View timeline",
           hint: stats.newestObservation
             ? `latest: ${stats.newestObservation.split("T")[0]}`
             : "no observations yet",
         },
         {
           value: "projects",
-          label: "Browse projects",
+          label: "📂 Browse projects",
           hint: "view all projects with stored memories",
         },
         {
           value: "provider",
-          label: "Configure AI provider",
+          label: "🧠 Configure AI provider",
           hint: `current: ${providerConfig.provider}${providerConfig.modelId ? ` (${providerConfig.modelId})` : ""}`,
         },
         {
           value: "sync",
-          label: syncStatus.available
-            ? "Sync to Growthub"
-            : "Sync to Growthub" + pc.dim(" (unavailable)"),
-          hint: syncStatus.available
-            ? "push memories to hosted account"
-            : syncStatus.reason,
+          label: binding.authenticated
+            ? (pendingTotal > 0
+              ? `☁️  Sync ${pendingTotal} change${pendingTotal === 1 ? "" : "s"} to Growthub`
+              : "☁️  Sync to Growthub")
+            : "☁️  Sync to Growthub" + pc.dim(" (connect account)"),
+          hint: syncHint,
         },
+        ...(binding.authenticated ? [
+          {
+            value: "auto-sync",
+            label: binding.autoSyncEnabled ? "⚡ Auto-sync · ON" : "⚡ Auto-sync · OFF",
+            hint: binding.autoSyncEnabled
+              ? "syncs deltas to Growthub automatically on session end"
+              : "enable to keep this project in lockstep with your hosted profile",
+          },
+          {
+            value: "pull",
+            label: "⬇️  Pull from Growthub" + pc.dim(" (preview)"),
+            hint: binding.syncState.lastPullStatus === "unavailable"
+              ? "hosted pull endpoint not live yet — local-first stays in effect"
+              : "fetch hosted-side memories for this project (forward-compat)",
+          },
+        ] : []),
         { value: "__back_to_hub", label: "← Back to main menu" },
       ],
     });
 
-    if (p.isCancel(action) || action === "__back_to_hub") return "back";
+    if (p.isCancel(action) || action === "__back_to_hub") {
+      // Seamless one-identity model: when the user leaves Memory & Knowledge
+      // and auto-sync is opted in, push any pending deltas before returning
+      // to the main menu. Silent and best-effort — never blocks navigation.
+      try {
+        const auto = await autoSyncProjectIfReady(project);
+        if (auto.ran && auto.result?.status === "ok" && (auto.result.pushedObservations + auto.result.pushedSummaries) > 0) {
+          p.log.message(
+            pc.dim(`⚡ Auto-synced ${auto.result.pushedObservations} obs + ${auto.result.pushedSummaries} summaries to Growthub.`),
+          );
+        }
+      } catch {
+        // Auto-sync is best-effort — never block return-to-hub.
+      }
+      return "back";
+    }
 
     if (action === "search") {
       const query = await p.text({
@@ -1346,7 +1396,7 @@ async function runMemoryKnowledgeHub(opts?: {
     }
 
     if (action === "sync") {
-      if (!syncStatus.available) {
+      if (!binding.authenticated) {
         const connectNow = await p.confirm({
           message: `${syncStatus.reason ?? "Sync unavailable"}. Connect your free Growthub account now?`,
           initialValue: true,
@@ -1357,14 +1407,74 @@ async function runMemoryKnowledgeHub(opts?: {
       }
       const syncSpinner = p.spinner();
       syncSpinner.start("Syncing memories to Growthub...");
-      const syncResult = await syncMemoriesToHosted(project);
-      if (syncResult.success) {
+      const result = await syncProjectToProfile(project);
+      if (result.status === "ok") {
         syncSpinner.stop(
-          `Synced ${syncResult.syncedObservations} observations and ${syncResult.syncedSummaries} summaries.`,
+          `Synced ${result.pushedObservations} observations and ${result.pushedSummaries} summaries.`,
         );
+      } else if (result.status === "no-changes") {
+        syncSpinner.stop("Already up to date — no new memories to push.");
+      } else if (result.status === "unavailable") {
+        syncSpinner.stop("Sync unavailable.");
+        p.note(result.reason ?? "Hosted session missing", "Sync");
       } else {
         syncSpinner.stop("Sync failed.");
-        p.note(syncResult.error ?? "Unknown error", "Sync Error");
+        p.note(result.reason ?? "Unknown error", "Sync Error");
+      }
+      continue;
+    }
+
+    if (action === "auto-sync") {
+      const next = !binding.autoSyncEnabled;
+      setAutoSyncEnabled(project, next);
+      if (next) {
+        // Run an immediate sync so the user sees value right away.
+        const result = await syncProjectToProfile(project);
+        if (result.status === "ok") {
+          p.note(
+            [
+              "Auto-sync enabled for this project.",
+              `Initial push: ${result.pushedObservations} observations · ${result.pushedSummaries} summaries.`,
+              "",
+              "Future sessions will sync deltas automatically when you return to the main menu.",
+            ].join("\n"),
+            "⚡ Auto-sync · ON",
+          );
+        } else if (result.status === "no-changes") {
+          p.note("Auto-sync enabled. No new memories to push right now.", "⚡ Auto-sync · ON");
+        } else {
+          p.note(
+            `Auto-sync enabled, but the initial push could not complete: ${result.reason ?? "unknown"}.`,
+            "⚡ Auto-sync · ON",
+          );
+        }
+      } else {
+        p.note("Auto-sync disabled. You can still trigger a manual sync any time.", "⚡ Auto-sync · OFF");
+      }
+      continue;
+    }
+
+    if (action === "pull") {
+      const pullSpinner = p.spinner();
+      pullSpinner.start("Asking Growthub for hosted-side memories...");
+      const result = await pullProjectMemoriesIfAvailable(project);
+      if (result.status === "ok") {
+        pullSpinner.stop(
+          `Pulled ${result.pulledObservations} observations and ${result.pulledSummaries} summaries.`,
+        );
+      } else if (result.status === "unavailable") {
+        pullSpinner.stop("Hosted pull endpoint not live yet.");
+        p.note(
+          [
+            result.reason ?? "Pull endpoint unavailable.",
+            "",
+            "Local-first stays in effect. Push (Sync to Growthub) works today; pull lands in a follow-up release.",
+          ].join("\n"),
+          "⬇️  Pull from Growthub",
+        );
+      } else {
+        pullSpinner.stop("Pull failed.");
+        p.note(result.reason ?? "Unknown error", "Pull Error");
       }
       continue;
     }
@@ -2517,6 +2627,7 @@ registerIntegrationsCommands(program);
 registerStatusCommands(program);
 registerStarterCommands(program);
 registerSkillsCommands(program);
+registerMemoryCommands(program);
 registerFleetCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);

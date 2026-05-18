@@ -1,12 +1,24 @@
 /**
- * Memory Module — Growthub Account Sync
+ * Memory Module — Growthub Account Sync (LEGACY · DEPRECATED)
  *
- * Pushes memory observations and summaries to the hosted Growthub app
- * via the existing auth bridge session. Sync is best-effort: failures
- * are silently logged and do not block local memory operations.
+ * This module's `syncMemoriesToHosted` posts the entire memory payload as a
+ * single envelope to `POST /api/cli/profile?action=sync-memory`. That route
+ * is NOT part of the advertised Growthub Local knowledge tool contract — it
+ * was the bridge-probe path. It either no-ops or returns the profile envelope
+ * depending on hosted version, so it does NOT persist memory items in your
+ * grouped knowledge table.
  *
- * Sync endpoint: POST /api/cli/profile?action=sync-memory
- * Requires an active CLI auth session (auth login).
+ * The canonical 2-way sync path is in `./profile-binding.ts`, which uses the
+ * live hosted knowledge routes behind the Growthub Local tool contract:
+ *
+ *   POST /api/knowledge/upload
+ *        (push each table/observation/summary as a knowledge item)
+ *   GET  /api/knowledge-base/list
+ *        (pull/reconcile hosted knowledge items by table metadata)
+ *
+ * The discovery hub now calls `syncProjectToProfile` / `pullProjectMemoriesIfAvailable`
+ * from `./profile-binding.ts`. This file is kept as a compatibility shim so
+ * older imports continue to type-check; do NOT use it for new code.
  */
 
 import { readSession, isSessionExpired } from "../../auth/session-store.js";
