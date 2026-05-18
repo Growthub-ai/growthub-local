@@ -1,6 +1,6 @@
 {
   "name": "@growthub/create-growthub-local",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Guided installer for Growthub Local and Agent Workspace as Code: create a governed workspace with matching CLI, fork metadata, and local-first lifecycle.",
   "license": "MIT",
   "type": "module",
@@ -23,7 +23,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@growthub/cli": "0.12.1"
+    "@growthub/cli": "0.12.2"
   },
   "keywords": [
     "growthub",
