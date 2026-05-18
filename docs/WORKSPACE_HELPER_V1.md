@@ -1,6 +1,6 @@
 # Workspace Helper V1 — governed local AI inside every Growthub workspace
 
-`@growthub/cli@0.12.0` ships the **Workspace Helper** as a first-class
+`@growthub/cli@0.12.1` ships the **Workspace Helper** as a first-class
 primitive inside every workspace exported from
 `growthub-custom-workspace-starter-v1`. The helper is a multi-turn AI
 chat sidecar that turns plain-language requests into **governed
