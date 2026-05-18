@@ -25,19 +25,19 @@ jobs:
       - name: Validate branch name
         run: |
           branch="${{ github.head_ref }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex)/.+'
+          pattern='^(feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex)/.+'
           if ! echo "$branch" | grep -Eq "$pattern"; then
-            echo "❌ Branch name '$branch' must match: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex/<name>"
+            echo "❌ Branch name '$branch' must match: feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex/<name>"
             exit 1
           fi
 
       - name: Validate PR title (conventional commits)
         run: |
           title="${{ github.event.pull_request.title }}"
-          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex)(\(.+\))?: .{10,}'
+          pattern='^(feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex)(\(.+\))?: .{10,}'
           if ! echo "$title" | grep -Eq "$pattern"; then
             echo "❌ PR title must follow conventional commits: type(scope): description"
-            echo "   Allowed types: feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex"
+            echo "   Allowed types: feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|claude|cursor|codex"
             echo "   Examples: feat(server): add health endpoint"
             echo "             fix(ui): correct gtm surface routing"
             echo "             ci: add contribution pipeline"

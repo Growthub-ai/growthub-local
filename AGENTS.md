@@ -195,7 +195,7 @@ Cloud agents blocked on `Cannot find name 'process'` or `Cannot find module 'vit
 ## Contribution Guardrails
 
 - Work in a feature branch or worktree; do not work directly on `main`.
-- Branch names must follow: `fix/`, `feat/`, `chore/`, `refactor/`, `docs/`, `ci/`, `test/`, `perf/`, `adapter/`, `sync/`, `cursor/`, or `codex/`.
+- Branch names must follow: `fix/`, `feat/`, `feature/`, `chore/`, `refactor/`, `docs/`, `ci/`, `test/`, `perf/`, `adapter/`, `sync/`, `cursor/`, or `codex/`.
 - Read files before editing.
 - Replace stale guidance directly; do not stack corrective notes on top of wrong text.
 - Do not improvise raw `pnpm --dir server` + `pnpm --dir ui` as the default path — use `scripts/runtime-control.sh`.

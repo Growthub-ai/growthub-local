@@ -39,7 +39,7 @@ The OSS tree is a **partial view** of the real workspace. Feature PRs live in th
 
 Land the feature as a source-only change. Do **not** rebuild `cli/dist/index.js` here; the super-admin rebuilds in Phase B.
 
-1. **Branch naming** — must match `^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|cursor|codex)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
+1. **Branch naming** — must match `^(feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|cursor|codex)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
 2. **Implement** the change in `cli/src/**`. Add unit tests in `cli/src/__tests__/**`.
 3. **Version bump** (required by `check-version-sync --require-bump-if-source-changed` whenever `cli/src/**` changes):
    - `cli/package.json` → bump minor for additive feature, patch for fix

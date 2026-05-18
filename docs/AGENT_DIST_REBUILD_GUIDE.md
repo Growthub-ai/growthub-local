@@ -125,7 +125,7 @@ Doing any of these breaks releases or wastes review cycles:
 
 Every Phase A PR must:
 
-1. **Branch name** matches `^(feat|fix|docs|chore|ci|refactor|test|perf|adapter|sync|cursor|codex)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
+1. **Branch name** matches `^(feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|cursor|codex)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
 2. **PR title** matches the same regex with at least 10 characters of subject.
 3. **Source change** in `cli/src/**` only — never `cli/dist/**`.
 4. **Lockstep version bump** in `cli/package.json` AND `packages/create-growthub-local/package.json` AND the pin in `packages/create-growthub-local/package.json.dependencies["@growthub/cli"]`. Use semver minor for additive, patch for fix.
