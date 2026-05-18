@@ -5440,6 +5440,300 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .workspace-rail-thread-menu-item.is-destructive { color: #b91c1c; }
 .workspace-rail-thread-menu-item.is-destructive:hover { background: #fef2f2; }
 
+/* ─── Workspace rail — Custom Folders Navigation Module ────────────────
+ *
+ * Twenty CRM-style sidebar folders: drag-to-reorder, three-dot menu,
+ * collapsible folder body, dashboard/view items. Sits directly below
+ * the tab row and above the Home / Chat body — mirrors the existing
+ * thread-list visual treatment so the rail stays uniform.
+ */
+.workspace-rail-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 4px;
+}
+.workspace-rail-folders-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 0;
+}
+.workspace-rail-folders-add-btn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.workspace-rail-folders-add-btn:hover { background: #f3f4f6; color: #111827; }
+.workspace-rail-folders-add-btn:focus-visible { outline: 2px solid #bfdbfe; outline-offset: 1px; }
+
+.workspace-rail-folders-empty {
+  margin: 0;
+  padding: 4px 10px 8px;
+  font-size: 11.5px;
+  color: #9ca3af;
+  line-height: 1.4;
+}
+
+.workspace-rail-folder-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  color: #6b7280;
+}
+
+.workspace-rail-folders-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.workspace-rail-folder {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-rail-folder.is-drop-target {
+  outline: 1px dashed #9ca3af;
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+
+.workspace-rail-folder-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: background .12s ease;
+}
+.workspace-rail-folder-header:hover { background: #f5f5f5; }
+.workspace-rail-folder-header:hover .workspace-rail-thread-menu-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.workspace-rail-folder-toggle {
+  flex: 1;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 9px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  min-width: 0;
+  border-radius: 6px;
+}
+.workspace-rail-folder-icon { color: #6b7280; flex-shrink: 0; }
+.workspace-rail-folder-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #2c2c2c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.workspace-rail-folder-items {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.workspace-rail-folder-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: background .12s ease;
+}
+.workspace-rail-folder-item:hover { background: #f5f5f5; }
+.workspace-rail-folder-item:hover .workspace-rail-thread-menu-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.workspace-rail-folder-item.is-active { background: #ececec; }
+
+.workspace-rail-folder-item-main {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 9px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  min-width: 0;
+  border-radius: 6px;
+}
+.workspace-rail-folder-item-icon { color: #6b7280; flex-shrink: 0; }
+.workspace-rail-folder-item-label {
+  font-size: 12.5px;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.workspace-rail-folder-empty {
+  font-size: 11.5px;
+  color: #9ca3af;
+  padding: 4px 8px 6px;
+  line-height: 1.35;
+}
+
+/* Picker — lightweight modal-ish overlay for "Add dashboard" / "Add view" */
+.workspace-rail-folder-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  display: grid;
+  place-items: center;
+  z-index: 80;
+}
+.workspace-rail-folder-picker {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+  overflow: hidden;
+}
+.workspace-rail-folder-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  color: #111827;
+}
+.workspace-rail-folder-picker-close {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: #6b7280;
+  cursor: pointer;
+}
+.workspace-rail-folder-picker-close:hover { background: #f3f4f6; color: #111827; }
+.workspace-rail-folder-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+.workspace-rail-folder-picker-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: #2c2c2c;
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-rail-folder-picker-item:hover { background: #f5f5f5; }
+.workspace-rail-folder-picker-hint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+/* ─── Custom Folders View page — clean user-facing table renderer ──── */
+.workspace-view-surface {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 24px 24px;
+}
+.workspace-view-empty {
+  margin: 24px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+.workspace-view-error { color: #b91c1c; }
+.workspace-view-table-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  background: #fff;
+}
+.workspace-view-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: #2c2c2c;
+}
+.workspace-view-table th,
+.workspace-view-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+.workspace-view-table th {
+  font-weight: 600;
+  font-size: 12px;
+  color: #6b7280;
+  background: #fafafa;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.workspace-view-table tbody tr:hover { background: #fafafa; }
+.workspace-view-table-empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12.5px;
+}
+.workspace-view-footer {
+  margin: 10px 2px 0;
+  font-size: 11.5px;
+  color: #9ca3af;
+}
+
 /* ─── HelperSidecar — clean light textarea (fix the dark-UA fallback) ─── */
 .dm-field-textarea {
   width: 100%;

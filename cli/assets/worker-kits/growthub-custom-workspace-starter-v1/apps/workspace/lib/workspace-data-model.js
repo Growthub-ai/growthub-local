@@ -289,12 +289,19 @@ function deriveManualObjectTable(object) {
 }
 
 // Helper-owned hidden objects — system-managed, never surfaced in the
-// user-facing Data Model picker / object list / dynamic title. The
-// workspace-helper-sandbox row backs the helper's local-intelligence
-// sandbox primitive (helper-tuned instructions live there); users
-// interact with it only through the helper Setup tab.
+// user-facing Data Model picker / object list / dynamic title.
+//
+// - `workspace-helper-sandbox` backs the helper's local-intelligence
+//   sandbox primitive (helper-tuned instructions live there); users
+//   interact with it only through the helper Setup tab.
+// - `nav-folders` backs the Custom Folders Navigation module rendered
+//   in the workspace rail (between the tab toggles and the Home / Chat
+//   body). Users create, rename, drag, and add items entirely from the
+//   rail; the row-level structure is never exposed in the Data Model
+//   admin surface so the core governed business objects stay clean.
 const HIDDEN_HELPER_OBJECT_IDS = new Set([
   "workspace-helper-sandbox",
+  "nav-folders",
 ]);
 
 function listWorkspaceDataModelTables(workspaceConfig) {

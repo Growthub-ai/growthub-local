@@ -310,6 +310,115 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
       })
     ).not.toThrow();
   });
+
+  it("nav-folders governed object with mixed dashboard + view items passes", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "nav-folders",
+            label: "Custom Folders",
+            objectType: "custom",
+            columns: ["name", "order", "collapsed", "items"],
+            rows: [
+              {
+                id: "fld_sales",
+                name: "Sales Pipeline",
+                order: 0,
+                collapsed: false,
+                items: [
+                  { id: "item_dash", type: "dashboard", refId: "dash_overview", label: "Pipeline Overview" },
+                  {
+                    id: "item_view",
+                    type: "view",
+                    objectId: "prospects",
+                    label: "Active Prospects",
+                    viewConfig: {
+                      columns: ["name", "status"],
+                      filters: [{ field: "status", op: "eq", value: "active" }],
+                      sort: { field: "name", dir: "asc" },
+                    },
+                  },
+                ],
+              },
+            ],
+            binding: { mode: "manual", source: "Custom Folders" },
+          }],
+        },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. Workspace schema — nav-folders negative probes
+// ---------------------------------------------------------------------------
+
+describe("workspace-schema — nav-folders governance (invalid rows must throw)", () => {
+  let validateWorkspaceConfig: (config: unknown) => void;
+
+  beforeEach(async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}`) as { validateWorkspaceConfig: (c: unknown) => void };
+    validateWorkspaceConfig = mod.validateWorkspaceConfig;
+  });
+
+  function tryValidate(rows: unknown[]): { code?: string; details?: string[] } {
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "nav-folders",
+            label: "Custom Folders",
+            objectType: "custom",
+            columns: ["name", "order", "collapsed", "items"],
+            rows: rows as Record<string, unknown>[],
+          }],
+        },
+      });
+    } catch (e) {
+      const err = e as Error & { code?: string; details?: string[] };
+      return { code: err.code, details: err.details };
+    }
+    return {};
+  }
+
+  it("folder with empty name → name must be non-empty", () => {
+    const r = tryValidate([{ id: "fld_a", name: "", items: [] }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("name"))).toBe(true);
+  });
+
+  it("item with unknown type → must be dashboard|view", () => {
+    const r = tryValidate([{ id: "fld_a", name: "Ops", items: [{ id: "x", type: "iframe" }] }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("type"))).toBe(true);
+  });
+
+  it("dashboard item missing refId → refId required", () => {
+    const r = tryValidate([{ id: "fld_a", name: "Ops", items: [{ id: "x", type: "dashboard" }] }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("refId"))).toBe(true);
+  });
+
+  it("view item missing objectId → objectId required", () => {
+    const r = tryValidate([{ id: "fld_a", name: "Ops", items: [{ id: "x", type: "view" }] }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("objectId"))).toBe(true);
+  });
+
+  it("folder with duplicate item ids in same folder → duplicates flagged", () => {
+    const r = tryValidate([{
+      id: "fld_a",
+      name: "Ops",
+      items: [
+        { id: "same", type: "dashboard", refId: "d1" },
+        { id: "same", type: "dashboard", refId: "d2" },
+      ],
+    }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("duplicates"))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
