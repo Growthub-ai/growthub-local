@@ -42015,12 +42015,12 @@ async function runDiscoveryHub(opts) {
         },
         {
           value: "workspace-ops",
-          label: "\u{1F3D7}\uFE0F Workspace Operations",
+          label: "\u{1F3D7}  Workspace Operations",
           hint: "Status \xB7 QA \xB7 memory \xB7 deploy \xB7 sync"
         },
         {
           value: "settings",
-          label: "\u2699\uFE0F Settings",
+          label: "\u2699\uFE0F  Settings",
           hint: growthubConnected ? "Your Growthub profile, workspace agents, GitHub, Fork Sync" : "Connect free Growthub account (PLG) \xB7 profile \xB7 workspace agents"
         },
         {
