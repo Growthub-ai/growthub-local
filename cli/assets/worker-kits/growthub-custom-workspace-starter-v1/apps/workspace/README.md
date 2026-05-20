@@ -54,6 +54,10 @@ curl -s -X PATCH http://localhost:3000/api/workspace \
 
 See [`lib/adapters/integrations/resolvers/README.md`](./lib/adapters/integrations/resolvers/README.md) for the full resolver shape, all CLI commands with JSON response contracts, and the complete data model → source dropdown → refresh flow.
 
+## Optional login gate
+
+Env-var workspace login (`proxy.js` + `/login`) is documented in [`docs/workspace-login-gate.md`](./docs/workspace-login-gate.md). Off by default; set `GROWTHUB_WORKSPACE_GATE_ENABLED=1` and gate credentials to protect all routes.
+
 ## Run
 
 ```bash

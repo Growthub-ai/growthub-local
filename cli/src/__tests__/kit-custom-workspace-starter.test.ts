@@ -461,6 +461,17 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
+
+  it("env-var login gate ships (proxy.js, lib/auth.js, login route)", () => {
+    expect(appExists("proxy.js")).toBe(true);
+    expect(appExists("lib/auth.js")).toBe(true);
+    expect(appExists("app/login/page.jsx")).toBe(true);
+    expect(appExists("app/api/auth/login/route.js")).toBe(true);
+    expect(appExists("docs/workspace-login-gate.md")).toBe(true);
+    const proxy = appText("proxy.js");
+    expect(proxy).toContain("export function proxy");
+    expect(proxy).toContain("/login");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -478,6 +489,11 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/resolvers/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
+    "apps/workspace/proxy.js",
+    "apps/workspace/lib/auth.js",
+    "apps/workspace/app/login/page.jsx",
+    "apps/workspace/app/api/auth/login/route.js",
+    "apps/workspace/docs/workspace-login-gate.md",
   ];
 
   for (const p of requiredPaths) {

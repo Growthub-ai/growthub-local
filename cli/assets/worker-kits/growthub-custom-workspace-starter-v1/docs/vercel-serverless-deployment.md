@@ -33,6 +33,19 @@ AGENCY_PORTAL_INTEGRATION_ADAPTER=<static|growthub-bridge|byo-api-key>
 
 Then set the provider-specific env required by `docs/adapter-contracts.md`.
 
+### Optional env-var login gate
+
+For client portals or internal ops consoles without wiring OIDC yet, enable the additive gate documented in `apps/workspace/docs/workspace-login-gate.md`:
+
+```text
+GROWTHUB_WORKSPACE_GATE_ENABLED=1
+GROWTHUB_WORKSPACE_GATE_USERNAME=<username>
+GROWTHUB_WORKSPACE_GATE_PASSWORD_HASH=<sha256-hex>
+GROWTHUB_WORKSPACE_GATE_SECRET=<random-secret>
+```
+
+Use `GROWTHUB_WORKSPACE_GATE_PASSWORD` only for local `.env.local`; prefer `GROWTHUB_WORKSPACE_GATE_PASSWORD_HASH` on Vercel.
+
 For hosted Growthub authority, set:
 
 ```text
