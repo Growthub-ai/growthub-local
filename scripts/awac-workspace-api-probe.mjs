@@ -86,9 +86,18 @@ function materializeWorkspace(outDir) {
   return meta;
 }
 
-function npmInstall(cwd) {
-  const r = spawnSync("npm", ["install", "--no-audit", "--no-fund"], { cwd, stdio: "inherit", env: process.env });
-  assert(r.status === 0, "npm install in workspace app failed");
+function installWorkspaceDeps(cwd) {
+  const pnpm = spawnSync("pnpm", ["install"], { cwd, stdio: "inherit", env: process.env });
+  if (pnpm.status === 0) return;
+  const npm = spawnSync("npm", ["install", "--no-audit", "--no-fund"], { cwd, stdio: "inherit", env: process.env });
+  assert(npm.status === 0, "workspace app install failed (pnpm and npm)");
+}
+
+function buildWorkspaceApp(cwd) {
+  const pnpm = spawnSync("pnpm", ["next", "build"], { cwd, stdio: "inherit", env: process.env });
+  if (pnpm.status === 0) return;
+  const npm = spawnSync("npm", ["run", "build"], { cwd, stdio: "inherit", env: process.env });
+  assert(npm.status === 0, "workspace app build failed (pnpm and npm)");
 }
 
 function buildSeedDataModel() {
@@ -206,6 +215,71 @@ function buildSeedDataModel() {
   };
 }
 
+async function runAuthGateProbes(appDir) {
+  console.log("[probe] next build (auth gate production lane)");
+  buildWorkspaceApp(appDir);
+
+  const gatePort = await pickPort();
+  const gateBase = `http://127.0.0.1:${gatePort}`;
+  const gateEnv = {
+    ...process.env,
+    PORT: String(gatePort),
+    HOSTNAME: "127.0.0.1",
+    NODE_ENV: "production",
+    WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true",
+    GROWTHUB_WORKSPACE_AUTH_GATE: "enabled",
+    GROWTHUB_WORKSPACE_GATE_USERNAME: "probe",
+    GROWTHUB_WORKSPACE_GATE_PASSWORD: "probe-secret",
+    GROWTHUB_WORKSPACE_GATE_SECRET: "awac-probe-gate-secret-32chars-min",
+  };
+  console.log(`[probe] starting next start (auth gate) on ${gateBase}`);
+  const gateChild = spawn("npx", ["next", "start", "-p", String(gatePort), "-H", "127.0.0.1"], {
+    cwd: appDir,
+    env: gateEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: false,
+  });
+  try {
+    await waitForHttp(`${gateBase}/login`, { tries: 100, delayMs: 400 });
+
+    let gateRes = await fetch(`${gateBase}/`, { redirect: "manual" });
+    assert(gateRes.status === 307 || gateRes.status === 302, `auth gate / redirect expected, got ${gateRes.status}`);
+    assert((gateRes.headers.get("location") || "").includes("/login"), "auth gate redirect must target /login");
+
+    gateRes = await fetch(`${gateBase}/api/workspace`);
+    assert(gateRes.status === 401, `auth gate unauthenticated API expected 401, got ${gateRes.status}`);
+
+    gateRes = await fetch(`${gateBase}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "probe", password: "wrong" }),
+    });
+    assert(gateRes.status === 401, `auth gate bad password expected 401, got ${gateRes.status}`);
+
+    gateRes = await fetch(`${gateBase}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "probe", password: "probe-secret" }),
+    });
+    assert(gateRes.ok, `auth gate login failed ${gateRes.status}`);
+    const sessionCookie = (gateRes.headers.get("set-cookie") || "").split(";")[0];
+    assert(sessionCookie.includes("gh_ws_session"), "auth gate must set gh_ws_session cookie");
+
+    gateRes = await fetch(`${gateBase}/api/workspace`, { headers: { cookie: sessionCookie } });
+    assert(gateRes.ok, `auth gate authenticated API expected 200, got ${gateRes.status}`);
+
+    console.log("[probe] auth gate probes passed");
+  } finally {
+    gateChild.kill("SIGTERM");
+    await sleep(500);
+    try {
+      gateChild.kill("SIGKILL");
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function main() {
   const tmpBase = await fs.promises.mkdtemp(path.join(os.tmpdir(), "growthub-awac-probe-"));
   const forkRoot = tmpBase;
@@ -213,8 +287,11 @@ async function main() {
   materializeWorkspace(forkRoot);
   const appDir = path.join(forkRoot, "apps", "workspace");
   assert(fs.existsSync(appDir), `missing ${appDir}`);
-  console.log(`[probe] npm install in ${appDir}`);
-  npmInstall(appDir);
+  console.log(`[probe] install deps in ${appDir}`);
+  installWorkspaceDeps(appDir);
+
+  await runAuthGateProbes(appDir);
+  await fs.promises.rm(path.join(appDir, ".next"), { recursive: true, force: true }).catch(() => {});
 
   const port = await pickPort();
   const base = `http://127.0.0.1:${port}`;
