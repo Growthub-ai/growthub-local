@@ -9,15 +9,11 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { materializeKitExport } from "./materialize-kit-export.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const kitWorkspace = path.join(
-  repoRoot,
-  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace",
-);
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -101,14 +97,12 @@ async function testOrchestrationLib(appDir) {
 }
 
 async function main() {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "growthub-orch-probe-"));
-  console.log(`[orch-probe] copy kit workspace → ${tmp}`);
-  fs.cpSync(kitWorkspace, tmp, {
-    recursive: true,
-    filter: (src) => !src.split(path.sep).includes("node_modules"),
-  });
+  const { exportRoot, appDir, kitDir, method } = materializeKitExport();
+  const tmp = appDir;
+  console.log(`[orch-probe] kit export (${method}) → ${kitDir}`);
+  console.log(`[orch-probe] workspace app → ${tmp}`);
 
-  console.log("[orch-probe] npm install");
+  console.log("[orch-probe] npm install (export tree only)");
   const ni = spawnSync("npm", ["install", "--no-fund", "--no-audit"], { cwd: tmp, stdio: "inherit" });
   assert(ni.status === 0, "npm install failed");
 
@@ -195,7 +189,11 @@ async function main() {
     } catch {
       /* ignore */
     }
-    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => {});
+    if (process.env.ORCH_PROBE_KEEP_EXPORT !== "1") {
+      await fs.promises.rm(exportRoot, { recursive: true, force: true }).catch(() => {});
+    } else {
+      console.log(`[orch-probe] kept export at ${exportRoot} (ORCH_PROBE_KEEP_EXPORT=1)`);
+    }
   }
 }
 

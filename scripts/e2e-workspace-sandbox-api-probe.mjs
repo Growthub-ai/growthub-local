@@ -28,12 +28,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { materializeKitExport } from "./materialize-kit-export.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const kitWorkspace = path.join(
-  root,
-  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace",
-);
 
 const sandboxColumns = [
   "Name",
@@ -180,18 +177,11 @@ async function main() {
     );
   }
 
-  const profileRoot = process.env.CLI_DEMO_HOME?.trim()
-    ? path.resolve(process.env.CLI_DEMO_HOME.trim())
-    : path.join(os.tmpdir(), "growthub-cli-demo");
-  const demoHome = path.join(profileRoot, "e2e-workspace-sandbox");
-  fs.mkdirSync(demoHome, { recursive: true });
-  const tmp = fs.mkdtempSync(path.join(demoHome, "ws-copy-"));
-
-  process.stdout.write(`[e2e] Copying starter workspace → ${tmp}\n`);
-  fs.cpSync(kitWorkspace, tmp, {
-    recursive: true,
-    filter: (src) => !src.split(path.sep).includes("node_modules"),
-  });
+  const { appDir: tmp, kitDir, method } = materializeKitExport(
+    process.env.KIT_EXPORT_ROOT?.trim() || path.join(os.tmpdir(), "growthub-e2e-export"),
+  );
+  process.stdout.write(`[e2e] Kit export (${method}) → ${kitDir}\n`);
+  process.stdout.write(`[e2e] Workspace app → ${tmp}\n`);
 
   const cfgPath = path.join(tmp, "growthub.config.json");
   const baseCfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
