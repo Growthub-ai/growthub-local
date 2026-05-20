@@ -33,6 +33,8 @@ AGENCY_PORTAL_INTEGRATION_ADAPTER=<static|growthub-bridge|byo-api-key>
 
 Then set the provider-specific env required by `docs/adapter-contracts.md`.
 
+For an optional workspace login gate (no changes to `growthub.config.json`), see `apps/workspace/docs/workspace-auth-gate.md` and set `GROWTHUB_WORKSPACE_AUTH_GATE=enabled` with gate credentials in the Vercel project env.
+
 For hosted Growthub authority, set:
 
 ```text

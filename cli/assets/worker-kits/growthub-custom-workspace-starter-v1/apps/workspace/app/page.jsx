@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import workspaceConfig from "../growthub.config.json";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
@@ -11,13 +12,15 @@ async function Home() {
   const integrations = await listGovernedWorkspaceIntegrations();
   const persistence = describePersistenceMode();
   return (
-    <WorkspaceBuilder
-      initialConfig={workspaceConfig}
-      adapterConfig={adapterConfig}
-      integrationAdapter={integrationAdapter}
-      integrationSettings={{ integrations: groupIntegrationsByLane(integrations) }}
-      persistence={persistence}
-    />
+    <Suspense fallback={<main className="shell"><p style={{ padding: 24 }}>Loading workspace…</p></main>}>
+      <WorkspaceBuilder
+        initialConfig={workspaceConfig}
+        adapterConfig={adapterConfig}
+        integrationAdapter={integrationAdapter}
+        integrationSettings={{ integrations: groupIntegrationsByLane(integrations) }}
+        persistence={persistence}
+      />
+    </Suspense>
   );
 }
 

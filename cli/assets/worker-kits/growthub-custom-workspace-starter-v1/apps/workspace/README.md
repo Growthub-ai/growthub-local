@@ -62,6 +62,10 @@ npm run dev
 npm run build
 ```
 
+## Optional auth gate
+
+For client portals and internal ops consoles, enable the env-var login gate documented in [`docs/workspace-auth-gate.md`](./docs/workspace-auth-gate.md). When disabled (default), `proxy.js` is a no-op and all workspace routes remain open.
+
 ## Deploy
 
 Use this directory as the Vercel project root.
