@@ -203,16 +203,19 @@ async function main() {
   assert(ni.status === 0, "npm install failed");
 
   process.stdout.write(`[e2e] starting next dev on :${port}…\n`);
+  const devEnv = {
+    ...process.env,
+    NODE_ENV: "development",
+    WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true",
+    PORT: String(port),
+  };
+  delete devEnv.OPENAI_API_KEY;
+  delete devEnv.OPENAI;
   const dev = spawn("npx", ["next", "dev", "-p", String(port)], {
     cwd: tmp,
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
-    env: {
-      ...process.env,
-      NODE_ENV: "development",
-      WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true",
-      PORT: String(port),
-    },
+    env: devEnv,
   });
   dev.stdout?.on("data", () => {});
   dev.stderr?.on("data", (c) => process.stderr.write(c));
@@ -280,6 +283,75 @@ async function main() {
       `GET row.adapter expected local-intelligence, got ${probeRow.adapter}`,
     );
     assert(String(probeRow.localModel || "").includes("gemma"), "GET row.localModel must echo PATCH");
+
+    // --- Positive: PATCH openai-responses intelligenceAdapterMode (helper setup row) ---
+    const openaiModePatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [
+            sandboxObject([
+              emptyRow({
+                Name: "helper-openai-row",
+                adapter: "local-intelligence",
+                localModel: "gpt-5.2",
+                localEndpoint: "https://api.openai.com/v1/responses",
+                intelligenceAdapterMode: "openai-responses",
+                authRef: "OPENAI",
+              }),
+            ]),
+          ],
+        },
+      }),
+    });
+    assert(
+      openaiModePatch.status === 200,
+      `expected 200 for openai-responses PATCH, got ${openaiModePatch.status} ${await openaiModePatch.text()}`,
+    );
+
+    // --- Helper query: openai-responses without server API key (no secret leakage) ---
+    const helperNoKey = await fetch(`${base}/api/workspace/helper/query`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: "explain",
+        userPrompt: "Explain this workspace in one sentence.",
+        adapterMode: "openai-responses",
+        model: "gpt-5.2",
+        localEndpoint: "",
+      }),
+    });
+    const helperNoKeyJson = await helperNoKey.json();
+    const helperNoKeyRaw = JSON.stringify(helperNoKeyJson);
+    assert(helperNoKeyJson.ok === false, "helper/query must return ok:false without OPENAI_API_KEY");
+    assert(
+      String(helperNoKeyJson.error || "").toLowerCase().includes("openai api key"),
+      `expected setup error mentioning API key, got: ${helperNoKeyJson.error}`,
+    );
+    assert(!helperNoKeyRaw.includes("sk-"), "helper error must not leak API key material");
+    assert(
+      helperNoKeyJson.receipts?.adapterMode === "openai-responses",
+      `receipts.adapterMode expected openai-responses, got ${helperNoKeyJson.receipts?.adapterMode}`,
+    );
+    assert(!helperNoKeyRaw.includes("OPENAI_API_KEY="), "response must not echo env var assignment");
+
+    // --- Helper query: invalid intent rejected before adapter ---
+    const helperBadIntent = await fetch(`${base}/api/workspace/helper/query`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: "not-a-valid-intent",
+        userPrompt: "test",
+        adapterMode: "openai-responses",
+      }),
+    });
+    const helperBadIntentJson = await helperBadIntent.json();
+    assert(helperBadIntentJson.ok === false, "invalid intent must return ok:false");
+    assert(
+      String(helperBadIntentJson.error || "").includes("intent must be one of"),
+      `invalid intent error must list allowed intents, got: ${helperBadIntentJson.error}`,
+    );
 
     // --- Negative: POST sandbox-run for unknown row name (customer-safe 404) ---
     const missingRow = await fetch(`${base}/api/workspace/sandbox-run`, {
