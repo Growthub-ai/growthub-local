@@ -197,21 +197,36 @@ The helper is reachable from every governed builder surface a no-code user can l
 - **Keyboard apply** — `Cmd/Ctrl+Enter` inside the prompt asks the helper; `Cmd/Ctrl+Enter` outside the prompt applies accepted proposals. The textarea handler stops propagation so submit and apply never collide on the same keystroke.
 - **Drag handle** — left edge of the sidecar, `ew-resize` cursor, clamped to `[320px, 80vw]`. While dragging, text selection is suppressed and width is held in memory (no localStorage).
 - **Proposal review** — each row shows the proposal type, target PATCH field, a short payload summary chip (no raw JSON), a rationale, and a confidence percent when the model provided one. Skipped proposals render their reason inline.
-- **Setup tab** — local model, inference endpoint, deployment mode (`local` / `hosted`), connection status (green = reachable, amber = unreachable / unconfigured), and a copyable `growthub workspace setup --open` command. Ping runs only when the Setup tab opens.
+- **Setup tab** — local model or **Use OpenAI Responses** one-click card, inference endpoint (local modes), deployment mode (`local` / `hosted`), connection status, and a copyable `growthub workspace setup --open` command. Local endpoint ping runs only for non–OpenAI Responses modes.
 
 ## Adapter contract
 
 The query route dispatches through the `local-intelligence` sandbox adapter:
 
 - Adapter: `local-intelligence` (registered in `sandbox-adapter-registry.js`)
-- Locality: `local`
-- Model: resolved from `--model` flag → `NATIVE_INTELLIGENCE_LOCAL_MODEL` env → `OLLAMA_MODEL` env → `"gemma3:4b"`
-- Mode: `ollama` (default) | `lmstudio` | `vllm` | `custom-openai-compatible`
+- Locality: `local` for Ollama/LM Studio/vLLM; `server` for OpenAI Responses
+- Model: resolved from `--model` flag → `NATIVE_INTELLIGENCE_LOCAL_MODEL` env → `OLLAMA_MODEL` env → `"gemma3:4b"` (local); `gpt-5.2` default for OpenAI Responses
+- Mode: `ollama` (default) | `lmstudio` | `vllm` | `custom-openai-compatible` | `openai-responses`
 - Output: `growthub-local-model-sandbox-v1` envelope with `result.json.proposals[]`
 
 The `local-agent-host` adapter is NOT used by the helper. These two adapters remain separate:
 - `local-intelligence` — advisory, JSON-only, propose-mode reasoning
 - `local-agent-host` — execution authority, spawns agent CLIs on PATH
+
+## OpenAI Responses helper mode
+
+The helper can run in either local OpenAI-compatible mode or **OpenAI Responses** mode.
+
+OpenAI Responses mode:
+
+- uses `adapterMode: "openai-responses"` on `POST /api/workspace/helper/query` and on the hidden `workspace-helper-sandbox` row (`intelligenceAdapterMode`)
+- reads `OPENAI_API_KEY` or `OPENAI` **server-side only** in `default-local-intelligence.js`
+- never sends credentials to the browser, helper-threads rows, or source records
+- calls `POST https://api.openai.com/v1/responses` with the same multi-turn `messages` / `input` array the chat-completions path uses
+- returns the same `WorkspaceHelperResponse` proposal envelope and persists the same `helper-threads` rows
+- applies through the same governed `POST /api/workspace/helper/apply` route
+
+Setup: the helper sidecar **Setup** tab exposes a one-click **Use OpenAI Responses** card plus OpenAI model quick-picks (`gpt-5.2`, `gpt-5.1`, `gpt-5-mini`, `gpt-5-nano`). Local Gemma/Llama quick-picks remain separate.
 
 ## Fine-tune loop integration
 

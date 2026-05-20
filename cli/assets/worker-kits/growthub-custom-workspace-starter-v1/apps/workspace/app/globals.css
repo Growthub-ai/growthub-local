@@ -4934,6 +4934,36 @@ body.workspace-rail-collapsed .workspace-builder.workspace-settings-page {
 .dm-helper-setup-status.state-unreachable { background: #fffbeb; border-color: #fde68a; }
 .dm-helper-setup-status.state-unconfigured { background: #f5f3ff; border-color: #ddd6fe; }
 .dm-helper-setup-status.state-checking { background: #f9fafb; border-color: #e5e7eb; }
+.dm-helper-setup-status.state-openai-responses { background: #eff6ff; border-color: #bfdbfe; }
+
+.dm-helper-setup-openai-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #93c5fd;
+  border-radius: 10px;
+  background: #eff6ff;
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s ease, border-color .12s ease;
+}
+.dm-helper-setup-openai-card:hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+.dm-helper-setup-openai-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e3a8a;
+}
+.dm-helper-setup-openai-meta {
+  font-size: 12px;
+  color: #1d4ed8;
+  line-height: 1.45;
+}
 
 .dm-helper-setup-status-row {
   display: flex;
