@@ -26,6 +26,7 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
     statusAllowlist: TRUSTED_STATUSES
   },
   envRefs: { editor: "env-ref-multiselect" },
+  orchestrationGraph: { editor: "orchestration-canvas", readonly: false },
   lastResponse: { editor: "json-preview", readonly: true },
   lastRunId: { editor: "readonly-text" },
   lastSourceId: { editor: "readonly-text" },

@@ -69,6 +69,15 @@ import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
+import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
+import { ApiRegistryReviewModal } from "./ApiRegistryReviewModal.jsx";
+import { OrchestrationGraphCanvas } from "./OrchestrationGraphCanvas.jsx";
+import {
+  ensureSandboxObjectColumns,
+  findSandboxRowsForRegistry,
+  isApiRegistryRowTested,
+  parseOrchestrationGraph
+} from "@/lib/orchestration-graph";
 import {
   FIELD_TYPE_ICON_NAMES,
   ICON_PICKER_SET,
@@ -793,6 +802,12 @@ function SandboxRecordFields({
         </label>
       </DrawerSection>
 
+      {parseOrchestrationGraph(draft.orchestrationGraph) && (
+        <DrawerSection title="Orchestration plan">
+          <OrchestrationGraphCanvas graph={parseOrchestrationGraph(draft.orchestrationGraph)} />
+        </DrawerSection>
+      )}
+
       <DrawerSection title="Prompt & Limits">
         <label className="dm-record-field">
           <span>Instructions</span>
@@ -885,7 +900,7 @@ function SandboxRecordFields({
   );
 }
 
-function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, saving, onClose, onSave }) {
+function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, saving, onClose, onSave, onSandboxToolCreated }) {
   const [draft, setDraft] = useState(row || {});
   const [editMode, setEditMode] = useState(false);
   const [pendingColumns, setPendingColumns] = useState(table.columns || []);
@@ -898,6 +913,9 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   const [sandboxHistoryMessage, setSandboxHistoryMessage] = useState("");
   const [loadingSandboxHistory, setLoadingSandboxHistory] = useState(false);
   const [expandedJson, setExpandedJson] = useState(null);
+  const [sandboxToolModalOpen, setSandboxToolModalOpen] = useState(false);
+  const [creatingSandboxTool, setCreatingSandboxTool] = useState(false);
+  const [sandboxToolCreatedName, setSandboxToolCreatedName] = useState("");
 
   useEffect(() => {
     setDraft(row || {});
@@ -909,11 +927,20 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
     setSandboxHistory([]);
     setSandboxHistoryMessage("");
     setExpandedJson(null);
+    setSandboxToolModalOpen(false);
+    setSandboxToolCreatedName("");
   }, [row, rowIndex]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
   const isSandbox = table.objectType === "sandbox-environment";
+  const isApiRegistry = table.objectType === "api-registry";
+  const apiRegistryTested = isApiRegistry && isApiRegistryRowTested(draft);
+  const linkedSandboxTools = useMemo(() => {
+    if (!isApiRegistry) return [];
+    return findSandboxRowsForRegistry(workspaceConfig || {}, draft?.integrationId);
+  }, [workspaceConfig, draft?.integrationId, isApiRegistry]);
+  const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
   const isDirty = JSON.stringify(draft || {}) !== JSON.stringify(row || {}) || JSON.stringify(pendingColumns) !== JSON.stringify(table.columns || []) || JSON.stringify(pendingHidden) !== JSON.stringify(table.fieldSettings?.hidden || []);
 
   function updateField(column, value) {
@@ -968,6 +995,35 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
       return next;
     });
     setEditMode(false);
+  }
+
+  function createSandboxToolFromRegistry(newRow) {
+    setCreatingSandboxTool(true);
+    onSave((config) => {
+      let next = config;
+      let sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
+      if (!sandboxTable) {
+        next = createTypedBusinessObject(next, { name: "Sandbox Environments", objectType: "sandbox-environment" });
+        sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
+      }
+      if (!sandboxTable) return next;
+      const objects = (next.dataModel?.objects || []).map((object) =>
+        object.id === sandboxTable.objectId ? ensureSandboxObjectColumns(object) : object
+      );
+      next = { ...next, dataModel: { ...(next.dataModel || {}), objects } };
+      sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectId === sandboxTable.objectId) || sandboxTable;
+      const rowCountBefore = sandboxTable.rows?.length || 0;
+      next = appendRowsToTable(next, sandboxTable, [newRow]);
+      const updatedSandbox = listWorkspaceDataModelTables(next).find((t) => t.objectId === sandboxTable.objectId);
+      const newRowIndex = (updatedSandbox?.rows?.length || rowCountBefore + 1) - 1;
+      if (updatedSandbox && onSandboxToolCreated) {
+        onSandboxToolCreated(updatedSandbox, newRowIndex);
+      }
+      return next;
+    });
+    setSandboxToolModalOpen(false);
+    setSandboxToolCreatedName(String(newRow?.Name || "").trim());
+    setCreatingSandboxTool(false);
   }
 
   async function testApiRecord() {
@@ -1107,6 +1163,20 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             onTest={testApiRecord}
           />
         )}
+        {apiRegistryTested && (
+          <ApiRegistryActionCard
+            existingToolCount={linkedSandboxTools.length}
+            onCreateSandboxTool={() => setSandboxToolModalOpen(true)}
+          />
+        )}
+        {sandboxToolCreatedName && isApiRegistry && (
+          <div className="dm-api-action-card dm-api-action-card-success">
+            <p className="dm-api-action-card-eyebrow">Sandbox tool created</p>
+            <p>
+              <strong>{sandboxToolCreatedName}</strong> is ready. Open the Sandbox Environment table to run a test.
+            </p>
+          </div>
+        )}
         {isSandbox && (
           <SandboxRunPanel
             status={draft.status}
@@ -1189,6 +1259,16 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
           </footer>
         )}
       </aside>
+      {isApiRegistry && (
+        <ApiRegistryReviewModal
+          open={sandboxToolModalOpen}
+          registryRow={draft}
+          savedEnvRefs={savedEnvRefs}
+          onClose={() => setSandboxToolModalOpen(false)}
+          onConfirmCreate={createSandboxToolFromRegistry}
+          saving={creatingSandboxTool || saving}
+        />
+      )}
       {expandedJson !== null && (
         <div className="dm-json-modal-backdrop" onClick={() => setExpandedJson(null)}>
           <section className="dm-json-modal" role="dialog" aria-modal="true" aria-label="lastResponse JSON" onClick={(event) => event.stopPropagation()}>
@@ -1209,8 +1289,12 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   );
 }
 
-function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave, onOpenThread }) {
+function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave, onOpenThread, onSandboxToolCreated, openRowIndex }) {
   const [selectedRow, setSelectedRow] = useState(null);
+  useEffect(() => {
+    if (openRowIndex === null || openRowIndex === undefined) return;
+    setSelectedRow(openRowIndex);
+  }, [openRowIndex, table.source]);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState("text");
   const [addingField, setAddingField] = useState(false);
@@ -1713,6 +1797,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
         saving={saving}
         onClose={() => setSelectedRow(null)}
         onSave={onSave}
+        onSandboxToolCreated={onSandboxToolCreated}
       />
     </div>
   );
@@ -1991,6 +2076,7 @@ export default function DataModelShell() {
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [pendingDrawerNav, setPendingDrawerNav] = useState(null);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
 
@@ -2100,6 +2186,12 @@ export default function DataModelShell() {
       setSelectedSource(target.source);
     }
   }, [searchParams, selectedSource, tables]);
+
+  useEffect(() => {
+    if (!pendingDrawerNav || pendingDrawerNav.source !== selectedSource) return;
+    const timer = setTimeout(() => setPendingDrawerNav(null), 200);
+    return () => clearTimeout(timer);
+  }, [pendingDrawerNav, selectedSource]);
 
   // Flush any accumulated patch keys to the server. Called by the debounce
   // timer and on visibilitychange/beforeunload so no local edit is lost.
@@ -2416,7 +2508,19 @@ export default function DataModelShell() {
           selectedTable && (
             <section className="dm-detail-v2 dm-detail-v3">
               <SourceValidationBanner table={selectedTable} />
-              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} onOpenThread={openHelperThreadFromRow} />
+              <DataModelTableSurface
+                workspaceConfig={workspaceConfig}
+                table={selectedTable}
+                tables={tables}
+                saving={saving}
+                onSave={save}
+                onOpenThread={openHelperThreadFromRow}
+                openRowIndex={pendingDrawerNav?.source === selectedTable.source ? pendingDrawerNav.rowIndex : null}
+                onSandboxToolCreated={(sandboxTable, rowIndex) => {
+                  setSelectedSource(sandboxTable.source);
+                  setPendingDrawerNav({ source: sandboxTable.source, rowIndex });
+                }}
+              />
             </section>
           )
         )}

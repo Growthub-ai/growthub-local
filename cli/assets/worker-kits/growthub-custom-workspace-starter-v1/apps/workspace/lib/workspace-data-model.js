@@ -726,6 +726,8 @@ const OBJECT_TYPE_PRESETS = {
       "instructions",
       "command",
       "timeoutMs",
+      "authRef",
+      "orchestrationGraph",
       "status",
       "lastTested",
       "lastRunId",

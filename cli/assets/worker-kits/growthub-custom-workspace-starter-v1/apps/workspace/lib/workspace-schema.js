@@ -981,6 +981,12 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (row.command !== undefined && typeof row.command !== "string") {
     errors.push(`${path}.command must be a string`);
   }
+  if (row.authRef !== undefined && row.authRef !== "" && typeof row.authRef !== "string") {
+    errors.push(`${path}.authRef must be a string reference slug (never a secret value)`);
+  }
+  if (row.orchestrationGraph !== undefined && row.orchestrationGraph !== "" && typeof row.orchestrationGraph !== "string") {
+    errors.push(`${path}.orchestrationGraph must be a JSON string when present`);
+  }
   if (row.lastRunId !== undefined && typeof row.lastRunId !== "string") {
     errors.push(`${path}.lastRunId must be a string`);
   }
