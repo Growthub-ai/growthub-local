@@ -3,7 +3,7 @@
  * V1: stored on the row; interpreted by sandbox-run for API-registry delegation.
  */
 
-import { createTypedBusinessObject } from "@/lib/workspace-data-model";
+import { createTypedBusinessObject } from "./workspace-data-model.js";
 
 const TRUSTED_REGISTRY_STATUSES = ["connected", "approved", "ok", "success"];
 

@@ -97,9 +97,9 @@ function buildSeedDataModel() {
     "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane"
   ];
   const sandboxColumns = [
-    "Name", "lifecycleStatus", "version", "runLocality", "schedulerRegistryId", "runtime", "adapter", "agentHost",
-    "envRefs", "networkAllow", "allowList", "instructions", "command", "timeoutMs", "status", "lastTested",
-    "lastRunId", "lastSourceId", "lastResponse", "resolverTemplateId", "connectorKind", "executionLane"
+    "Name", "slug", "description", "lifecycleStatus", "version", "runLocality", "schedulerRegistryId", "runtime", "adapter", "agentHost",
+    "authRef", "envRefs", "networkAllow", "allowList", "instructions", "command", "timeoutMs", "status", "lastTested",
+    "lastRunId", "lastSourceId", "lastResponse", "orchestrationGraph", "resolverTemplateId", "connectorKind", "executionLane"
   ];
   const schedulerRelation = {
     id: "scheduler-registry-binding",

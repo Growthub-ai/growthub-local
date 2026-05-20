@@ -58,6 +58,10 @@ const sandboxColumns = [
   "lastRunId",
   "lastSourceId",
   "lastResponse",
+  "orchestrationGraph",
+  "authRef",
+  "slug",
+  "description",
 ];
 
 const sandboxRelations = [
