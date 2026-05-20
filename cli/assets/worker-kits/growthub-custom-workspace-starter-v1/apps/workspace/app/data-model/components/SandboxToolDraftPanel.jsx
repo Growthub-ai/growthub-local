@@ -94,7 +94,7 @@ export function SandboxToolDraftPanel({
 
   return (
     <section className="dm-sandbox-tool-draft" aria-label="Sandbox tool draft">
-      <ApiRegistryReviewModal registryRow={registryRow} onClose={onCancel} />
+      <ApiRegistryReviewModal registryRow={registryRow} />
 
       <div className="dm-sandbox-tool-draft-grid">
         <div className="dm-sandbox-tool-draft-canvas-col">

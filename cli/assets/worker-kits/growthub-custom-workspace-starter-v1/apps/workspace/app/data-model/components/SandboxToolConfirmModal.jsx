@@ -38,11 +38,12 @@ export function SandboxToolConfirmModal({
           <p>This will create one Sandbox Environment row in your Data Model.</p>
           <ul className="dm-orch-modal-list">
             <li>
-              <strong>{toolName}</strong> — governed sandbox tool
+              <strong>{toolName}</strong> — one governed sandbox-environment row
             </li>
-            <li>References <code>{authRef || "authRef"}</code> only — no secrets stored</li>
-            <li>Will not create a widget or mutate dashboards</li>
-            <li>Will not call the provider until you run an explicit sandbox test</li>
+            <li>Stores <code>{authRef || "authRef"}</code> and env refs by name only — no secrets</li>
+            <li>Will not create a widget</li>
+            <li>Will not change dashboards or canvas</li>
+            <li>Will not execute until you click Run sandbox on the tool row</li>
           </ul>
           <p className="dm-orch-modal-summary">
             <span>Run plan</span>

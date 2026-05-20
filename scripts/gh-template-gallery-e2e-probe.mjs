@@ -257,12 +257,26 @@ async function probeOrchestrationGraph(base) {
     ],
   };
 
+  const beforeCfg = await (await fetch(`${base}/api/workspace`)).json();
+  const widgetCountBefore = beforeCfg.workspaceConfig?.canvas?.widgets?.length ?? 0;
+  const dashCountBefore = beforeCfg.workspaceConfig?.dashboards?.length ?? 0;
+
   let res = await fetch(`${base}/api/workspace`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ dataModel }),
   });
   assert(res.ok, `orchestration seed PATCH failed ${res.status}`);
+
+  const afterCfg = await (await fetch(`${base}/api/workspace`)).json();
+  assert(
+    (afterCfg.workspaceConfig?.canvas?.widgets?.length ?? 0) === widgetCountBefore,
+    "sandbox tool seed must not mutate canvas widgets"
+  );
+  assert(
+    (afterCfg.workspaceConfig?.dashboards?.length ?? 0) === dashCountBefore,
+    "sandbox tool seed must not mutate dashboards"
+  );
 
   res = await fetch(`${base}/api/workspace/sandbox-run`, {
     method: "POST",

@@ -6,7 +6,7 @@ import { CheckCircle2, X } from "lucide-react";
  * Read-only summary of a successfully tested API Registry row.
  * Shown at the top of the sandbox-tool draft flow (not a blocking modal).
  */
-export function ApiRegistryReviewModal({ registryRow, onClose }) {
+export function ApiRegistryReviewModal({ registryRow, onClose = null }) {
   if (!registryRow) return null;
   const integrationId = String(registryRow.integrationId || "").trim();
   const endpoint = String(registryRow.endpoint || "").trim();

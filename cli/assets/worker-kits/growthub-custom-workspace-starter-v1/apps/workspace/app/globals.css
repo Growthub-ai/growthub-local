@@ -4380,6 +4380,21 @@ body.workspace-rail-collapsed .workspace-builder.workspace-settings-page {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 .dm-api-action-card-success { grid-template-columns: 1fr auto; }
+.dm-api-action-card-muted { grid-template-columns: 1fr; background: #fafafa; }
+.dm-api-action-card-muted .dm-api-action-card-body h3 { display: none; }
+.dm-api-action-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+.dm-api-action-card-actions .dm-api-action-card-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
 .dm-api-action-card-icon { color: #111827; margin-top: 2px; }
 .dm-api-action-card-body { display: grid; gap: 4px; min-width: 0; }
 .dm-api-action-card-eyebrow { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }

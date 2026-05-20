@@ -889,7 +889,17 @@ function SandboxRecordFields({
   );
 }
 
-function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, saving, onClose, onSave }) {
+function DataModelRecordDrawer({
+  table,
+  tables,
+  workspaceConfig,
+  rowIndex,
+  row,
+  saving,
+  onClose,
+  onSave,
+  onFocusSandboxRow,
+}) {
   const [draft, setDraft] = useState(row || {});
   const [editMode, setEditMode] = useState(false);
   const [pendingColumns, setPendingColumns] = useState(table.columns || []);
@@ -1070,6 +1080,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
           authRef: newRow.authRef || sandboxToolDraft.authRef
         });
         setSandboxToolFlow("created");
+        onFocusSandboxRow?.({ rowName: newRow.Name, deferOpen: true });
         return next;
       });
     } finally {
@@ -1077,31 +1088,73 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
     }
   }
 
-  async function runCreatedSandboxTest() {
-    if (!createdSandboxMeta?.objectId || !createdSandboxMeta?.name) return;
+  async function runSandboxToolByName({ objectId, name }) {
+    const rowName = String(name || "").trim();
+    const objectIdValue = String(objectId || "").trim();
+    if (!rowName || !objectIdValue) return;
     setCreatedSandboxTesting(true);
     setCreatedSandboxTestMessage("");
     try {
       const res = await fetch("/api/workspace/sandbox-run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          objectId: createdSandboxMeta.objectId,
-          name: createdSandboxMeta.name
-        })
+        body: JSON.stringify({ objectId: objectIdValue, name: rowName }),
       });
       const payload = await res.json();
-      const ok = payload.ok && String(payload.status || "").toLowerCase() === "connected";
+      const responseText = JSON.stringify(payload.response ?? payload, null, 2);
+      const status = payload.ok && String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
+      const testedAt = payload.response?.ranAt || new Date().toISOString();
+      const lastRunId = payload.runId || payload.response?.runId || "";
+      const lastSourceId = payload.sourceId || payload.response?.sourceId || "";
+      onSave((config) => {
+        const sandboxTable = listWorkspaceDataModelTables(config).find((t) => t.objectType === "sandbox-environment");
+        if (!sandboxTable) return config;
+        const idx = (sandboxTable.rows || []).findIndex((r) => String(r?.Name || "").trim() === rowName);
+        if (idx < 0) return config;
+        let next = updateTableCell(config, sandboxTable, idx, "status", status);
+        next = updateTableCell(next, sandboxTable, idx, "lastTested", testedAt);
+        next = updateTableCell(next, sandboxTable, idx, "lastRunId", lastRunId);
+        next = updateTableCell(next, sandboxTable, idx, "lastSourceId", lastSourceId);
+        next = updateTableCell(next, sandboxTable, idx, "lastResponse", responseText);
+        return next;
+      });
       setCreatedSandboxTestMessage(
-        ok
-          ? "Sandbox test succeeded — stdout captured, lastResponse and source record saved."
-          : (payload.response?.error || payload.error || "Sandbox test failed")
+        status === "connected"
+          ? "Sandbox run succeeded — lastResponse and source record saved."
+          : (payload.response?.error || payload.error || "Sandbox run failed")
       );
     } catch (err) {
-      setCreatedSandboxTestMessage(err.message || "Sandbox test failed");
+      setCreatedSandboxTestMessage(err.message || "Sandbox run failed");
     } finally {
       setCreatedSandboxTesting(false);
     }
+  }
+
+  function resolveSandboxTableMeta() {
+    const sandboxTable = tables.find((t) => t.objectType === "sandbox-environment")
+      || (workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig).find((t) => t.objectType === "sandbox-environment") : null);
+    return sandboxTable?.objectId ? { objectId: sandboxTable.objectId, table: sandboxTable } : null;
+  }
+
+  async function runCreatedSandboxTest() {
+    if (!createdSandboxMeta?.objectId || !createdSandboxMeta?.name) return;
+    await runSandboxToolByName(createdSandboxMeta);
+  }
+
+  async function runExistingSandboxTool({ name }) {
+    const meta = resolveSandboxTableMeta();
+    if (!meta) {
+      setCreatedSandboxTestMessage("No sandbox-environment table in this workspace.");
+      return;
+    }
+    await runSandboxToolByName({ objectId: meta.objectId, name });
+  }
+
+  function openSandboxToolRow({ name }) {
+    const rowName = String(name || "").trim();
+    if (!rowName) return;
+    onFocusSandboxRow?.({ rowName });
+    onClose();
   }
 
   async function runSandbox() {
@@ -1210,11 +1263,15 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             onTest={testApiRecord}
           />
         )}
-        {isApiRegistry && sandboxToolFlow !== "draft" && (
+        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "created" && (
           <ApiRegistryActionCard
             registryRow={draft}
+            workspaceConfig={workspaceConfig}
             disabled={saving || sandboxToolCreating}
+            sandboxRunning={createdSandboxTesting}
             onCreateSandboxTool={() => setSandboxToolFlow("draft")}
+            onOpenSandboxTool={openSandboxToolRow}
+            onRunSandboxTool={runExistingSandboxTool}
           />
         )}
         {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
@@ -1225,14 +1282,24 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
               <p>Governed sandbox row saved with orchestrationGraph. Run an explicit test to persist lastResponse.</p>
               {createdSandboxTestMessage && <p className="dm-sandbox-tool-test-msg">{createdSandboxTestMessage}</p>}
             </div>
-            <button
-              type="button"
-              className="dm-btn-primary-sm dm-api-action-card-cta"
-              disabled={createdSandboxTesting || saving}
-              onClick={runCreatedSandboxTest}
-            >
-              {createdSandboxTesting ? "Running…" : "Run test"}
-            </button>
+            <div className="dm-api-action-card-actions">
+              <button
+                type="button"
+                className="dm-btn-outline dm-api-action-card-cta"
+                disabled={saving}
+                onClick={() => openSandboxToolRow({ name: createdSandboxMeta.name })}
+              >
+                Open sandbox tool
+              </button>
+              <button
+                type="button"
+                className="dm-btn-primary-sm dm-api-action-card-cta"
+                disabled={createdSandboxTesting || saving}
+                onClick={runCreatedSandboxTest}
+              >
+                {createdSandboxTesting ? "Running…" : "Run sandbox"}
+              </button>
+            </div>
           </section>
         )}
         {isApiRegistry && sandboxToolFlow === "draft" && (
@@ -1356,7 +1423,17 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   );
 }
 
-function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave, onOpenThread }) {
+function DataModelTableSurface({
+  table,
+  tables,
+  workspaceConfig,
+  saving,
+  onSave,
+  onOpenThread,
+  focusSandboxRowName,
+  onFocusSandboxRowConsumed,
+  onFocusSandboxRow,
+}) {
   const [selectedRow, setSelectedRow] = useState(null);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState("text");
@@ -1384,6 +1461,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
     setSelectMenuOpen(false);
     setPageIndex(0);
   }, [table.id]);
+
   useEffect(() => {
     setFieldName("");
     setFieldType("text");
@@ -1415,6 +1493,20 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
   const pageEnd = Math.min(pageStart + pageSize, rowEntries.length);
   const pageSelectedCount = pageEntries.filter((entry) => selectedRows.has(entry.originalIndex)).length;
   const allPageSelected = pageEntries.length > 0 && pageSelectedCount === pageEntries.length;
+
+  useEffect(() => {
+    if (!focusSandboxRowName || table.objectType !== "sandbox-environment") return;
+    const wanted = String(focusSandboxRowName).trim();
+    if (!wanted) return;
+    const originalIndex = (table.rows || []).findIndex((r) => String(r?.Name || "").trim() === wanted);
+    if (originalIndex < 0) return;
+    const visibleIndex = rowEntries.findIndex((entry) => entry.originalIndex === originalIndex);
+    if (visibleIndex < 0) return;
+    const pageForRow = Math.floor(visibleIndex / pageSize);
+    setPageIndex(pageForRow);
+    setSelectedRow(visibleIndex - pageForRow * pageSize);
+    onFocusSandboxRowConsumed?.();
+  }, [focusSandboxRowName, table.id, table.objectType, table.rows, rowEntries, pageSize, onFocusSandboxRowConsumed]);
 
   useEffect(() => {
     setPageIndex((current) => Math.min(current, pageCount - 1));
@@ -1860,6 +1952,7 @@ function DataModelTableSurface({ table, tables, workspaceConfig, saving, onSave,
         saving={saving}
         onClose={() => setSelectedRow(null)}
         onSave={onSave}
+        onFocusSandboxRow={onFocusSandboxRow}
       />
     </div>
   );
@@ -2138,6 +2231,7 @@ export default function DataModelShell() {
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
 
@@ -2229,6 +2323,19 @@ export default function DataModelShell() {
   );
 
   const selectedTable = tables.find((t) => t.source === selectedSource) || tables[0] || null;
+
+  const focusSandboxEnvironmentRow = useCallback(({ rowName, deferOpen = false } = {}) => {
+    const wanted = String(rowName || "").trim();
+    if (!wanted) return;
+    const sandboxTable = tables.find((t) => t.objectType === "sandbox-environment");
+    if (!sandboxTable?.source) return;
+    setSelectedSource(sandboxTable.source);
+    if (!deferOpen) {
+      setFocusSandboxRowName(wanted);
+    } else {
+      requestAnimationFrame(() => setFocusSandboxRowName(wanted));
+    }
+  }, [tables]);
 
   useEffect(() => {
     if (!selectedSource && tables[0]) setSelectedSource(tables[0].source);
@@ -2563,7 +2670,17 @@ export default function DataModelShell() {
           selectedTable && (
             <section className="dm-detail-v2 dm-detail-v3">
               <SourceValidationBanner table={selectedTable} />
-              <DataModelTableSurface workspaceConfig={workspaceConfig} table={selectedTable} tables={tables} saving={saving} onSave={save} onOpenThread={openHelperThreadFromRow} />
+              <DataModelTableSurface
+                workspaceConfig={workspaceConfig}
+                table={selectedTable}
+                tables={tables}
+                saving={saving}
+                onSave={save}
+                onOpenThread={openHelperThreadFromRow}
+                focusSandboxRowName={focusSandboxRowName}
+                onFocusSandboxRowConsumed={() => setFocusSandboxRowName(null)}
+                onFocusSandboxRow={focusSandboxEnvironmentRow}
+              />
             </section>
           )
         )}

@@ -636,4 +636,39 @@ describe("orchestration-graph — contract and kit presence", () => {
     ) as { validateOrchestrationGraph: (g: unknown) => { ok: boolean } };
     expect(mod.validateOrchestrationGraph({ version: 0, provider: "", nodes: [] }).ok).toBe(false);
   });
+
+  it("getApiRegistrySandboxToolState gates create vs existing", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      getApiRegistrySandboxToolState: (
+        row: Record<string, string>,
+        cfg: { dataModel: { objects: unknown[] } }
+      ) => { kind: string };
+      buildSandboxRowFromApiRegistry: (
+        cfg: { dataModel: { objects: unknown[] } },
+        row: Record<string, string>,
+        opts?: Record<string, unknown>
+      ) => Record<string, string>;
+    };
+    const registryRow = {
+      integrationId: "acme",
+      baseUrl: "https://api.example.com",
+      endpoint: "/v1",
+      status: "connected",
+    };
+    expect(mod.getApiRegistrySandboxToolState(registryRow, { dataModel: { objects: [] } }).kind).toBe("create");
+    const cfg = {
+      dataModel: {
+        objects: [
+          {
+            objectType: "sandbox-environment",
+            rows: [mod.buildSandboxRowFromApiRegistry({ dataModel: { objects: [] } }, registryRow)],
+          },
+        ],
+      },
+    };
+    expect(mod.getApiRegistrySandboxToolState(registryRow, cfg).kind).toBe("existing");
+    expect(mod.getApiRegistrySandboxToolState({ ...registryRow, status: "failed" }, cfg).kind).toBe("failed");
+  });
 });

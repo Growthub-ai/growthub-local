@@ -47,6 +47,45 @@ function isApiRegistryTestSuccessful(row) {
   return TRUSTED_API_STATUSES.includes(status);
 }
 
+/**
+ * Sidecar action state for API Registry → sandbox tool bridge (UI only).
+ */
+function getApiRegistrySandboxToolState(registryRow, workspaceConfig) {
+  const integrationId = String(registryRow?.integrationId || "").trim();
+  const baseUrl = String(registryRow?.baseUrl || "").trim();
+  const endpoint = String(registryRow?.endpoint || "").trim();
+  if (!integrationId) {
+    return {
+      kind: "incomplete",
+      message: "Add an integrationId before you can create a sandbox tool."
+    };
+  }
+  if (!baseUrl && !endpoint) {
+    return {
+      kind: "incomplete",
+      message: "Add a baseUrl or endpoint before you can create a sandbox tool."
+    };
+  }
+  if (!isApiRegistryTestSuccessful(registryRow)) {
+    const status = String(registryRow?.status || "").trim().toLowerCase();
+    if (status === "failed") {
+      return {
+        kind: "failed",
+        message: "Connection test failed. Fix the endpoint or auth reference, then test again."
+      };
+    }
+    return {
+      kind: "untested",
+      message: "Test connection first. Sandbox tool creation unlocks after a successful test."
+    };
+  }
+  const existing = findSandboxRowsForRegistry(workspaceConfig, integrationId);
+  if (existing.length > 0) {
+    return { kind: "existing", row: existing[0] };
+  }
+  return { kind: "create" };
+}
+
 function validateOrchestrationGraph(graph) {
   const errors = [];
   if (!graph || typeof graph !== "object") {
@@ -316,6 +355,7 @@ export {
   extractNormalizeConfig,
   findSandboxObject,
   findSandboxRowsForRegistry,
+  getApiRegistrySandboxToolState,
   isApiRegistryTestSuccessful,
   normalizeJsonAtPath,
   orderedGraphNodes,
