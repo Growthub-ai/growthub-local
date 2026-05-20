@@ -50,7 +50,6 @@ import {
   addTableRow,
   appendRowsToTable,
   createTypedBusinessObject,
-  addTableField,
   deleteTableRow,
   describeBindingLane,
   effectiveRelations,

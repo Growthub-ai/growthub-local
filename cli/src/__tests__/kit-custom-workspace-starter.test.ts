@@ -574,3 +574,66 @@ describe("workspace-config — source records functions declared", () => {
     expect(source).toContain("growthub.source-records.json");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 8. API Registry → sandbox orchestration primitive
+// ---------------------------------------------------------------------------
+
+describe("orchestration-graph — contract and kit presence", () => {
+  it("orchestration-graph.js ships in apps/workspace/lib/", () => {
+    expect(appExists("lib/orchestration-graph.js")).toBe(true);
+    expect(appExists("lib/orchestration-graph-runner.js")).toBe(true);
+  });
+
+  it("sidecar UI components ship", () => {
+    expect(appExists("app/data-model/components/ApiRegistryActionCard.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationGraphCanvas.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxToolDraftPanel.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxToolConfirmModal.jsx")).toBe(true);
+  });
+
+  it("sandbox-environment preset includes orchestrationGraph column", () => {
+    const dm = appText("lib/workspace-data-model.js");
+    expect(dm).toContain('"orchestrationGraph"');
+  });
+
+  it("buildDefaultOrchestrationGraphFromRegistry validates", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      buildDefaultOrchestrationGraphFromRegistry: (row: Record<string, string>) => unknown;
+      validateOrchestrationGraph: (g: unknown) => { ok: boolean };
+      buildSandboxRowFromApiRegistry: (
+        cfg: { dataModel: { objects: unknown[] } },
+        row: Record<string, string>,
+        opts?: Record<string, unknown>
+      ) => Record<string, string>;
+    };
+    const registryRow = {
+      integrationId: "leadshark",
+      Name: "LeadShark",
+      method: "GET",
+      endpoint: "/leads",
+      authRef: "LEADSHARK",
+      baseUrl: "https://api.example.com",
+      status: "connected",
+    };
+    const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow);
+    expect(mod.validateOrchestrationGraph(graph).ok).toBe(true);
+    const sandboxRow = mod.buildSandboxRowFromApiRegistry(
+      { dataModel: { objects: [] } },
+      registryRow,
+      { name: "LeadShark Leads Tool" }
+    );
+    expect(sandboxRow.Name).toBe("LeadShark Leads Tool");
+    expect(String(sandboxRow.orchestrationGraph || "")).toContain("api-registry-call");
+    expect(sandboxRow.status).toBe("untested");
+  });
+
+  it("invalid orchestrationGraph object fails validation", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as { validateOrchestrationGraph: (g: unknown) => { ok: boolean } };
+    expect(mod.validateOrchestrationGraph({ version: 0, provider: "", nodes: [] }).ok).toBe(false);
+  });
+});
