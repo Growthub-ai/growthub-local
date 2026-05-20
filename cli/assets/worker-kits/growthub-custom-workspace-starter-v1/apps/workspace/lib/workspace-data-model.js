@@ -302,6 +302,7 @@ function deriveManualObjectTable(object) {
 const HIDDEN_HELPER_OBJECT_IDS = new Set([
   "workspace-helper-sandbox",
   "nav-folders",
+  "crm-settings",
 ]);
 
 function listWorkspaceDataModelTables(workspaceConfig) {

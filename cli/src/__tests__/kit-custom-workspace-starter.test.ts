@@ -348,6 +348,48 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
       })
     ).not.toThrow();
   });
+
+  it("crm-settings mirror with twenty boolean toggles passes", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "crm-settings",
+            label: "CRM Settings Mirror",
+            objectType: "crm-settings",
+            columns: ["id", "updatedAt", "userShowFoldersNav", "agentEnableCrmTrace"],
+            rows: [{
+              id: "mirror",
+              updatedAt: "2026-05-20T00:00:00.000Z",
+              updatedBy: "admin",
+              externalSource: "twenty",
+              userShowFoldersNav: true,
+              userShowHelperChat: true,
+              userShowDashboardBuilder: true,
+              userShowDataModelNav: true,
+              userShowManagementNav: true,
+              userShowIntegrationsSettings: true,
+              userShowCustomerJourneyHints: false,
+              adminExposeFolderControls: true,
+              adminExposeNavCustomize: true,
+              adminExposeManagementRail: true,
+              adminExposeSandboxPicker: false,
+              adminExposeApiRegistryPicker: false,
+              adminExposeHiddenObjects: false,
+              adminAllowRailDividerOverrides: false,
+              agentEnableBackgroundModule: false,
+              agentEnableSettingsRead: false,
+              agentEnableActionProposals: false,
+              agentEnableJourneyNormalize: false,
+              agentEnableValidatedDispatch: false,
+              agentEnableCrmTrace: true,
+            }],
+            binding: { mode: "manual", source: "CRM Settings Mirror" },
+          }],
+        },
+      })
+    ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -422,6 +464,61 @@ describe("workspace-schema — nav-folders governance (invalid rows must throw)"
 });
 
 // ---------------------------------------------------------------------------
+// 2c. Workspace schema — crm-settings mirror governance
+// ---------------------------------------------------------------------------
+
+describe("workspace-schema — crm-settings governance", () => {
+  let validateWorkspaceConfig: (config: unknown) => void;
+
+  beforeEach(async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}`) as { validateWorkspaceConfig: (c: unknown) => void };
+    validateWorkspaceConfig = mod.validateWorkspaceConfig;
+  });
+
+  function tryValidate(rows: unknown[]): { code?: string; details?: string[] } {
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "crm-settings",
+            label: "CRM Settings Mirror",
+            objectType: "crm-settings",
+            columns: ["id"],
+            rows: rows as Record<string, unknown>[],
+          }],
+        },
+      });
+    } catch (e) {
+      const err = e as Error & { code?: string; details?: string[] };
+      return { code: err.code, details: err.details };
+    }
+    return {};
+  }
+
+  it("unknown toggle key → rejected", () => {
+    const r = tryValidate([{ id: "mirror", mysteryToggle: true }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("unknown CRM settings field"))).toBe(true);
+  });
+
+  it("non-boolean toggle → rejected", () => {
+    const r = tryValidate([{ id: "mirror", userShowFoldersNav: "yes" }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("userShowFoldersNav"))).toBe(true);
+  });
+
+  it("duplicate mirror rows → rejected", () => {
+    const r = tryValidate([
+      { id: "mirror", userShowFoldersNav: true },
+      { id: "mirror", userShowFoldersNav: false },
+    ]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("duplicate CRM settings mirror"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 4. New file presence — every upstream primitive must exist in the kit tree
 // ---------------------------------------------------------------------------
 
@@ -436,6 +533,14 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
 
   it("resolvers/ directory ships in lib/adapters/integrations/", () => {
     expect(fs.existsSync(path.join(APP_ROOT, "lib/adapters/integrations/resolvers"))).toBe(true);
+  });
+
+  it("crm-settings-contract.js ships in lib/data-model/", () => {
+    expect(appExists("lib/data-model/crm-settings-contract.js")).toBe(true);
+    const contract = appText("lib/data-model/crm-settings-contract.js");
+    expect(contract).toContain("CRM_SETTINGS_DEFINITIONS");
+    expect(contract).toContain("userShowFoldersNav");
+    expect(contract).toContain("agentEnableCrmTrace");
   });
 
   it("resolvers/README.md ships with operator contract documentation", () => {

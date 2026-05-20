@@ -37,6 +37,13 @@
  * them without parsing a stack trace.
  */
 
+import {
+  CRM_SETTINGS_KEYS,
+  CRM_SETTINGS_KEY_SET,
+  CRM_SETTINGS_OBJECT_ID,
+  CRM_SETTINGS_ROW_ID
+} from "./data-model/crm-settings-contract.js";
+
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
@@ -1095,6 +1102,32 @@ function validateNavFolderRow(row, path, errors) {
   });
 }
 
+function validateCrmSettingsMirrorRow(row, path, errors) {
+  if (!isPlainObject(row)) return;
+  if (typeof row.id !== "string" || row.id !== CRM_SETTINGS_ROW_ID) {
+    errors.push(`${path}.id must be "${CRM_SETTINGS_ROW_ID}"`);
+  }
+  if (row.updatedAt !== undefined && typeof row.updatedAt !== "string") {
+    errors.push(`${path}.updatedAt must be a string when present`);
+  }
+  if (row.updatedBy !== undefined && typeof row.updatedBy !== "string") {
+    errors.push(`${path}.updatedBy must be a string when present`);
+  }
+  if (row.externalSource !== undefined && typeof row.externalSource !== "string") {
+    errors.push(`${path}.externalSource must be a string when present`);
+  }
+  for (const key of Object.keys(row)) {
+    if (key === "id" || key === "updatedAt" || key === "updatedBy" || key === "externalSource") continue;
+    if (!CRM_SETTINGS_KEY_SET.has(key)) {
+      errors.push(`${path} contains unknown CRM settings field: ${key}`);
+      continue;
+    }
+    if (typeof row[key] !== "boolean") {
+      errors.push(`${path}.${key} must be a boolean`);
+    }
+  }
+}
+
 function validateDataModelConfig(dataModel, errors) {
   if (dataModel === undefined) return;
   if (!isPlainObject(dataModel)) {
@@ -1138,7 +1171,19 @@ function validateDataModelConfig(dataModel, errors) {
         if (object.id === NAV_FOLDERS_OBJECT_ID) {
           validateNavFolderRow(row, `${prefix}.rows[${rowIndex}]`, errors);
         }
+        if (object.id === CRM_SETTINGS_OBJECT_ID || object.objectType === "crm-settings") {
+          validateCrmSettingsMirrorRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        }
       });
+    }
+    if (object.id === CRM_SETTINGS_OBJECT_ID || object.objectType === "crm-settings") {
+      if (object.rows.length > 1) {
+        errors.push(`${prefix}.rows must contain at most one CRM settings mirror row`);
+      }
+      const mirrorRows = object.rows.filter((row) => isPlainObject(row) && row.id === CRM_SETTINGS_ROW_ID);
+      if (mirrorRows.length > 1) {
+        errors.push(`${prefix}.rows must not duplicate CRM settings mirror id "${CRM_SETTINGS_ROW_ID}"`);
+      }
     }
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
     if (object.binding?.sourceStorage === "workspace-source-records" && typeof object.sourceId !== "string") {
@@ -1414,6 +1459,9 @@ export {
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,
+  CRM_SETTINGS_KEYS,
+  CRM_SETTINGS_OBJECT_ID,
+  CRM_SETTINGS_ROW_ID,
   NAV_FOLDERS_OBJECT_ID,
   NAV_FOLDER_NAME_MAX,
   NAV_ITEM_LABEL_MAX,

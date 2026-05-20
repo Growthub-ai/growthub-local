@@ -3,6 +3,8 @@
  * Maps objectType + field → editor kind and static hints (no secrets).
  */
 
+import { CRM_SETTINGS_KEYS } from "./crm-settings-contract.js";
+
 const TRUSTED_STATUSES = ["connected", "approved", "ok", "success"];
 
 const SANDBOX_ENVIRONMENT_FIELDS = {
@@ -66,10 +68,25 @@ const DATA_SOURCE_FIELDS = {
   resolverTemplateId: { editor: "text" }
 };
 
+/** @type {Record<string, { editor: string, readonly?: boolean }>} */
+function crmSettingsBooleanFields() {
+  const fields = {};
+  for (const key of CRM_SETTINGS_KEYS) {
+    fields[key] = { editor: "boolean-toggle" };
+  }
+  fields.updatedAt = { editor: "readonly-text" };
+  fields.updatedBy = { editor: "readonly-text" };
+  fields.externalSource = { editor: "readonly-text" };
+  return fields;
+}
+
+const CRM_SETTINGS_FIELDS = crmSettingsBooleanFields();
+
 const BY_OBJECT_TYPE = {
   "sandbox-environment": SANDBOX_ENVIRONMENT_FIELDS,
   "api-registry": API_REGISTRY_FIELDS,
-  "data-source": DATA_SOURCE_FIELDS
+  "data-source": DATA_SOURCE_FIELDS,
+  "crm-settings": CRM_SETTINGS_FIELDS
 };
 
 function getFieldContract(objectType, fieldName) {

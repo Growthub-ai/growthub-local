@@ -28,6 +28,14 @@
  *     hard ceiling. Any proposal with an unknown affectedField is rejected.
  */
 
+import {
+  CRM_SETTINGS_LABEL,
+  CRM_SETTINGS_MIRROR_COLUMNS,
+  CRM_SETTINGS_OBJECT_ID,
+  CRM_SETTINGS_ROW_ID,
+  buildDefaultCrmSettingsMirrorRow,
+  normalizeCrmSettingsMirrorRow
+} from "@/lib/data-model/crm-settings-contract";
 import { validateWorkspaceConfig } from "@/lib/workspace-schema";
 
 const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"]);
@@ -547,6 +555,57 @@ function writeNavFolderRows(config, rows) {
   return { ...withObject, dataModel: { ...dm, objects } };
 }
 
+/**
+ * CRM Settings Mirror — singleton governed object (Phase 1 contract).
+ * Same PATCH / validate path as nav-folders; hidden from Data Model picker.
+ */
+function ensureCrmSettingsObject(config) {
+  const dm = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects.slice() : [];
+  const idx = objects.findIndex((o) => o?.id === CRM_SETTINGS_OBJECT_ID);
+  if (idx >= 0) {
+    const existing = objects[idx];
+    const rows = Array.isArray(existing.rows) ? existing.rows : [];
+    if (rows.length === 0) {
+      objects[idx] = { ...existing, rows: [buildDefaultCrmSettingsMirrorRow()] };
+    }
+    return { ...config, dataModel: { ...dm, objects } };
+  }
+  const seeded = {
+    id: CRM_SETTINGS_OBJECT_ID,
+    label: CRM_SETTINGS_LABEL,
+    source: CRM_SETTINGS_LABEL,
+    objectType: "crm-settings",
+    icon: "SlidersHorizontal",
+    pickerHidden: true,
+    columns: [...CRM_SETTINGS_MIRROR_COLUMNS],
+    rows: [buildDefaultCrmSettingsMirrorRow()],
+    binding: { mode: "manual", source: CRM_SETTINGS_LABEL }
+  };
+  return { ...config, dataModel: { ...dm, objects: [...objects, seeded] } };
+}
+
+function getCrmSettingsMirrorRow(config) {
+  const obj = (config?.dataModel?.objects || []).find((o) => o?.id === CRM_SETTINGS_OBJECT_ID);
+  const row = Array.isArray(obj?.rows) ? obj.rows.find((r) => r?.id === CRM_SETTINGS_ROW_ID) : null;
+  return row ? normalizeCrmSettingsMirrorRow(row) : buildDefaultCrmSettingsMirrorRow();
+}
+
+function writeCrmSettingsMirrorRow(config, partialRow) {
+  const withObject = ensureCrmSettingsObject(config);
+  const dm = withObject.dataModel;
+  const objects = dm.objects.slice();
+  const idx = objects.findIndex((o) => o?.id === CRM_SETTINGS_OBJECT_ID);
+  if (idx === -1) return withObject;
+  const nextRow = normalizeCrmSettingsMirrorRow({
+    ...getCrmSettingsMirrorRow(withObject),
+    ...partialRow,
+    id: CRM_SETTINGS_ROW_ID
+  });
+  objects[idx] = { ...objects[idx], rows: [nextRow] };
+  return { ...withObject, dataModel: { ...dm, objects } };
+}
+
 export {
   applyProposalToConfig,
   validateProposalForApply,
@@ -566,4 +625,9 @@ export {
   nextNavItemId,
   getNavFolderRows,
   writeNavFolderRows,
+  CRM_SETTINGS_OBJECT_ID,
+  CRM_SETTINGS_LABEL,
+  ensureCrmSettingsObject,
+  getCrmSettingsMirrorRow,
+  writeCrmSettingsMirrorRow,
 };
