@@ -71,6 +71,7 @@ import {
   parseSandboxEnvRefs,
   sandboxRunSourceId
 } from "@/lib/workspace-data-model";
+import { resolveSchedulerRegistryIdFromRow } from "@/lib/orchestration-graph";
 import {
   ensureSandboxAdaptersLoaded,
   getSandboxAdapter
@@ -438,11 +439,27 @@ async function POST(request) {
     return NextResponse.json({ ok: false, error: `no sandbox row named ${name} in object ${objectId}` }, { status: 404 });
   }
 
-  const runLocality = normalizeRunLocality(row);
+  let runLocality = normalizeRunLocality(row);
   const runtime = KNOWN_SANDBOX_RUNTIMES.includes(row.runtime) ? row.runtime : "node";
   let adapterId = (typeof row.adapter === "string" && row.adapter.trim()) ? row.adapter.trim() : DEFAULT_SANDBOX_ADAPTER;
   const agentHost = typeof row.agentHost === "string" ? row.agentHost.trim() : "";
-  const schedulerRegistryId = typeof row.schedulerRegistryId === "string" ? row.schedulerRegistryId.trim() : "";
+  let schedulerRegistryId = typeof row.schedulerRegistryId === "string" ? row.schedulerRegistryId.trim() : "";
+  if (!schedulerRegistryId) {
+    schedulerRegistryId = resolveSchedulerRegistryIdFromRow(workspaceConfig, row);
+  }
+  const commandEarly = typeof row.command === "string" ? row.command : "";
+  const instructionsEarly = typeof row.instructions === "string" ? row.instructions.trim() : "";
+  if (
+    runLocality === "local"
+    && schedulerRegistryId
+    && !commandEarly.trim()
+    && !instructionsEarly
+  ) {
+    runLocality = "serverless";
+  }
+  const executionRow = schedulerRegistryId
+    ? { ...row, schedulerRegistryId }
+    : row;
   const networkAllow = coerceBoolean(row.networkAllow);
   const allowList = parseSandboxAllowList(row.allowList);
   const envRefSlugs = parseSandboxEnvRefs(row.envRefs);
@@ -507,7 +524,7 @@ async function POST(request) {
     effectiveAdapterId = "serverless";
     result = await runServerlessScheduler({
       workspaceConfig,
-      row,
+      row: executionRow,
       runId,
       ranAt,
       workspaceId: workspaceConfig?.id ?? null,

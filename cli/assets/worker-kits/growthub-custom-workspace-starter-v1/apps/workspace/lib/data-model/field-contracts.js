@@ -31,7 +31,11 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
   lastSourceId: { editor: "readonly-text" },
   resolverTemplateId: { editor: "readonly-text" },
   connectorKind: { editor: "readonly-text" },
-  executionLane: { editor: "readonly-text" }
+  executionLane: { editor: "readonly-text" },
+  orchestrationGraph: { editor: "json-preview", readonly: true },
+  authRef: { editor: "text" },
+  slug: { editor: "text" },
+  description: { editor: "text" }
 };
 
 const API_REGISTRY_FIELDS = {

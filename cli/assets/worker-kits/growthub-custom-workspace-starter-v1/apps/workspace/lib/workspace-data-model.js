@@ -731,6 +731,10 @@ const OBJECT_TYPE_PRESETS = {
       "lastRunId",
       "lastSourceId",
       "lastResponse",
+      "orchestrationGraph",
+      "authRef",
+      "slug",
+      "description",
       "resolverTemplateId",
       "connectorKind",
       "executionLane"

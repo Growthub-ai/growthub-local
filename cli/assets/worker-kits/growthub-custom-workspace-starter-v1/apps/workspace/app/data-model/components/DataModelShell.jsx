@@ -69,6 +69,16 @@ import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
+import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
+import { ApiRegistryReviewModal } from "./ApiRegistryReviewModal.jsx";
+import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
+import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
+import {
+  applySandboxToolFromRegistry,
+  buildDefaultOrchestrationGraphFromRegistry,
+  findSandboxRowsForRegistry,
+  isApiRegistryTestSuccessful
+} from "@/lib/orchestration-graph";
 import {
   FIELD_TYPE_ICON_NAMES,
   ICON_PICKER_SET,
@@ -793,6 +803,15 @@ function SandboxRecordFields({
         </label>
       </DrawerSection>
 
+      {draft.orchestrationGraph && (
+        <DrawerSection title="Orchestration">
+          <label className="dm-record-field dm-json-field">
+            <span>orchestrationGraph</span>
+            <textarea rows={8} readOnly value={draft.orchestrationGraph ?? ""} />
+          </label>
+        </DrawerSection>
+      )}
+
       <DrawerSection title="Prompt & Limits">
         <label className="dm-record-field">
           <span>Instructions</span>
@@ -898,6 +917,11 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   const [sandboxHistoryMessage, setSandboxHistoryMessage] = useState("");
   const [loadingSandboxHistory, setLoadingSandboxHistory] = useState(false);
   const [expandedJson, setExpandedJson] = useState(null);
+  const [sandboxToolPhase, setSandboxToolPhase] = useState(null);
+  const [sandboxToolDraft, setSandboxToolDraft] = useState(null);
+  const [sandboxToolCreating, setSandboxToolCreating] = useState(false);
+  const [sandboxToolMessage, setSandboxToolMessage] = useState("");
+  const [createdSandboxTool, setCreatedSandboxTool] = useState(null);
 
   useEffect(() => {
     setDraft(row || {});
@@ -909,12 +933,96 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
     setSandboxHistory([]);
     setSandboxHistoryMessage("");
     setExpandedJson(null);
+    setSandboxToolPhase(null);
+    setSandboxToolDraft(null);
+    setSandboxToolCreating(false);
+    setSandboxToolMessage("");
+    setCreatedSandboxTool(null);
   }, [row, rowIndex]);
+
+  const isSandbox = table.objectType === "sandbox-environment";
+  const isApiRegistry = table.objectType === "api-registry";
+  const existingSandboxTools = useMemo(() => {
+    if (table.objectType !== "api-registry") return [];
+    return findSandboxRowsForRegistry(workspaceConfig, draft?.integrationId);
+  }, [table.objectType, workspaceConfig, draft?.integrationId]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
-  const isSandbox = table.objectType === "sandbox-environment";
+  const apiRegistryReady = isApiRegistry && isApiRegistryTestSuccessful(draft);
   const isDirty = JSON.stringify(draft || {}) !== JSON.stringify(row || {}) || JSON.stringify(pendingColumns) !== JSON.stringify(table.columns || []) || JSON.stringify(pendingHidden) !== JSON.stringify(table.fieldSettings?.hidden || []);
+
+  function openSandboxToolDraft() {
+    const integrationId = String(draft?.integrationId || "").trim();
+    const defaultName = `${String(draft?.Name || integrationId || "API").trim()} Tool`;
+    setSandboxToolDraft({
+      name: defaultName,
+      description: String(draft?.description || "").trim(),
+      authRef: String(draft?.authRef || "").trim(),
+      envRefs: "",
+      runLocality: "serverless",
+      adapter: "local-process",
+      schedulerRegistryId: integrationId,
+      outputRootPath: "data",
+      networkAllow: false,
+      timeoutMs: "120000",
+      instructions: `Use sandbox tool "${defaultName}" to call ${integrationId} (${draft?.method || "GET"} ${draft?.endpoint || ""}). Secrets resolve server-side via authRef only.`,
+      orchestrationGraph: buildDefaultOrchestrationGraphFromRegistry(draft, {
+        name: defaultName,
+        runLocality: "serverless"
+      })
+    });
+    setSandboxToolPhase("review");
+  }
+
+  function beginSandboxToolConfigure() {
+    setSandboxToolPhase("draft");
+  }
+
+  function requestSandboxToolCreate(nextDraft) {
+    setSandboxToolDraft(nextDraft);
+    setSandboxToolPhase("confirm");
+  }
+
+  function cancelSandboxToolFlow() {
+    setSandboxToolPhase(null);
+    setSandboxToolDraft(null);
+    setSandboxToolMessage("");
+  }
+
+  async function confirmSandboxToolCreate() {
+    if (!sandboxToolDraft) return;
+    setSandboxToolCreating(true);
+    setSandboxToolMessage("");
+    try {
+      const result = applySandboxToolFromRegistry(workspaceConfig, draft, {
+        name: sandboxToolDraft.name,
+        description: sandboxToolDraft.description,
+        authRef: sandboxToolDraft.authRef,
+        envRefs: sandboxToolDraft.envRefs,
+        runLocality: sandboxToolDraft.runLocality,
+        adapter: sandboxToolDraft.adapter,
+        schedulerRegistryId: sandboxToolDraft.schedulerRegistryId,
+        outputRootPath: sandboxToolDraft.outputRootPath,
+        networkAllow: sandboxToolDraft.networkAllow,
+        timeoutMs: sandboxToolDraft.timeoutMs,
+        instructions: sandboxToolDraft.instructions,
+        orchestrationGraph: sandboxToolDraft.orchestrationGraph
+      });
+      if (!result.ok) {
+        setSandboxToolMessage(result.errors?.join("; ") || "Could not create sandbox tool");
+        return;
+      }
+      onSave(() => result.workspaceConfig);
+      setCreatedSandboxTool({ rowName: result.rowName, objectId: result.sandboxObjectId });
+      setSandboxToolPhase("created");
+      setSandboxToolMessage(`Sandbox tool "${result.rowName}" created. Run test from the Sandbox Environment table when ready.`);
+    } catch (err) {
+      setSandboxToolMessage(err.message || "Could not create sandbox tool");
+    } finally {
+      setSandboxToolCreating(false);
+    }
+  }
 
   function updateField(column, value) {
     setDraft((current) => ({ ...current, [column]: value }));
@@ -1107,6 +1215,34 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             onTest={testApiRecord}
           />
         )}
+        {apiRegistryReady && !sandboxToolPhase && (
+          <ApiRegistryActionCard
+            registryLabel={draft.Name || draft.integrationId}
+            existingToolCount={existingSandboxTools.length}
+            disabled={saving}
+            onCreateTool={openSandboxToolDraft}
+          />
+        )}
+        {sandboxToolPhase === "created" && createdSandboxTool && (
+          <div className="dm-registry-action-card dm-registry-action-card-success">
+            <p className="dm-registry-action-card-eyebrow">Sandbox tool created</p>
+            <p className="dm-registry-action-card-copy">
+              Open the Sandbox Environment table, select <strong>{createdSandboxTool.rowName}</strong>, and use Run test.
+              {sandboxToolMessage && <span className="dm-registry-action-card-meta"> {sandboxToolMessage}</span>}
+            </p>
+            <button type="button" className="dm-btn-ghost" onClick={cancelSandboxToolFlow}>Dismiss</button>
+          </div>
+        )}
+        {sandboxToolPhase === "draft" && sandboxToolDraft && (
+          <SandboxToolDraftPanel
+            registryRow={draft}
+            draft={sandboxToolDraft}
+            onDraftChange={setSandboxToolDraft}
+            onCancel={cancelSandboxToolFlow}
+            onRequestCreate={requestSandboxToolCreate}
+            disabled={saving || sandboxToolCreating}
+          />
+        )}
         {isSandbox && (
           <SandboxRunPanel
             status={draft.status}
@@ -1118,7 +1254,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
           />
         )}
         <div className="dm-record-fields">
-          {isSandbox ? (
+          {sandboxToolPhase === "draft" ? null : isSandbox ? (
             <SandboxRecordFields
               draft={draft}
               setDraft={setDraft}
@@ -1189,6 +1325,22 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
           </footer>
         )}
       </aside>
+      {sandboxToolPhase === "review" && (
+        <ApiRegistryReviewModal
+          registryRow={draft}
+          onContinue={beginSandboxToolConfigure}
+          onCancel={cancelSandboxToolFlow}
+        />
+      )}
+      {sandboxToolPhase === "confirm" && sandboxToolDraft && (
+        <SandboxToolConfirmModal
+          draft={sandboxToolDraft}
+          graph={sandboxToolDraft.orchestrationGraph}
+          onConfirm={confirmSandboxToolCreate}
+          onCancel={() => setSandboxToolPhase("draft")}
+          creating={sandboxToolCreating}
+        />
+      )}
       {expandedJson !== null && (
         <div className="dm-json-modal-backdrop" onClick={() => setExpandedJson(null)}>
           <section className="dm-json-modal" role="dialog" aria-modal="true" aria-label="lastResponse JSON" onClick={(event) => event.stopPropagation()}>
