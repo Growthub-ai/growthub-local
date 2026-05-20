@@ -311,6 +311,30 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
     ).not.toThrow();
   });
 
+  it("shipped growthub.config.json PATCH subset passes schema validation", () => {
+    const configPath = path.join(APP_ROOT, "growthub.config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    const patchSubset = {
+      dashboards: config.dashboards,
+      widgetTypes: config.widgetTypes,
+      canvas: config.canvas,
+      dataModel: config.dataModel,
+    };
+    expect(() => validateWorkspaceConfig(patchSubset)).not.toThrow();
+    const objects = (config.dataModel as { objects?: Array<{ id: string }> })?.objects ?? [];
+    const visibleIds = objects.map((o) => o.id).filter((id) => id !== "nav-folders");
+    expect(visibleIds).toEqual([
+      "clients",
+      "campaigns",
+      "production-tasks",
+      "creative-assets",
+      "performance-metrics",
+      "reports-decisions",
+    ]);
+    const navFolders = objects.find((o) => o.id === "nav-folders") as { rows?: unknown[] } | undefined;
+    expect(Array.isArray(navFolders?.rows) && navFolders.rows.length).toBeGreaterThanOrEqual(6);
+  });
+
   it("nav-folders governed object with mixed dashboard + view items passes", () => {
     expect(() =>
       validateWorkspaceConfig({

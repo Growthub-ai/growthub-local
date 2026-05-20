@@ -1,9 +1,9 @@
 {
   "id": "workspace-builder-default",
-  "name": "Growthub Workspace",
-  "description": "Default no-code composition for the official Growthub Custom Workspace Starter. The interface starts as a governed dashboard workspace and can be customized by editing this file or by future governed UI controls.",
+  "name": "Creative OS Workspace",
+  "description": "Governed Creative OS starter workspace with seeded clients, campaigns, production, assets, performance, and reports objects. Customize through the Data Model and folder navigation without changing runtime contracts.",
   "branding": {
-    "name": "Growthub Workspace",
+    "name": "Creative OS",
     "logoUrl": "",
     "accent": "#3f68ff"
   },
@@ -19,11 +19,11 @@
   "integrations": [],
   "dashboards": [
     {
-      "id": "untitled-dashboard",
-      "name": "Untitled",
+      "id": "creative-os-command-center",
+      "name": "Creative OS Command Center",
       "createdBy": "Workspace owner",
-      "updatedAt": "new",
-      "status": "draft"
+      "updatedAt": "seeded",
+      "status": "active"
     }
   ],
   "widgetTypes": [
@@ -58,7 +58,70 @@
       "gap": 16,
       "responsive": true
     },
-    "widgets": [],
+    "widgets": [
+      {
+        "id": "widget-welcome-creative-os",
+        "kind": "rich-text",
+        "title": "Welcome to Creative OS",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 2
+        },
+        "config": {
+          "text": "Your governed workspace is ready. Use the sidebar folders to open clients, campaigns, production tasks, assets, performance, and reports. All starter data lives in the Data Model — widgets only present it."
+        }
+      },
+      {
+        "id": "widget-campaigns-overview",
+        "kind": "view",
+        "title": "Campaigns",
+        "position": {
+          "x": 0,
+          "y": 2,
+          "w": 6,
+          "h": 5
+        },
+        "config": {
+          "layout": "Table",
+          "source": "Campaigns",
+          "columns": [],
+          "rows": [],
+          "binding": {
+            "mode": "manual",
+            "source": "Campaigns",
+            "sourceType": "workspace-data-model",
+            "sourceAuthority": "workspace-config",
+            "objectId": "campaigns"
+          }
+        }
+      },
+      {
+        "id": "widget-production-tasks-overview",
+        "kind": "view",
+        "title": "Production Tasks",
+        "position": {
+          "x": 6,
+          "y": 2,
+          "w": 6,
+          "h": 5
+        },
+        "config": {
+          "layout": "Table",
+          "source": "Production Tasks",
+          "columns": [],
+          "rows": [],
+          "binding": {
+            "mode": "manual",
+            "source": "Production Tasks",
+            "sourceType": "workspace-data-model",
+            "sourceAuthority": "workspace-config",
+            "objectId": "production-tasks"
+          }
+        }
+      }
+    ],
     "bindings": {
       "chatToCanvas": true,
       "workflowOutputsToArtifacts": true,
@@ -69,6 +132,972 @@
   "provenance": {
     "createdBy": "cli",
     "mirrors": "growthub-custom-workspace-starter-v1",
-    "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit inside a governed fork and validate through the starter export smoke path."
+    "note": "Shipped with Creative OS Starter Seed V1; business objects and folders are seeded in dataModel.objects[]. Validate through starter export smoke path."
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "clients",
+        "label": "Clients",
+        "source": "Clients",
+        "objectType": "custom",
+        "icon": "Building2",
+        "columns": [
+          "Name",
+          "Account Type",
+          "Status",
+          "Primary Contact",
+          "Monthly Retainer",
+          "Next Review"
+        ],
+        "rows": [
+          {
+            "Name": "Northwind Studio",
+            "Account Type": "Retainer",
+            "Status": "Active",
+            "Primary Contact": "Alex Morgan",
+            "Monthly Retainer": "$12,000",
+            "Next Review": "2026-06-01"
+          },
+          {
+            "Name": "Beacon Health",
+            "Account Type": "Enterprise",
+            "Status": "Active",
+            "Primary Contact": "Priya Shah",
+            "Monthly Retainer": "$28,500",
+            "Next Review": "2026-05-28"
+          },
+          {
+            "Name": "Summit Outdoors",
+            "Account Type": "Project",
+            "Status": "Prospect",
+            "Primary Contact": "Jordan Lee",
+            "Monthly Retainer": "$0",
+            "Next Review": "2026-05-24"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "Account Type",
+            "Status",
+            "Primary Contact",
+            "Monthly Retainer",
+            "Next Review"
+          ],
+          "types": {
+            "Name": "text",
+            "Account Type": "select",
+            "Status": "select",
+            "Primary Contact": "text",
+            "Monthly Retainer": "text",
+            "Next Review": "date"
+          },
+          "activeViewId": "clients-all",
+          "favorite": true,
+          "views": [
+            {
+              "id": "clients-all",
+              "name": "All Clients",
+              "favorite": true,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Account Type",
+                "Status",
+                "Primary Contact",
+                "Monthly Retainer",
+                "Next Review"
+              ]
+            },
+            {
+              "id": "clients-active-retainers",
+              "name": "Active Retainers",
+              "favorite": false,
+              "locked": false,
+              "hidden": ["Next Review"],
+              "order": [
+                "Name",
+                "Primary Contact",
+                "Monthly Retainer",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "eq",
+                    "value": "Active"
+                  },
+                  {
+                    "fieldId": "Account Type",
+                    "operator": "eq",
+                    "value": "Retainer"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "clients-enterprise",
+              "name": "Enterprise / High Priority",
+              "favorite": false,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Primary Contact",
+                "Monthly Retainer",
+                "Next Review"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Account Type",
+                    "operator": "eq",
+                    "value": "Enterprise"
+                  }
+                ]
+              },
+              "sort": [
+                {
+                  "fieldId": "Monthly Retainer",
+                  "direction": "desc"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "campaigns",
+        "label": "Campaigns",
+        "source": "Campaigns",
+        "objectType": "custom",
+        "icon": "Megaphone",
+        "columns": [
+          "Name",
+          "Client",
+          "Stage",
+          "Channel",
+          "Launch Date",
+          "Owner",
+          "Status"
+        ],
+        "rows": [
+          {
+            "Name": "Spring Product Launch",
+            "Client": "Northwind Studio",
+            "Stage": "Production",
+            "Channel": "Paid Social",
+            "Launch Date": "2026-06-15",
+            "Owner": "Jamie Cole",
+            "Status": "Active"
+          },
+          {
+            "Name": "Wellness Awareness Q2",
+            "Client": "Beacon Health",
+            "Stage": "Review",
+            "Channel": "Video + Email",
+            "Launch Date": "2026-05-30",
+            "Owner": "Morgan Ellis",
+            "Status": "Active"
+          },
+          {
+            "Name": "Trail Season Teaser",
+            "Client": "Summit Outdoors",
+            "Stage": "Planning",
+            "Channel": "Organic",
+            "Launch Date": "2026-07-01",
+            "Owner": "Alex Morgan",
+            "Status": "Draft"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "Client",
+            "Stage",
+            "Channel",
+            "Launch Date",
+            "Owner",
+            "Status"
+          ],
+          "types": {
+            "Name": "text",
+            "Client": "text",
+            "Stage": "select",
+            "Channel": "text",
+            "Launch Date": "date",
+            "Owner": "text",
+            "Status": "select"
+          },
+          "activeViewId": "campaigns-active",
+          "favorite": true,
+          "views": [
+            {
+              "id": "campaigns-active",
+              "name": "Active Campaigns",
+              "favorite": true,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Client",
+                "Stage",
+                "Launch Date",
+                "Owner",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "eq",
+                    "value": "Active"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "campaigns-launch-queue",
+              "name": "Launch Queue",
+              "favorite": false,
+              "locked": false,
+              "hidden": ["Channel"],
+              "order": [
+                "Name",
+                "Client",
+                "Launch Date",
+                "Stage",
+                "Owner"
+              ],
+              "sort": [
+                {
+                  "fieldId": "Launch Date",
+                  "direction": "asc"
+                }
+              ]
+            },
+            {
+              "id": "campaigns-recent",
+              "name": "Recently Updated",
+              "favorite": false,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Client",
+                "Stage",
+                "Status",
+                "Owner"
+              ],
+              "sort": [
+                {
+                  "fieldId": "Launch Date",
+                  "direction": "desc"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "production-tasks",
+        "label": "Production Tasks",
+        "source": "Production Tasks",
+        "objectType": "tasks",
+        "icon": "CheckSquare",
+        "columns": [
+          "Name",
+          "Status",
+          "DueDate",
+          "Assignee",
+          "Priority"
+        ],
+        "rows": [
+          {
+            "Name": "Cut hero video v3",
+            "Status": "In Progress",
+            "DueDate": "2026-05-22",
+            "Assignee": "Jamie Cole",
+            "Priority": "High"
+          },
+          {
+            "Name": "Legal review — wellness claims",
+            "Status": "Blocked",
+            "DueDate": "2026-05-21",
+            "Assignee": "Morgan Ellis",
+            "Priority": "High"
+          },
+          {
+            "Name": "Storyboard trail teaser",
+            "Status": "To Do",
+            "DueDate": "2026-05-27",
+            "Assignee": "Alex Morgan",
+            "Priority": "Medium"
+          },
+          {
+            "Name": "Export paid social variants",
+            "Status": "Done",
+            "DueDate": "2026-05-18",
+            "Assignee": "Jamie Cole",
+            "Priority": "Low"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "Status",
+            "DueDate",
+            "Assignee",
+            "Priority"
+          ],
+          "types": {
+            "Name": "text",
+            "Status": "select",
+            "DueDate": "date",
+            "Assignee": "text",
+            "Priority": "select"
+          },
+          "activeViewId": "tasks-active",
+          "favorite": true,
+          "views": [
+            {
+              "id": "tasks-active",
+              "name": "Active Tasks",
+              "favorite": true,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Status",
+                "DueDate",
+                "Assignee",
+                "Priority"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "ne",
+                    "value": "Done"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "tasks-blocked",
+              "name": "Blocked",
+              "favorite": false,
+              "locked": false,
+              "hidden": ["Priority"],
+              "order": [
+                "Name",
+                "Assignee",
+                "DueDate",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "eq",
+                    "value": "Blocked"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "tasks-due-week",
+              "name": "Due This Week",
+              "favorite": false,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "DueDate",
+                "Assignee",
+                "Priority",
+                "Status"
+              ],
+              "sort": [
+                {
+                  "fieldId": "DueDate",
+                  "direction": "asc"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "creative-assets",
+        "label": "Creative Assets",
+        "source": "Creative Assets",
+        "objectType": "custom",
+        "icon": "Image",
+        "columns": [
+          "Name",
+          "Type",
+          "Campaign",
+          "Status",
+          "Version",
+          "Owner"
+        ],
+        "rows": [
+          {
+            "Name": "Hero Video — Spring Launch",
+            "Type": "Video",
+            "Campaign": "Spring Product Launch",
+            "Status": "In Review",
+            "Version": "v3",
+            "Owner": "Jamie Cole"
+          },
+          {
+            "Name": "Wellness Storyboard PDF",
+            "Type": "Document",
+            "Campaign": "Wellness Awareness Q2",
+            "Status": "Approved",
+            "Version": "v1",
+            "Owner": "Morgan Ellis"
+          },
+          {
+            "Name": "Trail Teaser Stills",
+            "Type": "Image Set",
+            "Campaign": "Trail Season Teaser",
+            "Status": "Draft",
+            "Version": "v0",
+            "Owner": "Alex Morgan"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "Type",
+            "Campaign",
+            "Status",
+            "Version",
+            "Owner"
+          ],
+          "types": {
+            "Name": "text",
+            "Type": "select",
+            "Campaign": "text",
+            "Status": "select",
+            "Version": "text",
+            "Owner": "text"
+          },
+          "activeViewId": "assets-library",
+          "favorite": true,
+          "views": [
+            {
+              "id": "assets-library",
+              "name": "Asset Library",
+              "favorite": true,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Type",
+                "Campaign",
+                "Status",
+                "Version",
+                "Owner"
+              ]
+            },
+            {
+              "id": "assets-needs-review",
+              "name": "Needs Review",
+              "favorite": false,
+              "locked": false,
+              "hidden": ["Version"],
+              "order": [
+                "Name",
+                "Campaign",
+                "Owner",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "eq",
+                    "value": "In Review"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "assets-approved",
+              "name": "Approved",
+              "favorite": false,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Name",
+                "Campaign",
+                "Type",
+                "Owner"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "eq",
+                    "value": "Approved"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "performance-metrics",
+        "label": "Performance Metrics",
+        "source": "Performance Metrics",
+        "objectType": "custom",
+        "icon": "LineChart",
+        "columns": [
+          "Period",
+          "Campaign",
+          "Channel",
+          "Metric",
+          "Value",
+          "Target"
+        ],
+        "rows": [
+          {
+            "Period": "2026-W20",
+            "Campaign": "Spring Product Launch",
+            "Channel": "Paid Social",
+            "Metric": "ROAS",
+            "Value": "3.2",
+            "Target": "2.8"
+          },
+          {
+            "Period": "2026-W20",
+            "Campaign": "Wellness Awareness Q2",
+            "Channel": "Video",
+            "Metric": "View-through rate",
+            "Value": "42%",
+            "Target": "38%"
+          },
+          {
+            "Period": "2026-W19",
+            "Campaign": "Trail Season Teaser",
+            "Channel": "Organic",
+            "Metric": "Engagement rate",
+            "Value": "5.1%",
+            "Target": "4.0%"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Period",
+            "Campaign",
+            "Channel",
+            "Metric",
+            "Value",
+            "Target"
+          ],
+          "types": {
+            "Period": "text",
+            "Campaign": "text",
+            "Channel": "text",
+            "Metric": "text",
+            "Value": "text",
+            "Target": "text"
+          },
+          "activeViewId": "metrics-latest",
+          "favorite": true,
+          "views": [
+            {
+              "id": "metrics-latest",
+              "name": "Latest Metrics",
+              "favorite": true,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Period",
+                "Campaign",
+                "Channel",
+                "Metric",
+                "Value",
+                "Target"
+              ],
+              "sort": [
+                {
+                  "fieldId": "Period",
+                  "direction": "desc"
+                }
+              ]
+            },
+            {
+              "id": "metrics-by-channel",
+              "name": "By Channel",
+              "favorite": false,
+              "locked": false,
+              "hidden": ["Target"],
+              "order": [
+                "Channel",
+                "Campaign",
+                "Metric",
+                "Value"
+              ],
+              "sort": [
+                {
+                  "fieldId": "Channel",
+                  "direction": "asc"
+                }
+              ]
+            },
+            {
+              "id": "metrics-needs-analysis",
+              "name": "Needs Analysis",
+              "favorite": false,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Campaign",
+                "Metric",
+                "Value",
+                "Target",
+                "Period"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "reports-decisions",
+        "label": "Reports & Decisions",
+        "source": "Reports & Decisions",
+        "objectType": "custom",
+        "icon": "FileText",
+        "columns": [
+          "Title",
+          "Client",
+          "Type",
+          "Date",
+          "Owner",
+          "Status"
+        ],
+        "rows": [
+          {
+            "Title": "Q2 Creative Performance — Northwind",
+            "Client": "Northwind Studio",
+            "Type": "Client Report",
+            "Date": "2026-05-15",
+            "Owner": "Alex Morgan",
+            "Status": "Sent"
+          },
+          {
+            "Title": "Approve wellness claims disclaimer",
+            "Client": "Beacon Health",
+            "Type": "Decision",
+            "Date": "2026-05-19",
+            "Owner": "Morgan Ellis",
+            "Status": "Open"
+          },
+          {
+            "Title": "Trail teaser positioning follow-up",
+            "Client": "Summit Outdoors",
+            "Type": "Follow-up",
+            "Date": "2026-05-20",
+            "Owner": "Jordan Lee",
+            "Status": "Open"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Title",
+            "Client",
+            "Type",
+            "Date",
+            "Owner",
+            "Status"
+          ],
+          "types": {
+            "Title": "text",
+            "Client": "text",
+            "Type": "select",
+            "Date": "date",
+            "Owner": "text",
+            "Status": "select"
+          },
+          "activeViewId": "reports-client",
+          "favorite": true,
+          "views": [
+            {
+              "id": "reports-client",
+              "name": "Client Reports",
+              "favorite": true,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Title",
+                "Client",
+                "Date",
+                "Owner",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Type",
+                    "operator": "eq",
+                    "value": "Client Report"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "reports-decisions-log",
+              "name": "Decisions Log",
+              "favorite": false,
+              "locked": false,
+              "hidden": ["Date"],
+              "order": [
+                "Title",
+                "Client",
+                "Owner",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Type",
+                    "operator": "eq",
+                    "value": "Decision"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "reports-open-followups",
+              "name": "Open Follow-ups",
+              "favorite": false,
+              "locked": false,
+              "hidden": [],
+              "order": [
+                "Title",
+                "Client",
+                "Date",
+                "Owner",
+                "Status"
+              ],
+              "filter": {
+                "op": "and",
+                "clauses": [
+                  {
+                    "fieldId": "Status",
+                    "operator": "eq",
+                    "value": "Open"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "nav-folders",
+        "label": "Custom Folders",
+        "source": "Custom Folders",
+        "objectType": "custom",
+        "icon": "Folder",
+        "columns": [
+          "name",
+          "order",
+          "collapsed",
+          "items"
+        ],
+        "rows": [
+          {
+            "id": "folder-overview",
+            "name": "Overview",
+            "order": 0,
+            "collapsed": false,
+            "icon": "LayoutDashboard",
+            "color": "#3b82f6",
+            "iconBg": "#eff6ff",
+            "items": [
+              {
+                "id": "item-command-center",
+                "type": "dashboard",
+                "refId": "creative-os-command-center",
+                "label": "Creative OS Command Center",
+                "icon": "LayoutDashboard",
+                "color": "#3b82f6",
+                "iconBg": "#eff6ff"
+              },
+              {
+                "id": "item-clients",
+                "type": "view",
+                "objectId": "clients",
+                "label": "Clients",
+                "icon": "Building2",
+                "color": "#8b5cf6",
+                "iconBg": "#f5f3ff"
+              }
+            ]
+          },
+          {
+            "id": "folder-creative-production",
+            "name": "Creative Production",
+            "order": 1,
+            "collapsed": false,
+            "icon": "Folder",
+            "color": "#f97316",
+            "iconBg": "#fff7ed",
+            "items": [
+              {
+                "id": "item-production-tasks",
+                "type": "view",
+                "objectId": "production-tasks",
+                "label": "Production Tasks",
+                "icon": "CheckSquare",
+                "color": "#14b8a6",
+                "iconBg": "#f0fdfa"
+              }
+            ]
+          },
+          {
+            "id": "folder-campaigns",
+            "name": "Campaigns",
+            "order": 2,
+            "collapsed": false,
+            "icon": "Megaphone",
+            "color": "#ec4899",
+            "iconBg": "#fdf2f8",
+            "items": [
+              {
+                "id": "item-campaigns",
+                "type": "view",
+                "objectId": "campaigns",
+                "label": "Campaigns",
+                "icon": "Megaphone",
+                "color": "#ec4899",
+                "iconBg": "#fdf2f8"
+              }
+            ]
+          },
+          {
+            "id": "folder-assets",
+            "name": "Assets",
+            "order": 3,
+            "collapsed": false,
+            "icon": "Image",
+            "color": "#14b8a6",
+            "iconBg": "#f0fdfa",
+            "items": [
+              {
+                "id": "item-creative-assets",
+                "type": "view",
+                "objectId": "creative-assets",
+                "label": "Creative Assets",
+                "icon": "Image",
+                "color": "#14b8a6",
+                "iconBg": "#f0fdfa"
+              }
+            ]
+          },
+          {
+            "id": "folder-performance",
+            "name": "Performance",
+            "order": 4,
+            "collapsed": false,
+            "icon": "LineChart",
+            "color": "#3b82f6",
+            "iconBg": "#eff6ff",
+            "items": [
+              {
+                "id": "item-performance-metrics",
+                "type": "view",
+                "objectId": "performance-metrics",
+                "label": "Performance Metrics",
+                "icon": "LineChart",
+                "color": "#3b82f6",
+                "iconBg": "#eff6ff"
+              }
+            ]
+          },
+          {
+            "id": "folder-reports-decisions",
+            "name": "Reports & Decisions",
+            "order": 5,
+            "collapsed": false,
+            "icon": "FileText",
+            "color": "#64748b",
+            "iconBg": "#f8fafc",
+            "items": [
+              {
+                "id": "item-reports-decisions",
+                "type": "view",
+                "objectId": "reports-decisions",
+                "label": "Reports & Decisions",
+                "icon": "FileText",
+                "color": "#64748b",
+                "iconBg": "#f8fafc"
+              }
+            ]
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Custom Folders"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "name",
+            "order",
+            "collapsed",
+            "items"
+          ]
+        }
+      }
+    ]
   }
 }

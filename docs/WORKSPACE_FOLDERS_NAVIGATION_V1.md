@@ -11,6 +11,7 @@ This matters for product-led adoption because the workspace becomes useful befor
 ## Behavior
 
 - Folder state persists through the governed workspace Data Model object that represents navigation folders.
+- The official `growthub-custom-workspace-starter-v1` export may ship with default client-facing folders seeded in the hidden `nav-folders` object (Creative OS Starter Seed V1). Users can rename, reorder, or replace those folders from the rail without a separate navigation service. See [`CREATIVE_OS_STARTER_SEED_V1.md`](./CREATIVE_OS_STARTER_SEED_V1.md).
 - Dashboard folder items route to `/?dashboard=<dashboardId>` and render the live dashboard builder canvas with tabs and widget state.
 - Object view folder items route to `/data-model?object=<objectId>` and render the governed Data Model object table.
 - Folder and item customization supports display name, icon, and color.
