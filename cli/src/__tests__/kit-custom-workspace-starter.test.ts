@@ -422,6 +422,92 @@ describe("workspace-schema — nav-folders governance (invalid rows must throw)"
 });
 
 // ---------------------------------------------------------------------------
+// 2c. Workspace schema — crm-settings-mirror governance
+// ---------------------------------------------------------------------------
+
+describe("workspace-schema — crm-settings-mirror governance", () => {
+  let validateWorkspaceConfig: (config: unknown) => void;
+
+  beforeEach(async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}`) as { validateWorkspaceConfig: (c: unknown) => void };
+    validateWorkspaceConfig = mod.validateWorkspaceConfig;
+  });
+
+  function crmObject(rows: unknown[]) {
+    return {
+      dataModel: {
+        objects: [{
+          id: "crm-settings-mirror",
+          label: "CRM Settings Mirror",
+          objectType: "crm-settings",
+          columns: ["key", "enabled", "adminExposure", "updatedAt", "mirroredAt"],
+          rows: rows as Record<string, unknown>[],
+        }],
+      },
+    };
+  }
+
+  function tryValidate(rows: unknown[]): { code?: string; details?: string[] } {
+    try {
+      validateWorkspaceConfig(crmObject(rows));
+    } catch (e) {
+      const err = e as Error & { code?: string; details?: string[] };
+      return { code: err.code, details: err.details };
+    }
+    return {};
+  }
+
+  it("empty rows validate (catalog fills at read time)", () => {
+    expect(() => validateWorkspaceConfig(crmObject([]))).not.toThrow();
+  });
+
+  it("unknown setting key → must be a known CRM settings mirror key", () => {
+    const r = tryValidate([{ key: "not-a-real-toggle", enabled: true }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("known CRM settings"))).toBe(true);
+  });
+
+  it("invalid adminExposure → must be above-divider|below-divider|agent-only", () => {
+    const r = tryValidate([{ key: "email-sync-enabled", enabled: false, adminExposure: "public" }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("adminExposure"))).toBe(true);
+  });
+
+  it("duplicate keys in rows → duplicates flagged", () => {
+    const r = tryValidate([
+      { key: "email-sync-enabled", enabled: true },
+      { key: "email-sync-enabled", enabled: false },
+    ]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("duplicates"))).toBe(true);
+  });
+
+  it("valid catalog row passes", () => {
+    expect(() => validateWorkspaceConfig(crmObject([
+      { key: "go-live-lock-enabled", enabled: false, adminExposure: "agent-only" },
+    ]))).not.toThrow();
+  });
+});
+
+describe("crm-settings-mirror — catalog and snapshot contract", () => {
+  it("catalog defines exactly 20 settings", async () => {
+    const contractPath = path.join(APP_ROOT, "lib/crm-settings-mirror-contract.js");
+    const mod = await import(`file://${contractPath}`) as { CRM_SETTINGS_CATALOG: unknown[] };
+    expect(mod.CRM_SETTINGS_CATALOG).toHaveLength(20);
+  });
+
+  it("readCrmSettingsSnapshot returns 20 normalized settings", async () => {
+    const mirrorPath = path.join(APP_ROOT, "lib/crm-settings-mirror.js");
+    const mod = await import(`file://${mirrorPath}`) as {
+      readCrmSettingsSnapshot: (c: unknown) => { settings: unknown[] };
+    };
+    const snapshot = mod.readCrmSettingsSnapshot({ dataModel: { objects: [] } });
+    expect(snapshot.settings).toHaveLength(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 4. New file presence — every upstream primitive must exist in the kit tree
 // ---------------------------------------------------------------------------
 
@@ -461,6 +547,12 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
+
+  it("crm-settings-mirror contract and helper modules ship", () => {
+    expect(appExists("lib/crm-settings-mirror-contract.js")).toBe(true);
+    expect(appExists("lib/crm-settings-mirror.js")).toBe(true);
+    expect(appExists("docs/crm-settings-mirror-primitive.md")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -478,6 +570,9 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/resolvers/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
+    "apps/workspace/lib/crm-settings-mirror-contract.js",
+    "apps/workspace/lib/crm-settings-mirror.js",
+    "apps/workspace/docs/crm-settings-mirror-primitive.md",
   ];
 
   for (const p of requiredPaths) {

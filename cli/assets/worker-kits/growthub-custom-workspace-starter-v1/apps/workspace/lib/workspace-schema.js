@@ -1000,10 +1000,74 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   }
 }
 
+import {
+  CRM_ADMIN_EXPOSURES,
+  CRM_SETTINGS_KEY_SET,
+  CRM_SETTINGS_OBJECT_ID,
+  CRM_SETTINGS_ROW_COLUMNS
+} from "./crm-settings-mirror-contract.js";
+
 const NAV_FOLDERS_OBJECT_ID = "nav-folders";
 const NAV_FOLDER_NAME_MAX = 60;
 const NAV_ITEM_LABEL_MAX = 80;
 const NAV_ITEM_TYPES = ["dashboard", "view"];
+
+function validateCrmSettingsRow(row, path, errors) {
+  if (!isPlainObject(row)) return;
+  const key = typeof row.key === "string" ? row.key.trim() : "";
+  if (!key) {
+    errors.push(`${path}.key must be a non-empty string`);
+  } else if (!CRM_SETTINGS_KEY_SET.has(key)) {
+    errors.push(`${path}.key must be a known CRM settings mirror key`);
+  }
+  if (row.enabled !== undefined && row.enabled !== null && row.enabled !== "") {
+    const value = String(row.enabled).trim().toLowerCase();
+    if (!["true", "false", "0", "1", "on", "off", "yes", "no"].includes(value) && typeof row.enabled !== "boolean") {
+      errors.push(`${path}.enabled must be a boolean or boolean-like string`);
+    }
+  }
+  if (row.adminExposure !== undefined && row.adminExposure !== null && row.adminExposure !== "") {
+    const exposure = String(row.adminExposure).trim();
+    if (!CRM_ADMIN_EXPOSURES.includes(exposure)) {
+      errors.push(`${path}.adminExposure must be one of ${CRM_ADMIN_EXPOSURES.join(", ")}`);
+    }
+  }
+  for (const traceField of ["updatedAt", "mirroredAt"]) {
+    if (row[traceField] !== undefined && typeof row[traceField] !== "string") {
+      errors.push(`${path}.${traceField} must be a string when present`);
+    }
+  }
+  const allowed = new Set(CRM_SETTINGS_ROW_COLUMNS);
+  for (const field of Object.keys(row)) {
+    if (!allowed.has(field)) {
+      errors.push(`${path} contains unknown field: ${field}`);
+    }
+  }
+}
+
+function validateCrmSettingsObject(object, prefix, errors) {
+  if (Array.isArray(object.columns) && object.columns.length > 0) {
+    validateStringArray(object.columns, `${prefix}.columns`, errors);
+    for (const column of CRM_SETTINGS_ROW_COLUMNS) {
+      if (!object.columns.includes(column)) {
+        errors.push(`${prefix}.columns must include ${column}`);
+      }
+    }
+  }
+  if (!Array.isArray(object.rows)) return;
+  const keys = new Set();
+  object.rows.forEach((row, rowIndex) => {
+    validateCrmSettingsRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+    const key = typeof row?.key === "string" ? row.key.trim() : "";
+    if (key) {
+      if (keys.has(key)) {
+        errors.push(`${prefix}.rows[${rowIndex}].key duplicates an earlier CRM settings key`);
+      } else {
+        keys.add(key);
+      }
+    }
+  });
+}
 
 function validateNavFolderRow(row, path, errors) {
   if (!isPlainObject(row)) return;
@@ -1138,6 +1202,9 @@ function validateDataModelConfig(dataModel, errors) {
         if (object.id === NAV_FOLDERS_OBJECT_ID) {
           validateNavFolderRow(row, `${prefix}.rows[${rowIndex}]`, errors);
         }
+        if (object.objectType === "crm-settings" || object.id === CRM_SETTINGS_OBJECT_ID) {
+          validateCrmSettingsRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        }
       });
     }
     validateStaticDataBinding(object.binding, `${prefix}.binding`, errors);
@@ -1154,6 +1221,9 @@ function validateDataModelConfig(dataModel, errors) {
       }
     }
     validateFieldSettings(object.fieldSettings, `${prefix}.fieldSettings`, errors);
+    if (object.objectType === "crm-settings" || object.id === CRM_SETTINGS_OBJECT_ID) {
+      validateCrmSettingsObject(object, prefix, errors);
+    }
   });
 }
 
@@ -1414,6 +1484,7 @@ export {
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,
+  CRM_SETTINGS_OBJECT_ID,
   NAV_FOLDERS_OBJECT_ID,
   NAV_FOLDER_NAME_MAX,
   NAV_ITEM_LABEL_MAX,

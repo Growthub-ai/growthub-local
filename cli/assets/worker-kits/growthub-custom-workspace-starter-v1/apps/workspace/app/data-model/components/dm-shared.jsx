@@ -50,6 +50,7 @@ const OBJECT_TYPE_BADGE = {
   "data-source":         { label: "Data Source",         cls: "dm-badge-datasource" },
   "api-registry":        { label: "API Registry",        cls: "dm-badge-registry" },
   "sandbox-environment": { label: "Sandbox Environment", cls: "dm-badge-sandbox" },
+  "crm-settings":          { label: "CRM Settings",        cls: "dm-badge-registry" },
   people:                { label: "People",              cls: "dm-badge-people" },
   tasks:                 { label: "Tasks",               cls: "dm-badge-tasks" },
   custom:                { label: "Custom",              cls: "dm-badge-manual" },

@@ -90,6 +90,10 @@ widget.config.binding = {
 
 The reference is widget-local. Object rows and fields remain owned by `dataModel.objects[]`.
 
+### CRM Settings Mirror (`objectType: "crm-settings"`)
+
+Optional governed object on well-known id `crm-settings-mirror`. Twenty workspace toggles mirror as rows (`key`, `enabled`, `adminExposure`, `updatedAt`, `mirroredAt`). Catalog metadata and validation live in `apps/workspace/lib/crm-settings-mirror-contract.js`. Not a View widget source. See `apps/workspace/docs/crm-settings-mirror-primitive.md` in the starter kit.
+
 ---
 
 ## DashboardConfig

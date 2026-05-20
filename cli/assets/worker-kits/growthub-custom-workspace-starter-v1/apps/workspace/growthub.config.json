@@ -66,6 +66,21 @@
       "configDrivenCanvas": true
     }
   },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "crm-settings-mirror",
+        "label": "CRM Settings Mirror",
+        "source": "CRM Settings Mirror",
+        "objectType": "crm-settings",
+        "icon": "SlidersHorizontal",
+        "pickerHidden": true,
+        "columns": ["key", "enabled", "adminExposure", "updatedAt", "mirroredAt"],
+        "rows": [],
+        "binding": { "mode": "manual", "source": "CRM Settings Mirror" }
+      }
+    ]
+  },
   "provenance": {
     "createdBy": "cli",
     "mirrors": "growthub-custom-workspace-starter-v1",

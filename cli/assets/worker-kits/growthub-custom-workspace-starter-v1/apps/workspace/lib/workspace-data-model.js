@@ -302,6 +302,7 @@ function deriveManualObjectTable(object) {
 const HIDDEN_HELPER_OBJECT_IDS = new Set([
   "workspace-helper-sandbox",
   "nav-folders",
+  "crm-settings-mirror",
 ]);
 
 function listWorkspaceDataModelTables(workspaceConfig) {
@@ -752,6 +753,13 @@ const OBJECT_TYPE_PRESETS = {
         pageSize: 25
       }
     ]
+  },
+  "crm-settings": {
+    label: "CRM Settings Mirror",
+    icon: "SlidersHorizontal",
+    description: "One-to-one mirror of Twenty CRM workspace toggles for customer journey, admin divider exposure, and background-agent reads. Not a View widget source.",
+    columns: ["key", "enabled", "adminExposure", "updatedAt", "mirroredAt"],
+    relations: []
   },
   "custom": {
     label: "Custom",
