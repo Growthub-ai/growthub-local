@@ -23,6 +23,8 @@
  *     confirm affectedField is consistent with PROPOSAL_TYPE_TO_PATCH_FIELD.
  *
  * The local-intelligence adapter is the only execution backend used here.
+ * Supported intelligenceAdapterMode values: ollama, lmstudio, vllm,
+ * custom-openai-compatible, openai-responses (server-side OpenAI Responses).
  * No tool execution, no credential access, no direct workspace writes.
  */
 

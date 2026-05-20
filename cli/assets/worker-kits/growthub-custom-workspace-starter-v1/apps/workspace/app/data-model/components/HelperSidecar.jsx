@@ -196,15 +196,22 @@ const HELPER_INTENTS = [
 const PRIMARY_INTENT_VALUES = ["build_dashboard", "create_object", "edit_view", "repair"];
 const MORE_INTENT_VALUES   = ["create_widget", "register_api", "explain"];
 
-// Quick-swap suggestions surfaced under the Local Model input in the Setup
-// tab. Click → swaps the draft value; user still needs to hit Save & connect.
-const SETUP_QUICK_MODELS = [
+// Quick-swap suggestions surfaced under the model input in the Setup tab.
+const SETUP_QUICK_LOCAL_MODELS = [
   "gemma3:4b",
   "llama3.1:8b",
   "qwen2.5:7b",
   "mistral:7b",
   "phi3:14b",
 ];
+
+const SETUP_QUICK_OPENAI_MODELS = [
+  "gpt-5.2",
+  "gpt-5.1",
+  "gpt-5-mini",
+];
+
+const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 
 // Plain-language intent descriptions surfaced to no-code users.
 const HELPER_INTENT_HINTS = {
@@ -229,6 +236,13 @@ let persistedWidth = 420;
 
 function resolveSandboxEnvRow(workspaceConfig) {
   const objects = workspaceConfig?.dataModel?.objects || [];
+  const helperObj = objects.find((o) => o?.id === "workspace-helper-sandbox");
+  if (helperObj?.rows?.length) {
+    const named = helperObj.rows.find(
+      (r) => String(r?.Name || r?.name || "").trim().toLowerCase() === "workspace-helper",
+    );
+    return named || helperObj.rows[0];
+  }
   for (const obj of objects) {
     if (obj.objectType === "sandbox-environment" && Array.isArray(obj.rows) && obj.rows.length > 0) {
       return obj.rows[0];
@@ -495,10 +509,21 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     setPrompt("");
 
     try {
+      const helperRow = resolveSandboxEnvRow(workspaceConfig);
+      const queryAdapterMode = String(helperRow?.intelligenceAdapterMode || adapterDraft || "ollama").trim();
+      const queryModel = String(helperRow?.localModel || modelDraft || "").trim();
+      const queryEndpoint = String(helperRow?.localEndpoint || endpointDraft || "").trim();
       const res = await fetch("/api/workspace/helper/query", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ intent: activeIntent, userPrompt: submittedPrompt, threadId: threadId || undefined }),
+        body: JSON.stringify({
+          intent: activeIntent,
+          userPrompt: submittedPrompt,
+          threadId: threadId || undefined,
+          model: queryModel || undefined,
+          adapterMode: queryAdapterMode || undefined,
+          localEndpoint: queryEndpoint || undefined,
+        }),
       });
 
       // Try streaming first
@@ -580,6 +605,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   async function pingConnection() {
     const row = resolveSandboxEnvRow(workspaceConfig);
+    const adapterMode = String(row?.intelligenceAdapterMode || adapterDraft || "ollama").trim().toLowerCase();
+    if (adapterMode === "openai-responses") {
+      setConnectionStatus("connected");
+      return;
+    }
     const endpoint = row?.localEndpoint || "";
     if (!endpoint) { setConnectionStatus("unconfigured"); return; }
     setPingLoading(true);
@@ -614,8 +644,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const liveModel = sandboxRow?.localModel || "";
   const liveEndpoint = sandboxRow?.localEndpoint || "";
   const liveAdapter = sandboxRow?.intelligenceAdapterMode || "ollama";
-  const deploymentMode = liveAdapter === "custom-openai-compatible" || liveAdapter === "vllm" ? "hosted" : "local";
-  const isUnconfigured = !liveEndpoint;
+  const isOpenAiResponses = liveAdapter === "openai-responses" || adapterDraft === "openai-responses";
+  const deploymentMode =
+    liveAdapter === "openai-responses"
+      || liveAdapter === "custom-openai-compatible"
+      || liveAdapter === "vllm"
+      ? "hosted"
+      : "local";
+  const isUnconfigured = isOpenAiResponses ? false : !liveEndpoint;
   const setupIsDirty =
     modelDraft.trim() !== liveModel ||
     endpointDraft.trim() !== liveEndpoint ||
@@ -627,18 +663,34 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       : isUnconfigured
         ? "unconfigured"
         : "unreachable";
-  const setupStatusLabel = {
-    checking: "Checking connection…",
-    connected: "Connected to your local model",
-    unconfigured: "No local model configured yet",
-    unreachable: "Could not reach your local model",
-  }[setupStatusState];
-  const setupStatusMeta = {
-    checking: "",
-    connected: liveModel && liveEndpoint ? `${liveModel} · ${liveEndpoint}` : "",
-    unconfigured: "Configure your local model below to start using the helper.",
-    unreachable: "Start your local Ollama / LM Studio server, or verify the endpoint URL.",
-  }[setupStatusState];
+  const setupStatusLabel = isOpenAiResponses
+    ? {
+        checking: "Checking OpenAI Responses setup…",
+        connected: "OpenAI Responses mode",
+        unconfigured: "OpenAI Responses not configured",
+        unreachable: "OpenAI Responses setup issue",
+      }[setupStatusState]
+    : {
+        checking: "Checking connection…",
+        connected: "Connected to your local model",
+        unconfigured: "No local model configured yet",
+        unreachable: "Could not reach your local model",
+      }[setupStatusState];
+  const setupStatusMeta = isOpenAiResponses
+    ? {
+        checking: "",
+        connected: liveModel
+          ? `${liveModel} · server uses OPENAI_API_KEY (never sent to the browser)`
+          : "Set OPENAI_API_KEY on the server, then save OpenAI Responses mode below.",
+        unconfigured: "Click Use OpenAI Responses below, then save.",
+        unreachable: "Verify OPENAI_API_KEY is set on the server and restart npm run dev.",
+      }[setupStatusState]
+    : {
+        checking: "",
+        connected: liveModel && liveEndpoint ? `${liveModel} · ${liveEndpoint}` : "",
+        unconfigured: "Configure your local model below to start using the helper.",
+        unreachable: "Start your local Ollama / LM Studio server, or verify the endpoint URL.",
+      }[setupStatusState];
 
   // Seed setup-tab drafts whenever the sidecar opens or the underlying
   // sandbox row changes. Drafts mirror the live row on open and diverge
@@ -651,6 +703,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     setSetupSaveError("");
     setSetupSaveOk(false);
   }, [open, liveModel, liveEndpoint, liveAdapter]);
+
+  function applyOpenAiResponsesSetup(model = "gpt-5.2") {
+    setAdapterDraft("openai-responses");
+    setModelDraft(model);
+    setEndpointDraft(OPENAI_RESPONSES_ENDPOINT);
+    setSetupSaveError("");
+    setSetupSaveOk(false);
+  }
 
   async function saveSetup() {
     if (savingSetup) return;
@@ -669,9 +729,12 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         const rows = obj.rows.slice();
         rows[0] = {
           ...rows[0],
+          Name: rows[0].Name || "workspace-helper",
           localModel: modelDraft.trim(),
-          localEndpoint: endpointDraft.trim(),
+          localEndpoint: adapterDraft === "openai-responses" ? OPENAI_RESPONSES_ENDPOINT : endpointDraft.trim(),
           intelligenceAdapterMode: adapterDraft,
+          authRef: adapterDraft === "openai-responses" ? "OPENAI" : rows[0].authRef,
+          status: adapterDraft === "openai-responses" ? "connected" : rows[0].status,
         };
         objects[sbIdx] = { ...obj, rows };
         nextObjects = objects;
@@ -694,9 +757,12 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             runLocality: "local",
             runtime: "node",
             intelligenceType: "local-intelligence",
+            adapter: "local-intelligence",
             localModel: modelDraft.trim(),
-            localEndpoint: endpointDraft.trim(),
+            localEndpoint: adapterDraft === "openai-responses" ? OPENAI_RESPONSES_ENDPOINT : endpointDraft.trim(),
             intelligenceAdapterMode: adapterDraft,
+            authRef: adapterDraft === "openai-responses" ? "OPENAI" : undefined,
+            status: adapterDraft === "openai-responses" ? "connected" : undefined,
           }],
           binding: { mode: "manual", source: "Workspace Helper Sandbox" },
         });
@@ -1193,8 +1259,38 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {activeTab === "setup" && (
           <div className="dm-sidecar-body dm-helper-setup-body">
             <p className="dm-helper-setup-intro">
-              The helper sends your prompt to a local model. Credentials are never stored in the workspace.
+              Run the helper on a local model (Ollama, LM Studio, vLLM) or switch to OpenAI Responses with one click.
+              API keys stay on the server — never in the workspace or browser.
             </p>
+
+            <div className="dm-helper-setup-section dm-helper-setup-openai-card">
+              <p className="dm-helper-setup-label">Cloud reasoning (optional)</p>
+              <button
+                type="button"
+                className="dm-helper-setup-openai-btn"
+                onClick={() => applyOpenAiResponsesSetup("gpt-5.2")}
+                data-setup-openai-responses=""
+              >
+                Use OpenAI Responses
+              </button>
+              <p className="dm-helper-setup-helper-text">
+                Sets adapter mode to OpenAI Responses with <strong>gpt-5.2</strong>. Requires{" "}
+                <code>OPENAI_API_KEY</code> (or <code>OPENAI</code>) in the server environment.
+              </p>
+              <div className="dm-helper-setup-quick-row" role="group" aria-label="OpenAI model quick swap">
+                <span className="dm-helper-setup-quick-label">OpenAI models</span>
+                {SETUP_QUICK_OPENAI_MODELS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`dm-helper-setup-quick-pill${modelDraft === m && adapterDraft === "openai-responses" ? " active" : ""}`}
+                    onClick={() => applyOpenAiResponsesSetup(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div
               className={`dm-helper-setup-status state-${setupStatusState}`}
@@ -1226,47 +1322,53 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             </div>
 
             <div className="dm-helper-setup-section">
-              <label className="dm-helper-setup-label" htmlFor="setup-model">Local Model</label>
+              <label className="dm-helper-setup-label" htmlFor="setup-model">
+                {isOpenAiResponses ? "OpenAI Model" : "Local Model"}
+              </label>
               <input
                 id="setup-model"
                 type="text"
                 className="dm-helper-setup-input"
                 value={modelDraft}
                 onChange={(e) => setModelDraft(e.target.value)}
-                placeholder="e.g. gemma3:4b"
+                placeholder={isOpenAiResponses ? "e.g. gpt-5.2" : "e.g. gemma3:4b"}
                 autoComplete="off"
                 spellCheck={false}
                 data-local-model=""
               />
-              <div className="dm-helper-setup-quick-row" role="group" aria-label="Quick model swap">
-                <span className="dm-helper-setup-quick-label">Quick swap</span>
-                {SETUP_QUICK_MODELS.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`dm-helper-setup-quick-pill${modelDraft === m ? " active" : ""}`}
-                    onClick={() => setModelDraft(m)}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
+              {!isOpenAiResponses && (
+                <div className="dm-helper-setup-quick-row" role="group" aria-label="Local model quick swap">
+                  <span className="dm-helper-setup-quick-label">Local models</span>
+                  {SETUP_QUICK_LOCAL_MODELS.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`dm-helper-setup-quick-pill${modelDraft === m ? " active" : ""}`}
+                      onClick={() => setModelDraft(m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="dm-helper-setup-section">
-              <label className="dm-helper-setup-label" htmlFor="setup-endpoint">Inference Endpoint</label>
-              <input
-                id="setup-endpoint"
-                type="text"
-                className="dm-helper-setup-input"
-                value={endpointDraft}
-                onChange={(e) => setEndpointDraft(e.target.value)}
-                placeholder="http://127.0.0.1:11434/v1"
-                autoComplete="off"
-                spellCheck={false}
-                data-local-endpoint=""
-              />
-            </div>
+            {!isOpenAiResponses && (
+              <div className="dm-helper-setup-section">
+                <label className="dm-helper-setup-label" htmlFor="setup-endpoint">Inference Endpoint</label>
+                <input
+                  id="setup-endpoint"
+                  type="text"
+                  className="dm-helper-setup-input"
+                  value={endpointDraft}
+                  onChange={(e) => setEndpointDraft(e.target.value)}
+                  placeholder="http://127.0.0.1:11434/v1"
+                  autoComplete="off"
+                  spellCheck={false}
+                  data-local-endpoint=""
+                />
+              </div>
+            )}
 
             <div className="dm-helper-setup-section">
               <label className="dm-helper-setup-label" htmlFor="setup-adapter">Adapter Mode</label>
@@ -1281,6 +1383,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 <option value="lmstudio">LM Studio</option>
                 <option value="vllm">vLLM</option>
                 <option value="custom-openai-compatible">Custom OpenAI-compatible</option>
+                <option value="openai-responses">OpenAI Responses (server API key)</option>
               </select>
               <span className="dm-helper-setup-helper-text" data-deployment-mode={deploymentMode}>
                 Deployment: <strong>{deploymentMode}</strong>
@@ -1292,7 +1395,12 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 type="button"
                 className="dm-helper-setup-save"
                 onClick={saveSetup}
-                disabled={savingSetup || !setupIsDirty || (!modelDraft.trim() || !endpointDraft.trim())}
+                disabled={
+                  savingSetup
+                  || !setupIsDirty
+                  || !modelDraft.trim()
+                  || (!isOpenAiResponses && !endpointDraft.trim())
+                }
                 data-setup-save=""
               >
                 {savingSetup

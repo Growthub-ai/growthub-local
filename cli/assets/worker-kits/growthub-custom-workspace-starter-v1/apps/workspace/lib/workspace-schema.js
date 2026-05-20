@@ -951,7 +951,7 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (row.agentHost !== undefined && row.agentHost !== "" && !KNOWN_SANDBOX_AGENT_HOSTS.includes(row.agentHost)) {
     errors.push(`${path}.agentHost must be one of ${KNOWN_SANDBOX_AGENT_HOSTS.join(", ")}`);
   }
-  const INTELLIGENCE_ADAPTER_MODES = ["ollama", "lmstudio", "vllm", "custom-openai-compatible"];
+  const INTELLIGENCE_ADAPTER_MODES = ["ollama", "lmstudio", "vllm", "custom-openai-compatible", "openai-responses"];
   for (const field of ["localModel", "localEndpoint", "intelligenceAdapterMode"]) {
     if (row[field] !== undefined && row[field] !== null && row[field] !== "" && typeof row[field] !== "string") {
       errors.push(`${path}.${field} must be a string when set`);

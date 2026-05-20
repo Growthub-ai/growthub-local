@@ -199,14 +199,28 @@ The helper is reachable from every governed builder surface a no-code user can l
 - **Proposal review** — each row shows the proposal type, target PATCH field, a short payload summary chip (no raw JSON), a rationale, and a confidence percent when the model provided one. Skipped proposals render their reason inline.
 - **Setup tab** — local model, inference endpoint, deployment mode (`local` / `hosted`), connection status (green = reachable, amber = unreachable / unconfigured), and a copyable `growthub workspace setup --open` command. Ping runs only when the Setup tab opens.
 
+## OpenAI Responses helper mode
+
+The helper can run in either **local OpenAI-compatible** mode or **OpenAI Responses** mode. Both use the same query/apply/thread contract.
+
+OpenAI Responses mode:
+
+- Uses `adapterMode: "openai-responses"` on the query body or the hidden `workspace-helper-sandbox` row (`intelligenceAdapterMode`).
+- Resolves `OPENAI_API_KEY` or `OPENAI` **server-side only** inside `default-local-intelligence.js` — never in the browser, helper-threads rows, or source records.
+- Calls `POST https://api.openai.com/v1/responses` with the same sanitized chat `messages[]` built by `buildChatMessages`.
+- Normalizes the response into the same `growthub-local-model-sandbox-v1` envelope and `WorkspaceHelperResponse`.
+- Persists helper-threads and applies proposals through the same governed `/api/workspace/helper/apply` route.
+
+Without a server API key, query returns `ok: false` with a clear setup error and no secret leakage.
+
 ## Adapter contract
 
 The query route dispatches through the `local-intelligence` sandbox adapter:
 
 - Adapter: `local-intelligence` (registered in `sandbox-adapter-registry.js`)
-- Locality: `local`
-- Model: resolved from `--model` flag → `NATIVE_INTELLIGENCE_LOCAL_MODEL` env → `OLLAMA_MODEL` env → `"gemma3:4b"`
-- Mode: `ollama` (default) | `lmstudio` | `vllm` | `custom-openai-compatible`
+- Locality: `local` for Ollama/LM Studio/vLLM/custom; `server` for OpenAI Responses transport
+- Model: resolved from query body → `workspace-helper-sandbox` row → env defaults
+- Mode: `ollama` (default) | `lmstudio` | `vllm` | `custom-openai-compatible` | `openai-responses`
 - Output: `growthub-local-model-sandbox-v1` envelope with `result.json.proposals[]`
 
 The `local-agent-host` adapter is NOT used by the helper. These two adapters remain separate:

@@ -74,6 +74,16 @@ const VALID_INTENTS = [
 
 const HELPER_SOURCE_KEY_PREFIX = "helper";
 
+function resolveHelperSandboxRow(workspaceConfig) {
+  const objects = workspaceConfig?.dataModel?.objects || [];
+  const helperObj = objects.find((o) => o?.id === "workspace-helper-sandbox");
+  if (!helperObj || !Array.isArray(helperObj.rows) || helperObj.rows.length === 0) return null;
+  const named = helperObj.rows.find(
+    (r) => String(r?.Name || r?.name || "").trim().toLowerCase() === "workspace-helper",
+  );
+  return named || helperObj.rows[0] || null;
+}
+
 function helperSourceId(intent, runId) {
   return `${HELPER_SOURCE_KEY_PREFIX}:${intent}:${runId}`;
 }
@@ -184,6 +194,26 @@ async function POST(request) {
   const runId = `helper_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const ranAt = new Date().toISOString();
 
+  const helperRow = liveConfigForThread ? resolveHelperSandboxRow(liveConfigForThread) : null;
+  const resolvedAdapterMode = (
+    adapterModeOverride
+    || (typeof helperRow?.intelligenceAdapterMode === "string" ? helperRow.intelligenceAdapterMode.trim() : "")
+    || "ollama"
+  ).toLowerCase();
+  const resolvedModel = (
+    modelOverride
+    || (typeof helperRow?.localModel === "string" ? helperRow.localModel.trim() : "")
+    || (resolvedAdapterMode === "openai-responses" ? "gpt-5.2" : "")
+    || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL
+    || process.env.OLLAMA_MODEL
+    || "gemma3:4b"
+  );
+  const resolvedEndpoint = (
+    localEndpointOverride
+    || (typeof helperRow?.localEndpoint === "string" ? helperRow.localEndpoint.trim() : "")
+    || (resolvedAdapterMode === "openai-responses" ? "https://api.openai.com/v1/responses" : "")
+  );
+
   let adapterResult;
   try {
     adapterResult = await adapter.run({
@@ -207,9 +237,9 @@ async function POST(request) {
         // (KV-cache friendly).
         messages: chatMessages,
         userIntent,
-        localModel: modelOverride || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "gemma3:4b",
-        localEndpoint: localEndpointOverride || "",
-        intelligenceAdapterMode: adapterModeOverride || "ollama",
+        localModel: resolvedModel,
+        localEndpoint: resolvedEndpoint,
+        intelligenceAdapterMode: resolvedAdapterMode,
       },
     });
   } catch (err) {
@@ -228,9 +258,9 @@ async function POST(request) {
         ok: false,
         error: adapterResult.error || "local-intelligence adapter returned error",
         receipts: {
-          model: "unknown",
-          adapterMode: adapterModeOverride || "ollama",
-          endpoint: "",
+          model: resolvedModel || "unknown",
+          adapterMode: resolvedAdapterMode,
+          endpoint: resolvedEndpoint,
           confidence: 0,
           latencyMs: adapterResult.durationMs || 0,
           ranAt,

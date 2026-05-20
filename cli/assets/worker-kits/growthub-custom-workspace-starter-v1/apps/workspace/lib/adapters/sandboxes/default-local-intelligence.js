@@ -11,6 +11,7 @@ import { Buffer } from "node:buffer";
 import { registerSandboxAdapter } from "./sandbox-adapter-registry.js";
 
 const MAX_OUT = 256 * 1024;
+const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 function clampStream(buffer) {
   if (buffer.length <= MAX_OUT) return buffer.toString("utf8");
@@ -51,6 +52,192 @@ function buildSystemPrompt() {
   ].join("\n");
 }
 
+function resolveOpenAiApiKey() {
+  const key = String(process.env.OPENAI_API_KEY || process.env.OPENAI || "").trim();
+  return key || null;
+}
+
+function extractResponsesOutputText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text.trim();
+  }
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  const parts = [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "message" && Array.isArray(item.content)) {
+      for (const block of item.content) {
+        if (!block || typeof block !== "object") continue;
+        if (block.type === "output_text" && typeof block.text === "string" && block.text.trim()) {
+          parts.push(block.text.trim());
+        } else if (typeof block.text === "string" && block.text.trim()) {
+          parts.push(block.text.trim());
+        }
+      }
+    }
+  }
+  return parts.join("\n").trim();
+}
+
+function parseModelJsonEnvelope(text) {
+  if (!text) {
+    return { text: "", warnings: ["model returned empty output"], toolIntents: [], confidence: 0 };
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { text, warnings: ["model completion was not valid JSON"], toolIntents: [], confidence: 0 };
+  }
+}
+
+function buildLocalModelEnvelope({ request, box, model, endpoint, parsed, rawText, durationMs, mode }) {
+  const envelope = {
+    version: "growthub-local-model-sandbox-v1",
+    taskId: request.runId,
+    businessObjectType: "sandbox-environment",
+    adapter: {
+      kind: "local-intelligence",
+      mode: mode || box.intelligenceAdapterMode || "ollama",
+      modelId: model,
+      endpoint,
+    },
+    result: {
+      text: typeof parsed.text === "string" ? parsed.text : undefined,
+      json: parsed.json && typeof parsed.json === "object" ? parsed.json : undefined,
+      toolIntents: Array.isArray(parsed.toolIntents) ? parsed.toolIntents : [],
+      warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
+    },
+    rawText,
+    latencyMs: durationMs,
+    createdAt: new Date().toISOString(),
+  };
+  return {
+    ok: true,
+    exitCode: 0,
+    durationMs,
+    stdout: JSON.stringify(envelope, null, 2),
+    stderr: "",
+    adapterMeta: {
+      adapter: "local-intelligence",
+      endpoint,
+      model,
+      locality: mode === "openai-responses" ? "server" : "local",
+      provider: mode === "openai-responses" ? "openai" : undefined,
+    },
+  };
+}
+
+async function runOpenAiResponses(request, box, started) {
+  const apiKey = resolveOpenAiApiKey();
+  if (!apiKey) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: Date.now() - started,
+      stdout: "",
+      stderr: "",
+      error:
+        "OpenAI Responses mode requires OPENAI_API_KEY (or OPENAI) in the server environment. Set the key and restart the workspace dev server.",
+      adapterMeta: { adapter: "local-intelligence", mode: "openai-responses" },
+    };
+  }
+
+  const model =
+    String(box.localModel || "").trim()
+    || String(process.env.OPENAI_RESPONSES_MODEL || "").trim()
+    || "gpt-5.2";
+  const endpoint = OPENAI_RESPONSES_URL;
+
+  const explicitMessages = Array.isArray(box.messages)
+    ? box.messages.filter((m) => m && typeof m.role === "string" && typeof m.content === "string")
+    : null;
+  const messages = explicitMessages && explicitMessages.length > 0
+    ? explicitMessages
+    : [
+        { role: "system", content: buildSystemPrompt() },
+        { role: "user", content: box.userIntent },
+      ];
+
+  const body = {
+    model,
+    input: messages,
+    store: false,
+    text: { format: { type: "json_object" } },
+  };
+
+  const controller = new AbortController();
+  const ms = Number(request.timeoutMs) > 0 ? Math.min(Number(request.timeoutMs), 600000) : 90000;
+  const timer = setTimeout(() => controller.abort(), ms);
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const buf = Buffer.from(await res.arrayBuffer());
+    const text = clampStream(buf);
+    const durationMs = Date.now() - started;
+    if (!res.ok) {
+      let detail = `OpenAI Responses HTTP ${res.status}`;
+      try {
+        const errBody = JSON.parse(text);
+        const msg = errBody?.error?.message;
+        if (typeof msg === "string" && msg.trim()) detail = msg.trim();
+      } catch {
+        // keep generic status message — never forward raw response bodies that may leak metadata
+      }
+      return {
+        ok: false,
+        exitCode: 1,
+        durationMs,
+        stdout: "",
+        stderr: "",
+        error: detail,
+        adapterMeta: { adapter: "local-intelligence", endpoint, model, mode: "openai-responses" },
+      };
+    }
+
+    let outer;
+    try {
+      outer = JSON.parse(text);
+    } catch {
+      outer = null;
+    }
+    const outputText = extractResponsesOutputText(outer);
+    const parsed = parseModelJsonEnvelope(outputText);
+    return buildLocalModelEnvelope({
+      request,
+      box,
+      model,
+      endpoint,
+      parsed,
+      rawText: text,
+      durationMs,
+      mode: "openai-responses",
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: Date.now() - started,
+      stdout: "",
+      stderr: clampStream(Buffer.from(String(err.message || err), "utf8")),
+      error: err.name === "AbortError" ? `timed out after ${ms}ms` : err.message || "OpenAI Responses request failed",
+      adapterMeta: { adapter: "local-intelligence", endpoint, model, mode: "openai-responses" },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function run(request) {
   const started = Date.now();
   const box = request.intelligenceSandbox;
@@ -64,6 +251,11 @@ async function run(request) {
       error: "intelligenceSandbox.userIntent is required for local-intelligence adapter",
       adapterMeta: { adapter: "local-intelligence" },
     };
+  }
+
+  const adapterMode = String(box.intelligenceAdapterMode || "ollama").trim().toLowerCase();
+  if (adapterMode === "openai-responses") {
+    return runOpenAiResponses(request, box, started);
   }
 
   let endpoint;
@@ -157,41 +349,16 @@ async function run(request) {
       parsed = { text, warnings: ["invalid JSON from model"], toolIntents: [], confidence: 0 };
     }
 
-    const envelope = {
-      version: "growthub-local-model-sandbox-v1",
-      taskId: request.runId,
-      businessObjectType: "sandbox-environment",
-      adapter: {
-        kind: "local-intelligence",
-        mode: box.intelligenceAdapterMode || "ollama",
-        modelId: model,
-        endpoint,
-      },
-      result: {
-        text: typeof parsed.text === "string" ? parsed.text : undefined,
-        json: parsed.json && typeof parsed.json === "object" ? parsed.json : undefined,
-        toolIntents: Array.isArray(parsed.toolIntents) ? parsed.toolIntents : [],
-        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
-        confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
-      },
+    return buildLocalModelEnvelope({
+      request,
+      box,
+      model,
+      endpoint,
+      parsed,
       rawText: text,
-      latencyMs: durationMs,
-      createdAt: new Date().toISOString(),
-    };
-
-    return {
-      ok: true,
-      exitCode: 0,
       durationMs,
-      stdout: JSON.stringify(envelope, null, 2),
-      stderr: "",
-      adapterMeta: {
-        adapter: "local-intelligence",
-        endpoint,
-        model,
-        locality: "local",
-      },
-    };
+      mode: box.intelligenceAdapterMode || "ollama",
+    });
   } catch (err) {
     return {
       ok: false,
@@ -211,7 +378,7 @@ registerSandboxAdapter({
   id: "local-intelligence",
   label: "Local intelligence (OpenAI-compatible)",
   description:
-    "Calls your local Ollama / LM Studio / vLLM Chat Completions endpoint with JSON-only output. Tool intents are proposals — not executed here.",
+    "Calls your local Ollama / LM Studio / vLLM Chat Completions endpoint, or OpenAI Responses server-side when adapter mode is openai-responses. Tool intents are proposals — not executed here.",
   locality: "local",
   supportedRuntimes: [],
   run,
