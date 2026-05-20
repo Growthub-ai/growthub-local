@@ -993,9 +993,38 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.timeoutMs must be a finite number between 0 and ${SANDBOX_MAX_TIMEOUT_MS}`);
     }
   }
-  for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane"]) {
+  for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane", "slug", "outputRootPath"]) {
     if (row[traceField] !== undefined && typeof row[traceField] !== "string") {
       errors.push(`${path}.${traceField} must be a string when present`);
+    }
+  }
+  if (row.orchestrationGraph !== undefined && row.orchestrationGraph !== "") {
+    let graph = row.orchestrationGraph;
+    if (typeof graph === "string") {
+      try {
+        graph = JSON.parse(graph);
+      } catch {
+        errors.push(`${path}.orchestrationGraph must be valid JSON when present`);
+        graph = null;
+      }
+    }
+    if (graph !== null && graph !== undefined) {
+      if (!isPlainObject(graph)) {
+        errors.push(`${path}.orchestrationGraph must be a plain object`);
+      } else {
+        if (Number(graph.version) !== 1) {
+          errors.push(`${path}.orchestrationGraph.version must be 1`);
+        }
+        if (typeof graph.provider !== "string" || !String(graph.provider).trim()) {
+          errors.push(`${path}.orchestrationGraph.provider is required`);
+        }
+        if (!Array.isArray(graph.nodes) || !graph.nodes.length) {
+          errors.push(`${path}.orchestrationGraph.nodes must be a non-empty array`);
+        }
+        if (!Array.isArray(graph.edges)) {
+          errors.push(`${path}.orchestrationGraph.edges must be an array`);
+        }
+      }
     }
   }
 }

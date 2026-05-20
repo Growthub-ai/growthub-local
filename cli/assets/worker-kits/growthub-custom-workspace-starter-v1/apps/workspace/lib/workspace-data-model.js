@@ -710,6 +710,7 @@ const OBJECT_TYPE_PRESETS = {
     description: "Execution locality: local (process sandbox or Paperclip thin local agent-host CLI) or serverless (delegates to an API Registry HTTP target: Edge/QStash/cron webhook). Env refs resolve server-side; run history in growthub.source-records.json. Not a widget binding source.",
     columns: [
       "Name",
+      "slug",
       "lifecycleStatus",
       "version",
       "runLocality",
@@ -731,6 +732,8 @@ const OBJECT_TYPE_PRESETS = {
       "lastRunId",
       "lastSourceId",
       "lastResponse",
+      "orchestrationGraph",
+      "outputRootPath",
       "resolverTemplateId",
       "connectorKind",
       "executionLane"
@@ -1139,6 +1142,18 @@ function resolveLocalReferenceOptions(workspaceConfig, {
 
   return { options: page, nextCursor, reason: null, total: filtered.length };
 }
+
+export {
+  appendSandboxToolRow,
+  buildSandboxRowFromApiRegistry,
+  buildDefaultOrchestrationGraphFromRegistry,
+  findSandboxRowsForRegistry,
+  isApiRegistryTestSuccess,
+  parseOrchestrationGraph,
+  serializeOrchestrationGraph,
+  summarizeOrchestrationGraph,
+  validateOrchestrationGraph,
+} from "./orchestration-graph.js";
 
 export {
   OBJECT_TYPE_PRESETS,
