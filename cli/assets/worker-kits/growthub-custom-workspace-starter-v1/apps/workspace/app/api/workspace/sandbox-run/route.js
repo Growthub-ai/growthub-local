@@ -75,6 +75,8 @@ import {
   ensureSandboxAdaptersLoaded,
   getSandboxAdapter
 } from "@/lib/adapters/sandboxes";
+import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
+import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 
 function envKeyCandidates(ref) {
   const token = String(ref || "")
@@ -503,7 +505,16 @@ async function POST(request) {
   let result;
   let effectiveAdapterId = adapterId;
 
-  if (runLocality === "serverless") {
+  const hasNativeGraph = Boolean(parseOrchestrationGraph(row.orchestrationGraph));
+  if (hasNativeGraph && runLocality !== "serverless") {
+    const graphResult = await runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs });
+    if (graphResult !== null) {
+      result = graphResult;
+      effectiveAdapterId = "orchestration-graph";
+    }
+  }
+
+  if (!result && runLocality === "serverless") {
     effectiveAdapterId = "serverless";
     result = await runServerlessScheduler({
       workspaceConfig,
@@ -525,7 +536,7 @@ async function POST(request) {
       envRefsResolved,
       envRefsMissing
     });
-  } else {
+  } else if (!result) {
     await ensureSandboxAdaptersLoaded();
     const adapter = getSandboxAdapter(adapterId);
     if (!adapter) {

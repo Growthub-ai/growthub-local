@@ -50,6 +50,7 @@ import {
   addTableRow,
   appendRowsToTable,
   createTypedBusinessObject,
+  addTableField,
   deleteTableRow,
   describeBindingLane,
   effectiveRelations,
@@ -69,6 +70,10 @@ import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
+import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
+import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
+import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
+import { buildSandboxRowFromApiRegistry } from "@/lib/orchestration-graph";
 import {
   FIELD_TYPE_ICON_NAMES,
   ICON_PICKER_SET,
@@ -898,6 +903,12 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   const [sandboxHistoryMessage, setSandboxHistoryMessage] = useState("");
   const [loadingSandboxHistory, setLoadingSandboxHistory] = useState(false);
   const [expandedJson, setExpandedJson] = useState(null);
+  const [sandboxToolFlow, setSandboxToolFlow] = useState(null);
+  const [sandboxToolDraft, setSandboxToolDraft] = useState({});
+  const [sandboxToolCreating, setSandboxToolCreating] = useState(false);
+  const [createdSandboxMeta, setCreatedSandboxMeta] = useState(null);
+  const [createdSandboxTesting, setCreatedSandboxTesting] = useState(false);
+  const [createdSandboxTestMessage, setCreatedSandboxTestMessage] = useState("");
 
   useEffect(() => {
     setDraft(row || {});
@@ -909,10 +920,15 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
     setSandboxHistory([]);
     setSandboxHistoryMessage("");
     setExpandedJson(null);
+    setSandboxToolFlow(null);
+    setSandboxToolDraft({});
+    setCreatedSandboxMeta(null);
+    setCreatedSandboxTestMessage("");
   }, [row, rowIndex]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
+  const isApiRegistry = table.objectType === "api-registry";
   const isSandbox = table.objectType === "sandbox-environment";
   const isDirty = JSON.stringify(draft || {}) !== JSON.stringify(row || {}) || JSON.stringify(pendingColumns) !== JSON.stringify(table.columns || []) || JSON.stringify(pendingHidden) !== JSON.stringify(table.fieldSettings?.hidden || []);
 
@@ -1004,6 +1020,91 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
     }
   }
 
+  function ensureSandboxColumns(config, sandboxTable) {
+    let next = config;
+    let current = sandboxTable;
+    for (const field of ["orchestrationGraph", "description"]) {
+      if (!current.columns.includes(field)) {
+        next = addTableField(next, current, field);
+        const tables = listWorkspaceDataModelTables(next);
+        current = tables.find((t) => t.objectId === sandboxTable.objectId) || current;
+      }
+    }
+    return { config: next, sandboxTable: current };
+  }
+
+  function createSandboxToolFromRegistry() {
+    if (!sandboxToolDraft?.name?.trim()) return;
+    setSandboxToolCreating(true);
+    try {
+      onSave((config) => {
+        let next = config;
+        let sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
+        if (!sandboxTable) {
+          next = createTypedBusinessObject(next, {
+            name: "Sandbox Environments",
+            objectType: "sandbox-environment"
+          });
+          sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
+        }
+        if (!sandboxTable) return next;
+        const ensured = ensureSandboxColumns(next, sandboxTable);
+        next = ensured.config;
+        sandboxTable = ensured.sandboxTable;
+        const newRow = buildSandboxRowFromApiRegistry(next, draft, {
+          name: sandboxToolDraft.name,
+          description: sandboxToolDraft.description,
+          runLocality: sandboxToolDraft.runLocality,
+          adapter: sandboxToolDraft.adapter,
+          authRef: sandboxToolDraft.authRef,
+          envRefs: sandboxToolDraft.envRefs,
+          networkAllow: sandboxToolDraft.networkAllow,
+          timeoutMs: sandboxToolDraft.timeoutMs,
+          rootPath: sandboxToolDraft.rootPath,
+          instructions: sandboxToolDraft.instructions,
+          orchestrationGraph: sandboxToolDraft.orchestrationGraph
+        });
+        next = appendRowsToTable(next, sandboxTable, [newRow]);
+        setCreatedSandboxMeta({
+          objectId: sandboxTable.objectId,
+          name: newRow.Name,
+          authRef: newRow.authRef || sandboxToolDraft.authRef
+        });
+        setSandboxToolFlow("created");
+        return next;
+      });
+    } finally {
+      setSandboxToolCreating(false);
+    }
+  }
+
+  async function runCreatedSandboxTest() {
+    if (!createdSandboxMeta?.objectId || !createdSandboxMeta?.name) return;
+    setCreatedSandboxTesting(true);
+    setCreatedSandboxTestMessage("");
+    try {
+      const res = await fetch("/api/workspace/sandbox-run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          objectId: createdSandboxMeta.objectId,
+          name: createdSandboxMeta.name
+        })
+      });
+      const payload = await res.json();
+      const ok = payload.ok && String(payload.status || "").toLowerCase() === "connected";
+      setCreatedSandboxTestMessage(
+        ok
+          ? "Sandbox test succeeded — stdout captured, lastResponse and source record saved."
+          : (payload.response?.error || payload.error || "Sandbox test failed")
+      );
+    } catch (err) {
+      setCreatedSandboxTestMessage(err.message || "Sandbox test failed");
+    } finally {
+      setCreatedSandboxTesting(false);
+    }
+  }
+
   async function runSandbox() {
     if (!table.objectId) {
       setSandboxMessage("Missing object id for this sandbox table.");
@@ -1081,14 +1182,17 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
   return (
     <>
       <div className="dm-record-backdrop" onClick={onClose} />
-      <aside className="dm-record-drawer" aria-label="Record details">
+      <aside
+        className={`dm-record-drawer${sandboxToolFlow === "draft" ? " dm-record-drawer-wide" : ""}`}
+        aria-label="Record details"
+      >
         <header className="dm-record-drawer-head">
           <div>
             <p>Record</p>
             <h2>{draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}</h2>
           </div>
           <div className="dm-record-drawer-actions">
-            {!isSandbox && (
+            {!isSandbox && sandboxToolFlow !== "draft" && (
               <button type="button" className="dm-sidebar-close" onClick={() => setEditMode((current) => !current)} aria-label="Toggle edit mode">
                 <Pencil size={16} />
               </button>
@@ -1098,7 +1202,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             </button>
           </div>
         </header>
-        {(table.objectType === "api-registry" || table.objectType === "data-source") && (
+        {(table.objectType === "api-registry" || table.objectType === "data-source") && sandboxToolFlow !== "draft" && (
           <SourceTestPanel
             status={draft.status}
             testing={testing}
@@ -1107,6 +1211,50 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
             onTest={testApiRecord}
           />
         )}
+        {isApiRegistry && sandboxToolFlow !== "draft" && (
+          <ApiRegistryActionCard
+            registryRow={draft}
+            disabled={saving || sandboxToolCreating}
+            onCreateSandboxTool={() => setSandboxToolFlow("draft")}
+          />
+        )}
+        {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
+          <section className="dm-api-action-card dm-api-action-card-success" aria-label="Sandbox tool created">
+            <div className="dm-api-action-card-body">
+              <p className="dm-api-action-card-eyebrow">Sandbox tool created</p>
+              <h3>{createdSandboxMeta.name}</h3>
+              <p>Governed sandbox row saved with orchestrationGraph. Run an explicit test to persist lastResponse.</p>
+              {createdSandboxTestMessage && <p className="dm-sandbox-tool-test-msg">{createdSandboxTestMessage}</p>}
+            </div>
+            <button
+              type="button"
+              className="dm-btn-primary-sm dm-api-action-card-cta"
+              disabled={createdSandboxTesting || saving}
+              onClick={runCreatedSandboxTest}
+            >
+              {createdSandboxTesting ? "Running…" : "Run test"}
+            </button>
+          </section>
+        )}
+        {isApiRegistry && sandboxToolFlow === "draft" && (
+          <SandboxToolDraftPanel
+            registryRow={draft}
+            draftOptions={sandboxToolDraft}
+            disabled={saving || sandboxToolCreating}
+            onDraftChange={setSandboxToolDraft}
+            onRequestConfirm={() => setSandboxToolFlow("confirm")}
+            onCancel={() => setSandboxToolFlow(null)}
+          />
+        )}
+        <SandboxToolConfirmModal
+          open={isApiRegistry && sandboxToolFlow === "confirm"}
+          toolName={sandboxToolDraft?.name || ""}
+          authRef={sandboxToolDraft?.authRef || draft.authRef}
+          orchestrationGraph={sandboxToolDraft?.orchestrationGraph}
+          creating={sandboxToolCreating}
+          onConfirm={createSandboxToolFromRegistry}
+          onCancel={() => setSandboxToolFlow("draft")}
+        />
         {isSandbox && (
           <SandboxRunPanel
             status={draft.status}
@@ -1118,7 +1266,7 @@ function DataModelRecordDrawer({ table, tables, workspaceConfig, rowIndex, row, 
           />
         )}
         <div className="dm-record-fields">
-          {isSandbox ? (
+          {isApiRegistry && sandboxToolFlow === "draft" ? null : isSandbox ? (
             <SandboxRecordFields
               draft={draft}
               setDraft={setDraft}

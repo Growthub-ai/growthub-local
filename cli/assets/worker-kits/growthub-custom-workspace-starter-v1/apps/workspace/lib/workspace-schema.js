@@ -963,6 +963,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.intelligenceAdapterMode must be one of ${INTELLIGENCE_ADAPTER_MODES.join(", ")}`);
     }
   }
+  if (row.orchestrationGraph !== undefined && row.orchestrationGraph !== null && row.orchestrationGraph !== "") {
+    if (typeof row.orchestrationGraph !== "string" && (typeof row.orchestrationGraph !== "object" || Array.isArray(row.orchestrationGraph))) {
+      errors.push(`${path}.orchestrationGraph must be a JSON string or plain object`);
+    }
+  }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
     errors.push(`${path}.envRefs must be a comma-separated string or array of env-ref slugs (never values)`);
   }

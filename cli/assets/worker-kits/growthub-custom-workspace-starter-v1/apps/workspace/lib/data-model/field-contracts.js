@@ -27,6 +27,7 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
   },
   envRefs: { editor: "env-ref-multiselect" },
   lastResponse: { editor: "json-preview", readonly: true },
+  orchestrationGraph: { editor: "orchestration-graph", readonly: true },
   lastRunId: { editor: "readonly-text" },
   lastSourceId: { editor: "readonly-text" },
   resolverTemplateId: { editor: "readonly-text" },
