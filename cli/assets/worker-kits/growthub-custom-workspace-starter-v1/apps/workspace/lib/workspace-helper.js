@@ -22,7 +22,8 @@
  *     Check each proposal type against WORKSPACE_HELPER_PROPOSAL_TYPES and
  *     confirm affectedField is consistent with PROPOSAL_TYPE_TO_PATCH_FIELD.
  *
- * The local-intelligence adapter is the only execution backend used here.
+ * The local-intelligence adapter is the only execution backend used here
+ * (ollama | lmstudio | vllm | custom-openai-compatible | openai-responses).
  * No tool execution, no credential access, no direct workspace writes.
  */
 

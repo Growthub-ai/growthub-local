@@ -183,6 +183,10 @@ async function POST(request) {
 
   const runId = `helper_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const ranAt = new Date().toISOString();
+  const resolvedAdapterMode = (adapterModeOverride || "ollama").trim().toLowerCase();
+  const defaultModel = resolvedAdapterMode === "openai-responses"
+    ? (process.env.OPENAI_HELPER_MODEL || "gpt-5.2")
+    : (process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "gemma3:4b");
 
   let adapterResult;
   try {
@@ -207,9 +211,9 @@ async function POST(request) {
         // (KV-cache friendly).
         messages: chatMessages,
         userIntent,
-        localModel: modelOverride || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "gemma3:4b",
+        localModel: modelOverride || defaultModel,
         localEndpoint: localEndpointOverride || "",
-        intelligenceAdapterMode: adapterModeOverride || "ollama",
+        intelligenceAdapterMode: resolvedAdapterMode,
       },
     });
   } catch (err) {
@@ -229,7 +233,7 @@ async function POST(request) {
         error: adapterResult.error || "local-intelligence adapter returned error",
         receipts: {
           model: "unknown",
-          adapterMode: adapterModeOverride || "ollama",
+          adapterMode: resolvedAdapterMode,
           endpoint: "",
           confidence: 0,
           latencyMs: adapterResult.durationMs || 0,

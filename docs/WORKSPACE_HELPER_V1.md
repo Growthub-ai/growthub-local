@@ -26,10 +26,11 @@ Open `http://localhost:3000`. The helper is the **`Ask helper` pill** in
 the top-right of the rail header on every page (Dashboards, Management,
 Workspace Settings). Click it to open the right-side chat sidecar.
 
-### Pre-flight: a local model
+### Pre-flight: pick a helper backend
 
-The helper runs against an **OpenAI-compatible chat completions endpoint**
-on your machine — Ollama by default:
+**Option 1 — Local model (default).** The helper runs against an
+**OpenAI-compatible chat completions endpoint** on your machine — Ollama
+by default:
 
 ```bash
 # install once
@@ -41,6 +42,13 @@ ollama pull gemma3:4b
 Any locally-hosted model with a chat-completions endpoint works
 (LM Studio, vLLM, custom). Configure model + endpoint + adapter mode in
 the helper sidecar's **Setup tab** (gear icon in the sidecar header).
+
+**Option 2 — OpenAI Responses (one-click).** In the Setup tab, click
+**Use OpenAI Responses**. Set `OPENAI_API_KEY` (or `OPENAI`) in the
+environment where `npm run dev` runs — the key never enters the browser
+or workspace config. Default model is `gpt-5.2`; quick-picks include
+`gpt-5.1`, `gpt-5-mini`, and `gpt-5-nano`. Proposals, threads, and apply
+governance are identical to the local path.
 
 ---
 
@@ -74,8 +82,8 @@ the helper sidecar's **Setup tab** (gear icon in the sidecar header).
 │                               • intelligenceSandbox.messages → adapter  │
 │                                                                          │
 │  local-intelligence adapter ─►  Ollama / LM Studio / vLLM chat          │
-│                                 completions endpoint, response_format   │
-│                                 = json_object, stable system prompt     │
+│                                 completions OR OpenAI Responses         │
+│                                 (server key), JSON-only output          │
 │                                                                          │
 │  parseHelperEnvelope ◄──────  result.json OR result.text OR             │
 │                               rawText fallback (the path                │

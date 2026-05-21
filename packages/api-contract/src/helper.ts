@@ -211,7 +211,7 @@ export interface WorkspaceHelperQuery {
    */
   model?: string;
   /**
-   * Override the adapter mode (ollama | lmstudio | vllm | custom-openai-compatible).
+   * Override the adapter mode (ollama | lmstudio | vllm | custom-openai-compatible | openai-responses).
    * Falls back to the sandbox-environment row or NATIVE_INTELLIGENCE env defaults.
    */
   adapterMode?: string;
