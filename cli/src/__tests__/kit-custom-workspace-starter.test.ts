@@ -591,6 +591,10 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(appExists("app/data-model/components/OrchestrationNodeConfigPanel.jsx")).toBe(true);
     expect(appExists("app/data-model/components/SandboxToolDraftPanel.jsx")).toBe(true);
     expect(appExists("app/data-model/components/SandboxToolConfirmModal.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationGraphEmptyCanvas.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationRunTracePanel.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxOrchestrationEditorPanel.jsx")).toBe(true);
+    expect(appExists("lib/orchestration-run-trace.js")).toBe(true);
   });
 
   it("sandbox-environment preset includes orchestrationGraph column", () => {
@@ -728,6 +732,65 @@ describe("orchestration-graph — contract and kit presence", () => {
     );
     expect(fields.length).toBeGreaterThan(0);
     expect(fields.some((f) => f.includes("email"))).toBe(true);
+  });
+
+  it("blank orchestration shell and ui state helpers", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      buildBlankOrchestrationGraphShell: () => { nodes: unknown[]; version: number; provider: string };
+      getOrchestrationGraphUiState: (v: unknown) => string;
+      addCanonicalNodeToGraph: (g: unknown, id: string, row: Record<string, string>) => unknown;
+      getNextCanonicalNodeId: (g: unknown) => string | null;
+    };
+    expect(mod.getOrchestrationGraphUiState(null)).toBe("unset");
+    expect(mod.getOrchestrationGraphUiState("")).toBe("unset");
+    const shell = mod.buildBlankOrchestrationGraphShell();
+    expect(shell.nodes).toHaveLength(0);
+    expect(shell.provider).toBe("growthub-native");
+    expect(mod.getOrchestrationGraphUiState(shell)).toBe("blank-shell");
+    expect(mod.getNextCanonicalNodeId(shell)).toBe("input");
+    const row = { integrationId: "acme", method: "GET", endpoint: "/v1", authRef: "ACME" };
+    const withInput = mod.addCanonicalNodeToGraph(shell, "input", row);
+    expect(mod.getOrchestrationGraphUiState(withInput)).toBe("populated");
+  });
+
+  it("DataModelShell routes sandbox trace fields to trace panel not graph", () => {
+    const shell = appText("app/data-model/components/DataModelShell.jsx");
+    expect(shell).toContain("OrchestrationRunTracePanel");
+    expect(shell).toContain("SandboxOrchestrationEditorPanel");
+    expect(shell).toContain('sidecarMode === "trace"');
+    expect(shell).toContain('sidecarMode === "graph"');
+    expect(shell).toContain("SANDBOX_SIDECAR_COLUMNS");
+    expect(shell).toContain("onOpenTraceSidecar");
+    expect(shell).toContain("openTraceSidecar");
+  });
+
+  it("SandboxToolDraftPanel starts without auto-filled graph", () => {
+    const draft = appText("app/data-model/components/SandboxToolDraftPanel.jsx");
+    expect(draft).toContain("OrchestrationGraphEmptyCanvas");
+    expect(draft).toContain("return null");
+    expect(draft).toContain("getOrchestrationGraphUiState");
+    expect(draft).not.toMatch(/useState\(\(\) => \{\s*return buildDefaultOrchestrationGraphFromRegistry/s);
+  });
+
+  it("parseSandboxRunTrace redacts and extracts run metadata", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-trace.js")}?t=${Date.now()}`
+    ) as { parseSandboxRunTrace: (text: string) => { runId: string; stdout: string; output: string } };
+    const trace = mod.parseSandboxRunTrace(
+      JSON.stringify({
+        runId: "run-1",
+        exitCode: 0,
+        durationMs: 120,
+        stdout: "ok",
+        output: { items: [] },
+        adapter: "local-process",
+      })
+    );
+    expect(trace.runId).toBe("run-1");
+    expect(trace.stdout).toBe("ok");
+    expect(trace.output).toContain("items");
   });
 
   it("incomplete API Registry does not allow create state", async () => {

@@ -505,6 +505,158 @@ function detectFieldIdsFromLastResponse(lastResponse) {
   }
 }
 
+function isOrchestrationGraphEmpty(value) {
+  const graph = typeof value === "string" ? parseOrchestrationGraph(value) : value;
+  if (!graph || typeof graph !== "object") return true;
+  if (!Array.isArray(graph.nodes) || graph.nodes.length === 0) return true;
+  return false;
+}
+
+/** unset = no graph yet; blank-shell = valid shell with zero nodes; populated = has nodes */
+function getOrchestrationGraphUiState(value) {
+  const text = typeof value === "string" ? String(value || "").trim() : "";
+  const graph = typeof value === "string" ? parseOrchestrationGraph(value) : value;
+  if (!graph || typeof graph !== "object") {
+    return text ? "unset" : "unset";
+  }
+  if (!Array.isArray(graph.nodes) || graph.nodes.length === 0) return "blank-shell";
+  return "populated";
+}
+
+function buildBlankOrchestrationGraphShell() {
+  return {
+    version: 1,
+    provider: "growthub-native",
+    nodes: [],
+    edges: []
+  };
+}
+
+function buildCanonicalNode(nodeId, registryRow = {}, options = {}) {
+  const integrationId = String(registryRow?.integrationId || registryRow?.Name || "").trim();
+  const method = String(registryRow?.method || "GET").trim().toUpperCase();
+  const endpoint = String(registryRow?.endpoint || "").trim();
+  const baseUrl = String(registryRow?.baseUrl || "").trim();
+  const authRef = String(options.authRef || registryRow?.authRef || integrationId).trim();
+  const rootPath = String(options.rootPath || "data").trim();
+
+  switch (nodeId) {
+    case "input":
+      return {
+        id: "input",
+        type: "input",
+        label: "Input",
+        subtitle: "Manual or source payload",
+        config: {
+          inputMode: "manual",
+          samplePayload: {},
+          sourceType: "",
+          sourceId: "",
+          entityId: "",
+          filterMode: "and",
+          filters: []
+        }
+      };
+    case "api-request":
+      return {
+        id: "api-request",
+        type: "api-registry-call",
+        label: "API Registry",
+        subtitle: `${integrationId} · ${method} ${endpoint}`,
+        config: {
+          registryId: integrationId,
+          integrationId,
+          baseUrl,
+          endpoint,
+          method,
+          authRef,
+          queryParams: {},
+          bodyTemplate: "",
+          requestHeadersMetadata: {
+            authHeaderName: String(registryRow?.authHeaderName || registryRow?.authHeader || "x-api-key").trim(),
+            authPrefix: String(registryRow?.authPrefix || "").trim(),
+            contentType: method === "GET" ? "" : "application/json"
+          },
+          timeoutMs: 30000
+        }
+      };
+    case "transform":
+      return {
+        id: "transform",
+        type: "transform-filter",
+        label: "Transform",
+        subtitle: "Map fields and filter rows",
+        config: {
+          rootPath,
+          mode: "json",
+          responseMode: "json",
+          fieldMap: {},
+          includeFields: [],
+          excludeFields: [],
+          computedFields: {},
+          filters: [],
+          filterMode: "and",
+          maxRows: 0
+        }
+      };
+    case "result":
+      return {
+        id: "result",
+        type: "tool-result",
+        label: "Result",
+        subtitle: "Save status and response",
+        config: {
+          successStatusCodes: [200],
+          writeLastResponse: true,
+          writeSourceRecord: true,
+          sourceRecordId: "",
+          outputMode: "normalized-json",
+          previewFields: [],
+          statusField: "status",
+          lastTestedField: "lastTested"
+        }
+      };
+    default:
+      return null;
+  }
+}
+
+function getNextCanonicalNodeId(graph) {
+  const parsed = parseOrchestrationGraph(graph) || graph;
+  const ids = new Set((parsed?.nodes || []).map((n) => String(n.id)));
+  for (const id of CANONICAL_NODE_ORDER) {
+    if (!ids.has(id)) return id;
+  }
+  return null;
+}
+
+function addCanonicalNodeToGraph(graph, nodeId, registryRow, options = {}) {
+  const parsed = parseOrchestrationGraph(graph) || graph || buildBlankOrchestrationGraphShell();
+  const id = String(nodeId || "").trim();
+  const nextExpected = getNextCanonicalNodeId(parsed);
+  if (!id || id !== nextExpected) return parsed;
+  const node = buildCanonicalNode(id, registryRow, options);
+  if (!node) return parsed;
+  const nodes = [...(parsed.nodes || []), node];
+  const edges = [...(parsed.edges || [])];
+  const order = CANONICAL_NODE_ORDER;
+  const idx = order.indexOf(id);
+  if (idx > 0) {
+    const prev = order[idx - 1];
+    if (nodes.some((n) => n.id === prev) && !edges.some((e) => e.from === prev && e.to === id)) {
+      const passes = id === "api-request"
+        ? "payload, filters, variables"
+        : id === "transform"
+          ? "provider-response"
+          : id === "result"
+            ? "normalized-output"
+            : "";
+      edges.push({ from: prev, to: id, passes });
+    }
+  }
+  return { ...parsed, nodes, edges };
+}
+
 function redactSecretsFromText(text) {
   let out = String(text || "");
   for (const pattern of [
@@ -524,7 +676,13 @@ export {
   FILTER_OPERATORS,
   FILTER_CONJUNCTIONS,
   CANONICAL_NODE_ORDER,
+  buildBlankOrchestrationGraphShell,
   buildDefaultOrchestrationGraphFromRegistry,
+  buildCanonicalNode,
+  isOrchestrationGraphEmpty,
+  getOrchestrationGraphUiState,
+  getNextCanonicalNodeId,
+  addCanonicalNodeToGraph,
   buildSandboxRowFromApiRegistry,
   extractApiRegistryCallNode,
   extractInputNode,

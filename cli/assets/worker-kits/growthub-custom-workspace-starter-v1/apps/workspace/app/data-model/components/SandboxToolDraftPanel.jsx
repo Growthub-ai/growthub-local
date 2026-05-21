@@ -3,8 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import {
+  addCanonicalNodeToGraph,
+  buildBlankOrchestrationGraphShell,
   buildDefaultOrchestrationGraphFromRegistry,
+  getNextCanonicalNodeId,
   isApiRegistryTestSuccessful,
+  getOrchestrationGraphUiState,
   parseOrchestrationGraph,
   serializeOrchestrationGraph,
   updateGraphNode,
@@ -12,6 +16,7 @@ import {
 } from "@/lib/orchestration-graph";
 import { resolveConnectorAction } from "@/lib/orchestration-sidecar-routing";
 import { OrchestrationGraphCanvas } from "./OrchestrationGraphCanvas.jsx";
+import { OrchestrationGraphEmptyCanvas } from "./OrchestrationGraphEmptyCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "./OrchestrationNodeConfigPanel.jsx";
 
 export function SandboxToolDraftPanel({
@@ -47,15 +52,22 @@ export function SandboxToolDraftPanel({
   const [graphError, setGraphError] = useState("");
   const [orchestrationGraph, setOrchestrationGraph] = useState(() => {
     if (draftOptions?.orchestrationGraph) {
-      return parseOrchestrationGraph(draftOptions.orchestrationGraph)
-        || buildDefaultOrchestrationGraphFromRegistry(registryRow, { authRef, rootPath });
+      return parseOrchestrationGraph(draftOptions.orchestrationGraph);
     }
-    return buildDefaultOrchestrationGraphFromRegistry(registryRow, { authRef, rootPath });
+    return null;
   });
 
   const registryKey = `${integrationId}:${String(registryRow?.endpoint || "")}:${String(registryRow?.method || "")}`;
+  const graphUiState = getOrchestrationGraphUiState(orchestrationGraph);
+  const graphUnset = graphUiState === "unset";
+  const graphBlankShell = graphUiState === "blank-shell";
+  const nextNodeId = useMemo(
+    () => (orchestrationGraph ? getNextCanonicalNodeId(orchestrationGraph) : "input"),
+    [orchestrationGraph]
+  );
 
   useEffect(() => {
+    if (graphUnset || graphBlankShell) return;
     setOrchestrationGraph((current) => {
       const base = buildDefaultOrchestrationGraphFromRegistry(registryRow, {
         label: registryName,
@@ -63,7 +75,7 @@ export function SandboxToolDraftPanel({
         rootPath
       });
       const parsed = parseOrchestrationGraph(current) || current;
-      if (!parsed?.nodes?.length) return base;
+      if (!parsed?.nodes?.length) return current;
       return {
         ...parsed,
         nodes: parsed.nodes.map((node) => {
@@ -83,7 +95,7 @@ export function SandboxToolDraftPanel({
         })
       };
     });
-  }, [registryKey, registryName, authRef, rootPath, registryRow, integrationId]);
+  }, [registryKey, registryName, authRef, rootPath, registryRow, integrationId, graphUnset, graphBlankShell]);
 
   const selectedNode = useMemo(() => {
     const parsed = parseOrchestrationGraph(orchestrationGraph) || orchestrationGraph;
@@ -92,13 +104,17 @@ export function SandboxToolDraftPanel({
   }, [orchestrationGraph, selectedNodeId]);
 
   const graphSerialized = useMemo(
-    () => serializeOrchestrationGraph(orchestrationGraph),
-    [orchestrationGraph]
+    () => (graphUnset ? "" : serializeOrchestrationGraph(orchestrationGraph)),
+    [orchestrationGraph, graphUnset]
   );
 
   useEffect(() => {
-    const validation = validateOrchestrationGraph(orchestrationGraph);
-    setGraphError(validation.ok ? "" : validation.errors[0] || "Invalid graph");
+    if (graphUnset || graphBlankShell) {
+      setGraphError(graphBlankShell ? "Add at least Input and API Registry nodes before creating." : "");
+    } else {
+      const validation = validateOrchestrationGraph(orchestrationGraph);
+      setGraphError(validation.ok ? "" : validation.errors[0] || "Invalid graph");
+    }
     onDraftChange?.({
       name,
       description,
@@ -129,8 +145,39 @@ export function SandboxToolDraftPanel({
     schedulerRegistryId,
     graphSerialized,
     orchestrationGraph,
+    graphUnset,
+    graphBlankShell,
     onDraftChange
   ]);
+
+  function startFromRegistry() {
+    setOrchestrationGraph(buildDefaultOrchestrationGraphFromRegistry(registryRow, { authRef, rootPath }));
+    setSelectedNodeId("input");
+    setConfigTab("node");
+  }
+
+  function startBlank() {
+    setOrchestrationGraph(buildBlankOrchestrationGraphShell());
+    setSelectedNodeId("input");
+    setConfigTab("node");
+  }
+
+  function applyPastedGraph(text) {
+    const parsed = parseOrchestrationGraph(text);
+    if (parsed) setOrchestrationGraph(parsed);
+  }
+
+  function addNextNode() {
+    if (!nextNodeId) return;
+    setOrchestrationGraph((g) => addCanonicalNodeToGraph(
+      g || buildBlankOrchestrationGraphShell(),
+      nextNodeId,
+      registryRow,
+      { authRef, rootPath }
+    ));
+    setSelectedNodeId(nextNodeId);
+    setConfigTab("node");
+  }
 
   function handleNodeConfigChange(configPatch) {
     if (!selectedNodeId) return;
@@ -148,6 +195,7 @@ export function SandboxToolDraftPanel({
 
   const defaultInstructions = `Governed sandbox tool for ${registryName}. Calls ${String(registryRow?.method || "GET").toUpperCase()} ${registryRow?.endpoint || registryRow?.baseUrl || ""}. authRef ${authRef} only — secrets resolve server-side.`;
   const headerBadge = isApiRegistryTestSuccessful(registryRow) ? "connected" : "draft";
+  const canCreate = graphUiState === "populated" && !graphError && isApiRegistryTestSuccessful(registryRow);
 
   return (
     <section className="dm-orchestration-sidecar" aria-label="Sandbox orchestration field editor">
@@ -167,7 +215,7 @@ export function SandboxToolDraftPanel({
           <button
             type="button"
             className="dm-btn-primary-sm"
-            disabled={disabled || !name.trim() || Boolean(graphError) || !isApiRegistryTestSuccessful(registryRow)}
+            disabled={disabled || !name.trim() || !canCreate}
             onClick={onRequestConfirm}
           >
             Create tool
@@ -177,26 +225,56 @@ export function SandboxToolDraftPanel({
 
       <div className="dm-orchestration-sidecar__body">
         <div className="dm-orchestration-sidecar__canvas-col">
-          <OrchestrationGraphCanvas
-            graph={orchestrationGraph}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={(node) => {
-              setSelectedNodeId(String(node?.id || ""));
-              setConfigTab("node");
-            }}
-            onConnectorAction={handleConnectorAction}
-          />
+          {graphUnset ? (
+            <OrchestrationGraphEmptyCanvas
+              disabled={disabled}
+              onStartFromRegistry={startFromRegistry}
+              onStartBlank={startBlank}
+              onPasteGraph={applyPastedGraph}
+            />
+          ) : graphBlankShell ? (
+            <div className="dm-orchestration-canvas dm-orchestration-canvas--blank-shell">
+              <p className="dm-orchestration-canvas__blank-hint">Add first node</p>
+              <button type="button" className="dm-btn-outline" disabled={disabled} onClick={addNextNode}>
+                + Add Input
+              </button>
+            </div>
+          ) : (
+            <>
+              <OrchestrationGraphCanvas
+                graph={orchestrationGraph}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(node) => {
+                  setSelectedNodeId(String(node?.id || ""));
+                  setConfigTab("node");
+                }}
+                onConnectorAction={handleConnectorAction}
+              />
+              {nextNodeId && (
+                <button
+                  type="button"
+                  className="dm-btn-outline dm-orchestration-canvas__add-node"
+                  disabled={disabled}
+                  onClick={addNextNode}
+                >
+                  + Add {nextNodeId === "api-request" ? "API Registry" : nextNodeId === "transform" ? "Transform" : nextNodeId === "result" ? "Result" : "Input"}
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         <div className="dm-orchestration-sidecar__config-col">
-          <OrchestrationNodeConfigPanel
-            node={selectedNode}
-            registryRow={registryRow}
-            disabled={disabled}
-            activeTab={configTab}
-            onTabChange={setConfigTab}
-            onConfigChange={handleNodeConfigChange}
-          />
+          {graphUiState === "populated" && (
+            <OrchestrationNodeConfigPanel
+              node={selectedNode}
+              registryRow={registryRow}
+              disabled={disabled}
+              activeTab={configTab}
+              onTabChange={setConfigTab}
+              onConfigChange={handleNodeConfigChange}
+            />
+          )}
 
           <details className="dm-orchestration-runtime">
             <summary>Runtime (sandbox row)</summary>
@@ -285,6 +363,9 @@ export function SandboxToolDraftPanel({
           </details>
 
           {graphError && <p className="dm-orchestration-config__error">{graphError}</p>}
+          {graphUnset && (
+            <p className="dm-orchestration-config__hint">Start a graph before creating the sandbox tool.</p>
+          )}
           <p className="dm-orchestration-sidecar__footnote">
             No secrets are stored. Nothing runs until you click Run sandbox after creation.
           </p>
