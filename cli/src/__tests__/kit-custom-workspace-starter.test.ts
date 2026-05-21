@@ -311,6 +311,40 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
     ).not.toThrow();
   });
 
+  it("nav-folders governed object with workflow shortcut items passes", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "nav-folders",
+            label: "Custom Folders",
+            objectType: "custom",
+            columns: ["name", "order", "collapsed", "items"],
+            rows: [
+              {
+                id: "fld_ops",
+                name: "Operations",
+                order: 0,
+                collapsed: false,
+                items: [
+                  {
+                    id: "item_wf",
+                    type: "workflow",
+                    objectId: "sandbox-environments",
+                    rowId: "LeadShark Tool",
+                    fieldName: "orchestrationGraph",
+                    label: "LeadShark Tool",
+                  },
+                ],
+              },
+            ],
+            binding: { mode: "manual", source: "Custom Folders" },
+          }],
+        },
+      })
+    ).not.toThrow();
+  });
+
   it("nav-folders governed object with mixed dashboard + view items passes", () => {
     expect(() =>
       validateWorkspaceConfig({
@@ -389,10 +423,36 @@ describe("workspace-schema — nav-folders governance (invalid rows must throw)"
     expect(r.details!.some((d) => d.includes("name"))).toBe(true);
   });
 
-  it("item with unknown type → must be dashboard|view", () => {
+  it("item with unknown type → must be dashboard|view|workflow", () => {
     const r = tryValidate([{ id: "fld_a", name: "Ops", items: [{ id: "x", type: "iframe" }] }]);
     expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
     expect(r.details!.some((d) => d.includes("type"))).toBe(true);
+  });
+
+  it("workflow item missing rowId → rowId required", () => {
+    const r = tryValidate([{
+      id: "fld_a",
+      name: "Ops",
+      items: [{ id: "x", type: "workflow", objectId: "sandbox-env" }],
+    }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("rowId"))).toBe(true);
+  });
+
+  it("workflow item must not embed orchestrationGraph", () => {
+    const r = tryValidate([{
+      id: "fld_a",
+      name: "Ops",
+      items: [{
+        id: "x",
+        type: "workflow",
+        objectId: "sandbox-env",
+        rowId: "Tool A",
+        orchestrationGraph: '{"nodes":[]}',
+      }],
+    }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("orchestrationGraph"))).toBe(true);
   });
 
   it("dashboard item missing refId → refId required", () => {
@@ -772,6 +832,77 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(draft).toContain("return null");
     expect(draft).toContain("getOrchestrationGraphUiState");
     expect(draft).not.toMatch(/useState\(\(\) => \{\s*return buildDefaultOrchestrationGraphFromRegistry/s);
+  });
+
+  it("workspace-rail supports workflow folder shortcuts", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain('workflow: { icon: "GitBranch"');
+    expect(rail).toContain("listAvailableWorkflows");
+    expect(rail).toContain("addWorkflowItem");
+    expect(rail).toContain("openWorkflowItem");
+    expect(rail).toContain('type: "workflow"');
+    expect(rail).toContain('fieldName: "orchestrationGraph"');
+    expect(rail).toContain("/workflows?object=");
+    expect(rail).toContain("Add workflow");
+    expect(rail).toContain('{ id: "workflow", label: "Workflows" }');
+    expect(rail).not.toMatch(/addWorkflowItem[\s\S]*orchestrationGraph:\s*workflow/);
+  });
+
+  it("listAvailableWorkflows discovers sandbox-environment rows", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/nav-workflows.js")}?t=${Date.now()}`
+    ) as {
+      listAvailableWorkflows: (cfg: { dataModel: { objects: unknown[] } }) => Array<{
+        objectId: string;
+        rowId: string;
+        graphNodeCount: number;
+      }>;
+    };
+    const workflows = mod.listAvailableWorkflows({
+      dataModel: {
+        objects: [
+          {
+            id: "workspace-helper-sandbox",
+            objectType: "sandbox-environment",
+            rows: [{ Name: "Hidden" }],
+          },
+          {
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            label: "Sandbox Environments",
+            rows: [
+              {
+                Name: "LeadShark Tool",
+                lifecycleStatus: "live",
+                version: "2",
+                orchestrationGraph: JSON.stringify({
+                  version: 1,
+                  provider: "growthub-native",
+                  nodes: [{ id: "input", type: "input" }, { id: "api-request", type: "api-registry-call" }],
+                  edges: [],
+                }),
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(workflows).toHaveLength(1);
+    expect(workflows[0].objectId).toBe("sandbox-env");
+    expect(workflows[0].rowId).toBe("LeadShark Tool");
+    expect(workflows[0].graphNodeCount).toBe(2);
+  });
+
+  it("workflows page exists and uses orchestration canvas", () => {
+    expect(appExists("app/workflows/page.jsx")).toBe(true);
+    expect(appExists("app/workflows/WorkflowSurface.jsx")).toBe(true);
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("OrchestrationGraphCanvas");
+    expect(surface).toContain("OrchestrationRunTracePanel");
+    expect(surface).toContain("OrchestrationGraphEmptyCanvas");
+    expect(surface).toContain("/api/workspace/sandbox-run");
+    expect(surface).toContain("PATCH");
+    expect(surface).toContain("dataModel");
   });
 
   it("parseSandboxRunTrace redacts and extracts run metadata", async () => {

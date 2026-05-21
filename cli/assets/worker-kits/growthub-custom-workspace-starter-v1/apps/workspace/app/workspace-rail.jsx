@@ -33,13 +33,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
   ChevronDown,
   ChevronRight,
   Folder,
   FolderPlus,
+  GitBranch,
   Home,
   LayoutDashboard,
   MessageCircle,
@@ -64,6 +65,7 @@ import {
   nextNavFolderId,
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
+import { listAvailableWorkflows } from "@/lib/nav-workflows";
 import { ICON_PICKER_SET, LucideIcon } from "./data-model/components/dm-shared.jsx";
 
 function textColorForAccent(accent) {
@@ -172,6 +174,7 @@ const NAV_FOLDER_STYLE_DEFAULT = { icon: "Folder", color: "#f97316", iconBg: "#f
 const NAV_ITEM_STYLE_DEFAULT = {
   dashboard: { icon: "LayoutDashboard", color: "#3b82f6", iconBg: "#eff6ff" },
   view: { icon: "Table", color: "#14b8a6", iconBg: "#f0fdfa" },
+  workflow: { icon: "GitBranch", color: "#8b5cf6", iconBg: "#f5f3ff" },
 };
 
 /** Default visible rows before scroll — keeps the rail from growing unbounded. */
@@ -394,6 +397,7 @@ function NavFoldersSection({
   onPatchNavFolders,
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [creating, setCreating] = useState(false);
   const [createDraft, setCreateDraft] = useState("");
   const [createDiscardWarn, setCreateDiscardWarn] = useState(false);
@@ -401,15 +405,16 @@ function NavFoldersSection({
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [customizeTarget, setCustomizeTarget] = useState(null);
   const [discardWarn, setDiscardWarn] = useState(false);
-  const [addPickerFor, setAddPickerFor] = useState(null); // { folderId, kind: "dashboard"|"view" }
+  const [addPickerFor, setAddPickerFor] = useState(null); // { folderId, kind: "dashboard"|"view"|"workflow" }
   const [filterQuery, setFilterQuery] = useState("");
-  const [filterType, setFilterType] = useState("all"); // all | dashboard | view
+  const [filterType, setFilterType] = useState("all"); // all | dashboard | view | workflow
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [sectionCollapsed, setSectionCollapsed] = useState(true);
 
   const rows = useMemo(() => getNavFolderRows(workspaceConfig), [workspaceConfig]);
   const dashboards = useMemo(() => listAvailableDashboards(workspaceConfig), [workspaceConfig]);
   const viewableObjects = useMemo(() => listAvailableObjectsForViews(workspaceConfig), [workspaceConfig]);
+  const workflows = useMemo(() => listAvailableWorkflows(workspaceConfig), [workspaceConfig]);
   const filteredEntries = useMemo(
     () => filterNavFolderRows(rows, filterQuery, filterType),
     [rows, filterQuery, filterType],
@@ -680,6 +685,28 @@ function NavFoldersSection({
     await writeRows(next);
   }, [rows, writeRows]);
 
+  const addWorkflowItem = useCallback(async (folderId, workflow) => {
+    setAddPickerFor(null);
+    setOpenMenuId(null);
+    const style = NAV_ITEM_STYLE_DEFAULT.workflow;
+    const item = {
+      id: nextNavItemId(),
+      type: "workflow",
+      objectId: workflow.objectId,
+      rowId: workflow.rowId,
+      fieldName: "orchestrationGraph",
+      label: workflow.label,
+      icon: style.icon,
+      color: style.color,
+      iconBg: style.iconBg,
+    };
+    const next = rows.map((row) => {
+      if (row.id !== folderId) return row;
+      return { ...row, items: [...(row.items || []), item] };
+    });
+    await writeRows(next);
+  }, [rows, writeRows]);
+
   // ── Drag-and-drop ────────────────────────────────────────────────────
   //
   // HTML5 DnD with a tiny in-ref state machine; mirrors Twenty's
@@ -779,6 +806,13 @@ function NavFoldersSection({
     router.push(`/data-model?object=${encodeURIComponent(item.objectId || "")}`);
   };
 
+  const openWorkflowItem = (item) => {
+    const objectId = encodeURIComponent(item.objectId || "");
+    const row = encodeURIComponent(item.rowId || "");
+    const field = encodeURIComponent(item.fieldName || "orchestrationGraph");
+    router.push(`/workflows?object=${objectId}&row=${row}&field=${field}`);
+  };
+
   const renderItemMenu = (folder, item) => {
     const composedId = `${folder.id}::${item.id}`;
     const isMenuOpen = openMenuId === composedId;
@@ -862,9 +896,13 @@ function NavFoldersSection({
   const renderItemRow = (folder, item) => {
     const composedId = `${folder.id}::${item.id}`;
     const isMenuOpen = openMenuId === composedId;
-    const isActive = item.type === "view" && pathname.startsWith(`/views/${encodeURIComponent(item.id)}`);
+    const isActive = item.type === "view" && pathname.startsWith(`/views/${encodeURIComponent(item.id)}`)
+      || (item.type === "workflow"
+        && pathname.startsWith("/workflows")
+        && searchParams.get("object") === item.objectId
+        && searchParams.get("row") === item.rowId);
     const style = navItemStyle(item);
-    const typeHint = item.type === "dashboard" ? "Dashboard" : "View";
+    const typeHint = item.type === "dashboard" ? "Dashboard" : item.type === "workflow" ? "Workflow" : "View";
     return (
       <li
         key={item.id}
@@ -880,7 +918,11 @@ function NavFoldersSection({
           <button
             type="button"
             className="workspace-rail-nav-row-main"
-            onClick={() => (item.type === "dashboard" ? openDashboardItem(item) : openViewItem(item))}
+            onClick={() => {
+              if (item.type === "dashboard") openDashboardItem(item);
+              else if (item.type === "workflow") openWorkflowItem(item);
+              else openViewItem(item);
+            }}
             title={`${item.label || item.refId || item.objectId} · ${typeHint}`}
           >
             <NavIconBadge icon={style.icon} color={style.color} iconBg={style.iconBg} />
@@ -987,6 +1029,19 @@ function NavFoldersSection({
             <button
               type="button"
               role="menuitem"
+                  className="workspace-rail-thread-menu-item"
+                  disabled={workflows.length === 0}
+                  onClick={() => {
+                    setOpenMenuId(null);
+                    setMenuAnchor(null);
+                    setAddPickerFor({ folderId: folder.id, kind: "workflow" });
+                  }}
+                >
+                  <GitBranch size={13} aria-hidden="true" /> Add workflow
+                </button>
+            <button
+              type="button"
+              role="menuitem"
               className="workspace-rail-thread-menu-item is-destructive"
               onClick={() => deleteFolder(folder.id)}
             >
@@ -1060,7 +1115,13 @@ function NavFoldersSection({
     <NavFolderPickerOverlay onClose={() => setAddPickerFor(null)}>
       <div className="workspace-rail-folder-picker" onClick={(e) => e.stopPropagation()}>
         <div className="workspace-rail-folder-picker-head">
-          <strong>{addPickerFor.kind === "dashboard" ? "Add dashboard" : "Add view"}</strong>
+          <strong>
+            {addPickerFor.kind === "dashboard"
+              ? "Add dashboard"
+              : addPickerFor.kind === "workflow"
+                ? "Add workflow"
+                : "Add view"}
+          </strong>
           <button
             type="button"
             className="workspace-rail-folder-picker-close"
@@ -1088,23 +1149,45 @@ function NavFoldersSection({
                   </button>
                 </li>
               ))
-            : viewableObjects.map((o) => (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    className="workspace-rail-folder-picker-item"
-                    onClick={() => addViewItem(addPickerFor.folderId, o)}
-                  >
-                    <NavIconBadge
-                      icon={NAV_ITEM_STYLE_DEFAULT.view.icon}
-                      color={NAV_ITEM_STYLE_DEFAULT.view.color}
-                      iconBg={NAV_ITEM_STYLE_DEFAULT.view.iconBg}
-                    />
-                    <span>{o.label}</span>
-                    <span className="workspace-rail-folder-picker-hint">{o.columns.length} field{o.columns.length === 1 ? "" : "s"}</span>
-                  </button>
-                </li>
-              ))}
+            : addPickerFor.kind === "workflow"
+              ? workflows.map((w) => (
+                  <li key={`${w.objectId}:${w.rowId}`}>
+                    <button
+                      type="button"
+                      className="workspace-rail-folder-picker-item"
+                      onClick={() => addWorkflowItem(addPickerFor.folderId, w)}
+                    >
+                      <NavIconBadge
+                        icon={NAV_ITEM_STYLE_DEFAULT.workflow.icon}
+                        color={NAV_ITEM_STYLE_DEFAULT.workflow.color}
+                        iconBg={NAV_ITEM_STYLE_DEFAULT.workflow.iconBg}
+                      />
+                      <span className="workspace-rail-folder-picker-item-text">
+                        <span>{w.label}</span>
+                        <span className="workspace-rail-folder-picker-hint">
+                          {w.objectLabel} · {w.status} · {w.graphNodeCount} node{w.graphNodeCount === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))
+              : viewableObjects.map((o) => (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      className="workspace-rail-folder-picker-item"
+                      onClick={() => addViewItem(addPickerFor.folderId, o)}
+                    >
+                      <NavIconBadge
+                        icon={NAV_ITEM_STYLE_DEFAULT.view.icon}
+                        color={NAV_ITEM_STYLE_DEFAULT.view.color}
+                        iconBg={NAV_ITEM_STYLE_DEFAULT.view.iconBg}
+                      />
+                      <span>{o.label}</span>
+                      <span className="workspace-rail-folder-picker-hint">{o.columns.length} field{o.columns.length === 1 ? "" : "s"}</span>
+                    </button>
+                  </li>
+                ))}
         </ul>
       </div>
     </NavFolderPickerOverlay>
@@ -1154,7 +1237,7 @@ function NavFoldersSection({
           <input
             type="search"
             className="workspace-rail-folders-search-input"
-            placeholder="Filter folders & views"
+            placeholder="Filter folders & shortcuts"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             aria-label="Filter folders and views by name"
@@ -1203,6 +1286,7 @@ function NavFoldersSection({
                   { id: "all", label: "All" },
                   { id: "dashboard", label: "Dashboards" },
                   { id: "view", label: "Views" },
+                  { id: "workflow", label: "Workflows" },
                 ].map((opt) => (
                   <button
                     key={opt.id}

@@ -4518,6 +4518,16 @@ body.workspace-rail-collapsed .workspace-builder.workspace-settings-page {
 .dm-orchestration-confirm__list { margin: 0; padding-left: 18px; }
 .dm-orchestration-confirm__summary { margin: 0; padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 12px; }
 .dm-orchestration-confirm__summary span { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6b7280; margin-bottom: 4px; }
+.dm-workflow-surface { display: flex; flex-direction: column; min-height: 0; }
+.dm-workflow-toolbar { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.dm-workflow-eyebrow { margin: 0 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+.dm-workflow-meta { margin: 6px 0 0; font-size: 12px; color: #6b7280; }
+.dm-workflow-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dm-workflow-orchestration { flex: 1; min-height: 0; }
+.dm-workflow-empty { padding: 24px 16px; font-size: 13px; color: #6b7280; }
+.dm-workflow-error { color: #b91c1c; }
+.dm-workflow-status-msg { margin: 0 16px 16px; font-size: 12px; color: #374151; }
+.workspace-rail-folder-picker-item-text { display: grid; gap: 2px; text-align: left; min-width: 0; }
 .dm-orchestration-confirm__foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #edf0f3; }
 .dm-orchestration-canvas--empty-state {
   background: #fff;
