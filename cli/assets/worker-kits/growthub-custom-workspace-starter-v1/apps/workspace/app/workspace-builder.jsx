@@ -67,7 +67,11 @@ import {
   KNOWN_CHART_TYPES,
   KNOWN_FILTER_CONJUNCTIONS,
   KNOWN_FILTER_OPERATORS,
+  KNOWN_PRESENTATION_DENSITIES,
+  KNOWN_PRESENTATION_ENGINES,
   KNOWN_SORT_DIRECTIONS,
+  PRESENTATION_FIELD_MAP_KEYS,
+  PRESENTATION_TOGGLE_KEYS,
   SAMPLE_DATA_BINDINGS,
   cloneTemplateToDashboard,
   cloneTemplateToTab,
@@ -1040,6 +1044,118 @@ function summarizeFilter(widget) {
   const count = filter.clauses.length;
   if (!count) return "›";
   return `${count} clause${count === 1 ? "" : "s"} (${filter.op})`;
+}
+
+const DEFAULT_PRESENTATION_ENGINE = "table";
+const PRESENTATION_ENGINE_LABELS = {
+  "table": "Table",
+  "project-card": "Project card",
+  "creative-card": "Creative card",
+  "metric-card": "Metric card",
+  "compact-list": "Compact list"
+};
+const PRESENTATION_FIELD_LABELS = {
+  titleField: "Title",
+  subtitleField: "Subtitle",
+  descriptionField: "Description",
+  statusField: "Status",
+  toneField: "Tone",
+  iconField: "Icon",
+  accentField: "Accent",
+  labelField: "Label",
+  imageField: "Image",
+  ctaLabelField: "CTA label",
+  ctaUrlField: "CTA URL"
+};
+
+function getPresentationOptions(widget) {
+  const options = widget?.config?.presentationOptions;
+  return isPlainConfigObject(options) ? options : {};
+}
+
+function getPresentationEngine(widget) {
+  const engine = getPresentationOptions(widget).engine;
+  return KNOWN_PRESENTATION_ENGINES.includes(engine) ? engine : DEFAULT_PRESENTATION_ENGINE;
+}
+
+function isCardPresentationEngine(engine) {
+  return engine === "project-card" || engine === "creative-card" || engine === "metric-card" || engine === "compact-list";
+}
+
+function getPresentationFieldOptions(widget) {
+  const columns = getColumnList(widget);
+  const seen = new Set(columns.filter(Boolean));
+  const rows = Array.isArray(widget?.config?.rows) ? widget.config.rows : [];
+  for (const row of rows) {
+    if (row && typeof row === "object") {
+      for (const key of Object.keys(row)) {
+        if (key) seen.add(key);
+      }
+    }
+  }
+  return Array.from(seen);
+}
+
+function summarizePresentation(widget) {
+  const engine = getPresentationEngine(widget);
+  const engineLabel = PRESENTATION_ENGINE_LABELS[engine] || engine;
+  if (engine === DEFAULT_PRESENTATION_ENGINE) return engineLabel;
+  const options = getPresentationOptions(widget);
+  const titleLabel = typeof options.titleField === "string" && options.titleField ? options.titleField : null;
+  return titleLabel ? `${engineLabel} · ${titleLabel}` : engineLabel;
+}
+
+function resolvePresentationCard(row, options) {
+  if (!row || typeof row !== "object") return null;
+  const pick = (key) => {
+    const field = options[key];
+    if (typeof field !== "string" || !field) return undefined;
+    const value = row[field];
+    return value === undefined || value === null ? undefined : value;
+  };
+  const findFallback = (excludeKeys) => {
+    const skip = new Set(excludeKeys.filter(Boolean));
+    for (const key of Object.keys(row)) {
+      if (skip.has(key)) continue;
+      const value = row[key];
+      if (typeof value === "string" && value.trim()) return { key, value };
+      if (typeof value === "number" && Number.isFinite(value)) return { key, value: String(value) };
+    }
+    return null;
+  };
+  const titleField = typeof options.titleField === "string" ? options.titleField : null;
+  const subtitleField = typeof options.subtitleField === "string" ? options.subtitleField : null;
+  const explicitTitle = pick("titleField");
+  let title = "";
+  let titleKey = null;
+  if (explicitTitle !== undefined && explicitTitle !== "") {
+    title = String(explicitTitle);
+    titleKey = titleField;
+  } else {
+    const fb = findFallback([titleField, subtitleField]);
+    if (fb) { title = fb.value; titleKey = fb.key; }
+  }
+  const explicitSubtitle = pick("subtitleField");
+  let subtitle = "";
+  if (explicitSubtitle !== undefined && explicitSubtitle !== "") {
+    subtitle = String(explicitSubtitle);
+  } else {
+    const fb = findFallback([titleField, subtitleField, titleKey]);
+    if (fb) subtitle = fb.value;
+  }
+  return {
+    title,
+    subtitle,
+    description: pick("descriptionField"),
+    status: pick("statusField"),
+    tone: pick("toneField"),
+    icon: pick("iconField"),
+    accent: pick("accentField"),
+    label: pick("labelField"),
+    image: pick("imageField"),
+    ctaLabel: pick("ctaLabelField"),
+    ctaUrl: pick("ctaUrlField")
+  };
 }
 
 function describeIntegrationLane(integration) {
@@ -2738,6 +2854,120 @@ function FilterSubPanel({ widget, integrations, dataModelTable, adapterConfig, o
   </section>;
 }
 
+function PresentationSubPanel({ widget, dataModelTable, onChange, onBack }) {
+  const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
+  const fieldOptions = getPresentationFieldOptions(viewWidget);
+  const options = getPresentationOptions(widget);
+  const engine = getPresentationEngine(widget);
+  const isCard = isCardPresentationEngine(engine);
+  const hasFields = fieldOptions.length > 0;
+
+  const writeOptions = useCallback((nextOptions) => {
+    const next = { ...options, ...nextOptions };
+    for (const key of Object.keys(next)) {
+      const value = next[key];
+      if (value === "" || value === undefined || value === null) delete next[key];
+    }
+    const hasAnyKey = Object.keys(next).length > 0;
+    const baseConfig = { ...(widget.config || {}) };
+    if (hasAnyKey) {
+      baseConfig.presentationOptions = next;
+    } else {
+      delete baseConfig.presentationOptions;
+    }
+    onChange(baseConfig);
+  }, [onChange, options, widget.config]);
+
+  const setEngine = (value) => writeOptions({ engine: value === DEFAULT_PRESENTATION_ENGINE ? undefined : value });
+  const setField = (key, value) => writeOptions({ [key]: value });
+  const setDensity = (value) => writeOptions({ density: value });
+  const setToggle = (key, value) => writeOptions({ [key]: value });
+  const setMaxItems = (raw) => {
+    if (raw === "" || raw === null || raw === undefined) {
+      writeOptions({ maxItems: undefined });
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    writeOptions({ maxItems: Math.floor(parsed) });
+  };
+
+  const resetAll = () => onChange({ ...(widget.config || {}), presentationOptions: undefined });
+
+  return <section className="workspace-widget-subpanel workspace-presentation-section">
+    <SubPanelHeader title="Presentation" breadcrumb={widget.title} onBack={onBack} />
+    {!hasFields ? <p className="workspace-panel-hint">
+      Select a source before mapping presentation fields. Field options come from the widget's columns and row keys.
+    </p> : null}
+    <label className="workspace-presentation-control">
+      <span>Engine</span>
+      <select
+        value={engine}
+        onChange={(event) => setEngine(event.target.value)}
+        aria-label="Presentation engine"
+      >
+        {KNOWN_PRESENTATION_ENGINES.map((value) => <option key={value} value={value}>{PRESENTATION_ENGINE_LABELS[value] || value}</option>)}
+      </select>
+    </label>
+    {isCard ? <div className="workspace-presentation-grid">
+      {PRESENTATION_FIELD_MAP_KEYS.map((key) => <label key={key} className="workspace-field-map-row">
+        <span>{PRESENTATION_FIELD_LABELS[key] || key}</span>
+        <select
+          value={typeof options[key] === "string" ? options[key] : ""}
+          onChange={(event) => setField(key, event.target.value)}
+          disabled={!hasFields}
+          aria-label={`Map ${PRESENTATION_FIELD_LABELS[key] || key} field`}
+        >
+          <option value="">— none —</option>
+          {typeof options[key] === "string" && options[key] && !fieldOptions.includes(options[key])
+            ? <option value={options[key]}>{options[key]} (missing)</option>
+            : null}
+          {fieldOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      </label>)}
+    </div> : null}
+    {isCard ? <label className="workspace-presentation-control">
+      <span>Density</span>
+      <select
+        value={typeof options.density === "string" ? options.density : "comfortable"}
+        onChange={(event) => setDensity(event.target.value)}
+      >
+        {KNOWN_PRESENTATION_DENSITIES.map((value) => <option key={value} value={value}>{value === "compact" ? "Compact" : "Comfortable"}</option>)}
+      </select>
+    </label> : null}
+    {isCard ? <div className="workspace-presentation-toggles">
+      {PRESENTATION_TOGGLE_KEYS.map((key) => <label key={key} className="workspace-presentation-toggle">
+        <input
+          type="checkbox"
+          checked={options[key] !== false}
+          onChange={(event) => setToggle(key, event.target.checked)}
+          aria-label={`Toggle ${key}`}
+        />
+        <span>{key === "showLabels" ? "Show labels" : key === "showIcon" ? "Show icon" : "Show accent"}</span>
+      </label>)}
+    </div> : null}
+    {isCard ? <label className="workspace-presentation-control">
+      <span>Max items</span>
+      <input
+        type="number"
+        min={1}
+        value={Number.isFinite(options.maxItems) ? options.maxItems : ""}
+        placeholder="Unlimited"
+        onChange={(event) => setMaxItems(event.target.value)}
+        aria-label="Maximum cards to render"
+      />
+    </label> : null}
+    <p className="workspace-presentation-summary">
+      {summarizePresentation(widget)}
+      {isCard && options.titleField ? ` · Status = ${options.statusField || "—"}` : ""}
+    </p>
+    <button type="button" className="workspace-presentation-reset" onClick={resetAll}>Reset to defaults</button>
+    <p className="workspace-panel-hint">
+      Presentation options live on the widget. They never mutate Data Model objects or workflow runs.
+    </p>
+  </section>;
+}
+
 function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPage }) {
   const chartType = getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget);
   const xAxis = getChartAxis(widget, "xAxis");
@@ -3056,6 +3286,18 @@ function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRe
   const visibleColumns = widget.kind === "view" ? getVisibleColumns(widget) : fallbackColumns;
   const viewColumns = visibleColumns.length ? visibleColumns : fallbackColumns;
   const viewRows = Array.isArray(widget.config?.rows) ? widget.config.rows : [];
+  const presentationEngine = widget.kind === "view" ? getPresentationEngine(widget) : DEFAULT_PRESENTATION_ENGINE;
+  const presentationOptions = widget.kind === "view" ? getPresentationOptions(widget) : null;
+  const usesCardEngine = widget.kind === "view" && isCardPresentationEngine(presentationEngine);
+  const cardRowLimit = presentationOptions?.maxItems && Number.isFinite(presentationOptions.maxItems)
+    ? Math.max(1, Math.floor(presentationOptions.maxItems))
+    : 12;
+  const cardRows = usesCardEngine
+    ? viewRows.slice(0, cardRowLimit).map((row) => resolvePresentationCard(row, presentationOptions || {})).filter(Boolean)
+    : [];
+  const showLabels = presentationOptions?.showLabels !== false;
+  const showIcon = presentationOptions?.showIcon !== false;
+  const showAccent = presentationOptions?.showAccent !== false;
   const chartValues = widget.config?.values?.length ? widget.config.values : defaultConfigFor("chart").values;
   const chartType = widget.kind === "chart" ? (getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget)) : null;
   const dataLabels = widget.kind === "chart" ? Boolean(widget.config?.style?.dataLabels) : false;
@@ -3093,7 +3335,7 @@ function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRe
         type="button"
       ><X size={13} /></button>
     </div>
-    {widget.kind === "view" ? <div
+    {widget.kind === "view" && !usesCardEngine ? <div
       className="workspace-view-table"
       aria-label={`${widget.title} preview`}
       style={{ "--workspace-view-columns": viewColumns.length }}
@@ -3104,6 +3346,26 @@ function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRe
       </div>)}
       {!viewColumns.length && !viewRows.length ? <div className="workspace-view-empty">Select a source</div> : null}
       <footer>Calculate</footer>
+    </div> : null}
+    {widget.kind === "view" && usesCardEngine ? <div
+      className={`workspace-view-cards engine-${presentationEngine} density-${presentationOptions?.density === "compact" ? "compact" : "comfortable"}`}
+      aria-label={`${widget.title} preview`}
+      data-show-accent={showAccent ? "true" : "false"}
+      data-show-icon={showIcon ? "true" : "false"}
+      data-show-labels={showLabels ? "true" : "false"}
+    >
+      {!cardRows.length ? <div className="workspace-view-empty">Select a source</div> : null}
+      {cardRows.map((card, rowIndex) => <article key={rowIndex} className="workspace-view-card">
+        {showAccent ? <span className="workspace-view-card-accent" aria-hidden="true" data-accent={card.accent || ""} /> : null}
+        {showIcon ? <span className="workspace-view-card-icon" aria-hidden="true">{card.icon ? String(card.icon)[0]?.toUpperCase() || "•" : "•"}</span> : null}
+        <div className="workspace-view-card-body">
+          {card.label && showLabels ? <span className="workspace-view-card-label">{String(card.label)}</span> : null}
+          <strong className="workspace-view-card-title">{card.title || "Untitled"}</strong>
+          {card.subtitle ? <em className="workspace-view-card-subtitle">{String(card.subtitle)}</em> : null}
+          {card.description ? <p className="workspace-view-card-description">{String(card.description)}</p> : null}
+          {card.status ? <span className="workspace-view-card-status" data-tone={String(card.tone || card.status).toLowerCase()}>{String(card.status)}</span> : null}
+        </div>
+      </article>)}
     </div> : null}
     {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
       {isLikelyHttpUrl(widget.config?.url) ? <iframe title={`${widget.title} preview`} src={widget.config.url} /> : <span>Enter a valid http(s) URL</span>}
@@ -5142,6 +5404,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
+        {selectedWidget && inspectorPath === "presentation" ? <PresentationSubPanel
+          widget={selectedWidget}
+          dataModelTable={resolveDataModelTable(dataModelTables, selectedWidget.config?.binding)}
+          onChange={replaceSelectedWidgetConfig}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
         {selectedWidget && inspectorPath === SUB_PANEL_ROOT ? <section className="workspace-widget-settings">
           <label>
             <span>Title</span>
@@ -5196,6 +5464,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
               </button>
               <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("sort")}>
                 <span>Sort</span><code>{summarizeSort(selectedResolvedWidget || selectedWidget)}</code>
+              </button>
+              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("presentation")}>
+                <span>Presentation</span><code>{summarizePresentation(selectedResolvedWidget || selectedWidget)}</code>
               </button>
             </div>
           </section> : null}

@@ -47,6 +47,29 @@ const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "
 const KNOWN_FILTER_CONJUNCTIONS = ["and", "or"];
 const KNOWN_SORT_DIRECTIONS = ["asc", "desc"];
 const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
+const KNOWN_PRESENTATION_ENGINES = ["table", "project-card", "creative-card", "metric-card", "compact-list"];
+const KNOWN_PRESENTATION_DENSITIES = ["compact", "comfortable"];
+const PRESENTATION_FIELD_MAP_KEYS = [
+  "titleField",
+  "subtitleField",
+  "descriptionField",
+  "statusField",
+  "toneField",
+  "iconField",
+  "accentField",
+  "labelField",
+  "imageField",
+  "ctaLabelField",
+  "ctaUrlField"
+];
+const PRESENTATION_TOGGLE_KEYS = ["showLabels", "showIcon", "showAccent"];
+const KNOWN_PRESENTATION_OPTION_KEYS = new Set([
+  "engine",
+  ...PRESENTATION_FIELD_MAP_KEYS,
+  "density",
+  ...PRESENTATION_TOGGLE_KEYS,
+  "maxItems"
+]);
 const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
 /** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
 const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
@@ -114,7 +137,27 @@ const WIDGET_SCHEMA_CONTRACTS = {
     fieldSettings: "FieldSettingsConfig optional (hidden[], order[])",
     sort: "SortClause[] optional ({ fieldId, direction })",
     filter: "FilterConfig optional ({ op, clauses[] })",
-    binding: "StaticDataBinding optional"
+    binding: "StaticDataBinding optional",
+    presentationOptions: "PresentationOptionsConfig optional"
+  },
+  PresentationOptionsConfig: {
+    engine: `${KNOWN_PRESENTATION_ENGINES.join(" | ")} optional, defaults to table`,
+    titleField: "string optional — row key bound to the card title",
+    subtitleField: "string optional — row key bound to the card subtitle",
+    descriptionField: "string optional — row key bound to the card description",
+    statusField: "string optional — row key bound to the status pill",
+    toneField: "string optional — row key driving status tone",
+    iconField: "string optional — row key bound to the leading icon glyph",
+    accentField: "string optional — row key bound to the accent stripe",
+    labelField: "string optional — row key bound to the floating label chip",
+    imageField: "string optional — row key bound to the card image/media",
+    ctaLabelField: "string optional — row key bound to the CTA label",
+    ctaUrlField: "string optional — row key bound to the CTA URL",
+    density: `${KNOWN_PRESENTATION_DENSITIES.join(" | ")} optional`,
+    showLabels: "boolean optional",
+    showIcon: "boolean optional",
+    showAccent: "boolean optional",
+    maxItems: "positive finite integer optional — caps cards rendered per widget"
   },
   ChartAxisConfig: {
     field: "string optional",
@@ -643,6 +686,40 @@ function validateChartStyle(style, path, errors) {
   }
 }
 
+function validatePresentationOptions(options, path, errors) {
+  if (options === undefined) return;
+  if (!isPlainObject(options)) {
+    errors.push(`${path} must be a plain object`);
+    return;
+  }
+  for (const key of Object.keys(options)) {
+    if (!KNOWN_PRESENTATION_OPTION_KEYS.has(key)) {
+      errors.push(`${path} contains unknown key: ${key}`);
+    }
+  }
+  if (options.engine !== undefined && !KNOWN_PRESENTATION_ENGINES.includes(options.engine)) {
+    errors.push(`${path}.engine must be one of ${KNOWN_PRESENTATION_ENGINES.join(", ")}`);
+  }
+  for (const key of PRESENTATION_FIELD_MAP_KEYS) {
+    if (options[key] !== undefined && typeof options[key] !== "string") {
+      errors.push(`${path}.${key} must be a string when present`);
+    }
+  }
+  if (options.density !== undefined && !KNOWN_PRESENTATION_DENSITIES.includes(options.density)) {
+    errors.push(`${path}.density must be one of ${KNOWN_PRESENTATION_DENSITIES.join(", ")}`);
+  }
+  for (const key of PRESENTATION_TOGGLE_KEYS) {
+    if (options[key] !== undefined && typeof options[key] !== "boolean") {
+      errors.push(`${path}.${key} must be a boolean when present`);
+    }
+  }
+  if (options.maxItems !== undefined) {
+    if (!Number.isFinite(options.maxItems) || options.maxItems <= 0 || Math.floor(options.maxItems) !== options.maxItems) {
+      errors.push(`${path}.maxItems must be a positive finite integer when present`);
+    }
+  }
+}
+
 function validateWidgetConfig(kind, config, path, errors) {
   if (config === undefined) return;
   if (!isPlainObject(config)) {
@@ -679,6 +756,7 @@ function validateWidgetConfig(kind, config, path, errors) {
     validateSortClauses(config.sort, `${path}.sort`, errors);
     validateFilterClauses(config.filter, `${path}.filter`, errors);
     validateStaticDataBinding(config.binding, `${path}.binding`, errors);
+    validatePresentationOptions(config.presentationOptions, `${path}.presentationOptions`, errors);
   }
   if (kind === "iframe" && config.url !== undefined && typeof config.url !== "string") {
     errors.push(`${path}.url must be a string`);
@@ -1426,6 +1504,8 @@ export {
   KNOWN_FIELDS,
   KNOWN_FILTER_CONJUNCTIONS,
   KNOWN_FILTER_OPERATORS,
+  KNOWN_PRESENTATION_DENSITIES,
+  KNOWN_PRESENTATION_ENGINES,
   KNOWN_SANDBOX_AGENT_HOSTS,
   KNOWN_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_RUNTIMES,
@@ -1439,6 +1519,8 @@ export {
   NAV_ITEM_LABEL_MAX,
   NAV_ITEM_TYPES,
   NORMALIZED_OBJECT_FIELD_IDS,
+  PRESENTATION_FIELD_MAP_KEYS,
+  PRESENTATION_TOGGLE_KEYS,
   SAMPLE_DATA_BINDINGS,
   SAMPLE_VIEW_ROWS,
   WIDGET_SCHEMA_CONTRACTS,
