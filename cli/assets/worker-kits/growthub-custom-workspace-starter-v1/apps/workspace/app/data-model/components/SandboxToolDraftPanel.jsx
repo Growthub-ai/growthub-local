@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import {
   buildDefaultOrchestrationGraphFromRegistry,
+  isApiRegistryTestSuccessful,
   parseOrchestrationGraph,
   serializeOrchestrationGraph,
   updateGraphNode,
@@ -36,6 +38,7 @@ export function SandboxToolDraftPanel({
   const [rootPath, setRootPath] = useState(draftOptions?.rootPath || "data");
   const [instructions, setInstructions] = useState(draftOptions?.instructions || "");
   const [selectedNodeId, setSelectedNodeId] = useState("input");
+  const [configTab, setConfigTab] = useState("node");
   const [graphError, setGraphError] = useState("");
   const [orchestrationGraph, setOrchestrationGraph] = useState(() => {
     if (draftOptions?.orchestrationGraph) {
@@ -45,7 +48,9 @@ export function SandboxToolDraftPanel({
     return buildDefaultOrchestrationGraphFromRegistry(registryRow, { authRef, rootPath });
   });
 
-  const syncGraphFromRegistry = useCallback(() => {
+  const registryKey = `${integrationId}:${String(registryRow?.endpoint || "")}:${String(registryRow?.method || "")}`;
+
+  useEffect(() => {
     setOrchestrationGraph((current) => {
       const base = buildDefaultOrchestrationGraphFromRegistry(registryRow, {
         label: registryName,
@@ -55,28 +60,25 @@ export function SandboxToolDraftPanel({
       const parsed = parseOrchestrationGraph(current) || current;
       if (!parsed?.nodes?.length) return base;
       return {
-        ...base,
-        nodes: base.nodes.map((templateNode) => {
-          const existing = parsed.nodes.find((n) => String(n.id) === templateNode.id);
-          if (!existing) return templateNode;
-          if (templateNode.id === "api-request") {
+        ...parsed,
+        nodes: parsed.nodes.map((node) => {
+          const template = base.nodes.find((n) => n.id === node.id);
+          if (!template) return node;
+          if (node.id === "api-request") {
             return {
-              ...templateNode,
-              config: { ...templateNode.config, authRef, rootPath: undefined, endpoint: templateNode.config.endpoint }
+              ...node,
+              subtitle: template.subtitle,
+              config: { ...template.config, ...node.config, authRef }
             };
           }
-          if (templateNode.id === "transform") {
-            return { ...templateNode, config: { ...existing.config, rootPath } };
+          if (node.id === "transform") {
+            return { ...node, config: { ...node.config, rootPath } };
           }
-          return { ...templateNode, config: { ...templateNode.config, ...existing.config } };
+          return node;
         })
       };
     });
-  }, [registryRow, registryName, authRef, rootPath]);
-
-  useEffect(() => {
-    syncGraphFromRegistry();
-  }, [authRef, rootPath, integrationId]);
+  }, [registryKey, registryName, authRef, rootPath, registryRow, integrationId]);
 
   const selectedNode = useMemo(() => {
     const parsed = parseOrchestrationGraph(orchestrationGraph) || orchestrationGraph;
@@ -124,23 +126,42 @@ export function SandboxToolDraftPanel({
   function handleNodeConfigChange(configPatch) {
     if (!selectedNodeId) return;
     setOrchestrationGraph((g) => updateGraphNode(g, selectedNodeId, configPatch));
+    if (selectedNodeId === "transform" && configPatch.rootPath) {
+      setRootPath(String(configPatch.rootPath));
+    }
   }
 
-  function handleConnectorAction({ action }) {
-    if (action === "filter") setSelectedNodeId("transform");
-    else if (action === "map") setSelectedNodeId("transform");
-    else if (action === "preview") setSelectedNodeId("result");
+  function handleConnectorAction({ from, to, action }) {
+    if (action === "filter") {
+      if (to === "transform" || from === "api-request") {
+        setSelectedNodeId("transform");
+      } else {
+        setSelectedNodeId("input");
+      }
+      setConfigTab("filters");
+    } else if (action === "map") {
+      setSelectedNodeId("transform");
+      setConfigTab("node");
+    } else if (action === "preview") {
+      setSelectedNodeId("result");
+      setConfigTab("preview");
+    }
   }
 
   const defaultInstructions = `Governed sandbox tool for ${registryName}. Calls ${String(registryRow?.method || "GET").toUpperCase()} ${registryRow?.endpoint || registryRow?.baseUrl || ""}. authRef ${authRef} only — secrets resolve server-side.`;
+  const headerBadge = isApiRegistryTestSuccessful(registryRow) ? "connected" : "draft";
 
   return (
     <section className="dm-orchestration-sidecar" aria-label="Sandbox orchestration field editor">
       <header className="dm-orchestration-header">
-        <div>
+        <button type="button" className="dm-orchestration-header__back" onClick={onCancel} aria-label="Back">
+          <ArrowLeft size={16} />
+        </button>
+        <div className="dm-orchestration-header__titles">
           <h2>Sandbox tool draft</h2>
           <p>Created from {registryName}</p>
         </div>
+        <span className={`dm-orchestration-header__badge is-${headerBadge}`}>{headerBadge}</span>
         <div className="dm-orchestration-header__actions">
           <button type="button" className="dm-btn-outline" disabled={disabled} onClick={onCancel}>
             Cancel
@@ -148,7 +169,7 @@ export function SandboxToolDraftPanel({
           <button
             type="button"
             className="dm-btn-primary-sm"
-            disabled={disabled || !name.trim() || Boolean(graphError)}
+            disabled={disabled || !name.trim() || Boolean(graphError) || !isApiRegistryTestSuccessful(registryRow)}
             onClick={onRequestConfirm}
           >
             Create tool
@@ -158,11 +179,13 @@ export function SandboxToolDraftPanel({
 
       <div className="dm-orchestration-sidecar__body">
         <div className="dm-orchestration-sidecar__canvas-col">
-          <p className="dm-orchestration-sidecar__label">orchestrationGraph</p>
           <OrchestrationGraphCanvas
             graph={orchestrationGraph}
             selectedNodeId={selectedNodeId}
-            onSelectNode={(node) => setSelectedNodeId(String(node?.id || ""))}
+            onSelectNode={(node) => {
+              setSelectedNodeId(String(node?.id || ""));
+              setConfigTab("node");
+            }}
             onConnectorAction={handleConnectorAction}
           />
         </div>
@@ -172,6 +195,8 @@ export function SandboxToolDraftPanel({
             node={selectedNode}
             registryRow={registryRow}
             disabled={disabled}
+            activeTab={configTab}
+            onTabChange={setConfigTab}
             onConfigChange={handleNodeConfigChange}
           />
 
@@ -240,7 +265,7 @@ export function SandboxToolDraftPanel({
 
           {graphError && <p className="dm-orchestration-config__error">{graphError}</p>}
           <p className="dm-orchestration-sidecar__footnote">
-            No secrets are stored. Nothing runs until you test the sandbox after creation.
+            No secrets are stored. Nothing runs until you click Run sandbox after creation.
           </p>
         </div>
       </div>

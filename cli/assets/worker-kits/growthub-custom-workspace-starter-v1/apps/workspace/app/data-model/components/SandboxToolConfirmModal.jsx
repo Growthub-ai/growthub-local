@@ -17,15 +17,15 @@ export function SandboxToolConfirmModal({
   const summary = summarizeOrchestrationGraph(orchestrationGraph);
 
   return (
-    <div className="dm-orch-modal-backdrop" onClick={onCancel} role="presentation">
+    <div className="dm-orchestration-confirm dm-orchestration-confirm__backdrop" onClick={onCancel} role="presentation">
       <section
-        className="dm-orch-modal"
+        className="dm-orchestration-confirm__dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="sandbox-tool-confirm-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="dm-orch-modal-head">
+        <header className="dm-orchestration-confirm__head">
           <div>
             <p>Confirm</p>
             <h2 id="sandbox-tool-confirm-title">Create sandbox tool?</h2>
@@ -34,21 +34,22 @@ export function SandboxToolConfirmModal({
             <X size={16} />
           </button>
         </header>
-        <div className="dm-orch-modal-body">
-          <p>This creates one Sandbox Environment object from the tested API Registry record.</p>
-          <ul className="dm-orch-modal-list">
+        <div className="dm-orchestration-confirm__body">
+          <p>This creates one Sandbox Environment row from the tested API Registry record.</p>
+          <ul className="dm-orchestration-confirm__list">
             <li>Saves orchestrationGraph on the sandbox row</li>
             <li>Stores <code>{authRef || "authRef"}</code> only — no secrets</li>
+            <li>Does not store secrets</li>
             <li>Does not create widgets</li>
-            <li>Does not change dashboards</li>
-            <li>Does not run until you click Run test</li>
+            <li>Does not change dashboards or canvas</li>
+            <li>Does not run until you click Run sandbox</li>
           </ul>
-          <p className="dm-orch-modal-summary">
+          <p className="dm-orchestration-confirm__summary">
             <span>Run plan</span>
             {summary}
           </p>
         </div>
-        <footer className="dm-orch-modal-foot">
+        <footer className="dm-orchestration-confirm__foot">
           <button type="button" className="dm-btn-outline" disabled={creating} onClick={onCancel}>
             Cancel
           </button>

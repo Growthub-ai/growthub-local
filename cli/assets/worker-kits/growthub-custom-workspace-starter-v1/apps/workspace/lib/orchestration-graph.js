@@ -175,7 +175,7 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
         id: "input",
         type: "input",
         label: "Input",
-        subtitle: "Manual run payload",
+        subtitle: "Manual or source payload",
         config: {
           inputMode: "manual",
           samplePayload: {},
@@ -229,7 +229,7 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
         id: "result",
         type: "tool-result",
         label: "Result",
-        subtitle: "Save run output",
+        subtitle: "Save status and response",
         config: {
           successStatusCodes: [200],
           writeLastResponse: true,
@@ -356,7 +356,9 @@ function extractInputNode(graph) {
 function extractTransformConfig(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
   const node = parsed?.nodes?.find((n) => n?.type === "transform-filter" || n?.type === "normalize-output");
-  return node?.config || { mode: "json", rootPath: "data", fieldMap: {}, filters: [] };
+  const config = node?.config || { mode: "json", rootPath: "data", fieldMap: {}, filters: [] };
+  const mode = config.responseMode || config.mode || "json";
+  return { ...config, mode, responseMode: mode };
 }
 
 /** @deprecated use extractTransformConfig */
@@ -473,6 +475,36 @@ function orderedGraphNodes(graph) {
   return ordered;
 }
 
+function collectFieldIdsFromValue(value, prefix = "", out = new Set(), depth = 0) {
+  if (depth > 4 || value == null) return out;
+  if (Array.isArray(value)) {
+    value.slice(0, 5).forEach((item, index) => {
+      collectFieldIdsFromValue(item, prefix ? `${prefix}.${index}` : String(index), out, depth + 1);
+    });
+    return out;
+  }
+  if (typeof value === "object") {
+    Object.keys(value).forEach((key) => {
+      const path = prefix ? `${prefix}.${key}` : key;
+      out.add(path);
+      collectFieldIdsFromValue(value[key], path, out, depth + 1);
+    });
+  }
+  return out;
+}
+
+function detectFieldIdsFromLastResponse(lastResponse) {
+  const text = String(lastResponse || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    const payload = parsed?.response ?? parsed?.data ?? parsed;
+    return Array.from(collectFieldIdsFromValue(payload)).sort();
+  } catch {
+    return [];
+  }
+}
+
 function redactSecretsFromText(text) {
   let out = String(text || "");
   for (const pattern of [
@@ -515,5 +547,7 @@ export {
   summarizeOrchestrationGraph,
   updateGraphNode,
   validateOrchestrationGraph,
-  redactSecretsFromText
+  redactSecretsFromText,
+  detectFieldIdsFromLastResponse,
+  collectFieldIdsFromValue
 };

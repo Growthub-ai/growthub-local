@@ -1268,7 +1268,9 @@ function DataModelRecordDrawer({
             registryRow={draft}
             workspaceConfig={workspaceConfig}
             disabled={saving || sandboxToolCreating}
+            testing={testing}
             sandboxRunning={createdSandboxTesting}
+            onTestConnection={testApiRecord}
             onCreateSandboxTool={() => setSandboxToolFlow("draft")}
             onOpenSandboxTool={openSandboxToolRow}
             onRunSandboxTool={runExistingSandboxTool}
@@ -1297,7 +1299,7 @@ function DataModelRecordDrawer({
                 disabled={createdSandboxTesting || saving}
                 onClick={runCreatedSandboxTest}
               >
-                {createdSandboxTesting ? "Running…" : "Run test"}
+                {createdSandboxTesting ? "Running…" : "Run sandbox"}
               </button>
             </div>
           </section>

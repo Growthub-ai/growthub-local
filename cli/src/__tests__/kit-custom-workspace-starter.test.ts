@@ -682,6 +682,17 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(mod.getApiRegistrySandboxToolState({ ...registryRow, status: "failed" }, cfg).kind).toBe("failed");
   });
 
+  it("detectFieldIdsFromLastResponse extracts paths from test response", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as { detectFieldIdsFromLastResponse: (text: string) => string[] };
+    const fields = mod.detectFieldIdsFromLastResponse(
+      JSON.stringify({ data: { items: [{ email: "a@test.com", full_name: "Ada" }] } })
+    );
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.some((f) => f.includes("email"))).toBe(true);
+  });
+
   it("incomplete API Registry does not allow create state", async () => {
     const mod = await import(
       `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`

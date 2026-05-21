@@ -1,6 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  ArrowDownToLine,
+  Filter,
+  Globe,
+  SlidersHorizontal,
+  Target
+} from "lucide-react";
 import { orderedGraphNodes, parseOrchestrationGraph } from "@/lib/orchestration-graph";
 
 const NODE_TYPE_LABELS = {
@@ -8,13 +15,19 @@ const NODE_TYPE_LABELS = {
   "api-registry-call": "API Registry",
   "transform-filter": "Transform",
   "normalize-output": "Transform",
-  "tool-result": "Result",
-  "sandbox-adapter": "Adapter",
-  "custom-webhook": "Webhook"
+  "tool-result": "Result"
+};
+
+const NODE_ICONS = {
+  input: SlidersHorizontal,
+  "api-registry-call": Globe,
+  "transform-filter": Filter,
+  "normalize-output": Filter,
+  "tool-result": Target
 };
 
 const CONNECTOR_OPTIONS = [
-  { id: "filter", label: "Filter response" },
+  { id: "filter", label: "Add filter" },
   { id: "map", label: "Map fields" },
   { id: "preview", label: "Preview output" }
 ];
@@ -29,10 +42,10 @@ function nodeSubtitle(node) {
     return endpoint ? `${id} · ${method} ${endpoint}` : id;
   }
   if (node?.type === "transform-filter" || node?.type === "normalize-output") {
-    return config.rootPath ? `root: ${config.rootPath}` : "Map fields and apply filters";
+    return "Map fields and filter rows";
   }
-  if (node?.type === "input") return "Manual run payload";
-  if (node?.type === "tool-result") return "Save run output";
+  if (node?.type === "input") return "Manual or source payload";
+  if (node?.type === "tool-result") return "Save status and response";
   return "";
 }
 
@@ -52,7 +65,8 @@ export function OrchestrationGraphCanvas({
   onConnectorAction,
   showRunTest,
   onRunTest,
-  runStatus
+  runStatus,
+  runMessage
 }) {
   const parsed = useMemo(() => parseOrchestrationGraph(graph) || graph, [graph]);
   const nodes = useMemo(() => orderedGraphNodes(parsed), [parsed]);
@@ -75,11 +89,12 @@ export function OrchestrationGraphCanvas({
 
   return (
     <div className="dm-orchestration-canvas" aria-label="Orchestration graph field editor">
+      <span className="dm-orchestration-canvas__badge">Draft</span>
       {nodes.map((node, index) => {
         const id = String(node.id || "");
         const isSelected = activeId === id;
         const prevId = index > 0 ? String(nodes[index - 1].id || "") : "";
-        const hasEdge = prevId && edgeBetween(prevId, id);
+        const Icon = NODE_ICONS[node.type] || ArrowDownToLine;
 
         return (
           <div key={id || index} className="dm-orchestration-canvas__step">
@@ -113,8 +128,8 @@ export function OrchestrationGraphCanvas({
                     ))}
                   </div>
                 )}
-                {hasEdge && (
-                  <span className="dm-orchestration-connector__passes">{edgeBetween(prevId, id)?.passes || ""}</span>
+                {edgeBetween(prevId, id)?.passes && (
+                  <span className="dm-orchestration-connector__passes">{edgeBetween(prevId, id).passes}</span>
                 )}
               </div>
             )}
@@ -127,11 +142,12 @@ export function OrchestrationGraphCanvas({
                 onSelectNode?.(node);
               }}
             >
+              <span className="dm-orchestration-node__icon" aria-hidden="true">
+                <Icon size={14} />
+              </span>
               <span className="dm-orchestration-node__type">{NODE_TYPE_LABELS[node.type] || node.type}</span>
               <span className="dm-orchestration-node__title">{node.label || id}</span>
-              {nodeSubtitle(node) && (
-                <span className="dm-orchestration-node__subtitle">{nodeSubtitle(node)}</span>
-              )}
+              <span className="dm-orchestration-node__subtitle">{nodeSubtitle(node)}</span>
             </button>
           </div>
         );
@@ -139,9 +155,10 @@ export function OrchestrationGraphCanvas({
       {showRunTest && (
         <div className="dm-orchestration-run-status">
           <button type="button" className="dm-btn-primary-sm" onClick={onRunTest}>
-            Run test
+            Run sandbox
           </button>
           {runStatus && <span className={`dm-orchestration-run-status__badge is-${runStatus}`}>{runStatus}</span>}
+          {runMessage && <p className="dm-orchestration-run-status__message">{runMessage}</p>}
         </div>
       )}
     </div>

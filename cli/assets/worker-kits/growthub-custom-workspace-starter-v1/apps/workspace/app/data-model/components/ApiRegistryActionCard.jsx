@@ -10,6 +10,8 @@ export function ApiRegistryActionCard({
   onCreateSandboxTool,
   onOpenSandboxTool,
   onRunSandboxTool,
+  onTestConnection,
+  testing,
   sandboxRunning
 }) {
   const state = getApiRegistrySandboxToolState(registryRow, workspaceConfig);
@@ -37,16 +39,42 @@ export function ApiRegistryActionCard({
     );
   }
 
-  if (state.kind === "untested" || state.kind === "failed") {
+  if (state.kind === "untested") {
     return (
-      <section className="dm-api-action-card dm-api-action-card-muted" aria-label="Sandbox tool prerequisites">
+      <section className="dm-api-action-card dm-api-action-card-muted" aria-label="Test API first">
         <div className="dm-api-action-card-body">
-          <p className="dm-api-action-card-eyebrow">
-            {state.kind === "failed" ? "Connection not ready" : "Sandbox tool"}
-          </p>
-          <h3>{state.kind === "failed" ? "Fix connection test" : "Test connection first"}</h3>
+          <p className="dm-api-action-card-eyebrow">Sandbox tool</p>
+          <h3>Test this API first</h3>
           <p>{state.message}</p>
         </div>
+        <button
+          type="button"
+          className="dm-btn-primary-sm dm-api-action-card-cta"
+          disabled={disabled || testing}
+          onClick={onTestConnection}
+        >
+          {testing ? "Testing…" : "Test connection"}
+        </button>
+      </section>
+    );
+  }
+
+  if (state.kind === "failed") {
+    return (
+      <section className="dm-api-action-card dm-api-action-card-muted" aria-label="API test failed">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">Connection</p>
+          <h3>API test failed</h3>
+          <p>{state.message}</p>
+        </div>
+        <button
+          type="button"
+          className="dm-btn-outline dm-api-action-card-cta"
+          disabled={disabled || testing}
+          onClick={onTestConnection}
+        >
+          {testing ? "Testing…" : "Retest"}
+        </button>
       </section>
     );
   }
@@ -54,14 +82,14 @@ export function ApiRegistryActionCard({
   if (state.kind === "existing") {
     const toolName = String(state.row?.Name || "").trim();
     return (
-      <section className="dm-api-action-card" aria-label="Open sandbox tool">
+      <section className="dm-api-action-card" aria-label="Sandbox tool ready">
         <div className="dm-api-action-card-icon" aria-hidden="true">
           <Terminal size={18} />
         </div>
         <div className="dm-api-action-card-body">
-          <p className="dm-api-action-card-eyebrow">Sandbox tool exists</p>
-          <h3>{toolName}</h3>
-          <p>Governed sandbox row linked to this API Registry entry.</p>
+          <p className="dm-api-action-card-eyebrow">Sandbox tool</p>
+          <h3>Sandbox tool ready</h3>
+          <p>{toolName} — governed row linked to this API Registry entry.</p>
         </div>
         <div className="dm-api-action-card-actions">
           <button
@@ -80,7 +108,7 @@ export function ApiRegistryActionCard({
             onClick={() => onRunSandboxTool?.({ name: toolName })}
           >
             <Play size={14} aria-hidden="true" />
-            {sandboxRunning ? "Running…" : "Run test"}
+            {sandboxRunning ? "Running…" : "Run sandbox"}
           </button>
         </div>
       </section>
@@ -93,7 +121,7 @@ export function ApiRegistryActionCard({
         <Terminal size={18} />
       </div>
       <div className="dm-api-action-card-body">
-        <p className="dm-api-action-card-eyebrow">API tested successfully</p>
+        <p className="dm-api-action-card-eyebrow">API connected</p>
         <h3>Create sandbox tool</h3>
         <p>
           This API is connected. Turn it into a sandbox tool that agents can run safely from this workspace.

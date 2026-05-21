@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { FILTER_CONJUNCTIONS, FILTER_OPERATORS } from "@/lib/orchestration-graph";
+import { useEffect, useMemo, useState } from "react";
+import {
+  detectFieldIdsFromLastResponse,
+  FILTER_CONJUNCTIONS,
+  FILTER_OPERATORS,
+  isApiRegistryTestSuccessful
+} from "@/lib/orchestration-graph";
 
 const TABS = ["node", "filters", "preview", "advanced"];
 
-function FilterClauseList({ filters, filterMode, onChange, disabled, fieldPlaceholder }) {
+function FilterClauseList({ filters, filterMode, onChange, disabled, fieldOptions = [] }) {
   const clauses = Array.isArray(filters) ? filters : [];
   const mode = FILTER_CONJUNCTIONS.includes(filterMode) ? filterMode : "and";
 
@@ -24,13 +29,10 @@ function FilterClauseList({ filters, filterMode, onChange, disabled, fieldPlaceh
 
   return (
     <div className="dm-orchestration-config__filters">
+      <p className="dm-orchestration-config__hint">Where</p>
       <label className="dm-orchestration-config__field">
         <span>Match</span>
-        <select
-          value={mode}
-          disabled={disabled}
-          onChange={(e) => onChange(clauses, e.target.value)}
-        >
+        <select value={mode} disabled={disabled} onChange={(e) => onChange(clauses, e.target.value)}>
           {FILTER_CONJUNCTIONS.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
@@ -38,12 +40,25 @@ function FilterClauseList({ filters, filterMode, onChange, disabled, fieldPlaceh
       </label>
       {clauses.map((clause, index) => (
         <div key={index} className="dm-orchestration-config__filter-row">
-          <input
-            placeholder={fieldPlaceholder || "fieldId"}
-            value={clause.fieldId || ""}
-            disabled={disabled}
-            onChange={(e) => updateClause(index, { fieldId: e.target.value })}
-          />
+          {fieldOptions.length > 0 ? (
+            <select
+              value={clause.fieldId || ""}
+              disabled={disabled}
+              onChange={(e) => updateClause(index, { fieldId: e.target.value })}
+            >
+              <option value="">Select field</option>
+              {fieldOptions.map((field) => (
+                <option key={field} value={field}>{field}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              placeholder="field"
+              value={clause.fieldId || ""}
+              disabled={disabled}
+              onChange={(e) => updateClause(index, { fieldId: e.target.value })}
+            />
+          )}
           <select
             value={clause.operator || "eq"}
             disabled={disabled}
@@ -71,51 +86,159 @@ function FilterClauseList({ filters, filterMode, onChange, disabled, fieldPlaceh
   );
 }
 
-function FieldMapEditor({ fieldMap, onChange, disabled }) {
-  const [jsonText, setJsonText] = useState(() => JSON.stringify(fieldMap || {}, null, 2));
-  const [error, setError] = useState("");
+function FieldMapRows({ fieldMap, onChange, disabled, fieldOptions = [] }) {
+  const entries = Object.entries(fieldMap && typeof fieldMap === "object" ? fieldMap : {});
 
-  function applyJson() {
-    try {
-      const parsed = JSON.parse(jsonText || "{}");
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        onChange(parsed);
-        setError("");
-      } else {
-        setError("Field map must be a JSON object");
-      }
-    } catch {
-      setError("Invalid JSON");
-    }
+  function updateEntry(index, target, sourcePath) {
+    const next = [...entries];
+    next[index] = [target, sourcePath];
+    onChange(Object.fromEntries(next.filter(([t]) => String(t).trim())));
+  }
+
+  function addEntry() {
+    onChange({ ...Object.fromEntries(entries), "": "" });
+  }
+
+  function removeEntry(index) {
+    const next = entries.filter((_, i) => i !== index);
+    onChange(Object.fromEntries(next));
   }
 
   return (
-    <label className="dm-orchestration-config__field">
-      <span>Field map (target → source path)</span>
-      <textarea
-        rows={5}
-        value={jsonText}
-        disabled={disabled}
-        onChange={(e) => setJsonText(e.target.value)}
-        onBlur={applyJson}
-      />
-      {error && <p className="dm-orchestration-config__error">{error}</p>}
-    </label>
+    <div className="dm-orchestration-config__fieldmap">
+      <span className="dm-orchestration-config__field-label">Field mapping</span>
+      {entries.length === 0 && (
+        <p className="dm-orchestration-config__hint">Map workspace field names to paths in the API response.</p>
+      )}
+      {entries.map(([target, sourcePath], index) => (
+        <div key={`${target}-${index}`} className="dm-orchestration-config__fieldmap-row">
+          <input
+            placeholder="Output field"
+            value={target}
+            disabled={disabled}
+            onChange={(e) => updateEntry(index, e.target.value, sourcePath)}
+          />
+          {fieldOptions.length > 0 ? (
+            <select
+              value={sourcePath || ""}
+              disabled={disabled}
+              onChange={(e) => updateEntry(index, target, e.target.value)}
+            >
+              <option value="">Source path</option>
+              {fieldOptions.map((field) => (
+                <option key={field} value={field}>{field}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              placeholder="Source path"
+              value={sourcePath || ""}
+              disabled={disabled}
+              onChange={(e) => updateEntry(index, target, e.target.value)}
+            />
+          )}
+          <button type="button" className="dm-btn-ghost" disabled={disabled} onClick={() => removeEntry(index)}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button type="button" className="dm-btn-outline" disabled={disabled} onClick={addEntry}>
+        + Add field mapping
+      </button>
+    </div>
   );
 }
 
-export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, registryRow }) {
-  const [activeTab, setActiveTab] = useState("node");
+function PayloadKeyRows({ payload, onChange, disabled }) {
+  const entries = Object.entries(payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {});
+
+  function setEntries(nextEntries) {
+    onChange(Object.fromEntries(nextEntries.filter(([k]) => String(k).trim())));
+  }
+
+  return (
+    <div className="dm-orchestration-config__payload">
+      <span className="dm-orchestration-config__field-label">Test payload fields</span>
+      {entries.map(([key, value], index) => (
+        <div key={index} className="dm-orchestration-config__payload-row">
+          <input
+            placeholder="key"
+            value={key}
+            disabled={disabled}
+            onChange={(e) => {
+              const next = [...entries];
+              next[index] = [e.target.value, value];
+              setEntries(next);
+            }}
+          />
+          <input
+            placeholder="value"
+            value={value == null ? "" : String(value)}
+            disabled={disabled}
+            onChange={(e) => {
+              const next = [...entries];
+              next[index] = [key, e.target.value];
+              setEntries(next);
+            }}
+          />
+          <button
+            type="button"
+            className="dm-btn-ghost"
+            disabled={disabled}
+            onClick={() => setEntries(entries.filter((_, i) => i !== index))}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="dm-btn-outline"
+        disabled={disabled}
+        onClick={() => setEntries([...entries, ["", ""]])}
+      >
+        + Add payload field
+      </button>
+    </div>
+  );
+}
+
+export function OrchestrationNodeConfigPanel({
+  node,
+  onConfigChange,
+  disabled,
+  registryRow,
+  activeTab: controlledTab,
+  onTabChange
+}) {
+  const [internalTab, setInternalTab] = useState("node");
+  const activeTab = controlledTab ?? internalTab;
+
+  function setActiveTab(tab) {
+    setInternalTab(tab);
+    onTabChange?.(tab);
+  }
+
+  useEffect(() => {
+    setActiveTab("node");
+  }, [node?.id]);
+
+  const detectedFields = useMemo(
+    () => detectFieldIdsFromLastResponse(registryRow?.lastResponse),
+    [registryRow?.lastResponse]
+  );
+
   if (!node) {
     return (
       <div className="dm-orchestration-config dm-orchestration-config--empty">
-        <p>Select a node on the canvas to configure input, API request, transform, or result settings.</p>
+        <p>Select a node on the canvas to configure it in this panel.</p>
       </div>
     );
   }
 
   const config = node.config || {};
   const type = String(node.type || "");
+  const meta = config.requestHeadersMetadata || {};
 
   function patchConfig(patch) {
     onConfigChange?.({ ...config, ...patch });
@@ -127,8 +250,15 @@ export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, r
       ? ["node", "preview", "advanced"]
       : ["node", "preview"];
 
+  const registryConnected = isApiRegistryTestSuccessful(registryRow);
+  const responseMode = config.responseMode || config.mode || "json";
+
   return (
     <div className="dm-orchestration-config">
+      <div className="dm-orchestration-config__head">
+        <p className="dm-orchestration-config__node-kind">{node.label || node.id}</p>
+        <p className="dm-orchestration-config__node-sub">{node.subtitle || type}</p>
+      </div>
       <div className="dm-orchestration-config__tabs" role="tablist">
         {tabsForType.map((tab) => (
           <button
@@ -154,61 +284,103 @@ export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, r
               <option value="source-record">source-record</option>
             </select>
           </label>
-          <label className="dm-orchestration-config__field">
-            <span>Sample payload (JSON)</span>
-            <textarea
-              rows={4}
-              disabled={disabled}
-              value={typeof config.samplePayload === "string" ? config.samplePayload : JSON.stringify(config.samplePayload || {}, null, 2)}
-              onChange={(e) => {
-                try {
-                  patchConfig({ samplePayload: JSON.parse(e.target.value || "{}") });
-                } catch {
-                  patchConfig({ samplePayload: e.target.value });
-                }
-              }}
-            />
-          </label>
-          <p className="dm-orchestration-config__hint">Use {"{{input.field}}"} in the API node endpoint or body.</p>
+          <PayloadKeyRows
+            payload={config.samplePayload}
+            disabled={disabled}
+            onChange={(samplePayload) => patchConfig({ samplePayload })}
+          />
+          <p className="dm-orchestration-config__hint">
+            Bind values with {"{{input.key}}"} in the API endpoint or body template.
+          </p>
         </div>
       )}
 
       {activeTab === "node" && type === "api-registry-call" && (
         <div className="dm-orchestration-config__pane">
+          {registryConnected && (
+            <span className="dm-orchestration-config__badge is-connected">Connected</span>
+          )}
+          <label className="dm-orchestration-config__field">
+            <span>Method</span>
+            <select
+              value={String(config.method || "GET").toUpperCase()}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ method: e.target.value })}
+            >
+              {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </label>
           <label className="dm-orchestration-config__field">
             <span>Endpoint</span>
             <input value={config.endpoint || ""} disabled={disabled} onChange={(e) => patchConfig({ endpoint: e.target.value })} />
-          </label>
-          <label className="dm-orchestration-config__field">
-            <span>Method</span>
-            <input value={config.method || "GET"} disabled={disabled} onChange={(e) => patchConfig({ method: e.target.value })} />
           </label>
           <label className="dm-orchestration-config__field">
             <span>Body template</span>
             <textarea rows={3} value={config.bodyTemplate || ""} disabled={disabled} onChange={(e) => patchConfig({ bodyTemplate: e.target.value })} />
           </label>
           <label className="dm-orchestration-config__field">
-            <span>Auth reference (slug only)</span>
+            <span>Auth reference</span>
             <input value={config.authRef || ""} disabled={disabled} onChange={(e) => patchConfig({ authRef: e.target.value })} />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Auth header name</span>
+            <input
+              value={meta.authHeaderName || config.authHeaderName || ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({
+                authHeaderName: e.target.value,
+                requestHeadersMetadata: { ...meta, authHeaderName: e.target.value }
+              })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Auth prefix</span>
+            <input
+              value={meta.authPrefix || config.authPrefix || ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({
+                authPrefix: e.target.value,
+                requestHeadersMetadata: { ...meta, authPrefix: e.target.value }
+              })}
+            />
           </label>
         </div>
       )}
 
       {activeTab === "node" && type === "transform-filter" && (
         <div className="dm-orchestration-config__pane">
+          {detectedFields.length > 0 && (
+            <p className="dm-orchestration-config__meta">{detectedFields.length} fields detected from last API test</p>
+          )}
           <label className="dm-orchestration-config__field">
             <span>Root path</span>
-            <input value={config.rootPath || "data"} disabled={disabled} onChange={(e) => patchConfig({ rootPath: e.target.value })} />
+            <input
+              value={config.rootPath || ""}
+              placeholder="data.items"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ rootPath: e.target.value })}
+            />
           </label>
           <label className="dm-orchestration-config__field">
-            <span>Mode</span>
-            <select value={config.mode || "json"} disabled={disabled} onChange={(e) => patchConfig({ mode: e.target.value })}>
+            <span>Response mode</span>
+            <select
+              value={responseMode}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ responseMode: e.target.value, mode: e.target.value })}
+            >
               <option value="json">json</option>
               <option value="array">array</option>
               <option value="object">object</option>
             </select>
           </label>
-          <FieldMapEditor fieldMap={config.fieldMap} disabled={disabled} onChange={(fieldMap) => patchConfig({ fieldMap })} />
+          <FieldMapRows
+            fieldMap={config.fieldMap}
+            fieldOptions={detectedFields}
+            disabled={disabled}
+            onChange={(fieldMap) => patchConfig({ fieldMap })}
+          />
         </div>
       )}
 
@@ -233,9 +405,26 @@ export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, r
             <span>Write source record history</span>
           </label>
           <label className="dm-orchestration-config__field">
+            <span>Success HTTP codes</span>
+            <input
+              value={Array.isArray(config.successStatusCodes) ? config.successStatusCodes.join(", ") : "200"}
+              disabled={disabled}
+              onChange={(e) => {
+                const codes = e.target.value.split(",").map((v) => Number(v.trim())).filter(Number.isFinite);
+                patchConfig({ successStatusCodes: codes.length ? codes : [200] });
+              }}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
             <span>Output mode</span>
             <input value={config.outputMode || "normalized-json"} disabled={disabled} onChange={(e) => patchConfig({ outputMode: e.target.value })} />
           </label>
+          {registryRow?.lastResponse && (
+            <div className="dm-orchestration-preview">
+              <span>Registry test preview</span>
+              <pre>{String(registryRow.lastResponse).slice(0, 400)}{String(registryRow.lastResponse).length > 400 ? "…" : ""}</pre>
+            </div>
+          )}
         </div>
       )}
 
@@ -244,47 +433,29 @@ export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, r
           filters={config.filters}
           filterMode={config.filterMode}
           disabled={disabled}
-          fieldPlaceholder={type === "transform-filter" ? "mapped field" : "payload field"}
+          fieldOptions={type === "transform-filter" ? detectedFields : []}
           onChange={(filters, filterMode) => patchConfig({ filters, filterMode })}
         />
       )}
 
       {activeTab === "preview" && (
         <div className="dm-orchestration-config__pane">
-          <pre className="dm-orchestration-config__preview">{JSON.stringify(config, null, 2)}</pre>
-          {registryRow?.lastResponse && type === "transform-filter" && (
-            <p className="dm-orchestration-config__hint">Last API test response is available on the registry row for field discovery.</p>
-          )}
+          <pre className="dm-orchestration-preview">{JSON.stringify(config, null, 2)}</pre>
         </div>
       )}
 
       {activeTab === "advanced" && (
         <div className="dm-orchestration-config__pane">
           {type === "api-registry-call" && (
-            <>
-              <label className="dm-orchestration-config__field">
-                <span>Timeout (ms)</span>
-                <input
-                  type="number"
-                  value={config.timeoutMs ?? 30000}
-                  disabled={disabled}
-                  onChange={(e) => patchConfig({ timeoutMs: Number(e.target.value) })}
-                />
-              </label>
-              <label className="dm-orchestration-config__field">
-                <span>Auth header name</span>
-                <input
-                  value={config.requestHeadersMetadata?.authHeaderName || ""}
-                  disabled={disabled}
-                  onChange={(e) => patchConfig({
-                    requestHeadersMetadata: {
-                      ...(config.requestHeadersMetadata || {}),
-                      authHeaderName: e.target.value
-                    }
-                  })}
-                />
-              </label>
-            </>
+            <label className="dm-orchestration-config__field">
+              <span>Timeout (ms)</span>
+              <input
+                type="number"
+                value={config.timeoutMs ?? 30000}
+                disabled={disabled}
+                onChange={(e) => patchConfig({ timeoutMs: Number(e.target.value) })}
+              />
+            </label>
           )}
           {type === "input" && (
             <>
@@ -295,6 +466,10 @@ export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, r
               <label className="dm-orchestration-config__field">
                 <span>Source ID</span>
                 <input value={config.sourceId || ""} disabled={disabled} onChange={(e) => patchConfig({ sourceId: e.target.value })} />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Entity ID</span>
+                <input value={config.entityId || ""} disabled={disabled} onChange={(e) => patchConfig({ entityId: e.target.value })} />
               </label>
             </>
           )}
@@ -308,6 +483,12 @@ export function OrchestrationNodeConfigPanel({ node, onConfigChange, disabled, r
                 onChange={(e) => patchConfig({ maxRows: Number(e.target.value) })}
               />
             </label>
+          )}
+          {(type === "input" || type === "transform-filter") && (
+            <details className="dm-orchestration-config__advanced-json">
+              <summary>Advanced JSON</summary>
+              <pre className="dm-orchestration-preview">{JSON.stringify(config, null, 2)}</pre>
+            </details>
           )}
         </div>
       )}
