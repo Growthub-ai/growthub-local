@@ -23,7 +23,7 @@
  * Data Sources downstream can normalize either locality.
  *
  * Request body:
- *   { objectId: string, name: string }
+ *   { objectId: string, name: string, useDraft?: boolean, draftGraph?: string | object }
  *
  * Response (success):
  *   {
@@ -427,6 +427,7 @@ async function POST(request) {
 
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const useDraft = body?.useDraft === true;
   if (!objectId || !name) {
     return NextResponse.json({ ok: false, error: "objectId and name are required" }, { status: 400 });
   }
@@ -440,16 +441,23 @@ async function POST(request) {
     return NextResponse.json({ ok: false, error: `no sandbox row named ${name} in object ${objectId}` }, { status: 404 });
   }
 
-  const runLocality = normalizeRunLocality(row);
-  const runtime = KNOWN_SANDBOX_RUNTIMES.includes(row.runtime) ? row.runtime : "node";
-  let adapterId = (typeof row.adapter === "string" && row.adapter.trim()) ? row.adapter.trim() : DEFAULT_SANDBOX_ADAPTER;
-  const agentHost = typeof row.agentHost === "string" ? row.agentHost.trim() : "";
-  const schedulerRegistryId = typeof row.schedulerRegistryId === "string" ? row.schedulerRegistryId.trim() : "";
-  const networkAllow = coerceBoolean(row.networkAllow);
-  const allowList = parseSandboxAllowList(row.allowList);
-  const envRefSlugs = parseSandboxEnvRefs(row.envRefs);
-  const command = typeof row.command === "string" ? row.command : "";
-  const instructions = typeof row.instructions === "string" ? row.instructions.trim() : "";
+  const draftGraph = useDraft
+    ? parseOrchestrationGraph(body?.draftGraph || row.orchestrationDraftConfig || row.orchestrationDraftGraph)
+    : null;
+  const rowForRun = draftGraph
+    ? { ...row, orchestrationGraph: draftGraph, orchestrationConfig: draftGraph }
+    : row;
+
+  const runLocality = normalizeRunLocality(rowForRun);
+  const runtime = KNOWN_SANDBOX_RUNTIMES.includes(rowForRun.runtime) ? rowForRun.runtime : "node";
+  let adapterId = (typeof rowForRun.adapter === "string" && rowForRun.adapter.trim()) ? rowForRun.adapter.trim() : DEFAULT_SANDBOX_ADAPTER;
+  const agentHost = typeof rowForRun.agentHost === "string" ? rowForRun.agentHost.trim() : "";
+  const schedulerRegistryId = typeof rowForRun.schedulerRegistryId === "string" ? rowForRun.schedulerRegistryId.trim() : "";
+  const networkAllow = coerceBoolean(rowForRun.networkAllow);
+  const allowList = parseSandboxAllowList(rowForRun.allowList);
+  const envRefSlugs = parseSandboxEnvRefs(rowForRun.envRefs);
+  const command = typeof rowForRun.command === "string" ? rowForRun.command : "";
+  const instructions = typeof rowForRun.instructions === "string" ? rowForRun.instructions.trim() : "";
   const agentCommand = instructions
     ? `Instructions:\n${instructions}\n\nPrompt:\n${command}`
     : command;
@@ -457,17 +465,17 @@ async function POST(request) {
     adapterId === "local-intelligence"
       ? {
           userIntent: agentCommand,
-          localModel: typeof row.localModel === "string" ? row.localModel.trim() : "",
-          localEndpoint: typeof row.localEndpoint === "string" ? row.localEndpoint.trim() : "",
+          localModel: typeof rowForRun.localModel === "string" ? rowForRun.localModel.trim() : "",
+          localEndpoint: typeof rowForRun.localEndpoint === "string" ? rowForRun.localEndpoint.trim() : "",
           intelligenceAdapterMode:
-            typeof row.intelligenceAdapterMode === "string"
-              ? row.intelligenceAdapterMode.trim().toLowerCase()
+            typeof rowForRun.intelligenceAdapterMode === "string"
+              ? rowForRun.intelligenceAdapterMode.trim().toLowerCase()
               : "ollama",
         }
       : undefined;
-  const lifecycleStatus = String(row.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
-  const version = row.version ?? "";
-  const requestedTimeout = Number(row.timeoutMs);
+  const lifecycleStatus = String(rowForRun.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
+  const version = rowForRun.version ?? "";
+  const requestedTimeout = Number(rowForRun.timeoutMs);
   const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
     ? Math.min(requestedTimeout, SANDBOX_MAX_TIMEOUT_MS)
     : SANDBOX_DEFAULT_TIMEOUT_MS;
@@ -505,9 +513,9 @@ async function POST(request) {
   let result;
   let effectiveAdapterId = adapterId;
 
-  const hasNativeGraph = Boolean(parseOrchestrationGraph(row.orchestrationGraph));
+  const hasNativeGraph = Boolean(parseOrchestrationGraph(rowForRun.orchestrationGraph || rowForRun.orchestrationConfig));
   if (hasNativeGraph && runLocality !== "serverless") {
-    const graphResult = await runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs });
+    const graphResult = await runOrchestrationGraphIfPresent({ workspaceConfig, row: rowForRun, timeoutMs });
     if (graphResult !== null) {
       result = graphResult;
       effectiveAdapterId = "orchestration-graph";
@@ -518,12 +526,12 @@ async function POST(request) {
     effectiveAdapterId = "serverless";
     result = await runServerlessScheduler({
       workspaceConfig,
-      row,
+      row: rowForRun,
       runId,
       ranAt,
       workspaceId: workspaceConfig?.id ?? null,
       objectId,
-      sandboxName: row.Name || name,
+      sandboxName: rowForRun.Name || name,
       runtime,
       adapterId,
       agentHost,
@@ -558,7 +566,7 @@ async function POST(request) {
     try {
       result = await adapter.run({
         runId,
-        name: row.Name || name,
+        name: rowForRun.Name || name,
         runtime,
         agentHost,
         command: adapterId === "local-agent-host" || adapterId === "local-intelligence" ? agentCommand : command,
@@ -605,7 +613,7 @@ async function POST(request) {
     allowList,
     result,
     timeoutMs,
-    row
+    row: rowForRun
   });
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);
@@ -644,7 +652,13 @@ async function POST(request) {
             lastTested: ranAt,
             lastRunId: runId,
             lastSourceId: sourceIdValue,
-            lastResponse: compactResponse
+            lastResponse: compactResponse,
+            ...(useDraft ? {
+              orchestrationDraftLastTested: ranAt,
+              orchestrationDraftLastRunId: runId,
+              orchestrationDraftLastStatus: status,
+              orchestrationDraftLastResponse: compactResponse
+            } : {})
           };
         });
         return { ...entry, rows: nextRows };

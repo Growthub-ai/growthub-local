@@ -19,7 +19,7 @@ import { OrchestrationGraphEmptyCanvas } from "./OrchestrationGraphEmptyCanvas.j
 import { OrchestrationNodeConfigPanel } from "./OrchestrationNodeConfigPanel.jsx";
 
 function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
-  const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph);
+  const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph ?? sandboxRow?.orchestrationConfig);
   const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
   const registryId = String(
     apiNode?.config?.registryId || apiNode?.config?.integrationId || sandboxRow?.schedulerRegistryId || ""
@@ -50,10 +50,11 @@ export function SandboxOrchestrationEditorPanel({
   const [selectedNodeId, setSelectedNodeId] = useState("input");
   const [configTab, setConfigTab] = useState("node");
   const [graphError, setGraphError] = useState("");
-  const [orchestrationGraph, setOrchestrationGraph] = useState(() => parseOrchestrationGraph(sandboxRow?.orchestrationGraph));
+  const savedGraph = sandboxRow?.orchestrationGraph ?? sandboxRow?.orchestrationConfig;
+  const [orchestrationGraph, setOrchestrationGraph] = useState(() => parseOrchestrationGraph(savedGraph));
 
   const graphUiState = getOrchestrationGraphUiState(
-    orchestrationGraph ?? sandboxRow?.orchestrationGraph
+    orchestrationGraph ?? savedGraph
   );
   const graphUnset = graphUiState === "unset";
   const graphBlankShell = graphUiState === "blank-shell";
@@ -68,8 +69,8 @@ export function SandboxOrchestrationEditorPanel({
   }, [orchestrationGraph, selectedNodeId]);
 
   useEffect(() => {
-    setOrchestrationGraph(parseOrchestrationGraph(sandboxRow?.orchestrationGraph));
-  }, [sandboxRow?.orchestrationGraph]);
+    setOrchestrationGraph(parseOrchestrationGraph(sandboxRow?.orchestrationGraph ?? sandboxRow?.orchestrationConfig));
+  }, [sandboxRow?.orchestrationGraph, sandboxRow?.orchestrationConfig]);
 
   useEffect(() => {
     if (graphUnset) {

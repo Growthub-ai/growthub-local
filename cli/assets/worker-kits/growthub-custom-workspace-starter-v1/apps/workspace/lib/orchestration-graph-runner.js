@@ -257,7 +257,7 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
  * Returns null when the row has no executable graph (caller falls back to adapter path).
  */
 async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs }) {
-  const graph = parseOrchestrationGraph(row?.orchestrationGraph);
+  const graph = parseOrchestrationGraph(row?.orchestrationGraph || row?.orchestrationConfig);
   if (!graph || String(graph.provider || "").trim() !== "growthub-native") return null;
 
   const apiNode = extractApiRegistryCallNode(graph);

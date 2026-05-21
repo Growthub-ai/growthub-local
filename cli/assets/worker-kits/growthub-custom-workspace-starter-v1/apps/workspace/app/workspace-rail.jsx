@@ -12,7 +12,7 @@
  *   │ [🏠 Home] [💬 Chat]      [✶+  Ask helper]    │  Tab row
  *   ├──────────────────────────────────────────────┤
  *   │ HOME tab body:           CHAT tab body:      │
- *   │  Dashboards               Latest             │
+ *   │  Builder                  Latest             │
  *   │  Data Model               💬 Best Skills     │
  *   │  Management               💬 Casual greet    │
  *   │  Workspace Settings       (… more threads)   │
@@ -26,7 +26,7 @@
  *
  * Surface-specific slots (`dashboardsSlot`, `dataModelSlot`,
  * `managementSlot`, `settingsSlot`) let the page inject its own
- * Dashboards / Data Model / Management / Workspace Settings behaviour
+ * Builder / Management / Workspace Settings behaviour
  * while keeping the visual treatment identical across every page.
  */
 
@@ -795,9 +795,9 @@ function NavFoldersSection({
   };
 
   const openDashboardItem = (item) => {
-    // Dashboards are top-level surfaces; the builder reads the active
+    // Builder items are top-level surfaces; the builder reads the active
     // dashboard from query params if present. Other surfaces simply
-    // navigate home; the user lands on the dashboards list. This keeps
+    // navigate home; the user lands on the Builder list. This keeps
     // the rail itself agnostic of surface-specific routing.
     router.push(`/?dashboard=${encodeURIComponent(item.refId)}`);
   };
@@ -1663,7 +1663,7 @@ export function WorkspaceRail({
         <nav className="workspace-nav" aria-label="Workspace pages">
           {dashboardsSlot ?? (
             <Link href="/" className={pathname === "/" ? "active" : undefined}>
-              Dashboards
+              Builder
             </Link>
           )}
           {dataModelSlot ?? (

@@ -35,6 +35,7 @@ import {
   Tag,
   Terminal,
   ToggleLeft,
+  Trash2,
   Type,
   Users,
   X,
@@ -862,14 +863,14 @@ function SandboxRecordFields({
 
       <DrawerSection title="Orchestration">
         <div className="dm-record-field">
-          <span>orchestrationGraph</span>
+          <span>{draft.orchestrationConfig !== undefined ? "orchestrationConfig" : "orchestrationGraph"}</span>
           <button
             type="button"
             className="dm-btn-outline"
             disabled={saving}
             onClick={() => onOpenGraphSidecar?.()}
           >
-            {getOrchestrationGraphUiState(draft.orchestrationGraph) === "populated" ? "Edit orchestration graph" : "Start orchestration graph"}
+            {getOrchestrationGraphUiState(draft.orchestrationGraph ?? draft.orchestrationConfig) === "populated" ? "Edit orchestration graph" : "Start orchestration graph"}
           </button>
         </div>
       </DrawerSection>
@@ -1349,8 +1350,9 @@ function DataModelRecordDrawer({
 
   function saveOrchestrationGraph(serialized) {
     if (rowIndex === null || rowIndex === undefined) return;
-    onSave((config) => updateTableCell(config, table, rowIndex, "orchestrationGraph", serialized));
-    setDraft((current) => ({ ...current, orchestrationGraph: serialized }));
+    const graphField = draft.orchestrationConfig !== undefined ? "orchestrationConfig" : "orchestrationGraph";
+    onSave((config) => updateTableCell(config, table, rowIndex, graphField, serialized));
+    setDraft((current) => ({ ...current, [graphField]: serialized }));
   }
 
   const drawerWide = sandboxToolFlow === "draft" || sidecarMode === "graph" || sidecarMode === "trace";
@@ -1570,10 +1572,10 @@ function DataModelRecordDrawer({
   );
 }
 
-const SANDBOX_SIDECAR_COLUMNS = new Set(["orchestrationGraph", "lastResponse", "lastRunId", "lastSourceId"]);
+const SANDBOX_SIDECAR_COLUMNS = new Set(["orchestrationGraph", "orchestrationConfig", "lastResponse", "lastRunId", "lastSourceId"]);
 
 function sandboxSidecarForColumn(column, row) {
-  if (column === "orchestrationGraph") return { mode: "graph" };
+  if (column === "orchestrationGraph" || column === "orchestrationConfig") return { mode: "graph" };
   if (column === "lastResponse") return { mode: "trace", field: "lastResponse" };
   if (column === "lastRunId") return { mode: "trace", field: "lastRunId", runId: row?.lastRunId };
   if (column === "lastSourceId") return { mode: "trace", field: "lastSourceId" };
@@ -1595,6 +1597,7 @@ function DataModelTableSurface({
   onFocusSandboxRowConsumed,
   onFocusSandboxRow,
 }) {
+  const router = useRouter();
   const [selectedRow, setSelectedRow] = useState(null);
   const [initialSidecar, setInitialSidecar] = useState(null);
   const [fieldName, setFieldName] = useState("");
@@ -1753,6 +1756,15 @@ function DataModelTableSurface({
     setFilterTarget("");
   }
 
+  function openSandboxGraph(column, row) {
+    const rowId = String(row?.Name || row?.name || row?.slug || row?.id || "").trim();
+    const field = String(column || "orchestrationConfig").trim();
+    if (!table.objectId || !rowId) return;
+    router.push(
+      `/workflows?object=${encodeURIComponent(table.objectId)}&row=${encodeURIComponent(rowId)}&field=${encodeURIComponent(field)}`
+    );
+  }
+
   function removeFilter(fieldId) {
     updateSettings((current) => {
       const clauses = (current.filter?.clauses || []).filter((clause) => clause.fieldId !== fieldId);
@@ -1832,13 +1844,10 @@ function DataModelTableSurface({
 
   function deleteSelectedRows() {
     if (!selectedRows.size) return;
-    if (!confirmDeleteSelection) {
-      setConfirmDeleteSelection(true);
-      return;
-    }
     const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
     onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
     setSelectedRow(null);
+    setConfirmDeleteSelection(false);
     clearRowSelection();
   }
 
@@ -1905,8 +1914,8 @@ function DataModelTableSurface({
           {table.mutable && selectedRowCount > 0 && (
             <>
               <button type="button" className="dm-btn-ghost" disabled={saving} onClick={clearRowSelection}>Cancel selection</button>
-              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={deleteSelectedRows}>
-                {confirmDeleteSelection ? `Confirm delete ${selectedRowCount}` : "Delete"}
+              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={() => setConfirmDeleteSelection(true)}>
+                <Trash2 size={13} />Delete
               </button>
             </>
           )}
@@ -2072,16 +2081,20 @@ function DataModelTableSurface({
                       <button
                         type="button"
                         className={`dm-cell-link${row?.[column] ? "" : " dm-cell-empty"}`}
-                        disabled={column !== "orchestrationGraph" && !row?.[column]}
+                        disabled={column !== "orchestrationGraph" && column !== "orchestrationConfig" && !row?.[column]}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (column === "orchestrationGraph" || column === "orchestrationConfig") {
+                            openSandboxGraph(column, row);
+                            return;
+                          }
                           const sidecar = sandboxSidecarForColumn(column, row);
                           setSelectedRow(visibleIndex);
                           setInitialSidecar(sidecar);
                         }}
                       >
-                        {column === "orchestrationGraph"
-                          ? (getOrchestrationGraphUiState(row?.orchestrationGraph) === "populated" ? "Edit graph" : "Start graph")
+                        {column === "orchestrationGraph" || column === "orchestrationConfig"
+                          ? (getOrchestrationGraphUiState(row?.[column]) === "populated" ? "Edit graph" : "Start graph")
                           : (formatCellValue(row?.[column], column) || "View trace")}
                       </button>
                     ) : (
@@ -2134,6 +2147,30 @@ function DataModelTableSurface({
         initialSidecar={initialSidecar}
         onClearInitialSidecar={() => setInitialSidecar(null)}
       />
+      {confirmDeleteSelection && selectedRowCount > 0 && (
+        <div className="dm-orch-modal-backdrop" onClick={() => setConfirmDeleteSelection(false)}>
+          <section className="dm-orch-modal" role="dialog" aria-modal="true" aria-label="Confirm row deletion" onClick={(event) => event.stopPropagation()}>
+            <header className="dm-orch-modal-head">
+              <div>
+                <p>Confirm deletion</p>
+                <h2>Delete selected records?</h2>
+              </div>
+              <button type="button" className="dm-icon-btn" onClick={() => setConfirmDeleteSelection(false)} aria-label="Close delete confirmation">
+                <X size={15} />
+              </button>
+            </header>
+            <div className="dm-orch-modal-body">
+              <p>This will permanently remove {pluralize(selectedRowCount, "selected record")} from {table.label || table.source}.</p>
+            </div>
+            <footer className="dm-orch-modal-foot">
+              <button type="button" className="dm-btn-outline" onClick={() => setConfirmDeleteSelection(false)}>Cancel</button>
+              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={deleteSelectedRows}>
+                <Trash2 size={13} />Delete {selectedRowCount}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -2535,6 +2572,12 @@ export default function DataModelShell() {
     }
   }, [searchParams, selectedSource, tables]);
 
+  useEffect(() => {
+    const rowParam = searchParams?.get("row");
+    if (!rowParam || !tables.length) return;
+    focusSandboxEnvironmentRow({ rowName: rowParam, deferOpen: true });
+  }, [focusSandboxEnvironmentRow, searchParams, tables]);
+
   // Flush any accumulated patch keys to the server. Called by the debounce
   // timer and on visibilitychange/beforeunload so no local edit is lost.
   const flushPendingPatch = useCallback(async () => {
@@ -2705,7 +2748,7 @@ export default function DataModelShell() {
       run: () => setAddOpen(true)
     },
     {
-      id: "nav.dashboards", group: "Navigation", label: "Go to Dashboards",
+      id: "nav.builder", group: "Navigation", label: "Go to Builder",
       run: () => { window.location.href = "/"; }
     },
     {

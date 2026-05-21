@@ -16,7 +16,14 @@ const KNOWN_NODE_TYPES = new Set([
   "normalize-output",
   "tool-result",
   "sandbox-adapter",
-  "custom-webhook"
+  "custom-webhook",
+  "thinAdapter",
+  "data-trigger",
+  "data-action",
+  "ai-agent",
+  "flow-control",
+  "core-action",
+  "human-input"
 ]);
 
 const API_REGISTRY_SETUP_FIELDS = ["integrationId", "baseUrl", "endpoint", "method", "authRef"];
@@ -33,16 +40,30 @@ function slugifyName(value) {
 
 function parseOrchestrationGraph(value) {
   if (!value) return null;
-  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value === "object" && !Array.isArray(value)) return normalizeOrchestrationGraphShape(value);
   if (typeof value !== "string") return null;
   const text = value.trim();
   if (!text) return null;
   try {
     const parsed = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? normalizeOrchestrationGraphShape(parsed)
+      : null;
   } catch {
     return null;
   }
+}
+
+function normalizeOrchestrationGraphShape(graph) {
+  if (!graph || typeof graph !== "object" || Array.isArray(graph)) return null;
+  if (graph.graph && typeof graph.graph === "object" && !Array.isArray(graph.graph)) {
+    return {
+      ...graph.graph,
+      version: graph.graph.version || graph.version || 1,
+      provider: graph.graph.provider || graph.provider || "growthub-native"
+    };
+  }
+  return graph;
 }
 
 function serializeOrchestrationGraph(graph) {
@@ -130,10 +151,11 @@ function validateOrchestrationGraph(graph) {
         errors.push(`${prefix}.type "${type}" is not a known node type`);
       }
     });
+    const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
     const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call");
     const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
-    if (!hasApi) errors.push("orchestrationGraph requires an api-registry-call node");
-    if (!hasResult) errors.push("orchestrationGraph requires a tool-result node");
+    if (!hasThinAdapter && !hasApi) errors.push("orchestrationGraph requires an api-registry-call node");
+    if (!hasThinAdapter && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
   }
   if (!Array.isArray(graph.edges)) {
     errors.push("orchestrationGraph.edges must be an array");
@@ -623,6 +645,7 @@ function buildCanonicalNode(nodeId, registryRow = {}, options = {}) {
 
 function getNextCanonicalNodeId(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
+  if ((parsed?.nodes || []).some((n) => n?.type === "thinAdapter")) return null;
   const ids = new Set((parsed?.nodes || []).map((n) => String(n.id)));
   for (const id of CANONICAL_NODE_ORDER) {
     if (!ids.has(id)) return id;

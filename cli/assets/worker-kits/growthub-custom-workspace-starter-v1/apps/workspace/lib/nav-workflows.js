@@ -24,7 +24,7 @@ function listAvailableWorkflows(workspaceConfig) {
     for (const row of rows) {
       const rowId = sandboxRowId(row);
       if (!rowId) continue;
-      const graph = parseOrchestrationGraph(row?.orchestrationGraph);
+      const graph = parseOrchestrationGraph(row?.orchestrationGraph || row?.orchestrationConfig);
       const graphNodeCount = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
       out.push({
         objectId,
