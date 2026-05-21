@@ -963,6 +963,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.intelligenceAdapterMode must be one of ${INTELLIGENCE_ADAPTER_MODES.join(", ")}`);
     }
   }
+  if (row.orchestrationGraph !== undefined && row.orchestrationGraph !== null && row.orchestrationGraph !== "") {
+    if (typeof row.orchestrationGraph !== "string" && (typeof row.orchestrationGraph !== "object" || Array.isArray(row.orchestrationGraph))) {
+      errors.push(`${path}.orchestrationGraph must be a JSON string or plain object`);
+    }
+  }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
     errors.push(`${path}.envRefs must be a comma-separated string or array of env-ref slugs (never values)`);
   }
@@ -1003,7 +1008,7 @@ function validateSandboxEnvironmentRow(row, path, errors) {
 const NAV_FOLDERS_OBJECT_ID = "nav-folders";
 const NAV_FOLDER_NAME_MAX = 60;
 const NAV_ITEM_LABEL_MAX = 80;
-const NAV_ITEM_TYPES = ["dashboard", "view"];
+const NAV_ITEM_TYPES = ["dashboard", "view", "workflow"];
 
 function validateNavFolderRow(row, path, errors) {
   if (!isPlainObject(row)) return;
@@ -1090,6 +1095,21 @@ function validateNavFolderRow(row, path, errors) {
             errors.push(`${ipfx}.viewConfig.sort must be a plain object when present`);
           }
         }
+      }
+    } else if (item.type === "workflow") {
+      if (typeof item.objectId !== "string" || !item.objectId.trim()) {
+        errors.push(`${ipfx}.objectId must be a non-empty string for workflow items`);
+      }
+      if (typeof item.rowId !== "string" || !item.rowId.trim()) {
+        errors.push(`${ipfx}.rowId must be a non-empty string for workflow items`);
+      }
+      if (item.fieldName !== undefined) {
+        if (typeof item.fieldName !== "string" || !item.fieldName.trim()) {
+          errors.push(`${ipfx}.fieldName must be a non-empty string when present`);
+        }
+      }
+      if (item.orchestrationGraph !== undefined) {
+        errors.push(`${ipfx} must not embed orchestrationGraph — workflow items are shortcuts only`);
       }
     }
   });

@@ -26,6 +26,7 @@ import {
   Globe,
   GripVertical,
   Grid2X2,
+  GitBranch,
   Hash,
   Home,
   Import,
@@ -37,6 +38,7 @@ import {
   List,
   Mail,
   Maximize2,
+  MoreVertical,
   Pencil,
   PieChart,
   Plus,
@@ -344,6 +346,179 @@ function createDashboardRecord(name = "Untitled") {
     status: "draft",
     tabs: [tab],
     activeTabId: tab.id
+  };
+}
+
+function slugifyWorkflowName(name) {
+  const slug = String(name || "workflow")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "workflow";
+}
+
+function getDataModelObject(config, objectId) {
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  return objects.find((object) => object?.id === objectId) || null;
+}
+
+function listBuilderWorkflowItems(config) {
+  const navFolders = getDataModelObject(config, "nav-folders");
+  const rows = Array.isArray(navFolders?.rows) ? navFolders.rows : [];
+  return rows.flatMap((folder) => {
+    const folderId = String(folder?.id || folder?.name || "").trim();
+    const folderName = String(folder?.name || "").trim();
+    const items = Array.isArray(folder?.items) ? folder.items : [];
+    return items
+      .filter((item) => item?.type === "workflow" && item?.objectId && item?.rowId)
+      .map((item) => {
+        const objectId = String(item.objectId);
+        const rowId = String(item.rowId);
+        const itemId = String(item.id || `${objectId}:${rowId}`);
+        const sandboxObject = getDataModelObject(config, objectId);
+        const sandboxRows = Array.isArray(sandboxObject?.rows) ? sandboxObject.rows : [];
+        const sandboxRow = sandboxRows.find((row) => String(row?.Name || row?.name || row?.slug || row?.id || "").trim() === rowId);
+        return {
+          id: itemId,
+          folderId,
+          objectId,
+          rowId,
+          fieldName: String(item.fieldName || "orchestrationConfig"),
+          label: String(item.label || rowId),
+          folderName: folderName || "Builder",
+          lifecycleStatus: String(item.lifecycleStatus || item.status || sandboxRow?.lifecycleStatus || sandboxRow?.status || "draft").trim(),
+          version: String(sandboxRow?.version || "0").trim(),
+          updatedAt: String(sandboxRow?.orchestrationPublishedAt || sandboxRow?.orchestrationDraftUpdatedAt || sandboxRow?.lastTested || "").trim()
+        };
+      });
+  });
+}
+
+function formatBuilderTimestamp(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "new") return raw;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function updateWorkflowFolderItemInConfig(config, workflow, updater) {
+  const workflowId = String(workflow?.id || "").trim();
+  if (!workflowId) return config;
+  return {
+    ...config,
+    dataModel: {
+      ...(config.dataModel || {}),
+      objects: (Array.isArray(config.dataModel?.objects) ? config.dataModel.objects : []).map((object) => {
+        if (object?.id !== "nav-folders") return object;
+        return {
+          ...object,
+          rows: (Array.isArray(object.rows) ? object.rows : []).map((folder) => ({
+            ...folder,
+            items: (Array.isArray(folder.items) ? folder.items : []).map((item) =>
+              String(item?.id || `${item?.objectId}:${item?.rowId}`) === workflowId ? updater(item) : item
+            )
+          }))
+        };
+      })
+    }
+  };
+}
+
+function createBlankWorkflowSandboxRow(rowId, nowIso) {
+  const draftGraph = JSON.stringify({
+    version: "0",
+    provider: "growthub-native",
+    nodes: [],
+    edges: []
+  }, null, 2);
+  return {
+    Name: rowId,
+    lifecycleStatus: "draft",
+    version: "0",
+    runLocality: "local",
+    schedulerRegistryId: "",
+    runtime: "node",
+    adapter: "local-agent-host",
+    agentHost: "claude_local",
+    intelligenceType: "agent-host",
+    localModel: "",
+    localEndpoint: "",
+    intelligenceAdapterMode: "ollama",
+    envRefs: "",
+    networkAllow: "false",
+    allowList: "",
+    instructions: "Draft workflow created from Builder. Configure nodes, save draft, test successfully, then publish to v1.",
+    command: "",
+    orchestrationConfig: "",
+    orchestrationDraftConfig: draftGraph,
+    orchestrationDraftStatus: "draft",
+    orchestrationDraftUpdatedAt: nowIso,
+    orchestrationDraftBaseVersion: "0",
+    orchestrationDraftTestPassed: false,
+    orchestrationDraftTestedConfig: "",
+    orchestrationDeltas: [],
+    timeoutMs: "180000",
+    resolverTemplateId: "",
+    connectorKind: "local-agent-host",
+    executionLane: "workflow",
+    status: "draft",
+    lastTested: "",
+    lastRunId: "",
+    lastSourceId: "",
+    lastResponse: ""
+  };
+}
+
+function addWorkflowFolderShortcut(dataModel, workflow) {
+  const objects = Array.isArray(dataModel?.objects) ? dataModel.objects : [];
+  const navIndex = objects.findIndex((object) => object?.id === "nav-folders");
+  if (navIndex < 0) return dataModel;
+  const navObject = objects[navIndex];
+  const rows = Array.isArray(navObject.rows) ? navObject.rows : [];
+  const folderName = "Builder";
+  const existingFolder = rows.find((row) => String(row?.name || "").trim().toLowerCase() === folderName.toLowerCase());
+  const item = {
+    id: generateId("item"),
+    type: "workflow",
+    objectId: workflow.objectId,
+    rowId: workflow.rowId,
+    fieldName: "orchestrationConfig",
+    label: workflow.label,
+    builderManaged: true,
+    icon: "GitBranch",
+    color: "#111827",
+    iconBg: "#f3f4f6"
+  };
+  const nextRows = existingFolder
+    ? rows.map((row) => {
+        if (row !== existingFolder) return row;
+        const items = Array.isArray(row.items) ? row.items : [];
+        const exists = items.some((entry) => entry?.type === "workflow" && entry?.objectId === item.objectId && entry?.rowId === item.rowId);
+        return exists ? row : { ...row, collapsed: false, items: [...items, item] };
+      })
+    : [
+        ...rows,
+        {
+          id: generateId("folder"),
+          name: folderName,
+          order: rows.length,
+          collapsed: false,
+          icon: "Folder",
+          color: "#f97316",
+          iconBg: "#fff7ed",
+          items: [item]
+        }
+      ];
+  return {
+    ...dataModel,
+    objects: objects.map((object, index) => index === navIndex ? { ...navObject, rows: nextRows } : object)
   };
 }
 
@@ -3329,7 +3504,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [previewTemplateId, setPreviewTemplateId] = useState(null);
   const [editingDashboardId, setEditingDashboardId] = useState(null);
   const [editingDashboardDraft, setEditingDashboardDraft] = useState("");
+  const [editingWorkflowId, setEditingWorkflowId] = useState(null);
+  const [editingWorkflowDraft, setEditingWorkflowDraft] = useState("");
   const [workspaceView, setWorkspaceView] = useState("dashboards");
+  const [builderListFilter, setBuilderListFilter] = useState({ type: "all", query: "" });
+  const [builderActionMenuId, setBuilderActionMenuId] = useState(null);
+  const [builderActionMenuPlacement, setBuilderActionMenuPlacement] = useState(null);
   const [activeDashboardId, setActiveDashboardId] = useState(() =>
     getActiveDashboardId(
       Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length ? initialConfig.dashboards : [],
@@ -3339,6 +3519,34 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const gridRef = useRef(null);
   const canvas = config.canvas;
   const dashboards = config.dashboards || [];
+  const workflows = useMemo(() => listBuilderWorkflowItems(config), [config]);
+  const builderItems = useMemo(() => {
+    const dashboardItems = dashboards.map((dashboard, index) => ({
+      type: "dashboard",
+      id: dashboard.id,
+      title: dashboard.name,
+      itemKind: "Dashboard",
+      updatedAt: formatBuilderTimestamp(dashboard.updatedAt || ""),
+      status: dashboard.status || "draft",
+      index,
+      dashboard
+    }));
+    const workflowItems = workflows.map((workflow) => ({
+      type: "workflow",
+      id: workflow.id || `${workflow.objectId}:${workflow.rowId}`,
+      title: workflow.label,
+      itemKind: "Workflow",
+      updatedAt: formatBuilderTimestamp(workflow.updatedAt) || `v${workflow.version || "0"}`,
+      status: workflow.lifecycleStatus || "draft",
+      workflow
+    }));
+    const q = builderListFilter.query.trim().toLowerCase();
+    return [...dashboardItems, ...workflowItems].filter((item) => {
+      if (builderListFilter.type !== "all" && item.type !== builderListFilter.type) return false;
+      if (!q) return true;
+      return [item.title, item.itemKind, item.status, item.type].some((part) => String(part || "").toLowerCase().includes(q));
+    });
+  }, [builderListFilter, dashboards, workflows]);
   const resolvedActiveDashboardId = getActiveDashboardId(dashboards, activeDashboardId);
   const resolvedActiveDashboardIndex = activeDashboardIndex(dashboards, resolvedActiveDashboardId);
   const widgetTypes = config.widgetTypes;
@@ -3505,6 +3713,59 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       };
     });
   }, [activeDashboardId]);
+
+  const createWorkflow = useCallback(async () => {
+    if (saving) return;
+    const sandboxObjectId = "sandboxes-alignment-loop";
+    const nowIso = new Date().toISOString();
+    const existing = getDataModelObject(config, sandboxObjectId);
+    if (!existing) {
+      setConfigMessage("Workflow sandbox object is missing.");
+      return;
+    }
+    const rows = Array.isArray(existing.rows) ? existing.rows : [];
+    const base = slugifyWorkflowName(`workflow-${rows.length + 1}`);
+    const existingIds = new Set(rows.map((row) => String(row?.Name || row?.name || row?.id || "").trim()));
+    let rowId = base;
+    let suffix = 2;
+    while (existingIds.has(rowId)) {
+      rowId = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    const sandboxRow = createBlankWorkflowSandboxRow(rowId, nowIso);
+    const nextDataModel = {
+      ...(config.dataModel || {}),
+      objects: (Array.isArray(config.dataModel?.objects) ? config.dataModel.objects : []).map((object) =>
+        object?.id === sandboxObjectId
+          ? { ...object, rows: [...(Array.isArray(object.rows) ? object.rows : []), sandboxRow] }
+          : object
+      )
+    };
+    const finalDataModel = addWorkflowFolderShortcut(nextDataModel, {
+      objectId: sandboxObjectId,
+      rowId,
+      label: rowId
+    });
+    setSaving(true);
+    try {
+      const response = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: finalDataModel })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.workspaceConfig) {
+        throw new Error(payload.error || "Failed to create workflow");
+      }
+      setConfig((prev) => ({ ...prev, dataModel: payload.workspaceConfig.dataModel }));
+      setConfigMessage(`Created workflow ${rowId}`);
+      window.open(`/workflows?object=${sandboxObjectId}&row=${encodeURIComponent(rowId)}&field=orchestrationConfig`, "_self");
+    } catch (error) {
+      setConfigMessage(error.message || "Failed to create workflow");
+    } finally {
+      setSaving(false);
+    }
+  }, [config, saving]);
 
   const selectDashboard = useCallback((index) => {
     setConfig((prev) => {
@@ -3843,6 +4104,96 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     await persistWorkspaceConfig(nextConfig, activeDashboardId);
   }, [activeDashboardId, config, editingDashboardDraft, persistWorkspaceConfig]);
 
+  const enterWorkflowTitleEdit = useCallback((workflow) => {
+    if (!workflow) return;
+    setEditingWorkflowId(workflow.id);
+    setEditingWorkflowDraft(workflow.label || workflow.rowId || "Workflow");
+    setWorkspaceView("dashboards");
+  }, []);
+
+  const confirmWorkflowTitleEdit = useCallback(async (workflow) => {
+    if (!workflow) return;
+    const nextLabel = editingWorkflowDraft.trim() || workflow.label || workflow.rowId || "Workflow";
+    const nextConfig = updateWorkflowFolderItemInConfig(config, workflow, (item) => ({
+      ...item,
+      label: nextLabel,
+      updatedAt: new Date().toISOString()
+    }));
+    setEditingWorkflowId(null);
+    setEditingWorkflowDraft("");
+    setConfig(nextConfig);
+    await persistWorkspaceConfig(nextConfig, activeDashboardId);
+  }, [activeDashboardId, config, editingWorkflowDraft, persistWorkspaceConfig]);
+
+  const cancelWorkflowTitleEdit = useCallback((workflow) => {
+    if (!workflow) return;
+    if (editingWorkflowDraft.trim() !== String(workflow.label || workflow.rowId || "Workflow")) {
+      const discard = window.confirm("Discard workflow title changes?");
+      if (!discard) {
+        requestAnimationFrame(() => {
+          document.querySelector(`[data-workflow-title-input="${workflow.id}"]`)?.focus();
+        });
+        return;
+      }
+    }
+    setEditingWorkflowId(null);
+    setEditingWorkflowDraft("");
+  }, [editingWorkflowDraft]);
+
+  const closeBuilderActionMenu = useCallback(() => {
+    setBuilderActionMenuId(null);
+    setBuilderActionMenuPlacement(null);
+  }, []);
+
+  const openBuilderActionMenu = useCallback((item, event) => {
+    const itemId = item?.id;
+    if (!itemId) return;
+    if (builderActionMenuId === itemId) {
+      closeBuilderActionMenu();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 148;
+    const menuHeight = item?.type === "dashboard" ? 136 : 76;
+    const margin = 8;
+    const left = Math.min(
+      Math.max(margin, rect.right - menuWidth),
+      Math.max(margin, window.innerWidth - menuWidth - margin)
+    );
+    const preferredTop = rect.bottom + 6;
+    const top = preferredTop + menuHeight > window.innerHeight - margin
+      ? Math.max(margin, rect.top - menuHeight - 6)
+      : preferredTop;
+    setBuilderActionMenuId(itemId);
+    setBuilderActionMenuPlacement({
+      left: `${Math.round(left)}px`,
+      top: `${Math.round(top)}px`
+    });
+  }, [builderActionMenuId, closeBuilderActionMenu]);
+
+  useEffect(() => {
+    if (!builderActionMenuId) return undefined;
+    const close = () => closeBuilderActionMenu();
+    const closeOnPointerDown = (event) => {
+      const target = event.target;
+      if (target?.closest?.(".workspace-row-action-menu, .workspace-row-action-trigger")) return;
+      closeBuilderActionMenu();
+    };
+    const closeOnKeyDown = (event) => {
+      if (event.key === "Escape") closeBuilderActionMenu();
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnKeyDown);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnKeyDown);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [builderActionMenuId, closeBuilderActionMenu]);
+
   const cancelDashboardTitleEdit = useCallback((dashboard) => {
     if (!dashboard) return;
     if (editingDashboardDraft.trim() !== dashboard.name) {
@@ -4096,6 +4447,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const showDashboardHome = useCallback(() => {
     setEditingDashboardId(null);
     setEditingDashboardDraft("");
+    setBuilderActionMenuId(null);
     setWorkspaceView("dashboards");
   }, []);
   const resetWidgetSelectionOnOutsidePointer = useCallback((event) => {
@@ -4307,7 +4659,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       run: () => setManagementOpen(true)
     });
     list.push({
-      id: "workspace.dashboards", group: "Navigation", icon: Home, label: "Go to Dashboards",
+      id: "workspace.builder", group: "Navigation", icon: Home, label: "Go to Builder",
       run: () => showDashboardHome()
     });
 
@@ -4358,7 +4710,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"}
             onClick={showDashboardHome}
           >
-            Dashboards
+            Builder
           </button>
         )}
         managementSlot={(
@@ -4380,12 +4732,13 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
               <h1>{activeDashboard?.name || "Untitled"}</h1>
             </> : <>
               <p>Workspace home</p>
-              <h1>Dashboards</h1>
+              <h1>Builder</h1>
             </>}
           </div>
           <div className="workspace-toolbar-actions">
             <button type="button" onClick={() => setTemplateGalleryOpen(true)}><Grid2X2 size={15} />Templates</button>
             <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
+            <button type="button" onClick={createWorkflow} disabled={saving}><GitBranch size={15} />New Workflow</button>
             <button type="button" onClick={duplicateDashboard}><Copy size={15} />Duplicate Dashboard</button>
             <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
             <button type="button" onClick={exportConfig}><Download size={15} />Export</button>
@@ -4400,59 +4753,85 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           />
         </header>
 
-        {workspaceView === "dashboards" ? <section className="workspace-table" id="dashboards" aria-label="Dashboards">
+        {workspaceView === "dashboards" ? <section className="workspace-table" id="dashboards" aria-label="Builder">
           <div className="workspace-table-heading">
-            <strong>Dashboards</strong>
-            <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"}</span>
+            <strong>Builder</strong>
+            <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"} · {workflows.length} workflow{workflows.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="workspace-builder-filterbar">
+            <div className="workspace-builder-filterbar__segments" role="group" aria-label="Builder item type">
+              {[
+                ["all", "All"],
+                ["dashboard", "Dashboards"],
+                ["workflow", "Workflows"]
+              ].map(([type, label]) => (
+                <button
+                  key={type}
+                  type="button"
+                  className={builderListFilter.type === type ? "is-active" : ""}
+                  onClick={() => setBuilderListFilter((prev) => ({ ...prev, type }))}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="workspace-builder-filterbar__search">
+              <Search size={14} aria-hidden="true" />
+              <input
+                value={builderListFilter.query}
+                placeholder="Filter builder items"
+                onChange={(event) => setBuilderListFilter((prev) => ({ ...prev, query: event.target.value }))}
+              />
+            </label>
           </div>
           <div className="workspace-table-row workspace-table-head">
             <span>Title</span>
-            <span>Created by</span>
+            <span>Type</span>
             <span>Last update</span>
             <span>Status</span>
             <span>Actions</span>
           </div>
-          {dashboards.map((dashboard, index) => <div className="workspace-table-row" key={dashboard.id}>
+          {builderItems.map((item) => item.type === "dashboard" ? <div className="workspace-table-row" key={item.id}>
               <span className="workspace-dashboard-title">
-                {editingDashboardId === dashboard.id ? <span className="workspace-dashboard-title-editor">
+                {editingDashboardId === item.dashboard.id ? <span className="workspace-dashboard-title-editor">
                   <input
-                    aria-label={`Rename ${dashboard.name}`}
+                    aria-label={`Rename ${item.dashboard.name}`}
                     autoFocus
-                    data-dashboard-title-input={dashboard.id}
-                    onBlur={() => cancelDashboardTitleEdit(dashboard)}
+                    data-dashboard-title-input={item.dashboard.id}
+                    onBlur={() => cancelDashboardTitleEdit(item.dashboard)}
                     onChange={(event) => setEditingDashboardDraft(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
-                        confirmDashboardTitleEdit(dashboard.id);
+                        confirmDashboardTitleEdit(item.dashboard.id);
                       }
                       if (event.key === "Escape") {
                         event.preventDefault();
-                        cancelDashboardTitleEdit(dashboard);
+                        cancelDashboardTitleEdit(item.dashboard);
                       }
                     }}
                     value={editingDashboardDraft}
                   />
                   <button
-                    aria-label={`Confirm ${dashboard.name} title`}
+                    aria-label={`Confirm ${item.dashboard.name} title`}
                     className="workspace-dashboard-title-confirm"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => confirmDashboardTitleEdit(dashboard.id)}
+                    onClick={() => confirmDashboardTitleEdit(item.dashboard.id)}
                     type="button"
                   >✓</button>
                 </span> : <button
-                  className={index === resolvedActiveDashboardIndex ? "active" : ""}
-                  onClick={() => enterDashboardTitleEdit(dashboard)}
+                  className={item.index === resolvedActiveDashboardIndex ? "active" : ""}
+                  onClick={() => enterDashboardTitleEdit(item.dashboard)}
                   type="button"
-                >{dashboard.name}</button>}
+                >{item.dashboard.name}</button>}
               </span>
-              <span>{dashboard.createdBy}</span>
-              <span>{dashboard.updatedAt}</span>
+              <span>{item.itemKind}</span>
+              <span>{item.updatedAt}</span>
               <span>
                 <select
-                  aria-label={`Status for ${dashboard.name}`}
-                  onChange={(event) => updateDashboardStatus(dashboard.id, event.target.value)}
-                  value={dashboard.status}
+                  aria-label={`Status for ${item.dashboard.name}`}
+                  onChange={(event) => updateDashboardStatus(item.dashboard.id, event.target.value)}
+                  value={item.dashboard.status}
                 >
                   <option value="draft">draft</option>
                   <option value="active">active</option>
@@ -4460,10 +4839,85 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                 </select>
               </span>
               <span className="workspace-dashboard-actions">
-                <button type="button" onClick={() => selectDashboard(index)}>Edit</button>
-                <button type="button" onClick={() => enterDashboardTitleEdit(dashboard)}>Rename</button>
-                <button type="button" onClick={() => cloneDashboard(index)}>Clone</button>
-                <button type="button" onClick={() => deleteDashboard(index)}>Delete</button>
+                <button
+                  type="button"
+                  className="workspace-row-action-trigger"
+                  aria-label={`Actions for ${item.dashboard.name}`}
+                  onClick={(event) => openBuilderActionMenu(item, event)}
+                >
+                  <MoreVertical size={16} aria-hidden="true" />
+                </button>
+                {builderActionMenuId === item.id && (
+                  <span className="workspace-row-action-menu" style={builderActionMenuPlacement || undefined}>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); selectDashboard(item.index); }}>Edit</button>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); enterDashboardTitleEdit(item.dashboard); }}>Rename</button>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); cloneDashboard(item.index); }}>Clone</button>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); deleteDashboard(item.index); }}>Delete</button>
+                  </span>
+                )}
+              </span>
+            </div> : <div className="workspace-table-row" key={item.id}>
+              <span className="workspace-dashboard-title">
+                {editingWorkflowId === item.workflow.id ? <span className="workspace-dashboard-title-editor">
+                  <input
+                    aria-label={`Rename ${item.title}`}
+                    autoFocus
+                    data-workflow-title-input={item.workflow.id}
+                    onBlur={() => cancelWorkflowTitleEdit(item.workflow)}
+                    onChange={(event) => setEditingWorkflowDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        confirmWorkflowTitleEdit(item.workflow);
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelWorkflowTitleEdit(item.workflow);
+                      }
+                    }}
+                    value={editingWorkflowDraft}
+                  />
+                  <button
+                    aria-label={`Confirm ${item.title} title`}
+                    className="workspace-dashboard-title-confirm"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => confirmWorkflowTitleEdit(item.workflow)}
+                    type="button"
+                  >✓</button>
+                </span> : <button
+                  type="button"
+                  onClick={() => enterWorkflowTitleEdit(item.workflow)}
+                >{item.title}</button>}
+              </span>
+              <span>{item.itemKind}</span>
+              <span>{item.updatedAt}</span>
+              <span>
+                <select
+                  aria-label={`Status for ${item.title}`}
+                  value={item.status}
+                  disabled
+                >
+                  <option value="draft">draft</option>
+                  <option value="active">active</option>
+                  <option value="live">live</option>
+                  <option value="archived">archived</option>
+                </select>
+              </span>
+              <span className="workspace-dashboard-actions">
+                <button
+                  type="button"
+                  className="workspace-row-action-trigger"
+                  aria-label={`Actions for ${item.title}`}
+                  onClick={(event) => openBuilderActionMenu(item, event)}
+                >
+                  <MoreVertical size={16} aria-hidden="true" />
+                </button>
+                {builderActionMenuId === item.id && (
+                  <span className="workspace-row-action-menu" style={builderActionMenuPlacement || undefined}>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); window.open(`/workflows?object=${item.workflow.objectId}&row=${encodeURIComponent(item.workflow.rowId)}&field=${encodeURIComponent(item.workflow.fieldName || "orchestrationConfig")}`, "_self"); }}>Edit</button>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); enterWorkflowTitleEdit(item.workflow); }}>Rename</button>
+                  </span>
+                )}
               </span>
             </div>)}
         </section> : null}

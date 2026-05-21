@@ -311,6 +311,40 @@ describe("workspace-schema — positive probes (valid configs pass cleanly)", ()
     ).not.toThrow();
   });
 
+  it("nav-folders governed object with workflow shortcut items passes", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [{
+            id: "nav-folders",
+            label: "Custom Folders",
+            objectType: "custom",
+            columns: ["name", "order", "collapsed", "items"],
+            rows: [
+              {
+                id: "fld_ops",
+                name: "Operations",
+                order: 0,
+                collapsed: false,
+                items: [
+                  {
+                    id: "item_wf",
+                    type: "workflow",
+                    objectId: "sandbox-environments",
+                    rowId: "LeadShark Tool",
+                    fieldName: "orchestrationGraph",
+                    label: "LeadShark Tool",
+                  },
+                ],
+              },
+            ],
+            binding: { mode: "manual", source: "Custom Folders" },
+          }],
+        },
+      })
+    ).not.toThrow();
+  });
+
   it("nav-folders governed object with mixed dashboard + view items passes", () => {
     expect(() =>
       validateWorkspaceConfig({
@@ -389,10 +423,36 @@ describe("workspace-schema — nav-folders governance (invalid rows must throw)"
     expect(r.details!.some((d) => d.includes("name"))).toBe(true);
   });
 
-  it("item with unknown type → must be dashboard|view", () => {
+  it("item with unknown type → must be dashboard|view|workflow", () => {
     const r = tryValidate([{ id: "fld_a", name: "Ops", items: [{ id: "x", type: "iframe" }] }]);
     expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
     expect(r.details!.some((d) => d.includes("type"))).toBe(true);
+  });
+
+  it("workflow item missing rowId → rowId required", () => {
+    const r = tryValidate([{
+      id: "fld_a",
+      name: "Ops",
+      items: [{ id: "x", type: "workflow", objectId: "sandbox-env" }],
+    }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("rowId"))).toBe(true);
+  });
+
+  it("workflow item must not embed orchestrationGraph", () => {
+    const r = tryValidate([{
+      id: "fld_a",
+      name: "Ops",
+      items: [{
+        id: "x",
+        type: "workflow",
+        objectId: "sandbox-env",
+        rowId: "Tool A",
+        orchestrationGraph: '{"nodes":[]}',
+      }],
+    }]);
+    expect(r.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(r.details!.some((d) => d.includes("orchestrationGraph"))).toBe(true);
   });
 
   it("dashboard item missing refId → refId required", () => {
@@ -572,5 +632,312 @@ describe("workspace-config — source records functions declared", () => {
 
   it("SOURCE_RECORDS_FILENAME declares the sidecar file name", () => {
     expect(source).toContain("growthub.source-records.json");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. API Registry → sandbox orchestration primitive
+// ---------------------------------------------------------------------------
+
+describe("orchestration-graph — contract and kit presence", () => {
+  it("orchestration-graph.js ships in apps/workspace/lib/", () => {
+    expect(appExists("lib/orchestration-graph.js")).toBe(true);
+    expect(appExists("lib/orchestration-graph-runner.js")).toBe(true);
+  });
+
+  it("sidecar UI components ship", () => {
+    expect(appExists("app/data-model/components/ApiRegistryActionCard.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationGraphCanvas.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationNodeConfigPanel.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxToolDraftPanel.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxToolConfirmModal.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationGraphEmptyCanvas.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationRunTracePanel.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxOrchestrationEditorPanel.jsx")).toBe(true);
+    expect(appExists("lib/orchestration-run-trace.js")).toBe(true);
+  });
+
+  it("sandbox-environment preset includes orchestrationGraph column", () => {
+    const dm = appText("lib/workspace-data-model.js");
+    expect(dm).toContain('"orchestrationGraph"');
+  });
+
+  it("buildDefaultOrchestrationGraphFromRegistry validates", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      buildDefaultOrchestrationGraphFromRegistry: (row: Record<string, string>) => unknown;
+      validateOrchestrationGraph: (g: unknown) => { ok: boolean };
+      buildSandboxRowFromApiRegistry: (
+        cfg: { dataModel: { objects: unknown[] } },
+        row: Record<string, string>,
+        opts?: Record<string, unknown>
+      ) => Record<string, string>;
+    };
+    const registryRow = {
+      integrationId: "leadshark",
+      Name: "LeadShark",
+      method: "GET",
+      endpoint: "/leads",
+      authRef: "LEADSHARK",
+      baseUrl: "https://api.example.com",
+      status: "connected",
+    };
+    const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow);
+    expect(mod.validateOrchestrationGraph(graph).ok).toBe(true);
+    expect(graph.nodes).toHaveLength(4);
+    expect(graph.nodes.map((n: { id: string }) => n.id)).toEqual([
+      "input",
+      "api-request",
+      "transform",
+      "result",
+    ]);
+    const sandboxRow = mod.buildSandboxRowFromApiRegistry(
+      { dataModel: { objects: [] } },
+      registryRow,
+      { name: "LeadShark Leads Tool" }
+    );
+    expect(sandboxRow.Name).toBe("LeadShark Leads Tool");
+    expect(String(sandboxRow.orchestrationGraph || "")).toContain("api-registry-call");
+    expect(sandboxRow.status).toBe("untested");
+  });
+
+  it("invalid orchestrationGraph object fails validation", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as { validateOrchestrationGraph: (g: unknown) => { ok: boolean } };
+    expect(mod.validateOrchestrationGraph({ version: 0, provider: "", nodes: [] }).ok).toBe(false);
+  });
+
+  it("ApiRegistryActionCard source gates Create sandbox tool by state", () => {
+    const card = appText("app/data-model/components/ApiRegistryActionCard.jsx");
+    expect(card).toContain("Complete API setup");
+    expect(card).toContain("Test this API first");
+    expect(card).toContain("API test failed");
+    expect(card).toContain("Sandbox tool ready");
+    expect(card).toContain("Test connection");
+    expect(card).toContain("Retest");
+    expect(card).toContain("Create sandbox tool");
+    expect(card).toContain("Run sandbox");
+    expect(card).not.toContain("Create sandbox tool</button>");
+  });
+
+  it("getApiRegistrySandboxToolState gates create vs existing", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      getApiRegistrySandboxToolState: (
+        row: Record<string, string>,
+        cfg: { dataModel: { objects: unknown[] } }
+      ) => { kind: string };
+      buildSandboxRowFromApiRegistry: (
+        cfg: { dataModel: { objects: unknown[] } },
+        row: Record<string, string>,
+        opts?: Record<string, unknown>
+      ) => Record<string, string>;
+    };
+    const registryRow = {
+      integrationId: "acme",
+      baseUrl: "https://api.example.com",
+      endpoint: "/v1",
+      method: "GET",
+      authRef: "ACME",
+      status: "connected",
+    };
+    expect(mod.getApiRegistrySandboxToolState(registryRow, { dataModel: { objects: [] } }).kind).toBe("create");
+    const cfg = {
+      dataModel: {
+        objects: [
+          {
+            objectType: "sandbox-environment",
+            rows: [mod.buildSandboxRowFromApiRegistry({ dataModel: { objects: [] } }, registryRow)],
+          },
+        ],
+      },
+    };
+    expect(mod.getApiRegistrySandboxToolState(registryRow, cfg).kind).toBe("existing");
+    expect(mod.getApiRegistrySandboxToolState({ ...registryRow, status: "failed" }, cfg).kind).toBe("failed");
+  });
+
+  it("resolveConnectorAction routes filter/map/preview to correct node and tab", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-sidecar-routing.js")}?t=${Date.now()}`
+    ) as {
+      resolveConnectorAction: (p: { from: string; to: string; action: string }) => { nodeId: string; tab: string };
+    };
+    expect(mod.resolveConnectorAction({ from: "input", to: "api-request", action: "filter" })).toEqual({
+      nodeId: "input",
+      tab: "filters",
+    });
+    expect(mod.resolveConnectorAction({ from: "api-request", to: "transform", action: "filter" })).toEqual({
+      nodeId: "transform",
+      tab: "filters",
+    });
+    expect(mod.resolveConnectorAction({ from: "transform", to: "result", action: "map" })).toEqual({
+      nodeId: "transform",
+      tab: "node",
+    });
+    expect(mod.resolveConnectorAction({ from: "transform", to: "result", action: "preview" })).toEqual({
+      nodeId: "result",
+      tab: "preview",
+    });
+  });
+
+  it("detectFieldIdsFromLastResponse extracts paths from test response", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as { detectFieldIdsFromLastResponse: (text: string) => string[] };
+    const fields = mod.detectFieldIdsFromLastResponse(
+      JSON.stringify({ data: { items: [{ email: "a@test.com", full_name: "Ada" }] } })
+    );
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.some((f) => f.includes("email"))).toBe(true);
+  });
+
+  it("blank orchestration shell and ui state helpers", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      buildBlankOrchestrationGraphShell: () => { nodes: unknown[]; version: number; provider: string };
+      getOrchestrationGraphUiState: (v: unknown) => string;
+      addCanonicalNodeToGraph: (g: unknown, id: string, row: Record<string, string>) => unknown;
+      getNextCanonicalNodeId: (g: unknown) => string | null;
+    };
+    expect(mod.getOrchestrationGraphUiState(null)).toBe("unset");
+    expect(mod.getOrchestrationGraphUiState("")).toBe("unset");
+    const shell = mod.buildBlankOrchestrationGraphShell();
+    expect(shell.nodes).toHaveLength(0);
+    expect(shell.provider).toBe("growthub-native");
+    expect(mod.getOrchestrationGraphUiState(shell)).toBe("blank-shell");
+    expect(mod.getNextCanonicalNodeId(shell)).toBe("input");
+    const row = { integrationId: "acme", method: "GET", endpoint: "/v1", authRef: "ACME" };
+    const withInput = mod.addCanonicalNodeToGraph(shell, "input", row);
+    expect(mod.getOrchestrationGraphUiState(withInput)).toBe("populated");
+  });
+
+  it("DataModelShell routes sandbox trace fields to trace panel not graph", () => {
+    const shell = appText("app/data-model/components/DataModelShell.jsx");
+    expect(shell).toContain("OrchestrationRunTracePanel");
+    expect(shell).toContain("SandboxOrchestrationEditorPanel");
+    expect(shell).toContain('sidecarMode === "trace"');
+    expect(shell).toContain('sidecarMode === "graph"');
+    expect(shell).toContain("SANDBOX_SIDECAR_COLUMNS");
+    expect(shell).toContain("onOpenTraceSidecar");
+    expect(shell).toContain("openTraceSidecar");
+  });
+
+  it("SandboxToolDraftPanel starts without auto-filled graph", () => {
+    const draft = appText("app/data-model/components/SandboxToolDraftPanel.jsx");
+    expect(draft).toContain("OrchestrationGraphEmptyCanvas");
+    expect(draft).toContain("return null");
+    expect(draft).toContain("getOrchestrationGraphUiState");
+    expect(draft).not.toMatch(/useState\(\(\) => \{\s*return buildDefaultOrchestrationGraphFromRegistry/s);
+  });
+
+  it("workspace-rail supports workflow folder shortcuts", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain('workflow: { icon: "GitBranch"');
+    expect(rail).toContain("listAvailableWorkflows");
+    expect(rail).toContain("addWorkflowItem");
+    expect(rail).toContain("openWorkflowItem");
+    expect(rail).toContain('type: "workflow"');
+    expect(rail).toContain('fieldName: "orchestrationGraph"');
+    expect(rail).toContain("/workflows?object=");
+    expect(rail).toContain("Add workflow");
+    expect(rail).toContain('{ id: "workflow", label: "Workflows" }');
+    expect(rail).not.toMatch(/addWorkflowItem[\s\S]*orchestrationGraph:\s*workflow/);
+  });
+
+  it("listAvailableWorkflows discovers sandbox-environment rows", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/nav-workflows.js")}?t=${Date.now()}`
+    ) as {
+      listAvailableWorkflows: (cfg: { dataModel: { objects: unknown[] } }) => Array<{
+        objectId: string;
+        rowId: string;
+        graphNodeCount: number;
+      }>;
+    };
+    const workflows = mod.listAvailableWorkflows({
+      dataModel: {
+        objects: [
+          {
+            id: "workspace-helper-sandbox",
+            objectType: "sandbox-environment",
+            rows: [{ Name: "Hidden" }],
+          },
+          {
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            label: "Sandbox Environments",
+            rows: [
+              {
+                Name: "LeadShark Tool",
+                lifecycleStatus: "live",
+                version: "2",
+                orchestrationGraph: JSON.stringify({
+                  version: 1,
+                  provider: "growthub-native",
+                  nodes: [{ id: "input", type: "input" }, { id: "api-request", type: "api-registry-call" }],
+                  edges: [],
+                }),
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(workflows).toHaveLength(1);
+    expect(workflows[0].objectId).toBe("sandbox-env");
+    expect(workflows[0].rowId).toBe("LeadShark Tool");
+    expect(workflows[0].graphNodeCount).toBe(2);
+  });
+
+  it("workflows page exists and uses orchestration canvas", () => {
+    expect(appExists("app/workflows/page.jsx")).toBe(true);
+    expect(appExists("app/workflows/WorkflowSurface.jsx")).toBe(true);
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("OrchestrationGraphCanvas");
+    expect(surface).toContain("OrchestrationRunTracePanel");
+    expect(surface).toContain("OrchestrationGraphEmptyCanvas");
+    expect(surface).toContain("/api/workspace/sandbox-run");
+    expect(surface).toContain("PATCH");
+    expect(surface).toContain("dataModel");
+  });
+
+  it("parseSandboxRunTrace redacts and extracts run metadata", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-trace.js")}?t=${Date.now()}`
+    ) as { parseSandboxRunTrace: (text: string) => { runId: string; stdout: string; output: string } };
+    const trace = mod.parseSandboxRunTrace(
+      JSON.stringify({
+        runId: "run-1",
+        exitCode: 0,
+        durationMs: 120,
+        stdout: "ok",
+        output: { items: [] },
+        adapter: "local-process",
+      })
+    );
+    expect(trace.runId).toBe("run-1");
+    expect(trace.stdout).toBe("ok");
+    expect(trace.output).toContain("items");
+  });
+
+  it("incomplete API Registry does not allow create state", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      getApiRegistrySandboxToolState: (
+        row: Record<string, string>,
+        cfg: { dataModel: { objects: unknown[] } }
+      ) => { kind: string };
+    };
+    expect(
+      mod.getApiRegistrySandboxToolState(
+        { integrationId: "x", status: "connected" },
+        { dataModel: { objects: [] } }
+      ).kind
+    ).toBe("incomplete");
   });
 });

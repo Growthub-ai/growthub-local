@@ -44,4 +44,4 @@ Validated behavior for the shipped starter export:
 
 ## Release Note
 
-This feature is part of the `@growthub/cli@0.13.0` / `@growthub/create-growthub-local@0.13.0` workspace starter export. Per the dist rebuild protocol, source and asset changes land first; the committed CLI dist is rebuilt from the full workspace in the super-admin release lane before npm publication.
+This feature is part of the `@growthub/cli@0.13.1` / `@growthub/create-growthub-local@0.13.1` workspace starter export. Per the dist rebuild protocol, source and asset changes land first; the committed CLI dist is rebuilt from the full workspace in the super-admin release lane before npm publication.
