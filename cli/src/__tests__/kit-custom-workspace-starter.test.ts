@@ -893,6 +893,15 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(workflows[0].graphNodeCount).toBe(2);
   });
 
+  it("Builder workflow creation resolves the live sandbox-environment object", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("function getWorkflowSandboxObject");
+    expect(builder).toContain('object?.objectType !== "sandbox-environment"');
+    expect(builder).toContain("HIDDEN_SANDBOX_OBJECT_IDS");
+    expect(builder).toContain("const existing = getWorkflowSandboxObject(config)");
+    expect(builder).not.toContain('const sandboxObjectId = "sandboxes-alignment-loop"');
+  });
+
   it("workflows page exists and uses orchestration canvas", () => {
     expect(appExists("app/workflows/page.jsx")).toBe(true);
     expect(appExists("app/workflows/WorkflowSurface.jsx")).toBe(true);
