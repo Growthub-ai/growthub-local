@@ -92,6 +92,7 @@ const CUSTOM_API_SOURCE_TYPE = "custom-api-webhooks";
 const DATA_MODEL_SOURCE_TYPE = "workspace-data-model";
 const LIVE_SOURCE_TYPE = "workspace-source-records";
 const TESTED_SOURCE_STATUSES = new Set(["connected", "approved", "ok", "success"]);
+const HIDDEN_SANDBOX_OBJECT_IDS = new Set(["workspace-helper-sandbox"]);
 
 const SOURCE_TYPE_OBJECTS = [
   {
@@ -361,6 +362,15 @@ function slugifyWorkflowName(name) {
 function getDataModelObject(config, objectId) {
   const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
   return objects.find((object) => object?.id === objectId) || null;
+}
+
+function getWorkflowSandboxObject(config) {
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  return objects.find((object) => {
+    if (object?.objectType !== "sandbox-environment") return false;
+    const id = String(object?.id || "").trim();
+    return id && !HIDDEN_SANDBOX_OBJECT_IDS.has(id);
+  }) || null;
 }
 
 function listBuilderWorkflowItems(config) {
@@ -3716,13 +3726,13 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
 
   const createWorkflow = useCallback(async () => {
     if (saving) return;
-    const sandboxObjectId = "sandboxes-alignment-loop";
     const nowIso = new Date().toISOString();
-    const existing = getDataModelObject(config, sandboxObjectId);
+    const existing = getWorkflowSandboxObject(config);
     if (!existing) {
       setConfigMessage("Workflow sandbox object is missing.");
       return;
     }
+    const sandboxObjectId = String(existing.id || "").trim();
     const rows = Array.isArray(existing.rows) ? existing.rows : [];
     const base = slugifyWorkflowName(`workflow-${rows.length + 1}`);
     const existingIds = new Set(rows.map((row) => String(row?.Name || row?.name || row?.id || "").trim()));
