@@ -761,7 +761,8 @@ function SandboxRecordFields({
                   { value: "ollama", label: "ollama (OLLAMA_BASE_URL + /v1/chat/completions)" },
                   { value: "lmstudio", label: "lmstudio (LMSTUDIO_BASE_URL)" },
                   { value: "vllm", label: "vllm (VLLM_BASE_URL required)" },
-                  { value: "custom-openai-compatible", label: "custom (use Chat completions URL above)" }
+                  { value: "custom-openai-compatible", label: "custom (use Chat completions URL above)" },
+                  { value: "openai-responses", label: "openai-responses (OPENAI_API_KEY server-side)" }
                 ]}
                 onChange={(nextValue) => patchFields({ intelligenceAdapterMode: nextValue })}
               />
