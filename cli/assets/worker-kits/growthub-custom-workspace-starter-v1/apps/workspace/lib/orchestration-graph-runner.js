@@ -3,10 +3,15 @@
  */
 
 import {
+  applyFieldMap,
+  applyFilters,
   extractApiRegistryCallNode,
-  extractNormalizeConfig,
+  extractInputNode,
+  extractTransformConfig,
   normalizeJsonAtPath,
-  parseOrchestrationGraph
+  parseOrchestrationGraph,
+  redactSecretsFromText,
+  substituteVariables
 } from "./orchestration-graph.js";
 
 function normalizeMethod(value) {
@@ -14,9 +19,10 @@ function normalizeMethod(value) {
   return ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method) ? method : "GET";
 }
 
-function buildUrl(record) {
+function buildUrl(record, inputPayload) {
   const baseUrl = String(record?.baseUrl || "").trim();
-  const endpoint = String(record?.endpoint || "").trim();
+  let endpoint = String(record?.endpoint || "").trim();
+  endpoint = substituteVariables(endpoint, inputPayload);
   const raw = endpoint || baseUrl;
   if (!raw) throw new Error("baseUrl or endpoint is required");
   if (/^https?:\/\//i.test(endpoint)) return endpoint;
@@ -46,9 +52,10 @@ function readServerSecret(authRef) {
 
 function buildAuthHeaders(record, secretValue) {
   if (!secretValue) return {};
-  const headerName = String(record?.authHeaderName || record?.authHeader || "x-api-key").trim();
+  const meta = record?.requestHeadersMetadata || {};
+  const headerName = String(meta.authHeaderName || record?.authHeaderName || record?.authHeader || "x-api-key").trim();
   if (!headerName) return {};
-  const prefix = String(record?.authPrefix || "").trim();
+  const prefix = String(meta.authPrefix || record?.authPrefix || "").trim();
   return { [headerName]: prefix ? `${prefix} ${secretValue}` : secretValue };
 }
 
@@ -69,8 +76,64 @@ function findRegistryRecord(workspaceConfig, registryId) {
   return null;
 }
 
-async function executeApiRegistryCall(workspaceConfig, nodeConfig, timeoutMs) {
-  const registryId = String(nodeConfig?.registryId || "").trim();
+function parseInputPayload(inputNode) {
+  const config = inputNode?.config || {};
+  const mode = String(config.inputMode || "manual").trim();
+  if (mode === "manual") {
+    const sample = config.samplePayload;
+    if (sample && typeof sample === "object") return sample;
+    if (typeof sample === "string" && sample.trim()) {
+      try {
+        return JSON.parse(sample);
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+  return {};
+}
+
+function transformProviderPayload(rawPayload, transformConfig) {
+  const config = transformConfig || {};
+  const rootPath = String(config.rootPath || "").trim();
+  let cursor = rootPath ? getValueAtPath(rawPayload, rootPath) : rawPayload;
+  if (cursor === undefined) cursor = rawPayload;
+
+  const fieldMap = config.fieldMap && typeof config.fieldMap === "object" ? config.fieldMap : {};
+  if (Object.keys(fieldMap).length) {
+    if (Array.isArray(cursor)) {
+      cursor = cursor.map((row) => applyFieldMap(row, fieldMap));
+    } else if (cursor && typeof cursor === "object") {
+      cursor = applyFieldMap(cursor, fieldMap);
+    }
+  }
+
+  if (Array.isArray(cursor)) {
+    const filtered = applyFilters(cursor, config.filters, config.filterMode);
+    const maxRows = Number(config.maxRows);
+    if (Number.isFinite(maxRows) && maxRows > 0) {
+      return filtered.slice(0, maxRows);
+    }
+    return filtered;
+  }
+
+  return cursor;
+}
+
+function getValueAtPath(obj, path) {
+  if (!path) return obj;
+  const parts = String(path).split(".").filter(Boolean);
+  let cursor = obj;
+  for (const part of parts) {
+    if (cursor == null || typeof cursor !== "object") return undefined;
+    cursor = cursor[part];
+  }
+  return cursor;
+}
+
+async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload, timeoutMs) {
+  const registryId = String(nodeConfig?.registryId || nodeConfig?.integrationId || "").trim();
   const registryRecord = findRegistryRecord(workspaceConfig, registryId);
   if (!registryRecord) {
     return {
@@ -88,12 +151,21 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, timeoutMs) {
     ...registryRecord,
     method: nodeConfig?.method || registryRecord.method,
     endpoint: nodeConfig?.endpoint || registryRecord.endpoint,
-    authRef: nodeConfig?.authRef || registryRecord.authRef || registryId
+    baseUrl: nodeConfig?.baseUrl || registryRecord.baseUrl,
+    authRef: nodeConfig?.authRef || registryRecord.authRef || registryId,
+    requestHeadersMetadata: {
+      ...(registryRecord.requestHeadersMetadata || {}),
+      ...(nodeConfig?.requestHeadersMetadata || {})
+    },
+    authHeaderName: nodeConfig?.requestHeadersMetadata?.authHeaderName
+      || registryRecord.authHeaderName
+      || registryRecord.authHeader,
+    authPrefix: nodeConfig?.requestHeadersMetadata?.authPrefix || registryRecord.authPrefix
   };
 
   let url;
   try {
-    url = buildUrl(merged);
+    url = buildUrl(merged, inputPayload);
   } catch (err) {
     return {
       ok: false,
@@ -115,19 +187,33 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), outboundTimeout);
 
+  const meta = nodeConfig?.requestHeadersMetadata || {};
+  const contentType = String(meta.contentType || "").trim() || (method === "GET" ? "" : "application/json");
+
+  let body;
+  const bodyTemplate = substituteVariables(String(nodeConfig?.bodyTemplate || ""), inputPayload);
+  if (method !== "GET" && bodyTemplate) {
+    try {
+      body = JSON.parse(bodyTemplate);
+    } catch {
+      body = bodyTemplate;
+    }
+  }
+
   try {
     const response = await fetch(url, {
       method,
       headers: {
         accept: "application/json, text/plain;q=0.9,*/*;q=0.8",
-        ...(method !== "GET" ? { "content-type": "application/json" } : {}),
+        ...(contentType ? { "content-type": contentType } : {}),
         ...buildAuthHeaders(merged, secret)
       },
+      ...(body !== undefined ? { body: typeof body === "string" ? body : JSON.stringify(body) } : {}),
       signal: controller.signal
     });
     const durationMs = Date.now() - startedAt;
-    const contentType = response.headers.get("content-type") || "";
-    const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+    const responseContentType = response.headers.get("content-type") || "";
+    const payload = responseContentType.includes("application/json") ? await response.json() : await response.text();
 
     return {
       ok: response.ok,
@@ -137,6 +223,7 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, timeoutMs) {
       stderr: "",
       error: response.ok ? undefined : `HTTP ${response.status}`,
       rawPayload: payload,
+      httpStatus: response.status,
       adapterMeta: {
         mode: "orchestration-graph",
         registryId,
@@ -148,13 +235,16 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, timeoutMs) {
     };
   } catch (error) {
     const durationMs = Date.now() - startedAt;
+    const safeError = redactSecretsFromText(
+      error.name === "AbortError" ? `request timed out after ${outboundTimeout}ms` : (error.message || "fetch failed")
+    );
     return {
       ok: false,
       exitCode: null,
       durationMs,
       stdout: "",
       stderr: "",
-      error: error.name === "AbortError" ? `request timed out after ${outboundTimeout}ms` : (error.message || "fetch failed"),
+      error: safeError,
       adapterMeta: { mode: "orchestration-graph", registryId, url, aborted: error.name === "AbortError" }
     };
   } finally {
@@ -183,11 +273,40 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs 
     };
   }
 
-  const raw = await executeApiRegistryCall(workspaceConfig, apiNode.config, timeoutMs);
-  const normalizeConfig = extractNormalizeConfig(graph);
+  const inputNode = extractInputNode(graph);
+  const inputPayload = parseInputPayload(inputNode);
+  const transformConfig = extractTransformConfig(graph);
+  const resultNode = graph.nodes?.find((n) => n?.type === "tool-result");
+  const successCodes = Array.isArray(resultNode?.config?.successStatusCodes)
+    ? resultNode.config.successStatusCodes.map(Number).filter(Number.isFinite)
+    : [200];
+
+  const raw = await executeApiRegistryCall(
+    workspaceConfig,
+    apiNode.config,
+    inputPayload,
+    Number(apiNode.config?.timeoutMs) || timeoutMs
+  );
+
   if (raw.ok && raw.rawPayload !== undefined) {
-    raw.stdout = normalizeJsonAtPath(raw.rawPayload, normalizeConfig.rootPath);
+    const httpStatus = Number(raw.httpStatus);
+    if (successCodes.length && !successCodes.includes(httpStatus)) {
+      raw.ok = false;
+      raw.exitCode = 1;
+      raw.error = `HTTP ${httpStatus} is not in successStatusCodes`;
+    }
+    const transformed = transformProviderPayload(raw.rawPayload, transformConfig);
+    raw.stdout = typeof transformed === "string"
+      ? transformed
+      : normalizeJsonAtPath(transformed, "");
     delete raw.rawPayload;
+    delete raw.httpStatus;
+  } else if (raw.error) {
+    raw.error = redactSecretsFromText(raw.error);
+  }
+
+  if (raw.stdout) {
+    raw.stdout = redactSecretsFromText(raw.stdout);
   }
 
   return {

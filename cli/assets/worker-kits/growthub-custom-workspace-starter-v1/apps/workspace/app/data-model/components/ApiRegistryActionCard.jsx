@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Play, Terminal } from "lucide-react";
+import { Check, ExternalLink, Play, Terminal, X } from "lucide-react";
 import { getApiRegistrySandboxToolState } from "@/lib/orchestration-graph";
 
 export function ApiRegistryActionCard({
@@ -14,13 +14,37 @@ export function ApiRegistryActionCard({
 }) {
   const state = getApiRegistrySandboxToolState(registryRow, workspaceConfig);
 
-  if (state.kind === "incomplete" || state.kind === "untested" || state.kind === "failed") {
+  if (state.kind === "incomplete") {
+    const checklist = state.checklist || [];
+    return (
+      <section className="dm-api-action-card dm-api-action-card-muted" aria-label="Complete API setup">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">API Registry</p>
+          <h3>Complete API setup</h3>
+          <p>
+            This API needs a registry ID, base URL, endpoint, method, and auth reference before it can become a sandbox tool.
+          </p>
+          <ul className="dm-api-action-checklist">
+            {checklist.map((item) => (
+              <li key={item.field} className={item.ok ? "is-done" : "is-pending"}>
+                {item.ok ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+                <span>{item.field}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    );
+  }
+
+  if (state.kind === "untested" || state.kind === "failed") {
     return (
       <section className="dm-api-action-card dm-api-action-card-muted" aria-label="Sandbox tool prerequisites">
         <div className="dm-api-action-card-body">
           <p className="dm-api-action-card-eyebrow">
             {state.kind === "failed" ? "Connection not ready" : "Sandbox tool"}
           </p>
+          <h3>{state.kind === "failed" ? "Fix connection test" : "Test connection first"}</h3>
           <p>{state.message}</p>
         </div>
       </section>
@@ -56,7 +80,7 @@ export function ApiRegistryActionCard({
             onClick={() => onRunSandboxTool?.({ name: toolName })}
           >
             <Play size={14} aria-hidden="true" />
-            {sandboxRunning ? "Running…" : "Run sandbox"}
+            {sandboxRunning ? "Running…" : "Run test"}
           </button>
         </div>
       </section>
@@ -70,10 +94,11 @@ export function ApiRegistryActionCard({
       </div>
       <div className="dm-api-action-card-body">
         <p className="dm-api-action-card-eyebrow">API tested successfully</p>
-        <h3>Create executable tool</h3>
+        <h3>Create sandbox tool</h3>
         <p>
-          Turn this endpoint into a sandbox tool your workspace assistant and agents can run safely.
+          This API is connected. Turn it into a sandbox tool that agents can run safely from this workspace.
         </p>
+        <p className="dm-api-action-card-note">No secrets are stored. Nothing runs until you test the sandbox.</p>
       </div>
       <button
         type="button"

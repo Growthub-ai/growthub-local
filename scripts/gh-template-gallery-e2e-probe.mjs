@@ -167,25 +167,32 @@ async function probeOrchestrationGraph(base) {
     version: 1,
     provider: "growthub-native",
     nodes: [
-      { id: "input", type: "input", label: "Input", config: { schema: "record" } },
+      { id: "input", type: "input", label: "Input", config: { inputMode: "manual", samplePayload: {} } },
       {
-        id: "api-registry-probe",
+        id: "api-request",
         type: "api-registry-call",
-        label: "Probe",
+        label: "API Registry",
         config: {
           registryId: "probe-api",
+          integrationId: "probe-api",
+          baseUrl: "https://httpbin.org",
           method: "GET",
           endpoint: "/get",
           authRef: "PROBE",
         },
       },
-      { id: "normalize", type: "normalize-output", label: "Normalize", config: { mode: "json", rootPath: "data" } },
-      { id: "result", type: "tool-result", label: "Result", config: { writeLastResponse: true } },
+      {
+        id: "transform",
+        type: "transform-filter",
+        label: "Transform",
+        config: { mode: "json", rootPath: "", fieldMap: {}, filters: [] },
+      },
+      { id: "result", type: "tool-result", label: "Result", config: { writeLastResponse: true, successStatusCodes: [200] } },
     ],
     edges: [
-      { from: "input", to: "api-registry-probe" },
-      { from: "api-registry-probe", to: "normalize" },
-      { from: "normalize", to: "result" },
+      { from: "input", to: "api-request" },
+      { from: "api-request", to: "transform" },
+      { from: "transform", to: "result" },
     ],
   };
 

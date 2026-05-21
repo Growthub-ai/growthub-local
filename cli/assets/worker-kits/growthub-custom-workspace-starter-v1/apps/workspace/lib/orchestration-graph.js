@@ -1,19 +1,27 @@
 /**
- * Governed orchestration graph contract for sandbox-environment rows.
- * V1: growthub-native declarative run plans (stored on row.orchestrationGraph).
- * Execution authority remains POST /api/workspace/sandbox-run.
+ * Governed orchestrationGraph field contract (sandbox-environment row).
+ * V1: growthub-native declarative run plan. Execution: POST /api/workspace/sandbox-run only.
  */
 
 const TRUSTED_API_STATUSES = ["connected", "approved", "ok", "success"];
 const SUPPORTED_PROVIDERS_V1 = new Set(["growthub-native", "custom-webhook"]);
+
+const FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "isNotEmpty"];
+const FILTER_CONJUNCTIONS = ["and", "or"];
+
 const KNOWN_NODE_TYPES = new Set([
   "input",
   "api-registry-call",
-  "sandbox-adapter",
+  "transform-filter",
   "normalize-output",
   "tool-result",
+  "sandbox-adapter",
   "custom-webhook"
 ]);
+
+const API_REGISTRY_SETUP_FIELDS = ["integrationId", "baseUrl", "endpoint", "method", "authRef"];
+
+const CANONICAL_NODE_ORDER = ["input", "api-request", "transform", "result"];
 
 function slugifyName(value) {
   return String(value || "")
@@ -47,24 +55,27 @@ function isApiRegistryTestSuccessful(row) {
   return TRUSTED_API_STATUSES.includes(status);
 }
 
+function getApiRegistrySetupChecklist(registryRow) {
+  const row = registryRow || {};
+  return API_REGISTRY_SETUP_FIELDS.map((field) => {
+    const value = String(row[field] ?? "").trim();
+    const ok = field === "baseUrl" || field === "endpoint"
+      ? Boolean(String(row.baseUrl || "").trim() || String(row.endpoint || "").trim())
+      : Boolean(value);
+    return { field, ok, value: field === "method" ? (value || "GET") : value };
+  });
+}
+
+function isApiRegistrySetupComplete(registryRow) {
+  return getApiRegistrySetupChecklist(registryRow).every((item) => item.ok);
+}
+
 /**
  * Sidecar action state for API Registry → sandbox tool bridge (UI only).
  */
 function getApiRegistrySandboxToolState(registryRow, workspaceConfig) {
-  const integrationId = String(registryRow?.integrationId || "").trim();
-  const baseUrl = String(registryRow?.baseUrl || "").trim();
-  const endpoint = String(registryRow?.endpoint || "").trim();
-  if (!integrationId) {
-    return {
-      kind: "incomplete",
-      message: "Add an integrationId before you can create a sandbox tool."
-    };
-  }
-  if (!baseUrl && !endpoint) {
-    return {
-      kind: "incomplete",
-      message: "Add a baseUrl or endpoint before you can create a sandbox tool."
-    };
+  if (!isApiRegistrySetupComplete(registryRow)) {
+    return { kind: "incomplete", checklist: getApiRegistrySetupChecklist(registryRow) };
   }
   if (!isApiRegistryTestSuccessful(registryRow)) {
     const status = String(registryRow?.status || "").trim().toLowerCase();
@@ -79,6 +90,7 @@ function getApiRegistrySandboxToolState(registryRow, workspaceConfig) {
       message: "Test connection first. Sandbox tool creation unlocks after a successful test."
     };
   }
+  const integrationId = String(registryRow?.integrationId || "").trim();
   const existing = findSandboxRowsForRegistry(workspaceConfig, integrationId);
   if (existing.length > 0) {
     return { kind: "existing", row: existing[0] };
@@ -118,6 +130,10 @@ function validateOrchestrationGraph(graph) {
         errors.push(`${prefix}.type "${type}" is not a known node type`);
       }
     });
+    const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call");
+    const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
+    if (!hasApi) errors.push("orchestrationGraph requires an api-registry-call node");
+    if (!hasResult) errors.push("orchestrationGraph requires a tool-result node");
   }
   if (!Array.isArray(graph.edges)) {
     errors.push("orchestrationGraph.edges must be an array");
@@ -138,8 +154,8 @@ function validateOrchestrationGraph(graph) {
 function summarizeOrchestrationGraph(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
   if (!parsed?.nodes?.length) return "No orchestration graph";
-  const labels = parsed.nodes.map((n) => String(n.label || n.id || n.type || "").trim()).filter(Boolean);
-  return labels.join(" → ");
+  const ordered = orderedGraphNodes(parsed);
+  return ordered.map((n) => String(n.label || n.id || "").trim()).filter(Boolean).join(" → ");
 }
 
 function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
@@ -147,11 +163,9 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
   const label = String(options.label || registryRow?.Name || integrationId || "API").trim();
   const method = String(options.method || registryRow?.method || "GET").trim().toUpperCase();
   const endpoint = String(options.endpoint || registryRow?.endpoint || "").trim();
+  const baseUrl = String(registryRow?.baseUrl || "").trim();
   const authRef = String(options.authRef || registryRow?.authRef || integrationId).trim();
-  const adapter = String(options.adapter || "local-process").trim();
-  const runLocality = String(options.runLocality || "local").trim();
   const rootPath = String(options.rootPath || "data").trim();
-  const apiNodeId = `api-registry-${slugifyName(integrationId) || "call"}`;
 
   return {
     version: 1,
@@ -161,53 +175,94 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
         id: "input",
         type: "input",
         label: "Input",
-        config: { schema: "record" }
+        subtitle: "Manual run payload",
+        config: {
+          inputMode: "manual",
+          samplePayload: {},
+          sourceType: "",
+          sourceId: "",
+          entityId: "",
+          filterMode: "and",
+          filters: []
+        }
       },
       {
-        id: apiNodeId,
+        id: "api-request",
         type: "api-registry-call",
-        label: label,
+        label: "API Registry",
+        subtitle: `${integrationId} · ${method} ${endpoint}`,
         config: {
           registryId: integrationId,
-          method,
+          integrationId,
+          baseUrl,
           endpoint,
-          authRef
+          method,
+          authRef,
+          queryParams: {},
+          bodyTemplate: "",
+          requestHeadersMetadata: {
+            authHeaderName: String(registryRow?.authHeaderName || registryRow?.authHeader || "x-api-key").trim(),
+            authPrefix: String(registryRow?.authPrefix || "").trim(),
+            contentType: method === "GET" ? "" : "application/json"
+          },
+          timeoutMs: Number(options.timeoutMs) || 30000
         }
       },
       {
-        id: "sandbox-adapter",
-        type: "sandbox-adapter",
-        label: "Sandbox Adapter",
+        id: "transform",
+        type: "transform-filter",
+        label: "Transform",
+        subtitle: "Map fields and apply filters",
         config: {
-          runLocality,
-          adapter
-        }
-      },
-      {
-        id: "normalize",
-        type: "normalize-output",
-        label: "Normalize Output",
-        config: {
+          rootPath,
           mode: "json",
-          rootPath
+          fieldMap: {},
+          includeFields: [],
+          excludeFields: [],
+          computedFields: {},
+          filters: [],
+          filterMode: "and",
+          maxRows: 0
         }
       },
       {
         id: "result",
         type: "tool-result",
         label: "Result",
+        subtitle: "Save run output",
         config: {
+          successStatusCodes: [200],
           writeLastResponse: true,
-          writeSourceRecord: true
+          writeSourceRecord: true,
+          sourceRecordId: "",
+          outputMode: "normalized-json",
+          previewFields: [],
+          statusField: "status",
+          lastTestedField: "lastTested"
         }
       }
     ],
     edges: [
-      { from: "input", to: apiNodeId },
-      { from: apiNodeId, to: "sandbox-adapter" },
-      { from: "sandbox-adapter", to: "normalize" },
-      { from: "normalize", to: "result" }
+      { from: "input", to: "api-request", passes: "payload, filters, variables" },
+      { from: "api-request", to: "transform", passes: "provider-response" },
+      { from: "transform", to: "result", passes: "normalized-output" }
     ]
+  };
+}
+
+function updateGraphNode(graph, nodeId, configPatch) {
+  const parsed = parseOrchestrationGraph(graph) || graph;
+  if (!parsed?.nodes) return parsed;
+  const id = String(nodeId || "").trim();
+  return {
+    ...parsed,
+    nodes: parsed.nodes.map((node) => {
+      if (String(node.id) !== id) return node;
+      return {
+        ...node,
+        config: { ...(node.config || {}), ...(configPatch || {}) }
+      };
+    })
   };
 }
 
@@ -227,7 +282,7 @@ function findSandboxRowsForRegistry(workspaceConfig, integrationId) {
     if (!graph?.nodes) return String(row?.schedulerRegistryId || "").trim() === id;
     return graph.nodes.some(
       (node) => node?.type === "api-registry-call"
-        && String(node?.config?.registryId || "").trim() === id
+        && String(node?.config?.registryId || node?.config?.integrationId || "").trim() === id
     );
   });
 }
@@ -242,19 +297,19 @@ function buildSandboxRowFromApiRegistry(workspaceConfig, registryRow, options = 
     ? (typeof options.orchestrationGraph === "string"
       ? parseOrchestrationGraph(options.orchestrationGraph)
       : options.orchestrationGraph)
-    : buildDefaultOrchestrationGraphFromRegistry(registryRow, { ...options, runLocality, adapter });
+    : buildDefaultOrchestrationGraphFromRegistry(registryRow, options);
 
   const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
   const authRef = String(options.authRef || apiNode?.config?.authRef || registryRow?.authRef || integrationId).trim();
-  const normalizeNode = graph?.nodes?.find((n) => n?.type === "normalize-output");
-  const rootPath = normalizeNode?.config?.rootPath || "data";
-
-  const existing = findSandboxRowsForRegistry(workspaceConfig, integrationId);
-  const slug = options.slug || slugifyName(name) || slugifyName(integrationId);
+  const transformNode = graph?.nodes?.find((n) => n?.type === "transform-filter" || n?.type === "normalize-output");
+  const rootPath = transformNode?.config?.rootPath || "data";
+  const method = String(registryRow?.method || apiNode?.config?.method || "GET").trim().toUpperCase();
+  const endpoint = String(registryRow?.endpoint || apiNode?.config?.endpoint || "").trim();
+  const baseUrl = String(registryRow?.baseUrl || apiNode?.config?.baseUrl || "").trim();
 
   return {
     Name: name,
-    slug,
+    slug: options.slug || slugifyName(name) || slugifyName(integrationId),
     objectType: "sandbox-environment",
     lifecycleStatus: "draft",
     version: "1",
@@ -262,13 +317,13 @@ function buildSandboxRowFromApiRegistry(workspaceConfig, registryRow, options = 
     schedulerRegistryId: runLocality === "serverless" ? integrationId : "",
     runtime: String(options.runtime || "node").trim(),
     adapter,
-    agentHost: "",
+    agentHost: String(options.agentHost || "").trim(),
     envRefs: Array.isArray(options.envRefs) ? options.envRefs.join(",") : String(options.envRefs || "").trim(),
     networkAllow: options.networkAllow === true ? "true" : "",
     allowList: String(options.allowList || "").trim(),
     instructions: String(
       options.instructions
-        || `Governed sandbox tool for ${integrationId}. Calls the API Registry endpoint and normalizes output at "${rootPath}". Use authRef ${authRef} only — secrets resolve server-side.`
+        || `Governed sandbox tool for ${integrationId}. Calls ${method} ${endpoint || baseUrl} and normalizes at "${rootPath}". authRef ${authRef} only — secrets resolve server-side.`
     ).trim(),
     command: String(options.command || "").trim(),
     timeoutMs: String(options.timeoutMs || "30000").trim(),
@@ -282,41 +337,117 @@ function buildSandboxRowFromApiRegistry(workspaceConfig, registryRow, options = 
   };
 }
 
+function extractNodeByType(graph, type) {
+  const parsed = parseOrchestrationGraph(graph) || graph;
+  if (!parsed?.nodes) return null;
+  return parsed.nodes.find((n) => n?.type === type) || null;
+}
+
 function extractApiRegistryCallNode(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
   if (!parsed?.nodes) return null;
   return parsed.nodes.find((n) => n?.type === "api-registry-call") || null;
 }
 
-function extractNormalizeConfig(graph) {
+function extractInputNode(graph) {
+  return extractNodeByType(graph, "input");
+}
+
+function extractTransformConfig(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
-  const node = parsed?.nodes?.find((n) => n?.type === "normalize-output");
-  return node?.config || { mode: "json", rootPath: "data" };
+  const node = parsed?.nodes?.find((n) => n?.type === "transform-filter" || n?.type === "normalize-output");
+  return node?.config || { mode: "json", rootPath: "data", fieldMap: {}, filters: [] };
+}
+
+/** @deprecated use extractTransformConfig */
+function extractNormalizeConfig(graph) {
+  return extractTransformConfig(graph);
+}
+
+function getValueAtPath(obj, path) {
+  if (!path) return obj;
+  const parts = String(path).split(".").filter(Boolean);
+  let cursor = obj;
+  for (const part of parts) {
+    if (cursor == null || typeof cursor !== "object") return undefined;
+    cursor = cursor[part];
+  }
+  return cursor;
 }
 
 function normalizeJsonAtPath(payload, rootPath) {
-  if (!rootPath || rootPath === ".") {
-    return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
-  }
-  const parts = String(rootPath).split(".").filter(Boolean);
-  let cursor = payload;
-  for (const part of parts) {
-    if (cursor == null || typeof cursor !== "object") {
-      cursor = null;
-      break;
-    }
-    cursor = cursor[part];
-  }
+  const cursor = rootPath ? getValueAtPath(payload, rootPath) : payload;
   if (cursor == null) {
     return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   }
   return typeof cursor === "string" ? cursor : JSON.stringify(cursor, null, 2);
 }
 
+function applyFieldMap(payload, fieldMap) {
+  if (!fieldMap || typeof fieldMap !== "object" || !Object.keys(fieldMap).length) {
+    return payload;
+  }
+  const source = payload && typeof payload === "object" ? payload : {};
+  const out = {};
+  for (const [target, sourcePath] of Object.entries(fieldMap)) {
+    out[target] = getValueAtPath(source, String(sourcePath || ""));
+  }
+  return out;
+}
+
+function rowMatchesFilter(row, clause) {
+  const fieldId = String(clause?.fieldId || "").trim();
+  const op = String(clause?.operator || "eq").trim();
+  const expected = clause?.value;
+  const raw = row && typeof row === "object" ? row[fieldId] : undefined;
+  const value = raw == null ? "" : String(raw);
+  switch (op) {
+    case "eq":
+      return value === String(expected ?? "");
+    case "ne":
+      return value !== String(expected ?? "");
+    case "contains":
+      return value.toLowerCase().includes(String(expected ?? "").toLowerCase());
+    case "gt":
+      return Number(value) > Number(expected);
+    case "lt":
+      return Number(value) < Number(expected);
+    case "isEmpty":
+      return value === "";
+    case "isNotEmpty":
+      return value !== "";
+    default:
+      return true;
+  }
+}
+
+function applyFilters(rows, filters, filterMode = "and") {
+  if (!Array.isArray(rows) || !Array.isArray(filters) || !filters.length) return rows;
+  const mode = String(filterMode || "and").toLowerCase() === "or" ? "or" : "and";
+  return rows.filter((row) => {
+    const results = filters.map((clause) => rowMatchesFilter(row, clause));
+    return mode === "or" ? results.some(Boolean) : results.every(Boolean);
+  });
+}
+
+function substituteVariables(template, inputPayload) {
+  const text = String(template || "");
+  if (!text.includes("{{")) return text;
+  const input = inputPayload && typeof inputPayload === "object" ? inputPayload : {};
+  return text.replace(/\{\{input\.([a-zA-Z0-9_.]+)\}\}/g, (_, key) => {
+    const val = getValueAtPath(input, key);
+    return val == null ? "" : String(val);
+  });
+}
+
 function orderedGraphNodes(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
   if (!parsed?.nodes?.length) return [];
   const byId = new Map(parsed.nodes.map((n) => [String(n.id), n]));
+  const ordered = [];
+  for (const id of CANONICAL_NODE_ORDER) {
+    if (byId.has(id)) ordered.push(byId.get(id));
+  }
   const edges = Array.isArray(parsed.edges) ? parsed.edges : [];
   const incoming = new Map();
   parsed.nodes.forEach((n) => incoming.set(String(n.id), 0));
@@ -324,44 +455,65 @@ function orderedGraphNodes(graph) {
     const to = String(e.to || "");
     if (incoming.has(to)) incoming.set(to, (incoming.get(to) || 0) + 1);
   });
-  const roots = parsed.nodes.filter((n) => !incoming.get(String(n.id)));
-  const ordered = [];
-  const seen = new Set();
+  const seen = new Set(ordered.map((n) => String(n.id)));
   function walk(node) {
     const id = String(node?.id || "");
     if (!id || seen.has(id)) return;
     seen.add(id);
     ordered.push(node);
-    edges
-      .filter((e) => String(e.from) === id)
-      .forEach((e) => {
-        const next = byId.get(String(e.to));
-        if (next) walk(next);
-      });
+    edges.filter((e) => String(e.from) === id).forEach((e) => {
+      const next = byId.get(String(e.to));
+      if (next) walk(next);
+    });
   }
-  (roots.length ? roots : [parsed.nodes[0]]).forEach(walk);
+  parsed.nodes.filter((n) => !incoming.get(String(n.id))).forEach(walk);
   parsed.nodes.forEach((n) => {
     if (!seen.has(String(n.id))) ordered.push(n);
   });
   return ordered;
 }
 
+function redactSecretsFromText(text) {
+  let out = String(text || "");
+  for (const pattern of [
+    /(Bearer\s+)[^\s"']+/gi,
+    /(api[_-]?key["']?\s*[:=]\s*)["']?[^\s"',}]+/gi,
+    /(token["']?\s*[:=]\s*)["']?[^\s"',}]+/gi
+  ]) {
+    out = out.replace(pattern, "$1[redacted]");
+  }
+  return out;
+}
+
 export {
+  API_REGISTRY_SETUP_FIELDS,
   TRUSTED_API_STATUSES,
   SUPPORTED_PROVIDERS_V1,
+  FILTER_OPERATORS,
+  FILTER_CONJUNCTIONS,
+  CANONICAL_NODE_ORDER,
   buildDefaultOrchestrationGraphFromRegistry,
   buildSandboxRowFromApiRegistry,
   extractApiRegistryCallNode,
+  extractInputNode,
+  extractTransformConfig,
   extractNormalizeConfig,
   findSandboxObject,
   findSandboxRowsForRegistry,
+  getApiRegistrySetupChecklist,
   getApiRegistrySandboxToolState,
+  isApiRegistrySetupComplete,
   isApiRegistryTestSuccessful,
   normalizeJsonAtPath,
+  applyFieldMap,
+  applyFilters,
+  substituteVariables,
   orderedGraphNodes,
   parseOrchestrationGraph,
   serializeOrchestrationGraph,
   slugifyName,
   summarizeOrchestrationGraph,
-  validateOrchestrationGraph
+  updateGraphNode,
+  validateOrchestrationGraph,
+  redactSecretsFromText
 };

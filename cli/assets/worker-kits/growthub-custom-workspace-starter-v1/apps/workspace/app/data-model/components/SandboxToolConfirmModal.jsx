@@ -35,15 +35,13 @@ export function SandboxToolConfirmModal({
           </button>
         </header>
         <div className="dm-orch-modal-body">
-          <p>This will create one Sandbox Environment row in your Data Model.</p>
+          <p>This creates one Sandbox Environment object from the tested API Registry record.</p>
           <ul className="dm-orch-modal-list">
-            <li>
-              <strong>{toolName}</strong> — one governed sandbox-environment row
-            </li>
-            <li>Stores <code>{authRef || "authRef"}</code> and env refs by name only — no secrets</li>
-            <li>Will not create a widget</li>
-            <li>Will not change dashboards or canvas</li>
-            <li>Will not execute until you click Run sandbox on the tool row</li>
+            <li>Saves orchestrationGraph on the sandbox row</li>
+            <li>Stores <code>{authRef || "authRef"}</code> only — no secrets</li>
+            <li>Does not create widgets</li>
+            <li>Does not change dashboards</li>
+            <li>Does not run until you click Run test</li>
           </ul>
           <p className="dm-orch-modal-summary">
             <span>Run plan</span>

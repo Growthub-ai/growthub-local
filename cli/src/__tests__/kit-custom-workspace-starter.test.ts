@@ -588,6 +588,7 @@ describe("orchestration-graph — contract and kit presence", () => {
   it("sidecar UI components ship", () => {
     expect(appExists("app/data-model/components/ApiRegistryActionCard.jsx")).toBe(true);
     expect(appExists("app/data-model/components/OrchestrationGraphCanvas.jsx")).toBe(true);
+    expect(appExists("app/data-model/components/OrchestrationNodeConfigPanel.jsx")).toBe(true);
     expect(appExists("app/data-model/components/SandboxToolDraftPanel.jsx")).toBe(true);
     expect(appExists("app/data-model/components/SandboxToolConfirmModal.jsx")).toBe(true);
   });
@@ -620,6 +621,13 @@ describe("orchestration-graph — contract and kit presence", () => {
     };
     const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow);
     expect(mod.validateOrchestrationGraph(graph).ok).toBe(true);
+    expect(graph.nodes).toHaveLength(4);
+    expect(graph.nodes.map((n: { id: string }) => n.id)).toEqual([
+      "input",
+      "api-request",
+      "transform",
+      "result",
+    ]);
     const sandboxRow = mod.buildSandboxRowFromApiRegistry(
       { dataModel: { objects: [] } },
       registryRow,
@@ -655,6 +663,8 @@ describe("orchestration-graph — contract and kit presence", () => {
       integrationId: "acme",
       baseUrl: "https://api.example.com",
       endpoint: "/v1",
+      method: "GET",
+      authRef: "ACME",
       status: "connected",
     };
     expect(mod.getApiRegistrySandboxToolState(registryRow, { dataModel: { objects: [] } }).kind).toBe("create");
@@ -670,5 +680,22 @@ describe("orchestration-graph — contract and kit presence", () => {
     };
     expect(mod.getApiRegistrySandboxToolState(registryRow, cfg).kind).toBe("existing");
     expect(mod.getApiRegistrySandboxToolState({ ...registryRow, status: "failed" }, cfg).kind).toBe("failed");
+  });
+
+  it("incomplete API Registry does not allow create state", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
+    ) as {
+      getApiRegistrySandboxToolState: (
+        row: Record<string, string>,
+        cfg: { dataModel: { objects: unknown[] } }
+      ) => { kind: string };
+    };
+    expect(
+      mod.getApiRegistrySandboxToolState(
+        { integrationId: "x", status: "connected" },
+        { dataModel: { objects: [] } }
+      ).kind
+    ).toBe("incomplete");
   });
 });

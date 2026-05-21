@@ -1279,7 +1279,7 @@ function DataModelRecordDrawer({
             <div className="dm-api-action-card-body">
               <p className="dm-api-action-card-eyebrow">Sandbox tool created</p>
               <h3>{createdSandboxMeta.name}</h3>
-              <p>Governed sandbox row saved with orchestrationGraph. Run an explicit test to persist lastResponse.</p>
+              <p>Governed sandbox row saved with orchestrationGraph. Run test to persist lastResponse — nothing auto-runs.</p>
               {createdSandboxTestMessage && <p className="dm-sandbox-tool-test-msg">{createdSandboxTestMessage}</p>}
             </div>
             <div className="dm-api-action-card-actions">
@@ -1297,7 +1297,7 @@ function DataModelRecordDrawer({
                 disabled={createdSandboxTesting || saving}
                 onClick={runCreatedSandboxTest}
               >
-                {createdSandboxTesting ? "Running…" : "Run sandbox"}
+                {createdSandboxTesting ? "Running…" : "Run test"}
               </button>
             </div>
           </section>
