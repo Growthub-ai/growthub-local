@@ -72,7 +72,11 @@ import { SourceTestPanel } from "./SourceTestPanel.jsx";
 import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
 import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
 import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
-import { buildSandboxRowFromApiRegistry } from "@/lib/orchestration-graph";
+import {
+  buildSandboxRowFromApiRegistry,
+  findSandboxRowsForRegistry,
+  redactSecretsFromText
+} from "@/lib/orchestration-graph";
 import {
   FIELD_TYPE_ICON_NAMES,
   ICON_PICKER_SET,
@@ -1044,10 +1048,18 @@ function DataModelRecordDrawer({
 
   function createSandboxToolFromRegistry() {
     if (!sandboxToolDraft?.name?.trim()) return;
+    const integrationId = String(draft?.integrationId || "").trim();
+    if (integrationId && findSandboxRowsForRegistry(workspaceConfig, integrationId).length > 0) {
+      setCreatedSandboxTestMessage("A sandbox tool already exists for this API Registry entry. Open it instead of creating a duplicate.");
+      return;
+    }
     setSandboxToolCreating(true);
     try {
       onSave((config) => {
         let next = config;
+        if (integrationId && findSandboxRowsForRegistry(next, integrationId).length > 0) {
+          return next;
+        }
         let sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
         if (!sandboxTable) {
           next = createTypedBusinessObject(next, {
@@ -1101,7 +1113,7 @@ function DataModelRecordDrawer({
         body: JSON.stringify({ objectId: objectIdValue, name: rowName }),
       });
       const payload = await res.json();
-      const responseText = JSON.stringify(payload.response ?? payload, null, 2);
+      const responseText = redactSecretsFromText(JSON.stringify(payload.response ?? payload, null, 2));
       const status = payload.ok && String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
       const testedAt = payload.response?.ranAt || new Date().toISOString();
       const lastRunId = payload.runId || payload.response?.runId || "";
@@ -1118,13 +1130,16 @@ function DataModelRecordDrawer({
         next = updateTableCell(next, sandboxTable, idx, "lastResponse", responseText);
         return next;
       });
+      const safeError = redactSecretsFromText(
+        payload.response?.error || payload.error || "Sandbox run failed"
+      );
       setCreatedSandboxTestMessage(
         status === "connected"
           ? "Sandbox run succeeded — lastResponse and source record saved."
-          : (payload.response?.error || payload.error || "Sandbox run failed")
+          : safeError
       );
     } catch (err) {
-      setCreatedSandboxTestMessage(err.message || "Sandbox run failed");
+      setCreatedSandboxTestMessage(redactSecretsFromText(err.message || "Sandbox run failed"));
     } finally {
       setCreatedSandboxTesting(false);
     }

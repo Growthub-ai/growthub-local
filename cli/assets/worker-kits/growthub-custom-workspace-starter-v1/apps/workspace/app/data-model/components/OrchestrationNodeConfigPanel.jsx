@@ -440,7 +440,31 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "preview" && (
         <div className="dm-orchestration-config__pane">
-          <pre className="dm-orchestration-preview">{JSON.stringify(config, null, 2)}</pre>
+          {type === "tool-result" ? (
+            <>
+              <p className="dm-orchestration-config__hint">
+                After Run sandbox, status, lastTested, and lastResponse update on the sandbox row.
+              </p>
+              <ul className="dm-orchestration-config__preview-list">
+                <li>Success codes: {Array.isArray(config.successStatusCodes) ? config.successStatusCodes.join(", ") : "200"}</li>
+                <li>Write lastResponse: {config.writeLastResponse !== false ? "yes" : "no"}</li>
+                <li>Write source record: {config.writeSourceRecord !== false ? "yes" : "no"}</li>
+                <li>Output mode: {config.outputMode || "normalized-json"}</li>
+              </ul>
+              {registryRow?.lastResponse && (
+                <div className="dm-orchestration-preview">
+                  <span>Latest API test output (preview)</span>
+                  <pre>{String(registryRow.lastResponse).slice(0, 500)}{String(registryRow.lastResponse).length > 500 ? "…" : ""}</pre>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="dm-orchestration-config__hint">Advanced node configuration preview.</p>
+          )}
+          <details className="dm-orchestration-config__advanced-json">
+            <summary>Advanced JSON</summary>
+            <pre className="dm-orchestration-preview">{JSON.stringify(config, null, 2)}</pre>
+          </details>
         </div>
       )}
 

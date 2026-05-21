@@ -645,6 +645,19 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(mod.validateOrchestrationGraph({ version: 0, provider: "", nodes: [] }).ok).toBe(false);
   });
 
+  it("ApiRegistryActionCard source gates Create sandbox tool by state", () => {
+    const card = appText("app/data-model/components/ApiRegistryActionCard.jsx");
+    expect(card).toContain("Complete API setup");
+    expect(card).toContain("Test this API first");
+    expect(card).toContain("API test failed");
+    expect(card).toContain("Sandbox tool ready");
+    expect(card).toContain("Test connection");
+    expect(card).toContain("Retest");
+    expect(card).toContain("Create sandbox tool");
+    expect(card).toContain("Run sandbox");
+    expect(card).not.toContain("Create sandbox tool</button>");
+  });
+
   it("getApiRegistrySandboxToolState gates create vs existing", async () => {
     const mod = await import(
       `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
