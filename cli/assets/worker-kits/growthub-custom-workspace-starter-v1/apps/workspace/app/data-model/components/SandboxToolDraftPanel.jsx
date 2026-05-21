@@ -10,6 +10,7 @@ import {
   updateGraphNode,
   validateOrchestrationGraph
 } from "@/lib/orchestration-graph";
+import { resolveConnectorAction } from "@/lib/orchestration-sidecar-routing";
 import { OrchestrationGraphCanvas } from "./OrchestrationGraphCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "./OrchestrationNodeConfigPanel.jsx";
 
@@ -37,6 +38,10 @@ export function SandboxToolDraftPanel({
   const [timeoutMs, setTimeoutMs] = useState(String(draftOptions?.timeoutMs || "30000"));
   const [rootPath, setRootPath] = useState(draftOptions?.rootPath || "data");
   const [instructions, setInstructions] = useState(draftOptions?.instructions || "");
+  const [agentHost, setAgentHost] = useState(draftOptions?.agentHost || "");
+  const [schedulerRegistryId, setSchedulerRegistryId] = useState(
+    draftOptions?.schedulerRegistryId || (draftOptions?.runLocality === "serverless" ? integrationId : "")
+  );
   const [selectedNodeId, setSelectedNodeId] = useState("input");
   const [configTab, setConfigTab] = useState("node");
   const [graphError, setGraphError] = useState("");
@@ -105,6 +110,8 @@ export function SandboxToolDraftPanel({
       timeoutMs,
       rootPath,
       instructions,
+      agentHost,
+      schedulerRegistryId,
       orchestrationGraph: graphSerialized
     });
   }, [
@@ -118,6 +125,8 @@ export function SandboxToolDraftPanel({
     timeoutMs,
     rootPath,
     instructions,
+    agentHost,
+    schedulerRegistryId,
     graphSerialized,
     orchestrationGraph,
     onDraftChange
@@ -131,21 +140,10 @@ export function SandboxToolDraftPanel({
     }
   }
 
-  function handleConnectorAction({ from, to, action }) {
-    if (action === "filter") {
-      if (to === "transform" || from === "api-request") {
-        setSelectedNodeId("transform");
-      } else {
-        setSelectedNodeId("input");
-      }
-      setConfigTab("filters");
-    } else if (action === "map") {
-      setSelectedNodeId("transform");
-      setConfigTab("node");
-    } else if (action === "preview") {
-      setSelectedNodeId("result");
-      setConfigTab("preview");
-    }
+  function handleConnectorAction(payload) {
+    const { nodeId, tab } = resolveConnectorAction(payload);
+    setSelectedNodeId(nodeId);
+    setConfigTab(tab);
   }
 
   const defaultInstructions = `Governed sandbox tool for ${registryName}. Calls ${String(registryRow?.method || "GET").toUpperCase()} ${registryRow?.endpoint || registryRow?.baseUrl || ""}. authRef ${authRef} only — secrets resolve server-side.`;
@@ -220,6 +218,9 @@ export function SandboxToolDraftPanel({
                     const next = e.target.value;
                     setRunLocality(next);
                     setAdapter(next === "serverless" ? "serverless" : "local-process");
+                    if (next === "serverless" && !schedulerRegistryId) {
+                      setSchedulerRegistryId(integrationId);
+                    }
                   }}
                 >
                   <option value="local">local</option>
@@ -228,8 +229,28 @@ export function SandboxToolDraftPanel({
               </label>
               <label className="dm-orchestration-config__field">
                 <span>Adapter</span>
-                <input value={adapter} disabled={disabled} onChange={(e) => setAdapter(e.target.value)} />
+                <select value={adapter} disabled={disabled} onChange={(e) => setAdapter(e.target.value)}>
+                  <option value="local-process">local-process</option>
+                  <option value="local-agent-host">local-agent-host</option>
+                  <option value="serverless">serverless</option>
+                </select>
               </label>
+              {adapter === "local-agent-host" && (
+                <label className="dm-orchestration-config__field">
+                  <span>Agent host</span>
+                  <input value={agentHost} disabled={disabled} onChange={(e) => setAgentHost(e.target.value)} />
+                </label>
+              )}
+              {runLocality === "serverless" && (
+                <label className="dm-orchestration-config__field">
+                  <span>Scheduler registry ID</span>
+                  <input
+                    value={schedulerRegistryId}
+                    disabled={disabled}
+                    onChange={(e) => setSchedulerRegistryId(e.target.value)}
+                  />
+                </label>
+              )}
               <label className="dm-orchestration-config__field">
                 <span>Auth reference</span>
                 <input value={authRef} disabled={disabled} onChange={(e) => setAuthRef(e.target.value)} />

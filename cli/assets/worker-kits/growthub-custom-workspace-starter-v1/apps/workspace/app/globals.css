@@ -4472,7 +4472,9 @@ body.workspace-rail-collapsed .workspace-builder.workspace-settings-page {
 .dm-orchestration-config__head { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid #f3f4f6; }
 .dm-orchestration-config__node-kind { margin: 0; font-size: 14px; font-weight: 650; color: #111827; }
 .dm-orchestration-config__node-sub { margin: 0; font-size: 11px; color: #6b7280; }
-.dm-orchestration-config__badge { display: inline-flex; align-self: start; font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; }
+.dm-orchestration-config__badge { display: inline-flex; align-self: start; font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; border: 1px solid #e5e7eb; background: #fafafa; color: #374151; }
+.dm-orchestration-config__badge.is-connected { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.dm-orchestration-config__badge.is-failed { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .dm-orchestration-config__meta { margin: 0; font-size: 11px; color: #4b5563; }
 .dm-orchestration-config__field-label { font-size: 11px; font-weight: 650; color: #475569; }
 .dm-orchestration-config__fieldmap,

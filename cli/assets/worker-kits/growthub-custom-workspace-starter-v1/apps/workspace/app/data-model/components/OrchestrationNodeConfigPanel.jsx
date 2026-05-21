@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -215,13 +215,9 @@ export function OrchestrationNodeConfigPanel({
   const activeTab = controlledTab ?? internalTab;
 
   function setActiveTab(tab) {
-    setInternalTab(tab);
+    if (controlledTab == null) setInternalTab(tab);
     onTabChange?.(tab);
   }
-
-  useEffect(() => {
-    setActiveTab("node");
-  }, [node?.id]);
 
   const detectedFields = useMemo(
     () => detectFieldIdsFromLastResponse(registryRow?.lastResponse),
@@ -386,6 +382,11 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "node" && type === "tool-result" && (
         <div className="dm-orchestration-config__pane">
+          {registryRow?.status && (
+            <span className={`dm-orchestration-config__badge is-${String(registryRow.status).toLowerCase()}`}>
+              Latest registry test: {registryRow.status}
+            </span>
+          )}
           <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
             <input
               type="checkbox"
@@ -471,15 +472,32 @@ export function OrchestrationNodeConfigPanel({
       {activeTab === "advanced" && (
         <div className="dm-orchestration-config__pane">
           {type === "api-registry-call" && (
-            <label className="dm-orchestration-config__field">
-              <span>Timeout (ms)</span>
-              <input
-                type="number"
-                value={config.timeoutMs ?? 30000}
-                disabled={disabled}
-                onChange={(e) => patchConfig({ timeoutMs: Number(e.target.value) })}
-              />
-            </label>
+            <>
+              <label className="dm-orchestration-config__field">
+                <span>Timeout (ms)</span>
+                <input
+                  type="number"
+                  value={config.timeoutMs ?? 30000}
+                  disabled={disabled}
+                  onChange={(e) => patchConfig({ timeoutMs: Number(e.target.value) })}
+                />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Query params (JSON object)</span>
+                <textarea
+                  rows={2}
+                  disabled={disabled}
+                  value={JSON.stringify(config.queryParams || {}, null, 2)}
+                  onChange={(e) => {
+                    try {
+                      patchConfig({ queryParams: JSON.parse(e.target.value || "{}") });
+                    } catch {
+                      /* keep typing */
+                    }
+                  }}
+                />
+              </label>
+            </>
           )}
           {type === "input" && (
             <>
@@ -498,15 +516,59 @@ export function OrchestrationNodeConfigPanel({
             </>
           )}
           {type === "transform-filter" && (
-            <label className="dm-orchestration-config__field">
-              <span>Max rows (0 = no limit)</span>
-              <input
-                type="number"
-                value={config.maxRows ?? 0}
-                disabled={disabled}
-                onChange={(e) => patchConfig({ maxRows: Number(e.target.value) })}
-              />
-            </label>
+            <>
+              <label className="dm-orchestration-config__field">
+                <span>Max rows (0 = no limit)</span>
+                <input
+                  type="number"
+                  value={config.maxRows ?? 0}
+                  disabled={disabled}
+                  onChange={(e) => patchConfig({ maxRows: Number(e.target.value) })}
+                />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Include fields (comma-separated)</span>
+                <input
+                  value={Array.isArray(config.includeFields) ? config.includeFields.join(", ") : ""}
+                  disabled={disabled}
+                  onChange={(e) => patchConfig({
+                    includeFields: e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                  })}
+                />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Exclude fields (comma-separated)</span>
+                <input
+                  value={Array.isArray(config.excludeFields) ? config.excludeFields.join(", ") : ""}
+                  disabled={disabled}
+                  onChange={(e) => patchConfig({
+                    excludeFields: e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                  })}
+                />
+              </label>
+            </>
+          )}
+          {type === "tool-result" && (
+            <>
+              <label className="dm-orchestration-config__field">
+                <span>Preview fields (comma-separated)</span>
+                <input
+                  value={Array.isArray(config.previewFields) ? config.previewFields.join(", ") : ""}
+                  disabled={disabled}
+                  onChange={(e) => patchConfig({
+                    previewFields: e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                  })}
+                />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Status field name</span>
+                <input value={config.statusField || "status"} disabled={disabled} onChange={(e) => patchConfig({ statusField: e.target.value })} />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Last tested field name</span>
+                <input value={config.lastTestedField || "lastTested"} disabled={disabled} onChange={(e) => patchConfig({ lastTestedField: e.target.value })} />
+              </label>
+            </>
           )}
           {(type === "input" || type === "transform-filter") && (
             <details className="dm-orchestration-config__advanced-json">

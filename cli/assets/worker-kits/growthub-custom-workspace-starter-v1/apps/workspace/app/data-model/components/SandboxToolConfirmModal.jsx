@@ -41,7 +41,8 @@ export function SandboxToolConfirmModal({
             <li>Stores <code>{authRef || "authRef"}</code> only — no secrets</li>
             <li>Does not store secrets</li>
             <li>Does not create widgets</li>
-            <li>Does not change dashboards or canvas</li>
+            <li>Does not change dashboards</li>
+            <li>Does not change canvas</li>
             <li>Does not run until you click Run sandbox</li>
           </ul>
           <p className="dm-orchestration-confirm__summary">

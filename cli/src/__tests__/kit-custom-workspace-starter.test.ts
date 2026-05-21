@@ -695,6 +695,30 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(mod.getApiRegistrySandboxToolState({ ...registryRow, status: "failed" }, cfg).kind).toBe("failed");
   });
 
+  it("resolveConnectorAction routes filter/map/preview to correct node and tab", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-sidecar-routing.js")}?t=${Date.now()}`
+    ) as {
+      resolveConnectorAction: (p: { from: string; to: string; action: string }) => { nodeId: string; tab: string };
+    };
+    expect(mod.resolveConnectorAction({ from: "input", to: "api-request", action: "filter" })).toEqual({
+      nodeId: "input",
+      tab: "filters",
+    });
+    expect(mod.resolveConnectorAction({ from: "api-request", to: "transform", action: "filter" })).toEqual({
+      nodeId: "transform",
+      tab: "filters",
+    });
+    expect(mod.resolveConnectorAction({ from: "transform", to: "result", action: "map" })).toEqual({
+      nodeId: "transform",
+      tab: "node",
+    });
+    expect(mod.resolveConnectorAction({ from: "transform", to: "result", action: "preview" })).toEqual({
+      nodeId: "result",
+      tab: "preview",
+    });
+  });
+
   it("detectFieldIdsFromLastResponse extracts paths from test response", async () => {
     const mod = await import(
       `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`

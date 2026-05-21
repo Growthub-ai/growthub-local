@@ -128,9 +128,6 @@ export function OrchestrationGraphCanvas({
                     ))}
                   </div>
                 )}
-                {edgeBetween(prevId, id)?.passes && (
-                  <span className="dm-orchestration-connector__passes">{edgeBetween(prevId, id).passes}</span>
-                )}
               </div>
             )}
             <button

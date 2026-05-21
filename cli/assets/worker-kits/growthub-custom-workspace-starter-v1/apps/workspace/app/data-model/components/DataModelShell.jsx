@@ -1083,6 +1083,8 @@ function DataModelRecordDrawer({
           timeoutMs: sandboxToolDraft.timeoutMs,
           rootPath: sandboxToolDraft.rootPath,
           instructions: sandboxToolDraft.instructions,
+          agentHost: sandboxToolDraft.agentHost,
+          schedulerRegistryId: sandboxToolDraft.schedulerRegistryId,
           orchestrationGraph: sandboxToolDraft.orchestrationGraph
         });
         next = appendRowsToTable(next, sandboxTable, [newRow]);
