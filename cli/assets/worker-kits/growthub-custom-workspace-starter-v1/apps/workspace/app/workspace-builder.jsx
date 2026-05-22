@@ -160,6 +160,23 @@ const CHART_TYPE_ICONS = {
 
 const VISIBLE_CHART_TYPES = KNOWN_CHART_TYPES.filter((type) => type !== "line");
 
+// User-facing labels for the Twenty-style Y-axis operation dropdown.
+// Keys must stay in sync with `lib/workspace-chart-values.js#KNOWN_AGGREGATIONS`
+// and the validator in `lib/workspace-schema.js`.
+const AGGREGATION_LABELS = {
+  sum: "Sum",
+  avg: "Average",
+  count: "Count (all)",
+  countAll: "Count (all)",
+  countEmpty: "Count (empty)",
+  countNotEmpty: "Count (not empty)",
+  countUnique: "Count (unique)",
+  percentEmpty: "Percent empty",
+  percentNotEmpty: "Percent not empty",
+  min: "Min",
+  max: "Max"
+};
+
 const WIDGET_KIND_ICONS = {
   chart: BarChart3,
   view: Table2,
@@ -2374,6 +2391,10 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
         {savedObjects.length > 0 ? savedObjects.map((table) => {
           const isActive = activeObjectId === table.objectId;
           const iconName = table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database";
+          // Only surface a badge when it communicates *real* runtime state
+          // (live-backed = sidecar-hydrated). Manual is the default and would
+          // be visual noise; api/webhook are reserved for future surfacing.
+          const showLiveBadge = table.sourceBadge === "live";
           return (
             <button
               key={table.id}
@@ -2388,6 +2409,7 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
                 <strong>{table.label}</strong>
                 <em>{table.columns.length} field{table.columns.length !== 1 ? "s" : ""} · {table.rows.length} record{table.rows.length !== 1 ? "s" : ""}</em>
               </span>
+              {showLiveBadge ? <span className="workspace-source-badge badge-live" aria-label="Live source">Live</span> : null}
               {isActive && <Check size={14} strokeWidth={2.5} aria-hidden="true" />}
             </button>
           );
@@ -2952,9 +2974,7 @@ function ChartHydrationInspector({
           <Save size={15} />{saving ? "Saving…" : unsaved ? "Save computed values" : "Save"}
         </button>
       </div>
-      {unsaved ? <p className="workspace-panel-hint">
-        Computed values are unsaved. Save persists them through the existing PATCH /api/workspace path.
-      </p> : null}
+      {unsaved ? <p className="workspace-panel-hint">Unsaved computed values.</p> : null}
       {!canSave && saveGuidance ? <p className="workspace-panel-hint">{saveGuidance}</p> : null}
     </section>
   );
@@ -3034,32 +3054,16 @@ function ChartConfigPanel({ widget, branding, dataModelTables, unsaved, onChange
       <span>Filter</span><code>{summarizeFilter(widget)}</code>
     </button>
     {boundTable ? (
-      <div className="workspace-settings-list" role="group" aria-label="Computed chart values">
-        <div>
-          <span>Rows</span>
-          <code>{boundTable.rows?.length || 0} available{computeStatus?.usedRowCount !== undefined && computeStatus.usedRowCount !== boundTable.rows?.length
-            ? ` · ${computeStatus.usedRowCount} after filter`
-            : ""}</code>
-        </div>
-        <div>
-          <span>Values</span>
-          <code>{Array.isArray(widget.config?.values) ? widget.config.values.length : 0} computed{unsaved ? " · unsaved" : ""}</code>
-        </div>
-        {boundTable.liveSource?.fetchedAt ? <div>
-          <span>Last fetched</span>
-          <code>{boundTable.liveSource.fetchedAt}</code>
-        </div> : null}
-        {Array.isArray(computeStatus?.warnings) && computeStatus.warnings.length ? <div>
-          <span>Status</span>
-          <code title={computeStatus.warnings.join(" · ")}>{computeStatus.warnings[0]}</code>
-        </div> : null}
-        <button type="button" className="workspace-settings-row" onClick={() => onSubPage("hydration")}>
-          <span>Inspect computation</span><code>{unsaved ? "Unsaved" : "Open"}</code>
-        </button>
-        <button type="button" className="workspace-settings-row" onClick={recomputeValues}>
-          <span>Recompute values</span><code>Sync</code>
-        </button>
-      </div>
+      <button type="button" className="workspace-settings-row" onClick={() => onSubPage("hydration")}>
+        <span>Inspect computation</span>
+        <code>
+          {boundTable.rows?.length || 0} row{(boundTable.rows?.length || 0) === 1 ? "" : "s"}
+          {" · "}
+          {Array.isArray(widget.config?.values) ? widget.config.values.length : 0} value{(widget.config?.values?.length || 0) === 1 ? "" : "s"}
+          {unsaved ? " · unsaved" : ""}
+          {Array.isArray(computeStatus?.warnings) && computeStatus.warnings.length ? " · warning" : ""}
+        </code>
+      </button>
     ) : null}
 
     <p className="workspace-panel-label">X axis</p>
@@ -3108,9 +3112,9 @@ function ChartConfigPanel({ widget, branding, dataModelTables, unsaved, onChange
       />
     </div>
     <div className="workspace-settings-row-field">
-      <span>Aggregation</span>
-      <select value={yAxis.aggregation || "sum"} onChange={(event) => setYAxis({ aggregation: event.target.value })}>
-        {KNOWN_AGGREGATIONS.map((agg) => <option key={agg} value={agg}>{agg}</option>)}
+      <span>Operation</span>
+      <select value={yAxis.operation || yAxis.aggregation || "sum"} onChange={(event) => setYAxis({ operation: event.target.value, aggregation: event.target.value })}>
+        {KNOWN_AGGREGATIONS.map((agg) => <option key={agg} value={agg}>{AGGREGATION_LABELS[agg] || agg}</option>)}
       </select>
     </div>
     <div className="workspace-axis-range">

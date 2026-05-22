@@ -566,6 +566,212 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
     // successful persistWorkspaceConfig response.
     expect(builder).toMatch(/setUnsavedChartIds\(new Set\(\)\)/);
   });
+
+  it("Chart sidecar surfaces Twenty-style operation labels in the Operation dropdown", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("AGGREGATION_LABELS");
+    expect(builder).toContain("countAll");
+    expect(builder).toContain("countNotEmpty");
+    expect(builder).toContain("countUnique");
+    expect(builder).toContain("percentEmpty");
+    // The select must write both operation (preferred) and aggregation
+    // (legacy) so existing configs continue to round-trip.
+    expect(builder).toMatch(/setYAxis\(\{\s*operation:[^,]+,\s*aggregation:/);
+  });
+
+  it("Source picker only surfaces a badge when it communicates real runtime state", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    // The picker now suppresses Manual/API/Webhook badges and only renders
+    // Live when the bound object is sidecar-hydrated.
+    expect(builder).toContain("workspace-source-badge badge-live");
+    expect(builder).toContain("showLiveBadge");
+    expect(builder).not.toMatch(/aria-label=\{`Source type: \$\{badgeLabel\}`\}/);
+  });
+
+  it("Inspect computation surfaces as a single compact row in the chart panel", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    // The verbose inline status block was collapsed into one row.
+    expect(builder).toContain("Inspect computation");
+    expect(builder).not.toContain("Computed values updated · Unsaved");
+    expect(builder).not.toContain("Computed values are unsaved. Save persists them");
+  });
+
+  it("workspace-data-model attaches fieldMetadata and sourceBadge to tables", () => {
+    const dm = appText("lib/workspace-data-model.js");
+    expect(dm).toContain("function inferFieldType");
+    expect(dm).toContain("function buildFieldMetadata");
+    expect(dm).toContain("fieldMetadata: buildFieldMetadata");
+    expect(dm).toContain("sourceBadge");
+  });
+});
+
+describe("workspace-data-model — runtime field metadata inference", () => {
+  type Table = {
+    objectId?: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+    sourceBadge?: string;
+    fieldMetadata?: Array<{ id: string; type: string; isNumeric: boolean; isDate: boolean; isBoolean: boolean }>;
+  };
+  let listWorkspaceDataModelTables: (
+    config: unknown,
+    options?: { sourceRecords?: Record<string, unknown> }
+  ) => Table[];
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-data-model.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      listWorkspaceDataModelTables: typeof listWorkspaceDataModelTables;
+    };
+    listWorkspaceDataModelTables = mod.listWorkspaceDataModelTables;
+  });
+
+  it("infers numeric/text/date/boolean field types from rows when no hints exist", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "opps",
+          label: "Opportunities",
+          columns: ["name", "arr", "won", "closeDate"],
+          rows: [
+            { name: "Acme", arr: 100, won: "true", closeDate: "2026-05-01" },
+            { name: "Beta", arr: 250, won: "false", closeDate: "2026-05-15" },
+            { name: "Gamma", arr: 75, won: "true", closeDate: "2026-06-01" },
+          ],
+          binding: { mode: "manual", source: "Opportunities" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config);
+    const table = tables.find((t) => t.objectId === "opps");
+    expect(table!.fieldMetadata).toBeDefined();
+    const types = Object.fromEntries((table!.fieldMetadata || []).map((f) => [f.id, f.type]));
+    expect(types.arr).toBe("number");
+    expect(types.closeDate).toBe("date");
+    expect(types.won).toBe("boolean");
+    expect(types.name).toBe("text");
+  });
+
+  it("respects existing fieldSettings.types hints over inference", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "opps",
+          label: "Opportunities",
+          columns: ["status"],
+          rows: [{ status: "won" }, { status: "lost" }],
+          fieldSettings: { types: { status: "select" }, order: ["status"] },
+          binding: { mode: "manual", source: "Opportunities" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config);
+    const meta = tables.find((t) => t.objectId === "opps")!.fieldMetadata!;
+    expect(meta.find((f) => f.id === "status")!.type).toBe("select");
+  });
+
+  it("tags live-backed objects with sourceBadge === \"live\"", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "src_crm",
+          label: "CRM",
+          objectType: "data-source",
+          columns: ["name"],
+          rows: [],
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords: { src_crm: { records: [{ name: "Acme" }], fetchedAt: "x", recordCount: 1 } } });
+    expect(tables.find((t) => t.objectId === "src_crm")!.sourceBadge).toBe("live");
+  });
+});
+
+describe("workspace-schema — chart config validates Twenty-style nested keys", () => {
+  let validateWorkspaceConfig: (config: unknown) => void;
+
+  beforeEach(async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as { validateWorkspaceConfig: (c: unknown) => void };
+    validateWorkspaceConfig = mod.validateWorkspaceConfig;
+  });
+
+  function chartConfig(extra: Record<string, unknown>) {
+    return {
+      canvas: {
+        layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+        widgets: [{
+          id: "w1", kind: "chart", title: "C",
+          position: { x: 0, y: 0, w: 4, h: 4 },
+          config: { values: [10, 20], ...extra },
+        }],
+      },
+    };
+  }
+
+  it("accepts yAxis.operation = countNotEmpty", () => {
+    expect(() => validateWorkspaceConfig(chartConfig({
+      yAxis: { field: "Owner", operation: "countNotEmpty" },
+    }))).not.toThrow();
+  });
+
+  it("accepts yAxis.cumulative + xAxis.dateGranularity", () => {
+    expect(() => validateWorkspaceConfig(chartConfig({
+      xAxis: { field: "createdAt", dateGranularity: "month" },
+      yAxis: { field: "arr", operation: "sum", cumulative: true },
+    }))).not.toThrow();
+  });
+
+  it("accepts style.legend / style.stacked / style.prefix / style.suffix", () => {
+    expect(() => validateWorkspaceConfig(chartConfig({
+      style: { legend: true, stacked: true, prefix: "$", suffix: "" },
+    }))).not.toThrow();
+  });
+
+  it("rejects unknown operation values", () => {
+    let err: Error & { code?: string } | null = null;
+    try {
+      validateWorkspaceConfig(chartConfig({ yAxis: { field: "x", operation: "bogus-op" } }));
+    } catch (e) { err = e as typeof err; }
+    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+  });
+
+  it("rejects unknown date granularities", () => {
+    let err: Error & { code?: string } | null = null;
+    try {
+      validateWorkspaceConfig(chartConfig({ xAxis: { field: "createdAt", dateGranularity: "century" } }));
+    } catch (e) { err = e as typeof err; }
+    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+  });
+});
+
+describe("workspace-helper — system prompt carries widget configuration rules", () => {
+  it("buildStableSystemPrompt includes the verbatim widget configuration rules", () => {
+    const helper = appText("lib/workspace-helper.js");
+    expect(helper).toContain("When configuring dashboard widgets");
+    expect(helper).toContain("Use Data Model objects as source authority.");
+    expect(helper).toContain("Bind widgets by objectId and source metadata.");
+    expect(helper).toContain("For charts, compute widget.config.values from rows.");
+    expect(helper).toContain("Never copy source rows into chart widget config.");
+    expect(helper).toContain("Never store secrets in widget config, Data Model rows, source records, browser state, localStorage, or exported templates.");
+    expect(helper).toContain("Use source records for live-backed data.");
+    expect(helper).toContain("Mark recomputed values as unsaved unless PATCH succeeds.");
+  });
+});
+
+describe("docs — Widget Sidecar Twenty UX Alignment doc ships", () => {
+  it("docs/WIDGET_SIDECAR_TWENTY_UX_ALIGNMENT_V1.md exists with the required sections", () => {
+    const docsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../docs");
+    const docPath = path.join(docsRoot, "WIDGET_SIDECAR_TWENTY_UX_ALIGNMENT_V1.md");
+    expect(fs.existsSync(docPath)).toBe(true);
+    const body = fs.readFileSync(docPath, "utf8");
+    expect(body).toContain("Operation vocabulary");
+    expect(body).toContain("Source-type badges");
+    expect(body).toContain("Field metadata");
+    expect(body).toContain("Chart Hydration Inspector");
+    expect(body).toContain("Hard rules");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1145,6 +1351,95 @@ describe("workspace-chart-values — pure computation", () => {
     // Group by Stage after filtering to Stage=Won → single group with 2 rows.
     expect(out.values).toEqual([2]);
     expect(out.usedRowCount).toBe(2);
+  });
+
+  it("countEmpty counts rows where the Y field is null/empty", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+        { Stage: "Won", Owner: null },
+        { Stage: "Lost", Owner: "Ben" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "countEmpty" },
+    });
+    expect(out.values).toEqual([2, 0]);
+  });
+
+  it("countNotEmpty counts rows where the Y field is present", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+        { Stage: "Lost", Owner: "Ben" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "countNotEmpty" },
+    });
+    expect(out.values).toEqual([1, 1]);
+  });
+
+  it("countUnique counts distinct non-empty Y values per bucket", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "Ben" },
+        { Stage: "Lost", Owner: "" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "countUnique" },
+    });
+    expect(out.values).toEqual([2, 0]);
+  });
+
+  it("percentEmpty / percentNotEmpty return 0-100 percentages of the bucket", () => {
+    const empty = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+        { Stage: "Won", Owner: null },
+        { Stage: "Won", Owner: "Cy" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "percentEmpty" },
+    });
+    expect(empty.values).toEqual([50]);
+    const notEmpty = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "percentNotEmpty" },
+    });
+    expect(notEmpty.values).toEqual([50]);
+  });
+
+  it("cumulative transform produces a running total over sorted buckets", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Lead", arr: 10 },
+        { Stage: "Negotiation", arr: 20 },
+        { Stage: "Won", arr: 30 },
+      ],
+      xAxis: { field: "Stage", sort: "position" },
+      yAxis: { field: "arr", operation: "sum", cumulative: true },
+    });
+    expect(out.values).toEqual([10, 30, 60]);
+  });
+
+  it("yAxis.operation key takes precedence over yAxis.aggregation when both are set", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", arr: 5 },
+        { Stage: "Won", arr: 7 },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "arr", operation: "avg", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([6]);
   });
 });
 

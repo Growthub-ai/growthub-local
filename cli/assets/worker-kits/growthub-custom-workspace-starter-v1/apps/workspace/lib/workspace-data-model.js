@@ -292,6 +292,87 @@ function findSourceRecordsForObject(object, sourceRecords) {
   return null;
 }
 
+/**
+ * Infer a lightweight field type for a column from existing rows.
+ *
+ * This is a runtime projection — it does not persist anywhere and does not
+ * require a schema migration. The Chart Hydration Inspector and Twenty-style
+ * field-type-aware controls (date granularity, ratio mode, prefix/suffix)
+ * read it to decide which UI affordances to show.
+ *
+ * Returns one of: text | number | boolean | date | select | multi-value |
+ * relation-like | json.
+ *
+ * `existingTypeHints` is the per-table `fieldSettings.types` map — when
+ * present it wins over inference, so operators who have already declared a
+ * type on the Data Model object don't get overridden by the runtime guesser.
+ */
+function inferFieldType(column, rows, existingTypeHints) {
+  const hint = existingTypeHints && typeof existingTypeHints === "object" ? existingTypeHints[column] : "";
+  if (typeof hint === "string" && hint.trim()) return hint.trim();
+  if (!Array.isArray(rows) || rows.length === 0) return "text";
+
+  const lower = String(column || "").toLowerCase();
+  if (/(^|_)(id|_id)$/.test(lower) || lower.endsWith("ref") || lower === "registryid") return "relation-like";
+  if (lower.includes("date") || lower.includes("_at") || lower === "created" || lower === "updated" || lower.endsWith("at")) return "date";
+
+  let numeric = 0;
+  let boolean = 0;
+  let date = 0;
+  let multi = 0;
+  let json = 0;
+  let nonEmpty = 0;
+  const distinct = new Set();
+  for (const row of rows) {
+    const value = row?.[column];
+    if (value === undefined || value === null || value === "") continue;
+    nonEmpty += 1;
+    if (typeof value === "boolean") boolean += 1;
+    if (typeof value === "number" && Number.isFinite(value)) numeric += 1;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      const asNumber = Number(trimmed.replace(/,/g, ""));
+      if (Number.isFinite(asNumber) && /^-?\d+(\.\d+)?$/.test(trimmed.replace(/,/g, ""))) numeric += 1;
+      if (trimmed === "true" || trimmed === "false") boolean += 1;
+      if (!Number.isNaN(Date.parse(trimmed)) && /\d{4}/.test(trimmed)) date += 1;
+      if (trimmed.includes(",") && trimmed.split(",").length > 1) multi += 1;
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) json += 1;
+      distinct.add(trimmed);
+    } else if (Array.isArray(value)) {
+      multi += 1;
+    } else if (typeof value === "object") {
+      json += 1;
+    }
+  }
+  if (!nonEmpty) return "text";
+  if (json / nonEmpty > 0.5) return "json";
+  if (date / nonEmpty > 0.6) return "date";
+  if (boolean / nonEmpty > 0.6) return "boolean";
+  if (numeric / nonEmpty > 0.6) return "number";
+  if (multi / nonEmpty > 0.5) return "multi-value";
+  // Low-cardinality string columns look like select fields.
+  if (nonEmpty >= 3 && distinct.size > 0 && distinct.size <= Math.max(2, Math.floor(nonEmpty / 2))) return "select";
+  return "text";
+}
+
+function buildFieldMetadata(columns, rows, existingTypeHints) {
+  return (Array.isArray(columns) ? columns : []).map((column) => {
+    const type = inferFieldType(column, rows, existingTypeHints);
+    return {
+      id: column,
+      label: column,
+      type,
+      isNumeric: type === "number",
+      isDate: type === "date",
+      isBoolean: type === "boolean",
+      isSelectLike: type === "select",
+      isMultiValue: type === "multi-value",
+      isRelationLike: type === "relation-like",
+      isJson: type === "json"
+    };
+  });
+}
+
 function deriveManualObjectTable(object, options = {}) {
   const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
   const configRows = Array.isArray(object.rows)
@@ -323,6 +404,13 @@ function deriveManualObjectTable(object, options = {}) {
     }
   }
 
+  const fieldSettings = normalizeFieldSettings(object.fieldSettings, hydratedColumns);
+  const sourceBadge = (() => {
+    if (isLiveBacked) return "live";
+    if (object?.objectType === "data-source") return "api";
+    if (object?.objectType === "api-registry") return "api";
+    return "manual";
+  })();
   return {
     id: `manual-object:${object.id || source}`,
     label: object.label || object.name || source,
@@ -338,8 +426,10 @@ function deriveManualObjectTable(object, options = {}) {
     storage: "manual-object",
     objectId: object.id,
     widgetRefs: [],
-    fieldSettings: normalizeFieldSettings(object.fieldSettings, hydratedColumns),
-    liveSource
+    fieldSettings,
+    liveSource,
+    sourceBadge,
+    fieldMetadata: buildFieldMetadata(hydratedColumns, hydratedRows, fieldSettings?.types)
   };
 }
 

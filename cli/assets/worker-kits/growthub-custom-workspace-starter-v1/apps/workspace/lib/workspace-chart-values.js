@@ -21,8 +21,54 @@
  *     → { values: number[], rowCount: number, usedRowCount: number, warnings: string[] }
  */
 
-const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
+/**
+ * Aggregation vocabulary — extends the V1 `sum | avg | count | min | max`
+ * set with Twenty-style row-presence operations. Every operation here is
+ * a pure function over filtered rows (or per-bucket subsets after group-by);
+ * none of them require the Y field to be numeric.
+ *
+ *   countAll          — total rows in the bucket
+ *   countEmpty        — rows where Y is null/undefined/""
+ *   countNotEmpty     — rows where Y is non-empty
+ *   countUnique       — distinct non-empty Y values
+ *   percentEmpty      — countEmpty / countAll × 100
+ *   percentNotEmpty   — countNotEmpty / countAll × 100
+ *   sum, avg, min, max — numeric operations (require Y to coerce to number)
+ *
+ * `count` is kept as an alias for `countAll` for backward compatibility with
+ * V1 charts whose configs still set `aggregation: "count"`.
+ */
+const KNOWN_AGGREGATIONS = [
+  "sum",
+  "avg",
+  "count",
+  "countAll",
+  "countEmpty",
+  "countNotEmpty",
+  "countUnique",
+  "percentEmpty",
+  "percentNotEmpty",
+  "min",
+  "max"
+];
+const COUNT_AGGREGATIONS = new Set(["count", "countAll", "countEmpty", "countNotEmpty", "countUnique"]);
+const PERCENT_AGGREGATIONS = new Set(["percentEmpty", "percentNotEmpty"]);
+// Aggregations that DO NOT require Y values to be numeric — they operate on
+// row presence or emptiness, not row magnitude.
+const NON_NUMERIC_AGGREGATIONS = new Set([
+  "count",
+  "countAll",
+  "countEmpty",
+  "countNotEmpty",
+  "countUnique",
+  "percentEmpty",
+  "percentNotEmpty"
+]);
 const DEFAULT_AGGREGATION = "sum";
+
+function isEmptyValue(value) {
+  return value === undefined || value === null || value === "" || (typeof value === "string" && value.trim() === "");
+}
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -81,15 +127,70 @@ function applyFilter(rows, filter) {
   });
 }
 
+/**
+ * Aggregate a list of numeric values. Kept for backward compatibility and
+ * the V1 public surface — callers that already have a `number[]` (e.g. count
+ * aggregations) can hand them in directly.
+ *
+ * For Twenty-style row-presence operations (countEmpty, countNotEmpty,
+ * countUnique, percentEmpty, percentNotEmpty), use `aggregateRows` instead —
+ * those operations need the raw row set, not just numeric values.
+ */
 function aggregateValues(numbers, aggregation) {
   if (!numbers.length) return null;
   const agg = KNOWN_AGGREGATIONS.includes(aggregation) ? aggregation : DEFAULT_AGGREGATION;
-  if (agg === "count") return numbers.length;
+  if (agg === "count" || agg === "countAll") return numbers.length;
   if (agg === "min") return numbers.reduce((acc, value) => (value < acc ? value : acc), numbers[0]);
   if (agg === "max") return numbers.reduce((acc, value) => (value > acc ? value : acc), numbers[0]);
   const sum = numbers.reduce((acc, value) => acc + value, 0);
   if (agg === "avg") return sum / numbers.length;
   return sum;
+}
+
+/**
+ * Aggregate rows under a Twenty-style operation. Returns a finite number or
+ * null (for empty buckets where the operation cannot be defined).
+ *
+ * - count* operations ignore the Y field entirely — they count row presence.
+ * - percent* operations return a 0-100 percentage of countEmpty/countNotEmpty
+ *   over countAll for the bucket.
+ * - sum/avg/min/max coerce row[yField] to number and discard non-numeric.
+ */
+function aggregateRows(rowsForBucket, yField, aggregation) {
+  if (!Array.isArray(rowsForBucket) || rowsForBucket.length === 0) return null;
+  const agg = KNOWN_AGGREGATIONS.includes(aggregation) ? aggregation : DEFAULT_AGGREGATION;
+  const total = rowsForBucket.length;
+
+  if (agg === "count" || agg === "countAll") return total;
+  if (agg === "countEmpty") return rowsForBucket.reduce((acc, row) => acc + (isEmptyValue(row?.[yField]) ? 1 : 0), 0);
+  if (agg === "countNotEmpty") return rowsForBucket.reduce((acc, row) => acc + (isEmptyValue(row?.[yField]) ? 0 : 1), 0);
+  if (agg === "countUnique") {
+    const set = new Set();
+    for (const row of rowsForBucket) {
+      const value = row?.[yField];
+      if (isEmptyValue(value)) continue;
+      set.add(String(value));
+    }
+    return set.size;
+  }
+  if (agg === "percentEmpty") {
+    if (!total) return null;
+    const empty = rowsForBucket.reduce((acc, row) => acc + (isEmptyValue(row?.[yField]) ? 1 : 0), 0);
+    return (empty / total) * 100;
+  }
+  if (agg === "percentNotEmpty") {
+    if (!total) return null;
+    const notEmpty = rowsForBucket.reduce((acc, row) => acc + (isEmptyValue(row?.[yField]) ? 0 : 1), 0);
+    return (notEmpty / total) * 100;
+  }
+
+  // Numeric operations: coerce row[yField] to number and discard nulls.
+  const numbers = [];
+  for (const row of rowsForBucket) {
+    const coerced = coerceNumber(row?.[yField]);
+    if (coerced !== null) numbers.push(coerced);
+  }
+  return aggregateValues(numbers, agg);
 }
 
 function groupRows(rows, field) {
@@ -220,15 +321,21 @@ function computeChartProjectionDebug({
   const xField = isPlainObject(xAxis) && typeof xAxis.field === "string" ? xAxis.field.trim() : "";
   const yField = isPlainObject(yAxis) && typeof yAxis.field === "string" ? yAxis.field.trim() : "";
   const groupField = isPlainObject(yAxis) && typeof yAxis.groupBy === "string" ? yAxis.groupBy.trim() : "";
-  const aggregation = isPlainObject(yAxis) && typeof yAxis.aggregation === "string"
-    ? yAxis.aggregation.trim()
-    : DEFAULT_AGGREGATION;
+  const aggregationRaw = isPlainObject(yAxis) && typeof yAxis.operation === "string"
+    ? yAxis.operation.trim()
+    : (isPlainObject(yAxis) && typeof yAxis.aggregation === "string" ? yAxis.aggregation.trim() : DEFAULT_AGGREGATION);
+  const aggregation = KNOWN_AGGREGATIONS.includes(aggregationRaw) ? aggregationRaw : DEFAULT_AGGREGATION;
   const omitZero = isPlainObject(xAxis) ? Boolean(xAxis.omitZero) : false;
   const sortDirection = isPlainObject(xAxis) && typeof xAxis.sort === "string" ? xAxis.sort : "position";
   const chartKind = typeof chartType === "string" ? chartType : "";
-  const isCountAggregation = aggregation === "count" || chartKind === "count";
+  const isCountAggregation = COUNT_AGGREGATIONS.has(aggregation) || chartKind === "count";
+  const isPercentAggregation = PERCENT_AGGREGATIONS.has(aggregation);
+  // Aggregation tolerates non-numeric Y when it operates on row presence or
+  // emptiness (count*, percent*) — every other operation needs at least one
+  // numeric Y value somewhere in the filtered set.
+  const tolerantOfNonNumericY = NON_NUMERIC_AGGREGATIONS.has(aggregation) || chartKind === "count";
 
-  if (!yField && !isCountAggregation) {
+  if (!yField && !tolerantOfNonNumericY) {
     warnings.push("Choose a Y axis field or switch aggregation to count.");
     return {
       values: [],
@@ -243,11 +350,7 @@ function computeChartProjectionDebug({
     };
   }
 
-  // Count aggregation never needs numeric Y values — a row exists, so it
-  // contributes 1. Other aggregations require at least one numeric Y value
-  // somewhere in the filtered set; if every Y value is non-numeric the
-  // computation has nothing to aggregate and we return early with a warning.
-  if (yField && !isCountAggregation && !fieldHasNumericValue(filtered, yField)) {
+  if (yField && !tolerantOfNonNumericY && !fieldHasNumericValue(filtered, yField)) {
     warnings.push(`Y field "${yField}" has no numeric values.`);
     return {
       values: [],
@@ -266,29 +369,37 @@ function computeChartProjectionDebug({
   const grouped = bucketField ? groupRows(filtered, bucketField) : null;
   const droppedRows = [];
 
-  const numericFor = (rowsForBucket) => {
-    if (isCountAggregation) {
-      // Count is row-presence: every row in the bucket contributes 1,
-      // regardless of whether a Y field is selected or numeric.
-      return rowsForBucket.map(() => 1);
-    }
-    const numbers = [];
+  // For numeric operations we still surface dropped-row diagnostics; for
+  // count/percent operations the Y field is ignored, so nothing is "dropped".
+  const trackNumericDrops = !tolerantOfNonNumericY;
+  const trackNumericDropsForBucket = (rowsForBucket) => {
+    if (!trackNumericDrops || !yField) return;
     for (const row of rowsForBucket) {
       const coerced = coerceNumber(row?.[yField]);
       if (coerced === null) {
-        droppedRows.push({ row, reason: row?.[yField] === undefined || row?.[yField] === null || row?.[yField] === "" ? "missing-y" : "non-numeric-y" });
-        continue;
+        droppedRows.push({
+          row,
+          reason: isEmptyValue(row?.[yField]) ? "missing-y" : "non-numeric-y"
+        });
       }
-      numbers.push(coerced);
     }
-    return numbers;
+  };
+
+  const numericCountFor = (rowsForBucket) => {
+    if (!yField) return 0;
+    let count = 0;
+    for (const row of rowsForBucket) {
+      if (coerceNumber(row?.[yField]) !== null) count += 1;
+    }
+    return count;
   };
 
   const buckets = [];
   let pairs;
   if (!grouped) {
-    const numbers = numericFor(filtered);
-    if (!numbers.length && !isCountAggregation) {
+    trackNumericDropsForBucket(filtered);
+    const value = aggregateRows(filtered, yField, aggregation);
+    if (value === null && !tolerantOfNonNumericY) {
       warnings.push("No numeric values found.");
       return {
         values: [],
@@ -302,28 +413,49 @@ function computeChartProjectionDebug({
         warnings
       };
     }
-    const aggregated = aggregateValues(numbers, aggregation);
-    buckets.push({ key: "", rowCount: filtered.length, numericCount: numbers.length, value: aggregated });
-    pairs = aggregated === null ? [] : [["", aggregated]];
+    buckets.push({
+      key: "",
+      rowCount: filtered.length,
+      numericCount: numericCountFor(filtered),
+      value,
+      operation: aggregation
+    });
+    pairs = value === null ? [] : [["", value]];
   } else {
     const computed = new Map();
     for (const key of grouped.order) {
       const bucketRows = grouped.groups.get(key) || [];
-      const numbers = numericFor(bucketRows);
-      let value;
-      if (!numbers.length && !isCountAggregation) {
-        computed.set(key, null);
-        value = null;
-      } else {
-        value = aggregateValues(numbers, aggregation);
-        computed.set(key, value);
-      }
-      buckets.push({ key, rowCount: bucketRows.length, numericCount: numbers.length, value });
+      trackNumericDropsForBucket(bucketRows);
+      const value = aggregateRows(bucketRows, yField, aggregation);
+      computed.set(key, value);
+      buckets.push({
+        key,
+        rowCount: bucketRows.length,
+        numericCount: numericCountFor(bucketRows),
+        value,
+        operation: aggregation
+      });
     }
     const ordered = sortGroups(grouped.order, computed, sortDirection);
     pairs = ordered
       .map((key) => [key, computed.get(key)])
       .filter(([, value]) => value !== null && Number.isFinite(value));
+  }
+
+  // Cumulative running-total transform (Twenty-style yAxis.cumulative). Applied
+  // after sort/group and before omitZero so the displayed curve matches the
+  // sort direction the user picked.
+  const cumulative = isPlainObject(yAxis) ? Boolean(yAxis.cumulative) : false;
+  if (cumulative && pairs.length) {
+    let running = 0;
+    pairs = pairs.map(([key, value]) => {
+      running += value;
+      return [key, running];
+    });
+  }
+
+  if (isPercentAggregation) {
+    // Percent operations are already 0-100; nothing to clamp here.
   }
 
   if (omitZero) {
@@ -398,7 +530,9 @@ function deriveChartHydrationState({
 }
 
 export {
+  KNOWN_AGGREGATIONS,
   applyFilter,
+  aggregateRows,
   aggregateValues,
   coerceNumber,
   computeChartProjectionDebug,
