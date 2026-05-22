@@ -6788,13 +6788,33 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   white-space: nowrap;
 }
 .workspace-rail-folders-scroll {
+  /* Folder list owns its own scroll surface so the rail's main nav
+     items (Builder / Management / Workspace Settings) and the status
+     pill below remain reachable even when the user has many folders
+     or one folder is expanded with many items. Horizontal overflow is
+     hard-clipped — long folder/item labels truncate via ellipsis on
+     the inner label spans, never producing a sideways scrollbar. */
   flex: 0 1 auto;
   min-height: 0;
+  max-height: min(
+    calc(var(--nav-folder-row-h) * var(--nav-max-folders) + 12px),
+    calc(100vh - 280px)
+  );
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .workspace-rail-folders-scroll.is-scrollable {
-  max-height: calc(var(--nav-folder-row-h) * var(--nav-max-folders) + 12px);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* Compatibility hook: existing markup adds `is-scrollable` once the
+     visible folder count crosses the 10-row threshold. Behaviour is
+     already covered by the base rule above; the class is kept so
+     downstream tests / themes can target an overflowing list. */
+  max-height: min(
+    calc(var(--nav-folder-row-h) * var(--nav-max-folders) + 12px),
+    calc(100vh - 280px)
+  );
 }
 .workspace-rail-folders-scroll-hint {
   margin: 0;
@@ -6806,6 +6826,8 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-rail-folder-items.is-scrollable {
   max-height: calc(var(--nav-item-row-h) * var(--nav-max-items));
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 .workspace-rail-nav-menu-stack {
@@ -7137,6 +7159,10 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   font-size: 10.5px;
   color: #9ca3af;
   line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .workspace-rail-nav-menu-wrap {
   flex-shrink: 0;

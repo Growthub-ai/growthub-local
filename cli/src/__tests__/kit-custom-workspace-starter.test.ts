@@ -848,6 +848,103 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(rail).not.toMatch(/addWorkflowItem[\s\S]*orchestrationGraph:\s*workflow/);
   });
 
+  // ── Folder sidebar stability ──────────────────────────────────────────
+  //
+  // The rail must:
+  //   1. cap visible folder/item slots at 10 before scrolling internally
+  //   2. derive an `activeFolderId` from pathname + searchParams so a
+  //      child item's parent folder stays open across navigation
+  //   3. expand the Folders section automatically when an active item is
+  //      detected (deep-link / reload case)
+  //   4. stop click propagation on child item / customize / remove
+  //      handlers so child clicks never collapse the parent folder
+  //   5. ship a dedicated folder-scroll container with ellipsis-friendly
+  //      label rules in CSS
+
+  it("workspace-rail caps visible folder + item slots at 10", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain("NAV_MAX_VISIBLE_FOLDERS = 10");
+    expect(rail).toContain("NAV_MAX_VISIBLE_ITEMS = 10");
+    expect(rail).toContain("workspace-rail-folders-scroll");
+    expect(rail).toContain("workspace-rail-folder-items");
+  });
+
+  it("workspace-rail derives an activeFolderId from pathname + searchParams", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain("function deriveActiveNavFolderId");
+    expect(rail).toContain("function isNavItemActive");
+    expect(rail).toContain("const activeFolderId = useMemo");
+    expect(rail).toContain("deriveActiveNavFolderId(rows, pathname, searchParams)");
+  });
+
+  it("workspace-rail isNavItemActive covers dashboard, view, and workflow items", () => {
+    // workspace-rail.jsx is a Next.js client module — server-importing it
+    // in vitest would require a JSX runtime + lucide-react mocks. Assert
+    // against the source the same way every other sidebar test does.
+    const rail = appText("app/workspace-rail.jsx");
+    // dashboard branch
+    expect(rail).toContain('item.type === "dashboard"');
+    expect(rail).toContain('pathname === "/" && get("dashboard")');
+    // view branch
+    expect(rail).toContain('item.type === "view"');
+    expect(rail).toContain('pathname.startsWith("/data-model")');
+    expect(rail).toMatch(/get\(\s*"object"\s*\) === String\(item\.objectId/);
+    // workflow branch
+    expect(rail).toContain('item.type === "workflow"');
+    expect(rail).toContain('pathname.startsWith("/workflows")');
+    expect(rail).toMatch(/get\(\s*"row"\s*\) === String\(item\.rowId/);
+  });
+
+  it("workspace-rail keeps the active folder expanded across navigation", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    // renderFolder must consult activeFolderId before the persisted
+    // `collapsed` flag — otherwise navigating to a child surface would
+    // re-collapse the parent folder on the next mount.
+    expect(rail).toContain("isActiveFolder = activeFolderId === folder.id");
+    expect(rail).toContain("!isActiveFolder && Boolean(folder.collapsed)");
+    // Section auto-expand on deep-link to an active item.
+    expect(rail).toMatch(/if \(activeFolderId\) setSectionCollapsed\(false\)/);
+  });
+
+  it("workspace-rail stops click propagation on child item + menu actions", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    // Item-row navigation button — must stop propagation so the click
+    // never reaches the parent folder toggle.
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*\/\/[\s\S]*e\.stopPropagation\(\);\s*if \(item\.type === "dashboard"\)/);
+    // Customize / Remove menu items on a folder item must also stop
+    // propagation — opening / using the menu cannot collapse the folder.
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*startCustomizeItem\(folder, item\);/);
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*deleteItem\(folder\.id, item\.id\);/);
+    // Folder menu items (Customize, Add dashboard/view/workflow, Delete)
+    // must also stop propagation.
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*startCustomizeFolder\(folder\);/);
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*setOpenMenuId\(null\);\s*setMenuAnchor\(null\);\s*setAddPickerFor\(\{ folderId: folder\.id, kind: "dashboard" \}\);/);
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*deleteFolder\(folder\.id\);/);
+  });
+
+  it("globals.css constrains the folder list with its own scrollbar", () => {
+    const css = appText("app/globals.css");
+    // Dedicated scroll container — owns vertical overflow, kills lateral.
+    expect(css).toMatch(/\.workspace-rail-folders-scroll\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior:\s*contain;/);
+    // Max-height is bounded by both row count and viewport height so the
+    // section never pushes Builder / Management / Settings off-screen.
+    expect(css).toMatch(/\.workspace-rail-folders-scroll\s*\{[\s\S]*?max-height:\s*min\([\s\S]*?calc\(100vh - 280px\)[\s\S]*?\);/);
+    // Item-children container also gets internal scroll when many items
+    // are stacked under a single folder.
+    expect(css).toMatch(/\.workspace-rail-folder-items\.is-scrollable\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;/);
+  });
+
+  it("globals.css truncates long folder + item labels with ellipsis", () => {
+    const css = appText("app/globals.css");
+    // Folder name ellipsis already shipped; assert it stays.
+    expect(css).toMatch(/\.workspace-rail-folder-name\s*\{[\s\S]*?white-space:\s*nowrap;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?min-width:\s*0;/);
+    // Item label ellipsis must stay too.
+    expect(css).toMatch(/\.workspace-rail-folder-item-label\s*\{[\s\S]*?white-space:\s*nowrap;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?min-width:\s*0;/);
+    // New: subtitle/meta line (Dashboard / View / Workflow hint) must
+    // also truncate so it never expands the row width.
+    expect(css).toMatch(/\.workspace-rail-nav-row-meta\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/);
+  });
+
   it("listAvailableWorkflows discovers sandbox-environment rows", async () => {
     const mod = await import(
       `file://${path.join(APP_ROOT, "lib/nav-workflows.js")}?t=${Date.now()}`

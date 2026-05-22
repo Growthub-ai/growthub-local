@@ -232,6 +232,50 @@ function filterNavFolderRows(rows, query, typeFilter) {
   });
 }
 
+/**
+ * Derive which nav-folder item is "active" for the current route. The
+ * destination URLs here mirror `openDashboardItem`/`openViewItem`/
+ * `openWorkflowItem` below — so a freshly mounted rail can recover the
+ * active item (and therefore its parent folder) purely from
+ * pathname + searchParams, without depending on transient client state.
+ */
+function isNavItemActive(item, pathname, searchParams) {
+  if (!item || !pathname) return false;
+  const get = (key) => (searchParams && typeof searchParams.get === "function"
+    ? searchParams.get(key)
+    : null);
+  if (item.type === "dashboard") {
+    return pathname === "/" && get("dashboard") === String(item.refId || "");
+  }
+  if (item.type === "view") {
+    return pathname.startsWith("/data-model")
+      && get("object") === String(item.objectId || "");
+  }
+  if (item.type === "workflow") {
+    return pathname.startsWith("/workflows")
+      && get("object") === String(item.objectId || "")
+      && get("row") === String(item.rowId || "");
+  }
+  return false;
+}
+
+/**
+ * Walk the persisted nav-folder rows and return the folder id whose item
+ * matches the active route, or null if none do. This is the anchor the
+ * rail uses to keep the parent folder open while the user navigates
+ * between its dashboards / views / workflows.
+ */
+function deriveActiveNavFolderId(rows, pathname, searchParams) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  for (const folder of rows) {
+    const items = Array.isArray(folder?.items) ? folder.items : [];
+    for (const item of items) {
+      if (isNavItemActive(item, pathname, searchParams)) return folder.id;
+    }
+  }
+  return null;
+}
+
 function hexToTintBg(hex, alpha = 0.1) {
   const h = String(hex || "").replace("#", "");
   if (!/^[0-9a-f]{6}$/i.test(h)) return "#f5f5f5";
@@ -415,6 +459,19 @@ function NavFoldersSection({
   const dashboards = useMemo(() => listAvailableDashboards(workspaceConfig), [workspaceConfig]);
   const viewableObjects = useMemo(() => listAvailableObjectsForViews(workspaceConfig), [workspaceConfig]);
   const workflows = useMemo(() => listAvailableWorkflows(workspaceConfig), [workspaceConfig]);
+  const activeFolderId = useMemo(
+    () => deriveActiveNavFolderId(rows, pathname, searchParams),
+    [rows, pathname, searchParams],
+  );
+
+  // When the user lands on a route owned by a folder item (deep-link,
+  // reload, cross-page navigation), expand the Folders section so the
+  // active folder/item is visible without an extra click. Manual
+  // collapse still wins — the effect only fires when activeFolderId
+  // changes, not on every render.
+  useEffect(() => {
+    if (activeFolderId) setSectionCollapsed(false);
+  }, [activeFolderId]);
   const filteredEntries = useMemo(
     () => filterNavFolderRows(rows, filterQuery, filterType),
     [rows, filterQuery, filterType],
@@ -875,7 +932,10 @@ function NavFoldersSection({
               type="button"
               role="menuitem"
               className="workspace-rail-thread-menu-item"
-              onClick={() => startCustomizeItem(folder, item)}
+              onClick={(e) => {
+                e.stopPropagation();
+                startCustomizeItem(folder, item);
+              }}
             >
               <Pencil size={13} aria-hidden="true" /> Customize
             </button>
@@ -883,7 +943,10 @@ function NavFoldersSection({
               type="button"
               role="menuitem"
               className="workspace-rail-thread-menu-item is-destructive"
-              onClick={() => deleteItem(folder.id, item.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteItem(folder.id, item.id);
+              }}
             >
               <Trash2 size={13} aria-hidden="true" /> Remove
             </button>
@@ -896,11 +959,7 @@ function NavFoldersSection({
   const renderItemRow = (folder, item) => {
     const composedId = `${folder.id}::${item.id}`;
     const isMenuOpen = openMenuId === composedId;
-    const isActive = item.type === "view" && pathname.startsWith(`/views/${encodeURIComponent(item.id)}`)
-      || (item.type === "workflow"
-        && pathname.startsWith("/workflows")
-        && searchParams.get("object") === item.objectId
-        && searchParams.get("row") === item.rowId);
+    const isActive = isNavItemActive(item, pathname, searchParams);
     const style = navItemStyle(item);
     const typeHint = item.type === "dashboard" ? "Dashboard" : item.type === "workflow" ? "Workflow" : "View";
     return (
@@ -918,7 +977,11 @@ function NavFoldersSection({
           <button
             type="button"
             className="workspace-rail-nav-row-main"
-            onClick={() => {
+            onClick={(e) => {
+              // Child clicks must never reach the folder toggle — keep
+              // navigation independent from accordion state so the parent
+              // folder stays open while the user moves between its items.
+              e.stopPropagation();
               if (item.type === "dashboard") openDashboardItem(item);
               else if (item.type === "workflow") openWorkflowItem(item);
               else openViewItem(item);
@@ -996,7 +1059,10 @@ function NavFoldersSection({
               type="button"
               role="menuitem"
               className="workspace-rail-thread-menu-item"
-              onClick={() => startCustomizeFolder(folder)}
+              onClick={(e) => {
+                e.stopPropagation();
+                startCustomizeFolder(folder);
+              }}
             >
               <Pencil size={13} aria-hidden="true" /> Customize
             </button>
@@ -1005,7 +1071,8 @@ function NavFoldersSection({
               role="menuitem"
                   className="workspace-rail-thread-menu-item"
                   disabled={dashboards.length === 0}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setOpenMenuId(null);
                     setMenuAnchor(null);
                     setAddPickerFor({ folderId: folder.id, kind: "dashboard" });
@@ -1018,7 +1085,8 @@ function NavFoldersSection({
               role="menuitem"
                   className="workspace-rail-thread-menu-item"
                   disabled={viewableObjects.length === 0}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setOpenMenuId(null);
                     setMenuAnchor(null);
                     setAddPickerFor({ folderId: folder.id, kind: "view" });
@@ -1031,7 +1099,8 @@ function NavFoldersSection({
               role="menuitem"
                   className="workspace-rail-thread-menu-item"
                   disabled={workflows.length === 0}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setOpenMenuId(null);
                     setMenuAnchor(null);
                     setAddPickerFor({ folderId: folder.id, kind: "workflow" });
@@ -1043,7 +1112,10 @@ function NavFoldersSection({
               type="button"
               role="menuitem"
               className="workspace-rail-thread-menu-item is-destructive"
-              onClick={() => deleteFolder(folder.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteFolder(folder.id);
+              }}
             >
               <Trash2 size={13} aria-hidden="true" /> Delete
             </button>
@@ -1057,7 +1129,12 @@ function NavFoldersSection({
     const { folder, items, expand: forceExpand } = entry;
     const isMenuOpen = openMenuId === folder.id;
     const isCustomizing = customizeTarget?.scope === "folder" && customizeTarget.folderId === folder.id;
-    const collapsed = Boolean(folder.collapsed) && !forceExpand;
+    // Active-folder preservation: if a child item matches the current
+    // route, the parent folder stays open regardless of its persisted
+    // `collapsed` flag — so navigating between sibling items inside a
+    // folder never collapses the folder underneath the user.
+    const isActiveFolder = activeFolderId === folder.id;
+    const collapsed = !isActiveFolder && Boolean(folder.collapsed) && !forceExpand;
     const isExpanded = !collapsed;
     const style = navFolderStyle(folder);
     const visibleItems = items;
