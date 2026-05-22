@@ -57,6 +57,12 @@ function parseSandboxRunTrace(lastResponse) {
 
 function normalizeRunRecord(record) {
   if (!record || typeof record !== "object") return null;
+  const outputRaw = record.output ?? record.normalizedOutput ?? record.response;
+  const outputText = typeof outputRaw === "string"
+    ? outputRaw
+    : outputRaw != null
+      ? JSON.stringify(outputRaw, null, 2)
+      : "";
   return {
     runId: String(record.runId || "").trim(),
     ranAt: String(record.ranAt || "").trim(),
@@ -65,6 +71,15 @@ function normalizeRunRecord(record) {
     error: redactSecretsFromText(record.error || ""),
     stdout: redactSecretsFromText(typeof record.stdout === "string" ? record.stdout : ""),
     stderr: redactSecretsFromText(record.stderr || ""),
+    output: redactSecretsFromText(outputText),
+    runtime: String(record.runtime || "").trim(),
+    adapter: String(record.adapter || "").trim(),
+    runLocality: String(record.runLocality || "").trim(),
+    status: String(record.status || "").trim(),
+    envRefsResolved: Array.isArray(record.envRefsResolved) ? record.envRefsResolved : [],
+    envRefsMissing: Array.isArray(record.envRefsMissing) ? record.envRefsMissing : [],
+    adapterMeta: record.adapterMeta && typeof record.adapterMeta === "object" ? record.adapterMeta : null,
+    templateTrace: record.templateTrace && typeof record.templateTrace === "object" ? record.templateTrace : null,
     lifecycleStatus: String(record.lifecycleStatus || "").trim(),
     version: String(record.version || "").trim()
   };
