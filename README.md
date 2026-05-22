@@ -12,8 +12,6 @@
 
 **Streamlined one-click deployment:** [Launch Growthub Local](https://www.growthub.ai/f/growthub-local)
 
-**Official white paper:** [Agent Workspace as Code — Growthub Local](./docs/assets/agent-workspace-as-code-whitepaper-workflows.pdf)
-
 **Quick links:** [Start here](#start-here) · [White paper](./docs/assets/agent-workspace-as-code-whitepaper-workflows.pdf) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
 
 ---
