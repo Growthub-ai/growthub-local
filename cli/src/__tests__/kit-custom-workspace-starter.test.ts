@@ -933,6 +933,57 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(trace.output).toContain("items");
   });
 
+  it("sandbox-agent-auth rejects non-claude rows and redacts token-like output", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth.js")}?t=${Date.now()}`
+    ) as {
+      findSandboxRow: (
+        cfg: { dataModel: { objects: unknown[] } },
+        objectId: string,
+        name: string
+      ) => { row: Record<string, string> | null };
+      validateClaudeLocalEligibility: (row: Record<string, string>) => { ok: boolean; error?: string };
+      resolveClaudeCommand: (row: Record<string, string>) => string;
+      buildSafeAuthMetadata: (input: { status: string; message?: string }) => Record<string, unknown>;
+      redactAuthOutput: (text: string) => string;
+    };
+    const cfg = {
+      dataModel: {
+        objects: [
+          {
+            id: "sandboxes",
+            objectType: "sandbox-environment",
+            rows: [
+              {
+                Name: "codex-worker",
+                adapter: "local-agent-host",
+                agentHost: "codex_local",
+                runLocality: "local",
+              },
+              {
+                Name: "claude-worker",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runLocality: "local",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const codex = mod.findSandboxRow(cfg, "sandboxes", "codex-worker").row!;
+    expect(mod.validateClaudeLocalEligibility(codex).ok).toBe(false);
+    const claude = mod.findSandboxRow(cfg, "sandboxes", "claude-worker").row!;
+    expect(mod.validateClaudeLocalEligibility(claude).ok).toBe(true);
+    expect(mod.resolveClaudeCommand({})).toBe("claude");
+    expect(mod.resolveClaudeCommand({ agentCommand: "/usr/bin/claude" })).toBe("/usr/bin/claude");
+    const meta = mod.buildSafeAuthMetadata({ status: "active", message: "ok" });
+    expect(meta.agentAuthStatus).toBe("active");
+    expect(meta).not.toHaveProperty("claudeToken");
+    expect(String(meta.agentAuthLastMessage)).not.toMatch(/sk-ant-/);
+    expect(mod.redactAuthOutput("token sk-ant-api03-abcdefghijklmnop")).toContain("[redacted]");
+  });
+
   it("incomplete API Registry does not allow create state", async () => {
     const mod = await import(
       `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`

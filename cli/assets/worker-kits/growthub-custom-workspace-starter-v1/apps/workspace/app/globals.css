@@ -4475,6 +4475,8 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-db-status.ok span { background: #22c55e; }
 .dm-db-status.bad { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .dm-db-status.bad span { background: #ef4444; }
+.dm-db-status.warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+.dm-db-status.warn span { background: #f59e0b; }
 .dm-record-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(15,23,42,.12); }
 .dm-record-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; display: flex; flex-direction: column; width: min(440px, 100vw); background: #fff; border-left: 1px solid #dfe3e8; box-shadow: -10px 0 34px rgba(15,23,42,.16); }
 .dm-record-drawer-wide { width: min(780px, 100vw); }

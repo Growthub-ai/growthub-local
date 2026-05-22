@@ -1003,6 +1003,29 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.${traceField} must be a string when present`);
     }
   }
+  const KNOWN_AGENT_AUTH_STATUSES = ["active", "stale", "missing", "checking", "unknown"];
+  if (row.agentAuthStatus !== undefined && row.agentAuthStatus !== "") {
+    const authStatus = String(row.agentAuthStatus).trim().toLowerCase();
+    if (!KNOWN_AGENT_AUTH_STATUSES.includes(authStatus)) {
+      errors.push(`${path}.agentAuthStatus must be one of ${KNOWN_AGENT_AUTH_STATUSES.join(", ")}`);
+    }
+  }
+  for (const authField of [
+    "agentAuthProvider",
+    "agentAuthLastChecked",
+    "agentAuthLastMessage",
+    "agentAuthLastLoginUrl"
+  ]) {
+    if (row[authField] !== undefined && row[authField] !== null && row[authField] !== "" && typeof row[authField] !== "string") {
+      errors.push(`${path}.${authField} must be a string when present`);
+    }
+  }
+  if (row.agentAuthLastExitCode !== undefined && row.agentAuthLastExitCode !== null && row.agentAuthLastExitCode !== "") {
+    const code = Number(row.agentAuthLastExitCode);
+    if (!Number.isFinite(code)) {
+      errors.push(`${path}.agentAuthLastExitCode must be a number when present`);
+    }
+  }
 }
 
 const NAV_FOLDERS_OBJECT_ID = "nav-folders";

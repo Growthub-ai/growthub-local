@@ -27,6 +27,15 @@ Sandbox rows reference **`authRef` / named env refs** — never literals in brow
 
 Workspace Builder excludes **`sandbox-environment`** from View widget bindings (execution records, not tabular KPI sources). See **`data-sources-api-registry.md`** in this folder.
 
+## Claude local auth onboarding
+
+When a sandbox row uses `adapter: local-agent-host` and `agentHost: claude_local` with `runLocality: local`, the Data Model row sidecar shows **Claude Code local auth** onboarding. That panel is separate from execution:
+
+- **Auth setup** runs server-side via `POST /api/workspace/sandbox-agent-auth/{status,claude-login,claude-logout}` and spawns `claude auth login` / `claude auth logout` on the Next.js host (same command shape as Paperclip `server/src/routes/agents.ts` — not `setup-token`).
+- **Execution** still uses `POST /api/workspace/sandbox-run` and `default-local-agent-host.js`, which remains thin and does not manage host auth state.
+
+The workspace stores only safe row metadata (`agentAuthStatus`, `agentAuthProvider`, `agentAuthLastChecked`, `agentAuthLastExitCode`, `agentAuthLastMessage`, optional `agentAuthLastLoginUrl`). Raw Claude tokens never belong in `growthub.config.json`, the browser, or `lastResponse`.
+
 ## Extension points
 
 - Custom adapters: `apps/workspace/lib/adapters/sandboxes/adapters/` (see `README.md` there).

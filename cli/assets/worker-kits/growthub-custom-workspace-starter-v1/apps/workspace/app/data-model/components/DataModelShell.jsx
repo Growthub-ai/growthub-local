@@ -67,6 +67,7 @@ import {
 } from "@/lib/workspace-data-model";
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
+import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
@@ -977,6 +978,7 @@ function DataModelRecordDrawer({
   const [testMessage, setTestMessage] = useState("");
   const [sandboxRunning, setSandboxRunning] = useState(false);
   const [sandboxMessage, setSandboxMessage] = useState("");
+  const [sandboxAuthHint, setSandboxAuthHint] = useState("");
   const [sandboxHistory, setSandboxHistory] = useState([]);
   const [sandboxHistoryMessage, setSandboxHistoryMessage] = useState("");
   const [loadingSandboxHistory, setLoadingSandboxHistory] = useState(false);
@@ -998,6 +1000,7 @@ function DataModelRecordDrawer({
     setPendingHidden(table.fieldSettings?.hidden || []);
     setTestMessage("");
     setSandboxMessage("");
+    setSandboxAuthHint("");
     setSandboxHistory([]);
     setSandboxHistoryMessage("");
     setExpandedJson(null);
@@ -1024,6 +1027,11 @@ function DataModelRecordDrawer({
 
   const isApiRegistry = table.objectType === "api-registry";
   const isSandbox = table.objectType === "sandbox-environment";
+  const showClaudeAuthPanel =
+    isSandbox
+    && String(draft?.adapter || "").trim() === "local-agent-host"
+    && String(draft?.agentHost || "").trim() === "claude_local"
+    && String(draft?.runLocality || "local").trim().toLowerCase() !== "serverless";
   const isDirty = JSON.stringify(draft || {}) !== JSON.stringify(row || {}) || JSON.stringify(pendingColumns) !== JSON.stringify(table.columns || []) || JSON.stringify(pendingHidden) !== JSON.stringify(table.fieldSettings?.hidden || []);
 
   function updateField(column, value) {
@@ -1255,6 +1263,18 @@ function DataModelRecordDrawer({
     onClose();
   }
 
+  function applyClaudeAuthMetadata(patch) {
+    if (!patch || typeof patch !== "object") return;
+    setDraft((current) => ({ ...current, ...patch }));
+    onSave((config) => {
+      let next = config;
+      for (const [field, value] of Object.entries(patch)) {
+        next = updateTableCell(next, table, rowIndex, field, value ?? "");
+      }
+      return next;
+    });
+  }
+
   async function runSandbox() {
     if (!table.objectId) {
       setSandboxMessage("Missing object id for this sandbox table.");
@@ -1267,6 +1287,7 @@ function DataModelRecordDrawer({
     }
     setSandboxRunning(true);
     setSandboxMessage("");
+    setSandboxAuthHint("");
     try {
       const res = await fetch("/api/workspace/sandbox-run", {
         method: "POST",
@@ -1274,7 +1295,7 @@ function DataModelRecordDrawer({
         body: JSON.stringify({ objectId: table.objectId, name: rowName }),
       });
       const payload = await res.json();
-      const responseText = JSON.stringify(payload.response ?? payload, null, 2);
+      const responseText = redactSecretsFromText(JSON.stringify(payload.response ?? payload, null, 2));
       const status = String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
       const testedAt = payload.response?.ranAt || new Date().toISOString();
       const lastRunId = payload.runId || payload.response?.runId || "";
@@ -1289,9 +1310,34 @@ function DataModelRecordDrawer({
       });
       setDraft((current) => ({ ...current, status, lastTested: testedAt, lastRunId, lastSourceId, lastResponse: responseText }));
       setSandboxHistory((current) => payload.response ? [payload.response, ...current].slice(0, 25) : current);
-      setSandboxMessage(payload.ok ? "Sandbox run recorded" : (payload.response?.error || payload.error || "Run failed"));
+      const runError = redactSecretsFromText(
+        payload.response?.error
+          || payload.response?.stderr
+          || payload.error
+          || ""
+      );
+      if (!payload.ok && showClaudeAuthPanel) {
+        const authFailureText = [
+          runError,
+          payload.response?.stderr,
+          payload.response?.stdout,
+          responseText
+        ].filter(Boolean).join("\n");
+        const staleHints = [
+          /not\s+logged\s+in/i,
+          /authentication\s+required/i,
+          /claude_auth_required/i,
+          /login\s+required/i,
+          /unauthorized/i,
+          /auth\s+login/i
+        ];
+        if (staleHints.some((pattern) => pattern.test(authFailureText))) {
+          setSandboxAuthHint("Claude auth may be stale. Open Claude Auth Setup.");
+        }
+      }
+      setSandboxMessage(payload.ok ? "Sandbox run recorded" : (runError || "Run failed"));
     } catch (err) {
-      setSandboxMessage(err.message || "Sandbox run failed");
+      setSandboxMessage(redactSecretsFromText(err.message || "Sandbox run failed"));
     } finally {
       setSandboxRunning(false);
     }
@@ -1450,11 +1496,26 @@ function DataModelRecordDrawer({
           onConfirm={createSandboxToolFromRegistry}
           onCancel={() => setSandboxToolFlow("draft")}
         />
+        {showClaudeAuthPanel && sidecarMode !== "graph" && sidecarMode !== "trace" && (
+          <SandboxAgentAuthPanel
+            objectId={table.objectId}
+            rowName={draft.Name}
+            authStatus={draft.agentAuthStatus}
+            authMessage={draft.agentAuthLastMessage}
+            disabled={saving}
+            canRun={Boolean(String(draft.Name || "").trim())}
+            sandboxRunning={sandboxRunning}
+            onRunSandbox={runSandbox}
+            onAuthMetadata={applyClaudeAuthMetadata}
+          />
+        )}
         {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && (
           <SandboxRunPanel
             status={draft.status}
             sandboxRunning={sandboxRunning}
             sandboxMessage={sandboxMessage}
+            authStatus={showClaudeAuthPanel ? draft.agentAuthStatus : undefined}
+            authHint={showClaudeAuthPanel ? sandboxAuthHint : undefined}
             disabled={saving}
             canRun={Boolean(String(draft.Name || "").trim())}
             onRun={runSandbox}
