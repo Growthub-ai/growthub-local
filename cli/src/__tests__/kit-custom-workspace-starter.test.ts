@@ -521,6 +521,13 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
+
+  it("lib/workspace-chart-values.js ships with computeChartValuesFromRows", () => {
+    expect(appExists("lib/workspace-chart-values.js")).toBe(true);
+    const source = appText("lib/workspace-chart-values.js");
+    expect(source).toContain("function computeChartValuesFromRows");
+    expect(source).toMatch(/export\s*\{[^}]*computeChartValuesFromRows[^}]*\}/s);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -538,6 +545,7 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/resolvers/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
+    "apps/workspace/lib/workspace-chart-values.js",
   ];
 
   for (const p of requiredPaths) {
@@ -948,5 +956,307 @@ describe("orchestration-graph — contract and kit presence", () => {
         { dataModel: { objects: [] } }
       ).kind
     ).toBe("incomplete");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Chart value hydration — pure computation + Data Model hydration
+//
+// Negative probes are the spine of this suite: invalid axis configs must
+// not crash and must not silently persist malformed values. Positive probes
+// confirm the legacy static `values` path and the new hydration path both
+// produce finite number[] projections suitable for `widget.config.values`.
+// ---------------------------------------------------------------------------
+
+describe("workspace-chart-values — pure computation", () => {
+  type ComputeResult = {
+    values: number[];
+    rowCount: number;
+    usedRowCount: number;
+    warnings: string[];
+  };
+  let computeChartValuesFromRows: (input: unknown) => ComputeResult;
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-chart-values.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      computeChartValuesFromRows: typeof computeChartValuesFromRows;
+    };
+    computeChartValuesFromRows = mod.computeChartValuesFromRows;
+  });
+
+  it("manual Data Model rows compute finite chart values via sum aggregation", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { stage: "lead", arr: "100" },
+        { stage: "lead", arr: 50 },
+        { stage: "won", arr: 250 },
+      ],
+      xAxis: { field: "stage", sort: "position" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([150, 250]);
+    expect(out.values.every((v) => Number.isFinite(v))).toBe(true);
+    expect(out.usedRowCount).toBe(3);
+  });
+
+  it("count aggregation works without a numeric Y field", () => {
+    const out = computeChartValuesFromRows({
+      rows: [{ stage: "a" }, { stage: "a" }, { stage: "b" }],
+      xAxis: { field: "stage" },
+      yAxis: { aggregation: "count" },
+    });
+    expect(out.values).toEqual([2, 1]);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("invalid Y field returns empty values and a warning, never throws", () => {
+    const out = computeChartValuesFromRows({
+      rows: [{ stage: "lead", arr: "not-a-number" }],
+      xAxis: { field: "stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([]);
+    expect(out.warnings.length).toBeGreaterThan(0);
+    expect(out.warnings.some((w) => w.toLowerCase().includes("numeric"))).toBe(true);
+  });
+
+  it("empty rows produce empty values and a warning instead of crashing", () => {
+    const out = computeChartValuesFromRows({
+      rows: [],
+      xAxis: { field: "stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([]);
+    expect(out.rowCount).toBe(0);
+  });
+
+  it("filter clauses narrow the input row set before aggregation", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { stage: "lead", arr: 100 },
+        { stage: "won", arr: 200 },
+        { stage: "won", arr: 300 },
+      ],
+      xAxis: { field: "stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+      filter: { op: "and", clauses: [{ fieldId: "stage", operator: "eq", value: "won" }] },
+    });
+    expect(out.values).toEqual([500]);
+    expect(out.usedRowCount).toBe(2);
+  });
+
+  it("omitZero strips zero buckets", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { stage: "a", arr: 0 },
+        { stage: "b", arr: 10 },
+      ],
+      xAxis: { field: "stage", omitZero: true },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([10]);
+  });
+
+  it("invalid input shape is tolerated without throwing", () => {
+    const out = computeChartValuesFromRows({});
+    expect(out.values).toEqual([]);
+    expect(out.warnings.length).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("workspace-data-model — sidecar hydration", () => {
+  type Table = {
+    objectId?: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+    storage: string;
+    liveSource?: { sourceRecordKey: string; fetchedAt: string | null };
+  };
+  let listWorkspaceDataModelTables: (
+    config: unknown,
+    options?: { sourceRecords?: Record<string, unknown> }
+  ) => Table[];
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-data-model.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      listWorkspaceDataModelTables: typeof listWorkspaceDataModelTables;
+    };
+    listWorkspaceDataModelTables = mod.listWorkspaceDataModelTables;
+  });
+
+  it("live-backed object hydrates rows from sidecar records keyed by object.id", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "src_crm",
+          label: "CRM",
+          objectType: "data-source",
+          columns: ["name", "stage"],
+          rows: [],
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const sourceRecords = {
+      src_crm: {
+        records: [{ name: "Acme", stage: "won" }, { name: "Beta", stage: "lead" }],
+        fetchedAt: "2026-05-01T00:00:00Z",
+        recordCount: 2,
+        integrationId: "my-crm",
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords });
+    const crm = tables.find((t) => t.objectId === "src_crm");
+    expect(crm).toBeDefined();
+    expect(crm!.rows.length).toBe(2);
+    expect(crm!.rows[0].name).toBe("Acme");
+    expect(crm!.liveSource?.sourceRecordKey).toBe("src_crm");
+  });
+
+  it("live-backed object falls back to config rows when sidecar is empty", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "src_crm",
+          label: "CRM",
+          objectType: "data-source",
+          columns: ["name"],
+          rows: [{ name: "Stub" }],
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords: {} });
+    const crm = tables.find((t) => t.objectId === "src_crm");
+    expect(crm!.rows.length).toBe(1);
+    expect(crm!.rows[0].name).toBe("Stub");
+    expect(crm!.liveSource).toBeFalsy();
+  });
+
+  it("hydration falls back to object.sourceId then binding.sourceId when object.id is not the sidecar key", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "object-id-mismatch",
+          label: "CRM",
+          objectType: "data-source",
+          columns: [],
+          rows: [],
+          sourceId: "alt-source-key",
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "another-key", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const sourceRecords = {
+      "another-key": { records: [{ name: "From binding" }], fetchedAt: "2026-05-02T00:00:00Z", recordCount: 1 },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords });
+    const crm = tables.find((t) => t.objectId === "object-id-mismatch");
+    expect(crm!.rows.length).toBe(1);
+    expect(crm!.rows[0].name).toBe("From binding");
+    expect(crm!.liveSource?.sourceRecordKey).toBe("another-key");
+  });
+
+  it("non-live-backed objects are not affected by sidecar records", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "manual",
+          label: "Manual",
+          columns: ["name"],
+          rows: [{ name: "Local" }],
+          binding: { mode: "manual", source: "Manual" },
+        }],
+      },
+    };
+    const sourceRecords = { manual: { records: [{ name: "Should-not-appear" }], fetchedAt: null, recordCount: 1 } };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords });
+    const manual = tables.find((t) => t.objectId === "manual");
+    expect(manual!.rows[0].name).toBe("Local");
+  });
+
+  it("calling without options keeps the legacy single-arg signature working", () => {
+    const config = {
+      dataModel: {
+        objects: [{ id: "m", label: "M", columns: ["a"], rows: [{ a: "1" }], binding: { mode: "manual" } }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config);
+    expect(tables.find((t) => t.objectId === "m")!.rows[0].a).toBe("1");
+  });
+});
+
+describe("workspace route + schema — chart value hydration governance", () => {
+  it("GET /api/workspace returns workspaceSourceRecords for runtime hydration", () => {
+    const source = appText("app/api/workspace/route.js");
+    expect(source).toContain("readWorkspaceSourceRecords");
+    expect(source).toContain("workspaceSourceRecords");
+  });
+
+  it("workspaceSourceRecords is NOT in the PATCH allowlist", () => {
+    const source = appText("app/api/workspace/route.js");
+    // The frozen allowlist literal must remain exactly these four fields and
+    // never name `workspaceSourceRecords`. The sidecar is GET-only.
+    expect(source).toContain('ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"])');
+    const allowlistMatch = source.match(/ALLOWED_PATCH_FIELDS\s*=\s*new Set\(\[[^\]]*\]\)/);
+    expect(allowlistMatch).not.toBeNull();
+    expect(allowlistMatch![0]).not.toContain("workspaceSourceRecords");
+  });
+
+  it("workspaceSourceRecords is rejected as unknown when sent to PATCH", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const schemaMod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: (c: unknown) => void;
+    };
+    // The validator rejects unknown top-level fields outright — the route
+    // layer additionally rejects unknown PATCH keys before validation runs.
+    expect(() =>
+      schemaMod.validateWorkspaceConfig({ workspaceSourceRecords: { foo: { records: [] } } } as never)
+    ).toThrow(expect.objectContaining({ code: "INVALID_WORKSPACE_CONFIG" }));
+  });
+
+  it("static chart config.values continues to validate without binding", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: (c: unknown) => void;
+    };
+    expect(() =>
+      mod.validateWorkspaceConfig({
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [
+            { id: "w1", kind: "chart", title: "Static",
+              position: { x: 0, y: 0, w: 4, h: 4 },
+              config: { values: [10, 20, 30] } },
+          ],
+        },
+      })
+    ).not.toThrow();
+  });
+
+  it("chart bound to a Data Model object with computed values validates", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: (c: unknown) => void;
+    };
+    expect(() =>
+      mod.validateWorkspaceConfig({
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [
+            { id: "w1", kind: "chart", title: "Bound",
+              position: { x: 0, y: 0, w: 6, h: 4 },
+              config: {
+                values: [150, 250],
+                xAxis: { field: "stage", sort: "position" },
+                yAxis: { field: "arr", aggregation: "sum" },
+                binding: { mode: "manual", source: "Pipeline", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "pipeline" },
+              } },
+          ],
+        },
+      })
+    ).not.toThrow();
   });
 });

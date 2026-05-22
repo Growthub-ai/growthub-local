@@ -79,6 +79,7 @@ import {
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
+import { computeChartValuesFromRows } from "@/lib/workspace-chart-values";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 
@@ -1018,6 +1019,62 @@ function resolveViewWidget(widget, dataModelTables) {
   };
 }
 
+/**
+ * Recompute `config.values` for a chart widget config from its bound Data
+ * Model rows. This is the only path that writes chart values from rows.
+ * The chart renderer continues to read from `config.values` — it never
+ * queries rows directly.
+ *
+ * Returns the next `config` object (with finite-number `values`) plus the
+ * computation result (`rowCount`, `usedRowCount`, `warnings`).
+ *
+ * When the chart has no bound Data Model source, the input config is
+ * returned unchanged and the result is `{ status: "unbound" }`.
+ */
+function recomputeChartConfig(chartConfig, dataModelTables) {
+  const config = chartConfig && typeof chartConfig === "object" && !Array.isArray(chartConfig) ? chartConfig : {};
+  const binding = config.binding;
+  if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE) {
+    return { config, result: { status: "unbound" } };
+  }
+  const table = resolveDataModelTable(dataModelTables, binding);
+  if (!table) {
+    return { config, result: { status: "no-source", warnings: ["Selected source is unavailable."] } };
+  }
+  const computation = computeChartValuesFromRows({
+    rows: Array.isArray(table.rows) ? table.rows : [],
+    xAxis: config.xAxis,
+    yAxis: config.yAxis,
+    filter: config.filter,
+    chartType: config.chartType
+  });
+  return {
+    config: { ...config, values: computation.values },
+    result: { status: "computed", ...computation }
+  };
+}
+
+function findWidgetByIdInConfig(workspaceConfig, widgetId) {
+  if (!widgetId) return null;
+  for (const dashboard of workspaceConfig?.dashboards || []) {
+    for (const tab of dashboard.tabs || []) {
+      for (const widget of tab.widgets || []) {
+        if (widget?.id === widgetId) return widget;
+      }
+    }
+  }
+  const canvas = workspaceConfig?.canvas;
+  for (const tab of canvas?.tabs || []) {
+    for (const widget of tab.widgets || []) {
+      if (widget?.id === widgetId) return widget;
+    }
+  }
+  for (const widget of canvas?.widgets || []) {
+    if (widget?.id === widgetId) return widget;
+  }
+  return null;
+}
+
 function summarizeFields(widget) {
   const total = getColumnList(widget).length;
   const hidden = getHiddenColumnSet(widget).size;
@@ -1759,14 +1816,20 @@ function SourceDropdown({ widget, dataModelTables, onChange }) {
   })();
 
   function selectObject(table) {
-    onChange({
+    const nextConfig = {
       ...widget.config,
       source: table.source,
       columns: table.columns,
       rows: [],
       binding: { mode: "manual", source: table.source, sourceType: DATA_MODEL_SOURCE_TYPE, sourceAuthority: "workspace-config", objectId: table.objectId },
       fieldSettings: { hidden: [], order: table.columns }
-    });
+    };
+    if (widget.kind === "chart") {
+      const { config: recomputed } = recomputeChartConfig(nextConfig, dataModelTables);
+      onChange(recomputed);
+    } else {
+      onChange(nextConfig);
+    }
     setOpen(false);
     setQuery("");
   }
@@ -2266,7 +2329,7 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
     if (binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
       if (!window.confirm(`Change source to "${table.label}"?`)) return;
     }
-    onChange({
+    const nextConfig = {
       ...widget.config,
       source: table.source,
       columns: table.columns,
@@ -2279,8 +2342,16 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
         objectId: table.objectId,
       },
       fieldSettings: { hidden: [], order: table.columns }
-    });
-  }, [binding, onChange, widget.config]);
+    };
+    // Chart widgets always project rows into `config.values`. Recompute on
+    // source change so the preview reflects the new binding immediately.
+    if (widget.kind === "chart") {
+      const { config: recomputed } = recomputeChartConfig(nextConfig, dataModelTables);
+      onChange(recomputed);
+      return;
+    }
+    onChange(nextConfig);
+  }, [binding, dataModelTables, onChange, widget.config, widget.kind]);
 
   const activeObjectId = binding.sourceType === DATA_MODEL_SOURCE_TYPE ? binding.objectId : null;
 
@@ -2744,21 +2815,45 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
   const yAxis = getChartAxis(widget, "yAxis");
   const style = getChartStyle(widget);
   const activeColor = resolveChartColor(style, branding) || "#d9e4ff";
-  const setChartType = (type) => onChange({ ...widget.config, chartType: type });
-  const setXAxis = (patch) => onChange({ ...widget.config, xAxis: { ...xAxis, ...patch } });
-  const setYAxis = (patch) => onChange({ ...widget.config, yAxis: { ...yAxis, ...patch } });
+
+  // Every axis/filter/aggregation/chartType edit funnels through this writer
+  // so `widget.config.values` is recomputed from the bound Data Model rows
+  // before persistence. Unbound charts (no Data Model source) keep the
+  // existing static `values` untouched — this is what preserves the legacy
+  // chart-with-static-values path.
+  const commitConfig = useCallback((nextConfig) => {
+    const { config: computed } = recomputeChartConfig(nextConfig, dataModelTables);
+    onChange(computed);
+  }, [dataModelTables, onChange]);
+
+  const setChartType = (type) => commitConfig({ ...widget.config, chartType: type });
+  const setXAxis = (patch) => commitConfig({ ...widget.config, xAxis: { ...xAxis, ...patch } });
+  const setYAxis = (patch) => commitConfig({ ...widget.config, yAxis: { ...yAxis, ...patch } });
+  // Style is render-only — it doesn't change values, so skip recomputation.
   const setStyle = (patch) => onChange({ ...widget.config, style: { ...style, ...patch } });
 
   // Derive source fields from the bound data model object
-  const sourceFields = useMemo(() => {
+  const boundTable = useMemo(() => {
     const binding = widget.config?.binding;
-    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return [];
-    const table = (Array.isArray(dataModelTables) ? dataModelTables : [])
-      .find((t) => t.objectId === binding.objectId || t.source === binding.source);
-    return table?.columns || [];
+    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return null;
+    return (Array.isArray(dataModelTables) ? dataModelTables : [])
+      .find((t) => t.objectId === binding.objectId || t.source === binding.source) || null;
   }, [widget.config?.binding, dataModelTables]);
 
+  const sourceFields = boundTable?.columns || [];
   const hasSource = sourceFields.length > 0;
+
+  // Compute the live preview status for the configured chart so the panel
+  // can surface row counts, warnings, and last-fetched timestamps without
+  // having to re-derive the projection elsewhere.
+  const computeStatus = useMemo(() => {
+    const { result } = recomputeChartConfig(widget.config || {}, dataModelTables);
+    return result;
+  }, [widget.config, dataModelTables]);
+
+  const recomputeValues = useCallback(() => {
+    commitConfig({ ...widget.config });
+  }, [commitConfig, widget.config]);
 
   return <section className="workspace-chart-config">
     <p className="workspace-panel-label">Chart type</p>
@@ -2787,6 +2882,31 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
     <button type="button" className="workspace-settings-row" onClick={() => onSubPage("filter")}>
       <span>Filter</span><code>{summarizeFilter(widget)}</code>
     </button>
+    {boundTable ? (
+      <div className="workspace-settings-list" role="group" aria-label="Computed chart values">
+        <div>
+          <span>Rows</span>
+          <code>{boundTable.rows?.length || 0} available{computeStatus?.usedRowCount !== undefined && computeStatus.usedRowCount !== boundTable.rows?.length
+            ? ` · ${computeStatus.usedRowCount} after filter`
+            : ""}</code>
+        </div>
+        <div>
+          <span>Values</span>
+          <code>{Array.isArray(widget.config?.values) ? widget.config.values.length : 0} computed</code>
+        </div>
+        {boundTable.liveSource?.fetchedAt ? <div>
+          <span>Last fetched</span>
+          <code>{boundTable.liveSource.fetchedAt}</code>
+        </div> : null}
+        {Array.isArray(computeStatus?.warnings) && computeStatus.warnings.length ? <div>
+          <span>Status</span>
+          <code title={computeStatus.warnings.join(" · ")}>{computeStatus.warnings[0]}</code>
+        </div> : null}
+        <button type="button" className="workspace-settings-row" onClick={recomputeValues}>
+          <span>Recompute values</span><code>Sync</code>
+        </button>
+      </div>
+    ) : null}
 
     <p className="workspace-panel-label">X axis</p>
     <div className="workspace-settings-row-field">
@@ -3492,7 +3612,7 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
   </div>;
 }
 
-function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, integrationSettings, persistence }) {
+function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, integrationAdapter, integrationSettings, persistence }) {
   const searchParams = useSearchParams();
   const [config, setConfig] = useState(() => {
     const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
@@ -3582,13 +3702,25 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
+  // Sidecar source records (`growthub.source-records.json`) hydrate live-backed
+  // Data Model objects at runtime. They are NOT persisted into growthub.config.json
+  // and NEVER flow through PATCH /api/workspace. Updates land here only after a
+  // successful POST /api/workspace/refresh-sources cycle re-reads GET /api/workspace.
+  const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState(
+    () => (initialSourceRecords && typeof initialSourceRecords === "object" && !Array.isArray(initialSourceRecords)
+      ? initialSourceRecords
+      : {})
+  );
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
   const addSlot = dragPreview || selectedPosition;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
   const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
-  const dataModelTables = useMemo(() => listWorkspaceDataModelTables(config), [config]);
+  const dataModelTables = useMemo(
+    () => listWorkspaceDataModelTables(config, { sourceRecords: workspaceSourceRecords }),
+    [config, workspaceSourceRecords]
+  );
   const selectedResolvedWidget = selectedWidget ? resolveViewWidget(selectedWidget, dataModelTables) : null;
   const branding = config.branding || {};
   const occupiedCells = useMemo(() => {
@@ -3629,18 +3761,72 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sourceIds: liveSourceIds })
       });
-      if (response.ok) {
-        const data = await response.json();
-        setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
-      } else {
+      if (!response.ok) {
         setRefreshResult({ error: true });
+        return;
       }
+      const data = await response.json();
+      const refreshedIds = new Set((data.refreshed || [])
+        .map((entry) => String(entry?.sourceId || "").trim())
+        .filter(Boolean));
+      let nextSourceRecords = workspaceSourceRecords;
+      try {
+        // Re-read GET so the sidecar (`workspaceSourceRecords`) reflects
+        // the new rows the resolver just persisted. This is what makes the
+        // chart preview update without a page reload.
+        const getResponse = await fetch("/api/workspace", { method: "GET" });
+        if (getResponse.ok) {
+          const getPayload = await getResponse.json();
+          if (getPayload?.workspaceSourceRecords && typeof getPayload.workspaceSourceRecords === "object") {
+            nextSourceRecords = getPayload.workspaceSourceRecords;
+            setWorkspaceSourceRecords(nextSourceRecords);
+          }
+        }
+      } catch {
+        // Non-fatal: refresh result still reports counts; UI will use stale records.
+      }
+      // Recompute chart widgets bound to refreshed objects. We rebuild the
+      // Data Model tables from the latest sidecar before recomputing so the
+      // computation sees the freshly-fetched rows.
+      if (refreshedIds.size > 0) {
+        const nextTables = listWorkspaceDataModelTables(config, { sourceRecords: nextSourceRecords });
+        const objectIdsForRefreshedSources = new Set();
+        for (const sourceId of refreshedIds) {
+          for (const table of nextTables) {
+            if (!table.objectId) continue;
+            const liveKey = table.liveSource?.sourceRecordKey;
+            if (liveKey === sourceId || table.objectId === sourceId) {
+              objectIdsForRefreshedSources.add(table.objectId);
+            }
+          }
+        }
+        if (objectIdsForRefreshedSources.size > 0) {
+          const recomputeWidgets = (widgets) => (widgets || []).map((widget) => {
+            if (widget?.kind !== "chart") return widget;
+            const objectId = widget.config?.binding?.objectId;
+            if (!objectId || !objectIdsForRefreshedSources.has(objectId)) return widget;
+            const { config: recomputed } = recomputeChartConfig(widget.config || {}, nextTables);
+            return { ...widget, config: recomputed };
+          });
+          setConfig((prev) => {
+            const nextDashboards = (prev.dashboards || []).map((dashboard) => ({
+              ...dashboard,
+              tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: recomputeWidgets(tab.widgets) }))
+            }));
+            let nextCanvas = prev.canvas ? { ...prev.canvas } : {};
+            if (Array.isArray(nextCanvas.widgets)) nextCanvas = { ...nextCanvas, widgets: recomputeWidgets(nextCanvas.widgets) };
+            if (Array.isArray(nextCanvas.tabs)) nextCanvas = { ...nextCanvas, tabs: nextCanvas.tabs.map((tab) => ({ ...tab, widgets: recomputeWidgets(tab.widgets) })) };
+            return { ...prev, dashboards: nextDashboards, canvas: nextCanvas };
+          });
+        }
+      }
+      setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
     } catch {
       setRefreshResult({ error: true });
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, liveSourceIds]);
+  }, [refreshing, liveSourceIds, workspaceSourceRecords, config]);
 
   const addWidget = useCallback((kind) => {
     setConfig((prev) => {

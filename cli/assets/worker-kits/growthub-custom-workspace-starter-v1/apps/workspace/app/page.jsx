@@ -3,7 +3,7 @@ import workspaceConfig from "../growthub.config.json";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
-import { describePersistenceMode } from "@/lib/workspace-config";
+import { describePersistenceMode, readWorkspaceSourceRecords } from "@/lib/workspace-config";
 import WorkspaceBuilder from "./workspace-builder.jsx";
 
 async function Home() {
@@ -11,10 +11,17 @@ async function Home() {
   const integrationAdapter = describeIntegrationAdapter();
   const integrations = await listGovernedWorkspaceIntegrations();
   const persistence = describePersistenceMode();
+  let initialSourceRecords = {};
+  try {
+    initialSourceRecords = (await readWorkspaceSourceRecords()) || {};
+  } catch {
+    initialSourceRecords = {};
+  }
   return (
     <Suspense fallback={null}>
       <WorkspaceBuilder
         initialConfig={workspaceConfig}
+        initialSourceRecords={initialSourceRecords}
         adapterConfig={adapterConfig}
         integrationAdapter={integrationAdapter}
         integrationSettings={{ integrations: groupIntegrationsByLane(integrations) }}

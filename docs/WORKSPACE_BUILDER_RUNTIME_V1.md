@@ -229,6 +229,34 @@ Either way, the result is validated through `validateWorkspaceConfig` before ent
 
 That is the entire UI delta vs. the pre-V1 starter — a `"use client"` boundary, event handlers, fixed-cell placement, and selected-widget resize handles.
 
+## Runtime source-records hydration
+
+`growthub.source-records.json` is a sidecar persistence file beside `growthub.config.json`. It hydrates **live-backed Data Model objects** at runtime — Data Model objects whose `binding.sourceStorage === "workspace-source-records"`.
+
+- `GET /api/workspace` returns the sidecar as `workspaceSourceRecords`. The builder uses it to populate `dataModelTables` without mutating `growthub.config.json`.
+- Hydration is read-only unless `POST /api/workspace/refresh-sources` runs. That route dispatches to the server-side resolver registry, normalizes rows, and writes them through `writeWorkspaceSourceRecords` (`apps/workspace/lib/workspace-config.js`).
+- `workspaceSourceRecords` is **not** in the PATCH allowlist. `PATCH /api/workspace` still rejects it as an unknown field.
+
+After a successful refresh, the builder re-reads `GET /api/workspace`, recomputes the chart value projection for any chart widget bound to the refreshed object, and persists the updated `widget.config.values` through the normal Save path.
+
+### Chart value computation
+
+Chart widgets keep rendering from `widget.config.values` exactly as before. The new path is **how those values get written**:
+
+```
+Data Model rows (manual or sidecar-hydrated)
+  → computeChartValuesFromRows({ rows, xAxis, yAxis, filter, chartType })
+  → number[]
+  → widget.config.values
+  → PATCH /api/workspace
+```
+
+`computeChartValuesFromRows` (in `apps/workspace/lib/workspace-chart-values.js`) is a pure module:
+
+- No browser fetch, no provider logic, no secrets, no schema mutation.
+- Invalid inputs (missing Y field, non-numeric Y values, empty rows, filter clauses that drop every row) return `values: []` plus `warnings[]` — they never throw.
+- The renderer never calls this — only the builder UI calls it when the user edits source, axis, filter, group by, or aggregation; and the refresh handler calls it after a sidecar update.
+
 ## Save semantics
 
 Click `Save` → `fetch("/api/workspace", { method: "PATCH", body: JSON.stringify({ dashboards, widgetTypes, canvas }) })`. Data Model edits use the same route with `dataModel` only. While the request is in flight the button is disabled and reads `Saving...`; it returns to `Save` once the response settles. On success the response payload is hydrated back into local state so subsequent reads come from the validated server output.

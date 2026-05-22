@@ -180,7 +180,12 @@ Off-grid placements and overlaps return `400` with `details[]` naming the offend
 
 ```ts
 ChartWidgetConfig = {
-  values?: number[],                           // finite numbers only
+  values?: number[],                           // finite numbers only — precomputed projection
+  chartType?: "bar-vertical" | "bar-horizontal" | "line" | "pie" | "sum" | "gauge",
+  xAxis?: ChartAxisConfig,
+  yAxis?: ChartAxisConfig,
+  style?: ChartStyleConfig,
+  filter?: FilterConfig,
   binding?: StaticDataBinding
 }
 
@@ -217,6 +222,19 @@ RichTextWidgetConfig = {
 ```
 
 V1 ships `static` bindings only. Bridge-backed bindings are documented in `docs/BRIDGE_BACKED_WIDGETS_V1_PLAN.md` and are explicitly out of scope for V1.
+
+---
+
+## Chart value projection rule
+
+`ChartWidgetConfig.values` is the **persisted computed projection** the chart renderer reads. It is never the raw row set.
+
+- **Rows** live in Data Model objects (`dataModel.objects[*].rows`), in widget bindings (`StaticDataBinding.rows` / `json` / `csv`), or in the `growthub.source-records.json` sidecar (live-backed objects).
+- **Values** are computed from those rows by `apps/workspace/lib/workspace-chart-values.js#computeChartValuesFromRows` and written back into `widget.config.values` as a finite `number[]`.
+- Widgets **must not** mirror full source rows into chart config. The renderer queries no rows at render time — it reads `config.values` directly.
+- Bindings tie a chart to its source. The `binding.sourceType === "workspace-data-model"` shape (with `objectId`) is the reference; the computation is a one-way row → values projection persisted on Save.
+
+`workspaceSourceRecords` is exposed on `GET /api/workspace` for runtime hydration only. It is **not** in the PATCH allowlist and is **not** persisted into `growthub.config.json`.
 
 ---
 
