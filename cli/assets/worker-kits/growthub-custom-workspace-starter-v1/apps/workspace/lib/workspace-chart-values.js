@@ -131,9 +131,10 @@ function omitZeroIfRequested(pairs, omitZero) {
 /**
  * Compute the chart `values: number[]` projection from rows.
  *
- * - When `chartType === "count"` or `yAxis.aggregation === "count"`, the
- *   numeric Y field is optional; otherwise every produced bucket requires
- *   at least one numeric Y value.
+ * - When `chartType === "count"` or `yAxis.aggregation === "count"`, every row
+ *   in a bucket contributes 1 — the Y field is ignored entirely because
+ *   counting is about row presence, not row values. A non-numeric Y field is
+ *   therefore valid under count.
  * - When the Y field is non-numeric and the aggregation needs numbers,
  *   the result is `values: []` plus a warning — never a throw.
  * - When `yAxis.groupBy` is set, rows group on that key first; otherwise
@@ -147,20 +148,73 @@ function computeChartValuesFromRows({
   filter,
   chartType
 } = {}) {
+  const debug = computeChartProjectionDebug({ rows, xAxis, yAxis, filter, chartType });
+  return {
+    values: debug.values,
+    rowCount: debug.rowCount,
+    usedRowCount: debug.usedRowCount,
+    warnings: debug.warnings
+  };
+}
+
+/**
+ * Same computation as `computeChartValuesFromRows`, but also returns the
+ * intermediate steps so the Chart Hydration Inspector can show why each
+ * value exists.
+ *
+ * The returned shape includes:
+ *   - `samples`: first N source rows (preview only)
+ *   - `filteredCount` and `droppedByFilter`
+ *   - `buckets`: per-group breakdown ({ key, rowCount, numericCount, value, reason })
+ *   - `droppedRows`: per-row drop reasons after filtering ("non-numeric-y",
+ *     "missing-y", "filter-removed", "zero-omitted")
+ *   - `values`: final number[] persisted on widget.config.values
+ *
+ * Pure: no fetch, no provider logic, no schema mutation.
+ */
+function computeChartProjectionDebug({
+  rows,
+  xAxis,
+  yAxis,
+  filter,
+  chartType
+} = {}) {
   const warnings = [];
   const safeRows = Array.isArray(rows) ? rows.filter(isPlainObject) : [];
   const rowCount = safeRows.length;
+  const samples = safeRows.slice(0, 5);
   if (!rowCount) {
     if (rows !== undefined && rows !== null) {
       warnings.push("No rows available from the selected source.");
     }
-    return { values: [], rowCount: 0, usedRowCount: 0, warnings };
+    return {
+      values: [],
+      rowCount: 0,
+      usedRowCount: 0,
+      filteredCount: 0,
+      droppedByFilter: 0,
+      buckets: [],
+      droppedRows: [],
+      samples,
+      warnings
+    };
   }
 
   const filtered = applyFilter(safeRows, filter);
+  const droppedByFilter = rowCount - filtered.length;
   if (!filtered.length) {
     warnings.push("Filter clauses removed every row.");
-    return { values: [], rowCount, usedRowCount: 0, warnings };
+    return {
+      values: [],
+      rowCount,
+      usedRowCount: 0,
+      filteredCount: 0,
+      droppedByFilter,
+      buckets: [],
+      droppedRows: [],
+      samples,
+      warnings
+    };
   }
 
   const xField = isPlainObject(xAxis) && typeof xAxis.field === "string" ? xAxis.field.trim() : "";
@@ -176,42 +230,95 @@ function computeChartValuesFromRows({
 
   if (!yField && !isCountAggregation) {
     warnings.push("Choose a Y axis field or switch aggregation to count.");
-    return { values: [], rowCount, usedRowCount: 0, warnings };
+    return {
+      values: [],
+      rowCount,
+      usedRowCount: 0,
+      filteredCount: filtered.length,
+      droppedByFilter,
+      buckets: [],
+      droppedRows: [],
+      samples,
+      warnings
+    };
   }
 
+  // Count aggregation never needs numeric Y values — a row exists, so it
+  // contributes 1. Other aggregations require at least one numeric Y value
+  // somewhere in the filtered set; if every Y value is non-numeric the
+  // computation has nothing to aggregate and we return early with a warning.
   if (yField && !isCountAggregation && !fieldHasNumericValue(filtered, yField)) {
     warnings.push(`Y field "${yField}" has no numeric values.`);
-    return { values: [], rowCount, usedRowCount: 0, warnings };
+    return {
+      values: [],
+      rowCount,
+      usedRowCount: 0,
+      filteredCount: filtered.length,
+      droppedByFilter,
+      buckets: [],
+      droppedRows: filtered.slice(0, 5).map((row) => ({ row, reason: "non-numeric-y" })),
+      samples,
+      warnings
+    };
   }
 
   const bucketField = groupField || xField || "";
   const grouped = bucketField ? groupRows(filtered, bucketField) : null;
+  const droppedRows = [];
 
   const numericFor = (rowsForBucket) => {
-    if (isCountAggregation && !yField) return rowsForBucket.map(() => 1);
-    return rowsForBucket
-      .map((row) => coerceNumber(row?.[yField]))
-      .filter((value) => value !== null);
+    if (isCountAggregation) {
+      // Count is row-presence: every row in the bucket contributes 1,
+      // regardless of whether a Y field is selected or numeric.
+      return rowsForBucket.map(() => 1);
+    }
+    const numbers = [];
+    for (const row of rowsForBucket) {
+      const coerced = coerceNumber(row?.[yField]);
+      if (coerced === null) {
+        droppedRows.push({ row, reason: row?.[yField] === undefined || row?.[yField] === null || row?.[yField] === "" ? "missing-y" : "non-numeric-y" });
+        continue;
+      }
+      numbers.push(coerced);
+    }
+    return numbers;
   };
 
+  const buckets = [];
   let pairs;
   if (!grouped) {
     const numbers = numericFor(filtered);
     if (!numbers.length && !isCountAggregation) {
       warnings.push("No numeric values found.");
-      return { values: [], rowCount, usedRowCount: 0, warnings };
+      return {
+        values: [],
+        rowCount,
+        usedRowCount: filtered.length,
+        filteredCount: filtered.length,
+        droppedByFilter,
+        buckets: [],
+        droppedRows,
+        samples,
+        warnings
+      };
     }
     const aggregated = aggregateValues(numbers, aggregation);
+    buckets.push({ key: "", rowCount: filtered.length, numericCount: numbers.length, value: aggregated });
     pairs = aggregated === null ? [] : [["", aggregated]];
   } else {
     const computed = new Map();
     for (const key of grouped.order) {
-      const numbers = numericFor(grouped.groups.get(key) || []);
+      const bucketRows = grouped.groups.get(key) || [];
+      const numbers = numericFor(bucketRows);
+      let value;
       if (!numbers.length && !isCountAggregation) {
         computed.set(key, null);
-        continue;
+        value = null;
+      } else {
+        value = aggregateValues(numbers, aggregation);
+        computed.set(key, value);
       }
-      computed.set(key, aggregateValues(numbers, aggregation));
+      buckets.push({ key, rowCount: bucketRows.length, numericCount: numbers.length, value });
     }
     const ordered = sortGroups(grouped.order, computed, sortDirection);
     pairs = ordered
@@ -219,6 +326,11 @@ function computeChartValuesFromRows({
       .filter(([, value]) => value !== null && Number.isFinite(value));
   }
 
+  if (omitZero) {
+    for (const [key, value] of pairs) {
+      if (value === 0) droppedRows.push({ key, reason: "zero-omitted" });
+    }
+  }
   pairs = omitZeroIfRequested(pairs, omitZero);
   const values = pairs.map(([, value]) => value).filter((value) => Number.isFinite(value));
 
@@ -230,14 +342,67 @@ function computeChartValuesFromRows({
     values,
     rowCount,
     usedRowCount: filtered.length,
+    filteredCount: filtered.length,
+    droppedByFilter,
+    buckets,
+    droppedRows,
+    samples,
     warnings
   };
+}
+
+/**
+ * Derive a single status code the UI can render as a chip.
+ *
+ * Inputs:
+ *   - widget:           the chart widget
+ *   - table:            the bound Data Model table (or null)
+ *   - computation:      a `computeChartProjectionDebug` result
+ *   - lastSavedValues:  the values that were last persisted to disk
+ *   - sourceFetchedAt:  ISO timestamp of the last refresh, if any
+ *   - readOnlySave:     true when the runtime persistence is read-only
+ *
+ * Returns one of:
+ *   "static" | "unbound" | "needs-source" | "needs-axis" | "warnings"
+ *   "unsaved" | "stale-source" | "read-only-save-blocked" | "computed"
+ */
+function deriveChartHydrationState({
+  widget,
+  table,
+  computation,
+  lastSavedValues,
+  sourceFetchedAt,
+  readOnlySave
+} = {}) {
+  const binding = widget?.config?.binding;
+  if (binding?.sourceType !== "workspace-data-model" || !binding.objectId) {
+    return Array.isArray(widget?.config?.values) && widget.config.values.length ? "static" : "unbound";
+  }
+  if (!table) return "needs-source";
+  const yField = isPlainObject(widget?.config?.yAxis) ? widget.config.yAxis.field : "";
+  const xField = isPlainObject(widget?.config?.xAxis) ? widget.config.xAxis.field : "";
+  const aggregation = isPlainObject(widget?.config?.yAxis) ? widget.config.yAxis.aggregation : "";
+  const isCount = aggregation === "count" || widget?.config?.chartType === "count";
+  if (!isCount && !yField) return "needs-axis";
+  if (!isCount && !xField) return "needs-axis";
+  if (computation?.warnings?.length) return "warnings";
+  const current = Array.isArray(widget?.config?.values) ? widget.config.values : [];
+  const saved = Array.isArray(lastSavedValues) ? lastSavedValues : current;
+  const valuesDiffer = current.length !== saved.length || current.some((value, index) => value !== saved[index]);
+  if (valuesDiffer && readOnlySave) return "read-only-save-blocked";
+  if (valuesDiffer) return "unsaved";
+  if (sourceFetchedAt && table.liveSource?.fetchedAt && sourceFetchedAt !== table.liveSource.fetchedAt) {
+    return "stale-source";
+  }
+  return "computed";
 }
 
 export {
   applyFilter,
   aggregateValues,
   coerceNumber,
+  computeChartProjectionDebug,
   computeChartValuesFromRows,
+  deriveChartHydrationState,
   groupRows
 };

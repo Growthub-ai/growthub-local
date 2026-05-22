@@ -528,6 +528,44 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
     expect(source).toContain("function computeChartValuesFromRows");
     expect(source).toMatch(/export\s*\{[^}]*computeChartValuesFromRows[^}]*\}/s);
   });
+
+  it("lib/workspace-chart-values.js exports debug + hydration-state helpers", () => {
+    const source = appText("lib/workspace-chart-values.js");
+    expect(source).toContain("function computeChartProjectionDebug");
+    expect(source).toContain("function deriveChartHydrationState");
+    expect(source).toMatch(/export\s*\{[^}]*computeChartProjectionDebug[^}]*\}/s);
+    expect(source).toMatch(/export\s*\{[^}]*deriveChartHydrationState[^}]*\}/s);
+  });
+
+  it("Chart Hydration Inspector is wired into the builder shell", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("function ChartHydrationInspector");
+    expect(builder).toContain("Inspect computation");
+    expect(builder).toContain("Source preview");
+    expect(builder).toContain("Final values");
+    expect(builder).toContain("Save computed values");
+    // The inspector is routed via the `hydration` inspector path the Chart
+    // panel surfaces — `onSubPage("hydration")`.
+    expect(builder).toContain('inspectorPath === "hydration"');
+    expect(builder).toContain('onSubPage("hydration")');
+  });
+
+  it("Refresh source discovery resolves Data Model-bound live sources, not just direct bindings", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    // The liveSourceIds resolver must inspect both direct bindings and bound
+    // Data Model tables (so charts pointing at live-backed objects refresh).
+    expect(builder).toContain("liveSourceIds = useMemo");
+    expect(builder).toMatch(/binding\.sourceType === DATA_MODEL_SOURCE_TYPE[\s\S]{0,400}table\.liveSource/);
+  });
+
+  it("Refresh recompute marks widgets unsaved instead of silently auto-saving", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("unsavedChartIds");
+    expect(builder).toContain("setUnsavedChartIds");
+    // Save semantics: clearing the unsaved set must only happen after a
+    // successful persistWorkspaceConfig response.
+    expect(builder).toMatch(/setUnsavedChartIds\(new Set\(\)\)/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1062,6 +1100,123 @@ describe("workspace-chart-values — pure computation", () => {
     const out = computeChartValuesFromRows({});
     expect(out.values).toEqual([]);
     expect(out.warnings.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("count aggregation counts rows even when a non-numeric Y field is selected", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Lost", Owner: "Ben" },
+        { Stage: "Won", Owner: "Cy" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", aggregation: "count" },
+    });
+    // Count must ignore the (non-numeric) Y field entirely — every row in
+    // the bucket contributes 1.
+    expect(out.values).toEqual([2, 1]);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("count aggregation counts rows when Y field is numeric (still row-presence)", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", arr: 100 },
+        { Stage: "Won", arr: 200 },
+        { Stage: "Lost", arr: 50 },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "arr", aggregation: "count" },
+    });
+    expect(out.values).toEqual([2, 1]);
+  });
+
+  it("count aggregation respects filter and groupBy", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Lost", Owner: "Ben" },
+        { Stage: "Won", Owner: "Ada" },
+      ],
+      xAxis: { field: "Owner" },
+      yAxis: { aggregation: "count", groupBy: "Stage" },
+      filter: { op: "and", clauses: [{ fieldId: "Stage", operator: "eq", value: "Won" }] },
+    });
+    // Group by Stage after filtering to Stage=Won → single group with 2 rows.
+    expect(out.values).toEqual([2]);
+    expect(out.usedRowCount).toBe(2);
+  });
+});
+
+describe("workspace-chart-values — debug + hydration state", () => {
+  type DebugResult = {
+    values: number[];
+    rowCount: number;
+    filteredCount: number;
+    droppedByFilter: number;
+    buckets: Array<{ key: string | number; rowCount: number; numericCount: number; value: number | null }>;
+    droppedRows: Array<{ reason: string }>;
+    samples: Record<string, unknown>[];
+    warnings: string[];
+  };
+  let computeChartProjectionDebug: (input: unknown) => DebugResult;
+  let deriveChartHydrationState: (input: unknown) => string;
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-chart-values.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      computeChartProjectionDebug: typeof computeChartProjectionDebug;
+      deriveChartHydrationState: typeof deriveChartHydrationState;
+    };
+    computeChartProjectionDebug = mod.computeChartProjectionDebug;
+    deriveChartHydrationState = mod.deriveChartHydrationState;
+  });
+
+  it("debug returns buckets, dropped rows, samples, and final values", () => {
+    const out = computeChartProjectionDebug({
+      rows: [
+        { Stage: "Won", arr: 100 },
+        { Stage: "Won", arr: "n/a" },
+        { Stage: "Lost", arr: 50 },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([100, 50]);
+    expect(out.buckets.length).toBe(2);
+    expect(out.buckets[0]).toMatchObject({ key: "Won", rowCount: 2, numericCount: 1, value: 100 });
+    expect(out.droppedRows.some((r) => r.reason === "non-numeric-y")).toBe(true);
+    expect(out.samples.length).toBeLessThanOrEqual(5);
+  });
+
+  it("deriveChartHydrationState reports needs-source when bound table is missing", () => {
+    const state = deriveChartHydrationState({
+      widget: { config: { binding: { sourceType: "workspace-data-model", objectId: "gone" }, yAxis: { field: "arr", aggregation: "sum" }, xAxis: { field: "Stage" } } },
+      table: null,
+      computation: { warnings: [] },
+      lastSavedValues: [],
+    });
+    expect(state).toBe("needs-source");
+  });
+
+  it("deriveChartHydrationState reports unsaved when current values differ from saved", () => {
+    const state = deriveChartHydrationState({
+      widget: { config: { values: [10, 20], binding: { sourceType: "workspace-data-model", objectId: "o" }, yAxis: { field: "arr", aggregation: "sum" }, xAxis: { field: "Stage" } } },
+      table: { rows: [], columns: [] },
+      computation: { warnings: [] },
+      lastSavedValues: [10, 30],
+    });
+    expect(state).toBe("unsaved");
+  });
+
+  it("deriveChartHydrationState reports static for unbound widgets that still have legacy values", () => {
+    const state = deriveChartHydrationState({
+      widget: { config: { values: [1, 2, 3] } },
+      table: null,
+      computation: { warnings: [] },
+      lastSavedValues: [1, 2, 3],
+    });
+    expect(state).toBe("static");
   });
 });
 

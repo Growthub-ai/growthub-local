@@ -255,7 +255,27 @@ Data Model rows (manual or sidecar-hydrated)
 
 - No browser fetch, no provider logic, no secrets, no schema mutation.
 - Invalid inputs (missing Y field, non-numeric Y values, empty rows, filter clauses that drop every row) return `values: []` plus `warnings[]` — they never throw.
+- `count` aggregation always counts rows in the bucket. The Y field is ignored entirely under `count` — a non-numeric Y field is valid because counting is about row presence, not row values.
 - The renderer never calls this — only the builder UI calls it when the user edits source, axis, filter, group by, or aggregation; and the refresh handler calls it after a sidecar update.
+
+The companion helper `computeChartProjectionDebug` returns the same projection plus per-bucket diagnostics (row count, numeric count, aggregated value, dropped-row reasons, sample input rows, warnings). The Chart Hydration Inspector renders these so the user can audit why `widget.config.values` looks the way it does without leaving the builder.
+
+### Refresh semantics + unsaved values
+
+`POST /api/workspace/refresh-sources` writes sidecar rows server-side, then the builder re-reads `GET /api/workspace` and recomputes every chart widget whose bound Data Model object (resolved via the table's `liveSource.sourceRecordKey`, `objectId`, or `binding.sourceId`) was refreshed.
+
+Recomputed values land in **local React state only**. They are **not** auto-saved. The Chart panel surfaces the recomputed widget as `Unsaved` and offers a `Save computed values` action in the Hydration Inspector that routes through the existing `persistWorkspaceConfig` / `PATCH /api/workspace` path. On read-only runtimes the Save action is disabled with the same guidance the 409 returns.
+
+Source rows are **never** copied into chart widget config. The persisted projection is the only data that flows into `widget.config.values`.
+
+### Refresh source discovery
+
+`liveSourceIds` discovery (used to populate the tab-level refresh button) considers BOTH:
+
+- Direct live bindings — a widget binding with `sourceStorage === "workspace-source-records"`.
+- Data Model-bound widgets — a widget binding with `sourceType === "workspace-data-model"` whose resolved table is itself live-backed. The refreshable key is taken from the bound table's `liveSource.sourceRecordKey`, `objectId`, or `binding.sourceId`.
+
+This is runtime discovery only; `growthub.config.json` is never mutated when computing the refresh set.
 
 ## Save semantics
 

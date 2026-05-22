@@ -79,7 +79,10 @@ import {
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
-import { computeChartValuesFromRows } from "@/lib/workspace-chart-values";
+import {
+  computeChartProjectionDebug,
+  computeChartValuesFromRows
+} from "@/lib/workspace-chart-values";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 
@@ -2809,7 +2812,155 @@ function FilterSubPanel({ widget, integrations, dataModelTable, adapterConfig, o
   </section>;
 }
 
-function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPage }) {
+/**
+ * ChartHydrationInspector — diagnostics overlay for chart value computation.
+ *
+ * Renders the same projection pipeline the renderer reads from (source rows
+ * → filter → grouping → aggregation → values[]), so the user can audit why
+ * `widget.config.values` looks the way it does. It is read-only with two
+ * actions:
+ *   - "Recompute values" re-runs `recomputeChartConfig` against the latest
+ *     Data Model tables; useful after manual row edits.
+ *   - "Save computed values" routes through the existing PATCH /api/workspace
+ *     path; respects the read-only runtime adapter (Save is disabled with
+ *     guidance instead of crashing).
+ */
+function ChartHydrationInspector({
+  widget,
+  dataModelTables,
+  unsaved,
+  saving,
+  canSave,
+  saveGuidance,
+  onChange,
+  onSave,
+  onBack
+}) {
+  const binding = widget?.config?.binding;
+  const table = useMemo(() => {
+    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return null;
+    return (Array.isArray(dataModelTables) ? dataModelTables : [])
+      .find((t) => t.objectId === binding.objectId) || null;
+  }, [binding, dataModelTables]);
+  const debug = useMemo(() => computeChartProjectionDebug({
+    rows: Array.isArray(table?.rows) ? table.rows : [],
+    xAxis: widget?.config?.xAxis,
+    yAxis: widget?.config?.yAxis,
+    filter: widget?.config?.filter,
+    chartType: widget?.config?.chartType
+  }), [table, widget?.config?.xAxis, widget?.config?.yAxis, widget?.config?.filter, widget?.config?.chartType]);
+
+  const recompute = useCallback(() => {
+    const { config: recomputed } = recomputeChartConfig(widget.config || {}, dataModelTables);
+    onChange(recomputed);
+  }, [widget.config, dataModelTables, onChange]);
+
+  const dropReasonCounts = useMemo(() => {
+    const counts = {};
+    for (const entry of debug.droppedRows || []) {
+      counts[entry.reason] = (counts[entry.reason] || 0) + 1;
+    }
+    return counts;
+  }, [debug.droppedRows]);
+
+  return (
+    <section className="workspace-widget-subpanel workspace-chart-inspector">
+      <SubPanelHeader title="Inspect computation" breadcrumb={widget?.title} onBack={onBack} />
+
+      <p className="workspace-panel-label">Source</p>
+      {table ? (
+        <div className="workspace-settings-list">
+          <div><span>Object</span><code>{table.label}</code></div>
+          <div><span>Storage</span><code>{table.liveSource ? "Live-backed sidecar" : "Manual Data Model"}</code></div>
+          <div><span>Rows available</span><code>{table.rows?.length || 0}</code></div>
+          {table.liveSource?.fetchedAt ? <div><span>Last fetched</span><code>{table.liveSource.fetchedAt}</code></div> : null}
+        </div>
+      ) : (
+        <p className="workspace-panel-hint">
+          No source bound. Open <strong>Source</strong> to pick a Data Model object.
+        </p>
+      )}
+
+      <p className="workspace-panel-label">Source preview</p>
+      {debug.samples?.length ? (
+        <pre className="workspace-chart-inspector-sample">
+{JSON.stringify(debug.samples, null, 2)}
+        </pre>
+      ) : (
+        <p className="workspace-panel-hint">No source rows.</p>
+      )}
+
+      <p className="workspace-panel-label">Filter</p>
+      <div className="workspace-settings-list">
+        <div><span>Before</span><code>{debug.rowCount}</code></div>
+        <div><span>After</span><code>{debug.filteredCount ?? 0}</code></div>
+        <div><span>Dropped by filter</span><code>{debug.droppedByFilter ?? 0}</code></div>
+      </div>
+
+      <p className="workspace-panel-label">Buckets</p>
+      {debug.buckets?.length ? (
+        <div className="workspace-settings-list">
+          {debug.buckets.map((bucket, index) => (
+            <div key={`${bucket.key || "_"}_${index}`}>
+              <span>{bucket.key === "" ? "(all rows)" : String(bucket.key)}</span>
+              <code>
+                {bucket.rowCount} row{bucket.rowCount === 1 ? "" : "s"}
+                {" · "}
+                {bucket.numericCount} numeric
+                {" · "}
+                {bucket.value === null || bucket.value === undefined ? "—" : String(bucket.value)}
+              </code>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="workspace-panel-hint">No buckets — choose an X axis field or group by.</p>
+      )}
+
+      <p className="workspace-panel-label">Dropped rows</p>
+      {Object.keys(dropReasonCounts).length ? (
+        <div className="workspace-settings-list">
+          {Object.entries(dropReasonCounts).map(([reason, count]) => (
+            <div key={reason}><span>{reason}</span><code>{count}</code></div>
+          ))}
+        </div>
+      ) : (
+        <p className="workspace-panel-hint">No rows dropped.</p>
+      )}
+
+      <p className="workspace-panel-label">Final values</p>
+      <pre className="workspace-chart-inspector-sample">
+{JSON.stringify(debug.values, null, 2)}
+      </pre>
+
+      {debug.warnings?.length ? (
+        <div className="workspace-settings-list" role="alert" aria-label="Computation warnings">
+          {debug.warnings.map((warning, index) => (
+            <div key={index}><span>Warning</span><code>{warning}</code></div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="workspace-widget-actions" role="group" aria-label="Inspector actions">
+        <button type="button" onClick={recompute}><RefreshCw size={15} />Recompute values</button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave || saving}
+          title={!canSave ? saveGuidance || "Save is disabled in this runtime." : "Persist computed values to growthub.config.json"}
+        >
+          <Save size={15} />{saving ? "Saving…" : unsaved ? "Save computed values" : "Save"}
+        </button>
+      </div>
+      {unsaved ? <p className="workspace-panel-hint">
+        Computed values are unsaved. Save persists them through the existing PATCH /api/workspace path.
+      </p> : null}
+      {!canSave && saveGuidance ? <p className="workspace-panel-hint">{saveGuidance}</p> : null}
+    </section>
+  );
+}
+
+function ChartConfigPanel({ widget, branding, dataModelTables, unsaved, onChange, onSubPage }) {
   const chartType = getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget);
   const xAxis = getChartAxis(widget, "xAxis");
   const yAxis = getChartAxis(widget, "yAxis");
@@ -2892,7 +3043,7 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         </div>
         <div>
           <span>Values</span>
-          <code>{Array.isArray(widget.config?.values) ? widget.config.values.length : 0} computed</code>
+          <code>{Array.isArray(widget.config?.values) ? widget.config.values.length : 0} computed{unsaved ? " · unsaved" : ""}</code>
         </div>
         {boundTable.liveSource?.fetchedAt ? <div>
           <span>Last fetched</span>
@@ -2902,6 +3053,9 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
           <span>Status</span>
           <code title={computeStatus.warnings.join(" · ")}>{computeStatus.warnings[0]}</code>
         </div> : null}
+        <button type="button" className="workspace-settings-row" onClick={() => onSubPage("hydration")}>
+          <span>Inspect computation</span><code>{unsaved ? "Unsaved" : "Open"}</code>
+        </button>
         <button type="button" className="workspace-settings-row" onClick={recomputeValues}>
           <span>Recompute values</span><code>Sync</code>
         </button>
@@ -3736,20 +3890,57 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   }, [activeWidgets]);
 
   /**
-   * Collect all sourceIds from live-backed widgets on the active tab.
-   * A widget is live-backed when its binding has sourceStorage === "workspace-source-records"
-   * and a non-empty sourceId. The refresh button is inert when this list is empty.
+   * Collect refreshable source IDs from BOTH direct live bindings (a widget
+   * binding with `sourceStorage === "workspace-source-records"`) AND
+   * Data Model-bound widgets whose bound table resolves to a live-backed
+   * sidecar source. The second path is what makes charts that point at a
+   * live-backed Data Model object refreshable from the Chart panel — the
+   * live-source metadata lives on the Data Model object, not on the widget
+   * binding itself.
+   *
+   * This is runtime discovery only — config is never mutated.
    */
   const liveSourceIds = useMemo(() => {
     const ids = new Set();
+    const addCandidates = (...candidates) => {
+      for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim()) {
+          ids.add(candidate.trim());
+        }
+      }
+    };
     for (const widget of activeWidgets) {
       const binding = widget?.config?.binding;
-      if (binding?.sourceStorage === "workspace-source-records" && typeof binding.sourceId === "string" && binding.sourceId.trim()) {
-        ids.add(binding.sourceId.trim());
+      if (!binding) continue;
+      // Direct live binding (legacy path).
+      if (binding.sourceStorage === "workspace-source-records") {
+        addCandidates(binding.sourceId);
+      }
+      // Data Model-bound widgets (chart / view) whose bound table is itself
+      // backed by a sidecar source.
+      if (binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
+        const table = (Array.isArray(dataModelTables) ? dataModelTables : [])
+          .find((t) => t.objectId === binding.objectId);
+        if (!table) continue;
+        const tableBinding = table.binding || {};
+        if (table.liveSource || tableBinding.sourceStorage === "workspace-source-records") {
+          addCandidates(
+            table.liveSource?.sourceRecordKey,
+            table.objectId,
+            tableBinding.sourceId
+          );
+        }
       }
     }
     return Array.from(ids);
-  }, [activeWidgets]);
+  }, [activeWidgets, dataModelTables]);
+
+  // Track which chart widgets have recomputed values that have not yet been
+  // persisted. After a refresh, recomputed values live in local React state
+  // only — until the user saves, the on-disk `growthub.config.json` still
+  // holds the previous projection. The Chart panel shows an `Unsaved` chip
+  // and a `Save computed values` action when this set is non-empty.
+  const [unsavedChartIds, setUnsavedChartIds] = useState(() => new Set());
 
   const refreshSources = useCallback(async () => {
     if (refreshing || liveSourceIds.length === 0) return;
@@ -3787,7 +3978,10 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       }
       // Recompute chart widgets bound to refreshed objects. We rebuild the
       // Data Model tables from the latest sidecar before recomputing so the
-      // computation sees the freshly-fetched rows.
+      // computation sees the freshly-fetched rows. Recomputed widgets are
+      // marked as unsaved — persistence still requires the explicit Save
+      // action so the user can audit the projection before committing it.
+      const dirtyWidgetIds = new Set();
       if (refreshedIds.size > 0) {
         const nextTables = listWorkspaceDataModelTables(config, { sourceRecords: nextSourceRecords });
         const objectIdsForRefreshedSources = new Set();
@@ -3795,7 +3989,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           for (const table of nextTables) {
             if (!table.objectId) continue;
             const liveKey = table.liveSource?.sourceRecordKey;
-            if (liveKey === sourceId || table.objectId === sourceId) {
+            const tableBindingSourceId = table.binding?.sourceId;
+            if (liveKey === sourceId || table.objectId === sourceId || tableBindingSourceId === sourceId) {
               objectIdsForRefreshedSources.add(table.objectId);
             }
           }
@@ -3806,6 +4001,11 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
             const objectId = widget.config?.binding?.objectId;
             if (!objectId || !objectIdsForRefreshedSources.has(objectId)) return widget;
             const { config: recomputed } = recomputeChartConfig(widget.config || {}, nextTables);
+            const prevValues = Array.isArray(widget.config?.values) ? widget.config.values : [];
+            const nextValues = Array.isArray(recomputed.values) ? recomputed.values : [];
+            const changed = prevValues.length !== nextValues.length
+              || prevValues.some((value, index) => value !== nextValues[index]);
+            if (changed) dirtyWidgetIds.add(widget.id);
             return { ...widget, config: recomputed };
           });
           setConfig((prev) => {
@@ -3820,7 +4020,19 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           });
         }
       }
-      setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
+      if (dirtyWidgetIds.size > 0) {
+        setUnsavedChartIds((prev) => {
+          const next = new Set(prev);
+          for (const id of dirtyWidgetIds) next.add(id);
+          return next;
+        });
+      }
+      setRefreshResult({
+        refreshed: data.refreshed?.length || 0,
+        skipped: data.skipped?.length || 0,
+        recomputed: dirtyWidgetIds.size,
+        unsaved: dirtyWidgetIds.size > 0
+      });
     } catch {
       setRefreshResult({ error: true });
     } finally {
@@ -4278,6 +4490,9 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           dashboards: savedDashboards,
           canvas: savedActiveDashboard ? dashboardCanvasFrom(savedActiveDashboard, payload.workspaceConfig.canvas) : payload.workspaceConfig.canvas
         });
+        // Saved values are now on disk — clear the unsaved-chart tracking
+        // so the Chart panel stops showing the `Unsaved` chip / CTA.
+        setUnsavedChartIds(new Set());
       } else {
         setConfigMessage(payload.error || "Save failed");
       }
@@ -5328,6 +5543,17 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
+        {selectedWidget && selectedWidget.kind === "chart" && inspectorPath === "hydration" ? <ChartHydrationInspector
+          widget={selectedWidget}
+          dataModelTables={dataModelTables}
+          unsaved={unsavedChartIds.has(selectedWidget.id)}
+          saving={saving}
+          canSave={Boolean(persistence?.canSave)}
+          saveGuidance={persistence?.guidance || persistence?.saveLabel || ""}
+          onChange={replaceSelectedWidgetConfig}
+          onSave={() => persistWorkspaceConfig(config, activeDashboardId)}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
         {selectedWidget && inspectorPath === SUB_PANEL_ROOT ? <section className="workspace-widget-settings">
           <label>
             <span>Title</span>
@@ -5337,6 +5563,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
             widget={selectedWidget}
             branding={branding}
             dataModelTables={dataModelTables}
+            unsaved={unsavedChartIds.has(selectedWidget.id)}
             onChange={replaceSelectedWidgetConfig}
             onSubPage={(name) => setInspectorPath(name)}
           /> : null}
