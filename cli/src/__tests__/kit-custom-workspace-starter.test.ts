@@ -1191,3 +1191,264 @@ describe("orchestration-run-console — observability model", () => {
     expect(record!.adapterMeta).toEqual({ httpStatus: 200 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 10. Live Runs Console V2 — manual run inputs, redaction, route contract
+// ---------------------------------------------------------------------------
+
+describe("orchestration-run-inputs — manual input contract", () => {
+  it("orchestration-run-inputs.js ships in apps/workspace/lib/", () => {
+    expect(appExists("lib/orchestration-run-inputs.js")).toBe(true);
+  });
+
+  it("RunSetupPanel ships in app/workflows/", () => {
+    expect(appExists("app/workflows/RunSetupPanel.jsx")).toBe(true);
+  });
+
+  it("discoverRunInputSchema finds form fields from human-input nodes", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      discoverRunInputSchema: (g: unknown) => {
+        requiresInput: boolean;
+        fields: Array<{ id: string; required: boolean; isSecret: boolean; type: string }>;
+        kind: string;
+      };
+      RUN_INPUTS_KIND: string;
+    };
+    expect(mod.RUN_INPUTS_KIND).toBe("growthub-workflow-run-inputs-v1");
+    const schema = mod.discoverRunInputSchema({
+      version: 1,
+      provider: "growthub-native",
+      nodes: [
+        {
+          id: "form-1",
+          type: "human-input",
+          config: {
+            action: "form",
+            title: "Run inputs",
+            required: true,
+            fields: [
+              { key: "companyName", value: "text" },
+              { key: "email", value: "email" },
+              { key: "apiKey", value: "secretRef" },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    });
+    expect(schema.requiresInput).toBe(true);
+    expect(schema.fields.map((f) => f.id)).toEqual(["companyName", "email", "apiKey"]);
+    const secretField = schema.fields.find((f) => f.id === "apiKey");
+    expect(secretField?.isSecret).toBe(true);
+    expect(secretField?.type).toBe("secretRef");
+  });
+
+  it("discoverRunInputSchema returns requiresInput=false when no form nodes", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as { discoverRunInputSchema: (g: unknown) => { requiresInput: boolean; fields: unknown[] } };
+    const schema = mod.discoverRunInputSchema({
+      version: 1,
+      provider: "growthub-native",
+      nodes: [{ id: "input", type: "input" }],
+      edges: [],
+    });
+    expect(schema.requiresInput).toBe(false);
+    expect(schema.fields).toEqual([]);
+  });
+
+  it("validateRunInputsEnvelope flags missing required fields", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      discoverRunInputSchema: (g: unknown) => { fields: unknown[]; requiresInput: boolean };
+      validateRunInputsEnvelope: (v: unknown, s: unknown) => { ok: boolean; missing: string[]; error?: string };
+    };
+    const schema = mod.discoverRunInputSchema({
+      version: 1,
+      provider: "growthub-native",
+      nodes: [
+        {
+          id: "form-1",
+          type: "human-input",
+          config: { action: "form", required: true, fields: [{ key: "email", value: "email" }] },
+        },
+      ],
+      edges: [],
+    });
+    const r = mod.validateRunInputsEnvelope({ values: {} }, schema);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toContain("email");
+  });
+
+  it("normalizeRunInputsEnvelope redacts secret-typed fields", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunInputsEnvelope: (v: unknown, s: unknown) => { values: Record<string, unknown>; kind: string };
+    };
+    const env = mod.normalizeRunInputsEnvelope(
+      {
+        values: {
+          companyName: "Acme",
+          api_key: "leak-this-please",
+          secretField: { secretRef: "OPENAI_API_KEY" },
+        },
+      },
+      {
+        fields: [
+          { id: "companyName", type: "text", required: true, isSecret: false },
+          { id: "api_key", type: "text", required: false, isSecret: true },
+          { id: "secretField", type: "secretRef", required: false, isSecret: true },
+        ],
+      }
+    );
+    expect(env!.kind).toBe("growthub-workflow-run-inputs-v1");
+    expect(env!.values.companyName).toBe("Acme");
+    expect(env!.values.api_key).toEqual({ secretRef: "[redacted]" });
+    expect(env!.values.secretField).toEqual({ secretRef: "OPENAI_API_KEY" });
+    expect(JSON.stringify(env)).not.toContain("leak-this-please");
+  });
+
+  it("normalizeRunInputsEnvelope redacts bearer tokens inside string values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunInputsEnvelope: (v: unknown, s: unknown) => { values: Record<string, unknown> };
+    };
+    const env = mod.normalizeRunInputsEnvelope(
+      { values: { prompt: "Use Authorization: Bearer abc123 to call the api" } },
+      { fields: [{ id: "prompt", type: "text", required: true, isSecret: false }] }
+    );
+    expect(String(env!.values.prompt)).toContain("[redacted]");
+    expect(String(env!.values.prompt)).not.toContain("abc123");
+  });
+
+  it("validateRunInputsEnvelope rejects oversize field values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      validateRunInputsEnvelope: (v: unknown, s: unknown) => { ok: boolean; error?: string };
+      MAX_RUN_INPUT_FIELD_BYTES: number;
+    };
+    const oversize = "x".repeat(mod.MAX_RUN_INPUT_FIELD_BYTES + 1);
+    const r = mod.validateRunInputsEnvelope({ values: { prompt: oversize } }, { fields: [{ id: "prompt", required: false }] });
+    expect(r.ok).toBe(false);
+    expect(String(r.error)).toMatch(/exceeds/);
+  });
+
+  it("buildInputPayloadForRunner skips secretRef values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      buildInputPayloadForRunner: (e: unknown) => Record<string, unknown>;
+    };
+    const payload = mod.buildInputPayloadForRunner({
+      values: { companyName: "Acme", token: { secretRef: "OPENAI_API_KEY" } },
+    });
+    expect(payload.companyName).toBe("Acme");
+    expect("token" in payload).toBe(false);
+  });
+
+  it("sandbox-run route imports the run-inputs helper and validates", () => {
+    const route = appText("app/api/workspace/sandbox-run/route.js");
+    expect(route).toContain("orchestration-run-inputs");
+    expect(route).toContain("discoverRunInputSchema");
+    expect(route).toContain("normalizeRunInputsEnvelope");
+    expect(route).toContain("validateRunInputsEnvelope");
+    expect(route).toContain("runInputs");
+  });
+
+  it("orchestration-graph-runner accepts an optional runInputs param", () => {
+    const runner = appText("lib/orchestration-graph-runner.js");
+    expect(runner).toContain("runInputs");
+    expect(runner).toContain("buildInputPayloadForRunner");
+  });
+
+  it("orchestration-run-console exposes inputs + exports on the normalized record", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => {
+        payload: {
+          runInputs: { values: Record<string, unknown> } | null;
+          inputSource: string;
+          inputFieldCount: number;
+        };
+        exports: { available: string[] };
+      } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-with-inputs",
+      exitCode: 0,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "ok",
+      input: {
+        kind: "growthub-workflow-run-inputs-v1",
+        source: "manual",
+        values: { companyName: "Acme" },
+        files: [],
+      },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.payload.runInputs?.values.companyName).toBe("Acme");
+    expect(record!.payload.inputSource).toBe("manual");
+    expect(record!.payload.inputFieldCount).toBe(1);
+    expect(record!.exports.available).toContain("download-json");
+    expect(record!.exports.available).toContain("copy-output");
+  });
+
+  it("orchestration-run-trace preserves redacted input metadata on records", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-trace.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunRecord: (r: unknown) => {
+        input: { values: Record<string, unknown> } | null;
+        inputSummary: { fieldCount: number } | null;
+      } | null;
+    };
+    const record = mod.normalizeRunRecord({
+      runId: "run-1",
+      input: {
+        kind: "growthub-workflow-run-inputs-v1",
+        source: "manual",
+        values: { email: "user@example.com" },
+        files: [],
+      },
+    });
+    expect(record!.input!.values.email).toBe("user@example.com");
+    expect(record!.inputSummary!.fieldCount).toBe(1);
+  });
+
+  it("WorkflowSurface wires Test through handleTestClick and runSandbox accepts options", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("RunSetupPanel");
+    expect(surface).toContain("discoverRunInputSchema");
+    expect(surface).toContain("handleTestClick");
+    expect(surface).toContain("handleRunWithInputs");
+    expect(surface).toContain("runSandbox(options = {})");
+    expect(surface).toContain("body.runInputs");
+  });
+
+  it("OrchestrationRunTracePanel renders inputs and export actions", () => {
+    const panel = appText("app/data-model/components/OrchestrationRunTracePanel.jsx");
+    expect(panel).toContain("InputsSection");
+    expect(panel).toContain("ExportActions");
+    expect(panel).toContain("Copy output");
+    expect(panel).toContain("Download stdout");
+    expect(panel).toContain("Download stderr");
+  });
+
+  it("no browser-side secret persistence patterns introduced", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    const panel = appText("app/workflows/RunSetupPanel.jsx");
+    const trace = appText("app/data-model/components/OrchestrationRunTracePanel.jsx");
+    for (const source of [surface, panel, trace]) {
+      expect(source).not.toMatch(/localStorage\.setItem\([^)]*(token|secret|api_key|apiKey|password)/i);
+      expect(source).not.toMatch(/sessionStorage\.setItem\([^)]*(token|secret|api_key|apiKey|password)/i);
+    }
+  });
+});

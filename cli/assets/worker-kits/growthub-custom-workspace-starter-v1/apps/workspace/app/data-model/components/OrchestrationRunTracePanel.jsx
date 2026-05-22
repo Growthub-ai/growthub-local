@@ -192,6 +192,127 @@ function CodeBlock({ label, body }) {
   );
 }
 
+function downloadText(filename, text, mime = "text/plain") {
+  if (typeof window === "undefined") return;
+  const blob = new Blob([text || ""], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function copyToClipboard(text) {
+  if (typeof navigator === "undefined" || !navigator?.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(text || "");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function InputsSection({ payload }) {
+  const runInputs = payload?.runInputs;
+  const summary = payload?.inputSummary;
+  if (!runInputs && (!summary || summary.fieldCount === 0)) {
+    return (
+      <section className="dm-run-console__section">
+        <h3>Inputs</h3>
+        <p className="dm-run-console__hint">No manual inputs were submitted for this run.</p>
+      </section>
+    );
+  }
+  const valueEntries = runInputs && runInputs.values && typeof runInputs.values === "object"
+    ? Object.entries(runInputs.values)
+    : [];
+  return (
+    <section className="dm-run-console__section">
+      <h3>Inputs</h3>
+      <KeyValueBlock
+        entries={[
+          ["Source", summary?.source || runInputs?.source || "manual"],
+          ["Fields", String(summary?.fieldCount ?? valueEntries.length)],
+          ["Files", String(summary?.fileCount ?? (Array.isArray(runInputs?.files) ? runInputs.files.length : 0))]
+        ]}
+      />
+      {valueEntries.length > 0 ? (
+        <dl className="dm-run-console__kv">
+          {valueEntries.map(([key, value]) => {
+            const isSecretRef = value && typeof value === "object" && "secretRef" in value;
+            const display = isSecretRef
+              ? `secretRef: ${String(value.secretRef || "[redacted]")}`
+              : typeof value === "string"
+                ? value
+                : JSON.stringify(value);
+            return (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{display}</dd>
+              </div>
+            );
+          })}
+        </dl>
+      ) : null}
+    </section>
+  );
+}
+
+function ExportActions({ exports, output, record, selectedLogNode }) {
+  const available = Array.isArray(exports?.available) ? exports.available : [];
+  if (available.length === 0) {
+    return <p className="dm-run-console__hint">No exports available for this run.</p>;
+  }
+  const runLabel = String(record?.runId || "run").replace(/[^a-zA-Z0-9_-]+/g, "-") || "run";
+  const [copied, setCopied] = useState("");
+
+  async function handleCopy() {
+    const ok = await copyToClipboard(output?.normalizedOutput || output?.stdout || "");
+    setCopied(ok ? "Output copied" : "Clipboard unavailable");
+    setTimeout(() => setCopied(""), 1600);
+  }
+
+  return (
+    <div className="dm-run-console__exports">
+      {available.includes("copy-output") && (
+        <button type="button" className="dm-btn-outline" onClick={handleCopy}>Copy output</button>
+      )}
+      {available.includes("download-stdout") && output?.stdout && (
+        <button
+          type="button"
+          className="dm-btn-outline"
+          onClick={() => downloadText(`growthub-run-${runLabel}-stdout.txt`, output.stdout)}
+        >Download stdout</button>
+      )}
+      {available.includes("download-stderr") && output?.stderr && (
+        <button
+          type="button"
+          className="dm-btn-outline"
+          onClick={() => downloadText(`growthub-run-${runLabel}-stderr.txt`, output.stderr)}
+        >Download stderr</button>
+      )}
+      {available.includes("download-normalized-output") && output?.normalizedOutput && output.normalizedOutput !== output.stdout && (
+        <button
+          type="button"
+          className="dm-btn-outline"
+          onClick={() => downloadText(`growthub-run-${runLabel}-output.json`, output.normalizedOutput, "application/json")}
+        >Download output JSON</button>
+      )}
+      {available.includes("download-log-node") && selectedLogNode?.text && (
+        <button
+          type="button"
+          className="dm-btn-outline"
+          onClick={() => downloadText(`growthub-run-${runLabel}-${selectedLogNode.id || "log"}.txt`, selectedLogNode.text)}
+        >Download selected log node</button>
+      )}
+      {copied && <span className="dm-run-console__export-toast">{copied}</span>}
+    </div>
+  );
+}
+
 export function OrchestrationRunTracePanel({
   row,
   objectId,
@@ -589,11 +710,21 @@ export function OrchestrationRunTracePanel({
                 <CodeBlock label="Command" body={payload.command} />
                 <CodeBlock label="Instructions" body={payload.instructions} />
               </section>
+              <InputsSection payload={payload} />
             </div>
           )}
 
           {activeDetailTab === "detail" && (
             <div className="dm-run-console__detail-body">
+              <section className="dm-run-console__section">
+                <h3>Export</h3>
+                <ExportActions
+                  exports={activeConsoleRecord?.exports}
+                  output={output}
+                  record={activeConsoleRecord}
+                  selectedLogNode={selectedLogNode}
+                />
+              </section>
               <section className="dm-run-console__section">
                 <h3>Output</h3>
                 <CodeBlock label="Error" body={output.error} />

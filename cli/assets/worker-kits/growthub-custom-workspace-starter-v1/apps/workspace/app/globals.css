@@ -7998,3 +7998,36 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-run-console__code { display: grid; gap: 4px; }
 .dm-run-console__code span { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; }
 .dm-run-console__code pre { margin: 0; padding: 10px; background: #0f172a; color: #e2e8f0; border-radius: 5px; font-size: 11px; overflow: auto; max-height: 280px; white-space: pre-wrap; word-break: break-word; }
+
+/* Exports (Detail tab action bar) */
+.dm-run-console__exports { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dm-run-console__exports .dm-btn-outline { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 8px; border-radius: 5px; }
+.dm-run-console__export-toast { font-size: 11px; color: #166534; background: #dcfce7; border: 1px solid #bbf7d0; padding: 2px 8px; border-radius: 999px; }
+
+/* Run Setup sidecar (manual inputs before execution) */
+.dm-run-setup { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px; min-height: 0; }
+.dm-run-setup__instructions { margin: 0; font-size: 12px; color: #475569; line-height: 1.45; }
+.dm-run-setup__fields { display: grid; gap: 10px; }
+.dm-run-setup__fields .dm-orchestration-config__field { gap: 4px; }
+.dm-run-setup__fields .dm-orchestration-config__field span { font-size: 11px; font-weight: 650; color: #1f2937; }
+.dm-run-setup__fields input[type="text"],
+.dm-run-setup__fields input[type="email"],
+.dm-run-setup__fields input[type="url"],
+.dm-run-setup__fields input[type="number"],
+.dm-run-setup__fields textarea {
+  width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 5px;
+  padding: 6px 8px; font-size: 12px; color: #111827; background: #fff; outline: none;
+  font-family: inherit;
+}
+.dm-run-setup__fields input:focus,
+.dm-run-setup__fields textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.dm-run-setup__fields textarea { min-height: 60px; resize: vertical; }
+.dm-run-setup__checkbox { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #1f2937; }
+.dm-run-setup__required { color: #b91c1c; font-style: normal; }
+.dm-run-setup__help { font-size: 10px; color: #6b7280; }
+.dm-run-setup__error { font-size: 10px; color: #b91c1c; }
+.dm-run-setup__hint { margin: 0; font-size: 12px; color: #6b7280; }
+.dm-run-setup__notice { font-size: 11px; color: #475569; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; padding: 8px 10px; line-height: 1.4; }
+.dm-run-setup__actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.dm-run-setup__actions .dm-btn-outline,
+.dm-run-setup__actions .dm-workflow-chip-btn { display: inline-flex; align-items: center; gap: 6px; }

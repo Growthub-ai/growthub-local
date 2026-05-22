@@ -17,8 +17,17 @@
  */
 
 import { redactSecretsFromText } from "./orchestration-graph.js";
+import { redactRunInputsEnvelope, summarizeRunInputs } from "./orchestration-run-inputs.js";
 
 const RUN_LOG_BUNDLE_KIND = "growthub-sandbox-run-log-v1";
+const DEFAULT_EXPORT_TARGETS = Object.freeze([
+  "download-json",
+  "copy-output",
+  "download-stdout",
+  "download-stderr",
+  "download-normalized-output",
+  "download-log-node"
+]);
 
 function safeString(value) {
   if (value == null) return "";
@@ -173,6 +182,23 @@ function buildRunLogTree(record) {
   return [rootNode];
 }
 
+function buildExportsForRecord(record, stdoutText, stderrText, outputText) {
+  const declared = record?.exports?.available;
+  if (Array.isArray(declared) && declared.length > 0) {
+    return {
+      available: declared.map((id) => safeString(id).trim()).filter(Boolean),
+      external: Array.isArray(record?.exports?.external) ? record.exports.external.slice() : []
+    };
+  }
+  const available = ["download-json"];
+  if (stdoutText || outputText) available.push("copy-output");
+  if (stdoutText) available.push("download-stdout");
+  if (stderrText) available.push("download-stderr");
+  if (outputText && outputText !== stdoutText) available.push("download-normalized-output");
+  available.push("download-log-node");
+  return { available, external: [] };
+}
+
 function normalizeRunConsoleRecord(record) {
   if (!record || typeof record !== "object") return null;
   const summary = deriveRunSummary(record);
@@ -194,6 +220,10 @@ function normalizeRunConsoleRecord(record) {
   const errorText = safeString(record.error);
   const outputRaw = record.output ?? record.normalizedOutput ?? record.response;
   const outputText = typeof outputRaw === "string" ? outputRaw : safeJsonString(outputRaw);
+  const rawInput = record.input || record.runInputs || null;
+  const safeInput = rawInput ? redactRunInputsEnvelope(rawInput) : null;
+  const inputSummary = safeInput ? summarizeRunInputs(safeInput) : null;
+  const exports = buildExportsForRecord(record, stdoutText, stderrText, outputText);
 
   return {
     runId: safeString(record.runId).trim(),
@@ -222,8 +252,14 @@ function normalizeRunConsoleRecord(record) {
       version: safeString(record.version).trim(),
       schedulerRegistryId: safeString(record.schedulerRegistryId).trim(),
       agentHost: safeString(record.agentHost).trim(),
-      timeoutMs: clampNumber(record.timeoutMs)
+      timeoutMs: clampNumber(record.timeoutMs),
+      runInputs: safeInput,
+      inputSource: inputSummary ? inputSummary.source : "",
+      inputFieldCount: inputSummary ? inputSummary.fieldCount : 0,
+      inputFileCount: inputSummary ? inputSummary.fileCount : 0,
+      inputSummary
     },
+    exports,
     output: {
       stdout: redactSecretsFromText(stdoutText),
       stderr: redactSecretsFromText(stderrText),
@@ -336,6 +372,7 @@ function downloadRunBundle({ record, runId, sourceId } = {}) {
 
 export {
   RUN_LOG_BUNDLE_KIND,
+  DEFAULT_EXPORT_TARGETS,
   normalizeRunConsoleRecord,
   deriveRunSummary,
   deriveRunLifecycle,

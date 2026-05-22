@@ -45,6 +45,8 @@ import { OrchestrationGraphCanvas } from "../data-model/components/Orchestration
 import { OrchestrationGraphEmptyCanvas } from "../data-model/components/OrchestrationGraphEmptyCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
+import { RunSetupPanel } from "./RunSetupPanel.jsx";
+import { discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 
 function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph);
@@ -328,6 +330,7 @@ export default function WorkflowSurface() {
   const [graphError, setGraphError] = useState("");
   const [orchestrationGraph, setOrchestrationGraph] = useState(null);
   const [dirty, setDirty] = useState(false);
+  const [runSetupOpen, setRunSetupOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -536,17 +539,27 @@ export default function WorkflowSurface() {
     }
   }
 
-  async function runSandbox() {
+  const runInputSchema = useMemo(
+    () => discoverRunInputSchema(orchestrationGraph),
+    [orchestrationGraph]
+  );
+
+  async function runSandbox(options = {}) {
     if (!objectId || !rowId) return;
+    const runInputs = options && typeof options === "object" && options.runInputs && typeof options.runInputs === "object"
+      ? options.runInputs
+      : null;
     setRunning(true);
     setRunMessage("");
     try {
       const draft = await saveDraft({ orchestrationDraftStatus: "testing" });
       const draftGraph = draft?.serialized || serializeCurrentGraph();
+      const body = { objectId, name: rowId, useDraft: true, draftGraph };
+      if (runInputs) body.runInputs = runInputs;
       const res = await fetch("/api/workspace/sandbox-run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId, name: rowId, useDraft: true, draftGraph }),
+        body: JSON.stringify(body),
       });
       const payload = await res.json();
       const responseText = redactSecretsFromText(JSON.stringify(payload.response ?? payload, null, 2));
@@ -584,6 +597,21 @@ export default function WorkflowSurface() {
     params.delete("run");
     router.push(`/workflows?${params.toString()}`);
     setSidecarMode("trace");
+  }
+
+  function handleTestClick() {
+    if (runInputSchema.requiresInput) {
+      setRunSetupOpen(true);
+      setSelectedNodeId("");
+      setAddTarget(null);
+      return;
+    }
+    runSandbox();
+  }
+
+  async function handleRunWithInputs(runInputs) {
+    setRunSetupOpen(false);
+    await runSandbox({ runInputs });
   }
 
   function openGraphMode() {
@@ -759,8 +787,8 @@ export default function WorkflowSurface() {
               </button>
             )}
             {canTest && (
-              <button type="button" className="dm-workflow-chip-btn" disabled={running || saving || publishing} onClick={runSandbox}>
-              <Play size={13} /> {running ? "Running" : "Test"}
+              <button type="button" className="dm-workflow-chip-btn" disabled={running || saving || publishing} onClick={handleTestClick}>
+              <Play size={13} /> {running ? "Running" : runInputSchema.requiresInput ? "Test with inputs" : "Test"}
               </button>
             )}
             {showPublish && (
@@ -820,7 +848,7 @@ export default function WorkflowSurface() {
             running={running}
           />
         ) : (
-          <div className={`dm-orchestration-sidecar dm-workflow-orchestration${selectedNode || addTarget ? " has-panel" : ""}`}>
+          <div className={`dm-orchestration-sidecar dm-workflow-orchestration${selectedNode || addTarget || runSetupOpen ? " has-panel" : ""}`}>
             <div className="dm-orchestration-sidecar__body">
               <div className="dm-orchestration-sidecar__canvas-col">
                 {graphUnset ? (
@@ -857,7 +885,24 @@ export default function WorkflowSurface() {
                   </>
                 )}
               </div>
-              {graphUiState === "populated" && addTarget && (
+              {graphUiState === "populated" && runSetupOpen && (
+                <div className="dm-orchestration-sidecar__config-col">
+                  <div className="dm-workflow-panel-head">
+                    <button type="button" className="dm-workflow-icon-btn" onClick={() => setRunSetupOpen(false)} aria-label="Close run setup panel">
+                      <X size={14} />
+                    </button>
+                    <span>Run setup</span>
+                    <em>Manual inputs</em>
+                  </div>
+                  <RunSetupPanel
+                    schema={runInputSchema}
+                    running={running}
+                    onSubmit={handleRunWithInputs}
+                    onCancel={() => setRunSetupOpen(false)}
+                  />
+                </div>
+              )}
+              {graphUiState === "populated" && !runSetupOpen && addTarget && (
                 <div className="dm-orchestration-sidecar__config-col">
                   <div className="dm-workflow-panel-head">
                     <button type="button" className="dm-workflow-icon-btn" onClick={() => setAddTarget(null)} aria-label="Close side panel">
@@ -872,7 +917,7 @@ export default function WorkflowSurface() {
                   />
                 </div>
               )}
-              {graphUiState === "populated" && !addTarget && selectedNode && (
+              {graphUiState === "populated" && !runSetupOpen && !addTarget && selectedNode && (
                 <div className="dm-orchestration-sidecar__config-col">
                   <div className="dm-workflow-panel-head">
                     <button type="button" className="dm-workflow-icon-btn" onClick={() => setSelectedNodeId("")} aria-label="Close side panel">

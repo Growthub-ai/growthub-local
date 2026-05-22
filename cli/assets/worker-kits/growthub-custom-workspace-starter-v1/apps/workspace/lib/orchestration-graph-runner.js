@@ -13,6 +13,7 @@ import {
   redactSecretsFromText,
   substituteVariables
 } from "./orchestration-graph.js";
+import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
@@ -255,8 +256,13 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
 /**
  * Run a growthub-native orchestration graph when present on the sandbox row.
  * Returns null when the row has no executable graph (caller falls back to adapter path).
+ *
+ * `runInputs` (V2) — normalized manual run input envelope. When provided, the
+ * non-secret values override matching keys in the input node's samplePayload
+ * for `human-input` / form workflows. Secret values (those stored as
+ * `{ secretRef }`) are never expanded into the runner payload.
  */
-async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs }) {
+async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs, runInputs }) {
   const graph = parseOrchestrationGraph(row?.orchestrationGraph || row?.orchestrationConfig);
   if (!graph || String(graph.provider || "").trim() !== "growthub-native") return null;
 
@@ -274,7 +280,10 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs 
   }
 
   const inputNode = extractInputNode(graph);
-  const inputPayload = parseInputPayload(inputNode);
+  const baseInputPayload = parseInputPayload(inputNode);
+  const manualPayload = runInputs ? buildInputPayloadForRunner(runInputs) : {};
+  const inputPayload = { ...baseInputPayload, ...manualPayload };
+  const consumedInputKeys = Object.keys(manualPayload);
   const transformConfig = extractTransformConfig(graph);
   const resultNode = graph.nodes?.find((n) => n?.type === "tool-result");
   const successCodes = Array.isArray(resultNode?.config?.successStatusCodes)
@@ -314,7 +323,10 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs 
     adapterMeta: {
       ...(raw.adapterMeta || {}),
       orchestrationProvider: graph.provider,
-      orchestrationVersion: graph.version
+      orchestrationVersion: graph.version,
+      ...(consumedInputKeys.length
+        ? { runInputsConsumed: consumedInputKeys, runInputSource: String(runInputs?.source || "manual") }
+        : {})
     }
   };
 }
