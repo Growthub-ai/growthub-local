@@ -950,3 +950,106 @@ describe("orchestration-graph — contract and kit presence", () => {
     ).toBe("incomplete");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 9. Sandbox Claude local auth onboarding V1 — file presence + helper contract
+//
+// Claude auth setup is a SEPARATE concern from the `local-agent-host`
+// execution adapter. These probes guard the invariant that the auth onboarding
+// surface ships with the kit and that the helper rejects non-Claude rows
+// rather than silently letting them through.
+// ---------------------------------------------------------------------------
+
+describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship", () => {
+  it("lib/sandbox-agent-auth.js ships", () => {
+    expect(appExists("lib/sandbox-agent-auth.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-agent-auth/status/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/status/route.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-agent-auth/claude-login/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-login/route.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-agent-auth/claude-logout/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-logout/route.js")).toBe(true);
+  });
+
+  it("app/data-model/components/SandboxAgentAuthPanel.jsx ships", () => {
+    expect(appExists("app/data-model/components/SandboxAgentAuthPanel.jsx")).toBe(true);
+  });
+
+  it("DataModelShell.jsx mounts SandboxAgentAuthPanel guarded by isSandboxClaudeLocal", () => {
+    const shell = appText("app/data-model/components/DataModelShell.jsx");
+    expect(shell).toContain("SandboxAgentAuthPanel");
+    expect(shell).toContain("isSandboxClaudeLocal");
+  });
+
+  it("auth routes use the canonical `claude auth login` / `claude auth logout` commands", () => {
+    const helper = appText("lib/sandbox-agent-auth.js");
+    // Source-of-truth on `main` is `claude auth login` (NOT `setup-token`).
+    expect(helper).toContain('"auth", "login"');
+    expect(helper).toContain('"auth", "logout"');
+    expect(helper).not.toContain("setup-token");
+  });
+
+  it("helper redaction patterns cover obvious token shapes", () => {
+    const helper = appText("lib/sandbox-agent-auth.js");
+    expect(helper).toContain("sk-ant-");
+    expect(helper).toMatch(/redactSecrets/);
+  });
+
+  it("helper writes ONLY safe metadata back to the row (whitelist guard)", () => {
+    const helper = appText("lib/sandbox-agent-auth.js");
+    expect(helper).toContain("SAFE_ROW_PATCH_FIELDS");
+    // Whitelist must include the documented safe fields…
+    expect(helper).toContain("agentAuthStatus");
+    expect(helper).toContain("agentAuthProvider");
+    expect(helper).toContain("agentAuthLastChecked");
+    expect(helper).toContain("agentAuthLastExitCode");
+    expect(helper).toContain("agentAuthLastMessage");
+    // …and must never reference raw token fields.
+    expect(helper).not.toMatch(/\btoken\s*:\s*/);
+    expect(helper).not.toMatch(/\baccessToken\b/);
+    expect(helper).not.toMatch(/\brefreshToken\b/);
+  });
+
+  it("isSandboxClaudeLocal rejects non-Claude rows", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-eligibility.js")}?t=${Date.now()}`
+    ) as { isSandboxClaudeLocal: (row: unknown) => boolean };
+    expect(mod.isSandboxClaudeLocal(null)).toBe(false);
+    expect(mod.isSandboxClaudeLocal({})).toBe(false);
+    expect(mod.isSandboxClaudeLocal({ adapter: "local-process", agentHost: "claude_local" })).toBe(false);
+    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "codex_local" })).toBe(false);
+    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local", runLocality: "serverless" })).toBe(false);
+    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local" })).toBe(true);
+    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local", runLocality: "local" })).toBe(true);
+  });
+
+  it("lib/sandbox-agent-auth-eligibility.js ships", () => {
+    expect(appExists("lib/sandbox-agent-auth-eligibility.js")).toBe(true);
+  });
+});
+
+describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth kit.json frozen paths", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+
+  const requiredPaths = [
+    "apps/workspace/lib/sandbox-agent-auth.js",
+    "apps/workspace/lib/sandbox-agent-auth-eligibility.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/status/route.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/claude-login/route.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/claude-logout/route.js",
+    "apps/workspace/app/data-model/components/SandboxAgentAuthPanel.jsx",
+  ];
+
+  for (const p of requiredPaths) {
+    it(`frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+});

@@ -67,6 +67,7 @@ import {
 } from "@/lib/workspace-data-model";
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
+import { SandboxAgentAuthPanel, isSandboxClaudeLocal } from "./SandboxAgentAuthPanel.jsx";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
@@ -1458,6 +1459,21 @@ function DataModelRecordDrawer({
             disabled={saving}
             canRun={Boolean(String(draft.Name || "").trim())}
             onRun={runSandbox}
+            agentAuthStatus={draft.agentAuthStatus}
+            agentAuthHint={
+              isSandboxClaudeLocal(draft) && ["stale", "missing"].includes(String(draft.agentAuthStatus || ""))
+                ? "Claude auth may be stale — open Claude Auth panel above."
+                : null
+            }
+          />
+        )}
+        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && isSandboxClaudeLocal(draft) && (
+          <SandboxAgentAuthPanel
+            objectId={table.objectId}
+            rowName={String(draft.Name || "").trim()}
+            draft={draft}
+            disabled={saving || sandboxRunning}
+            onPatchDraft={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           />
         )}
         {isSandbox && sidecarMode === "graph" && (
