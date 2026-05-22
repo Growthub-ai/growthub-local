@@ -816,6 +816,8 @@ export default function WorkflowSurface() {
             selectedRunId={runId}
             onBack={openGraphMode}
             onOpenGraph={openGraphMode}
+            onReplay={runSandbox}
+            running={running}
           />
         ) : (
           <div className={`dm-orchestration-sidecar dm-workflow-orchestration${selectedNode || addTarget ? " has-panel" : ""}`}>

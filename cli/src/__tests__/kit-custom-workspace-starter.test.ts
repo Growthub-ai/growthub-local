@@ -950,3 +950,244 @@ describe("orchestration-graph — contract and kit presence", () => {
     ).toBe("incomplete");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 9. Live Runs Console — observability helper contract
+// ---------------------------------------------------------------------------
+
+describe("orchestration-run-console — observability model", () => {
+  it("orchestration-run-console.js ships in apps/workspace/lib/", () => {
+    expect(appExists("lib/orchestration-run-console.js")).toBe(true);
+  });
+
+  it("OrchestrationRunTracePanel still exists for the live console UI", () => {
+    expect(appExists("app/data-model/components/OrchestrationRunTracePanel.jsx")).toBe(true);
+  });
+
+  it("WorkflowSurface imports the run trace panel and passes onReplay", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("OrchestrationRunTracePanel");
+    expect(surface).toContain("onReplay={runSandbox}");
+    expect(surface).toContain("running={running}");
+  });
+
+  it("sandbox-run route still exports GET and POST", () => {
+    const route = appText("app/api/workspace/sandbox-run/route.js");
+    expect(route).toMatch(/export\s*\{[^}]*GET[^}]*POST[^}]*\}/);
+  });
+
+  it("normalizeRunConsoleRecord normalises a successful run", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => {
+        runId: string;
+        status: string;
+        ok: boolean;
+        durationMs: number | null;
+        logTree: Array<{ id: string; children: unknown[] }>;
+        lifecycle: Array<{ label: string }>;
+      } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-ok-1",
+      exitCode: 0,
+      durationMs: 250,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      runtime: "node",
+      adapter: "local-process",
+      stdout: "hello",
+      output: { items: [{ id: 1 }] },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.runId).toBe("run-ok-1");
+    expect(record!.status).toBe("completed");
+    expect(record!.ok).toBe(true);
+    expect(record!.durationMs).toBe(250);
+    expect(record!.logTree).toHaveLength(1);
+    expect(record!.lifecycle.map((l) => l.label)).toEqual([
+      "Triggered",
+      "Dequeued",
+      "Started",
+      "Finished",
+    ]);
+  });
+
+  it("normalizeRunConsoleRecord marks failed runs", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => { status: string; ok: boolean; output: { error: string } } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-fail-1",
+      exitCode: 1,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "Not logged in",
+      error: "exit 1",
+    });
+    expect(record).not.toBeNull();
+    expect(record!.status).toBe("failed");
+    expect(record!.ok).toBe(false);
+    expect(record!.output.error).toContain("exit 1");
+  });
+
+  it("buildRunLogTree returns a root with attempt and stream nodes", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      buildRunLogTree: (r: unknown) => Array<{
+        id: string;
+        children: Array<{ id: string; children: Array<{ id: string }> }>;
+      }>;
+    };
+    const tree = mod.buildRunLogTree({
+      runId: "run-1",
+      exitCode: 0,
+      durationMs: 100,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "ok",
+      stderr: "warn",
+      adapterMeta: { httpStatus: 200 },
+    });
+    expect(tree).toHaveLength(1);
+    expect(tree[0].id).toBe("root");
+    expect(tree[0].children).toHaveLength(1);
+    const attempt = tree[0].children[0];
+    expect(attempt.id).toBe("attempt-1");
+    const childIds = attempt.children.map((c) => c.id);
+    expect(childIds).toContain("stdout");
+    expect(childIds).toContain("stderr");
+    expect(childIds).toContain("adapter-meta");
+  });
+
+  it("filterRunLogTree honours search query and errors-only flag", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      buildRunLogTree: (r: unknown) => unknown[];
+      filterRunLogTree: (t: unknown[], opts: { query?: string; errorsOnly?: boolean }) => unknown[];
+    };
+    const tree = mod.buildRunLogTree({
+      runId: "run-1",
+      exitCode: 1,
+      durationMs: 100,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "Not logged in · Please run /login",
+      stderr: "boom",
+      error: "exit 1",
+    });
+    const queried = mod.filterRunLogTree(tree, { query: "boom" }) as Array<{ children: Array<{ children: unknown[] }> }>;
+    expect(queried).toHaveLength(1);
+    const errorsOnly = mod.filterRunLogTree(tree, { errorsOnly: true }) as Array<{ children: Array<{ children: Array<{ id: string }> }> }>;
+    expect(errorsOnly).toHaveLength(1);
+    const childIds = errorsOnly[0].children[0].children.map((c) => c.id);
+    expect(childIds).toContain("error");
+    expect(childIds).toContain("stderr");
+    expect(childIds).not.toContain("stdout");
+  });
+
+  it("normalizeRunConsoleRecord redacts secret-looking text", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => { output: { stdout: string } } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-1",
+      exitCode: 0,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: 'Authorization: Bearer abc123 api_key="topsecret"',
+    });
+    expect(record!.output.stdout).toContain("[redacted]");
+    expect(record!.output.stdout).not.toContain("abc123");
+    expect(record!.output.stdout).not.toContain("topsecret");
+  });
+
+  it("downloadRunBundle wraps a redacted record in the v1 envelope", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      downloadRunBundle: (i: { record: unknown; runId?: string; sourceId?: string }) => {
+        kind: string;
+        runId: string;
+        sourceId: string;
+        record: { runId: string; output: { stdout: string } } | null;
+      };
+    };
+    const bundle = mod.downloadRunBundle({
+      record: {
+        runId: "run-1",
+        exitCode: 0,
+        durationMs: 50,
+        ranAt: "2026-05-21T19:28:07.906Z",
+        stdout: "Bearer leak123",
+      },
+      runId: "run-1",
+      sourceId: "sandbox:obj:row",
+    });
+    expect(bundle.kind).toBe("growthub-sandbox-run-log-v1");
+    expect(bundle.runId).toBe("run-1");
+    expect(bundle.sourceId).toBe("sandbox:obj:row");
+    expect(bundle.record!.output.stdout).not.toContain("leak123");
+  });
+
+  it("buildRunTimeline ratios runs against the longest", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      buildRunTimeline: (records: unknown[]) => Array<{ runId: string; barRatio: number; durationMs: number }>;
+    };
+    const items = mod.buildRunTimeline([
+      { runId: "run-a", exitCode: 0, durationMs: 500, ranAt: "2026-05-21T19:00:00.000Z" },
+      { runId: "run-b", exitCode: 0, durationMs: 1000, ranAt: "2026-05-21T19:00:01.000Z" },
+    ]);
+    expect(items).toHaveLength(2);
+    const b = items.find((i) => i.runId === "run-b")!;
+    const a = items.find((i) => i.runId === "run-a")!;
+    expect(b.barRatio).toBe(1);
+    expect(a.barRatio).toBeCloseTo(0.5);
+  });
+
+  it("OrchestrationRunTracePanel exposes the live console controls", () => {
+    const panel = appText("app/data-model/components/OrchestrationRunTracePanel.jsx");
+    expect(panel).toContain("dm-run-console");
+    expect(panel).toContain("Replay current config");
+    expect(panel).toContain("Download logs");
+    expect(panel).toContain("Cancel request");
+    expect(panel).toContain("Live reloading");
+    expect(panel).toContain("Errors only");
+    expect(panel).toContain("Queue time");
+    expect(panel).toContain("orchestration-run-console");
+    expect(panel).toContain('Overview');
+    expect(panel).toContain('Detail');
+    expect(panel).toContain('Context');
+  });
+
+  it("normalizeRunRecord now surfaces runtime/adapter/locality", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-trace.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunRecord: (r: unknown) => {
+        runtime: string;
+        adapter: string;
+        runLocality: string;
+        adapterMeta: unknown;
+      } | null;
+    };
+    const record = mod.normalizeRunRecord({
+      runId: "run-1",
+      runtime: "node",
+      adapter: "local-process",
+      runLocality: "local",
+      adapterMeta: { httpStatus: 200 },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.runtime).toBe("node");
+    expect(record!.adapter).toBe("local-process");
+    expect(record!.runLocality).toBe("local");
+    expect(record!.adapterMeta).toEqual({ httpStatus: 200 });
+  });
+});
