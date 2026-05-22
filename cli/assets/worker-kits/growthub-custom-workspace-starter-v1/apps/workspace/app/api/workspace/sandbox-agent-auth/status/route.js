@@ -1,17 +1,23 @@
 /**
  * POST /api/workspace/sandbox-agent-auth/status
  *
- * Probes the local Claude CLI for a sandbox row whose adapter is
- * `local-agent-host` + agentHost `claude_local`. Returns one of:
+ * Probes the local agent CLI for a sandbox row whose adapter is
+ * `local-agent-host`. The probe is host-agnostic — each host's reachability
+ * + auth-status subcommand lives in `lib/sandbox-agent-host-catalog.js`.
  *
- *   - "active"   `claude --version` exits 0 (CLI reachable; auth verified at
- *                next sandbox-run)
- *   - "stale"    CLI reachable but auth-looking error in output
+ * Status semantics (uniform across every host):
+ *   - "active"    a real auth probe confirmed authentication
+ *   - "reachable" CLI is callable but auth NOT yet confirmed
+ *   - "stale"    CLI reachable but auth-shaped failure detected
  *   - "missing"  binary not on PATH
- *   - "unknown"  reachable but indeterminate
+ *   - "unknown"  indeterminate
  *
- * Side effect: stamps `agentAuthStatus` + sibling fields onto the row so the
- * Data Model record drawer surfaces the result without a follow-up load.
+ * A `--version` (or equivalent) probe NEVER promotes to "active" — the
+ * next sandbox-run is the source of truth for session readiness.
+ *
+ * Side effect: stamps `agentAuthStatus` + sibling fields onto the row so
+ * the Data Model record drawer surfaces the result without a follow-up
+ * load.
  *
  * Request body:
  *   { objectId: string, name: string }
@@ -19,23 +25,22 @@
  * Response (success):
  *   {
  *     ok: boolean,
- *     status: "active" | "stale" | "missing" | "unknown",
+ *     status: "active" | "reachable" | "stale" | "missing" | "unknown",
+ *     provider: string,
+ *     label: string,
  *     binary: string,
  *     cwd: string,
  *     exitCode: number | null,
+ *     probe: "auth-status" | "version",
  *     stdout: string,
  *     stderr: string,
  *     message: string,
  *     checkedAt: string
  *   }
- *
- * Authority contract: raw Claude tokens never leave the local CLI's own
- * on-disk state. This route returns only stdout/stderr (redacted) and a
- * coarse status pill — never secret material.
  */
 
 import { NextResponse } from "next/server";
-import { checkClaudeStatus } from "@/lib/sandbox-agent-auth";
+import { checkAgentStatus } from "@/lib/sandbox-agent-auth";
 
 async function POST(request) {
   let body;
@@ -55,13 +60,13 @@ async function POST(request) {
   }
 
   try {
-    const result = await checkClaudeStatus({ objectId, name });
+    const result = await checkAgentStatus({ objectId, name });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message || "Claude auth status check failed",
+        error: error?.message || "Agent auth status check failed",
         code: error?.code || null
       },
       { status: error?.code === "SANDBOX_AGENT_AUTH_NOT_FOUND" ? 404 : 400 }

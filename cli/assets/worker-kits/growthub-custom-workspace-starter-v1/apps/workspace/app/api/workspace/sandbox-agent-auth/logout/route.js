@@ -1,17 +1,13 @@
 /**
- * POST /api/workspace/sandbox-agent-auth/claude-login
+ * POST /api/workspace/sandbox-agent-auth/logout
  *
- * Spawns `claude auth login` for a sandbox row whose adapter is
- * `local-agent-host` + agentHost `claude_local`. Mirrors the upstream
- * Paperclip server route in `server/src/routes/agents.ts` so the local
- * workspace starter behaves the same way operators are already familiar with
- * for Claude Code agents.
+ * Spawns the catalog-declared logout subcommand for a sandbox row whose
+ * adapter is `local-agent-host`. Host-agnostic; the actual subcommand is
+ * read from `lib/sandbox-agent-host-catalog.js`.
  *
- * Captures stdout, stderr, the login URL (if Claude prints one), and the
- * exit code. Token-shaped output is redacted before returning to the browser.
- *
- * Side effect: stamps `agentAuthStatus` + sibling metadata fields onto the
- * sandbox row. Raw tokens are NEVER written to `growthub.config.json`.
+ * Hosts without a documented logout subcommand return 400 with
+ * `code: "SANDBOX_AGENT_AUTH_LOGOUT_UNSUPPORTED"` so the UI can render the
+ * host's `notes` string.
  *
  * Request body:
  *   { objectId: string, name: string }
@@ -19,22 +15,22 @@
  * Response:
  *   {
  *     ok: boolean,
- *     status: "active" | "stale" | "missing" | "unknown",
+ *     status: "stale" | "missing" | "unknown",
+ *     provider: string,
+ *     label: string,
  *     binary: string,
  *     cwd: string,
  *     exitCode: number | null,
- *     timedOut: boolean,
  *     durationMs: number,
  *     stdout: string,
  *     stderr: string,
- *     loginUrl: string | null,
  *     message: string,
  *     checkedAt: string
  *   }
  */
 
 import { NextResponse } from "next/server";
-import { runClaudeLogin } from "@/lib/sandbox-agent-auth";
+import { runAgentLogout } from "@/lib/sandbox-agent-auth";
 
 async function POST(request) {
   let body;
@@ -54,13 +50,13 @@ async function POST(request) {
   }
 
   try {
-    const result = await runClaudeLogin({ objectId, name });
+    const result = await runAgentLogout({ objectId, name });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message || "Claude login failed",
+        error: error?.message || "Agent logout failed",
         code: error?.code || null
       },
       { status: error?.code === "SANDBOX_AGENT_AUTH_NOT_FOUND" ? 404 : 400 }

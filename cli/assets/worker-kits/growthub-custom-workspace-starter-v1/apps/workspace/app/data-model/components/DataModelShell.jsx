@@ -67,7 +67,8 @@ import {
 } from "@/lib/workspace-data-model";
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
-import { SandboxAgentAuthPanel, isSandboxClaudeLocal } from "./SandboxAgentAuthPanel.jsx";
+import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
+import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
@@ -1461,13 +1462,13 @@ function DataModelRecordDrawer({
             onRun={runSandbox}
             agentAuthStatus={draft.agentAuthStatus}
             agentAuthHint={
-              isSandboxClaudeLocal(draft) && ["stale", "missing"].includes(String(draft.agentAuthStatus || ""))
-                ? "Claude auth may be stale — open Claude Auth panel above."
+              isSandboxLocalAgentHost(draft) && ["stale", "missing"].includes(String(draft.agentAuthStatus || ""))
+                ? "Agent auth may be stale — open the auth panel above."
                 : null
             }
           />
         )}
-        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && isSandboxClaudeLocal(draft) && (
+        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && isSandboxLocalAgentHost(draft) && (
           <SandboxAgentAuthPanel
             objectId={table.objectId}
             rowName={String(draft.Name || "").trim()}

@@ -1,12 +1,18 @@
 /**
- * POST /api/workspace/sandbox-agent-auth/claude-logout
+ * POST /api/workspace/sandbox-agent-auth/login
  *
- * Spawns `claude auth logout` for a sandbox row whose adapter is
- * `local-agent-host` + agentHost `claude_local`. Mirrors the upstream
- * Paperclip server route in `server/src/routes/agents.ts`.
+ * Spawns the catalog-declared login subcommand for a sandbox row whose
+ * adapter is `local-agent-host`. The actual subcommand (e.g.
+ * `claude auth login`) is read from `lib/sandbox-agent-host-catalog.js` —
+ * this route is host-agnostic.
  *
- * Side effect: stamps `agentAuthStatus = "stale"` (or "missing" if the
- * binary isn't on PATH) plus sibling metadata fields onto the row.
+ * Hosts without a documented login subcommand return 400 with
+ * `code: "SANDBOX_AGENT_AUTH_LOGIN_UNSUPPORTED"` so the UI can render the
+ * host's `notes` string ("sign in via the host CLI directly").
+ *
+ * Captures stdout, stderr, login URL (if printed), exit code. Token-shaped
+ * output is redacted before crossing the response boundary. Raw tokens are
+ * NEVER written to `growthub.config.json`.
  *
  * Request body:
  *   { objectId: string, name: string }
@@ -14,20 +20,24 @@
  * Response:
  *   {
  *     ok: boolean,
- *     status: "stale" | "missing",
+ *     status: "active" | "reachable" | "stale" | "missing" | "unknown",
+ *     provider: string,
+ *     label: string,
  *     binary: string,
  *     cwd: string,
  *     exitCode: number | null,
+ *     timedOut: boolean,
  *     durationMs: number,
  *     stdout: string,
  *     stderr: string,
+ *     loginUrl: string | null,
  *     message: string,
  *     checkedAt: string
  *   }
  */
 
 import { NextResponse } from "next/server";
-import { runClaudeLogout } from "@/lib/sandbox-agent-auth";
+import { runAgentLogin } from "@/lib/sandbox-agent-auth";
 
 async function POST(request) {
   let body;
@@ -47,13 +57,13 @@ async function POST(request) {
   }
 
   try {
-    const result = await runClaudeLogout({ objectId, name });
+    const result = await runAgentLogin({ objectId, name });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message || "Claude logout failed",
+        error: error?.message || "Agent login failed",
         code: error?.code || null
       },
       { status: error?.code === "SANDBOX_AGENT_AUTH_NOT_FOUND" ? 404 : 400 }

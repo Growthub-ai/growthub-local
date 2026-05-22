@@ -1,31 +1,38 @@
 "use client";
 
 /**
- * Sandbox Claude Local Auth Onboarding V1 — record sidecar panel.
+ * Sandbox Local Agent Auth Onboarding V1 — record sidecar panel.
  *
- * Rendered ONLY when the selected sandbox row uses adapter
- * `local-agent-host` + agentHost `claude_local`. Acts as a preflight to the
- * existing `SandboxRunPanel` — execution still flows through
- * /api/workspace/sandbox-run; this panel only prepares the Claude CLI's
- * local auth state so the next run doesn't fail with a stale-auth error.
+ * Rendered for any sandbox row using `adapter: local-agent-host` in local
+ * locality. The panel is host-agnostic: per-host capabilities (whether a
+ * documented login/logout subcommand exists, the label, the install hint)
+ * come from `lib/sandbox-agent-host-catalog.js` via `getAgentHostCapabilities`.
  *
- * The panel reads `agentAuthStatus` from the row draft (stamped by the API
- * routes after each action) and lets the operator:
- *   - Check status (`claude --version`)
- *   - Run Claude login (`claude auth login`)
- *   - Log out Claude (`claude auth logout`)
+ * Mental model — identical for every host:
  *
- * Output captured from the CLI is rendered inside a monospace block. Raw
- * tokens are redacted server-side before transit; this component does not
- * receive or render any secret material.
+ *   1. Check status         host CLI installed and authed?
+ *   2. Run login            (only when the catalog declares loginCommand)
+ *   3. Log out              (only when the catalog declares logoutCommand)
+ *   4. Run sandbox          existing button (unchanged)
+ *
+ * Hosts without a documented login flow surface only step 1 and a notes
+ * line directing the operator to sign in via the host CLI itself. There is
+ * no second product surface, no terminal emulator — just a uniform
+ * readiness bridge.
+ *
+ * Status values stamped on the row are intentionally distinct between
+ * confirmed-authenticated ("active") and merely-installed ("reachable")
+ * so the pill cannot overclaim auth from a `--version` probe.
  */
 
 import { useCallback, useState } from "react";
 import { LogIn, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
-import { isSandboxClaudeLocal } from "@/lib/sandbox-agent-auth-eligibility";
+import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
+import { getAgentHostCapabilities } from "@/lib/sandbox-agent-host-catalog";
 
 const STATUS_LABEL = {
   active: "Active",
+  reachable: "Reachable",
   stale: "Stale",
   missing: "Missing",
   checking: "Checking",
@@ -34,7 +41,9 @@ const STATUS_LABEL = {
 
 function statusKind(status) {
   if (status === "active") return "ok";
-  if (status === "missing" || status === "stale") return "bad";
+  if (status === "stale") return "warn";
+  if (status === "missing") return "bad";
+  // "reachable" stays neutral — CLI is installed, but auth is NOT confirmed.
   return "";
 }
 
@@ -54,6 +63,7 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
   const [output, setOutput] = useState(null);
   const [message, setMessage] = useState("");
 
+  const capabilities = getAgentHostCapabilities(draft);
   const currentStatus =
     typeof draft?.agentAuthStatus === "string" && draft.agentAuthStatus.trim()
       ? draft.agentAuthStatus.trim()
@@ -77,10 +87,10 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
         const payload = await res.json();
         setOutput(payload);
         setMessage(payload.message || (payload.ok ? "Done" : payload.error || "Failed"));
-        if (typeof onPatchDraft === "function") {
+        if (typeof onPatchDraft === "function" && payload.status) {
           onPatchDraft({
-            agentAuthStatus: payload.status || "unknown",
-            agentAuthProvider: "claude_local",
+            agentAuthStatus: payload.status,
+            agentAuthProvider: payload.provider || draft?.agentHost || "unknown",
             agentAuthLastChecked: payload.checkedAt || new Date().toISOString(),
             agentAuthLastExitCode:
               typeof payload.exitCode === "number" ? payload.exitCode : null,
@@ -94,21 +104,23 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
         setBusy(null);
       }
     },
-    [canAct, objectId, rowName, onPatchDraft]
+    [canAct, objectId, rowName, onPatchDraft, draft?.agentHost]
   );
 
   const onCheckStatus = () =>
     callAction("status", "/api/workspace/sandbox-agent-auth/status");
   const onLogin = () =>
-    callAction("login", "/api/workspace/sandbox-agent-auth/claude-login");
+    callAction("login", "/api/workspace/sandbox-agent-auth/login");
   const onLogout = () =>
-    callAction("logout", "/api/workspace/sandbox-agent-auth/claude-logout");
+    callAction("logout", "/api/workspace/sandbox-agent-auth/logout");
+
+  if (!capabilities) return null;
 
   return (
-    <div className="dm-record-testbar" data-panel="sandbox-agent-auth">
+    <div className="dm-record-testbar" data-panel="sandbox-agent-auth" data-agent-host={capabilities.slug}>
       <ShieldCheck size={13} aria-hidden style={{ color: "#64748b", flex: "0 0 auto" }} />
       <strong style={{ fontSize: 12, color: "#334155", fontWeight: 650 }}>
-        Claude Code local auth
+        {capabilities.label} auth
       </strong>
       <AuthStatusPill status={currentStatus} />
       <button
@@ -116,34 +128,46 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
         className="dm-btn-ghost"
         disabled={busy !== null || !canAct}
         onClick={onCheckStatus}
-        title="Probe the local Claude CLI"
+        title={`Probe the local ${capabilities.label} CLI`}
       >
         <RefreshCw size={13} aria-hidden />
         {busy === "status" ? "Checking…" : "Check status"}
       </button>
-      <button
-        type="button"
-        className="dm-btn-primary-sm"
-        disabled={busy !== null || !canAct}
-        onClick={onLogin}
-        title="Run `claude auth login` on this machine"
-      >
-        <LogIn size={13} aria-hidden />
-        {busy === "login" ? "Running…" : "Run Claude login"}
-      </button>
-      <button
-        type="button"
-        className="dm-btn-ghost"
-        disabled={busy !== null || !canAct}
-        onClick={onLogout}
-        title="Run `claude auth logout` on this machine"
-      >
-        <LogOut size={13} aria-hidden />
-        {busy === "logout" ? "…" : "Log out"}
-      </button>
+      {capabilities.canLogin && (
+        <button
+          type="button"
+          className="dm-btn-primary-sm"
+          disabled={busy !== null || !canAct}
+          onClick={onLogin}
+          title={`Run the documented login flow for ${capabilities.label}`}
+        >
+          <LogIn size={13} aria-hidden />
+          {busy === "login" ? "Running…" : "Run login"}
+        </button>
+      )}
+      {capabilities.canLogout && (
+        <button
+          type="button"
+          className="dm-btn-ghost"
+          disabled={busy !== null || !canAct}
+          onClick={onLogout}
+          title={`Run the documented logout flow for ${capabilities.label}`}
+        >
+          <LogOut size={13} aria-hidden />
+          {busy === "logout" ? "…" : "Log out"}
+        </button>
+      )}
       {(message || lastMessage) && (
         <span style={{ color: "#64748b", fontSize: 12 }}>
           {message || lastMessage}
+        </span>
+      )}
+      {currentStatus === "missing" && (
+        <span style={{ color: "#b45309", fontSize: 12 }}>{capabilities.installHint}</span>
+      )}
+      {!capabilities.canLogin && capabilities.notes && (
+        <span style={{ color: "#64748b", fontSize: 11 }} data-host-notes>
+          {capabilities.notes}
         </span>
       )}
       {output && (output.stdout || output.stderr || output.loginUrl) && (
@@ -195,7 +219,7 @@ function SandboxAgentAuthOutput({ output }) {
   );
 }
 
-// `isSandboxClaudeLocal` is exported from `lib/sandbox-agent-auth-eligibility.js`
-// — this barrel keeps it accessible to call sites that import it from this
-// component file (e.g. `DataModelShell.jsx`) without forcing a second import.
-export { isSandboxClaudeLocal };
+// Re-export the eligibility predicate so callers can keep importing it from
+// this component file. New code should import from
+// `@/lib/sandbox-agent-auth-eligibility` directly.
+export { isSandboxLocalAgentHost };

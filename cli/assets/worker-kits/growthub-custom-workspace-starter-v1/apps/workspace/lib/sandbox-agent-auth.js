@@ -1,41 +1,48 @@
 /**
- * Sandbox Claude Local Auth Onboarding V1 — server-side helper.
+ * Sandbox Local Agent Auth Onboarding V1 — server-side helper.
  *
- * Sandbox rows with `adapter: "local-agent-host"` + `agentHost: "claude_local"`
- * route through the local Claude CLI on the operator's machine. The host
- * adapter at `lib/adapters/sandboxes/default-local-agent-host.js` is
- * intentionally **execution-only**: it spawns the CLI and captures
- * stdout/stderr/exit code, and it does NOT manage host auth state, model
- * selection, or context window.
+ * Sandbox rows with `adapter: "local-agent-host"` route execution through
+ * the thin host adapter at `lib/adapters/sandboxes/default-local-agent-host.js`.
+ * That adapter is intentionally **execution-only**: it spawns the CLI and
+ * captures stdout/stderr/exit code, and it does NOT manage host auth state.
  *
- * Claude auth setup is a separate concern — preparing the local CLI before a
- * sandbox row can run successfully. This helper is the workspace API surface
- * for that preflight:
+ * Auth setup is a separate concern — preparing the local CLI before a
+ * sandbox row can run successfully. This helper is the workspace API
+ * surface for that preflight. It is host-agnostic: the per-host commands
+ * (login subcommand, logout subcommand, status probe) live in
+ * `lib/sandbox-agent-host-catalog.js`. Adding a host means editing the
+ * catalog — never extending this file.
  *
+ * Responsibilities:
  *   - resolve a sandbox row by `objectId` + `name`
- *   - guard on adapter + agentHost eligibility
- *   - resolve the Claude binary path (row override, defaults to `claude` on PATH)
- *   - spawn `claude auth login` / `claude auth logout` exactly the same way
- *     the upstream Paperclip server route does in `server/src/routes/agents.ts`
+ *   - guard on adapter + agentHost + runLocality eligibility
+ *   - resolve the binary (row override, defaults to the catalog default)
+ *   - spawn the catalog-declared subcommands
  *   - capture stdout, stderr, login URL, exit code
  *   - redact anything token-shaped before returning to the browser
  *   - stamp ONLY safe metadata back onto the sandbox row:
  *
- *       agentAuthStatus         "active" | "stale" | "missing" | "checking" | "unknown"
- *       agentAuthProvider       "claude_local"
+ *       agentAuthStatus         "active" | "reachable" | "stale" | "missing"
+ *                              | "checking" | "unknown"
+ *       agentAuthProvider       the host slug, e.g. "claude_local"
  *       agentAuthLastChecked    ISO timestamp
  *       agentAuthLastExitCode   number | null
  *       agentAuthLastMessage    short human-readable summary
- *       agentAuthLastLoginUrl   string | null (login URL if present in CLI output)
+ *       agentAuthLastLoginUrl   string | null (login URL if printed)
  *
- * Raw tokens NEVER touch `growthub.config.json`. The local Claude CLI keeps
- * its own auth state on disk (under `~/.claude/...` typically); this module
- * only records *readiness*, not secret material.
+ * Raw tokens NEVER touch `growthub.config.json`. The host CLI keeps its own
+ * on-disk auth state; this module only records *readiness*, not secrets.
  *
- * The auth command catalog is small but kept abstract so a fork can swap in
- * a non-default subcommand by editing this one file rather than chasing
- * spawn calls across the codebase. The repo source-of-truth on `main` is
- * `claude auth login` / `claude auth logout`.
+ * The status semantics are deliberately conservative:
+ *   - "active"    a real auth probe confirmed authentication (auth-status
+ *                 exit 0 with auth-shaped output, or a clean login exit)
+ *   - "reachable" the binary is callable (version probe exit 0) — but
+ *                 authentication is NOT yet confirmed
+ *   - "stale"    the binary printed auth-shaped failure output
+ *   - "missing"  binary not found on PATH
+ *
+ * A `--version` probe NEVER promotes to "active". The next sandbox-run is
+ * the final source of truth for session readiness.
  */
 
 import { spawn } from "node:child_process";
@@ -46,40 +53,22 @@ import {
   readWorkspaceConfig,
   writeWorkspaceConfig
 } from "@/lib/workspace-config";
+import {
+  DEFAULT_LOGIN_TIMEOUT_MS,
+  DEFAULT_LOGOUT_TIMEOUT_MS,
+  DEFAULT_PROBE_TIMEOUT_MS,
+  getAgentHostCapabilities,
+  getHostAuthSpec
+} from "@/lib/sandbox-agent-host-catalog";
+import {
+  KNOWN_AGENT_AUTH_STATUSES,
+  SAFE_ROW_PATCH_FIELDS,
+  redactSecrets
+} from "@/lib/sandbox-agent-auth-redaction";
 
 const execFileAsync = promisify(execFile);
 
-const CLAUDE_AUTH_PROVIDER = "claude_local";
-const CLAUDE_DEFAULT_BINARY = "claude";
-const CLAUDE_INSTALL_HINT = "Install Claude Code: npm i -g @anthropic-ai/claude-code";
-
-const CLAUDE_AUTH_COMMANDS = Object.freeze({
-  login: ["auth", "login"],
-  logout: ["auth", "logout"],
-  status: ["--version"]
-});
-
-const LOGIN_TIMEOUT_MS = 300_000;
-const LOGOUT_TIMEOUT_MS = 10_000;
-const STATUS_TIMEOUT_MS = 10_000;
 const MAX_CAPTURED_BYTES = 64 * 1024;
-
-const KNOWN_AGENT_AUTH_STATUSES = Object.freeze([
-  "active",
-  "stale",
-  "missing",
-  "checking",
-  "unknown"
-]);
-
-const SAFE_ROW_PATCH_FIELDS = Object.freeze([
-  "agentAuthStatus",
-  "agentAuthProvider",
-  "agentAuthLastChecked",
-  "agentAuthLastExitCode",
-  "agentAuthLastMessage",
-  "agentAuthLastLoginUrl"
-]);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Resolution
@@ -100,46 +89,57 @@ function findSandboxRow(workspaceConfig, objectId, name) {
   return { object, row: rows[rowIndex], rowIndex };
 }
 
-function assertClaudeLocalEligible(row) {
+function assertAgentHostEligible(row, { requireLogin = false, requireLogout = false } = {}) {
   const adapter = String(row?.adapter || "").trim();
   if (adapter !== "local-agent-host") {
     const error = new Error(
-      `Claude auth setup applies only to adapter "local-agent-host" (got "${adapter || "<unset>"}")`
+      `Agent auth setup applies only to adapter "local-agent-host" (got "${adapter || "<unset>"}")`
     );
     error.code = "SANDBOX_AGENT_AUTH_ADAPTER_MISMATCH";
-    throw error;
-  }
-  const agentHost = String(row?.agentHost || "").trim();
-  if (agentHost !== "claude_local") {
-    const error = new Error(
-      `Claude auth setup applies only to agentHost "claude_local" (got "${agentHost || "<unset>"}")`
-    );
-    error.code = "SANDBOX_AGENT_AUTH_HOST_MISMATCH";
     throw error;
   }
   const runLocality = String(row?.runLocality || "").trim().toLowerCase();
   if (runLocality === "serverless") {
     const error = new Error(
-      "Claude auth setup is not supported when runLocality is `serverless` — auth lives on the local machine."
+      "Agent auth setup is not supported when runLocality is `serverless` — auth lives on the local machine."
     );
     error.code = "SANDBOX_AGENT_AUTH_LOCALITY_MISMATCH";
     throw error;
   }
+  const agentHost = String(row?.agentHost || "").trim();
+  const spec = getHostAuthSpec(agentHost);
+  if (!spec) {
+    const error = new Error(
+      `Agent auth setup is not registered for agentHost "${agentHost || "<unset>"}"`
+    );
+    error.code = "SANDBOX_AGENT_AUTH_HOST_UNSUPPORTED";
+    throw error;
+  }
+  if (requireLogin && !Array.isArray(spec.loginCommand)) {
+    const error = new Error(
+      `Host "${agentHost}" does not declare a documented login subcommand. ${spec.notes || "Sign in via the host CLI directly."}`
+    );
+    error.code = "SANDBOX_AGENT_AUTH_LOGIN_UNSUPPORTED";
+    throw error;
+  }
+  if (requireLogout && !Array.isArray(spec.logoutCommand)) {
+    const error = new Error(
+      `Host "${agentHost}" does not declare a documented logout subcommand. ${spec.notes || "Sign out via the host CLI directly."}`
+    );
+    error.code = "SANDBOX_AGENT_AUTH_LOGOUT_UNSUPPORTED";
+    throw error;
+  }
+  return { spec, agentHost };
 }
 
-function resolveClaudeBinary(row) {
-  const candidates = [
-    row?.agentCommand,
-    row?.claudeCommand,
-    row?.command && row?.adapter === "local-agent-host" ? "" : null,
-    null
-  ];
+function resolveHostBinary(row, spec) {
+  const candidates = [row?.agentCommand, row?.claudeCommand];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim()) {
       return candidate.trim();
     }
   }
-  return CLAUDE_DEFAULT_BINARY;
+  return spec.binary;
 }
 
 function resolveCwd(row) {
@@ -149,27 +149,12 @@ function resolveCwd(row) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Redaction
+// Output handling
+//
+// Redaction utilities live in `sandbox-agent-auth-redaction.js` so they can
+// be imported without pulling in Next.js path-aliased modules — keeps the
+// unit test surface lean.
 // ──────────────────────────────────────────────────────────────────────────
-
-// Patterns deliberately conservative — match common token shapes the Claude
-// CLI might print on stdout/stderr and replace them before they cross the
-// process boundary into the browser. We err on the side of redaction.
-const TOKEN_PATTERNS = [
-  /sk-ant-[A-Za-z0-9_-]{8,}/g,
-  /sk-[A-Za-z0-9_-]{20,}/g,
-  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
-  /Bearer\s+[A-Za-z0-9._-]{16,}/gi
-];
-
-function redactSecrets(text) {
-  if (typeof text !== "string" || !text) return "";
-  let next = text;
-  for (const pattern of TOKEN_PATTERNS) {
-    next = next.replace(pattern, "[redacted]");
-  }
-  return next;
-}
 
 function clampOutput(text) {
   if (typeof text !== "string") return "";
@@ -180,48 +165,92 @@ function clampOutput(text) {
 
 function extractLoginUrl(combined) {
   if (typeof combined !== "string" || !combined) return null;
-  const match = combined.match(/https?:\/\/[^\s]+auth[^\s]*/);
+  const match = combined.match(/https?:\/\/[^\s]+auth[^\s]*/)
+    || combined.match(/https?:\/\/[^\s]+(?:login|oauth|sign[_-]?in)[^\s]*/i);
   return match ? match[0] : null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Status derivation
+// Status pattern recognition
 // ──────────────────────────────────────────────────────────────────────────
+
+const STALE_AUTH_PATTERNS = [
+  /not\s+logged\s+in/i,
+  /login\s+required/i,
+  /authentication\s+required/i,
+  /please\s+(?:log\s+in|sign\s+in)/i,
+  /run\s+[`'"]?[a-z][a-z0-9_-]*\s+auth\s+login/i,
+  /unauthorized/i,
+  /invalid\s+credentials/i,
+  /session\s+expired/i
+];
+
+const ACTIVE_AUTH_PATTERNS = [
+  /logged\s+in\s+as/i,
+  /authenticated\s+as/i,
+  /session\s+active/i,
+  /auth(?:entication)?\s+ok/i
+];
+
+const UNKNOWN_SUBCOMMAND_PATTERNS = [
+  /unknown\s+(?:command|subcommand|option)/i,
+  /did\s+you\s+mean/i,
+  /no\s+such\s+command/i,
+  /invalid\s+command/i,
+  /usage:/i
+];
+
+function hasAny(patterns, text) {
+  if (!text) return false;
+  return patterns.some((p) => p.test(text));
+}
+
+function deriveStatusFromAuthStatusProbe({ exitCode, stdout = "", stderr = "", spawnError }) {
+  if (spawnError) return spawnError.notFound ? "missing" : null;
+  const combined = `${stdout}\n${stderr}`;
+  if (hasAny(UNKNOWN_SUBCOMMAND_PATTERNS, combined)) return null; // fall back
+  if (hasAny(STALE_AUTH_PATTERNS, combined)) return "stale";
+  if (exitCode === 0) return "active";
+  if (typeof exitCode === "number" && exitCode !== 0) {
+    return hasAny(STALE_AUTH_PATTERNS, combined) ? "stale" : null;
+  }
+  return null;
+}
+
+function deriveStatusFromVersionProbe({ exitCode, stderr, spawnError }) {
+  if (spawnError) return spawnError.notFound ? "missing" : "unknown";
+  if (typeof exitCode === "number" && exitCode === 0) return "reachable";
+  const text = String(stderr || "");
+  if (hasAny(STALE_AUTH_PATTERNS, text)) return "stale";
+  return "unknown";
+}
 
 function deriveLoginStatus({ exitCode, stderr, stdout, timedOut, spawnError }) {
   if (spawnError) return spawnError.notFound ? "missing" : "unknown";
   if (timedOut) return "unknown";
   if (typeof exitCode === "number" && exitCode === 0) return "active";
-  const combined = `${stdout || ""}\n${stderr || ""}`.toLowerCase();
-  if (combined.includes("not logged in") || combined.includes("login required")) return "stale";
+  const combined = `${stdout || ""}\n${stderr || ""}`;
+  if (hasAny(STALE_AUTH_PATTERNS, combined)) return "stale";
   return "stale";
 }
 
-function deriveStatusFromProbe({ exitCode, stderr, spawnError }) {
-  if (spawnError) return spawnError.notFound ? "missing" : "unknown";
-  if (typeof exitCode === "number" && exitCode === 0) return "active";
-  const text = String(stderr || "").toLowerCase();
-  if (text.includes("not logged in") || text.includes("login required") || text.includes("authenticate")) {
-    return "stale";
-  }
-  return "unknown";
-}
-
-function shortMessage({ status, exitCode, error, loginUrl }) {
-  if (error) return `Claude CLI: ${error}`;
-  if (status === "active") return loginUrl ? "Claude login completed" : "Claude CLI ready";
-  if (status === "stale") return "Claude auth appears stale — run Claude login";
-  if (status === "missing") return `Claude CLI not found on PATH. ${CLAUDE_INSTALL_HINT}`;
-  if (status === "checking") return "Checking Claude CLI…";
-  if (typeof exitCode === "number") return `Claude CLI exited with code ${exitCode}`;
-  return "Claude CLI status unknown";
+function shortMessage({ status, label, exitCode, error, loginUrl }) {
+  const name = label || "Local agent CLI";
+  if (error) return `${name}: ${redactSecrets(String(error))}`;
+  if (status === "active") return loginUrl ? `${name} login completed.` : `${name} authenticated.`;
+  if (status === "reachable") return `${name} reachable. Auth will be verified on next login or sandbox run.`;
+  if (status === "stale") return `${name} auth looks stale. Run login (or sign in via the host CLI), then run the sandbox again.`;
+  if (status === "missing") return `${name} not found. Install it and try again.`;
+  if (status === "checking") return `Checking ${name}…`;
+  if (typeof exitCode === "number") return `${name} exited with code ${exitCode}.`;
+  return `${name} status unknown.`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Process orchestration
 // ──────────────────────────────────────────────────────────────────────────
 
-function runClaudeCommand({ binary, args, cwd, timeoutMs, stdin }) {
+function runCommand({ binary, args, cwd, timeoutMs, stdin }) {
   return new Promise((resolve) => {
     let stdoutBuf = "";
     let stderrBuf = "";
@@ -300,23 +329,23 @@ function runClaudeCommand({ binary, args, cwd, timeoutMs, stdin }) {
 // Public API — login / logout / status
 // ──────────────────────────────────────────────────────────────────────────
 
-async function runClaudeLogin({ objectId, name }) {
+async function runAgentLogin({ objectId, name }) {
   const workspaceConfig = await readWorkspaceConfig();
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) throw notFoundError(`no sandbox-environment object with id ${objectId}`);
   if (!row) throw notFoundError(`no sandbox row named ${name} in object ${objectId}`);
 
-  assertClaudeLocalEligible(row);
+  const { spec, agentHost } = assertAgentHostEligible(row, { requireLogin: true });
 
-  const binary = resolveClaudeBinary(row);
+  const binary = resolveHostBinary(row, spec);
   const cwd = resolveCwd(row);
   const startedAt = Date.now();
 
-  const result = await runClaudeCommand({
+  const result = await runCommand({
     binary,
-    args: CLAUDE_AUTH_COMMANDS.login,
+    args: spec.loginCommand,
     cwd,
-    timeoutMs: LOGIN_TIMEOUT_MS
+    timeoutMs: spec.loginTimeoutMs || DEFAULT_LOGIN_TIMEOUT_MS
   });
 
   const stdout = clampOutput(redactSecrets(result.stdout));
@@ -327,9 +356,11 @@ async function runClaudeLogin({ objectId, name }) {
 
   const patch = buildRowPatch({
     status,
+    provider: agentHost,
     checkedAt,
     exitCode: result.exitCode,
     loginUrl,
+    label: spec.label,
     spawnError: result.spawnError
   });
 
@@ -338,6 +369,8 @@ async function runClaudeLogin({ objectId, name }) {
   return {
     ok: status === "active",
     status,
+    provider: agentHost,
+    label: spec.label,
     binary,
     cwd,
     exitCode: result.exitCode,
@@ -346,20 +379,20 @@ async function runClaudeLogin({ objectId, name }) {
     stdout,
     stderr,
     loginUrl,
-    message: shortMessage({ status, exitCode: result.exitCode, loginUrl, error: result.spawnError?.message }),
+    message: patch.agentAuthLastMessage,
     checkedAt
   };
 }
 
-async function runClaudeLogout({ objectId, name }) {
+async function runAgentLogout({ objectId, name }) {
   const workspaceConfig = await readWorkspaceConfig();
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) throw notFoundError(`no sandbox-environment object with id ${objectId}`);
   if (!row) throw notFoundError(`no sandbox row named ${name} in object ${objectId}`);
 
-  assertClaudeLocalEligible(row);
+  const { spec, agentHost } = assertAgentHostEligible(row, { requireLogout: true });
 
-  const binary = resolveClaudeBinary(row);
+  const binary = resolveHostBinary(row, spec);
   const cwd = resolveCwd(row);
   const startedAt = Date.now();
 
@@ -368,9 +401,9 @@ async function runClaudeLogout({ objectId, name }) {
   let stderr = "";
   let spawnError = null;
   try {
-    const { stdout: out, stderr: err } = await execFileAsync(binary, CLAUDE_AUTH_COMMANDS.logout, {
+    const { stdout: out, stderr: err } = await execFileAsync(binary, spec.logoutCommand, {
       cwd,
-      timeout: LOGOUT_TIMEOUT_MS
+      timeout: DEFAULT_LOGOUT_TIMEOUT_MS
     });
     exitCode = 0;
     stdout = out || "";
@@ -389,20 +422,24 @@ async function runClaudeLogout({ objectId, name }) {
 
   const patch = buildRowPatch({
     status,
+    provider: agentHost,
     checkedAt,
     exitCode,
     loginUrl: null,
+    label: spec.label,
     spawnError
   });
   patch.agentAuthLastMessage = spawnError?.notFound
-    ? shortMessage({ status: "missing" })
-    : "Claude logged out — auth will be required before next run";
+    ? shortMessage({ status: "missing", label: spec.label })
+    : `${spec.label} logged out — auth will be required before next run.`;
 
   await applyRowPatch({ workspaceConfig, object, rowIndex, patch });
 
   return {
     ok: !spawnError,
     status,
+    provider: agentHost,
+    label: spec.label,
     binary,
     cwd,
     exitCode,
@@ -414,39 +451,64 @@ async function runClaudeLogout({ objectId, name }) {
   };
 }
 
-async function checkClaudeStatus({ objectId, name }) {
+async function checkAgentStatus({ objectId, name }) {
   const workspaceConfig = await readWorkspaceConfig();
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) throw notFoundError(`no sandbox-environment object with id ${objectId}`);
   if (!row) throw notFoundError(`no sandbox row named ${name} in object ${objectId}`);
 
-  assertClaudeLocalEligible(row);
+  const { spec, agentHost } = assertAgentHostEligible(row);
 
-  const binary = resolveClaudeBinary(row);
+  const binary = resolveHostBinary(row, spec);
   const cwd = resolveCwd(row);
 
-  // `claude --version` is a cheap reachability + install probe. It does NOT
-  // prove auth — only that the CLI binary is callable. We map exit-code 0 to
-  // "active" optimistically; the next sandbox-run will reveal stale auth and
-  // we surface that through the SandboxRunPanel's optional auth hint.
-  const result = await runClaudeCommand({
-    binary,
-    args: CLAUDE_AUTH_COMMANDS.status,
-    cwd,
-    timeoutMs: STATUS_TIMEOUT_MS
-  });
+  // Two-phase probe:
+  //   1. If the catalog declares an auth-status subcommand, try it first.
+  //      A clean exit lets us label the row as "active".
+  //   2. Always fall back to the catalog versionProbe — exit 0 maps to
+  //      "reachable", NEVER "active". This is the same contract for every
+  //      host so the UI mental model stays uniform.
+  let status = null;
+  let usedProbe = "version";
+  let usedResult = null;
 
-  const status = deriveStatusFromProbe(result);
+  if (Array.isArray(spec.authStatusProbe) && spec.authStatusProbe.length) {
+    const authStatusResult = await runCommand({
+      binary,
+      args: spec.authStatusProbe,
+      cwd,
+      timeoutMs: DEFAULT_PROBE_TIMEOUT_MS
+    });
+    status = deriveStatusFromAuthStatusProbe(authStatusResult);
+    if (status !== null) {
+      usedProbe = "auth-status";
+      usedResult = authStatusResult;
+    }
+  }
+
+  if (status === null) {
+    const versionResult = await runCommand({
+      binary,
+      args: spec.versionProbe || ["--version"],
+      cwd,
+      timeoutMs: DEFAULT_PROBE_TIMEOUT_MS
+    });
+    status = deriveStatusFromVersionProbe(versionResult);
+    usedResult = versionResult;
+  }
+
   const checkedAt = new Date().toISOString();
-  const stdout = clampOutput(redactSecrets(result.stdout));
-  const stderr = clampOutput(redactSecrets(result.stderr));
+  const stdout = clampOutput(redactSecrets(usedResult.stdout));
+  const stderr = clampOutput(redactSecrets(usedResult.stderr));
 
   const patch = buildRowPatch({
     status,
+    provider: agentHost,
     checkedAt,
-    exitCode: result.exitCode,
+    exitCode: usedResult.exitCode,
     loginUrl: null,
-    spawnError: result.spawnError
+    label: spec.label,
+    spawnError: usedResult.spawnError
   });
 
   await applyRowPatch({ workspaceConfig, object, rowIndex, patch });
@@ -454,12 +516,15 @@ async function checkClaudeStatus({ objectId, name }) {
   return {
     ok: status === "active",
     status,
+    provider: agentHost,
+    label: spec.label,
     binary,
     cwd,
-    exitCode: result.exitCode,
+    exitCode: usedResult.exitCode,
+    probe: usedProbe,
     stdout,
     stderr,
-    message: shortMessage({ status, exitCode: result.exitCode, error: result.spawnError?.message }),
+    message: patch.agentAuthLastMessage,
     checkedAt
   };
 }
@@ -468,22 +533,21 @@ async function checkClaudeStatus({ objectId, name }) {
 // Row patch — safe metadata only
 // ──────────────────────────────────────────────────────────────────────────
 
-function buildRowPatch({ status, checkedAt, exitCode, loginUrl, spawnError }) {
+function buildRowPatch({ status, provider, checkedAt, exitCode, loginUrl, label, spawnError }) {
   const safe = {
     agentAuthStatus: KNOWN_AGENT_AUTH_STATUSES.includes(status) ? status : "unknown",
-    agentAuthProvider: CLAUDE_AUTH_PROVIDER,
+    agentAuthProvider: String(provider || "").trim() || "unknown",
     agentAuthLastChecked: checkedAt,
     agentAuthLastExitCode: typeof exitCode === "number" ? exitCode : null,
     agentAuthLastMessage: shortMessage({
       status,
+      label,
       exitCode,
       loginUrl,
       error: spawnError?.message
     }),
     agentAuthLastLoginUrl: loginUrl || ""
   };
-  // Whitelist guard — never let an upstream change accidentally smuggle a
-  // raw token / non-metadata field into the row through this helper.
   for (const key of Object.keys(safe)) {
     if (!SAFE_ROW_PATCH_FIELDS.includes(key)) delete safe[key];
   }
@@ -521,20 +585,45 @@ function notFoundError(message) {
   return error;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Backwards-compatible Claude aliases (legacy)
+// ──────────────────────────────────────────────────────────────────────────
+
+const runClaudeLogin = runAgentLogin;
+const runClaudeLogout = runAgentLogout;
+const checkClaudeStatus = checkAgentStatus;
+function assertClaudeLocalEligible(row) {
+  const { spec, agentHost } = assertAgentHostEligible(row);
+  if (agentHost !== "claude_local") {
+    const error = new Error(
+      `Expected agentHost "claude_local", got "${agentHost}"`
+    );
+    error.code = "SANDBOX_AGENT_AUTH_HOST_MISMATCH";
+    throw error;
+  }
+  return { spec, agentHost };
+}
+function resolveClaudeBinary(row) {
+  const spec = getHostAuthSpec(String(row?.agentHost || "claude_local").trim()) || getHostAuthSpec("claude_local");
+  return resolveHostBinary(row, spec);
+}
+
 export {
-  CLAUDE_AUTH_COMMANDS,
-  CLAUDE_AUTH_PROVIDER,
-  CLAUDE_DEFAULT_BINARY,
-  CLAUDE_INSTALL_HINT,
   KNOWN_AGENT_AUTH_STATUSES,
   SAFE_ROW_PATCH_FIELDS,
+  assertAgentHostEligible,
   assertClaudeLocalEligible,
   buildRowPatch,
+  checkAgentStatus,
   checkClaudeStatus,
   findSandboxRow,
+  getAgentHostCapabilities,
   redactSecrets,
-  resolveClaudeBinary,
   resolveCwd,
+  resolveHostBinary,
+  resolveClaudeBinary,
+  runAgentLogin,
+  runAgentLogout,
   runClaudeLogin,
   runClaudeLogout
 };

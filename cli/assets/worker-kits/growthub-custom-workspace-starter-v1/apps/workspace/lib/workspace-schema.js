@@ -1003,6 +1003,63 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.${traceField} must be a string when present`);
     }
   }
+  // Sandbox Local Agent Auth Onboarding V1 — governance for the safe auth
+  // metadata fields stamped by the auth helper / API routes.
+  const KNOWN_AGENT_AUTH_STATUSES_INLINE = [
+    "active",
+    "reachable",
+    "stale",
+    "missing",
+    "checking",
+    "unknown"
+  ];
+  if (row.agentAuthStatus !== undefined && row.agentAuthStatus !== "" && row.agentAuthStatus !== null) {
+    const authStatus = String(row.agentAuthStatus).trim().toLowerCase();
+    if (!KNOWN_AGENT_AUTH_STATUSES_INLINE.includes(authStatus)) {
+      errors.push(`${path}.agentAuthStatus must be one of ${KNOWN_AGENT_AUTH_STATUSES_INLINE.join(", ")}`);
+    }
+  }
+  for (const authField of [
+    "agentAuthProvider",
+    "agentAuthLastChecked",
+    "agentAuthLastMessage",
+    "agentAuthLastLoginUrl"
+  ]) {
+    const value = row[authField];
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "string") {
+      errors.push(`${path}.${authField} must be a string when present`);
+    }
+  }
+  if (
+    row.agentAuthLastExitCode !== undefined
+    && row.agentAuthLastExitCode !== null
+    && row.agentAuthLastExitCode !== ""
+  ) {
+    const code = Number(row.agentAuthLastExitCode);
+    if (!Number.isFinite(code)) {
+      errors.push(`${path}.agentAuthLastExitCode must be a finite number when present`);
+    }
+  }
+  // Defensive: refuse to ever persist token-shaped field names on a sandbox
+  // row. The helper only writes the SAFE_ROW_PATCH_FIELDS whitelist, but
+  // this guard catches any out-of-band PATCH that tries to stash a secret.
+  const FORBIDDEN_AUTH_ROW_FIELDS = [
+    "token",
+    "apiKey",
+    "authToken",
+    "accessToken",
+    "refreshToken",
+    "bearer",
+    "password",
+    "secret",
+    "sessionKey",
+    "claudeToken"
+  ];
+  for (const forbidden of FORBIDDEN_AUTH_ROW_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(row, forbidden)) {
+      errors.push(`${path}.${forbidden} is not allowed on a sandbox row — auth secrets must stay in the local CLI's own store`);
+    }
+  }
 }
 
 const NAV_FOLDERS_OBJECT_ID = "nav-folders";

@@ -228,6 +228,97 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
     expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
     expect(err!.details!.some((d) => d.includes("duplicates an earlier object id"))).toBe(true);
   });
+
+  it("sandbox row with forbidden auth secret field (e.g. accessToken) → rejected", () => {
+    let err: Error & { details?: string[] } | null = null;
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [
+            {
+              id: "sandboxes",
+              objectType: "sandbox-environment",
+              label: "Sandboxes",
+              columns: ["Name", "adapter", "agentHost"],
+              rows: [
+                {
+                  Name: "naughty",
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                  runLocality: "local",
+                  accessToken: "sk-ant-secret-leak"
+                }
+              ]
+            }
+          ]
+        }
+      });
+    } catch (e) { err = e as typeof err; }
+    expect(err).not.toBeNull();
+    expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(err!.details!.some((d) => d.includes("accessToken is not allowed"))).toBe(true);
+  });
+
+  it("sandbox row with invalid agentAuthStatus → rejected", () => {
+    let err: Error & { details?: string[] } | null = null;
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [
+            {
+              id: "sandboxes",
+              objectType: "sandbox-environment",
+              label: "Sandboxes",
+              columns: ["Name"],
+              rows: [
+                {
+                  Name: "row",
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                  runLocality: "local",
+                  agentAuthStatus: "totally-made-up"
+                }
+              ]
+            }
+          ]
+        }
+      });
+    } catch (e) { err = e as typeof err; }
+    expect(err).not.toBeNull();
+    expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(err!.details!.some((d) => d.includes("agentAuthStatus must be one of"))).toBe(true);
+  });
+
+  it("sandbox row with `reachable` agentAuthStatus is accepted (new V1 value)", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [
+            {
+              id: "sandboxes",
+              objectType: "sandbox-environment",
+              label: "Sandboxes",
+              columns: ["Name"],
+              rows: [
+                {
+                  Name: "row",
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                  runLocality: "local",
+                  agentAuthStatus: "reachable",
+                  agentAuthProvider: "claude_local",
+                  agentAuthLastChecked: "2026-05-22T19:24:08.412Z",
+                  agentAuthLastExitCode: 0,
+                  agentAuthLastMessage: "Claude Code (local) reachable. Auth will be verified on next login or sandbox run.",
+                  agentAuthLastLoginUrl: ""
+                }
+              ]
+            }
+          ]
+        }
+      })
+    ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -969,64 +1060,181 @@ describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship
     expect(appExists("app/api/workspace/sandbox-agent-auth/status/route.js")).toBe(true);
   });
 
-  it("app/api/workspace/sandbox-agent-auth/claude-login/route.js ships", () => {
-    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-login/route.js")).toBe(true);
+  it("app/api/workspace/sandbox-agent-auth/login/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/login/route.js")).toBe(true);
   });
 
-  it("app/api/workspace/sandbox-agent-auth/claude-logout/route.js ships", () => {
-    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-logout/route.js")).toBe(true);
+  it("app/api/workspace/sandbox-agent-auth/logout/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/logout/route.js")).toBe(true);
+  });
+
+  it("legacy Claude-specific route paths are NOT shipped (replaced by host-agnostic routes)", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-login/route.js")).toBe(false);
+    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-logout/route.js")).toBe(false);
   });
 
   it("app/data-model/components/SandboxAgentAuthPanel.jsx ships", () => {
     expect(appExists("app/data-model/components/SandboxAgentAuthPanel.jsx")).toBe(true);
   });
 
-  it("DataModelShell.jsx mounts SandboxAgentAuthPanel guarded by isSandboxClaudeLocal", () => {
-    const shell = appText("app/data-model/components/DataModelShell.jsx");
-    expect(shell).toContain("SandboxAgentAuthPanel");
-    expect(shell).toContain("isSandboxClaudeLocal");
+  it("lib/sandbox-agent-host-catalog.js ships", () => {
+    expect(appExists("lib/sandbox-agent-host-catalog.js")).toBe(true);
   });
 
-  it("auth routes use the canonical `claude auth login` / `claude auth logout` commands", () => {
+  it("DataModelShell.jsx mounts SandboxAgentAuthPanel guarded by isSandboxLocalAgentHost", () => {
+    const shell = appText("app/data-model/components/DataModelShell.jsx");
+    expect(shell).toContain("SandboxAgentAuthPanel");
+    expect(shell).toContain("isSandboxLocalAgentHost");
+  });
+
+  it("Claude host catalog entry uses repo source-of-truth `auth login` / `auth logout` (no setup-token)", () => {
+    const catalog = appText("lib/sandbox-agent-host-catalog.js");
+    expect(catalog).toContain('"auth", "login"');
+    expect(catalog).toContain('"auth", "logout"');
+    expect(catalog).not.toContain("setup-token");
+  });
+
+  it("helper does NOT reference setup-token anywhere", () => {
     const helper = appText("lib/sandbox-agent-auth.js");
-    // Source-of-truth on `main` is `claude auth login` (NOT `setup-token`).
-    expect(helper).toContain('"auth", "login"');
-    expect(helper).toContain('"auth", "logout"');
     expect(helper).not.toContain("setup-token");
   });
 
   it("helper redaction patterns cover obvious token shapes", () => {
     const helper = appText("lib/sandbox-agent-auth.js");
-    expect(helper).toContain("sk-ant-");
-    expect(helper).toMatch(/redactSecrets/);
+    // Helper imports redactSecrets from the pure utilities module.
+    expect(helper).toContain("redactSecrets");
+    const redaction = appText("lib/sandbox-agent-auth-redaction.js");
+    expect(redaction).toContain("sk-ant-");
+    // Prefix-anchored patterns added in the production-pass refinement.
+    expect(redaction).toContain("access[_-]?token");
+    expect(redaction).toContain("refresh[_-]?token");
+    expect(redaction).toContain("api[_-]?key");
   });
 
   it("helper writes ONLY safe metadata back to the row (whitelist guard)", () => {
     const helper = appText("lib/sandbox-agent-auth.js");
     expect(helper).toContain("SAFE_ROW_PATCH_FIELDS");
-    // Whitelist must include the documented safe fields…
     expect(helper).toContain("agentAuthStatus");
     expect(helper).toContain("agentAuthProvider");
     expect(helper).toContain("agentAuthLastChecked");
     expect(helper).toContain("agentAuthLastExitCode");
     expect(helper).toContain("agentAuthLastMessage");
-    // …and must never reference raw token fields.
+    // Must never reference raw token field names (as literal identifiers or
+    // object keys we'd persist).
     expect(helper).not.toMatch(/\btoken\s*:\s*/);
     expect(helper).not.toMatch(/\baccessToken\b/);
     expect(helper).not.toMatch(/\brefreshToken\b/);
   });
 
-  it("isSandboxClaudeLocal rejects non-Claude rows", async () => {
+  it("helper redactSecrets actually strips token-shaped strings at runtime", async () => {
     const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-redaction.js")}?t=${Date.now()}`
+    ) as { redactSecrets: (text: string) => string };
+    const redacted = mod.redactSecrets(
+      [
+        "claude key sk-ant-api03-abcdefghijklmnop1234567",
+        "Bearer abcdefghijklmnop1234567890",
+        "access_token=ZZZsecretvalueXXX",
+        "refresh_token: ABC_refresh_DEF",
+        "api_key='LIVE-12345-KEY'",
+        "session_key=ZZZ"
+      ].join("\n")
+    );
+    expect(redacted).not.toMatch(/sk-ant-api03-abcdefghijklmnop/);
+    expect(redacted).not.toMatch(/abcdefghijklmnop1234567890/);
+    expect(redacted).not.toMatch(/ZZZsecretvalueXXX/);
+    expect(redacted).not.toMatch(/ABC_refresh_DEF/);
+    expect(redacted).not.toMatch(/LIVE-12345-KEY/);
+    expect(redacted).toMatch(/\[redacted\]/);
+  });
+
+  it("status semantics — `--version` exit 0 maps to `reachable`, NEVER `active`", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-redaction.js")}?t=${Date.now()}`
+    ) as {
+      KNOWN_AGENT_AUTH_STATUSES: readonly string[];
+    };
+    // The status taxonomy must include a distinct "reachable" value so the
+    // helper / UI can never promote a `--version` probe to "active".
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("reachable");
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("active");
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("stale");
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("missing");
+  });
+
+  it("isSandboxLocalAgentHost accepts every catalog host slug in local locality", async () => {
+    const eligibility = await import(
       `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-eligibility.js")}?t=${Date.now()}`
-    ) as { isSandboxClaudeLocal: (row: unknown) => boolean };
-    expect(mod.isSandboxClaudeLocal(null)).toBe(false);
-    expect(mod.isSandboxClaudeLocal({})).toBe(false);
-    expect(mod.isSandboxClaudeLocal({ adapter: "local-process", agentHost: "claude_local" })).toBe(false);
-    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "codex_local" })).toBe(false);
-    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local", runLocality: "serverless" })).toBe(false);
-    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local" })).toBe(true);
-    expect(mod.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local", runLocality: "local" })).toBe(true);
+    ) as {
+      isSandboxLocalAgentHost: (row: unknown) => boolean;
+      isSandboxClaudeLocal: (row: unknown) => boolean;
+    };
+    const catalog = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-host-catalog.js")}?t=${Date.now()}`
+    ) as { KNOWN_HOST_AUTH_SLUGS: readonly string[] };
+
+    expect(eligibility.isSandboxLocalAgentHost(null)).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({})).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({ adapter: "local-process", agentHost: "claude_local" })).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({ adapter: "local-agent-host", agentHost: "nope_local" })).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({ adapter: "local-agent-host", agentHost: "claude_local", runLocality: "serverless" })).toBe(false);
+    for (const slug of catalog.KNOWN_HOST_AUTH_SLUGS) {
+      expect(
+        eligibility.isSandboxLocalAgentHost({ adapter: "local-agent-host", agentHost: slug, runLocality: "local" })
+      ).toBe(true);
+    }
+    // Backwards-compatible Claude-specific predicate still works.
+    expect(eligibility.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local" })).toBe(true);
+    expect(eligibility.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "codex_local" })).toBe(false);
+  });
+
+  it("host catalog declares Claude with full auth and other hosts with reachability-only capabilities", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-host-catalog.js")}?t=${Date.now()}`
+    ) as {
+      getAgentHostCapabilities: (row: unknown) => null | {
+        slug: string;
+        label: string;
+        canLogin: boolean;
+        canLogout: boolean;
+        canCheckStatus: boolean;
+        hasAuthStatusProbe: boolean;
+        installHint: string;
+      };
+      KNOWN_HOST_AUTH_SLUGS: readonly string[];
+    };
+    const claude = mod.getAgentHostCapabilities({
+      adapter: "local-agent-host",
+      agentHost: "claude_local",
+      runLocality: "local"
+    });
+    expect(claude).not.toBeNull();
+    expect(claude!.canLogin).toBe(true);
+    expect(claude!.canLogout).toBe(true);
+    expect(claude!.canCheckStatus).toBe(true);
+    expect(claude!.hasAuthStatusProbe).toBe(true);
+
+    // Every other host: reachability probe only (no invented subcommands).
+    for (const slug of mod.KNOWN_HOST_AUTH_SLUGS) {
+      if (slug === "claude_local") continue;
+      const caps = mod.getAgentHostCapabilities({
+        adapter: "local-agent-host",
+        agentHost: slug,
+        runLocality: "local"
+      });
+      expect(caps).not.toBeNull();
+      expect(caps!.canCheckStatus).toBe(true);
+      expect(caps!.canLogin).toBe(false);
+      expect(caps!.canLogout).toBe(false);
+      expect(caps!.installHint.length).toBeGreaterThan(0);
+    }
+
+    // Serverless / non-eligible rows return null.
+    expect(mod.getAgentHostCapabilities({
+      adapter: "local-agent-host",
+      agentHost: "claude_local",
+      runLocality: "serverless"
+    })).toBeNull();
   });
 
   it("lib/sandbox-agent-auth-eligibility.js ships", () => {
@@ -1041,9 +1249,11 @@ describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth kit.json f
   const requiredPaths = [
     "apps/workspace/lib/sandbox-agent-auth.js",
     "apps/workspace/lib/sandbox-agent-auth-eligibility.js",
+    "apps/workspace/lib/sandbox-agent-auth-redaction.js",
+    "apps/workspace/lib/sandbox-agent-host-catalog.js",
     "apps/workspace/app/api/workspace/sandbox-agent-auth/status/route.js",
-    "apps/workspace/app/api/workspace/sandbox-agent-auth/claude-login/route.js",
-    "apps/workspace/app/api/workspace/sandbox-agent-auth/claude-logout/route.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/login/route.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/logout/route.js",
     "apps/workspace/app/data-model/components/SandboxAgentAuthPanel.jsx",
   ];
 
