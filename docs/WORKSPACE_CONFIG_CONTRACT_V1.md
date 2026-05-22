@@ -178,9 +178,15 @@ Off-grid placements and overlaps return `400` with `details[]` naming the offend
 
 ## Widget config shapes
 
+### Chart values are a computed projection
+
+- `config.values` must remain a `number[]` of finite numbers. The chart renderer reads **only** this array at display time.
+- Source **rows** stay in Data Model objects (`dataModel.objects[].rows`), widget binding metadata, or the `growthub.source-records.json` sidecar — never mirrored wholesale into chart widget config.
+- Axis, filter, aggregation, and style metadata may live on the chart config, but the builder computes `values` from resolved rows before save. Invalid axis combinations must yield `values: []` plus explicit warnings, not malformed numbers.
+
 ```ts
 ChartWidgetConfig = {
-  values?: number[],                           // finite numbers only
+  values?: number[],                           // finite numbers only — persisted computed projection
   binding?: StaticDataBinding
 }
 

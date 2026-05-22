@@ -119,7 +119,22 @@ async function POST(request) {
       ) || null;
       const records = await resolver.fetchRecords(adapterConfig, connection, binding);
       const fetchedAt = new Date().toISOString();
-      await writeWorkspaceSourceRecords(sourceId, records, { integrationId, fetchedAt });
+      const metadata = {
+        integrationId,
+        fetchedAt,
+        objectId: obj.id,
+        objectSourceId: typeof obj.sourceId === "string" ? obj.sourceId : null,
+        bindingSourceId: typeof binding.sourceId === "string" ? binding.sourceId : null
+      };
+      const recordKeys = [...new Set([
+        sourceId,
+        obj.id,
+        obj.sourceId,
+        binding.sourceId
+      ].map((key) => String(key || "").trim()).filter(Boolean))];
+      for (const recordKey of recordKeys) {
+        await writeWorkspaceSourceRecords(recordKey, records, metadata);
+      }
       refreshed.push({ sourceId, integrationId, recordCount: records.length, fetchedAt });
     } catch (err) {
       skipped.push(sourceId);

@@ -78,6 +78,7 @@ import {
   wrapWorkspaceTemplateExport
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
+import { computeChartValuesFromRows } from "@/lib/workspace-chart-values";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
@@ -1016,6 +1017,58 @@ function resolveViewWidget(widget, dataModelTables) {
       rows: table.rows
     }
   };
+}
+
+function recomputeChartWidgetConfig(widgetConfig, dataModelTables) {
+  const binding = widgetConfig?.binding;
+  if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) {
+    return {
+      config: { ...widgetConfig, values: [] },
+      meta: { warnings: ["Select a source first."], rowCount: 0, usedRowCount: 0, values: [] }
+    };
+  }
+  const table = resolveDataModelTable(dataModelTables, binding);
+  if (!table) {
+    return {
+      config: { ...widgetConfig, values: [] },
+      meta: { warnings: ["Select a source first."], rowCount: 0, usedRowCount: 0, values: [] }
+    };
+  }
+  const meta = computeChartValuesFromRows({
+    rows: table.rows,
+    xAxis: widgetConfig.xAxis,
+    yAxis: widgetConfig.yAxis,
+    filter: widgetConfig.filter,
+    chartType: widgetConfig.chartType
+  });
+  return {
+    config: { ...widgetConfig, values: meta.values },
+    meta
+  };
+}
+
+function applyChartRecomputeToActiveTab(config, activeDashboardId, dataModelTables) {
+  const recomputeWidget = (widget) => {
+    if (widget?.kind !== "chart") return widget;
+    return { ...widget, config: recomputeChartWidgetConfig(widget.config, dataModelTables).config };
+  };
+  const prevTabs = getTabs(config.canvas);
+  const prevActiveId = getActiveTabId(config.canvas);
+  const nextTabs = prevTabs.map((tab) => (
+    tab.id === prevActiveId
+      ? { ...tab, widgets: (tab.widgets || []).map(recomputeWidget) }
+      : tab
+  ));
+  return commitDashboardCanvas(config, activeDashboardId, commitTabs(config.canvas, nextTabs, prevActiveId));
+}
+
+async function loadWorkspaceSourceRecords() {
+  const response = await fetch("/api/workspace", { cache: "no-store" });
+  if (!response.ok) return {};
+  const payload = await response.json();
+  return payload.workspaceSourceRecords && typeof payload.workspaceSourceRecords === "object"
+    ? payload.workspaceSourceRecords
+    : {};
 }
 
 function summarizeFields(widget) {
@@ -2744,21 +2797,24 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
   const yAxis = getChartAxis(widget, "yAxis");
   const style = getChartStyle(widget);
   const activeColor = resolveChartColor(style, branding) || "#d9e4ff";
-  const setChartType = (type) => onChange({ ...widget.config, chartType: type });
-  const setXAxis = (patch) => onChange({ ...widget.config, xAxis: { ...xAxis, ...patch } });
-  const setYAxis = (patch) => onChange({ ...widget.config, yAxis: { ...yAxis, ...patch } });
-  const setStyle = (patch) => onChange({ ...widget.config, style: { ...style, ...patch } });
+  const patchChartConfig = useCallback((patch) => {
+    onChange({ ...widget.config, ...patch });
+  }, [onChange, widget.config]);
+  const setChartType = (type) => patchChartConfig({ chartType: type });
+  const setXAxis = (patch) => patchChartConfig({ xAxis: { ...xAxis, ...patch } });
+  const setYAxis = (patch) => patchChartConfig({ yAxis: { ...yAxis, ...patch } });
+  const setStyle = (patch) => patchChartConfig({ style: { ...style, ...patch } });
 
-  // Derive source fields from the bound data model object
-  const sourceFields = useMemo(() => {
-    const binding = widget.config?.binding;
-    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return [];
-    const table = (Array.isArray(dataModelTables) ? dataModelTables : [])
-      .find((t) => t.objectId === binding.objectId || t.source === binding.source);
-    return table?.columns || [];
-  }, [widget.config?.binding, dataModelTables]);
-
-  const hasSource = sourceFields.length > 0;
+  const sourceTable = useMemo(
+    () => resolveDataModelTable(dataModelTables, widget.config?.binding),
+    [dataModelTables, widget.config?.binding]
+  );
+  const sourceFields = sourceTable?.columns || [];
+  const hasSource = Boolean(sourceTable);
+  const computeStatus = useMemo(
+    () => recomputeChartWidgetConfig(widget.config, dataModelTables).meta,
+    [widget.config, dataModelTables]
+  );
 
   return <section className="workspace-chart-config">
     <p className="workspace-panel-label">Chart type</p>
@@ -2896,6 +2952,30 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         onChange={(event) => setStyle({ dataLabels: event.target.checked })}
       />
     </label>
+    <div className="workspace-chart-compute-status" role="status">
+      <p className="workspace-panel-label">Computed values</p>
+      {hasSource ? <p className="workspace-panel-hint">
+        {sourceTable.storage === "workspace-source-records" ? "Live sidecar rows" : "Config rows"}
+        {" · "}{computeStatus.rowCount} row{computeStatus.rowCount === 1 ? "" : "s"}
+        {" · "}{computeStatus.usedRowCount} used
+        {" · "}{(widget.config?.values || []).length} value{(widget.config?.values || []).length === 1 ? "" : "s"}
+        {sourceTable.sourceRecordMeta?.fetchedAt
+          ? ` · refreshed ${new Date(sourceTable.sourceRecordMeta.fetchedAt).toLocaleString()}`
+          : ""}
+      </p> : <p className="workspace-panel-hint">Select a source first.</p>}
+      {computeStatus.warnings?.length ? computeStatus.warnings.map((warning) => (
+        <p key={warning} className="workspace-field-hint warn">{warning}</p>
+      )) : null}
+      <button
+        type="button"
+        className="workspace-settings-row"
+        disabled={!hasSource}
+        onClick={() => onChange({ ...widget.config })}
+      >
+        <span>Recompute values</span>
+        <code>{(widget.config?.values || []).length} pts</code>
+      </button>
+    </div>
   </section>;
 }
 
@@ -3582,13 +3662,17 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
+  const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState({});
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
   const addSlot = dragPreview || selectedPosition;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
   const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
-  const dataModelTables = useMemo(() => listWorkspaceDataModelTables(config), [config]);
+  const dataModelTables = useMemo(
+    () => listWorkspaceDataModelTables(config, { sourceRecords: workspaceSourceRecords }),
+    [config, workspaceSourceRecords]
+  );
   const selectedResolvedWidget = selectedWidget ? resolveViewWidget(selectedWidget, dataModelTables) : null;
   const branding = config.branding || {};
   const occupiedCells = useMemo(() => {
@@ -3610,14 +3694,22 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
    */
   const liveSourceIds = useMemo(() => {
     const ids = new Set();
+    const objects = Array.isArray(config.dataModel?.objects) ? config.dataModel.objects : [];
+    const objectById = new Map(objects.map((object) => [object.id, object]));
     for (const widget of activeWidgets) {
       const binding = widget?.config?.binding;
       if (binding?.sourceStorage === "workspace-source-records" && typeof binding.sourceId === "string" && binding.sourceId.trim()) {
         ids.add(binding.sourceId.trim());
       }
+      if (binding?.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
+        const object = objectById.get(binding.objectId);
+        if (object?.binding?.sourceStorage === "workspace-source-records" && object.id) {
+          ids.add(String(object.id).trim());
+        }
+      }
     }
     return Array.from(ids);
-  }, [activeWidgets]);
+  }, [activeWidgets, config.dataModel]);
 
   const refreshSources = useCallback(async () => {
     if (refreshing || liveSourceIds.length === 0) return;
@@ -3632,6 +3724,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       if (response.ok) {
         const data = await response.json();
         setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
+        const records = await loadWorkspaceSourceRecords();
+        setWorkspaceSourceRecords(records);
+        setConfig((prev) => {
+          const tables = listWorkspaceDataModelTables(prev, { sourceRecords: records });
+          return applyChartRecomputeToActiveTab(prev, activeDashboardId, tables);
+        });
       } else {
         setRefreshResult({ error: true });
       }
@@ -3640,7 +3738,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, liveSourceIds]);
+  }, [activeDashboardId, refreshing, liveSourceIds]);
 
   const addWidget = useCallback((kind) => {
     setConfig((prev) => {
@@ -3799,6 +3897,21 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       };
     });
   }, [activeDashboardId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const records = await loadWorkspaceSourceRecords();
+        if (!cancelled) setWorkspaceSourceRecords(records);
+      } catch {
+        // Runtime hydration is best-effort; builder still works from config rows.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const dashboardParam = searchParams?.get("dashboard");
@@ -4357,15 +4470,22 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || data.reason || "Refresh failed");
-    // Sync updated dataModel into local state so the widget immediately reflects new rows
-    if (data.dataModel) {
-      setConfig((prev) => ({ ...prev, dataModel: data.dataModel }));
-    }
+    const records = await loadWorkspaceSourceRecords();
+    setWorkspaceSourceRecords(records);
+    setConfig((prev) => {
+      const next = data.dataModel ? { ...prev, dataModel: data.dataModel } : prev;
+      const tables = listWorkspaceDataModelTables(next, { sourceRecords: records });
+      return applyChartRecomputeToActiveTab(next, activeDashboardId, tables);
+    });
     return data;
-  }, []);
+  }, [activeDashboardId]);
 
   const replaceSelectedWidgetConfig = useCallback((nextConfig) => {
     if (!selectedWidgetId) return;
+    const selected = activeWidgets.find((widget) => widget.id === selectedWidgetId);
+    const finalConfig = selected?.kind === "chart"
+      ? recomputeChartWidgetConfig(nextConfig, dataModelTables).config
+      : nextConfig;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -4374,13 +4494,13 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         return {
           ...tab,
           widgets: (tab.widgets || []).map((widget) =>
-            widget.id === selectedWidgetId ? { ...widget, config: nextConfig } : widget
+            widget.id === selectedWidgetId ? { ...widget, config: finalConfig } : widget
           )
         };
       });
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [activeDashboardId, selectedWidgetId]);
+  }, [activeDashboardId, activeWidgets, dataModelTables, selectedWidgetId]);
   const updateSelectedWidget = useCallback((updates) => {
     if (!selectedWidgetId) return;
     setConfig((prev) => {

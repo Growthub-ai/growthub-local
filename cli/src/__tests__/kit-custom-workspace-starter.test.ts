@@ -950,3 +950,150 @@ describe("orchestration-graph — contract and kit presence", () => {
     ).toBe("incomplete");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 9. Chart value hydration — runtime-safe projection from rows
+// ---------------------------------------------------------------------------
+
+describe("chart value hydration — computation and runtime contracts", () => {
+  it("lib/workspace-chart-values.js ships", () => {
+    expect(appExists("lib/workspace-chart-values.js")).toBe(true);
+  });
+
+  it("GET /api/workspace exposes workspaceSourceRecords without PATCH allowlist expansion", () => {
+    const route = appText("app/api/workspace/route.js");
+    expect(route).toContain("readWorkspaceSourceRecords");
+    expect(route).toContain("workspaceSourceRecords");
+    expect(route).toContain('new Set(["dashboards", "widgetTypes", "canvas", "dataModel"])');
+    expect(route).not.toContain('"workspaceSourceRecords"');
+  });
+
+  it("static chart values still validate unchanged", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const { validateWorkspaceConfig } = await import(`file://${schemaPath}`) as {
+      validateWorkspaceConfig: (config: unknown) => void;
+    };
+    expect(() =>
+      validateWorkspaceConfig({
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [{
+            id: "chart_static",
+            kind: "chart",
+            title: "Static",
+            position: { x: 0, y: 0, w: 4, h: 3 },
+            config: { values: [10, 20, 30], binding: { mode: "manual", source: "Manual" } },
+          }],
+        },
+      })
+    ).not.toThrow();
+  });
+
+  it("manual Data Model rows compute finite chart values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-chart-values.js")}?t=${Date.now()}`
+    ) as {
+      computeChartValuesFromRows: (input: Record<string, unknown>) => {
+        values: number[];
+        warnings: string[];
+      };
+    };
+    const result = mod.computeChartValuesFromRows({
+      rows: [
+        { Region: "North", Revenue: 10 },
+        { Region: "South", Revenue: 20 },
+        { Region: "East", Revenue: 5 },
+      ],
+      xAxis: { field: "Region", sort: "asc" },
+      yAxis: { field: "Revenue", aggregation: "sum" },
+    });
+    expect(result.warnings).toEqual([]);
+    expect(result.values).toEqual([5, 10, 20]);
+    result.values.forEach((value) => expect(Number.isFinite(value)).toBe(true));
+  });
+
+  it("hydrated sidecar rows feed Data Model tables without mutating config", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-data-model.js")}?t=${Date.now()}`
+    ) as {
+      listWorkspaceDataModelTables: (
+        config: Record<string, unknown>,
+        options?: { sourceRecords?: Record<string, { records: Record<string, unknown>[] }> }
+      ) => Array<{ objectId: string; rows: Record<string, unknown>[]; storage: string }>;
+    };
+    const workspaceConfig = {
+      dataModel: {
+        objects: [{
+          id: "src_live",
+          label: "Live CRM",
+          sourceId: "src_live",
+          columns: ["name", "amount"],
+          rows: [{ name: "stale", amount: 1 }],
+          binding: {
+            mode: "integration",
+            source: "crm",
+            sourceStorage: "workspace-source-records",
+            sourceId: "src_live",
+            integrationId: "crm",
+          },
+        }],
+      },
+    };
+    const tables = mod.listWorkspaceDataModelTables(workspaceConfig, {
+      sourceRecords: {
+        src_live: {
+          records: [
+            { name: "alpha", amount: 40 },
+            { name: "beta", amount: 60 },
+          ],
+        },
+      },
+    });
+    const table = tables.find((entry) => entry.objectId === "src_live");
+    expect(table?.storage).toBe("workspace-source-records");
+    expect(table?.rows).toEqual([
+      { name: "alpha", amount: 40 },
+      { name: "beta", amount: 60 },
+    ]);
+    expect(workspaceConfig.dataModel.objects[0].rows).toEqual([{ name: "stale", amount: 1 }]);
+  });
+
+  it("invalid Y field returns empty values and warnings", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-chart-values.js")}?t=${Date.now()}`
+    ) as {
+      computeChartValuesFromRows: (input: Record<string, unknown>) => {
+        values: number[];
+        warnings: string[];
+      };
+    };
+    const result = mod.computeChartValuesFromRows({
+      rows: [{ Region: "North", Label: "alpha" }],
+      xAxis: { field: "Region" },
+      yAxis: { field: "Label", aggregation: "sum" },
+    });
+    expect(result.values).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes("numeric"))).toBe(true);
+  });
+
+  it("workspace builder wires chart recompute without render-time row queries", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("computeChartValuesFromRows");
+    expect(builder).toContain("recomputeChartWidgetConfig");
+    expect(builder).toContain("workspaceSourceRecords");
+    expect(builder).toContain('listWorkspaceDataModelTables(config, { sourceRecords: workspaceSourceRecords })');
+    const previewIdx = builder.indexOf("const chartValues = widget.config?.values");
+    const dataModelQueryIdx = builder.indexOf("listWorkspaceDataModelTables(widget");
+    expect(previewIdx).toBeGreaterThan(-1);
+    expect(dataModelQueryIdx).toBe(-1);
+  });
+});
+
+describe("growthub-custom-workspace-starter-v1 — kit.json chart hydration assets", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+
+  it("frozen asset paths include workspace-chart-values.js", () => {
+    expect(frozen).toContain("apps/workspace/lib/workspace-chart-values.js");
+  });
+});

@@ -90,6 +90,7 @@
     "apps/workspace/app/api/workspace/sandbox-run/route.js",
     "apps/workspace/app/api/settings/integrations/route.js",
     "apps/workspace/lib/workspace-schema.js",
+    "apps/workspace/lib/workspace-chart-values.js",
     "apps/workspace/lib/workspace-config.js",
     "apps/workspace/lib/domain/portal.js",
     "apps/workspace/lib/domain/integrations.js",

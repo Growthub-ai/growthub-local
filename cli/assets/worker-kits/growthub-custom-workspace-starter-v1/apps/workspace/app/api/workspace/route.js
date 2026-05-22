@@ -9,6 +9,7 @@ import { buildPortalWorkspace, portalCapabilities } from "@/lib/domain/portal";
 import {
   describePersistenceMode,
   readWorkspaceConfig,
+  readWorkspaceSourceRecords,
   writeWorkspaceConfig
 } from "@/lib/workspace-config";
 
@@ -27,6 +28,7 @@ async function GET() {
     integrations: groupIntegrationsByLane(integrations)
   };
   const workspaceConfig = await readWorkspaceConfig();
+  const workspaceSourceRecords = await readWorkspaceSourceRecords();
   const persistence = describePersistenceMode();
   return NextResponse.json({
     config,
@@ -35,6 +37,7 @@ async function GET() {
     settings,
     workspace: buildPortalWorkspace({ config, adapters, integrations: settings.integrations }),
     workspaceConfig,
+    workspaceSourceRecords,
     workspaceConfigPersistence: persistence
   });
 }

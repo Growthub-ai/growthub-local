@@ -265,9 +265,54 @@ function normalizeFieldSettings(fieldSettings, columns) {
   };
 }
 
-function deriveManualObjectTable(object) {
-  const columns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
-  const rows = Array.isArray(object.rows) ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+function resolveSourceRecordEntry(object, sourceRecords) {
+  if (!sourceRecords || typeof sourceRecords !== "object" || Array.isArray(sourceRecords)) return null;
+  if (object?.binding?.sourceStorage !== "workspace-source-records") return null;
+  const keys = [
+    object.id,
+    object.sourceId,
+    object.binding?.sourceId
+  ].map((key) => String(key || "").trim()).filter(Boolean);
+  const seen = new Set();
+  for (const key of keys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (Object.prototype.hasOwnProperty.call(sourceRecords, key)) {
+      return sourceRecords[key];
+    }
+  }
+  return null;
+}
+
+function unionColumnsFromRows(columns, rows) {
+  const base = Array.isArray(columns) ? columns.filter(Boolean) : [];
+  const ordered = [...base];
+  const known = new Set(base);
+  for (const row of rows) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    for (const key of Object.keys(row)) {
+      if (!known.has(key)) {
+        known.add(key);
+        ordered.push(key);
+      }
+    }
+  }
+  return ordered;
+}
+
+function deriveManualObjectTable(object, sourceRecords) {
+  const configColumns = Array.isArray(object.columns) ? object.columns.filter(Boolean) : [];
+  const configRows = Array.isArray(object.rows)
+    ? object.rows.filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const sidecarEntry = resolveSourceRecordEntry(object, sourceRecords);
+  const hydratedRows = sidecarEntry
+    ? (Array.isArray(sidecarEntry.records)
+      ? sidecarEntry.records.filter((row) => row && typeof row === "object" && !Array.isArray(row))
+      : [])
+    : null;
+  const rows = hydratedRows != null ? hydratedRows : configRows;
+  const columns = unionColumnsFromRows(configColumns, rows);
   const source = object.source || object.label || object.name || "Manual object";
   return {
     id: `manual-object:${object.id || source}`,
@@ -281,8 +326,13 @@ function deriveManualObjectTable(object) {
     binding: object.binding || { mode: "manual", source: "Data Model" },
     relations: Array.isArray(object.relations) ? object.relations : [],
     mutable: true,
-    storage: "manual-object",
+    storage: sidecarEntry ? "workspace-source-records" : "manual-object",
     objectId: object.id,
+    sourceRecordMeta: sidecarEntry ? {
+      fetchedAt: sidecarEntry.fetchedAt || null,
+      recordCount: sidecarEntry.recordCount ?? rows.length,
+      integrationId: sidecarEntry.integrationId || null
+    } : null,
     widgetRefs: [],
     fieldSettings: normalizeFieldSettings(object.fieldSettings, columns)
   };
@@ -304,7 +354,8 @@ const HIDDEN_HELPER_OBJECT_IDS = new Set([
   "nav-folders",
 ]);
 
-function listWorkspaceDataModelTables(workspaceConfig) {
+function listWorkspaceDataModelTables(workspaceConfig, options = {}) {
+  const sourceRecords = options?.sourceRecords;
   const widgetEntries = listWidgetEntries(workspaceConfig);
   const refsByObjectId = widgetEntries.reduce((map, { widget, location }) => {
     const binding = widget?.config?.binding;
@@ -321,7 +372,7 @@ function listWorkspaceDataModelTables(workspaceConfig) {
   const manualObjects = normalizeManualObjects(workspaceConfig)
     .filter((object) => !HIDDEN_HELPER_OBJECT_IDS.has(object?.id))
     .map((object) => {
-      const table = deriveManualObjectTable(object);
+      const table = deriveManualObjectTable(object, sourceRecords);
       return { ...table, widgetRefs: refsByObjectId.get(object.id) || [] };
     });
   const widgetTables = widgetEntries

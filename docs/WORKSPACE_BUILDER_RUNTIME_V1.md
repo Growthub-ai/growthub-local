@@ -128,8 +128,16 @@ The starter ships in `read-only` mode by default. Local `next dev` runs in `file
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/workspace` | Returns `config`, `adapters`, `capabilities`, `settings`, `workspace`, plus the resolved `workspaceConfig` and `workspaceConfigPersistence`. Pre-existing fields are preserved. |
+| `GET /api/workspace` | Returns `config`, `adapters`, `capabilities`, `settings`, `workspace`, plus the resolved `workspaceConfig`, `workspaceSourceRecords` (read-only sidecar snapshot), and `workspaceConfigPersistence`. Pre-existing fields are preserved. |
 | `PATCH /api/workspace` | Validates and writes only `dashboards`, `widgetTypes`, `canvas`, and `dataModel`. Unknown fields → 400. Invalid shape → 400. Read-only runtime → 409. |
+
+`workspaceSourceRecords` is **not** on the PATCH allowlist. It hydrates live-backed Data Model objects at builder runtime only.
+
+### Chart value hydration (runtime)
+
+- `growthub.source-records.json` stores normalized rows fetched through `POST /api/workspace/refresh-sources`. The builder reads this sidecar via `GET /api/workspace` and merges rows into Data Model tables in memory — it does not mutate `growthub.config.json` for hydration.
+- Chart widgets still render from precomputed `widget.config.values`. When source, axis, filter, or aggregation changes, the builder runs `lib/workspace-chart-values.js` and persists only the resulting `number[]` through the existing save path.
+- After a successful source refresh, the builder reloads `workspaceSourceRecords`, rebuilds tables, recomputes chart values for affected widgets, and saves through `PATCH /api/workspace` like any other config edit.
 
 No new API routes are added. No bridge data widgets, no chat route, no workflow runner, no artifact viewer, no deploy status route — those would all introduce UI surfaces that are not in the baseline.
 
