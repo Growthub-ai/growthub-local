@@ -28,6 +28,7 @@ import {
   Mail,
   Maximize2,
   MoreHorizontal,
+  Play,
   Plus,
   Pencil,
   Search,
@@ -67,6 +68,8 @@ import {
 } from "@/lib/workspace-data-model";
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
+import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
+import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
@@ -135,6 +138,15 @@ const OBJECT_TYPE_DEFS = [
 // ─── Lane / badge meta (objectTypeBadge from dm-shared) ────────────────────────
 
 const SANDBOX_RUNTIME_OPTIONS = ["python", "node", "bash"];
+const EMPTY_FIELD_SETTING_LIST = Object.freeze([]);
+const EMPTY_AGENT_AUTH_PATCH = {
+  agentAuthStatus: "",
+  agentAuthProvider: "",
+  agentAuthLastChecked: "",
+  agentAuthLastExitCode: "",
+  agentAuthLastMessage: "",
+  agentAuthLastLoginUrl: ""
+};
 const FIELD_TYPE_CHOICES = [
   { value: "text", label: "Text", icon: "Type", sample: "Field name" },
   { value: "number", label: "Number", icon: "Hash", sample: "Amount" },
@@ -618,10 +630,17 @@ function SandboxRecordFields({
     ));
   }
 
+  function withClearedAgentAuth(fields) {
+    return { ...fields, ...EMPTY_AGENT_AUTH_PATCH };
+  }
+
   function setRunLocality(next) {
     const fields = { runLocality: next };
     if (next === "serverless" && ["local-agent-host", "local-intelligence"].includes(String(draft.adapter || "").trim())) {
       fields.adapter = "local-process";
+      fields.agentHost = "";
+      patchFields(withClearedAgentAuth(fields));
+      return;
     }
     patchFields(fields);
   }
@@ -708,7 +727,10 @@ function SandboxRecordFields({
             value={String(draft.adapter || "local-process").trim() || "local-process"}
             disabled={!table.mutable || saving}
             options={sandboxAdapters.length === 0 ? [{ value: "local-process", label: "local-process" }] : sandboxAdapters.map((a) => ({ value: a.id, label: a.label }))}
-            onChange={(nextValue) => patchFields({ adapter: nextValue })}
+            onChange={(nextValue) => patchFields(withClearedAgentAuth({
+              adapter: nextValue,
+              agentHost: nextValue === "local-agent-host" ? draft.agentHost || "" : ""
+            }))}
           />
         </label>
 
@@ -720,7 +742,7 @@ function SandboxRecordFields({
               disabled={!table.mutable || saving}
               placeholder="Select host..."
               options={(selectedAdapterMeta?.hostCatalog || []).map((h) => ({ value: h.slug, label: h.label }))}
-              onChange={(nextValue) => patchFields({ agentHost: nextValue })}
+              onChange={(nextValue) => patchFields(withClearedAgentAuth({ agentHost: nextValue }))}
             />
           </label>
         )}
@@ -990,21 +1012,27 @@ function DataModelRecordDrawer({
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
+  const drawerKeyRef = useRef("");
 
   useEffect(() => {
+    const drawerKey = `${table.id || table.objectId || table.source}:${rowIndex}:${row?.Name || row?.id || ""}`;
+    const sameDrawerRecord = drawerKeyRef.current === drawerKey;
+    drawerKeyRef.current = drawerKey;
     setDraft(row || {});
-    setEditMode(false);
     setPendingColumns(table.columns || []);
     setPendingHidden(table.fieldSettings?.hidden || []);
-    setTestMessage("");
-    setSandboxMessage("");
-    setSandboxHistory([]);
-    setSandboxHistoryMessage("");
-    setExpandedJson(null);
-    setSandboxToolFlow(null);
-    setSandboxToolDraft({});
-    setCreatedSandboxMeta(null);
-    setCreatedSandboxTestMessage("");
+    if (!sameDrawerRecord) {
+      setEditMode(false);
+      setTestMessage("");
+      setSandboxMessage("");
+      setSandboxHistory([]);
+      setSandboxHistoryMessage("");
+      setExpandedJson(null);
+      setSandboxToolFlow(null);
+      setSandboxToolDraft({});
+      setCreatedSandboxMeta(null);
+      setCreatedSandboxTestMessage("");
+    }
     if (initialSidecar?.mode === "graph") {
       setSidecarMode("graph");
       setTraceField(null);
@@ -1013,12 +1041,12 @@ function DataModelRecordDrawer({
       setSidecarMode("trace");
       setTraceField(initialSidecar.field || "lastResponse");
       setTraceRunId(String(initialSidecar.runId || row?.lastRunId || "").trim());
-    } else {
+    } else if (!sameDrawerRecord) {
       setSidecarMode(null);
       setTraceField(null);
       setTraceRunId("");
     }
-  }, [row, rowIndex, initialSidecar]);
+  }, [row, rowIndex, initialSidecar, table.id, table.objectId, table.source, table.columns, table.fieldSettings?.hidden]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
@@ -1371,6 +1399,17 @@ function DataModelRecordDrawer({
             <h2>{draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}</h2>
           </div>
           <div className="dm-record-drawer-actions">
+            {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && (
+              <button
+                type="button"
+                className="dm-btn-primary-sm dm-record-head-run"
+                disabled={sandboxRunning || saving || !String(draft.Name || "").trim()}
+                onClick={runSandbox}
+              >
+                <Play size={13} aria-hidden />
+                {sandboxRunning ? "Running…" : "Run sandbox"}
+              </button>
+            )}
             {!isSandbox && sandboxToolFlow !== "draft" && (
               <button type="button" className="dm-sidebar-close" onClick={() => setEditMode((current) => !current)} aria-label="Toggle edit mode">
                 <Pencil size={16} />
@@ -1450,7 +1489,7 @@ function DataModelRecordDrawer({
           onConfirm={createSandboxToolFromRegistry}
           onCancel={() => setSandboxToolFlow("draft")}
         />
-        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && (
+        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && sandboxMessage && (
           <SandboxRunPanel
             status={draft.status}
             sandboxRunning={sandboxRunning}
@@ -1458,6 +1497,21 @@ function DataModelRecordDrawer({
             disabled={saving}
             canRun={Boolean(String(draft.Name || "").trim())}
             onRun={runSandbox}
+            agentAuthStatus={draft.agentAuthStatus}
+            agentAuthHint={
+              isSandboxLocalAgentHost(draft) && ["stale", "missing"].includes(String(draft.agentAuthStatus || ""))
+                ? "Agent auth may be stale — open the auth panel above."
+                : null
+            }
+          />
+        )}
+        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && isSandboxLocalAgentHost(draft) && (
+          <SandboxAgentAuthPanel
+            objectId={table.objectId}
+            rowName={String(draft.Name || "").trim()}
+            draft={draft}
+            disabled={saving || sandboxRunning}
+            onPatchDraft={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           />
         )}
         {isSandbox && sidecarMode === "graph" && (
@@ -1596,9 +1650,12 @@ function DataModelTableSurface({
   focusSandboxRowName,
   onFocusSandboxRowConsumed,
   onFocusSandboxRow,
+  selectedRecordIndex,
+  onSelectedRecordIndexChange,
 }) {
   const router = useRouter();
   const [selectedRow, setSelectedRow] = useState(null);
+  const [localSelectedOriginalIndex, setLocalSelectedOriginalIndex] = useState(null);
   const [initialSidecar, setInitialSidecar] = useState(null);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState("text");
@@ -1616,10 +1673,17 @@ function DataModelTableSurface({
   const [pageSize, setPageSize] = useState(15);
   const [pageIndex, setPageIndex] = useState(0);
   const fieldInputRef = useRef(null);
+  const selectedOriginalIndex = selectedRecordIndex ?? localSelectedOriginalIndex;
+
+  function selectOriginalIndex(index) {
+    setLocalSelectedOriginalIndex(index);
+    onSelectedRecordIndexChange?.(index);
+  }
 
   useEffect(() => { if (addingField) fieldInputRef.current?.focus(); }, [addingField]);
   useEffect(() => {
     setSelectedRow(null);
+    selectOriginalIndex(null);
     setSelectedRows(new Set());
     setConfirmDeleteSelection(false);
     setLastSelectedRowIndex(null);
@@ -1633,7 +1697,15 @@ function DataModelTableSurface({
     setFilterDraft({ fieldId: table.columns[0] || "", operator: "eq", value: "" });
   }, [table.id, table.columns]);
 
-  const settings = table.fieldSettings || { hidden: [], order: table.columns, sort: [], filter: null };
+  const settings = useMemo(() => {
+    const fieldSettings = table.fieldSettings || {};
+    return {
+      hidden: Array.isArray(fieldSettings.hidden) ? fieldSettings.hidden : EMPTY_FIELD_SETTING_LIST,
+      order: Array.isArray(fieldSettings.order) ? fieldSettings.order : (table.columns || EMPTY_FIELD_SETTING_LIST),
+      sort: Array.isArray(fieldSettings.sort) ? fieldSettings.sort : EMPTY_FIELD_SETTING_LIST,
+      filter: fieldSettings.filter || null
+    };
+  }, [table.fieldSettings, table.columns]);
   const orderedColumns = useMemo(() => mergeColumnOrder(settings.order, table.columns), [settings.order, table.columns]);
   const visibleColumns = useMemo(() => orderedColumns.filter((column) => !settings.hidden.includes(column)), [orderedColumns, settings.hidden]);
   const rowEntries = useMemo(() => {
@@ -1669,7 +1741,8 @@ function DataModelTableSurface({
     if (visibleIndex < 0) return;
     const pageForRow = Math.floor(visibleIndex / pageSize);
     setPageIndex(pageForRow);
-    setSelectedRow(visibleIndex - pageForRow * pageSize);
+    setSelectedRow(visibleIndex);
+    selectOriginalIndex(originalIndex);
     onFocusSandboxRowConsumed?.();
   }, [focusSandboxRowName, table.id, table.objectType, table.rows, rowEntries, pageSize, onFocusSandboxRowConsumed]);
 
@@ -1847,11 +1920,14 @@ function DataModelTableSurface({
     const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
     onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
     setSelectedRow(null);
+    selectOriginalIndex(null);
     setConfirmDeleteSelection(false);
     clearRowSelection();
   }
 
-  const selectedEntry = selectedRow === null ? null : rowEntries[selectedRow];
+  const selectedEntry = selectedOriginalIndex === null
+    ? (selectedRow === null ? null : rowEntries[selectedRow])
+    : rowEntries.find((entry) => entry.originalIndex === selectedOriginalIndex) || null;
   const selectedRecord = selectedEntry?.row || null;
 
   return (
@@ -2035,7 +2111,14 @@ function DataModelTableSurface({
               const visibleIndex = pageStart + rowIndex;
               const displayIndex = visibleIndex + 1;
               return (
-              <tr key={`${originalIndex}:${visibleIndex}`} className={`${selectedRow === visibleIndex ? "selected" : ""}${selectedRows.has(originalIndex) ? " multi-selected" : ""}`} onClick={() => setSelectedRow(visibleIndex)}>
+              <tr
+                key={`${originalIndex}:${visibleIndex}`}
+	                className={`${selectedOriginalIndex === originalIndex ? "selected" : ""}${selectedRows.has(originalIndex) ? " multi-selected" : ""}`}
+	                onClick={() => {
+	                  setSelectedRow(visibleIndex);
+	                  selectOriginalIndex(originalIndex);
+	                }}
+	              >
                 <td className="dm-db-rownum">
                   {table.mutable ? (
                     <button type="button" className="dm-row-select" aria-label={selectedRows.has(originalIndex) ? `Deselect row ${displayIndex}` : `Select row ${displayIndex}`} aria-pressed={selectedRows.has(originalIndex)} onClick={(event) => { event.stopPropagation(); toggleRowSelection(originalIndex, visibleIndex, event); }}>
@@ -2087,11 +2170,12 @@ function DataModelTableSurface({
                           if (column === "orchestrationGraph" || column === "orchestrationConfig") {
                             openSandboxGraph(column, row);
                             return;
-                          }
-                          const sidecar = sandboxSidecarForColumn(column, row);
-                          setSelectedRow(visibleIndex);
-                          setInitialSidecar(sidecar);
-                        }}
+	                          }
+	                          const sidecar = sandboxSidecarForColumn(column, row);
+	                          setSelectedRow(visibleIndex);
+	                          selectOriginalIndex(originalIndex);
+	                          setInitialSidecar(sidecar);
+	                        }}
                       >
                         {column === "orchestrationGraph" || column === "orchestrationConfig"
                           ? (getOrchestrationGraphUiState(row?.[column]) === "populated" ? "Edit graph" : "Start graph")
@@ -2139,9 +2223,9 @@ function DataModelTableSurface({
         tables={tables}
         workspaceConfig={workspaceConfig}
         rowIndex={selectedEntry?.originalIndex ?? null}
-        row={selectedRecord}
-        saving={saving}
-        onClose={() => { setSelectedRow(null); setInitialSidecar(null); }}
+	        row={selectedRecord}
+	        saving={saving}
+	        onClose={() => { setSelectedRow(null); selectOriginalIndex(null); setInitialSidecar(null); }}
         onSave={onSave}
         onFocusSandboxRow={onFocusSandboxRow}
         initialSidecar={initialSidecar}
@@ -2449,6 +2533,7 @@ export default function DataModelShell() {
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
+  const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
 
@@ -2540,6 +2625,9 @@ export default function DataModelShell() {
   );
 
   const selectedTable = tables.find((t) => t.source === selectedSource) || tables[0] || null;
+  const selectedTableKey = selectedTable
+    ? String(selectedTable.objectId || selectedTable.id || selectedTable.source || "")
+    : "";
 
   const focusSandboxEnvironmentRow = useCallback(({ rowName, deferOpen = false } = {}) => {
     const wanted = String(rowName || "").trim();
@@ -2903,6 +2991,14 @@ export default function DataModelShell() {
                 focusSandboxRowName={focusSandboxRowName}
                 onFocusSandboxRowConsumed={() => setFocusSandboxRowName(null)}
                 onFocusSandboxRow={focusSandboxEnvironmentRow}
+                selectedRecordIndex={selectedTableKey ? selectedRecordByTable[selectedTableKey] ?? null : null}
+                onSelectedRecordIndexChange={(index) => {
+                  if (!selectedTableKey) return;
+                  setSelectedRecordByTable((current) => ({
+                    ...current,
+                    [selectedTableKey]: index
+                  }));
+                }}
               />
             </section>
           )

@@ -3,6 +3,7 @@
  */
 
 import { redactSecretsFromText } from "./orchestration-graph.js";
+import { redactRunInputsEnvelope, summarizeRunInputs } from "./orchestration-run-inputs.js";
 
 function safeParseJson(text) {
   const raw = String(text || "").trim();
@@ -31,10 +32,15 @@ function parseSandboxRunTrace(lastResponse) {
       output: "",
       ranAt: "",
       envRefsResolved: [],
-      envRefsMissing: []
+      envRefsMissing: [],
+      input: null,
+      inputSummary: null,
+      exports: null
     };
   }
   const outputRaw = parsed.output ?? parsed.normalizedOutput ?? parsed.response;
+  const inputRaw = parsed.input || parsed.runInputs || null;
+  const safeInput = inputRaw ? redactRunInputsEnvelope(inputRaw) : null;
   return {
     status: parsed.status || (parsed.exitCode === 0 && !parsed.error ? "connected" : parsed.error ? "failed" : ""),
     runId: String(parsed.runId || "").trim(),
@@ -51,12 +57,23 @@ function parseSandboxRunTrace(lastResponse) {
     ),
     ranAt: String(parsed.ranAt || "").trim(),
     envRefsResolved: Array.isArray(parsed.envRefsResolved) ? parsed.envRefsResolved : [],
-    envRefsMissing: Array.isArray(parsed.envRefsMissing) ? parsed.envRefsMissing : []
+    envRefsMissing: Array.isArray(parsed.envRefsMissing) ? parsed.envRefsMissing : [],
+    input: safeInput,
+    inputSummary: safeInput ? summarizeRunInputs(safeInput) : null,
+    exports: parsed.exports && typeof parsed.exports === "object" ? parsed.exports : null
   };
 }
 
 function normalizeRunRecord(record) {
   if (!record || typeof record !== "object") return null;
+  const outputRaw = record.output ?? record.normalizedOutput ?? record.response;
+  const outputText = typeof outputRaw === "string"
+    ? outputRaw
+    : outputRaw != null
+      ? JSON.stringify(outputRaw, null, 2)
+      : "";
+  const inputRaw = record.input || record.runInputs || null;
+  const safeInput = inputRaw ? redactRunInputsEnvelope(inputRaw) : null;
   return {
     runId: String(record.runId || "").trim(),
     ranAt: String(record.ranAt || "").trim(),
@@ -65,8 +82,20 @@ function normalizeRunRecord(record) {
     error: redactSecretsFromText(record.error || ""),
     stdout: redactSecretsFromText(typeof record.stdout === "string" ? record.stdout : ""),
     stderr: redactSecretsFromText(record.stderr || ""),
+    output: redactSecretsFromText(outputText),
+    runtime: String(record.runtime || "").trim(),
+    adapter: String(record.adapter || "").trim(),
+    runLocality: String(record.runLocality || "").trim(),
+    status: String(record.status || "").trim(),
+    envRefsResolved: Array.isArray(record.envRefsResolved) ? record.envRefsResolved : [],
+    envRefsMissing: Array.isArray(record.envRefsMissing) ? record.envRefsMissing : [],
+    adapterMeta: record.adapterMeta && typeof record.adapterMeta === "object" ? record.adapterMeta : null,
+    templateTrace: record.templateTrace && typeof record.templateTrace === "object" ? record.templateTrace : null,
     lifecycleStatus: String(record.lifecycleStatus || "").trim(),
-    version: String(record.version || "").trim()
+    version: String(record.version || "").trim(),
+    input: safeInput,
+    inputSummary: safeInput ? summarizeRunInputs(safeInput) : null,
+    exports: record.exports && typeof record.exports === "object" ? record.exports : null
   };
 }
 

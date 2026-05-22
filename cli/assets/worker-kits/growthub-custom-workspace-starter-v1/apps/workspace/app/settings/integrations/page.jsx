@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
@@ -58,13 +59,15 @@ async function IntegrationsSettingsPage() {
   const allRows = [...grouped.dataSources, ...grouped.workspaceIntegrations];
 
   return <main className="workspace-builder workspace-settings-page">
-      <WorkspaceRail
-        workspaceConfig={workspaceConfig}
-        authority={adapter.authority}
-        managementSlot={(
-          <Link className="active" href="/settings/integrations">Integrations</Link>
-        )}
-      />
+      <Suspense fallback={null}>
+        <WorkspaceRail
+          workspaceConfig={workspaceConfig}
+          authority={adapter.authority}
+          managementSlot={(
+            <Link className="active" href="/settings/integrations">Integrations</Link>
+          )}
+        />
+      </Suspense>
 
       <section className="workspace-surface">
         <header className="workspace-toolbar">

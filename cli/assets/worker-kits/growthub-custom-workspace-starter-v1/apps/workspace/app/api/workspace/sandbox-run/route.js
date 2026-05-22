@@ -77,6 +77,12 @@ import {
 } from "@/lib/adapters/sandboxes";
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
+import {
+  discoverRunInputSchema,
+  normalizeRunInputsEnvelope,
+  validateRunInputsEnvelope,
+  summarizeRunInputs
+} from "@/lib/orchestration-run-inputs";
 
 function envKeyCandidates(ref) {
   const token = String(ref || "")
@@ -347,7 +353,8 @@ function buildRunResponse({
   allowList,
   result,
   timeoutMs,
-  row
+  row,
+  runInputs
 }) {
   const base = {
     runId,
@@ -380,6 +387,15 @@ function buildRunResponse({
       executionLane: row.executionLane ? String(row.executionLane) : null
     };
   }
+  if (runInputs && typeof runInputs === "object") {
+    base.input = runInputs;
+    base.runInputs = runInputs;
+    base.inputSummary = summarizeRunInputs(runInputs);
+  }
+  base.exports = {
+    available: ["download-json", "copy-output", "download-stdout", "download-stderr", "download-log-node"],
+    external: []
+  };
   return base;
 }
 
@@ -448,6 +464,29 @@ async function POST(request) {
     ? { ...row, orchestrationGraph: draftGraph, orchestrationConfig: draftGraph }
     : row;
 
+  const inputSchema = discoverRunInputSchema(rowForRun.orchestrationGraph || rowForRun.orchestrationConfig);
+  let normalizedRunInputs = null;
+  if (body?.runInputs != null) {
+    const validation = validateRunInputsEnvelope(body.runInputs, inputSchema);
+    if (validation.error) {
+      return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
+    }
+    if (inputSchema.requiresInput && validation.missing.length > 0) {
+      return NextResponse.json({
+        ok: false,
+        error: `Missing required run input fields: ${validation.missing.join(", ")}`,
+        missingFields: validation.missing
+      }, { status: 400 });
+    }
+    normalizedRunInputs = normalizeRunInputsEnvelope(body.runInputs, inputSchema);
+  } else if (inputSchema.requiresInput) {
+    return NextResponse.json({
+      ok: false,
+      error: "runInputs is required for this workflow",
+      missingFields: (inputSchema.fields || []).filter((f) => f.required).map((f) => f.id)
+    }, { status: 400 });
+  }
+
   const runLocality = normalizeRunLocality(rowForRun);
   const runtime = KNOWN_SANDBOX_RUNTIMES.includes(rowForRun.runtime) ? rowForRun.runtime : "node";
   let adapterId = (typeof rowForRun.adapter === "string" && rowForRun.adapter.trim()) ? rowForRun.adapter.trim() : DEFAULT_SANDBOX_ADAPTER;
@@ -515,7 +554,12 @@ async function POST(request) {
 
   const hasNativeGraph = Boolean(parseOrchestrationGraph(rowForRun.orchestrationGraph || rowForRun.orchestrationConfig));
   if (hasNativeGraph && runLocality !== "serverless") {
-    const graphResult = await runOrchestrationGraphIfPresent({ workspaceConfig, row: rowForRun, timeoutMs });
+    const graphResult = await runOrchestrationGraphIfPresent({
+      workspaceConfig,
+      row: rowForRun,
+      timeoutMs,
+      runInputs: normalizedRunInputs
+    });
     if (graphResult !== null) {
       result = graphResult;
       effectiveAdapterId = "orchestration-graph";
@@ -613,7 +657,8 @@ async function POST(request) {
     allowList,
     result,
     timeoutMs,
-    row: rowForRun
+    row: rowForRun,
+    runInputs: normalizedRunInputs
   });
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);

@@ -119,8 +119,30 @@ async function POST(request) {
       ) || null;
       const records = await resolver.fetchRecords(adapterConfig, connection, binding);
       const fetchedAt = new Date().toISOString();
-      await writeWorkspaceSourceRecords(sourceId, records, { integrationId, fetchedAt });
-      refreshed.push({ sourceId, integrationId, recordCount: records.length, fetchedAt });
+      // Persist the records under the object's `id` (canonical sidecar key).
+      // We also include `objectId`, `objectSourceId`, and `bindingSourceId`
+      // metadata so reader-side hydration in `lib/workspace-data-model.js`
+      // can fall back across the three places that may legitimately store
+      // the same key (object.id, object.sourceId, object.binding.sourceId)
+      // without having to re-parse the object.
+      const objectSourceId = typeof obj.sourceId === "string" && obj.sourceId.trim() ? obj.sourceId.trim() : null;
+      const bindingSourceId = typeof binding.sourceId === "string" && binding.sourceId.trim() ? binding.sourceId.trim() : null;
+      await writeWorkspaceSourceRecords(sourceId, records, {
+        integrationId,
+        fetchedAt,
+        objectId: sourceId,
+        objectSourceId,
+        bindingSourceId
+      });
+      refreshed.push({
+        sourceId,
+        integrationId,
+        recordCount: records.length,
+        fetchedAt,
+        objectId: sourceId,
+        objectSourceId,
+        bindingSourceId
+      });
     } catch (err) {
       skipped.push(sourceId);
       skippedDetail.push({

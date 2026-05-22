@@ -7,10 +7,33 @@ import {
   FILTER_OPERATORS,
   isApiRegistryTestSuccessful
 } from "@/lib/orchestration-graph";
+import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
+import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
+import { HOST_AUTH_CATALOG } from "@/lib/sandbox-agent-host-catalog";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const MODEL_OPTIONS = ["Claude Opus 4.6", "Claude Sonnet 4.5", "GPT-5.2", "Local agent host"];
 const OUTPUT_TYPES = ["Text", "Number", "Boolean", "JSON", "Record ID"];
+const LOCAL_AGENT_ADAPTERS = [
+  { value: "local-process", label: "Local process" },
+  { value: "local-agent-host", label: "Local agent host" },
+  { value: "local-intelligence", label: "Local intelligence" }
+];
+const EMPTY_AGENT_AUTH_PATCH = {
+  agentAuthStatus: "",
+  agentAuthProvider: "",
+  agentAuthLastChecked: "",
+  agentAuthLastExitCode: "",
+  agentAuthLastMessage: "",
+  agentAuthLastLoginUrl: ""
+};
+
+function getAgentHostOptions() {
+  return Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => ({
+    value: slug,
+    label: host?.label || slug
+  }));
+}
 function normalizeTags(tags) {
   return Array.from(new Set((Array.isArray(tags) ? tags : [])
     .map((tag) => String(tag || "").trim().toLowerCase())
@@ -378,6 +401,107 @@ function VersionDeltaControls({ node, config, sandboxRow, onChange, disabled }) 
   );
 }
 
+function LocalAgentHostControls({
+  sandboxRow,
+  objectId,
+  rowName,
+  disabled,
+  onSandboxRowPatch
+}) {
+  const row = sandboxRow && typeof sandboxRow === "object" ? sandboxRow : {};
+  const runLocality = String(row.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
+  const adapter = String(row.adapter || "local-process").trim() || "local-process";
+  const agentHost = String(row.agentHost || "").trim();
+  const hostOptions = getAgentHostOptions();
+  const canPatch = typeof onSandboxRowPatch === "function";
+
+  function patch(fields) {
+    onSandboxRowPatch?.(fields);
+  }
+
+  function patchWithClearedAgentAuth(fields) {
+    patch({ ...fields, ...EMPTY_AGENT_AUTH_PATCH });
+  }
+
+  return (
+    <div className="dm-orchestration-config__section dm-workflow-agent-runtime">
+      <span>Local agent runtime</span>
+      <div className="dm-sandbox-locality-toggle" role="group" aria-label="Run locality">
+        {["local", "serverless"].map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            className={runLocality === mode ? "is-active" : ""}
+            disabled={disabled || !canPatch}
+            onClick={() => {
+              const fields = { runLocality: mode };
+              if (mode === "serverless" && ["local-agent-host", "local-intelligence"].includes(adapter)) {
+                fields.adapter = "local-process";
+                fields.agentHost = "";
+                patchWithClearedAgentAuth(fields);
+                return;
+              }
+              patch(fields);
+            }}
+          >
+            {mode === "local" ? "Local" : "Serverless"}
+          </button>
+        ))}
+      </div>
+      <p className="dm-orchestration-config__hint">
+        Same runtime fields as the Data Model sandbox sidecar. Local agent host uses the Paperclip thin adapter on this machine.
+      </p>
+      {runLocality === "serverless" && (
+        <p className="dm-orchestration-config__hint">
+          Serverless delegates execution to the configured scheduler/API Registry row; local CLI auth is not used.
+        </p>
+      )}
+      <label className="dm-orchestration-config__field">
+        <span>Execution adapter</span>
+        <select
+          value={adapter}
+          disabled={disabled || !canPatch}
+          onChange={(event) => {
+            const nextAdapter = event.target.value;
+            patchWithClearedAgentAuth({
+              adapter: nextAdapter,
+              agentHost: nextAdapter === "local-agent-host" ? (agentHost || "claude_local") : ""
+            });
+          }}
+        >
+          {LOCAL_AGENT_ADAPTERS.map((item) => (
+            <option key={item.value} value={item.value}>{item.label}</option>
+          ))}
+        </select>
+      </label>
+      {runLocality === "local" && adapter === "local-agent-host" && (
+        <label className="dm-orchestration-config__field">
+          <span>Agent host (Paperclip)</span>
+          <select
+            value={agentHost}
+            disabled={disabled || !canPatch}
+            onChange={(event) => patchWithClearedAgentAuth({ agentHost: event.target.value })}
+          >
+            <option value="">Select host...</option>
+            {hostOptions.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {runLocality === "local" && adapter === "local-agent-host" && isSandboxLocalAgentHost(row) && (
+        <SandboxAgentAuthPanel
+          objectId={objectId}
+          rowName={rowName}
+          draft={row}
+          disabled={disabled || !canPatch}
+          onPatchDraft={patch}
+        />
+      )}
+    </div>
+  );
+}
+
 export function OrchestrationNodeConfigPanel({
   node,
   onConfigChange,
@@ -386,6 +510,9 @@ export function OrchestrationNodeConfigPanel({
   registryRow,
   workspaceConfig,
   sandboxRow,
+  objectId,
+  rowName,
+  onSandboxRowPatch,
   activeTab: controlledTab,
   onTabChange
 }) {
@@ -778,6 +905,15 @@ export function OrchestrationNodeConfigPanel({
               {MODEL_OPTIONS.map((model) => <option key={model} value={model}>{model}</option>)}
             </select>
           </label>
+          {(config.model || MODEL_OPTIONS[0]) === "Local agent host" && (
+            <LocalAgentHostControls
+              sandboxRow={sandboxRow}
+              objectId={objectId}
+              rowName={rowName}
+              disabled={disabled}
+              onSandboxRowPatch={onSandboxRowPatch}
+            />
+          )}
           <label className="dm-orchestration-config__field">
             <span>Input prompt</span>
             <textarea

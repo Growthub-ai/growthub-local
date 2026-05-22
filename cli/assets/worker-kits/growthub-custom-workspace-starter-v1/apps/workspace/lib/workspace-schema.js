@@ -46,7 +46,25 @@ const KNOWN_CHART_TYPES = ["bar-vertical", "bar-horizontal", "line", "pie", "sum
 const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "isNotEmpty"];
 const KNOWN_FILTER_CONJUNCTIONS = ["and", "or"];
 const KNOWN_SORT_DIRECTIONS = ["asc", "desc"];
-const KNOWN_AGGREGATIONS = ["sum", "avg", "count", "min", "max"];
+// Aggregation vocabulary kept in sync with `lib/workspace-chart-values.js`.
+// V1 charts use the first five; the Twenty-style row-presence operations
+// (countAll/countEmpty/countNotEmpty/countUnique, percentEmpty/percentNotEmpty)
+// are valid both as `yAxis.aggregation` (legacy key) and `yAxis.operation`
+// (preferred key going forward). The validator accepts both for back-compat.
+const KNOWN_AGGREGATIONS = [
+  "sum",
+  "avg",
+  "count",
+  "countAll",
+  "countEmpty",
+  "countNotEmpty",
+  "countUnique",
+  "percentEmpty",
+  "percentNotEmpty",
+  "min",
+  "max"
+];
+const KNOWN_DATE_GRANULARITIES = ["day", "week", "month", "quarter", "year"];
 const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
 /** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
 const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
@@ -612,11 +630,25 @@ function validateChartAxis(axis, path, errors) {
   if (axis.aggregation !== undefined && !KNOWN_AGGREGATIONS.includes(axis.aggregation)) {
     errors.push(`${path}.aggregation must be one of ${KNOWN_AGGREGATIONS.join(", ")}`);
   }
+  // `operation` is the Twenty-style preferred key; accepted in addition to
+  // `aggregation` so older configs round-trip cleanly.
+  if (axis.operation !== undefined && !KNOWN_AGGREGATIONS.includes(axis.operation)) {
+    errors.push(`${path}.operation must be one of ${KNOWN_AGGREGATIONS.join(", ")}`);
+  }
   if (axis.groupBy !== undefined && typeof axis.groupBy !== "string") {
     errors.push(`${path}.groupBy must be a string`);
   }
   if (axis.omitZero !== undefined && typeof axis.omitZero !== "boolean") {
     errors.push(`${path}.omitZero must be a boolean`);
+  }
+  if (axis.cumulative !== undefined && typeof axis.cumulative !== "boolean") {
+    errors.push(`${path}.cumulative must be a boolean`);
+  }
+  if (axis.splitMultiValueFields !== undefined && typeof axis.splitMultiValueFields !== "boolean") {
+    errors.push(`${path}.splitMultiValueFields must be a boolean`);
+  }
+  if (axis.dateGranularity !== undefined && !KNOWN_DATE_GRANULARITIES.includes(axis.dateGranularity)) {
+    errors.push(`${path}.dateGranularity must be one of ${KNOWN_DATE_GRANULARITIES.join(", ")}`);
   }
   if (axis.min !== undefined && typeof axis.min !== "string" && typeof axis.min !== "number") {
     errors.push(`${path}.min must be a string or number`);
@@ -635,11 +667,32 @@ function validateChartStyle(style, path, errors) {
   if (style.colors !== undefined && typeof style.colors !== "string") {
     errors.push(`${path}.colors must be a string`);
   }
+  if (style.manualColor !== undefined && typeof style.manualColor !== "string") {
+    errors.push(`${path}.manualColor must be a string`);
+  }
   if (style.axisName !== undefined && typeof style.axisName !== "string") {
     errors.push(`${path}.axisName must be a string`);
   }
   if (style.dataLabels !== undefined && typeof style.dataLabels !== "boolean") {
     errors.push(`${path}.dataLabels must be a boolean`);
+  }
+  if (style.legend !== undefined && typeof style.legend !== "boolean") {
+    errors.push(`${path}.legend must be a boolean`);
+  }
+  if (style.stacked !== undefined && typeof style.stacked !== "boolean") {
+    errors.push(`${path}.stacked must be a boolean`);
+  }
+  if (style.compact !== undefined && typeof style.compact !== "boolean") {
+    errors.push(`${path}.compact must be a boolean`);
+  }
+  if (style.prefix !== undefined && typeof style.prefix !== "string") {
+    errors.push(`${path}.prefix must be a string`);
+  }
+  if (style.suffix !== undefined && typeof style.suffix !== "string") {
+    errors.push(`${path}.suffix must be a string`);
+  }
+  if (style.centerValue !== undefined && typeof style.centerValue !== "string") {
+    errors.push(`${path}.centerValue must be a string`);
   }
 }
 
@@ -1001,6 +1054,63 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane"]) {
     if (row[traceField] !== undefined && typeof row[traceField] !== "string") {
       errors.push(`${path}.${traceField} must be a string when present`);
+    }
+  }
+  // Sandbox Local Agent Auth Onboarding V1 — governance for the safe auth
+  // metadata fields stamped by the auth helper / API routes.
+  const KNOWN_AGENT_AUTH_STATUSES_INLINE = [
+    "active",
+    "reachable",
+    "stale",
+    "missing",
+    "checking",
+    "unknown"
+  ];
+  if (row.agentAuthStatus !== undefined && row.agentAuthStatus !== "" && row.agentAuthStatus !== null) {
+    const authStatus = String(row.agentAuthStatus).trim().toLowerCase();
+    if (!KNOWN_AGENT_AUTH_STATUSES_INLINE.includes(authStatus)) {
+      errors.push(`${path}.agentAuthStatus must be one of ${KNOWN_AGENT_AUTH_STATUSES_INLINE.join(", ")}`);
+    }
+  }
+  for (const authField of [
+    "agentAuthProvider",
+    "agentAuthLastChecked",
+    "agentAuthLastMessage",
+    "agentAuthLastLoginUrl"
+  ]) {
+    const value = row[authField];
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "string") {
+      errors.push(`${path}.${authField} must be a string when present`);
+    }
+  }
+  if (
+    row.agentAuthLastExitCode !== undefined
+    && row.agentAuthLastExitCode !== null
+    && row.agentAuthLastExitCode !== ""
+  ) {
+    const code = Number(row.agentAuthLastExitCode);
+    if (!Number.isFinite(code)) {
+      errors.push(`${path}.agentAuthLastExitCode must be a finite number when present`);
+    }
+  }
+  // Defensive: refuse to ever persist token-shaped field names on a sandbox
+  // row. The helper only writes the SAFE_ROW_PATCH_FIELDS whitelist, but
+  // this guard catches any out-of-band PATCH that tries to stash a secret.
+  const FORBIDDEN_AUTH_ROW_FIELDS = [
+    "token",
+    "apiKey",
+    "authToken",
+    "accessToken",
+    "refreshToken",
+    "bearer",
+    "password",
+    "secret",
+    "sessionKey",
+    "claudeToken"
+  ];
+  for (const forbidden of FORBIDDEN_AUTH_ROW_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(row, forbidden)) {
+      errors.push(`${path}.${forbidden} is not allowed on a sandbox row — auth secrets must stay in the local CLI's own store`);
     }
   }
 }

@@ -79,6 +79,10 @@ import {
 } from "@/lib/workspace-schema";
 import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
+import {
+  computeChartProjectionDebug,
+  computeChartValuesFromRows
+} from "@/lib/workspace-chart-values";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 
@@ -155,6 +159,23 @@ const CHART_TYPE_ICONS = {
 };
 
 const VISIBLE_CHART_TYPES = KNOWN_CHART_TYPES.filter((type) => type !== "line");
+
+// User-facing labels for the Twenty-style Y-axis operation dropdown.
+// Keys must stay in sync with `lib/workspace-chart-values.js#KNOWN_AGGREGATIONS`
+// and the validator in `lib/workspace-schema.js`.
+const AGGREGATION_LABELS = {
+  sum: "Sum",
+  avg: "Average",
+  count: "Count (all)",
+  countAll: "Count (all)",
+  countEmpty: "Count (empty)",
+  countNotEmpty: "Count (not empty)",
+  countUnique: "Count (unique)",
+  percentEmpty: "Percent empty",
+  percentNotEmpty: "Percent not empty",
+  min: "Min",
+  max: "Max"
+};
 
 const WIDGET_KIND_ICONS = {
   chart: BarChart3,
@@ -293,11 +314,11 @@ function textColorForAccent(accent) {
 
 function defaultTitleFor(kind) {
   switch (kind) {
-    case "chart": return "Untitled chart";
-    case "view": return "Untitled view";
-    case "iframe": return "Untitled iFrame";
-    case "rich-text": return "Untitled Rich Text";
-    default: return "Untitled widget";
+    case "chart": return "Chart widget";
+    case "view": return "Data view";
+    case "iframe": return "Embedded page";
+    case "rich-text": return "Text note";
+    default: return "Workspace widget";
   }
 }
 
@@ -337,7 +358,7 @@ function commitTabs(canvas, tabs, activeTabId) {
   return next;
 }
 
-function createDashboardRecord(name = "Untitled") {
+function createDashboardRecord(name = "New Dashboard") {
   const tab = createEmptyTab("Tab 1");
   return {
     id: generateId("dashboard"),
@@ -634,7 +655,7 @@ function commitDashboardCanvas(config, activeDashboardId, nextCanvas) {
 }
 
 function renameDashboardInConfig(config, dashboardId, name, activeDashboardId) {
-  const nextName = name.trim() || "Untitled";
+  const nextName = name.trim() || "New Dashboard";
   const prevDashboards = config.dashboards || [];
   const index = prevDashboards.findIndex((dashboard) => dashboard.id === dashboardId);
   if (index < 0) return config;
@@ -1018,6 +1039,62 @@ function resolveViewWidget(widget, dataModelTables) {
   };
 }
 
+/**
+ * Recompute `config.values` for a chart widget config from its bound Data
+ * Model rows. This is the only path that writes chart values from rows.
+ * The chart renderer continues to read from `config.values` — it never
+ * queries rows directly.
+ *
+ * Returns the next `config` object (with finite-number `values`) plus the
+ * computation result (`rowCount`, `usedRowCount`, `warnings`).
+ *
+ * When the chart has no bound Data Model source, the input config is
+ * returned unchanged and the result is `{ status: "unbound" }`.
+ */
+function recomputeChartConfig(chartConfig, dataModelTables) {
+  const config = chartConfig && typeof chartConfig === "object" && !Array.isArray(chartConfig) ? chartConfig : {};
+  const binding = config.binding;
+  if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE) {
+    return { config, result: { status: "unbound" } };
+  }
+  const table = resolveDataModelTable(dataModelTables, binding);
+  if (!table) {
+    return { config, result: { status: "no-source", warnings: ["Selected source is unavailable."] } };
+  }
+  const computation = computeChartValuesFromRows({
+    rows: Array.isArray(table.rows) ? table.rows : [],
+    xAxis: config.xAxis,
+    yAxis: config.yAxis,
+    filter: config.filter,
+    chartType: config.chartType
+  });
+  return {
+    config: { ...config, values: computation.values },
+    result: { status: "computed", ...computation }
+  };
+}
+
+function findWidgetByIdInConfig(workspaceConfig, widgetId) {
+  if (!widgetId) return null;
+  for (const dashboard of workspaceConfig?.dashboards || []) {
+    for (const tab of dashboard.tabs || []) {
+      for (const widget of tab.widgets || []) {
+        if (widget?.id === widgetId) return widget;
+      }
+    }
+  }
+  const canvas = workspaceConfig?.canvas;
+  for (const tab of canvas?.tabs || []) {
+    for (const widget of tab.widgets || []) {
+      if (widget?.id === widgetId) return widget;
+    }
+  }
+  for (const widget of canvas?.widgets || []) {
+    if (widget?.id === widgetId) return widget;
+  }
+  return null;
+}
+
 function summarizeFields(widget) {
   const total = getColumnList(widget).length;
   const hidden = getHiddenColumnSet(widget).size;
@@ -1040,6 +1117,37 @@ function summarizeFilter(widget) {
   const count = filter.clauses.length;
   if (!count) return "›";
   return `${count} clause${count === 1 ? "" : "s"} (${filter.op})`;
+}
+
+function WidgetPanelHeaderIcon({ kind }) {
+  const Icon = WIDGET_KIND_ICONS[kind] || Box;
+  return <span className="workspace-widget-panel-kind-icon"><IconGlyph icon={Icon} size={15} /></span>;
+}
+
+function WidgetSettingsRow({ icon: Icon, label, value, disabled, active, onClick }) {
+  return <button
+    type="button"
+    className={`workspace-twenty-settings-row${active ? " is-active" : ""}`}
+    disabled={disabled}
+    onClick={onClick}
+  >
+    <span className="workspace-twenty-settings-row__main">
+      <span className="workspace-twenty-settings-row__icon">{Icon ? <Icon size={15} /> : null}</span>
+      <span>{label}</span>
+    </span>
+    <span className="workspace-twenty-settings-row__value">{value || ""}</span>
+    {!disabled ? <ChevronDown className="workspace-twenty-settings-row__chevron" size={14} /> : null}
+  </button>;
+}
+
+function WidgetSelectRow({ icon: Icon, label, value, children }) {
+  return <label className="workspace-twenty-select-row">
+    <span className="workspace-twenty-settings-row__main">
+      <span className="workspace-twenty-settings-row__icon">{Icon ? <Icon size={15} /> : null}</span>
+      <span>{label}</span>
+    </span>
+    <span className="workspace-twenty-select-row__control">{children}</span>
+  </label>;
 }
 
 function describeIntegrationLane(integration) {
@@ -1759,14 +1867,20 @@ function SourceDropdown({ widget, dataModelTables, onChange }) {
   })();
 
   function selectObject(table) {
-    onChange({
+    const nextConfig = {
       ...widget.config,
       source: table.source,
       columns: table.columns,
       rows: [],
       binding: { mode: "manual", source: table.source, sourceType: DATA_MODEL_SOURCE_TYPE, sourceAuthority: "workspace-config", objectId: table.objectId },
       fieldSettings: { hidden: [], order: table.columns }
-    });
+    };
+    if (widget.kind === "chart") {
+      const { config: recomputed } = recomputeChartConfig(nextConfig, dataModelTables);
+      onChange(recomputed);
+    } else {
+      onChange(nextConfig);
+    }
     setOpen(false);
     setQuery("");
   }
@@ -2266,7 +2380,7 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
     if (binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
       if (!window.confirm(`Change source to "${table.label}"?`)) return;
     }
-    onChange({
+    const nextConfig = {
       ...widget.config,
       source: table.source,
       columns: table.columns,
@@ -2279,8 +2393,16 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
         objectId: table.objectId,
       },
       fieldSettings: { hidden: [], order: table.columns }
-    });
-  }, [binding, onChange, widget.config]);
+    };
+    // Chart widgets always project rows into `config.values`. Recompute on
+    // source change so the preview reflects the new binding immediately.
+    if (widget.kind === "chart") {
+      const { config: recomputed } = recomputeChartConfig(nextConfig, dataModelTables);
+      onChange(recomputed);
+      return;
+    }
+    onChange(nextConfig);
+  }, [binding, dataModelTables, onChange, widget.config, widget.kind]);
 
   const activeObjectId = binding.sourceType === DATA_MODEL_SOURCE_TYPE ? binding.objectId : null;
 
@@ -2300,6 +2422,10 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
         {savedObjects.length > 0 ? savedObjects.map((table) => {
           const isActive = activeObjectId === table.objectId;
           const iconName = table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database";
+          // Only surface a badge when it communicates *real* runtime state
+          // (live-backed = sidecar-hydrated). Manual is the default and would
+          // be visual noise; api/webhook are reserved for future surfacing.
+          const showLiveBadge = table.sourceBadge === "live";
           return (
             <button
               key={table.id}
@@ -2314,6 +2440,7 @@ function SourceSubPanel({ widget, dataModelTables, onChange, onBack }) {
                 <strong>{table.label}</strong>
                 <em>{table.columns.length} field{table.columns.length !== 1 ? "s" : ""} · {table.rows.length} record{table.rows.length !== 1 ? "s" : ""}</em>
               </span>
+              {showLiveBadge ? <span className="workspace-source-badge badge-live" aria-label="Live source">Live</span> : null}
               {isActive && <Check size={14} strokeWidth={2.5} aria-hidden="true" />}
             </button>
           );
@@ -2738,30 +2865,208 @@ function FilterSubPanel({ widget, integrations, dataModelTable, adapterConfig, o
   </section>;
 }
 
-function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPage }) {
+/**
+ * ChartHydrationInspector — diagnostics overlay for chart value computation.
+ *
+ * Renders the same projection pipeline the renderer reads from (source rows
+ * → filter → grouping → aggregation → values[]), so the user can audit why
+ * `widget.config.values` looks the way it does. It is read-only with two
+ * actions:
+ *   - "Recompute values" re-runs `recomputeChartConfig` against the latest
+ *     Data Model tables; useful after manual row edits.
+ *   - "Save computed values" routes through the existing PATCH /api/workspace
+ *     path; respects the read-only runtime adapter (Save is disabled with
+ *     guidance instead of crashing).
+ */
+function ChartHydrationInspector({
+  widget,
+  dataModelTables,
+  unsaved,
+  saving,
+  canSave,
+  saveGuidance,
+  onChange,
+  onSave,
+  onBack
+}) {
+  const binding = widget?.config?.binding;
+  const table = useMemo(() => {
+    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return null;
+    return (Array.isArray(dataModelTables) ? dataModelTables : [])
+      .find((t) => t.objectId === binding.objectId) || null;
+  }, [binding, dataModelTables]);
+  const debug = useMemo(() => computeChartProjectionDebug({
+    rows: Array.isArray(table?.rows) ? table.rows : [],
+    xAxis: widget?.config?.xAxis,
+    yAxis: widget?.config?.yAxis,
+    filter: widget?.config?.filter,
+    chartType: widget?.config?.chartType
+  }), [table, widget?.config?.xAxis, widget?.config?.yAxis, widget?.config?.filter, widget?.config?.chartType]);
+
+  const recompute = useCallback(() => {
+    const { config: recomputed } = recomputeChartConfig(widget.config || {}, dataModelTables);
+    onChange(recomputed);
+  }, [widget.config, dataModelTables, onChange]);
+
+  const dropReasonCounts = useMemo(() => {
+    const counts = {};
+    for (const entry of debug.droppedRows || []) {
+      counts[entry.reason] = (counts[entry.reason] || 0) + 1;
+    }
+    return counts;
+  }, [debug.droppedRows]);
+
+  return (
+    <section className="workspace-widget-subpanel workspace-chart-inspector">
+      <SubPanelHeader title="Inspect computation" breadcrumb={widget?.title} onBack={onBack} />
+      <div className="workspace-widget-actions workspace-chart-inspector-top-actions" role="group" aria-label="Chart inspector navigation">
+        <button type="button" onClick={onBack}>Edit chart</button>
+        <button type="button" onClick={recompute}><RefreshCw size={15} />Recompute values</button>
+      </div>
+
+      <p className="workspace-panel-label">Source</p>
+      {table ? (
+        <div className="workspace-settings-list">
+          <div><span>Object</span><code>{table.label}</code></div>
+          <div><span>Storage</span><code>{table.liveSource ? "Live-backed sidecar" : "Manual Data Model"}</code></div>
+          <div><span>Rows available</span><code>{table.rows?.length || 0}</code></div>
+          {table.liveSource?.fetchedAt ? <div><span>Last fetched</span><code>{table.liveSource.fetchedAt}</code></div> : null}
+        </div>
+      ) : (
+        <p className="workspace-panel-hint">
+          No source bound. Open <strong>Source</strong> to pick a Data Model object.
+        </p>
+      )}
+
+      <p className="workspace-panel-label">Source preview</p>
+      {debug.samples?.length ? (
+        <details className="workspace-chart-inspector-preview">
+          <summary>{debug.samples.length} sample row{debug.samples.length === 1 ? "" : "s"}</summary>
+          <pre className="workspace-chart-inspector-sample">
+{JSON.stringify(debug.samples, null, 2)}
+          </pre>
+        </details>
+      ) : (
+        <p className="workspace-panel-hint">No source rows.</p>
+      )}
+
+      <p className="workspace-panel-label">Filter</p>
+      <div className="workspace-settings-list">
+        <div><span>Before</span><code>{debug.rowCount}</code></div>
+        <div><span>After</span><code>{debug.filteredCount ?? 0}</code></div>
+        <div><span>Dropped by filter</span><code>{debug.droppedByFilter ?? 0}</code></div>
+      </div>
+
+      <p className="workspace-panel-label">Buckets</p>
+      {debug.buckets?.length ? (
+        <div className="workspace-settings-list">
+          {debug.buckets.map((bucket, index) => (
+            <div key={`${bucket.key || "_"}_${index}`}>
+              <span>{bucket.key === "" ? "(all rows)" : String(bucket.key)}</span>
+              <code>
+                {bucket.rowCount} row{bucket.rowCount === 1 ? "" : "s"}
+                {" · "}
+                {bucket.numericCount} numeric
+                {" · "}
+                {bucket.value === null || bucket.value === undefined ? "—" : String(bucket.value)}
+              </code>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="workspace-panel-hint">No buckets — choose an X axis field or group by.</p>
+      )}
+
+      <p className="workspace-panel-label">Dropped rows</p>
+      {Object.keys(dropReasonCounts).length ? (
+        <div className="workspace-settings-list">
+          {Object.entries(dropReasonCounts).map(([reason, count]) => (
+            <div key={reason}><span>{reason}</span><code>{count}</code></div>
+          ))}
+        </div>
+      ) : (
+        <p className="workspace-panel-hint">No rows dropped.</p>
+      )}
+
+      <p className="workspace-panel-label">Final values</p>
+      <pre className="workspace-chart-inspector-sample">
+{JSON.stringify(debug.values, null, 2)}
+      </pre>
+
+      {debug.warnings?.length ? (
+        <div className="workspace-settings-list" role="alert" aria-label="Computation warnings">
+          {debug.warnings.map((warning, index) => (
+            <div key={index}><span>Warning</span><code>{warning}</code></div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="workspace-widget-actions" role="group" aria-label="Inspector actions">
+        <button type="button" onClick={recompute}><RefreshCw size={15} />Recompute values</button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave || saving}
+          title={!canSave ? saveGuidance || "Save is disabled in this runtime." : "Persist computed values to growthub.config.json"}
+        >
+          <Save size={15} />{saving ? "Saving…" : unsaved ? "Save computed values" : "Save"}
+        </button>
+      </div>
+      {unsaved ? <p className="workspace-panel-hint">Unsaved computed values.</p> : null}
+      {!canSave && saveGuidance ? <p className="workspace-panel-hint">{saveGuidance}</p> : null}
+    </section>
+  );
+}
+
+function ChartConfigPanel({ widget, branding, dataModelTables, unsaved, onChange, onSubPage }) {
   const chartType = getChartType(widget) === "line" ? DEFAULT_CHART_TYPE : getChartType(widget);
   const xAxis = getChartAxis(widget, "xAxis");
   const yAxis = getChartAxis(widget, "yAxis");
   const style = getChartStyle(widget);
   const activeColor = resolveChartColor(style, branding) || "#d9e4ff";
-  const setChartType = (type) => onChange({ ...widget.config, chartType: type });
-  const setXAxis = (patch) => onChange({ ...widget.config, xAxis: { ...xAxis, ...patch } });
-  const setYAxis = (patch) => onChange({ ...widget.config, yAxis: { ...yAxis, ...patch } });
+
+  // Every axis/filter/aggregation/chartType edit funnels through this writer
+  // so `widget.config.values` is recomputed from the bound Data Model rows
+  // before persistence. Unbound charts (no Data Model source) keep the
+  // existing static `values` untouched — this is what preserves the legacy
+  // chart-with-static-values path.
+  const commitConfig = useCallback((nextConfig) => {
+    const { config: computed } = recomputeChartConfig(nextConfig, dataModelTables);
+    onChange(computed);
+  }, [dataModelTables, onChange]);
+
+  const setChartType = (type) => commitConfig({ ...widget.config, chartType: type });
+  const setXAxis = (patch) => commitConfig({ ...widget.config, xAxis: { ...xAxis, ...patch } });
+  const setYAxis = (patch) => commitConfig({ ...widget.config, yAxis: { ...yAxis, ...patch } });
+  // Style is render-only — it doesn't change values, so skip recomputation.
   const setStyle = (patch) => onChange({ ...widget.config, style: { ...style, ...patch } });
 
   // Derive source fields from the bound data model object
-  const sourceFields = useMemo(() => {
+  const boundTable = useMemo(() => {
     const binding = widget.config?.binding;
-    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return [];
-    const table = (Array.isArray(dataModelTables) ? dataModelTables : [])
-      .find((t) => t.objectId === binding.objectId || t.source === binding.source);
-    return table?.columns || [];
+    if (binding?.sourceType !== DATA_MODEL_SOURCE_TYPE || !binding.objectId) return null;
+    return (Array.isArray(dataModelTables) ? dataModelTables : [])
+      .find((t) => t.objectId === binding.objectId || t.source === binding.source) || null;
   }, [widget.config?.binding, dataModelTables]);
 
+  const sourceFields = boundTable?.columns || [];
   const hasSource = sourceFields.length > 0;
 
-  return <section className="workspace-chart-config">
-    <p className="workspace-panel-label">Chart type</p>
+  // Compute the live preview status for the configured chart so the panel
+  // can surface row counts, warnings, and last-fetched timestamps without
+  // having to re-derive the projection elsewhere.
+  const computeStatus = useMemo(() => {
+    const { result } = recomputeChartConfig(widget.config || {}, dataModelTables);
+    return result;
+  }, [widget.config, dataModelTables]);
+
+  const recomputeValues = useCallback(() => {
+    commitConfig({ ...widget.config });
+  }, [commitConfig, widget.config]);
+
+  return <section className="workspace-chart-config workspace-twenty-config">
+    <p className="workspace-panel-label">Settings</p>
+    <WidgetSettingsRow icon={BarChart3} label="Layout" value={CHART_TYPE_LABELS[chartType]} disabled />
     <div className="workspace-chart-type-tabs" role="tablist" aria-label="Chart type">
       {VISIBLE_CHART_TYPES.map((type) => {
         const TypeIcon = CHART_TYPE_ICONS[type];
@@ -2780,17 +3085,27 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
       })}
     </div>
 
-    <p className="workspace-panel-label">Data</p>
-    <button type="button" className="workspace-settings-row" onClick={() => onSubPage("source")}>
-      <span>Source</span><code>{summarizeSource(widget) || "None"}</code>
-    </button>
-    <button type="button" className="workspace-settings-row" onClick={() => onSubPage("filter")}>
-      <span>Filter</span><code>{summarizeFilter(widget)}</code>
-    </button>
+    <WidgetSettingsRow icon={Box} label="Source" value={summarizeSource(widget) || "None"} onClick={() => onSubPage("source")} />
+    <WidgetSettingsRow icon={Filter} label="Filter" value={summarizeFilter(widget)} onClick={() => onSubPage("filter")} />
+    {boundTable ? (
+      <WidgetSettingsRow
+        icon={Activity}
+        label="Values"
+        value={
+          <>
+          {boundTable.rows?.length || 0} row{(boundTable.rows?.length || 0) === 1 ? "" : "s"}
+          {" · "}
+          {Array.isArray(widget.config?.values) ? widget.config.values.length : 0} value{(widget.config?.values?.length || 0) === 1 ? "" : "s"}
+          {unsaved ? " · unsaved" : ""}
+          {Array.isArray(computeStatus?.warnings) && computeStatus.warnings.length ? " · warning" : ""}
+          </>
+        }
+        onClick={() => onSubPage("hydration")}
+      />
+    ) : null}
 
     <p className="workspace-panel-label">X axis</p>
-    <div className="workspace-settings-row-field">
-      <span>Data on display</span>
+    <WidgetSelectRow icon={Columns3} label="Data">
       <FieldDropdown
         fields={sourceFields}
         value={xAxis.field || ""}
@@ -2798,23 +3113,21 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         placeholder={hasSource ? "Select field…" : "Select source first"}
         disabled={!hasSource}
       />
-    </div>
-    <div className="workspace-settings-row-field">
-      <span>Sort by</span>
+    </WidgetSelectRow>
+    <WidgetSelectRow icon={SlidersHorizontal} label="Sort">
       <select value={xAxis.sort || "position"} onChange={(event) => setXAxis({ sort: event.target.value })}>
         <option value="position">Position asc</option>
         <option value="asc">Value asc</option>
         <option value="desc">Value desc</option>
       </select>
-    </div>
-    <label className="workspace-toggle-row">
+    </WidgetSelectRow>
+    <label className="workspace-twenty-toggle-row">
       <span>Omit zero values</span>
       <input type="checkbox" checked={Boolean(xAxis.omitZero)} onChange={(event) => setXAxis({ omitZero: event.target.checked })} />
     </label>
 
     <p className="workspace-panel-label">Y axis</p>
-    <div className="workspace-settings-row-field">
-      <span>Data on display</span>
+    <WidgetSelectRow icon={Hash} label="Data">
       <FieldDropdown
         fields={sourceFields}
         value={yAxis.field || ""}
@@ -2822,9 +3135,8 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         placeholder={hasSource ? "Select field…" : "Select source first"}
         disabled={!hasSource}
       />
-    </div>
-    <div className="workspace-settings-row-field">
-      <span>Group by</span>
+    </WidgetSelectRow>
+    <WidgetSelectRow icon={Layers} label="Group by">
       <FieldDropdown
         fields={sourceFields}
         value={yAxis.groupBy || ""}
@@ -2832,13 +3144,12 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         placeholder="None"
         disabled={!hasSource}
       />
-    </div>
-    <div className="workspace-settings-row-field">
-      <span>Aggregation</span>
-      <select value={yAxis.aggregation || "sum"} onChange={(event) => setYAxis({ aggregation: event.target.value })}>
-        {KNOWN_AGGREGATIONS.map((agg) => <option key={agg} value={agg}>{agg}</option>)}
+    </WidgetSelectRow>
+    <WidgetSelectRow icon={Sigma} label="Operation">
+      <select value={yAxis.operation || yAxis.aggregation || "sum"} onChange={(event) => setYAxis({ operation: event.target.value, aggregation: event.target.value })}>
+        {KNOWN_AGGREGATIONS.map((agg) => <option key={agg} value={agg}>{AGGREGATION_LABELS[agg] || agg}</option>)}
       </select>
-    </div>
+    </WidgetSelectRow>
     <div className="workspace-axis-range">
       <label>
         <span>Min range</span>
@@ -2850,8 +3161,7 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
       </label>
     </div>
     <p className="workspace-panel-label">Style</p>
-    <label>
-      <span>Colors</span>
+    <WidgetSelectRow icon={Star} label="Colors">
       <select value={style.colors || "auto"} onChange={(event) => setStyle({ colors: event.target.value })}>
         <option value="auto">Auto</option>
         <option value="accent">Accent</option>
@@ -2859,7 +3169,7 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         <option value="brand-bridge">Bridge brand kit</option>
         <option value="manual">Manual</option>
       </select>
-    </label>
+    </WidgetSelectRow>
     <div className="workspace-color-preview-row">
       <span>Active color</span>
       <em style={{ background: activeColor }} />
@@ -2888,7 +3198,7 @@ function ChartConfigPanel({ widget, branding, dataModelTables, onChange, onSubPa
         onChange={(event) => setStyle({ axisName: event.target.value })}
       />
     </label>
-    <label className="workspace-toggle-row">
+    <label className="workspace-twenty-toggle-row">
       <span>Data labels</span>
       <input
         type="checkbox"
@@ -3492,14 +3802,14 @@ function WorkspaceManagementPanel({ config, persistence, adapterConfig, onClose 
   </div>;
 }
 
-function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, integrationSettings, persistence }) {
+function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, integrationAdapter, integrationSettings, persistence }) {
   const searchParams = useSearchParams();
   const [config, setConfig] = useState(() => {
     const dashboards = Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length
       ? initialConfig.dashboards.map((dashboard, index) =>
           normalizeDashboard(dashboard, index === 0 ? initialConfig.canvas : undefined)
         )
-      : [createDashboardRecord("Untitled")];
+      : [createDashboardRecord("New Dashboard")];
     return {
       ...initialConfig,
       dashboards,
@@ -3516,10 +3826,14 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [editingDashboardDraft, setEditingDashboardDraft] = useState("");
   const [editingWorkflowId, setEditingWorkflowId] = useState(null);
   const [editingWorkflowDraft, setEditingWorkflowDraft] = useState("");
+  const [editingTabId, setEditingTabId] = useState(null);
+  const [editingTabDraft, setEditingTabDraft] = useState("");
   const [workspaceView, setWorkspaceView] = useState("dashboards");
   const [builderListFilter, setBuilderListFilter] = useState({ type: "all", query: "" });
   const [builderActionMenuId, setBuilderActionMenuId] = useState(null);
   const [builderActionMenuPlacement, setBuilderActionMenuPlacement] = useState(null);
+  const [dashboardDraftMode, setDashboardDraftMode] = useState(false);
+  const [dashboardLiveSnapshot, setDashboardLiveSnapshot] = useState(null);
   const [activeDashboardId, setActiveDashboardId] = useState(() =>
     getActiveDashboardId(
       Array.isArray(initialConfig.dashboards) && initialConfig.dashboards.length ? initialConfig.dashboards : [],
@@ -3565,8 +3879,15 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
   const activeWidgets = activeTab.widgets || [];
   const activeDashboard = dashboards[resolvedActiveDashboardIndex] || dashboards[0] || null;
+  const dashboardHasSavedDraft = Boolean(activeDashboard?.dashboardDraftStatus && Array.isArray(activeDashboard?.dashboardDraftTabs));
+  const dashboardDirty = dashboardDraftMode && dashboardLiveSnapshot
+    ? JSON.stringify(activeDashboard?.tabs || []) !== JSON.stringify(dashboardLiveSnapshot.tabs || [])
+      || String(activeDashboard?.name || "") !== String(dashboardLiveSnapshot.name || "")
+    : false;
+  const dashboardModeLabel = dashboardDraftMode || dashboardHasSavedDraft ? "draft" : "live";
   const [selectedPosition, setSelectedPosition] = useState(() => findFreePosition(activeWidgets));
   const [selectedWidgetId, setSelectedWidgetId] = useState(null);
+  const [pendingSelectedWidgetId, setPendingSelectedWidgetId] = useState(null);
   const [dragStartCell, setDragStartCell] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
   const [resizeDrag, setResizeDrag] = useState(null);
@@ -3582,13 +3903,26 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const [expandedIframeWidget, setExpandedIframeWidget] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
+  // Sidecar source records (`growthub.source-records.json`) hydrate live-backed
+  // Data Model objects at runtime. They are NOT persisted into growthub.config.json
+  // and NEVER flow through PATCH /api/workspace. Updates land here only after a
+  // successful POST /api/workspace/refresh-sources cycle re-reads GET /api/workspace.
+  const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState(
+    () => (initialSourceRecords && typeof initialSourceRecords === "object" && !Array.isArray(initialSourceRecords)
+      ? initialSourceRecords
+      : {})
+  );
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
   const addSlot = dragPreview || selectedPosition;
-  const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetId) || null;
+  const selectedWidgetLookupId = selectedWidgetId || pendingSelectedWidgetId;
+  const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetLookupId) || null;
   const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
-  const dataModelTables = useMemo(() => listWorkspaceDataModelTables(config), [config]);
+  const dataModelTables = useMemo(
+    () => listWorkspaceDataModelTables(config, { sourceRecords: workspaceSourceRecords }),
+    [config, workspaceSourceRecords]
+  );
   const selectedResolvedWidget = selectedWidget ? resolveViewWidget(selectedWidget, dataModelTables) : null;
   const branding = config.branding || {};
   const occupiedCells = useMemo(() => {
@@ -3604,20 +3938,57 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   }, [activeWidgets]);
 
   /**
-   * Collect all sourceIds from live-backed widgets on the active tab.
-   * A widget is live-backed when its binding has sourceStorage === "workspace-source-records"
-   * and a non-empty sourceId. The refresh button is inert when this list is empty.
+   * Collect refreshable source IDs from BOTH direct live bindings (a widget
+   * binding with `sourceStorage === "workspace-source-records"`) AND
+   * Data Model-bound widgets whose bound table resolves to a live-backed
+   * sidecar source. The second path is what makes charts that point at a
+   * live-backed Data Model object refreshable from the Chart panel — the
+   * live-source metadata lives on the Data Model object, not on the widget
+   * binding itself.
+   *
+   * This is runtime discovery only — config is never mutated.
    */
   const liveSourceIds = useMemo(() => {
     const ids = new Set();
+    const addCandidates = (...candidates) => {
+      for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim()) {
+          ids.add(candidate.trim());
+        }
+      }
+    };
     for (const widget of activeWidgets) {
       const binding = widget?.config?.binding;
-      if (binding?.sourceStorage === "workspace-source-records" && typeof binding.sourceId === "string" && binding.sourceId.trim()) {
-        ids.add(binding.sourceId.trim());
+      if (!binding) continue;
+      // Direct live binding (legacy path).
+      if (binding.sourceStorage === "workspace-source-records") {
+        addCandidates(binding.sourceId);
+      }
+      // Data Model-bound widgets (chart / view) whose bound table is itself
+      // backed by a sidecar source.
+      if (binding.sourceType === DATA_MODEL_SOURCE_TYPE && binding.objectId) {
+        const table = (Array.isArray(dataModelTables) ? dataModelTables : [])
+          .find((t) => t.objectId === binding.objectId);
+        if (!table) continue;
+        const tableBinding = table.binding || {};
+        if (table.liveSource || tableBinding.sourceStorage === "workspace-source-records") {
+          addCandidates(
+            table.liveSource?.sourceRecordKey,
+            table.objectId,
+            tableBinding.sourceId
+          );
+        }
       }
     }
     return Array.from(ids);
-  }, [activeWidgets]);
+  }, [activeWidgets, dataModelTables]);
+
+  // Track which chart widgets have recomputed values that have not yet been
+  // persisted. After a refresh, recomputed values live in local React state
+  // only — until the user saves, the on-disk `growthub.config.json` still
+  // holds the previous projection. The Chart panel shows an `Unsaved` chip
+  // and a `Save computed values` action when this set is non-empty.
+  const [unsavedChartIds, setUnsavedChartIds] = useState(() => new Set());
 
   const refreshSources = useCallback(async () => {
     if (refreshing || liveSourceIds.length === 0) return;
@@ -3629,20 +4000,96 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sourceIds: liveSourceIds })
       });
-      if (response.ok) {
-        const data = await response.json();
-        setRefreshResult({ refreshed: data.refreshed?.length || 0, skipped: data.skipped?.length || 0 });
-      } else {
+      if (!response.ok) {
         setRefreshResult({ error: true });
+        return;
       }
+      const data = await response.json();
+      const refreshedIds = new Set((data.refreshed || [])
+        .map((entry) => String(entry?.sourceId || "").trim())
+        .filter(Boolean));
+      let nextSourceRecords = workspaceSourceRecords;
+      try {
+        // Re-read GET so the sidecar (`workspaceSourceRecords`) reflects
+        // the new rows the resolver just persisted. This is what makes the
+        // chart preview update without a page reload.
+        const getResponse = await fetch("/api/workspace", { method: "GET" });
+        if (getResponse.ok) {
+          const getPayload = await getResponse.json();
+          if (getPayload?.workspaceSourceRecords && typeof getPayload.workspaceSourceRecords === "object") {
+            nextSourceRecords = getPayload.workspaceSourceRecords;
+            setWorkspaceSourceRecords(nextSourceRecords);
+          }
+        }
+      } catch {
+        // Non-fatal: refresh result still reports counts; UI will use stale records.
+      }
+      // Recompute chart widgets bound to refreshed objects. We rebuild the
+      // Data Model tables from the latest sidecar before recomputing so the
+      // computation sees the freshly-fetched rows. Recomputed widgets are
+      // marked as unsaved — persistence still requires the explicit Save
+      // action so the user can audit the projection before committing it.
+      const dirtyWidgetIds = new Set();
+      if (refreshedIds.size > 0) {
+        const nextTables = listWorkspaceDataModelTables(config, { sourceRecords: nextSourceRecords });
+        const objectIdsForRefreshedSources = new Set();
+        for (const sourceId of refreshedIds) {
+          for (const table of nextTables) {
+            if (!table.objectId) continue;
+            const liveKey = table.liveSource?.sourceRecordKey;
+            const tableBindingSourceId = table.binding?.sourceId;
+            if (liveKey === sourceId || table.objectId === sourceId || tableBindingSourceId === sourceId) {
+              objectIdsForRefreshedSources.add(table.objectId);
+            }
+          }
+        }
+        if (objectIdsForRefreshedSources.size > 0) {
+          const recomputeWidgets = (widgets) => (widgets || []).map((widget) => {
+            if (widget?.kind !== "chart") return widget;
+            const objectId = widget.config?.binding?.objectId;
+            if (!objectId || !objectIdsForRefreshedSources.has(objectId)) return widget;
+            const { config: recomputed } = recomputeChartConfig(widget.config || {}, nextTables);
+            const prevValues = Array.isArray(widget.config?.values) ? widget.config.values : [];
+            const nextValues = Array.isArray(recomputed.values) ? recomputed.values : [];
+            const changed = prevValues.length !== nextValues.length
+              || prevValues.some((value, index) => value !== nextValues[index]);
+            if (changed) dirtyWidgetIds.add(widget.id);
+            return { ...widget, config: recomputed };
+          });
+          setConfig((prev) => {
+            const nextDashboards = (prev.dashboards || []).map((dashboard) => ({
+              ...dashboard,
+              tabs: (dashboard.tabs || []).map((tab) => ({ ...tab, widgets: recomputeWidgets(tab.widgets) }))
+            }));
+            let nextCanvas = prev.canvas ? { ...prev.canvas } : {};
+            if (Array.isArray(nextCanvas.widgets)) nextCanvas = { ...nextCanvas, widgets: recomputeWidgets(nextCanvas.widgets) };
+            if (Array.isArray(nextCanvas.tabs)) nextCanvas = { ...nextCanvas, tabs: nextCanvas.tabs.map((tab) => ({ ...tab, widgets: recomputeWidgets(tab.widgets) })) };
+            return { ...prev, dashboards: nextDashboards, canvas: nextCanvas };
+          });
+        }
+      }
+      if (dirtyWidgetIds.size > 0) {
+        setUnsavedChartIds((prev) => {
+          const next = new Set(prev);
+          for (const id of dirtyWidgetIds) next.add(id);
+          return next;
+        });
+      }
+      setRefreshResult({
+        refreshed: data.refreshed?.length || 0,
+        skipped: data.skipped?.length || 0,
+        recomputed: dirtyWidgetIds.size,
+        unsaved: dirtyWidgetIds.size > 0
+      });
     } catch {
       setRefreshResult({ error: true });
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, liveSourceIds]);
+  }, [refreshing, liveSourceIds, workspaceSourceRecords, config]);
 
   const addWidget = useCallback((kind) => {
+    if (!dashboardDraftMode) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -3662,11 +4109,20 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         tab.id === prevActiveId ? { ...tab, widgets: [...(tab.widgets || []), widget] } : tab
       );
       setSelectedWidgetId(widget.id);
+      setPendingSelectedWidgetId(widget.id);
+      setInspectorPath(SUB_PANEL_ROOT);
+      setPanelOpen(true);
+      window.setTimeout(() => {
+        setSelectedWidgetId(widget.id);
+        setPendingSelectedWidgetId(widget.id);
+        setInspectorPath(SUB_PANEL_ROOT);
+        setPanelOpen(true);
+      }, 0);
       setSelectedPosition(findFreePosition([...existingWidgets, widget]));
       setDragPreview(null);
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [activeDashboardId, addSlot]);
+  }, [activeDashboardId, addSlot, dashboardDraftMode]);
 
   const switchTab = useCallback((tabId) => {
     setConfig((prev) => {
@@ -3675,13 +4131,38 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       if (!prevTabs.some((tab) => tab.id === tabId)) return prev;
       const nextTab = prevTabs.find((tab) => tab.id === tabId);
       setSelectedWidgetId(null);
+      setPendingSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(nextTab?.widgets || []));
       setDragPreview(null);
+      setPanelOpen(false);
+      setEditingTabId(null);
+      setEditingTabDraft("");
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, prevTabs, tabId));
     });
   }, [activeDashboardId]);
 
+  const beginTabRename = useCallback((tab, event) => {
+    if (!dashboardDraftMode || !tab) return;
+    event?.stopPropagation?.();
+    setEditingTabId(tab.id);
+    setEditingTabDraft(tab.name || "Tab");
+  }, [dashboardDraftMode]);
+
+  const commitTabRename = useCallback((tabId) => {
+    if (!dashboardDraftMode || !tabId) return;
+    const nextName = editingTabDraft.trim() || "Tab";
+    setConfig((prev) => {
+      const prevTabs = getTabs(prev.canvas);
+      const activeId = getActiveTabId(prev.canvas);
+      const nextTabs = prevTabs.map((tab) => tab.id === tabId ? { ...tab, name: nextName } : tab);
+      return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, activeId));
+    });
+    setEditingTabId(null);
+    setEditingTabDraft("");
+  }, [activeDashboardId, dashboardDraftMode, editingTabDraft]);
+
   const addTab = useCallback(() => {
+    if (!dashboardDraftMode) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const stableFirst = prevTabs.length === 1 && prevTabs[0].id === DEFAULT_TAB_ID
@@ -3700,7 +4181,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       setDragPreview(null);
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, newTab.id));
     });
-  }, [activeDashboardId]);
+  }, [activeDashboardId, dashboardDraftMode]);
 
   const addDashboard = useCallback(() => {
     setConfig((prev) => {
@@ -3787,11 +4268,14 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       setSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(getTabs(dashboardCanvasFrom(normalized, prev.canvas))[0]?.widgets || []));
       setDragPreview(null);
+      setPanelOpen(false);
       setEditingDashboardId(null);
       setEditingDashboardDraft("");
+      setDashboardDraftMode(false);
+      setDashboardLiveSnapshot(null);
       setActiveDashboardId(dashboard.id);
       setWorkspaceView("builder");
-      setConfigMessage(`Editing ${dashboard.name}`);
+      setConfigMessage(`Viewing ${dashboard.name}`);
       return {
         ...synced,
         dashboards: prevDashboards.map((item) => item.id === dashboard.id ? normalized : item),
@@ -3863,7 +4347,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       const prevDashboards = synced.dashboards || [];
       if (!prevDashboards[index]) return prev;
       if (prevDashboards.length <= 1) {
-        const dashboard = createDashboardRecord("Untitled");
+        const dashboard = createDashboardRecord("New Dashboard");
         setSelectedWidgetId(null);
         setSelectedPosition({ ...DEFAULT_POSITION });
         setDragPreview(null);
@@ -3899,6 +4383,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   }, [cloneDashboard, resolvedActiveDashboardIndex]);
 
   const duplicateTab = useCallback(() => {
+    if (!dashboardDraftMode) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -3921,9 +4406,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       setDragPreview(null);
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, cloned.id));
     });
-  }, [activeDashboardId]);
+  }, [activeDashboardId, dashboardDraftMode]);
 
   const deleteTab = useCallback((tabId) => {
+    if (!dashboardDraftMode) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const tab = prevTabs.find((item) => item.id === tabId);
@@ -3945,9 +4431,10 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       setConfigMessage(`Deleted ${tab.name}`);
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, nextActiveTab.id));
     });
-  }, [activeDashboardId]);
+  }, [activeDashboardId, dashboardDraftMode]);
 
   const applyTemplateToCurrentTab = useCallback((templateId) => {
+    if (!dashboardDraftMode) return;
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
     if (!template) return;
     const clonedTab = cloneTemplateToTab(template, { tabName: template.name, idFactory: generateId });
@@ -3979,7 +4466,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     setConfigMessage(`Applied ${template.name} to current tab`);
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
-  }, [activeDashboardId]);
+  }, [activeDashboardId, dashboardDraftMode]);
 
   const cloneTemplateAsDashboard = useCallback((templateId) => {
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
@@ -4092,6 +4579,9 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           dashboards: savedDashboards,
           canvas: savedActiveDashboard ? dashboardCanvasFrom(savedActiveDashboard, payload.workspaceConfig.canvas) : payload.workspaceConfig.canvas
         });
+        // Saved values are now on disk — clear the unsaved-chart tracking
+        // so the Chart panel stops showing the `Unsaved` chip / CTA.
+        setUnsavedChartIds(new Set());
       } else {
         setConfigMessage(payload.error || "Save failed");
       }
@@ -4105,6 +4595,105 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const save = useCallback(async () => {
     await persistWorkspaceConfig(config, activeDashboardId);
   }, [activeDashboardId, config, persistWorkspaceConfig]);
+
+  const beginDashboardDraft = useCallback(() => {
+    if (!activeDashboard) return;
+    const snapshot = cloneConfig(activeDashboard);
+    setDashboardLiveSnapshot(snapshot);
+    setDashboardDraftMode(true);
+    setPanelOpen(false);
+    setConfigMessage(`Editing draft for ${activeDashboard.name}`);
+    if (dashboardHasSavedDraft) {
+      setConfig((prev) => {
+        const nextDashboards = (prev.dashboards || []).map((dashboard) => {
+          if (dashboard.id !== activeDashboard.id) return dashboard;
+          return {
+            ...dashboard,
+            tabs: cloneConfig(dashboard.dashboardDraftTabs),
+            activeTabId: dashboard.dashboardDraftActiveTabId || dashboard.activeTabId
+          };
+        });
+        const nextActive = nextDashboards.find((dashboard) => dashboard.id === activeDashboard.id) || nextDashboards[0];
+        return {
+          ...prev,
+          dashboards: nextDashboards,
+          canvas: dashboardCanvasFrom(nextActive, prev.canvas)
+        };
+      });
+    }
+  }, [activeDashboard, dashboardHasSavedDraft]);
+
+  const saveDashboardDraft = useCallback(async () => {
+    if (!activeDashboard || saving) return;
+    const now = new Date().toISOString();
+    const synced = syncActiveDashboard(config, activeDashboardId);
+    const nextDashboards = (synced.dashboards || []).map((dashboard) =>
+      dashboard.id === activeDashboard.id
+        ? {
+            ...dashboard,
+            dashboardDraftStatus: "draft",
+            dashboardDraftUpdatedAt: now,
+            dashboardDraftBaseVersion: String(dashboard.version || "1"),
+            dashboardDraftTabs: cloneConfig(dashboard.tabs || []),
+            dashboardDraftActiveTabId: dashboard.activeTabId || ""
+          }
+        : dashboard
+    );
+    await persistWorkspaceConfig({ ...synced, dashboards: nextDashboards }, activeDashboardId);
+    setDashboardDraftMode(true);
+    setDashboardLiveSnapshot(cloneConfig(nextDashboards.find((dashboard) => dashboard.id === activeDashboard.id) || activeDashboard));
+    setConfigMessage("Saved dashboard draft. Publish to update the live dashboard.");
+  }, [activeDashboard, activeDashboardId, config, persistWorkspaceConfig, saving]);
+
+  const publishDashboard = useCallback(async () => {
+    if (!activeDashboard || saving) return;
+    const now = new Date().toISOString();
+    const synced = syncActiveDashboard(config, activeDashboardId);
+    const nextDashboards = (synced.dashboards || []).map((dashboard) => {
+      if (dashboard.id !== activeDashboard.id) return dashboard;
+      const {
+        dashboardDraftTabs,
+        dashboardDraftActiveTabId,
+        dashboardDraftStatus,
+        dashboardDraftUpdatedAt,
+        dashboardDraftBaseVersion,
+        ...rest
+      } = dashboard;
+      return {
+        ...rest,
+        tabs: cloneConfig(dashboard.tabs || []),
+        activeTabId: dashboard.activeTabId,
+        status: "active",
+        version: String(Number(dashboard.version || "1") + 1),
+        dashboardPublishedAt: now,
+        updatedAt: now
+      };
+    });
+    await persistWorkspaceConfig({ ...synced, dashboards: nextDashboards }, activeDashboardId);
+    setDashboardDraftMode(false);
+    setDashboardLiveSnapshot(null);
+    setConfigMessage("Published dashboard.");
+  }, [activeDashboard, activeDashboardId, config, persistWorkspaceConfig, saving]);
+
+  const discardDashboardDraft = useCallback(() => {
+    if (!activeDashboard) return;
+    const snapshot = dashboardLiveSnapshot;
+    setDashboardDraftMode(false);
+    setDashboardLiveSnapshot(null);
+    setPanelOpen(false);
+    if (!snapshot) return;
+    setConfig((prev) => {
+      const nextDashboards = (prev.dashboards || []).map((dashboard) =>
+        dashboard.id === activeDashboard.id ? snapshot : dashboard
+      );
+      return {
+        ...prev,
+        dashboards: nextDashboards,
+        canvas: dashboardCanvasFrom(snapshot, prev.canvas)
+      };
+    });
+    setConfigMessage("Discarded dashboard draft.");
+  }, [activeDashboard, dashboardLiveSnapshot]);
 
   const confirmDashboardTitleEdit = useCallback(async (dashboardId) => {
     const nextConfig = renameDashboardInConfig(config, dashboardId, editingDashboardDraft, activeDashboardId);
@@ -4219,18 +4808,24 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     setEditingDashboardDraft("");
   }, [editingDashboardDraft]);
 
-  const closePanel = useCallback(() => setPanelOpen(false), []);
+  const closePanel = useCallback(() => {
+    setPanelOpen(false);
+    setSelectedWidgetId(null);
+    setPendingSelectedWidgetId(null);
+  }, []);
   const beginCellDrag = useCallback((index, event) => {
+    if (!dashboardDraftMode) return;
     const x = index % GRID_COLUMNS;
     const y = Math.floor(index / GRID_COLUMNS);
     if (occupiedCells.has(`${x}:${y}`)) return;
     event.preventDefault();
     const position = normalizePosition(index, index);
     setSelectedWidgetId(null);
+    setPendingSelectedWidgetId(null);
     setDragStartCell(index);
     setDragPreview(position);
     setPanelOpen(true);
-  }, [occupiedCells]);
+  }, [dashboardDraftMode, occupiedCells]);
   const updateCellDrag = useCallback((index) => {
     if (dragStartCell === null) return;
     setDragPreview(normalizePosition(dragStartCell, index));
@@ -4254,14 +4849,16 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     finishCellDrag(index ?? dragStartCell);
   }, [dragStartCell, finishCellDrag]);
   const beginResizeDrag = useCallback((widget, corner, event) => {
+    if (!dashboardDraftMode) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const nextResizeDrag = { widgetId: widget.id, corner, originalPosition: widget.position };
     setSelectedWidgetId(widget.id);
+    setPendingSelectedWidgetId(widget.id);
     resizeDragRef.current = nextResizeDrag;
     setResizeDrag(nextResizeDrag);
-  }, []);
+  }, [dashboardDraftMode]);
   const updateResizeDrag = useCallback((event) => {
     const activeResizeDrag = resizeDragRef.current;
     if (!activeResizeDrag) return;
@@ -4292,6 +4889,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     setResizeDrag(null);
   }, []);
   const beginMoveDrag = useCallback((widget, event) => {
+    if (!dashboardDraftMode) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -4303,10 +4901,11 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       offsetY: Math.max(0, Math.min(widget.position.h - 1, pointerCell.y - widget.position.y))
     };
     setSelectedWidgetId(widget.id);
+    setPendingSelectedWidgetId(widget.id);
     setPanelOpen(true);
     moveDragRef.current = nextMoveDrag;
     setMoveDrag(nextMoveDrag);
-  }, []);
+  }, [dashboardDraftMode]);
   const updateMoveDrag = useCallback((event) => {
     const activeMoveDrag = moveDragRef.current;
     if (!activeMoveDrag) return;
@@ -4341,10 +4940,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
     setMoveDrag(null);
   }, []);
   const selectWidget = useCallback((widgetId) => {
+    if (!dashboardDraftMode) return;
     setSelectedWidgetId(widgetId);
+    setPendingSelectedWidgetId(widgetId);
     setInspectorPath(SUB_PANEL_ROOT);
     setPanelOpen(true);
-  }, []);
+  }, [dashboardDraftMode]);
   // Fetches all records from a resolver and persists them into the data model object,
   // then syncs the updated dataModel into local React state.
   const handleRefreshDataModelObject = useCallback(async (binding, objectId) => {
@@ -4365,7 +4966,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   }, []);
 
   const replaceSelectedWidgetConfig = useCallback((nextConfig) => {
-    if (!selectedWidgetId) return;
+    if (!dashboardDraftMode) return;
+    if (!selectedWidgetLookupId) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -4374,15 +4976,16 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         return {
           ...tab,
           widgets: (tab.widgets || []).map((widget) =>
-            widget.id === selectedWidgetId ? { ...widget, config: nextConfig } : widget
+            widget.id === selectedWidgetLookupId ? { ...widget, config: nextConfig } : widget
           )
         };
       });
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [activeDashboardId, selectedWidgetId]);
+  }, [activeDashboardId, dashboardDraftMode, selectedWidgetLookupId]);
   const updateSelectedWidget = useCallback((updates) => {
-    if (!selectedWidgetId) return;
+    if (!dashboardDraftMode) return;
+    if (!selectedWidgetLookupId) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -4391,18 +4994,19 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         return {
           ...tab,
           widgets: (tab.widgets || []).map((widget) =>
-            widget.id === selectedWidgetId ? { ...widget, ...updates } : widget
+            widget.id === selectedWidgetLookupId ? { ...widget, ...updates } : widget
           )
         };
       });
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [activeDashboardId, selectedWidgetId]);
+  }, [activeDashboardId, dashboardDraftMode, selectedWidgetLookupId]);
   const updateSelectedWidgetConfig = useCallback((updates) => {
     if (!selectedWidget) return;
     updateSelectedWidget({ config: { ...(selectedWidget.config || {}), ...updates } });
   }, [selectedWidget, updateSelectedWidget]);
   const removeSelectedWidget = useCallback((widgetId) => {
+    if (!dashboardDraftMode) return;
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -4412,10 +5016,11 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       });
       const nextActiveWidgets = nextTabs.find((tab) => tab.id === prevActiveId)?.widgets || [];
       setSelectedWidgetId(null);
+      setPendingSelectedWidgetId(null);
       setSelectedPosition(findFreePosition(nextActiveWidgets));
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
     });
-  }, [activeDashboardId]);
+  }, [activeDashboardId, dashboardDraftMode]);
 
   const duplicateSelectedWidget = useCallback(() => {
     if (!selectedWidget) return;
@@ -4438,6 +5043,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         return { ...tab, widgets: [...(tab.widgets || []), cloned] };
       });
       setSelectedWidgetId(cloned.id);
+      setPendingSelectedWidgetId(cloned.id);
       setSelectedPosition(findFreePosition([...tabWidgets, cloned]));
       setConfigMessage(`Duplicated ${selectedWidget.title}`);
       return commitDashboardCanvas(prev, activeDashboardId, commitTabs(prev.canvas, nextTabs, prevActiveId));
@@ -4452,6 +5058,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
   const closeManagement = useCallback(() => setManagementOpen(false), []);
   const resetWidgetSelection = useCallback(() => {
     setSelectedWidgetId(null);
+    setPendingSelectedWidgetId(null);
     setPanelOpen(true);
   }, []);
   const showDashboardHome = useCallback(() => {
@@ -4734,26 +5341,32 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
         )}
       />
 
-      <section className="workspace-surface">
-        <header className="workspace-toolbar">
-          <div>
+      <section className={`workspace-surface${workspaceView === "builder" ? " dm-workflow-surface workspace-dashboard-surface" : ""}`}>
+        <header className={`workspace-toolbar${workspaceView === "builder" ? " dm-workflow-toolbar" : ""}`}>
+          <div className={workspaceView === "builder" ? "dm-workflow-titlebar" : undefined}>
             {workspaceView === "builder" ? <>
-              <p>{activeTab?.name || "Tab 1"}</p>
+              <span className="dm-workflow-title-muted">Dashboards</span>
+              <span className="dm-workflow-title-separator">/</span>
               <h1>{activeDashboard?.name || "Untitled"}</h1>
+              <span className="dm-workflow-count">({activeWidgets.length}) · v{activeDashboard?.version || "1"} · {dashboardModeLabel}</span>
             </> : <>
               <p>Workspace home</p>
               <h1>Builder</h1>
             </>}
           </div>
-          <div className="workspace-toolbar-actions">
-            <button type="button" onClick={() => setTemplateGalleryOpen(true)}><Grid2X2 size={15} />Templates</button>
+          {workspaceView === "builder" ? <div className="dm-workflow-toolbar-actions">
+            {dashboardDraftMode || dashboardHasSavedDraft ? <button type="button" className="dm-workflow-chip-btn" onClick={discardDashboardDraft} disabled={saving}>Discard Draft</button> : null}
+            {dashboardDraftMode ? <button type="button" className="dm-workflow-chip-btn" onClick={saveDashboardDraft} disabled={saving || !dashboardDirty}><Save size={13} />{saving ? "Saving" : "Save draft"}</button> : null}
+            {dashboardDraftMode || dashboardHasSavedDraft ? <button type="button" className="dm-workflow-chip-btn" onClick={publishDashboard} disabled={saving || (!dashboardDirty && !dashboardHasSavedDraft)}><Check size={13} />Publish</button> : null}
+            {!dashboardDraftMode ? <button type="button" className="dm-workflow-chip-btn" onClick={beginDashboardDraft}><Pencil size={13} />Edit</button> : null}
+            <button type="button" className="dm-workflow-chip-btn" onClick={() => setTemplateGalleryOpen(true)} disabled={!dashboardDraftMode}><Grid2X2 size={13} />Templates</button>
+            <button type="button" className="dm-workflow-chip-btn" onClick={exportConfig}><Download size={13} />Export</button>
+            <button type="button" className="dm-workflow-icon-btn" onClick={() => importInputRef.current?.click()} aria-label="Import"><Import size={14} /></button>
+          </div> : <div className="workspace-toolbar-actions">
             <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
             <button type="button" onClick={createWorkflow} disabled={saving}><GitBranch size={15} />New Workflow</button>
-            <button type="button" onClick={duplicateDashboard}><Copy size={15} />Duplicate Dashboard</button>
             <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
-            <button type="button" onClick={exportConfig}><Download size={15} />Export</button>
-            <button type="button" onClick={save} disabled={saving}><Save size={15} />{saving ? "Saving..." : "Save"}</button>
-          </div>
+          </div>}
           <input
             ref={importInputRef}
             type="file"
@@ -4831,7 +5444,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                   >✓</button>
                 </span> : <button
                   className={item.index === resolvedActiveDashboardIndex ? "active" : ""}
-                  onClick={() => enterDashboardTitleEdit(item.dashboard)}
+                  onClick={() => selectDashboard(item.index)}
                   type="button"
                 >{item.dashboard.name}</button>}
               </span>
@@ -4939,13 +5552,33 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                 className={tab.id === activeTabId ? "active" : ""}
                 type="button"
                 onClick={() => switchTab(tab.id)}
+                onDoubleClick={(event) => beginTabRename(tab, event)}
               >
-                <span>{tab.name}</span>
+                {editingTabId === tab.id ? <input
+                  className="workspace-tab-name-input"
+                  autoFocus
+                  value={editingTabDraft}
+                  onChange={(event) => setEditingTabDraft(event.target.value)}
+                  onBlur={() => commitTabRename(tab.id)}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitTabRename(tab.id);
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setEditingTabId(null);
+                      setEditingTabDraft("");
+                    }
+                  }}
+                /> : <span>{tab.name}</span>}
                 <span
                   aria-label={`Delete tab ${tab.name}`}
                   className="workspace-tab-delete"
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (!dashboardDraftMode) return;
                     deleteTab(tab.id);
                   }}
                   onKeyDown={(event) => {
@@ -4959,18 +5592,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                   tabIndex={0}
                 >x</span>
               </button>)}
-            <button type="button" onClick={addTab}><Plus size={15} />New Tab</button>
-            <button type="button" onClick={duplicateTab}><Copy size={15} />Duplicate Tab</button>
-            <button
-              type="button"
-              className={`workspace-tab-refresh${liveSourceIds.length === 0 ? " inert" : ""}${refreshing ? " loading" : ""}`}
-              disabled={liveSourceIds.length === 0 || refreshing}
-              onClick={refreshSources}
-              title={liveSourceIds.length === 0 ? "No live-backed sources on this tab" : `Refresh ${liveSourceIds.length} live source${liveSourceIds.length === 1 ? "" : "s"}`}
-            >
-              <RefreshCw size={15} className={refreshing ? "spinning" : ""} />
-              {refreshing ? "Refreshing…" : refreshResult?.error ? "Refresh failed" : refreshResult ? `${refreshResult.refreshed} updated` : "Refresh"}
-            </button>
+            <button type="button" onClick={addTab} disabled={!dashboardDraftMode}><Plus size={15} />New Tab</button>
+            <button type="button" onClick={duplicateTab} disabled={!dashboardDraftMode}><Copy size={15} />Duplicate Tab</button>
           </div>
           <div
             className={`workspace-grid${moveDrag ? " moving-widget" : ""}`}
@@ -5010,7 +5633,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
                 type="button"
               />;
             })}
-            <button className={`workspace-add-widget${dragPreview ? " selecting" : ""}`} type="button" onClick={() => setPanelOpen(true)} style={{
+            <button className={`workspace-add-widget${dragPreview ? " selecting" : ""}`} type="button" disabled={!dashboardDraftMode} onClick={() => dashboardDraftMode && setPanelOpen(true)} style={{
               gridColumn: `${addSlot.x + 1} / span ${addSlot.w}`,
               gridRow: `${addSlot.y + 1} / span ${addSlot.h}`
             }}>
@@ -5105,12 +5728,12 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
       />
 
       {workspaceView === "builder" && panelOpen ? <aside className="workspace-widget-panel" id="widgets" aria-label="Widget configuration">
-        <div className="workspace-panel-title">
+        {(inspectorPath === SUB_PANEL_ROOT || !selectedWidget) ? <div className="workspace-panel-title">
           <button type="button" aria-label="Close widget panel" onClick={closePanel}>x</button>
-          <span aria-hidden="true">+</span>
+          {selectedWidget ? <WidgetPanelHeaderIcon kind={selectedWidget.kind} /> : <span aria-hidden="true">+</span>}
           <strong>{selectedWidget ? selectedWidget.title : "New widget"}</strong>
           {selectedWidget ? <em>{widgetKindLabel(selectedWidget.kind)}</em> : null}
-        </div>
+        </div> : null}
         {selectedWidget && inspectorPath === SUB_PANEL_ROOT ? <div className="workspace-widget-actions" role="group" aria-label="Widget actions">
           <button type="button" onClick={duplicateSelectedWidget}><Copy size={15} />Duplicate</button>
           <button type="button" className="danger" onClick={() => removeSelectedWidget(selectedWidget.id)}><Trash2 size={15} />Remove</button>
@@ -5142,6 +5765,17 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
           onChange={replaceSelectedWidgetConfig}
           onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
         /> : null}
+        {selectedWidget && selectedWidget.kind === "chart" && inspectorPath === "hydration" ? <ChartHydrationInspector
+          widget={selectedWidget}
+          dataModelTables={dataModelTables}
+          unsaved={unsavedChartIds.has(selectedWidget.id)}
+          saving={saving}
+          canSave={Boolean(persistence?.canSave)}
+          saveGuidance={persistence?.guidance || persistence?.saveLabel || ""}
+          onChange={replaceSelectedWidgetConfig}
+          onSave={() => persistWorkspaceConfig(config, activeDashboardId)}
+          onBack={() => setInspectorPath(SUB_PANEL_ROOT)}
+        /> : null}
         {selectedWidget && inspectorPath === SUB_PANEL_ROOT ? <section className="workspace-widget-settings">
           <label>
             <span>Title</span>
@@ -5151,6 +5785,7 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             widget={selectedWidget}
             branding={branding}
             dataModelTables={dataModelTables}
+            unsaved={unsavedChartIds.has(selectedWidget.id)}
             onChange={replaceSelectedWidgetConfig}
             onSubPage={(name) => setInspectorPath(name)}
           /> : null}
@@ -5180,30 +5815,15 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
-            <div className="workspace-settings-list" role="group" aria-label="View widget settings">
+            <div className="workspace-twenty-config" role="group" aria-label="View widget settings">
               <p className="workspace-panel-label">Settings</p>
-              <button type="button" className="workspace-settings-row" disabled>
-                <span>Layout</span><code>{selectedWidget.config?.layout || "Table"}</code>
-              </button>
-              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("source")}>
-                <span>Source</span><code>{summarizeSource(selectedWidget)}</code>
-              </button>
-              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("fields")}>
-                <span>Fields</span><code>{summarizeFields(selectedResolvedWidget || selectedWidget)}</code>
-              </button>
-              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("filter")}>
-                <span>Filter</span><code>{summarizeFilter(selectedResolvedWidget || selectedWidget)}</code>
-              </button>
-              <button type="button" className="workspace-settings-row" onClick={() => setInspectorPath("sort")}>
-                <span>Sort</span><code>{summarizeSort(selectedResolvedWidget || selectedWidget)}</code>
-              </button>
+              <WidgetSettingsRow icon={Table2} label="Layout" value={selectedWidget.config?.layout || "Table"} disabled />
+              <WidgetSettingsRow icon={Box} label="Source" value={summarizeSource(selectedWidget)} onClick={() => setInspectorPath("source")} />
+              <WidgetSettingsRow icon={List} label="Fields" value={summarizeFields(selectedResolvedWidget || selectedWidget)} onClick={() => setInspectorPath("fields")} />
+              <WidgetSettingsRow icon={Filter} label="Filter" value={summarizeFilter(selectedResolvedWidget || selectedWidget)} onClick={() => setInspectorPath("filter")} />
+              <WidgetSettingsRow icon={SlidersHorizontal} label="Sort" value={summarizeSort(selectedResolvedWidget || selectedWidget)} onClick={() => setInspectorPath("sort")} />
             </div>
           </section> : null}
-          <div className="workspace-settings-list">
-            <p className="workspace-panel-label">Placement</p>
-            <div><span>Size</span><code>{selectedWidget.position.w} x {selectedWidget.position.h}</code></div>
-            <div><span>Origin</span><code>{selectedWidget.position.x + 1}, {selectedWidget.position.y + 1}</code></div>
-          </div>
         </section> : null}
         {!selectedWidget ? <section>
           <div className="workspace-widget-empty">
@@ -5227,8 +5847,8 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             })}
           </div>
         </section> : null}
-        {inspectorPath === SUB_PANEL_ROOT ? <section className="workspace-bindings" id="bindings">
-          <p className="workspace-panel-label">Config bindings</p>
+        {inspectorPath === SUB_PANEL_ROOT ? <details className="workspace-bindings" id="bindings">
+          <summary>Config bindings and data model sync</summary>
           {Object.entries(canvas.bindings).map(([key, value]) => <div key={key}>
               <span>{key}</span>
               <code>{String(value)}</code>
@@ -5237,7 +5857,15 @@ function WorkspaceBuilder({ initialConfig, adapterConfig, integrationAdapter, in
             <span>integrationAdapter</span>
             <code>{adapterConfig.integrationAdapter}</code>
           </div>
-        </section> : null}
+          <div>
+            <span>workspaceSourceRecords</span>
+            <code>{Object.keys(workspaceSourceRecords || {}).length} sources</code>
+          </div>
+          <div>
+            <span>dataModelObjects</span>
+            <code>{dataModelTables.length} synced</code>
+          </div>
+        </details> : null}
       </aside> : null}
       {expandedIframeWidget ? <IframePreviewModal widget={expandedIframeWidget} onClose={() => setExpandedIframeWidget(null)} /> : null}
       {commandPaletteOpen ? <CommandPalette commands={paletteCommands} onClose={closeCommandPalette} /> : null}

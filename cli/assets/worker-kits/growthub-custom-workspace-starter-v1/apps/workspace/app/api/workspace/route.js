@@ -9,9 +9,14 @@ import { buildPortalWorkspace, portalCapabilities } from "@/lib/domain/portal";
 import {
   describePersistenceMode,
   readWorkspaceConfig,
+  readWorkspaceSourceRecords,
   writeWorkspaceConfig
 } from "@/lib/workspace-config";
 
+// Workspace Config Contract V1 — PATCH is permanently restricted to these
+// four fields. Sidecar source records (`workspaceSourceRecords`) are exposed
+// on GET for runtime hydration only; they are deliberately NOT in this set.
+// Sidecar writes flow through POST /api/workspace/refresh-sources.
 const ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"]);
 
 async function GET() {
@@ -27,6 +32,14 @@ async function GET() {
     integrations: groupIntegrationsByLane(integrations)
   };
   const workspaceConfig = await readWorkspaceConfig();
+  // Source records hydrate live-backed Data Model objects at runtime.
+  // Missing or unreadable sidecar returns `{}` — never throws.
+  let workspaceSourceRecords = {};
+  try {
+    workspaceSourceRecords = (await readWorkspaceSourceRecords()) || {};
+  } catch {
+    workspaceSourceRecords = {};
+  }
   const persistence = describePersistenceMode();
   return NextResponse.json({
     config,
@@ -35,6 +48,7 @@ async function GET() {
     settings,
     workspace: buildPortalWorkspace({ config, adapters, integrations: settings.integrations }),
     workspaceConfig,
+    workspaceSourceRecords,
     workspaceConfigPersistence: persistence
   });
 }

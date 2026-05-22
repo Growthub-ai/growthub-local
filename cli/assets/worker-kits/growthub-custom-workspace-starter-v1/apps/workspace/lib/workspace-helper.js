@@ -185,6 +185,17 @@ function buildStableSystemPrompt(intent) {
     `Known object types: ${KNOWN_OBJECT_TYPES.join(", ")}`,
     `PATCH allowlist (only these top-level keys can be mutated): ${PATCH_ALLOWLIST.join(", ")}`,
     "",
+    "## When configuring dashboard widgets",
+    "- Use Data Model objects as source authority.",
+    "- Bind widgets by objectId and source metadata.",
+    "- For charts, compute widget.config.values from rows.",
+    "- Never copy source rows into chart widget config.",
+    "- Never store secrets in widget config, Data Model rows, source records, browser state, localStorage, or exported templates.",
+    "- Use source records for live-backed data.",
+    "- Use filters, grouping, aggregation, style, and values projection as nested widget config only.",
+    "- Reset invalid axis, filter, group, and sort settings when source changes.",
+    "- Mark recomputed values as unsaved unless PATCH succeeds.",
+    "",
     "## Valid proposal types and their target patch field",
     WORKSPACE_HELPER_PROPOSAL_TYPES.map(
       (t) => `  ${t} → ${PROPOSAL_TYPE_TO_PATCH_FIELD[t]}`

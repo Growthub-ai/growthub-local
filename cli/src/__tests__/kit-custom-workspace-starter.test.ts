@@ -228,6 +228,97 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
     expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
     expect(err!.details!.some((d) => d.includes("duplicates an earlier object id"))).toBe(true);
   });
+
+  it("sandbox row with forbidden auth secret field (e.g. accessToken) → rejected", () => {
+    let err: Error & { details?: string[] } | null = null;
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [
+            {
+              id: "sandboxes",
+              objectType: "sandbox-environment",
+              label: "Sandboxes",
+              columns: ["Name", "adapter", "agentHost"],
+              rows: [
+                {
+                  Name: "naughty",
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                  runLocality: "local",
+                  accessToken: "sk-ant-secret-leak"
+                }
+              ]
+            }
+          ]
+        }
+      });
+    } catch (e) { err = e as typeof err; }
+    expect(err).not.toBeNull();
+    expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(err!.details!.some((d) => d.includes("accessToken is not allowed"))).toBe(true);
+  });
+
+  it("sandbox row with invalid agentAuthStatus → rejected", () => {
+    let err: Error & { details?: string[] } | null = null;
+    try {
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [
+            {
+              id: "sandboxes",
+              objectType: "sandbox-environment",
+              label: "Sandboxes",
+              columns: ["Name"],
+              rows: [
+                {
+                  Name: "row",
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                  runLocality: "local",
+                  agentAuthStatus: "totally-made-up"
+                }
+              ]
+            }
+          ]
+        }
+      });
+    } catch (e) { err = e as typeof err; }
+    expect(err).not.toBeNull();
+    expect(err!.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect(err!.details!.some((d) => d.includes("agentAuthStatus must be one of"))).toBe(true);
+  });
+
+  it("sandbox row with `reachable` agentAuthStatus is accepted (new V1 value)", () => {
+    expect(() =>
+      validateWorkspaceConfig({
+        dataModel: {
+          objects: [
+            {
+              id: "sandboxes",
+              objectType: "sandbox-environment",
+              label: "Sandboxes",
+              columns: ["Name"],
+              rows: [
+                {
+                  Name: "row",
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                  runLocality: "local",
+                  agentAuthStatus: "reachable",
+                  agentAuthProvider: "claude_local",
+                  agentAuthLastChecked: "2026-05-22T19:24:08.412Z",
+                  agentAuthLastExitCode: 0,
+                  agentAuthLastMessage: "Claude Code (local) reachable. Auth will be verified on next login or sandbox run.",
+                  agentAuthLastLoginUrl: ""
+                }
+              ]
+            }
+          ]
+        }
+      })
+    ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -521,6 +612,257 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
+
+  it("lib/workspace-chart-values.js ships with computeChartValuesFromRows", () => {
+    expect(appExists("lib/workspace-chart-values.js")).toBe(true);
+    const source = appText("lib/workspace-chart-values.js");
+    expect(source).toContain("function computeChartValuesFromRows");
+    expect(source).toMatch(/export\s*\{[^}]*computeChartValuesFromRows[^}]*\}/s);
+  });
+
+  it("lib/workspace-chart-values.js exports debug + hydration-state helpers", () => {
+    const source = appText("lib/workspace-chart-values.js");
+    expect(source).toContain("function computeChartProjectionDebug");
+    expect(source).toContain("function deriveChartHydrationState");
+    expect(source).toMatch(/export\s*\{[^}]*computeChartProjectionDebug[^}]*\}/s);
+    expect(source).toMatch(/export\s*\{[^}]*deriveChartHydrationState[^}]*\}/s);
+  });
+
+  it("Chart Hydration Inspector is wired into the builder shell", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("function ChartHydrationInspector");
+    expect(builder).toContain("Inspect computation");
+    expect(builder).toContain("Source preview");
+    expect(builder).toContain("Final values");
+    expect(builder).toContain("Save computed values");
+    // The inspector is routed via the `hydration` inspector path the Chart
+    // panel surfaces — `onSubPage("hydration")`.
+    expect(builder).toContain('inspectorPath === "hydration"');
+    expect(builder).toContain('onSubPage("hydration")');
+  });
+
+  it("Refresh source discovery resolves Data Model-bound live sources, not just direct bindings", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    // The liveSourceIds resolver must inspect both direct bindings and bound
+    // Data Model tables (so charts pointing at live-backed objects refresh).
+    expect(builder).toContain("liveSourceIds = useMemo");
+    expect(builder).toMatch(/binding\.sourceType === DATA_MODEL_SOURCE_TYPE[\s\S]{0,400}table\.liveSource/);
+  });
+
+  it("Refresh recompute marks widgets unsaved instead of silently auto-saving", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("unsavedChartIds");
+    expect(builder).toContain("setUnsavedChartIds");
+    // Save semantics: clearing the unsaved set must only happen after a
+    // successful persistWorkspaceConfig response.
+    expect(builder).toMatch(/setUnsavedChartIds\(new Set\(\)\)/);
+  });
+
+  it("Chart sidecar surfaces Twenty-style operation labels in the Operation dropdown", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("AGGREGATION_LABELS");
+    expect(builder).toContain("countAll");
+    expect(builder).toContain("countNotEmpty");
+    expect(builder).toContain("countUnique");
+    expect(builder).toContain("percentEmpty");
+    // The select must write both operation (preferred) and aggregation
+    // (legacy) so existing configs continue to round-trip.
+    expect(builder).toMatch(/setYAxis\(\{\s*operation:[^,]+,\s*aggregation:/);
+  });
+
+  it("Source picker only surfaces a badge when it communicates real runtime state", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    // The picker now suppresses Manual/API/Webhook badges and only renders
+    // Live when the bound object is sidecar-hydrated.
+    expect(builder).toContain("workspace-source-badge badge-live");
+    expect(builder).toContain("showLiveBadge");
+    expect(builder).not.toMatch(/aria-label=\{`Source type: \$\{badgeLabel\}`\}/);
+  });
+
+  it("Inspect computation surfaces as a single compact row in the chart panel", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    // The verbose inline status block was collapsed into one row.
+    expect(builder).toContain("Inspect computation");
+    expect(builder).not.toContain("Computed values updated · Unsaved");
+    expect(builder).not.toContain("Computed values are unsaved. Save persists them");
+  });
+
+  it("workspace-data-model attaches fieldMetadata and sourceBadge to tables", () => {
+    const dm = appText("lib/workspace-data-model.js");
+    expect(dm).toContain("function inferFieldType");
+    expect(dm).toContain("function buildFieldMetadata");
+    expect(dm).toContain("fieldMetadata: buildFieldMetadata");
+    expect(dm).toContain("sourceBadge");
+  });
+});
+
+describe("workspace-data-model — runtime field metadata inference", () => {
+  type Table = {
+    objectId?: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+    sourceBadge?: string;
+    fieldMetadata?: Array<{ id: string; type: string; isNumeric: boolean; isDate: boolean; isBoolean: boolean }>;
+  };
+  let listWorkspaceDataModelTables: (
+    config: unknown,
+    options?: { sourceRecords?: Record<string, unknown> }
+  ) => Table[];
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-data-model.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      listWorkspaceDataModelTables: typeof listWorkspaceDataModelTables;
+    };
+    listWorkspaceDataModelTables = mod.listWorkspaceDataModelTables;
+  });
+
+  it("infers numeric/text/date/boolean field types from rows when no hints exist", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "opps",
+          label: "Opportunities",
+          columns: ["name", "arr", "won", "closeDate"],
+          rows: [
+            { name: "Acme", arr: 100, won: "true", closeDate: "2026-05-01" },
+            { name: "Beta", arr: 250, won: "false", closeDate: "2026-05-15" },
+            { name: "Gamma", arr: 75, won: "true", closeDate: "2026-06-01" },
+          ],
+          binding: { mode: "manual", source: "Opportunities" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config);
+    const table = tables.find((t) => t.objectId === "opps");
+    expect(table!.fieldMetadata).toBeDefined();
+    const types = Object.fromEntries((table!.fieldMetadata || []).map((f) => [f.id, f.type]));
+    expect(types.arr).toBe("number");
+    expect(types.closeDate).toBe("date");
+    expect(types.won).toBe("boolean");
+    expect(types.name).toBe("text");
+  });
+
+  it("respects existing fieldSettings.types hints over inference", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "opps",
+          label: "Opportunities",
+          columns: ["status"],
+          rows: [{ status: "won" }, { status: "lost" }],
+          fieldSettings: { types: { status: "select" }, order: ["status"] },
+          binding: { mode: "manual", source: "Opportunities" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config);
+    const meta = tables.find((t) => t.objectId === "opps")!.fieldMetadata!;
+    expect(meta.find((f) => f.id === "status")!.type).toBe("select");
+  });
+
+  it("tags live-backed objects with sourceBadge === \"live\"", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "src_crm",
+          label: "CRM",
+          objectType: "data-source",
+          columns: ["name"],
+          rows: [],
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords: { src_crm: { records: [{ name: "Acme" }], fetchedAt: "x", recordCount: 1 } } });
+    expect(tables.find((t) => t.objectId === "src_crm")!.sourceBadge).toBe("live");
+  });
+});
+
+describe("workspace-schema — chart config validates Twenty-style nested keys", () => {
+  let validateWorkspaceConfig: (config: unknown) => void;
+
+  beforeEach(async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as { validateWorkspaceConfig: (c: unknown) => void };
+    validateWorkspaceConfig = mod.validateWorkspaceConfig;
+  });
+
+  function chartConfig(extra: Record<string, unknown>) {
+    return {
+      canvas: {
+        layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+        widgets: [{
+          id: "w1", kind: "chart", title: "C",
+          position: { x: 0, y: 0, w: 4, h: 4 },
+          config: { values: [10, 20], ...extra },
+        }],
+      },
+    };
+  }
+
+  it("accepts yAxis.operation = countNotEmpty", () => {
+    expect(() => validateWorkspaceConfig(chartConfig({
+      yAxis: { field: "Owner", operation: "countNotEmpty" },
+    }))).not.toThrow();
+  });
+
+  it("accepts yAxis.cumulative + xAxis.dateGranularity", () => {
+    expect(() => validateWorkspaceConfig(chartConfig({
+      xAxis: { field: "createdAt", dateGranularity: "month" },
+      yAxis: { field: "arr", operation: "sum", cumulative: true },
+    }))).not.toThrow();
+  });
+
+  it("accepts style.legend / style.stacked / style.prefix / style.suffix", () => {
+    expect(() => validateWorkspaceConfig(chartConfig({
+      style: { legend: true, stacked: true, prefix: "$", suffix: "" },
+    }))).not.toThrow();
+  });
+
+  it("rejects unknown operation values", () => {
+    let err: Error & { code?: string } | null = null;
+    try {
+      validateWorkspaceConfig(chartConfig({ yAxis: { field: "x", operation: "bogus-op" } }));
+    } catch (e) { err = e as typeof err; }
+    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+  });
+
+  it("rejects unknown date granularities", () => {
+    let err: Error & { code?: string } | null = null;
+    try {
+      validateWorkspaceConfig(chartConfig({ xAxis: { field: "createdAt", dateGranularity: "century" } }));
+    } catch (e) { err = e as typeof err; }
+    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+  });
+});
+
+describe("workspace-helper — system prompt carries widget configuration rules", () => {
+  it("buildStableSystemPrompt includes the verbatim widget configuration rules", () => {
+    const helper = appText("lib/workspace-helper.js");
+    expect(helper).toContain("When configuring dashboard widgets");
+    expect(helper).toContain("Use Data Model objects as source authority.");
+    expect(helper).toContain("Bind widgets by objectId and source metadata.");
+    expect(helper).toContain("For charts, compute widget.config.values from rows.");
+    expect(helper).toContain("Never copy source rows into chart widget config.");
+    expect(helper).toContain("Never store secrets in widget config, Data Model rows, source records, browser state, localStorage, or exported templates.");
+    expect(helper).toContain("Use source records for live-backed data.");
+    expect(helper).toContain("Mark recomputed values as unsaved unless PATCH succeeds.");
+  });
+});
+
+describe("docs — Widget Sidecar Twenty UX Alignment doc ships", () => {
+  it("docs/WIDGET_SIDECAR_TWENTY_UX_ALIGNMENT_V1.md exists with the required sections", () => {
+    const docsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../docs");
+    const docPath = path.join(docsRoot, "WIDGET_SIDECAR_TWENTY_UX_ALIGNMENT_V1.md");
+    expect(fs.existsSync(docPath)).toBe(true);
+    const body = fs.readFileSync(docPath, "utf8");
+    expect(body).toContain("Operation vocabulary");
+    expect(body).toContain("Source-type badges");
+    expect(body).toContain("Field metadata");
+    expect(body).toContain("Chart Hydration Inspector");
+    expect(body).toContain("Hard rules");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -538,6 +880,7 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/resolvers/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
+    "apps/workspace/lib/workspace-chart-values.js",
   ];
 
   for (const p of requiredPaths) {
@@ -848,6 +1191,103 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(rail).not.toMatch(/addWorkflowItem[\s\S]*orchestrationGraph:\s*workflow/);
   });
 
+  // ── Folder sidebar stability ──────────────────────────────────────────
+  //
+  // The rail must:
+  //   1. cap visible folder/item slots at 10 before scrolling internally
+  //   2. derive an `activeFolderId` from pathname + searchParams so a
+  //      child item's parent folder stays open across navigation
+  //   3. expand the Folders section automatically when an active item is
+  //      detected (deep-link / reload case)
+  //   4. stop click propagation on child item / customize / remove
+  //      handlers so child clicks never collapse the parent folder
+  //   5. ship a dedicated folder-scroll container with ellipsis-friendly
+  //      label rules in CSS
+
+  it("workspace-rail caps visible folder + item slots at 10", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain("NAV_MAX_VISIBLE_FOLDERS = 10");
+    expect(rail).toContain("NAV_MAX_VISIBLE_ITEMS = 10");
+    expect(rail).toContain("workspace-rail-folders-scroll");
+    expect(rail).toContain("workspace-rail-folder-items");
+  });
+
+  it("workspace-rail derives an activeFolderId from pathname + searchParams", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain("function deriveActiveNavFolderId");
+    expect(rail).toContain("function isNavItemActive");
+    expect(rail).toContain("const activeFolderId = useMemo");
+    expect(rail).toContain("deriveActiveNavFolderId(rows, pathname, searchParams)");
+  });
+
+  it("workspace-rail isNavItemActive covers dashboard, view, and workflow items", () => {
+    // workspace-rail.jsx is a Next.js client module — server-importing it
+    // in vitest would require a JSX runtime + lucide-react mocks. Assert
+    // against the source the same way every other sidebar test does.
+    const rail = appText("app/workspace-rail.jsx");
+    // dashboard branch
+    expect(rail).toContain('item.type === "dashboard"');
+    expect(rail).toContain('pathname === "/" && get("dashboard")');
+    // view branch
+    expect(rail).toContain('item.type === "view"');
+    expect(rail).toContain('pathname.startsWith("/data-model")');
+    expect(rail).toMatch(/get\(\s*"object"\s*\) === String\(item\.objectId/);
+    // workflow branch
+    expect(rail).toContain('item.type === "workflow"');
+    expect(rail).toContain('pathname.startsWith("/workflows")');
+    expect(rail).toMatch(/get\(\s*"row"\s*\) === String\(item\.rowId/);
+  });
+
+  it("workspace-rail keeps the active folder expanded across navigation", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    // renderFolder must consult activeFolderId before the persisted
+    // `collapsed` flag — otherwise navigating to a child surface would
+    // re-collapse the parent folder on the next mount.
+    expect(rail).toContain("isActiveFolder = activeFolderId === folder.id");
+    expect(rail).toContain("!isActiveFolder && Boolean(folder.collapsed)");
+    // Section auto-expand on deep-link to an active item.
+    expect(rail).toMatch(/if \(activeFolderId\) setSectionCollapsed\(false\)/);
+  });
+
+  it("workspace-rail stops click propagation on child item + menu actions", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    // Item-row navigation button — must stop propagation so the click
+    // never reaches the parent folder toggle.
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*\/\/[\s\S]*e\.stopPropagation\(\);\s*if \(item\.type === "dashboard"\)/);
+    // Customize / Remove menu items on a folder item must also stop
+    // propagation — opening / using the menu cannot collapse the folder.
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*startCustomizeItem\(folder, item\);/);
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*deleteItem\(folder\.id, item\.id\);/);
+    // Folder menu items (Customize, Add dashboard/view/workflow, Delete)
+    // must also stop propagation.
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*startCustomizeFolder\(folder\);/);
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*setOpenMenuId\(null\);\s*setMenuAnchor\(null\);\s*setAddPickerFor\(\{ folderId: folder\.id, kind: "dashboard" \}\);/);
+    expect(rail).toMatch(/onClick=\{\(e\) => \{\s*e\.stopPropagation\(\);\s*deleteFolder\(folder\.id\);/);
+  });
+
+  it("globals.css constrains the folder list with its own scrollbar", () => {
+    const css = appText("app/globals.css");
+    // Dedicated scroll container — owns vertical overflow, kills lateral.
+    expect(css).toMatch(/\.workspace-rail-folders-scroll\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior:\s*contain;/);
+    // Max-height is bounded by both row count and viewport height so the
+    // section never pushes Builder / Management / Settings off-screen.
+    expect(css).toMatch(/\.workspace-rail-folders-scroll\s*\{[\s\S]*?max-height:\s*min\([\s\S]*?calc\(100vh - 280px\)[\s\S]*?\);/);
+    // Item-children container also gets internal scroll when many items
+    // are stacked under a single folder.
+    expect(css).toMatch(/\.workspace-rail-folder-items\.is-scrollable\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;/);
+  });
+
+  it("globals.css truncates long folder + item labels with ellipsis", () => {
+    const css = appText("app/globals.css");
+    // Folder name ellipsis already shipped; assert it stays.
+    expect(css).toMatch(/\.workspace-rail-folder-name\s*\{[\s\S]*?white-space:\s*nowrap;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?min-width:\s*0;/);
+    // Item label ellipsis must stay too.
+    expect(css).toMatch(/\.workspace-rail-folder-item-label\s*\{[\s\S]*?white-space:\s*nowrap;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?min-width:\s*0;/);
+    // New: subtitle/meta line (Dashboard / View / Workflow hint) must
+    // also truncate so it never expands the row width.
+    expect(css).toMatch(/\.workspace-rail-nav-row-meta\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/);
+  });
+
   it("listAvailableWorkflows discovers sandbox-environment rows", async () => {
     const mod = await import(
       `file://${path.join(APP_ROOT, "lib/nav-workflows.js")}?t=${Date.now()}`
@@ -948,5 +1388,1236 @@ describe("orchestration-graph — contract and kit presence", () => {
         { dataModel: { objects: [] } }
       ).kind
     ).toBe("incomplete");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Chart value hydration — pure computation + Data Model hydration
+//
+// Negative probes are the spine of this suite: invalid axis configs must
+// not crash and must not silently persist malformed values. Positive probes
+// confirm the legacy static `values` path and the new hydration path both
+// produce finite number[] projections suitable for `widget.config.values`.
+// ---------------------------------------------------------------------------
+
+describe("workspace-chart-values — pure computation", () => {
+  type ComputeResult = {
+    values: number[];
+    rowCount: number;
+    usedRowCount: number;
+    warnings: string[];
+  };
+  let computeChartValuesFromRows: (input: unknown) => ComputeResult;
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-chart-values.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      computeChartValuesFromRows: typeof computeChartValuesFromRows;
+    };
+    computeChartValuesFromRows = mod.computeChartValuesFromRows;
+  });
+
+  it("manual Data Model rows compute finite chart values via sum aggregation", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { stage: "lead", arr: "100" },
+        { stage: "lead", arr: 50 },
+        { stage: "won", arr: 250 },
+      ],
+      xAxis: { field: "stage", sort: "position" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([150, 250]);
+    expect(out.values.every((v) => Number.isFinite(v))).toBe(true);
+    expect(out.usedRowCount).toBe(3);
+  });
+
+  it("count aggregation works without a numeric Y field", () => {
+    const out = computeChartValuesFromRows({
+      rows: [{ stage: "a" }, { stage: "a" }, { stage: "b" }],
+      xAxis: { field: "stage" },
+      yAxis: { aggregation: "count" },
+    });
+    expect(out.values).toEqual([2, 1]);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("invalid Y field returns empty values and a warning, never throws", () => {
+    const out = computeChartValuesFromRows({
+      rows: [{ stage: "lead", arr: "not-a-number" }],
+      xAxis: { field: "stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([]);
+    expect(out.warnings.length).toBeGreaterThan(0);
+    expect(out.warnings.some((w) => w.toLowerCase().includes("numeric"))).toBe(true);
+  });
+
+  it("empty rows produce empty values and a warning instead of crashing", () => {
+    const out = computeChartValuesFromRows({
+      rows: [],
+      xAxis: { field: "stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([]);
+    expect(out.rowCount).toBe(0);
+  });
+
+  it("filter clauses narrow the input row set before aggregation", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { stage: "lead", arr: 100 },
+        { stage: "won", arr: 200 },
+        { stage: "won", arr: 300 },
+      ],
+      xAxis: { field: "stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+      filter: { op: "and", clauses: [{ fieldId: "stage", operator: "eq", value: "won" }] },
+    });
+    expect(out.values).toEqual([500]);
+    expect(out.usedRowCount).toBe(2);
+  });
+
+  it("omitZero strips zero buckets", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { stage: "a", arr: 0 },
+        { stage: "b", arr: 10 },
+      ],
+      xAxis: { field: "stage", omitZero: true },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([10]);
+  });
+
+  it("invalid input shape is tolerated without throwing", () => {
+    const out = computeChartValuesFromRows({});
+    expect(out.values).toEqual([]);
+    expect(out.warnings.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("count aggregation counts rows even when a non-numeric Y field is selected", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Lost", Owner: "Ben" },
+        { Stage: "Won", Owner: "Cy" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", aggregation: "count" },
+    });
+    // Count must ignore the (non-numeric) Y field entirely — every row in
+    // the bucket contributes 1.
+    expect(out.values).toEqual([2, 1]);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("count aggregation counts rows when Y field is numeric (still row-presence)", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", arr: 100 },
+        { Stage: "Won", arr: 200 },
+        { Stage: "Lost", arr: 50 },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "arr", aggregation: "count" },
+    });
+    expect(out.values).toEqual([2, 1]);
+  });
+
+  it("count aggregation respects filter and groupBy", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Lost", Owner: "Ben" },
+        { Stage: "Won", Owner: "Ada" },
+      ],
+      xAxis: { field: "Owner" },
+      yAxis: { aggregation: "count", groupBy: "Stage" },
+      filter: { op: "and", clauses: [{ fieldId: "Stage", operator: "eq", value: "Won" }] },
+    });
+    // Group by Stage after filtering to Stage=Won → single group with 2 rows.
+    expect(out.values).toEqual([2]);
+    expect(out.usedRowCount).toBe(2);
+  });
+
+  it("countEmpty counts rows where the Y field is null/empty", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+        { Stage: "Won", Owner: null },
+        { Stage: "Lost", Owner: "Ben" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "countEmpty" },
+    });
+    expect(out.values).toEqual([2, 0]);
+  });
+
+  it("countNotEmpty counts rows where the Y field is present", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+        { Stage: "Lost", Owner: "Ben" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "countNotEmpty" },
+    });
+    expect(out.values).toEqual([1, 1]);
+  });
+
+  it("countUnique counts distinct non-empty Y values per bucket", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "Ben" },
+        { Stage: "Lost", Owner: "" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "countUnique" },
+    });
+    expect(out.values).toEqual([2, 0]);
+  });
+
+  it("percentEmpty / percentNotEmpty return 0-100 percentages of the bucket", () => {
+    const empty = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+        { Stage: "Won", Owner: null },
+        { Stage: "Won", Owner: "Cy" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "percentEmpty" },
+    });
+    expect(empty.values).toEqual([50]);
+    const notEmpty = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", Owner: "Ada" },
+        { Stage: "Won", Owner: "" },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "Owner", operation: "percentNotEmpty" },
+    });
+    expect(notEmpty.values).toEqual([50]);
+  });
+
+  it("cumulative transform produces a running total over sorted buckets", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Lead", arr: 10 },
+        { Stage: "Negotiation", arr: 20 },
+        { Stage: "Won", arr: 30 },
+      ],
+      xAxis: { field: "Stage", sort: "position" },
+      yAxis: { field: "arr", operation: "sum", cumulative: true },
+    });
+    expect(out.values).toEqual([10, 30, 60]);
+  });
+
+  it("yAxis.operation key takes precedence over yAxis.aggregation when both are set", () => {
+    const out = computeChartValuesFromRows({
+      rows: [
+        { Stage: "Won", arr: 5 },
+        { Stage: "Won", arr: 7 },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "arr", operation: "avg", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([6]);
+  });
+});
+
+describe("workspace-chart-values — debug + hydration state", () => {
+  type DebugResult = {
+    values: number[];
+    rowCount: number;
+    filteredCount: number;
+    droppedByFilter: number;
+    buckets: Array<{ key: string | number; rowCount: number; numericCount: number; value: number | null }>;
+    droppedRows: Array<{ reason: string }>;
+    samples: Record<string, unknown>[];
+    warnings: string[];
+  };
+  let computeChartProjectionDebug: (input: unknown) => DebugResult;
+  let deriveChartHydrationState: (input: unknown) => string;
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-chart-values.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      computeChartProjectionDebug: typeof computeChartProjectionDebug;
+      deriveChartHydrationState: typeof deriveChartHydrationState;
+    };
+    computeChartProjectionDebug = mod.computeChartProjectionDebug;
+    deriveChartHydrationState = mod.deriveChartHydrationState;
+  });
+
+  it("debug returns buckets, dropped rows, samples, and final values", () => {
+    const out = computeChartProjectionDebug({
+      rows: [
+        { Stage: "Won", arr: 100 },
+        { Stage: "Won", arr: "n/a" },
+        { Stage: "Lost", arr: 50 },
+      ],
+      xAxis: { field: "Stage" },
+      yAxis: { field: "arr", aggregation: "sum" },
+    });
+    expect(out.values).toEqual([100, 50]);
+    expect(out.buckets.length).toBe(2);
+    expect(out.buckets[0]).toMatchObject({ key: "Won", rowCount: 2, numericCount: 1, value: 100 });
+    expect(out.droppedRows.some((r) => r.reason === "non-numeric-y")).toBe(true);
+    expect(out.samples.length).toBeLessThanOrEqual(5);
+  });
+
+  it("deriveChartHydrationState reports needs-source when bound table is missing", () => {
+    const state = deriveChartHydrationState({
+      widget: { config: { binding: { sourceType: "workspace-data-model", objectId: "gone" }, yAxis: { field: "arr", aggregation: "sum" }, xAxis: { field: "Stage" } } },
+      table: null,
+      computation: { warnings: [] },
+      lastSavedValues: [],
+    });
+    expect(state).toBe("needs-source");
+  });
+
+  it("deriveChartHydrationState reports unsaved when current values differ from saved", () => {
+    const state = deriveChartHydrationState({
+      widget: { config: { values: [10, 20], binding: { sourceType: "workspace-data-model", objectId: "o" }, yAxis: { field: "arr", aggregation: "sum" }, xAxis: { field: "Stage" } } },
+      table: { rows: [], columns: [] },
+      computation: { warnings: [] },
+      lastSavedValues: [10, 30],
+    });
+    expect(state).toBe("unsaved");
+  });
+
+  it("deriveChartHydrationState reports static for unbound widgets that still have legacy values", () => {
+    const state = deriveChartHydrationState({
+      widget: { config: { values: [1, 2, 3] } },
+      table: null,
+      computation: { warnings: [] },
+      lastSavedValues: [1, 2, 3],
+    });
+    expect(state).toBe("static");
+  });
+});
+
+describe("workspace-data-model — sidecar hydration", () => {
+  type Table = {
+    objectId?: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+    storage: string;
+    liveSource?: { sourceRecordKey: string; fetchedAt: string | null };
+  };
+  let listWorkspaceDataModelTables: (
+    config: unknown,
+    options?: { sourceRecords?: Record<string, unknown> }
+  ) => Table[];
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-data-model.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      listWorkspaceDataModelTables: typeof listWorkspaceDataModelTables;
+    };
+    listWorkspaceDataModelTables = mod.listWorkspaceDataModelTables;
+  });
+
+  it("live-backed object hydrates rows from sidecar records keyed by object.id", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "src_crm",
+          label: "CRM",
+          objectType: "data-source",
+          columns: ["name", "stage"],
+          rows: [],
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const sourceRecords = {
+      src_crm: {
+        records: [{ name: "Acme", stage: "won" }, { name: "Beta", stage: "lead" }],
+        fetchedAt: "2026-05-01T00:00:00Z",
+        recordCount: 2,
+        integrationId: "my-crm",
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords });
+    const crm = tables.find((t) => t.objectId === "src_crm");
+    expect(crm).toBeDefined();
+    expect(crm!.rows.length).toBe(2);
+    expect(crm!.rows[0].name).toBe("Acme");
+    expect(crm!.liveSource?.sourceRecordKey).toBe("src_crm");
+  });
+
+  it("live-backed object falls back to config rows when sidecar is empty", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "src_crm",
+          label: "CRM",
+          objectType: "data-source",
+          columns: ["name"],
+          rows: [{ name: "Stub" }],
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords: {} });
+    const crm = tables.find((t) => t.objectId === "src_crm");
+    expect(crm!.rows.length).toBe(1);
+    expect(crm!.rows[0].name).toBe("Stub");
+    expect(crm!.liveSource).toBeFalsy();
+  });
+
+  it("hydration falls back to object.sourceId then binding.sourceId when object.id is not the sidecar key", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "object-id-mismatch",
+          label: "CRM",
+          objectType: "data-source",
+          columns: [],
+          rows: [],
+          sourceId: "alt-source-key",
+          binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "another-key", integrationId: "my-crm" },
+        }],
+      },
+    };
+    const sourceRecords = {
+      "another-key": { records: [{ name: "From binding" }], fetchedAt: "2026-05-02T00:00:00Z", recordCount: 1 },
+    };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords });
+    const crm = tables.find((t) => t.objectId === "object-id-mismatch");
+    expect(crm!.rows.length).toBe(1);
+    expect(crm!.rows[0].name).toBe("From binding");
+    expect(crm!.liveSource?.sourceRecordKey).toBe("another-key");
+  });
+
+  it("non-live-backed objects are not affected by sidecar records", () => {
+    const config = {
+      dataModel: {
+        objects: [{
+          id: "manual",
+          label: "Manual",
+          columns: ["name"],
+          rows: [{ name: "Local" }],
+          binding: { mode: "manual", source: "Manual" },
+        }],
+      },
+    };
+    const sourceRecords = { manual: { records: [{ name: "Should-not-appear" }], fetchedAt: null, recordCount: 1 } };
+    const tables = listWorkspaceDataModelTables(config, { sourceRecords });
+    const manual = tables.find((t) => t.objectId === "manual");
+    expect(manual!.rows[0].name).toBe("Local");
+  });
+
+  it("calling without options keeps the legacy single-arg signature working", () => {
+    const config = {
+      dataModel: {
+        objects: [{ id: "m", label: "M", columns: ["a"], rows: [{ a: "1" }], binding: { mode: "manual" } }],
+      },
+    };
+    const tables = listWorkspaceDataModelTables(config);
+    expect(tables.find((t) => t.objectId === "m")!.rows[0].a).toBe("1");
+  });
+});
+
+describe("workspace route + schema — chart value hydration governance", () => {
+  it("GET /api/workspace returns workspaceSourceRecords for runtime hydration", () => {
+    const source = appText("app/api/workspace/route.js");
+    expect(source).toContain("readWorkspaceSourceRecords");
+    expect(source).toContain("workspaceSourceRecords");
+  });
+
+  it("workspaceSourceRecords is NOT in the PATCH allowlist", () => {
+    const source = appText("app/api/workspace/route.js");
+    // The frozen allowlist literal must remain exactly these four fields and
+    // never name `workspaceSourceRecords`. The sidecar is GET-only.
+    expect(source).toContain('ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"])');
+    const allowlistMatch = source.match(/ALLOWED_PATCH_FIELDS\s*=\s*new Set\(\[[^\]]*\]\)/);
+    expect(allowlistMatch).not.toBeNull();
+    expect(allowlistMatch![0]).not.toContain("workspaceSourceRecords");
+  });
+
+  it("workspaceSourceRecords is rejected as unknown when sent to PATCH", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const schemaMod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: (c: unknown) => void;
+    };
+    // The validator rejects unknown top-level fields outright — the route
+    // layer additionally rejects unknown PATCH keys before validation runs.
+    expect(() =>
+      schemaMod.validateWorkspaceConfig({ workspaceSourceRecords: { foo: { records: [] } } } as never)
+    ).toThrow(expect.objectContaining({ code: "INVALID_WORKSPACE_CONFIG" }));
+  });
+
+  it("static chart config.values continues to validate without binding", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: (c: unknown) => void;
+    };
+    expect(() =>
+      mod.validateWorkspaceConfig({
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [
+            { id: "w1", kind: "chart", title: "Static",
+              position: { x: 0, y: 0, w: 4, h: 4 },
+              config: { values: [10, 20, 30] } },
+          ],
+        },
+      })
+    ).not.toThrow();
+  });
+
+  it("chart bound to a Data Model object with computed values validates", async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: (c: unknown) => void;
+    };
+    expect(() =>
+      mod.validateWorkspaceConfig({
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [
+            { id: "w1", kind: "chart", title: "Bound",
+              position: { x: 0, y: 0, w: 6, h: 4 },
+              config: {
+                values: [150, 250],
+                xAxis: { field: "stage", sort: "position" },
+                yAxis: { field: "arr", aggregation: "sum" },
+                binding: { mode: "manual", source: "Pipeline", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "pipeline" },
+              } },
+          ],
+        },
+      })
+    ).not.toThrow();
+});
+
+// ---------------------------------------------------------------------------
+// 9. Sandbox Claude local auth onboarding V1 — file presence + helper contract
+//
+// Claude auth setup is a SEPARATE concern from the `local-agent-host`
+// execution adapter. These probes guard the invariant that the auth onboarding
+// surface ships with the kit and that the helper rejects non-Claude rows
+// rather than silently letting them through.
+// ---------------------------------------------------------------------------
+
+describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship", () => {
+  it("lib/sandbox-agent-auth.js ships", () => {
+    expect(appExists("lib/sandbox-agent-auth.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-agent-auth/status/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/status/route.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-agent-auth/login/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/login/route.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-agent-auth/logout/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/logout/route.js")).toBe(true);
+  });
+
+  it("legacy Claude-specific route paths are NOT shipped (replaced by host-agnostic routes)", () => {
+    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-login/route.js")).toBe(false);
+    expect(appExists("app/api/workspace/sandbox-agent-auth/claude-logout/route.js")).toBe(false);
+  });
+
+  it("app/data-model/components/SandboxAgentAuthPanel.jsx ships", () => {
+    expect(appExists("app/data-model/components/SandboxAgentAuthPanel.jsx")).toBe(true);
+  });
+
+  it("lib/sandbox-agent-host-catalog.js ships", () => {
+    expect(appExists("lib/sandbox-agent-host-catalog.js")).toBe(true);
+  });
+
+  it("DataModelShell.jsx mounts SandboxAgentAuthPanel guarded by isSandboxLocalAgentHost", () => {
+    const shell = appText("app/data-model/components/DataModelShell.jsx");
+    expect(shell).toContain("SandboxAgentAuthPanel");
+    expect(shell).toContain("isSandboxLocalAgentHost");
+  });
+
+  it("Claude host catalog entry uses repo source-of-truth `auth login` / `auth logout` (no setup-token)", () => {
+    const catalog = appText("lib/sandbox-agent-host-catalog.js");
+    expect(catalog).toContain('"auth", "login"');
+    expect(catalog).toContain('"auth", "logout"');
+    expect(catalog).not.toContain("setup-token");
+  });
+
+  it("helper does NOT reference setup-token anywhere", () => {
+    const helper = appText("lib/sandbox-agent-auth.js");
+    expect(helper).not.toContain("setup-token");
+  });
+
+  it("helper redaction patterns cover obvious token shapes", () => {
+    const helper = appText("lib/sandbox-agent-auth.js");
+    // Helper imports redactSecrets from the pure utilities module.
+    expect(helper).toContain("redactSecrets");
+    const redaction = appText("lib/sandbox-agent-auth-redaction.js");
+    expect(redaction).toContain("sk-ant-");
+    // Prefix-anchored patterns added in the production-pass refinement.
+    expect(redaction).toContain("access[_-]?token");
+    expect(redaction).toContain("refresh[_-]?token");
+    expect(redaction).toContain("api[_-]?key");
+  });
+
+  it("helper writes ONLY safe metadata back to the row (whitelist guard)", () => {
+    const helper = appText("lib/sandbox-agent-auth.js");
+    expect(helper).toContain("SAFE_ROW_PATCH_FIELDS");
+    expect(helper).toContain("agentAuthStatus");
+    expect(helper).toContain("agentAuthProvider");
+    expect(helper).toContain("agentAuthLastChecked");
+    expect(helper).toContain("agentAuthLastExitCode");
+    expect(helper).toContain("agentAuthLastMessage");
+    // Must never reference raw token field names (as literal identifiers or
+    // object keys we'd persist).
+    expect(helper).not.toMatch(/\btoken\s*:\s*/);
+    expect(helper).not.toMatch(/\baccessToken\b/);
+    expect(helper).not.toMatch(/\brefreshToken\b/);
+  });
+
+  it("helper redactSecrets actually strips token-shaped strings at runtime", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-redaction.js")}?t=${Date.now()}`
+    ) as { redactSecrets: (text: string) => string };
+    const redacted = mod.redactSecrets(
+      [
+        "claude key sk-ant-api03-abcdefghijklmnop1234567",
+        "Bearer abcdefghijklmnop1234567890",
+        "access_token=ZZZsecretvalueXXX",
+        "refresh_token: ABC_refresh_DEF",
+        "api_key='LIVE-12345-KEY'",
+        "session_key=ZZZ"
+      ].join("\n")
+    );
+    expect(redacted).not.toMatch(/sk-ant-api03-abcdefghijklmnop/);
+    expect(redacted).not.toMatch(/abcdefghijklmnop1234567890/);
+    expect(redacted).not.toMatch(/ZZZsecretvalueXXX/);
+    expect(redacted).not.toMatch(/ABC_refresh_DEF/);
+    expect(redacted).not.toMatch(/LIVE-12345-KEY/);
+    expect(redacted).toMatch(/\[redacted\]/);
+  });
+
+  it("status semantics — `--version` exit 0 maps to `reachable`, NEVER `active`", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-redaction.js")}?t=${Date.now()}`
+    ) as {
+      KNOWN_AGENT_AUTH_STATUSES: readonly string[];
+    };
+    // The status taxonomy must include a distinct "reachable" value so the
+    // helper / UI can never promote a `--version` probe to "active".
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("reachable");
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("active");
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("stale");
+    expect(mod.KNOWN_AGENT_AUTH_STATUSES).toContain("missing");
+  });
+
+  it("isSandboxLocalAgentHost accepts every catalog host slug in local locality", async () => {
+    const eligibility = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-auth-eligibility.js")}?t=${Date.now()}`
+    ) as {
+      isSandboxLocalAgentHost: (row: unknown) => boolean;
+      isSandboxClaudeLocal: (row: unknown) => boolean;
+    };
+    const catalog = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-host-catalog.js")}?t=${Date.now()}`
+    ) as { KNOWN_HOST_AUTH_SLUGS: readonly string[] };
+
+    expect(eligibility.isSandboxLocalAgentHost(null)).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({})).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({ adapter: "local-process", agentHost: "claude_local" })).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({ adapter: "local-agent-host", agentHost: "nope_local" })).toBe(false);
+    expect(eligibility.isSandboxLocalAgentHost({ adapter: "local-agent-host", agentHost: "claude_local", runLocality: "serverless" })).toBe(false);
+    for (const slug of catalog.KNOWN_HOST_AUTH_SLUGS) {
+      expect(
+        eligibility.isSandboxLocalAgentHost({ adapter: "local-agent-host", agentHost: slug, runLocality: "local" })
+      ).toBe(true);
+    }
+    // Backwards-compatible Claude-specific predicate still works.
+    expect(eligibility.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "claude_local" })).toBe(true);
+    expect(eligibility.isSandboxClaudeLocal({ adapter: "local-agent-host", agentHost: "codex_local" })).toBe(false);
+  });
+
+  it("host catalog declares Claude with full auth and other hosts with reachability-only capabilities", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/sandbox-agent-host-catalog.js")}?t=${Date.now()}`
+    ) as {
+      getAgentHostCapabilities: (row: unknown) => null | {
+        slug: string;
+        label: string;
+        canLogin: boolean;
+        canLogout: boolean;
+        canCheckStatus: boolean;
+        hasAuthStatusProbe: boolean;
+        installHint: string;
+      };
+      KNOWN_HOST_AUTH_SLUGS: readonly string[];
+    };
+    const claude = mod.getAgentHostCapabilities({
+      adapter: "local-agent-host",
+      agentHost: "claude_local",
+      runLocality: "local"
+    });
+    expect(claude).not.toBeNull();
+    expect(claude!.canLogin).toBe(true);
+    expect(claude!.canLogout).toBe(true);
+    expect(claude!.canCheckStatus).toBe(true);
+    expect(claude!.hasAuthStatusProbe).toBe(true);
+
+    // Every other host: reachability probe only (no invented subcommands).
+    for (const slug of mod.KNOWN_HOST_AUTH_SLUGS) {
+      if (slug === "claude_local") continue;
+      const caps = mod.getAgentHostCapabilities({
+        adapter: "local-agent-host",
+        agentHost: slug,
+        runLocality: "local"
+      });
+      expect(caps).not.toBeNull();
+      expect(caps!.canCheckStatus).toBe(true);
+      expect(caps!.canLogin).toBe(false);
+      expect(caps!.canLogout).toBe(false);
+      expect(caps!.installHint.length).toBeGreaterThan(0);
+    }
+
+    // Serverless / non-eligible rows return null.
+    expect(mod.getAgentHostCapabilities({
+      adapter: "local-agent-host",
+      agentHost: "claude_local",
+      runLocality: "serverless"
+    })).toBeNull();
+  });
+
+  it("lib/sandbox-agent-auth-eligibility.js ships", () => {
+    expect(appExists("lib/sandbox-agent-auth-eligibility.js")).toBe(true);
+  });
+});
+
+describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth kit.json frozen paths", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+
+  const requiredPaths = [
+    "apps/workspace/lib/sandbox-agent-auth.js",
+    "apps/workspace/lib/sandbox-agent-auth-eligibility.js",
+    "apps/workspace/lib/sandbox-agent-auth-redaction.js",
+    "apps/workspace/lib/sandbox-agent-host-catalog.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/status/route.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/login/route.js",
+    "apps/workspace/app/api/workspace/sandbox-agent-auth/logout/route.js",
+    "apps/workspace/app/data-model/components/SandboxAgentAuthPanel.jsx",
+  ];
+
+  for (const p of requiredPaths) {
+    it(`frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Live Runs Console — observability helper contract
+// ---------------------------------------------------------------------------
+
+describe("orchestration-run-console — observability model", () => {
+  it("orchestration-run-console.js ships in apps/workspace/lib/", () => {
+    expect(appExists("lib/orchestration-run-console.js")).toBe(true);
+  });
+
+  it("OrchestrationRunTracePanel still exists for the live console UI", () => {
+    expect(appExists("app/data-model/components/OrchestrationRunTracePanel.jsx")).toBe(true);
+  });
+
+  it("WorkflowSurface imports the run trace panel and passes onReplay", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("OrchestrationRunTracePanel");
+    expect(surface).toContain("onReplay={runSandbox}");
+    expect(surface).toContain("running={running}");
+  });
+
+  it("sandbox-run route still exports GET and POST", () => {
+    const route = appText("app/api/workspace/sandbox-run/route.js");
+    expect(route).toMatch(/export\s*\{[^}]*GET[^}]*POST[^}]*\}/);
+  });
+
+  it("normalizeRunConsoleRecord normalises a successful run", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => {
+        runId: string;
+        status: string;
+        ok: boolean;
+        durationMs: number | null;
+        logTree: Array<{ id: string; children: unknown[] }>;
+        lifecycle: Array<{ label: string }>;
+      } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-ok-1",
+      exitCode: 0,
+      durationMs: 250,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      runtime: "node",
+      adapter: "local-process",
+      stdout: "hello",
+      output: { items: [{ id: 1 }] },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.runId).toBe("run-ok-1");
+    expect(record!.status).toBe("completed");
+    expect(record!.ok).toBe(true);
+    expect(record!.durationMs).toBe(250);
+    expect(record!.logTree).toHaveLength(1);
+    expect(record!.lifecycle.map((l) => l.label)).toEqual([
+      "Triggered",
+      "Dequeued",
+      "Started",
+      "Finished",
+    ]);
+  });
+
+  it("normalizeRunConsoleRecord marks failed runs", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => { status: string; ok: boolean; output: { error: string } } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-fail-1",
+      exitCode: 1,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "Not logged in",
+      error: "exit 1",
+    });
+    expect(record).not.toBeNull();
+    expect(record!.status).toBe("failed");
+    expect(record!.ok).toBe(false);
+    expect(record!.output.error).toContain("exit 1");
+  });
+
+  it("buildRunLogTree returns a root with attempt and stream nodes", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      buildRunLogTree: (r: unknown) => Array<{
+        id: string;
+        children: Array<{ id: string; children: Array<{ id: string }> }>;
+      }>;
+    };
+    const tree = mod.buildRunLogTree({
+      runId: "run-1",
+      exitCode: 0,
+      durationMs: 100,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "ok",
+      stderr: "warn",
+      adapterMeta: { httpStatus: 200 },
+    });
+    expect(tree).toHaveLength(1);
+    expect(tree[0].id).toBe("root");
+    expect(tree[0].children).toHaveLength(1);
+    const attempt = tree[0].children[0];
+    expect(attempt.id).toBe("attempt-1");
+    const childIds = attempt.children.map((c) => c.id);
+    expect(childIds).toContain("stdout");
+    expect(childIds).toContain("stderr");
+    expect(childIds).toContain("adapter-meta");
+  });
+
+  it("filterRunLogTree honours search query and errors-only flag", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      buildRunLogTree: (r: unknown) => unknown[];
+      filterRunLogTree: (t: unknown[], opts: { query?: string; errorsOnly?: boolean }) => unknown[];
+    };
+    const tree = mod.buildRunLogTree({
+      runId: "run-1",
+      exitCode: 1,
+      durationMs: 100,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "Not logged in · Please run /login",
+      stderr: "boom",
+      error: "exit 1",
+    });
+    const queried = mod.filterRunLogTree(tree, { query: "boom" }) as Array<{ children: Array<{ children: unknown[] }> }>;
+    expect(queried).toHaveLength(1);
+    const errorsOnly = mod.filterRunLogTree(tree, { errorsOnly: true }) as Array<{ children: Array<{ children: Array<{ id: string }> }> }>;
+    expect(errorsOnly).toHaveLength(1);
+    const childIds = errorsOnly[0].children[0].children.map((c) => c.id);
+    expect(childIds).toContain("error");
+    expect(childIds).toContain("stderr");
+    expect(childIds).not.toContain("stdout");
+  });
+
+  it("normalizeRunConsoleRecord redacts secret-looking text", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => { output: { stdout: string } } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-1",
+      exitCode: 0,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: 'Authorization: Bearer abc123 api_key="topsecret"',
+    });
+    expect(record!.output.stdout).toContain("[redacted]");
+    expect(record!.output.stdout).not.toContain("abc123");
+    expect(record!.output.stdout).not.toContain("topsecret");
+  });
+
+  it("downloadRunBundle wraps a redacted record in the v1 envelope", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      downloadRunBundle: (i: { record: unknown; runId?: string; sourceId?: string }) => {
+        kind: string;
+        runId: string;
+        sourceId: string;
+        record: { runId: string; output: { stdout: string } } | null;
+      };
+    };
+    const bundle = mod.downloadRunBundle({
+      record: {
+        runId: "run-1",
+        exitCode: 0,
+        durationMs: 50,
+        ranAt: "2026-05-21T19:28:07.906Z",
+        stdout: "Bearer leak123",
+      },
+      runId: "run-1",
+      sourceId: "sandbox:obj:row",
+    });
+    expect(bundle.kind).toBe("growthub-sandbox-run-log-v1");
+    expect(bundle.runId).toBe("run-1");
+    expect(bundle.sourceId).toBe("sandbox:obj:row");
+    expect(bundle.record!.output.stdout).not.toContain("leak123");
+  });
+
+  it("buildRunTimeline ratios runs against the longest", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      buildRunTimeline: (records: unknown[]) => Array<{ runId: string; barRatio: number; durationMs: number }>;
+    };
+    const items = mod.buildRunTimeline([
+      { runId: "run-a", exitCode: 0, durationMs: 500, ranAt: "2026-05-21T19:00:00.000Z" },
+      { runId: "run-b", exitCode: 0, durationMs: 1000, ranAt: "2026-05-21T19:00:01.000Z" },
+    ]);
+    expect(items).toHaveLength(2);
+    const b = items.find((i) => i.runId === "run-b")!;
+    const a = items.find((i) => i.runId === "run-a")!;
+    expect(b.barRatio).toBe(1);
+    expect(a.barRatio).toBeCloseTo(0.5);
+  });
+
+  it("OrchestrationRunTracePanel exposes the live console controls", () => {
+    const panel = appText("app/data-model/components/OrchestrationRunTracePanel.jsx");
+    expect(panel).toContain("dm-run-console");
+    expect(panel).toContain("Replay current config");
+    expect(panel).toContain("Download logs");
+    expect(panel).toContain("Cancel request");
+    expect(panel).toContain("Live reloading");
+    expect(panel).toContain("Errors only");
+    expect(panel).toContain("Queue time");
+    expect(panel).toContain("orchestration-run-console");
+    expect(panel).toContain('Overview');
+    expect(panel).toContain('Detail');
+    expect(panel).toContain('Context');
+  });
+
+  it("normalizeRunRecord now surfaces runtime/adapter/locality", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-trace.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunRecord: (r: unknown) => {
+        runtime: string;
+        adapter: string;
+        runLocality: string;
+        adapterMeta: unknown;
+      } | null;
+    };
+    const record = mod.normalizeRunRecord({
+      runId: "run-1",
+      runtime: "node",
+      adapter: "local-process",
+      runLocality: "local",
+      adapterMeta: { httpStatus: 200 },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.runtime).toBe("node");
+    expect(record!.adapter).toBe("local-process");
+    expect(record!.runLocality).toBe("local");
+    expect(record!.adapterMeta).toEqual({ httpStatus: 200 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Live Runs Console V2 — manual run inputs, redaction, route contract
+// ---------------------------------------------------------------------------
+
+describe("orchestration-run-inputs — manual input contract", () => {
+  it("orchestration-run-inputs.js ships in apps/workspace/lib/", () => {
+    expect(appExists("lib/orchestration-run-inputs.js")).toBe(true);
+  });
+
+  it("RunSetupPanel ships in app/workflows/", () => {
+    expect(appExists("app/workflows/RunSetupPanel.jsx")).toBe(true);
+  });
+
+  it("discoverRunInputSchema finds form fields from human-input nodes", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      discoverRunInputSchema: (g: unknown) => {
+        requiresInput: boolean;
+        fields: Array<{ id: string; required: boolean; isSecret: boolean; type: string }>;
+        kind: string;
+      };
+      RUN_INPUTS_KIND: string;
+    };
+    expect(mod.RUN_INPUTS_KIND).toBe("growthub-workflow-run-inputs-v1");
+    const schema = mod.discoverRunInputSchema({
+      version: 1,
+      provider: "growthub-native",
+      nodes: [
+        {
+          id: "form-1",
+          type: "human-input",
+          config: {
+            action: "form",
+            title: "Run inputs",
+            required: true,
+            fields: [
+              { key: "companyName", value: "text" },
+              { key: "email", value: "email" },
+              { key: "apiKey", value: "secretRef" },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    });
+    expect(schema.requiresInput).toBe(true);
+    expect(schema.fields.map((f) => f.id)).toEqual(["companyName", "email", "apiKey"]);
+    const secretField = schema.fields.find((f) => f.id === "apiKey");
+    expect(secretField?.isSecret).toBe(true);
+    expect(secretField?.type).toBe("secretRef");
+  });
+
+  it("discoverRunInputSchema returns requiresInput=false when no form nodes", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as { discoverRunInputSchema: (g: unknown) => { requiresInput: boolean; fields: unknown[] } };
+    const schema = mod.discoverRunInputSchema({
+      version: 1,
+      provider: "growthub-native",
+      nodes: [{ id: "input", type: "input" }],
+      edges: [],
+    });
+    expect(schema.requiresInput).toBe(false);
+    expect(schema.fields).toEqual([]);
+  });
+
+  it("validateRunInputsEnvelope flags missing required fields", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      discoverRunInputSchema: (g: unknown) => { fields: unknown[]; requiresInput: boolean };
+      validateRunInputsEnvelope: (v: unknown, s: unknown) => { ok: boolean; missing: string[]; error?: string };
+    };
+    const schema = mod.discoverRunInputSchema({
+      version: 1,
+      provider: "growthub-native",
+      nodes: [
+        {
+          id: "form-1",
+          type: "human-input",
+          config: { action: "form", required: true, fields: [{ key: "email", value: "email" }] },
+        },
+      ],
+      edges: [],
+    });
+    const r = mod.validateRunInputsEnvelope({ values: {} }, schema);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toContain("email");
+  });
+
+  it("normalizeRunInputsEnvelope redacts secret-typed fields", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunInputsEnvelope: (v: unknown, s: unknown) => { values: Record<string, unknown>; kind: string };
+    };
+    const env = mod.normalizeRunInputsEnvelope(
+      {
+        values: {
+          companyName: "Acme",
+          api_key: "leak-this-please",
+          secretField: { secretRef: "OPENAI_API_KEY" },
+        },
+      },
+      {
+        fields: [
+          { id: "companyName", type: "text", required: true, isSecret: false },
+          { id: "api_key", type: "text", required: false, isSecret: true },
+          { id: "secretField", type: "secretRef", required: false, isSecret: true },
+        ],
+      }
+    );
+    expect(env!.kind).toBe("growthub-workflow-run-inputs-v1");
+    expect(env!.values.companyName).toBe("Acme");
+    expect(env!.values.api_key).toEqual({ secretRef: "[redacted]" });
+    expect(env!.values.secretField).toEqual({ secretRef: "OPENAI_API_KEY" });
+    expect(JSON.stringify(env)).not.toContain("leak-this-please");
+  });
+
+  it("normalizeRunInputsEnvelope redacts bearer tokens inside string values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunInputsEnvelope: (v: unknown, s: unknown) => { values: Record<string, unknown> };
+    };
+    const env = mod.normalizeRunInputsEnvelope(
+      { values: { prompt: "Use Authorization: Bearer abc123 to call the api" } },
+      { fields: [{ id: "prompt", type: "text", required: true, isSecret: false }] }
+    );
+    expect(String(env!.values.prompt)).toContain("[redacted]");
+    expect(String(env!.values.prompt)).not.toContain("abc123");
+  });
+
+  it("validateRunInputsEnvelope rejects oversize field values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      validateRunInputsEnvelope: (v: unknown, s: unknown) => { ok: boolean; error?: string };
+      MAX_RUN_INPUT_FIELD_BYTES: number;
+    };
+    const oversize = "x".repeat(mod.MAX_RUN_INPUT_FIELD_BYTES + 1);
+    const r = mod.validateRunInputsEnvelope({ values: { prompt: oversize } }, { fields: [{ id: "prompt", required: false }] });
+    expect(r.ok).toBe(false);
+    expect(String(r.error)).toMatch(/exceeds/);
+  });
+
+  it("buildInputPayloadForRunner skips secretRef values", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`
+    ) as {
+      buildInputPayloadForRunner: (e: unknown) => Record<string, unknown>;
+    };
+    const payload = mod.buildInputPayloadForRunner({
+      values: { companyName: "Acme", token: { secretRef: "OPENAI_API_KEY" } },
+    });
+    expect(payload.companyName).toBe("Acme");
+    expect("token" in payload).toBe(false);
+  });
+
+  it("sandbox-run route imports the run-inputs helper and validates", () => {
+    const route = appText("app/api/workspace/sandbox-run/route.js");
+    expect(route).toContain("orchestration-run-inputs");
+    expect(route).toContain("discoverRunInputSchema");
+    expect(route).toContain("normalizeRunInputsEnvelope");
+    expect(route).toContain("validateRunInputsEnvelope");
+    expect(route).toContain("runInputs");
+  });
+
+  it("orchestration-graph-runner accepts an optional runInputs param", () => {
+    const runner = appText("lib/orchestration-graph-runner.js");
+    expect(runner).toContain("runInputs");
+    expect(runner).toContain("buildInputPayloadForRunner");
+  });
+
+  it("orchestration-run-console exposes inputs + exports on the normalized record", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunConsoleRecord: (r: unknown) => {
+        payload: {
+          runInputs: { values: Record<string, unknown> } | null;
+          inputSource: string;
+          inputFieldCount: number;
+        };
+        exports: { available: string[] };
+      } | null;
+    };
+    const record = mod.normalizeRunConsoleRecord({
+      runId: "run-with-inputs",
+      exitCode: 0,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "ok",
+      input: {
+        kind: "growthub-workflow-run-inputs-v1",
+        source: "manual",
+        values: { companyName: "Acme" },
+        files: [],
+      },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.payload.runInputs?.values.companyName).toBe("Acme");
+    expect(record!.payload.inputSource).toBe("manual");
+    expect(record!.payload.inputFieldCount).toBe(1);
+    expect(record!.exports.available).toContain("download-json");
+    expect(record!.exports.available).toContain("copy-output");
+  });
+
+  it("orchestration-run-trace preserves redacted input metadata on records", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/orchestration-run-trace.js")}?t=${Date.now()}`
+    ) as {
+      normalizeRunRecord: (r: unknown) => {
+        input: { values: Record<string, unknown> } | null;
+        inputSummary: { fieldCount: number } | null;
+      } | null;
+    };
+    const record = mod.normalizeRunRecord({
+      runId: "run-1",
+      input: {
+        kind: "growthub-workflow-run-inputs-v1",
+        source: "manual",
+        values: { email: "user@example.com" },
+        files: [],
+      },
+    });
+    expect(record!.input!.values.email).toBe("user@example.com");
+    expect(record!.inputSummary!.fieldCount).toBe(1);
+  });
+
+  it("WorkflowSurface wires Test through handleTestClick and runSandbox accepts options", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("RunSetupPanel");
+    expect(surface).toContain("discoverRunInputSchema");
+    expect(surface).toContain("handleTestClick");
+    expect(surface).toContain("handleRunWithInputs");
+    expect(surface).toContain("runSandbox(options = {})");
+    expect(surface).toContain("body.runInputs");
+  });
+
+  it("OrchestrationRunTracePanel renders inputs and export actions", () => {
+    const panel = appText("app/data-model/components/OrchestrationRunTracePanel.jsx");
+    expect(panel).toContain("InputsSection");
+    expect(panel).toContain("ExportActions");
+    expect(panel).toContain("Copy output");
+    expect(panel).toContain("Download stdout");
+    expect(panel).toContain("Download stderr");
+  });
+
+  it("no browser-side secret persistence patterns introduced", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    const panel = appText("app/workflows/RunSetupPanel.jsx");
+    const trace = appText("app/data-model/components/OrchestrationRunTracePanel.jsx");
+    for (const source of [surface, panel, trace]) {
+      expect(source).not.toMatch(/localStorage\.setItem\([^)]*(token|secret|api_key|apiKey|password)/i);
+      expect(source).not.toMatch(/sessionStorage\.setItem\([^)]*(token|secret|api_key|apiKey|password)/i);
+    }
   });
 });
