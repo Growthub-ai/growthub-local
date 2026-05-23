@@ -680,6 +680,159 @@ function addCanonicalNodeToGraph(graph, nodeId, registryRow, options = {}) {
   return { ...parsed, nodes, edges };
 }
 
+const AGENT_SWARM_EXECUTION_MODE = "agent-swarm-v1";
+
+/**
+ * Detect whether a graph is an agent-swarm-v1 control plane. Swarm graphs are
+ * encoded as growthub-native graphs whose root carries
+ * `executionMode: "agent-swarm-v1"` and that contain at least one orchestrator
+ * (`thinAdapter`) or subagent (`ai-agent`) node.
+ */
+function isAgentSwarmGraph(graph) {
+  const parsed = parseOrchestrationGraph(graph) || graph;
+  if (!parsed || typeof parsed !== "object") return false;
+  if (String(parsed.provider || "").trim() !== "growthub-native") return false;
+  if (String(parsed.executionMode || "").trim() !== AGENT_SWARM_EXECUTION_MODE) return false;
+  const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+  if (!nodes.length) return false;
+  return nodes.some((n) => n?.type === "thinAdapter" || n?.type === "ai-agent");
+}
+
+/**
+ * Split a swarm graph into its semantic parts so the runtime and UI can reason
+ * about it without re-walking the node list. Returns `null` when the graph is
+ * not a recognized swarm.
+ */
+function extractSwarmNodes(graph) {
+  const parsed = parseOrchestrationGraph(graph) || graph;
+  if (!isAgentSwarmGraph(parsed)) return null;
+  const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+  const orchestrator = nodes.find((n) => n?.type === "thinAdapter") || null;
+  const subagents = nodes.filter((n) => n?.type === "ai-agent");
+  const synthesis = nodes.find((n) => n?.type === "tool-result") || null;
+  const humanInputs = nodes.filter((n) => n?.type === "human-input");
+  const flowControls = nodes.filter((n) => n?.type === "flow-control");
+  const swarmConfig = (parsed.swarm && typeof parsed.swarm === "object" && !Array.isArray(parsed.swarm))
+    ? parsed.swarm
+    : {};
+  return {
+    graph: parsed,
+    orchestrator,
+    subagents,
+    synthesis,
+    humanInputs,
+    flowControls,
+    swarmConfig
+  };
+}
+
+/**
+ * Build the default scaffold for a new agent-swarm-v1 graph. The shape mirrors
+ * the Kimi screenshots — an orchestrator, two specialized subagents, a
+ * synthesis tool-result — but reuses existing node types so no schema change
+ * is required.
+ */
+function buildDefaultAgentSwarmGraph(options = {}) {
+  const agentHost = String(options.agentHost || "").trim();
+  const subagents = Array.isArray(options.subagents) && options.subagents.length > 0
+    ? options.subagents
+    : [
+        {
+          id: "subagent-researcher",
+          role: "Researcher",
+          taskPrompt: "Investigate the orchestrator's plan and gather the relevant facts.",
+          required: true
+        },
+        {
+          id: "subagent-synthesizer",
+          role: "Synthesizer",
+          taskPrompt: "Combine the researcher findings into a final answer.",
+          required: true
+        }
+      ];
+
+  const nodes = [
+    {
+      id: "orchestrator",
+      type: "thinAdapter",
+      label: "Orchestrator",
+      subtitle: "Plans subagent dispatch",
+      sandbox: "orchestrator",
+      config: {
+        executionPolicy: "parallel",
+        prompt: String(options.orchestratorPrompt || "Decompose the task into independent subtasks for the listed subagents.").trim(),
+        inputBinding: "{{input.payload}}",
+        outputKey: "plan"
+      }
+    },
+    ...subagents.map((agent) => ({
+      id: String(agent.id || agent.role || "subagent").replace(/[^a-zA-Z0-9_-]+/g, "-"),
+      type: "ai-agent",
+      label: String(agent.role || agent.id || "Subagent"),
+      subtitle: "Swarm subagent",
+      config: {
+        role: String(agent.role || agent.id || "Subagent"),
+        taskPrompt: String(agent.taskPrompt || "").trim(),
+        agentHost: String(agent.agentHost || agentHost || "").trim(),
+        required: agent.required !== false,
+        canReadWorkspace: true,
+        canWriteDraft: false,
+        networkAccess: agent.networkAccess === true
+      }
+    })),
+    {
+      id: "synthesis",
+      type: "tool-result",
+      label: "Final synthesis",
+      subtitle: "Aggregate subagent results",
+      config: {
+        successStatusCodes: [200],
+        writeLastResponse: true,
+        writeSourceRecord: true,
+        outputMode: "swarm-summary",
+        statusField: "status",
+        lastTestedField: "lastTested",
+        outcomePrompt: String(options.outcomePrompt || "Confirm every required subagent completed and write the final answer.").trim()
+      }
+    }
+  ];
+
+  const edges = [
+    ...subagents.map((agent) => ({
+      from: "orchestrator",
+      to: String(agent.id || agent.role || "subagent").replace(/[^a-zA-Z0-9_-]+/g, "-"),
+      passes: "subtask-assignment"
+    })),
+    ...subagents.map((agent) => ({
+      from: String(agent.id || agent.role || "subagent").replace(/[^a-zA-Z0-9_-]+/g, "-"),
+      to: "synthesis",
+      passes: "subtask-result"
+    }))
+  ];
+
+  const maxConcurrency = Math.max(1, Number(options.maxConcurrency) || subagents.length);
+  const rewardWeights = options.rewardWeights && typeof options.rewardWeights === "object"
+    ? options.rewardWeights
+    : { parallel: 0.25, finish: 0.35, outcome: 0.4 };
+
+  return {
+    version: 1,
+    provider: "growthub-native",
+    executionMode: AGENT_SWARM_EXECUTION_MODE,
+    swarm: {
+      maxConcurrency,
+      rewardWeights: {
+        parallel: Number(rewardWeights.parallel) || 0,
+        finish: Number(rewardWeights.finish) || 0,
+        outcome: Number(rewardWeights.outcome) || 0
+      },
+      outcomeCriteria: String(options.outcomeCriteria || "All required subagents complete and synthesis runs without error.").trim()
+    },
+    nodes,
+    edges
+  };
+}
+
 function redactSecretsFromText(text) {
   let out = String(text || "");
   for (const pattern of [
@@ -699,9 +852,13 @@ export {
   FILTER_OPERATORS,
   FILTER_CONJUNCTIONS,
   CANONICAL_NODE_ORDER,
+  AGENT_SWARM_EXECUTION_MODE,
   buildBlankOrchestrationGraphShell,
   buildDefaultOrchestrationGraphFromRegistry,
+  buildDefaultAgentSwarmGraph,
   buildCanonicalNode,
+  isAgentSwarmGraph,
+  extractSwarmNodes,
   isOrchestrationGraphEmpty,
   getOrchestrationGraphUiState,
   getNextCanonicalNodeId,

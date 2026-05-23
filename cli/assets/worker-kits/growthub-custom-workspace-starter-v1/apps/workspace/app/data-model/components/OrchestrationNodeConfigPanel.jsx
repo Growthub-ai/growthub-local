@@ -897,7 +897,61 @@ export function OrchestrationNodeConfigPanel({
         </div>
       )}
 
-      {activeTab === "configuration" && type === "ai-agent" && (
+      {activeTab === "configuration" && type === "ai-agent" && (config.role || config.taskPrompt || config.required != null) && (
+        <div className="dm-orchestration-config__pane">
+          <p className="dm-orchestration-config__hint">Swarm subagent. Edit role / task prompt / agent host below; the orchestrator dispatches this subtask through the sandbox adapter registry.</p>
+          <label className="dm-orchestration-config__field">
+            <span>Role</span>
+            <input
+              value={config.role || node.label || ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ role: e.target.value, __nodePatch: { label: e.target.value } })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Task prompt</span>
+            <textarea
+              rows={4}
+              value={config.taskPrompt || ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ taskPrompt: e.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Agent host override</span>
+            <select
+              value={config.agentHost || ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ agentHost: e.target.value })}
+            >
+              <option value="">Inherit row agent host</option>
+              {Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => (
+                <option key={slug} value={slug}>{host?.label || slug}</option>
+              ))}
+            </select>
+          </label>
+          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
+            <input
+              type="checkbox"
+              checked={config.required !== false}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ required: e.target.checked })}
+            />
+            <span>Required for swarm success</span>
+          </label>
+          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
+            <input
+              type="checkbox"
+              checked={config.networkAccess === true}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ networkAccess: e.target.checked })}
+            />
+            <span>Allow network access</span>
+          </label>
+        </div>
+      )}
+
+      {activeTab === "configuration" && type === "ai-agent" && !(config.role || config.taskPrompt || config.required != null) && (
         <div className="dm-orchestration-config__pane">
           <label className="dm-orchestration-config__field">
             <span>Model</span>

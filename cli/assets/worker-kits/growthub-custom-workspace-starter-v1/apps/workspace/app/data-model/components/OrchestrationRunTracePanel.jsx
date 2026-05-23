@@ -215,6 +215,47 @@ async function copyToClipboard(text) {
   }
 }
 
+function formatRewardScore(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(2);
+}
+
+function SwarmSection({ swarm }) {
+  if (!swarm || typeof swarm !== "object") return null;
+  const tasks = Array.isArray(swarm.tasks) ? swarm.tasks : [];
+  if (tasks.length === 0) return null;
+  const completed = tasks.filter((t) => t?.status === "completed").length;
+  const score = swarm.reward ? formatRewardScore(swarm.reward.score) : "—";
+  return (
+    <section className="dm-run-console__section">
+      <h3>Swarm</h3>
+      <div className="dm-swarm-summary">
+        <p className="dm-swarm-summary__line">
+          <span><strong>{tasks.length}</strong> subagents</span>
+          <span><strong>{completed}</strong> ok</span>
+          <span><strong>{tasks.length - completed}</strong> failed</span>
+          <span>score <strong>{score}</strong></span>
+        </p>
+        <ol className="dm-swarm-tasks">
+          {tasks.map((task) => {
+            const variant = statusToVariant(task.status);
+            return (
+              <li key={task.taskId || task.nodeId}>
+                <span className="dm-run-console__tree-dot" data-variant={variant} aria-hidden="true" />
+                <span className="dm-swarm-tasks__role" title={task.role || task.nodeId}>{task.role || task.nodeId}</span>
+                <span className="dm-swarm-tasks__meta">{task.adapter || "—"}</span>
+                <span className="dm-swarm-tasks__dur">{formatRunDuration(task.durationMs)}</span>
+                {task.error ? <em className="dm-swarm-tasks__err">{task.error}</em> : null}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 function InputsSection({ payload }) {
   const runInputs = payload?.runInputs;
   const summary = payload?.inputSummary;
@@ -477,6 +518,9 @@ export function OrchestrationRunTracePanel({
   const payload = activeConsoleRecord?.payload || {};
   const output = activeConsoleRecord?.output || {};
   const context = activeConsoleRecord?.context || {};
+  const swarmPayload = activeConsoleRecord?.swarm
+    || (activeRawRecord && activeRawRecord.swarm)
+    || null;
 
   return (
     <section className="dm-run-console" aria-label="Live runs console">
@@ -710,6 +754,7 @@ export function OrchestrationRunTracePanel({
                 <CodeBlock label="Command" body={payload.command} />
                 <CodeBlock label="Instructions" body={payload.instructions} />
               </section>
+              <SwarmSection swarm={swarmPayload} />
               <InputsSection payload={payload} />
             </div>
           )}

@@ -392,6 +392,12 @@ function buildRunResponse({
     base.runInputs = runInputs;
     base.inputSummary = summarizeRunInputs(runInputs);
   }
+  if (result && typeof result === "object" && result.swarm && typeof result.swarm === "object") {
+    base.swarm = result.swarm;
+  }
+  if (result && typeof result === "object" && Array.isArray(result.logTree)) {
+    base.logTree = result.logTree;
+  }
   base.exports = {
     available: ["download-json", "copy-output", "download-stdout", "download-stderr", "download-log-node"],
     external: []
@@ -558,11 +564,28 @@ async function POST(request) {
       workspaceConfig,
       row: rowForRun,
       timeoutMs,
-      runInputs: normalizedRunInputs
+      runInputs: normalizedRunInputs,
+      executionContext: {
+        runId,
+        ranAt,
+        runtime,
+        agentHost,
+        adapterId,
+        env,
+        envRefSlugs,
+        envRefsMissing,
+        envRefsResolved,
+        networkAllow,
+        allowList,
+        instructions,
+        command,
+        timeoutMs,
+        sandboxName: rowForRun.Name || name
+      }
     });
     if (graphResult !== null) {
       result = graphResult;
-      effectiveAdapterId = "orchestration-graph";
+      effectiveAdapterId = String(graphResult?.adapterMeta?.adapter || "").trim() || "orchestration-graph";
     }
   }
 

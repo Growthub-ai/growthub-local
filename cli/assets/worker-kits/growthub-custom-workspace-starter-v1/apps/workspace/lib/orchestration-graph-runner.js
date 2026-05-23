@@ -8,12 +8,14 @@ import {
   extractApiRegistryCallNode,
   extractInputNode,
   extractTransformConfig,
+  isAgentSwarmGraph,
   normalizeJsonAtPath,
   parseOrchestrationGraph,
   redactSecretsFromText,
   substituteVariables
 } from "./orchestration-graph.js";
 import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
+import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
 
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
@@ -262,9 +264,20 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
  * for `human-input` / form workflows. Secret values (those stored as
  * `{ secretRef }`) are never expanded into the runner payload.
  */
-async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs, runInputs }) {
+async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs, runInputs, executionContext }) {
   const graph = parseOrchestrationGraph(row?.orchestrationGraph || row?.orchestrationConfig);
   if (!graph || String(graph.provider || "").trim() !== "growthub-native") return null;
+
+  if (isAgentSwarmGraph(graph)) {
+    return await runAgentSwarmGraphIfPresent({
+      workspaceConfig,
+      row,
+      graph,
+      timeoutMs,
+      runInputs,
+      executionContext
+    });
+  }
 
   const apiNode = extractApiRegistryCallNode(graph);
   if (!apiNode?.config) {

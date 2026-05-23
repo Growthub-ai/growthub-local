@@ -363,6 +363,104 @@ async function main() {
       );
     }
 
+    // --- Positive: agent-swarm-v1 graph round-trip + swarm dispatch ---
+    const swarmGraph = {
+      version: 1,
+      provider: "growthub-native",
+      executionMode: "agent-swarm-v1",
+      swarm: {
+        maxConcurrency: 2,
+        rewardWeights: { parallel: 0.25, finish: 0.35, outcome: 0.4 },
+        outcomeCriteria: "All required subagents complete."
+      },
+      nodes: [
+        {
+          id: "orchestrator",
+          type: "thinAdapter",
+          label: "Orchestrator",
+          sandbox: "orchestrator",
+          config: { executionPolicy: "parallel", prompt: "Plan the swarm.", outputKey: "plan" }
+        },
+        {
+          id: "subagent-alpha",
+          type: "ai-agent",
+          label: "Alpha",
+          config: { role: "Alpha", taskPrompt: "do alpha", required: true }
+        },
+        {
+          id: "subagent-beta",
+          type: "ai-agent",
+          label: "Beta",
+          config: { role: "Beta", taskPrompt: "do beta", required: true }
+        },
+        {
+          id: "synthesis",
+          type: "tool-result",
+          label: "Final synthesis",
+          config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, outputMode: "swarm-summary" }
+        }
+      ],
+      edges: [
+        { from: "orchestrator", to: "subagent-alpha", passes: "subtask-assignment" },
+        { from: "orchestrator", to: "subagent-beta", passes: "subtask-assignment" },
+        { from: "subagent-alpha", to: "synthesis", passes: "subtask-result" },
+        { from: "subagent-beta", to: "synthesis", passes: "subtask-result" }
+      ]
+    };
+
+    const swarmPatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [
+            sandboxObject([
+              emptyRow({
+                Name: "api-probe-row",
+                adapter: "local-process",
+                runtime: "bash",
+                command: "echo orchestrator-ok"
+              }),
+              emptyRow({
+                Name: "swarm-probe-row",
+                adapter: "local-process",
+                runtime: "bash",
+                command: "echo swarm-ok",
+                instructions: "Swarm orchestrator instructions.",
+                orchestrationGraph: JSON.stringify(swarmGraph),
+              }),
+            ]),
+          ],
+        },
+      }),
+    });
+    assert(swarmPatch.status === 200, `PATCH for swarm row expected 200, got ${swarmPatch.status} ${await swarmPatch.text()}`);
+
+    const swarmRun = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-probe-row" }),
+    });
+    const swarmRunJson = await swarmRun.json();
+    assert(swarmRunJson && typeof swarmRunJson === "object", "swarm sandbox-run must return JSON");
+    assert(swarmRunJson.response, "swarm sandbox-run must include response envelope");
+    assert(
+      swarmRunJson.adapter === "orchestration-agent-swarm",
+      `expected adapter orchestration-agent-swarm, got ${swarmRunJson.adapter}`,
+    );
+    const swarmPayload = swarmRunJson.response?.swarm;
+    assert(swarmPayload, "swarm response must include swarm block");
+    assert(Array.isArray(swarmPayload.tasks) && swarmPayload.tasks.length === 2, `expected 2 swarm tasks, got ${swarmPayload?.tasks?.length}`);
+    assert(swarmPayload.reward && typeof swarmPayload.reward === "object", "swarm.reward must be present");
+    assert(Number.isFinite(Number(swarmPayload.reward.score)), "swarm.reward.score must be a number");
+
+    const swarmHistory = await fetch(`${base}/api/workspace/sandbox-run?objectId=sandboxes-e2e&name=swarm-probe-row`);
+    const swarmHistoryJson = await swarmHistory.json();
+    assert(swarmHistoryJson.ok && Array.isArray(swarmHistoryJson.records), "swarm history must be present");
+    assert(swarmHistoryJson.records.length >= 1, "swarm history must have at least one record");
+
+    process.stdout.write(`[e2e] swarm probe: ${swarmPayload.tasks.length} tasks, reward score ${swarmPayload.reward.score}\n`);
+
     process.stdout.write("[e2e] all API probes completed successfully.\n");
   } finally {
     try {

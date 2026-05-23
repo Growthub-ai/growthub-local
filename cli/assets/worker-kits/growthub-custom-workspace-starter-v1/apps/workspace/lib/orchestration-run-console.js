@@ -160,6 +160,9 @@ function buildLogChildren(record, summary) {
 
 function buildRunLogTree(record) {
   if (!record || typeof record !== "object") return [];
+  if (Array.isArray(record.logTree) && record.logTree.length > 0) {
+    return record.logTree;
+  }
   const summary = deriveRunSummary(record);
   const durationMs = clampNumber(record?.durationMs) || 0;
   const attemptChildren = buildLogChildren(record, summary);
@@ -275,6 +278,7 @@ function normalizeRunConsoleRecord(record) {
       adapterMeta,
       templateTrace
     },
+    swarm: record.swarm && typeof record.swarm === "object" ? record.swarm : null,
     logTree: buildRunLogTree(record)
   };
 }
