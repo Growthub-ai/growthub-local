@@ -2071,7 +2071,13 @@ describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship
     expect(claude!.canCheckStatus).toBe(true);
     expect(claude!.hasAuthStatusProbe).toBe(true);
 
-    // Every other host: reachability probe only (no invented subcommands).
+    // Hosts that DECLARE a documented login/logout subcommand in the catalog
+    // surface canLogin / canLogout as true. Hosts that ship only the
+    // versionProbe (no invented subcommands) stay reachability-only. The
+    // catalog is the single source of truth; this test verifies the helper
+    // mirrors the catalog rather than hard-coding a "claude is the only host
+    // with login" assumption (which was true before codex/cursor were added).
+    const HOSTS_WITH_DOCUMENTED_LOGIN = new Set(["claude_local", "codex_local", "cursor"]);
     for (const slug of mod.KNOWN_HOST_AUTH_SLUGS) {
       if (slug === "claude_local") continue;
       const caps = mod.getAgentHostCapabilities({
@@ -2081,8 +2087,13 @@ describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship
       });
       expect(caps).not.toBeNull();
       expect(caps!.canCheckStatus).toBe(true);
-      expect(caps!.canLogin).toBe(false);
-      expect(caps!.canLogout).toBe(false);
+      if (HOSTS_WITH_DOCUMENTED_LOGIN.has(slug)) {
+        expect(caps!.canLogin).toBe(true);
+        expect(caps!.canLogout).toBe(true);
+      } else {
+        expect(caps!.canLogin).toBe(false);
+        expect(caps!.canLogout).toBe(false);
+      }
       expect(caps!.installHint.length).toBeGreaterThan(0);
     }
 
@@ -3887,5 +3898,151 @@ describe("metadata-graph route — response envelope coverage", () => {
     for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
       expect(route).not.toMatch(new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\b`));
     }
+  });
+
+  it("route declares an httpEnabled selector manifest covering stale-group lookup", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    // V1: only selectStaleMetadataGroups is wired through HTTP via
+    // `?staleKind=&staleId=`. The remaining selectors stay helperOnly.
+    expect(route).toContain("httpEnabled");
+    expect(route).toContain("selectStaleMetadataGroups");
+    expect(route).toContain("staleKind");
+    expect(route).toContain("staleId");
+  });
+
+  it("route falls back to an empty store envelope when helpers throw", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    // Defensive try/catch wraps store + graph builders so the inspector and
+    // agents always receive a typed envelope, never a 500.
+    expect(route).toContain("Failed to build metadata store");
+    expect(route).toContain("Failed to build metadata graph");
+    expect(route).toContain("Failed to compute stale groups");
+    expect(route).toContain("emptyMetadataStore");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14. Metadata Graph V1 — run history + secret/redaction full-envelope checks
+// ---------------------------------------------------------------------------
+
+describe("workspace-metadata-store — sandbox run history from source-records sidecar", () => {
+  let buildWorkspaceMetadataStore: (input: unknown) => {
+    runs: Array<{ runId: string; ok: boolean; ranAt: string }>;
+    outputArtifacts: unknown[];
+    sourceRecords: Array<{ id: string; sourceKind: string }>;
+  };
+
+  beforeEach(async () => {
+    const mod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore;
+    };
+    buildWorkspaceMetadataStore = mod.buildWorkspaceMetadataStore;
+  });
+
+  it("derives multiple runs from workspaceSourceRecords[sandbox:objectId:rowSlug] history", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{
+              Name: "LeadShark Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              lastSourceId: "sandbox:sandbox-env:leadshark-tool",
+              lastResponse: JSON.stringify({ runId: "run-3", exitCode: 0, durationMs: 50, ranAt: "2026-05-21T19:30:00.000Z", output: { items: [] } }),
+            }],
+          }],
+        },
+      },
+      workspaceSourceRecords: {
+        "sandbox:sandbox-env:leadshark-tool": {
+          records: [
+            { runId: "run-1", exitCode: 0, durationMs: 100, ranAt: "2026-05-21T19:28:00.000Z", output: { items: [{ id: 1 }] } },
+            { runId: "run-2", exitCode: 1, durationMs: 80, ranAt: "2026-05-21T19:29:00.000Z", error: "boom", stdout: "fail" },
+            { runId: "run-3", exitCode: 0, durationMs: 50, ranAt: "2026-05-21T19:30:00.000Z", output: { items: [] } },
+          ],
+          fetchedAt: "2026-05-21T19:30:00.000Z",
+          recordCount: 3,
+        },
+      },
+    });
+    const runIds = store.runs.map((r) => r.runId).sort();
+    expect(runIds).toEqual(["run-1", "run-2", "run-3"]);
+    // The latest run (also in row.lastResponse) is deduplicated.
+    expect(store.runs.filter((r) => r.runId === "run-3")).toHaveLength(1);
+    // Failed runs are marked ok=false and never crash the projection.
+    expect(store.runs.find((r) => r.runId === "run-2")!.ok).toBe(false);
+    // The sandbox-run sidecar is tagged so the inspector distinguishes
+    // it from live data-source records.
+    const sidecar = store.sourceRecords.find((s) => s.id === "sandbox:sandbox-env:leadshark-tool");
+    expect(sidecar).toBeDefined();
+    expect(sidecar!.sourceKind).toBe("sandbox-run-history");
+  });
+});
+
+describe("metadata-graph projection — full-envelope secret/redaction guarantees", () => {
+  let buildWorkspaceMetadataStore: (input: unknown) => unknown;
+  let buildWorkspaceMetadataGraph: (store: unknown) => unknown;
+
+  beforeEach(async () => {
+    const storeMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as { buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore };
+    const graphMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-graph.js")}?t=${Date.now()}`) as { buildWorkspaceMetadataGraph: typeof buildWorkspaceMetadataGraph };
+    buildWorkspaceMetadataStore = storeMod.buildWorkspaceMetadataStore;
+    buildWorkspaceMetadataGraph = graphMod.buildWorkspaceMetadataGraph;
+  });
+
+  it("never echoes raw stdout / stderr / token-shaped values into the envelope JSON", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "creds",
+            columns: ["name", "apiKey", "accessToken", "refreshToken", "authHeaderValue"],
+            rows: [{
+              name: "x",
+              apiKey: "sk-ant-LEAK-1",
+              accessToken: "Bearer LEAK-2",
+              refreshToken: "refresh_LEAK_3",
+              authHeaderValue: "Authorization: Bearer LEAK-4",
+            }],
+            binding: { mode: "manual", source: "Creds" },
+          }, {
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{
+              Name: "Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              lastResponse: JSON.stringify({
+                runId: "run-1",
+                exitCode: 0,
+                durationMs: 10,
+                ranAt: "2026-05-21T19:28:00.000Z",
+                stdout: "Authorization: Bearer secret-stdout-XYZ",
+                stderr: "x-api-key=secret-stderr-XYZ",
+                output: { token: "raw-output-XYZ" },
+              }),
+            }],
+          }],
+        },
+      },
+    });
+    const graph = buildWorkspaceMetadataGraph(store);
+    const json = JSON.stringify({ store, graph });
+    // No secret values from creds row.
+    expect(json).not.toContain("sk-ant-LEAK-1");
+    expect(json).not.toContain("LEAK-2");
+    expect(json).not.toContain("LEAK_3");
+    expect(json).not.toContain("LEAK-4");
+    // No raw stdout / stderr / output from run record.
+    expect(json).not.toContain("secret-stdout-XYZ");
+    expect(json).not.toContain("secret-stderr-XYZ");
+    expect(json).not.toContain("raw-output-XYZ");
   });
 });

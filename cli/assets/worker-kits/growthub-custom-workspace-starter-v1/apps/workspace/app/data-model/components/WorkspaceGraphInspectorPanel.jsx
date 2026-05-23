@@ -4,13 +4,23 @@
  * Growthub Workspace Metadata Graph V1 — read-only inspector panel.
  *
  * Surfaces a selected metadata node's dependencies + dependents + warnings.
- * Intended entry points (incremental — start where least invasive):
  *
- *   - Widget sidecar: View dependencies
- *   - Workflow sidecar: View dependencies
- *   - Run console: View graph lineage
- *   - Data Model row sidecar: View dependents
- *   - Workspace Settings: Metadata Graph
+ * Mounting status (V1):
+ *   This component SHIPS with the worker kit but is NOT yet mounted by the
+ *   existing builder / workflow / data-model surfaces. Mounting is
+ *   intentionally deferred to a follow-up PR so the V1 scope stays focused
+ *   on the typed projection + GET route. Operators that want the inspector
+ *   now can import it directly:
+ *
+ *     import { WorkspaceGraphInspectorPanel } from "@/app/data-model/components/WorkspaceGraphInspectorPanel.jsx";
+ *
+ *   Intended future entry points:
+ *
+ *     - Widget sidecar: View dependencies
+ *     - Workflow sidecar: View dependencies
+ *     - Run console: View graph lineage
+ *     - Data Model row sidecar: View dependents
+ *     - Workspace Settings: Metadata Graph
  *
  * V1 invariants:
  *   - Read-only. No edits. No deletes.

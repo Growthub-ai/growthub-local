@@ -765,21 +765,79 @@ function deriveWorkspaceSourceRecordMetadataItems(workspaceSourceRecords) {
   for (const [key, value] of Object.entries(workspaceSourceRecords)) {
     if (!isPlainObject(value)) continue;
     const records = Array.isArray(value.records) ? value.records : [];
+    const id = safeString(key).trim();
+    // `sandbox:<objectId>:<rowSlug>` keys are sandbox-run history sidecars
+    // (already represented as workspaceRunRecord items). Tag them so the
+    // inspector can distinguish them from live data-source records — but
+    // never inline raw records into the metadata projection.
+    const isSandboxRunHistory = id.startsWith("sandbox:");
     items.push({
       kind: "workspaceSourceRecord",
-      id: safeString(key).trim(),
+      id,
       metadataId: stableId("sourceRecord", key),
       integrationId: safeString(value.integrationId).trim(),
       recordCount: Number.isFinite(value.recordCount) ? Number(value.recordCount) : records.length,
-      fetchedAt: safeString(value.fetchedAt).trim()
+      fetchedAt: safeString(value.fetchedAt).trim(),
+      sourceKind: isSandboxRunHistory ? "sandbox-run-history" : "live-source"
     });
   }
   return { items, warnings: [] };
 }
 
-function deriveWorkspaceRunRecordMetadataItems(workspaceConfig) {
+function sandboxRunSourceIdFor(objectId, rowName) {
+  const slug = safeString(rowName).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!objectId || !slug) return "";
+  return `sandbox:${objectId}:${slug}`;
+}
+
+function projectRunRecord(parsed, { objectId, rowName, fallbackAgentHost }) {
+  const runId = safeString(parsed.runId).trim() || stableId("run", objectId, rowName, safeString(parsed.ranAt));
+  const workflowMetadataId = stableId("workflow", objectId, rowName);
+  const sandboxMetadataId = stableId("sandbox", objectId, rowName);
+  const exitCode = Number.isFinite(parsed.exitCode) ? Number(parsed.exitCode) : null;
+  const ok = exitCode === 0 && !safeString(parsed.error).trim();
+  return {
+    item: {
+      kind: "workspaceRunRecord",
+      id: runId,
+      metadataId: stableId("run", runId),
+      runId,
+      workflowMetadataId,
+      sandboxMetadataId,
+      objectId,
+      rowId: rowName,
+      ranAt: safeString(parsed.ranAt).trim(),
+      durationMs: Number.isFinite(parsed.durationMs) ? Number(parsed.durationMs) : null,
+      exitCode,
+      ok,
+      adapter: safeString(parsed.adapter).trim(),
+      runtime: safeString(parsed.runtime).trim(),
+      runLocality: safeString(parsed.runLocality).trim(),
+      agentHost: safeString(parsed.agentHost || fallbackAgentHost).trim(),
+      inputFieldCount: countInputFields(parsed.input || parsed.runInputs),
+      hasOutput: Boolean(parsed.output ?? parsed.normalizedOutput),
+      hasStdout: Boolean(safeString(parsed.stdout).trim()),
+      hasStderr: Boolean(safeString(parsed.stderr).trim())
+    },
+    artifact: (parsed.output != null || parsed.normalizedOutput != null) ? {
+      kind: "workspaceOutputArtifact",
+      id: stableId("artifact", runId, "output"),
+      metadataId: stableId("artifact", runId, "output"),
+      runMetadataId: stableId("run", runId),
+      artifactKind: "normalized-output",
+      mediaType: typeof parsed.output === "string" || typeof parsed.normalizedOutput === "string"
+        ? "text/plain"
+        : "application/json",
+      promotable: ok
+    } : null
+  };
+}
+
+function deriveWorkspaceRunRecordMetadataItems(workspaceConfig, options = {}) {
   const items = [];
   const outputArtifacts = [];
+  const seenRunIds = new Set();
+  const sourceRecords = isPlainObject(options?.workspaceSourceRecords) ? options.workspaceSourceRecords : null;
   const rawObjects = Array.isArray(workspaceConfig?.dataModel?.objects)
     ? workspaceConfig.dataModel.objects
     : [];
@@ -793,50 +851,34 @@ function deriveWorkspaceRunRecordMetadataItems(workspaceConfig) {
       if (!isPlainObject(row)) continue;
       const rowName = safeString(row.Name || row.name).trim();
       if (!rowName) continue;
+      const fallbackAgentHost = safeString(row.agentHost).trim();
+      const pushProjected = (projected) => {
+        if (!projected || seenRunIds.has(projected.item.runId)) return;
+        seenRunIds.add(projected.item.runId);
+        items.push(projected.item);
+        if (projected.artifact) outputArtifacts.push(projected.artifact);
+      };
+
+      // 1) Source-record history (full lineage, up to last 50 runs persisted
+      //    by POST /api/workspace/sandbox-run into growthub.source-records.json).
+      if (sourceRecords) {
+        const sourceId = safeString(row.lastSourceId).trim() || sandboxRunSourceIdFor(objectId, rowName);
+        const sidecar = sourceId ? sourceRecords[sourceId] : null;
+        const records = Array.isArray(sidecar?.records) ? sidecar.records : [];
+        for (const rec of records) {
+          const parsed = parseLastResponse(rec);
+          if (!parsed) continue;
+          pushProjected(projectRunRecord(parsed, { objectId, rowName, fallbackAgentHost }));
+        }
+      }
+
+      // 2) row.lastResponse (always present after the most recent run, even
+      //    when source-record persistence is read-only).
       const lastResponseRaw = row.lastResponse;
       if (lastResponseRaw == null || lastResponseRaw === "") continue;
       const parsed = parseLastResponse(lastResponseRaw);
       if (!parsed) continue;
-      const runId = safeString(parsed.runId).trim() || stableId("run", objectId, rowName, safeString(parsed.ranAt));
-      const workflowMetadataId = stableId("workflow", objectId, rowName);
-      const sandboxMetadataId = stableId("sandbox", objectId, rowName);
-      const exitCode = Number.isFinite(parsed.exitCode) ? Number(parsed.exitCode) : null;
-      const ok = exitCode === 0 && !safeString(parsed.error).trim();
-      items.push({
-        kind: "workspaceRunRecord",
-        id: runId,
-        metadataId: stableId("run", runId),
-        runId,
-        workflowMetadataId,
-        sandboxMetadataId,
-        objectId,
-        rowId: rowName,
-        ranAt: safeString(parsed.ranAt).trim(),
-        durationMs: Number.isFinite(parsed.durationMs) ? Number(parsed.durationMs) : null,
-        exitCode,
-        ok,
-        adapter: safeString(parsed.adapter).trim(),
-        runtime: safeString(parsed.runtime).trim(),
-        runLocality: safeString(parsed.runLocality).trim(),
-        agentHost: safeString(parsed.agentHost || row.agentHost).trim(),
-        inputFieldCount: countInputFields(parsed.input || parsed.runInputs),
-        hasOutput: Boolean(parsed.output ?? parsed.normalizedOutput),
-        hasStdout: Boolean(safeString(parsed.stdout).trim()),
-        hasStderr: Boolean(safeString(parsed.stderr).trim())
-      });
-      if (parsed.output != null || parsed.normalizedOutput != null) {
-        outputArtifacts.push({
-          kind: "workspaceOutputArtifact",
-          id: stableId("artifact", runId, "output"),
-          metadataId: stableId("artifact", runId, "output"),
-          runMetadataId: stableId("run", runId),
-          artifactKind: "normalized-output",
-          mediaType: typeof parsed.output === "string" || typeof parsed.normalizedOutput === "string"
-            ? "text/plain"
-            : "application/json",
-          promotable: ok
-        });
-      }
+      pushProjected(projectRunRecord(parsed, { objectId, rowName, fallbackAgentHost }));
     }
   }
   return { items, outputArtifacts, warnings: [] };
@@ -1022,7 +1064,7 @@ function buildWorkspaceMetadataStore({
   const sourceRecords = deriveWorkspaceSourceRecordMetadataItems(safeSourceRecords);
   warnings.push(...sourceRecords.warnings);
 
-  const runs = deriveWorkspaceRunRecordMetadataItems(safeConfig);
+  const runs = deriveWorkspaceRunRecordMetadataItems(safeConfig, { workspaceSourceRecords: safeSourceRecords });
   warnings.push(...runs.warnings);
 
   const actions = deriveWorkspaceWorkflowActionMetadataItems(workflows.nodes);
