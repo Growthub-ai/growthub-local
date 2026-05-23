@@ -224,34 +224,30 @@ function formatRewardScore(value) {
 function SwarmSection({ swarm }) {
   if (!swarm || typeof swarm !== "object") return null;
   const tasks = Array.isArray(swarm.tasks) ? swarm.tasks : [];
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0 && !swarm.orchestrator?.plan && !swarm.synthesis?.answer) return null;
   const completed = tasks.filter((t) => t?.status === "completed").length;
   const score = swarm.reward ? formatRewardScore(swarm.reward.score) : "—";
+  const kind = swarm.reward?.kind || "structural-v1";
+  const synthesis = swarm.synthesis || null;
   return (
     <section className="dm-run-console__section">
       <h3>Swarm</h3>
-      <div className="dm-swarm-summary">
-        <p className="dm-swarm-summary__line">
-          <span><strong>{tasks.length}</strong> subagents</span>
-          <span><strong>{completed}</strong> ok</span>
-          <span><strong>{tasks.length - completed}</strong> failed</span>
-          <span>score <strong>{score}</strong></span>
-        </p>
-        <ol className="dm-swarm-tasks">
-          {tasks.map((task) => {
-            const variant = statusToVariant(task.status);
-            return (
-              <li key={task.taskId || task.nodeId}>
-                <span className="dm-run-console__tree-dot" data-variant={variant} aria-hidden="true" />
-                <span className="dm-swarm-tasks__role" title={task.role || task.nodeId}>{task.role || task.nodeId}</span>
-                <span className="dm-swarm-tasks__meta">{task.adapter || "—"}</span>
-                <span className="dm-swarm-tasks__dur">{formatRunDuration(task.durationMs)}</span>
-                {task.error ? <em className="dm-swarm-tasks__err">{task.error}</em> : null}
-              </li>
-            );
-          })}
-        </ol>
-      </div>
+      <p className="dm-swarm-summary__line">
+        <span><strong>{completed}/{tasks.length}</strong></span>
+        <span>score <strong>{score}</strong></span>
+        <span className="dm-swarm-summary__kind" title={swarm.reward?.note || ""}>{kind}</span>
+      </p>
+      {synthesis?.answer ? (
+        <details className="dm-swarm-phase" open>
+          <summary>
+            synthesizer
+            {synthesis.parsedOutcomeScore != null
+              ? ` · ${Number(synthesis.parsedOutcomeScore).toFixed(2)}`
+              : ""}
+          </summary>
+          <pre>{synthesis.answer}</pre>
+        </details>
+      ) : null}
     </section>
   );
 }

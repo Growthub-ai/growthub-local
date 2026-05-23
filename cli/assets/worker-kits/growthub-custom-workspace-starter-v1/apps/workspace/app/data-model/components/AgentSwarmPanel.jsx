@@ -68,12 +68,16 @@ function addSubagent(graph, defaults = {}) {
     subtitle: "Swarm subagent",
     config: {
       role: defaults.role || "Subagent",
+      description: defaults.description || "",
       taskPrompt: defaults.taskPrompt || "",
+      tools: Array.isArray(defaults.tools) ? defaults.tools : [],
       agentHost: defaults.agentHost || "",
       required: true,
       canReadWorkspace: true,
       canWriteDraft: false,
-      networkAccess: false
+      networkAccess: false,
+      maxTokens: 0,
+      timeoutMs: 0
     }
   };
   const nextEdges = [...edges];
@@ -119,165 +123,204 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
   }
 
   return (
-    <div className="dm-agent-swarm-panel">
-      <section className="dm-agent-swarm-panel__section">
-        <h4>Orchestrator</h4>
-        <label className="dm-orchestration-config__field">
-          <span>Orchestrator prompt</span>
-          <textarea
-            rows={3}
-            value={orchestrator?.config?.prompt || ""}
-            disabled={disabled || !orchestrator}
-            onChange={(e) => patchGraph((g) => patchOrchestrator(g, { prompt: e.target.value }))}
-          />
-        </label>
-      </section>
-
-      <section className="dm-agent-swarm-panel__section">
-        <div className="dm-agent-swarm-panel__section-head">
-          <h4>Subagents ({subagents.length})</h4>
-          <button
-            type="button"
-            className="dm-btn-outline"
-            disabled={disabled}
-            onClick={() => patchGraph((g) => addSubagent(g))}
-          >
-            <Plus size={12} aria-hidden="true" /> Add subagent
-          </button>
-        </div>
-        {subagents.length === 0 && (
-          <p className="dm-orchestration-config__hint">No subagents yet. Add at least one for the swarm to do work.</p>
-        )}
-        {subagents.map((node) => {
-          const cfg = node.config || {};
-          return (
-            <div key={node.id} className="dm-agent-swarm-panel__subagent">
-              <div className="dm-agent-swarm-panel__subagent-head">
-                <input
-                  className="dm-agent-swarm-panel__role"
-                  placeholder="Role"
-                  value={cfg.role || node.label || ""}
-                  disabled={disabled}
-                  onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { role: e.target.value }))}
-                />
-                <button
-                  type="button"
-                  className="dm-btn-ghost"
-                  disabled={disabled}
-                  onClick={() => patchGraph((g) => removeSubagent(g, node.id))}
-                  aria-label={`Remove ${cfg.role || node.id}`}
-                >
-                  <Trash2 size={12} aria-hidden="true" />
-                </button>
-              </div>
-              <label className="dm-orchestration-config__field">
-                <span>Task prompt</span>
-                <textarea
-                  rows={2}
-                  value={cfg.taskPrompt || ""}
-                  disabled={disabled}
-                  onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { taskPrompt: e.target.value }))}
-                />
-              </label>
-              <label className="dm-orchestration-config__field">
-                <span>Agent host (override)</span>
-                <select
-                  value={cfg.agentHost || ""}
-                  disabled={disabled}
-                  onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { agentHost: e.target.value }))}
-                >
-                  <option value="">Inherit row agent host</option>
-                  {hostOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-                <input
-                  type="checkbox"
-                  checked={cfg.required !== false}
-                  disabled={disabled}
-                  onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { required: e.target.checked }))}
-                />
-                <span>Required for swarm success</span>
-              </label>
-              <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-                <input
-                  type="checkbox"
-                  checked={cfg.networkAccess === true}
-                  disabled={disabled}
-                  onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { networkAccess: e.target.checked }))}
-                />
-                <span>Allow network access</span>
-              </label>
-            </div>
-          );
-        })}
-      </section>
-
-      <section className="dm-agent-swarm-panel__section">
-        <h4>Concurrency & reward</h4>
-        <label className="dm-orchestration-config__field">
-          <span>Max concurrency</span>
-          <input
-            type="number"
-            min="1"
-            value={swarmCfg.maxConcurrency ?? subagents.length}
-            disabled={disabled}
-            onChange={(e) => patchGraph((g) => patchSwarmConfig(g, { maxConcurrency: Math.max(1, Number(e.target.value) || 1) }))}
-          />
-        </label>
-        <div className="dm-agent-swarm-panel__weights">
-          {[
-            ["parallel", "Parallel"],
-            ["finish", "Finish"],
-            ["outcome", "Outcome"]
-          ].map(([key, label]) => (
-            <label key={key} className="dm-orchestration-config__field">
-              <span>{label}</span>
-              <input
-                type="number"
-                step="0.05"
-                min="0"
-                max="1"
-                value={weights[key] ?? 0}
-                disabled={disabled}
-                onChange={(e) =>
-                  patchGraph((g) =>
-                    patchSwarmConfig(g, {
-                      rewardWeights: { ...weights, [key]: Number(e.target.value) || 0 }
-                    })
-                  )
-                }
-              />
-            </label>
-          ))}
-        </div>
-        <label className="dm-orchestration-config__field">
-          <span>Outcome criteria</span>
-          <textarea
-            rows={2}
-            value={swarmCfg.outcomeCriteria || ""}
-            disabled={disabled}
-            onChange={(e) => patchGraph((g) => patchSwarmConfig(g, { outcomeCriteria: e.target.value }))}
-          />
-        </label>
-      </section>
-
-      {synthesis && (
-        <section className="dm-agent-swarm-panel__section">
-          <h4>Final synthesis</h4>
+    <div className="dm-orchestration-config dm-agent-swarm-panel">
+      <div className="dm-orchestration-config__pane">
+        <div className="dm-orchestration-config__section">
+          <span>Orchestrator</span>
           <label className="dm-orchestration-config__field">
-            <span>Synthesis prompt</span>
+            <span>Prompt</span>
             <textarea
-              rows={2}
-              value={synthesis?.config?.outcomePrompt || ""}
-              disabled={disabled}
-              onChange={(e) => patchGraph((g) => patchSynthesis(g, { outcomePrompt: e.target.value }))}
+              rows={3}
+              value={orchestrator?.config?.prompt || ""}
+              disabled={disabled || !orchestrator}
+              onChange={(e) => patchGraph((g) => patchOrchestrator(g, { prompt: e.target.value }))}
             />
           </label>
-        </section>
-      )}
+        </div>
+
+        <div className="dm-orchestration-config__section">
+          <div className="dm-agent-swarm-panel__row">
+            <span>Subagents · {subagents.length}</span>
+            <button
+              type="button"
+              className="dm-btn-outline"
+              disabled={disabled}
+              onClick={() => patchGraph((g) => addSubagent(g))}
+            >
+              <Plus size={12} aria-hidden="true" /> Add
+            </button>
+          </div>
+          {subagents.length === 0 && (
+            <p className="dm-orchestration-config__hint">Add at least one subagent.</p>
+          )}
+          {subagents.map((node) => {
+            const cfg = node.config || {};
+            return (
+              <div key={node.id} className="dm-agent-swarm-panel__subagent">
+                <div className="dm-agent-swarm-panel__row">
+                  <input
+                    className="dm-agent-swarm-panel__role"
+                    placeholder="Role"
+                    value={cfg.role || node.label || ""}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { role: e.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    className="dm-btn-ghost"
+                    disabled={disabled}
+                    onClick={() => patchGraph((g) => removeSubagent(g, node.id))}
+                    aria-label={`Remove ${cfg.role || node.id}`}
+                  >
+                    <Trash2 size={12} aria-hidden="true" />
+                  </button>
+                </div>
+                <label className="dm-orchestration-config__field">
+                  <span>Description</span>
+                  <input
+                    placeholder="One-sentence charter"
+                    value={cfg.description || ""}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { description: e.target.value }))}
+                  />
+                </label>
+                <label className="dm-orchestration-config__field">
+                  <span>Task</span>
+                  <textarea
+                    rows={2}
+                    value={cfg.taskPrompt || ""}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { taskPrompt: e.target.value }))}
+                  />
+                </label>
+                <label className="dm-orchestration-config__field">
+                  <span>Tools</span>
+                  <input
+                    placeholder="read, summarize"
+                    value={Array.isArray(cfg.tools) ? cfg.tools.join(", ") : ""}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, {
+                      tools: e.target.value.split(",").map((t) => t.trim()).filter(Boolean)
+                    }))}
+                  />
+                </label>
+                <label className="dm-orchestration-config__field">
+                  <span>Max tokens</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0 = inherit"
+                    value={cfg.maxTokens || 0}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { maxTokens: Math.max(0, Number(e.target.value) || 0) }))}
+                  />
+                </label>
+                <label className="dm-orchestration-config__field">
+                  <span>Agent host</span>
+                  <select
+                    value={cfg.agentHost || ""}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { agentHost: e.target.value }))}
+                  >
+                    <option value="">Inherit</option>
+                    {hostOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
+                  <input
+                    type="checkbox"
+                    checked={cfg.required !== false}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { required: e.target.checked }))}
+                  />
+                  <span>Required</span>
+                </label>
+                <label
+                  className="dm-orchestration-config__field dm-orchestration-config__field-inline"
+                  title="Network is granted only when both this and the row's networkAllow are on."
+                >
+                  <input
+                    type="checkbox"
+                    checked={cfg.networkAccess === true}
+                    disabled={disabled}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { networkAccess: e.target.checked }))}
+                  />
+                  <span>Network</span>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="dm-orchestration-config__section">
+          <span>Concurrency & reward</span>
+          <label className="dm-orchestration-config__field">
+            <span>Max concurrency</span>
+            <input
+              type="number"
+              min="1"
+              value={swarmCfg.maxConcurrency ?? subagents.length}
+              disabled={disabled}
+              onChange={(e) => patchGraph((g) => patchSwarmConfig(g, { maxConcurrency: Math.max(1, Number(e.target.value) || 1) }))}
+            />
+          </label>
+          <div className="dm-agent-swarm-panel__weights">
+            {[
+              ["parallel", "Parallel"],
+              ["finish", "Finish"],
+              ["outcome", "Outcome"]
+            ].map(([key, label]) => (
+              <label key={key} className="dm-orchestration-config__field">
+                <span>{label}</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={weights[key] ?? 0}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    patchGraph((g) =>
+                      patchSwarmConfig(g, {
+                        rewardWeights: { ...weights, [key]: Number(e.target.value) || 0 }
+                      })
+                    )
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <label className="dm-orchestration-config__field">
+            <span>Outcome criteria</span>
+            <textarea
+              rows={2}
+              value={swarmCfg.outcomeCriteria || ""}
+              disabled={disabled}
+              onChange={(e) => patchGraph((g) => patchSwarmConfig(g, { outcomeCriteria: e.target.value }))}
+            />
+          </label>
+          <p className="dm-orchestration-config__hint">
+            Outcome is parsed from the synthesizer's last <code>OUTCOME_SCORE: 0–1</code>; otherwise falls back to required-completion.
+          </p>
+        </div>
+
+        {synthesis && (
+          <div className="dm-orchestration-config__section">
+            <span>Synthesizer</span>
+            <label className="dm-orchestration-config__field">
+              <span>Prompt</span>
+              <textarea
+                rows={2}
+                value={synthesis?.config?.outcomePrompt || ""}
+                disabled={disabled}
+                onChange={(e) => patchGraph((g) => patchSynthesis(g, { outcomePrompt: e.target.value }))}
+              />
+            </label>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

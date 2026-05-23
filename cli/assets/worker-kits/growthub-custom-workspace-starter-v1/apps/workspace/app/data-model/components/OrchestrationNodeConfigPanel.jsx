@@ -899,7 +899,6 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "configuration" && type === "ai-agent" && (config.role || config.taskPrompt || config.required != null) && (
         <div className="dm-orchestration-config__pane">
-          <p className="dm-orchestration-config__hint">Swarm subagent. Edit role / task prompt / agent host below; the orchestrator dispatches this subtask through the sandbox adapter registry.</p>
           <label className="dm-orchestration-config__field">
             <span>Role</span>
             <input
@@ -909,7 +908,16 @@ export function OrchestrationNodeConfigPanel({
             />
           </label>
           <label className="dm-orchestration-config__field">
-            <span>Task prompt</span>
+            <span>Description</span>
+            <input
+              placeholder="One-sentence charter"
+              value={config.description || ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ description: e.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Task</span>
             <textarea
               rows={4}
               value={config.taskPrompt || ""}
@@ -918,13 +926,35 @@ export function OrchestrationNodeConfigPanel({
             />
           </label>
           <label className="dm-orchestration-config__field">
-            <span>Agent host override</span>
+            <span>Tools</span>
+            <input
+              placeholder="read, summarize"
+              value={Array.isArray(config.tools) ? config.tools.join(", ") : ""}
+              disabled={disabled}
+              onChange={(e) => patchConfig({
+                tools: e.target.value.split(",").map((t) => t.trim()).filter(Boolean)
+              })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Max tokens</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="0 = inherit"
+              value={config.maxTokens || 0}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ maxTokens: Math.max(0, Number(e.target.value) || 0) })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Agent host</span>
             <select
               value={config.agentHost || ""}
               disabled={disabled}
               onChange={(e) => patchConfig({ agentHost: e.target.value })}
             >
-              <option value="">Inherit row agent host</option>
+              <option value="">Inherit</option>
               {Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => (
                 <option key={slug} value={slug}>{host?.label || slug}</option>
               ))}
@@ -937,16 +967,19 @@ export function OrchestrationNodeConfigPanel({
               disabled={disabled}
               onChange={(e) => patchConfig({ required: e.target.checked })}
             />
-            <span>Required for swarm success</span>
+            <span>Required</span>
           </label>
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
+          <label
+            className="dm-orchestration-config__field dm-orchestration-config__field-inline"
+            title="Network is granted only when both this and the row's networkAllow are on."
+          >
             <input
               type="checkbox"
               checked={config.networkAccess === true}
               disabled={disabled}
               onChange={(e) => patchConfig({ networkAccess: e.target.checked })}
             />
-            <span>Allow network access</span>
+            <span>Network</span>
           </label>
         </div>
       )}

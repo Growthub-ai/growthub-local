@@ -151,11 +151,16 @@ function validateOrchestrationGraph(graph) {
         errors.push(`${prefix}.type "${type}" is not a known node type`);
       }
     });
-    const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
-    const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call");
-    const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
-    if (!hasThinAdapter && !hasApi) errors.push("orchestrationGraph requires an api-registry-call node");
-    if (!hasThinAdapter && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
+    if (isAgentSwarmGraph(graph)) {
+      const swarmCheck = validateAgentSwarmGraph(graph);
+      if (!swarmCheck.ok) errors.push(...swarmCheck.errors);
+    } else {
+      const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
+      const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call");
+      const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
+      if (!hasThinAdapter && !hasApi) errors.push("orchestrationGraph requires an api-registry-call node");
+      if (!hasThinAdapter && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
+    }
   }
   if (!Array.isArray(graph.edges)) {
     errors.push("orchestrationGraph.edges must be an array");
@@ -740,13 +745,17 @@ function buildDefaultAgentSwarmGraph(options = {}) {
         {
           id: "subagent-researcher",
           role: "Researcher",
+          description: "Gathers facts from the run input and the orchestrator's plan.",
           taskPrompt: "Investigate the orchestrator's plan and gather the relevant facts.",
+          tools: ["read", "summarize"],
           required: true
         },
         {
-          id: "subagent-synthesizer",
-          role: "Synthesizer",
-          taskPrompt: "Combine the researcher findings into a final answer.",
+          id: "subagent-analyst",
+          role: "Analyst",
+          description: "Stress-tests assumptions and surfaces risks.",
+          taskPrompt: "Identify risks, assumptions, and dependencies in the orchestrator's plan.",
+          tools: ["read", "critique"],
           required: true
         }
       ];
@@ -772,12 +781,21 @@ function buildDefaultAgentSwarmGraph(options = {}) {
       subtitle: "Swarm subagent",
       config: {
         role: String(agent.role || agent.id || "Subagent"),
+        description: String(agent.description || "").trim(),
         taskPrompt: String(agent.taskPrompt || "").trim(),
+        tools: Array.isArray(agent.tools) ? agent.tools.map((t) => String(t || "").trim()).filter(Boolean) : [],
         agentHost: String(agent.agentHost || agentHost || "").trim(),
+        adapter: String(agent.adapter || "").trim(),
         required: agent.required !== false,
         canReadWorkspace: true,
         canWriteDraft: false,
-        networkAccess: agent.networkAccess === true
+        networkAccess: agent.networkAccess === true,
+        maxTokens: Number.isFinite(Number(agent.maxTokens)) && Number(agent.maxTokens) > 0
+          ? Math.floor(Number(agent.maxTokens))
+          : 0,
+        timeoutMs: Number.isFinite(Number(agent.timeoutMs)) && Number(agent.timeoutMs) > 0
+          ? Math.floor(Number(agent.timeoutMs))
+          : 0
       }
     })),
     {
@@ -833,6 +851,41 @@ function buildDefaultAgentSwarmGraph(options = {}) {
   };
 }
 
+/**
+ * Schema-aware validation for agent-swarm-v1 graphs. Returns `{ ok, errors }`
+ * with concrete user-facing messages. Used both by validateOrchestrationGraph
+ * and the WorkflowSurface Test gate so the user never gets a runtime "swarm
+ * subagent has no prompt-capable adapter" error at Test time when the static
+ * config already revealed the issue.
+ */
+function validateAgentSwarmGraph(graph) {
+  const errors = [];
+  if (!graph || typeof graph !== "object") {
+    return { ok: false, errors: ["agent-swarm graph must be an object"] };
+  }
+  const extracted = extractSwarmNodes(graph);
+  if (!extracted) return { ok: false, errors: ["graph is not an agent-swarm-v1 graph"] };
+  const { orchestrator, subagents, synthesis } = extracted;
+  if (!orchestrator) errors.push("missing orchestrator (thinAdapter) node");
+  if (subagents.length === 0) errors.push("agent-swarm requires at least one ai-agent subagent");
+  subagents.forEach((node, index) => {
+    const cfg = node?.config || {};
+    const role = String(cfg.role || node?.label || "").trim();
+    if (!role) errors.push(`subagent[${index}] (${node?.id || "?"}) must declare a role`);
+    if (!String(cfg.taskPrompt || cfg.prompt || "").trim()) {
+      errors.push(`subagent "${role || node?.id}" must declare a task prompt`);
+    }
+    const adapter = String(cfg.adapter || "").trim();
+    if (adapter && !["local-agent-host", "local-intelligence"].includes(adapter)) {
+      errors.push(`subagent "${role || node?.id}" sets adapter="${adapter}" which cannot execute prompts; use local-agent-host or local-intelligence`);
+    }
+  });
+  if (!synthesis) {
+    errors.push("agent-swarm graph should include a tool-result synthesis node to evaluate outcome");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 function redactSecretsFromText(text) {
   let out = String(text || "");
   for (const pattern of [
@@ -859,6 +912,7 @@ export {
   buildCanonicalNode,
   isAgentSwarmGraph,
   extractSwarmNodes,
+  validateAgentSwarmGraph,
   isOrchestrationGraphEmpty,
   getOrchestrationGraphUiState,
   getNextCanonicalNodeId,

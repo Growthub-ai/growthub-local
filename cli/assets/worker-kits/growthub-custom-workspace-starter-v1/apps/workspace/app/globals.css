@@ -8400,25 +8400,17 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-run-setup__actions .dm-workflow-chip-btn { display: inline-flex; align-items: center; gap: 6px; }
 
 /* Agent swarm — sidecar editor (re-uses dm-orchestration-config tokens) */
-.dm-agent-swarm-panel { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; }
-.dm-agent-swarm-panel__section { display: flex; flex-direction: column; gap: 6px; }
-.dm-agent-swarm-panel__section + .dm-agent-swarm-panel__section { border-top: 1px solid #edf0f3; padding-top: 10px; }
-.dm-agent-swarm-panel__section h4 { margin: 0; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
-.dm-agent-swarm-panel__section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dm-agent-swarm-panel__section-head .dm-btn-outline { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 7px; }
+.dm-agent-swarm-panel__row { display: flex; align-items: center; gap: 6px; }
+.dm-agent-swarm-panel__row > span:first-child { flex: 1; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+.dm-agent-swarm-panel__row .dm-btn-outline { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 7px; }
 .dm-agent-swarm-panel__subagent { border: 1px solid #edf0f3; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-.dm-agent-swarm-panel__subagent-head { display: flex; align-items: center; gap: 6px; }
 .dm-agent-swarm-panel__role { flex: 1; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 6px; font-size: 12px; color: #111827; background: #fff; }
 .dm-agent-swarm-panel__weights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 
-/* Agent swarm — condensed run trace summary (inherits dm-run-console variants) */
-.dm-swarm-summary { display: flex; flex-direction: column; gap: 6px; }
-.dm-swarm-summary__line { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11px; color: #6b7280; }
+/* Agent swarm — condensed run trace summary */
+.dm-swarm-summary__line { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11px; color: #6b7280; align-items: center; margin: 0 0 6px; }
 .dm-swarm-summary__line strong { color: #111827; font-weight: 600; }
-.dm-swarm-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.dm-swarm-tasks li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; font-size: 11px; padding: 4px 6px; border-radius: 4px; }
-.dm-swarm-tasks li:hover { background: #f8fafc; }
-.dm-swarm-tasks__role { color: #111827; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-swarm-tasks__meta { color: #9ca3af; font-size: 10px; }
-.dm-swarm-tasks__dur { color: #6b7280; font-variant-numeric: tabular-nums; font-size: 10px; }
-.dm-swarm-tasks__err { grid-column: 2 / -1; color: #6b7280; font-style: italic; font-size: 10px; }
+.dm-swarm-summary__kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; border: 1px solid #e5e7eb; border-radius: 999px; padding: 1px 6px; }
+.dm-swarm-phase { border: 1px solid #edf0f3; border-radius: 4px; padding: 6px 8px; font-size: 11px; }
+.dm-swarm-phase summary { cursor: pointer; color: #6b7280; font-weight: 500; }
+.dm-swarm-phase pre { margin: 6px 0 0; font-size: 11px; white-space: pre-wrap; color: #111827; max-height: 240px; overflow: auto; }
