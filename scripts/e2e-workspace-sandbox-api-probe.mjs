@@ -194,6 +194,34 @@ async function main() {
   baseCfg.dataModel = { objects: [sandboxObject([emptyRow()])] };
   fs.writeFileSync(cfgPath, `${JSON.stringify(baseCfg, null, 2)}\n`, "utf8");
 
+  // Drop a deterministic prompt-capable adapter stub into the drop-zone so the
+  // swarm path has a real registered adapter to dispatch through (no real CLI
+  // binary required). Registers under "local-agent-host" id to satisfy the
+  // PROMPT_CAPABLE_ADAPTERS gate while replacing the spawn-based default.
+  const probeStubPath = path.join(tmp, "lib/adapters/sandboxes/adapters/probe-swarm-stub.js");
+  fs.writeFileSync(probeStubPath, `import { registerSandboxAdapter } from "../sandbox-adapter-registry.js";
+registerSandboxAdapter({
+  id: "local-agent-host",
+  label: "probe stub (prompt-capable)",
+  description: "E2E probe stub — replaces the spawn-based default during automated runs.",
+  locality: "local",
+  supportedRuntimes: ["node", "bash", "python"],
+  supportedHosts: ["claude_local"],
+  hostCatalog: { claude_local: { label: "Claude Code (stub)", binary: "claude" } },
+  run: async (request) => {
+    const phase = request?.env?.GROWTHUB_SWARM_PHASE || "subagent";
+    const role = request?.env?.GROWTHUB_SWARM_SUBAGENT_ROLE || "subagent";
+    if (phase === "orchestrator") {
+      return { ok: true, exitCode: 0, durationMs: 1, stdout: "PLAN: probe plan.", stderr: "", adapterMeta: { stub: true } };
+    }
+    if (phase === "synthesis") {
+      return { ok: true, exitCode: 0, durationMs: 1, stdout: "Aggregated answer.\\nOUTCOME_SCORE: 0.91", stderr: "", adapterMeta: { stub: true } };
+    }
+    return { ok: true, exitCode: 0, durationMs: 1, stdout: \`[\${role}] done\`, stderr: "", adapterMeta: { stub: true } };
+  }
+});
+`, "utf8");
+
   process.stdout.write("[e2e] npm install (workspace app)…\n");
   const ni = spawnSync("npm", ["install", "--no-fund", "--no-audit"], {
     cwd: tmp,
@@ -423,9 +451,10 @@ async function main() {
               }),
               emptyRow({
                 Name: "swarm-probe-row",
-                adapter: "local-process",
-                runtime: "bash",
-                command: "echo swarm-ok",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runtime: "node",
+                command: "",
                 instructions: "Swarm orchestrator instructions.",
                 orchestrationGraph: JSON.stringify(swarmGraph),
               }),
@@ -453,13 +482,82 @@ async function main() {
     assert(Array.isArray(swarmPayload.tasks) && swarmPayload.tasks.length === 2, `expected 2 swarm tasks, got ${swarmPayload?.tasks?.length}`);
     assert(swarmPayload.reward && typeof swarmPayload.reward === "object", "swarm.reward must be present");
     assert(Number.isFinite(Number(swarmPayload.reward.score)), "swarm.reward.score must be a number");
+    assert(
+      swarmPayload.reward.kind === "evaluated-v1",
+      `expected reward.kind=evaluated-v1 from synthesizer OUTCOME_SCORE, got ${swarmPayload.reward.kind}`,
+    );
+    assert(
+      swarmPayload.orchestrator?.status === "completed",
+      `expected orchestrator phase completed, got ${swarmPayload.orchestrator?.status}`,
+    );
+    assert(
+      swarmPayload.synthesis?.parsedOutcomeScore != null,
+      "synthesis must include parsed OUTCOME_SCORE",
+    );
+    assert(
+      swarmPayload.tasks.every((t) => t.adapter === "local-agent-host"),
+      `every task must dispatch through local-agent-host, got ${swarmPayload.tasks.map((t) => t.adapter).join(",")}`,
+    );
+    assert(
+      Array.isArray(swarmRunJson.response.logTree) && swarmRunJson.response.logTree[0]?.id === "swarm-root",
+      "swarm response must carry the logTree rooted at swarm-root",
+    );
+
+    // Negative-path: ai-agent cannot fall back to local-process
+    const swarmCodeExecGate = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [
+            sandboxObject([
+              emptyRow({
+                Name: "api-probe-row",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runtime: "node",
+              }),
+              emptyRow({
+                Name: "swarm-probe-row",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runtime: "node",
+                orchestrationGraph: JSON.stringify(swarmGraph),
+              }),
+              emptyRow({
+                Name: "swarm-gate-row",
+                adapter: "local-process",
+                runtime: "bash",
+                orchestrationGraph: JSON.stringify(swarmGraph),
+              }),
+            ]),
+          ],
+        },
+      }),
+    });
+    assert(swarmCodeExecGate.status === 200, "PATCH swarm-gate-row should validate");
+    const swarmGateRun = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-gate-row" }),
+    });
+    const swarmGateJson = await swarmGateRun.json();
+    assert(
+      swarmGateJson.adapter === "orchestration-agent-swarm",
+      `expected orchestration-agent-swarm adapter even on gate-fail, got ${swarmGateJson.adapter}`,
+    );
+    assert(swarmGateJson.ok === false, "swarm on local-process row must fail at adapter-gate");
+    assert(
+      swarmGateJson.response?.adapterMeta?.phaseFailed === "orchestrator",
+      `gate-fail must short-circuit at orchestrator phase, got ${swarmGateJson.response?.adapterMeta?.phaseFailed}`,
+    );
 
     const swarmHistory = await fetch(`${base}/api/workspace/sandbox-run?objectId=sandboxes-e2e&name=swarm-probe-row`);
     const swarmHistoryJson = await swarmHistory.json();
     assert(swarmHistoryJson.ok && Array.isArray(swarmHistoryJson.records), "swarm history must be present");
     assert(swarmHistoryJson.records.length >= 1, "swarm history must have at least one record");
 
-    process.stdout.write(`[e2e] swarm probe: ${swarmPayload.tasks.length} tasks, reward score ${swarmPayload.reward.score}\n`);
+    process.stdout.write(`[e2e] swarm probe: ${swarmPayload.tasks.length} tasks, reward ${swarmPayload.reward.kind} score ${swarmPayload.reward.score}\n`);
 
     process.stdout.write("[e2e] all API probes completed successfully.\n");
   } finally {
