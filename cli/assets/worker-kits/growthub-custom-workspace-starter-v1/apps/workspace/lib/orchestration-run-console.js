@@ -224,6 +224,29 @@ function normalizeRunConsoleRecord(record) {
   const safeInput = rawInput ? redactRunInputsEnvelope(rawInput) : null;
   const inputSummary = safeInput ? summarizeRunInputs(safeInput) : null;
   const exports = buildExportsForRecord(record, stdoutText, stderrText, outputText);
+  // Workspace Metadata Graph V1 — safe lineage projection. Names only,
+  // no secrets. Lets the Live Runs Console UI render "this run came from
+  // sandbox X / workflow Y / adapter Z / agent host A" without re-deriving
+  // the relationships from raw fields.
+  const lineage = {
+    runId: safeString(record.runId).trim(),
+    objectId: safeString(record.objectId).trim(),
+    sandboxName: safeString(record.name || record.sandboxName).trim(),
+    workflowRowId: safeString(record.name || record.sandboxName).trim(),
+    workflowMetadataId: safeString(record.objectId).trim() && safeString(record.name || record.sandboxName).trim()
+      ? `workflow:${safeString(record.objectId).trim()}:${safeString(record.name || record.sandboxName).trim()}`
+      : "",
+    sandboxMetadataId: safeString(record.objectId).trim() && safeString(record.name || record.sandboxName).trim()
+      ? `sandbox:${safeString(record.objectId).trim()}:${safeString(record.name || record.sandboxName).trim()}`
+      : "",
+    adapter: safeString(record.adapter).trim(),
+    agentHost: safeString(record.agentHost).trim(),
+    runtime: safeString(record.runtime).trim(),
+    runLocality: safeString(record.runLocality).trim(),
+    inputFieldCount: inputSummary ? inputSummary.fieldCount : 0,
+    inputSource: inputSummary ? inputSummary.source : "",
+    hasOutput: Boolean(outputText)
+  };
 
   return {
     runId: safeString(record.runId).trim(),
@@ -275,6 +298,7 @@ function normalizeRunConsoleRecord(record) {
       adapterMeta,
       templateTrace
     },
+    lineage,
     logTree: buildRunLogTree(record)
   };
 }

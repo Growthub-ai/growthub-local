@@ -81,10 +81,23 @@ import { governedWorkspaceIntegrationCatalog } from "@/lib/domain/integrations";
 import { OBJECT_TYPE_PRESETS, listWorkspaceDataModelTables } from "@/lib/workspace-data-model";
 import {
   computeChartProjectionDebug,
-  computeChartValuesFromRows
+  computeChartValuesFromRows,
+  deriveWidgetDependencyContract
 } from "@/lib/workspace-chart-values";
+import { selectObjectFilterableFields, selectObjectSortableFields } from "@/lib/workspace-metadata-selectors";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
+
+// Workspace Metadata Graph V1 — typed dependency contracts.
+// Used by sidecar dependency summaries; the existing chart hydration path
+// continues to compute values via `computeChartValuesFromRows`. These
+// selectors only describe the widget's typed contract — they never mutate
+// config or trigger network calls.
+const WORKSPACE_METADATA_SELECTORS = Object.freeze({
+  deriveWidgetDependencyContract,
+  selectObjectFilterableFields,
+  selectObjectSortableFields
+});
 
 const DEFAULT_CHART_TYPE = "bar-vertical";
 const DEFAULT_FILTER_OP = "and";

@@ -46,7 +46,17 @@ import { OrchestrationGraphEmptyCanvas } from "../data-model/components/Orchestr
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
-import { discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
+import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
+import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
+
+// Workspace Metadata Graph V1 — read-only dependency metadata for workflow
+// sidecars. The runtime path (sandbox-run, publish, draft/live) is
+// unchanged; this only exposes typed dependency descriptors so the sidecar
+// can render "this node requires N inputs from M source nodes".
+const WORKFLOW_METADATA_SELECTORS = Object.freeze({
+  describeRunInputMetadataItems,
+  selectWorkflowNodeInputSchema
+});
 
 function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph);
