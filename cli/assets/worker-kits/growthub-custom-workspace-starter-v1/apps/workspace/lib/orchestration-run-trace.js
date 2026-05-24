@@ -60,7 +60,9 @@ function parseSandboxRunTrace(lastResponse) {
     envRefsMissing: Array.isArray(parsed.envRefsMissing) ? parsed.envRefsMissing : [],
     input: safeInput,
     inputSummary: safeInput ? summarizeRunInputs(safeInput) : null,
-    exports: parsed.exports && typeof parsed.exports === "object" ? parsed.exports : null
+    exports: parsed.exports && typeof parsed.exports === "object" ? parsed.exports : null,
+    swarm: parsed.swarm && typeof parsed.swarm === "object" ? parsed.swarm : null,
+    logTree: Array.isArray(parsed.logTree) ? parsed.logTree : null
   };
 }
 

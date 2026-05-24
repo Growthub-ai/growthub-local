@@ -5,6 +5,7 @@ import { useState } from "react";
 export function OrchestrationGraphEmptyCanvas({
   onStartFromRegistry,
   onStartBlank,
+  onStartAgentSwarm,
   onPasteGraph,
   disabled
 }) {
@@ -23,6 +24,11 @@ export function OrchestrationGraphEmptyCanvas({
           <button type="button" className="dm-btn-outline" disabled={disabled} onClick={onStartBlank}>
             Start blank
           </button>
+          {onStartAgentSwarm && (
+            <button type="button" className="dm-btn-outline" disabled={disabled} onClick={onStartAgentSwarm}>
+              Add Agent Swarm
+            </button>
+          )}
         </div>
         <details
           className="dm-orchestration-canvas__paste"
