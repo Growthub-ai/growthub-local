@@ -31,9 +31,11 @@ import { findSandboxRowByWorkflowRef } from "@/lib/nav-workflows";
 import {
   addCanonicalNodeToGraph,
   buildBlankOrchestrationGraphShell,
+  buildDefaultAgentSwarmGraph,
   buildDefaultOrchestrationGraphFromRegistry,
   getNextCanonicalNodeId,
   getOrchestrationGraphUiState,
+  isAgentSwarmGraph,
   parseOrchestrationGraph,
   redactSecretsFromText,
   serializeOrchestrationGraph,
@@ -45,8 +47,19 @@ import { OrchestrationGraphCanvas } from "../data-model/components/Orchestration
 import { OrchestrationGraphEmptyCanvas } from "../data-model/components/OrchestrationGraphEmptyCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
+import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
-import { discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
+import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
+import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
+
+// Workspace Metadata Graph V1 — read-only dependency metadata for workflow
+// sidecars. The runtime path (sandbox-run, publish, draft/live) is
+// unchanged; this only exposes typed dependency descriptors so the sidecar
+// can render "this node requires N inputs from M source nodes".
+const WORKFLOW_METADATA_SELECTORS = Object.freeze({
+  describeRunInputMetadataItems,
+  selectWorkflowNodeInputSchema
+});
 
 function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph);
@@ -382,9 +395,10 @@ export default function WorkflowSurface() {
   const graphUiState = getOrchestrationGraphUiState(orchestrationGraph);
   const graphUnset = graphUiState === "unset";
   const graphBlankShell = graphUiState === "blank-shell";
+  const swarmMode = useMemo(() => isAgentSwarmGraph(orchestrationGraph), [orchestrationGraph]);
   const nextNodeId = useMemo(
-    () => (orchestrationGraph ? getNextCanonicalNodeId(orchestrationGraph) : "input"),
-    [orchestrationGraph]
+    () => (orchestrationGraph && !swarmMode ? getNextCanonicalNodeId(orchestrationGraph) : null),
+    [orchestrationGraph, swarmMode]
   );
 
   const selectedNode = useMemo(() => {
@@ -649,6 +663,16 @@ export default function WorkflowSurface() {
     setDirty(true);
   }
 
+  function startAgentSwarm() {
+    const graph = buildDefaultAgentSwarmGraph({
+      agentHost: String(sandboxRow?.agentHost || "").trim()
+    });
+    setOrchestrationGraph(graph);
+    setSelectedNodeId("orchestrator");
+    setConfigTab("swarm");
+    setDirty(true);
+  }
+
   function applyPastedGraph(text) {
     const parsed = parseOrchestrationGraph(text);
     if (parsed) {
@@ -871,6 +895,7 @@ export default function WorkflowSurface() {
                     disabled={false}
                     onStartFromRegistry={registryRow ? startFromRegistry : undefined}
                     onStartBlank={startBlank}
+                    onStartAgentSwarm={startAgentSwarm}
                     onPasteGraph={applyPastedGraph}
                   />
                 ) : graphBlankShell ? (
@@ -932,7 +957,27 @@ export default function WorkflowSurface() {
                   />
                 </div>
               )}
-              {graphUiState === "populated" && !runSetupOpen && !addTarget && selectedNode && (
+              {graphUiState === "populated" && !runSetupOpen && !addTarget && selectedNode && swarmMode && selectedNode?.type === "thinAdapter" && (
+                <div className="dm-orchestration-sidecar__config-col">
+                  <div className="dm-workflow-panel-head">
+                    <button type="button" className="dm-workflow-icon-btn" onClick={() => setSelectedNodeId("")} aria-label="Close side panel">
+                      <X size={14} />
+                    </button>
+                    <span>Agent swarm</span>
+                    <em>agent-swarm-v1</em>
+                  </div>
+                  <AgentSwarmPanel
+                    graph={orchestrationGraph}
+                    disabled={false}
+                    onGraphChange={(updater) => {
+                      setOrchestrationGraph((g) => (typeof updater === "function" ? updater(g) : updater));
+                      setDirty(true);
+                    }}
+                  />
+                  {graphError && <p className="dm-orchestration-config__error">{graphError}</p>}
+                </div>
+              )}
+              {graphUiState === "populated" && !runSetupOpen && !addTarget && selectedNode && !(swarmMode && selectedNode?.type === "thinAdapter") && (
                 <div className="dm-orchestration-sidecar__config-col">
                   <div className="dm-workflow-panel-head">
                     <button type="button" className="dm-workflow-icon-btn" onClick={() => setSelectedNodeId("")} aria-label="Close side panel">

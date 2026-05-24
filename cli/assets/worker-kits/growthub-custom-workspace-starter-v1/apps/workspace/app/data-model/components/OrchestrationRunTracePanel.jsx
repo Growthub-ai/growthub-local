@@ -215,6 +215,43 @@ async function copyToClipboard(text) {
   }
 }
 
+function formatRewardScore(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(2);
+}
+
+function SwarmSection({ swarm }) {
+  if (!swarm || typeof swarm !== "object") return null;
+  const tasks = Array.isArray(swarm.tasks) ? swarm.tasks : [];
+  if (tasks.length === 0 && !swarm.orchestrator?.plan && !swarm.synthesis?.answer) return null;
+  const completed = tasks.filter((t) => t?.status === "completed").length;
+  const score = swarm.reward ? formatRewardScore(swarm.reward.score) : "—";
+  const kind = swarm.reward?.kind || "structural-v1";
+  const synthesis = swarm.synthesis || null;
+  return (
+    <section className="dm-run-console__section">
+      <h3>Swarm</h3>
+      <p className="dm-swarm-summary__line">
+        <span><strong>{completed}/{tasks.length}</strong></span>
+        <span>score <strong>{score}</strong></span>
+        <span className="dm-swarm-summary__kind" title={swarm.reward?.note || ""}>{kind}</span>
+      </p>
+      {synthesis?.answer ? (
+        <details className="dm-swarm-phase" open>
+          <summary>
+            synthesizer
+            {synthesis.parsedOutcomeScore != null
+              ? ` · ${Number(synthesis.parsedOutcomeScore).toFixed(2)}`
+              : ""}
+          </summary>
+          <pre>{synthesis.answer}</pre>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 function InputsSection({ payload }) {
   const runInputs = payload?.runInputs;
   const summary = payload?.inputSummary;
@@ -477,6 +514,9 @@ export function OrchestrationRunTracePanel({
   const payload = activeConsoleRecord?.payload || {};
   const output = activeConsoleRecord?.output || {};
   const context = activeConsoleRecord?.context || {};
+  const swarmPayload = activeConsoleRecord?.swarm
+    || (activeRawRecord && activeRawRecord.swarm)
+    || null;
 
   return (
     <section className="dm-run-console" aria-label="Live runs console">
@@ -710,6 +750,7 @@ export function OrchestrationRunTracePanel({
                 <CodeBlock label="Command" body={payload.command} />
                 <CodeBlock label="Instructions" body={payload.instructions} />
               </section>
+              <SwarmSection swarm={swarmPayload} />
               <InputsSection payload={payload} />
             </div>
           )}

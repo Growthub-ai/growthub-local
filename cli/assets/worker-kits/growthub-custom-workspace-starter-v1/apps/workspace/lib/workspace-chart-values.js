@@ -529,6 +529,58 @@ function deriveChartHydrationState({
   return "computed";
 }
 
+/**
+ * Workspace Metadata Graph V1 — typed widget dependency contract.
+ *
+ * Returns the same dependency shape Twenty-style sidecars consume: required
+ * axis fields, filter fields, sort fields, aggregation fields, output shape,
+ * and per-widget warnings. The metadata store calls a richer derivation that
+ * carries the bound object id; this helper accepts a single widget config
+ * and returns the dependency contract without needing the full store.
+ *
+ * Pure. No fetch. No mutation. Never throws on partial widget shapes.
+ */
+function deriveWidgetDependencyContract(widget) {
+  const config = isPlainObject(widget?.config) ? widget.config : {};
+  const binding = isPlainObject(config.binding) ? config.binding : null;
+  const xAxis = isPlainObject(config.xAxis) ? config.xAxis : null;
+  const yAxis = isPlainObject(config.yAxis) ? config.yAxis : null;
+  const filter = isPlainObject(config.filter) ? config.filter : null;
+  const xField = typeof xAxis?.field === "string" ? xAxis.field.trim() : "";
+  const yField = typeof yAxis?.field === "string" ? yAxis.field.trim() : "";
+  const groupField = typeof yAxis?.groupBy === "string" ? yAxis.groupBy.trim() : "";
+  const operation = typeof yAxis?.operation === "string"
+    ? yAxis.operation.trim()
+    : (typeof yAxis?.aggregation === "string" ? yAxis.aggregation.trim() : "sum");
+  const clauses = Array.isArray(filter?.clauses) ? filter.clauses : [];
+  const filterFields = [];
+  for (const clause of clauses) {
+    if (!isPlainObject(clause)) continue;
+    const field = typeof clause.fieldId === "string" ? clause.fieldId.trim() : "";
+    if (field && !filterFields.includes(field)) filterFields.push(field);
+  }
+  const sortFields = xField ? [xField] : [];
+  const aggregationFields = yField ? [yField] : [];
+  const required = Array.from(new Set([xField, yField, groupField].filter(Boolean)));
+  const widgetKind = typeof widget?.kind === "string" ? widget.kind.trim() : "chart";
+  const warnings = [];
+  if (widgetKind === "chart" && required.length === 0 && operation !== "count" && operation !== "countAll") {
+    warnings.push("Chart widget is missing both X and Y axis fields.");
+  }
+  return {
+    objectId: typeof binding?.objectId === "string" ? binding.objectId.trim() : "",
+    sourceType: typeof binding?.sourceType === "string" ? binding.sourceType.trim() : "",
+    sourceAuthority: "workspace-config",
+    required,
+    filter: filterFields,
+    sort: sortFields,
+    aggregation: aggregationFields,
+    operation: operation || "sum",
+    outputShape: widgetKind === "chart" ? "number[]" : "row[]",
+    warnings
+  };
+}
+
 export {
   KNOWN_AGGREGATIONS,
   applyFilter,
@@ -538,5 +590,6 @@ export {
   computeChartProjectionDebug,
   computeChartValuesFromRows,
   deriveChartHydrationState,
+  deriveWidgetDependencyContract,
   groupRows
 };
