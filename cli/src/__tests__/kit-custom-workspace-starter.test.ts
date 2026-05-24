@@ -1896,6 +1896,7 @@ describe("workspace route + schema — chart value hydration governance", () => 
         },
       })
     ).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2070,7 +2071,13 @@ describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship
     expect(claude!.canCheckStatus).toBe(true);
     expect(claude!.hasAuthStatusProbe).toBe(true);
 
-    // Every other host: reachability probe only (no invented subcommands).
+    // Hosts that DECLARE a documented login/logout subcommand in the catalog
+    // surface canLogin / canLogout as true. Hosts that ship only the
+    // versionProbe (no invented subcommands) stay reachability-only. The
+    // catalog is the single source of truth; this test verifies the helper
+    // mirrors the catalog rather than hard-coding a "claude is the only host
+    // with login" assumption (which was true before codex/cursor were added).
+    const HOSTS_WITH_DOCUMENTED_LOGIN = new Set(["claude_local", "codex_local", "cursor"]);
     for (const slug of mod.KNOWN_HOST_AUTH_SLUGS) {
       if (slug === "claude_local") continue;
       const caps = mod.getAgentHostCapabilities({
@@ -2080,8 +2087,13 @@ describe("growthub-custom-workspace-starter-v1 — sandbox-agent-auth files ship
       });
       expect(caps).not.toBeNull();
       expect(caps!.canCheckStatus).toBe(true);
-      expect(caps!.canLogin).toBe(false);
-      expect(caps!.canLogout).toBe(false);
+      if (HOSTS_WITH_DOCUMENTED_LOGIN.has(slug)) {
+        expect(caps!.canLogin).toBe(true);
+        expect(caps!.canLogout).toBe(true);
+      } else {
+        expect(caps!.canLogin).toBe(false);
+        expect(caps!.canLogout).toBe(false);
+      }
       expect(caps!.installHint.length).toBeGreaterThan(0);
     }
 
@@ -2619,5 +2631,1418 @@ describe("orchestration-run-inputs — manual input contract", () => {
       expect(source).not.toMatch(/localStorage\.setItem\([^)]*(token|secret|api_key|apiKey|password)/i);
       expect(source).not.toMatch(/sessionStorage\.setItem\([^)]*(token|secret|api_key|apiKey|password)/i);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. Workspace Metadata Graph V1 — typed projection, graph builder, route
+//
+// The metadata graph is a derived read model over the governed workspace
+// artifact. Tests here cover:
+//   - file presence + frozen asset paths
+//   - metadata store derivation (objects, fields, widgets, workflows, runs)
+//   - graph node/edge construction + dependency traversal
+//   - GET-only route surface, no secret persistence
+// ---------------------------------------------------------------------------
+
+describe("workspace-metadata-graph-v1 — file presence", () => {
+  it("lib/workspace-metadata-store.js ships", () => {
+    expect(appExists("lib/workspace-metadata-store.js")).toBe(true);
+  });
+
+  it("lib/workspace-metadata-graph.js ships", () => {
+    expect(appExists("lib/workspace-metadata-graph.js")).toBe(true);
+  });
+
+  it("lib/workspace-metadata-selectors.js ships", () => {
+    expect(appExists("lib/workspace-metadata-selectors.js")).toBe(true);
+  });
+
+  it("app/api/workspace/metadata-graph/route.js ships and is GET-only", () => {
+    expect(appExists("app/api/workspace/metadata-graph/route.js")).toBe(true);
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    expect(route).toMatch(/export\s*\{[^}]*GET[^}]*\}/);
+    expect(route).not.toMatch(/export\s+(?:async\s+)?function\s+(?:POST|PATCH|PUT|DELETE)\b/);
+    expect(route).not.toMatch(/export\s*\{[^}]*\b(?:POST|PATCH|PUT|DELETE)\b[^}]*\}/);
+  });
+
+  it("WorkspaceGraphInspectorPanel.jsx ships", () => {
+    expect(appExists("app/data-model/components/WorkspaceGraphInspectorPanel.jsx")).toBe(true);
+    const panel = appText("app/data-model/components/WorkspaceGraphInspectorPanel.jsx");
+    expect(panel).toContain("WorkspaceGraphInspectorPanel");
+    expect(panel).toContain("/api/workspace/metadata-graph");
+    expect(panel).toContain("findDependents");
+    expect(panel).toContain("findDependencies");
+  });
+});
+
+describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+  const required = [
+    "apps/workspace/lib/workspace-metadata-store.js",
+    "apps/workspace/lib/workspace-metadata-graph.js",
+    "apps/workspace/lib/workspace-metadata-selectors.js",
+    "apps/workspace/app/api/workspace/metadata-graph/route.js",
+    "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",
+  ];
+  for (const p of required) {
+    it(`kit.json frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+});
+
+describe("workspace-metadata-store — derivation", () => {
+  type MetadataStore = {
+    kind: string;
+    version: number;
+    objects: Array<{ id: string; metadataId: string; isLiveBacked: boolean; objectType: string; columns: string[] }>;
+    fields: Array<{ id: string; objectId: string; type: string; isNumeric: boolean; isSecret: boolean; isWritable: boolean; isFilterable: boolean; isSortable: boolean }>;
+    widgets: Array<{ id: string; objectId: string; requiredFields: string[]; filterFields: string[]; sortFields: string[]; operation: string; isLiveBacked: boolean; warnings: string[] }>;
+    dashboards: Array<{ id: string; widgetIds: string[]; widgetCount: number }>;
+    workflows: Array<{ id: string; objectId: string; rowId: string; nodeCount: number; requiresInput: boolean }>;
+    workflowNodes: Array<{ id: string; workflowMetadataId: string; nodeType: string }>;
+    runInputs: Array<{ id: string; isSecret: boolean; required: boolean }>;
+    sandboxes: Array<{ id: string; adapter: string; agentHost: string; runLocality: string }>;
+    agentHosts: Array<{ id: string; adapters: string[]; sandboxMetadataIds: string[] }>;
+    integrations: Array<{ id: string }>;
+    integrationEntities: Array<{ id: string; integrationId: string }>;
+    sourceRecords: Array<{ id: string; recordCount: number }>;
+    runs: Array<{ runId: string; ok: boolean; exitCode: number | null; inputFieldCount: number }>;
+    outputArtifacts: Array<{ runMetadataId: string; promotable: boolean }>;
+    warnings: string[];
+  };
+
+  let buildWorkspaceMetadataStore: (input: unknown) => MetadataStore;
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/workspace-metadata-store.js");
+    const mod = await import(`file://${modPath}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore;
+    };
+    buildWorkspaceMetadataStore = mod.buildWorkspaceMetadataStore;
+  });
+
+  it("returns a typed envelope with the V1 kind and version", () => {
+    const store = buildWorkspaceMetadataStore({});
+    expect(store.kind).toBe("growthub-workspace-metadata-store-v1");
+    expect(store.version).toBe(1);
+    expect(Array.isArray(store.objects)).toBe(true);
+    expect(Array.isArray(store.fields)).toBe(true);
+    expect(Array.isArray(store.widgets)).toBe(true);
+    expect(Array.isArray(store.warnings)).toBe(true);
+  });
+
+  it("derives object + field metadata with stable metadataIds and inferred types", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "opps",
+            label: "Opportunities",
+            objectType: "custom",
+            columns: ["name", "arr", "closeDate"],
+            rows: [
+              { name: "Acme", arr: 100, closeDate: "2026-05-01" },
+              { name: "Beta", arr: 250, closeDate: "2026-05-15" },
+            ],
+            binding: { mode: "manual", source: "Opportunities" },
+          }],
+        },
+      },
+    });
+    expect(store.objects).toHaveLength(1);
+    expect(store.objects[0]).toMatchObject({ id: "opps", isLiveBacked: false, objectType: "custom" });
+    expect(store.objects[0].metadataId).toContain("object:opps");
+    const types = Object.fromEntries(store.fields.filter((f) => f.objectId === "opps").map((f) => [f.id, f.type]));
+    expect(types.arr).toBe("number");
+    expect(types.closeDate).toBe("date");
+    expect(types.name).toBe("text");
+    const arrField = store.fields.find((f) => f.objectId === "opps" && f.id === "arr")!;
+    expect(arrField.isNumeric).toBe(true);
+    expect(arrField.isWritable).toBe(true);
+    expect(arrField.isSecret).toBe(false);
+  });
+
+  it("flags secret-shaped fields as isSecret + non-writable", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "creds",
+            label: "Creds",
+            columns: ["name", "apiKey", "accessToken"],
+            rows: [{ name: "x", apiKey: "secret-1", accessToken: "secret-2" }],
+            binding: { mode: "manual", source: "Creds" },
+          }],
+        },
+      },
+    });
+    const apiKey = store.fields.find((f) => f.id === "apiKey");
+    const accessToken = store.fields.find((f) => f.id === "accessToken");
+    expect(apiKey!.isSecret).toBe(true);
+    expect(apiKey!.isFilterable).toBe(false);
+    expect(apiKey!.isSortable).toBe(false);
+    expect(apiKey!.isWritable).toBe(false);
+    expect(accessToken!.isSecret).toBe(true);
+    // Metadata graph must NEVER carry the raw secret value anywhere.
+    expect(JSON.stringify(store)).not.toContain("secret-1");
+    expect(JSON.stringify(store)).not.toContain("secret-2");
+  });
+
+  it("derives widget dependency contract (required/filter/sort/aggregation fields)", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "pipeline",
+            label: "Pipeline",
+            columns: ["stage", "arr"],
+            rows: [{ stage: "lead", arr: 100 }, { stage: "won", arr: 200 }],
+            binding: { mode: "manual", source: "Pipeline" },
+          }],
+        },
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [{
+            id: "wc",
+            kind: "chart",
+            title: "Pipeline ARR",
+            position: { x: 0, y: 0, w: 6, h: 5 },
+            config: {
+              values: [100, 200],
+              xAxis: { field: "stage", sort: "asc" },
+              yAxis: { field: "arr", aggregation: "sum" },
+              filter: { op: "and", clauses: [{ fieldId: "stage", operator: "eq", value: "won" }] },
+              binding: { sourceType: "workspace-data-model", objectId: "pipeline", mode: "manual", source: "Pipeline" },
+            },
+          }],
+        },
+      },
+    });
+    expect(store.widgets).toHaveLength(1);
+    const widget = store.widgets[0];
+    expect(widget.objectId).toBe("pipeline");
+    expect(widget.requiredFields).toEqual(expect.arrayContaining(["stage", "arr"]));
+    expect(widget.filterFields).toEqual(["stage"]);
+    expect(widget.sortFields).toEqual(["stage"]);
+    expect(widget.operation).toBe("sum");
+    expect(widget.warnings).toEqual([]);
+  });
+
+  it("derives workflow + node + runInput metadata for a sandbox-environment row", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            label: "Sandbox Environments",
+            columns: ["Name", "adapter", "agentHost", "runLocality", "orchestrationGraph"],
+            rows: [{
+              Name: "LeadShark Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              lifecycleStatus: "live",
+              version: "2",
+              orchestrationGraph: JSON.stringify({
+                version: 1,
+                provider: "growthub-native",
+                nodes: [
+                  { id: "input", type: "input", config: {} },
+                  { id: "form", type: "human-input", config: { action: "form", required: true, fields: [{ key: "companyName", value: "text" }, { key: "apiKey", value: "secretRef" }] } },
+                  { id: "api", type: "api-registry-call", config: { integrationId: "leadshark" } },
+                  { id: "out", type: "tool-result", config: {} },
+                ],
+                edges: [],
+              }),
+            }],
+          }],
+        },
+      },
+    });
+    expect(store.workflows).toHaveLength(1);
+    expect(store.workflows[0].rowId).toBe("LeadShark Tool");
+    expect(store.workflows[0].nodeCount).toBe(4);
+    expect(store.workflows[0].requiresInput).toBe(true);
+
+    const formNode = store.workflowNodes.find((n) => n.id === "form")!;
+    expect(formNode.nodeType).toBe("human-input");
+
+    expect(store.runInputs.map((r) => r.id)).toEqual(expect.arrayContaining(["companyName", "apiKey"]));
+    const secretField = store.runInputs.find((r) => r.id === "apiKey")!;
+    expect(secretField.isSecret).toBe(true);
+
+    expect(store.sandboxes).toHaveLength(1);
+    expect(store.sandboxes[0].agentHost).toBe("claude_local");
+    expect(store.agentHosts.find((h) => h.id === "claude_local")!.adapters).toContain("local-agent-host");
+  });
+
+  it("hides workspace-helper-sandbox object from the public projection", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "workspace-helper-sandbox",
+            objectType: "sandbox-environment",
+            label: "Hidden",
+            columns: ["Name"],
+            rows: [{ Name: "Helper" }],
+          }],
+        },
+      },
+    });
+    expect(store.objects.find((o) => o.id === "workspace-helper-sandbox")).toBeUndefined();
+    expect(store.sandboxes).toHaveLength(0);
+    expect(store.workflows).toHaveLength(0);
+  });
+
+  it("derives source record metadata from the workspaceSourceRecords sidecar", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "src_crm",
+            label: "CRM",
+            objectType: "data-source",
+            columns: ["name"],
+            rows: [],
+            sourceId: "src_crm",
+            binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "my-crm" },
+          }],
+        },
+      },
+      workspaceSourceRecords: {
+        src_crm: { records: [{ name: "Acme" }], fetchedAt: "2026-05-01T00:00:00Z", recordCount: 1, integrationId: "my-crm" },
+      },
+    });
+    expect(store.objects.find((o) => o.id === "src_crm")!.isLiveBacked).toBe(true);
+    const sourceRecord = store.sourceRecords.find((r) => r.id === "src_crm");
+    expect(sourceRecord).toBeDefined();
+    expect(sourceRecord!.recordCount).toBe(1);
+  });
+
+  it("derives runs + output artifacts from row.lastResponse", () => {
+    const lastResponse = JSON.stringify({
+      runId: "run-42",
+      exitCode: 0,
+      durationMs: 250,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      runtime: "node",
+      adapter: "local-agent-host",
+      runLocality: "local",
+      stdout: "ok",
+      output: { items: [{ id: 1 }] },
+      input: { kind: "growthub-workflow-run-inputs-v1", source: "manual", values: { companyName: "Acme" }, files: [] },
+    });
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{ Name: "LeadShark Tool", agentHost: "claude_local", adapter: "local-agent-host", runLocality: "local", lastResponse }],
+          }],
+        },
+      },
+    });
+    expect(store.runs).toHaveLength(1);
+    expect(store.runs[0].runId).toBe("run-42");
+    expect(store.runs[0].ok).toBe(true);
+    expect(store.runs[0].inputFieldCount).toBe(1);
+    expect(store.outputArtifacts).toHaveLength(1);
+    expect(store.outputArtifacts[0].promotable).toBe(true);
+  });
+
+  it("never throws on empty / unknown / partial input", () => {
+    expect(() => buildWorkspaceMetadataStore(undefined)).not.toThrow();
+    expect(() => buildWorkspaceMetadataStore({})).not.toThrow();
+    expect(() => buildWorkspaceMetadataStore({ workspaceConfig: { dataModel: { objects: [{ id: "" }] } } })).not.toThrow();
+    const store = buildWorkspaceMetadataStore({ workspaceConfig: { dataModel: { objects: [{ id: "" }, { id: "ok", columns: ["a"], rows: [{ a: 1 }] }] } } });
+    expect(store.warnings.some((w) => w.includes("without id"))).toBe(true);
+    expect(store.objects.find((o) => o.id === "ok")).toBeDefined();
+  });
+
+  it("never contains secret-shaped values in the JSON output", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name", "accessToken"],
+            rows: [{ Name: "x", agentHost: "claude_local", adapter: "local-agent-host", runLocality: "local" }],
+          }],
+        },
+      },
+    });
+    const json = JSON.stringify(store);
+    expect(json).not.toMatch(/sk-ant-/);
+    expect(json).not.toMatch(/Bearer\s+[A-Za-z0-9._-]{8,}/);
+    expect(json).not.toMatch(/access_token\s*[:=]\s*['"][A-Za-z0-9._-]{8,}/i);
+  });
+});
+
+describe("workspace-metadata-graph — node + edge construction", () => {
+  type Graph = {
+    kind: string;
+    version: number;
+    nodes: Array<{ id: string; type: string; label: string; metadataId: string; summary: Record<string, unknown> }>;
+    edges: Array<{ id: string; from: string; to: string; relation: string; fromType: string; toType: string }>;
+    warnings: string[];
+  };
+  let buildWorkspaceMetadataStore: (input: unknown) => unknown;
+  let buildWorkspaceMetadataGraph: (store: unknown) => Graph;
+  let findDependents: (graph: Graph, id: string) => Array<{ node: { id: string; type: string }; relation: string }>;
+  let findDependencies: (graph: Graph, id: string) => Array<{ node: { id: string; type: string }; relation: string }>;
+
+  beforeEach(async () => {
+    const storeMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as { buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore };
+    const graphMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-graph.js")}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataGraph: typeof buildWorkspaceMetadataGraph;
+      findDependents: typeof findDependents;
+      findDependencies: typeof findDependencies;
+    };
+    buildWorkspaceMetadataStore = storeMod.buildWorkspaceMetadataStore;
+    buildWorkspaceMetadataGraph = graphMod.buildWorkspaceMetadataGraph;
+    findDependents = graphMod.findDependents;
+    findDependencies = graphMod.findDependencies;
+  });
+
+  function buildFixture(): Graph {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [
+            {
+              id: "pipeline",
+              label: "Pipeline",
+              columns: ["stage", "arr"],
+              rows: [{ stage: "lead", arr: 100 }, { stage: "won", arr: 200 }],
+              binding: { mode: "manual", source: "Pipeline" },
+            },
+            {
+              id: "sandbox-env",
+              objectType: "sandbox-environment",
+              columns: ["Name"],
+              rows: [{
+                Name: "LeadShark Tool",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runLocality: "local",
+                lifecycleStatus: "live",
+                orchestrationGraph: JSON.stringify({
+                  version: 1,
+                  provider: "growthub-native",
+                  nodes: [
+                    { id: "input", type: "input", config: { sourceId: "pipeline" } },
+                    { id: "api", type: "api-registry-call", config: { integrationId: "leadshark" } },
+                    { id: "out", type: "tool-result" },
+                  ],
+                  edges: [],
+                }),
+              }],
+            },
+          ],
+        },
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [{
+            id: "wc",
+            kind: "chart",
+            title: "ARR by stage",
+            position: { x: 0, y: 0, w: 6, h: 5 },
+            config: {
+              values: [100, 200],
+              xAxis: { field: "stage" },
+              yAxis: { field: "arr", aggregation: "sum" },
+              binding: { sourceType: "workspace-data-model", objectId: "pipeline" },
+            },
+          }],
+        },
+      },
+    });
+    return buildWorkspaceMetadataGraph(store);
+  }
+
+  it("returns a typed envelope with deterministic node + edge IDs", () => {
+    const graph = buildFixture();
+    expect(graph.kind).toBe("growthub-workspace-metadata-graph-v1");
+    expect(graph.version).toBe(1);
+    expect(graph.nodes.length).toBeGreaterThan(0);
+    expect(graph.edges.length).toBeGreaterThan(0);
+    const ids = new Set(graph.nodes.map((n) => n.id));
+    expect(ids.size).toBe(graph.nodes.length);
+    for (const edge of graph.edges) {
+      expect(ids.has(edge.from)).toBe(true);
+      expect(ids.has(edge.to)).toBe(true);
+    }
+  });
+
+  it("emits widget→object bindsToObject and widget→field usesField edges", () => {
+    const graph = buildFixture();
+    const widget = graph.nodes.find((n) => n.type === "widget")!;
+    const deps = findDependencies(graph, widget.id);
+    const relations = deps.map((d) => d.relation);
+    expect(relations).toContain("bindsToObject");
+    expect(relations).toContain("usesField");
+  });
+
+  it("emits workflow→workflowNode containsNode and workflow→sandbox usesSandbox edges", () => {
+    const graph = buildFixture();
+    const workflow = graph.nodes.find((n) => n.type === "workflow")!;
+    const deps = findDependencies(graph, workflow.id);
+    const relations = deps.map((d) => d.relation);
+    expect(relations).toContain("containsNode");
+    expect(relations).toContain("usesSandbox");
+  });
+
+  it("emits sandbox→agentHost usesAgentHost edge", () => {
+    const graph = buildFixture();
+    const sandbox = graph.nodes.find((n) => n.type === "sandbox")!;
+    const deps = findDependencies(graph, sandbox.id);
+    expect(deps.some((d) => d.relation === "usesAgentHost")).toBe(true);
+  });
+
+  it("findDependents returns incoming-edge neighbours (widgets / nodes that read a field)", () => {
+    const graph = buildFixture();
+    const arrField = graph.nodes.find((n) => n.type === "field" && n.summary?.objectId === "pipeline" && n.label === "arr")!;
+    const dependents = findDependents(graph, arrField.id);
+    expect(dependents.length).toBeGreaterThan(0);
+    expect(dependents.some((d) => d.relation === "usesField")).toBe(true);
+  });
+
+  it("never produces dangling edges — every endpoint resolves to an existing node", () => {
+    const graph = buildFixture();
+    const nodeIds = new Set(graph.nodes.map((n) => n.id));
+    for (const edge of graph.edges) {
+      expect(nodeIds.has(edge.from)).toBe(true);
+      expect(nodeIds.has(edge.to)).toBe(true);
+    }
+  });
+});
+
+describe("workspace-metadata-selectors — typed contracts", () => {
+  type Store = {
+    objects: Array<{ id: string }>;
+    fields: unknown[];
+    widgets: Array<{ id: string; metadataId: string; objectId: string; requiredFields: string[]; filterFields: string[]; sortFields: string[]; aggregationFields: string[]; warnings: string[]; sourceRecordKey: string }>;
+    workflows: unknown[];
+    workflowNodes: Array<{ id: string; metadataId: string; workflowMetadataId: string; readsObjectId: string; writesObjectId: string; requiresHumanInput: boolean }>;
+    runInputs: Array<{ id: string; workflowMetadataId: string; required: boolean; isSecret: boolean }>;
+    sandboxes: unknown[];
+    agentHosts: Array<{ id: string }>;
+    runs: Array<{ runId: string; metadataId: string; workflowMetadataId: string; sandboxMetadataId: string; agentHost: string; inputFieldCount: number }>;
+    outputArtifacts: Array<{ runMetadataId: string }>;
+    sourceRecords: unknown[];
+    integrations: unknown[];
+    integrationEntities: unknown[];
+  };
+  let buildWorkspaceMetadataStore: (input: unknown) => Store;
+  let selectWidgetRequiredFields: (s: Store, id: string) => { required: string[]; filter: string[]; sort: string[]; aggregation: string[]; warnings: string[] };
+  let selectObjectFilterableFields: (s: Store, id: string) => Array<{ id: string }>;
+  let selectObjectSortableFields: (s: Store, id: string) => Array<{ id: string }>;
+  let selectStaleMetadataGroups: (s: Store, change: { kind: string; id: string }) => { groups: string[]; reasons: string[] };
+  let selectRunLineage: (s: Store, runId: string) => { run: unknown; workflow: unknown; sandbox: unknown; agentHost: unknown; artifacts: unknown[] } | null;
+
+  beforeEach(async () => {
+    const storeMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore;
+    };
+    const selectorsMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-selectors.js")}?t=${Date.now()}`) as {
+      selectWidgetRequiredFields: typeof selectWidgetRequiredFields;
+      selectObjectFilterableFields: typeof selectObjectFilterableFields;
+      selectObjectSortableFields: typeof selectObjectSortableFields;
+      selectStaleMetadataGroups: typeof selectStaleMetadataGroups;
+      selectRunLineage: typeof selectRunLineage;
+    };
+    buildWorkspaceMetadataStore = storeMod.buildWorkspaceMetadataStore;
+    selectWidgetRequiredFields = selectorsMod.selectWidgetRequiredFields;
+    selectObjectFilterableFields = selectorsMod.selectObjectFilterableFields;
+    selectObjectSortableFields = selectorsMod.selectObjectSortableFields;
+    selectStaleMetadataGroups = selectorsMod.selectStaleMetadataGroups;
+    selectRunLineage = selectorsMod.selectRunLineage;
+  });
+
+  function fixtureStore(): Store {
+    return buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [
+            {
+              id: "pipeline",
+              label: "Pipeline",
+              columns: ["stage", "arr", "createdAt"],
+              rows: [{ stage: "lead", arr: 100, createdAt: "2026-05-01" }],
+              binding: { mode: "manual", source: "Pipeline" },
+            },
+            {
+              id: "sandbox-env",
+              objectType: "sandbox-environment",
+              columns: ["Name"],
+              rows: [{
+                Name: "Tool",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runLocality: "local",
+                lastResponse: JSON.stringify({
+                  runId: "run-99",
+                  exitCode: 0,
+                  durationMs: 100,
+                  ranAt: "2026-05-21T19:28:07.906Z",
+                  stdout: "ok",
+                  output: { items: [] },
+                  adapter: "local-agent-host",
+                  agentHost: "claude_local",
+                }),
+                orchestrationGraph: JSON.stringify({
+                  version: 1,
+                  provider: "growthub-native",
+                  nodes: [{ id: "in", type: "input", config: { sourceId: "pipeline" } }, { id: "out", type: "tool-result" }],
+                  edges: [],
+                }),
+              }],
+            },
+          ],
+        },
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [{
+            id: "wc",
+            kind: "chart",
+            title: "Pipeline ARR",
+            position: { x: 0, y: 0, w: 6, h: 5 },
+            config: {
+              values: [100],
+              xAxis: { field: "stage" },
+              yAxis: { field: "arr", aggregation: "sum" },
+              filter: { op: "and", clauses: [{ fieldId: "stage", operator: "eq", value: "won" }] },
+              binding: { sourceType: "workspace-data-model", objectId: "pipeline" },
+            },
+          }],
+        },
+      },
+    });
+  }
+
+  it("selectWidgetRequiredFields returns typed required/filter/sort/aggregation lists", () => {
+    const store = fixtureStore();
+    const result = selectWidgetRequiredFields(store, "wc");
+    expect(result.required).toEqual(expect.arrayContaining(["stage", "arr"]));
+    expect(result.filter).toEqual(["stage"]);
+    expect(result.sort).toEqual(["stage"]);
+    expect(result.aggregation).toEqual(["arr"]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("selectObjectFilterableFields excludes secret-shaped fields", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "creds",
+            columns: ["name", "apiKey"],
+            rows: [{ name: "x", apiKey: "y" }],
+            binding: { mode: "manual", source: "Creds" },
+          }],
+        },
+      },
+    });
+    const fields = selectObjectFilterableFields(store, "creds");
+    expect(fields.map((f) => f.id)).toEqual(["name"]);
+  });
+
+  it("selectStaleMetadataGroups flags widget + dashboard groups when a field changes", () => {
+    const store = fixtureStore();
+    const stale = selectStaleMetadataGroups(store, { kind: "field", id: "pipeline::arr" });
+    expect(stale.groups).toEqual(expect.arrayContaining(["workspaceWidgetMetadataItems", "workspaceDashboardMetadataItems"]));
+    expect(stale.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("selectStaleMetadataGroups returns empty groups for unrelated changes", () => {
+    const store = fixtureStore();
+    const stale = selectStaleMetadataGroups(store, { kind: "field", id: "unknown::field" });
+    expect(stale.groups).toEqual([]);
+  });
+
+  it("selectRunLineage returns workflow + sandbox + agent host for a run", () => {
+    const store = fixtureStore();
+    const lineage = selectRunLineage(store, "run-99");
+    expect(lineage).not.toBeNull();
+    expect(lineage!.workflow).toBeTruthy();
+    expect(lineage!.sandbox).toBeTruthy();
+    expect(lineage!.agentHost).toBeTruthy();
+  });
+});
+
+describe("metadata-graph route — invariants", () => {
+  it("route depends only on read helpers (no PATCH/POST imports)", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    expect(route).toContain("readWorkspaceConfig");
+    expect(route).toContain("readWorkspaceSourceRecords");
+    expect(route).toContain("buildWorkspaceMetadataStore");
+    expect(route).toContain("buildWorkspaceMetadataGraph");
+    expect(route).not.toContain("writeWorkspaceConfig");
+    expect(route).not.toContain("writeWorkspaceSourceRecords");
+  });
+
+  it("response envelope mentions the v1 kind, version, and authority pointers", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    expect(route).toContain("growthub-workspace-metadata-graph-v1");
+    expect(route).toContain("growthub.config.json");
+    expect(route).toContain("growthub.source-records.json");
+    expect(route).toContain("readOnlyProjection: true");
+  });
+
+  it("no secret persistence or browser-side secret patterns introduced in metadata graph modules", () => {
+    const store = appText("lib/workspace-metadata-store.js");
+    const graph = appText("lib/workspace-metadata-graph.js");
+    const selectors = appText("lib/workspace-metadata-selectors.js");
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    for (const source of [store, graph, selectors, route]) {
+      expect(source).not.toMatch(/localStorage|sessionStorage/);
+      expect(source).not.toMatch(/process\.env\.[A-Z_]*(?:TOKEN|SECRET|API_KEY|PASSWORD)/);
+      expect(source).not.toMatch(/Bearer\s+[A-Za-z0-9._-]{8,}/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12. Metadata Graph V1 — full metadata group + graph node coverage
+// ---------------------------------------------------------------------------
+
+describe("workspace-metadata-store — complete V1 group coverage", () => {
+  type Store = {
+    workflowActions: Array<{ action: string; nodeType: string; workflowNodeMetadataId: string }>;
+    workerKits: Array<{ id: string; label: string; family: string }>;
+    pipelineHealth: Array<{ status: string; sandboxMetadataId: string; latestRunId: string }>;
+    sandboxes: Array<{ hasGraph: boolean }>;
+    runs: Array<{ runId: string; ok: boolean }>;
+  };
+  let buildWorkspaceMetadataStore: (input: unknown) => Store;
+  let deriveWorkspaceRunMetadataItems: (input: unknown) => { items: unknown[]; outputArtifacts: unknown[] };
+  let deriveWorkspaceWorkflowActionMetadataItems: (nodes: unknown[]) => { items: unknown[] };
+  let deriveWorkspaceWorkerKitMetadataItems: (config: unknown) => { items: unknown[] };
+  let deriveWorkspacePipelineHealthMetadataItems: (sandboxes: unknown[], runs: unknown[]) => { items: unknown[] };
+
+  beforeEach(async () => {
+    const mod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore;
+      deriveWorkspaceRunMetadataItems: typeof deriveWorkspaceRunMetadataItems;
+      deriveWorkspaceWorkflowActionMetadataItems: typeof deriveWorkspaceWorkflowActionMetadataItems;
+      deriveWorkspaceWorkerKitMetadataItems: typeof deriveWorkspaceWorkerKitMetadataItems;
+      deriveWorkspacePipelineHealthMetadataItems: typeof deriveWorkspacePipelineHealthMetadataItems;
+    };
+    buildWorkspaceMetadataStore = mod.buildWorkspaceMetadataStore;
+    deriveWorkspaceRunMetadataItems = mod.deriveWorkspaceRunMetadataItems;
+    deriveWorkspaceWorkflowActionMetadataItems = mod.deriveWorkspaceWorkflowActionMetadataItems;
+    deriveWorkspaceWorkerKitMetadataItems = mod.deriveWorkspaceWorkerKitMetadataItems;
+    deriveWorkspacePipelineHealthMetadataItems = mod.deriveWorkspacePipelineHealthMetadataItems;
+  });
+
+  it("exports the spec-required derivation helpers", () => {
+    expect(typeof buildWorkspaceMetadataStore).toBe("function");
+    expect(typeof deriveWorkspaceRunMetadataItems).toBe("function");
+    expect(typeof deriveWorkspaceWorkflowActionMetadataItems).toBe("function");
+    expect(typeof deriveWorkspaceWorkerKitMetadataItems).toBe("function");
+    expect(typeof deriveWorkspacePipelineHealthMetadataItems).toBe("function");
+  });
+
+  it("derives workflowAction items per workflow node", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{
+              Name: "Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              orchestrationGraph: JSON.stringify({
+                version: 1,
+                provider: "growthub-native",
+                nodes: [
+                  { id: "form", type: "human-input", config: { action: "form", fields: [{ key: "x", value: "text" }] } },
+                  { id: "req", type: "api-registry-call", config: {} },
+                  { id: "filt", type: "transform-filter", config: {} },
+                  { id: "out", type: "tool-result" },
+                ],
+                edges: [],
+              }),
+            }],
+          }],
+        },
+      },
+    });
+    const actions = store.workflowActions.map((a) => a.action);
+    expect(actions).toEqual(expect.arrayContaining(["form", "request", "filter", "result"]));
+    for (const action of store.workflowActions) {
+      expect(action.workflowNodeMetadataId).toBeTruthy();
+    }
+  });
+
+  it("derives a single workerKit anchor with a deterministic metadata id", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        kit: { id: "growthub-custom-workspace-starter-v1", name: "Starter", version: "1.0.0" },
+      },
+    });
+    expect(store.workerKits).toHaveLength(1);
+    expect(store.workerKits[0].label).toBe("Starter");
+    expect(store.workerKits[0].family).toBe("studio");
+  });
+
+  it("derives pipelineHealth from sandboxes + latest run", () => {
+    const lastResponse = JSON.stringify({
+      runId: "run-ok",
+      exitCode: 0,
+      durationMs: 100,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "ok",
+      output: { items: [] },
+    });
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{
+              Name: "Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              lifecycleStatus: "live",
+              orchestrationGraph: JSON.stringify({
+                version: 1,
+                provider: "growthub-native",
+                nodes: [{ id: "in", type: "input" }, { id: "out", type: "tool-result" }],
+                edges: [],
+              }),
+              lastResponse,
+            }],
+          }],
+        },
+      },
+    });
+    expect(store.pipelineHealth).toHaveLength(1);
+    expect(store.pipelineHealth[0].status).toBe("healthy");
+    expect(store.pipelineHealth[0].latestRunId).toBe("run-ok");
+  });
+
+  it("deriveWorkspaceRunMetadataItems accepts a sourceRecords-shaped sidecar", () => {
+    const result = deriveWorkspaceRunMetadataItems({
+      "sandbox:obj:row": {
+        runId: "run-1",
+        exitCode: 0,
+        durationMs: 50,
+        ranAt: "2026-05-21T19:28:07.906Z",
+        stdout: "ok",
+        output: { items: [] },
+      },
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.outputArtifacts).toHaveLength(1);
+  });
+});
+
+describe("workspace-metadata-graph — complete V1 node + edge coverage", () => {
+  type Graph = {
+    nodes: Array<{ id: string; type: string; metadataId: string; summary: Record<string, unknown> }>;
+    edges: Array<{ relation: string; from: string; to: string; fromType: string; toType: string }>;
+  };
+  let buildWorkspaceMetadataStore: (input: unknown) => unknown;
+  let buildWorkspaceMetadataGraph: (store: unknown) => Graph;
+  let summarizeGraphNode: (node: unknown) => unknown;
+
+  beforeEach(async () => {
+    const storeMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as { buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore };
+    const graphMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-graph.js")}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataGraph: typeof buildWorkspaceMetadataGraph;
+      summarizeGraphNode: typeof summarizeGraphNode;
+    };
+    buildWorkspaceMetadataStore = storeMod.buildWorkspaceMetadataStore;
+    buildWorkspaceMetadataGraph = graphMod.buildWorkspaceMetadataGraph;
+    summarizeGraphNode = graphMod.summarizeGraphNode;
+  });
+
+  function richFixture(): Graph {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          integrations: [
+            { integrationId: "leadshark", label: "LeadShark", lane: "outbound", status: "connected" },
+          ],
+          objects: [
+            {
+              id: "pipeline",
+              columns: ["stage", "arr"],
+              rows: [{ stage: "lead", arr: 1 }],
+              binding: { mode: "manual", source: "Pipeline", integrationId: "leadshark", entityId: "acct-1", entityType: "account", entityLabel: "Acct 1" },
+              savedViews: [{ id: "viewA", name: "Active", columns: ["stage", "arr"], filters: [{ field: "stage", op: "eq", value: "lead" }] }],
+            },
+            {
+              id: "src_crm",
+              label: "CRM",
+              objectType: "data-source",
+              columns: ["name"],
+              rows: [],
+              sourceId: "src_crm",
+              binding: { mode: "integration", sourceStorage: "workspace-source-records", sourceId: "src_crm", integrationId: "leadshark" },
+            },
+            {
+              id: "sandbox-env",
+              objectType: "sandbox-environment",
+              columns: ["Name"],
+              rows: [{
+                Name: "Tool",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runLocality: "local",
+                lifecycleStatus: "live",
+                orchestrationGraph: JSON.stringify({
+                  version: 1,
+                  provider: "growthub-native",
+                  nodes: [
+                    { id: "form", type: "human-input", config: { action: "form", required: true, fields: [{ key: "companyName", value: "text" }] } },
+                    { id: "src", type: "input", config: { sourceId: "pipeline" } },
+                    { id: "api", type: "api-registry-call", config: { integrationId: "leadshark" } },
+                    { id: "wrt", type: "tool-result", config: { writeObjectId: "pipeline" } },
+                  ],
+                  edges: [],
+                }),
+                lastResponse: JSON.stringify({ runId: "r1", exitCode: 0, durationMs: 100, ranAt: "2026-05-21T19:28:07.906Z", output: { items: [] }, input: { kind: "growthub-workflow-run-inputs-v1", values: { companyName: "Acme" } } }),
+              }],
+            },
+          ],
+        },
+        canvas: {
+          layout: { columns: 12, rowHeight: 64, gap: 16, responsive: true },
+          widgets: [{
+            id: "wc",
+            kind: "chart",
+            title: "ARR by stage",
+            position: { x: 0, y: 0, w: 6, h: 5 },
+            config: {
+              values: [1],
+              xAxis: { field: "stage" },
+              yAxis: { field: "arr", aggregation: "sum" },
+              filter: { op: "and", clauses: [{ fieldId: "stage", operator: "eq", value: "lead" }] },
+              binding: { sourceType: "workspace-data-model", objectId: "pipeline", integrationId: "leadshark", entityId: "acct-1", entityType: "account" },
+            },
+          }],
+        },
+      },
+      workspaceSourceRecords: {
+        src_crm: { records: [{ name: "Acme" }], fetchedAt: "2026-05-01T00:00:00Z", recordCount: 1, integrationId: "leadshark" },
+      },
+    });
+    return buildWorkspaceMetadataGraph(store);
+  }
+
+  it("emits every V1 node type that has corresponding metadata", () => {
+    const graph = richFixture();
+    const types = new Set(graph.nodes.map((n) => n.type));
+    const expectedTypes = [
+      "dashboard",
+      "widget",
+      "dataModelObject",
+      "field",
+      "view",
+      "filter",
+      "sort",
+      "workflow",
+      "workflowNode",
+      "workflowAction",
+      "runInput",
+      "sandbox",
+      "agentHost",
+      "integration",
+      "integrationEntity",
+      "sourceRecord",
+      "run",
+      "runOutput",
+      "outputArtifact",
+      "workerKit",
+      "pipelineHealth"
+    ];
+    for (const type of expectedTypes) {
+      expect(types.has(type)).toBe(true);
+    }
+  });
+
+  it("emits every V1 edge relation when the underlying metadata exists", () => {
+    const graph = richFixture();
+    const relations = new Set(graph.edges.map((e) => e.relation));
+    const expectedRelations = [
+      "containsWidget",
+      "bindsToObject",
+      "usesField",
+      "filteredByField",
+      "sortedByField",
+      "backedBySourceRecord",
+      "scopedToEntity",
+      "boundToIntegration",
+      "belongsToIntegration",
+      "containsNode",
+      "usesSandbox",
+      "readsObject",
+      "writesObject",
+      "usesAgentHost",
+      "requiresRunInput",
+      "callsIntegration",
+      "configuresAction",
+      "executedWorkflow",
+      "executedSandbox",
+      "usedAgentHost",
+      "producedArtifact",
+      "producedRunOutput",
+      "materializedAs",
+      "consumedRunInput",
+      "summarisesSandbox",
+      "summarisesWorkflow",
+      "materializes",
+      "configuresFilter",
+      "configuresSort"
+    ];
+    for (const relation of expectedRelations) {
+      expect(relations.has(relation)).toBe(true);
+    }
+  });
+
+  it("summarizeGraphNode returns a typed compact summary", () => {
+    const graph = richFixture();
+    const widget = graph.nodes.find((n) => n.type === "widget")!;
+    const summary = summarizeGraphNode(widget) as { id: string; type: string; label: string; metadataId: string };
+    expect(summary.id).toBe(widget.id);
+    expect(summary.type).toBe("widget");
+    expect(summary.label).toBeTruthy();
+    expect(summary.metadataId).toBe(widget.metadataId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 13. Metadata Graph V1 — existing-file integration points
+// ---------------------------------------------------------------------------
+
+describe("workspace-chart-values — typed widget dependency contract", () => {
+  let deriveWidgetDependencyContract: (widget: unknown) => {
+    objectId: string;
+    required: string[];
+    filter: string[];
+    sort: string[];
+    aggregation: string[];
+    operation: string;
+    outputShape: string;
+    warnings: string[];
+  };
+
+  beforeEach(async () => {
+    const mod = await import(`file://${path.join(APP_ROOT, "lib/workspace-chart-values.js")}?t=${Date.now()}`) as {
+      deriveWidgetDependencyContract: typeof deriveWidgetDependencyContract;
+    };
+    deriveWidgetDependencyContract = mod.deriveWidgetDependencyContract;
+  });
+
+  it("ships from workspace-chart-values", () => {
+    expect(typeof deriveWidgetDependencyContract).toBe("function");
+  });
+
+  it("returns required / filter / sort / aggregation fields for a chart widget", () => {
+    const contract = deriveWidgetDependencyContract({
+      kind: "chart",
+      config: {
+        xAxis: { field: "stage" },
+        yAxis: { field: "arr", aggregation: "sum" },
+        filter: { op: "and", clauses: [{ fieldId: "stage", operator: "eq", value: "won" }] },
+        binding: { sourceType: "workspace-data-model", objectId: "pipeline" },
+      },
+    });
+    expect(contract.objectId).toBe("pipeline");
+    expect(contract.required).toEqual(expect.arrayContaining(["stage", "arr"]));
+    expect(contract.filter).toEqual(["stage"]);
+    expect(contract.sort).toEqual(["stage"]);
+    expect(contract.aggregation).toEqual(["arr"]);
+    expect(contract.operation).toBe("sum");
+    expect(contract.outputShape).toBe("number[]");
+  });
+
+  it("warns when an axis is missing on a chart widget", () => {
+    const contract = deriveWidgetDependencyContract({ kind: "chart", config: {} });
+    expect(contract.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("never throws on unknown widget shapes", () => {
+    expect(() => deriveWidgetDependencyContract(null)).not.toThrow();
+    expect(() => deriveWidgetDependencyContract(undefined)).not.toThrow();
+    expect(() => deriveWidgetDependencyContract({ kind: "chart" } as never)).not.toThrow();
+  });
+});
+
+describe("orchestration-run-inputs — metadata-compatible descriptors", () => {
+  let describeRunInputMetadataItems: (input: { workflowId: string; graph: unknown }) => Array<{
+    id: string;
+    label: string;
+    type: string;
+    required: boolean;
+    isSecret: boolean;
+    secretRefOnly: boolean;
+    sourceNodeId: string;
+    workflowId: string;
+  }>;
+
+  beforeEach(async () => {
+    const mod = await import(`file://${path.join(APP_ROOT, "lib/orchestration-run-inputs.js")}?t=${Date.now()}`) as {
+      describeRunInputMetadataItems: typeof describeRunInputMetadataItems;
+    };
+    describeRunInputMetadataItems = mod.describeRunInputMetadataItems;
+  });
+
+  it("returns descriptors with all spec-required keys", () => {
+    const items = describeRunInputMetadataItems({
+      workflowId: "sandbox-env::Tool",
+      graph: {
+        version: 1,
+        provider: "growthub-native",
+        nodes: [{
+          id: "form-1",
+          type: "human-input",
+          config: { action: "form", required: true, fields: [{ key: "companyName", value: "text" }, { key: "apiKey", value: "secretRef" }] },
+        }],
+        edges: [],
+      },
+    });
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      expect(item).toHaveProperty("id");
+      expect(item).toHaveProperty("label");
+      expect(item).toHaveProperty("type");
+      expect(item).toHaveProperty("required");
+      expect(item).toHaveProperty("secretRefOnly");
+      expect(item).toHaveProperty("sourceNodeId");
+      expect(item).toHaveProperty("workflowId");
+      expect(item.workflowId).toBe("sandbox-env::Tool");
+    }
+    const apiKey = items.find((i) => i.id === "apiKey")!;
+    expect(apiKey.secretRefOnly).toBe(true);
+    expect(apiKey.isSecret).toBe(true);
+  });
+});
+
+describe("orchestration-run-console — run lineage on normalized record", () => {
+  let normalizeRunConsoleRecord: (r: unknown) => {
+    lineage: {
+      runId: string;
+      objectId: string;
+      sandboxName: string;
+      workflowMetadataId: string;
+      sandboxMetadataId: string;
+      adapter: string;
+      agentHost: string;
+      runtime: string;
+      runLocality: string;
+      inputFieldCount: number;
+      inputSource: string;
+      hasOutput: boolean;
+    };
+  } | null;
+
+  beforeEach(async () => {
+    const mod = await import(`file://${path.join(APP_ROOT, "lib/orchestration-run-console.js")}?t=${Date.now()}`) as {
+      normalizeRunConsoleRecord: typeof normalizeRunConsoleRecord;
+    };
+    normalizeRunConsoleRecord = mod.normalizeRunConsoleRecord;
+  });
+
+  it("attaches a safe lineage descriptor (run → sandbox / workflow / adapter / agentHost / inputs / output)", () => {
+    const record = normalizeRunConsoleRecord({
+      runId: "run-lineage-1",
+      exitCode: 0,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      objectId: "sandbox-env",
+      name: "LeadShark Tool",
+      adapter: "local-agent-host",
+      agentHost: "claude_local",
+      runtime: "node",
+      runLocality: "local",
+      stdout: "ok",
+      output: { items: [{ id: 1 }] },
+      input: { kind: "growthub-workflow-run-inputs-v1", source: "manual", values: { companyName: "Acme" }, files: [] },
+    });
+    expect(record).not.toBeNull();
+    expect(record!.lineage.runId).toBe("run-lineage-1");
+    expect(record!.lineage.objectId).toBe("sandbox-env");
+    expect(record!.lineage.sandboxName).toBe("LeadShark Tool");
+    expect(record!.lineage.workflowMetadataId).toBe("workflow:sandbox-env:LeadShark Tool");
+    expect(record!.lineage.sandboxMetadataId).toBe("sandbox:sandbox-env:LeadShark Tool");
+    expect(record!.lineage.adapter).toBe("local-agent-host");
+    expect(record!.lineage.agentHost).toBe("claude_local");
+    expect(record!.lineage.runtime).toBe("node");
+    expect(record!.lineage.runLocality).toBe("local");
+    expect(record!.lineage.inputFieldCount).toBe(1);
+    expect(record!.lineage.inputSource).toBe("manual");
+    expect(record!.lineage.hasOutput).toBe(true);
+  });
+
+  it("lineage stays redaction-safe — never echoes secret-looking inputs", () => {
+    const record = normalizeRunConsoleRecord({
+      runId: "run-secret",
+      exitCode: 0,
+      durationMs: 50,
+      ranAt: "2026-05-21T19:28:07.906Z",
+      stdout: "Bearer leak",
+      input: { kind: "growthub-workflow-run-inputs-v1", source: "manual", values: { apiKey: "raw-secret-do-not-leak" }, files: [] },
+    });
+    const json = JSON.stringify(record);
+    expect(json).not.toContain("raw-secret-do-not-leak");
+    expect(json).not.toMatch(/Bearer\s+leak/);
+  });
+});
+
+describe("sandbox-agent-auth — safe metadata summary helper", () => {
+  let describeAgentHostReadinessMetadata: (row: unknown) => {
+    kind: string;
+    adapter: string;
+    agentHost: string;
+    status: string;
+    provider: string;
+    lastChecked: string;
+    lastExitCode: number | null;
+    lastMessage: string;
+    lastLoginUrl: string;
+  } | null;
+
+  beforeEach(async () => {
+    // The auth module imports `@/lib/workspace-config` which uses Next.js path
+    // aliases. Vitest cannot resolve those without the Next.js module graph,
+    // so we assert via source-text inspection like the rest of the auth suite.
+    describeAgentHostReadinessMetadata = (() => null) as never;
+  });
+
+  it("ships from sandbox-agent-auth and is exported", () => {
+    const source = appText("lib/sandbox-agent-auth.js");
+    expect(source).toContain("function describeAgentHostReadinessMetadata");
+    expect(source).toMatch(/export\s*\{[^}]*describeAgentHostReadinessMetadata[^}]*\}/s);
+  });
+
+  it("only reads safe row patch fields — never the raw token / secret keys", () => {
+    const source = appText("lib/sandbox-agent-auth.js");
+    const blockMatch = source.match(/function describeAgentHostReadinessMetadata[\s\S]*?\n\}/);
+    expect(blockMatch).not.toBeNull();
+    const block = blockMatch![0];
+    expect(block).toContain("SAFE_ROW_PATCH_FIELDS");
+    expect(block).not.toMatch(/\baccessToken\b/);
+    expect(block).not.toMatch(/\brefreshToken\b/);
+    expect(block).not.toMatch(/\bapiKey\b/);
+  });
+});
+
+describe("workspace-builder + WorkflowSurface — metadata selector wiring", () => {
+  it("workspace-builder imports the typed widget dependency contract + object selectors", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("deriveWidgetDependencyContract");
+    expect(builder).toContain("selectObjectFilterableFields");
+    expect(builder).toContain("selectObjectSortableFields");
+    expect(builder).toContain("WORKSPACE_METADATA_SELECTORS");
+  });
+
+  it("WorkflowSurface imports the workflow node + run-input metadata selectors", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("describeRunInputMetadataItems");
+    expect(surface).toContain("selectWorkflowNodeInputSchema");
+    expect(surface).toContain("WORKFLOW_METADATA_SELECTORS");
+  });
+});
+
+describe("metadata-graph route — response envelope coverage", () => {
+  it("response envelope exposes every V1 metadata group", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    const required = [
+      "objects",
+      "fields",
+      "views",
+      "filters",
+      "sorts",
+      "widgets",
+      "dashboards",
+      "workflows",
+      "workflowNodes",
+      "workflowActions",
+      "runInputs",
+      "agentHosts",
+      "sandboxes",
+      "integrations",
+      "integrationEntities",
+      "sourceRecords",
+      "runs",
+      "outputArtifacts",
+      "workerKits",
+      "pipelineHealth",
+    ];
+    for (const key of required) {
+      expect(route).toMatch(new RegExp(`${key}:\\s*metadataStore\\.${key}`));
+    }
+  });
+
+  it("route is GET-only and never references any write helper", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    expect(route).toMatch(/export\s*\{[^}]*\bGET\b[^}]*\}/);
+    for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
+      expect(route).not.toMatch(new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\b`));
+    }
+  });
+
+  it("route declares an httpEnabled selector manifest covering stale-group lookup", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    // V1: only selectStaleMetadataGroups is wired through HTTP via
+    // `?staleKind=&staleId=`. The remaining selectors stay helperOnly.
+    expect(route).toContain("httpEnabled");
+    expect(route).toContain("selectStaleMetadataGroups");
+    expect(route).toContain("staleKind");
+    expect(route).toContain("staleId");
+  });
+
+  it("route falls back to an empty store envelope when helpers throw", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    // Defensive try/catch wraps store + graph builders so the inspector and
+    // agents always receive a typed envelope, never a 500.
+    expect(route).toContain("Failed to build metadata store");
+    expect(route).toContain("Failed to build metadata graph");
+    expect(route).toContain("Failed to compute stale groups");
+    expect(route).toContain("emptyMetadataStore");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14. Metadata Graph V1 — run history + secret/redaction full-envelope checks
+// ---------------------------------------------------------------------------
+
+describe("workspace-metadata-store — sandbox run history from source-records sidecar", () => {
+  let buildWorkspaceMetadataStore: (input: unknown) => {
+    runs: Array<{ runId: string; ok: boolean; ranAt: string }>;
+    outputArtifacts: unknown[];
+    sourceRecords: Array<{ id: string; sourceKind: string }>;
+  };
+
+  beforeEach(async () => {
+    const mod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as {
+      buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore;
+    };
+    buildWorkspaceMetadataStore = mod.buildWorkspaceMetadataStore;
+  });
+
+  it("derives multiple runs from workspaceSourceRecords[sandbox:objectId:rowSlug] history", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{
+              Name: "LeadShark Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              lastSourceId: "sandbox:sandbox-env:leadshark-tool",
+              lastResponse: JSON.stringify({ runId: "run-3", exitCode: 0, durationMs: 50, ranAt: "2026-05-21T19:30:00.000Z", output: { items: [] } }),
+            }],
+          }],
+        },
+      },
+      workspaceSourceRecords: {
+        "sandbox:sandbox-env:leadshark-tool": {
+          records: [
+            { runId: "run-1", exitCode: 0, durationMs: 100, ranAt: "2026-05-21T19:28:00.000Z", output: { items: [{ id: 1 }] } },
+            { runId: "run-2", exitCode: 1, durationMs: 80, ranAt: "2026-05-21T19:29:00.000Z", error: "boom", stdout: "fail" },
+            { runId: "run-3", exitCode: 0, durationMs: 50, ranAt: "2026-05-21T19:30:00.000Z", output: { items: [] } },
+          ],
+          fetchedAt: "2026-05-21T19:30:00.000Z",
+          recordCount: 3,
+        },
+      },
+    });
+    const runIds = store.runs.map((r) => r.runId).sort();
+    expect(runIds).toEqual(["run-1", "run-2", "run-3"]);
+    // The latest run (also in row.lastResponse) is deduplicated.
+    expect(store.runs.filter((r) => r.runId === "run-3")).toHaveLength(1);
+    // Failed runs are marked ok=false and never crash the projection.
+    expect(store.runs.find((r) => r.runId === "run-2")!.ok).toBe(false);
+    // The sandbox-run sidecar is tagged so the inspector distinguishes
+    // it from live data-source records.
+    const sidecar = store.sourceRecords.find((s) => s.id === "sandbox:sandbox-env:leadshark-tool");
+    expect(sidecar).toBeDefined();
+    expect(sidecar!.sourceKind).toBe("sandbox-run-history");
+  });
+});
+
+describe("metadata-graph projection — full-envelope secret/redaction guarantees", () => {
+  let buildWorkspaceMetadataStore: (input: unknown) => unknown;
+  let buildWorkspaceMetadataGraph: (store: unknown) => unknown;
+
+  beforeEach(async () => {
+    const storeMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`) as { buildWorkspaceMetadataStore: typeof buildWorkspaceMetadataStore };
+    const graphMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-graph.js")}?t=${Date.now()}`) as { buildWorkspaceMetadataGraph: typeof buildWorkspaceMetadataGraph };
+    buildWorkspaceMetadataStore = storeMod.buildWorkspaceMetadataStore;
+    buildWorkspaceMetadataGraph = graphMod.buildWorkspaceMetadataGraph;
+  });
+
+  it("never echoes raw stdout / stderr / token-shaped values into the envelope JSON", () => {
+    const store = buildWorkspaceMetadataStore({
+      workspaceConfig: {
+        dataModel: {
+          objects: [{
+            id: "creds",
+            columns: ["name", "apiKey", "accessToken", "refreshToken", "authHeaderValue"],
+            rows: [{
+              name: "x",
+              apiKey: "sk-ant-LEAK-1",
+              accessToken: "Bearer LEAK-2",
+              refreshToken: "refresh_LEAK_3",
+              authHeaderValue: "Authorization: Bearer LEAK-4",
+            }],
+            binding: { mode: "manual", source: "Creds" },
+          }, {
+            id: "sandbox-env",
+            objectType: "sandbox-environment",
+            columns: ["Name"],
+            rows: [{
+              Name: "Tool",
+              adapter: "local-agent-host",
+              agentHost: "claude_local",
+              runLocality: "local",
+              lastResponse: JSON.stringify({
+                runId: "run-1",
+                exitCode: 0,
+                durationMs: 10,
+                ranAt: "2026-05-21T19:28:00.000Z",
+                stdout: "Authorization: Bearer secret-stdout-XYZ",
+                stderr: "x-api-key=secret-stderr-XYZ",
+                output: { token: "raw-output-XYZ" },
+              }),
+            }],
+          }],
+        },
+      },
+    });
+    const graph = buildWorkspaceMetadataGraph(store);
+    const json = JSON.stringify({ store, graph });
+    // No secret values from creds row.
+    expect(json).not.toContain("sk-ant-LEAK-1");
+    expect(json).not.toContain("LEAK-2");
+    expect(json).not.toContain("LEAK_3");
+    expect(json).not.toContain("LEAK-4");
+    // No raw stdout / stderr / output from run record.
+    expect(json).not.toContain("secret-stdout-XYZ");
+    expect(json).not.toContain("secret-stderr-XYZ");
+    expect(json).not.toContain("raw-output-XYZ");
   });
 });

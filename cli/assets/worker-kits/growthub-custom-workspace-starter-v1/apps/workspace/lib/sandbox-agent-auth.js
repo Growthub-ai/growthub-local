@@ -586,6 +586,41 @@ function notFoundError(message) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Workspace Metadata Graph V1 — safe agent host readiness metadata.
+//
+// Pure helper that distills a sandbox row into the safe metadata the
+// workspace metadata graph + UI inspector can show. Reads ONLY the safe,
+// allowlisted readiness fields the auth helper persists on the row. Never
+// echoes raw tokens, login URLs, or stdout/stderr — those live inside the
+// helper's response object, not the row patch.
+// ──────────────────────────────────────────────────────────────────────────
+
+function describeAgentHostReadinessMetadata(row) {
+  if (!row || typeof row !== "object") return null;
+  const adapter = String(row?.adapter || "").trim();
+  const agentHost = String(row?.agentHost || "").trim();
+  const runLocality = String(row?.runLocality || "").trim();
+  const safe = {};
+  for (const key of SAFE_ROW_PATCH_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      safe[key] = row[key];
+    }
+  }
+  return {
+    kind: "workspaceAgentHostReadiness",
+    adapter,
+    agentHost,
+    runLocality,
+    status: KNOWN_AGENT_AUTH_STATUSES.includes(safe.agentAuthStatus) ? safe.agentAuthStatus : "unknown",
+    provider: String(safe.agentAuthProvider || agentHost || "unknown").trim(),
+    lastChecked: String(safe.agentAuthLastChecked || "").trim(),
+    lastExitCode: typeof safe.agentAuthLastExitCode === "number" ? safe.agentAuthLastExitCode : null,
+    lastMessage: String(safe.agentAuthLastMessage || "").trim(),
+    lastLoginUrl: String(safe.agentAuthLastLoginUrl || "").trim()
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Backwards-compatible Claude aliases (legacy)
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -616,6 +651,7 @@ export {
   buildRowPatch,
   checkAgentStatus,
   checkClaudeStatus,
+  describeAgentHostReadinessMetadata,
   findSandboxRow,
   getAgentHostCapabilities,
   redactSecrets,

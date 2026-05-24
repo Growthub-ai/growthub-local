@@ -307,6 +307,48 @@ function buildInputPayloadForRunner(envelope) {
   return out;
 }
 
+/**
+ * Workspace Metadata Graph V1 — typed run-input descriptors.
+ *
+ * Returns a metadata-compatible list:
+ *   { id, label, type, required, secretRefOnly, sourceNodeId, workflowId }
+ *
+ * Used by the metadata store + workflow sidecar so the manual run input
+ * schema is a single typed contract — never re-derived inside UI code.
+ *
+ * Existing redaction + size limits remain enforced by
+ * `validateRunInputsEnvelope` / `normalizeRunInputsEnvelope`. This helper
+ * is descriptor-only and does not mutate or echo any field value.
+ */
+function describeRunInputMetadataItems({ workflowId, graph, objectId, rowId } = {}) {
+  const schema = discoverRunInputSchema(graph);
+  const fields = Array.isArray(schema?.fields) ? schema.fields : [];
+  const workflowKey = String(workflowId || (objectId && rowId ? `${objectId}::${rowId}` : "")).trim();
+  const sourceNodeId = findFirstHumanInputNodeId(graph);
+  return fields.map((field) => ({
+    kind: "workspaceRunInput",
+    id: field.id,
+    label: field.label,
+    type: field.type,
+    required: Boolean(field.required),
+    isSecret: Boolean(field.isSecret),
+    secretRefOnly: Boolean(field.isSecret) || field.type === "secretRef",
+    sourceNodeId,
+    workflowId: workflowKey
+  }));
+}
+
+function findFirstHumanInputNodeId(graphValue) {
+  const graph = parseOrchestrationGraph(graphValue) || graphValue || null;
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  for (const node of nodes) {
+    const type = String(node?.type || "").trim();
+    const action = String(node?.config?.action || "").trim();
+    if (type === "human-input" || action === "form") return String(node?.id || "").trim() || "human-input";
+  }
+  return "";
+}
+
 export {
   RUN_INPUTS_KIND,
   MAX_RUN_INPUT_VALUES,
@@ -319,5 +361,6 @@ export {
   summarizeRunInputs,
   validateRunInputsEnvelope,
   buildInputPayloadForRunner,
+  describeRunInputMetadataItems,
   parseFieldDescriptor
 };
