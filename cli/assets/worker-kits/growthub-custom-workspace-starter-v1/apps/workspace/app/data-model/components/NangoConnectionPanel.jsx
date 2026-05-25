@@ -49,6 +49,39 @@ function deriveDefaultConnectionId(row) {
   return "";
 }
 
+/**
+ * Recover the panel's visual state from the persisted row. `status` and
+ * `lastTested` are part of the canonical api-registry shape and survive
+ * across page reloads / workspace navigation via growthub.config.json.
+ * Without this, the panel would flash to "unknown" on every remount even
+ * when the row is already saved as connected.
+ */
+function deriveInitialStatus(row) {
+  const status = typeof row?.status === "string" ? row.status.trim().toLowerCase() : "";
+  if (status === "connected") {
+    return {
+      kind: "connected",
+      message: row?.lastTested
+        ? `Connected · last verified ${formatRelativeTime(row.lastTested)}`
+        : "Connected"
+    };
+  }
+  if (status === "failed" || status === "error") {
+    return { kind: "error", message: "Last verification failed. Re-check the connection." };
+  }
+  return { kind: "unknown", message: "" };
+}
+
+function formatRelativeTime(isoString) {
+  const ts = new Date(isoString);
+  if (Number.isNaN(ts.getTime())) return "recently";
+  const diffMs = Date.now() - ts.getTime();
+  if (diffMs < 60_000) return "just now";
+  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
+  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
+  return `${Math.floor(diffMs / 86_400_000)}d ago`;
+}
+
 function validateField(name, value) {
   if (!value) {
     return name === "providerConfigKey"
@@ -84,6 +117,9 @@ function StatusBadge({ status, label }) {
 export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
   const initialProviderConfigKey = useMemo(() => deriveProviderConfigKey(row), [row]);
   const initialConnectionId = useMemo(() => deriveDefaultConnectionId(row), [row]);
+  const initialStatus = useMemo(() => deriveInitialStatus(row), [row]);
+  const lastTested = typeof row?.lastTested === "string" ? row.lastTested : "";
+  const persistedStatus = typeof row?.status === "string" ? row.status.trim().toLowerCase() : "";
 
   const [providerConfigKey, setProviderConfigKey] = useState(initialProviderConfigKey);
   const [connectionId, setConnectionId] = useState(initialConnectionId);
@@ -91,8 +127,8 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
   const [creatingSession, setCreatingSession] = useState(false);
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [statusKind, setStatusKind] = useState("unknown");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusKind, setStatusKind] = useState(initialStatus.kind);
+  const [statusMessage, setStatusMessage] = useState(initialStatus.message);
   const [connectLink, setConnectLink] = useState(null);
   const [lastSummary, setLastSummary] = useState(null);
   const [errorRecovery, setErrorRecovery] = useState(null);
@@ -100,7 +136,9 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
   const pollTimerRef = useRef(null);
   const pollDeadlineRef = useRef(0);
 
-  // Reset the form when a different row is selected.
+  // Reset the form when a different row is selected. Seed `statusKind` /
+  // `statusMessage` from the persisted row so the connected badge survives
+  // page reloads and row navigation.
   useEffect(() => {
     setProviderConfigKey(initialProviderConfigKey);
     setConnectionId(initialConnectionId);
@@ -108,14 +146,14 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
     setConnectLink(null);
     setLastSummary(null);
     setErrorRecovery(null);
-    setStatusKind("unknown");
-    setStatusMessage("");
+    setStatusKind(initialStatus.kind);
+    setStatusMessage(initialStatus.message);
     setPolling(false);
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
     }
-  }, [row?.id, row?.integrationId, initialProviderConfigKey, initialConnectionId]);
+  }, [row?.id, row?.integrationId, initialProviderConfigKey, initialConnectionId, initialStatus.kind, initialStatus.message]);
 
   useEffect(() => () => {
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
@@ -334,6 +372,12 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
 
         <StatusBadge status={statusKind} label={statusMessage || statusKind} />
 
+        {persistedStatus === "connected" && lastTested ? (
+          <p className="dm-nango-last-tested" aria-label="Last connection verification">
+            Last verified <time dateTime={lastTested}>{formatRelativeTime(lastTested)}</time>
+          </p>
+        ) : null}
+
         {connectLink ? (
           <p className="dm-nango-connect-link">
             <a href={connectLink} target="_blank" rel="noopener noreferrer">
@@ -381,7 +425,7 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
               ? <><Loader2 className="dm-spinner" size={14} aria-hidden="true" /> Auto-polling…</>
               : "Check Connection"}
         </button>
-        {statusKind === "connected" && lastSummary ? (
+        {(statusKind === "connected" || persistedStatus === "connected") ? (
           <button
             type="button"
             className="dm-btn-outline dm-api-action-card-cta"
