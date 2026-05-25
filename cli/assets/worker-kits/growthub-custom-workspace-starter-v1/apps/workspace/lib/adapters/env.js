@@ -14,6 +14,14 @@ function readAdapterConfig() {
     },
     dataSources: {
       hasWindsorApiKey: Boolean(process.env.WINDSOR_API_KEY)
+    },
+    // Nango is a row-level auth/proxy authority under API Registry, NOT a
+    // global integration adapter. Exposing it here is safe metadata only —
+    // never the secret value. NANGO_SECRET_KEY stays inside the server-only
+    // Nango adapter helper (`lib/adapters/nango/index.js`).
+    nango: {
+      hasSecretKey: Boolean(process.env.NANGO_SECRET_KEY),
+      host: process.env.NANGO_HOST || void 0
     }
   };
 }

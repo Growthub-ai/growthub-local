@@ -247,7 +247,11 @@ function buildWorkspaceMetadataGraph(metadataStore) {
     addNode(makeNode("integration", integration.metadataId, {
       label: integration.label,
       lane: integration.lane,
-      status: integration.status
+      status: integration.status,
+      // Safe Nango summary only — providerConfigKey is an identifier, never
+      // a credential. `hasConnectionId` is a boolean, not the connection id.
+      // No access_token / refresh_token / credentials ever appear here.
+      ...(integration.nango ? { nango: integration.nango } : {})
     }, integration));
   }
 

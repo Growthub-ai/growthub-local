@@ -74,6 +74,7 @@ import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
 import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
+import { NangoConnectionPanel } from "./NangoConnectionPanel.jsx";
 import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
 import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { SandboxOrchestrationEditorPanel } from "./SandboxOrchestrationEditorPanel.jsx";
@@ -1440,6 +1441,13 @@ function DataModelRecordDrawer({
             onCreateSandboxTool={() => setSandboxToolFlow("draft")}
             onOpenSandboxTool={openSandboxToolRow}
             onRunSandboxTool={runExistingSandboxTool}
+          />
+        )}
+        {isApiRegistry && sandboxToolFlow !== "draft" && (
+          <NangoConnectionPanel
+            draft={draft}
+            disabled={saving}
+            onDraftChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           />
         )}
         {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (

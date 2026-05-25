@@ -4046,3 +4046,297 @@ describe("metadata-graph projection — full-envelope secret/redaction guarantee
     expect(json).not.toContain("raw-output-XYZ");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Nango Thin Adapter for API Registry — governance + contract probes
+// ---------------------------------------------------------------------------
+
+describe("nango thin adapter — files ship and stay server-only", () => {
+  it("lib/adapters/nango/index.js ships in the kit", () => {
+    expect(appExists("lib/adapters/nango/index.js")).toBe(true);
+  });
+
+  it("connect-session POST route ships", () => {
+    expect(appExists("app/api/workspace/nango/connect-session/route.js")).toBe(true);
+  });
+
+  it("connection-status POST route ships", () => {
+    expect(appExists("app/api/workspace/nango/connection-status/route.js")).toBe(true);
+  });
+
+  it("NangoConnectionPanel sidecar component ships", () => {
+    expect(appExists("app/data-model/components/NangoConnectionPanel.jsx")).toBe(true);
+  });
+
+  it("adapter exports the documented server-only contract", () => {
+    const source = appText("lib/adapters/nango/index.js");
+    for (const name of [
+      "describeNangoAdapter",
+      "getNangoServerConfig",
+      "createNangoConnectSession",
+      "getNangoConnectionSummary",
+      "executeNangoProxyRequest",
+      "redactNangoError",
+    ]) {
+      expect(source).toContain(`function ${name}`);
+      expect(source).toMatch(new RegExp(`export\\s*\\{[^}]*${name}[^}]*\\}`, "s"));
+    }
+  });
+
+  it("adapter reads NANGO_SECRET_KEY from process.env only, never from config", () => {
+    const source = appText("lib/adapters/nango/index.js");
+    // Strip block + line comments before scanning so doc references don't
+    // count as runtime reads. Strip JS string literals too (single/double).
+    const sansComments = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+      .replace(/"[^"]*"/g, "\"\"")
+      .replace(/'[^']*'/g, "''");
+    const runtimeRefs = sansComments.match(/NANGO_SECRET_KEY/g) || [];
+    const envRefs = sansComments.match(/process\.env\.NANGO_SECRET_KEY/g) || [];
+    expect(runtimeRefs.length).toBeGreaterThan(0);
+    // Every NON-comment, NON-string occurrence MUST be a process.env access.
+    expect(envRefs.length).toBe(runtimeRefs.length);
+  });
+
+  it("adapter never imports a client-only React surface", () => {
+    const source = appText("lib/adapters/nango/index.js");
+    expect(source).not.toContain('"use client"');
+    expect(source).not.toContain("from \"react\"");
+    expect(source).not.toContain("from 'react'");
+  });
+
+  it("connect-session route is POST-only (others return 405)", () => {
+    const source = appText("app/api/workspace/nango/connect-session/route.js");
+    expect(source).toContain("async function POST");
+    expect(source).toContain("method not allowed");
+    expect(source).toMatch(/export\s*\{[^}]*POST[^}]*GET[^}]*\}/s);
+  });
+
+  it("connection-status route is POST-only (others return 405)", () => {
+    const source = appText("app/api/workspace/nango/connection-status/route.js");
+    expect(source).toContain("async function POST");
+    expect(source).toContain("method not allowed");
+  });
+
+  it("connect-session route never references NANGO_SECRET_KEY in its response shape", () => {
+    const source = appText("app/api/workspace/nango/connect-session/route.js");
+    // The route may guard on process.env.NANGO_SECRET_KEY but must NOT pass it
+    // into the JSON response. We assert no path constructs a response object
+    // that includes the secret key name.
+    expect(source).not.toMatch(/NANGO_SECRET_KEY:\s/);
+    expect(source).not.toMatch(/secret_key:\s*process\.env/);
+  });
+
+  it("connect-session response payload exposes only safe session fields", () => {
+    const source = appText("app/api/workspace/nango/connect-session/route.js");
+    expect(source).toContain("token: session.token");
+    expect(source).toContain("connect_link: session.connect_link");
+    expect(source).toContain("expires_at: session.expires_at");
+  });
+
+  it("connection-status route never echoes credentials/access_token/refresh_token", () => {
+    const source = appText("app/api/workspace/nango/connection-status/route.js");
+    // Allow the words inside redaction comments but disallow live references
+    // that would actually shape the response (e.g. `credentials: ...`).
+    expect(source).not.toMatch(/credentials:\s/);
+    expect(source).not.toMatch(/access_token:\s/);
+    expect(source).not.toMatch(/refresh_token:\s/);
+  });
+
+  it("adapter SAFE_CONNECTION_FIELDS allowlist excludes all credential fields", () => {
+    const source = appText("lib/adapters/nango/index.js");
+    expect(source).toContain("const SAFE_CONNECTION_FIELDS = [");
+    // Defensive: the allowlist must NOT include any token/credential field.
+    const safeBlock = source.match(/SAFE_CONNECTION_FIELDS = \[(.*?)\]/s)?.[1] || "";
+    for (const forbidden of ["credentials", "access_token", "refresh_token", "client_secret", "api_key"]) {
+      expect(safeBlock).not.toContain(`"${forbidden}"`);
+    }
+  });
+});
+
+describe("nango — API Registry row schema governance", () => {
+  let validateWorkspaceConfig: (next: unknown) => void;
+
+  beforeEach(async () => {
+    const schemaPath = path.join(APP_ROOT, "lib/workspace-schema.js");
+    const mod = await import(`file://${schemaPath}?t=${Date.now()}`) as {
+      validateWorkspaceConfig: typeof validateWorkspaceConfig;
+    };
+    validateWorkspaceConfig = mod.validateWorkspaceConfig;
+  });
+
+  function apiRegistryConfig(rowOverrides: Record<string, unknown>) {
+    return {
+      dataModel: {
+        objects: [{
+          id: "api-registry",
+          label: "API Registry",
+          objectType: "api-registry",
+          columns: ["Name", "integrationId"],
+          rows: [{ Name: "github", integrationId: "github", ...rowOverrides }],
+        }],
+      },
+    };
+  }
+
+  it("accepts a row with authAuthority: nango and required Nango fields", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoProviderConfigKey: "github-prod",
+      nangoConnectionId: "customer-123",
+      nangoStatus: "connected",
+    }))).not.toThrow();
+  });
+
+  it("rejects a Nango row missing providerConfigKey", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoConnectionId: "customer-123",
+    }))).toThrow(/nangoProviderConfigKey/);
+  });
+
+  it("rejects a Nango row missing connectionId", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoProviderConfigKey: "github-prod",
+    }))).toThrow(/nangoConnectionId/);
+  });
+
+  it("rejects an unknown authAuthority value", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "vault",
+    }))).toThrow(/authAuthority/);
+  });
+
+  it("rejects an unknown nangoStatus value", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoProviderConfigKey: "github-prod",
+      nangoConnectionId: "customer-123",
+      nangoStatus: "compromised",
+    }))).toThrow(/nangoStatus/);
+  });
+
+  it("rejects a row carrying a Nango secret in config", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoProviderConfigKey: "github-prod",
+      nangoConnectionId: "customer-123",
+      nangoSecretKey: "nango_sk_live_xyz",
+    }))).toThrow(/nangoSecretKey is not allowed/);
+  });
+
+  it("rejects a row carrying a provider access_token in config", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoProviderConfigKey: "github-prod",
+      nangoConnectionId: "customer-123",
+      access_token: "ghu_xyz",
+    }))).toThrow(/access_token is not allowed/);
+  });
+
+  it("rejects a row carrying provider credentials in config", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "nango",
+      nangoProviderConfigKey: "github-prod",
+      nangoConnectionId: "customer-123",
+      credentials: { type: "oauth2", access_token: "xxx" },
+    }))).toThrow(/credentials is not allowed/);
+  });
+
+  it("preserves direct-env rows that omit Nango fields", () => {
+    expect(() => validateWorkspaceConfig(apiRegistryConfig({
+      authAuthority: "direct-env",
+      authRef: "github",
+    }))).not.toThrow();
+  });
+});
+
+describe("nango — test-api-record and orchestration runner branch on authAuthority", () => {
+  it("test-api-record route imports the Nango adapter and branches on authAuthority", () => {
+    const source = appText("app/api/workspace/test-api-record/route.js");
+    expect(source).toContain('from "@/lib/adapters/nango"');
+    expect(source).toContain("executeNangoProxyRequest");
+    expect(source).toMatch(/authAuthority\)\s*\.trim\(\)|authAuthority\s*===\s*"nango"/);
+  });
+
+  it("orchestration-graph-runner imports the Nango adapter and branches on authAuthority", () => {
+    const source = appText("lib/orchestration-graph-runner.js");
+    expect(source).toContain('from "./adapters/nango/index.js"');
+    expect(source).toContain("executeNangoProxyRequest");
+    expect(source).toContain('authAuthority || "").trim()');
+  });
+
+  it("test-api-record preserves direct-env behavior for non-nango rows", () => {
+    const source = appText("app/api/workspace/test-api-record/route.js");
+    // The direct-env path uses readServerSecret + buildAuthHeaders; these must
+    // remain reachable below the Nango branch.
+    expect(source).toContain("readServerSecret(authRef)");
+    expect(source).toContain("buildAuthHeaders(record, secret)");
+  });
+
+  it("orchestration runner preserves transform / successStatusCodes / redaction pipeline", () => {
+    const source = appText("lib/orchestration-graph-runner.js");
+    expect(source).toContain("transformProviderPayload");
+    expect(source).toContain("successStatusCodes");
+    expect(source).toContain("redactSecretsFromText");
+  });
+});
+
+describe("nango — env adapter exposes safe Nango wiring without becoming the global integration adapter", () => {
+  it("readAdapterConfig surfaces nango.hasSecretKey + nango.host but does not list nango as an integrationAdapter value", () => {
+    const source = appText("lib/adapters/env.js");
+    expect(source).toContain("nango:");
+    expect(source).toContain("hasSecretKey: Boolean(process.env.NANGO_SECRET_KEY)");
+    // V1 invariant: Nango is row-scoped, not a global integration adapter.
+    const integrationAdapterAllowlist = source.match(
+      /integrationAdapter:\s*readEnum\([^,]+,\s*\[(.*?)\]/s,
+    )?.[1] || "";
+    expect(integrationAdapterAllowlist).not.toContain('"nango"');
+  });
+});
+
+describe("nango — kit.json frozen asset coverage", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+
+  const requiredPaths = [
+    "apps/workspace/lib/adapters/nango/index.js",
+    "apps/workspace/app/api/workspace/nango/connect-session/route.js",
+    "apps/workspace/app/api/workspace/nango/connection-status/route.js",
+    "apps/workspace/app/data-model/components/NangoConnectionPanel.jsx",
+  ];
+
+  for (const p of requiredPaths) {
+    it(`frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+});
+
+describe("nango — metadata store surfaces safe Nango summary only", () => {
+  it("workspace-metadata-store derives safe Nango summary for api-registry rows", () => {
+    const source = appText("lib/workspace-metadata-store.js");
+    expect(source).toContain('objectType !== "api-registry"');
+    expect(source).toContain("nangoProviderConfigKey");
+    expect(source).toContain("hasConnectionId");
+  });
+
+  it("workspace-metadata-store never references token/credential field names in derivation", () => {
+    const source = appText("lib/workspace-metadata-store.js");
+    // The derivation block must not read nangoSecretKey or provider tokens.
+    // It may mention "credentials" in unrelated source-record contexts; the
+    // probe targets the Nango derivation specifically.
+    const nangoBlock = source.match(/nangoByIntegrationId = new Map[\s\S]*?for \(const integration of integrations\)/)?.[0] || "";
+    expect(nangoBlock).not.toContain("nangoSecretKey");
+    expect(nangoBlock).not.toContain("access_token");
+    expect(nangoBlock).not.toContain("refresh_token");
+    expect(nangoBlock).not.toMatch(/\bcredentials\b/);
+  });
+
+  it("workspace-metadata-graph surfaces nango summary on integration nodes only", () => {
+    const source = appText("lib/workspace-metadata-graph.js");
+    expect(source).toContain("integration.nango");
+  });
+});

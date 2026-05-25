@@ -1115,6 +1115,88 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   }
 }
 
+// API Registry — Nango Thin Adapter row contract.
+//
+// `authAuthority` is the only secret-routing decision a registry row makes.
+//
+//   - "direct-env"      : existing behavior, resolves env keys server-side
+//   - "nango"           : routes through Nango proxy via row-level providerConfigKey + connectionId
+//   - "growthub-bridge" : reserved — bridge owns the auth handoff
+//   - "none"            : no auth (public endpoint)
+//
+// SAFE Nango row fields ONLY. Any token-shaped field (NANGO_SECRET_KEY,
+// access_token, refresh_token, bearer, credentials, etc.) is explicitly
+// rejected by `validateApiRegistryRow` below.
+const KNOWN_API_REGISTRY_AUTH_AUTHORITIES = [
+  "direct-env",
+  "nango",
+  "growthub-bridge",
+  "none",
+];
+const KNOWN_NANGO_STATUSES = ["unknown", "connected", "missing", "error", "checking"];
+const SAFE_NANGO_ROW_FIELDS = [
+  "nangoProviderConfigKey",
+  "nangoConnectionId",
+  "nangoModel",
+  "nangoSyncName",
+  "nangoHostRef",
+  "nangoStatus",
+  "nangoLastCheckedAt",
+  "nangoLastError",
+];
+const FORBIDDEN_NANGO_ROW_FIELDS = [
+  "nangoSecretKey",
+  "nango_secret_key",
+  "NANGO_SECRET_KEY",
+  "accessToken",
+  "access_token",
+  "refreshToken",
+  "refresh_token",
+  "credentials",
+  "providerCredentials",
+  "bearer",
+];
+
+function validateApiRegistryRow(row, path, errors) {
+  if (!isPlainObject(row)) return;
+  if (row.authAuthority !== undefined && row.authAuthority !== null && row.authAuthority !== "") {
+    const authority = String(row.authAuthority).trim();
+    if (!KNOWN_API_REGISTRY_AUTH_AUTHORITIES.includes(authority)) {
+      errors.push(`${path}.authAuthority must be one of ${KNOWN_API_REGISTRY_AUTH_AUTHORITIES.join(", ")}`);
+    }
+  }
+  for (const field of SAFE_NANGO_ROW_FIELDS) {
+    const value = row[field];
+    if (value === undefined || value === null || value === "") continue;
+    if (typeof value !== "string") {
+      errors.push(`${path}.${field} must be a string when present`);
+    }
+  }
+  if (row.nangoStatus !== undefined && row.nangoStatus !== null && row.nangoStatus !== "") {
+    const status = String(row.nangoStatus).trim().toLowerCase();
+    if (!KNOWN_NANGO_STATUSES.includes(status)) {
+      errors.push(`${path}.nangoStatus must be one of ${KNOWN_NANGO_STATUSES.join(", ")}`);
+    }
+  }
+  // The Nango thin adapter contract is row-scoped: when authAuthority is
+  // "nango", both providerConfigKey and connectionId must be present so
+  // executeNangoProxyRequest can route the call safely. A missing pair would
+  // otherwise silently fall back to direct fetch which is unsafe.
+  if (String(row.authAuthority || "").trim() === "nango") {
+    if (typeof row.nangoProviderConfigKey !== "string" || !row.nangoProviderConfigKey.trim()) {
+      errors.push(`${path}.nangoProviderConfigKey is required when authAuthority is "nango"`);
+    }
+    if (typeof row.nangoConnectionId !== "string" || !row.nangoConnectionId.trim()) {
+      errors.push(`${path}.nangoConnectionId is required when authAuthority is "nango"`);
+    }
+  }
+  for (const forbidden of FORBIDDEN_NANGO_ROW_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(row, forbidden)) {
+      errors.push(`${path}.${forbidden} is not allowed on an api-registry row — Nango secrets and provider credentials must stay server-side (env only)`);
+    }
+  }
+}
+
 const NAV_FOLDERS_OBJECT_ID = "nav-folders";
 const NAV_FOLDER_NAME_MAX = 60;
 const NAV_ITEM_LABEL_MAX = 80;
@@ -1264,6 +1346,9 @@ function validateDataModelConfig(dataModel, errors) {
         }
         if (object.objectType === "sandbox-environment") {
           validateSandboxEnvironmentRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        }
+        if (object.objectType === "api-registry") {
+          validateApiRegistryRow(row, `${prefix}.rows[${rowIndex}]`, errors);
         }
         if (object.id === NAV_FOLDERS_OBJECT_ID) {
           validateNavFolderRow(row, `${prefix}.rows[${rowIndex}]`, errors);
@@ -1526,11 +1611,14 @@ function validateWorkspaceConfig(nextConfig) {
 
 export {
   DASHBOARD_TEMPLATES,
+  FORBIDDEN_NANGO_ROW_FIELDS,
   GRID_COLUMNS,
   GRID_ROWS,
   KNOWN_AGGREGATIONS,
+  KNOWN_API_REGISTRY_AUTH_AUTHORITIES,
   KNOWN_CHART_TYPES,
   KNOWN_DATA_BINDING_MODES,
+  KNOWN_NANGO_STATUSES,
   DEFAULT_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_LIFECYCLE_STATUSES,
   KNOWN_FIELDS,
@@ -1541,6 +1629,7 @@ export {
   KNOWN_SANDBOX_RUNTIMES,
   KNOWN_SORT_DIRECTIONS,
   KNOWN_WIDGET_KINDS,
+  SAFE_NANGO_ROW_FIELDS,
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,

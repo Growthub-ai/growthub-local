@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { executeNangoProxyRequest, redactNangoError } from "@/lib/adapters/nango";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -76,6 +77,38 @@ async function POST(request) {
     ...(body?.record || {}),
     ...(dataSourceRecord || {}),
   };
+
+  // Nango thin adapter branch — when the row explicitly declares Nango as its
+  // auth authority, route through the server-only Nango proxy adapter instead
+  // of the direct env-secret fetch path. Direct-env behavior is preserved for
+  // every other row.
+  const authAuthority = String(record.authAuthority || "").trim();
+  if (authAuthority === "nango") {
+    try {
+      const result = await executeNangoProxyRequest(record, {}, { timeoutMs: DEFAULT_TIMEOUT_MS });
+      return NextResponse.json(
+        {
+          ok: result.ok,
+          status: result.httpStatus || (result.ok ? 200 : 502),
+          authAuthority: "nango",
+          adapterMeta: result.adapterMeta || null,
+          nangoProviderConfigKey: record.nangoProviderConfigKey || null,
+          response: result.rawPayload !== undefined ? result.rawPayload : result.stdout,
+          ...(result.error ? { error: result.error } : {}),
+        },
+        { status: result.ok ? 200 : 502 },
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          authAuthority: "nango",
+          error: redactNangoError(error),
+        },
+        { status: 502 },
+      );
+    }
+  }
 
   let url;
   try {

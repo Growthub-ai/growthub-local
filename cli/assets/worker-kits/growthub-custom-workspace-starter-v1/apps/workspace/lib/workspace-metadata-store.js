@@ -705,18 +705,64 @@ function deriveWorkspaceIntegrationMetadataItems(workspaceConfig) {
       ? workspaceConfig.dataModel.integrations
       : []
     : [];
+  // Index api-registry rows so we can stamp safe Nango summary fields onto
+  // matching integration items (and synthesise integration nodes for
+  // registry-only Nango rows). NEVER include the secret value here — only
+  // authAuthority, providerConfigKey, hasConnectionId, nangoStatus, timestamps.
+  const nangoByIntegrationId = new Map();
+  const rawObjectsForNango = Array.isArray(workspaceConfig?.dataModel?.objects)
+    ? workspaceConfig.dataModel.objects
+    : [];
+  for (const raw of rawObjectsForNango) {
+    if (!isPlainObject(raw) || raw.objectType !== "api-registry") continue;
+    const rows = Array.isArray(raw.rows) ? raw.rows : [];
+    for (const row of rows) {
+      if (!isPlainObject(row)) continue;
+      const authAuthority = safeString(row.authAuthority).trim();
+      const integrationId = safeString(row.integrationId || row.id || row.Name).trim();
+      if (!integrationId) continue;
+      if (authAuthority !== "nango") continue;
+      nangoByIntegrationId.set(integrationId, {
+        authAuthority: "nango",
+        nangoProviderConfigKey: safeString(row.nangoProviderConfigKey).trim(),
+        hasConnectionId: Boolean(safeString(row.nangoConnectionId).trim()),
+        nangoStatus: safeString(row.nangoStatus).trim() || "unknown",
+        nangoLastCheckedAt: safeString(row.nangoLastCheckedAt).trim()
+      });
+    }
+  }
   for (const integration of integrations) {
     if (!isPlainObject(integration)) continue;
     const id = safeString(integration.integrationId || integration.id).trim();
     if (!id) continue;
+    const nangoSummary = nangoByIntegrationId.get(id);
     items.push({
       kind: "workspaceIntegration",
       id,
       metadataId: stableId("integration", id),
       label: safeString(integration.label || integration.name || id).trim(),
       lane: safeString(integration.lane).trim(),
-      status: safeString(integration.status).trim()
+      status: safeString(integration.status).trim(),
+      ...(nangoSummary ? { nango: nangoSummary } : {})
     });
+  }
+  // Surface Nango-only api-registry integrations even when there is no
+  // matching `dataModel.integrations` entry, so the graph never silently
+  // drops a row that workflows can already reach.
+  const declaredIntegrationIds = new Set(items.map((item) => item.id));
+  for (const [id, nangoSummary] of nangoByIntegrationId.entries()) {
+    if (declaredIntegrationIds.has(id)) continue;
+    items.push({
+      kind: "workspaceIntegration",
+      id,
+      metadataId: stableId("integration", id),
+      label: id,
+      lane: "",
+      status: "referenced",
+      sourceAuthority: "api-registry-nango",
+      nango: nangoSummary
+    });
+    declaredIntegrationIds.add(id);
   }
   // Also derive integrations referenced by data-model bindings / widgets so
   // an unregistered integration still appears as a graph node (with a

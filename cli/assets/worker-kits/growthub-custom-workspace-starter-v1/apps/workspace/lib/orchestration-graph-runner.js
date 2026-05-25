@@ -16,6 +16,7 @@ import {
 } from "./orchestration-graph.js";
 import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
+import { executeNangoProxyRequest } from "./adapters/nango/index.js";
 
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
@@ -155,6 +156,9 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
     method: nodeConfig?.method || registryRecord.method,
     endpoint: nodeConfig?.endpoint || registryRecord.endpoint,
     baseUrl: nodeConfig?.baseUrl || registryRecord.baseUrl,
+    authAuthority: nodeConfig?.authAuthority || registryRecord.authAuthority,
+    nangoProviderConfigKey: nodeConfig?.nangoProviderConfigKey || registryRecord.nangoProviderConfigKey,
+    nangoConnectionId: nodeConfig?.nangoConnectionId || registryRecord.nangoConnectionId,
     authRef: nodeConfig?.authRef || registryRecord.authRef || registryId,
     requestHeadersMetadata: {
       ...(registryRecord.requestHeadersMetadata || {}),
@@ -165,6 +169,36 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
       || registryRecord.authHeader,
     authPrefix: nodeConfig?.requestHeadersMetadata?.authPrefix || registryRecord.authPrefix
   };
+
+  // Nango thin adapter branch — when the row declares Nango as its auth
+  // authority, route through Nango's proxy. The shape of the result mirrors
+  // the direct-fetch branch so transformProviderPayload, successStatusCodes,
+  // and the redaction pipeline downstream all keep working unchanged.
+  if (String(merged.authAuthority || "").trim() === "nango") {
+    const outboundTimeoutNango = Math.min(Math.max(timeoutMs, 1000), 120000);
+    const bodyTemplate = substituteVariables(String(nodeConfig?.bodyTemplate || ""), inputPayload);
+    let nangoBody;
+    if (String(merged.method || "GET").toUpperCase() !== "GET" && bodyTemplate) {
+      try {
+        nangoBody = JSON.parse(bodyTemplate);
+      } catch {
+        nangoBody = bodyTemplate;
+      }
+    }
+    const nangoResult = await executeNangoProxyRequest(merged, inputPayload, {
+      timeoutMs: outboundTimeoutNango,
+      substituteVariables,
+      body: nangoBody,
+    });
+    return {
+      ...nangoResult,
+      adapterMeta: {
+        ...(nangoResult.adapterMeta || {}),
+        mode: "orchestration-graph",
+        registryId,
+      },
+    };
+  }
 
   let url;
   try {
