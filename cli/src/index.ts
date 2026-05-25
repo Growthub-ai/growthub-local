@@ -1721,7 +1721,7 @@ async function runCreateGovernedWorkspaceFlow(opts?: {
         ...(opts?.importOnly ? [] : [
           {
             value: "worker-kit",
-            label: "🧰  Start from worker kit",
+            label: "🔎  Browse Custom Workspaces",
           },
         ]),
         opts?.firstRun
@@ -1967,7 +1967,7 @@ async function runDiscoveryHub(opts?: {
           "🤖 Agent Harness: filter by type — Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
           "🏗️ Workspace Operations: status, QA, persistent memory, deploy checks, upstream sync, and portal prep.",
-          "🧰 Browse Worker Kits: browse specialized agents and custom workspaces.",
+          "🔎 Browse Custom Workspaces: choose an official governed workspace template.",
           "⚙️ Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
           `   Locked state: ${workflowAccess.reason}.`,
           "🔀 Fork Sync Agent: register, track, and heal your forked worker kits — preserves all customisations while syncing to the latest upstream version.",
@@ -2146,7 +2146,7 @@ async function runDiscoveryHub(opts?: {
         const advancedChoice = await p.select({
           message: "Advanced — capabilities & admin",
           options: [
-            { value: "kits", label: "🧰 Browse Worker Kits", hint: "Self-contained workspace environments for agents" },
+            { value: "kits", label: "🔎 Browse Custom Workspaces", hint: "Official governed workspace templates" },
             {
               value: "workflows",
               label: workflowAccess.state === "ready" ? "🔗 Workflows" : "🔗 Workflows" + pc.dim(" (locked)"),
@@ -2485,27 +2485,19 @@ program
   .description("Growthub CLI — setup, configure, and run your local Growthub instance")
   .version(resolveCliVersion())
   .addHelpText("after", `
-Worker Kits (agent execution environments):
+Custom Workspaces:
 
   Discovery:
-    $ growthub kit                              Interactive browser — pick, preview, download
-    $ growthub kit list                         All kits grouped by family (studio · workflow · operator · ops)
-    $ growthub kit list --family studio         Filter by family
-    $ growthub kit families                     Show family taxonomy with descriptions
+    $ growthub kit                              Browse official workspace templates
+    $ growthub kit list --family studio         Show the official workspace templates
 
-  Download:
-    $ growthub kit download                     Interactive (no arg = picker)
-    $ growthub kit download higgsfield          Fuzzy slug — resolves automatically
-    $ growthub kit download hyperframes         Hyperframes custom workspace
-    $ growthub kit download postiz              Postiz Social Media Studio
-    $ growthub kit download zernio             Zernio Social Media Studio (Postiz UI Shell + Zernio Engine)
-    $ growthub kit download growthub-hyperframes-studio-v1
-    $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
-    $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
+  Create:
+    $ growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
+    $ growthub kit download project-management --out ./project-management-workspace
 
   Inspect & validate:
-    $ growthub kit inspect higgsfield-studio-v1
-    $ growthub kit inspect growthub-email-marketing-v1 --json
+    $ growthub kit inspect growthub-custom-workspace-starter-v1
+    $ growthub kit inspect project-management --json
     $ growthub kit validate ./path/to/kit
 
   Fork Sync (keep your forked kits in sync):

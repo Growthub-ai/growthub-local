@@ -96,6 +96,15 @@ const KNOWN_SANDBOX_AGENT_HOSTS = [
 ];
 
 const NORMALIZED_OBJECT_FIELD_IDS = ["id", "label", "secondaryLabel", "entityType", "provider", "lane", "status"];
+
+// API Registry V1 — Nango binding fields are additive and OPTIONAL on the
+// existing `objectType: "api-registry"` row shape (whose canonical columns
+// are owned by `lib/workspace-data-model.js`). They only carry meaning when
+// the row's `connectorKind === "nango"`. The HTTP, MCP, Chrome, and tool
+// connectorKinds keep working unchanged.
+const KNOWN_NANGO_MODES = ["cloud", "self-hosted"];
+const NANGO_PROVIDER_CONFIG_KEY_MAX = 64;
+const NANGO_PROVIDER_CONFIG_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const WORKSPACE_TEMPLATE_KIND = "growthub-workspace-template";
 const WORKSPACE_TEMPLATE_VERSION = 1;
 const WORKSPACE_TEMPLATE_SOURCE = "growthub-custom-workspace-starter-v1";
@@ -1016,9 +1025,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.intelligenceAdapterMode must be one of ${INTELLIGENCE_ADAPTER_MODES.join(", ")}`);
     }
   }
-  if (row.orchestrationGraph !== undefined && row.orchestrationGraph !== null && row.orchestrationGraph !== "") {
-    if (typeof row.orchestrationGraph !== "string" && (typeof row.orchestrationGraph !== "object" || Array.isArray(row.orchestrationGraph))) {
-      errors.push(`${path}.orchestrationGraph must be a JSON string or plain object`);
+  for (const field of ["orchestrationConfig", "orchestrationGraph"]) {
+    if (row[field] !== undefined && row[field] !== null && row[field] !== "") {
+      if (typeof row[field] !== "string" && (typeof row[field] !== "object" || Array.isArray(row[field]))) {
+        errors.push(`${path}.${field} must be a JSON string or plain object`);
+      }
     }
   }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {
@@ -1111,6 +1122,88 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   for (const forbidden of FORBIDDEN_AUTH_ROW_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(row, forbidden)) {
       errors.push(`${path}.${forbidden} is not allowed on a sandbox row — auth secrets must stay in the local CLI's own store`);
+    }
+  }
+}
+
+/**
+ * Validate the OPTIONAL Nango binding fields that may appear on an
+ * `objectType: "api-registry"` row when `connectorKind === "nango"`.
+ *
+ * The canonical api-registry columns (`integrationId`, `authRef`, `baseUrl`,
+ * `endpoint`, `method`, `status`, `connectorKind`, `resolverTemplateId`, ...)
+ * are owned by `lib/workspace-data-model.js` and validated by their own
+ * shape. This function only inspects the Nango extension fields and is a
+ * no-op for HTTP / MCP / Chrome / tool / custom rows.
+ */
+function validateApiRegistryRow(row, path, errors) {
+  if (!isPlainObject(row)) return;
+  // Defensive: any api-registry row is forbidden from persisting raw
+  // credentials. The auth ref lives in `authRef` (an env-ref name) and the
+  // actual secret stays in env. This guard applies to ALL connectorKinds.
+  const FORBIDDEN_TOKEN_FIELDS = [
+    "secret",
+    "secretKey",
+    "apiKey",
+    "token",
+    "authToken",
+    "accessToken",
+    "refreshToken",
+    "bearer",
+    "password"
+  ];
+  for (const forbidden of FORBIDDEN_TOKEN_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(row, forbidden)) {
+      errors.push(`${path}.${forbidden} is not allowed on an api-registry row — store the env-ref name in authRef and keep the secret in env`);
+    }
+  }
+  if (row.connectorKind !== "nango") return;
+  // Nango-specific binding fields. All are optional individually, but
+  // `providerConfigKey` must resolve at runtime — either explicitly or by
+  // falling back to `integrationId`. Validate format only when present.
+  if (row.providerConfigKey !== undefined && row.providerConfigKey !== null && row.providerConfigKey !== "") {
+    if (
+      typeof row.providerConfigKey !== "string"
+      || row.providerConfigKey.length > NANGO_PROVIDER_CONFIG_KEY_MAX
+      || !NANGO_PROVIDER_CONFIG_KEY_PATTERN.test(row.providerConfigKey)
+    ) {
+      errors.push(`${path}.providerConfigKey must be alphanumeric (with _.- separators), starting alphanumeric, and <= ${NANGO_PROVIDER_CONFIG_KEY_MAX} chars`);
+    }
+  }
+  if (row.nangoMode !== undefined && row.nangoMode !== "" && !KNOWN_NANGO_MODES.includes(row.nangoMode)) {
+    errors.push(`${path}.nangoMode must be one of ${KNOWN_NANGO_MODES.join(", ")}`);
+  }
+  if (row.nangoHostUrl !== undefined && row.nangoHostUrl !== null && row.nangoHostUrl !== "" && typeof row.nangoHostUrl !== "string") {
+    errors.push(`${path}.nangoHostUrl must be a string when present`);
+  }
+  if (row.nangoEnvironment !== undefined && row.nangoEnvironment !== null && row.nangoEnvironment !== "" && typeof row.nangoEnvironment !== "string") {
+    errors.push(`${path}.nangoEnvironment must be a string when present`);
+  }
+  if (row.connectionIds !== undefined) {
+    if (typeof row.connectionIds === "string") {
+      // Allow comma-separated form for hand-edits — splitting/normalization
+      // happens at the resolver boundary, not in the validator.
+    } else if (!Array.isArray(row.connectionIds)) {
+      errors.push(`${path}.connectionIds must be a comma-separated string or an array of strings`);
+    } else {
+      row.connectionIds.forEach((value, index) => {
+        if (typeof value !== "string" || !value.trim()) {
+          errors.push(`${path}.connectionIds[${index}] must be a non-empty string`);
+        }
+      });
+    }
+  }
+  if (row.enabledActions !== undefined) {
+    if (typeof row.enabledActions === "string") {
+      // Comma-separated form is allowed.
+    } else if (!Array.isArray(row.enabledActions)) {
+      errors.push(`${path}.enabledActions must be a comma-separated string or an array of strings`);
+    } else {
+      row.enabledActions.forEach((value, index) => {
+        if (typeof value !== "string" || !value.trim()) {
+          errors.push(`${path}.enabledActions[${index}] must be a non-empty string`);
+        }
+      });
     }
   }
 }
@@ -1264,6 +1357,9 @@ function validateDataModelConfig(dataModel, errors) {
         }
         if (object.objectType === "sandbox-environment") {
           validateSandboxEnvironmentRow(row, `${prefix}.rows[${rowIndex}]`, errors);
+        }
+        if (object.objectType === "api-registry") {
+          validateApiRegistryRow(row, `${prefix}.rows[${rowIndex}]`, errors);
         }
         if (object.id === NAV_FOLDERS_OBJECT_ID) {
           validateNavFolderRow(row, `${prefix}.rows[${rowIndex}]`, errors);
@@ -1536,11 +1632,14 @@ export {
   KNOWN_FIELDS,
   KNOWN_FILTER_CONJUNCTIONS,
   KNOWN_FILTER_OPERATORS,
+  KNOWN_NANGO_MODES,
   KNOWN_SANDBOX_AGENT_HOSTS,
   KNOWN_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_RUNTIMES,
   KNOWN_SORT_DIRECTIONS,
   KNOWN_WIDGET_KINDS,
+  NANGO_PROVIDER_CONFIG_KEY_MAX,
+  NANGO_PROVIDER_CONFIG_KEY_PATTERN,
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,

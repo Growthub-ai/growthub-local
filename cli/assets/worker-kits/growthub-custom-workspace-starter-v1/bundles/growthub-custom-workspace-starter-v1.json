@@ -40,6 +40,7 @@
     "templates/deployment-plan.md",
     "templates/project.md",
     "templates/self-eval.md",
+    "templates/seeded-configs/project-management.config.json",
     "helpers/README.md",
     "skills/README.md",
     "examples/workspace-sample.md",

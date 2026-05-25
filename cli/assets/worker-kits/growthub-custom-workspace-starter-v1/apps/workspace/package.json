@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@nangohq/node": "^0.70.4",
     "@tanstack/react-table": "^8.21.3",
     "lucide-react": "^0.468.0",
     "next": "^16.2.6",

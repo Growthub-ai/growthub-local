@@ -12,6 +12,13 @@ function readAdapterConfig() {
       userId: process.env.GROWTHUB_BRIDGE_USER_ID || void 0,
       hasAccessToken: Boolean(process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN)
     },
+    nango: {
+      mode: readEnum(["NANGO_MODE"], ["cloud", "self-hosted"], "cloud"),
+      hostUrl: process.env.NANGO_HOST_URL || void 0,
+      environment: process.env.NANGO_ENVIRONMENT || "dev",
+      secretEnvName: "NANGO_SECRET_KEY",
+      hasSecretKey: Boolean(process.env.NANGO_SECRET_KEY)
+    },
     dataSources: {
       hasWindsorApiKey: Boolean(process.env.WINDSOR_API_KEY)
     }

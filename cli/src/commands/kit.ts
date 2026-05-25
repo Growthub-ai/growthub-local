@@ -16,6 +16,7 @@ import {
 } from "../kits/service.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { registerKitForkSubcommands } from "./kit-fork.js";
+import { runStarterInit } from "./starter.js";
 import {
   registerKitContractSubcommands,
   runPipelineInspect,
@@ -33,6 +34,35 @@ const TYPE_CONFIG: Record<string, { color: (s: string) => string; emoji: string;
   specialized_agents: { color: pc.magenta, emoji: "🧠", label: "Specialized Agents" },
   ops: { color: pc.yellow, emoji: "⚙️ ", label: "Ops" },
 };
+
+const PROJECT_MANAGEMENT_TEMPLATE_ID = "project-management-workspace-template-v1";
+const PROJECT_MANAGEMENT_TEMPLATE: KitListItem = {
+  id: PROJECT_MANAGEMENT_TEMPLATE_ID,
+  version: "1.0.0",
+  name: "Project Management Workspace Template",
+  description: "Opinionated workspace template for API-backed project task workflows. Built from the blank workspace starter with a sanitized project-management seed.",
+  type: "worker",
+  family: "studio",
+  executionMode: "export",
+  activationModes: ["export"],
+  bundleId: "growthub-custom-workspace-starter-v1",
+  bundleVersion: "1.0.0",
+  briefType: "workspace-template",
+};
+
+const RETIRED_CUSTOM_WORKSPACE_KIT_IDS = new Set([
+  "growthub-open-higgsfield-studio-v1",
+  "growthub-geo-seo-v1",
+  "growthub-postiz-social-v1",
+  "growthub-open-montage-studio-v1",
+  "growthub-ai-website-cloner-v1",
+  "growthub-agency-portal-starter-v1",
+  "growthub-creative-video-pipeline-v1",
+  "growthub-twenty-crm-v1",
+  "growthub-zernio-social-v1",
+  "growthub-hyperframes-studio-v1",
+  "growthub-video-use-studio-v1",
+]);
 
 function displayTypeForFamily(family: string): keyof typeof TYPE_CONFIG | string {
   if (family === "workflow" || family === "operator") return "specialized_agents";
@@ -59,6 +89,38 @@ function truncate(str: string, max: number): string {
 
 function displayKitName(name: string): string {
   return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
+}
+
+function isWorkspaceTemplateId(id: string): boolean {
+  const normalized = String(id || "").trim().toLowerCase();
+  return normalized === PROJECT_MANAGEMENT_TEMPLATE_ID || normalized === "project-management" || normalized === "project-management-workspace";
+}
+
+function isRetiredCustomWorkspaceKit(id: string): boolean {
+  return RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(id);
+}
+
+function listKitAndWorkspaceTemplates(): KitListItem[] {
+  const activeBundled = listBundledKits().filter((kit) => !RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(kit.id));
+  const starter = activeBundled.find((kit) => kit.id === "growthub-custom-workspace-starter-v1");
+  return [
+    ...(starter ? [starter] : []),
+    PROJECT_MANAGEMENT_TEMPLATE,
+  ];
+}
+
+async function createProjectManagementWorkspace(opts: { out?: string; yes?: boolean }): Promise<void> {
+  const output = opts.out || (opts.yes ? "./project-management-workspace" : await p.text({
+    message: "Output directory",
+    placeholder: "./project-management-workspace",
+    defaultValue: "./project-management-workspace",
+  }));
+  if (p.isCancel(output)) { p.cancel("Cancelled."); process.exit(0); }
+  await runStarterInit({
+    out: String(output || "./project-management-workspace"),
+    name: "Project Management Workspace",
+    seedConfig: "project-management",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +248,7 @@ function printGroupedList(kits: KitListItem[]): void {
 
   console.log("");
   console.log(
-    pc.bold("Growthub Agent Worker Kits") +
+    pc.bold("Growthub Custom Workspaces") +
     pc.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} · ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`),
   );
   console.log(hr());
@@ -216,11 +278,11 @@ function printGroupedList(kits: KitListItem[]): void {
 
 export async function runInteractivePicker(opts: { out?: string; allowBackToHub?: boolean }): Promise<"done" | "back"> {
   printPaperclipCliBanner();
-  p.intro(pc.bold("Growthub Agent Worker Kits"));
+  p.intro(pc.bold("Growthub Custom Workspaces"));
 
   let kits: KitListItem[];
   try {
-    kits = listBundledKits();
+    kits = listKitAndWorkspaceTemplates();
   } catch (err) {
     p.log.error("Failed to load kits: " + (err as Error).message);
     process.exit(1);
@@ -357,8 +419,21 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
         }
 
         if (action === "inspect") {
+          if (isWorkspaceTemplateId(selected.id)) {
+            printKitCard(selected);
+            console.log(pc.bold("Create with:"));
+            console.log("  " + pc.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+            console.log("");
+            p.outro(pc.dim("Done."));
+            return "done";
+          }
           runInspect(selected.id, opts.out);
           p.outro(pc.dim("Done."));
+          return "done";
+        }
+
+        if (isWorkspaceTemplateId(selected.id)) {
+          await createProjectManagementWorkspace(opts);
           return "done";
         }
 
@@ -378,6 +453,10 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   const resolvedId = fuzzyResolveKitId(kitId);
   if (!resolvedId) {
     console.error(pc.red("Unknown kit '" + kitId + "'.") + pc.dim(" Run `growthub kit list` to browse."));
+    process.exit(1);
+  }
+  if (isRetiredCustomWorkspaceKit(resolvedId)) {
+    console.error(pc.yellow("That custom workspace kit is deprecated.") + pc.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
     process.exit(1);
   }
   if (resolvedId !== kitId) {
@@ -472,15 +551,9 @@ Examples:
   $ growthub kit list                     # all kits grouped by type
   $ growthub kit list --family studio     # filter by family
   $ growthub kit list --json              # machine-readable output
-  $ growthub kit download higgsfield      # fuzzy slug — resolves automatically
-  $ growthub kit download hyperframes     # Hyperframes custom workspace
-  $ growthub kit download video-use       # browser-use/video-use custom workspace
-  $ growthub kit download growthub-open-higgsfield-studio-v1
-  $ growthub kit download growthub-hyperframes-studio-v1
-  $ growthub kit download growthub-video-use-studio-v1
-  $ growthub kit inspect higgsfield-studio-v1
-  $ growthub kit inspect hyperframes
-  $ growthub kit inspect video-use
+  $ growthub kit download growthub-custom-workspace-starter-v1
+  $ growthub kit download project-management --out ./project-management-workspace
+  $ growthub kit inspect growthub-custom-workspace-starter-v1
   $ growthub kit families                 # show family taxonomy
 
 Pipeline Kit Contract v1 (PIPELINE_KIT_CONTRACT_V1):
@@ -515,7 +588,7 @@ Examples:
   $ growthub kit list --json
 `)
     .action((opts: { family?: string; json?: boolean }) => {
-      let kits = listBundledKits();
+      let kits = listKitAndWorkspaceTemplates();
 
       if (opts.family) {
         const wanted = opts.family.split(",").map((f) => f.trim().toLowerCase());
@@ -540,18 +613,34 @@ Examples:
   kit
     .command("inspect")
     .description("Inspect a kit manifest (supports fuzzy slug)")
-    .argument("<kit-id>", "Kit id or slug (e.g. 'higgsfield', 'studio-v1')")
+    .argument("<kit-id>", "Kit id or slug")
     .option("--out <path>", "Override the export root for resolved paths")
     .option("--json", "Output raw JSON")
     .addHelpText("after", `
 Examples:
-  $ growthub kit inspect higgsfield-studio-v1
-  $ growthub kit inspect growthub-email-marketing-v1 --json
+  $ growthub kit inspect growthub-custom-workspace-starter-v1
+  $ growthub kit inspect project-management --json
 `)
     .action((kitId: string, opts: { out?: string; json?: boolean }) => {
       const resolvedId = fuzzyResolveKitId(kitId);
+      if (!resolvedId && isWorkspaceTemplateId(kitId)) {
+        if (opts.json) {
+          console.log(JSON.stringify(PROJECT_MANAGEMENT_TEMPLATE, null, 2));
+          return;
+        }
+        printKitCard(PROJECT_MANAGEMENT_TEMPLATE);
+        console.log(pc.bold("Create with:"));
+        console.log("  " + pc.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+        console.log("");
+        return;
+      }
       if (!resolvedId) {
         console.error(pc.red("Unknown kit '" + kitId + "'.") + pc.dim(" Run `growthub kit list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      if (isRetiredCustomWorkspaceKit(resolvedId)) {
+        console.error(pc.yellow("That custom workspace kit is deprecated.") + pc.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
         process.exitCode = 1;
         return;
       }
@@ -572,12 +661,9 @@ Examples:
     .addHelpText("after", `
 Examples:
   $ growthub kit download                           # interactive
-  $ growthub kit download higgsfield                # fuzzy slug
-  $ growthub kit download hyperframes               # fuzzy slug
-  $ growthub kit download growthub-open-higgsfield-studio-v1
-  $ growthub kit download growthub-hyperframes-studio-v1
-  $ growthub kit download studio-v1 --out ~/kits
-  $ growthub kit download studio-v1 --yes
+  $ growthub kit download growthub-custom-workspace-starter-v1
+  $ growthub kit download project-management --out ./project-management-workspace
+  $ growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
 `)
     .action(async (kitId: string | undefined, opts: { out?: string; yes?: boolean }) => {
       if (!kitId) {
@@ -586,8 +672,17 @@ Examples:
       }
 
       const resolvedId = fuzzyResolveKitId(kitId);
+      if (!resolvedId && isWorkspaceTemplateId(kitId)) {
+        await createProjectManagementWorkspace(opts);
+        return;
+      }
       if (!resolvedId) {
         console.error(pc.red("Unknown kit '" + kitId + "'.") + pc.dim(" Run `growthub kit list` to browse."));
+        process.exitCode = 1;
+        return;
+      }
+      if (isRetiredCustomWorkspaceKit(resolvedId)) {
+        console.error(pc.yellow("That custom workspace kit is deprecated.") + pc.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
         process.exitCode = 1;
         return;
       }
@@ -639,7 +734,7 @@ Examples:
     .addHelpText("after", `
 Examples:
   $ growthub kit validate ./my-kit
-  $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
+  $ growthub kit validate ./my-workspace
 `)
     .action((kitPath: string) => {
       const resolvedPath = path.resolve(kitPath);
@@ -672,7 +767,7 @@ Examples:
     .description("Show the kit family taxonomy with descriptions and examples")
     .action(() => {
       const defs = [
-        { family: "studio",   tagline: "AI generation studio backed by a local fork",                      surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1, growthub-hyperframes-studio-v1, growthub-video-use-studio-v1, growthub-zernio-social-v1" },
+        { family: "studio",   tagline: "Governed Workspace templates and app starters",                    surfaces: "workspace-app, data-model, workflows",    example: "growthub-custom-workspace-starter-v1, project-management-workspace-template-v1" },
         { family: "workflow", tagline: "Multi-step pipeline operator across tools or APIs",                surfaces: "browser-hosted (primary)",                example: "creative-strategist-v1" },
         { family: "operator", tagline: "Domain vertical specialist — one provider, structured deliverables", surfaces: "browser-hosted",                       example: "growthub-email-marketing-v1" },
         { family: "ops",      tagline: "Infrastructure / toolchain operator (provider optional)",          surfaces: "local-fork (primary)",                   example: "(coming soon)" },

@@ -77,6 +77,7 @@ async function IntegrationsSettingsPage() {
           </div>
           <div className="workspace-toolbar-actions">
             <Link href="/api/settings/integrations">API contract</Link>
+            <Link href="/settings/integrations/nango">Nango</Link>
             <span>{adapter.id}</span>
             <span>{adapter.authority}</span>
           </div>

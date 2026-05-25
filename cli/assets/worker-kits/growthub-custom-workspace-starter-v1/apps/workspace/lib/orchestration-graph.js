@@ -305,7 +305,7 @@ function findSandboxRowsForRegistry(workspaceConfig, integrationId) {
   if (!sandboxObject) return [];
   const rows = Array.isArray(sandboxObject.rows) ? sandboxObject.rows : [];
   return rows.filter((row) => {
-    const graph = parseOrchestrationGraph(row?.orchestrationGraph);
+    const graph = parseOrchestrationGraph(row?.orchestrationConfig || row?.orchestrationGraph);
     if (!graph?.nodes) return String(row?.schedulerRegistryId || "").trim() === id;
     return graph.nodes.some(
       (node) => node?.type === "api-registry-call"
@@ -359,7 +359,7 @@ function buildSandboxRowFromApiRegistry(workspaceConfig, registryRow, options = 
     lastRunId: "",
     lastSourceId: "",
     lastResponse: "",
-    orchestrationGraph: serializeOrchestrationGraph(graph),
+    orchestrationConfig: serializeOrchestrationGraph(graph),
     description: String(options.description || registryRow?.description || "").trim()
   };
 }

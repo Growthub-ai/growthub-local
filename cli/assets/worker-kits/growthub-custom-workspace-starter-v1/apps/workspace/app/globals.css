@@ -396,6 +396,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 }
 
 .workspace-builder {
+  --workspace-rail-width: 264px;
   min-height: 100vh;
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr) 320px;
@@ -427,6 +428,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
   overflow: hidden;
 }
 body.workspace-rail-collapsed .workspace-builder {
+  --workspace-rail-width: 52px;
   grid-template-columns: 52px minmax(0, 1fr) 320px;
 }
 body.workspace-rail-collapsed .workspace-builder.workspace-settings-page {
@@ -456,24 +458,19 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-rail.is-collapsed .workspace-rail-topbar {
   justify-content: center;
   width: 100%;
+  display: contents;
 }
 .workspace-rail.is-collapsed .workspace-rail-topbar-actions {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-}
-.workspace-rail.is-collapsed .workspace-rail-topbar-actions .workspace-rail-icon-btn {
-  order: 2;
+  display: contents;
 }
 .workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-pressed="true"] {
   order: 1;
 }
 .workspace-rail.is-collapsed .workspace-rail-icon-btn[data-rail-search] {
-  order: 2;
+  order: 3;
 }
 .workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-label="Workspace settings"] {
-  order: 3;
+  order: 4;
 }
 .workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-pressed="true"] svg {
   transform: rotate(180deg);
@@ -482,6 +479,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   display: flex;
   justify-content: center;
   width: 100%;
+  order: 2;
 }
 .workspace-rail.is-collapsed .workspace-rail-tabs {
   flex-direction: column;
@@ -2126,6 +2124,63 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 
 .workspace-dashboard-surface .workspace-canvas-grid {
   transition: opacity .12s ease;
+}
+
+.workspace-dashboard-surface {
+  background: #f7f7f8;
+  padding: 0 32px 24px;
+}
+.workspace-dashboard-surface .dm-workflow-toolbar {
+  margin: 0 0 18px;
+  padding: 0;
+  background: #ffffff;
+  border-bottom-color: #e8e8e8;
+}
+.workspace-dashboard-surface .workspace-canvas {
+  width: 100%;
+  margin: 0 auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f7f7f8;
+  max-height: calc(100vh - 72px);
+}
+.workspace-dashboard-surface .workspace-tabs {
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 12px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid #ececec;
+  border-radius: 8px 8px 0 0;
+}
+.workspace-dashboard-surface .workspace-tabs button {
+  min-height: 30px;
+}
+.workspace-dashboard-surface .workspace-grid {
+  gap: 12px;
+  padding: 18px;
+}
+.workspace-dashboard-surface .workspace-grid-cell {
+  background: #ffffff;
+  border-color: #e8e8e8;
+}
+.workspace-dashboard-surface.is-dashboard-editing {
+  padding-inline: 16px;
+}
+.workspace-dashboard-surface.is-dashboard-editing .workspace-canvas {
+  max-height: calc(100vh - 64px);
+}
+.workspace-dashboard-surface.is-dashboard-editing .workspace-grid {
+  gap: 10px;
+  padding: 14px;
+}
+
+@media (max-width: 900px) {
+  .workspace-dashboard-surface {
+    padding-inline: 20px;
+  }
+  .workspace-dashboard-surface .dm-workflow-toolbar {
+    margin-inline: 0;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -4890,32 +4945,49 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   background: #f7f7f8;
   overflow: hidden;
 }
+.workspace-surface.workspace-dashboard-surface {
+  background: #f7f7f8;
+  padding: 0 32px 24px;
+}
+.workspace-surface.workspace-dashboard-surface.is-dashboard-editing {
+  padding-inline: 16px;
+}
 .dm-workflow-toolbar {
   height: 40px;
   min-height: 40px;
   align-items: center;
   flex-wrap: nowrap;
   gap: 12px;
-  padding: 0 12px;
-  margin: 0;
+  padding: 0 32px;
+  margin: 0 -32px 18px;
   border-bottom: 1px solid #ececef;
   background: #fbfbfc;
   overflow: hidden;
+}
+.workspace-surface.workspace-dashboard-surface .dm-workflow-toolbar {
+  padding-inline: 32px;
+  margin-inline: -32px;
+}
+.workspace-dashboard-surface.is-dashboard-editing .dm-workflow-toolbar {
+  padding-inline: 16px;
+  margin-inline: -16px;
 }
 .dm-workflow-titlebar {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
-  flex: 1;
+  min-width: max-content;
+  flex: 1 0 auto;
   color: #8b8b91;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
 }
 .dm-workflow-titlebar h1 {
   margin: 0;
-  min-width: 0;
-  max-width: 260px;
+  min-width: max-content;
+  max-width: none;
+  flex: 0 0 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4923,6 +4995,20 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0;
+}
+.dm-workflow-breadcrumb-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #a1a1aa;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dm-workflow-breadcrumb-link:hover {
+  color: #4b4b52;
 }
 .dm-workflow-title-icon {
   display: grid;
@@ -4943,8 +5029,9 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
-  max-width: 66vw;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 58vw;
   overflow-x: auto;
   scrollbar-width: none;
 }

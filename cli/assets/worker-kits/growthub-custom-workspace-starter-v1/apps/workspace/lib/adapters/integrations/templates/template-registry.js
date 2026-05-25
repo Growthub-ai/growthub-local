@@ -5,7 +5,7 @@
  * @property {"growthub-resolver-template-v1"} schemaVersion
  * @property {string} templateId
  * @property {string} label
- * @property {"http"|"mcp"|"chrome"|"tool"|"custom"} connectorKind
+ * @property {"http"|"mcp"|"chrome"|"tool"|"custom"|"nango"} connectorKind
  * @property {Array<"listEntities"|"fetchRecords"|"runAction">} capabilities
  * @property {Object} apiRegistryDefaults
  * @property {string} apiRegistryDefaults.integrationId
@@ -26,6 +26,7 @@ import genericCrm from "./generic-crm.js";
 import genericSpreadsheet from "./generic-spreadsheet.js";
 import genericProjectManagement from "./generic-project-management.js";
 import genericCommerce from "./generic-commerce.js";
+import nango from "./nango.js";
 
 const ALL = [
   customHttp,
@@ -35,7 +36,8 @@ const ALL = [
   genericCrm,
   genericSpreadsheet,
   genericProjectManagement,
-  genericCommerce
+  genericCommerce,
+  nango
 ];
 
 function listResolverTemplates() {

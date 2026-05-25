@@ -62,7 +62,7 @@ const WORKFLOW_METADATA_SELECTORS = Object.freeze({
 });
 
 function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
-  const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph);
+  const graph = parseOrchestrationGraph(sandboxRow?.orchestrationConfig || sandboxRow?.orchestrationGraph);
   const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
   const registryId = String(
     apiNode?.config?.registryId || apiNode?.config?.integrationId || sandboxRow?.schedulerRegistryId || ""
@@ -291,6 +291,10 @@ function isPassingRun(payload) {
   return payload?.ok === true && Number(payload?.exitCode ?? payload?.response?.exitCode) === 0;
 }
 
+function graphHasNodes(graph) {
+  return Array.isArray(graph?.nodes) && graph.nodes.length > 0;
+}
+
 function WorkflowAddStepPanel({ target, onSelect }) {
   return (
     <div className="dm-workflow-add-panel">
@@ -323,7 +327,7 @@ export default function WorkflowSurface() {
   const searchParams = useSearchParams();
   const objectId = String(searchParams.get("object") || "").trim();
   const rowId = String(searchParams.get("row") || "").trim();
-  const fieldName = String(searchParams.get("field") || "orchestrationGraph").trim();
+  const fieldName = String(searchParams.get("field") || "orchestrationConfig").trim();
   const runId = String(searchParams.get("run") || "").trim();
 
   const [workspaceConfig, setWorkspaceConfig] = useState(null);
@@ -369,11 +373,14 @@ export default function WorkflowSurface() {
   );
 
   const sandboxRow = resolved.row;
-  const effectiveFieldName = sandboxRow?.[fieldName] !== undefined
+  const hasGraphValue = (value) => Boolean(parseOrchestrationGraph(value));
+  const effectiveFieldName = hasGraphValue(sandboxRow?.[fieldName])
     ? fieldName
-    : sandboxRow?.orchestrationConfig !== undefined
+    : hasGraphValue(sandboxRow?.orchestrationConfig)
       ? "orchestrationConfig"
-      : "orchestrationGraph";
+      : hasGraphValue(sandboxRow?.orchestrationGraph)
+        ? "orchestrationGraph"
+        : (fieldName || "orchestrationConfig");
   const draftFieldName = effectiveFieldName === "orchestrationConfig" ? "orchestrationDraftConfig" : "orchestrationDraftGraph";
   const registryRow = useMemo(
     () => (sandboxRow && workspaceConfig ? resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) : null),
@@ -386,7 +393,11 @@ export default function WorkflowSurface() {
 
   useEffect(() => {
     if (!sandboxRow) return;
-    const parsed = parseOrchestrationGraph(sandboxRow[draftFieldName]) || parseOrchestrationGraph(sandboxRow[effectiveFieldName]);
+    const draftParsed = parseOrchestrationGraph(sandboxRow[draftFieldName]);
+    const publishedParsed = parseOrchestrationGraph(sandboxRow[effectiveFieldName])
+      || parseOrchestrationGraph(sandboxRow.orchestrationConfig)
+      || parseOrchestrationGraph(sandboxRow.orchestrationGraph);
+    const parsed = graphHasNodes(draftParsed) || !graphHasNodes(publishedParsed) ? draftParsed : publishedParsed;
     setOrchestrationGraph(parsed);
     setDirty(false);
     setGraphError("");
@@ -760,7 +771,7 @@ export default function WorkflowSurface() {
   const publishReady = draftPassed && String(sandboxRow?.orchestrationDraftTestedConfig || "") === currentGraphSerialized && !dirty;
   const savedDraftValue = String(sandboxRow?.[draftFieldName] || "").trim();
   const draftStatus = String(sandboxRow?.orchestrationDraftStatus || "").trim();
-  const hasSavedDraft = Boolean(savedDraftValue) && draftStatus !== "published";
+  const hasSavedDraft = Boolean(savedDraftValue) && draftStatus !== "published" && graphHasNodes(parseOrchestrationGraph(savedDraftValue));
   const isDraftMode = dirty || hasSavedDraft;
   const canTest = !graphUnset && !graphBlankShell && Boolean(sandboxRow) && !Boolean(graphError);
   const showDiscardDraft = isDraftMode;
