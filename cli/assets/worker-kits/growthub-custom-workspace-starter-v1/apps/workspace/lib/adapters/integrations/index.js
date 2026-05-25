@@ -3,7 +3,6 @@ import {
   governedWorkspaceIntegrationCatalog,
   normalizeIntegrationEntities
 } from "@/lib/domain/integrations";
-import { describeNangoAdapter } from "./nango";
 import {
   normalizeGrowthubBridgePayload
 } from "./growthub-connection-normalizer";
@@ -24,9 +23,6 @@ function describeIntegrationAdapter() {
       requiredEnv: ["GROWTHUB_WORKSPACE_BYO_CONNECTIONS_JSON"],
       authority: "workspace-env"
     };
-  }
-  if (config.integrationAdapter === "nango") {
-    return describeNangoAdapter();
   }
   return {
     id: "static",

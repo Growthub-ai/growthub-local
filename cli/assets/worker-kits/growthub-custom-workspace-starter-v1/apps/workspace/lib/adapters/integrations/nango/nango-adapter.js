@@ -341,6 +341,159 @@ async function executeAction(request) {
   };
 }
 
+/**
+ * Project a Nango connection object down to the no-credential fields the
+ * browser is allowed to see. Anything provider-specific (raw OAuth payload,
+ * access/refresh tokens, client secrets) is dropped — only the fields a
+ * status badge or sidecar UI legitimately needs are kept.
+ */
+function pickSafeConnectionFields(connection) {
+  if (!connection || typeof connection !== "object") return null;
+  const safe = {
+    providerConfigKey: connection.providerConfigKey || connection.provider_config_key || null,
+    provider: connection.provider || null,
+    connectionId: connection.connectionId || connection.connection_id || null,
+    environment: connection.environment || null,
+    created: connection.created_at || connection.createdAt || null,
+    updated: connection.updated_at || connection.updatedAt || null,
+    lastFetchedAt: connection.last_fetched_at || connection.lastFetchedAt || null,
+    expiresAt: connection.credentials?.expires_at
+      || connection.credentials?.expiresAt
+      || connection.expires_at
+      || connection.expiresAt
+      || null,
+    credentialsType: connection.credentials?.type || null
+  };
+  // Drop any null-only fields so the response stays compact.
+  return Object.fromEntries(Object.entries(safe).filter(([, v]) => v !== null));
+}
+
+/**
+ * Create a Nango Connect session and return the OAuth handoff link (no
+ * secret). The Nango Connect UI opens with this link in a new window or
+ * redirect; tokens are minted by Nango directly — the workspace never sees
+ * raw OAuth credentials.
+ *
+ * `input` shape:
+ *   { providerConfigKey: string, connectionId?: string, endUser?: { id, email } }
+ */
+async function createConnectSession(input) {
+  const { client, env, reason } = await getNangoClient(
+    input?.secretEnvName ? { secretEnvName: input.secretEnvName } : undefined
+  );
+  if (!client) {
+    const error = new Error(reason === "missing-secret"
+      ? `Nango secret is missing (set ${env.secretEnvName})`
+      : reason === "sdk-not-installed"
+        ? "Nango SDK (@nangohq/node) is not installed in apps/workspace"
+        : `Nango client unavailable: ${reason}`);
+    error.code = reason === "missing-secret" ? "NANGO_NOT_CONFIGURED" : "NANGO_SDK_UNAVAILABLE";
+    throw error;
+  }
+  // Try the canonical SDK shape first, then alternates that have shipped
+  // across Nango versions. Each candidate is wrapped so a missing method
+  // does not crash — we throw a clear NANGO_SDK_SHAPE error if none match.
+  const payload = {
+    allowed_integrations: [input.providerConfigKey],
+    end_user: input.endUser && typeof input.endUser === "object" ? input.endUser : undefined
+  };
+  const candidates = [
+    ["createConnectSession", payload],
+    ["createSession", payload],
+    ["connectSession", { providerConfigKey: input.providerConfigKey, connectionId: input.connectionId }]
+  ];
+  let raw = null;
+  let usedMethod = null;
+  let lastError = null;
+  for (const [methodName, args] of candidates) {
+    if (typeof client[methodName] !== "function") continue;
+    try {
+      raw = await client[methodName](args);
+      usedMethod = methodName;
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!raw) {
+    if (lastError) {
+      const error = new Error(lastError?.message || "nango connect-session failed");
+      error.code = "NANGO_CONNECT_SESSION_FAILED";
+      throw error;
+    }
+    const error = new Error("@nangohq/node does not expose a connect-session method in this version");
+    error.code = "NANGO_SDK_SHAPE";
+    throw error;
+  }
+  // The Nango response carries a `token` (Connect Session token) and a
+  // `connect_link` (URL the user opens). Both are surface-level pointers —
+  // the token cannot be used to mint provider credentials; only the Connect
+  // UI can. Still, we redact everything else.
+  const token = raw?.data?.token || raw?.token || null;
+  const connectLink = raw?.data?.connect_link || raw?.connect_link || raw?.url || null;
+  return {
+    providerConfigKey: input.providerConfigKey,
+    environment: env.environment,
+    token,
+    connectLink,
+    sdkMethod: usedMethod
+  };
+}
+
+/**
+ * Fetch a Nango connection and return only the safe (non-credential) summary.
+ * Used by POST /integrations/nango/connection-status to verify a per-row
+ * connection from the no-code UI.
+ *
+ * `input` shape:
+ *   { providerConfigKey: string, connectionId: string, secretEnvName?: string }
+ */
+async function getConnectionSummary(input) {
+  const { client, env, reason } = await getNangoClient(
+    input?.secretEnvName ? { secretEnvName: input.secretEnvName } : undefined
+  );
+  if (!client) {
+    const error = new Error(reason === "missing-secret"
+      ? `Nango secret is missing (set ${env.secretEnvName})`
+      : `Nango client unavailable: ${reason}`);
+    error.code = reason === "missing-secret" ? "NANGO_NOT_CONFIGURED" : "NANGO_SDK_UNAVAILABLE";
+    throw error;
+  }
+  if (typeof client.getConnection !== "function") {
+    const error = new Error("@nangohq/node does not expose getConnection in this version");
+    error.code = "NANGO_SDK_SHAPE";
+    throw error;
+  }
+  let raw;
+  try {
+    raw = await client.getConnection(input.providerConfigKey, input.connectionId);
+  } catch (error) {
+    // Nango returns 404 for unknown connection — surface that explicitly so
+    // the UI can render a "not yet connected" badge instead of a hard error.
+    const status = error?.response?.status || error?.status;
+    if (status === 404) {
+      return {
+        status: "not-connected",
+        providerConfigKey: input.providerConfigKey,
+        connectionId: input.connectionId,
+        environment: env.environment,
+        reason: "Nango has no record of this providerConfigKey + connectionId pair yet."
+      };
+    }
+    const out = new Error(error?.message || "nango getConnection failed");
+    out.code = "NANGO_GET_CONNECTION_FAILED";
+    throw out;
+  }
+  const summary = pickSafeConnectionFields(raw);
+  return {
+    status: summary ? "connected" : "unknown",
+    providerConfigKey: input.providerConfigKey,
+    connectionId: input.connectionId,
+    environment: env.environment,
+    connection: summary
+  };
+}
+
 function describeNangoAdapter() {
   const env = resolveNangoEnv();
   return {
@@ -358,10 +511,13 @@ function describeNangoAdapter() {
 
 export {
   DEFAULT_NANGO_SECRET_ENV,
+  createConnectSession,
   describeNangoAdapter,
   executeAction,
+  getConnectionSummary,
   getStatus,
   listActions,
+  pickSafeConnectionFields,
   projectNangoBinding,
   proxyRequest,
   resolveNangoEnv

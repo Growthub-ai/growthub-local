@@ -232,16 +232,26 @@ test("sandbox-environment validation is unchanged", () => {
   });
 });
 
-test("integrationAdapter env enum accepts nango", () => {
+test("nango is row-scoped — NOT in the global integrationAdapter enum", () => {
+  // Nango is not a workspace-wide integration adapter. It lives at the
+  // api-registry row level via `connectorKind: "nango"`. The env enum must
+  // continue to reject "nango" so callers don't think it's a global mode.
   const prev = process.env.GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER;
   process.env.GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER = "nango";
   try {
-    const cfg = env.readAdapterConfig();
-    assert.equal(cfg.integrationAdapter, "nango");
+    assert.throws(() => env.readAdapterConfig(), /must be one of/);
   } finally {
     if (prev === undefined) delete process.env.GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER;
     else process.env.GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER = prev;
   }
+});
+
+test("nango env block is still exposed by readAdapterConfig", () => {
+  const cfg = env.readAdapterConfig();
+  assert.ok(cfg.nango, "expected nango config block");
+  assert.equal(cfg.nango.secretEnvName, "NANGO_SECRET_KEY");
+  assert.ok("mode" in cfg.nango);
+  assert.ok("environment" in cfg.nango);
 });
 
 test("nango template is exposed by the resolver template registry", () => {
@@ -384,6 +394,103 @@ test("describeNangoAdapter exposes secretEnvName and never the secret value", ()
   } finally {
     if (prev === undefined) delete process.env.NANGO_SECRET_KEY;
     else process.env.NANGO_SECRET_KEY = prev;
+  }
+});
+
+test("validateConnectSessionRequest accepts a well-formed payload", () => {
+  const out = nangoSchema.validateConnectSessionRequest({
+    providerConfigKey: "hubspot-prod",
+    connectionId: "acct-123",
+    endUser: { id: "user-1", email: "u@example.com" }
+  });
+  assert.equal(out.providerConfigKey, "hubspot-prod");
+  assert.equal(out.connectionId, "acct-123");
+  assert.equal(out.endUser.id, "user-1");
+});
+
+test("validateConnectSessionRequest rejects missing providerConfigKey", () => {
+  let caught;
+  try {
+    nangoSchema.validateConnectSessionRequest({ providerConfigKey: "" });
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught, "expected throw");
+  assert.equal(caught.code, "NANGO_INVALID_INPUT");
+  assert.ok(caught.details.some((d) => d.includes("providerConfigKey")));
+});
+
+test("validateConnectionSummaryRequest requires both keys", () => {
+  let caught;
+  try {
+    nangoSchema.validateConnectionSummaryRequest({ providerConfigKey: "hubspot" });
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught, "expected throw");
+  assert.ok(caught.details.some((d) => d.includes("connectionId")));
+});
+
+test("pickSafeConnectionFields strips credentials", () => {
+  const safe = nangoAdapter.pickSafeConnectionFields({
+    providerConfigKey: "hubspot-prod",
+    connection_id: "acct-123",
+    provider: "hubspot",
+    environment: "prod",
+    created_at: "2026-05-25T00:00:00Z",
+    credentials: {
+      type: "OAUTH2",
+      access_token: "should-not-leak",
+      refresh_token: "should-not-leak",
+      expires_at: "2026-05-26T00:00:00Z"
+    }
+  });
+  // Only safe fields present
+  assert.equal(safe.providerConfigKey, "hubspot-prod");
+  assert.equal(safe.connectionId, "acct-123");
+  assert.equal(safe.credentialsType, "OAUTH2");
+  assert.equal(safe.expiresAt, "2026-05-26T00:00:00Z");
+  // No token-shaped fields anywhere in the projection
+  const serialized = JSON.stringify(safe);
+  assert.equal(serialized.includes("should-not-leak"), false);
+  assert.equal(serialized.includes("access_token"), false);
+  assert.equal(serialized.includes("refresh_token"), false);
+});
+
+test("createConnectSession throws NANGO_NOT_CONFIGURED when secret is missing", async () => {
+  const prev = process.env.NANGO_SECRET_KEY;
+  delete process.env.NANGO_SECRET_KEY;
+  try {
+    let caught;
+    try {
+      await nangoAdapter.createConnectSession({ providerConfigKey: "hubspot-prod" });
+    } catch (error) {
+      caught = error;
+    }
+    assert.ok(caught, "expected throw");
+    assert.equal(caught.code, "NANGO_NOT_CONFIGURED");
+  } finally {
+    if (prev !== undefined) process.env.NANGO_SECRET_KEY = prev;
+  }
+});
+
+test("getConnectionSummary throws NANGO_NOT_CONFIGURED when secret is missing", async () => {
+  const prev = process.env.NANGO_SECRET_KEY;
+  delete process.env.NANGO_SECRET_KEY;
+  try {
+    let caught;
+    try {
+      await nangoAdapter.getConnectionSummary({
+        providerConfigKey: "hubspot-prod",
+        connectionId: "acct-123"
+      });
+    } catch (error) {
+      caught = error;
+    }
+    assert.ok(caught, "expected throw");
+    assert.equal(caught.code, "NANGO_NOT_CONFIGURED");
+  } finally {
+    if (prev !== undefined) process.env.NANGO_SECRET_KEY = prev;
   }
 });
 

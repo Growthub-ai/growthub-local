@@ -13,7 +13,7 @@ It intentionally depends on adapter contracts:
 - `GROWTHUB_BRIDGE_ACCESS_TOKEN`
 - `GROWTHUB_BRIDGE_USER_ID`
 - `GROWTHUB_WORKSPACE_BYO_CONNECTIONS_JSON`
-- `NANGO_SECRET_KEY` (required when `GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER=nango`)
+- `NANGO_SECRET_KEY` (required when any api-registry row uses `connectorKind: "nango"`)
 - `NANGO_HOST_URL` (self-hosted Nango only)
 - `NANGO_ENVIRONMENT` (default `dev`)
 - `NANGO_MODE` (`cloud` | `self-hosted`, default `cloud`)

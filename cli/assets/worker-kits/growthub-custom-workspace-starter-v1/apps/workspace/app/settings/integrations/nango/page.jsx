@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeNangoAdapter, getStatus } from "@/lib/adapters/integrations/nango";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
 import { WorkspaceRail } from "../../../workspace-rail.jsx";
@@ -68,7 +67,6 @@ function NangoRowCard({ object, row }) {
 }
 
 async function NangoIntegrationsSettingsPage() {
-  const config = readAdapterConfig();
   const adapter = describeNangoAdapter();
   const workspaceConfig = await readWorkspaceConfig();
   const apiRegistryObjects = listApiRegistryObjects(workspaceConfig);
@@ -111,9 +109,7 @@ async function NangoIntegrationsSettingsPage() {
           <strong>{adapter.label}</strong>
           <div>
             <code>{adapter.secretEnvName}</code>
-            {config.integrationAdapter !== "nango"
-              ? <span> &middot; set <code>GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER=nango</code> to surface Nango here</span>
-              : null}
+            <span> &middot; row-scoped via <code>connectorKind: "nango"</code></span>
           </div>
         </article>
         <article>

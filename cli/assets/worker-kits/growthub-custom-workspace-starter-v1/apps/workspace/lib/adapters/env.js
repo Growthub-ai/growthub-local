@@ -4,7 +4,7 @@ function readAdapterConfig() {
     dataAdapter: readEnum(["GROWTHUB_WORKSPACE_DATA_ADAPTER", "AGENCY_PORTAL_DATA_ADAPTER"], ["postgres", "qstash-kv", "provider-managed"], "provider-managed"),
     authAdapter: readEnum(["GROWTHUB_WORKSPACE_AUTH_ADAPTER", "AGENCY_PORTAL_AUTH_ADAPTER"], ["oidc", "clerk", "authjs", "provider-managed"], "provider-managed"),
     paymentAdapter: readEnum(["GROWTHUB_WORKSPACE_PAYMENT_ADAPTER", "AGENCY_PORTAL_PAYMENT_ADAPTER"], ["none", "stripe", "polar"], "none"),
-    integrationAdapter: readEnum(["GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER", "AGENCY_PORTAL_INTEGRATION_ADAPTER"], ["growthub-bridge", "byo-api-key", "static", "nango"], "static"),
+    integrationAdapter: readEnum(["GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER", "AGENCY_PORTAL_INTEGRATION_ADAPTER"], ["growthub-bridge", "byo-api-key", "static"], "static"),
     reportingAdapter: process.env.GROWTHUB_WORKSPACE_REPORTING_ADAPTER || process.env.AGENCY_PORTAL_REPORTING_ADAPTER || void 0,
     growthubBridge: {
       baseUrl: process.env.GROWTHUB_BRIDGE_BASE_URL || void 0,

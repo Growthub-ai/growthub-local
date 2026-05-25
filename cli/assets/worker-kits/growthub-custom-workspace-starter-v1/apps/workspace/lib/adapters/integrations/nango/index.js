@@ -7,10 +7,13 @@
 
 export {
   DEFAULT_NANGO_SECRET_ENV,
+  createConnectSession,
   describeNangoAdapter,
   executeAction,
+  getConnectionSummary,
   getStatus,
   listActions,
+  pickSafeConnectionFields,
   projectNangoBinding,
   proxyRequest,
   resolveNangoEnv
@@ -24,8 +27,10 @@ export {
 export {
   validateActionExecuteRequest,
   validateActionsListInput,
+  validateConnectSessionRequest,
   validateConnectionId,
   validateConnectionStatusRequest,
+  validateConnectionSummaryRequest,
   validateHostUrl,
   validateNangoMode,
   validateProviderConfigKey,

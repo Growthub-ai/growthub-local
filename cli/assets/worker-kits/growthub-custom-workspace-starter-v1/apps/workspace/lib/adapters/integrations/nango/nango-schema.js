@@ -187,6 +187,49 @@ function validateActionExecuteRequest(input) {
   };
 }
 
+function validateConnectSessionRequest(input) {
+  if (!isPlainObject(input)) {
+    throw makeInvalidInputError("connect session body must be a plain object");
+  }
+  const errors = [];
+  errors.push(...validateProviderConfigKey(input.providerConfigKey));
+  if (input.connectionId !== undefined && input.connectionId !== null && input.connectionId !== "") {
+    errors.push(...validateConnectionId(input.connectionId));
+  }
+  if (input.endUser !== undefined && input.endUser !== null) {
+    if (!isPlainObject(input.endUser)) {
+      errors.push("endUser must be a plain object when present");
+    } else {
+      if (input.endUser.id !== undefined && typeof input.endUser.id !== "string") {
+        errors.push("endUser.id must be a string when present");
+      }
+      if (input.endUser.email !== undefined && typeof input.endUser.email !== "string") {
+        errors.push("endUser.email must be a string when present");
+      }
+    }
+  }
+  if (errors.length) throw makeInvalidInputError("invalid connect session request", errors);
+  return {
+    providerConfigKey: input.providerConfigKey.trim(),
+    connectionId: input.connectionId ? input.connectionId.trim() : undefined,
+    endUser: isPlainObject(input.endUser) ? { ...input.endUser } : undefined
+  };
+}
+
+function validateConnectionSummaryRequest(input) {
+  if (!isPlainObject(input)) {
+    throw makeInvalidInputError("connection status body must be a plain object");
+  }
+  const errors = [];
+  errors.push(...validateProviderConfigKey(input.providerConfigKey));
+  errors.push(...validateConnectionId(input.connectionId));
+  if (errors.length) throw makeInvalidInputError("invalid connection status request", errors);
+  return {
+    providerConfigKey: input.providerConfigKey.trim(),
+    connectionId: input.connectionId.trim()
+  };
+}
+
 function validateConnectionStatusRequest(input) {
   if (input === null || input === undefined) return {};
   if (!isPlainObject(input)) {
@@ -218,8 +261,10 @@ export {
   KNOWN_HTTP_METHODS,
   validateActionExecuteRequest,
   validateActionsListInput,
+  validateConnectSessionRequest,
   validateConnectionId,
   validateConnectionStatusRequest,
+  validateConnectionSummaryRequest,
   validateHostUrl,
   validateNangoMode,
   validateProviderConfigKey,
