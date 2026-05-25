@@ -5,16 +5,24 @@ import { CheckCircle, ExternalLink, Loader2, RefreshCw, ShieldCheck, XCircle } f
 
 /**
  * NangoConnectionPanel — interactive sidecar for an api-registry row whose
- * `connectorKind === "nango"`. Surfaces three operations:
+ * `connectorKind === "nango"`. Aligns with Nango's documented OAuth
+ * lifecycle:
  *
- *   1. Create Connect Session → opens Nango Connect UI in a new window
- *   2. Auto-poll connection status every 3s for ~60s after a session opens
- *   3. Manual "Check Connection" verification button
+ *   1. Create Connect Session — needs `providerConfigKey` only. Nango
+ *      mints a session token + connect_link. The user opens the link and
+ *      completes OAuth on the provider.
+ *   2. Nango generates the `connectionId` server-side and delivers it via
+ *      the auth webhook (which an operator can persist into the row's
+ *      `connectionIds` later — webhook persistence is a follow-up).
+ *   3. The user pastes the `connectionId` shown in Nango Cloud / received
+ *      via webhook into the panel; "Check Connection" then verifies it.
+ *   4. Reconnect uses the existing `connectionId` as input and produces a
+ *      fresh authorization session for the same connection.
  *
  * The panel reads `providerConfigKey`, `integrationId`, and `connectionIds`
- * off the row (with sensible fallbacks) and never persists secrets. It calls
- * server routes which themselves go through `@nangohq/node`. The browser
- * never sees the Nango secret key or any provider OAuth credential.
+ * off the row (with sensible fallbacks) and never persists secrets. It
+ * calls server routes which themselves go through `@nangohq/node`. The
+ * browser never sees the Nango secret key or any provider OAuth credential.
  *
  * Props:
  *   row      — the api-registry row being edited
@@ -49,13 +57,6 @@ function deriveDefaultConnectionId(row) {
   return "";
 }
 
-/**
- * Recover the panel's visual state from the persisted row. `status` and
- * `lastTested` are part of the canonical api-registry shape and survive
- * across page reloads / workspace navigation via growthub.config.json.
- * Without this, the panel would flash to "unknown" on every remount even
- * when the row is already saved as connected.
- */
 function deriveInitialStatus(row) {
   const status = typeof row?.status === "string" ? row.status.trim().toLowerCase() : "";
   if (status === "connected") {
@@ -82,18 +83,17 @@ function formatRelativeTime(isoString) {
   return `${Math.floor(diffMs / 86_400_000)}d ago`;
 }
 
-function validateField(name, value) {
-  if (!value) {
-    return name === "providerConfigKey"
-      ? "providerConfigKey is required (the Nango integration key)."
-      : "connectionId is required to verify a specific tenant.";
-  }
-  if (name === "providerConfigKey" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(value)) {
+function validateProviderConfigKey(value) {
+  if (!value) return "providerConfigKey is required (the Nango integration key).";
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(value)) {
     return "Use letters, digits, _, ., or - (max 64 chars, starts alphanumeric).";
   }
-  if (name === "connectionId" && value.length > 256) {
-    return "connectionId is too long (max 256 chars).";
-  }
+  return null;
+}
+
+function validateConnectionIdField(value, { required }) {
+  if (!value) return required ? "connectionId is required to verify or reconnect." : null;
+  if (value.length > 256) return "connectionId is too long (max 256 chars).";
   return null;
 }
 
@@ -130,20 +130,19 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
   const [statusKind, setStatusKind] = useState(initialStatus.kind);
   const [statusMessage, setStatusMessage] = useState(initialStatus.message);
   const [connectLink, setConnectLink] = useState(null);
+  const [sessionMode, setSessionMode] = useState(null);
   const [lastSummary, setLastSummary] = useState(null);
   const [errorRecovery, setErrorRecovery] = useState(null);
 
   const pollTimerRef = useRef(null);
   const pollDeadlineRef = useRef(0);
 
-  // Reset the form when a different row is selected. Seed `statusKind` /
-  // `statusMessage` from the persisted row so the connected badge survives
-  // page reloads and row navigation.
   useEffect(() => {
     setProviderConfigKey(initialProviderConfigKey);
     setConnectionId(initialConnectionId);
     setFieldErrors({});
     setConnectLink(null);
+    setSessionMode(null);
     setLastSummary(null);
     setErrorRecovery(null);
     setStatusKind(initialStatus.kind);
@@ -159,12 +158,21 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
   }, []);
 
-  const handleBlur = useCallback((name, value) => {
-    const error = validateField(name, value.trim());
-    setFieldErrors((prev) => ({ ...prev, [name]: error }));
+  const handleProviderConfigKeyBlur = useCallback((value) => {
+    setFieldErrors((prev) => ({ ...prev, providerConfigKey: validateProviderConfigKey(value.trim()) }));
+  }, []);
+
+  const handleConnectionIdBlur = useCallback((value) => {
+    setFieldErrors((prev) => ({ ...prev, connectionId: validateConnectionIdField(value.trim(), { required: false }) }));
   }, []);
 
   const runStatusCheck = useCallback(async (silent = false) => {
+    const connectionIdValue = connectionId.trim();
+    const connectionIdError = validateConnectionIdField(connectionIdValue, { required: true });
+    if (connectionIdError) {
+      setFieldErrors((prev) => ({ ...prev, connectionId: connectionIdError }));
+      return { ok: false, missingConnectionId: true };
+    }
     if (!silent) setCheckingConnection(true);
     setErrorRecovery(null);
     try {
@@ -173,7 +181,7 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           providerConfigKey: providerConfigKey.trim(),
-          connectionId: connectionId.trim()
+          connectionId: connectionIdValue
         })
       });
       const payload = await response.json();
@@ -220,6 +228,11 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
   }, [providerConfigKey, connectionId, onUpdateRow]);
 
   const startPolling = useCallback(() => {
+    if (!connectionId.trim()) {
+      // Without a connectionId we can't poll — the user must paste it once
+      // Nango delivers it (via Connect UI or the auth webhook).
+      return;
+    }
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     pollDeadlineRef.current = Date.now() + POLL_DURATION_MS;
     setPolling(true);
@@ -240,28 +253,38 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
       pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS);
     };
     pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS);
-  }, [runStatusCheck, statusKind]);
+  }, [runStatusCheck, statusKind, connectionId]);
 
-  const handleCreateSession = useCallback(async () => {
-    const errors = {
-      providerConfigKey: validateField("providerConfigKey", providerConfigKey.trim()),
-      connectionId: validateField("connectionId", connectionId.trim())
-    };
-    setFieldErrors(errors);
-    if (errors.providerConfigKey || errors.connectionId) return;
+  const createSession = useCallback(async ({ reconnect }) => {
+    const providerError = validateProviderConfigKey(providerConfigKey.trim());
+    const connectionIdError = reconnect
+      ? validateConnectionIdField(connectionId.trim(), { required: true })
+      : null;
+    setFieldErrors((prev) => ({ ...prev, providerConfigKey: providerError, connectionId: connectionIdError }));
+    if (providerError || connectionIdError) return;
 
     setCreatingSession(true);
     setConnectLink(null);
+    setSessionMode(null);
     setErrorRecovery(null);
     setStatusKind("pending");
-    setStatusMessage("Creating Nango Connect session…");
+    setStatusMessage(reconnect ? "Creating Nango Reconnect session…" : "Creating Nango Connect session…");
+
+    // Build correlation tags so the auth webhook can identify which row
+    // asked for OAuth. No secrets — only stable identifiers.
+    const tags = {};
+    if (typeof row?.id === "string" && row.id.trim()) tags.row_id = row.id.trim();
+    if (typeof row?.integrationId === "string" && row.integrationId.trim()) tags.integration_id = row.integrationId.trim();
+    if (typeof row?.objectId === "string" && row.objectId.trim()) tags.object_id = row.objectId.trim();
+
     try {
       const response = await fetch("/api/workspace/integrations/nango/connect-session", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           providerConfigKey: providerConfigKey.trim(),
-          connectionId: connectionId.trim()
+          ...(reconnect ? { connectionId: connectionId.trim(), reconnect: true } : {}),
+          tags
         })
       });
       const payload = await response.json();
@@ -286,17 +309,24 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
         return;
       }
       setConnectLink(payload.connectLink);
+      setSessionMode(payload.mode || (reconnect ? "reconnect" : "connect"));
       setStatusKind("pending");
-      setStatusMessage("Open the Connect link to finish OAuth — we'll auto-detect when it completes.");
-      // Auto-open in a new window so the user doesn't lose the workspace tab.
+      setStatusMessage(
+        reconnect
+          ? "Reconnect link ready — complete OAuth, then we'll re-verify automatically."
+          : "Open the Connect link to finish OAuth. Nango will return a connectionId — paste it below or wait for the auth webhook to persist it."
+      );
       try {
         const win = window.open(payload.connectLink, "_blank", "noopener,noreferrer");
         if (win) win.focus();
       } catch {
-        // Some browsers block window.open silently; the manual button below
-        // still works as a fallback.
+        // window.open may be blocked silently — the visible link below still works.
       }
-      startPolling();
+      // Auto-poll only when we already have a connectionId (reconnect flow,
+      // or the user pre-filled it for a known existing connection).
+      if (connectionId.trim()) {
+        startPolling();
+      }
     } catch (error) {
       const message = error?.message || "network error";
       setStatusKind("error");
@@ -305,10 +335,14 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
     } finally {
       setCreatingSession(false);
     }
-  }, [providerConfigKey, connectionId, startPolling]);
+  }, [providerConfigKey, connectionId, row, startPolling]);
+
+  const handleCreateSession = useCallback(() => createSession({ reconnect: false }), [createSession]);
+  const handleReconnect = useCallback(() => createSession({ reconnect: true }), [createSession]);
 
   const handleDisconnect = useCallback(() => {
     setConnectLink(null);
+    setSessionMode(null);
     setLastSummary(null);
     setStatusKind("unknown");
     setStatusMessage("");
@@ -323,7 +357,9 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
   }, [onUpdateRow]);
 
   const isBusy = creatingSession || checkingConnection || polling;
-  const hasFieldErrors = Boolean(fieldErrors.providerConfigKey || fieldErrors.connectionId);
+  const hasProviderError = Boolean(fieldErrors.providerConfigKey);
+  const hasConnectionIdError = Boolean(fieldErrors.connectionId);
+  const hasConnectionId = Boolean(connectionId.trim());
 
   return (
     <section className="dm-api-action-card" aria-label="Nango connection">
@@ -334,6 +370,12 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
           Nango handles OAuth and API authentication for hundreds of providers. Your provider credentials stay on Nango — this workspace only sees safe connection metadata, never tokens.
         </p>
 
+        <ol className="dm-nango-steps">
+          <li>Enter the <strong>providerConfigKey</strong> (the Nango integration key).</li>
+          <li>Click <strong>Create Connect Session</strong> and complete OAuth in the new tab.</li>
+          <li>Paste the <strong>connectionId</strong> Nango shows you (or wait for the auth webhook to persist it), then click <strong>Check Connection</strong>.</li>
+        </ol>
+
         <div className="dm-nango-fields">
           <label className="dm-field">
             <span>providerConfigKey</span>
@@ -341,32 +383,32 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
               type="text"
               value={providerConfigKey}
               onChange={(event) => setProviderConfigKey(event.target.value)}
-              onBlur={(event) => handleBlur("providerConfigKey", event.target.value)}
+              onBlur={(event) => handleProviderConfigKeyBlur(event.target.value)}
               placeholder="e.g. hubspot-prod"
               disabled={disabled || isBusy}
-              aria-invalid={Boolean(fieldErrors.providerConfigKey)}
-              aria-describedby={fieldErrors.providerConfigKey ? "nango-pck-error" : undefined}
+              aria-invalid={hasProviderError}
+              aria-describedby={hasProviderError ? "nango-pck-error" : undefined}
             />
-            {fieldErrors.providerConfigKey
+            {hasProviderError
               ? <small id="nango-pck-error" className="dm-field-error">{fieldErrors.providerConfigKey}</small>
               : <small className="dm-field-hint">Defaults to <code>integrationId</code> when blank.</small>}
           </label>
 
           <label className="dm-field">
-            <span>connectionId</span>
+            <span>connectionId <small>(required to verify or reconnect)</small></span>
             <input
               type="text"
               value={connectionId}
               onChange={(event) => setConnectionId(event.target.value)}
-              onBlur={(event) => handleBlur("connectionId", event.target.value)}
-              placeholder="tenant or account identifier"
+              onBlur={(event) => handleConnectionIdBlur(event.target.value)}
+              placeholder="Nango returns this after OAuth"
               disabled={disabled || isBusy}
-              aria-invalid={Boolean(fieldErrors.connectionId)}
-              aria-describedby={fieldErrors.connectionId ? "nango-cid-error" : undefined}
+              aria-invalid={hasConnectionIdError}
+              aria-describedby={hasConnectionIdError ? "nango-cid-error" : undefined}
             />
-            {fieldErrors.connectionId
+            {hasConnectionIdError
               ? <small id="nango-cid-error" className="dm-field-error">{fieldErrors.connectionId}</small>
-              : <small className="dm-field-hint">Stored in the row's <code>connectionIds</code> set.</small>}
+              : <small className="dm-field-hint">Nango generates this during OAuth and delivers it via auth webhook.</small>}
           </label>
         </div>
 
@@ -381,7 +423,8 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
         {connectLink ? (
           <p className="dm-nango-connect-link">
             <a href={connectLink} target="_blank" rel="noopener noreferrer">
-              <ExternalLink size={14} aria-hidden="true" /> Reopen Nango Connect link
+              <ExternalLink size={14} aria-hidden="true" />
+              {sessionMode === "reconnect" ? " Reopen Nango Reconnect link" : " Reopen Nango Connect link"}
             </a>
           </p>
         ) : null}
@@ -394,7 +437,7 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
               type="button"
               className="dm-btn-outline"
               onClick={() => runStatusCheck(false)}
-              disabled={disabled || isBusy || hasFieldErrors}
+              disabled={disabled || isBusy || hasProviderError}
             >
               <RefreshCw size={14} aria-hidden="true" /> Try Again
             </button>
@@ -407,17 +450,29 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
           type="button"
           className="dm-btn-primary-sm dm-api-action-card-cta"
           onClick={handleCreateSession}
-          disabled={disabled || isBusy || hasFieldErrors}
+          disabled={disabled || isBusy || hasProviderError}
         >
-          {creatingSession
+          {creatingSession && sessionMode !== "reconnect"
             ? <><Loader2 className="dm-spinner" size={14} aria-hidden="true" /> Creating session…</>
             : "Create Connect Session"}
         </button>
+        {hasConnectionId ? (
+          <button
+            type="button"
+            className="dm-btn-outline dm-api-action-card-cta"
+            onClick={handleReconnect}
+            disabled={disabled || isBusy || hasProviderError || hasConnectionIdError}
+          >
+            {creatingSession && sessionMode === "reconnect"
+              ? <><Loader2 className="dm-spinner" size={14} aria-hidden="true" /> Reconnecting…</>
+              : "Reconnect"}
+          </button>
+        ) : null}
         <button
           type="button"
           className="dm-btn-outline dm-api-action-card-cta"
           onClick={() => runStatusCheck(false)}
-          disabled={disabled || isBusy || hasFieldErrors}
+          disabled={disabled || isBusy || hasProviderError}
         >
           {checkingConnection
             ? <><Loader2 className="dm-spinner" size={14} aria-hidden="true" /> Checking…</>

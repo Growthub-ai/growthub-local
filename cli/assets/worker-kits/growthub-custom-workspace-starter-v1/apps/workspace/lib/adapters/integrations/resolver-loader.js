@@ -9,31 +9,41 @@
  * stays empty — the refresh button and test route gracefully skip unknown
  * integrationIds and surface them in the `skipped` array.
  *
- * Called once per route handler invocation (Next.js module cache means it
- * will only do real I/O on the first call in each worker process).
+ * Two cadences:
+ *   - `loadStaticResolversOnce()` — imports `.js` files in the resolvers/
+ *     directory exactly once per worker process. Static resolvers register
+ *     themselves at module-load time; re-importing would be a no-op anyway.
+ *   - `refreshConfigDrivenResolvers()` — re-scans growthub.config.json on
+ *     EVERY call. New Nango-backed api-registry rows are picked up without
+ *     a server restart. The source-resolver registry's `registerSourceResolver`
+ *     contract is "calling again with the same integrationId replaces the
+ *     existing resolver", so repeated registration is safe.
+ *
+ * `loadAllResolvers()` calls both and remains the single entry point that
+ * existing routes (test-source, refresh-source) consume.
  */
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const loaded = new Set();
-let loadAttempted = false;
+const staticLoaded = new Set();
+let staticLoadDone = false;
 
-async function loadAllResolvers() {
-  if (loadAttempted) return;
-  loadAttempted = true;
+async function loadStaticResolversOnce() {
+  if (staticLoadDone) return;
+  staticLoadDone = true;
   const resolversDir = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "lib/adapters/integrations/resolvers");
   try {
     const entries = await fs.readdir(resolversDir);
     const jsFiles = entries.filter((f) => f.endsWith(".js") && !f.startsWith("_") && !f.startsWith("."));
     await Promise.all(
       jsFiles.map(async (file) => {
-        if (loaded.has(file)) return;
+        if (staticLoaded.has(file)) return;
         try {
           const absolutePath = path.join(resolversDir, file);
           await import(/*turbopackIgnore: true*/ pathToFileURL(absolutePath).href);
-          loaded.add(file);
+          staticLoaded.add(file);
         } catch {
           // Malformed resolver — skip silently; operator needs to fix the file
         }
@@ -42,17 +52,30 @@ async function loadAllResolvers() {
   } catch {
     // resolvers directory missing or empty — normal for fresh upstream kit
   }
-  // Config-driven Nango resolvers — picks up `objectType: "api-registry"`
-  // rows with `connectorKind: "nango"` from growthub.config.json. No
-  // resolver file authoring is required for Nango-backed providers.
+}
+
+/**
+ * Re-scan growthub.config.json for Nango-backed api-registry rows and
+ * register one source resolver per row. Runs on every invocation so newly
+ * added rows are picked up between requests without a server restart.
+ *
+ * Returns the list of integrationIds registered on this call (or `[]` on
+ * any non-fatal error — the static resolvers still work).
+ */
+async function refreshConfigDrivenResolvers() {
   try {
     const { readWorkspaceConfig } = await import("../../workspace-config.js");
     const { registerNangoResolversFromConfig } = await import("./nango/index.js");
     const workspaceConfig = await readWorkspaceConfig();
-    registerNangoResolversFromConfig(workspaceConfig);
+    return registerNangoResolversFromConfig(workspaceConfig) || [];
   } catch {
-    // Missing config or Nango module — non-fatal; static resolvers still work.
+    return [];
   }
+}
+
+async function loadAllResolvers() {
+  await loadStaticResolversOnce();
+  await refreshConfigDrivenResolvers();
 }
 
 async function listResolverFiles() {
@@ -65,4 +88,9 @@ async function listResolverFiles() {
   }
 }
 
-export { loadAllResolvers, listResolverFiles };
+export {
+  loadAllResolvers,
+  loadStaticResolversOnce,
+  listResolverFiles,
+  refreshConfigDrivenResolvers
+};

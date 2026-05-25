@@ -193,8 +193,18 @@ function validateConnectSessionRequest(input) {
   }
   const errors = [];
   errors.push(...validateProviderConfigKey(input.providerConfigKey));
+  // connectionId is OPTIONAL on Create Connect Session — Nango mints the
+  // connection during OAuth and delivers the id via the auth webhook. The
+  // field is only meaningful for explicit Reconnect flows against a known
+  // existing connection.
   if (input.connectionId !== undefined && input.connectionId !== null && input.connectionId !== "") {
     errors.push(...validateConnectionId(input.connectionId));
+  }
+  if (input.reconnect !== undefined && typeof input.reconnect !== "boolean") {
+    errors.push("reconnect must be a boolean when present");
+  }
+  if (input.reconnect === true && (typeof input.connectionId !== "string" || !input.connectionId.trim())) {
+    errors.push("connectionId is required when reconnect=true");
   }
   if (input.endUser !== undefined && input.endUser !== null) {
     if (!isPlainObject(input.endUser)) {
@@ -208,11 +218,32 @@ function validateConnectSessionRequest(input) {
       }
     }
   }
+  // Tags: arbitrary string→string map that Nango echoes back in the auth
+  // webhook so the workspace can correlate "which row asked for OAuth" once
+  // a connectionId is minted. Keys constrained to identifier-shape and
+  // values constrained to short strings — no secret payloads.
+  if (input.tags !== undefined && input.tags !== null) {
+    if (!isPlainObject(input.tags)) {
+      errors.push("tags must be a plain object when present");
+    } else {
+      for (const [key, value] of Object.entries(input.tags)) {
+        if (!/^[A-Za-z0-9_.-]{1,64}$/.test(key)) {
+          errors.push(`tags.${key} must match [A-Za-z0-9_.-]{1,64}`);
+          continue;
+        }
+        if (typeof value !== "string" || value.length > 256) {
+          errors.push(`tags.${key} must be a string (<= 256 chars)`);
+        }
+      }
+    }
+  }
   if (errors.length) throw makeInvalidInputError("invalid connect session request", errors);
   return {
     providerConfigKey: input.providerConfigKey.trim(),
     connectionId: input.connectionId ? input.connectionId.trim() : undefined,
-    endUser: isPlainObject(input.endUser) ? { ...input.endUser } : undefined
+    reconnect: input.reconnect === true,
+    endUser: isPlainObject(input.endUser) ? { ...input.endUser } : undefined,
+    tags: isPlainObject(input.tags) ? { ...input.tags } : undefined
   };
 }
 

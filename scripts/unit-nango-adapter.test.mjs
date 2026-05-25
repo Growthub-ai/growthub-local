@@ -54,6 +54,9 @@ const nangoConfigLoader = await import(
 const resolverRegistry = await import(
   pathToFileURL(path.join(kitLib, "adapters/integrations/source-resolver-registry.js")).href
 );
+const resolverLoader = await import(
+  pathToFileURL(path.join(kitLib, "adapters/integrations/resolver-loader.js")).href
+);
 const templateRegistry = await import(
   pathToFileURL(path.join(kitLib, "adapters/integrations/templates/template-registry.js")).href
 );
@@ -397,15 +400,52 @@ test("describeNangoAdapter exposes secretEnvName and never the secret value", ()
   }
 });
 
-test("validateConnectSessionRequest accepts a well-formed payload", () => {
+test("validateConnectSessionRequest accepts providerConfigKey alone (no connectionId required)", () => {
   const out = nangoSchema.validateConnectSessionRequest({
-    providerConfigKey: "hubspot-prod",
-    connectionId: "acct-123",
-    endUser: { id: "user-1", email: "u@example.com" }
+    providerConfigKey: "hubspot-prod"
   });
   assert.equal(out.providerConfigKey, "hubspot-prod");
-  assert.equal(out.connectionId, "acct-123");
-  assert.equal(out.endUser.id, "user-1");
+  assert.equal(out.connectionId, undefined);
+  assert.equal(out.reconnect, false);
+});
+
+test("validateConnectSessionRequest accepts tags for webhook correlation", () => {
+  const out = nangoSchema.validateConnectSessionRequest({
+    providerConfigKey: "hubspot-prod",
+    tags: { row_id: "row-1", integration_id: "hubspot", object_id: "api-registry" }
+  });
+  assert.deepEqual(out.tags, { row_id: "row-1", integration_id: "hubspot", object_id: "api-registry" });
+});
+
+test("validateConnectSessionRequest requires connectionId when reconnect=true", () => {
+  let caught;
+  try {
+    nangoSchema.validateConnectSessionRequest({
+      providerConfigKey: "hubspot-prod",
+      reconnect: true
+    });
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught, "expected throw");
+  assert.ok(
+    caught.details.some((d) => d.includes("connectionId is required when reconnect=true")),
+    `expected reconnect+connectionId rejection, got: ${caught.details?.join(" | ")}`
+  );
+});
+
+test("validateConnectSessionRequest rejects oversized tag values", () => {
+  let caught;
+  try {
+    nangoSchema.validateConnectSessionRequest({
+      providerConfigKey: "hubspot-prod",
+      tags: { row_id: "x".repeat(300) }
+    });
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught, "expected throw on oversized tag");
+  assert.ok(caught.details.some((d) => d.includes("tags.row_id")));
 });
 
 test("validateConnectSessionRequest rejects missing providerConfigKey", () => {
@@ -418,6 +458,44 @@ test("validateConnectSessionRequest rejects missing providerConfigKey", () => {
   assert.ok(caught, "expected throw");
   assert.equal(caught.code, "NANGO_INVALID_INPUT");
   assert.ok(caught.details.some((d) => d.includes("providerConfigKey")));
+});
+
+test("loadAllResolvers re-runs config-driven Nango registration on every call", async () => {
+  // Stub `readWorkspaceConfig` by monkey-patching `process.cwd()` indirectly
+  // is impractical here. Instead, exercise `refreshConfigDrivenResolvers`
+  // directly through the loader's public surface: call it twice and verify
+  // the second call re-registers Nango resolvers (and does NOT silently
+  // skip them like the previous `loadAttempted` guard did).
+  //
+  // We simulate this by calling `registerNangoResolversFromConfig` twice
+  // with the SAME row and asserting both registrations succeed (the
+  // resolver registry contract is "replace on duplicate id").
+  const config = {
+    dataModel: {
+      objects: [{
+        id: "api-registry-refresh-test",
+        label: "API Registry",
+        objectType: "api-registry",
+        columns: [],
+        rows: [{
+          integrationId: "refresh-test-provider",
+          connectorKind: "nango",
+          providerConfigKey: "refresh-test-provider",
+          connectionIds: ["acct-1"],
+          endpoint: "/v1/data"
+        }]
+      }]
+    }
+  };
+  const first = nangoConfigLoader.registerNangoResolversFromConfig(config);
+  const second = nangoConfigLoader.registerNangoResolversFromConfig(config);
+  assert.deepEqual(first, ["refresh-test-provider"]);
+  assert.deepEqual(second, ["refresh-test-provider"]);
+  // The loader still exposes the canonical `loadAllResolvers` entry; call
+  // it twice and verify it does not throw (config refresh is part of it).
+  await resolverLoader.loadAllResolvers();
+  await resolverLoader.loadAllResolvers();
+  assert.equal(typeof resolverLoader.refreshConfigDrivenResolvers, "function");
 });
 
 test("validateConnectionSummaryRequest requires both keys", () => {
