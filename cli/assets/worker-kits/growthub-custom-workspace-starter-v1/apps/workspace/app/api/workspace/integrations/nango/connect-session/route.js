@@ -7,14 +7,21 @@
  * never sees the resulting OAuth credentials. The token returned here is a
  * Connect Session token (handoff only), not a provider credential.
  *
+ * Lifecycle: Nango creates the connectionId AFTER the user completes OAuth
+ * and delivers it through the auth webhook. A normal Connect Session
+ * therefore does NOT need a connectionId as input — only the explicit
+ * Reconnect path (`reconnect: true`) operates on an existing connectionId.
+ *
  * Request body:
  *   {
- *     providerConfigKey: string,        // required, alphanumeric (+ _.-) <= 64 chars
- *     connectionId?: string,             // optional pre-mint connection id
- *     endUser?: { id?: string, email?: string }
+ *     providerConfigKey: string,         // required, alphanumeric (+ _.-) <= 64 chars
+ *     reconnect?: boolean,                // true → use the SDK's reconnect-session path
+ *     connectionId?: string,              // REQUIRED when reconnect=true; ignored for a normal Create Connect Session
+ *     endUser?: { id?: string, email?: string },
+ *     tags?: Record<string, string>      // echoed back in the Nango auth webhook so the workspace can map the eventual connectionId to the originating row
  *   }
  *
- * Response — success: 200 { ok: true, providerConfigKey, environment, token, connectLink, sdkMethod }
+ * Response — success: 200 { ok: true, providerConfigKey, environment, mode, token, connectLink, sdkMethod, tagsEchoed }
  * Response — validation failure: 400 { ok: false, error, details }
  * Response — Nango not configured / SDK missing: 503 { ok: false, error, code }
  * Response — upstream failure: 502 { ok: false, error }
