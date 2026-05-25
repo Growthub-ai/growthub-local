@@ -12,7 +12,7 @@
  *   entityTypes: string[],           // e.g. ["project.tasks", "workspace.users"]
  *   listEntities: async (config, connection) => NormalizedEntity[],
  *   fetchRecords: async (config, connection, binding) => Record[]
- *   connectorKind?: string,          // http | mcp | chrome | tool | custom
+ *   connectorKind?: string,          // http | mcp | chrome | tool | custom | nango
  *   templateId?: string,
  *   capabilities?: string[],
  *   configSchema?: SchemaField[],

@@ -42,6 +42,17 @@ async function loadAllResolvers() {
   } catch {
     // resolvers directory missing or empty — normal for fresh upstream kit
   }
+  // Config-driven Nango resolvers — picks up `objectType: "api-registry"`
+  // rows with `connectorKind: "nango"` from growthub.config.json. No
+  // resolver file authoring is required for Nango-backed providers.
+  try {
+    const { readWorkspaceConfig } = await import("../../workspace-config.js");
+    const { registerNangoResolversFromConfig } = await import("./nango/index.js");
+    const workspaceConfig = await readWorkspaceConfig();
+    registerNangoResolversFromConfig(workspaceConfig);
+  } catch {
+    // Missing config or Nango module — non-fatal; static resolvers still work.
+  }
 }
 
 async function listResolverFiles() {

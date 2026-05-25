@@ -4,13 +4,20 @@ function readAdapterConfig() {
     dataAdapter: readEnum(["GROWTHUB_WORKSPACE_DATA_ADAPTER", "AGENCY_PORTAL_DATA_ADAPTER"], ["postgres", "qstash-kv", "provider-managed"], "provider-managed"),
     authAdapter: readEnum(["GROWTHUB_WORKSPACE_AUTH_ADAPTER", "AGENCY_PORTAL_AUTH_ADAPTER"], ["oidc", "clerk", "authjs", "provider-managed"], "provider-managed"),
     paymentAdapter: readEnum(["GROWTHUB_WORKSPACE_PAYMENT_ADAPTER", "AGENCY_PORTAL_PAYMENT_ADAPTER"], ["none", "stripe", "polar"], "none"),
-    integrationAdapter: readEnum(["GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER", "AGENCY_PORTAL_INTEGRATION_ADAPTER"], ["growthub-bridge", "byo-api-key", "static"], "static"),
+    integrationAdapter: readEnum(["GROWTHUB_WORKSPACE_INTEGRATION_ADAPTER", "AGENCY_PORTAL_INTEGRATION_ADAPTER"], ["growthub-bridge", "byo-api-key", "static", "nango"], "static"),
     reportingAdapter: process.env.GROWTHUB_WORKSPACE_REPORTING_ADAPTER || process.env.AGENCY_PORTAL_REPORTING_ADAPTER || void 0,
     growthubBridge: {
       baseUrl: process.env.GROWTHUB_BRIDGE_BASE_URL || void 0,
       integrationsPath: process.env.GROWTHUB_BRIDGE_INTEGRATIONS_PATH || "/api/mcp/accounts",
       userId: process.env.GROWTHUB_BRIDGE_USER_ID || void 0,
       hasAccessToken: Boolean(process.env.GROWTHUB_BRIDGE_ACCESS_TOKEN)
+    },
+    nango: {
+      mode: readEnum(["NANGO_MODE"], ["cloud", "self-hosted"], "cloud"),
+      hostUrl: process.env.NANGO_HOST_URL || void 0,
+      environment: process.env.NANGO_ENVIRONMENT || "dev",
+      secretEnvName: "NANGO_SECRET_KEY",
+      hasSecretKey: Boolean(process.env.NANGO_SECRET_KEY)
     },
     dataSources: {
       hasWindsorApiKey: Boolean(process.env.WINDSOR_API_KEY)
