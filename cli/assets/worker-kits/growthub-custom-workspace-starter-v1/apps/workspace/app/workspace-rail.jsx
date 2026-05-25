@@ -1488,6 +1488,7 @@ export function WorkspaceRail({
   onConfigChange,
   dashboardsSlot,
   dataModelSlot,
+  defaultCollapsed = false,
   // `managementSlot` retained as accepted-but-ignored prop for backward
   // compatibility with callers that still pass it. The Management item
   // moved to the Workspace Settings → Ownership tab.
@@ -1500,7 +1501,7 @@ export function WorkspaceRail({
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState("home");
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(Boolean(defaultCollapsed));
   const [openMenuId, setOpenMenuId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -1520,6 +1521,10 @@ export function WorkspaceRail({
   }, [openMenuId]);
 
   const threads = useMemo(() => getHelperThreadRows(workspaceConfig), [workspaceConfig]);
+
+  useEffect(() => {
+    setRailCollapsed(Boolean(defaultCollapsed));
+  }, [defaultCollapsed]);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -1643,29 +1648,26 @@ export function WorkspaceRail({
           <button
             type="button"
             className="workspace-rail-icon-btn"
-            aria-label="Search workspace"
-            title="Search (⌘K)"
-            data-rail-search=""
-            onClick={() => {
-              // Surfaces with a command palette (DataModelShell) listen
-              // for this event and open the palette in place. Other
-              // surfaces are free to ignore it.
-              if (typeof window !== "undefined") {
-                window.dispatchEvent(new CustomEvent("growthub:open-command-palette"));
-              }
-            }}
-          >
-            <Search size={13} />
-          </button>
-          <button
-            type="button"
-            className="workspace-rail-icon-btn"
             aria-label={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-pressed={railCollapsed}
             onClick={() => setRailCollapsed((v) => !v)}
           >
             <PanelLeftClose size={13} />
+          </button>
+          <button
+            type="button"
+            className="workspace-rail-icon-btn"
+            aria-label="Search workspace"
+            title="Search (⌘K)"
+            data-rail-search=""
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("growthub:open-command-palette"));
+              }
+            }}
+          >
+            <Search size={13} />
           </button>
           <button
             type="button"

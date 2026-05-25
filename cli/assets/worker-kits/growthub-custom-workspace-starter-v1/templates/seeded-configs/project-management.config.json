@@ -1,0 +1,276 @@
+{
+  "name": "Project Management Workspace Template",
+  "description": "Opinionated project-management workspace template for API-backed task workflows. This seed is sanitized: it stores no provider secrets, no OAuth connection ids, and no user task data.",
+  "dataModel": {
+    "objects": [
+      {
+        "id": "api-registry",
+        "label": "API Registry",
+        "source": "API Registry",
+        "objectType": "api-registry",
+        "icon": "Code2",
+        "locked": true,
+        "columns": [
+          "integrationId",
+          "authRef",
+          "baseUrl",
+          "endpoint",
+          "method",
+          "status",
+          "lastTested",
+          "lastResponse",
+          "entityTypes",
+          "description",
+          "connectorKind",
+          "resolverTemplateId",
+          "schemaVersion",
+          "capabilities",
+          "executionLane",
+          "providerConfigKey",
+          "connectionIds",
+          "nangoMode",
+          "nangoEnvironment"
+        ],
+        "records": [
+          {
+            "integrationId": "asana-active-tasks",
+            "authRef": "NANGO_SECRET_KEY",
+            "baseUrl": "http://127.0.0.1:3000",
+            "endpoint": "/api/workspace/integrations/nango/proxy",
+            "method": "POST",
+            "status": "template",
+            "lastTested": "",
+            "lastResponse": "",
+            "entityTypes": "tasks",
+            "description": "Template API Registry row for pulling active project tasks through a provider-auth proxy. Set providerConfigKey and connectionIds in the exported workspace after OAuth.",
+            "connectorKind": "nango",
+            "resolverTemplateId": "nango-proxy-v1",
+            "schemaVersion": "1",
+            "capabilities": "read:tasks",
+            "executionLane": "project-management",
+            "providerConfigKey": "asana",
+            "connectionIds": "",
+            "nangoMode": "cloud",
+            "nangoEnvironment": "dev"
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [
+            "lastResponse"
+          ]
+        }
+      },
+      {
+        "id": "project-task-source",
+        "label": "Project Task Source",
+        "source": "Project Task Source",
+        "objectType": "data-source",
+        "icon": "Globe",
+        "locked": true,
+        "columns": [
+          "Name",
+          "registryId",
+          "endpoint",
+          "authRef",
+          "baseUrl",
+          "method",
+          "status",
+          "lastTested",
+          "lastResponse",
+          "sourceStorage",
+          "sourceId",
+          "entityType",
+          "description"
+        ],
+        "records": [
+          {
+            "Name": "Active project tasks",
+            "registryId": "asana-active-tasks",
+            "endpoint": "/api/workspace/integrations/nango/proxy",
+            "authRef": "NANGO_SECRET_KEY",
+            "baseUrl": "http://127.0.0.1:3000",
+            "method": "POST",
+            "status": "template",
+            "lastTested": "",
+            "lastResponse": "",
+            "sourceStorage": "workspace-source-records",
+            "sourceId": "project-active-tasks",
+            "entityType": "tasks",
+            "description": "Source binding for task deltas returned by the project-management workflow."
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [
+            "lastResponse"
+          ]
+        }
+      },
+      {
+        "id": "sandbox-environments",
+        "label": "Sandbox Environments",
+        "source": "Sandbox Environments",
+        "objectType": "sandbox-environment",
+        "icon": "Terminal",
+        "locked": true,
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "version",
+          "runLocality",
+          "schedulerRegistryId",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "localModel",
+          "localEndpoint",
+          "intelligenceAdapterMode",
+          "envRefs",
+          "networkAllow",
+          "allowList",
+          "instructions",
+          "command",
+          "timeoutMs",
+          "status",
+          "lastTested",
+          "lastRunId",
+          "lastSourceId",
+          "lastResponse",
+          "orchestrationConfig",
+          "description"
+        ],
+        "records": [
+          {
+            "Name": "project-active-tasks-workflow",
+            "lifecycleStatus": "draft",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-process",
+            "agentHost": "",
+            "localModel": "",
+            "localEndpoint": "",
+            "intelligenceAdapterMode": "",
+            "envRefs": "NANGO_SECRET_KEY",
+            "networkAllow": "true",
+            "allowList": "127.0.0.1,localhost,api.nango.dev,app.asana.com",
+            "instructions": "Template workflow for pulling active tasks from a project-management provider through API Registry. Fill projectGid, workspaceGid, providerConfigKey, and connectionIds in the exported workspace before running.",
+            "command": "",
+            "timeoutMs": "60000",
+            "status": "template",
+            "lastTested": "",
+            "lastRunId": "",
+            "lastSourceId": "",
+            "lastResponse": "",
+            "orchestrationConfig": "{\n  \"version\": 1,\n  \"provider\": \"growthub-native\",\n  \"nodes\": [\n    {\n      \"id\": \"input\",\n      \"type\": \"input\",\n      \"label\": \"Project input\",\n      \"config\": {\n        \"inputMode\": \"manual\",\n        \"samplePayload\": {\n          \"projectGid\": \"PROJECT_GID_PLACEHOLDER\",\n          \"workspaceGid\": \"WORKSPACE_GID_PLACEHOLDER\"\n        }\n      }\n    },\n    {\n      \"id\": \"active-tasks-call\",\n      \"type\": \"api-registry-call\",\n      \"label\": \"Pull active project tasks\",\n      \"config\": {\n        \"registryId\": \"asana-active-tasks\",\n        \"integrationId\": \"asana-active-tasks\",\n        \"method\": \"POST\",\n        \"baseUrl\": \"http://127.0.0.1:3000\",\n        \"endpoint\": \"/api/workspace/integrations/nango/proxy\",\n        \"authRef\": \"NANGO_SECRET_KEY\",\n        \"bodyTemplate\": {\n          \"providerConfigKey\": \"asana\",\n          \"connectionId\": \"CONNECTION_ID_PLACEHOLDER\",\n          \"method\": \"GET\",\n          \"path\": \"/api/1.0/projects/{{input.projectGid}}/tasks\",\n          \"params\": {\n            \"completed_since\": \"now\",\n            \"limit\": \"20\",\n            \"opt_fields\": \"gid,name,completed,assignee.name,due_on,permalink_url,created_at,modified_at,memberships.section.name\"\n          }\n        },\n        \"deltaTags\": [\n          \"routing\",\n          \"input\",\n          \"output\"\n        ]\n      }\n    },\n    {\n      \"id\": \"normalize-active-tasks\",\n      \"type\": \"transform-filter\",\n      \"label\": \"Normalize active tasks\",\n      \"config\": {\n        \"rootPath\": \"data\",\n        \"filter\": {\n          \"completed\": false\n        },\n        \"fieldMap\": {\n          \"gid\": \"gid\",\n          \"name\": \"name\",\n          \"completed\": \"completed\",\n          \"assignee\": \"assignee.name\",\n          \"due_on\": \"due_on\",\n          \"section\": \"memberships.0.section.name\",\n          \"permalink_url\": \"permalink_url\",\n          \"modified_at\": \"modified_at\"\n        },\n        \"deltaTags\": [\n          \"evaluation\",\n          \"output\"\n        ]\n      }\n    },\n    {\n      \"id\": \"result\",\n      \"type\": \"tool-result\",\n      \"label\": \"Persist task response\",\n      \"config\": {\n        \"saveStatus\": true,\n        \"saveResponse\": true,\n        \"sourceId\": \"project-active-tasks\",\n        \"deltaTags\": [\n          \"output\"\n        ]\n      }\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"input\",\n      \"to\": \"active-tasks-call\",\n      \"passes\": \"input\"\n    },\n    {\n      \"from\": \"active-tasks-call\",\n      \"to\": \"normalize-active-tasks\",\n      \"passes\": \"response\"\n    },\n    {\n      \"from\": \"normalize-active-tasks\",\n      \"to\": \"result\",\n      \"passes\": \"normalized-output\"\n    }\n  ]\n}",
+            "description": "Draft project-management workflow template. No secrets or provider data are stored in this row."
+          }
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [
+            "lastResponse"
+          ]
+        }
+      }
+    ]
+  },
+  "dashboards": [
+    {
+      "id": "project-management-template",
+      "name": "Project Management",
+      "description": "Template dashboard for active project tasks. Run the workflow after configuring provider OAuth to hydrate real rows.",
+      "tabs": [
+        {
+          "id": "tab-project-tasks",
+          "label": "Active Tasks",
+          "widgets": [
+            {
+              "id": "project-active-tasks-view",
+              "kind": "view",
+              "title": "Active project tasks",
+              "position": {
+                "x": 0,
+                "y": 0,
+                "w": 9,
+                "h": 8
+              },
+              "config": {
+                "source": "Project Task Source",
+                "layout": "Table",
+                "columns": [
+                  "gid",
+                  "name",
+                  "assignee",
+                  "due_on",
+                  "section",
+                  "modified_at",
+                  "permalink_url"
+                ],
+                "rows": []
+              }
+            }
+          ]
+        }
+      ],
+      "activeTabId": "tab-project-tasks",
+      "version": "1"
+    }
+  ],
+  "canvas": {
+    "id": "workspace-canvas",
+    "name": "Project Management",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "widgets": [
+      {
+        "id": "project-active-tasks-view",
+        "kind": "view",
+        "title": "Active project tasks",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "w": 9,
+          "h": 8
+        },
+        "config": {
+          "source": "Project Task Source",
+          "layout": "Table",
+          "columns": [
+            "gid",
+            "name",
+            "assignee",
+            "due_on",
+            "section",
+            "modified_at",
+            "permalink_url"
+          ],
+          "rows": []
+        }
+      }
+    ]
+  },
+  "provenance": {
+    "mirrors": "growthub-custom-workspace-starter-v1",
+    "template": "project-management",
+    "templateKind": "workspace-template",
+    "privacy": "sanitized-no-secrets-no-provider-data",
+    "note": "Official Workspace 2 seed. Configure provider OAuth and project identifiers after export."
+  }
+}

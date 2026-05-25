@@ -306,7 +306,7 @@ const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const GRID_CELL_COUNT = GRID_COLUMNS * GRID_ROWS;
 const DEFAULT_TAB_ID = "tab-default";
-const COLLAPSED_GRID_COLUMNS = "264px minmax(0, 1fr)";
+const COLLAPSED_GRID_COLUMNS = "var(--workspace-rail-width, 264px) minmax(0, 1fr)";
 
 function generateId(prefix) {
   if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
@@ -3928,8 +3928,9 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
-  const addSlot = dragPreview || selectedPosition;
   const selectedWidgetLookupId = selectedWidgetId || pendingSelectedWidgetId;
+  const addSlot = dragPreview || selectedPosition;
+  const showAddWidgetSlot = dashboardDraftMode && !selectedWidgetLookupId && panelOpen && addSlot;
   const selectedWidget = activeWidgets.find((widget) => widget.id === selectedWidgetLookupId) || null;
   const availableIntegrations = useMemo(() => flattenIntegrationSettings(integrationSettings), [integrationSettings]);
   const dataModelTables = useMemo(
@@ -5149,6 +5150,12 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     return () => window.removeEventListener("keydown", handler);
   }, [addWidget, commandPaletteOpen, managementOpen, panelOpen, settingsOpen, templateGalleryOpen, workspaceView]);
 
+  useEffect(() => {
+    const openFromRail = () => setCommandPaletteOpen(true);
+    window.addEventListener("growthub:open-command-palette", openFromRail);
+    return () => window.removeEventListener("growthub:open-command-palette", openFromRail);
+  }, []);
+
   const builderStyle = workspaceView === "dashboards" || !panelOpen
     ? { gridTemplateColumns: COLLAPSED_GRID_COLUMNS }
     : undefined;
@@ -5317,6 +5324,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       <WorkspaceRail
         workspaceConfig={config}
         authority={integrationAdapter.authority}
+        defaultCollapsed={workspaceView === "builder"}
         helperOpen={helperOpen}
         onOpenHelper={() => {
           if (helperOpen) { setHelperOpen(false); return; }
@@ -5354,11 +5362,11 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         )}
       />
 
-      <section className={`workspace-surface${workspaceView === "builder" ? " dm-workflow-surface workspace-dashboard-surface" : ""}`}>
+      <section className={`workspace-surface${workspaceView === "builder" ? ` dm-workflow-surface workspace-dashboard-surface${dashboardDraftMode ? " is-dashboard-editing" : ""}` : ""}`}>
         <header className={`workspace-toolbar${workspaceView === "builder" ? " dm-workflow-toolbar" : ""}`}>
           <div className={workspaceView === "builder" ? "dm-workflow-titlebar" : undefined}>
             {workspaceView === "builder" ? <>
-              <span className="dm-workflow-title-muted">Dashboards</span>
+              <button type="button" className="dm-workflow-breadcrumb-link" onClick={showDashboardHome}>Dashboards</button>
               <span className="dm-workflow-title-separator">/</span>
               <h1>{activeDashboard?.name || "Untitled"}</h1>
               <span className="dm-workflow-count">({activeWidgets.length}) · v{activeDashboard?.version || "1"} · {dashboardModeLabel}</span>
@@ -5609,7 +5617,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
             <button type="button" onClick={duplicateTab} disabled={!dashboardDraftMode}><Copy size={15} />Duplicate Tab</button>
           </div>
           <div
-            className={`workspace-grid${moveDrag ? " moving-widget" : ""}`}
+            className={`workspace-grid${moveDrag ? " moving-widget" : ""}${dashboardDraftMode ? " is-edit-mode" : " is-view-mode"}`}
             ref={gridRef}
             onPointerMove={updatePointerDrag}
             onPointerUp={(event) => {
@@ -5627,7 +5635,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
             }}
             style={{ "--workspace-columns": canvas.layout.columns, "--workspace-rows": GRID_ROWS }}
           >
-            {Array.from({ length: GRID_CELL_COUNT }).map((_, index) => {
+            {dashboardDraftMode ? Array.from({ length: GRID_CELL_COUNT }).map((_, index) => {
               const x = index % GRID_COLUMNS;
               const y = Math.floor(index / GRID_COLUMNS);
               const isOccupied = occupiedCells.has(`${x}:${y}`);
@@ -5645,15 +5653,15 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
                 }}
                 type="button"
               />;
-            })}
-            <button className={`workspace-add-widget${dragPreview ? " selecting" : ""}`} type="button" disabled={!dashboardDraftMode} onClick={() => dashboardDraftMode && setPanelOpen(true)} style={{
+            }) : null}
+            {showAddWidgetSlot ? <button className={`workspace-add-widget${dragPreview ? " selecting" : ""}`} type="button" onClick={() => setPanelOpen(true)} style={{
               gridColumn: `${addSlot.x + 1} / span ${addSlot.w}`,
               gridRow: `${addSlot.y + 1} / span ${addSlot.h}`
             }}>
               <span className="workspace-widget-icon" aria-hidden="true"><span /></span>
               <strong>Add widget</strong>
               <small>Click to add your first widget</small>
-            </button>
+            </button> : null}
             {activeWidgets.map((widget) => <WidgetPreview
               key={widget.id}
               branding={branding}

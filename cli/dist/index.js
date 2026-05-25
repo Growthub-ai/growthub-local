@@ -24679,6 +24679,33 @@ var TYPE_CONFIG = {
   specialized_agents: { color: pc32.magenta, emoji: "\u{1F9E0}", label: "Specialized Agents" },
   ops: { color: pc32.yellow, emoji: "\u2699\uFE0F ", label: "Ops" }
 };
+var PROJECT_MANAGEMENT_TEMPLATE_ID = "project-management-workspace-template-v1";
+var PROJECT_MANAGEMENT_TEMPLATE = {
+  id: PROJECT_MANAGEMENT_TEMPLATE_ID,
+  version: "1.0.0",
+  name: "Project Management Workspace Template",
+  description: "Opinionated workspace template for API-backed project task workflows. Built from the blank workspace starter with a sanitized project-management seed.",
+  type: "worker",
+  family: "studio",
+  executionMode: "export",
+  activationModes: ["export"],
+  bundleId: "growthub-custom-workspace-starter-v1",
+  bundleVersion: "1.0.0",
+  briefType: "workspace-template"
+};
+var RETIRED_CUSTOM_WORKSPACE_KIT_IDS = /* @__PURE__ */ new Set([
+  "growthub-open-higgsfield-studio-v1",
+  "growthub-geo-seo-v1",
+  "growthub-postiz-social-v1",
+  "growthub-open-montage-studio-v1",
+  "growthub-ai-website-cloner-v1",
+  "growthub-agency-portal-starter-v1",
+  "growthub-creative-video-pipeline-v1",
+  "growthub-twenty-crm-v1",
+  "growthub-zernio-social-v1",
+  "growthub-hyperframes-studio-v1",
+  "growthub-video-use-studio-v1"
+]);
 function displayTypeForFamily(family) {
   if (family === "workflow" || family === "operator") return "specialized_agents";
   if (family === "studio" || family === "ops") return family;
@@ -24700,6 +24727,37 @@ function truncate2(str, max) {
 }
 function displayKitName(name) {
   return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
+}
+function isWorkspaceTemplateId(id) {
+  const normalized = String(id || "").trim().toLowerCase();
+  return normalized === PROJECT_MANAGEMENT_TEMPLATE_ID || normalized === "project-management" || normalized === "project-management-workspace";
+}
+function isRetiredCustomWorkspaceKit(id) {
+  return RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(id);
+}
+function listKitAndWorkspaceTemplates() {
+  const activeBundled = listBundledKits().filter((kit) => !RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(kit.id));
+  const starter = activeBundled.find((kit) => kit.id === "growthub-custom-workspace-starter-v1");
+  return [
+    ...starter ? [starter] : [],
+    PROJECT_MANAGEMENT_TEMPLATE
+  ];
+}
+async function createProjectManagementWorkspace(opts) {
+  const output = opts.out || (opts.yes ? "./project-management-workspace" : await p20.text({
+    message: "Output directory",
+    placeholder: "./project-management-workspace",
+    defaultValue: "./project-management-workspace"
+  }));
+  if (p20.isCancel(output)) {
+    p20.cancel("Cancelled.");
+    process.exit(0);
+  }
+  await runStarterInit({
+    out: String(output || "./project-management-workspace"),
+    name: "Project Management Workspace",
+    seedConfig: "project-management"
+  });
 }
 function hr4(width = 72) {
   return pc32.dim("\u2500".repeat(width));
@@ -24789,7 +24847,7 @@ function printGroupedList(kits) {
   const totalTypes = types.length;
   console.log("");
   console.log(
-    pc32.bold("Growthub Agent Worker Kits") + pc32.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
+    pc32.bold("Growthub Custom Workspaces") + pc32.dim(`  ${kits.length} kit${kits.length !== 1 ? "s" : ""} \xB7 ${totalTypes} type${totalTypes !== 1 ? "s" : ""}`)
   );
   console.log(hr4());
   for (const type of types) {
@@ -24810,10 +24868,10 @@ ${header}  ${pc32.dim("(" + groupKits.length + ")")}`);
 }
 async function runInteractivePicker(opts) {
   printPaperclipCliBanner();
-  p20.intro(pc32.bold("Growthub Agent Worker Kits"));
+  p20.intro(pc32.bold("Growthub Custom Workspaces"));
   let kits;
   try {
-    kits = listBundledKits();
+    kits = listKitAndWorkspaceTemplates();
   } catch (err) {
     p20.log.error("Failed to load kits: " + err.message);
     process.exit(1);
@@ -24939,8 +24997,21 @@ async function runInteractivePicker(opts) {
           return "done";
         }
         if (action === "inspect") {
+          if (isWorkspaceTemplateId(selected.id)) {
+            printKitCard(PROJECT_MANAGEMENT_TEMPLATE);
+            console.log("");
+            console.log(pc32.bold("Create command:"));
+            console.log("  " + pc32.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+            p20.outro(pc32.dim("Done."));
+            return "done";
+          }
           runInspect(selected.id, opts.out);
           p20.outro(pc32.dim("Done."));
+          return "done";
+        }
+        if (isWorkspaceTemplateId(selected.id)) {
+          await createProjectManagementWorkspace(opts);
+          p20.outro(pc32.green("Workspace template exported successfully."));
           return "done";
         }
         await runDownload(selected.id, opts);
@@ -24954,6 +25025,10 @@ async function runDownload(kitId, opts) {
   const resolvedId = fuzzyResolveKitId(kitId);
   if (!resolvedId) {
     console.error(pc32.red("Unknown kit '" + kitId + "'.") + pc32.dim(" Run `growthub kit list` to browse."));
+    process.exit(1);
+  }
+  if (isRetiredCustomWorkspaceKit(resolvedId)) {
+    console.error(pc32.yellow("That custom workspace kit is deprecated.") + pc32.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
     process.exit(1);
   }
   if (resolvedId !== kitId) {
@@ -25030,15 +25105,9 @@ Examples:
   $ growthub kit list                     # all kits grouped by type
   $ growthub kit list --family studio     # filter by family
   $ growthub kit list --json              # machine-readable output
-  $ growthub kit download higgsfield      # fuzzy slug \u2014 resolves automatically
-  $ growthub kit download hyperframes     # Hyperframes custom workspace
-  $ growthub kit download video-use       # browser-use/video-use custom workspace
-  $ growthub kit download growthub-open-higgsfield-studio-v1
-  $ growthub kit download growthub-hyperframes-studio-v1
-  $ growthub kit download growthub-video-use-studio-v1
-  $ growthub kit inspect higgsfield-studio-v1
-  $ growthub kit inspect hyperframes
-  $ growthub kit inspect video-use
+  $ growthub kit download growthub-custom-workspace-starter-v1
+  $ growthub kit download project-management --out ./project-management-workspace
+  $ growthub kit inspect growthub-custom-workspace-starter-v1
   $ growthub kit families                 # show family taxonomy
 
 Pipeline Kit Contract v1 (PIPELINE_KIT_CONTRACT_V1):
@@ -25063,7 +25132,7 @@ Examples:
   $ growthub kit list --family studio,operator
   $ growthub kit list --json
 `).action((opts) => {
-    let kits = listBundledKits();
+    let kits = listKitAndWorkspaceTemplates();
     if (opts.family) {
       const wanted = opts.family.split(",").map((f) => f.trim().toLowerCase());
       kits = kits.filter((k) => wanted.includes(k.family));
@@ -25080,14 +25149,30 @@ Examples:
     }
     printGroupedList(kits);
   });
-  kit.command("inspect").description("Inspect a kit manifest (supports fuzzy slug)").argument("<kit-id>", "Kit id or slug (e.g. 'higgsfield', 'studio-v1')").option("--out <path>", "Override the export root for resolved paths").option("--json", "Output raw JSON").addHelpText("after", `
+  kit.command("inspect").description("Inspect a kit manifest (supports fuzzy slug)").argument("<kit-id>", "Kit id or slug").option("--out <path>", "Override the export root for resolved paths").option("--json", "Output raw JSON").addHelpText("after", `
 Examples:
-  $ growthub kit inspect higgsfield-studio-v1
-  $ growthub kit inspect growthub-email-marketing-v1 --json
+  $ growthub kit inspect growthub-custom-workspace-starter-v1
+  $ growthub kit inspect project-management --json
 `).action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
+    if (!resolvedId && isWorkspaceTemplateId(kitId)) {
+      if (opts.json) {
+        console.log(JSON.stringify(PROJECT_MANAGEMENT_TEMPLATE, null, 2));
+        return;
+      }
+      printKitCard(PROJECT_MANAGEMENT_TEMPLATE);
+      console.log(pc32.bold("Create with:"));
+      console.log("  " + pc32.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+      console.log("");
+      return;
+    }
     if (!resolvedId) {
       console.error(pc32.red("Unknown kit '" + kitId + "'.") + pc32.dim(" Run `growthub kit list` to browse."));
+      process.exitCode = 1;
+      return;
+    }
+    if (isRetiredCustomWorkspaceKit(resolvedId)) {
+      console.error(pc32.yellow("That custom workspace kit is deprecated.") + pc32.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
       process.exitCode = 1;
       return;
     }
@@ -25100,20 +25185,26 @@ Examples:
   kit.command("download").description("Download a kit \u2014 interactive if no kit-id given").argument("[kit-id]", "Kit id or fuzzy slug (omit for interactive picker)").option("--out <path>", "Output directory for the generated artifacts").option("--yes", "Skip confirmation prompt").addHelpText("after", `
 Examples:
   $ growthub kit download                           # interactive
-  $ growthub kit download higgsfield                # fuzzy slug
-  $ growthub kit download hyperframes               # fuzzy slug
-  $ growthub kit download growthub-open-higgsfield-studio-v1
-  $ growthub kit download growthub-hyperframes-studio-v1
-  $ growthub kit download studio-v1 --out ~/kits
-  $ growthub kit download studio-v1 --yes
+  $ growthub kit download growthub-custom-workspace-starter-v1
+  $ growthub kit download project-management --out ./project-management-workspace
+  $ growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
 `).action(async (kitId, opts) => {
     if (!kitId) {
       await runInteractivePicker(opts);
       return;
     }
     const resolvedId = fuzzyResolveKitId(kitId);
+    if (!resolvedId && isWorkspaceTemplateId(kitId)) {
+      await createProjectManagementWorkspace(opts);
+      return;
+    }
     if (!resolvedId) {
       console.error(pc32.red("Unknown kit '" + kitId + "'.") + pc32.dim(" Run `growthub kit list` to browse."));
+      process.exitCode = 1;
+      return;
+    }
+    if (isRetiredCustomWorkspaceKit(resolvedId)) {
+      console.error(pc32.yellow("That custom workspace kit is deprecated.") + pc32.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
       process.exitCode = 1;
       return;
     }
@@ -25149,7 +25240,7 @@ Examples:
   kit.command("validate").description("Validate a kit directory against the kit contract schema").argument("<path>", "Path to the kit directory").addHelpText("after", `
 Examples:
   $ growthub kit validate ./my-kit
-  $ growthub kit validate ~/kits/growthub-open-higgsfield-studio-v1
+  $ growthub kit validate ./my-workspace
 `).action((kitPath) => {
     const resolvedPath = path43.resolve(kitPath);
     const result = validateKitDirectory(resolvedPath);
@@ -25173,7 +25264,7 @@ Examples:
   });
   kit.command("families").description("Show the kit family taxonomy with descriptions and examples").action(() => {
     const defs = [
-      { family: "studio", tagline: "AI generation studio backed by a local fork", surfaces: "local-fork, browser-hosted, desktop-app", example: "growthub-open-higgsfield-studio-v1, growthub-hyperframes-studio-v1, growthub-video-use-studio-v1, growthub-zernio-social-v1" },
+      { family: "studio", tagline: "Governed Workspace templates and app starters", surfaces: "workspace-app, data-model, workflows", example: "growthub-custom-workspace-starter-v1, project-management-workspace-template-v1" },
       { family: "workflow", tagline: "Multi-step pipeline operator across tools or APIs", surfaces: "browser-hosted (primary)", example: "creative-strategist-v1" },
       { family: "operator", tagline: "Domain vertical specialist \u2014 one provider, structured deliverables", surfaces: "browser-hosted", example: "growthub-email-marketing-v1" },
       { family: "ops", tagline: "Infrastructure / toolchain operator (provider optional)", surfaces: "local-fork (primary)", example: "(coming soon)" }
@@ -41823,7 +41914,7 @@ async function runCreateGovernedWorkspaceFlow(opts) {
         ...opts?.importOnly ? [] : [
           {
             value: "worker-kit",
-            label: "\u{1F9F0}  Start from worker kit"
+            label: "\u{1F50E}  Browse Custom Workspaces"
           }
         ],
         opts?.firstRun ? { value: "__full_menu", label: "\u{1F440} Open full discovery menu" } : { value: "__back", label: opts?.backLabel ?? "\u2190 Back" }
@@ -42045,7 +42136,7 @@ async function runDiscoveryHub(opts) {
           "\u{1F916} Agent Harness: filter by type \u2014 Paperclip Local App (GTM/DX profiles), Open Agents (durable workflow orchestration), Qwen Code CLI, or T3 Code CLI (pingdotgg/t3code).",
           "Custom AI Governed Workspace: start from a starter, repo, skills.sh skill, or worker kit.",
           "\u{1F3D7}\uFE0F Workspace Operations: status, QA, persistent memory, deploy checks, upstream sync, and portal prep.",
-          "\u{1F9F0} Browse Worker Kits: browse specialized agents and custom workspaces.",
+          "\u{1F50E} Browse Custom Workspaces: choose an official governed workspace template.",
           "\u2699\uFE0F Settings: GitHub, Fork Sync, workflows, templates, local models, service status, starter, fleet.",
           `   Locked state: ${workflowAccess.reason}.`,
           "\u{1F500} Fork Sync Agent: register, track, and heal your forked worker kits \u2014 preserves all customisations while syncing to the latest upstream version.",
@@ -42224,7 +42315,7 @@ async function runDiscoveryHub(opts) {
         const advancedChoice = await p42.select({
           message: "Advanced \u2014 capabilities & admin",
           options: [
-            { value: "kits", label: "\u{1F9F0} Browse Worker Kits", hint: "Self-contained workspace environments for agents" },
+            { value: "kits", label: "\u{1F50E} Browse Custom Workspaces", hint: "Official governed workspace templates" },
             {
               value: "workflows",
               label: workflowAccess.state === "ready" ? "\u{1F517} Workflows" : "\u{1F517} Workflows" + pc63.dim(" (locked)"),
@@ -42513,27 +42604,19 @@ loadPaperclipEnvFile(bootstrapOptions.config);
 var bootstrapConfig = readConfig(resolveConfigPath(bootstrapOptions.config));
 var surfaceRuntime = initializeSurfaceRuntimeContract(resolveSurfaceProfile(bootstrapConfig) ?? void 0);
 program.name("growthub").description("Growthub CLI \u2014 setup, configure, and run your local Growthub instance").version(resolveCliVersion2()).addHelpText("after", `
-Worker Kits (agent execution environments):
+Custom Workspaces:
 
   Discovery:
-    $ growthub kit                              Interactive browser \u2014 pick, preview, download
-    $ growthub kit list                         All kits grouped by family (studio \xB7 workflow \xB7 operator \xB7 ops)
-    $ growthub kit list --family studio         Filter by family
-    $ growthub kit families                     Show family taxonomy with descriptions
+    $ growthub kit                              Browse official workspace templates
+    $ growthub kit list --family studio         Show the official workspace templates
 
-  Download:
-    $ growthub kit download                     Interactive (no arg = picker)
-    $ growthub kit download higgsfield          Fuzzy slug \u2014 resolves automatically
-    $ growthub kit download hyperframes         Hyperframes custom workspace
-    $ growthub kit download postiz              Postiz Social Media Studio
-    $ growthub kit download zernio             Zernio Social Media Studio (Postiz UI Shell + Zernio Engine)
-    $ growthub kit download growthub-hyperframes-studio-v1
-    $ growthub kit download higgsfield --yes    Skip confirmation (scripting / agent use)
-    $ growthub kit download growthub-open-higgsfield-studio-v1 --out ~/kits
+  Create:
+    $ growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
+    $ growthub kit download project-management --out ./project-management-workspace
 
   Inspect & validate:
-    $ growthub kit inspect higgsfield-studio-v1
-    $ growthub kit inspect growthub-email-marketing-v1 --json
+    $ growthub kit inspect growthub-custom-workspace-starter-v1
+    $ growthub kit inspect project-management --json
     $ growthub kit validate ./path/to/kit
 
   Fork Sync (keep your forked kits in sync):

@@ -1025,9 +1025,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.intelligenceAdapterMode must be one of ${INTELLIGENCE_ADAPTER_MODES.join(", ")}`);
     }
   }
-  if (row.orchestrationGraph !== undefined && row.orchestrationGraph !== null && row.orchestrationGraph !== "") {
-    if (typeof row.orchestrationGraph !== "string" && (typeof row.orchestrationGraph !== "object" || Array.isArray(row.orchestrationGraph))) {
-      errors.push(`${path}.orchestrationGraph must be a JSON string or plain object`);
+  for (const field of ["orchestrationConfig", "orchestrationGraph"]) {
+    if (row[field] !== undefined && row[field] !== null && row[field] !== "") {
+      if (typeof row[field] !== "string" && (typeof row[field] !== "object" || Array.isArray(row[field]))) {
+        errors.push(`${path}.${field} must be a JSON string or plain object`);
+      }
     }
   }
   if (row.envRefs !== undefined && typeof row.envRefs !== "string" && !Array.isArray(row.envRefs)) {

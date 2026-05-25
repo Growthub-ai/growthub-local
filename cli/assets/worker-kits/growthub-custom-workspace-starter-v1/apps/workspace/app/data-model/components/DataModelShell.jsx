@@ -15,7 +15,9 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
+  Copy,
   Database,
+  Download,
   EyeOff,
   FileText,
   Filter,
@@ -28,6 +30,7 @@ import {
   Mail,
   Maximize2,
   MoreHorizontal,
+  MoreVertical,
   Play,
   Plus,
   Pencil,
@@ -38,6 +41,7 @@ import {
   ToggleLeft,
   Trash2,
   Type,
+  Unlock,
   Users,
   X,
   Zap,
@@ -73,11 +77,8 @@ import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
-import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
-import { NangoConnectionPanel } from "./NangoConnectionPanel.jsx";
 import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
 import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
-import { SandboxOrchestrationEditorPanel } from "./SandboxOrchestrationEditorPanel.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import {
   buildSandboxRowFromApiRegistry,
@@ -171,7 +172,7 @@ function mergeColumnOrder(order, columns) {
 }
 
 function isLockedObject(table) {
-  return Boolean(table?.objectType && table.objectType !== "custom");
+  return Boolean(table?.locked);
 }
 
 function compareCellValues(left, right) {
@@ -221,14 +222,16 @@ function applyRowsView(rows, settings) {
   });
 }
 
-function ObjectViewPicker({ tables, selectedTable, onSelectSource }) {
+function ObjectViewPicker({ tables, selectedTable, onSelectSource, onToggleLock, onDeleteObject, onExportObject, onDuplicateObject }) {
   const pickerRef = useRef(null);
   const [open, setOpen] = useState(false);
+  const [menuSource, setMenuSource] = useState("");
 
   useEffect(() => {
     function handlePointer(event) {
       if (!pickerRef.current?.contains(event.target)) {
         setOpen(false);
+        setMenuSource("");
       }
     }
     document.addEventListener("pointerdown", handlePointer);
@@ -242,6 +245,7 @@ function ObjectViewPicker({ tables, selectedTable, onSelectSource }) {
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           setOpen(false);
+          setMenuSource("");
         }
       }}
     >
@@ -263,11 +267,43 @@ function ObjectViewPicker({ tables, selectedTable, onSelectSource }) {
                   <button type="button" className="dm-picker-row" onClick={() => {
                     onSelectSource(table.source);
                     setOpen(false);
+                    setMenuSource("");
                   }}>
                     <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
                     <span>{table.label}</span>
                     {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
                   </button>
+                  <div className="dm-picker-actions">
+                    <button
+                      type="button"
+                      className="dm-picker-icon-btn"
+                      aria-label={`${table.label} actions`}
+                      title="Object actions"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setMenuSource((current) => current === table.source ? "" : table.source);
+                      }}
+                    >
+                      <MoreVertical size={14} aria-hidden="true" />
+                    </button>
+                    {menuSource === table.source && (
+                      <div className="dm-picker-menu" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" onClick={() => { onToggleLock?.(table); setMenuSource(""); }}>
+                          {isLockedObject(table) ? <Unlock size={13} /> : <Lock size={13} />}
+                          {isLockedObject(table) ? "Unlock" : "Lock"}
+                        </button>
+                        <button type="button" onClick={() => { onExportObject?.(table); setMenuSource(""); }}>
+                          <Download size={13} />Export
+                        </button>
+                        <button type="button" onClick={() => { onDuplicateObject?.(table); setMenuSource(""); }}>
+                          <Copy size={13} />Duplicate
+                        </button>
+                        <button type="button" className="danger" onClick={() => { onDeleteObject?.(table); setMenuSource(""); }}>
+                          <Trash2 size={13} />Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -886,14 +922,14 @@ function SandboxRecordFields({
 
       <DrawerSection title="Orchestration">
         <div className="dm-record-field">
-          <span>{draft.orchestrationConfig !== undefined ? "orchestrationConfig" : "orchestrationGraph"}</span>
+          <span>orchestrationConfig</span>
           <button
             type="button"
             className="dm-btn-outline"
             disabled={saving}
             onClick={() => onOpenGraphSidecar?.()}
           >
-            {getOrchestrationGraphUiState(draft.orchestrationGraph ?? draft.orchestrationConfig) === "populated" ? "Edit orchestration graph" : "Start orchestration graph"}
+            {getOrchestrationGraphUiState(draft.orchestrationConfig ?? draft.orchestrationGraph) === "populated" ? "Open workflow" : "Create workflow"}
           </button>
         </div>
       </DrawerSection>
@@ -1014,6 +1050,7 @@ function DataModelRecordDrawer({
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
   const drawerKeyRef = useRef("");
+  const router = useRouter();
 
   useEffect(() => {
     const drawerKey = `${table.id || table.objectId || table.source}:${rowIndex}:${row?.Name || row?.id || ""}`;
@@ -1034,11 +1071,7 @@ function DataModelRecordDrawer({
       setCreatedSandboxMeta(null);
       setCreatedSandboxTestMessage("");
     }
-    if (initialSidecar?.mode === "graph") {
-      setSidecarMode("graph");
-      setTraceField(null);
-      setTraceRunId("");
-    } else if (initialSidecar?.mode === "trace") {
+    if (initialSidecar?.mode === "trace") {
       setSidecarMode("trace");
       setTraceField(initialSidecar.field || "lastResponse");
       setTraceRunId(String(initialSidecar.runId || row?.lastRunId || "").trim());
@@ -1146,7 +1179,7 @@ function DataModelRecordDrawer({
   function ensureSandboxColumns(config, sandboxTable) {
     let next = config;
     let current = sandboxTable;
-    for (const field of ["orchestrationGraph", "description"]) {
+    for (const field of ["orchestrationConfig", "description"]) {
       if (!current.columns.includes(field)) {
         next = addTableField(next, current, field);
         const tables = listWorkspaceDataModelTables(next);
@@ -1365,9 +1398,14 @@ function DataModelRecordDrawer({
     onClearInitialSidecar?.();
   }
 
-  function openGraphSidecar() {
-    setSidecarMode("graph");
+  function openWorkflowView() {
+    const rowId = String(draft?.Name || draft?.name || draft?.slug || draft?.id || "").trim();
+    const field = draft?.orchestrationConfig !== undefined ? "orchestrationConfig" : "orchestrationGraph";
+    if (!table.objectId || !rowId) return;
     onClearInitialSidecar?.();
+    router.push(
+      `/workflows?object=${encodeURIComponent(table.objectId)}&row=${encodeURIComponent(rowId)}&field=${encodeURIComponent(field)}`
+    );
   }
 
   function openTraceSidecar({ field, runId } = {}) {
@@ -1377,15 +1415,8 @@ function DataModelRecordDrawer({
     onClearInitialSidecar?.();
   }
 
-  function saveOrchestrationGraph(serialized) {
-    if (rowIndex === null || rowIndex === undefined) return;
-    const graphField = draft.orchestrationConfig !== undefined ? "orchestrationConfig" : "orchestrationGraph";
-    onSave((config) => updateTableCell(config, table, rowIndex, graphField, serialized));
-    setDraft((current) => ({ ...current, [graphField]: serialized }));
-  }
-
-  const drawerWide = sandboxToolFlow === "draft" || sidecarMode === "graph" || sidecarMode === "trace";
-  const hideRecordFields = isSandbox && (sidecarMode === "graph" || sidecarMode === "trace");
+  const drawerWide = sandboxToolFlow === "draft" || sidecarMode === "trace";
+  const hideRecordFields = isSandbox && sidecarMode === "trace";
 
   return (
     <>
@@ -1421,33 +1452,13 @@ function DataModelRecordDrawer({
             </button>
           </div>
         </header>
-        {(table.objectType === "api-registry" || table.objectType === "data-source") && sandboxToolFlow !== "draft" && (
+        {table.objectType === "data-source" && sandboxToolFlow !== "draft" && (
           <SourceTestPanel
             status={draft.status}
             testing={testing}
             testMessage={testMessage}
             disabled={saving}
             onTest={testApiRecord}
-          />
-        )}
-        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "created" && (
-          <ApiRegistryActionCard
-            registryRow={draft}
-            workspaceConfig={workspaceConfig}
-            disabled={saving || sandboxToolCreating}
-            testing={testing}
-            sandboxRunning={createdSandboxTesting}
-            onTestConnection={testApiRecord}
-            onCreateSandboxTool={() => setSandboxToolFlow("draft")}
-            onOpenSandboxTool={openSandboxToolRow}
-            onRunSandboxTool={runExistingSandboxTool}
-          />
-        )}
-        {isApiRegistry && draft?.connectorKind === "nango" && sandboxToolFlow !== "draft" && (
-          <NangoConnectionPanel
-            row={draft}
-            disabled={saving || sandboxToolCreating}
-            onUpdateRow={(patch) => setDraft((c) => ({ ...c, ...patch }))}
           />
         )}
         {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
@@ -1522,15 +1533,6 @@ function DataModelRecordDrawer({
             onPatchDraft={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           />
         )}
-        {isSandbox && sidecarMode === "graph" && (
-          <SandboxOrchestrationEditorPanel
-            sandboxRow={draft}
-            workspaceConfig={workspaceConfig}
-            disabled={saving}
-            onSaveGraph={saveOrchestrationGraph}
-            onBack={closeSidecar}
-          />
-        )}
         {isSandbox && sidecarMode === "trace" && (
           <OrchestrationRunTracePanel
             row={draft}
@@ -1538,7 +1540,7 @@ function DataModelRecordDrawer({
             fieldName={traceField || "lastResponse"}
             selectedRunId={traceRunId}
             onBack={closeSidecar}
-            onOpenGraph={openGraphSidecar}
+            onOpenGraph={openWorkflowView}
           />
         )}
         <div className="dm-record-fields">
@@ -1556,7 +1558,7 @@ function DataModelRecordDrawer({
               sandboxHistoryMessage={sandboxHistoryMessage}
               loadingSandboxHistory={loadingSandboxHistory}
               onLoadSandboxHistory={loadSandboxHistory}
-              onOpenGraphSidecar={openGraphSidecar}
+              onOpenGraphSidecar={openWorkflowView}
               onOpenTraceSidecar={openTraceSidecar}
             />
           ) : groupRecordColumns(table.columns || []).map((section) => (
@@ -1637,7 +1639,7 @@ function DataModelRecordDrawer({
 const SANDBOX_SIDECAR_COLUMNS = new Set(["orchestrationGraph", "orchestrationConfig", "lastResponse", "lastRunId", "lastSourceId"]);
 
 function sandboxSidecarForColumn(column, row) {
-  if (column === "orchestrationGraph" || column === "orchestrationConfig") return { mode: "graph" };
+  if (column === "orchestrationGraph" || column === "orchestrationConfig") return null;
   if (column === "lastResponse") return { mode: "trace", field: "lastResponse" };
   if (column === "lastRunId") return { mode: "trace", field: "lastRunId", runId: row?.lastRunId };
   if (column === "lastSourceId") return { mode: "trace", field: "lastSourceId" };
@@ -2186,7 +2188,7 @@ function DataModelTableSurface({
 	                        }}
                       >
                         {column === "orchestrationGraph" || column === "orchestrationConfig"
-                          ? (getOrchestrationGraphUiState(row?.[column]) === "populated" ? "Edit graph" : "Start graph")
+                          ? (getOrchestrationGraphUiState(row?.[column]) === "populated" ? "Open workflow" : "Create workflow")
                           : (formatCellValue(row?.[column], column) || "View trace")}
                       </button>
                     ) : (
@@ -2792,6 +2794,102 @@ export default function DataModelShell() {
     setHelperOpen(true);
   };
 
+  const mutateObjectById = useCallback((table, updater) => {
+    const targetId = String(table?.objectId || "").trim();
+    if (!targetId) return;
+    save((config) => {
+      const dataModel = config.dataModel && typeof config.dataModel === "object" && !Array.isArray(config.dataModel)
+        ? config.dataModel
+        : {};
+      const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+      return {
+        ...config,
+        dataModel: {
+          ...dataModel,
+          objects: objects.map((object) => String(object?.id || "") === targetId ? updater(object) : object)
+        }
+      };
+    });
+  }, [save]);
+
+  const toggleObjectLock = useCallback((table) => {
+    mutateObjectById(table, (object) => ({ ...object, locked: !isLockedObject(table) }));
+  }, [mutateObjectById]);
+
+  const exportObject = useCallback((table) => {
+    const blob = new Blob([exportTableAsCsv(table)], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${String(table?.source || table?.label || "data-model-object").replace(/\s+/g, "-").toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const duplicateObject = useCallback((table) => {
+    const targetId = String(table?.objectId || "").trim();
+    if (!targetId) return;
+    let nextSource = "";
+    save((config) => {
+      const dataModel = config.dataModel && typeof config.dataModel === "object" && !Array.isArray(config.dataModel)
+        ? config.dataModel
+        : {};
+      const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+      const sourceObject = objects.find((object) => String(object?.id || "") === targetId);
+      if (!sourceObject) return config;
+      const baseLabel = `${sourceObject.label || sourceObject.name || sourceObject.source || table.label || "Object"} Copy`;
+      const existingIds = new Set(objects.map((object) => String(object?.id || "")));
+      const slugBase = baseLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "object-copy";
+      let id = slugBase;
+      let index = 2;
+      while (existingIds.has(id)) {
+        id = `${slugBase}-${index}`;
+        index += 1;
+      }
+      nextSource = baseLabel;
+      const clone = {
+        ...JSON.parse(JSON.stringify(sourceObject)),
+        id,
+        label: baseLabel,
+        source: baseLabel,
+        locked: false
+      };
+      return {
+        ...config,
+        dataModel: {
+          ...dataModel,
+          objects: [...objects, clone]
+        }
+      };
+    });
+    if (nextSource) setSelectedSource(nextSource);
+  }, [save]);
+
+  const deleteObject = useCallback((table) => {
+    const targetId = String(table?.objectId || "").trim();
+    if (!targetId) return;
+    const confirmed = window.confirm(`Delete "${table.label || table.source}" from the Data Model?`);
+    if (!confirmed) return;
+    let fallbackSource = "";
+    save((config) => {
+      const dataModel = config.dataModel && typeof config.dataModel === "object" && !Array.isArray(config.dataModel)
+        ? config.dataModel
+        : {};
+      const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+      const nextObjects = objects.filter((object) => String(object?.id || "") !== targetId);
+      const fallback = nextObjects[0];
+      fallbackSource = String(fallback?.source || fallback?.label || fallback?.name || "");
+      return {
+        ...config,
+        dataModel: {
+          ...dataModel,
+          objects: nextObjects
+        }
+      };
+    });
+    if (selectedSource === table.source) setSelectedSource(fallbackSource);
+  }, [save, selectedSource]);
+
   // Reopen a helper thread row from the Helper Threads Data Model object.
   // The row already holds the full prior turn (intent, prompt, proposals,
   // warnings, receipts) — passing it through initialThread rehydrates the
@@ -2909,6 +3007,10 @@ export default function DataModelShell() {
                 saving={saving}
                 onSelectSource={setSelectedSource}
                 onSave={save}
+                onToggleLock={toggleObjectLock}
+                onDeleteObject={deleteObject}
+                onExportObject={exportObject}
+                onDuplicateObject={duplicateObject}
               />
             )}
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
@@ -2990,6 +3092,7 @@ export default function DataModelShell() {
             <section className="dm-detail-v2 dm-detail-v3">
               <SourceValidationBanner table={selectedTable} />
               <DataModelTableSurface
+                key={selectedTableKey}
                 workspaceConfig={workspaceConfig}
                 table={selectedTable}
                 tables={tables}

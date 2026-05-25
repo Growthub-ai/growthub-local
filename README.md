@@ -222,8 +222,9 @@ This keeps the mental model intact:
 
 ### Workspace Templates
 
-Five shipped dashboard templates, each grounded in the actual `DASHBOARD_TEMPLATES` array in `apps/workspace/lib/workspace-schema.js`:
+Official workspace templates and shipped dashboard templates:
 
+- [**Project Management Workspace Template**](./docs/PROJECT_MANAGEMENT_WORKSPACE_TEMPLATE.md) — official second workspace template for API-backed project task workflows, Nango-supported provider setup, sandbox workflow orchestration, and dashboard deltas
 - [**Templates Index**](./docs/workspace-templates/README.md) — all five at a glance
 - [Client Portal](./docs/workspace-templates/client-portal.md) — client status, documents, embedded portal area
 - [Content Ops](./docs/workspace-templates/content-ops.md) — editorial pipeline and review snapshot
