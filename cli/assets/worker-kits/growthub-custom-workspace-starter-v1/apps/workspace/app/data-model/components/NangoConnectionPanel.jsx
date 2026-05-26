@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle, ExternalLink, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, CheckCircle, ExternalLink, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 
 /**
  * NangoConnectionPanel — interactive sidecar for an api-registry row whose
@@ -114,7 +115,7 @@ function StatusBadge({ status, label }) {
   );
 }
 
-export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
+export function NangoConnectionPanel({ row, disabled, onUpdateRow, templateContext }) {
   const initialProviderConfigKey = useMemo(() => deriveProviderConfigKey(row), [row]);
   const initialConnectionId = useMemo(() => deriveDefaultConnectionId(row), [row]);
   const initialStatus = useMemo(() => deriveInitialStatus(row), [row]);
@@ -491,6 +492,40 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
           </button>
         ) : null}
       </div>
+
+      {/*
+       * Template-aware affordances. When this row was scaffolded as part
+       * of a workspace template (project-management today), surface a
+       * "next step" hint linking back to the activation checklist or the
+       * seeded workflow. Other rows render no template context at all.
+       */}
+      {templateContext && (templateContext.nextHref || templateContext.backHref) ? (
+        <div
+          className={
+            "workspace-template-context-banner"
+            + ((statusKind === "connected" || persistedStatus === "connected") ? "" : " is-warn")
+          }
+          role="note"
+        >
+          <span>
+            {(statusKind === "connected" || persistedStatus === "connected")
+              ? (templateContext.nextLabel || "Next: run the seeded workflow.")
+              : (templateContext.pendingLabel || "Finish OAuth above, then continue setup.")}
+          </span>
+          {templateContext.backHref ? (
+            <Link href={templateContext.backHref} className="workspace-template-context-link">
+              <span>Back to setup checklist</span>
+              <ArrowRight size={12} aria-hidden="true" />
+            </Link>
+          ) : null}
+          {templateContext.nextHref ? (
+            <Link href={templateContext.nextHref} className="workspace-template-context-link">
+              <span>{templateContext.nextCta || "Open workflow"}</span>
+              <ArrowRight size={12} aria-hidden="true" />
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -40,7 +40,26 @@
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 16;
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
-const KNOWN_FIELDS = ["dashboards", "widgetTypes", "canvas", "dataModel"];
+// Top-level fields the workspace artifact preserves round-trip. The
+// validator below mutates only the first four; the remaining metadata
+// fields (id, name, description, capabilities, branding, pipelines,
+// integrations, provenance, kit) are passive descriptors honoured by
+// the bundling/export surfaces — they never flow through PATCH.
+const KNOWN_FIELDS = [
+  "dashboards",
+  "widgetTypes",
+  "canvas",
+  "dataModel",
+  "id",
+  "name",
+  "description",
+  "capabilities",
+  "branding",
+  "pipelines",
+  "integrations",
+  "provenance",
+  "kit"
+];
 const KNOWN_DATA_BINDING_MODES = ["manual", "json", "csv", "integration"];
 const KNOWN_CHART_TYPES = ["bar-vertical", "bar-horizontal", "line", "pie", "sum", "gauge"];
 const KNOWN_FILTER_OPERATORS = ["eq", "ne", "contains", "gt", "lt", "isEmpty", "isNotEmpty"];

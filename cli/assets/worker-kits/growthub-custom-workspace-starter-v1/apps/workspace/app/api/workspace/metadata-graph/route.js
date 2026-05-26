@@ -152,6 +152,7 @@ async function GET(request) {
       runs: metadataStore.runs,
       outputArtifacts: metadataStore.outputArtifacts,
       workerKits: metadataStore.workerKits,
+      provenance: metadataStore.provenance,
       pipelineHealth: metadataStore.pipelineHealth
     },
     graph: {

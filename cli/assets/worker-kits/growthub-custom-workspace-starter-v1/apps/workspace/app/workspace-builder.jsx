@@ -87,6 +87,7 @@ import {
 import { selectObjectFilterableFields, selectObjectSortableFields } from "@/lib/workspace-metadata-selectors";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
+import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
 
 // Workspace Metadata Graph V1 — typed dependency contracts.
 // Used by sidecar dependency summaries; the existing chart hydration path
@@ -5397,7 +5398,18 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           />
         </header>
 
-        {workspaceView === "dashboards" ? <section className="workspace-table" id="dashboards" aria-label="Builder">
+        {workspaceView === "dashboards" ? <>
+          <WorkspaceActivationPanel
+            workspaceConfig={config}
+            workspaceSourceRecords={workspaceSourceRecords}
+            onOpenHelper={() => {
+              setHelperIntent("explain");
+              setHelperInitialPrompt("Help me finish setting up this workspace.");
+              setHelperInitialThread(null);
+              setHelperOpen(true);
+            }}
+          />
+        <section className="workspace-table" id="dashboards" aria-label="Builder">
           <div className="workspace-table-heading">
             <strong>Builder</strong>
             <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"} · {workflows.length} workflow{workflows.length === 1 ? "" : "s"}</span>
@@ -5564,7 +5576,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
                 )}
               </span>
             </div>)}
-        </section> : null}
+        </section>
+        </> : null}
 
         {workspaceView === "builder" ? <section className="workspace-canvas" id="canvas" aria-label="Composable dashboard canvas">
           <div className="workspace-tabs">
