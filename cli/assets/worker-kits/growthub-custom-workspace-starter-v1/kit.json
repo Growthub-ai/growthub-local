@@ -99,6 +99,8 @@
     "apps/workspace/lib/workspace-metadata-store.js",
     "apps/workspace/lib/workspace-metadata-graph.js",
     "apps/workspace/lib/workspace-metadata-selectors.js",
+    "apps/workspace/lib/workspace-activation.js",
+    "apps/workspace/app/components/WorkspaceActivationPanel.jsx",
     "apps/workspace/app/api/workspace/metadata-graph/route.js",
     "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",
     "apps/workspace/lib/sandbox-agent-auth.js",

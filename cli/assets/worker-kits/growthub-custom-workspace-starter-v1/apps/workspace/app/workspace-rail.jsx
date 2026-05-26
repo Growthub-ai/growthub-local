@@ -1494,6 +1494,12 @@ export function WorkspaceRail({
   // moved to the Workspace Settings → Ownership tab.
   managementSlot: _managementSlotDeprecated,
   settingsSlot,
+  // Optional Customer Activation Layer V1 slot. Renders inside the Home
+  // tab body above the nav links when provided. The rail itself never
+  // computes activation state — callers pass the read-only panel they
+  // built with `WorkspaceActivationPanel`. Backwards compatible: with no
+  // slot the Home body is unchanged.
+  activationSlot,
 }) {
   const branding = workspaceConfig?.branding || {};
   const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
@@ -1740,6 +1746,7 @@ export function WorkspaceRail({
           model surface IS the user-facing object/list management. */}
       {activeTab === "home" ? (
         <nav className="workspace-nav" aria-label="Workspace pages">
+          {activationSlot}
           {dashboardsSlot ?? (
             <Link href="/" className={pathname === "/" ? "active" : undefined}>
               Builder

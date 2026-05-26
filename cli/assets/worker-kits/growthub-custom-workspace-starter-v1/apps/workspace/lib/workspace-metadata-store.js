@@ -967,6 +967,78 @@ function deriveWorkspaceWorkerKitMetadataItems(workspaceConfig) {
 }
 
 /**
+ * Workspace PROVENANCE metadata items.
+ *
+ * Exposes the workspace's seeded-template provenance as read-only
+ * metadata so the Customer Activation Layer V1 (and other consumers) can
+ * reason about which template the workspace was exported from, without
+ * re-implementing template detection in every component.
+ *
+ * The projection is no-secret by construction — it only echoes the
+ * template id / kind / privacy tag from `workspaceConfig.provenance`, and
+ * derives booleans like `hasConfiguredConnections` from existing rows.
+ * Raw provider tokens, OAuth credentials, and the NANGO_SECRET_KEY value
+ * NEVER appear in the projection.
+ */
+function deriveWorkspaceProvenanceMetadataItems(workspaceConfig) {
+  const provenance = isPlainObject(workspaceConfig?.provenance) ? workspaceConfig.provenance : null;
+  const templateId = safeString(provenance?.template).trim();
+  const items = [];
+  if (templateId) {
+    items.push({
+      kind: "workspaceProvenance",
+      id: templateId,
+      metadataId: stableId("provenance", templateId),
+      template: templateId,
+      templateKind: safeString(provenance?.templateKind).trim() || "workspace-template",
+      mirrors: safeString(provenance?.mirrors).trim(),
+      privacy: safeString(provenance?.privacy).trim(),
+      // Read-only signals an activation panel can consume without touching
+      // any private state.
+      hasConfiguredConnections: hasAnyConfiguredConnection(workspaceConfig),
+      sourceRowCount: countSeededSourceRows(workspaceConfig)
+    });
+  }
+  return { items, warnings: [] };
+}
+
+function hasAnyConfiguredConnection(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects)
+    ? workspaceConfig.dataModel.objects
+    : [];
+  for (const object of objects) {
+    if (!isPlainObject(object)) continue;
+    if (safeString(object.objectType).trim() !== "api-registry") continue;
+    const rows = Array.isArray(object.rows)
+      ? object.rows
+      : (Array.isArray(object.records) ? object.records : []);
+    for (const row of rows) {
+      if (!isPlainObject(row)) continue;
+      const ids = row.connectionIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      if (typeof ids === "string" && ids.trim().length > 0) return true;
+    }
+  }
+  return false;
+}
+
+function countSeededSourceRows(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects)
+    ? workspaceConfig.dataModel.objects
+    : [];
+  let count = 0;
+  for (const object of objects) {
+    if (!isPlainObject(object)) continue;
+    if (safeString(object.objectType).trim() !== "data-source") continue;
+    const rows = Array.isArray(object.rows)
+      ? object.rows
+      : (Array.isArray(object.records) ? object.records : []);
+    count += rows.length;
+  }
+  return count;
+}
+
+/**
  * Pipeline health — derived from the sandbox + run set.
  *
  * Aggregates "executable pipelines" (sandboxes with a graph) and their
@@ -1076,6 +1148,9 @@ function buildWorkspaceMetadataStore({
   const pipelineHealth = deriveWorkspacePipelineHealthMetadataItems(sandboxes.items, runs.items);
   warnings.push(...pipelineHealth.warnings);
 
+  const provenance = deriveWorkspaceProvenanceMetadataItems(safeConfig);
+  warnings.push(...provenance.warnings);
+
   return {
     kind: METADATA_STORE_KIND,
     version: METADATA_STORE_VERSION,
@@ -1099,6 +1174,7 @@ function buildWorkspaceMetadataStore({
     outputArtifacts: runs.outputArtifacts,
     workerKits: workerKits.items,
     pipelineHealth: pipelineHealth.items,
+    provenance: provenance.items,
     warnings
   };
 }
@@ -1182,5 +1258,6 @@ export {
   deriveWorkspaceRunMetadataItems,
   deriveWorkspaceWorkerKitMetadataItems,
   deriveWorkspacePipelineHealthMetadataItems,
+  deriveWorkspaceProvenanceMetadataItems,
   isSecretKey
 };

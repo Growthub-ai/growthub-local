@@ -8501,3 +8501,119 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-swarm-phase { border: 1px solid #edf0f3; border-radius: 4px; padding: 6px 8px; font-size: 11px; }
 .dm-swarm-phase summary { cursor: pointer; color: #6b7280; font-weight: 500; }
 .dm-swarm-phase pre { margin: 6px 0 0; font-size: 11px; white-space: pre-wrap; color: #111827; max-height: 240px; overflow: auto; }
+
+/* Workspace Activation Panel V1 — goal-first checklist mounted in the
+   WorkspaceRail Home tab. Pure render of the read-only activation state
+   derived from `workspace-activation.js`. */
+.ws-activation-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 8px 12px 12px;
+  padding: 12px 12px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+  font-size: 12px; color: #1f2937;
+}
+.ws-activation-head { display: flex; align-items: flex-start; gap: 10px; }
+.ws-activation-head-text { flex: 1; min-width: 0; }
+.ws-activation-eyebrow { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6366f1; }
+.ws-activation-title { margin: 2px 0 4px; font-size: 13px; font-weight: 650; color: #111827; line-height: 1.3; }
+.ws-activation-summary { margin: 0; font-size: 11px; color: #4b5563; line-height: 1.4; }
+.ws-activation-progress { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 56px; }
+.ws-activation-progress-bar { width: 56px; height: 4px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+.ws-activation-progress-fill { height: 100%; background: linear-gradient(90deg, #6366f1, #3b82f6); transition: width 200ms ease-out; }
+.ws-activation-progress-label { font-size: 10px; font-weight: 600; color: #4b5563; }
+
+.ws-activation-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ws-activation-step {
+  padding: 8px 10px;
+  border: 1px solid #eef0f3;
+  border-radius: 6px;
+  background: #fff;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ws-activation-step.is-next { border-color: #bfdbfe; background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%); }
+.ws-activation-step.is-complete { background: #f8fafc; border-color: #e5e7eb; opacity: 0.78; }
+.ws-activation-step.is-blocked { background: #fefce8; border-color: #fde68a; }
+
+.ws-activation-step-head { display: flex; align-items: center; gap: 8px; }
+.ws-activation-step-label { flex: 1; font-size: 12px; font-weight: 600; color: #111827; }
+.ws-activation-step-status { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+.ws-activation-step.is-next .ws-activation-step-status { color: #2563eb; }
+.ws-activation-step.is-complete .ws-activation-step-status { color: #15803d; }
+.ws-activation-step.is-blocked .ws-activation-step-status { color: #a16207; }
+
+.ws-activation-icon { flex-shrink: 0; }
+.ws-activation-icon-complete { color: #16a34a; }
+.ws-activation-icon-pending { color: #9ca3af; }
+.ws-activation-icon-blocked { color: #ca8a04; }
+
+.ws-activation-step-desc { margin: 0; font-size: 11px; color: #4b5563; line-height: 1.4; }
+.ws-activation-step-help { margin: 0; font-size: 10px; color: #6b7280; line-height: 1.35; font-style: italic; }
+
+.ws-activation-step-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.ws-activation-step-cta {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  color: #1d4ed8; text-decoration: none;
+  padding: 4px 8px; border-radius: 5px;
+  background: #eff6ff; border: 1px solid #bfdbfe;
+}
+.ws-activation-step-cta:hover { background: #dbeafe; }
+.ws-activation-step-helper-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: #5b21b6;
+  padding: 3px 7px; border-radius: 5px;
+  background: #f5f3ff; border: 1px solid #ddd6fe;
+  cursor: pointer;
+}
+.ws-activation-step-helper-btn:hover { background: #ede9fe; }
+
+.ws-activation-done {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: #166534;
+  background: #f0fdf4; border: 1px solid #bbf7d0;
+  padding: 8px 10px; border-radius: 6px;
+}
+
+.ws-activation-warnings { margin: 0; padding-left: 18px; font-size: 10px; color: #a16207; line-height: 1.4; }
+
+.workspace-rail.is-collapsed .ws-activation-panel { display: none; }
+
+/* Template-aware banners shown on Workflow / Nango surfaces when an
+   activation context is present. Lives in-page rather than in the rail. */
+.ws-activation-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  font-size: 12px; color: #1e3a8a;
+}
+.ws-activation-banner-icon { color: #2563eb; flex-shrink: 0; margin-top: 1px; }
+.ws-activation-banner-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ws-activation-banner-title { font-weight: 650; font-size: 12px; }
+.ws-activation-banner-text { font-size: 11px; color: #1e40af; line-height: 1.4; }
+.ws-activation-banner-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.ws-activation-banner-actions a {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  color: #1d4ed8; text-decoration: none;
+  padding: 3px 8px; border-radius: 5px;
+  background: #ffffff; border: 1px solid #bfdbfe;
+}
+.ws-activation-banner-actions a:hover { background: #eff6ff; }
+
+.dm-api-action-card-template-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+.dm-api-action-card-template-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  color: #1d4ed8; text-decoration: none;
+}
+.dm-api-action-card-template-link:hover { color: #1e40af; text-decoration: underline; }
+.dm-api-action-card-template-link.is-back { color: #4b5563; }

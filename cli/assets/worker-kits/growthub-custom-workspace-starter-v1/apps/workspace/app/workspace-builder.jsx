@@ -87,6 +87,7 @@ import {
 import { selectObjectFilterableFields, selectObjectSortableFields } from "@/lib/workspace-metadata-selectors";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
+import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
 
 // Workspace Metadata Graph V1 — typed dependency contracts.
 // Used by sidecar dependency summaries; the existing chart hydration path
@@ -5342,6 +5343,25 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         onConfigChange={(nextConfig) => {
           if (typeof setConfig === "function") setConfig(nextConfig);
         }}
+        activationSlot={(
+          <WorkspaceActivationPanel
+            workspaceConfig={config}
+            workspaceSourceRecords={workspaceSourceRecords}
+            runtimeStatus={{
+              nango: {
+                hasSecretKey: integrationAdapter?.nango?.hasSecretKey
+                  ?? integrationAdapter?.hasNangoSecretKey
+                  ?? null
+              }
+            }}
+            onAskHelper={() => {
+              setHelperIntent("explain");
+              setHelperInitialPrompt("Help me finish this workspace setup.");
+              setHelperInitialThread(null);
+              setHelperOpen(true);
+            }}
+          />
+        )}
         dashboardsSlot={(
           <button
             type="button"

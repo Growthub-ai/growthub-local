@@ -51,6 +51,12 @@ import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
+import {
+  deriveWorkspaceActivationState,
+  PROJECT_MANAGEMENT_REGISTRY_OBJECT_ID,
+  PROJECT_MANAGEMENT_REGISTRY_ROW_ID,
+  PROJECT_MANAGEMENT_WORKFLOW_ROW_NAME
+} from "@/lib/workspace-activation";
 
 // Workspace Metadata Graph V1 — read-only dependency metadata for workflow
 // sidecars. The runtime path (sandbox-run, publish, draft/live) is
@@ -779,6 +785,29 @@ export default function WorkflowSurface() {
   const showSaveDraft = dirty && !graphUnset;
   const workflowModeLabel = isDraftMode ? "draft" : lifecycle || "live";
 
+  // Template-aware context banner — only shown when the workspace was
+  // exported from a known template and the current workflow row is the
+  // template's seeded workflow. The banner reads activation state and
+  // highlights the blocking setup step if there is one.
+  const templateBanner = useMemo(() => {
+    if (!workspaceConfig) return null;
+    const activation = deriveWorkspaceActivationState({ workspaceConfig });
+    if (activation.template.id !== "project-management") return null;
+    if (rowId !== PROJECT_MANAGEMENT_WORKFLOW_ROW_NAME) return null;
+    return activation;
+  }, [workspaceConfig, rowId]);
+
+  const templateBannerStep = useMemo(() => {
+    if (!templateBanner) return null;
+    if (templateBanner.done) return null;
+    // Surface the most blocking precondition for *this* surface: the
+    // Nango connection step. If that's already complete, fall back to
+    // the activation's nextStepId.
+    const verify = templateBanner.steps.find((s) => s.id === "verify-connection");
+    if (verify && verify.status !== "complete") return verify;
+    return templateBanner.steps.find((s) => s.id === templateBanner.nextStepId) || null;
+  }, [templateBanner]);
+
   return (
     <main className="workspace-builder dm-workflow-page">
       <WorkspaceRail
@@ -790,6 +819,24 @@ export default function WorkflowSurface() {
         onOpenThread={(row) => router.push(`/data-model?thread=${encodeURIComponent(row.id)}`)}
       />
       <section className="workspace-surface dm-workflow-surface">
+        {templateBannerStep ? (
+          <div className="ws-activation-banner" role="note" data-template-id={templateBanner.template.id}>
+            <Globe2 size={16} className="ws-activation-banner-icon" aria-hidden="true" />
+            <div className="ws-activation-banner-body">
+              <span className="ws-activation-banner-title">
+                {templateBanner.template.name} setup · {templateBannerStep.label}
+              </span>
+              <span className="ws-activation-banner-text">
+                {templateBannerStep.help || templateBannerStep.description}
+              </span>
+              <div className="ws-activation-banner-actions">
+                <Link href={`/data-model?object=${encodeURIComponent(PROJECT_MANAGEMENT_REGISTRY_OBJECT_ID)}&row=${encodeURIComponent(PROJECT_MANAGEMENT_REGISTRY_ROW_ID)}`}>
+                  Open Nango panel
+                </Link>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <header className="workspace-toolbar dm-workflow-toolbar">
           <div className="dm-workflow-titlebar">
             <span className="dm-workflow-title-muted">Workflows</span>

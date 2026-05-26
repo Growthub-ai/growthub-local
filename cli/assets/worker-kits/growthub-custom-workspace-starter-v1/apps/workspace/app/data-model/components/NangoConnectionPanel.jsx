@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle, ExternalLink, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle, ChevronRight, ExternalLink, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 
 /**
  * NangoConnectionPanel — interactive sidecar for an api-registry row whose
@@ -114,7 +114,7 @@ function StatusBadge({ status, label }) {
   );
 }
 
-export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
+export function NangoConnectionPanel({ row, disabled, onUpdateRow, templateContext }) {
   const initialProviderConfigKey = useMemo(() => deriveProviderConfigKey(row), [row]);
   const initialConnectionId = useMemo(() => deriveDefaultConnectionId(row), [row]);
   const initialStatus = useMemo(() => deriveInitialStatus(row), [row]);
@@ -491,6 +491,25 @@ export function NangoConnectionPanel({ row, disabled, onUpdateRow }) {
           </button>
         ) : null}
       </div>
+
+      {/* Template activation footer — shown only when the parent passes a
+          `templateContext` prop. Non-invasive: with no context the panel
+          renders exactly as before. Used by the project-management
+          template to nudge the user forward to the next setup step
+          (typically "Run Active Tasks workflow") after they verify the
+          connection. */}
+      {templateContext && templateContext.nextStepHref ? (
+        <div className="dm-api-action-card-template-footer">
+          {templateContext.backHref ? (
+            <a href={templateContext.backHref} className="dm-api-action-card-template-link is-back">
+              ← {templateContext.backLabel || "Back to setup checklist"}
+            </a>
+          ) : null}
+          <a href={templateContext.nextStepHref} className="dm-api-action-card-template-link is-next">
+            {templateContext.nextStepLabel || "Next step"} <ChevronRight size={13} aria-hidden="true" />
+          </a>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -696,6 +696,102 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
   });
 });
 
+// ---------------------------------------------------------------------------
+// Customer Activation Layer V1 — primitive presence + governance
+// ---------------------------------------------------------------------------
+
+describe("workspace-activation — V1 derivation helper ships in the kit", () => {
+  it("lib/workspace-activation.js exists with the three derivation entrypoints", () => {
+    expect(appExists("lib/workspace-activation.js")).toBe(true);
+    const source = appText("lib/workspace-activation.js");
+    expect(source).toContain("function deriveWorkspaceActivationState");
+    expect(source).toContain("function deriveProjectManagementActivationState");
+    expect(source).toContain("function deriveBlankWorkspaceActivationState");
+    expect(source).toMatch(/export\s*\{[^}]*deriveWorkspaceActivationState[^}]*\}/s);
+    expect(source).toMatch(/export\s*\{[^}]*deriveProjectManagementActivationState[^}]*\}/s);
+    expect(source).toMatch(/export\s*\{[^}]*deriveBlankWorkspaceActivationState[^}]*\}/s);
+  });
+
+  it("activation helper has no fetch / no React / no localStorage", () => {
+    const source = appText("lib/workspace-activation.js");
+    expect(source).not.toMatch(/from\s+["']react["']/);
+    expect(source).not.toMatch(/from\s+["']next\//);
+    expect(source).not.toMatch(/\bfetch\s*\(/);
+    expect(source).not.toMatch(/localStorage|sessionStorage/);
+  });
+
+  it("activation helper does not leak NANGO_SECRET_KEY values", () => {
+    // The helper consumes `runtimeStatus.nango.hasSecretKey` (boolean) and
+    // MUST NOT carry the raw env value forward. No `process.env.NANGO_SECRET_KEY`
+    // reads, no `secretKey` reads on the runtimeStatus shape.
+    const source = appText("lib/workspace-activation.js");
+    expect(source).not.toMatch(/process\.env\.NANGO_SECRET_KEY/);
+    expect(source).not.toMatch(/runtimeStatus\.\w*\.secretKey/);
+    expect(source).not.toMatch(/access_token|refresh_token|Bearer\s/);
+  });
+
+  it("app/components/WorkspaceActivationPanel.jsx ships", () => {
+    expect(appExists("app/components/WorkspaceActivationPanel.jsx")).toBe(true);
+    const source = appText("app/components/WorkspaceActivationPanel.jsx");
+    expect(source).toContain('"use client"');
+    expect(source).toContain("WorkspaceActivationPanel");
+    expect(source).toContain("deriveWorkspaceActivationState");
+  });
+
+  it("workspace-rail accepts an activationSlot prop", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain("activationSlot");
+  });
+
+  it("workspace-builder passes WorkspaceActivationPanel into the rail", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("WorkspaceActivationPanel");
+    expect(builder).toContain("activationSlot=");
+  });
+
+  it("WorkflowSurface renders template-aware activation banner", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("deriveWorkspaceActivationState");
+    expect(surface).toContain("ws-activation-banner");
+  });
+
+  it("NangoConnectionPanel accepts templateContext for activation handoff", () => {
+    const panel = appText("app/data-model/components/NangoConnectionPanel.jsx");
+    expect(panel).toMatch(/templateContext/);
+    expect(panel).toContain("dm-api-action-card-template-footer");
+  });
+
+  it("workspace-metadata-store exposes provenance metadata items", () => {
+    const store = appText("lib/workspace-metadata-store.js");
+    expect(store).toContain("function deriveWorkspaceProvenanceMetadataItems");
+    expect(store).toMatch(/export\s*\{[^}]*deriveWorkspaceProvenanceMetadataItems[^}]*\}/s);
+  });
+
+  it("project-management seed ships with sanitized provenance (no secrets)", () => {
+    const seedPath = "templates/seeded-configs/project-management.config.json";
+    const seed = JSON.parse(readText(seedPath));
+    expect(seed.provenance).toBeDefined();
+    expect(seed.provenance.template).toBe("project-management");
+    expect(seed.provenance.privacy).toContain("sanitized");
+    // Negative governance probe — the seed must not ship provider secrets.
+    const text = readText(seedPath);
+    expect(text).not.toMatch(/access_token/i);
+    expect(text).not.toMatch(/refresh_token/i);
+    expect(text).not.toMatch(/Bearer\s+[A-Za-z0-9]/);
+    expect(text).not.toMatch(/Authorization:\s*Bearer/);
+    // The seed references NANGO_SECRET_KEY as an env-ref (`authRef`) but
+    // must never embed the value itself.
+    expect(text).not.toMatch(/NANGO_SECRET_KEY\s*[:=]\s*["'][^"']+/);
+  });
+
+  it("kit.json frozen asset paths include the activation primitives", () => {
+    const kitJson = JSON.parse(readText("kit.json"));
+    const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+    expect(frozen).toContain("apps/workspace/lib/workspace-activation.js");
+    expect(frozen).toContain("apps/workspace/app/components/WorkspaceActivationPanel.jsx");
+  });
+});
+
 describe("workspace-data-model — runtime field metadata inference", () => {
   type Table = {
     objectId?: string;
