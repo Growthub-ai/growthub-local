@@ -17,6 +17,38 @@ import { fileURLToPath } from "node:url";
 import type { KitListItem } from "./service.js";
 import type { KitActivationMode, KitCapabilityType, KitFamily } from "./contract.js";
 
+/**
+ * Static activation-step blueprint shipped per template. PR #216's
+ * workspace-activation.js currently hardcodes one of these per template; the
+ * V1 plan calls for it to consume this blueprint instead so activation
+ * adapters and the CLI registry share a single source of truth.
+ *
+ * `completeWhen` is a small predicate DSL the renderer evaluates against
+ * workspaceConfig + workspaceSourceRecords + metadataGraph. The shape is
+ * intentionally permissive (`Record<string, unknown>`) at the registry
+ * boundary — the renderer owns predicate dispatch.
+ */
+export interface ActivationStepBlueprint {
+  id: string;
+  label: string;
+  description: string;
+  href: string;
+  ctaPending?: string;
+  ctaComplete?: string;
+  ctaFailed?: string;
+  hint?: string;
+  hintFailed?: string;
+  completeWhen: Record<string, unknown>;
+  blockedUntil?: string[];
+}
+
+export interface ActivationBlueprint {
+  headline?: string;
+  headlineComplete?: string;
+  subheadlineComplete?: string;
+  steps: ActivationStepBlueprint[];
+}
+
 export interface WorkspaceTemplateEntry {
   id: string;
   slug: string;
@@ -31,6 +63,11 @@ export interface WorkspaceTemplateEntry {
   defaultOutDir: string;
   defaultName: string;
   briefType: string;
+  /**
+   * Optional static blueprint consumed by the activation renderer. When
+   * absent, the renderer falls back to the generic blank-workspace adapter.
+   */
+  activation?: ActivationBlueprint;
 }
 
 interface WorkspaceTemplateManifest {
@@ -66,8 +103,46 @@ function loadManifest(): WorkspaceTemplateEntry[] {
   cachedEntries = raw.templates.map((t) => ({
     ...t,
     aliases: Array.isArray(t.aliases) ? t.aliases : [],
+    activation: normalizeActivation(t.activation),
   }));
   return cachedEntries;
+}
+
+function normalizeActivation(value: unknown): ActivationBlueprint | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const steps = Array.isArray(raw.steps) ? raw.steps : [];
+  const normalizedSteps: ActivationStepBlueprint[] = [];
+  for (const step of steps) {
+    if (!step || typeof step !== "object" || Array.isArray(step)) continue;
+    const s = step as Record<string, unknown>;
+    if (typeof s.id !== "string" || typeof s.label !== "string"
+      || typeof s.description !== "string" || typeof s.href !== "string"
+      || !s.completeWhen || typeof s.completeWhen !== "object" || Array.isArray(s.completeWhen)) {
+      throw new Error(`Workspace template activation step is malformed: ${JSON.stringify(s)}`);
+    }
+    normalizedSteps.push({
+      id: s.id,
+      label: s.label,
+      description: s.description,
+      href: s.href,
+      ctaPending: typeof s.ctaPending === "string" ? s.ctaPending : undefined,
+      ctaComplete: typeof s.ctaComplete === "string" ? s.ctaComplete : undefined,
+      ctaFailed: typeof s.ctaFailed === "string" ? s.ctaFailed : undefined,
+      hint: typeof s.hint === "string" ? s.hint : undefined,
+      hintFailed: typeof s.hintFailed === "string" ? s.hintFailed : undefined,
+      completeWhen: s.completeWhen as Record<string, unknown>,
+      blockedUntil: Array.isArray(s.blockedUntil)
+        ? s.blockedUntil.filter((x): x is string => typeof x === "string")
+        : undefined,
+    });
+  }
+  return {
+    headline: typeof raw.headline === "string" ? raw.headline : undefined,
+    headlineComplete: typeof raw.headlineComplete === "string" ? raw.headlineComplete : undefined,
+    subheadlineComplete: typeof raw.subheadlineComplete === "string" ? raw.subheadlineComplete : undefined,
+    steps: normalizedSteps,
+  };
 }
 
 export function listWorkspaceTemplates(): WorkspaceTemplateEntry[] {

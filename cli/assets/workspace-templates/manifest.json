@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Workspace template registry. Each entry is a full Data Model seed (api-registry + data-source + sandbox-environment + dashboard) that resolves through the existing growthub starter init --seed-config path. Adding a template = drop a seed file + add a row here. No CLI code edits.",
+  "description": "Workspace template registry. Each entry is a full Data Model seed (api-registry + data-source + sandbox-environment + dashboard) plus a static activationSteps[] blueprint. The seed is consumed by `growthub starter init --seed-config <slug>`. The blueprint is consumed by a generic activation renderer (PR #216's workspace-activation.js, once refactored) so adding a template stays at: one manifest row + one seed file. No CLI or activation-library code edits.",
   "templates": [
     {
       "id": "project-management-workspace-template-v1",
@@ -15,7 +15,86 @@
       "seedConfig": "project-management",
       "defaultOutDir": "./project-management-workspace",
       "defaultName": "Project Management Workspace",
-      "briefType": "workspace-template"
+      "briefType": "workspace-template",
+      "activation": {
+        "headline": "You're {{remaining}} step{{remainingPlural}} from your first task dashboard.",
+        "headlineComplete": "Your Project Management workspace is live.",
+        "subheadlineComplete": "Inspect runs, customize objects, or wire another provider.",
+        "steps": [
+          {
+            "id": "provider-env",
+            "label": "Configure provider auth",
+            "description": "Set NANGO_SECRET_KEY in your runtime environment so the workspace can talk to Nango.",
+            "href": "/settings/integrations",
+            "ctaPending": "Open integration settings",
+            "ctaComplete": "Review integrations",
+            "hint": "Set NANGO_SECRET_KEY in .env.local (or your hosted runtime), then restart the workspace server.",
+            "completeWhen": { "predicate": "metadataGraph.flag", "path": "runtime.nangoConfigured" },
+            "blockedUntil": []
+          },
+          {
+            "id": "nango-connection",
+            "label": "Connect provider through Nango",
+            "description": "Open the API Registry row and run Create Connect Session, then paste the connectionId Nango returns.",
+            "href": "/data-model?object=api-registry&row=asana-active-tasks",
+            "ctaPending": "Open Nango panel",
+            "ctaComplete": "Manage connection",
+            "hint": "Use the Nango panel in the API Registry row — your workspace never sees provider tokens.",
+            "completeWhen": {
+              "predicate": "dataModelRow.fieldNonEmpty",
+              "objectMatcher": { "objectType": "api-registry" },
+              "rowMatcher": { "field": "connectorKind", "value": "nango" },
+              "field": "connectionIds"
+            },
+            "blockedUntil": ["provider-env"]
+          },
+          {
+            "id": "workflow-run",
+            "label": "Run the Active Tasks workflow",
+            "description": "Open the seeded workflow and click Test to pull active tasks from your project.",
+            "href": "/workflows?object=sandbox-environments&row=project-active-tasks-workflow&field=orchestrationConfig",
+            "ctaPending": "Open workflow",
+            "ctaComplete": "Open workflow",
+            "ctaFailed": "Open run trace",
+            "hint": "Fill projectGid + workspaceGid in the input node, then click Test.",
+            "hintFailed": "Open the workflow's See Runs trace and check the failing node's response.",
+            "completeWhen": {
+              "predicate": "and",
+              "of": [
+                {
+                  "predicate": "sandboxRun.ok",
+                  "objectId": "sandbox-environments",
+                  "rowMatcher": { "field": "Name", "value": "project-active-tasks-workflow" }
+                },
+                {
+                  "predicate": "sourceRecords.nonEmpty",
+                  "sourceId": "project-active-tasks"
+                }
+              ]
+            },
+            "blockedUntil": ["nango-connection"]
+          },
+          {
+            "id": "dashboard-view",
+            "label": "View the Active Tasks dashboard",
+            "description": "Open the dashboard to see the latest active project tasks.",
+            "href": "/?dashboard=project-management-template",
+            "ctaPending": "Open dashboard",
+            "ctaComplete": "Open dashboard",
+            "completeWhen": { "predicate": "stepComplete", "stepId": "workflow-run" },
+            "blockedUntil": []
+          },
+          {
+            "id": "customize",
+            "label": "Customize this workspace",
+            "description": "Duplicate the dashboard, add objects, schedule the workflow, or wire another provider through Nango.",
+            "href": "/data-model",
+            "ctaPending": "Customize",
+            "completeWhen": { "predicate": "optional" },
+            "blockedUntil": []
+          }
+        ]
+      }
     }
   ]
 }

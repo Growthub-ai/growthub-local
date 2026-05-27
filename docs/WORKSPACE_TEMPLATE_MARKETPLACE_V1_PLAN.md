@@ -4,6 +4,26 @@ Companion plan to the 0.13.6 sprint reframing. Productizes the **workspace-templ
 
 This plan does **not** invent a new contract layer. It collapses the hardcoded `PROJECT_MANAGEMENT_TEMPLATE_ID` special case in `cli/src/commands/kit.ts` into a generic loop, lifts `templates/seeded-configs/` into a first-class catalog, and derives a Production Readiness Score from primitives already on disk.
 
+## Cross-PR coordination — Activation Layer (PR #216)
+
+The Customer Activation Layer in parallel PR #216 (`cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-activation.js`) currently ships two hardcoded adapters: `deriveProjectManagementActivationState()` and `deriveBlankWorkspaceActivationState()`, routed by `provenance.template === "project-management"`. As a third template appears, this requires TypeScript edits per template — contradicting this plan's "manifest row + seed file, no TypeScript edits" invariant.
+
+**Resolution (closes audit gap M1):** the manifest entry now carries an optional static `activation` blueprint (steps with `id`, `label`, `description`, `href`, CTA strings, and a `completeWhen` predicate). The activation library's role narrows to (1) a predicate evaluator and (2) a generic renderer that walks the blueprint. The PM template's existing checklist is now data in `cli/assets/workspace-templates/manifest.json`, not code. The renderer refactor in `workspace-activation.js` is coordinated work between this PR and PR #216 — the data contract ships here, the consumer refactor lands in PR #216 (or a follow-up after both merge).
+
+**Activation predicate vocabulary (V1):**
+
+| `predicate` | Reads | Meaning |
+|---|---|---|
+| `metadataGraph.flag` | `metadataGraph[path]` (dotted) | Boolean flag in the metadata-graph runtime block (e.g. `runtime.nangoConfigured`) |
+| `dataModelRow.fieldNonEmpty` | `workspaceConfig.dataModel.objects[].rows[]` | A row matching `objectMatcher` + `rowMatcher` has non-empty `field` |
+| `sandboxRun.ok` | Same | A `sandbox-environment` row's `lastResponse` parses with `exitCode === 0` |
+| `sourceRecords.nonEmpty` | `workspaceSourceRecords[sourceId]` | The sidecar has rows for the given `sourceId` |
+| `stepComplete` | other steps in the same blueprint | Mirror another step's completion (cheap composition) |
+| `and` | `of[]` | Every nested predicate evaluates true |
+| `optional` | — | Step never auto-completes; treated as `status: optional` by the renderer |
+
+The vocabulary stays small on purpose. Each new predicate is a one-line addition in PR #216's evaluator + a new manifest field shape — and every existing template entry remains a pure data change.
+
 ## Architectural anchor (do not violate)
 
 A **workspace template** is a sanitized **full Data Model seed**, not a dashboard layout. Layout presets are a sub-primitive (`DASHBOARD_TEMPLATES` in `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-schema.js:289`) that the builder already surfaces through `TemplateGallery` (`workspace-builder.jsx:1343`).
@@ -67,7 +87,11 @@ The PM template proves the shape. The marketplace move is removing the one-off p
 
 ### What this unlocks
 
-After Phase 0, adding a new workspace template = drop a `*.config.json` + one manifest row. Zero TypeScript edits. Every downstream surface (`growthub kit list`, `growthub kit inspect`, `growthub kit download <slug>`, `growthub discover` → "Browse Custom Workspaces") picks it up by enumeration.
+After Phase 0, adding a new workspace template = drop a `*.config.json` seed + one manifest row (with an optional `activation` blueprint for per-template checklist). Zero TypeScript edits in the CLI **and** in the activation library once PR #216's renderer is refactored. Every downstream surface (`growthub kit list`, `growthub kit inspect`, `growthub kit download <slug>`, `growthub discover` → "Browse Custom Workspaces", and the workspace-builder activation checklist) picks it up by enumeration.
+
+### Manifest shape — Phase 0 vs. full plan (addresses audit gap M5)
+
+The Phase 0 manifest ships these fields per template: `id`, `slug`, `aliases[]`, `name`, `description`, `version`, `family`, `bundleId`, `bundleVersion`, `seedConfig`, `defaultOutDir`, `defaultName`, `briefType`, `activation?` (optional, ships now for PM). The plan also names `category`, `badges[]`, `surfaces[]`, `readinessCriteria[]` — those are **deferred** and arrive with the phases that consume them (`category` in Phase 2 gallery filter, `badges[]` + `readinessCriteria[]` in Phase 3, `surfaces[]` in Phase 5). The current schemaVersion stays at `1`; deferred fields land as additive, non-breaking additions.
 
 ### Risks to surface in PR
 
@@ -108,7 +132,8 @@ After Phase 0, adding a new workspace template = drop a `*.config.json` + one ma
 - **`apps/workspace/app/workspace-builder.jsx:1343-1448` (`TemplateGallery`)** — add a single segmented control at the top: **Layout** | **Full Workspace**. The grid, filters, preview, and footer code below stays. Each surface re-uses the same card shape; the action buttons differ:
   - Layout cards keep `Use Here` / `New Dashboard` (unchanged).
   - Workspace-seed cards show `Open in CLI` (copies the `growthub workspace template create <slug>` command), since applying a full Data Model spine to an already-running workspace is **out of scope for V1** — the import lifecycle goes through the starter-init path so fork registration, policy, and trace seeding all fire correctly.
-- **`apps/workspace/app/workspace-builder.jsx:3834` (`templateGalleryOpen` state)** — first-run UX: if `growthub.config.json` has no user-edited dashboards or canvas widgets, the gallery opens **automatically** on first dev-server boot, defaulted to the **Full Workspace** segment. Closing it sets a `.growthub-fork/first-run.json` flag so it stays closed afterward. (No new persistence layer — reuse the existing `.growthub-fork/` lifecycle directory.)
+- **`apps/workspace/app/workspace-builder.jsx:3834` (`templateGalleryOpen` state)** — first-run UX: derived from the activation state, not a separate flag (closes audit gap M3). When **every required activation step is `pending` or `blocked`**, the workspace is considered first-run and the gallery opens automatically, defaulted to the **Full Workspace** segment. The moment any step transitions to `complete`, first-run ends — no flag file, no `.growthub-fork/first-run.json`, no second source of truth. Closing the gallery without progress just hides it for the session.
+- **Workspace-seed card action** — replaces the original "Open in CLI" copy-command pattern (closes audit gap M6). The primary CTA is **"Create workspace"** which dispatches an instruction to the existing `HelperSidecar` with `{ templateSlug, defaultOutDir, defaultName }` context. The sidecar can then propose the `growthub workspace template create <slug>` command for the user to confirm and run, surfacing it as a pre-action preview rather than terminal-copy chore. CLI copy-string remains available as a secondary affordance for power users.
 
 ### What this is **not**
 
@@ -144,6 +169,10 @@ This is a pure reducer over data already on disk. No new storage, no new contrac
 
 Not a vanity number. The score is **the count of green primitives**: did the API Registry row actually return 2xx in the last run, did the workflow validate, did the selfEval criteria pass within `maxRetries`. If any input is missing, the corresponding finding lists *exactly which row, which field, which command to run*. The score is a navigation aid, not a marketing badge.
 
+### Activation alignment (closes audit gap M2)
+
+The readiness inputs above are a strict superset of the activation predicate inputs. The activation evaluator and the readiness reducer therefore share signals — when an activation step's `completeWhen` predicate references `sandboxRun.ok` for a workflow row, the same row's run status feeds the readiness score. The two surfaces will never disagree on whether a primitive is green; activation is a curated **subset** projected from the readiness signal set. Concretely: the manifest's `activation.steps[].completeWhen` predicate vocabulary is a vocabulary subset of the readiness reducer's input list. Phase 3 lands the reducer first; Phase 2 activation predicates dispatch through it.
+
 ---
 
 ## Phase 4 — Publish / Submit-for-Curation (ride existing contract)
@@ -172,7 +201,7 @@ The methodology you formalized maps cleanly onto the six existing `OBJECT_TYPE_P
 | Investigative Architect | 1 × `sandbox-environment` (`runLocality: local`, `adapter: local-process`, `instructions` = architect prompt) + 1 × `data-source` whose `sourceId` matches the sandbox's eventual `lastSourceId` | Architect's findings flow `sandbox-environment → source-records → data-source → widget` exactly like the PM template |
 | Parallel Implementation Swarm | N × `sandbox-environment` rows (one per worker), each with its own `orchestrationConfig` graph + N matching `data-source` rows | Fan-out is N independent rows, not a new "swarm" object. Each worker's `executionLane` field tags it for filtering |
 | Adversarial QA Gate | 1 × `sandbox-environment` row (`instructions` = gate prompt) whose `orchestrationConfig` graph contains `api-registry-call` nodes that read each worker's `data-source` output; verdict written into `lastResponse` and an output `data-source` row | Gate row reads worker outputs via the `data-source` layer — never directly from sandbox rows (which are not bindable) |
-| Numbered gap tracking | 1 × `tasks` object whose rows are gap items (`Name` = gap title, `Status` = open/closed, `Priority` = severity, `Assignee` = which worker raised it, `DueDate` optional). Gate row's transform step writes new rows into this object's source-records | This is the user's "numbered gap tracking" requirement — solved by the existing `tasks` preset, no new type |
+| Numbered gap tracking | 1 × `tasks` object whose rows are gap items (`Name` = gap title, `Status` = open/closed, `Priority` = severity, `Assignee` = which worker raised it, `DueDate` optional). The gate's `orchestrationConfig` writes gap rows into source-records via a `tool-result` node configured with `sourceId: "qa-swarm/gaps"`. A `data-source` row whose `sourceId` matches re-exposes those rows to the dashboard's tasks view (closes audit gap M4 — write path is the existing `tool-result` node kind plus an additional read-through `data-source` row, not a new node type) | This is the user's "numbered gap tracking" requirement — solved by the existing `tasks` preset, no new type |
 | Merge Synthesis | The gate row's `orchestrationConfig` uses existing node kinds — `api-registry-call` (read worker outputs), `transform-filter` (merge + dedupe), `tool-result` (write merged source-records) | Same node vocabulary as the PM template's workflow JSON |
 | Iterative Contraction Loop | `selfEval.criteria[]` + `selfEval.maxRetries` on the swarm skill (`cli/src/skills/self-eval.ts:57`). Each retry writes to `.growthub-fork/project.md` and `trace.jsonl` | The "Production Gate" pass = all selfEval criteria green within `maxRetries`. No new loop construct |
 | Strategic Reframer | 1 × `sandbox-environment` (`instructions` = reframer prompt) run after the gate verdict, reading the gate's output `data-source` | Same shape as the architect row at the top of the chain — symmetry by design |
