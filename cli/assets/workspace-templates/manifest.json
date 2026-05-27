@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "description": "Workspace template registry. Each entry is a full Data Model seed (api-registry + data-source + sandbox-environment + dashboard) that resolves through the existing growthub starter init --seed-config path. Adding a template = drop a seed file + add a row here. No CLI code edits.",
+  "templates": [
+    {
+      "id": "project-management-workspace-template-v1",
+      "slug": "project-management",
+      "aliases": ["project-management-workspace"],
+      "name": "Project Management Workspace Template",
+      "description": "Opinionated workspace template for API-backed project task workflows. Built from the blank workspace starter with a sanitized project-management seed.",
+      "version": "1.0.0",
+      "family": "studio",
+      "bundleId": "growthub-custom-workspace-starter-v1",
+      "bundleVersion": "1.0.0",
+      "seedConfig": "project-management",
+      "defaultOutDir": "./project-management-workspace",
+      "defaultName": "Project Management Workspace",
+      "briefType": "workspace-template"
+    }
+  ]
+}

@@ -24,6 +24,13 @@ import {
   runKitHealth,
 } from "./kit-contract.js";
 import { registerKitPublishCommands } from "./kit-publish.js";
+import {
+  listWorkspaceTemplates,
+  resolveWorkspaceTemplate,
+  isWorkspaceTemplateId as registryIsWorkspaceTemplateId,
+  workspaceTemplateToKitListItem,
+  type WorkspaceTemplateEntry,
+} from "../kits/workspace-template-registry.js";
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -33,21 +40,6 @@ const TYPE_CONFIG: Record<string, { color: (s: string) => string; emoji: string;
   studio: { color: pc.cyan, emoji: "🛠️", label: "Custom Workspaces" },
   specialized_agents: { color: pc.magenta, emoji: "🧠", label: "Specialized Agents" },
   ops: { color: pc.yellow, emoji: "⚙️ ", label: "Ops" },
-};
-
-const PROJECT_MANAGEMENT_TEMPLATE_ID = "project-management-workspace-template-v1";
-const PROJECT_MANAGEMENT_TEMPLATE: KitListItem = {
-  id: PROJECT_MANAGEMENT_TEMPLATE_ID,
-  version: "1.0.0",
-  name: "Project Management Workspace Template",
-  description: "Opinionated workspace template for API-backed project task workflows. Built from the blank workspace starter with a sanitized project-management seed.",
-  type: "worker",
-  family: "studio",
-  executionMode: "export",
-  activationModes: ["export"],
-  bundleId: "growthub-custom-workspace-starter-v1",
-  bundleVersion: "1.0.0",
-  briefType: "workspace-template",
 };
 
 const RETIRED_CUSTOM_WORKSPACE_KIT_IDS = new Set([
@@ -92,8 +84,7 @@ function displayKitName(name: string): string {
 }
 
 function isWorkspaceTemplateId(id: string): boolean {
-  const normalized = String(id || "").trim().toLowerCase();
-  return normalized === PROJECT_MANAGEMENT_TEMPLATE_ID || normalized === "project-management" || normalized === "project-management-workspace";
+  return registryIsWorkspaceTemplateId(id);
 }
 
 function isRetiredCustomWorkspaceKit(id: string): boolean {
@@ -103,23 +94,27 @@ function isRetiredCustomWorkspaceKit(id: string): boolean {
 function listKitAndWorkspaceTemplates(): KitListItem[] {
   const activeBundled = listBundledKits().filter((kit) => !RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(kit.id));
   const starter = activeBundled.find((kit) => kit.id === "growthub-custom-workspace-starter-v1");
+  const templates = listWorkspaceTemplates().map(workspaceTemplateToKitListItem);
   return [
     ...(starter ? [starter] : []),
-    PROJECT_MANAGEMENT_TEMPLATE,
+    ...templates,
   ];
 }
 
-async function createProjectManagementWorkspace(opts: { out?: string; yes?: boolean }): Promise<void> {
-  const output = opts.out || (opts.yes ? "./project-management-workspace" : await p.text({
+async function createFromWorkspaceTemplate(
+  entry: WorkspaceTemplateEntry,
+  opts: { out?: string; yes?: boolean },
+): Promise<void> {
+  const output = opts.out || (opts.yes ? entry.defaultOutDir : await p.text({
     message: "Output directory",
-    placeholder: "./project-management-workspace",
-    defaultValue: "./project-management-workspace",
+    placeholder: entry.defaultOutDir,
+    defaultValue: entry.defaultOutDir,
   }));
   if (p.isCancel(output)) { p.cancel("Cancelled."); process.exit(0); }
   await runStarterInit({
-    out: String(output || "./project-management-workspace"),
-    name: "Project Management Workspace",
-    seedConfig: "project-management",
+    out: String(output || entry.defaultOutDir),
+    name: entry.defaultName,
+    seedConfig: entry.seedConfig,
   });
 }
 
@@ -419,10 +414,11 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
         }
 
         if (action === "inspect") {
-          if (isWorkspaceTemplateId(selected.id)) {
+          const templateEntry = resolveWorkspaceTemplate(selected.id);
+          if (templateEntry) {
             printKitCard(selected);
             console.log(pc.bold("Create with:"));
-            console.log("  " + pc.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+            console.log("  " + pc.cyan(`growthub starter init --out ${templateEntry.defaultOutDir} --seed-config ${templateEntry.seedConfig}`));
             console.log("");
             p.outro(pc.dim("Done."));
             return "done";
@@ -432,8 +428,9 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
           return "done";
         }
 
-        if (isWorkspaceTemplateId(selected.id)) {
-          await createProjectManagementWorkspace(opts);
+        const selectedTemplate = resolveWorkspaceTemplate(selected.id);
+        if (selectedTemplate) {
+          await createFromWorkspaceTemplate(selectedTemplate, opts);
           return "done";
         }
 
@@ -623,14 +620,16 @@ Examples:
 `)
     .action((kitId: string, opts: { out?: string; json?: boolean }) => {
       const resolvedId = fuzzyResolveKitId(kitId);
-      if (!resolvedId && isWorkspaceTemplateId(kitId)) {
+      const templateEntry = !resolvedId ? resolveWorkspaceTemplate(kitId) : null;
+      if (templateEntry) {
+        const item = workspaceTemplateToKitListItem(templateEntry);
         if (opts.json) {
-          console.log(JSON.stringify(PROJECT_MANAGEMENT_TEMPLATE, null, 2));
+          console.log(JSON.stringify(item, null, 2));
           return;
         }
-        printKitCard(PROJECT_MANAGEMENT_TEMPLATE);
+        printKitCard(item);
         console.log(pc.bold("Create with:"));
-        console.log("  " + pc.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+        console.log("  " + pc.cyan(`growthub starter init --out ${templateEntry.defaultOutDir} --seed-config ${templateEntry.seedConfig}`));
         console.log("");
         return;
       }
@@ -672,8 +671,9 @@ Examples:
       }
 
       const resolvedId = fuzzyResolveKitId(kitId);
-      if (!resolvedId && isWorkspaceTemplateId(kitId)) {
-        await createProjectManagementWorkspace(opts);
+      const downloadTemplate = !resolvedId ? resolveWorkspaceTemplate(kitId) : null;
+      if (downloadTemplate) {
+        await createFromWorkspaceTemplate(downloadTemplate, opts);
         return;
       }
       if (!resolvedId) {
