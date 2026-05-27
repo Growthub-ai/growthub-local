@@ -8,22 +8,42 @@ This plan does **not** invent a new contract layer. It collapses the hardcoded `
 
 A **workspace template** is a sanitized **full Data Model seed**, not a dashboard layout. Layout presets are a sub-primitive (`DASHBOARD_TEMPLATES` in `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-schema.js:289`) that the builder already surfaces through `TemplateGallery` (`workspace-builder.jsx:1343`).
 
-The productized unit is the chain the PM template already proved:
+### Legal vocabulary — every template MUST use these existing object types
+
+Authoritative source: `OBJECT_TYPE_PRESETS` at `apps/workspace/lib/workspace-data-model.js:791`. Templates may not invent new object types — every row a template seeds resolves to one of these six presets.
+
+| `objectType` | Role in a template | Widget-bindable? | Relations |
+|---|---|---|---|
+| `api-registry` | The wire — endpoint, method, `authRef`, `connectorKind`, `capabilities`, `executionLane`, stored `lastResponse` | No (sources bind, not registries) | — |
+| `data-source` | Governed entity the widgets actually read | **Yes** | `belongs-to api-registry` via `registryId` |
+| `sandbox-environment` | Execution locality — `runLocality: local` (process or local agent host) or `serverless` (delegates to a scheduler API Registry record). Carries `orchestrationConfig` JSON = the workflow graph. Persists runs to `lastSourceId` in source-records | **No** — sandbox rows are not widget sources; outputs surface via the `data-source` row whose `sourceId` matches the sandbox's `lastSourceId` | `belongs-to api-registry` via `schedulerRegistryId` (when serverless) |
+| `tasks` | Action items / numbered gap tracking | Yes | — |
+| `people` | Contacts, owners, assignees | Yes | — |
+| `custom` | Domain-specific table | Yes | — |
+
+### The productized chain (the PM template proved it)
 
 ```
-api-registry row  ──►  data-source row  ──►  sandbox-environment row
-   (the wire)         (the entity bound)      (orchestrationConfig JSON
-                                                = the workflow graph)
+api-registry row  ──►  data-source row  ──►  dashboard widget
+   (the wire)         (the entity bound)        (binds to source name)
+                              ▲
+                              │ writes lastSourceId
                               │
+                      sandbox-environment row
+                      (orchestrationConfig JSON
+                       = the workflow graph)
+                              │
+                              │ when runLocality=serverless
                               ▼
-                       dashboard widget
-                       (bound by source name,
-                        not by registry id)
+                       api-registry row
+                       (the scheduler target)
 ```
 
-Separation of concerns is enforced by the PATCH allowlist (`dashboards`, `widgetTypes`, `canvas`, `dataModel`) at `apps/workspace/app/api/workspace/route.js`. Templates ride that allowlist — they do not bypass it. Secrets stay as `authRef` references (`NANGO_SECRET_KEY` etc.); no provider keys, OAuth connection ids, or task rows enter the seed.
+Widgets bind to `data-source` rows. `sandbox-environment` rows execute the workflow and persist into source-records; the matching `data-source` row exposes that persisted data to widgets. This separation is enforced by the PATCH allowlist (`dashboards`, `widgetTypes`, `canvas`, `dataModel`) at `apps/workspace/app/api/workspace/route.js`. Templates ride that allowlist — they do not bypass it.
 
-Reference seed: `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/project-management.config.json` — full registry + source + sandbox + workflow + dashboard, sanitized, with `provenance.templateKind: "workspace-template"`.
+Secrets stay as `authRef` references (`NANGO_SECRET_KEY` etc.); no provider keys, OAuth connection ids, or task rows enter the seed.
+
+Reference seed: `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/project-management.config.json` — registry row + source row + sandbox row (with `orchestrationConfig`) + dashboard, sanitized, with `provenance.templateKind: "workspace-template"`.
 
 ---
 
@@ -143,28 +163,79 @@ Not a vanity number. The score is **the count of green primitives**: did the API
 
 ## Phase 5 — QA Swarm methodology as a flagship template
 
-The methodology you formalized maps cleanly onto primitives that already ship — no new runtime. The deliverable is a single `agentic-qa-swarm.config.json` seed in the registry.
+The methodology you formalized maps cleanly onto the six existing `OBJECT_TYPE_PRESETS` — no new object types, no new runtime, no new persistence. The deliverable is a single `agentic-qa-swarm.config.json` seed in the registry whose `dataModel.objects[]` contains only rows of the legal vocabulary defined above.
 
-### Phase → primitive mapping
+### Phase → existing object-type mapping
 
-| Methodology phase | Existing primitive |
-|---|---|
-| Investigative Architect | `sandbox-environment` row, `runLocality: local`, prompt seeded from `templates/project.md` |
-| Parallel Implementation Swarm | N `sandbox-environment` rows fanned out; `orchestrationConfig` has an `api-registry-call` per worker |
-| Adversarial QA Gate | One `sandbox-environment` row whose `instructions` field is the gate prompt; verdict written to `lastResponse` |
-| Merge Synthesis | `transform-filter` + `tool-result` nodes inside the orchestration JSON |
-| Iterative Contraction Loop | `selfEval.maxRetries` bounded loop in `cli/src/skills/self-eval.ts` |
-| Strategic Reframer | Final `sandbox-environment` row, run after the gate verdict |
-| Retrospective | The append-only `.growthub-fork/trace.jsonl` history itself |
+| Methodology phase | Rows seeded (existing types only) | Notes |
+|---|---|---|
+| Investigative Architect | 1 × `sandbox-environment` (`runLocality: local`, `adapter: local-process`, `instructions` = architect prompt) + 1 × `data-source` whose `sourceId` matches the sandbox's eventual `lastSourceId` | Architect's findings flow `sandbox-environment → source-records → data-source → widget` exactly like the PM template |
+| Parallel Implementation Swarm | N × `sandbox-environment` rows (one per worker), each with its own `orchestrationConfig` graph + N matching `data-source` rows | Fan-out is N independent rows, not a new "swarm" object. Each worker's `executionLane` field tags it for filtering |
+| Adversarial QA Gate | 1 × `sandbox-environment` row (`instructions` = gate prompt) whose `orchestrationConfig` graph contains `api-registry-call` nodes that read each worker's `data-source` output; verdict written into `lastResponse` and an output `data-source` row | Gate row reads worker outputs via the `data-source` layer — never directly from sandbox rows (which are not bindable) |
+| Numbered gap tracking | 1 × `tasks` object whose rows are gap items (`Name` = gap title, `Status` = open/closed, `Priority` = severity, `Assignee` = which worker raised it, `DueDate` optional). Gate row's transform step writes new rows into this object's source-records | This is the user's "numbered gap tracking" requirement — solved by the existing `tasks` preset, no new type |
+| Merge Synthesis | The gate row's `orchestrationConfig` uses existing node kinds — `api-registry-call` (read worker outputs), `transform-filter` (merge + dedupe), `tool-result` (write merged source-records) | Same node vocabulary as the PM template's workflow JSON |
+| Iterative Contraction Loop | `selfEval.criteria[]` + `selfEval.maxRetries` on the swarm skill (`cli/src/skills/self-eval.ts:57`). Each retry writes to `.growthub-fork/project.md` and `trace.jsonl` | The "Production Gate" pass = all selfEval criteria green within `maxRetries`. No new loop construct |
+| Strategic Reframer | 1 × `sandbox-environment` (`instructions` = reframer prompt) run after the gate verdict, reading the gate's output `data-source` | Same shape as the architect row at the top of the chain — symmetry by design |
+| Retrospective | `.growthub-fork/trace.jsonl` history (append-only, already on disk) | No new row. Surfaced via the existing trace viewer / readiness panel from Phase 3 |
+| Cross-phase scheduling (optional) | When a phase needs `runLocality: serverless`, its sandbox row's `schedulerRegistryId` points at an `api-registry` row whose `executionLane: "qa-swarm-scheduler"` carries the QStash/Edge/cron endpoint | Reuses the existing `belongs-to api-registry` relation on `sandbox-environment`; no new scheduler primitive |
+
+### What the seed contains (concrete object-by-object)
+
+```
+dataModel.objects:
+  - id: api-registry           # objectType: "api-registry"
+    records:                   # one row per external service the workers/gate call
+      - integrationId: "llm-completion"        executionLane: "qa-swarm"
+      - integrationId: "test-runner"           executionLane: "qa-swarm"
+      - integrationId: "git-trace-export"      executionLane: "qa-swarm"
+      # (all status: "template", lastTested: "", authRef references only)
+
+  - id: workers                # objectType: "sandbox-environment"
+    records:
+      - Name: "investigative-architect"  instructions: "<architect prompt>"  executionLane: "qa-swarm"
+      - Name: "worker-1"  ...  executionLane: "qa-swarm"
+      - Name: "worker-2"  ...  executionLane: "qa-swarm"
+      - Name: "worker-3"  ...  executionLane: "qa-swarm"
+      - Name: "adversarial-gate"  instructions: "<gate prompt>"  executionLane: "qa-swarm"
+      - Name: "strategic-reframer"  instructions: "<reframer prompt>"  executionLane: "qa-swarm"
+      # each row carries its own orchestrationConfig JSON
+      # all sandbox rows are NOT widget binding sources (per architectural anchor)
+
+  - id: worker-outputs         # objectType: "data-source"
+    records:                   # one per sandbox row above (this is what widgets bind to)
+      - Name: "investigative-architect-output"  sourceId: "qa-swarm/architect"   registryId: "llm-completion"
+      - Name: "worker-1-output"  sourceId: "qa-swarm/worker-1"   ...
+      - ...
+      - Name: "adversarial-gate-verdict"  sourceId: "qa-swarm/gate"  ...
+      - Name: "strategic-reframer-output"  sourceId: "qa-swarm/reframer"  ...
+
+  - id: gaps                   # objectType: "tasks"  ← numbered gap tracking
+    records: []                # populated at runtime by the gate row's transform-filter step
+
+dashboards:
+  - Phase 1 (Investigation)  → binds to "investigative-architect-output"
+  - Phase 2 (Workers)        → binds to "worker-{1..N}-output"
+  - Phase 3 (Gate + Gaps)    → binds to "adversarial-gate-verdict" + "gaps" (tasks view)
+  - Phase 4 (Reframer)       → binds to "strategic-reframer-output"
+  - Phase 5 (Retrospective)  → trace.jsonl viewer panel (from Phase 3 of this plan)
+
+provenance:
+  templateKind: "workspace-template"
+  privacy: "sanitized-no-secrets-no-provider-data"
+  template: "agentic-qa-swarm"
+  mirrors: "growthub-custom-workspace-starter-v1"
+```
 
 ### Edits
 
-- **New file** `cli/assets/workspace-templates/agentic-qa-swarm.config.json` — full Data Model seed wiring the six phases above as governed rows, with `orchestrationConfig` JSON shaped like the PM template's workflow graph (input → api-registry-call → transform-filter → tool-result).
-- **Manifest entry** with `readinessCriteria[]` listing exactly the selfEval criteria that constitute "production gate passed."
-- **Dashboard** in the seed: one tab per phase (Investigation, Workers, Gate, Merge, Contraction, Reframer), each bound to its phase's `data-source` row so the user watches the swarm run row-by-row.
-- **No new CLI surface required** — the seed lands through `growthub workspace template create agentic-qa-swarm`, same path as PM.
+- **New file** `cli/assets/workspace-templates/agentic-qa-swarm.config.json` — Data Model seed exactly as enumerated above. Same JSON shape as `project-management.config.json` so the existing `applySeededConfig` path (`cli/src/starter/init.ts:86-114`) accepts it without changes.
+- **Manifest entry** with `readinessCriteria[]` listing the `selfEval` criteria that constitute "production gate passed" (architect completed, all worker outputs persisted, gate verdict written, gaps closed or escalated, reframer run).
+- **No new CLI surface required** — the seed lands through `growthub workspace template create agentic-qa-swarm`, same starter-init path as PM.
+- **No new object types.** Every row uses one of the six existing `OBJECT_TYPE_PRESETS`. If a row needs a field that doesn't exist on its preset, the row uses the preset's existing columns plus the generic per-row fields the schema already permits (`description`, etc.). Anything else is out of scope for V1.
 
-This template is the proof that AWaC is the production-readiness platform, not a creative tool. It runs on disk, leaves a trace, scores on the same readiness badge, and can itself be forked and customized.
+### Why this is meaningful, not a layout exercise
+
+The swarm template proves AWaC is the production-readiness platform: every methodology phase becomes a governed, inspectable, forkable row in the same Data Model that already backs PM. The same `lastTested` / `lastResponse` / `lastSourceId` fields the PM template uses for Asana task deltas now carry the architect's brief, the workers' implementations, the gate's verdict, and the reframer's strategic synthesis. The readiness score from Phase 3 grades the swarm on the same primitives that grade the PM template. The trace, the publish flow, the fork policy, the PATCH allowlist — everything reuses.
 
 ---
 
