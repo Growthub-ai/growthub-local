@@ -8656,6 +8656,21 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-activation-helper-btn { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px dashed #c7d2fe; color: #4338ca; font-size: 12px; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
 .workspace-activation-helper-btn:hover { background: #eef2ff; }
 
+/* Secondary readiness lenses (persistence, orchestration, deploy, tasks, app-build) */
+.workspace-activation-lenses { margin-top: 14px; border-top: 1px solid #eef2f7; padding-top: 12px; }
+.workspace-activation-lenses-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; margin: 0 0 8px; }
+.workspace-activation-lenses-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.workspace-activation-lens { border: 1px solid #e8edf3; border-radius: 8px; padding: 10px; background: #fbfcfe; }
+.workspace-activation-lens.is-complete { background: #f6fbf7; border-color: #d7eedd; }
+.workspace-activation-lens-head { display: flex; align-items: center; gap: 6px; }
+.workspace-activation-lens-status { display: inline-flex; color: #94a3b8; }
+.workspace-activation-lens.is-complete .workspace-activation-lens-status { color: #16a34a; }
+.workspace-activation-lens-title { font-size: 12px; font-weight: 600; color: #1e293b; margin: 0; flex: 1; }
+.workspace-activation-lens-progress { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
+.workspace-activation-lens-headline { font-size: 12px; color: #475569; margin: 6px 0 6px; line-height: 1.35; }
+.workspace-activation-lens-cta { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #4338ca; text-decoration: none; }
+.workspace-activation-lens-cta:hover { text-decoration: underline; }
+
 /* Compact rail variant — slim activation chip in WorkspaceRail Home */
 .workspace-activation-panel.is-compact { padding: 12px 14px; margin: 0 0 12px; gap: 10px; border-radius: 8px; }
 .workspace-activation-panel.is-compact .workspace-activation-head { gap: 8px; }

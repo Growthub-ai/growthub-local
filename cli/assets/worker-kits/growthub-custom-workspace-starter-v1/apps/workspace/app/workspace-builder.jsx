@@ -4316,6 +4316,18 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     workspaceConfig: config,
     workspaceSourceRecords,
   }), [config, workspaceSourceRecords]);
+  // Safe runtime descriptor for the secondary readiness lenses — assembled from
+  // the persistence/adapter props the builder already receives (no fetch, no
+  // secrets; booleans only).
+  const lensMetadataGraph = useMemo(() => ({
+    runtime: {
+      persistenceMode: persistence?.mode || "",
+      persistenceAdapter: persistence?.mode === "database" ? (adapterConfig?.dataAdapter || null) : null,
+      allowFsWrite: persistence?.mode === "filesystem" && persistence?.canSave === true,
+      nangoConfigured: Boolean(adapterConfig?.nango?.hasSecretKey),
+      deploy: { target: adapterConfig?.deployTarget || "" },
+    },
+  }), [persistence, adapterConfig]);
   const activationStarted = activationState.completedCount > 0;
   const activationComplete = Boolean(activationState.complete);
   const activationUiCache = useMemo(() => getWorkspaceUiCache(config), [config]);
@@ -5881,6 +5893,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           {showActivationPanel ? <WorkspaceActivationPanel
             workspaceConfig={config}
             workspaceSourceRecords={workspaceSourceRecords}
+            metadataGraph={lensMetadataGraph}
+            showLenses={true}
             onStepAction={(step) => {
               if (step?.id === "add-widget") return openAddWidgetBuilder();
               if (step?.id === "create-workflow") {

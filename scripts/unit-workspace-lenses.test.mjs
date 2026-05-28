@@ -55,16 +55,36 @@ test("lens layer — public API exports", () => {
   assert.equal(typeof activation.deriveWorkspaceState, "function");
   assert.equal(typeof activation.derivePersistenceLensState, "function");
   assert.equal(typeof activation.deriveObservabilityLensState, "function");
+  assert.equal(typeof activation.deriveDeployLensState, "function");
+  assert.equal(typeof activation.deriveTaskLensState, "function");
+  assert.equal(typeof activation.deriveAppBuildLensState, "function");
   assert.equal(typeof activation.deriveSwarmConditionPacket, "function");
   assert.ok(Array.isArray(activation.WORKSPACE_LENS_REGISTRY));
 });
 
-test("registry — exactly one primary lens and it is activation", () => {
+test("registry — exactly one primary lens and it is activation, stable order", () => {
   const primaries = activation.WORKSPACE_LENS_REGISTRY.filter((e) => e.primary);
   assert.equal(primaries.length, 1);
   assert.equal(primaries[0].id, "activation");
   const ids = activation.WORKSPACE_LENS_REGISTRY.map((e) => e.id);
-  assert.deepEqual(ids, ["activation", "persistence", "observability"]);
+  assert.deepEqual(ids, ["activation", "persistence", "observability", "deploy", "tasks", "app-build"]);
+  // Fleet/multi-app (Item 4) is intentionally NOT registered.
+  assert.equal(ids.includes("fleet"), false);
+});
+
+test("every lens emits the panel-compatible step shape", () => {
+  for (const entry of activation.WORKSPACE_LENS_REGISTRY) {
+    const state = entry.derive({ workspaceConfig: {} });
+    assert.equal(typeof state.completedCount, "number", `${entry.id} completedCount`);
+    assert.equal(typeof state.totalCount, "number", `${entry.id} totalCount`);
+    assert.ok(Array.isArray(state.steps), `${entry.id} steps`);
+    for (const step of state.steps) {
+      assert.equal(typeof step.id, "string");
+      assert.equal(typeof step.label, "string");
+      assert.equal(typeof step.description, "string");
+      assert.ok(["complete", "pending", "blocked", "optional"].includes(step.status), `${entry.id}/${step.id} status ${step.status}`);
+    }
+  }
 });
 
 test("backward compatibility — activation exports untouched", () => {
@@ -293,13 +313,183 @@ test("lenses — every step href routes into an existing workspace surface", () 
   const inputs = [
     {},
     { metadataGraph: { runtime: { persistenceMode: "read-only" } }, workspaceConfig: workflowsConfig([{ Name: "x", lastResponse: JSON.stringify({ exitCode: 1 }) }]) },
+    { metadataGraph: { runtime: { persistenceMode: "database", persistenceAdapter: "postgres", deploy: { target: "vercel", envVarsNeeded: ["X"] } } } },
   ];
   for (const input of inputs) {
-    for (const fn of [activation.derivePersistenceLensState, activation.deriveObservabilityLensState]) {
-      for (const step of fn(input).steps) {
+    for (const entry of activation.WORKSPACE_LENS_REGISTRY) {
+      for (const step of entry.derive(input).steps) {
         if (!step.href) continue;
-        assert.ok(ALLOWED_HREF(step.href), `${fn.name} step ${step.id} href "${step.href}" must route into an existing surface`);
+        assert.ok(ALLOWED_HREF(step.href), `${entry.id} step ${step.id} href "${step.href}" must route into an existing surface`);
       }
+    }
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Deploy lens (Item 5)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("deploy lens — no signal: surface/env pending, persistence pending", () => {
+  const state = activation.deriveDeployLensState({});
+  assert.equal(state.lensId, "deploy");
+  const byId = statusesById(state);
+  assert.equal(byId["resolve-app-surface"], "pending");
+  assert.equal(byId["verify-persistence"], "pending");
+  assert.equal(byId["run-deploy-check"], "blocked"); // gated on durable persistence
+  assert.equal(state.complete, false);
+});
+
+test("deploy lens — read-only persistence blocks deploy readiness", () => {
+  const state = activation.deriveDeployLensState({
+    metadataGraph: { runtime: { persistenceMode: "read-only", deploy: { target: "vercel" } } },
+  });
+  const byId = statusesById(state);
+  assert.equal(byId["resolve-app-surface"], "complete"); // target present
+  assert.equal(byId["verify-persistence"], "blocked"); // read-only blocks durability
+  assert.equal(byId["run-deploy-check"], "blocked"); // gated on durable persistence
+  // verify-env (pending) is earlier in order, so it's the first next step.
+  assert.equal(state.nextStepId, "verify-env");
+  assert.equal(state.complete, false);
+});
+
+test("deploy lens — durable + env ready + check passed → deploy-ready", () => {
+  const state = activation.deriveDeployLensState({
+    metadataGraph: { runtime: { persistenceMode: "database", persistenceAdapter: "postgres", deploy: { target: "vercel", envReady: true, checkPassed: true } } },
+  });
+  const byId = statusesById(state);
+  assert.equal(byId["verify-persistence"], "complete");
+  assert.equal(byId["run-deploy-check"], "complete");
+  assert.equal(state.complete, true);
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Task lens (Item 6)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("task lens — no task object: create-task-object pending, rows blocked", () => {
+  const state = activation.deriveTaskLensState({ workspaceConfig: { dataModel: { objects: [] } } });
+  assert.equal(state.lensId, "tasks");
+  const byId = statusesById(state);
+  assert.equal(byId["create-task-object"], "pending");
+  assert.equal(byId["add-task-rows"], "blocked");
+  assert.equal(state.nextStepId, "create-task-object");
+});
+
+test("task lens — governed task object with assigned rows advances", () => {
+  const state = activation.deriveTaskLensState({
+    workspaceConfig: {
+      dataModel: { objects: [
+        { id: "tasks", name: "Tasks", objectType: "task", rows: [{ title: "Do it", status: "open", owner: "ana" }] },
+      ] },
+    },
+  });
+  const byId = statusesById(state);
+  assert.equal(byId["create-task-object"], "complete");
+  assert.equal(byId["add-task-rows"], "complete");
+  assert.equal(byId["assign-owners-status"], "complete");
+});
+
+test("task lens — source-backed task data detected without a governed object", () => {
+  const state = activation.deriveTaskLensState({
+    workspaceConfig: {
+      dataModel: { objects: [
+        { id: "project-task-source", name: "Project Task Source", objectType: "data-source", rows: [{ gid: "1" }] },
+      ] },
+    },
+  });
+  const byId = statusesById(state);
+  // No governed task object yet, but source-backed rows exist → object step
+  // pending (nudge to model), rows step not blocked.
+  assert.equal(byId["create-task-object"], "pending");
+  assert.notEqual(byId["add-task-rows"], "blocked");
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// App-build lens (Item 7)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("app-build lens — empty workspace: model pending, dashboard blocked", () => {
+  const state = activation.deriveAppBuildLensState({ workspaceConfig: {} });
+  assert.equal(state.lensId, "app-build");
+  const byId = statusesById(state);
+  assert.equal(byId["model-object"], "pending");
+  assert.equal(byId["build-dashboard"], "blocked");
+  assert.equal(state.complete, false);
+});
+
+test("app-build lens — progresses with objects/dashboard/workflow but blocks on persistence/deploy", () => {
+  const state = activation.deriveAppBuildLensState({
+    workspaceConfig: {
+      dataModel: { objects: [
+        { id: "leads", objectType: "custom", rows: [] },
+        { objectType: "sandbox-environment", rows: [{ Name: "wf", lastResponse: JSON.stringify({ exitCode: 0 }) }] },
+      ] },
+      dashboards: [{ id: "d1", name: "Overview", tabs: [{ id: "t1", widgets: [{ id: "w1", kind: "chart" }] }] }],
+    },
+    // read-only persistence → durable-persistence step blocked
+    metadataGraph: { runtime: { persistenceMode: "read-only" } },
+  });
+  const byId = statusesById(state);
+  assert.equal(byId["model-object"], "complete");
+  assert.equal(byId["build-dashboard"], "complete");
+  assert.equal(byId["add-workflow"], "complete");
+  assert.equal(byId["land-run"], "complete");
+  assert.equal(byId["durable-persistence"], "blocked");
+  assert.equal(state.complete, false);
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Swarm packet across every registered lens + serialization + secret safety
+// ───────────────────────────────────────────────────────────────────────────
+
+test("swarm packet — works for every registered lens id", () => {
+  for (const entry of activation.WORKSPACE_LENS_REGISTRY) {
+    const packet = activation.deriveSwarmConditionPacket({ workspaceConfig: {} }, { lensId: entry.id });
+    assert.equal(packet.kind, "growthub-swarm-condition-packet-v1");
+    assert.equal(packet.lensId, entry.id);
+    assert.equal(typeof packet.currentState, "string");
+    assert.ok(Array.isArray(packet.availableTools));
+    assert.ok(Array.isArray(packet.expectedEvidence));
+  }
+});
+
+test("all lens + composed + packet outputs are JSON-serializable", () => {
+  const input = {
+    workspaceConfig: {
+      dataModel: { objects: [
+        { id: "api-registry", objectType: "api-registry", rows: [{ connectionIds: "conn_x", accessToken: "leak" }] },
+        { objectType: "sandbox-environment", rows: [{ Name: "wf", lastResponse: JSON.stringify({ exitCode: 1, error: "boom" }) }] },
+      ] },
+    },
+    metadataGraph: { runtime: { persistenceMode: "read-only", deploy: { target: "vercel" }, agents: [{ slug: "a" }] } },
+  };
+  for (const entry of activation.WORKSPACE_LENS_REGISTRY) {
+    assert.doesNotThrow(() => JSON.stringify(entry.derive(input)));
+  }
+  assert.doesNotThrow(() => JSON.stringify(activation.deriveWorkspaceState(input)));
+  for (const entry of activation.WORKSPACE_LENS_REGISTRY) {
+    assert.doesNotThrow(() => JSON.stringify(activation.deriveSwarmConditionPacket(input, { lensId: entry.id })));
+  }
+});
+
+test("no lens, composed state, or packet leaks secret-shaped strings", () => {
+  const input = {
+    workspaceConfig: {
+      dataModel: { objects: [
+        { id: "api-registry", objectType: "api-registry", rows: [{ connectionIds: "conn_SECRET_XYZ", accessToken: "Bearer-LEAK", apiKey: "sk-ant-LEAK", authRef: "NANGO_SECRET_KEY" }] },
+        { objectType: "sandbox-environment", rows: [{ Name: "wf", lastResponse: JSON.stringify({ exitCode: 1, error: "boom" }) }] },
+      ] },
+    },
+    metadataGraph: { runtime: { persistenceMode: "read-only", agents: [{ slug: "a", budgetMonthlyCents: 9999 }] } },
+  };
+  const FORBIDDEN = ["conn_SECRET_XYZ", "Bearer-LEAK", "sk-ant-LEAK", "access_token", "refresh_token", "Authorization"];
+  const blobs = [
+    JSON.stringify(activation.deriveWorkspaceState(input)),
+    ...activation.WORKSPACE_LENS_REGISTRY.map((e) => JSON.stringify(activation.deriveSwarmConditionPacket(input, { lensId: e.id }))),
+  ];
+  for (const blob of blobs) {
+    for (const needle of FORBIDDEN) {
+      assert.equal(blob.includes(needle), false, `output leaked "${needle}"`);
     }
   }
 });

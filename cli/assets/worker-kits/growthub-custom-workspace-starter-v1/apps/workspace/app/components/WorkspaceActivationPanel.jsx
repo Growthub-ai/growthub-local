@@ -30,7 +30,7 @@ import {
   Lock,
   Sparkles,
 } from "lucide-react";
-import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
+import { deriveWorkspaceActivationState, deriveWorkspaceState } from "@/lib/workspace-activation";
 
 function StatusIcon({ status }) {
   if (status === "complete") return <Check size={14} aria-hidden="true" />;
@@ -52,12 +52,22 @@ export function WorkspaceActivationPanel({
   metadataGraph,
   onOpenHelper,
   compact = false,
+  showLenses = false,
 }) {
   const state = deriveWorkspaceActivationState({
     workspaceConfig,
     workspaceSourceRecords,
     metadataGraph,
   });
+
+  // Secondary lenses (runtime persistence, orchestration health, deploy
+  // readiness, tasks, app buildout) are opt-in and never shown in the compact
+  // rail so the 0.13.7 activation flow stays unchanged by default. Pure
+  // derivation — no fetch, no mutation, no secrets.
+  const composedState = (showLenses && !compact)
+    ? deriveWorkspaceState({ workspaceConfig, workspaceSourceRecords, metadataGraph })
+    : null;
+  const secondaryLenses = composedState ? Object.values(composedState.lenses) : [];
 
   const stepsToRender = compact
     ? state.steps.filter((step) => step.status !== "optional")
@@ -147,6 +157,44 @@ export function WorkspaceActivationPanel({
           );
         })}
       </ol>
+
+      {secondaryLenses.length > 0 ? (
+        <div className="workspace-activation-lenses" aria-label="Workspace readiness lenses">
+          <p className="workspace-activation-lenses-title">Workspace readiness</p>
+          <ul className="workspace-activation-lenses-list" role="list">
+            {secondaryLenses.map((lens) => {
+              const lensNext = (lens.steps || []).find((s) => s.id === lens.nextStepId) || null;
+              return (
+                <li
+                  key={lens.lensId}
+                  className={"workspace-activation-lens is-" + lens.lensId + (lens.complete ? " is-complete" : "")}
+                  data-lens={lens.lensId}
+                >
+                  <div className="workspace-activation-lens-head">
+                    <span className="workspace-activation-lens-status" aria-hidden="true">
+                      <StatusIcon status={lens.complete ? "complete" : (lensNext ? lensNext.status : "optional")} />
+                    </span>
+                    <h4 className="workspace-activation-lens-title">{lens.title}</h4>
+                    <span
+                      className="workspace-activation-lens-progress"
+                      aria-label={`${lens.completedCount} of ${lens.totalCount} ready`}
+                    >
+                      {lens.completedCount}/{lens.totalCount}
+                    </span>
+                  </div>
+                  <p className="workspace-activation-lens-headline">{lens.headline}</p>
+                  {lensNext && lensNext.href ? (
+                    <Link href={lensNext.href} className="workspace-activation-lens-cta">
+                      <span>{lensNext.cta || lensNext.label}</span>
+                      <ArrowRight size={12} aria-hidden="true" />
+                    </Link>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {onOpenHelper ? (
         <div className="workspace-activation-helper-cta">

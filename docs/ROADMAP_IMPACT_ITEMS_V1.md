@@ -42,22 +42,37 @@ every state, and every derived nudge points at the two destinations that create 
 
 ### Implementation status
 
-The **derivation foundation** for this roadmap has shipped in-repo as a backward-compatible extension of the
-frozen activation module (`apps/workspace/lib/workspace-activation.js`), fully unit-tested
-(`scripts/unit-workspace-lenses.test.mjs`) and verified through the exported-workspace `next build`:
+The roadmap's **derivation layer** has shipped in-repo as a backward-compatible extension of the frozen
+activation module (`apps/workspace/lib/workspace-activation.js`), fully unit-tested
+(`scripts/unit-workspace-lenses.test.mjs`, 30 tests), surfaced in the existing panel, exposed over a read-only
+route, and verified through the exported-workspace `next build` + live HTTP probes:
 
 - **Item 1 (keystone)** — `WORKSPACE_LENS_REGISTRY` + `deriveWorkspaceState()` (composed state + one global next
   action). ✅ shipped
-- **Item 2 (persistence lens)** — `derivePersistenceLensState()` (pure-derivation nudge over the existing
-  persistence adapters). ✅ shipped
+- **Item 2 (persistence lens)** — `derivePersistenceLensState()` (durability nudge over the existing persistence
+  adapters). ✅ shipped
 - **Item 3 (observability lens)** — `deriveObservabilityLensState()` (run-state rollup: healthy/failing/never).
   ✅ shipped
-- **Item 8 (swarm packet)** — `deriveSwarmConditionPacket()` (assignable `{goal, state, blockedStep,
-  prerequisite, tools, evidence}`). ✅ shipped
+- **Item 5 (deploy lens)** — `deriveDeployLensState()` (pure derivation over deploy-check-shaped runtime signals
+  + persistence durability; blocks on read-only). ✅ shipped
+- **Item 6 (task lens)** — `deriveTaskLensState()` (pure derivation over governed Data Model rows; detects
+  governed and source-backed tasks; never creates rows or invents schema). ✅ shipped
+- **Item 7 (app-build lens)** — `deriveAppBuildLensState()` (readiness lens from object → dashboard → workflow →
+  run → durable persistence → deploy readiness → package; scaffolds nothing). ✅ shipped
+- **Item 8 (swarm packet)** — `deriveSwarmConditionPacket()` + read-only `GET /api/workspace/swarm-condition`
+  (assignable `{goal, currentState, nextAction, blockedStep, prerequisite, availableTools, expectedEvidence}`).
+  ✅ shipped
+- **Secondary-lens panel surfacing** — `WorkspaceActivationPanel` renders the registered secondary lenses
+  (opt-in via `showLenses`, never in the compact rail; the builder feeds a safe runtime descriptor). ✅ shipped
 
-Remaining for these items: surface the secondary lenses in `WorkspaceActivationPanel` (the renderer already
-accepts the typed shape) and expose the swarm packet behind a read-only route. Items 4–7 (multi-app
-management, deploy lens UI, governed tasks, the build-a-full-app lane) remain staged as described below.
+- **Item 4 (multi-app / fleet lens)** — ⏸ **staged, intentionally not implemented.** The exported workspace
+  runtime exposes no in-artifact multi-app surface registry to derive from (surface detection lives in the CLI's
+  `workspace surface list`, not in `growthub.config.json`). A Fleet lens requires a runtime surface-metadata
+  source first; inventing one would violate the pure-derivation guardrail. See Item 4 below.
+
+All shipped lenses keep the activation invariants: pure derivation, no fetch, no mutation, no secrets, never
+throws on partial input, hrefs route into existing surfaces only. The only mutation path remains
+`PATCH /api/workspace` (`dashboards | widgetTypes | canvas | dataModel`).
 
 ### The framing every item below obeys
 
