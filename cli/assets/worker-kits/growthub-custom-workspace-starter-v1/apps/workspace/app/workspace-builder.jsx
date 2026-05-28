@@ -29,6 +29,7 @@ import {
   GitBranch,
   Hash,
   Home,
+  Hourglass,
   Import,
   Italic,
   Layers,
@@ -85,8 +86,10 @@ import {
   deriveWidgetDependencyContract
 } from "@/lib/workspace-chart-values";
 import { selectObjectFilterableFields, selectObjectSortableFields } from "@/lib/workspace-metadata-selectors";
+import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
+import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
 
 // Workspace Metadata Graph V1 — typed dependency contracts.
 // Used by sidecar dependency summaries; the existing chart hydration path
@@ -110,6 +113,7 @@ const DATA_MODEL_SOURCE_TYPE = "workspace-data-model";
 const LIVE_SOURCE_TYPE = "workspace-source-records";
 const TESTED_SOURCE_STATUSES = new Set(["connected", "approved", "ok", "success"]);
 const HIDDEN_SANDBOX_OBJECT_IDS = new Set(["workspace-helper-sandbox"]);
+const WORKSPACE_UI_CACHE_OBJECT_ID = "workspace-ui-cache";
 
 const SOURCE_TYPE_OBJECTS = [
   {
@@ -172,6 +176,26 @@ const CHART_TYPE_ICONS = {
 };
 
 const VISIBLE_CHART_TYPES = KNOWN_CHART_TYPES.filter((type) => type !== "line");
+
+const TABLE_VIEW_TYPES = ["gantt", "board", "calendar", "timeline"];
+const TABLE_VIEW_LABELS = {
+  gantt: "Gantt",
+  board: "Board",
+  calendar: "Calendar",
+  timeline: "Timeline"
+};
+const TABLE_VIEW_HELP = {
+  gantt: "Track dependencies and baselines",
+  board: "Track work in a Kanban view",
+  calendar: "Plan weekly or monthly work",
+  timeline: "Schedule work over time"
+};
+const TABLE_VIEW_ICONS = {
+  gantt: GitBranch,
+  board: Columns3,
+  calendar: Calendar,
+  timeline: Rows3
+};
 
 // User-facing labels for the Twenty-style Y-axis operation dropdown.
 // Keys must stay in sync with `lib/workspace-chart-values.js#KNOWN_AGGREGATIONS`
@@ -407,6 +431,44 @@ function getWorkflowSandboxObject(config) {
   }) || null;
 }
 
+function getWorkspaceUiCache(config) {
+  const object = getDataModelObject(config, WORKSPACE_UI_CACHE_OBJECT_ID);
+  const row = Array.isArray(object?.rows) ? object.rows.find((entry) => entry?.id === "activation") : null;
+  return row && typeof row === "object" ? row : {};
+}
+
+function setWorkspaceUiCacheFlag(config, key, value) {
+  const dataModel = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+  const cacheObject = objects.find((object) => object?.id === WORKSPACE_UI_CACHE_OBJECT_ID) || {
+    id: WORKSPACE_UI_CACHE_OBJECT_ID,
+    label: "Workspace UI Cache",
+    source: "Workspace UI Cache",
+    objectType: "custom",
+    icon: "Settings",
+    columns: ["id", key],
+    rows: [],
+    binding: { mode: "manual", source: "Workspace UI Cache" }
+  };
+  const columns = Array.from(new Set([...(Array.isArray(cacheObject.columns) ? cacheObject.columns : ["id"]), key]));
+  const rows = Array.isArray(cacheObject.rows) ? cacheObject.rows : [];
+  const hasActivationRow = rows.some((row) => row?.id === "activation");
+  const nextRows = hasActivationRow
+    ? rows.map((row) => row?.id === "activation" ? { ...row, [key]: value } : row)
+    : [...rows, { id: "activation", [key]: value }];
+  const nextCacheObject = { ...cacheObject, columns, rows: nextRows };
+  const nextObjects = objects.some((object) => object?.id === WORKSPACE_UI_CACHE_OBJECT_ID)
+    ? objects.map((object) => object?.id === WORKSPACE_UI_CACHE_OBJECT_ID ? nextCacheObject : object)
+    : [...objects, nextCacheObject];
+  return {
+    ...config,
+    dataModel: {
+      ...dataModel,
+      objects: nextObjects
+    }
+  };
+}
+
 function listBuilderWorkflowItems(config) {
   const navFolders = getDataModelObject(config, "nav-folders");
   const rows = Array.isArray(navFolders?.rows) ? navFolders.rows : [];
@@ -476,11 +538,76 @@ function updateWorkflowFolderItemInConfig(config, workflow, updater) {
 }
 
 function createBlankWorkflowSandboxRow(rowId, nowIso) {
+  const registryId = "growthub-workspace-smoke-api";
   const draftGraph = JSON.stringify({
-    version: "0",
+    version: "1",
     provider: "growthub-native",
-    nodes: [],
-    edges: []
+    nodes: [
+      {
+        id: "input",
+        type: "input",
+        label: "Input",
+        subtitle: "Manual or source payload",
+        config: { inputMode: "manual", samplePayload: {}, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] }
+      },
+      {
+        id: "api-request",
+        type: "api-registry-call",
+        label: "API Registry",
+        subtitle: `${registryId} · GET /api/workspace`,
+        config: {
+          registryId,
+          integrationId: registryId,
+          baseUrl: "http://localhost:3000",
+          endpoint: "/api/workspace",
+          method: "GET",
+          authRef: "",
+          queryParams: {},
+          bodyTemplate: "",
+          requestHeadersMetadata: { authHeaderName: "x-api-key", authPrefix: "", contentType: "" },
+          timeoutMs: 30000
+        }
+      },
+      {
+        id: "transform",
+        type: "transform-filter",
+        label: "Transform",
+        subtitle: "Map fields and filter rows",
+        config: {
+          rootPath: "",
+          mode: "json",
+          responseMode: "json",
+          fieldMap: {},
+          includeFields: [],
+          excludeFields: [],
+          computedFields: {},
+          filters: [],
+          filterMode: "and",
+          maxRows: 0
+        }
+      },
+      {
+        id: "result",
+        type: "tool-result",
+        label: "Result",
+        subtitle: "Save status and response",
+        config: {
+          successStatusCodes: [200],
+          writeLastResponse: true,
+          writeSourceRecord: true,
+          sourceRecordId: "",
+          outputMode: "normalized-json",
+          previewFields: [],
+          statusField: "status",
+          lastTestedField: "lastTested"
+        }
+      }
+    ],
+    edges: [
+      { from: "input", to: "api-request", passes: "payload, filters, variables" },
+      { from: "api-request", to: "transform", passes: "provider-response" },
+      { from: "transform", to: "result", passes: "normalized-output" }
+    ]
   }, null, 2);
   return {
     Name: rowId,
@@ -520,11 +647,77 @@ function createBlankWorkflowSandboxRow(rowId, nowIso) {
   };
 }
 
+function createWorkflowApiRegistryObject() {
+  const preset = OBJECT_TYPE_PRESETS["api-registry"] || {};
+  const columns = Array.isArray(preset.columns) ? [...preset.columns] : ["integrationId"];
+  return {
+    id: "workflow-api-registry",
+    label: preset.label || "API Registry",
+    source: preset.label || "API Registry",
+    objectType: "api-registry",
+    icon: preset.icon || "Code2",
+    columns,
+    rows: [
+      {
+        integrationId: "growthub-workspace-smoke-api",
+        authRef: "",
+        baseUrl: "http://localhost:3000",
+        endpoint: "/api/workspace",
+        method: "GET",
+        status: "draft",
+        lastTested: "",
+        lastResponse: "",
+        entityTypes: "workspace",
+        description: "Local workspace smoke endpoint for first workflow setup.",
+        connectorKind: "custom-http",
+        resolverTemplateId: "",
+        schemaVersion: "1",
+        capabilities: "read",
+        executionLane: "sandbox-local"
+      }
+    ],
+    binding: { mode: "manual", source: "Data Model" },
+    relations: Array.isArray(preset.relations) ? preset.relations.map((relation) => ({ ...relation })) : [],
+    fieldSettings: { hidden: [], order: columns }
+  };
+}
+
+function createWorkflowSandboxObject() {
+  const preset = OBJECT_TYPE_PRESETS["sandbox-environment"] || {};
+  const columns = Array.isArray(preset.columns) ? [...preset.columns] : ["Name"];
+  return {
+    id: "sandbox-environments",
+    label: preset.label || "Sandbox Environments",
+    source: preset.label || "Sandbox Environments",
+    objectType: "sandbox-environment",
+    icon: preset.icon || "Terminal",
+    columns,
+    rows: [],
+    binding: { mode: "manual", source: "Data Model" },
+    relations: Array.isArray(preset.relations) ? preset.relations.map((relation) => ({ ...relation })) : [],
+    fieldSettings: { hidden: [], order: columns }
+  };
+}
+
 function addWorkflowFolderShortcut(dataModel, workflow) {
   const objects = Array.isArray(dataModel?.objects) ? dataModel.objects : [];
-  const navIndex = objects.findIndex((object) => object?.id === "nav-folders");
-  if (navIndex < 0) return dataModel;
-  const navObject = objects[navIndex];
+  const seededObjects = objects.some((object) => object?.id === "nav-folders")
+    ? objects
+    : [
+        ...objects,
+        {
+          id: "nav-folders",
+          label: "Custom Folders",
+          source: "Custom Folders",
+          objectType: "custom",
+          icon: "Folder",
+          columns: ["name", "order", "collapsed", "items"],
+          rows: [],
+          binding: { mode: "manual", source: "Custom Folders" }
+        }
+      ];
+  const navIndex = seededObjects.findIndex((object) => object?.id === "nav-folders");
+  const navObject = seededObjects[navIndex];
   const rows = Array.isArray(navObject.rows) ? navObject.rows : [];
   const folderName = "Builder";
   const existingFolder = rows.find((row) => String(row?.name || "").trim().toLowerCase() === folderName.toLowerCase());
@@ -562,7 +755,7 @@ function addWorkflowFolderShortcut(dataModel, workflow) {
       ];
   return {
     ...dataModel,
-    objects: objects.map((object, index) => index === navIndex ? { ...navObject, rows: nextRows } : object)
+    objects: seededObjects.map((object, index) => index === navIndex ? { ...navObject, rows: nextRows } : object)
   };
 }
 
@@ -939,6 +1132,43 @@ function getVisibleColumns(widget) {
   return ordered.filter((name) => !hidden.has(name));
 }
 
+function getTableViewSettings(widget) {
+  const settings = widget?.config?.fieldSettings?.tableView;
+  return isPlainConfigObject(settings) ? settings : {};
+}
+
+function getTableViewType(widget) {
+  const type = getTableViewSettings(widget).type;
+  return TABLE_VIEW_TYPES.includes(type) ? type : "";
+}
+
+function getFieldValue(row, field, fallback = "") {
+  if (!row || !field) return fallback;
+  const value = row[field];
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function firstMatchingField(columns, candidates) {
+  const lower = columns.map((column) => [column, String(column).toLowerCase()]);
+  for (const candidate of candidates) {
+    const found = lower.find(([, name]) => name.includes(candidate));
+    if (found) return found[0];
+  }
+  return columns[0] || "";
+}
+
+function resolveTableViewFields(widget) {
+  const columns = getVisibleColumns(widget);
+  const settings = getTableViewSettings(widget);
+  return {
+    titleField: settings.titleField || firstMatchingField(columns, ["title", "name", "task", "project"]),
+    statusField: settings.statusField || firstMatchingField(columns, ["status", "stage", "state", "lane"]),
+    startDateField: settings.startDateField || firstMatchingField(columns, ["start", "created", "date"]),
+    endDateField: settings.endDateField || firstMatchingField(columns, ["end", "due", "deadline", "target"]),
+  };
+}
+
 function withFieldSettings(config, patch) {
   const current = isPlainConfigObject(config?.fieldSettings) ? config.fieldSettings : { hidden: [], order: [] };
   return {
@@ -947,6 +1177,21 @@ function withFieldSettings(config, patch) {
       hidden: Array.isArray(current.hidden) ? [...current.hidden] : [],
       order: Array.isArray(current.order) ? [...current.order] : [],
       ...patch
+    }
+  };
+}
+
+function withTableViewSettings(config, patch) {
+  const current = isPlainConfigObject(config?.fieldSettings) ? config.fieldSettings : {};
+  const currentTableView = isPlainConfigObject(current.tableView) ? current.tableView : {};
+  return {
+    ...config,
+    fieldSettings: {
+      ...current,
+      tableView: {
+        ...currentTableView,
+        ...patch
+      }
     }
   };
 }
@@ -1113,6 +1358,10 @@ function summarizeFields(widget) {
   const hidden = getHiddenColumnSet(widget).size;
   if (!total) return "0 shown";
   return hidden ? `${total - hidden} of ${total} shown` : `${total} shown`;
+}
+
+function summarizeTableView(widget) {
+  return TABLE_VIEW_LABELS[getTableViewType(widget)] || "Table";
 }
 
 function summarizeSort(widget) {
@@ -2633,6 +2882,105 @@ function SortSubPanel({ widget, dataModelTable, onChange, onBack }) {
   </section>;
 }
 
+function TableViewConfig({ widget, dataModelTable, onChange, onSubPage }) {
+  const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
+  const columns = getVisibleColumns(viewWidget);
+  const tableView = getTableViewSettings(widget);
+  const activeType = getTableViewType(widget);
+  const setTableView = (patch) => onChange(withTableViewSettings(widget.config, patch));
+  const fieldOptions = columns.length ? columns : getColumnList(viewWidget);
+  return (
+    <div className="workspace-twenty-config workspace-table-view-config" role="group" aria-label="Table view widget settings">
+      <p className="workspace-panel-label">Settings</p>
+      <WidgetSettingsRow icon={Table2} label="Layout" value={summarizeTableView(widget)} disabled />
+      <div className="workspace-chart-type-tabs workspace-table-view-tabs" role="tablist" aria-label="Table view type">
+        {TABLE_VIEW_TYPES.map((type) => {
+          const TypeIcon = TABLE_VIEW_ICONS[type];
+          return (
+            <button
+              key={type}
+              type="button"
+              role="tab"
+              aria-selected={activeType === type}
+              className={activeType === type ? "active" : ""}
+              onClick={() => setTableView({ type: activeType === type ? "" : type })}
+              title={TABLE_VIEW_HELP[type]}
+            >
+              <IconGlyph icon={TypeIcon} size={17} />
+              <em>{TABLE_VIEW_LABELS[type]}</em>
+            </button>
+          );
+        })}
+      </div>
+      {activeType ? <p className="workspace-panel-hint">{TABLE_VIEW_HELP[activeType]}</p> : null}
+
+      <WidgetSettingsRow icon={Box} label="Source" value={summarizeSource(widget)} onClick={() => onSubPage("source")} />
+      <WidgetSettingsRow icon={List} label="Fields" value={summarizeFields(viewWidget)} onClick={() => onSubPage("fields")} />
+      <WidgetSettingsRow icon={Filter} label="Filter" value={summarizeFilter(viewWidget)} onClick={() => onSubPage("filter")} />
+      <WidgetSettingsRow icon={SlidersHorizontal} label="Sort" value={summarizeSort(viewWidget)} onClick={() => onSubPage("sort")} />
+
+      {activeType ? (
+        <>
+          <p className="workspace-panel-label">View fields</p>
+          <WidgetSelectRow icon={Type} label="Title">
+            <FieldDropdown
+              fields={fieldOptions}
+              value={tableView.titleField || ""}
+              onChange={(field) => setTableView({ titleField: field })}
+              placeholder="Auto"
+              disabled={!fieldOptions.length}
+            />
+          </WidgetSelectRow>
+          {activeType === "board" ? (
+            <WidgetSelectRow icon={Columns3} label="Status">
+              <FieldDropdown
+                fields={fieldOptions}
+                value={tableView.statusField || ""}
+                onChange={(field) => setTableView({ statusField: field })}
+                placeholder="Auto"
+                disabled={!fieldOptions.length}
+              />
+            </WidgetSelectRow>
+          ) : null}
+          {activeType === "gantt" || activeType === "timeline" ? (
+            <>
+              <WidgetSelectRow icon={Calendar} label="Start">
+                <FieldDropdown
+                  fields={fieldOptions}
+                  value={tableView.startDateField || ""}
+                  onChange={(field) => setTableView({ startDateField: field })}
+                  placeholder="Auto"
+                  disabled={!fieldOptions.length}
+                />
+              </WidgetSelectRow>
+              <WidgetSelectRow icon={Calendar} label="End">
+                <FieldDropdown
+                  fields={fieldOptions}
+                  value={tableView.endDateField || ""}
+                  onChange={(field) => setTableView({ endDateField: field })}
+                  placeholder="Auto"
+                  disabled={!fieldOptions.length}
+                />
+              </WidgetSelectRow>
+            </>
+          ) : null}
+          {activeType === "calendar" ? (
+            <WidgetSelectRow icon={Calendar} label="Date">
+              <FieldDropdown
+                fields={fieldOptions}
+                value={tableView.startDateField || ""}
+                onChange={(field) => setTableView({ startDateField: field })}
+                placeholder="Auto"
+                disabled={!fieldOptions.length}
+              />
+            </WidgetSelectRow>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function FilterSubPanel({ widget, integrations, dataModelTable, adapterConfig, onRefreshAndSave, onChange, onBack }) {
   const viewWidget = dataModelTable ? resolveViewWidget(widget, [dataModelTable]) : widget;
   const binding = widget.config?.binding || {};
@@ -3374,6 +3722,55 @@ function IframePreviewModal({ widget, onClose }) {
   </div>;
 }
 
+function TableTransformPreview({ widget, columns, rows }) {
+  const type = getTableViewType(widget);
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!type) {
+    return <div
+      className="workspace-view-table"
+      aria-label={`${widget.title} preview`}
+      style={{ "--workspace-view-columns": columns.length }}
+    >
+      <div>{columns.map((column) => <span key={column}>{column}</span>)}</div>
+      {safeRows.slice(0, 6).map((row, rowIndex) => <div key={rowIndex}>
+        {columns.map((column) => <span key={column}>{row?.[column] || ""}</span>)}
+      </div>)}
+      {!columns.length && !safeRows.length ? <div className="workspace-view-empty">Select a source</div> : null}
+      <footer>Calculate</footer>
+    </div>;
+  }
+  const fields = resolveTableViewFields(widget);
+  if (type === "board") {
+    const groups = safeRows.slice(0, 8).reduce((acc, row) => {
+      const status = getFieldValue(row, fields.statusField, "Open");
+      if (!acc[status]) acc[status] = [];
+      acc[status].push(row);
+      return acc;
+    }, {});
+    return <div className="workspace-table-transform-preview is-board">
+      {Object.entries(groups).slice(0, 3).map(([status, groupRows]) => <section key={status}>
+        <strong>{status}</strong>
+        {groupRows.slice(0, 3).map((row, index) => <span key={index}>{getFieldValue(row, fields.titleField, `Row ${index + 1}`)}</span>)}
+      </section>)}
+    </div>;
+  }
+  if (type === "calendar") {
+    return <div className="workspace-table-transform-preview is-calendar">
+      {["Mon", "Tue", "Wed", "Thu", "Fri"].map((day, index) => <section key={day}>
+        <strong>{day}</strong>
+        {safeRows[index] ? <span>{getFieldValue(safeRows[index], fields.titleField, `Row ${index + 1}`)}</span> : null}
+      </section>)}
+    </div>;
+  }
+  return <div className={`workspace-table-transform-preview is-${type}`}>
+    {safeRows.slice(0, 5).map((row, index) => <div key={index}>
+      <span>{getFieldValue(row, fields.titleField, `Row ${index + 1}`)}</span>
+      <i style={{ "--offset": `${(index % 4) * 14}%`, "--width": `${34 + (index % 3) * 12}%` }} />
+      <em>{getFieldValue(row, fields.startDateField, getFieldValue(row, fields.endDateField, ""))}</em>
+    </div>)}
+  </div>;
+}
+
 function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRemove, onResizeStart, onExpandIframe }) {
   const fallbackColumns = widget.config?.columns?.length ? widget.config.columns : [];
   const visibleColumns = widget.kind === "view" ? getVisibleColumns(widget) : fallbackColumns;
@@ -3416,18 +3813,7 @@ function WidgetPreview({ widget, branding, selected, onSelect, onMoveStart, onRe
         type="button"
       ><X size={13} /></button>
     </div>
-    {widget.kind === "view" ? <div
-      className="workspace-view-table"
-      aria-label={`${widget.title} preview`}
-      style={{ "--workspace-view-columns": viewColumns.length }}
-    >
-      <div>{viewColumns.map((column) => <span key={column}>{column}</span>)}</div>
-      {viewRows.slice(0, 6).map((row, rowIndex) => <div key={rowIndex}>
-        {viewColumns.map((column) => <span key={column}>{row?.[column] || ""}</span>)}
-      </div>)}
-      {!viewColumns.length && !viewRows.length ? <div className="workspace-view-empty">Select a source</div> : null}
-      <footer>Calculate</footer>
-    </div> : null}
+    {widget.kind === "view" ? <TableTransformPreview widget={widget} columns={viewColumns} rows={viewRows} /> : null}
     {widget.kind === "iframe" ? <div className="workspace-iframe-preview">
       {isLikelyHttpUrl(widget.config?.url) ? <iframe title={`${widget.title} preview`} src={widget.config.url} /> : <span>Enter a valid http(s) URL</span>}
       <button type="button" onClick={(event) => {
@@ -3842,6 +4228,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   const [editingTabId, setEditingTabId] = useState(null);
   const [editingTabDraft, setEditingTabDraft] = useState("");
   const [workspaceView, setWorkspaceView] = useState("dashboards");
+  const [activationPanelOpen, setActivationPanelOpen] = useState(false);
   const [builderListFilter, setBuilderListFilter] = useState({ type: "all", query: "" });
   const [builderActionMenuId, setBuilderActionMenuId] = useState(null);
   const [builderActionMenuPlacement, setBuilderActionMenuPlacement] = useState(null);
@@ -3925,6 +4312,19 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       ? initialSourceRecords
       : {})
   );
+  const activationState = useMemo(() => deriveWorkspaceActivationState({
+    workspaceConfig: config,
+    workspaceSourceRecords,
+  }), [config, workspaceSourceRecords]);
+  const activationStarted = activationState.completedCount > 0;
+  const activationComplete = Boolean(activationState.complete);
+  const activationUiCache = useMemo(() => getWorkspaceUiCache(config), [config]);
+  const activationButtonHidden = activationUiCache.finishSetupButtonHidden === true
+    || String(activationUiCache.finishSetupButtonHidden || "") === "true";
+  const showFinishSetupButton = workspaceView === "dashboards" && activationStarted && !activationButtonHidden;
+  const showActivationPanel = workspaceView === "dashboards" && (
+    !activationStarted || activationPanelOpen
+  );
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
@@ -3937,6 +4337,24 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     () => listWorkspaceDataModelTables(config, { sourceRecords: workspaceSourceRecords }),
     [config, workspaceSourceRecords]
   );
+
+  const dismissFinishSetupButton = useCallback(async () => {
+    const nextConfig = setWorkspaceUiCacheFlag(config, "finishSetupButtonHidden", true);
+    setActivationPanelOpen(false);
+    setConfig(nextConfig);
+    try {
+      const response = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: nextConfig.dataModel })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.workspaceConfig) throw new Error(payload.error || "Failed to save workspace preference");
+      setConfig((prev) => ({ ...prev, dataModel: payload.workspaceConfig.dataModel }));
+    } catch (error) {
+      setConfigMessage(error.message || "Failed to save workspace preference");
+    }
+  }, [config]);
   const selectedResolvedWidget = selectedWidget ? resolveViewWidget(selectedWidget, dataModelTables) : null;
   const branding = config.branding || {};
   const occupiedCells = useMemo(() => {
@@ -4222,11 +4640,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   const createWorkflow = useCallback(async () => {
     if (saving) return;
     const nowIso = new Date().toISOString();
-    const existing = getWorkflowSandboxObject(config);
-    if (!existing) {
-      setConfigMessage("Workflow sandbox object is missing.");
-      return;
-    }
+    const existing = getWorkflowSandboxObject(config) || createWorkflowSandboxObject();
     const sandboxObjectId = String(existing.id || "").trim();
     const rows = Array.isArray(existing.rows) ? existing.rows : [];
     const base = slugifyWorkflowName(`workflow-${rows.length + 1}`);
@@ -4240,11 +4654,20 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     const sandboxRow = createBlankWorkflowSandboxRow(rowId, nowIso);
     const nextDataModel = {
       ...(config.dataModel || {}),
-      objects: (Array.isArray(config.dataModel?.objects) ? config.dataModel.objects : []).map((object) =>
-        object?.id === sandboxObjectId
-          ? { ...object, rows: [...(Array.isArray(object.rows) ? object.rows : []), sandboxRow] }
-          : object
-      )
+      objects: (() => {
+        const objects = Array.isArray(config.dataModel?.objects) ? config.dataModel.objects : [];
+        const hasSandboxObject = objects.some((object) => object?.id === sandboxObjectId);
+        const hasSmokeRegistry = objects.some((object) => object?.id === "workflow-api-registry")
+          || objects.some((object) =>
+            object?.objectType === "api-registry"
+            && (Array.isArray(object.rows) ? object.rows : []).some((row) => row?.integrationId === "growthub-workspace-smoke-api")
+          );
+        const nextSandboxObject = { ...existing, rows: [...rows, sandboxRow] };
+        const nextObjects = hasSandboxObject
+          ? objects.map((object) => object?.id === sandboxObjectId ? nextSandboxObject : object)
+          : [...objects, nextSandboxObject];
+        return hasSmokeRegistry ? nextObjects : [...nextObjects, createWorkflowApiRegistryObject()];
+      })()
     };
     const finalDataModel = addWorkflowFolderShortcut(nextDataModel, {
       objectId: sandboxObjectId,
@@ -4306,6 +4729,36 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     if (dashboards[targetIndex]?.id === resolvedActiveDashboardId && workspaceView === "builder") return;
     selectDashboard(targetIndex);
   }, [dashboards, resolvedActiveDashboardId, searchParams, selectDashboard, workspaceView]);
+
+  const openAddWidgetBuilder = useCallback(() => {
+    const targetDashboard = activeDashboard || dashboards[0];
+    if (!targetDashboard) return false;
+    setConfig((prev) => {
+      const synced = syncActiveDashboard(prev, activeDashboardId);
+      const prevDashboards = synced.dashboards || [];
+      const dashboard = prevDashboards.find((item) => item.id === targetDashboard.id) || prevDashboards[0];
+      if (!dashboard) return prev;
+      const normalized = normalizeDashboard(dashboard, dashboard.id === prevDashboards[0]?.id ? synced.canvas : undefined);
+      const nextCanvas = dashboardCanvasFrom(normalized, synced.canvas);
+      const nextActiveWidgets = getTabs(nextCanvas)[0]?.widgets || [];
+      setSelectedWidgetId(null);
+      setPendingSelectedWidgetId(null);
+      setSelectedPosition(findFreePosition(nextActiveWidgets));
+      setDragPreview(null);
+      setActiveDashboardId(normalized.id);
+      setWorkspaceView("builder");
+      setDashboardLiveSnapshot(cloneConfig(normalized));
+      setDashboardDraftMode(true);
+      setPanelOpen(true);
+      setConfigMessage(`Editing draft for ${normalized.name}`);
+      return {
+        ...synced,
+        dashboards: prevDashboards.map((item) => item.id === normalized.id ? normalized : item),
+        canvas: nextCanvas
+      };
+    });
+    return true;
+  }, [activeDashboard, activeDashboardId, dashboards]);
 
   const enterDashboardTitleEdit = useCallback((dashboard) => {
     if (!dashboard) return;
@@ -5384,6 +5837,33 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
             <button type="button" className="dm-workflow-chip-btn" onClick={exportConfig}><Download size={13} />Export</button>
             <button type="button" className="dm-workflow-icon-btn" onClick={() => importInputRef.current?.click()} aria-label="Import"><Import size={14} /></button>
           </div> : <div className="workspace-toolbar-actions">
+            {showFinishSetupButton ? (
+              <span className={`workspace-finish-setup-control${activationComplete ? " is-complete" : ""}`}>
+                <button
+                  type="button"
+                  className="workspace-finish-setup-trigger"
+                  onClick={() => {
+                    setWorkspaceView("dashboards");
+                    setActivationPanelOpen((open) => !open);
+                  }}
+                >
+                  {activationComplete ? null : <Hourglass size={15} />}
+                  <span>{activationComplete ? "Setup Complete" : "Finish Workspace Setup"}</span>
+                </button>
+                {activationComplete ? (
+                  <button
+                    type="button"
+                    className="workspace-finish-setup-dismiss"
+                    aria-label="Hide completed workspace setup"
+                    title="Hide completed workspace setup"
+                    onClick={dismissFinishSetupButton}
+                  >
+                    <Check className="workspace-finish-setup-dismiss-check" size={15} aria-hidden="true" />
+                    <X className="workspace-finish-setup-dismiss-x" size={15} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
             <button type="button" onClick={createWorkflow} disabled={saving}><GitBranch size={15} />New Workflow</button>
             <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
@@ -5397,7 +5877,26 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           />
         </header>
 
-        {workspaceView === "dashboards" ? <section className="workspace-table" id="dashboards" aria-label="Builder">
+        {workspaceView === "dashboards" ? <>
+          {showActivationPanel ? <WorkspaceActivationPanel
+            workspaceConfig={config}
+            workspaceSourceRecords={workspaceSourceRecords}
+            onStepAction={(step) => {
+              if (step?.id === "add-widget") return openAddWidgetBuilder();
+              if (step?.id === "create-workflow") {
+                createWorkflow();
+                return true;
+              }
+              return false;
+            }}
+            onOpenHelper={() => {
+              setHelperIntent("explain");
+              setHelperInitialPrompt("Help me finish setting up this workspace.");
+              setHelperInitialThread(null);
+              setHelperOpen(true);
+            }}
+          /> : null}
+        <section className="workspace-table" id="dashboards" aria-label="Builder">
           <div className="workspace-table-heading">
             <strong>Builder</strong>
             <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"} · {workflows.length} workflow{workflows.length === 1 ? "" : "s"}</span>
@@ -5564,7 +6063,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
                 )}
               </span>
             </div>)}
-        </section> : null}
+        </section>
+        </> : null}
 
         {workspaceView === "builder" ? <section className="workspace-canvas" id="canvas" aria-label="Composable dashboard canvas">
           <div className="workspace-tabs">
@@ -5836,14 +6336,12 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
             </small>
           </label> : null}
           {selectedWidget.kind === "view" ? <section className="workspace-field-stack">
-            <div className="workspace-twenty-config" role="group" aria-label="View widget settings">
-              <p className="workspace-panel-label">Settings</p>
-              <WidgetSettingsRow icon={Table2} label="Layout" value={selectedWidget.config?.layout || "Table"} disabled />
-              <WidgetSettingsRow icon={Box} label="Source" value={summarizeSource(selectedWidget)} onClick={() => setInspectorPath("source")} />
-              <WidgetSettingsRow icon={List} label="Fields" value={summarizeFields(selectedResolvedWidget || selectedWidget)} onClick={() => setInspectorPath("fields")} />
-              <WidgetSettingsRow icon={Filter} label="Filter" value={summarizeFilter(selectedResolvedWidget || selectedWidget)} onClick={() => setInspectorPath("filter")} />
-              <WidgetSettingsRow icon={SlidersHorizontal} label="Sort" value={summarizeSort(selectedResolvedWidget || selectedWidget)} onClick={() => setInspectorPath("sort")} />
-            </div>
+            <TableViewConfig
+              widget={selectedWidget}
+              dataModelTable={resolveDataModelTable(dataModelTables, selectedWidget.config?.binding)}
+              onChange={replaceSelectedWidgetConfig}
+              onSubPage={(name) => setInspectorPath(name)}
+            />
           </section> : null}
         </section> : null}
         {!selectedWidget ? <section>

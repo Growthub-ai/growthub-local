@@ -448,6 +448,7 @@ function deriveManualObjectTable(object, options = {}) {
 const HIDDEN_HELPER_OBJECT_IDS = new Set([
   "workspace-helper-sandbox",
   "nav-folders",
+  "workspace-ui-cache",
 ]);
 
 /**

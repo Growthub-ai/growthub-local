@@ -51,6 +51,7 @@ import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
+import { deriveProvenance, hasConnectionId } from "@/lib/workspace-activation";
 
 // Workspace Metadata Graph V1 — read-only dependency metadata for workflow
 // sidecars. The runtime path (sandbox-run, publish, draft/live) is
@@ -386,6 +387,33 @@ export default function WorkflowSurface() {
     () => (sandboxRow && workspaceConfig ? resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) : null),
     [workspaceConfig, sandboxRow]
   );
+
+  // Template-aware activation banner. When the active workflow belongs to
+  // a seeded template (project-management today) and its provider row
+  // doesn't have a connectionId yet, surface a back-link to the API
+  // Registry / Nango panel so the user can finish setup without hunting
+  // through Data Model surfaces.
+  const templateBanner = useMemo(() => {
+    if (!workspaceConfig) return null;
+    const provenance = deriveProvenance(workspaceConfig);
+    if (provenance.template !== "project-management") return null;
+    if (!registryRow) return null;
+    const ready = hasConnectionId(registryRow);
+    const apiRegistryObjectId = String(
+      (Array.isArray(workspaceConfig?.dataModel?.objects)
+        ? workspaceConfig.dataModel.objects.find((o) => o?.objectType === "api-registry")?.id
+        : "") || ""
+    );
+    const apiRegistryRowId = String(registryRow.integrationId || "").trim();
+    const backHref = apiRegistryObjectId && apiRegistryRowId
+      ? `/data-model?object=${encodeURIComponent(apiRegistryObjectId)}&row=${encodeURIComponent(apiRegistryRowId)}`
+      : "/data-model";
+    return {
+      ready,
+      backHref,
+      providerConfigKey: String(registryRow.providerConfigKey || registryRow.integrationId || "").trim(),
+    };
+  }, [workspaceConfig, registryRow]);
 
   useEffect(() => {
     setSidecarMode(runId ? "trace" : "graph");
@@ -875,6 +903,22 @@ export default function WorkflowSurface() {
             </Link>
           </div>
         </header>
+
+        {templateBanner ? (
+          <div
+            className={"workspace-template-context-banner" + (templateBanner.ready ? "" : " is-warn")}
+            role="note"
+          >
+            <span>
+              {templateBanner.ready
+                ? `Provider connected via Nango${templateBanner.providerConfigKey ? ` (${templateBanner.providerConfigKey})` : ""}. Ready to run.`
+                : "Connect your provider through Nango before running this workflow."}
+            </span>
+            <Link href={templateBanner.backHref} className="workspace-template-context-link">
+              <span>{templateBanner.ready ? "Manage connection" : "Open Nango panel"}</span>
+            </Link>
+          </div>
+        ) : null}
 
         {loading ? (
           <p className="dm-workflow-empty">Loading workflow…</p>
