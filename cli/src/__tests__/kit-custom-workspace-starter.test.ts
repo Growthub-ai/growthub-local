@@ -4046,3 +4046,104 @@ describe("metadata-graph projection — full-envelope secret/redaction guarantee
     expect(json).not.toContain("raw-output-XYZ");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 15. Customer Activation Layer V1 — files ship, derivation safe, panel mounted
+// ---------------------------------------------------------------------------
+
+describe("workspace-activation — Customer Activation Layer V1", () => {
+  it("workspace-activation.js ships in lib/", () => {
+    expect(appExists("lib/workspace-activation.js")).toBe(true);
+    const source = appText("lib/workspace-activation.js");
+    expect(source).toContain("function deriveWorkspaceActivationState");
+    expect(source).toContain("function deriveProjectManagementActivationState");
+    expect(source).toContain("function deriveBlankWorkspaceActivationState");
+    expect(source).toMatch(/export\s*\{[^}]*deriveWorkspaceActivationState[^}]*\}/s);
+  });
+
+  it("WorkspaceActivationPanel.jsx ships in app/components/", () => {
+    expect(appExists("app/components/WorkspaceActivationPanel.jsx")).toBe(true);
+    const source = appText("app/components/WorkspaceActivationPanel.jsx");
+    expect(source).toContain("WorkspaceActivationPanel");
+    expect(source).toContain("@/lib/workspace-activation");
+  });
+
+  it("workspace-rail.jsx accepts an activationSlot prop and renders it in Home", () => {
+    const rail = appText("app/workspace-rail.jsx");
+    expect(rail).toContain("activationSlot");
+    expect(rail).toContain("workspace-rail-activation-slot");
+  });
+
+  it("workspace-builder.jsx mounts WorkspaceActivationPanel in the dashboards view", () => {
+    const builder = appText("app/workspace-builder.jsx");
+    expect(builder).toContain("WorkspaceActivationPanel");
+    expect(builder).toContain('from "./components/WorkspaceActivationPanel.jsx"');
+  });
+
+  it("WorkflowSurface.jsx wires a template-aware context banner", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("@/lib/workspace-activation");
+    expect(surface).toContain("templateBanner");
+    expect(surface).toContain("workspace-template-context-banner");
+  });
+
+  it("NangoConnectionPanel.jsx accepts optional template context CTAs", () => {
+    const panel = appText("app/data-model/components/NangoConnectionPanel.jsx");
+    expect(panel).toContain("templateContext");
+    expect(panel).toContain("workspace-template-context-banner");
+  });
+
+  it("workspace-metadata-store exposes a provenance projection (safe, no secrets)", () => {
+    const store = appText("lib/workspace-metadata-store.js");
+    expect(store).toContain("function deriveWorkspaceProvenanceMetadataItems");
+    expect(store).toContain('kind: "workspaceProvenance"');
+    expect(store).toContain("hasProvenance");
+    expect(store).toContain("connectionsConfigured");
+    expect(store).toMatch(/export\s*\{[^}]*deriveWorkspaceProvenanceMetadataItems[^}]*\}/s);
+  });
+
+  it("metadata-graph route exposes the new provenance metadata block", () => {
+    const route = appText("app/api/workspace/metadata-graph/route.js");
+    expect(route).toMatch(/provenance:\s*metadataStore\.provenance/);
+  });
+
+  it("project-management seed has provenance + uses the runtime rows schema", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const seedPath = path.join(root, "assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/project-management.config.json");
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    expect(seed.provenance).toBeDefined();
+    expect(seed.provenance.template).toBe("project-management");
+    expect(seed.provenance.templateKind).toBe("workspace-template");
+    // The runtime contract uses dataModel.objects[].rows[], not .records[].
+    for (const object of seed.dataModel.objects) {
+      expect("records" in object).toBe(false);
+      expect(Array.isArray(object.rows)).toBe(true);
+    }
+  });
+
+  it("project-management seed ships no provider secrets or connection IDs", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const seedPath = path.join(root, "assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/project-management.config.json");
+    const seedJson = fs.readFileSync(seedPath, "utf8");
+    expect(seedJson).not.toMatch(/Bearer\s+\w+/);
+    expect(seedJson).not.toMatch(/sk-ant-[A-Za-z0-9_-]+/);
+    // The api-registry row may declare the providerConfigKey but must not
+    // pre-populate any connectionIds — those are operator-owned post-OAuth.
+    const seed = JSON.parse(seedJson);
+    const apiRegistry = seed.dataModel.objects.find((o: { objectType?: string }) => o.objectType === "api-registry");
+    expect(apiRegistry).toBeDefined();
+    for (const row of apiRegistry.rows) {
+      const connectionIds = typeof row.connectionIds === "string"
+        ? row.connectionIds.trim()
+        : row.connectionIds;
+      expect(connectionIds || "").toBe("");
+    }
+  });
+
+  it("activation kit assets are listed as frozen assets in kit.json", () => {
+    const kitJson = JSON.parse(readText("kit.json"));
+    const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+    expect(frozen).toContain("apps/workspace/lib/workspace-activation.js");
+    expect(frozen).toContain("apps/workspace/app/components/WorkspaceActivationPanel.jsx");
+  });
+});

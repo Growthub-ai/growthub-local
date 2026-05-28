@@ -31,7 +31,7 @@
           "nangoMode",
           "nangoEnvironment"
         ],
-        "records": [
+        "rows": [
           {
             "integrationId": "asana-active-tasks",
             "authRef": "NANGO_SECRET_KEY",
@@ -86,7 +86,7 @@
           "entityType",
           "description"
         ],
-        "records": [
+        "rows": [
           {
             "Name": "Active project tasks",
             "registryId": "asana-active-tasks",
@@ -146,7 +146,7 @@
           "orchestrationConfig",
           "description"
         ],
-        "records": [
+        "rows": [
           {
             "Name": "project-active-tasks-workflow",
             "lifecycleStatus": "draft",
@@ -194,7 +194,7 @@
       "tabs": [
         {
           "id": "tab-project-tasks",
-          "label": "Active Tasks",
+          "name": "Active Tasks",
           "widgets": [
             {
               "id": "project-active-tasks-view",

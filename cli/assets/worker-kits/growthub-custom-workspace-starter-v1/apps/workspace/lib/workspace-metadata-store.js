@@ -942,6 +942,83 @@ function deriveWorkspaceWorkflowActionMetadataItems(workflowNodeItems) {
 }
 
 /**
+ * Workspace PROVENANCE metadata.
+ *
+ * Surfaces the `provenance` block of a seeded workspace template (e.g.
+ * the Project Management seed) as safe booleans + strings so the customer
+ * activation layer can derive setup state without re-parsing the config.
+ * The block intentionally only echoes non-secret descriptors:
+ *
+ *   - template slug (e.g. "project-management")
+ *   - template kind (e.g. "workspace-template")
+ *   - privacy descriptor (e.g. "sanitized-no-secrets-no-provider-data")
+ *   - booleans: has provider api-registry row, has any configured
+ *     connectionId, has any persisted source records, has at least one
+ *     seeded workflow row, has at least one seeded dashboard.
+ *
+ * Returns a single-item list so the metadata store can stay shape-stable
+ * even when no provenance block exists.
+ */
+function deriveWorkspaceProvenanceMetadataItems(workspaceConfig, workspaceSourceRecords) {
+  const safeConfig = isPlainObject(workspaceConfig) ? workspaceConfig : {};
+  const provenance = isPlainObject(safeConfig.provenance) ? safeConfig.provenance : null;
+  const objects = Array.isArray(safeConfig.dataModel?.objects) ? safeConfig.dataModel.objects : [];
+  let apiRegistryRows = 0;
+  let nangoRows = 0;
+  let connectionsConfigured = 0;
+  let sandboxRows = 0;
+  for (const object of objects) {
+    if (!isPlainObject(object)) continue;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    if (object.objectType === "api-registry") {
+      apiRegistryRows += rows.length;
+      for (const row of rows) {
+        if (!isPlainObject(row)) continue;
+        if (safeString(row.connectorKind).trim().toLowerCase() === "nango") nangoRows += 1;
+        const raw = row.connectionIds ?? row.connectionId;
+        if (Array.isArray(raw)) {
+          if (raw.some((entry) => safeString(entry).trim())) connectionsConfigured += 1;
+        } else if (safeString(raw).trim()) {
+          connectionsConfigured += 1;
+        }
+      }
+    }
+    if (object.objectType === "sandbox-environment") {
+      sandboxRows += rows.length;
+    }
+  }
+  let sourceRecordKeys = 0;
+  if (isPlainObject(workspaceSourceRecords)) {
+    for (const value of Object.values(workspaceSourceRecords)) {
+      if (!isPlainObject(value)) continue;
+      const count = Number.isFinite(value.recordCount)
+        ? Number(value.recordCount)
+        : Array.isArray(value.records) ? value.records.length : 0;
+      if (count > 0) sourceRecordKeys += 1;
+    }
+  }
+  return {
+    items: [{
+      kind: "workspaceProvenance",
+      id: safeString(provenance?.template).trim() || "blank",
+      metadataId: stableId("provenance", safeString(provenance?.template).trim() || "blank"),
+      template: safeString(provenance?.template).trim() || "blank",
+      templateKind: safeString(provenance?.templateKind).trim(),
+      privacy: safeString(provenance?.privacy).trim(),
+      mirrors: safeString(provenance?.mirrors).trim(),
+      hasProvenance: Boolean(provenance),
+      apiRegistryRows,
+      nangoRows,
+      connectionsConfigured,
+      sandboxRows,
+      hydratedSourceRecordKeys: sourceRecordKeys,
+      hasSeededDashboard: Array.isArray(safeConfig.dashboards) && safeConfig.dashboards.length > 0
+    }],
+    warnings: []
+  };
+}
+
+/**
  * Worker kit metadata.
  *
  * The metadata graph is scoped to a single workspace; the worker kit it
@@ -1073,6 +1150,9 @@ function buildWorkspaceMetadataStore({
   const workerKits = deriveWorkspaceWorkerKitMetadataItems(safeConfig);
   warnings.push(...workerKits.warnings);
 
+  const provenance = deriveWorkspaceProvenanceMetadataItems(safeConfig, safeSourceRecords);
+  warnings.push(...provenance.warnings);
+
   const pipelineHealth = deriveWorkspacePipelineHealthMetadataItems(sandboxes.items, runs.items);
   warnings.push(...pipelineHealth.warnings);
 
@@ -1098,6 +1178,7 @@ function buildWorkspaceMetadataStore({
     runs: runs.items,
     outputArtifacts: runs.outputArtifacts,
     workerKits: workerKits.items,
+    provenance: provenance.items,
     pipelineHealth: pipelineHealth.items,
     warnings
   };
@@ -1181,6 +1262,7 @@ export {
   deriveWorkspaceRunRecordMetadataItems,
   deriveWorkspaceRunMetadataItems,
   deriveWorkspaceWorkerKitMetadataItems,
+  deriveWorkspaceProvenanceMetadataItems,
   deriveWorkspacePipelineHealthMetadataItems,
   isSecretKey
 };
