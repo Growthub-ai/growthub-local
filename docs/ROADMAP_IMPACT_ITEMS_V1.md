@@ -40,6 +40,25 @@ every state, and every derived nudge points at the two destinations that create 
 2. **Building and shipping full custom applications** — the loop doesn't stop at a dashboard; it nudges all
    the way to a deployed, swarm-operable application.
 
+### Implementation status
+
+The **derivation foundation** for this roadmap has shipped in-repo as a backward-compatible extension of the
+frozen activation module (`apps/workspace/lib/workspace-activation.js`), fully unit-tested
+(`scripts/unit-workspace-lenses.test.mjs`) and verified through the exported-workspace `next build`:
+
+- **Item 1 (keystone)** — `WORKSPACE_LENS_REGISTRY` + `deriveWorkspaceState()` (composed state + one global next
+  action). ✅ shipped
+- **Item 2 (persistence lens)** — `derivePersistenceLensState()` (pure-derivation nudge over the existing
+  persistence adapters). ✅ shipped
+- **Item 3 (observability lens)** — `deriveObservabilityLensState()` (run-state rollup: healthy/failing/never).
+  ✅ shipped
+- **Item 8 (swarm packet)** — `deriveSwarmConditionPacket()` (assignable `{goal, state, blockedStep,
+  prerequisite, tools, evidence}`). ✅ shipped
+
+Remaining for these items: surface the secondary lenses in `WorkspaceActivationPanel` (the renderer already
+accepts the typed shape) and expose the swarm packet behind a read-only route. Items 4–7 (multi-app
+management, deploy lens UI, governed tasks, the build-a-full-app lane) remain staged as described below.
+
 ### The framing every item below obeys
 
 Each item is expressed as **the actual config deltas it reads/writes in the information space**, plus the

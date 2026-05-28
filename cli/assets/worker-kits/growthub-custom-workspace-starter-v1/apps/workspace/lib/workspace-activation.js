@@ -521,14 +521,473 @@ function deriveWorkspaceActivationState(input = {}) {
   return deriveBlankWorkspaceActivationState(safeInput);
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Workspace State Lenses — generalize the activation derivation primitive
+// ───────────────────────────────────────────────────────────────────────────
+//
+// The activation layer proved one idea: a delta in the workspace artifact is
+// causal — it re-derives a typed, self-describing "what's next" state. A *lens*
+// is the same primitive aimed at a different slice of the artifact. Every lens
+// is a pure function over the same envelope and emits the same step shape the
+// WorkspaceActivationPanel already renders, so new lenses cost no new UI.
+//
+// Lens output shape (sibling to the activation state):
+//
+//   {
+//     kind:        "growthub-workspace-lens-state-v1"
+//     lensId:      string
+//     title:       string
+//     headline:    string
+//     subheadline: string
+//     complete:    boolean
+//     completedCount / totalCount / nextStepId
+//     steps: [{ id, label, description, status, href, hint?, cta? }]
+//   }
+//
+// Invariants are inherited verbatim from the activation layer: pure derivation,
+// no secrets (booleans/counts only), never throws on partial input, and every
+// `href` routes into an existing workspace surface.
+
+const LENS_STATE_KIND = "growthub-workspace-lens-state-v1";
+const WORKSPACE_STATE_KIND = "growthub-workspace-state-v1";
+const SWARM_PACKET_KIND = "growthub-swarm-condition-packet-v1";
+
+/** Shared step scoring convention used by every lens. */
+function scoreLensSteps(steps) {
+  const required = steps.filter((step) => step.status !== "optional");
+  const totalCount = required.length;
+  const completedCount = required.filter((step) => step.status === "complete").length;
+  const complete = completedCount >= totalCount;
+  const nextStep = steps.find((step) => step.status === "pending" || step.status === "blocked");
+  return { totalCount, completedCount, complete, nextStepId: nextStep ? nextStep.id : null };
+}
+
+/** Collect every sandbox-environment workflow row across the data model. */
+function collectSandboxRows(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects)
+    ? workspaceConfig.dataModel.objects
+    : [];
+  const rows = [];
+  for (const object of objects) {
+    if (!isPlainObject(object) || object.objectType !== "sandbox-environment") continue;
+    for (const row of listObjectRows(object)) {
+      if (isPlainObject(row)) rows.push(row);
+    }
+  }
+  return rows;
+}
+
+/**
+ * Persistence & runtime-durability lens (roadmap Item 2 — derivation).
+ *
+ * Reads the resolved persistence mode/adapter (surfaced via
+ * metadataGraph.runtime when the server provides it) and whether durable run
+ * evidence exists, then nudges the workspace toward a store where workflow
+ * runs, source records, and agent-swarm evidence survive restart/redeploy.
+ *
+ * The persistence adapters themselves already ship
+ * (lib/adapters/persistence/{postgres,qstash-kv,provider-managed}.js); this
+ * lens is the self-describing activation pathway over them.
+ */
+function derivePersistenceLensState(input = {}) {
+  const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
+  const graph = isPlainObject(input?.metadataGraph) ? input.metadataGraph : {};
+  const rt = isPlainObject(graph?.runtime) ? graph.runtime : {};
+
+  const persistenceMode = safeString(rt.persistenceMode).trim() || null; // filesystem|read-only|database
+  const persistenceAdapter = safeString(rt.persistenceAdapter).trim() || null;
+  const allowFsWrite = rt.allowFsWrite === true;
+
+  // Run evidence lives in sandbox-environment object ROWS (canonical shape —
+  // see findWorkflowRow / the project-management seed), not on the object.
+  const sandboxRows = collectSandboxRows(cfg);
+  const hasRunEvidence = sandboxRows.some(
+    (row) => safeString(row.lastResponse).trim() !== "" || safeString(row.lastRunId).trim() !== "",
+  );
+
+  const isDurableDatabase = persistenceMode === "database" && persistenceAdapter !== null;
+  const isDurableFilesystem = persistenceMode === "filesystem" && allowFsWrite;
+  const isDurable = isDurableDatabase || isDurableFilesystem;
+  const isReadOnly = persistenceMode === "read-only"
+    || (persistenceMode === "filesystem" && !allowFsWrite);
+  const modeResolved = persistenceMode !== null;
+
+  const steps = [];
+
+  steps.push({
+    id: "choose-persistence",
+    label: "Choose a persistence mode",
+    description: "Resolve where the workspace stores run state, source records, and agent-swarm evidence.",
+    status: modeResolved ? "complete" : "pending",
+    href: "/settings",
+    cta: modeResolved ? "Review persistence" : "Open persistence settings",
+  });
+
+  if (isDurable) {
+    steps.push({
+      id: "enable-durable-store",
+      label: "Enable a durable store",
+      description: "Runs and agent-swarm evidence are written to a persistent backing store and survive redeploy.",
+      status: "complete",
+      href: "/settings",
+      hint: isDurableDatabase ? `Durable database adapter active (${persistenceAdapter}).` : "Filesystem writes enabled.",
+      cta: "Review store",
+    });
+  } else if (!modeResolved) {
+    steps.push({
+      id: "enable-durable-store",
+      label: "Enable a durable store",
+      description: "Configure a database adapter or enable filesystem writes so run data persists across restarts.",
+      status: "blocked",
+      href: "/settings",
+      hint: "Resolve the persistence mode first — the workspace can't persist runs until a store is chosen.",
+      cta: "Configure persistence",
+    });
+  } else {
+    steps.push({
+      id: "enable-durable-store",
+      label: "Enable a durable store",
+      description: "Persistence is read-only: PATCH returns 409 and run data is held only in-process — it won't survive redeploy.",
+      status: "blocked",
+      href: "/settings",
+      hint: `Mode "${persistenceMode}" is read-only. Switch to "database" or set WORKSPACE_CONFIG_ALLOW_FS_WRITE for filesystem.`,
+      cta: "Switch to a durable store",
+    });
+  }
+
+  if (hasRunEvidence && isDurable) {
+    steps.push({
+      id: "verify-run-durability",
+      label: "Verify run durability",
+      description: "Workflow runs are recorded and the store is durable — evidence will survive redeploy.",
+      status: "complete",
+      href: "/workflows",
+      cta: "Review runs",
+    });
+  } else if (hasRunEvidence && !isDurable) {
+    steps.push({
+      id: "verify-run-durability",
+      label: "Verify run durability",
+      description: "Workflow runs exist but the store is read-only. This evidence is ephemeral and will be lost on redeploy.",
+      status: "blocked",
+      href: "/workflows",
+      hint: "Enable a durable store to preserve the run records you've already produced.",
+      cta: "Review affected runs",
+    });
+  } else {
+    steps.push({
+      id: "verify-run-durability",
+      label: "Verify run durability",
+      description: "After workflows run, this confirms run evidence is persisted to the durable store.",
+      status: "optional",
+      href: "/workflows",
+      cta: "Open workflows",
+    });
+  }
+
+  const { totalCount, completedCount, complete, nextStepId } = scoreLensSteps(steps);
+
+  let headline;
+  let subheadline;
+  if (complete && steps.every((step) => step.status !== "blocked")) {
+    headline = "Workspace persistence is durable.";
+    subheadline = "Run evidence and source records will survive redeploy.";
+  } else if (!modeResolved) {
+    headline = "Persistence mode is not configured.";
+    subheadline = "Next: choose a persistence mode in settings.";
+  } else if (isReadOnly && hasRunEvidence) {
+    headline = "Store is read-only — run evidence is ephemeral.";
+    subheadline = "Next: switch to a durable store to preserve existing runs.";
+  } else if (isReadOnly) {
+    headline = "Store is read-only — runs won't survive redeploy.";
+    subheadline = "Next: enable a durable adapter or allow filesystem writes.";
+  } else {
+    headline = "Durable store active.";
+    subheadline = "Run a workflow to confirm end-to-end durability.";
+  }
+
+  return {
+    kind: LENS_STATE_KIND,
+    lensId: "persistence",
+    title: "Runtime persistence",
+    headline,
+    subheadline,
+    complete,
+    completedCount,
+    totalCount,
+    nextStepId,
+    steps,
+  };
+}
+
+/**
+ * Orchestration-health / observability lens (roadmap Item 3 — derivation).
+ *
+ * Rolls up run-state deltas across every sandbox-environment workflow row into
+ * legible counts (healthy / failing / never-run) and points at the next action
+ * — launch an idle workflow or fix a failing one. This is the surface that
+ * makes an agent swarm's work steerable rather than opaque.
+ */
+function deriveObservabilityLensState(input = {}) {
+  const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
+  const graph = isPlainObject(input?.metadataGraph) ? input.metadataGraph : {};
+
+  const rows = collectSandboxRows(cfg);
+  let healthy = 0;
+  let failing = 0;
+  let neverRun = 0;
+  for (const row of rows) {
+    const { status } = deriveLatestRunStatus(row);
+    if (status === "ok") healthy += 1;
+    else if (status === "failed") failing += 1;
+    else neverRun += 1;
+  }
+  const workflowsTotal = rows.length;
+  const agents = Array.isArray(graph?.runtime?.agents) ? graph.runtime.agents.length : 0;
+  const rollup = { workflowsTotal, healthy, failing, neverRun, agents };
+
+  const steps = [
+    {
+      id: "have-workflow",
+      label: "Register a workflow",
+      description: "Add at least one sandbox-environment workflow to begin orchestration.",
+      status: workflowsTotal > 0 ? "complete" : "pending",
+      href: "/workflows",
+      cta: workflowsTotal > 0 ? "Open Workflows" : "New workflow",
+    },
+    {
+      id: "first-healthy-run",
+      label: "Land a healthy run",
+      description: "At least one workflow must complete successfully.",
+      status: healthy > 0 ? "complete" : (workflowsTotal === 0 ? "blocked" : "pending"),
+      href: "/workflows",
+      hint: workflowsTotal === 0 ? "Register a workflow first." : "",
+      cta: healthy > 0 ? "View runs" : "Run a workflow",
+    },
+    {
+      id: "resolve-failures",
+      label: "Resolve failing runs",
+      description: "Every failing workflow should be fixed or disabled.",
+      status: workflowsTotal === 0 ? "pending" : (failing > 0 ? "blocked" : "complete"),
+      href: "/workflows",
+      hint: failing > 0 ? `${failing} workflow${failing === 1 ? " is" : "s are"} failing — open the run trace.` : "",
+      cta: failing > 0 ? "Open failing runs" : "Review",
+    },
+    {
+      id: "launch-next",
+      label: "Launch idle workflows",
+      description: "Kick off any workflow that has never run.",
+      status: neverRun > 0 ? "pending" : (workflowsTotal > 0 ? "complete" : "optional"),
+      href: "/workflows",
+      hint: neverRun > 0 ? `${neverRun} workflow${neverRun === 1 ? " has" : "s have"} never run.` : "",
+      cta: neverRun > 0 ? "Launch workflow" : "Review",
+    },
+  ];
+
+  // Drop empty hints so the rendered panel stays clean.
+  for (const step of steps) {
+    if (!step.hint) delete step.hint;
+  }
+
+  const { totalCount, completedCount, complete, nextStepId } = scoreLensSteps(steps);
+
+  let headline;
+  let subheadline;
+  if (workflowsTotal === 0) {
+    headline = "No workflows registered yet.";
+    subheadline = "Add a workflow to start tracking orchestration health.";
+  } else {
+    const parts = [];
+    if (healthy > 0) parts.push(`${healthy} healthy`);
+    if (failing > 0) parts.push(`${failing} failing`);
+    if (neverRun > 0) parts.push(`${neverRun} never run`);
+    headline = `${workflowsTotal} workflow${workflowsTotal === 1 ? "" : "s"}: ${parts.join(", ")}.`;
+    if (failing > 0) {
+      subheadline = `Next: fix ${failing} failing workflow${failing === 1 ? "" : "s"}.`;
+    } else if (neverRun > 0) {
+      subheadline = `Next: launch ${neverRun} idle workflow${neverRun === 1 ? "" : "s"}.`;
+    } else {
+      subheadline = "All workflows are healthy.";
+    }
+  }
+
+  return {
+    kind: LENS_STATE_KIND,
+    lensId: "observability",
+    title: "Orchestration health",
+    headline,
+    subheadline,
+    complete,
+    completedCount,
+    totalCount,
+    nextStepId,
+    steps,
+    rollup,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Lens registry + composed workspace state (roadmap Item 1 — the keystone)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * The lens registry. The activation deriver is the `primary` lens (it keeps
+ * its own v1 state kind for backwards compatibility); every other entry is a
+ * secondary lens that plugs into the same panel and the same swarm packet.
+ * Adding a roadmap item is "register a deriver" — no new surface.
+ */
+const WORKSPACE_LENS_REGISTRY = [
+  { id: "activation", title: "Activation", primary: true, derive: deriveWorkspaceActivationState },
+  { id: "persistence", title: "Runtime persistence", primary: false, derive: derivePersistenceLensState },
+  { id: "observability", title: "Orchestration health", primary: false, derive: deriveObservabilityLensState },
+];
+
+function getLensEntry(lensId) {
+  return WORKSPACE_LENS_REGISTRY.find((entry) => entry.id === lensId) || null;
+}
+
+/**
+ * Compose every registered lens into a single workspace state and resolve the
+ * one highest-value next action across the whole workspace: prefer the primary
+ * activation step, then fall back to the first incomplete secondary lens.
+ */
+function deriveWorkspaceState(input = {}) {
+  const safeInput = {
+    workspaceConfig: isPlainObject(input.workspaceConfig) ? input.workspaceConfig : {},
+    workspaceSourceRecords: isPlainObject(input.workspaceSourceRecords) ? input.workspaceSourceRecords : {},
+    metadataGraph: isPlainObject(input.metadataGraph) ? input.metadataGraph : null,
+  };
+
+  const primaryEntry = WORKSPACE_LENS_REGISTRY.find((entry) => entry.primary);
+  const primary = primaryEntry.derive(safeInput);
+  const lenses = {};
+  for (const entry of WORKSPACE_LENS_REGISTRY) {
+    if (entry.primary) continue;
+    lenses[entry.id] = entry.derive(safeInput);
+  }
+
+  const stepFromState = (lensId, state) => {
+    if (!state || !state.nextStepId) return null;
+    const step = (state.steps || []).find((s) => s.id === state.nextStepId);
+    if (!step) return null;
+    return { lensId, stepId: step.id, label: step.label, status: step.status, href: step.href || "/" };
+  };
+
+  let nextAction = null;
+  if (!primary.complete) nextAction = stepFromState("activation", primary);
+  if (!nextAction) {
+    for (const entry of WORKSPACE_LENS_REGISTRY) {
+      if (entry.primary) continue;
+      const state = lenses[entry.id];
+      if (state && !state.complete) {
+        nextAction = stepFromState(entry.id, state);
+        if (nextAction) break;
+      }
+    }
+  }
+
+  const complete = primary.complete
+    && WORKSPACE_LENS_REGISTRY.every((entry) => entry.primary || lenses[entry.id].complete);
+
+  return {
+    kind: WORKSPACE_STATE_KIND,
+    version: 1,
+    primary,
+    lenses,
+    nextAction,
+    complete,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Swarm-assignable condition packet (roadmap Item 8)
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Derive the safe tool surface available to an agent operating this workspace. */
+function deriveAvailableTools(workspaceConfig) {
+  const tools = [
+    "workspace UI (same surfaces a human uses)",
+    "PATCH /api/workspace (dashboards | widgetTypes | canvas | dataModel)",
+  ];
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects)
+    ? workspaceConfig.dataModel.objects
+    : [];
+  const hasRegistry = objects.some((o) => isPlainObject(o) && o.objectType === "api-registry");
+  const hasSandbox = objects.some((o) => isPlainObject(o) && o.objectType === "sandbox-environment");
+  if (hasRegistry) tools.push("Nango proxy (/api/workspace/integrations/nango/proxy)");
+  if (hasSandbox) tools.push("sandbox-run (POST /api/workspace/sandbox-run)");
+  return tools;
+}
+
+/**
+ * Compose any registered lens into the swarm assignment shape: a single
+ * read-only packet that hands an agent (or a swarm) a workspace *condition*
+ * instead of a vague prompt — goal, current state, the blocked step, its
+ * prerequisite, the tools available, and the evidence it must produce. The
+ * human panel and this packet read the identical derived state.
+ */
+function deriveSwarmConditionPacket(input = {}, options = {}) {
+  const safeInput = {
+    workspaceConfig: isPlainObject(input.workspaceConfig) ? input.workspaceConfig : {},
+    workspaceSourceRecords: isPlainObject(input.workspaceSourceRecords) ? input.workspaceSourceRecords : {},
+    metadataGraph: isPlainObject(input.metadataGraph) ? input.metadataGraph : null,
+  };
+  const lensId = safeString(options.lensId).trim() || "activation";
+  const entry = getLensEntry(lensId) || getLensEntry("activation");
+  const state = entry.derive(safeInput);
+  const steps = Array.isArray(state.steps) ? state.steps : [];
+
+  const blocked = steps.find((s) => s.status === "blocked") || null;
+  const nextStep = steps.find((s) => s.id === state.nextStepId) || null;
+  const blockedStep = blocked || nextStep;
+  // The prerequisite is the last completed step before the blocker, surfaced
+  // as guidance (the blocker's own hint already explains *why*).
+  const prerequisite = blockedStep
+    ? (safeString(blockedStep.hint).trim() || "Complete the prior step to unblock this one.")
+    : null;
+
+  return {
+    kind: SWARM_PACKET_KIND,
+    version: 1,
+    lensId: entry.id,
+    goal: safeString(state.headline).trim() || `Activate the ${safeString(state.title || state.templateName).trim()} workspace.`,
+    currentState: `${state.completedCount}/${state.totalCount}`,
+    complete: Boolean(state.complete),
+    nextAction: nextStep
+      ? { stepId: nextStep.id, label: nextStep.label, href: nextStep.href || "/", status: nextStep.status }
+      : null,
+    blockedStep: blockedStep
+      ? { stepId: blockedStep.id, label: blockedStep.label, status: blockedStep.status }
+      : null,
+    prerequisite,
+    availableTools: deriveAvailableTools(safeInput.workspaceConfig),
+    expectedEvidence: [
+      "run record (sandbox-environment row lastResponse)",
+      "hydrated source records",
+      "dashboard rollup reflecting the new state",
+    ],
+  };
+}
+
 export {
   ACTIVATION_KIND,
   ACTIVATION_VERSION,
   TEMPLATE_PROJECT_MANAGEMENT,
+  LENS_STATE_KIND,
+  WORKSPACE_STATE_KIND,
+  SWARM_PACKET_KIND,
   deriveWorkspaceActivationState,
   deriveProjectManagementActivationState,
   deriveBlankWorkspaceActivationState,
   deriveProvenance,
   hasConnectionId,
   hasSourceRecords,
+  // Workspace State Lens registry (roadmap Item 1) + lenses (Items 2, 3)
+  WORKSPACE_LENS_REGISTRY,
+  getLensEntry,
+  deriveWorkspaceState,
+  derivePersistenceLensState,
+  deriveObservabilityLensState,
+  // Swarm-assignable condition packet (roadmap Item 8)
+  deriveSwarmConditionPacket,
 };
