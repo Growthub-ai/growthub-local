@@ -445,46 +445,53 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-rail.is-collapsed {
   padding: 18px 10px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
+/* Collapsed rail = a single clean icon column. Every primary action stays
+   tracked as an icon (toggle, home, search, chat, builder, lens, management,
+   settings); only labels, folders, chat list, brand, helper pill, activation
+   panel, and the duplicate top-bar gear are hidden. Native title attributes
+   provide the hover tooltip of each item's name. */
 .workspace-rail.is-collapsed .workspace-rail-brand-button,
 .workspace-rail.is-collapsed .workspace-rail-folders,
-.workspace-rail.is-collapsed .workspace-nav,
 .workspace-rail.is-collapsed .workspace-rail-chat,
 .workspace-rail.is-collapsed .workspace-rail-status,
-.workspace-rail.is-collapsed .workspace-rail-helper-pill {
+.workspace-rail.is-collapsed .workspace-rail-helper-pill,
+.workspace-rail.is-collapsed .workspace-rail-activation-slot,
+.workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-label="Workspace settings"],
+.workspace-rail.is-collapsed .workspace-nav-label {
   display: none;
 }
-.workspace-rail.is-collapsed .workspace-rail-topbar {
-  justify-content: center;
-  width: 100%;
+.workspace-rail.is-collapsed .workspace-rail-topbar,
+.workspace-rail.is-collapsed .workspace-rail-topbar-actions,
+.workspace-rail.is-collapsed .workspace-rail-tabbar,
+.workspace-rail.is-collapsed .workspace-rail-tabs {
   display: contents;
 }
-.workspace-rail.is-collapsed .workspace-rail-topbar-actions {
-  display: contents;
-}
-.workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-pressed="true"] {
-  order: 1;
-}
-.workspace-rail.is-collapsed .workspace-rail-icon-btn[data-rail-search] {
-  order: 3;
-}
-.workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-label="Workspace settings"] {
-  order: 4;
-}
+/* Vertical order: toggle · home · search · chat · [nav: builder, lens,
+   management, settings]. */
+.workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-pressed="true"] { order: 1; }
+.workspace-rail.is-collapsed .workspace-rail-tab[aria-label="Home"] { order: 2; }
+.workspace-rail.is-collapsed .workspace-rail-icon-btn[data-rail-search] { order: 3; }
+.workspace-rail.is-collapsed .workspace-rail-tab[aria-label="Helper conversations"] { order: 4; }
+.workspace-rail.is-collapsed .workspace-nav { order: 5; }
 .workspace-rail.is-collapsed .workspace-rail-icon-btn[aria-pressed="true"] svg {
   transform: rotate(180deg);
 }
-.workspace-rail.is-collapsed .workspace-rail-tabbar {
+.workspace-rail.is-collapsed .workspace-nav {
   display: flex;
-  justify-content: center;
-  width: 100%;
-  order: 2;
-}
-.workspace-rail.is-collapsed .workspace-rail-tabs {
   flex-direction: column;
+  align-items: center;
   gap: 8px;
+  width: 100%;
+}
+.workspace-rail.is-collapsed .workspace-nav a,
+.workspace-rail.is-collapsed .workspace-nav .workspace-nav-button {
+  justify-content: center;
+  gap: 0;
   padding: 0;
+  width: 34px;
+  height: 34px;
 }
 .workspace-rail.is-collapsed .workspace-rail-tab,
 .workspace-rail.is-collapsed .workspace-rail-icon-btn {
@@ -525,12 +532,31 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   margin-top: 2px;
 }
 .workspace-nav a,
-.workspace-nav-static {
+.workspace-nav-static,
+.workspace-nav .workspace-nav-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   border-radius: 6px;
   color: #686868;
   font-size: 13px;
   padding: 8px 9px;
   text-decoration: none;
+  width: 100%;
+}
+.workspace-nav a > svg,
+.workspace-nav .workspace-nav-button > svg {
+  flex-shrink: 0;
+  color: #9a9a9a;
+}
+.workspace-nav a.active > svg,
+.workspace-nav .workspace-nav-button.active > svg {
+  color: #2c2c2c;
+}
+.workspace-nav-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .workspace-nav-static {
   cursor: default;

@@ -36,14 +36,17 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
+  BarChart3,
   ChevronDown,
   ChevronRight,
+  Database,
   Folder,
   FolderPlus,
   GitBranch,
   Home,
   LayoutDashboard,
   MessageCircle,
+  Wrench,
   MessageCirclePlus,
   MoreHorizontal,
   MoreVertical,
@@ -1757,24 +1760,19 @@ export function WorkspaceRail({
             <div className="workspace-rail-activation-slot">{activationSlot}</div>
           ) : null}
           {dashboardsSlot ?? (
-            <Link href="/" className={pathname === "/" ? "active" : undefined}>
-              Builder
-            </Link>
-          )}
-          {dataModelSlot ?? (
-            <Link
-              href="/data-model"
-              className={pathname.startsWith("/data-model") ? "active" : undefined}
-            >
-              Management
+            <Link href="/" title="Builder" className={pathname === "/" ? "active" : undefined}>
+              <Wrench size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Builder</span>
             </Link>
           )}
           {lensUnlocked ? (
             <Link
               href="/workspace-lens"
+              title="Workspace Lens"
               className={pathname.startsWith("/workspace-lens") ? "active" : undefined}
             >
-              Workspace Lens
+              <BarChart3 size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Workspace Lens</span>
             </Link>
           ) : (
             <button
@@ -1783,15 +1781,28 @@ export function WorkspaceRail({
               disabled
               title="Finish workspace setup to unlock Workspace Lens"
             >
-              Workspace Lens
+              <BarChart3 size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Workspace Lens</span>
             </button>
+          )}
+          {dataModelSlot ?? (
+            <Link
+              href="/data-model"
+              title="Management"
+              className={pathname.startsWith("/data-model") ? "active" : undefined}
+            >
+              <Database size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Management</span>
+            </Link>
           )}
           {settingsSlot ?? (
             <Link
               href="/settings/general"
+              title="Workspace Settings"
               className={"workspace-nav-bottom" + (pathname.startsWith("/settings") ? " active" : "")}
             >
-              Workspace Settings
+              <Settings size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Workspace Settings</span>
             </Link>
           )}
         </nav>

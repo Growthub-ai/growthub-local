@@ -59,6 +59,7 @@ import {
   Trash2,
   Type,
   Users,
+  Wrench,
   X,
   Zap,
 } from "lucide-react";
@@ -5764,6 +5765,40 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       id: "workspace.builder", group: "Navigation", icon: Home, label: "Go to Builder",
       run: () => showDashboardHome()
     });
+    list.push({
+      id: "nav.data-model", group: "Navigation", icon: Database, label: "Go to Management (Data Model)",
+      run: () => { window.location.href = "/data-model"; }
+    });
+
+    // Workspace Lens — fast navigation into the post-activation operating
+    // surface and its filtered views. Unlocks once activation completes.
+    const lensReady = Boolean(activationState?.complete);
+    list.push({
+      id: "lens.open", group: "Workspace Lens", icon: BarChart3,
+      label: lensReady ? "Open Workspace Lens" : "Workspace Lens (finish setup to unlock)",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens"; }
+    });
+    list.push({
+      id: "lens.blocked", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Blocked",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=blocked"; }
+    });
+    list.push({
+      id: "lens.ready", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Ready",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=ready"; }
+    });
+    list.push({
+      id: "lens.assignable", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Agent-assignable",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=assignable"; }
+    });
+    list.push({
+      id: "lens.runs", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Runs",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=runs"; }
+    });
 
     return list;
   }, [
@@ -5782,7 +5817,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     saving,
     selectedWidget,
     showDashboardHome,
-    workspaceView
+    workspaceView,
+    activationState
   ]);
 
   return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
@@ -5810,10 +5846,12 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         dashboardsSlot={(
           <button
             type="button"
+            title="Builder"
             className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"}
             onClick={showDashboardHome}
           >
-            Builder
+            <Wrench size={15} aria-hidden="true" />
+            <span className="workspace-nav-label">Builder</span>
           </button>
         )}
         managementSlot={(
