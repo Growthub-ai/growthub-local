@@ -341,6 +341,65 @@ test("contributions — never throws, no secret values leak", () => {
   assert.equal(JSON.stringify(c).includes("conn_SECRET"), false);
 });
 
+// ───────────────────────────────────────────────────────────────────────────
+// Lens walkthrough eligibility (one-time reveal)
+// ───────────────────────────────────────────────────────────────────────────
+
+// A blank workspace that derives activation-complete (5/5).
+function completeConfig(extraObjects = []) {
+  return {
+    dataModel: { objects: [
+      { id: "leads", objectType: "custom", rows: [] },
+      { objectType: "sandbox-environment", rows: [{ Name: "wf", lastResponse: JSON.stringify({ exitCode: 0 }) }] },
+      ...extraObjects,
+    ] },
+    dashboards: [{ id: "d1", name: "O", tabs: [{ id: "t1", widgets: [{ id: "w1", kind: "chart" }] }] }],
+  };
+}
+
+test("walkthrough — hidden until onboarding completes", () => {
+  const w = activation.deriveLensWalkthroughState({ workspaceConfig: {} });
+  assert.equal(w.activationComplete, false);
+  assert.equal(w.show, false);
+});
+
+test("walkthrough — shows in the in-between state (complete, no activity, not dismissed)", () => {
+  const w = activation.deriveLensWalkthroughState({ workspaceConfig: completeConfig() });
+  assert.equal(w.activationComplete, true);
+  assert.equal(w.hasActivity, false);
+  assert.equal(w.dismissed, false);
+  assert.equal(w.show, true);
+});
+
+test("walkthrough — hidden once the workspace has activity (power user)", () => {
+  const cfg = completeConfig();
+  cfg.dataModel.objects[1].rows[0].lastResponse = JSON.stringify({ exitCode: 0, ranAt: "2026-05-20T10:00:00Z" });
+  const w = activation.deriveLensWalkthroughState({ workspaceConfig: cfg });
+  assert.equal(w.hasActivity, true);
+  assert.equal(w.show, false);
+});
+
+test("walkthrough — hidden permanently once dismissed via ui-cache flag", () => {
+  const cfg = completeConfig([
+    { id: "workspace-ui-cache", objectType: "custom", rows: [{ id: "activation", lensWalkthroughDismissed: true }] },
+  ]);
+  const w = activation.deriveLensWalkthroughState({ workspaceConfig: cfg });
+  assert.equal(w.dismissed, true);
+  assert.equal(w.show, false);
+  // ui-cache flag reader
+  assert.equal(activation.readUiCacheFlag(cfg, "lensWalkthroughDismissed"), true);
+});
+
+test("agent handoff — hasLocalAgentSandbox detects a local-agent-host row", () => {
+  assert.equal(activation.hasLocalAgentSandbox({}), false);
+  assert.equal(activation.hasLocalAgentSandbox({
+    dataModel: { objects: [{ objectType: "sandbox-environment", rows: [{ Name: "wf", adapter: "local-process" }] }] },
+  }), false);
+  assert.equal(activation.hasLocalAgentSandbox({
+    dataModel: { objects: [{ objectType: "sandbox-environment", rows: [{ Name: "agent", adapter: "local-agent-host", agentHost: "claude_local" }] }] },
+  }), true);
+});
+
 test("lenses — never throw on partial/empty input", () => {
   for (const fn of [activation.derivePersistenceLensState, activation.deriveObservabilityLensState]) {
     assert.doesNotThrow(() => fn());

@@ -8762,6 +8762,32 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-contrib-tooltip-link { font-size: 10px; color: #9be9a8; text-decoration: none; margin-top: 2px; }
 .workspace-contrib-tooltip-link:hover { text-decoration: underline; }
 
+/* Workspace Lens one-time walkthrough — calm white popover. */
+.workspace-rail-lens-nav { position: relative; }
+.workspace-lens-walkthrough { position: relative; width: 264px; background: #ffffff; border: 1px solid #d1d5db; border-radius: 5px; box-shadow: 0 6px 18px rgba(17, 24, 39, 0.12); padding: 12px 13px; }
+.workspace-lens-walkthrough.is-anchored { position: absolute; left: calc(100% + 12px); top: -4px; z-index: 60; }
+.workspace-lens-walkthrough.is-anchored::before { content: ""; position: absolute; left: -6px; top: 16px; width: 10px; height: 10px; background: #ffffff; border-left: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; transform: rotate(45deg); }
+.workspace-lens-walkthrough.is-panel { width: 100%; max-width: 520px; margin: 0 0 16px; }
+.workspace-lens-walkthrough-x { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: none; background: transparent; color: #9ca3af; border-radius: 5px; cursor: pointer; }
+.workspace-lens-walkthrough-x:hover { background: #f3f4f6; color: #4b5563; }
+.workspace-lens-walkthrough-eyebrow { margin: 0 0 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #9ca3af; }
+.workspace-lens-walkthrough-title { margin: 0 0 5px; font-size: 13px; font-weight: 600; color: #111827; padding-right: 18px; }
+.workspace-lens-walkthrough-body { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: #4b5563; }
+.workspace-lens-walkthrough-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workspace-lens-walkthrough-steps { font-size: 11px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+.workspace-lens-walkthrough-next { font-size: 12px; font-weight: 600; color: #ffffff; background: #111827; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.workspace-lens-walkthrough-next:hover { background: #1f2937; }
+
+/* Subatomic-worker call-out — minimal neutral card that scaffolds a local
+   agent sandbox + brings the helper live. Sits beside the walkthrough. */
+.workspace-lens-agent-callout { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafbfc; padding: 12px 14px; margin: 0 0 16px; }
+.workspace-lens-agent-callout-text { min-width: 0; }
+.workspace-lens-agent-callout-title { margin: 0 0 3px; font-size: 13px; font-weight: 600; color: #111827; }
+.workspace-lens-agent-callout-body { margin: 0; font-size: 12px; line-height: 1.5; color: #6b7280; max-width: 560px; }
+.workspace-lens-agent-callout-btn { flex-shrink: 0; font-size: 12px; font-weight: 600; color: #111827; background: #ffffff; border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.workspace-lens-agent-callout-btn:hover:not(:disabled) { background: #f3f4f6; }
+.workspace-lens-agent-callout-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* Compact rail variant — slim activation chip in WorkspaceRail Home */
 .workspace-activation-panel.is-compact { padding: 12px 14px; margin: 0 0 12px; gap: 10px; border-radius: 8px; }
 .workspace-activation-panel.is-compact .workspace-activation-head { gap: 8px; }

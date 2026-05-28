@@ -1469,11 +1469,75 @@ function deriveWorkspaceContributions(input = {}, options = {}) {
   };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Workspace Lens first-time walkthrough (one-time guided reveal)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// The walkthrough is the dopamine handoff: it appears ONLY in the in-between
+// state — onboarding complete, Workspace Lens unlocked, but no activity yet
+// (not a power user). Once the workspace shows real activity, or once the user
+// dismisses it (persisted in the same workspace-ui-cache row the onboarding
+// dismiss uses), it never shows again.
+
+const LENS_WALKTHROUGH_DISMISS_FLAG = "lensWalkthroughDismissed";
+
+/**
+ * Whether the workspace already has a governed local-agent-host sandbox (a
+ * Claude / Codex / local-model agent). When false, Workspace Lens nudges the
+ * operator to scaffold one — the subatomic-worker action that closes the loop:
+ * a real sandbox-environment object under the data model + the helper going
+ * live, aware of the Lens.
+ */
+function hasLocalAgentSandbox(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  return objects.some((o) => isPlainObject(o)
+    && o.objectType === "sandbox-environment"
+    && (Array.isArray(o.rows) ? o.rows : []).some((r) => isPlainObject(r) && safeString(r.adapter).trim() === "local-agent-host"));
+}
+
+/** Read a flag from the governed workspace-ui-cache "activation" row. */
+function readUiCacheFlag(workspaceConfig, key) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const cache = objects.find((o) => isPlainObject(o) && o.id === "workspace-ui-cache");
+  const row = cache && Array.isArray(cache.rows)
+    ? cache.rows.find((r) => isPlainObject(r) && r.id === "activation")
+    : null;
+  return row ? row[key] : undefined;
+}
+
+/**
+ * Derive whether the one-time Workspace Lens walkthrough should show.
+ * `show` is true iff: activation complete AND no workspace activity yet AND
+ * not previously dismissed. Pure; never throws.
+ */
+function deriveLensWalkthroughState(input = {}) {
+  const safe = {
+    workspaceConfig: isPlainObject(input.workspaceConfig) ? input.workspaceConfig : {},
+    workspaceSourceRecords: isPlainObject(input.workspaceSourceRecords) ? input.workspaceSourceRecords : {},
+    metadataGraph: isPlainObject(input.metadataGraph) ? input.metadataGraph : null,
+  };
+  const activationComplete = deriveWorkspaceActivationState(safe).complete;
+  const hasActivity = deriveWorkspaceContributions(safe).total > 0;
+  const flag = readUiCacheFlag(safe.workspaceConfig, LENS_WALKTHROUGH_DISMISS_FLAG);
+  const dismissed = flag === true || String(flag || "") === "true";
+  return {
+    kind: "growthub-lens-walkthrough-state-v1",
+    activationComplete,
+    hasActivity,
+    dismissed,
+    show: activationComplete && !hasActivity && !dismissed,
+  };
+}
+
 export {
   ACTIVATION_KIND,
   ACTIVATION_VERSION,
   TEMPLATE_PROJECT_MANAGEMENT,
   CONTRIBUTIONS_KIND,
+  LENS_WALKTHROUGH_DISMISS_FLAG,
+  readUiCacheFlag,
+  deriveLensWalkthroughState,
+  hasLocalAgentSandbox,
   LENS_STATE_KIND,
   WORKSPACE_STATE_KIND,
   SWARM_PACKET_KIND,

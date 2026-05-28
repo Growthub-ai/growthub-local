@@ -40,6 +40,7 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  Eye,
   Folder,
   FolderPlus,
   GitBranch,
@@ -69,7 +70,33 @@ import {
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
 import { listAvailableWorkflows } from "@/lib/nav-workflows";
-import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
+import { deriveWorkspaceActivationState, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
+import { WorkspaceLensWalkthrough } from "./components/WorkspaceLensWalkthrough.jsx";
+
+// Set a flag on the governed workspace-ui-cache "activation" row (pure
+// transform) — the same row the onboarding dismiss persists to. Returned
+// config is PATCHed via the existing /api/workspace boundary.
+function withUiCacheFlag(config, key, value) {
+  const dataModel = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+  const existing = objects.find((o) => o?.id === "workspace-ui-cache");
+  const cacheObject = existing || {
+    id: "workspace-ui-cache", label: "Workspace UI Cache", source: "Workspace UI Cache",
+    objectType: "custom", icon: "Settings", columns: ["id", key], rows: [],
+    binding: { mode: "manual", source: "Workspace UI Cache" },
+  };
+  const columns = Array.from(new Set([...(Array.isArray(cacheObject.columns) ? cacheObject.columns : ["id"]), key]));
+  const rows = Array.isArray(cacheObject.rows) ? cacheObject.rows : [];
+  const hasRow = rows.some((r) => r?.id === "activation");
+  const nextRows = hasRow
+    ? rows.map((r) => (r?.id === "activation" ? { ...r, [key]: value } : r))
+    : [...rows, { id: "activation", [key]: value }];
+  const nextCache = { ...cacheObject, columns, rows: nextRows };
+  const nextObjects = existing
+    ? objects.map((o) => (o?.id === "workspace-ui-cache" ? nextCache : o))
+    : [...objects, nextCache];
+  return { ...config, dataModel: { ...dataModel, objects: nextObjects } };
+}
 import { ICON_PICKER_SET, LucideIcon } from "./data-model/components/dm-shared.jsx";
 
 function textColorForAccent(accent) {
@@ -1515,6 +1542,31 @@ export function WorkspaceRail({
     () => Boolean(deriveWorkspaceActivationState({ workspaceConfig: workspaceConfig || {} }).complete),
     [workspaceConfig],
   );
+  // One-time Workspace Lens reveal: shown anchored to the (newly visible) lens
+  // nav item only in the in-between state, and never on the lens page itself.
+  const lensWalkthrough = useMemo(
+    () => deriveLensWalkthroughState({ workspaceConfig: workspaceConfig || {} }),
+    [workspaceConfig],
+  );
+  const showLensReveal = lensWalkthrough.show && !pathname.startsWith("/workspace-lens");
+  const dismissLensWalkthrough = useCallback(async () => {
+    const next = withUiCacheFlag(workspaceConfig || {}, LENS_WALKTHROUGH_DISMISS_FLAG, true);
+    if (onConfigChange) onConfigChange(next);
+    try {
+      const res = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: next.dataModel }),
+      });
+      const body = await res.json();
+      if (body?.workspaceConfig && onConfigChange) onConfigChange(body.workspaceConfig);
+    } catch {
+      /* optimistic update already applied; cache write is best-effort */
+    }
+  }, [workspaceConfig, onConfigChange]);
+  const enterLensWalkthrough = useCallback(() => {
+    router.push("/workspace-lens?walkthrough=2");
+  }, [router]);
 
   const [activeTab, setActiveTab] = useState("home");
   const [railCollapsed, setRailCollapsed] = useState(Boolean(defaultCollapsed));
@@ -1766,25 +1818,25 @@ export function WorkspaceRail({
             </Link>
           )}
           {lensUnlocked ? (
-            <Link
-              href="/workspace-lens"
-              title="Workspace Lens"
-              className={pathname.startsWith("/workspace-lens") ? "active" : undefined}
-            >
-              <BarChart3 size={15} aria-hidden="true" />
-              <span className="workspace-nav-label">Workspace Lens</span>
-            </Link>
-          ) : (
-            <button
-              type="button"
-              className="workspace-nav-button is-locked"
-              disabled
-              title="Finish workspace setup to unlock Workspace Lens"
-            >
-              <BarChart3 size={15} aria-hidden="true" />
-              <span className="workspace-nav-label">Workspace Lens</span>
-            </button>
-          )}
+            <div className="workspace-rail-lens-nav">
+              <Link
+                href="/workspace-lens"
+                title="Workspace Lens"
+                className={pathname.startsWith("/workspace-lens") ? "active" : undefined}
+              >
+                <Eye size={15} aria-hidden="true" />
+                <span className="workspace-nav-label">Workspace Lens</span>
+              </Link>
+              {showLensReveal ? (
+                <WorkspaceLensWalkthrough
+                  step={1}
+                  className="is-anchored"
+                  onPrimary={enterLensWalkthrough}
+                  onDismiss={dismissLensWalkthrough}
+                />
+              ) : null}
+            </div>
+          ) : null}
           {dataModelSlot ?? (
             <Link
               href="/data-model"

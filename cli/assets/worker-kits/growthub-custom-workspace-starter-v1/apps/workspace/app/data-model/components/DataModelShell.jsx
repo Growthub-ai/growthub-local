@@ -2544,6 +2544,16 @@ export default function DataModelShell() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
+  // Workspace Lens agent handoff: arriving with ?helper=1 brings the helper
+  // widget live immediately (identical UI/UX), now aware of the just-created
+  // local-agent sandbox — closing the loop from the Lens.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("helper") === "1") {
+      setHelperIntent("explain");
+      setHelperOpen(true);
+    }
+  }, []);
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
 

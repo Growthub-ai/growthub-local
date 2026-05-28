@@ -85,6 +85,7 @@
     "apps/workspace/app/components/WorkspaceActivationPanel.jsx",
     "apps/workspace/app/components/WorkspaceLensPanel.jsx",
     "apps/workspace/app/components/WorkspaceContributionGraph.jsx",
+    "apps/workspace/app/components/WorkspaceLensWalkthrough.jsx",
     "apps/workspace/app/workspace-lens/page.jsx",
     "apps/workspace/lib/workspace-activation.js",
     "apps/workspace/app/settings/integrations/page.jsx",

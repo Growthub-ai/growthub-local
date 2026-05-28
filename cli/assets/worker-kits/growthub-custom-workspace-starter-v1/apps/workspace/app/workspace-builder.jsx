@@ -59,6 +59,7 @@ import {
   Trash2,
   Type,
   Users,
+  Eye,
   Wrench,
   X,
   Zap,
@@ -5774,28 +5775,28 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     // surface and its filtered views. Unlocks once activation completes.
     const lensReady = Boolean(activationState?.complete);
     list.push({
-      id: "lens.open", group: "Workspace Lens", icon: BarChart3,
+      id: "lens.open", group: "Workspace Lens", icon: Eye,
       label: lensReady ? "Open Workspace Lens" : "Workspace Lens (finish setup to unlock)",
       disabled: !lensReady,
       run: () => { window.location.href = "/workspace-lens"; }
     });
     list.push({
-      id: "lens.blocked", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Blocked",
+      id: "lens.blocked", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Blocked",
       disabled: !lensReady,
       run: () => { window.location.href = "/workspace-lens?filter=blocked"; }
     });
     list.push({
-      id: "lens.ready", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Ready",
+      id: "lens.ready", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Ready",
       disabled: !lensReady,
       run: () => { window.location.href = "/workspace-lens?filter=ready"; }
     });
     list.push({
-      id: "lens.assignable", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Agent-assignable",
+      id: "lens.assignable", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Agent-assignable",
       disabled: !lensReady,
       run: () => { window.location.href = "/workspace-lens?filter=assignable"; }
     });
     list.push({
-      id: "lens.runs", group: "Workspace Lens", icon: BarChart3, label: "Workspace Lens — Runs",
+      id: "lens.runs", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Runs",
       disabled: !lensReady,
       run: () => { window.location.href = "/workspace-lens?filter=runs"; }
     });

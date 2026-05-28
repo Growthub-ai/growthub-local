@@ -18,11 +18,86 @@
  *     semantic color overload, no icon spam.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions } from "@/lib/workspace-activation";
+import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG, hasLocalAgentSandbox } from "@/lib/workspace-activation";
 import { WorkspaceContributionGraph } from "./WorkspaceContributionGraph.jsx";
+import { WorkspaceLensWalkthrough } from "./WorkspaceLensWalkthrough.jsx";
+
+// Read the guided-tour step from the ?walkthrough= param (steps 2–3 land here
+// after the rail reveal). Anything outside 2–3 means no in-panel tour.
+function readWalkthroughStep() {
+  if (typeof window === "undefined") return 0;
+  const n = parseInt(new URLSearchParams(window.location.search).get("walkthrough") || "", 10);
+  return n === 2 || n === 3 ? n : 0;
+}
+
+const SANDBOX_OBJECT_ID = "sandbox-environments";
+
+// Subatomic-worker scaffold: build a governed local-agent-host sandbox row
+// (Claude Code / Codex / local model) under the data model — the same
+// sandbox-environment primitive the onboarding "create workflow" action uses.
+// Pure config transform; the caller PATCHes dataModel through /api/workspace.
+function buildLocalAgentSandbox(config) {
+  const dataModel = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+  const COLUMNS = ["Name", "lifecycleStatus", "version", "runLocality", "runtime", "adapter", "agentHost", "localModel", "intelligenceAdapterMode", "instructions", "command", "timeoutMs", "status", "description"];
+  const row = {
+    Name: "workspace-lens-agent",
+    lifecycleStatus: "draft",
+    version: "1",
+    runLocality: "local",
+    runtime: "node",
+    adapter: "local-agent-host",
+    agentHost: "claude_local",
+    localModel: "",
+    intelligenceAdapterMode: "",
+    instructions: "Workspace Lens agent. Operate this workspace through its governed surfaces (PATCH /api/workspace, POST /api/workspace/sandbox-run). Stay aware of Workspace Lens state — what is healthy, blocked, and agent-assignable — and help the operator close the loop in plain language.",
+    command: "",
+    timeoutMs: "120000",
+    status: "draft",
+    description: "Local agent host (Claude Code / Codex / local model) created from Workspace Lens.",
+  };
+  const existing = objects.find((o) => o?.id === SANDBOX_OBJECT_ID && o?.objectType === "sandbox-environment");
+  const base = existing || {
+    id: SANDBOX_OBJECT_ID, label: "Sandbox Environments", source: "Sandbox Environments",
+    objectType: "sandbox-environment", icon: "Box", columns: COLUMNS, rows: [],
+    binding: { mode: "manual", source: "Sandbox Environments" },
+  };
+  const next = {
+    ...base,
+    columns: Array.from(new Set([...(Array.isArray(base.columns) ? base.columns : []), ...COLUMNS])),
+    rows: [...(Array.isArray(base.rows) ? base.rows : []), row],
+  };
+  const nextObjects = existing
+    ? objects.map((o) => (o?.id === SANDBOX_OBJECT_ID ? next : o))
+    : [...objects, next];
+  return { ...config, dataModel: { ...dataModel, objects: nextObjects } };
+}
+
+// Same workspace-ui-cache flag transform the rail/onboarding dismiss use.
+function withUiCacheFlag(config, key, value) {
+  const dataModel = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+  const existing = objects.find((o) => o?.id === "workspace-ui-cache");
+  const cacheObject = existing || {
+    id: "workspace-ui-cache", label: "Workspace UI Cache", source: "Workspace UI Cache",
+    objectType: "custom", icon: "Settings", columns: ["id", key], rows: [],
+    binding: { mode: "manual", source: "Workspace UI Cache" },
+  };
+  const columns = Array.from(new Set([...(Array.isArray(cacheObject.columns) ? cacheObject.columns : ["id"]), key]));
+  const rows = Array.isArray(cacheObject.rows) ? cacheObject.rows : [];
+  const hasRow = rows.some((r) => r?.id === "activation");
+  const nextRows = hasRow
+    ? rows.map((r) => (r?.id === "activation" ? { ...r, [key]: value } : r))
+    : [...rows, { id: "activation", [key]: value }];
+  const nextCache = { ...cacheObject, columns, rows: nextRows };
+  const nextObjects = existing
+    ? objects.map((o) => (o?.id === "workspace-ui-cache" ? nextCache : o))
+    : [...objects, nextCache];
+  return { ...config, dataModel: { ...dataModel, objects: nextObjects } };
+}
 
 // Map a ?filter= query value (and the contribution graph's "runs") onto a
 // canonical filter id so tooltip deep-links open the right filtered view.
@@ -59,6 +134,67 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
   const [filter, setFilter] = useState(readInitialFilter);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(null);
+  const [walkStep, setWalkStep] = useState(0);
+
+  // URL params (?filter=, ?walkthrough=) are read on the client after mount —
+  // useState initializers run during SSR where window is undefined, so the
+  // deep-links from the contribution graph and the rail reveal land here.
+  useEffect(() => {
+    const f = readInitialFilter();
+    if (f !== "all") setFilter(f);
+    const w = readWalkthroughStep();
+    if (w) setWalkStep(w);
+  }, []);
+
+  const walkthrough = useMemo(
+    () => deriveLensWalkthroughState({ workspaceConfig, workspaceSourceRecords, metadataGraph }),
+    [workspaceConfig, workspaceSourceRecords, metadataGraph],
+  );
+  // Steps 2–3 show only when arrived via the guided reveal and still eligible
+  // (lens unlocked, no activity yet, not previously dismissed).
+  const showWalk = walkStep >= 2 && walkthrough.show;
+
+  const dismissWalkthrough = useMemo(() => async () => {
+    setWalkStep(0);
+    try {
+      const next = withUiCacheFlag(workspaceConfig || {}, LENS_WALKTHROUGH_DISMISS_FLAG, true);
+      await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: next.dataModel }),
+      });
+    } catch {
+      /* best-effort; local state already hides the tour */
+    }
+  }, [workspaceConfig]);
+
+  const onWalkPrimary = useMemo(() => (step) => {
+    if (step === 2) setWalkStep(3);
+    else dismissWalkthrough();
+  }, [dismissWalkthrough]);
+
+  // Subatomic-worker handoff: until a local agent exists, nudge the operator to
+  // scaffold one and bring the helper live. One safe governed write + handoff.
+  const needsAgent = !hasLocalAgentSandbox(workspaceConfig);
+  const [scaffolding, setScaffolding] = useState(false);
+  const scaffoldAgent = useMemo(() => async () => {
+    if (scaffolding) return;
+    setScaffolding(true);
+    try {
+      const next = buildLocalAgentSandbox(workspaceConfig || {});
+      const res = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: next.dataModel }),
+      });
+      if (!res.ok) throw new Error("scaffold failed");
+      // Close the loop: land on the surface where the new agent object + the
+      // helper widget are live and aware of the workspace.
+      window.location.href = `/data-model?object=${encodeURIComponent(SANDBOX_OBJECT_ID)}&helper=1`;
+    } catch {
+      setScaffolding(false);
+    }
+  }, [workspaceConfig, scaffolding]);
 
   const contributions = useMemo(
     () => deriveWorkspaceContributions({ workspaceConfig, workspaceSourceRecords, metadataGraph }),
@@ -109,6 +245,36 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
           {counts.total} lenses · {counts.ready} ready · {counts.blocked} blocked · {counts.assignable} agent-assignable
         </p>
       </header>
+
+      {showWalk ? (
+        <WorkspaceLensWalkthrough
+          step={walkStep}
+          className="is-panel"
+          onPrimary={onWalkPrimary}
+          onDismiss={dismissWalkthrough}
+        />
+      ) : null}
+
+      {needsAgent ? (
+        <div className="workspace-lens-agent-callout" role="note">
+          <div className="workspace-lens-agent-callout-text">
+            <p className="workspace-lens-agent-callout-title">Bring your workspace agent live</p>
+            <p className="workspace-lens-agent-callout-body">
+              Create a governed local agent (Claude Code, Codex, or a local model) that operates this
+              workspace through its own surfaces — then open the helper, now aware of your Lens, to work in
+              plain language.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="workspace-lens-agent-callout-btn"
+            onClick={scaffoldAgent}
+            disabled={scaffolding}
+          >
+            {scaffolding ? "Creating…" : "Create agent & open helper"}
+          </button>
+        </div>
+      ) : null}
 
       <WorkspaceContributionGraph
         data={contributions}
