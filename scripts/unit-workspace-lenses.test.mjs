@@ -297,6 +297,50 @@ test("swarm packet — can target a secondary lens by id", () => {
 // Cross-cutting invariants
 // ───────────────────────────────────────────────────────────────────────────
 
+// ───────────────────────────────────────────────────────────────────────────
+// Workspace contribution graph
+// ───────────────────────────────────────────────────────────────────────────
+
+test("contributions — empty workspace yields a full 53-week grid, zero total", () => {
+  const c = activation.deriveWorkspaceContributions({}, { endDate: "2026-05-28" });
+  assert.equal(c.kind, "growthub-workspace-contributions-v1");
+  assert.equal(c.weeks.length, 53);
+  assert.equal(c.weeks.every((w) => w.days.length === 7), true);
+  assert.equal(c.total, 0);
+});
+
+test("contributions — dated run + source evidence bucket by day", () => {
+  const c = activation.deriveWorkspaceContributions({
+    workspaceConfig: {
+      dataModel: { objects: [
+        { objectType: "sandbox-environment", rows: [
+          { Name: "wf", lastResponse: JSON.stringify({ exitCode: 0, ranAt: "2026-05-20T10:00:00Z" }) },
+        ] },
+      ] },
+    },
+    workspaceSourceRecords: {
+      "project-active-tasks": { recordCount: 2, fetchedAt: "2026-05-20T11:00:00Z", records: [{ ranAt: "2026-05-21T09:00:00Z" }] },
+    },
+  }, { endDate: "2026-05-28" });
+  // 2 events on 2026-05-20 (run ranAt + sidecar fetchedAt), 1 on 2026-05-21.
+  assert.equal(c.total, 3);
+  const flat = c.weeks.flatMap((w) => w.days);
+  assert.equal(flat.find((d) => d.date === "2026-05-20").count, 2);
+  assert.equal(flat.find((d) => d.date === "2026-05-21").count, 1);
+  assert.ok(flat.find((d) => d.date === "2026-05-20").level > 0);
+});
+
+test("contributions — never throws, no secret values leak", () => {
+  assert.doesNotThrow(() => activation.deriveWorkspaceContributions());
+  assert.doesNotThrow(() => activation.deriveWorkspaceContributions({}, { endDate: "not-a-date" }));
+  const c = activation.deriveWorkspaceContributions({
+    workspaceConfig: { dataModel: { objects: [
+      { objectType: "api-registry", rows: [{ connectionIds: "conn_SECRET", lastTested: "2026-05-19T10:00:00Z" }] },
+    ] } },
+  }, { endDate: "2026-05-28" });
+  assert.equal(JSON.stringify(c).includes("conn_SECRET"), false);
+});
+
 test("lenses — never throw on partial/empty input", () => {
   for (const fn of [activation.derivePersistenceLensState, activation.deriveObservabilityLensState]) {
     assert.doesNotThrow(() => fn());

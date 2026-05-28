@@ -8708,6 +8708,34 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-lens-agent-row > span { color: #9ca3af; min-width: 84px; }
 .workspace-lens-empty { font-size: 12px; color: #9ca3af; padding: 16px; text-align: center; }
 
+/* Workspace contribution graph — neutral chrome, GitHub green cell scale. */
+.workspace-contrib { border: 1px solid #e8edf3; border-radius: 10px; background: #fff; padding: 14px 16px; margin-bottom: 16px; }
+.workspace-contrib-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.workspace-contrib-total { font-size: 12px; color: #4b5563; }
+.workspace-contrib-legend { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #9ca3af; }
+.workspace-contrib-grid-wrap { overflow-x: auto; }
+.workspace-contrib-months { display: grid; grid-template-columns: repeat(53, 13px); gap: 3px; margin-left: 30px; margin-bottom: 4px; }
+.workspace-contrib-month { font-size: 9px; color: #9ca3af; white-space: nowrap; }
+.workspace-contrib-body { display: flex; gap: 6px; }
+.workspace-contrib-weekdays { display: grid; grid-template-rows: repeat(7, 13px); gap: 3px; width: 24px; }
+.workspace-contrib-weekdays span { font-size: 9px; color: #9ca3af; line-height: 13px; }
+.workspace-contrib-weeks { display: flex; gap: 3px; }
+.workspace-contrib-week { display: grid; grid-template-rows: repeat(7, 13px); gap: 3px; }
+.workspace-contrib-cell { width: 13px; height: 13px; border-radius: 3px; padding: 0; border: 1px solid rgba(27, 31, 35, 0.06); background: #ebedf0; cursor: pointer; }
+.workspace-contrib-cell:disabled { cursor: default; }
+.workspace-contrib-cell.lvl-0 { background: #ebedf0; }
+.workspace-contrib-cell.lvl-1 { background: #9be9a8; }
+.workspace-contrib-cell.lvl-2 { background: #40c463; }
+.workspace-contrib-cell.lvl-3 { background: #30a14e; }
+.workspace-contrib-cell.lvl-4 { background: #216e39; }
+.workspace-contrib-cell.lvl-future { background: transparent; border-color: transparent; }
+.workspace-contrib-legend .workspace-contrib-cell { cursor: default; }
+.workspace-contrib-tooltip { position: fixed; transform: translate(-50%, calc(-100% - 8px)); z-index: 50; background: #111827; color: #fff; border-radius: 6px; padding: 6px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.18); display: flex; flex-direction: column; gap: 2px; pointer-events: auto; }
+.workspace-contrib-tooltip-count { font-size: 11px; font-weight: 600; }
+.workspace-contrib-tooltip-date { font-size: 10px; color: #cbd5e1; }
+.workspace-contrib-tooltip-link { font-size: 10px; color: #9be9a8; text-decoration: none; margin-top: 2px; }
+.workspace-contrib-tooltip-link:hover { text-decoration: underline; }
+
 /* Compact rail variant — slim activation chip in WorkspaceRail Home */
 .workspace-activation-panel.is-compact { padding: 12px 14px; margin: 0 0 12px; gap: 10px; border-radius: 8px; }
 .workspace-activation-panel.is-compact .workspace-activation-head { gap: 8px; }

@@ -21,7 +21,18 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { deriveWorkspaceState, deriveSwarmConditionPacket } from "@/lib/workspace-activation";
+import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions } from "@/lib/workspace-activation";
+import { WorkspaceContributionGraph } from "./WorkspaceContributionGraph.jsx";
+
+// Map a ?filter= query value (and the contribution graph's "runs") onto a
+// canonical filter id so tooltip deep-links open the right filtered view.
+function readInitialFilter() {
+  if (typeof window === "undefined") return "all";
+  const raw = (new URLSearchParams(window.location.search).get("filter") || "").trim().toLowerCase();
+  if (!raw) return "all";
+  if (raw === "runs") return "observability";
+  return raw;
+}
 
 // Lens state → a single neutral status word the whole surface filters on.
 function lensStatusKind(lens) {
@@ -45,9 +56,14 @@ const FILTERS = [
 ];
 
 export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, metadataGraph }) {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(readInitialFilter);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(null);
+
+  const contributions = useMemo(
+    () => deriveWorkspaceContributions({ workspaceConfig, workspaceSourceRecords, metadataGraph }),
+    [workspaceConfig, workspaceSourceRecords, metadataGraph],
+  );
 
   const composed = useMemo(
     () => deriveWorkspaceState({ workspaceConfig, workspaceSourceRecords, metadataGraph }),
@@ -93,6 +109,12 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
           {counts.total} lenses · {counts.ready} ready · {counts.blocked} blocked · {counts.assignable} agent-assignable
         </p>
       </header>
+
+      <WorkspaceContributionGraph
+        data={contributions}
+        onSelectDay={() => setFilter("observability")}
+        buildDayHref={(date) => `/workspace-lens?filter=runs&day=${date}`}
+      />
 
       <div className="workspace-lens-controls">
         <div className="workspace-lens-filters" role="tablist" aria-label="Filter lenses">

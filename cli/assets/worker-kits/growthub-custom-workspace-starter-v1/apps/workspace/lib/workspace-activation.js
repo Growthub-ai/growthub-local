@@ -1357,10 +1357,123 @@ function deriveSwarmConditionPacket(input = {}, options = {}) {
   };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Workspace contribution graph (daily-ritual visualization)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// A GitHub-style contribution heatmap derived from the SAME artifact + data
+// flow the lenses read: every dated workspace activity event (workflow run
+// `ranAt`, source-record `fetchedAt`, sandbox `lastTested`) is bucketed by day
+// into a 53-week × 7-day grid with intensity levels 0–4. Pure derivation, no
+// secrets — counts and dates only. This closes the activation loop into an
+// ongoing daily behaviour: open Workspace Lens, see your activity, start work.
+
+const CONTRIBUTIONS_KIND = "growthub-workspace-contributions-v1";
+const CONTRIBUTION_WEEKS = 53;
+
+function toDayKey(value) {
+  const s = safeString(value).trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function dayKeyFromDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function emptyContributionState() {
+  return { kind: CONTRIBUTIONS_KIND, version: 1, total: 0, max: 0, start: "", end: "", weeks: [] };
+}
+
+/**
+ * Derive the workspace contribution grid. Reads dated evidence from the same
+ * inputs as the lenses and never throws on partial input.
+ */
+function deriveWorkspaceContributions(input = {}, options = {}) {
+  const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
+  const sources = isPlainObject(input?.workspaceSourceRecords) ? input.workspaceSourceRecords : {};
+
+  const byDay = Object.create(null);
+  const add = (value) => {
+    const key = toDayKey(value);
+    if (key) byDay[key] = (byDay[key] || 0) + 1;
+  };
+  for (const row of collectSandboxRows(cfg)) {
+    const resp = parseSafe(row.lastResponse);
+    add(resp?.ranAt);
+    add(row.lastRunAt);
+    add(row.ranAt);
+    add(row.lastTested);
+  }
+  for (const key of Object.keys(sources)) {
+    const sidecar = sources[key];
+    if (!isPlainObject(sidecar)) continue;
+    add(sidecar.fetchedAt);
+    if (Array.isArray(sidecar.records)) {
+      for (const record of sidecar.records) {
+        if (!isPlainObject(record)) continue;
+        add(record.fetchedAt);
+        add(record.ranAt);
+        add(record.createdAt);
+      }
+    }
+  }
+
+  const endInput = options.endDate ? new Date(options.endDate) : new Date();
+  if (Number.isNaN(endInput.getTime())) return emptyContributionState();
+  const endUTC = new Date(Date.UTC(endInput.getUTCFullYear(), endInput.getUTCMonth(), endInput.getUTCDate()));
+  // Pad the final column out to Saturday so the grid is week-aligned.
+  const lastCell = new Date(endUTC);
+  lastCell.setUTCDate(endUTC.getUTCDate() + (6 - endUTC.getUTCDay()));
+  const firstCell = new Date(lastCell);
+  firstCell.setUTCDate(lastCell.getUTCDate() - (CONTRIBUTION_WEEKS * 7 - 1));
+
+  const counts = Object.values(byDay);
+  const max = counts.length ? Math.max(...counts) : 0;
+  const levelFor = (count) => {
+    if (count <= 0) return 0;
+    if (max <= 1) return 2;
+    const q = count / max;
+    if (q > 0.75) return 4;
+    if (q > 0.5) return 3;
+    if (q > 0.25) return 2;
+    return 1;
+  };
+
+  let total = 0;
+  const weeks = [];
+  const cursor = new Date(firstCell);
+  for (let w = 0; w < CONTRIBUTION_WEEKS; w += 1) {
+    const days = [];
+    for (let d = 0; d < 7; d += 1) {
+      const date = dayKeyFromDate(cursor);
+      const future = cursor.getTime() > endUTC.getTime();
+      const count = future ? 0 : (byDay[date] || 0);
+      if (!future) total += count;
+      days.push({ date, count, level: future ? 0 : levelFor(count), future });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    weeks.push({ days });
+  }
+
+  return {
+    kind: CONTRIBUTIONS_KIND,
+    version: 1,
+    total,
+    max,
+    start: dayKeyFromDate(firstCell),
+    end: dayKeyFromDate(endUTC),
+    weeks,
+  };
+}
+
 export {
   ACTIVATION_KIND,
   ACTIVATION_VERSION,
   TEMPLATE_PROJECT_MANAGEMENT,
+  CONTRIBUTIONS_KIND,
   LENS_STATE_KIND,
   WORKSPACE_STATE_KIND,
   SWARM_PACKET_KIND,
@@ -1382,4 +1495,6 @@ export {
   deriveAppBuildLensState,
   // Swarm-assignable condition packet (roadmap Item 8)
   deriveSwarmConditionPacket,
+  // Workspace contribution graph (daily-ritual visualization)
+  deriveWorkspaceContributions,
 };
