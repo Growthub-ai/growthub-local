@@ -30,7 +30,7 @@ import {
   Lock,
   Sparkles,
 } from "lucide-react";
-import { deriveWorkspaceActivationState, deriveWorkspaceState } from "@/lib/workspace-activation";
+import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
 
 function StatusIcon({ status }) {
   if (status === "complete") return <Check size={14} aria-hidden="true" />;
@@ -60,15 +60,10 @@ export function WorkspaceActivationPanel({
     metadataGraph,
   });
 
-  // Secondary readiness lenses are intentionally subordinate: they appear only
-  // once the primary activation loop is complete, so first-run stays a focused
-  // 5-step flow with zero added bloat. They render as neutral, icon-free status
-  // readouts — not a second checklist competing for attention. Pure derivation;
-  // no fetch, no mutation, no secrets.
-  const composedState = (showLenses && !compact && state.complete)
-    ? deriveWorkspaceState({ workspaceConfig, workspaceSourceRecords, metadataGraph })
-    : null;
-  const secondaryLenses = composedState ? Object.values(composedState.lenses) : [];
+  // Onboarding stays pure. Once the primary loop completes we don't render
+  // operating-state cards inside the checklist — we hand the user off to the
+  // dedicated Workspace Lens surface (the "you levelled up" moment).
+  const showLensTeaser = showLenses && !compact && state.complete;
 
   const stepsToRender = compact
     ? state.steps.filter((step) => step.status !== "optional")
@@ -159,37 +154,14 @@ export function WorkspaceActivationPanel({
         })}
       </ol>
 
-      {secondaryLenses.length > 0 ? (
-        <div className="workspace-activation-lenses" aria-label="Workspace readiness">
-          <p className="workspace-activation-lenses-title">Workspace readiness</p>
-          <ul className="workspace-activation-lenses-list" role="list">
-            {secondaryLenses.map((lens) => {
-              const lensNext = (lens.steps || []).find((s) => s.id === lens.nextStepId) || null;
-              return (
-                <li
-                  key={lens.lensId}
-                  className={"workspace-activation-lens" + (lens.complete ? " is-complete" : "")}
-                  data-lens={lens.lensId}
-                >
-                  <div className="workspace-activation-lens-head">
-                    <span className="workspace-activation-lens-title">{lens.title}</span>
-                    <span
-                      className="workspace-activation-lens-progress"
-                      aria-label={`${lens.completedCount} of ${lens.totalCount} ready`}
-                    >
-                      {lens.completedCount}/{lens.totalCount}
-                    </span>
-                  </div>
-                  <p className="workspace-activation-lens-headline">{lens.headline}</p>
-                  {!lens.complete && lensNext && lensNext.href ? (
-                    <Link href={lensNext.href} className="workspace-activation-lens-cta">
-                      {lensNext.cta || lensNext.label}
-                    </Link>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
+      {showLensTeaser ? (
+        <div className="workspace-activation-lens-teaser">
+          <span className="workspace-activation-lens-teaser-text">
+            Workspace Lens is now available — your live operating surface for state, blockers, and agent-assignable work.
+          </span>
+          <Link href="/workspace-lens" className="workspace-activation-lens-teaser-link">
+            Open Workspace Lens
+          </Link>
         </div>
       ) : null}
 

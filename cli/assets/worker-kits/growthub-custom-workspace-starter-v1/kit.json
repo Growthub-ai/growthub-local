@@ -83,6 +83,8 @@
     "apps/workspace/app/workspace-builder.jsx",
     "apps/workspace/app/workspace-rail.jsx",
     "apps/workspace/app/components/WorkspaceActivationPanel.jsx",
+    "apps/workspace/app/components/WorkspaceLensPanel.jsx",
+    "apps/workspace/app/workspace-lens/page.jsx",
     "apps/workspace/lib/workspace-activation.js",
     "apps/workspace/app/settings/integrations/page.jsx",
     "apps/workspace/app/api/workspace/route.js",

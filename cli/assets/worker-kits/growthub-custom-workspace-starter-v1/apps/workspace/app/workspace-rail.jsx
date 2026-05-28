@@ -66,6 +66,7 @@ import {
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
 import { listAvailableWorkflows } from "@/lib/nav-workflows";
+import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
 import { ICON_PICKER_SET, LucideIcon } from "./data-model/components/dm-shared.jsx";
 
 function textColorForAccent(accent) {
@@ -1504,6 +1505,13 @@ export function WorkspaceRail({
   const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
   const pathname = usePathname() || "/";
   const router = useRouter();
+  // Workspace Lens unlocks only after the primary activation loop completes —
+  // onboarding first, operating surface second. Derived from the same config
+  // the rail already holds, so the gate is consistent across every page.
+  const lensUnlocked = useMemo(
+    () => Boolean(deriveWorkspaceActivationState({ workspaceConfig: workspaceConfig || {} }).complete),
+    [workspaceConfig],
+  );
 
   const [activeTab, setActiveTab] = useState("home");
   const [railCollapsed, setRailCollapsed] = useState(Boolean(defaultCollapsed));
@@ -1760,6 +1768,23 @@ export function WorkspaceRail({
             >
               Management
             </Link>
+          )}
+          {lensUnlocked ? (
+            <Link
+              href="/workspace-lens"
+              className={pathname.startsWith("/workspace-lens") ? "active" : undefined}
+            >
+              Workspace Lens
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="workspace-nav-button is-locked"
+              disabled
+              title="Finish workspace setup to unlock Workspace Lens"
+            >
+              Workspace Lens
+            </button>
           )}
           {settingsSlot ?? (
             <Link

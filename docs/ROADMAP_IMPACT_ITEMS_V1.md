@@ -62,8 +62,42 @@ route, and verified through the exported-workspace `next build` + live HTTP prob
 - **Item 8 (swarm packet)** — `deriveSwarmConditionPacket()` + read-only `GET /api/workspace/swarm-condition`
   (assignable `{goal, currentState, nextAction, blockedStep, prerequisite, availableTools, expectedEvidence}`).
   ✅ shipped
-- **Secondary-lens panel surfacing** — `WorkspaceActivationPanel` renders the registered secondary lenses
-  (opt-in via `showLenses`, never in the compact rail; the builder feeds a safe runtime descriptor). ✅ shipped
+- **Workspace Lens surface** — a first-class, post-activation operating surface at `/workspace-lens`, reached
+  via a gated rail nav item between **Management** and **Workspace Settings**. ✅ shipped
+
+#### Workspace Lens — the post-activation operating surface
+
+Workspace Lens is **not** onboarding. Onboarding (the activation checklist) helps the user create first value;
+Workspace Lens helps them manage *ongoing* value. The customer journey:
+
+1. **First-run activation.** The `WorkspaceActivationPanel` shows only the template-routed setup checklist
+   (blank: object→dashboard→widget→workflow→run; project-management: provider-env→nango→run→dashboard→customize).
+   Nothing competes with it — no readiness cards. The rail's **Workspace Lens** item is visibly **locked**.
+2. **Completion reward.** At 5/5 the toolbar reads **Setup Complete** and the panel shows a single calm
+   handoff line: *"Workspace Lens is now available."* No overwhelm.
+3. **Unlock.** **Workspace Lens** unlocks in the rail (`deriveWorkspaceActivationState(config).complete`). It is
+   a minimal, filterable, **aggregate-first** stream of derived state:
+   - a summary score (`N lenses · R ready · B blocked · A agent-assignable`),
+   - filter chips (All / Blocked / Ready / Agent-assignable / Persistence / Runs / Deploy / Tasks / App build)
+     + search, reusing the rail's existing filter idiom,
+   - one collapsed card per lens (title · status chip · progress · headline · next action), expandable to the
+     step list **and the agent-assignable condition** (`deriveSwarmConditionPacket`: goal / state / prerequisite
+     / tools / expected evidence). The human card and the machine packet read the identical derived state.
+
+   It is **aggregate-first by design**: lenses are summaries, so a workspace with 18,807 rows or 10,350 writeback
+   receipts shows one rollup card with counts + a next action + drill-down — never thousands of raw items. Detail
+   lives in Data Model / the run console / dashboards.
+
+   The route is a server component with `force-dynamic`, so it always reflects the live artifact (a live
+   operating surface must not be statically baked). It renders no canvas, so it is unaffected by the pre-existing
+   builder canvas-grid issue noted below.
+
+> **Pre-existing finding (out of scope, flagged for the team):** the builder's canvas grid-occupancy code
+> (`workspace-builder.jsx`, the `occupied` loop) dereferences `widget.position.w` and throws
+> `TypeError: Cannot read properties of undefined (reading 'w')` when a canvas widget lacks a `position` — which
+> crashes the **production** render of configs that carry such a widget (e.g. the project-management seed). This
+> is independent of the lens work (reproduced on `origin/main` with the lens changes reverted) and the
+> `/workspace-lens` surface is immune (it renders no canvas). Worth a defensive default-position guard.
 
 - **Item 4 (multi-app / fleet lens)** — ⏸ **staged, intentionally not implemented.** The exported workspace
   runtime exposes no in-artifact multi-app surface registry to derive from (surface detection lives in the CLI's
