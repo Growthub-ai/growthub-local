@@ -73,10 +73,10 @@ export function WorkspaceContributionGraph({ data, onSelectDay, buildDayHref }) 
                   <button
                     key={day.date}
                     type="button"
-                    className={"workspace-contrib-cell lvl-" + (day.future ? "future" : day.level)}
+                    className={"workspace-contrib-cell lvl-" + (day.future ? "future" : day.level) + (day.count > 0 ? " has-count" : "")}
                     disabled={day.future}
+                    data-count={day.count}
                     aria-label={day.future ? "" : `${day.count} on ${formatDay(day.date)}`}
-                    title={day.future ? "" : `${day.count} contribution${day.count === 1 ? "" : "s"} · ${formatDay(day.date)}`}
                     onMouseEnter={(e) => {
                       if (day.future) return;
                       const r = e.currentTarget.getBoundingClientRect();

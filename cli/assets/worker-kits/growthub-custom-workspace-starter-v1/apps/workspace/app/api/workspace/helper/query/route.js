@@ -11,8 +11,8 @@
  * Execution model:
  *   1. Read and sanitize the live growthub.config.json (or accept a snapshot).
  *   2. Build a workspace-grammar-injected system prompt via workspace-helper.js.
- *   3. Dispatch through the local-intelligence sandbox adapter.
- *   4. Parse the growthub-local-model-sandbox-v1 envelope.
+ *   3. Dispatch through the configured workspace-helper-sandbox adapter.
+ *   4. Parse the helper JSON envelope.
  *   5. Validate proposals, write a run record to source-records, return response.
  *
  * Request body (WorkspaceHelperQuery):
@@ -73,9 +73,36 @@ const VALID_INTENTS = [
 ];
 
 const HELPER_SOURCE_KEY_PREFIX = "helper";
+const HELPER_SANDBOX_OBJECT_ID = "workspace-helper-sandbox";
 
 function helperSourceId(intent, runId) {
   return `${HELPER_SOURCE_KEY_PREFIX}:${intent}:${runId}`;
+}
+
+function findHelperSandboxRow(config) {
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  const helperObject = objects.find((o) => o?.id === HELPER_SANDBOX_OBJECT_ID && o?.objectType === "sandbox-environment");
+  const rows = Array.isArray(helperObject?.rows) ? helperObject.rows : [];
+  return rows[0] && typeof rows[0] === "object" ? rows[0] : null;
+}
+
+function buildAgentHostCommand(messages) {
+  const transcript = messages
+    .map((message) => {
+      const role = typeof message?.role === "string" ? message.role.toUpperCase() : "MESSAGE";
+      const content = typeof message?.content === "string" ? message.content : "";
+      return `### ${role}\n${content}`;
+    })
+    .join("\n\n");
+
+  return [
+    "You are the Growthub Workspace Helper running through the user's selected local agent host.",
+    "Use the full transcript below. Return only one JSON object with this exact shape:",
+    JSON.stringify({ summary: "", proposals: [], warnings: [] }),
+    "Do not wrap the JSON in markdown. Do not execute tools or mutate files.",
+    "",
+    transcript,
+  ].join("\n");
 }
 
 async function POST(request) {
@@ -116,6 +143,13 @@ async function POST(request) {
     const liveConfig = await readWorkspaceConfig();
     snapshot = sanitizeWorkspaceSnapshot(liveConfig);
     liveConfigForThread = liveConfig;
+  }
+  if (!liveConfigForThread) {
+    try {
+      liveConfigForThread = await readWorkspaceConfig();
+    } catch {
+      liveConfigForThread = null;
+    }
   }
 
   // Thread continuity — pull prior messages from the governed helper-threads
@@ -170,12 +204,17 @@ async function POST(request) {
   const userIntent = userPrompt;
 
   await ensureSandboxAdaptersLoaded();
-  const adapter = getSandboxAdapter("local-intelligence");
+  const helperSandboxRow = findHelperSandboxRow(liveConfigForThread);
+  const helperAdapterId = String(helperSandboxRow?.adapter || "").trim();
+  const helperAgentHost = String(helperSandboxRow?.agentHost || "").trim();
+  const useAgentHost = helperAdapterId === "local-agent-host" && helperAgentHost;
+  const adapterId = useAgentHost ? "local-agent-host" : "local-intelligence";
+  const adapter = getSandboxAdapter(adapterId);
   if (!adapter) {
     return NextResponse.json(
       {
         ok: false,
-        error: "local-intelligence adapter not registered. Ensure sandbox adapters are loaded.",
+        error: `${adapterId} adapter not registered. Ensure sandbox adapters are loaded.`,
       },
       { status: 503 }
     );
@@ -186,32 +225,50 @@ async function POST(request) {
 
   let adapterResult;
   try {
-    adapterResult = await adapter.run({
-      runId,
-      name: `workspace-helper-${resolvedIntent}`,
-      runtime: "node",
-      agentHost: "",
-      command: userIntent,
-      timeoutMs: 90000,
-      networkAllow: true,
-      allowList: [],
-      env: {},
-      envRefSlugs: [],
-      envRefsMissing: [],
-      workdir: "/tmp",
-      ranAt,
-      intelligenceSandbox: {
-        // Structured multi-turn message array — the adapter passes this
-        // straight through to the chat completions endpoint so the model
-        // sees the full conversation history with stable system prefix
-        // (KV-cache friendly).
-        messages: chatMessages,
-        userIntent,
-        localModel: modelOverride || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "gemma3:4b",
-        localEndpoint: localEndpointOverride || "",
-        intelligenceAdapterMode: adapterModeOverride || "ollama",
-      },
-    });
+    if (useAgentHost) {
+      adapterResult = await adapter.run({
+        runId,
+        name: `workspace-helper-${resolvedIntent}`,
+        runtime: "node",
+        agentHost: helperAgentHost,
+        command: buildAgentHostCommand(chatMessages),
+        timeoutMs: Number(helperSandboxRow?.timeoutMs) || 120000,
+        networkAllow: true,
+        allowList: [],
+        env: {},
+        envRefSlugs: [],
+        envRefsMissing: [],
+        workdir: "/tmp",
+        ranAt,
+      });
+    } else {
+      adapterResult = await adapter.run({
+        runId,
+        name: `workspace-helper-${resolvedIntent}`,
+        runtime: "node",
+        agentHost: "",
+        command: userIntent,
+        timeoutMs: 90000,
+        networkAllow: true,
+        allowList: [],
+        env: {},
+        envRefSlugs: [],
+        envRefsMissing: [],
+        workdir: "/tmp",
+        ranAt,
+        intelligenceSandbox: {
+          // Structured multi-turn message array — the adapter passes this
+          // straight through to the chat completions endpoint so the model
+          // sees the full conversation history with stable system prefix
+          // (KV-cache friendly).
+          messages: chatMessages,
+          userIntent,
+          localModel: modelOverride || process.env.NATIVE_INTELLIGENCE_LOCAL_MODEL || process.env.OLLAMA_MODEL || "gemma3:4b",
+          localEndpoint: localEndpointOverride || "",
+          intelligenceAdapterMode: adapterModeOverride || "ollama",
+        },
+      });
+    }
   } catch (err) {
     return NextResponse.json(
       {
@@ -226,10 +283,10 @@ async function POST(request) {
     return NextResponse.json(
       {
         ok: false,
-        error: adapterResult.error || "local-intelligence adapter returned error",
+        error: adapterResult.error || `${adapterId} adapter returned error`,
         receipts: {
-          model: "unknown",
-          adapterMode: adapterModeOverride || "ollama",
+          model: useAgentHost ? helperAgentHost : "unknown",
+          adapterMode: useAgentHost ? "agent-host" : (adapterModeOverride || "ollama"),
           endpoint: "",
           confidence: 0,
           latencyMs: adapterResult.durationMs || 0,
@@ -241,7 +298,14 @@ async function POST(request) {
     );
   }
 
-  const parsed = parseHelperEnvelope(adapterResult.stdout, intent);
+  const parsedInput = useAgentHost
+    ? {
+        result: { text: adapterResult.stdout },
+        adapter: { mode: "agent-host", modelId: helperAgentHost, endpoint: "local-agent-host" },
+        latencyMs: adapterResult.durationMs || 0,
+      }
+    : adapterResult.stdout;
+  const parsed = parseHelperEnvelope(parsedInput, intent);
   const { valid: validProposals, errors: validationErrors } = validateProposals(parsed.proposals);
 
   const warnings = [...parsed.warnings];

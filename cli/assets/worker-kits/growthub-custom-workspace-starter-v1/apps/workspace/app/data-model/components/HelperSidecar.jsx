@@ -42,6 +42,11 @@ import {
   Wrench as RepairIcon,
   X,
 } from "lucide-react";
+import {
+  HELPER_SANDBOX_OBJECT_ID,
+  isHelperConfigured,
+  WorkspaceHelperSetupModal,
+} from "../../components/WorkspaceHelperSetupModal.jsx";
 
 // Generic "Tool Call Output" title matches the reference grammar — the
 // user already sees the prompt + assistant response in the chat above,
@@ -229,8 +234,10 @@ let persistedWidth = 420;
 
 function resolveSandboxEnvRow(workspaceConfig) {
   const objects = workspaceConfig?.dataModel?.objects || [];
+  const helper = objects.find((obj) => obj?.id === HELPER_SANDBOX_OBJECT_ID && obj?.objectType === "sandbox-environment");
+  if (Array.isArray(helper?.rows) && helper.rows.length > 0) return helper.rows[0];
   for (const obj of objects) {
-    if (obj.objectType === "sandbox-environment" && Array.isArray(obj.rows) && obj.rows.length > 0) {
+    if (obj.id !== HELPER_SANDBOX_OBJECT_ID && obj.objectType === "sandbox-environment" && Array.isArray(obj.rows) && obj.rows.length > 0) {
       return obj.rows[0];
     }
   }
@@ -306,6 +313,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const [setupSaveError, setSetupSaveError] = useState("");
   const [setupSaveOk, setSetupSaveOk] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
+  const [agentSetupOpen, setAgentSetupOpen] = useState(false);
 
   // Drag state
   const [panelWidth, setPanelWidth] = useState(persistedWidth);
@@ -611,6 +619,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   }, [open, activeTab]);
 
   const sandboxRow = resolveSandboxEnvRow(workspaceConfig);
+  const helperAgentConfigured = isHelperConfigured(workspaceConfig);
   const liveModel = sandboxRow?.localModel || "";
   const liveEndpoint = sandboxRow?.localEndpoint || "";
   const liveAdapter = sandboxRow?.intelligenceAdapterMode || "ollama";
@@ -1193,8 +1202,25 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {activeTab === "setup" && (
           <div className="dm-sidecar-body dm-helper-setup-body">
             <p className="dm-helper-setup-intro">
-              The helper sends your prompt to a local model. Credentials are never stored in the workspace.
+              Connect the helper to Codex, Claude, or another local agent. Advanced local model setup stays below.
             </p>
+
+            <div className={`dm-helper-setup-status state-${helperAgentConfigured ? "connected" : "unconfigured"}`}>
+              <div className="dm-helper-setup-status-row">
+                <span className={`dm-connection-dot dm-connection-${helperAgentConfigured ? "ok" : "amber"}`} />
+                <span className="dm-helper-setup-status-label">
+                  {helperAgentConfigured ? `Agent connected: ${sandboxRow?.agentHost}` : "No helper agent configured yet"}
+                </span>
+                <button type="button" className="dm-helper-setup-recheck" onClick={() => setAgentSetupOpen(true)}>
+                  {helperAgentConfigured ? "Change agent" : "Set up agent"}
+                </button>
+              </div>
+              <span className="dm-helper-setup-status-meta">
+                Uses workspace-helper-sandbox for the same helper widget.
+              </span>
+            </div>
+
+            <p className="dm-helper-setup-intro">Advanced local model fallback.</p>
 
             <div
               className={`dm-helper-setup-status state-${setupStatusState}`}
@@ -1321,6 +1347,15 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 {copiedCommand ? "Copied" : "Copy command"}
               </button>
             </div>
+            <WorkspaceHelperSetupModal
+              workspaceConfig={workspaceConfig}
+              open={agentSetupOpen}
+              onClose={() => setAgentSetupOpen(false)}
+              onSaved={(nextConfig) => {
+                setAgentSetupOpen(false);
+                if (onApplied) onApplied(nextConfig);
+              }}
+            />
           </div>
         )}
       </aside>

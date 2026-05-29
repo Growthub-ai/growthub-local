@@ -390,16 +390,6 @@ test("walkthrough — hidden permanently once dismissed via ui-cache flag", () =
   assert.equal(activation.readUiCacheFlag(cfg, "lensWalkthroughDismissed"), true);
 });
 
-test("agent handoff — hasLocalAgentSandbox detects a local-agent-host row", () => {
-  assert.equal(activation.hasLocalAgentSandbox({}), false);
-  assert.equal(activation.hasLocalAgentSandbox({
-    dataModel: { objects: [{ objectType: "sandbox-environment", rows: [{ Name: "wf", adapter: "local-process" }] }] },
-  }), false);
-  assert.equal(activation.hasLocalAgentSandbox({
-    dataModel: { objects: [{ objectType: "sandbox-environment", rows: [{ Name: "agent", adapter: "local-agent-host", agentHost: "claude_local" }] }] },
-  }), true);
-});
-
 test("lenses — never throw on partial/empty input", () => {
   for (const fn of [activation.derivePersistenceLensState, activation.deriveObservabilityLensState]) {
     assert.doesNotThrow(() => fn());

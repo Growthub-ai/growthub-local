@@ -20,10 +20,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
-import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG, hasLocalAgentSandbox } from "@/lib/workspace-activation";
+import { Activity, BarChart3, Check, Copy, Eye, GitBranch, MoreVertical, Search } from "lucide-react";
+import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
 import { WorkspaceContributionGraph } from "./WorkspaceContributionGraph.jsx";
 import { WorkspaceLensWalkthrough } from "./WorkspaceLensWalkthrough.jsx";
+import { HelperSidecar } from "../data-model/components/HelperSidecar.jsx";
+import {
+  getHelperSandboxRow,
+  isHelperHandoffDismissed,
+  isHelperConfigured,
+  WorkspaceHelperSetupModal,
+} from "./WorkspaceHelperSetupModal.jsx";
 
 // Read the guided-tour step from the ?walkthrough= param (steps 2–3 land here
 // after the rail reveal). Anything outside 2–3 means no in-panel tour.
@@ -31,49 +38,6 @@ function readWalkthroughStep() {
   if (typeof window === "undefined") return 0;
   const n = parseInt(new URLSearchParams(window.location.search).get("walkthrough") || "", 10);
   return n === 2 || n === 3 ? n : 0;
-}
-
-const SANDBOX_OBJECT_ID = "sandbox-environments";
-
-// Subatomic-worker scaffold: build a governed local-agent-host sandbox row
-// (Claude Code / Codex / local model) under the data model — the same
-// sandbox-environment primitive the onboarding "create workflow" action uses.
-// Pure config transform; the caller PATCHes dataModel through /api/workspace.
-function buildLocalAgentSandbox(config) {
-  const dataModel = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
-  const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
-  const COLUMNS = ["Name", "lifecycleStatus", "version", "runLocality", "runtime", "adapter", "agentHost", "localModel", "intelligenceAdapterMode", "instructions", "command", "timeoutMs", "status", "description"];
-  const row = {
-    Name: "workspace-lens-agent",
-    lifecycleStatus: "draft",
-    version: "1",
-    runLocality: "local",
-    runtime: "node",
-    adapter: "local-agent-host",
-    agentHost: "claude_local",
-    localModel: "",
-    intelligenceAdapterMode: "",
-    instructions: "Workspace Lens agent. Operate this workspace through its governed surfaces (PATCH /api/workspace, POST /api/workspace/sandbox-run). Stay aware of Workspace Lens state — what is healthy, blocked, and agent-assignable — and help the operator close the loop in plain language.",
-    command: "",
-    timeoutMs: "120000",
-    status: "draft",
-    description: "Local agent host (Claude Code / Codex / local model) created from Workspace Lens.",
-  };
-  const existing = objects.find((o) => o?.id === SANDBOX_OBJECT_ID && o?.objectType === "sandbox-environment");
-  const base = existing || {
-    id: SANDBOX_OBJECT_ID, label: "Sandbox Environments", source: "Sandbox Environments",
-    objectType: "sandbox-environment", icon: "Box", columns: COLUMNS, rows: [],
-    binding: { mode: "manual", source: "Sandbox Environments" },
-  };
-  const next = {
-    ...base,
-    columns: Array.from(new Set([...(Array.isArray(base.columns) ? base.columns : []), ...COLUMNS])),
-    rows: [...(Array.isArray(base.rows) ? base.rows : []), row],
-  };
-  const nextObjects = existing
-    ? objects.map((o) => (o?.id === SANDBOX_OBJECT_ID ? next : o))
-    : [...objects, next];
-  return { ...config, dataModel: { ...dataModel, objects: nextObjects } };
 }
 
 // Same workspace-ui-cache flag transform the rail/onboarding dismiss use.
@@ -131,10 +95,22 @@ const FILTERS = [
 ];
 
 export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, metadataGraph }) {
+  const [localConfig, setLocalConfig] = useState(workspaceConfig);
   const [filter, setFilter] = useState(readInitialFilter);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [walkStep, setWalkStep] = useState(0);
+  const [openActionMenu, setOpenActionMenu] = useState(null);
+  const effectiveConfig = localConfig || workspaceConfig;
+  const helperRow = getHelperSandboxRow(effectiveConfig);
+  const helperConfigured = isHelperConfigured(effectiveConfig);
+  const helperHandoffDismissed = helperConfigured || isHelperHandoffDismissed(effectiveConfig);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [helperOpen, setHelperOpen] = useState(false);
+
+  useEffect(() => {
+    setLocalConfig(workspaceConfig);
+  }, [workspaceConfig]);
 
   // URL params (?filter=, ?walkthrough=) are read on the client after mount —
   // useState initializers run during SSR where window is undefined, so the
@@ -173,28 +149,13 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
     else dismissWalkthrough();
   }, [dismissWalkthrough]);
 
-  // Subatomic-worker handoff: until a local agent exists, nudge the operator to
-  // scaffold one and bring the helper live. One safe governed write + handoff.
-  const needsAgent = !hasLocalAgentSandbox(workspaceConfig);
-  const [scaffolding, setScaffolding] = useState(false);
-  const scaffoldAgent = useMemo(() => async () => {
-    if (scaffolding) return;
-    setScaffolding(true);
-    try {
-      const next = buildLocalAgentSandbox(workspaceConfig || {});
-      const res = await fetch("/api/workspace", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dataModel: next.dataModel }),
-      });
-      if (!res.ok) throw new Error("scaffold failed");
-      // Close the loop: land on the surface where the new agent object + the
-      // helper widget are live and aware of the workspace.
-      window.location.href = `/data-model?object=${encodeURIComponent(SANDBOX_OBJECT_ID)}&helper=1`;
-    } catch {
-      setScaffolding(false);
+  const openHelperHandoff = useMemo(() => () => {
+    if (helperConfigured) {
+      setHelperOpen(true);
+      return;
     }
-  }, [workspaceConfig, scaffolding]);
+    setSetupOpen(true);
+  }, [helperConfigured]);
 
   const contributions = useMemo(
     () => deriveWorkspaceContributions({ workspaceConfig, workspaceSourceRecords, metadataGraph }),
@@ -226,6 +187,7 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
       if (filter === "ready" && kind !== "ready") return false;
       if (filter === "assignable" && (lens.complete || !lens.nextStepId)) return false;
       if (["persistence", "observability", "deploy", "tasks", "app-build"].includes(filter) && lens.lensId !== filter) return false;
+      if (!FILTERS.some((f) => f.id === filter) && lens.lensId !== filter) return false;
       if (q) {
         const hay = `${lens.title} ${lens.headline} ${(lens.steps || []).map((s) => s.label).join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -233,6 +195,46 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
       return true;
     });
   }, [lenses, filter, query]);
+
+  const productionItems = useMemo(() => {
+    return lenses.flatMap((lens) => (lens.steps || []).map((step) => ({
+      id: `${lens.lensId}:${step.id}`,
+      label: step.cta || step.label,
+      complete: step.status === "complete",
+      href: step.href || `/workspace-lens?filter=${lens.lensId}`,
+    }))).slice(0, 5);
+  }, [lenses]);
+
+  const productionCounts = useMemo(() => {
+    const steps = lenses.flatMap((lens) => lens.steps || []);
+    return {
+      total: steps.length,
+      complete: steps.filter((step) => step.status === "complete").length,
+    };
+  }, [lenses]);
+
+  const observabilityStats = useMemo(() => {
+    const objects = Array.isArray(effectiveConfig?.dataModel?.objects) ? effectiveConfig.dataModel.objects : [];
+    const sourceCount = workspaceSourceRecords && typeof workspaceSourceRecords === "object"
+      ? Object.keys(workspaceSourceRecords).length
+      : 0;
+    const sandboxCount = objects.filter((object) => object?.objectType === "sandbox-environment").length;
+    return [
+      { label: "Ready lenses", value: counts.ready },
+      { label: "Open actions", value: counts.assignable },
+      { label: "Sandbox environments", value: sandboxCount },
+      { label: "Source records", value: sourceCount },
+    ];
+  }, [counts.assignable, counts.ready, effectiveConfig, workspaceSourceRecords]);
+
+  const helperStatusLabel = helperConfigured
+    ? `Agent connected: ${helperRow?.agentHost || "local agent"}`
+    : "Helper setup needed";
+
+  const copyLensUrl = (lensId) => {
+    if (typeof window === "undefined" || !navigator?.clipboard) return;
+    navigator.clipboard.writeText(`${window.location.origin}/workspace-lens?filter=${lensId}`);
+  };
 
   return (
     <div className="workspace-lens">
@@ -255,26 +257,34 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
         />
       ) : null}
 
-      {needsAgent ? (
-        <div className="workspace-lens-agent-callout" role="note">
-          <div className="workspace-lens-agent-callout-text">
-            <p className="workspace-lens-agent-callout-title">Bring your workspace agent live</p>
-            <p className="workspace-lens-agent-callout-body">
-              Create a governed local agent (Claude Code, Codex, or a local model) that operates this
-              workspace through its own surfaces — then open the helper, now aware of your Lens, to work in
-              plain language.
+      {!helperHandoffDismissed ? (
+        <div className="workspace-lens-helper-callout" role="note">
+          <div className="workspace-lens-helper-callout-text">
+            <p className="workspace-lens-helper-callout-title">Connect the helper</p>
+            <p className="workspace-lens-helper-callout-body">
+              Pick the agent that powers the helper widget. Codex is recommended.
             </p>
           </div>
           <button
             type="button"
-            className="workspace-lens-agent-callout-btn"
-            onClick={scaffoldAgent}
-            disabled={scaffolding}
+            className="workspace-lens-helper-callout-btn"
+            onClick={openHelperHandoff}
           >
-            {scaffolding ? "Creating…" : "Create agent & open helper"}
+            {helperConfigured ? "Open helper" : "Set up helper"}
           </button>
         </div>
       ) : null}
+
+      <WorkspaceHelperSetupModal
+        workspaceConfig={effectiveConfig}
+        open={setupOpen}
+        onClose={() => setSetupOpen(false)}
+        onSaved={(nextConfig) => {
+          setLocalConfig(nextConfig);
+          setSetupOpen(false);
+          setHelperOpen(true);
+        }}
+      />
 
       <WorkspaceContributionGraph
         data={contributions}
@@ -282,8 +292,8 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
         buildDayHref={(date) => `/workspace-lens?filter=runs&day=${date}`}
       />
 
-      <div className="workspace-lens-controls">
-        <div className="workspace-lens-filters" role="tablist" aria-label="Filter lenses">
+      <div className="workspace-lens-controls workspace-builder-filterbar">
+        <div className="workspace-lens-filters workspace-builder-filterbar__segments" role="tablist" aria-label="Filter lenses">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -297,91 +307,182 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
             </button>
           ))}
         </div>
-        <input
-          type="text"
-          className="workspace-lens-search"
-          placeholder="Search lenses, workflows, objects"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search lenses"
-        />
+        <label className="workspace-builder-filterbar__search workspace-lens-search-wrap">
+          <Search size={14} aria-hidden="true" />
+          <input
+            type="text"
+            className="workspace-lens-search"
+            placeholder="Search lenses, workflows, objects"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search lenses"
+          />
+        </label>
       </div>
 
-      <ul className="workspace-lens-stream" role="list">
-        {visible.map((lens) => {
+      <section className="workspace-lens-control-grid" aria-label="Workspace control panel">
+        <article className="workspace-lens-control-card">
+          <div className="workspace-lens-control-card-head">
+            <div>
+              <h2>Production Checklist</h2>
+              <span>{productionCounts.complete}/{productionCounts.total}</span>
+            </div>
+            <button type="button" className="workspace-lens-icon-btn" aria-label="Checklist options">
+              <MoreVertical size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="workspace-lens-checklist" role="list">
+            {productionItems.map((item) => (
+              <Link
+                key={item.id}
+                href={item.href}
+                className={"workspace-lens-check-item" + (item.complete ? " is-complete" : "")}
+              >
+                <span>{item.label}</span>
+                {item.complete ? <Check size={14} aria-hidden="true" /> : null}
+              </Link>
+            ))}
+          </div>
+        </article>
+
+        <article className="workspace-lens-control-card">
+          <div className="workspace-lens-control-card-head">
+            <div>
+              <h2>Observability</h2>
+              <span>Live</span>
+            </div>
+            <button type="button" className="workspace-lens-icon-btn" aria-label="Observability options">
+              <MoreVertical size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="workspace-lens-stat-list">
+            {observabilityStats.map((stat) => (
+              <div key={stat.label} className="workspace-lens-stat-row">
+                <span>{stat.label}</span>
+                <strong>{stat.value}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="workspace-lens-control-card workspace-lens-helper-card">
+          <div className="workspace-lens-control-card-head">
+            <div>
+              <h2>Helper Analytics</h2>
+              <span>{helperConfigured ? "Active" : "Setup"}</span>
+            </div>
+            <button type="button" className="workspace-lens-icon-btn" aria-label="Helper options">
+              <MoreVertical size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="workspace-lens-helper-card-body">
+            <BarChart3 size={28} aria-hidden="true" />
+            <strong>{helperStatusLabel}</strong>
+            <p>Workspace Lens actions run through the same helper widget sandbox.</p>
+            <button type="button" onClick={openHelperHandoff}>
+              {helperConfigured ? "Open helper" : "Set up helper"}
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <section className="workspace-lens-branches" aria-label="Active branches">
+        <div className="workspace-lens-branches-head">
+          <h2>Active Branches</h2>
+          <span>{visible.length}/{lenses.length}</span>
+        </div>
+        <div className="workspace-lens-branches-table" role="table">
+          {visible.map((lens) => {
           const kind = lensStatusKind(lens);
           const next = (lens.steps || []).find((s) => s.id === lens.nextStepId) || null;
           const blockedStep = (lens.steps || []).find((s) => s.status === "blocked") || null;
-          const isOpen = expanded === lens.lensId;
-          const packet = isOpen
+          const isOpen = openActionMenu === lens.lensId;
+          const packet = expanded === lens.lensId
             ? deriveSwarmConditionPacket({ workspaceConfig, workspaceSourceRecords, metadataGraph }, { lensId: lens.lensId })
             : null;
           return (
-            <li key={lens.lensId} className={"workspace-lens-card is-" + kind} data-lens={lens.lensId}>
-              <button
-                type="button"
-                className="workspace-lens-card-head"
-                aria-expanded={isOpen}
-                onClick={() => setExpanded(isOpen ? null : lens.lensId)}
-              >
-                <span className="workspace-lens-card-title">{lens.title}</span>
+            <div key={lens.lensId} className="workspace-lens-branch-row" role="row" data-lens={lens.lensId}>
+              <div className="workspace-lens-branch-name" role="cell">
+                <GitBranch size={14} aria-hidden="true" />
+                <span>{lens.title}</span>
+              </div>
+              <div className="workspace-lens-branch-actions" role="cell">
+                {next?.href ? (
+                  <Link href={next.href} className="workspace-lens-preview-pill">
+                    <Eye size={12} aria-hidden="true" />
+                    Preview
+                  </Link>
+                ) : (
+                  <span className="workspace-lens-preview-pill">
+                    <Activity size={12} aria-hidden="true" />
+                    Healthy
+                  </span>
+                )}
                 <span className={"workspace-lens-chip is-" + kind}>{STATUS_LABEL[kind]}</span>
-                <span className="workspace-lens-card-progress">{lens.completedCount}/{lens.totalCount}</span>
-                <ChevronDown
-                  size={14}
-                  className={"workspace-lens-caret" + (isOpen ? " is-open" : "")}
-                  aria-hidden="true"
-                />
-              </button>
-              <p className="workspace-lens-card-headline">{lens.headline}</p>
+                <span className="workspace-lens-progress-pill">{lens.completedCount}/{lens.totalCount}</span>
+                <span className="workspace-lens-owner-pill">workspace-lens</span>
+                <button
+                  type="button"
+                  className="workspace-lens-icon-btn"
+                  aria-label={`${lens.title} actions`}
+                  aria-expanded={isOpen}
+                  onClick={() => setOpenActionMenu(isOpen ? null : lens.lensId)}
+                >
+                  <MoreVertical size={15} aria-hidden="true" />
+                </button>
+                {isOpen ? (
+                  <div className="workspace-lens-action-menu">
+                    <button type="button" onClick={() => { setExpanded(lens.lensId); setOpenActionMenu(null); }}>
+                      View condition packet
+                    </button>
+                    {next?.href ? <Link href={next.href}>Open next action</Link> : null}
+                    <button type="button" onClick={() => { setFilter(lens.lensId); setOpenActionMenu(null); }}>
+                      Filter to this lens
+                    </button>
+                    <button type="button" onClick={() => copyLensUrl(lens.lensId)}>
+                      Copy Lens URL <Copy size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              <p className="workspace-lens-branch-summary">{lens.headline}</p>
               {!lens.complete && next ? (
-                <div className="workspace-lens-card-next">
-                  <span className="workspace-lens-next-label">Next:</span>
-                  {next.href ? (
-                    <Link href={next.href} className="workspace-lens-next-link">{next.cta || next.label}</Link>
-                  ) : (
-                    <span>{next.label}</span>
-                  )}
+                <p className="workspace-lens-branch-next">Next: {next.cta || next.label}</p>
+              ) : null}
+              {blockedStep ? (
+                <p className="workspace-lens-branch-next">Blocked: {blockedStep.label}</p>
+              ) : null}
+              {packet ? (
+                <div className="workspace-lens-agent">
+                  <p className="workspace-lens-agent-title">
+                    {lens.complete ? "Agent condition (resolved)" : "Assignable to an agent"}
+                  </p>
+                  <p className="workspace-lens-agent-row"><span>Goal</span>{packet.goal}</p>
+                  <p className="workspace-lens-agent-row"><span>State</span>{packet.currentState}</p>
+                  {packet.prerequisite ? (
+                    <p className="workspace-lens-agent-row"><span>Prerequisite</span>{packet.prerequisite}</p>
+                  ) : null}
+                  <p className="workspace-lens-agent-row"><span>Tools</span>{packet.availableTools.join(" · ")}</p>
+                  <p className="workspace-lens-agent-row"><span>Evidence</span>{packet.expectedEvidence.join(" · ")}</p>
                 </div>
               ) : null}
-
-              {isOpen ? (
-                <div className="workspace-lens-card-detail">
-                  <ol className="workspace-lens-steps" role="list">
-                    {(lens.steps || []).map((s) => (
-                      <li key={s.id} className={"workspace-lens-step is-" + s.status}>
-                        <span className="workspace-lens-step-label">{s.label}</span>
-                        <span className="workspace-lens-step-status">{s.status}</span>
-                        {s.hint ? <span className="workspace-lens-step-hint">{s.hint}</span> : null}
-                      </li>
-                    ))}
-                  </ol>
-                  {blockedStep ? (
-                    <p className="workspace-lens-blocked">Blocked: {blockedStep.label}</p>
-                  ) : null}
-                  {packet ? (
-                    <div className="workspace-lens-agent">
-                      <p className="workspace-lens-agent-title">
-                        {lens.complete ? "Agent condition (resolved)" : "Assignable to an agent"}
-                      </p>
-                      <p className="workspace-lens-agent-row"><span>Goal</span>{packet.goal}</p>
-                      <p className="workspace-lens-agent-row"><span>State</span>{packet.currentState}</p>
-                      {packet.prerequisite ? (
-                        <p className="workspace-lens-agent-row"><span>Prerequisite</span>{packet.prerequisite}</p>
-                      ) : null}
-                      <p className="workspace-lens-agent-row"><span>Tools</span>{packet.availableTools.join(" · ")}</p>
-                      <p className="workspace-lens-agent-row"><span>Evidence</span>{packet.expectedEvidence.join(" · ")}</p>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </li>
+            </div>
           );
         })}
         {visible.length === 0 ? (
-          <li className="workspace-lens-empty">No lenses match this filter.</li>
+          <div className="workspace-lens-empty">No lenses match this filter.</div>
         ) : null}
-      </ul>
+        </div>
+      </section>
+
+      <HelperSidecar
+        open={helperOpen}
+        onClose={() => setHelperOpen(false)}
+        workspaceConfig={effectiveConfig}
+        initialIntent="explain"
+        initialPrompt=""
+        onApplied={(nextConfig) => setLocalConfig(nextConfig)}
+      />
     </div>
   );
 }

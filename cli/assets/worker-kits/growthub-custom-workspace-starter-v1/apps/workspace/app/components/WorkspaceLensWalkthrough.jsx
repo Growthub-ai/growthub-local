@@ -38,11 +38,12 @@ const STEPS = {
   },
 };
 
-export function WorkspaceLensWalkthrough({ step = 1, onPrimary, onDismiss, className }) {
+export function WorkspaceLensWalkthrough({ step = 1, onPrimary, onDismiss, className, style }) {
   const s = STEPS[step] || STEPS[1];
   return (
     <div
       className={"workspace-lens-walkthrough" + (className ? " " + className : "")}
+      style={style}
       role="dialog"
       aria-label="Workspace Lens walkthrough"
     >

@@ -41,9 +41,9 @@ async function WorkspaceLens() {
   const activationComplete = deriveWorkspaceActivationState({ workspaceConfig, workspaceSourceRecords }).complete;
 
   return (
-    <main className="workspace-builder">
+    <main className="workspace-builder workspace-lens-page">
       <WorkspaceRail workspaceConfig={workspaceConfig || {}} />
-      <section className="workspace-surface">
+      <section className="workspace-surface workspace-lens-surface">
         <div className="workspace-lens-shell">
           {activationComplete ? (
             <WorkspaceLensPanel

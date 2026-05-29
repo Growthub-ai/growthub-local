@@ -32,7 +32,7 @@ function sourceHeading(manifest: SourceImportManifest): string {
 
 function securitySection(manifest: SourceImportManifest): string {
   const sec = manifest.security;
-  const header = `Risk class: **${sec.riskClass}**  \nFindings: ${sec.findings.length} (inspected ${sec.filesInspected} files, ${sec.bytesInspected} bytes)`;
+  const header = `Risk class: **${sec.riskClass}**\nFindings: ${sec.findings.length} (inspected ${sec.filesInspected} files, ${sec.bytesInspected} bytes)`;
   if (sec.findings.length === 0) {
     return `${header}\n\nNo pattern-based security findings surfaced.`;
   }

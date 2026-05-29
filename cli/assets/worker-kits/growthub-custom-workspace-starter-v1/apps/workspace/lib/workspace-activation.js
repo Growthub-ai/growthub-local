@@ -1395,10 +1395,10 @@ function deriveWorkspaceContributions(input = {}, options = {}) {
   const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
   const sources = isPlainObject(input?.workspaceSourceRecords) ? input.workspaceSourceRecords : {};
 
-  const byDay = Object.create(null);
+  const rawDays = [];
   const add = (value) => {
     const key = toDayKey(value);
-    if (key) byDay[key] = (byDay[key] || 0) + 1;
+    if (key) rawDays.push(key);
   };
   for (const row of collectSandboxRows(cfg)) {
     const resp = parseSafe(row.lastResponse);
@@ -1429,6 +1429,16 @@ function deriveWorkspaceContributions(input = {}, options = {}) {
   lastCell.setUTCDate(endUTC.getUTCDate() + (6 - endUTC.getUTCDay()));
   const firstCell = new Date(lastCell);
   firstCell.setUTCDate(lastCell.getUTCDate() - (CONTRIBUTION_WEEKS * 7 - 1));
+
+  // Browser and runtime clocks can disagree around UTC day boundaries. Keep the
+  // GitHub-style mental model: activity that is real but slightly ahead of the
+  // local day still paints the latest visible cell instead of disappearing.
+  const endKey = dayKeyFromDate(endUTC);
+  const byDay = Object.create(null);
+  for (const rawDay of rawDays) {
+    const key = rawDay > endKey ? endKey : rawDay;
+    byDay[key] = (byDay[key] || 0) + 1;
+  }
 
   const counts = Object.values(byDay);
   const max = counts.length ? Math.max(...counts) : 0;
@@ -1481,20 +1491,6 @@ function deriveWorkspaceContributions(input = {}, options = {}) {
 
 const LENS_WALKTHROUGH_DISMISS_FLAG = "lensWalkthroughDismissed";
 
-/**
- * Whether the workspace already has a governed local-agent-host sandbox (a
- * Claude / Codex / local-model agent). When false, Workspace Lens nudges the
- * operator to scaffold one — the subatomic-worker action that closes the loop:
- * a real sandbox-environment object under the data model + the helper going
- * live, aware of the Lens.
- */
-function hasLocalAgentSandbox(workspaceConfig) {
-  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-  return objects.some((o) => isPlainObject(o)
-    && o.objectType === "sandbox-environment"
-    && (Array.isArray(o.rows) ? o.rows : []).some((r) => isPlainObject(r) && safeString(r.adapter).trim() === "local-agent-host"));
-}
-
 /** Read a flag from the governed workspace-ui-cache "activation" row. */
 function readUiCacheFlag(workspaceConfig, key) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
@@ -1537,7 +1533,6 @@ export {
   LENS_WALKTHROUGH_DISMISS_FLAG,
   readUiCacheFlag,
   deriveLensWalkthroughState,
-  hasLocalAgentSandbox,
   LENS_STATE_KIND,
   WORKSPACE_STATE_KIND,
   SWARM_PACKET_KIND,
