@@ -52,12 +52,18 @@ export function WorkspaceActivationPanel({
   metadataGraph,
   onOpenHelper,
   compact = false,
+  showLenses = false,
 }) {
   const state = deriveWorkspaceActivationState({
     workspaceConfig,
     workspaceSourceRecords,
     metadataGraph,
   });
+
+  // Onboarding stays pure. Once the primary loop completes we don't render
+  // operating-state cards inside the checklist — we hand the user off to the
+  // dedicated Workspace Lens surface (the "you levelled up" moment).
+  const showLensTeaser = showLenses && !compact && state.complete;
 
   const stepsToRender = compact
     ? state.steps.filter((step) => step.status !== "optional")
@@ -147,6 +153,17 @@ export function WorkspaceActivationPanel({
           );
         })}
       </ol>
+
+      {showLensTeaser ? (
+        <div className="workspace-activation-lens-teaser">
+          <span className="workspace-activation-lens-teaser-text">
+            Workspace Lens is now available — your live operating surface for state, blockers, and agent-assignable work.
+          </span>
+          <Link href="/workspace-lens" className="workspace-activation-lens-teaser-link">
+            Open Workspace Lens
+          </Link>
+        </div>
+      ) : null}
 
       {onOpenHelper ? (
         <div className="workspace-activation-helper-cta">

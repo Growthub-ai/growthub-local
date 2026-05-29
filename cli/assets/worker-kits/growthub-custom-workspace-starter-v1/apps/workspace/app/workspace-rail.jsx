@@ -36,14 +36,18 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
+  BarChart3,
   ChevronDown,
   ChevronRight,
+  Database,
+  Eye,
   Folder,
   FolderPlus,
   GitBranch,
   Home,
   LayoutDashboard,
   MessageCircle,
+  Wrench,
   MessageCirclePlus,
   MoreHorizontal,
   MoreVertical,
@@ -66,6 +70,34 @@ import {
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
 import { listAvailableWorkflows } from "@/lib/nav-workflows";
+import { deriveWorkspaceActivationState, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
+import { WorkspaceLensWalkthrough } from "./components/WorkspaceLensWalkthrough.jsx";
+import { isHelperConfigured, WorkspaceHelperSetupModal } from "./components/WorkspaceHelperSetupModal.jsx";
+
+// Set a flag on the governed workspace-ui-cache "activation" row (pure
+// transform) — the same row the onboarding dismiss persists to. Returned
+// config is PATCHed via the existing /api/workspace boundary.
+function withUiCacheFlag(config, key, value) {
+  const dataModel = config?.dataModel && typeof config.dataModel === "object" ? config.dataModel : {};
+  const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
+  const existing = objects.find((o) => o?.id === "workspace-ui-cache");
+  const cacheObject = existing || {
+    id: "workspace-ui-cache", label: "Workspace UI Cache", source: "Workspace UI Cache",
+    objectType: "custom", icon: "Settings", columns: ["id", key], rows: [],
+    binding: { mode: "manual", source: "Workspace UI Cache" },
+  };
+  const columns = Array.from(new Set([...(Array.isArray(cacheObject.columns) ? cacheObject.columns : ["id"]), key]));
+  const rows = Array.isArray(cacheObject.rows) ? cacheObject.rows : [];
+  const hasRow = rows.some((r) => r?.id === "activation");
+  const nextRows = hasRow
+    ? rows.map((r) => (r?.id === "activation" ? { ...r, [key]: value } : r))
+    : [...rows, { id: "activation", [key]: value }];
+  const nextCache = { ...cacheObject, columns, rows: nextRows };
+  const nextObjects = existing
+    ? objects.map((o) => (o?.id === "workspace-ui-cache" ? nextCache : o))
+    : [...objects, nextCache];
+  return { ...config, dataModel: { ...dataModel, objects: nextObjects } };
+}
 import { ICON_PICKER_SET, LucideIcon } from "./data-model/components/dm-shared.jsx";
 
 function textColorForAccent(accent) {
@@ -1504,6 +1536,40 @@ export function WorkspaceRail({
   const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
   const pathname = usePathname() || "/";
   const router = useRouter();
+  // Workspace Lens unlocks only after the primary activation loop completes —
+  // onboarding first, operating surface second. Derived from the same config
+  // the rail already holds, so the gate is consistent across every page.
+  const lensUnlocked = useMemo(
+    () => Boolean(deriveWorkspaceActivationState({ workspaceConfig: workspaceConfig || {} }).complete),
+    [workspaceConfig],
+  );
+  // One-time Workspace Lens reveal: shown anchored to the (newly visible) lens
+  // nav item only in the in-between state, and never on the lens page itself.
+  const lensWalkthrough = useMemo(
+    () => deriveLensWalkthroughState({ workspaceConfig: workspaceConfig || {} }),
+    [workspaceConfig],
+  );
+  const showLensReveal = lensWalkthrough.show && pathname === "/";
+  const lensNavRef = useRef(null);
+  const [lensRevealStyle, setLensRevealStyle] = useState(null);
+  const dismissLensWalkthrough = useCallback(async () => {
+    const next = withUiCacheFlag(workspaceConfig || {}, LENS_WALKTHROUGH_DISMISS_FLAG, true);
+    if (onConfigChange) onConfigChange(next);
+    try {
+      const res = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: next.dataModel }),
+      });
+      const body = await res.json();
+      if (body?.workspaceConfig && onConfigChange) onConfigChange(body.workspaceConfig);
+    } catch {
+      /* optimistic update already applied; cache write is best-effort */
+    }
+  }, [workspaceConfig, onConfigChange]);
+  const enterLensWalkthrough = useCallback(() => {
+    router.push("/workspace-lens?walkthrough=2");
+  }, [router]);
 
   const [activeTab, setActiveTab] = useState("home");
   const [railCollapsed, setRailCollapsed] = useState(Boolean(defaultCollapsed));
@@ -1512,6 +1578,7 @@ export function WorkspaceRail({
   const [renameDraft, setRenameDraft] = useState("");
   const [chatSearch, setChatSearch] = useState("");
   const [chatExpanded, setChatExpanded] = useState(false);
+  const [helperSetupOpen, setHelperSetupOpen] = useState(false);
   const menuWrapRef = useRef(null);
   const CHAT_PREVIEW_COUNT = 10;
 
@@ -1524,6 +1591,31 @@ export function WorkspaceRail({
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [openMenuId]);
+
+  useEffect(() => {
+    if (!showLensReveal) {
+      setLensRevealStyle(null);
+      return undefined;
+    }
+    const updatePosition = () => {
+      const rect = lensNavRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = 264;
+      const gap = 12;
+      const minLeft = 16;
+      const maxLeft = Math.max(minLeft, window.innerWidth - width - 16);
+      const left = Math.min(Math.max(rect.right + gap, minLeft), maxLeft);
+      const top = Math.max(16, Math.round(rect.top - 4));
+      setLensRevealStyle({ left, top });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [showLensReveal, railCollapsed]);
 
   const threads = useMemo(() => getHelperThreadRows(workspaceConfig), [workspaceConfig]);
 
@@ -1538,6 +1630,10 @@ export function WorkspaceRail({
   }, [railCollapsed]);
 
   const handleAskHelperClick = () => {
+    if (!isHelperConfigured(workspaceConfig)) {
+      setHelperSetupOpen(true);
+      return;
+    }
     if (onOpenHelper) {
       onOpenHelper();
       return;
@@ -1749,24 +1845,41 @@ export function WorkspaceRail({
             <div className="workspace-rail-activation-slot">{activationSlot}</div>
           ) : null}
           {dashboardsSlot ?? (
-            <Link href="/" className={pathname === "/" ? "active" : undefined}>
-              Builder
+            <Link href="/" title="Builder" className={pathname === "/" ? "active" : undefined}>
+              <Wrench size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Builder</span>
             </Link>
           )}
+          {lensUnlocked ? (
+            <div className="workspace-rail-lens-nav" ref={lensNavRef}>
+              <Link
+                href="/workspace-lens"
+                title="Workspace Lens"
+                className={pathname.startsWith("/workspace-lens") ? "active" : undefined}
+              >
+                <Eye size={15} aria-hidden="true" />
+                <span className="workspace-nav-label">Workspace Lens</span>
+              </Link>
+            </div>
+          ) : null}
           {dataModelSlot ?? (
             <Link
               href="/data-model"
+              title="Management"
               className={pathname.startsWith("/data-model") ? "active" : undefined}
             >
-              Management
+              <Database size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Management</span>
             </Link>
           )}
           {settingsSlot ?? (
             <Link
               href="/settings/general"
+              title="Workspace Settings"
               className={"workspace-nav-bottom" + (pathname.startsWith("/settings") ? " active" : "")}
             >
-              Workspace Settings
+              <Settings size={15} aria-hidden="true" />
+              <span className="workspace-nav-label">Workspace Settings</span>
             </Link>
           )}
         </nav>
@@ -1934,6 +2047,29 @@ export function WorkspaceRail({
         <span className="status-dot" />
         {authority || "local-catalog"}
       </div>
+      {showLensReveal && lensRevealStyle && typeof document !== "undefined"
+        ? createPortal(
+            <WorkspaceLensWalkthrough
+              step={1}
+              className="is-rail-reveal"
+              style={lensRevealStyle}
+              onPrimary={enterLensWalkthrough}
+              onDismiss={dismissLensWalkthrough}
+            />,
+          document.body,
+        )
+        : null}
+      <WorkspaceHelperSetupModal
+        workspaceConfig={workspaceConfig}
+        open={helperSetupOpen}
+        onClose={() => setHelperSetupOpen(false)}
+        onSaved={(nextConfig) => {
+          setHelperSetupOpen(false);
+          if (onConfigChange) onConfigChange(nextConfig);
+          if (onOpenHelper) onOpenHelper();
+          else router.push("/data-model?helper=open");
+        }}
+      />
     </aside>
   );
 }

@@ -59,6 +59,8 @@ import {
   Trash2,
   Type,
   Users,
+  Eye,
+  Wrench,
   X,
   Zap,
 } from "lucide-react";
@@ -4316,6 +4318,18 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     workspaceConfig: config,
     workspaceSourceRecords,
   }), [config, workspaceSourceRecords]);
+  // Safe runtime descriptor for the secondary readiness lenses — assembled from
+  // the persistence/adapter props the builder already receives (no fetch, no
+  // secrets; booleans only).
+  const lensMetadataGraph = useMemo(() => ({
+    runtime: {
+      persistenceMode: persistence?.mode || "",
+      persistenceAdapter: persistence?.mode === "database" ? (adapterConfig?.dataAdapter || null) : null,
+      allowFsWrite: persistence?.mode === "filesystem" && persistence?.canSave === true,
+      nangoConfigured: Boolean(adapterConfig?.nango?.hasSecretKey),
+      deploy: { target: adapterConfig?.deployTarget || "" },
+    },
+  }), [persistence, adapterConfig]);
   const activationStarted = activationState.completedCount > 0;
   const activationComplete = Boolean(activationState.complete);
   const activationUiCache = useMemo(() => getWorkspaceUiCache(config), [config]);
@@ -5752,6 +5766,40 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       id: "workspace.builder", group: "Navigation", icon: Home, label: "Go to Builder",
       run: () => showDashboardHome()
     });
+    list.push({
+      id: "nav.data-model", group: "Navigation", icon: Database, label: "Go to Management (Data Model)",
+      run: () => { window.location.href = "/data-model"; }
+    });
+
+    // Workspace Lens — fast navigation into the post-activation operating
+    // surface and its filtered views. Unlocks once activation completes.
+    const lensReady = Boolean(activationState?.complete);
+    list.push({
+      id: "lens.open", group: "Workspace Lens", icon: Eye,
+      label: lensReady ? "Open Workspace Lens" : "Workspace Lens (finish setup to unlock)",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens"; }
+    });
+    list.push({
+      id: "lens.blocked", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Blocked",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=blocked"; }
+    });
+    list.push({
+      id: "lens.ready", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Ready",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=ready"; }
+    });
+    list.push({
+      id: "lens.assignable", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Agent-assignable",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=assignable"; }
+    });
+    list.push({
+      id: "lens.runs", group: "Workspace Lens", icon: Eye, label: "Workspace Lens — Runs",
+      disabled: !lensReady,
+      run: () => { window.location.href = "/workspace-lens?filter=runs"; }
+    });
 
     return list;
   }, [
@@ -5770,7 +5818,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     saving,
     selectedWidget,
     showDashboardHome,
-    workspaceView
+    workspaceView,
+    activationState
   ]);
 
   return <main className="workspace-builder" onPointerDownCapture={resetWidgetSelectionOnOutsidePointer} style={builderStyle}>
@@ -5798,10 +5847,12 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         dashboardsSlot={(
           <button
             type="button"
+            title="Builder"
             className={workspaceView === "dashboards" ? "active workspace-nav-button" : "workspace-nav-button"}
             onClick={showDashboardHome}
           >
-            Builder
+            <Wrench size={15} aria-hidden="true" />
+            <span className="workspace-nav-label">Builder</span>
           </button>
         )}
         managementSlot={(
@@ -5881,6 +5932,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           {showActivationPanel ? <WorkspaceActivationPanel
             workspaceConfig={config}
             workspaceSourceRecords={workspaceSourceRecords}
+            metadataGraph={lensMetadataGraph}
+            showLenses={true}
             onStepAction={(step) => {
               if (step?.id === "add-widget") return openAddWidgetBuilder();
               if (step?.id === "create-workflow") {

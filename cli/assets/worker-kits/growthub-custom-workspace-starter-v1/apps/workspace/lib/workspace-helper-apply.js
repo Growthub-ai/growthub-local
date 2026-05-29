@@ -216,15 +216,31 @@ function applyProposalToConfig(currentConfig, proposal) {
     case "dataModel.object.create": {
       const dm = config.dataModel ? { ...config.dataModel } : {};
       const objects = Array.isArray(dm.objects) ? [...dm.objects] : [];
+      const objectPayload = proposal.payload.object && typeof proposal.payload.object === "object"
+        ? proposal.payload.object
+        : proposal.payload;
+      const normalizedColumns = Array.isArray(objectPayload.columns)
+        ? objectPayload.columns.map((column) => typeof column === "string" ? column : column?.id).filter(Boolean)
+        : [];
+      const columnFieldSettings = Array.isArray(objectPayload.columns)
+        ? objectPayload.columns.reduce((acc, column) => {
+            if (!column || typeof column === "string" || !column.id) return acc;
+            const { id, ...settings } = column;
+            if (Object.keys(settings).length > 0) acc[id] = settings;
+            return acc;
+          }, {})
+        : {};
       const newObj = {
-        id: proposal.payload.id || `obj-${Date.now().toString(36)}`,
-        label: proposal.payload.label || "Untitled Object",
-        objectType: proposal.payload.objectType || "custom",
-        columns: Array.isArray(proposal.payload.columns) ? proposal.payload.columns : [],
-        rows: [],
-        binding: proposal.payload.binding || { mode: "manual", source: "Data Model" },
-        ...(proposal.payload.relations ? { relations: proposal.payload.relations } : {}),
-        ...(proposal.payload.fieldSettings ? { fieldSettings: proposal.payload.fieldSettings } : {}),
+        id: objectPayload.id || `obj-${Date.now().toString(36)}`,
+        label: objectPayload.label || "Untitled Object",
+        objectType: objectPayload.objectType || "custom",
+        columns: normalizedColumns,
+        rows: Array.isArray(objectPayload.rows) ? objectPayload.rows : [],
+        binding: objectPayload.binding || { mode: "manual", source: "Data Model" },
+        ...(objectPayload.relations ? { relations: objectPayload.relations } : {}),
+        ...((objectPayload.fieldSettings || Object.keys(columnFieldSettings).length > 0)
+          ? { fieldSettings: { ...columnFieldSettings, ...(objectPayload.fieldSettings || {}) } }
+          : {}),
       };
       dm.objects = [...objects, newObj];
       config.dataModel = dm;

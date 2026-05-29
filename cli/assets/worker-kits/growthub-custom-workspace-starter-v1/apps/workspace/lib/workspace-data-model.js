@@ -437,9 +437,8 @@ function deriveManualObjectTable(object, options = {}) {
 // Helper-owned hidden objects — system-managed, never surfaced in the
 // user-facing Data Model picker / object list / dynamic title.
 //
-// - `workspace-helper-sandbox` backs the helper's local-intelligence
-//   sandbox primitive (helper-tuned instructions live there); users
-//   interact with it only through the helper Setup tab.
+// - `workspace-helper-sandbox` backs the helper widget sandbox config.
+//   Users interact with it through helper setup, not as a business object.
 // - `nav-folders` backs the Custom Folders Navigation module rendered
 //   in the workspace rail (between the tab toggles and the Home / Chat
 //   body). Users create, rename, drag, and add items entirely from the
