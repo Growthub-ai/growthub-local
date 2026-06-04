@@ -516,13 +516,15 @@ function listBuilderSiteItems(config) {
     const url = String(row?.url || "").trim();
     if (!isCodexSiteUrl(url)) return [];
     const title = String(row?.Name || row?.name || `Codex Site ${index + 1}`).trim();
+    const rawStatus = String(row?.status || "").trim().toLowerCase();
+    const status = rawStatus === "active" ? "live" : rawStatus || "draft";
     return [{
       type: "site",
       id: String(row?.id || row?.Name || `codex-site-${index + 1}`),
       title,
       itemKind: "Site",
       updatedAt: formatBuilderTimestamp(row?.lastRecordedAt || ""),
-      status: String(row?.status || "draft").trim(),
+      status,
       site: {
         row,
         rowIndex: index,
@@ -6137,11 +6139,15 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
               </span>
             </div> : item.type === "site" ? <div className="workspace-table-row" key={item.id}>
               <span className="workspace-dashboard-title">
-                <button
-                  className={item.site.url ? "" : "active"}
-                  onClick={() => openSite(item.site)}
-                  type="button"
-                >{item.title}</button>
+                {item.site.url ? (
+                  <a href={item.site.url} target="_blank" rel="noreferrer">{item.title}</a>
+                ) : (
+                  <button
+                    className="active"
+                    onClick={() => manageSite(item.site)}
+                    type="button"
+                  >{item.title}</button>
+                )}
               </span>
               <span>{item.itemKind}</span>
               <span>{item.updatedAt}</span>
@@ -6168,7 +6174,11 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
                 </button>
                 {builderActionMenuId === item.id && (
                   <span className="workspace-row-action-menu" style={builderActionMenuPlacement || undefined}>
-                    <button type="button" disabled={!item.site.url} onClick={() => { closeBuilderActionMenu(); openSite(item.site); }}>Open URL</button>
+                    {item.site.url ? (
+                      <a href={item.site.url} target="_blank" rel="noreferrer" onClick={closeBuilderActionMenu}>Open URL</a>
+                    ) : (
+                      <button type="button" disabled>Open URL</button>
+                    )}
                     <button type="button" onClick={() => { closeBuilderActionMenu(); manageSite(item.site); }}>Manage</button>
                     <button type="button" onClick={() => { closeBuilderActionMenu(); window.open("/settings/apps", "_self"); }}>Apps</button>
                   </span>
