@@ -95,6 +95,12 @@ import {
   pluralize,
   textColorForAccent,
 } from "./dm-shared.jsx";
+import {
+  CODEX_SITES_OBJECT_ID,
+  codexSiteRecordToRow,
+  isCodexSiteUrl,
+  normalizeCodexSiteRecord,
+} from "@/lib/codex-sites-workspace-adapter";
 
 // ─── Object type definitions for the type-picker step ────────────────────────
 
@@ -1015,6 +1021,95 @@ function SandboxRecordFields({
   );
 }
 
+function CodexSitesRecordFields({ draft, setDraft, table, saving, onSave, rowIndex }) {
+  const [sites, setSites] = useState([]);
+  const [loadingSites, setLoadingSites] = useState(false);
+  const [sitesMessage, setSitesMessage] = useState("");
+  const selectedUrl = String(draft?.url || "").trim();
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingSites(true);
+    setSitesMessage("");
+    fetch("/api/workspace/codex-sites", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (cancelled) return;
+        const nextSites = Array.isArray(payload.sites)
+          ? payload.sites.map((site) => normalizeCodexSiteRecord(site)).filter((site) => isCodexSiteUrl(site.url))
+          : [];
+        setSites(nextSites);
+        setSitesMessage(nextSites.length ? "" : "No Codex Sites are available from the workspace adapter.");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSites([]);
+        setSitesMessage(error?.message || "Codex Sites adapter unavailable.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSites(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  function patchFields(fields) {
+    setDraft((current) => ({ ...current, ...fields }));
+    onSave((config) => Object.entries(fields).reduce(
+      (nextConfig, [column, value]) => updateTableCell(nextConfig, table, rowIndex, column, value),
+      config
+    ));
+  }
+
+  function selectSite(url) {
+    const site = sites.find((item) => item.url === url);
+    if (!site) return;
+    patchFields(codexSiteRecordToRow(site));
+  }
+
+  return (
+    <div className="dm-codex-sites-config">
+      <DrawerSection title="Codex Site Binding" defaultOpen>
+        <label className="dm-record-field">
+          <span>Available site</span>
+          <StaticSelect
+            value={selectedUrl}
+            disabled={!table.mutable || saving || loadingSites || sites.length === 0}
+            placeholder={loadingSites ? "Loading Codex Sites..." : "Select Codex Site..."}
+            options={sites.map((site) => ({
+              value: site.url,
+              label: site.Name,
+              source: site.url,
+            }))}
+            onChange={selectSite}
+          />
+          {sitesMessage && <span className="dm-cell-empty">{sitesMessage}</span>}
+        </label>
+        {selectedUrl && (
+          <a className="dm-btn-outline dm-codex-sites-open-link" href={selectedUrl} target="_blank" rel="noreferrer">
+            <Link2 size={13} />Open selected site
+          </a>
+        )}
+      </DrawerSection>
+      <DrawerSection title="Bound Row" defaultOpen>
+        {["Name", "app", "client", "url", "status", "accessMode", "dashboardId", "lastRecordedAt", "notes"].map((column) => (
+          <RecordFieldEditor
+            key={column}
+            table={table}
+            tables={[]}
+            column={column}
+            value={String(draft?.[column] ?? "")}
+            saving={saving}
+            editable={false}
+            onDraft={() => {}}
+            onCommit={() => {}}
+            onExpandJson={() => {}}
+          />
+        ))}
+      </DrawerSection>
+    </div>
+  );
+}
+
 function DataModelRecordDrawer({
   table,
   tables,
@@ -1086,6 +1181,7 @@ function DataModelRecordDrawer({
 
   const isApiRegistry = table.objectType === "api-registry";
   const isSandbox = table.objectType === "sandbox-environment";
+  const isCodexSitesObject = table.objectId === CODEX_SITES_OBJECT_ID;
   const isDirty = JSON.stringify(draft || {}) !== JSON.stringify(row || {}) || JSON.stringify(pendingColumns) !== JSON.stringify(table.columns || []) || JSON.stringify(pendingHidden) !== JSON.stringify(table.fieldSettings?.hidden || []);
 
   function updateField(column, value) {
@@ -1560,6 +1656,15 @@ function DataModelRecordDrawer({
               onLoadSandboxHistory={loadSandboxHistory}
               onOpenGraphSidecar={openWorkflowView}
               onOpenTraceSidecar={openTraceSidecar}
+            />
+          ) : isCodexSitesObject ? (
+            <CodexSitesRecordFields
+              draft={draft}
+              setDraft={setDraft}
+              table={table}
+              saving={saving}
+              onSave={onSave}
+              rowIndex={rowIndex}
             />
           ) : groupRecordColumns(table.columns || []).map((section) => (
             <DrawerSection key={section.title} title={section.title}>

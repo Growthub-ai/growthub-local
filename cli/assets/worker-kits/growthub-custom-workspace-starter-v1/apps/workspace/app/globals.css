@@ -857,7 +857,8 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-dashboard-title {
   min-width: 0;
 }
-.workspace-dashboard-title button {
+.workspace-dashboard-title button,
+.workspace-dashboard-title a {
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -870,6 +871,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   overflow: hidden;
   padding: 0;
   text-align: left;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -953,17 +955,24 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   background: #ffffff;
   box-shadow: 0 12px 30px rgba(15, 23, 42, .16);
 }
-.workspace-row-action-menu button {
+.workspace-row-action-menu button,
+.workspace-row-action-menu a {
   width: 100%;
   min-height: 30px;
+  display: inline-flex;
+  align-items: center;
   justify-content: flex-start;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #344054;
+  font: inherit;
+  font-size: 12px;
   padding: 0 9px;
+  text-decoration: none;
 }
-.workspace-row-action-menu button:hover {
+.workspace-row-action-menu button:hover,
+.workspace-row-action-menu a:hover {
   background: #f5f5f5;
   border-color: transparent;
 }
@@ -3079,6 +3088,55 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   border-top: 1px solid #eeeeec;
   padding: 20px 0;
 }
+.workspace-settings-accordion {
+  gap: 12px;
+}
+.workspace-settings-accordion-trigger {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+.workspace-settings-accordion-trigger > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.workspace-settings-accordion-trigger h3 {
+  margin: 0;
+}
+.workspace-settings-accordion-trigger em {
+  min-width: 0;
+  display: block;
+  color: #888;
+  font-size: 12px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-settings-accordion-trigger svg {
+  flex: 0 0 auto;
+  color: #777;
+  transition: transform .16s ease;
+}
+.workspace-settings-accordion.is-open .workspace-settings-accordion-trigger svg {
+  transform: rotate(180deg);
+}
+.workspace-settings-accordion-body {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+}
 .workspace-apps-linkage-section {
   flex: 0 0 auto;
   padding-bottom: 16px;
@@ -3088,6 +3146,9 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   flex: 1 1 auto;
   grid-template-rows: auto minmax(0, 1fr);
   padding-bottom: 0;
+}
+.workspace-apps-list-section .workspace-settings-accordion-body {
+  min-height: 0;
 }
 .workspace-settings-section:first-of-type {
   border-top: 0;
@@ -3576,6 +3637,52 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   color: #777;
   font-size: 12px;
   line-height: 1.4;
+}
+.workspace-settings-action {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+}
+.workspace-settings-codex-sites-list {
+  display: grid;
+  gap: 6px;
+  padding: 0 14px 0;
+}
+.workspace-settings-codex-sites-list a,
+.workspace-settings-codex-sites-list button {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #ececea;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  padding: 0 10px;
+}
+.workspace-settings-codex-sites-list span,
+.workspace-settings-codex-sites-list em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-settings-codex-sites-list em {
+  color: #777;
+  font-style: normal;
 }
 
 /* Source picker */
@@ -4639,7 +4746,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-detail-v2-title h2 { margin: 0; font-size: 15px; font-weight: 600; color: #111827; flex: 1; }
 .dm-detail-v2-meta { display: flex; align-items: center; gap: 10px; padding-left: 21px; font-size: 12px; color: #9ca3af; }
 .dm-detail-v2-meta code { font-size: 11px; color: #6b7280; background: #f3f4f6; border-radius: 4px; padding: 2px 6px; }
-.dm-detail-v3 { border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; overflow: hidden; }
+.dm-detail-v3 { border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; overflow: visible; }
 .dm-picker { position: relative; min-width: 280px; }
 .dm-picker-trigger { width: min(420px, 100%); display: inline-flex; align-items: center; gap: 10px; min-height: 40px; border: 1px solid #dbe2ea; border-radius: 10px; background: #fff; color: #0f172a; box-shadow: 0 1px 2px rgba(15,23,42,.05); font: inherit; padding: 0 12px; cursor: pointer; text-align: left; }
 .dm-picker.open .dm-picker-trigger { border-color: #94a3b8; box-shadow: 0 0 0 4px rgba(148,163,184,.14); }
@@ -4680,6 +4787,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .workspace-toolbar-actions .dm-picker-popover {
   left: auto;
   right: 0;
+  z-index: 220;
 }
 
 /* Active-object title block in the workspace toolbar — replaces the
@@ -4729,13 +4837,13 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   font-weight: 400;
   color: #6b7280;
 }
-.dm-picker-popover { position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 360px; display: grid; gap: 10px; padding: 12px; border: 1px solid #dbe2ea; border-radius: 14px; background: #fff; box-shadow: 0 28px 80px rgba(15,23,42,.24); overflow: visible; }
+.dm-picker-popover { position: absolute; top: calc(100% + 8px); left: 0; z-index: 220; width: min(360px, calc(100vw - 32px)); max-height: min(520px, calc(100vh - 120px)); display: grid; gap: 10px; padding: 12px; border: 1px solid #dbe2ea; border-radius: 14px; background: #fff; box-shadow: 0 28px 80px rgba(15,23,42,.24); overflow-y: auto; overflow-x: visible; }
 .dm-picker-tabs { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: #f8fafc; }
 .dm-picker-tabs button { height: 28px; border: 0; border-radius: 999px; background: transparent; color: #64748b; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; }
 .dm-picker-tabs button.active { background: #fff; color: #111827; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
 .dm-picker-section { display: grid; gap: 8px; }
 .dm-picker-section > p { margin: 0; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .06em; }
-.dm-picker-scroll { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; padding-right: 10px; scrollbar-gutter: stable; }
+.dm-picker-scroll { display: grid; gap: 4px; max-height: none; overflow: visible; padding-right: 10px; scrollbar-gutter: stable; }
 .dm-picker-item { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; }
 .dm-picker-row { width: 100%; display: inline-flex; align-items: center; gap: 8px; min-width: 0; min-height: 34px; border: 0; border-radius: 9px; background: transparent; color: #334155; font: inherit; font-size: 12px; font-weight: 500; padding: 0 10px; cursor: pointer; text-align: left; }
 .dm-picker-row:hover, .dm-picker-item.active .dm-picker-row { background: #f1f5f9; color: #111827; }
@@ -4746,7 +4854,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-picker-icon-btn:hover { color: #111827; border-color: #cbd5e1; }
 .dm-picker-icon-btn.danger:hover { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
 .dm-picker-lock { margin-left: auto; color: #94a3b8; }
-.dm-picker-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 55; display: grid; gap: 4px; min-width: 156px; padding: 8px; border: 1px solid #dbe2ea; border-radius: 10px; background: #fff; box-shadow: 0 20px 44px rgba(15,23,42,.2), 0 4px 12px rgba(15,23,42,.08); }
+.dm-picker-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 240; display: grid; gap: 4px; min-width: 156px; padding: 8px; border: 1px solid #dbe2ea; border-radius: 10px; background: #fff; box-shadow: 0 20px 44px rgba(15,23,42,.2), 0 4px 12px rgba(15,23,42,.08); }
 .dm-picker-menu button { display: inline-flex; align-items: center; gap: 8px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: #334155; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; text-align: left; }
 .dm-picker-menu button:hover { background: #f1f5f9; color: #111827; }
 .dm-picker-menu button.danger:hover { background: #fef2f2; color: #b91c1c; }

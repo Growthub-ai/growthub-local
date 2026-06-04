@@ -115,6 +115,7 @@ Rules:
 4. The View widget stores a stable reference (`widget.config.binding.sourceType = "workspace-data-model"` and `objectId`) plus widget-local presentation settings. The object rows and fields remain owned by `dataModel.objects[]`.
 5. Integration-backed source objects continue to use the integration resolver path; the browser stores references and normalized metadata, not provider credentials.
 6. **Sandbox Environment** (`objectType: "sandbox-environment"`) rows describe where and how workloads run (`runLocality`, adapter, optional `schedulerRegistryId` → API Registry). They persist in the same `dataModel.objects[]` surface as other governed objects. They are **not** bindable as View widget sources; execution is `POST /api/workspace/sandbox-run`. Details and the `growthub-sandbox-run-v1` envelope live in the starter kit at `apps/workspace/docs/sandbox-environment-primitive.md` (materialized path under `growthub-custom-workspace-starter-v1`).
+7. **Codex Sites** (`id: "workspace-codex-sites"`) rows bind real Codex-hosted site URLs into the governed custom object surface. Builder creates or opens this object, the record sidecar selects an available site through the workspace adapter, and Builder renders each bound row as a Site item with a new-tab URL action. Local smoke tests for Codex Sites must run from an exported or temporary workspace copy so account-specific rows do not mutate the open source starter template. See [`docs/CODEX_SITES_WORKSPACE_PRIMITIVE_V1.md`](./CODEX_SITES_WORKSPACE_PRIMITIVE_V1.md).
 
 ---
 

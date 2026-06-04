@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
 import { AppsList } from "./apps-list.jsx";
+import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
+import { SettingsAccordionGroup, SettingsAccordionSection } from "./settings-accordion-section.jsx";
 
 async function readForkMetadata() {
   try {
@@ -82,24 +84,39 @@ async function AppsSettingsPage() {
       <div className="workspace-settings-card-heading">
         <div>
           <h2>Apps</h2>
-          <p>Read-only workspace app, bridge, and fork metadata already available to this workspace.</p>
+          <p>Workspace apps discovered from the local apps directory and governed Data Model configuration.</p>
         </div>
       </div>
 
-      <section className="workspace-settings-section workspace-apps-linkage-section">
-        <h3>Workspace Linkage</h3>
-        <div className="workspace-settings-kv">
-          <span>Workspace</span><code>{workspaceConfig.id || "workspace-builder-default"}</code>
-          <span>Fork</span><code>{fork?.forkId || "local fork metadata unavailable"}</code>
-          <span>Kit</span><code>{fork?.kitId || workspaceConfig.provenance?.mirrors || "growthub-custom-workspace-starter-v1"}</code>
-          <span>Bridge</span><code>{bridge?.status || bridge?.id || "not connected"}</code>
-        </div>
-      </section>
+      <SettingsAccordionGroup defaultOpenId="workspace-apps">
+        <SettingsAccordionSection
+          id="workspace-apps"
+          title="Workspace Apps"
+          summary={`${apps.length} app${apps.length === 1 ? "" : "s"} discovered from directory and config.`}
+          className="workspace-apps-list-section"
+        >
+          <AppsList apps={apps} />
+        </SettingsAccordionSection>
 
-      <section className="workspace-settings-section workspace-apps-list-section">
-        <h3>Workspace Apps</h3>
-        <AppsList apps={apps} />
-      </section>
+        <SettingsAccordionSection
+          id="workspace-linkage"
+          title="Workspace Linkage"
+          summary="Fork, kit, and bridge identity for this workspace."
+          className="workspace-apps-linkage-section"
+        >
+          <div className="workspace-settings-kv">
+            <span>Workspace</span><code>{workspaceConfig.id || "workspace-builder-default"}</code>
+            <span>Fork</span><code>{fork?.forkId || "local fork metadata unavailable"}</code>
+            <span>Kit</span><code>{fork?.kitId || workspaceConfig.provenance?.mirrors || "growthub-custom-workspace-starter-v1"}</code>
+            <span>Bridge</span><code>{bridge?.status || bridge?.id || "not connected"}</code>
+          </div>
+        </SettingsAccordionSection>
+
+        <CodexSitesDataModelCard
+          apps={apps}
+          dataModel={workspaceConfig.dataModel || {}}
+        />
+      </SettingsAccordionGroup>
     </section>
   </SettingsShell>;
 }
