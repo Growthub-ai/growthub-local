@@ -45,6 +45,7 @@ import {
   Plus,
   Quote,
   RefreshCw,
+  Rocket,
   Rows3,
   Save,
   Search,
@@ -89,6 +90,11 @@ import {
 } from "@/lib/workspace-chart-values";
 import { selectObjectFilterableFields, selectObjectSortableFields } from "@/lib/workspace-metadata-selectors";
 import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
+import {
+  CODEX_SITES_OBJECT_ID,
+  ensureCodexSitesDataModel,
+  isCodexSiteUrl
+} from "@/lib/codex-sites-workspace-adapter";
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
@@ -500,6 +506,32 @@ function listBuilderWorkflowItems(config) {
           updatedAt: String(sandboxRow?.orchestrationPublishedAt || sandboxRow?.orchestrationDraftUpdatedAt || sandboxRow?.lastTested || "").trim()
         };
       });
+  });
+}
+
+function listBuilderSiteItems(config) {
+  const object = getDataModelObject(config, CODEX_SITES_OBJECT_ID);
+  const rows = Array.isArray(object?.rows) ? object.rows : [];
+  return rows.flatMap((row, index) => {
+    const url = String(row?.url || "").trim();
+    if (!isCodexSiteUrl(url)) return [];
+    const title = String(row?.Name || row?.name || `Codex Site ${index + 1}`).trim();
+    return [{
+      type: "site",
+      id: String(row?.id || row?.Name || `codex-site-${index + 1}`),
+      title,
+      itemKind: "Site",
+      updatedAt: formatBuilderTimestamp(row?.lastRecordedAt || ""),
+      status: String(row?.status || "draft").trim(),
+      site: {
+        row,
+        rowIndex: index,
+        title,
+        url,
+        app: String(row?.app || "apps/workspace").trim(),
+        client: String(row?.client || "Workspace").trim()
+      }
+    }];
   });
 }
 
@@ -4246,6 +4278,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   const canvas = config.canvas;
   const dashboards = config.dashboards || [];
   const workflows = useMemo(() => listBuilderWorkflowItems(config), [config]);
+  const sites = useMemo(() => listBuilderSiteItems(config), [config]);
   const builderItems = useMemo(() => {
     const dashboardItems = dashboards.map((dashboard, index) => ({
       type: "dashboard",
@@ -4266,13 +4299,17 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       status: workflow.lifecycleStatus || "draft",
       workflow
     }));
+    const siteItems = sites.map((site) => ({
+      ...site,
+      updatedAt: site.updatedAt || "new"
+    }));
     const q = builderListFilter.query.trim().toLowerCase();
-    return [...dashboardItems, ...workflowItems].filter((item) => {
+    return [...dashboardItems, ...siteItems, ...workflowItems].filter((item) => {
       if (builderListFilter.type !== "all" && item.type !== builderListFilter.type) return false;
       if (!q) return true;
-      return [item.title, item.itemKind, item.status, item.type].some((part) => String(part || "").toLowerCase().includes(q));
+      return [item.title, item.itemKind, item.status, item.type, item.site?.client, item.site?.app, item.site?.url].some((part) => String(part || "").toLowerCase().includes(q));
     });
-  }, [builderListFilter, dashboards, workflows]);
+  }, [builderListFilter, dashboards, sites, workflows]);
   const resolvedActiveDashboardId = getActiveDashboardId(dashboards, activeDashboardId);
   const resolvedActiveDashboardIndex = activeDashboardIndex(dashboards, resolvedActiveDashboardId);
   const widgetTypes = config.widgetTypes;
@@ -4708,6 +4745,50 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       setSaving(false);
     }
   }, [config, saving]);
+
+  const createCodexSite = useCallback(async () => {
+    if (saving) return;
+    const objects = Array.isArray(config.dataModel?.objects) ? config.dataModel.objects : [];
+    const hasCodexSitesObject = objects.some((object) => object?.id === CODEX_SITES_OBJECT_ID);
+    if (hasCodexSitesObject) {
+      window.open(`/data-model?object=${encodeURIComponent(CODEX_SITES_OBJECT_ID)}`, "_self");
+      return;
+    }
+    const nextDataModel = ensureCodexSitesDataModel(config.dataModel, []);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel: nextDataModel })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.workspaceConfig) {
+        throw new Error(payload.error || "Failed to create Codex Sites object");
+      }
+      setConfig((prev) => ({ ...prev, dataModel: payload.workspaceConfig.dataModel }));
+      setBuilderListFilter({ type: "site", query: "" });
+      setConfigMessage("Created Codex Sites object");
+      window.open(`/data-model?object=${encodeURIComponent(CODEX_SITES_OBJECT_ID)}`, "_self");
+    } catch (error) {
+      setConfigMessage(error.message || "Failed to create Codex Sites object");
+    } finally {
+      setSaving(false);
+    }
+  }, [config, saving]);
+
+  const manageSite = useCallback((site) => {
+    const rowParam = site?.rowIndex !== undefined ? `&row=${encodeURIComponent(String(site.rowIndex))}` : "";
+    window.open(`/data-model?object=${encodeURIComponent(CODEX_SITES_OBJECT_ID)}${rowParam}`, "_self");
+  }, []);
+
+  const openSite = useCallback((site) => {
+    if (site?.url) {
+      window.open(site.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    manageSite(site);
+  }, [manageSite]);
 
   const selectDashboard = useCallback((index) => {
     setConfig((prev) => {
@@ -5234,7 +5315,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     }
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 148;
-    const menuHeight = item?.type === "dashboard" ? 136 : 76;
+    const menuHeight = item?.type === "dashboard" ? 136 : item?.type === "site" ? 108 : 76;
     const margin = 8;
     const left = Math.min(
       Math.max(margin, rect.right - menuWidth),
@@ -5916,6 +5997,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
               </span>
             ) : null}
             <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
+            <button type="button" onClick={createCodexSite} disabled={saving}><Rocket size={15} />New Codex Site</button>
             <button type="button" onClick={createWorkflow} disabled={saving}><GitBranch size={15} />New Workflow</button>
             <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
           </div>}
@@ -5952,13 +6034,14 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         <section className="workspace-table" id="dashboards" aria-label="Builder">
           <div className="workspace-table-heading">
             <strong>Builder</strong>
-            <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"} · {workflows.length} workflow{workflows.length === 1 ? "" : "s"}</span>
+            <span>{dashboards.length} dashboard{dashboards.length === 1 ? "" : "s"} · {sites.length} site{sites.length === 1 ? "" : "s"} · {workflows.length} workflow{workflows.length === 1 ? "" : "s"}</span>
           </div>
           <div className="workspace-builder-filterbar">
             <div className="workspace-builder-filterbar__segments" role="group" aria-label="Builder item type">
               {[
                 ["all", "All"],
                 ["dashboard", "Dashboards"],
+                ["site", "Sites"],
                 ["workflow", "Workflows"]
               ].map(([type, label]) => (
                 <button
@@ -6049,6 +6132,45 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
                     <button type="button" onClick={() => { closeBuilderActionMenu(); enterDashboardTitleEdit(item.dashboard); }}>Rename</button>
                     <button type="button" onClick={() => { closeBuilderActionMenu(); cloneDashboard(item.index); }}>Clone</button>
                     <button type="button" onClick={() => { closeBuilderActionMenu(); deleteDashboard(item.index); }}>Delete</button>
+                  </span>
+                )}
+              </span>
+            </div> : item.type === "site" ? <div className="workspace-table-row" key={item.id}>
+              <span className="workspace-dashboard-title">
+                <button
+                  className={item.site.url ? "" : "active"}
+                  onClick={() => openSite(item.site)}
+                  type="button"
+                >{item.title}</button>
+              </span>
+              <span>{item.itemKind}</span>
+              <span>{item.updatedAt}</span>
+              <span>
+                <select
+                  aria-label={`Status for ${item.title}`}
+                  value={item.status || "draft"}
+                  disabled
+                >
+                  <option value="draft">draft</option>
+                  <option value="review">review</option>
+                  <option value="live">live</option>
+                  <option value="paused">paused</option>
+                </select>
+              </span>
+              <span className="workspace-dashboard-actions">
+                <button
+                  type="button"
+                  className="workspace-row-action-trigger"
+                  aria-label={`Actions for ${item.title}`}
+                  onClick={(event) => openBuilderActionMenu(item, event)}
+                >
+                  <MoreVertical size={16} aria-hidden="true" />
+                </button>
+                {builderActionMenuId === item.id && (
+                  <span className="workspace-row-action-menu" style={builderActionMenuPlacement || undefined}>
+                    <button type="button" disabled={!item.site.url} onClick={() => { closeBuilderActionMenu(); openSite(item.site); }}>Open URL</button>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); manageSite(item.site); }}>Manage</button>
+                    <button type="button" onClick={() => { closeBuilderActionMenu(); window.open("/settings/apps", "_self"); }}>Apps</button>
                   </span>
                 )}
               </span>

@@ -3577,6 +3577,53 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   font-size: 12px;
   line-height: 1.4;
 }
+.workspace-settings-action {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+}
+.workspace-settings-codex-sites-list {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #ececea;
+  padding: 10px 14px 0;
+}
+.workspace-settings-codex-sites-list a,
+.workspace-settings-codex-sites-list button {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #ececea;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  padding: 0 10px;
+}
+.workspace-settings-codex-sites-list span,
+.workspace-settings-codex-sites-list em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-settings-codex-sites-list em {
+  color: #777;
+  font-style: normal;
+}
 
 /* Source picker */
 .workspace-source-list {

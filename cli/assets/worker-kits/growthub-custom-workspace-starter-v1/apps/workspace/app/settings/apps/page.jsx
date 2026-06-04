@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
 import { AppsList } from "./apps-list.jsx";
+import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
 
 async function readForkMetadata() {
   try {
@@ -82,9 +83,14 @@ async function AppsSettingsPage() {
       <div className="workspace-settings-card-heading">
         <div>
           <h2>Apps</h2>
-          <p>Read-only workspace app, bridge, and fork metadata already available to this workspace.</p>
+          <p>Workspace apps discovered from the local apps directory and governed Data Model configuration.</p>
         </div>
       </div>
+
+      <CodexSitesDataModelCard
+        apps={apps}
+        dataModel={workspaceConfig.dataModel || {}}
+      />
 
       <section className="workspace-settings-section workspace-apps-linkage-section">
         <h3>Workspace Linkage</h3>
