@@ -890,6 +890,7 @@ const OBJECT_TYPE_PRESETS = {
       "lastSourceId",
       "lastResponse",
       "orchestrationConfig",
+      "orchestrationDeltas",
       "description",
       "resolverTemplateId",
       "connectorKind",

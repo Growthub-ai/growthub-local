@@ -142,6 +142,7 @@ function ApisWebhooksForm({ persistence, refs }) {
             kind: item.kind,
             endpointRef: item.endpointRef,
             url: item.url,
+            value: item.value || "",
             status: item.endpointRef || item.value ? "configured" : "not-configured",
             hasSecret: Boolean(item.value) || item.hasSecret
           }))
@@ -150,7 +151,10 @@ function ApisWebhooksForm({ persistence, refs }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.guidance || payload.error || "Failed to save API/Webhook refs");
       setItems(payload.refs.length ? payload.refs.map(normalizeRef) : [blankRef("api"), blankRef("webhook")]);
-      setMessage("Saved.");
+      const envCount = Array.isArray(payload.envWritten) ? payload.envWritten.length : 0;
+      setMessage(envCount > 0
+        ? `Saved. ${envCount} secret(s) written to .env.local (restart dev server if keys were new).`
+        : "Saved.");
     } catch (error) {
       setMessage(error.message || "Failed to save.");
     } finally {

@@ -61,7 +61,6 @@ import {
   effectiveRelations,
   exportTableAsCsv,
   importTableFromCsv,
-  listSavedEnvRefs,
   listWorkspaceDataModelTables,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
@@ -71,7 +70,9 @@ import {
   updateTableCell,
 } from "@/lib/workspace-data-model";
 import { ReferencePicker } from "./ReferencePicker.jsx";
+import { EnvKeyRefChips, EnvRefPicker } from "./EnvKeyRefChips.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
+import { applyDeleteCascade, computeDeleteImpact } from "@/lib/workspace-lifecycle";
 import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
 import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
@@ -559,6 +560,18 @@ function groupRecordColumns(columns) {
 function RecordFieldEditor({ table, tables, column, value, saving, editable, onDraft, onCommit, onExpandJson }) {
   const relation = relationForColumn(table, column);
   const large = column === "lastResponse" || String(value ?? "").length > 120;
+  if (column === "authRef") {
+    return (
+      <label className="dm-record-field">
+        <span>{column}</span>
+        <EnvRefPicker
+          value={value}
+          disabled={!table.mutable || saving || !editable}
+          onChange={(nextValue) => onCommit(column, nextValue)}
+        />
+      </label>
+    );
+  }
   if (relation) {
     return (
       <label className="dm-record-field">
@@ -661,7 +674,6 @@ function SandboxRecordFields({
   }, []);
 
   const locality = String(draft.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
-  const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
   const selectedEnvSlugs = useMemo(() => new Set(parseSandboxEnvRefs(draft.envRefs)), [draft.envRefs]);
   const selectedAdapterMeta = sandboxAdapters.find((a) => a.id === String(draft.adapter || "").trim());
 
@@ -852,22 +864,11 @@ function SandboxRecordFields({
       <DrawerSection title="Environment & Network">
         <div className="dm-record-field">
           <span>Env key references</span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {savedEnvRefs.length === 0 ? (
-              <span className="dm-cell-empty">Add keys under Settings -&gt; APIs &amp; Webhooks.</span>
-            ) : savedEnvRefs.map((ref) => (
-              <button
-                key={ref.endpointRef}
-                type="button"
-                className={`dm-btn-ghost${selectedEnvSlugs.has(ref.endpointRef) ? " dm-chip-active" : ""}`}
-                style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11 }}
-                disabled={!table.mutable || saving}
-                onClick={() => toggleEnvRef(ref.endpointRef)}
-              >
-                {ref.endpointRef}
-              </button>
-            ))}
-          </div>
+          <EnvKeyRefChips
+            selectedSlugs={selectedEnvSlugs}
+            disabled={!table.mutable || saving}
+            onToggle={toggleEnvRef}
+          />
         </div>
 
         <ToggleField
@@ -1783,6 +1784,8 @@ function DataModelTableSurface({
   const [menuColumn, setMenuColumn] = useState("");
   const [selectedRows, setSelectedRows] = useState(() => new Set());
   const [confirmDeleteSelection, setConfirmDeleteSelection] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [lastSelectedRowIndex, setLastSelectedRowIndex] = useState(null);
   const [selectMenuOpen, setSelectMenuOpen] = useState(false);
   const [pageSize, setPageSize] = useState(15);
@@ -2030,14 +2033,38 @@ function DataModelTableSurface({
     setSelectMenuOpen(false);
   }
 
-  function deleteSelectedRows() {
-    if (!selectedRows.size) return;
+  async function deleteSelectedRows() {
+    if (!selectedRows.size || deleting) return;
     const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
-    onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
-    setSelectedRow(null);
-    selectOriginalIndex(null);
-    setConfirmDeleteSelection(false);
-    clearRowSelection();
+    const impact = deleteImpact || computeDeleteImpact(workspaceConfig, table, rowIndexes);
+    setDeleting(true);
+    try {
+      onSave((config) => {
+        let next = rowIndexes.reduce((acc, rowIndex) => deleteTableRow(acc, table, rowIndex), config);
+        next = applyDeleteCascade(next, impact);
+        return next;
+      });
+      if (impact.sidecarKeys?.length) {
+        await fetch("/api/workspace/cleanup-sidecar", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ keys: impact.sidecarKeys, reason: "governed-delete" }),
+        });
+      }
+    } finally {
+      setDeleting(false);
+      setSelectedRow(null);
+      selectOriginalIndex(null);
+      setConfirmDeleteSelection(false);
+      setDeleteImpact(null);
+      clearRowSelection();
+    }
+  }
+
+  function openDeleteConfirmation() {
+    const rowIndexes = Array.from(selectedRows);
+    setDeleteImpact(computeDeleteImpact(workspaceConfig, table, rowIndexes));
+    setConfirmDeleteSelection(true);
   }
 
   const selectedEntry = selectedOriginalIndex === null
@@ -2105,7 +2132,7 @@ function DataModelTableSurface({
           {table.mutable && selectedRowCount > 0 && (
             <>
               <button type="button" className="dm-btn-ghost" disabled={saving} onClick={clearRowSelection}>Cancel selection</button>
-              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={() => setConfirmDeleteSelection(true)}>
+              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={openDeleteConfirmation}>
                 <Trash2 size={13} />Delete
               </button>
             </>
@@ -2360,11 +2387,34 @@ function DataModelTableSurface({
             </header>
             <div className="dm-orch-modal-body">
               <p>This will permanently remove {pluralize(selectedRowCount, "selected record")} from {table.label || table.source}.</p>
+              {deleteImpact?.fkImpacts?.length > 0 && (
+                <div className="dm-delete-impact">
+                  <p><strong>Dependent references ({deleteImpact.fkImpacts.length})</strong></p>
+                  <ul>
+                    {deleteImpact.fkImpacts.slice(0, 8).map((item, idx) => (
+                      <li key={`fk-${idx}`}>{item.type}: {item.objectLabel} → {item.rowLabel}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {deleteImpact?.navImpacts?.length > 0 && (
+                <div className="dm-delete-impact">
+                  <p><strong>Workflow shortcuts ({deleteImpact.navImpacts.length})</strong></p>
+                  <ul>
+                    {deleteImpact.navImpacts.map((item, idx) => (
+                      <li key={`nav-${idx}`}>{item.folderName}: {item.itemLabel}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {deleteImpact?.sidecarKeys?.length > 0 && (
+                <p className="dm-cell-empty">Will prune {deleteImpact.sidecarKeys.length} sandbox run history bucket(s) from the sidecar.</p>
+              )}
             </div>
             <footer className="dm-orch-modal-foot">
-              <button type="button" className="dm-btn-outline" onClick={() => setConfirmDeleteSelection(false)}>Cancel</button>
-              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={deleteSelectedRows}>
-                <Trash2 size={13} />Delete {selectedRowCount}
+              <button type="button" className="dm-btn-outline" onClick={() => { setConfirmDeleteSelection(false); setDeleteImpact(null); }}>Cancel</button>
+              <button type="button" className="dm-btn-danger-sm" disabled={saving || deleting} onClick={deleteSelectedRows}>
+                <Trash2 size={13} />{deleting ? "Deleting…" : `Delete ${selectedRowCount}`}
               </button>
             </footer>
           </section>

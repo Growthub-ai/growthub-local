@@ -20,6 +20,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { envKeyCandidates } from "@/lib/env-key-catalog";
 import {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -38,6 +39,92 @@ const READ_ONLY_GUIDANCE =
 
 function resolveWorkspaceConfigPath() {
   return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "growthub.config.json");
+}
+
+function resolveEnvLocalPath() {
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), ".env.local");
+}
+
+function parseEnvLocalContent(text) {
+  const lines = String(text || "").split("\n");
+  const entries = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      entries.push({ type: "raw", line });
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) {
+      entries.push({ type: "raw", line });
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1);
+    entries.push({ type: "kv", key, value, line });
+  }
+  return entries;
+}
+
+function serializeEnvLocalEntries(entries) {
+  return `${entries.map((entry) => entry.line).join("\n").replace(/\n*$/, "\n")}`;
+}
+
+/**
+ * Upsert secret values into .env.local (filesystem mode only). Keys are written
+ * using the primary envKeyCandidates slug; values never enter growthub.config.json.
+ */
+async function writeEnvLocalSecrets(secretWrites) {
+  if (!Array.isArray(secretWrites) || !secretWrites.length) return { written: [] };
+  const persistence = describePersistenceMode();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+
+  const envPath = resolveEnvLocalPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(envPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${envPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+
+  let existing = "";
+  try {
+    existing = await fs.readFile(envPath, "utf8");
+  } catch {
+    existing = "";
+  }
+
+  const entries = parseEnvLocalContent(existing);
+  const written = [];
+
+  for (const { slug, value } of secretWrites) {
+    const endpointRef = String(slug || "").trim();
+    const secret = String(value || "");
+    if (!endpointRef || !secret) continue;
+    const envKey = envKeyCandidates(endpointRef)[0];
+    if (!envKey) continue;
+    const escaped = secret.includes(" ") || secret.includes("#") || secret.includes('"')
+      ? `"${secret.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+      : secret;
+    const line = `${envKey}=${escaped}`;
+    const idx = entries.findIndex((e) => e.type === "kv" && e.key === envKey);
+    if (idx >= 0) {
+      entries[idx] = { type: "kv", key: envKey, value: escaped, line };
+    } else {
+      entries.push({ type: "kv", key: envKey, value: escaped, line });
+    }
+    written.push({ endpointRef, envKey });
+  }
+
+  if (written.length) {
+    await fs.writeFile(envPath, serializeEnvLocalEntries(entries), "utf8");
+  }
+  return { written };
 }
 
 async function readWorkspaceConfig() {
@@ -264,38 +351,44 @@ function normalizeApiWebhookRefs(refs) {
     error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
     throw error;
   }
-  return refs
-    .map((item, index) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        const error = new Error("each ref must be a plain object");
-        error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
-        throw error;
-      }
-      const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url"]);
-      const unknown = Object.keys(item).filter((key) => !allowed.has(key));
-      if (unknown.length) {
-        const error = new Error("ref contains unknown fields");
-        error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
-        error.details = unknown;
-        throw error;
-      }
-      const kind = item.kind === "webhook" ? "webhook" : "api";
-      const label = typeof item.label === "string" ? item.label.trim() : "";
-      const endpointRef = typeof item.endpointRef === "string" ? item.endpointRef.trim() : "";
-      const url = typeof item.url === "string" ? item.url.trim() : "";
-      if (!label && !endpointRef && !url && item.hasSecret !== true) return null;
-      return {
-        id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `custom-${kind}-${index + 1}`,
-        label: label || endpointRef,
-        kind,
-        sourceType: "custom-api-webhooks",
-        endpointRef,
-        url,
-        status: typeof item.status === "string" && item.status.trim() ? item.status.trim() : "configured",
-        hasSecret: item.hasSecret === true
-      };
-    })
-    .filter(Boolean);
+  const normalized = [];
+  const secretWrites = [];
+  refs.forEach((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      const error = new Error("each ref must be a plain object");
+      error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+      throw error;
+    }
+    const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url", "value"]);
+    const unknown = Object.keys(item).filter((key) => !allowed.has(key));
+    if (unknown.length) {
+      const error = new Error("ref contains unknown fields");
+      error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
+      error.details = unknown;
+      throw error;
+    }
+    const kind = item.kind === "webhook" ? "webhook" : "api";
+    const label = typeof item.label === "string" ? item.label.trim() : "";
+    const endpointRef = typeof item.endpointRef === "string" ? item.endpointRef.trim() : "";
+    const url = typeof item.url === "string" ? item.url.trim() : "";
+    const value = typeof item.value === "string" ? item.value.trim() : "";
+    if (!label && !endpointRef && !url && item.hasSecret !== true && !value) return;
+    const hasSecret = item.hasSecret === true || Boolean(value);
+    if (value && endpointRef) {
+      secretWrites.push({ slug: endpointRef, value });
+    }
+    normalized.push({
+      id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `custom-${kind}-${index + 1}`,
+      label: label || endpointRef,
+      kind,
+      sourceType: "custom-api-webhooks",
+      endpointRef,
+      url,
+      status: typeof item.status === "string" && item.status.trim() ? item.status.trim() : "configured",
+      hasSecret,
+    });
+  });
+  return { refs: normalized, secretWrites };
 }
 
 async function writeWorkspaceApiWebhookSettings(patch) {
@@ -309,7 +402,8 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
 
-  const refs = normalizeApiWebhookRefs(patch?.refs);
+  const { refs, secretWrites } = normalizeApiWebhookRefs(patch?.refs);
+  const envWriteResult = secretWrites.length ? await writeEnvLocalSecrets(secretWrites) : { written: [] };
   const current = await readWorkspaceConfig();
   const existing = Array.isArray(current.integrations) ? current.integrations : [];
   const next = {
@@ -335,7 +429,10 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
   await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+  return {
+    refs: next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks"),
+    envWritten: envWriteResult.written,
+  };
 }
 
 /**
@@ -423,8 +520,10 @@ export {
   describePersistenceMode,
   readWorkspaceConfig,
   readWorkspaceSourceRecords,
+  resolveEnvLocalPath,
   resolveWorkspaceConfigPath,
   validateWorkspaceConfig,
+  writeEnvLocalSecrets,
   writeWorkspaceConfig,
   writeWorkspaceApiWebhookSettings,
   writeWorkspaceIdentitySettings,
