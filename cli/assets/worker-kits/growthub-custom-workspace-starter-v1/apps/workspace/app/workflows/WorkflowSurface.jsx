@@ -47,6 +47,7 @@ import { OrchestrationGraphCanvas } from "../data-model/components/Orchestration
 import { OrchestrationGraphEmptyCanvas } from "../data-model/components/OrchestrationGraphEmptyCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
+import { OrchestrationDeltaHistoryPanel } from "./OrchestrationDeltaHistoryPanel.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
@@ -375,14 +376,18 @@ export default function WorkflowSurface() {
 
   const sandboxRow = resolved.row;
   const hasGraphValue = (value) => Boolean(parseOrchestrationGraph(value));
-  const effectiveFieldName = hasGraphValue(sandboxRow?.[fieldName])
-    ? fieldName
-    : hasGraphValue(sandboxRow?.orchestrationConfig)
-      ? "orchestrationConfig"
-      : hasGraphValue(sandboxRow?.orchestrationGraph)
-        ? "orchestrationGraph"
-        : (fieldName || "orchestrationConfig");
+  const effectiveFieldName = hasGraphValue(sandboxRow?.orchestrationConfig)
+    ? "orchestrationConfig"
+    : hasGraphValue(sandboxRow?.orchestrationGraph)
+      ? "orchestrationGraph"
+      : hasGraphValue(sandboxRow?.[fieldName])
+        ? fieldName
+        : "orchestrationConfig";
   const draftFieldName = effectiveFieldName === "orchestrationConfig" ? "orchestrationDraftConfig" : "orchestrationDraftGraph";
+  const orchestrationDeltas = useMemo(
+    () => (Array.isArray(sandboxRow?.orchestrationDeltas) ? sandboxRow.orchestrationDeltas : []),
+    [sandboxRow]
+  );
   const registryRow = useMemo(
     () => (sandboxRow && workspaceConfig ? resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) : null),
     [workspaceConfig, sandboxRow]
@@ -425,7 +430,9 @@ export default function WorkflowSurface() {
     const publishedParsed = parseOrchestrationGraph(sandboxRow[effectiveFieldName])
       || parseOrchestrationGraph(sandboxRow.orchestrationConfig)
       || parseOrchestrationGraph(sandboxRow.orchestrationGraph);
-    const parsed = graphHasNodes(draftParsed) || !graphHasNodes(publishedParsed) ? draftParsed : publishedParsed;
+    const parsed = graphHasNodes(draftParsed)
+      ? draftParsed
+      : (publishedParsed || draftParsed);
     setOrchestrationGraph(parsed);
     setDirty(false);
     setGraphError("");
@@ -689,6 +696,13 @@ export default function WorkflowSurface() {
     setSidecarMode("graph");
   }
 
+  function openHistoryMode() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("run");
+    router.push(`/workflows?${params.toString()}`);
+    setSidecarMode("history");
+  }
+
   function startFromRegistry() {
     if (!registryRow) return;
     setOrchestrationGraph(buildDefaultOrchestrationGraphFromRegistry(registryRow));
@@ -883,7 +897,15 @@ export default function WorkflowSurface() {
             <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow} onClick={openTraceMode}>
               <History size={13} /> See Runs
             </button>
+            <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow || !orchestrationDeltas.length} onClick={openHistoryMode}>
+              <GitBranch size={13} /> Publish history
+            </button>
             {sidecarMode === "trace" && (
+              <button type="button" className="dm-workflow-chip-btn" onClick={openGraphMode}>
+                Edit graph
+              </button>
+            )}
+            {sidecarMode === "history" && (
               <button type="button" className="dm-workflow-chip-btn" onClick={openGraphMode}>
                 Edit graph
               </button>
@@ -940,6 +962,11 @@ export default function WorkflowSurface() {
             onOpenGraph={openGraphMode}
             onReplay={runSandbox}
             running={running}
+          />
+        ) : sidecarMode === "history" ? (
+          <OrchestrationDeltaHistoryPanel
+            deltas={orchestrationDeltas}
+            onBack={openGraphMode}
           />
         ) : (
           <div className={`dm-orchestration-sidecar dm-workflow-orchestration${selectedNode || addTarget || runSetupOpen ? " has-panel" : ""}`}>

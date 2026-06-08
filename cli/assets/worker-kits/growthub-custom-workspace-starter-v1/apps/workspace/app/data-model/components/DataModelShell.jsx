@@ -56,12 +56,10 @@ import {
   addTableRow,
   appendRowsToTable,
   createTypedBusinessObject,
-  deleteTableRow,
   describeBindingLane,
   effectiveRelations,
   exportTableAsCsv,
   importTableFromCsv,
-  listSavedEnvRefs,
   listWorkspaceDataModelTables,
   parseSandboxAllowList,
   parseSandboxEnvRefs,
@@ -70,6 +68,9 @@ import {
   updateTableFieldSettings,
   updateTableCell,
 } from "@/lib/workspace-data-model";
+import { getFieldContract } from "@/lib/data-model/field-contracts";
+import { previewDeleteRowsImpact, deleteTableRowsWithCascade } from "@/lib/workspace-lifecycle";
+import { EnvRefChipPicker } from "./EnvRefChipPicker.jsx";
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
 import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
@@ -556,9 +557,86 @@ function groupRecordColumns(columns) {
   return groups;
 }
 
-function RecordFieldEditor({ table, tables, column, value, saving, editable, onDraft, onCommit, onExpandJson }) {
+function RecordFieldEditor({ table, tables, column, value, saving, editable, onDraft, onCommit, onExpandJson, envCatalog = [] }) {
   const relation = relationForColumn(table, column);
+  const fieldContract = getFieldContract(table.objectType, column);
   const large = column === "lastResponse" || String(value ?? "").length > 120;
+
+  if (fieldContract?.editor === "env-ref-picker") {
+    const selected = String(value || "").trim();
+    return (
+      <label className="dm-record-field">
+        <span>{column}</span>
+        <EnvRefChipPicker
+          catalog={envCatalog}
+          selected={selected}
+          multiselect={false}
+          disabled={!table.mutable || saving || !editable}
+          onSelect={(slug) => onCommit(column, slug)}
+        />
+      </label>
+    );
+  }
+
+  if (fieldContract?.editor === "env-ref-multiselect") {
+    const selected = new Set(parseSandboxEnvRefs(value));
+    return (
+      <label className="dm-record-field">
+        <span>{column}</span>
+        <EnvRefChipPicker
+          catalog={envCatalog}
+          selected={selected}
+          disabled={!table.mutable || saving || !editable}
+          onToggle={(slug) => {
+            const next = new Set(selected);
+            if (next.has(slug)) next.delete(slug);
+            else next.add(slug);
+            onCommit(column, [...next].join(","));
+          }}
+        />
+      </label>
+    );
+  }
+
+  if (fieldContract?.editor === "segmented-toggle" && Array.isArray(fieldContract.options)) {
+    return (
+      <SegmentedToggle
+        name={`dm-field-${column}`}
+        label={column}
+        value={String(value || fieldContract.options[0])}
+        options={fieldContract.options}
+        disabled={!table.mutable || saving || !editable}
+        onChange={(nextValue) => onCommit(column, nextValue)}
+      />
+    );
+  }
+
+  if (fieldContract?.editor === "select" && Array.isArray(fieldContract.options)) {
+    return (
+      <label className="dm-record-field">
+        <span>{column}</span>
+        <StaticSelect
+          value={String(value || "")}
+          disabled={!table.mutable || saving || !editable}
+          options={fieldContract.options}
+          onChange={(nextValue) => onCommit(column, nextValue)}
+        />
+      </label>
+    );
+  }
+
+  if (fieldContract?.editor === "boolean-toggle") {
+    const checked = ["true", "1", "on", "yes"].includes(String(value || "").trim().toLowerCase());
+    return (
+      <ToggleField
+        checked={checked}
+        disabled={!table.mutable || saving || !editable}
+        label={column}
+        onChange={(on) => onCommit(column, on ? "true" : "false")}
+      />
+    );
+  }
+
   if (relation) {
     return (
       <label className="dm-record-field">
@@ -650,7 +728,8 @@ function SandboxRecordFields({
   loadingSandboxHistory,
   onLoadSandboxHistory,
   onOpenGraphSidecar,
-  onOpenTraceSidecar
+  onOpenTraceSidecar,
+  envCatalog = []
 }) {
   const [sandboxAdapters, setSandboxAdapters] = useState([]);
   useEffect(() => {
@@ -661,7 +740,6 @@ function SandboxRecordFields({
   }, []);
 
   const locality = String(draft.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
-  const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
   const selectedEnvSlugs = useMemo(() => new Set(parseSandboxEnvRefs(draft.envRefs)), [draft.envRefs]);
   const selectedAdapterMeta = sandboxAdapters.find((a) => a.id === String(draft.adapter || "").trim());
 
@@ -852,22 +930,12 @@ function SandboxRecordFields({
       <DrawerSection title="Environment & Network">
         <div className="dm-record-field">
           <span>Env key references</span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {savedEnvRefs.length === 0 ? (
-              <span className="dm-cell-empty">Add keys under Settings -&gt; APIs &amp; Webhooks.</span>
-            ) : savedEnvRefs.map((ref) => (
-              <button
-                key={ref.endpointRef}
-                type="button"
-                className={`dm-btn-ghost${selectedEnvSlugs.has(ref.endpointRef) ? " dm-chip-active" : ""}`}
-                style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11 }}
-                disabled={!table.mutable || saving}
-                onClick={() => toggleEnvRef(ref.endpointRef)}
-              >
-                {ref.endpointRef}
-              </button>
-            ))}
-          </div>
+          <EnvRefChipPicker
+            catalog={envCatalog}
+            selected={selectedEnvSlugs}
+            disabled={!table.mutable || saving}
+            onToggle={toggleEnvRef}
+          />
         </div>
 
         <ToggleField
@@ -1144,8 +1212,22 @@ function DataModelRecordDrawer({
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
+  const [envCatalog, setEnvCatalog] = useState([]);
   const drawerKeyRef = useRef("");
   const router = useRouter();
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/workspace/env-key-catalog", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (!cancelled) setEnvCatalog(Array.isArray(payload.refs) ? payload.refs : []);
+      })
+      .catch(() => {
+        if (!cancelled) setEnvCatalog([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const drawerKey = `${table.id || table.objectId || table.source}:${rowIndex}:${row?.Name || row?.id || ""}`;
@@ -1656,6 +1738,7 @@ function DataModelRecordDrawer({
               onLoadSandboxHistory={loadSandboxHistory}
               onOpenGraphSidecar={openWorkflowView}
               onOpenTraceSidecar={openTraceSidecar}
+              envCatalog={envCatalog}
             />
           ) : isCodexSitesObject ? (
             <CodexSitesRecordFields
@@ -1677,6 +1760,7 @@ function DataModelRecordDrawer({
                   value={String(draft?.[column] ?? "")}
                   saving={saving}
                   editable={editMode}
+                  envCatalog={envCatalog}
                   onDraft={(field, nextValue) => editMode && setDraft((current) => ({ ...current, [field]: nextValue }))}
                   onCommit={updateField}
                   onExpandJson={expandLastResponse}
@@ -1783,6 +1867,8 @@ function DataModelTableSurface({
   const [menuColumn, setMenuColumn] = useState("");
   const [selectedRows, setSelectedRows] = useState(() => new Set());
   const [confirmDeleteSelection, setConfirmDeleteSelection] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState(null);
+  const [deletingRows, setDeletingRows] = useState(false);
   const [lastSelectedRowIndex, setLastSelectedRowIndex] = useState(null);
   const [selectMenuOpen, setSelectMenuOpen] = useState(false);
   const [pageSize, setPageSize] = useState(15);
@@ -2030,14 +2116,35 @@ function DataModelTableSurface({
     setSelectMenuOpen(false);
   }
 
-  function deleteSelectedRows() {
+  function openDeleteConfirmation() {
     if (!selectedRows.size) return;
+    const rowIndexes = Array.from(selectedRows);
+    setDeleteImpact(previewDeleteRowsImpact(workspaceConfig, table, rowIndexes));
+    setConfirmDeleteSelection(true);
+  }
+
+  async function deleteSelectedRows() {
+    if (!selectedRows.size || deletingRows) return;
     const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
-    onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
-    setSelectedRow(null);
-    selectOriginalIndex(null);
-    setConfirmDeleteSelection(false);
-    clearRowSelection();
+    const impact = deleteImpact || previewDeleteRowsImpact(workspaceConfig, table, rowIndexes);
+    setDeletingRows(true);
+    try {
+      onSave((config) => deleteTableRowsWithCascade(config, table, rowIndexes));
+      if (impact.sidecarKeys?.length) {
+        await fetch("/api/workspace/cleanup-sidecar", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ keys: impact.sidecarKeys })
+        });
+      }
+      setSelectedRow(null);
+      selectOriginalIndex(null);
+      setConfirmDeleteSelection(false);
+      setDeleteImpact(null);
+      clearRowSelection();
+    } finally {
+      setDeletingRows(false);
+    }
   }
 
   const selectedEntry = selectedOriginalIndex === null
@@ -2105,7 +2212,7 @@ function DataModelTableSurface({
           {table.mutable && selectedRowCount > 0 && (
             <>
               <button type="button" className="dm-btn-ghost" disabled={saving} onClick={clearRowSelection}>Cancel selection</button>
-              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={() => setConfirmDeleteSelection(true)}>
+              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={openDeleteConfirmation}>
                 <Trash2 size={13} />Delete
               </button>
             </>
@@ -2360,11 +2467,26 @@ function DataModelTableSurface({
             </header>
             <div className="dm-orch-modal-body">
               <p>This will permanently remove {pluralize(selectedRowCount, "selected record")} from {table.label || table.source}.</p>
+              {deleteImpact?.impacts?.length ? (
+                <div className="dm-delete-impact-list">
+                  <p className="dm-delete-impact-title">Impact preview</p>
+                  <ul>
+                    {deleteImpact.impacts.map((impact, index) => (
+                      <li key={`${impact.kind}-${impact.label}-${index}`}>{impact.label}</li>
+                    ))}
+                  </ul>
+                  {deleteImpact.sidecarKeys?.length ? (
+                    <p className="dm-cell-empty">Also prunes {deleteImpact.sidecarKeys.length} sidecar run histor{deleteImpact.sidecarKeys.length === 1 ? "y" : "ies"} key{deleteImpact.sidecarKeys.length === 1 ? "" : "s"}.</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="dm-cell-empty">No cross-references detected beyond this table.</p>
+              )}
             </div>
             <footer className="dm-orch-modal-foot">
-              <button type="button" className="dm-btn-outline" onClick={() => setConfirmDeleteSelection(false)}>Cancel</button>
-              <button type="button" className="dm-btn-danger-sm" disabled={saving} onClick={deleteSelectedRows}>
-                <Trash2 size={13} />Delete {selectedRowCount}
+              <button type="button" className="dm-btn-outline" onClick={() => { setConfirmDeleteSelection(false); setDeleteImpact(null); }}>Cancel</button>
+              <button type="button" className="dm-btn-danger-sm" disabled={saving || deletingRows} onClick={deleteSelectedRows}>
+                <Trash2 size={13} />{deletingRows ? "Deleting…" : `Delete ${selectedRowCount}`}
               </button>
             </footer>
           </section>

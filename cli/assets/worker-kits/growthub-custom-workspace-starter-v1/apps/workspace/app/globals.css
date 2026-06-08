@@ -5327,6 +5327,70 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-workflow-error { color: #b91c1c; }
 .dm-workflow-status-msg { margin: 0 16px 16px; font-size: 12px; color: #374151; }
 
+.dm-env-ref-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  margin-right: 5px;
+  background: #d1d5db;
+  vertical-align: middle;
+}
+.dm-env-ref-resolved .dm-env-ref-dot { background: #16a34a; }
+.dm-env-ref-missing .dm-env-ref-dot { background: #f59e0b; }
+
+.dm-delete-impact-list { margin-top: 12px; }
+.dm-delete-impact-title { font-size: 12px; font-weight: 600; margin: 0 0 6px; color: #374151; }
+.dm-delete-impact-list ul { margin: 0; padding-left: 18px; font-size: 12px; color: #4b5563; }
+
+.dm-workflow-delta-history { padding: 16px; overflow: auto; }
+.dm-workflow-delta-history__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dm-workflow-delta-history__eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #6b7280;
+}
+.dm-workflow-delta-history__head h2 { margin: 0; font-size: 18px; }
+.dm-workflow-delta-timeline { display: grid; gap: 8px; }
+.dm-workflow-delta-card {
+  border: 1px solid #ececef;
+  border-radius: 8px;
+  background: #fff;
+}
+.dm-workflow-delta-card__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.dm-workflow-delta-card__version { font-weight: 600; font-size: 13px; }
+.dm-workflow-delta-card__meta { font-size: 12px; color: #6b7280; }
+.dm-workflow-delta-card__body { padding: 0 12px 12px 28px; font-size: 12px; color: #374151; }
+.dm-workflow-delta-card__reason { margin: 0 0 8px; white-space: pre-wrap; }
+.dm-workflow-delta-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.dm-workflow-delta-card__stats div { display: grid; gap: 2px; }
+.dm-workflow-delta-card__stats dt { font-size: 10px; text-transform: uppercase; color: #9ca3af; }
+.dm-workflow-delta-card__stats dd { margin: 0; font-weight: 600; }
+.dm-workflow-delta-node-list { margin: 0; padding-left: 18px; }
+
 .dm-workflow-orchestration .dm-orchestration-sidecar__body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;

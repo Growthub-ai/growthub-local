@@ -309,6 +309,46 @@ async function main() {
     assert(String(runBody.response?.stdout || "").includes("growthub-probe-ok"), "expected echo output in stdout");
     assert(runBody.response?.templateTrace?.resolverTemplateId === "custom-http", "expected templateTrace from row");
 
+    // --- env-key-catalog: name-only merged refs ---
+    res = await fetch(`${base}/api/workspace/env-key-catalog`, { cache: "no-store" });
+    assert(res.ok, `env-key-catalog failed ${res.status}`);
+    const envCatalog = await res.json();
+    assert(envCatalog.kind === "growthub-env-key-catalog-v1", "env-key-catalog kind");
+    assert(Array.isArray(envCatalog.refs), "env-key-catalog refs array");
+
+    // --- cleanup-sidecar: negative empty keys is ok ---
+    res = await fetch(`${base}/api/workspace/cleanup-sidecar`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keys: [] }),
+    });
+    assert(res.ok, `cleanup-sidecar empty failed ${res.status}`);
+
+    // --- settings apis-webhooks: write secret to .env.local in fs mode ---
+    res = await fetch(`${base}/api/settings/apis-webhooks`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        refs: [{
+          id: "probe-env",
+          kind: "api",
+          endpointRef: "PROBE_ENV_KEY",
+          value: "probe-secret-value",
+          status: "configured",
+          hasSecret: true
+        }]
+      }),
+    });
+    assert(res.ok, `apis-webhooks PATCH failed ${res.status}`);
+    const settingsPayload = await res.json();
+    assert(Array.isArray(settingsPayload.refs), "settings refs");
+    assert(settingsPayload.envLocalWritten?.includes("PROBE_ENV_KEY"), "expected .env.local write receipt");
+
+    res = await fetch(`${base}/api/workspace/env-key-catalog`, { cache: "no-store" });
+    const envCatalogAfter = await res.json();
+    const probeRef = (envCatalogAfter.refs || []).find((ref) => ref.endpointRef === "PROBE_ENV_KEY");
+    assert(probeRef?.resolved === true, "PROBE_ENV_KEY should resolve after settings save");
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {

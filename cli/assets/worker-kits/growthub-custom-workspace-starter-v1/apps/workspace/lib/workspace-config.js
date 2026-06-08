@@ -258,6 +258,74 @@ async function writeWorkspaceIdentitySettings(patch) {
   return next;
 }
 
+function resolveEnvLocalPath() {
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), ".env.local");
+}
+
+function formatEnvLocalValue(value) {
+  const text = String(value ?? "");
+  if (!text) return '""';
+  if (/[\s#"'\\]/.test(text)) {
+    return `"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return text;
+}
+
+function parseEnvLocalLines(raw) {
+  const lines = String(raw || "").split(/\r?\n/);
+  const map = new Map();
+  const order = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!key) continue;
+    if (!map.has(key)) order.push(key);
+    map.set(key, line.slice(eq + 1));
+  }
+  return { map, order, lines };
+}
+
+async function writeEnvLocalSecrets(secretPatches) {
+  const patches = Array.isArray(secretPatches) ? secretPatches : [];
+  const entries = patches
+    .map((item) => ({
+      key: typeof item?.endpointRef === "string" ? item.endpointRef.trim() : "",
+      value: typeof item?.value === "string" ? item.value : ""
+    }))
+    .filter((item) => item.key && item.value);
+  if (!entries.length) return { written: [] };
+
+  const envPath = resolveEnvLocalPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(envPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${envPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+
+  let raw = "";
+  try {
+    raw = await fs.readFile(envPath, "utf8");
+  } catch {
+    raw = "";
+  }
+
+  const { map, order } = parseEnvLocalLines(raw);
+  const written = [];
+  for (const entry of entries) {
+    map.set(entry.key, formatEnvLocalValue(entry.value));
+    if (!order.includes(entry.key)) order.push(entry.key);
+    written.push(entry.key);
+  }
+
+  const body = order.map((key) => `${key}=${map.get(key)}`).join("\n");
+  await fs.writeFile(envPath, body ? `${body}\n` : "", "utf8");
+  return { written };
+}
+
 function normalizeApiWebhookRefs(refs) {
   if (!Array.isArray(refs)) {
     const error = new Error("refs must be an array");
@@ -271,7 +339,7 @@ function normalizeApiWebhookRefs(refs) {
         error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
         throw error;
       }
-      const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url"]);
+      const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url", "value"]);
       const unknown = Object.keys(item).filter((key) => !allowed.has(key));
       if (unknown.length) {
         const error = new Error("ref contains unknown fields");
@@ -283,7 +351,8 @@ function normalizeApiWebhookRefs(refs) {
       const label = typeof item.label === "string" ? item.label.trim() : "";
       const endpointRef = typeof item.endpointRef === "string" ? item.endpointRef.trim() : "";
       const url = typeof item.url === "string" ? item.url.trim() : "";
-      if (!label && !endpointRef && !url && item.hasSecret !== true) return null;
+      const hasTypedSecret = typeof item.value === "string" && item.value.trim().length > 0;
+      if (!label && !endpointRef && !url && item.hasSecret !== true && !hasTypedSecret) return null;
       return {
         id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `custom-${kind}-${index + 1}`,
         label: label || endpointRef,
@@ -292,7 +361,7 @@ function normalizeApiWebhookRefs(refs) {
         endpointRef,
         url,
         status: typeof item.status === "string" && item.status.trim() ? item.status.trim() : "configured",
-        hasSecret: item.hasSecret === true
+        hasSecret: item.hasSecret === true || hasTypedSecret
       };
     })
     .filter(Boolean);
@@ -310,6 +379,17 @@ async function writeWorkspaceApiWebhookSettings(patch) {
   }
 
   const refs = normalizeApiWebhookRefs(patch?.refs);
+  const secretPatches = Array.isArray(patch?.refs)
+    ? patch.refs
+      .map((item) => ({
+        endpointRef: typeof item?.endpointRef === "string" ? item.endpointRef.trim() : "",
+        value: typeof item?.value === "string" ? item.value : ""
+      }))
+      .filter((item) => item.endpointRef && item.value)
+    : [];
+  if (secretPatches.length) {
+    await writeEnvLocalSecrets(secretPatches);
+  }
   const current = await readWorkspaceConfig();
   const existing = Array.isArray(current.integrations) ? current.integrations : [];
   const next = {
@@ -335,7 +415,11 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
   await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+  const savedRefs = next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+  return {
+    refs: savedRefs,
+    envLocalWritten: secretPatches.map((item) => item.endpointRef)
+  };
 }
 
 /**
@@ -423,8 +507,10 @@ export {
   describePersistenceMode,
   readWorkspaceConfig,
   readWorkspaceSourceRecords,
+  resolveEnvLocalPath,
   resolveWorkspaceConfigPath,
   validateWorkspaceConfig,
+  writeEnvLocalSecrets,
   writeWorkspaceConfig,
   writeWorkspaceApiWebhookSettings,
   writeWorkspaceIdentitySettings,
