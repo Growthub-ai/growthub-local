@@ -20,6 +20,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readAdapterConfig } from "@/lib/adapters/env";
+import { envKeyCandidates } from "@/lib/workspace-env-catalog";
 import {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -38,6 +39,95 @@ const READ_ONLY_GUIDANCE =
 
 function resolveWorkspaceConfigPath() {
   return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "growthub.config.json");
+}
+
+function resolveEnvLocalPath() {
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), ".env.local");
+}
+
+function parseEnvLocalFile(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const entries = [];
+  for (const line of lines) {
+    if (!line.trim() || line.trim().startsWith("#")) {
+      entries.push({ raw: line, type: "raw" });
+      continue;
+    }
+    const eq = line.indexOf("=");
+    if (eq === -1) {
+      entries.push({ raw: line, type: "raw" });
+      continue;
+    }
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1);
+    entries.push({ type: "kv", key, value, raw: line });
+  }
+  return entries;
+}
+
+function serializeEnvLocalFile(entries) {
+  return `${entries.map((entry) => {
+    if (entry.type === "raw") return entry.raw;
+    const escaped = String(entry.value ?? "").replace(/\n/g, "\\n");
+    return `${entry.key}=${escaped}`;
+  }).join("\n")}\n`;
+}
+
+/**
+ * Write secret values to .env.local (filesystem mode only). Config keeps
+ * endpointRef + hasSecret metadata; values never enter growthub.config.json.
+ */
+async function writeEnvLocalSecrets(secretValues) {
+  const persistence = describePersistenceMode();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+  if (!secretValues || typeof secretValues !== "object" || Array.isArray(secretValues)) {
+    return { written: [] };
+  }
+
+  const envPath = resolveEnvLocalPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(envPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${envPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+
+  let existing = "";
+  try {
+    existing = await fs.readFile(envPath, "utf8");
+  } catch {
+    existing = "";
+  }
+
+  const entries = parseEnvLocalFile(existing);
+  const written = [];
+
+  for (const [slug, rawValue] of Object.entries(secretValues)) {
+    const endpointRef = String(slug || "").trim();
+    const value = String(rawValue ?? "");
+    if (!endpointRef || !value.trim()) continue;
+    const key = envKeyCandidates(endpointRef)[0];
+    if (!key) continue;
+    const kvIndex = entries.findIndex((entry) => entry.type === "kv" && entry.key === key);
+    if (kvIndex >= 0) {
+      entries[kvIndex] = { type: "kv", key, value };
+    } else {
+      entries.push({ type: "kv", key, value });
+    }
+    written.push(key);
+    process.env[key] = value;
+  }
+
+  if (written.length) {
+    await fs.writeFile(envPath, serializeEnvLocalFile(entries), "utf8");
+  }
+
+  return { written };
 }
 
 async function readWorkspaceConfig() {
@@ -309,6 +399,14 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
 
+  const secretValues = patch?.secretValues && typeof patch.secretValues === "object" && !Array.isArray(patch.secretValues)
+    ? patch.secretValues
+    : null;
+  let envWrite = { written: [] };
+  if (secretValues && Object.keys(secretValues).length) {
+    envWrite = await writeEnvLocalSecrets(secretValues);
+  }
+
   const refs = normalizeApiWebhookRefs(patch?.refs);
   const current = await readWorkspaceConfig();
   const existing = Array.isArray(current.integrations) ? current.integrations : [];
@@ -335,7 +433,10 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
   await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+  return {
+    refs: next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks"),
+    envKeysWritten: envWrite.written
+  };
 }
 
 /**
@@ -423,8 +524,10 @@ export {
   describePersistenceMode,
   readWorkspaceConfig,
   readWorkspaceSourceRecords,
+  resolveEnvLocalPath,
   resolveWorkspaceConfigPath,
   validateWorkspaceConfig,
+  writeEnvLocalSecrets,
   writeWorkspaceConfig,
   writeWorkspaceApiWebhookSettings,
   writeWorkspaceIdentitySettings,

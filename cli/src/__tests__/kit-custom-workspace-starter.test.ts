@@ -609,6 +609,27 @@ describe("growthub-custom-workspace-starter-v1 — new upstream primitives prese
     expect(appExists("app/api/workspace/register-resolver/route.js")).toBe(true);
   });
 
+  it("app/api/workspace/env-key-catalog/route.js ships", () => {
+    expect(appExists("app/api/workspace/env-key-catalog/route.js")).toBe(true);
+  });
+
+  it("app/api/workspace/sandbox-scheduler/route.js ships", () => {
+    expect(appExists("app/api/workspace/sandbox-scheduler/route.js")).toBe(true);
+  });
+
+  it("lib/workspace-env-catalog.js ships buildEnvKeyCatalog", () => {
+    expect(appExists("lib/workspace-env-catalog.js")).toBe(true);
+    const source = appText("lib/workspace-env-catalog.js");
+    expect(source).toContain("function buildEnvKeyCatalog");
+  });
+
+  it("lib/workspace-lifecycle.js ships delete cascade helpers", () => {
+    expect(appExists("lib/workspace-lifecycle.js")).toBe(true);
+    const source = appText("lib/workspace-lifecycle.js");
+    expect(source).toContain("function computeRowDeleteImpact");
+    expect(source).toContain("function deleteTableRowWithCascade");
+  });
+
   it("app/api/workspace/resolvers/route.js ships", () => {
     expect(appExists("app/api/workspace/resolvers/route.js")).toBe(true);
   });
@@ -877,6 +898,13 @@ describe("growthub-custom-workspace-starter-v1 — kit.json frozen asset coverag
     "apps/workspace/app/api/workspace/refresh-sources/route.js",
     "apps/workspace/app/api/workspace/test-source/route.js",
     "apps/workspace/app/api/workspace/register-resolver/route.js",
+    "apps/workspace/app/api/workspace/env-key-catalog/route.js",
+    "apps/workspace/app/api/workspace/sandbox-scheduler/route.js",
+    "apps/workspace/app/api/workspace/delete-impact/route.js",
+    "apps/workspace/app/api/workspace/cleanup-sidecar/route.js",
+    "apps/workspace/lib/workspace-env-catalog.js",
+    "apps/workspace/lib/workspace-lifecycle.js",
+    "apps/workspace/app/data-model/components/OrchestrationDeltaHistoryPanel.jsx",
     "apps/workspace/app/api/workspace/resolvers/route.js",
     "apps/workspace/lib/adapters/integrations/source-resolver-registry.js",
     "apps/workspace/lib/adapters/integrations/resolver-loader.js",
@@ -2150,6 +2178,13 @@ describe("orchestration-run-console — observability model", () => {
     expect(surface).toContain("OrchestrationRunTracePanel");
     expect(surface).toContain("onReplay={runSandbox}");
     expect(surface).toContain("running={running}");
+  });
+
+  it("WorkflowSurface surfaces publish delta history", () => {
+    const surface = appText("app/workflows/WorkflowSurface.jsx");
+    expect(surface).toContain("OrchestrationDeltaHistoryPanel");
+    expect(surface).toContain('sidecarMode === "history"');
+    expect(surface).toContain("Publish history");
   });
 
   it("sandbox-run route still exports GET and POST", () => {

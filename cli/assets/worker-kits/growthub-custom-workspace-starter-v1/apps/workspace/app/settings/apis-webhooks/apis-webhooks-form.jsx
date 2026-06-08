@@ -133,6 +133,14 @@ function ApisWebhooksForm({ persistence, refs }) {
     setSaving(true);
     setMessage("");
     try {
+      const secretValues = {};
+      for (const item of items) {
+        const endpointRef = String(item.endpointRef || "").trim();
+        const value = String(item.value || "").trim();
+        if (endpointRef && value && value !== "************") {
+          secretValues[endpointRef] = value;
+        }
+      }
       const response = await fetch("/api/settings/apis-webhooks", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -144,13 +152,17 @@ function ApisWebhooksForm({ persistence, refs }) {
             url: item.url,
             status: item.endpointRef || item.value ? "configured" : "not-configured",
             hasSecret: Boolean(item.value) || item.hasSecret
-          }))
+          })),
+          secretValues
         })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.guidance || payload.error || "Failed to save API/Webhook refs");
       setItems(payload.refs.length ? payload.refs.map(normalizeRef) : [blankRef("api"), blankRef("webhook")]);
-      setMessage("Saved.");
+      const envNote = Array.isArray(payload.envKeysWritten) && payload.envKeysWritten.length
+        ? ` Wrote ${payload.envKeysWritten.length} key(s) to .env.local.`
+        : "";
+      setMessage(`Saved.${envNote}`);
     } catch (error) {
       setMessage(error.message || "Failed to save.");
     } finally {

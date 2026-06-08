@@ -683,9 +683,49 @@ function createBlankWorkflowSandboxRow(rowId, nowIso) {
   };
 }
 
-function createWorkflowApiRegistryObject() {
+function createWorkflowApiRegistryRow(partial = {}) {
+  return {
+    integrationId: "growthub-workspace-smoke-api",
+    authRef: "",
+    baseUrl: "http://localhost:3000",
+    endpoint: "/api/workspace",
+    method: "GET",
+    status: "draft",
+    lastTested: "",
+    lastResponse: "",
+    entityTypes: "workspace",
+    description: "Local workspace smoke endpoint for first workflow setup.",
+    connectorKind: "custom-http",
+    resolverTemplateId: "",
+    schemaVersion: "1",
+    capabilities: "read",
+    executionLane: "sandbox-local",
+    ...partial
+  };
+}
+
+function createWorkspaceSchedulerApiRegistryRow(partial = {}) {
+  return createWorkflowApiRegistryRow({
+    integrationId: "growthub-workspace-scheduler",
+    Name: "Workspace Scheduler",
+    baseUrl: "http://localhost:3000",
+    endpoint: "/api/workspace/sandbox-scheduler",
+    method: "POST",
+    description: "Default inbound receiver for growthub-sandbox-run-v1 serverless delegation.",
+    connectorKind: "custom-http",
+    executionLane: "sandbox-serverless",
+    ...partial
+  });
+}
+
+function createWorkflowApiRegistryObject(extraRows = []) {
   const preset = OBJECT_TYPE_PRESETS["api-registry"] || {};
   const columns = Array.isArray(preset.columns) ? [...preset.columns] : ["integrationId"];
+  const baseRows = [createWorkflowApiRegistryRow(), createWorkspaceSchedulerApiRegistryRow()];
+  const rows = [...baseRows, ...extraRows].filter((row, index, all) => {
+    const id = String(row?.integrationId || "").trim();
+    return id && all.findIndex((item) => String(item?.integrationId || "").trim() === id) === index;
+  });
   return {
     id: "workflow-api-registry",
     label: preset.label || "API Registry",
@@ -693,25 +733,7 @@ function createWorkflowApiRegistryObject() {
     objectType: "api-registry",
     icon: preset.icon || "Code2",
     columns,
-    rows: [
-      {
-        integrationId: "growthub-workspace-smoke-api",
-        authRef: "",
-        baseUrl: "http://localhost:3000",
-        endpoint: "/api/workspace",
-        method: "GET",
-        status: "draft",
-        lastTested: "",
-        lastResponse: "",
-        entityTypes: "workspace",
-        description: "Local workspace smoke endpoint for first workflow setup.",
-        connectorKind: "custom-http",
-        resolverTemplateId: "",
-        schemaVersion: "1",
-        capabilities: "read",
-        executionLane: "sandbox-local"
-      }
-    ],
+    rows,
     binding: { mode: "manual", source: "Data Model" },
     relations: Array.isArray(preset.relations) ? preset.relations.map((relation) => ({ ...relation })) : [],
     fieldSettings: { hidden: [], order: columns }

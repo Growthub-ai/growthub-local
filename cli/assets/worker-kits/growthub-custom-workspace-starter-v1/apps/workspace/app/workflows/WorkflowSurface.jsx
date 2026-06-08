@@ -47,6 +47,7 @@ import { OrchestrationGraphCanvas } from "../data-model/components/Orchestration
 import { OrchestrationGraphEmptyCanvas } from "../data-model/components/OrchestrationGraphEmptyCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
+import { OrchestrationDeltaHistoryPanel } from "../data-model/components/OrchestrationDeltaHistoryPanel.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
@@ -689,6 +690,13 @@ export default function WorkflowSurface() {
     setSidecarMode("graph");
   }
 
+  function openHistoryMode() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("run");
+    router.push(`/workflows?${params.toString()}`);
+    setSidecarMode("history");
+  }
+
   function startFromRegistry() {
     if (!registryRow) return;
     setOrchestrationGraph(buildDefaultOrchestrationGraphFromRegistry(registryRow));
@@ -883,7 +891,10 @@ export default function WorkflowSurface() {
             <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow} onClick={openTraceMode}>
               <History size={13} /> See Runs
             </button>
-            {sidecarMode === "trace" && (
+            <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow} onClick={openHistoryMode}>
+              Publish history
+            </button>
+            {(sidecarMode === "trace" || sidecarMode === "history") && (
               <button type="button" className="dm-workflow-chip-btn" onClick={openGraphMode}>
                 Edit graph
               </button>
@@ -940,6 +951,11 @@ export default function WorkflowSurface() {
             onOpenGraph={openGraphMode}
             onReplay={runSandbox}
             running={running}
+          />
+        ) : sidecarMode === "history" ? (
+          <OrchestrationDeltaHistoryPanel
+            row={sandboxRow}
+            onBack={openGraphMode}
           />
         ) : (
           <div className={`dm-orchestration-sidecar dm-workflow-orchestration${selectedNode || addTarget || runSetupOpen ? " has-panel" : ""}`}>

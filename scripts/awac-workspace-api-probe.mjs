@@ -309,6 +309,41 @@ async function main() {
     assert(String(runBody.response?.stdout || "").includes("growthub-probe-ok"), "expected echo output in stdout");
     assert(runBody.response?.templateTrace?.resolverTemplateId === "custom-http", "expected templateTrace from row");
 
+    // --- env-key-catalog: name-only merged slugs ---
+    res = await fetch(`${base}/api/workspace/env-key-catalog`);
+    assert(res.ok, `env-key-catalog failed ${res.status}`);
+    const envCatalog = await res.json();
+    assert(envCatalog.ok === true, "env-key-catalog ok flag");
+    assert(Array.isArray(envCatalog.refs), "env-key-catalog refs array");
+
+    // --- sandbox-scheduler inbound receiver ---
+    res = await fetch(`${base}/api/workspace/sandbox-scheduler`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "growthub-sandbox-run-v1",
+        runId: "probe-scheduler-run",
+        objectId: "sandbox-probe",
+        name: "probe-local-sbx",
+        sandbox: { command: "echo probe", runtime: "bash" }
+      }),
+    });
+    const schedulerBody = await res.json();
+    assert(res.ok, `sandbox-scheduler failed ${res.status} ${JSON.stringify(schedulerBody)}`);
+    assert(schedulerBody.ok === true, "sandbox-scheduler ok");
+    assert(String(schedulerBody.stdout || "").includes("scheduler-ack"), "expected scheduler ack stdout");
+
+    // --- delete-impact preview ---
+    res = await fetch(`${base}/api/workspace/delete-impact`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandbox-probe", rowIndexes: [0] }),
+    });
+    assert(res.ok, `delete-impact failed ${res.status}`);
+    const deleteImpact = await res.json();
+    assert(deleteImpact.ok === true, "delete-impact ok flag");
+    assert(Array.isArray(deleteImpact.previews), "delete-impact previews");
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {
