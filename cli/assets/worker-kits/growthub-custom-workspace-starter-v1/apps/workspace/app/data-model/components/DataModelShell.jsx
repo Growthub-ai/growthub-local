@@ -101,6 +101,26 @@ import {
   isCodexSiteUrl,
   normalizeCodexSiteRecord,
 } from "@/lib/codex-sites-workspace-adapter";
+import { computeDeleteImpact } from "@/lib/workspace-delete-impact";
+
+/**
+ * Fire-and-forget governed sidecar cleanup after a delete (roadmap Phase 1.4).
+ * The config PATCH is authoritative; this prunes orphaned run-history buckets.
+ * Read-only runtimes 409 — swallowed, since the row removal already succeeded.
+ */
+async function pruneSidecarKeys(sourceIds) {
+  const ids = Array.isArray(sourceIds) ? sourceIds.filter(Boolean) : [];
+  if (!ids.length) return;
+  try {
+    await fetch("/api/workspace/cleanup-sidecar", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sourceIds: ids }),
+    });
+  } catch {
+    /* sidecar prune is best-effort; the config delete already landed */
+  }
+}
 
 // ─── Object type definitions for the type-picker step ────────────────────────
 
@@ -2068,10 +2088,33 @@ function DataModelTableSurface({
     setSelectMenuOpen(false);
   }
 
+  // Governed delete impact (roadmap Phase 1.4) — derive the blast radius for
+  // the selected rows so the confirm modal can show cross-references and the
+  // sidecar keys we will prune after the config PATCH lands.
+  const deleteSelectionImpact = useMemo(() => {
+    if (!confirmDeleteSelection || !selectedRows.size) return null;
+    const sourceRecords = workspaceConfig?.workspaceSourceRecords || {};
+    const sidecarKeys = new Set();
+    const references = [];
+    for (const entry of rowEntries) {
+      if (!selectedRows.has(entry.originalIndex)) continue;
+      const impact = computeDeleteImpact(
+        workspaceConfig,
+        sourceRecords,
+        { kind: "row", objectId: table.objectId, objectType: table.objectType, row: entry.row }
+      );
+      impact.sidecarKeys.forEach((key) => sidecarKeys.add(key));
+      references.push(...impact.references);
+    }
+    return { sidecarKeys: Array.from(sidecarKeys), references };
+  }, [confirmDeleteSelection, selectedRows, rowEntries, workspaceConfig, table.objectId, table.objectType]);
+
   function deleteSelectedRows() {
     if (!selectedRows.size) return;
     const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
+    const sidecarKeys = deleteSelectionImpact?.sidecarKeys || [];
     onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
+    pruneSidecarKeys(sidecarKeys);
     setSelectedRow(null);
     selectOriginalIndex(null);
     setConfirmDeleteSelection(false);
@@ -2398,6 +2441,27 @@ function DataModelTableSurface({
             </header>
             <div className="dm-orch-modal-body">
               <p>This will permanently remove {pluralize(selectedRowCount, "selected record")} from {table.label || table.source}.</p>
+              {deleteSelectionImpact && (deleteSelectionImpact.references.length > 0 || deleteSelectionImpact.sidecarKeys.length > 0) && (
+                <div className="dm-source-notice" style={{ marginTop: 10, flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+                  {deleteSelectionImpact.references.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                      <AlertCircle size={13} />
+                      <span>
+                        {pluralize(deleteSelectionImpact.references.length, "cross-reference")} point at{" "}
+                        {selectedRowCount > 1 ? "these records" : "this record"} (
+                        {Array.from(new Set(deleteSelectionImpact.references.map((r) => r.fromObjectLabel))).slice(0, 3).join(", ")}
+                        {deleteSelectionImpact.references.length > 3 ? "…" : ""}) and will dangle until repaired.
+                      </span>
+                    </div>
+                  )}
+                  {deleteSelectionImpact.sidecarKeys.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                      <Trash2 size={13} />
+                      <span>{pluralize(deleteSelectionImpact.sidecarKeys.length, "run-history bucket")} will be pruned from the sidecar.</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <footer className="dm-orch-modal-foot">
               <button type="button" className="dm-btn-outline" onClick={() => setConfirmDeleteSelection(false)}>Cancel</button>
@@ -3011,7 +3075,20 @@ export default function DataModelShell() {
   const deleteObject = useCallback((table) => {
     const targetId = String(table?.objectId || "").trim();
     if (!targetId) return;
-    const confirmed = window.confirm(`Delete "${table.label || table.source}" from the Data Model?`);
+    // Governed delete impact (roadmap Phase 1.4): surface the blast radius in
+    // the confirm prompt and capture sidecar keys to prune after the PATCH.
+    const impact = computeDeleteImpact(
+      workspaceConfig,
+      workspaceConfig?.workspaceSourceRecords || {},
+      { kind: "object", objectId: targetId }
+    );
+    const impactLines = [];
+    if (impact.references.length) impactLines.push(`• ${impact.references.length} cross-reference(s) will dangle until repaired`);
+    if (impact.sidecarKeys.length) impactLines.push(`• ${impact.sidecarKeys.length} run-history bucket(s) will be pruned`);
+    const prompt = impactLines.length
+      ? `Delete "${table.label || table.source}" from the Data Model?\n\n${impactLines.join("\n")}`
+      : `Delete "${table.label || table.source}" from the Data Model?`;
+    const confirmed = window.confirm(prompt);
     if (!confirmed) return;
     let fallbackSource = "";
     save((config) => {
@@ -3030,8 +3107,9 @@ export default function DataModelShell() {
         }
       };
     });
+    pruneSidecarKeys(impact.sidecarKeys);
     if (selectedSource === table.source) setSelectedSource(fallbackSource);
-  }, [save, selectedSource]);
+  }, [save, selectedSource, workspaceConfig]);
 
   // Reopen a helper thread row from the Helper Threads Data Model object.
   // The row already holds the full prior turn (intent, prompt, proposals,
