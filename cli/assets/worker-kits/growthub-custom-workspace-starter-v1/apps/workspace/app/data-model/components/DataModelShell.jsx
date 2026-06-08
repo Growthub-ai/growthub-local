@@ -660,8 +660,32 @@ function SandboxRecordFields({
       .catch(() => setSandboxAdapters([]));
   }, []);
 
+  // Env Key Catalog (roadmap Phase 1.1/1.2) — server-side, name-only projection
+  // of config integrations[], in-use authRefs, and discovered `.env.local`
+  // keys with a `configured` boolean. Falls back to the config-only
+  // `listSavedEnvRefs` projection if the catalog route is unavailable so the
+  // drawer never goes blank.
+  const [envCatalog, setEnvCatalog] = useState(null);
+  useEffect(() => {
+    fetch("/api/workspace/env-key-catalog", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((payload) => setEnvCatalog(Array.isArray(payload?.entries) ? payload : null))
+      .catch(() => setEnvCatalog(null));
+  }, []);
+
   const locality = String(draft.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
-  const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
+  const fallbackEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
+  const savedEnvRefs = useMemo(() => {
+    if (envCatalog && Array.isArray(envCatalog.entries)) {
+      return envCatalog.entries.map((entry) => ({
+        endpointRef: entry.slug,
+        kind: Array.isArray(entry.kinds) && entry.kinds.includes("webhook") ? "webhook" : "api",
+        source: entry.source,
+        configured: entry.configured === true
+      }));
+    }
+    return fallbackEnvRefs.map((ref) => ({ ...ref, source: "config", configured: ref.hasSecret === true }));
+  }, [envCatalog, fallbackEnvRefs]);
   const selectedEnvSlugs = useMemo(() => new Set(parseSandboxEnvRefs(draft.envRefs)), [draft.envRefs]);
   const selectedAdapterMeta = sandboxAdapters.find((a) => a.id === String(draft.adapter || "").trim());
 
@@ -854,16 +878,30 @@ function SandboxRecordFields({
           <span>Env key references</span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {savedEnvRefs.length === 0 ? (
-              <span className="dm-cell-empty">Add keys under Settings -&gt; APIs &amp; Webhooks.</span>
+              <span className="dm-cell-empty">
+                No env keys found. Add keys under Settings -&gt; APIs &amp; Webhooks, or define them in <code>.env.local</code>.
+              </span>
             ) : savedEnvRefs.map((ref) => (
               <button
                 key={ref.endpointRef}
                 type="button"
                 className={`dm-btn-ghost${selectedEnvSlugs.has(ref.endpointRef) ? " dm-chip-active" : ""}`}
-                style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11 }}
+                style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}
+                title={ref.configured
+                  ? `${ref.endpointRef} resolves to a server-side value (source: ${ref.source})`
+                  : `${ref.endpointRef} is referenced but no value resolves in this runtime (source: ${ref.source})`}
                 disabled={!table.mutable || saving}
                 onClick={() => toggleEnvRef(ref.endpointRef)}
               >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 999,
+                    background: ref.configured ? "var(--dm-ok, #22c55e)" : "var(--dm-warn, #f59e0b)"
+                  }}
+                />
                 {ref.endpointRef}
               </button>
             ))}
