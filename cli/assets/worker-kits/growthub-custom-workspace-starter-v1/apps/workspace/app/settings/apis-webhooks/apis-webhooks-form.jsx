@@ -143,14 +143,18 @@ function ApisWebhooksForm({ persistence, refs }) {
             endpointRef: item.endpointRef,
             url: item.url,
             status: item.endpointRef || item.value ? "configured" : "not-configured",
-            hasSecret: Boolean(item.value) || item.hasSecret
+            hasSecret: Boolean(item.value) || item.hasSecret,
+            // Typed value (when present) is written to .env.local server-side;
+            // it is never stored in growthub.config.json. Phase 1.3.
+            ...(item.value ? { secretValue: item.value } : {})
           }))
         })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.guidance || payload.error || "Failed to save API/Webhook refs");
       setItems(payload.refs.length ? payload.refs.map(normalizeRef) : [blankRef("api"), blankRef("webhook")]);
-      setMessage("Saved.");
+      const wrote = Array.isArray(payload.envWrite?.written) ? payload.envWrite.written : [];
+      setMessage(wrote.length ? `Saved. Wrote ${wrote.length} key(s) to .env.local.` : "Saved.");
     } catch (error) {
       setMessage(error.message || "Failed to save.");
     } finally {

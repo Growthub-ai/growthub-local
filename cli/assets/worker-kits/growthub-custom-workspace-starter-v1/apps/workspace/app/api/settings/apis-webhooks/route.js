@@ -26,10 +26,11 @@ async function PATCH(request) {
   }
 
   try {
-    const refs = await writeWorkspaceApiWebhookSettings(patch);
+    const result = await writeWorkspaceApiWebhookSettings(patch);
     return NextResponse.json({
       adapterScope: "local-workspace-config",
-      refs
+      refs: result.refs,
+      envWrite: result.envWrite
     });
   } catch (error) {
     if (error.code === "WORKSPACE_PERSISTENCE_READ_ONLY") {

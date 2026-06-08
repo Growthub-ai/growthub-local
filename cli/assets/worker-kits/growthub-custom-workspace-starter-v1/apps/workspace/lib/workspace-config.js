@@ -26,6 +26,60 @@ import {
   KNOWN_WIDGET_KINDS,
   validateWorkspaceConfig
 } from "@/lib/workspace-schema";
+import { mergeEnvLocalContent } from "@/lib/env-local-file";
+import { envKeyCandidates } from "@/lib/workspace-env-catalog";
+
+const ENV_LOCAL_FILENAME = ".env.local";
+
+/**
+ * Write secret values to `.env.local` (filesystem mode only) — roadmap 1.3.
+ * `entries` = [{ endpointRef, value }]. The slug is mapped to its canonical
+ * UPPER_SNAKE env name (the first candidate the runner resolves). The config
+ * never receives the value; only `hasSecret: true` is persisted elsewhere.
+ * Returns a name-only receipt: { written: string[], skipped: string[] }.
+ */
+async function writeWorkspaceEnvLocalSecrets(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const updates = {};
+  const written = [];
+  const skipped = [];
+  for (const entry of list) {
+    const slug = typeof entry?.endpointRef === "string" ? entry.endpointRef.trim() : "";
+    const value = typeof entry?.value === "string" ? entry.value : "";
+    const [name] = envKeyCandidates(slug);
+    if (!slug || !name || value === "") {
+      if (slug) skipped.push(slug);
+      continue;
+    }
+    updates[name] = value;
+    written.push(name);
+  }
+  if (!written.length) return { written: [], skipped };
+
+  const persistence = describePersistenceMode();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+
+  const envPath = path.resolve(/*turbopackIgnore: true*/ process.cwd(), ENV_LOCAL_FILENAME);
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(envPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${envPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+  let existing = "";
+  try {
+    existing = await fs.readFile(envPath, "utf8");
+  } catch {
+    existing = "";
+  }
+  await fs.writeFile(envPath, mergeEnvLocalContent(existing, updates), "utf8");
+  return { written, skipped };
+}
 
 const PERSISTENCE_ADAPTERS = Object.freeze({
   FILESYSTEM: "filesystem",
@@ -309,7 +363,21 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
 
-  const refs = normalizeApiWebhookRefs(patch?.refs);
+  // Extract typed secret values BEFORE config normalization (which rejects
+  // unknown fields). Secrets land in `.env.local`; config keeps hasSecret only.
+  const inboundRefs = Array.isArray(patch?.refs) ? patch.refs : [];
+  const secretWrites = [];
+  const sanitizedRefs = inboundRefs.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    const { secretValue, ...rest } = item;
+    if (typeof secretValue === "string" && secretValue !== "") {
+      secretWrites.push({ endpointRef: rest.endpointRef, value: secretValue });
+      return { ...rest, hasSecret: true };
+    }
+    return rest;
+  });
+
+  const refs = normalizeApiWebhookRefs(sanitizedRefs);
   const current = await readWorkspaceConfig();
   const existing = Array.isArray(current.integrations) ? current.integrations : [];
   const next = {
@@ -335,7 +403,16 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
   await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+
+  let envWrite = { written: [], skipped: [] };
+  if (secretWrites.length) {
+    envWrite = await writeWorkspaceEnvLocalSecrets(secretWrites);
+  }
+
+  return {
+    refs: next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks"),
+    envWrite
+  };
 }
 
 /**
@@ -427,6 +504,7 @@ export {
   validateWorkspaceConfig,
   writeWorkspaceConfig,
   writeWorkspaceApiWebhookSettings,
+  writeWorkspaceEnvLocalSecrets,
   writeWorkspaceIdentitySettings,
   writeWorkspaceSourceRecords
 };
