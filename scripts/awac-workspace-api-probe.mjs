@@ -309,6 +309,54 @@ async function main() {
     assert(String(runBody.response?.stdout || "").includes("growthub-probe-ok"), "expected echo output in stdout");
     assert(runBody.response?.templateTrace?.resolverTemplateId === "custom-http", "expected templateTrace from row");
 
+    // --- env-key-catalog: name-only, configured booleans, no values (Phase 1.1) ---
+    res = await fetch(`${base}/api/workspace/env-key-catalog`, { cache: "no-store" });
+    assert(res.ok, `env-key-catalog failed ${res.status}`);
+    const catalog = await res.json();
+    assert(catalog.kind === "growthub-env-key-catalog-v1", "expected env catalog kind");
+    assert(Array.isArray(catalog.entries), "expected catalog entries array");
+    assert(catalog.entries.every((e) => typeof e.slug === "string" && typeof e.configured === "boolean"),
+      "catalog entries must be slug + configured boolean only");
+    assert(catalog.entries.every((e) => !("value" in e) && !("secret" in e)),
+      "catalog must never expose a value/secret field");
+
+    // --- sandbox-scheduler: GET descriptor + POST envelope round-trip (Phase 3.1) ---
+    res = await fetch(`${base}/api/workspace/sandbox-scheduler`, { cache: "no-store" });
+    assert(res.ok, `sandbox-scheduler GET failed ${res.status}`);
+    const schedulerDesc = await res.json();
+    assert(schedulerDesc.accepts === "growthub-sandbox-run-v1", "scheduler accepts envelope kind");
+
+    res = await fetch(`${base}/api/workspace/sandbox-scheduler`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "growthub-sandbox-run-v1", runId: "probe-run", objectId: "sandbox-probe", name: "probe", sandbox: { runtime: "node" } }),
+    });
+    const schedReceipt = await res.json();
+    assert(res.ok, `sandbox-scheduler POST failed ${res.status} ${JSON.stringify(schedReceipt)}`);
+    assert(schedReceipt.exitCode === 0 && String(schedReceipt.stdout || "").includes("accepted run probe-run"),
+      "scheduler receipt should accept the run");
+
+    res = await fetch(`${base}/api/workspace/sandbox-scheduler`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "wrong-kind" }),
+    });
+    assert(res.status === 400, `expected 400 for bad envelope, got ${res.status}`);
+
+    // --- cleanup-sidecar: prune is gated + reports removed/skipped (Phase 1.4) ---
+    res = await fetch(`${base}/api/workspace/cleanup-sidecar`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sourceIds: ["sandbox:does-not-exist:ghost"] }),
+    });
+    const cleanupBody = await res.json();
+    // filesystem mode => ok with skipped; read-only => 409. Both are valid contracts.
+    assert(res.ok || res.status === 409, `cleanup-sidecar unexpected status ${res.status}`);
+    if (res.ok) {
+      assert(Array.isArray(cleanupBody.skipped) && cleanupBody.skipped.includes("sandbox:does-not-exist:ghost"),
+        "cleanup should skip non-existent key");
+    }
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {
