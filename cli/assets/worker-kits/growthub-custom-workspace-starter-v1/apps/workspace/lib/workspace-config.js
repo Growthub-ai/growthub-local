@@ -258,6 +258,97 @@ async function writeWorkspaceIdentitySettings(patch) {
   return next;
 }
 
+function resolveEnvLocalPath() {
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), ".env.local");
+}
+
+function parseEnvLocalContent(raw) {
+  const entries = new Map();
+  const lines = String(raw || "").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    entries.set(key, value);
+  }
+  return { entries, lines };
+}
+
+async function readEnvLocalEntries() {
+  const envPath = resolveEnvLocalPath();
+  try {
+    const raw = await fs.readFile(envPath, "utf8");
+    return parseEnvLocalContent(raw);
+  } catch {
+    return parseEnvLocalContent("");
+  }
+}
+
+function serializeEnvLocal(entries, previousLines = []) {
+  const written = new Set();
+  const out = [];
+  for (const line of previousLines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      out.push(line);
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) {
+      out.push(line);
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    if (entries.has(key)) {
+      const value = String(entries.get(key) ?? "");
+      const escaped = value.includes(" ") || value.includes("#") ? `"${value.replace(/"/g, '\\"')}"` : value;
+      out.push(`${key}=${escaped}`);
+      written.add(key);
+    }
+  }
+  for (const [key, value] of entries) {
+    if (written.has(key)) continue;
+    const escaped = value.includes(" ") || value.includes("#") ? `"${String(value).replace(/"/g, '\\"')}"` : String(value);
+    out.push(`${key}=${escaped}`);
+  }
+  return `${out.join("\n").replace(/\n+$/, "")}\n`;
+}
+
+async function writeEnvLocalEntries(pairs) {
+  const persistence = describePersistenceMode();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+  const envPath = resolveEnvLocalPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(envPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${envPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+  const { entries, lines } = await readEnvLocalEntries();
+  const written = [];
+  for (const pair of pairs) {
+    const key = String(pair?.key || "").trim();
+    const value = String(pair?.value ?? "");
+    if (!key || !value) continue;
+    entries.set(key, value);
+    written.push(key);
+  }
+  if (!written.length) return { written: [] };
+  await fs.writeFile(envPath, serializeEnvLocal(entries, lines), "utf8");
+  return { written };
+}
+
 function normalizeApiWebhookRefs(refs) {
   if (!Array.isArray(refs)) {
     const error = new Error("refs must be an array");
@@ -271,7 +362,7 @@ function normalizeApiWebhookRefs(refs) {
         error.code = "INVALID_WORKSPACE_SETTINGS_PATCH";
         throw error;
       }
-      const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url"]);
+      const allowed = new Set(["id", "label", "kind", "endpointRef", "status", "hasSecret", "url", "value", "secretValue"]);
       const unknown = Object.keys(item).filter((key) => !allowed.has(key));
       if (unknown.length) {
         const error = new Error("ref contains unknown fields");
@@ -283,7 +374,10 @@ function normalizeApiWebhookRefs(refs) {
       const label = typeof item.label === "string" ? item.label.trim() : "";
       const endpointRef = typeof item.endpointRef === "string" ? item.endpointRef.trim() : "";
       const url = typeof item.url === "string" ? item.url.trim() : "";
-      if (!label && !endpointRef && !url && item.hasSecret !== true) return null;
+      const secretValue = typeof item.value === "string" ? item.value
+        : typeof item.secretValue === "string" ? item.secretValue
+          : "";
+      if (!label && !endpointRef && !url && item.hasSecret !== true && !secretValue) return null;
       return {
         id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `custom-${kind}-${index + 1}`,
         label: label || endpointRef,
@@ -292,7 +386,8 @@ function normalizeApiWebhookRefs(refs) {
         endpointRef,
         url,
         status: typeof item.status === "string" && item.status.trim() ? item.status.trim() : "configured",
-        hasSecret: item.hasSecret === true
+        hasSecret: item.hasSecret === true || Boolean(secretValue),
+        secretValue
       };
     })
     .filter(Boolean);
@@ -309,7 +404,12 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
 
-  const refs = normalizeApiWebhookRefs(patch?.refs);
+  const normalized = normalizeApiWebhookRefs(patch?.refs);
+  const envPairs = normalized
+    .filter((item) => item.endpointRef && item.secretValue)
+    .map((item) => ({ key: item.endpointRef, value: item.secretValue }));
+  const refs = normalized.map(({ secretValue, ...item }) => item);
+
   const current = await readWorkspaceConfig();
   const existing = Array.isArray(current.integrations) ? current.integrations : [];
   const next = {
@@ -335,7 +435,17 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     throw error;
   }
   await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks");
+
+  let envLocalWritten = [];
+  if (envPairs.length) {
+    const envResult = await writeEnvLocalEntries(envPairs);
+    envLocalWritten = envResult.written || [];
+  }
+
+  return {
+    refs: next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks"),
+    envLocalWritten
+  };
 }
 
 /**
@@ -414,6 +524,46 @@ async function writeWorkspaceSourceRecords(sourceId, records, metadata = {}) {
   return all[sourceId.trim()];
 }
 
+async function pruneWorkspaceSourceRecords(keys) {
+  const persistence = describePersistenceMode();
+  if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
+    const error = new Error(persistence.reason);
+    error.code = "WORKSPACE_PERSISTENCE_READ_ONLY";
+    error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
+    throw error;
+  }
+  const recordsPath = resolveSourceRecordsPath();
+  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+  if (path.dirname(recordsPath) !== expectedDir) {
+    const error = new Error(`refused to write outside workspace cwd: ${recordsPath}`);
+    error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
+    throw error;
+  }
+  let all = {};
+  try {
+    const raw = await fs.readFile(recordsPath, "utf8");
+    all = JSON.parse(raw);
+  } catch {
+    all = {};
+  }
+  const pruned = [];
+  const skipped = [];
+  for (const key of keys) {
+    const trimmed = String(key || "").trim();
+    if (!trimmed) continue;
+    if (Object.prototype.hasOwnProperty.call(all, trimmed)) {
+      delete all[trimmed];
+      pruned.push(trimmed);
+    } else {
+      skipped.push(trimmed);
+    }
+  }
+  if (pruned.length) {
+    await fs.writeFile(recordsPath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
+  }
+  return { pruned, skipped };
+}
+
 export {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -422,9 +572,12 @@ export {
   READ_ONLY_GUIDANCE,
   describePersistenceMode,
   readWorkspaceConfig,
+  pruneWorkspaceSourceRecords,
   readWorkspaceSourceRecords,
+  resolveEnvLocalPath,
   resolveWorkspaceConfigPath,
   validateWorkspaceConfig,
+  writeEnvLocalEntries,
   writeWorkspaceConfig,
   writeWorkspaceApiWebhookSettings,
   writeWorkspaceIdentitySettings,

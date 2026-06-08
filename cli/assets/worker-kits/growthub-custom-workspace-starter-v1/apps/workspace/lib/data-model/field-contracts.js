@@ -36,6 +36,7 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
 };
 
 const API_REGISTRY_FIELDS = {
+  authRef: { editor: "env-ref-picker" },
   method: {
     editor: "select",
     options: ["GET", "POST", "PUT", "PATCH", "DELETE"]

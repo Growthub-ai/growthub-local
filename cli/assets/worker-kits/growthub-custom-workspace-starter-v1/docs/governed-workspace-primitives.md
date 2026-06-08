@@ -169,6 +169,21 @@ growthub skills session init [--kit <id>]
 
 ---
 
+## Config vs server files (operator matrix)
+
+| Customer action | Config change | File change | Route |
+| --- | --- | --- | --- |
+| Register API | `dataModel` api-registry row | Optional `lib/adapters/integrations/resolvers/<slug>.js` | `test-api-record`, `register-resolver` |
+| Save env key name | `integrations[]` (`endpointRef`, `hasSecret` only) | `.env.local` value (filesystem mode) | `settings/apis-webhooks` |
+| Run workflow local | sandbox row `lastResponse` | — | `sandbox-run` |
+| Run workflow serverless | same row + `schedulerRegistryId` | Deployed scheduler URL | `sandbox-run` → outbound HTTP |
+| Publish workflow | `orchestrationConfig`, `orchestrationDeltas[]` | — | `PATCH /api/workspace` |
+| Delete record | row removed + FK cleanup | Optional sidecar prune | `cleanup-sidecar` |
+
+Env key discovery is name-only: `GET /api/workspace/env-key-catalog` merges `integrations[]`, in-use `authRef` / `envRefs`, and resolved `process.env` slugs — never secret values.
+
+---
+
 ## Further reading
 
 - [`../SKILL.md`](../SKILL.md) — the discovery entry for this kit
