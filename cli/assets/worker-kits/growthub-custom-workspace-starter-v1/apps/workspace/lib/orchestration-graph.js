@@ -364,6 +364,67 @@ function buildSandboxRowFromApiRegistry(workspaceConfig, registryRow, options = 
   };
 }
 
+/**
+ * Find existing data-source rows that already resolve through a given API
+ * Registry integration (by `registryId`). Mirrors findSandboxRowsForRegistry so
+ * the drawer can refuse to create a duplicate Data Source for the same API.
+ */
+function findDataSourceRowsForRegistry(workspaceConfig, integrationId) {
+  const id = String(integrationId || "").trim();
+  if (!id) return [];
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const rows = [];
+  for (const object of objects) {
+    if (object?.objectType !== "data-source") continue;
+    for (const row of Array.isArray(object.rows) ? object.rows : []) {
+      if (String(row?.registryId || "").trim() === id) rows.push(row);
+    }
+  }
+  return rows;
+}
+
+/**
+ * Build a governed Data Source row from a tested API Registry row. The Data
+ * Source references the registry entry by `registryId` (the existing
+ * resolver-binding relation) and keeps auth as an `authRef` slug only — the
+ * secret never lands on the row. Shape matches the OBJECT_TYPE_PRESETS
+ * "data-source" columns so it slots straight into the data-source table.
+ */
+function buildDataSourceRowFromApiRegistry(workspaceConfig, registryRow, options = {}) {
+  const integrationId = String(registryRow?.integrationId || "").trim();
+  const baseName = String(options.name || registryRow?.Name || integrationId || "Data Source").trim();
+  const name = baseName.endsWith(" Source") ? baseName : `${baseName} Source`;
+  const entityType = String(
+    options.entityType || registryRow?.entityTypes || "records"
+  ).split(",")[0].trim() || "records";
+  const sourceId = String(
+    options.sourceId || slugifyName(`${integrationId || baseName}-${entityType}`) || slugifyName(baseName)
+  ).trim();
+  const sourceStorage = String(options.sourceStorage || "workspace-source-records").trim();
+  return {
+    Name: name,
+    slug: options.slug || slugifyName(name) || slugifyName(integrationId),
+    objectType: "data-source",
+    registryId: integrationId,
+    endpoint: String(registryRow?.endpoint || "").trim(),
+    authRef: String(options.authRef || registryRow?.authRef || integrationId).trim(),
+    baseUrl: String(registryRow?.baseUrl || "").trim(),
+    method: String(registryRow?.method || "GET").trim().toUpperCase(),
+    status: "draft",
+    lastTested: "",
+    lastResponse: "",
+    entityType,
+    sourceId,
+    sourceStorage,
+    resolverTemplateId: String(options.resolverTemplateId || registryRow?.resolverTemplateId || "").trim(),
+    description: String(
+      options.description
+        || registryRow?.description
+        || `Data Source for ${integrationId || baseName} — resolves ${entityType} through the API Registry resolver. authRef ${String(options.authRef || registryRow?.authRef || integrationId).trim()} only; secrets resolve server-side.`
+    ).trim()
+  };
+}
+
 function extractNodeByType(graph, type) {
   const parsed = parseOrchestrationGraph(graph) || graph;
   if (!parsed?.nodes) return null;
@@ -918,6 +979,8 @@ export {
   getNextCanonicalNodeId,
   addCanonicalNodeToGraph,
   buildSandboxRowFromApiRegistry,
+  buildDataSourceRowFromApiRegistry,
+  findDataSourceRowsForRegistry,
   extractApiRegistryCallNode,
   extractInputNode,
   extractTransformConfig,

@@ -83,6 +83,8 @@ import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import {
   buildSandboxRowFromApiRegistry,
   findSandboxRowsForRegistry,
+  buildDataSourceRowFromApiRegistry,
+  findDataSourceRowsForRegistry,
   getOrchestrationGraphUiState,
   redactSecretsFromText
 } from "@/lib/orchestration-graph";
@@ -1141,6 +1143,9 @@ function DataModelRecordDrawer({
   const [createdSandboxMeta, setCreatedSandboxMeta] = useState(null);
   const [createdSandboxTesting, setCreatedSandboxTesting] = useState(false);
   const [createdSandboxTestMessage, setCreatedSandboxTestMessage] = useState("");
+  const [creatingDataSource, setCreatingDataSource] = useState(false);
+  const [createdDataSourceMeta, setCreatedDataSourceMeta] = useState(null);
+  const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
@@ -1165,6 +1170,9 @@ function DataModelRecordDrawer({
       setSandboxToolDraft({});
       setCreatedSandboxMeta(null);
       setCreatedSandboxTestMessage("");
+      setCreatingDataSource(false);
+      setCreatedDataSourceMeta(null);
+      setDataSourceMessage("");
     }
     if (initialSidecar?.mode === "trace") {
       setSidecarMode("trace");
@@ -1339,6 +1347,49 @@ function DataModelRecordDrawer({
     } finally {
       setSandboxToolCreating(false);
     }
+  }
+
+  function createDataSourceFromRegistry() {
+    const integrationId = String(draft?.integrationId || "").trim();
+    if (!integrationId) {
+      setDataSourceMessage("This API Registry row needs an integrationId before a Data Source can reference it.");
+      return;
+    }
+    if (findDataSourceRowsForRegistry(workspaceConfig, integrationId).length > 0) {
+      setDataSourceMessage("A Data Source already references this API. Open it instead of creating a duplicate.");
+      return;
+    }
+    setCreatingDataSource(true);
+    setDataSourceMessage("");
+    try {
+      let createdMeta = null;
+      onSave((config) => {
+        let next = config;
+        if (findDataSourceRowsForRegistry(next, integrationId).length > 0) return next;
+        let sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "data-source");
+        if (!sourceTable) {
+          next = createTypedBusinessObject(next, { name: "Data Sources", objectType: "data-source" });
+          sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "data-source");
+        }
+        if (!sourceTable) return next;
+        const newRow = buildDataSourceRowFromApiRegistry(next, draft, {});
+        next = appendRowsToTable(next, sourceTable, [newRow]);
+        createdMeta = { objectId: sourceTable.objectId, name: newRow.Name, sourceId: newRow.sourceId };
+        return next;
+      });
+      if (createdMeta) {
+        setCreatedDataSourceMeta(createdMeta);
+        setDataSourceMessage("Data Source created. Open it to map fields and run a refresh — nothing auto-fetches.");
+      }
+    } finally {
+      setCreatingDataSource(false);
+    }
+  }
+
+  function openDataSourceRow() {
+    if (!createdDataSourceMeta?.objectId) return;
+    onClose();
+    router.push(`/data-model?object=${encodeURIComponent(createdDataSourceMeta.objectId)}`);
   }
 
   async function runSandboxToolByName({ objectId, name }) {
@@ -1584,6 +1635,51 @@ function DataModelRecordDrawer({
               </button>
             </div>
           </section>
+        )}
+        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "confirm" && (
+          createdDataSourceMeta ? (
+            <section className="dm-api-action-card dm-api-action-card-success" aria-label="Data Source created">
+              <div className="dm-api-action-card-body">
+                <p className="dm-api-action-card-eyebrow">Data Source created</p>
+                <h3>{createdDataSourceMeta.name}</h3>
+                <p>Governed Data Source row saved, referencing this API by registryId. Open it to map fields and refresh — secrets stay server-side.</p>
+                {dataSourceMessage && <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p>}
+              </div>
+              <div className="dm-api-action-card-actions">
+                <button
+                  type="button"
+                  className="dm-btn-primary-sm dm-api-action-card-cta"
+                  disabled={saving}
+                  onClick={openDataSourceRow}
+                >
+                  Open Data Source
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section className="dm-api-action-card" aria-label="Create Data Source">
+              <div className="dm-api-action-card-body">
+                <p className="dm-api-action-card-eyebrow">Turn this API into data</p>
+                <h3>Create Data Source</h3>
+                <p>
+                  {["connected", "ok", "success", "live"].includes(String(draft?.status || "").trim().toLowerCase())
+                    ? "Create a governed Data Source that resolves this API's records into the workspace."
+                    : "Test this API first, then create a governed Data Source from its tested response."}
+                </p>
+                {dataSourceMessage && <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p>}
+              </div>
+              <div className="dm-api-action-card-actions">
+                <button
+                  type="button"
+                  className="dm-btn-primary-sm dm-api-action-card-cta"
+                  disabled={creatingDataSource || saving}
+                  onClick={createDataSourceFromRegistry}
+                >
+                  {creatingDataSource ? "Creating…" : "Create Data Source"}
+                </button>
+              </div>
+            </section>
+          )
         )}
         {isApiRegistry && sandboxToolFlow === "draft" && (
           <SandboxToolDraftPanel
