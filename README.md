@@ -4,15 +4,13 @@
 
 **Growthub Local turns repos, skills, starters, kits, and templates into governed AI workspaces you can customize, operate with agents, deploy as apps, and keep current.**
 
-**Agent Workspace as Code (AWaC)** means the workspace is the owned artifact: a forkable app, portable config, local builder, agent-readable contracts, lifecycle trace, and optional hosted authority moving together instead of living in scattered tools.
+**Agent Workspace as Code (AWaC)** means the workspace is the owned artifact: a forkable app, portable config, local builder, agent-readable contracts, lifecycle trace, and optional hosted authority only when the workspace needs it.
 
 ![npm](https://img.shields.io/npm/v/@growthub/cli?label=%40growthub%2Fcli)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 
-**Streamlined one-click deployment:** [Launch Growthub Local](https://www.growthub.ai/f/growthub-local)
-
-**Quick links:** [Start here](#start-here) · [White paper](./docs/assets/agent-workspace-as-code-whitepaper-workflows.pdf) · [Launch](https://www.growthub.ai/f/growthub-local) · [Architecture](#architecture) · [Features](#features) · [Install](#install) · [Docs](#docs)
+**Quick links:** [Start here](#start-here) · [Current reality](#current-shipped-reality) · [Architecture](#architecture) · [Install](#install) · [Docs](#docs)
 
 ---
 
@@ -39,8 +37,6 @@ Choose **Custom AI Governed Workspace**, then pick the fastest source:
 2. [**Import a skills.sh skill**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
 3. [**Start from the workspace starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
 4. [**Start from a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
-5. [**Connect your Growthub account after local value is clear**](./docs/FIRST_RUN_PATHS.md#5-connect-your-growthub-account)
-6. [**Unlock hosted workflows and enterprise customization (optional)**](./docs/FIRST_RUN_PATHS.md#6-unlock-hosted-workflows-and-enterprise-customization-optional)
 
 Agent commands:
 
@@ -78,6 +74,7 @@ Growthub Local's current line is one coherent AWaC surface, not separate release
 - **0.13.9** added Codex Sites as a governed workspace primitive: real site rows live in the Data Model, Builder renders them as Site items, and browser smoke tests prove the hosted URL without storing account-specific site data in source control.
 - **0.14.0** added the governed creation cockpit: tested API Registry rows become profiled responses, optional helper-created resolvers, governed Data Sources, source-record refreshes, workflow persistence readiness, and Workspace Lens evidence.
 - **Growthub Browser agent protocol** packages the universal operating rule for agents: use the real in-app browser surface first, act through visible CUA when available, read back the DOM, and corroborate state through `/api/workspace`, source records, deployment status, or the configured store before claiming behavior.
+- **Hosted authority is C-tier**: useful after local workspace value is proven, but not required for the core AWaC loop and not front-page operating authority.
 
 This is the first-tier operating model for agents and humans: the browser is the no-code surface, helper proposals are reviewable, source records are evidence, workflows are governed rows, and Workspace Lens is the readiness surface.
 
@@ -100,7 +97,7 @@ That matters at every skill level:
 - **Non-technical teams** get a real workspace they can open, customize, hand off, and trust without learning how to wire repos, prompts, credentials, and scripts together.
 - **Builders and no-code innovators** can turn a repo, skill, starter, template, or worker kit into a working product surface without losing upgrade paths or governance.
 - **Agents and operators** get clear commands, JSON status, policy, trace, and reusable workspace primitives instead of guessing what folder, prompt, or script matters.
-- **Enterprise developers** get local-first flexibility with fork safety, deploy checks, credential boundaries, audit trails, and optional hosted authority when higher-trust flows need it.
+- **Enterprise developers** get local-first flexibility with fork safety, deploy checks, credential boundaries, audit trails, and optional hosted authority only when higher-trust flows need it.
 
 The practical result: Growthub Local keeps open-source speed and customization, but gives AI workspaces the structure teams expect from serious DevOps.
 
@@ -136,7 +133,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `@growthub/create-growthub-local@0.14.0`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `@growthub/create-growthub-local@0.14.0`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
@@ -152,18 +149,18 @@ Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `
   </tr>
   <tr>
     <td align="center"><strong>🔌 Integration Catalog</strong><br>Data-source and workspace-integration lanes cover analytics, commerce, ads, spreadsheets, project tools, docs, and CRM-style systems.</td>
-    <td align="center"><strong>🧩 Resolver Layer</strong><br>Local resolver files, bridge-backed connections, BYO credentials, API Registry rows, and Data Sources make live data governable.</td>
-    <td align="center"><strong>🧪 Workspace Operations</strong><br><code>workspace status</code>, QA, deploy checks, Vercel env output, upstream checks, surface detection, and portal preparation are JSON-first.</td>
+    <td align="center"><strong>🧩 Resolver Layer</strong><br>Local resolver files, BYO credentials, API Registry rows, and Data Sources make live data governable.</td>
+    <td align="center"><strong>🧪 Workspace Operations</strong><br><code>workspace status</code>, QA, deploy checks, upstream checks, surface detection, and browser proof are JSON-first.</td>
   </tr>
   <tr>
     <td align="center"><strong>🔁 Self-Healing Forks</strong><br>Fork registration, drift detection, dry-run heal plans, protected paths, background jobs, optional GitHub PR flow, and trace history.</td>
     <td align="center"><strong>🧰 Worker Kits</strong><br>Self-contained operator environments ship SKILL.md, helpers, sub-skills, templates, assumptions, examples, and output standards.</td>
-    <td align="center"><strong>🤖 Agent Harnesses</strong><br>Open Agents, Qwen Code, T3 Code, local intelligence, memory, knowledge sync, health checks, sessions, and profile binding.</td>
+    <td align="center"><strong>🤖 Agent Operations</strong><br>Local intelligence, helper proposals, workspace browser QA, source records, health checks, and governed traces.</td>
   </tr>
   <tr>
-    <td align="center"><strong>⚙️ Workflows + Pipelines</strong><br>Saved workflows, templates, dynamic pipeline assembly, CMS node contracts, execution payloads, artifacts, and structured results.</td>
+    <td align="center"><strong>⚙️ Workflows</strong><br>Saved workflow rows, draft/test/publish safety, execution payloads, artifacts, and structured results.</td>
     <td align="center"><strong>✨ Self-Improving Workspace</strong><br>Workspace improvement commands propose, list, and promote capabilities after runs so the workspace compounds over time.</td>
-    <td align="center"><strong>🌉 Bridge + Hosted Agents</strong><br>Hosted identity, integrations, MCP accounts, agent list/inspect/bind/bindings, and authority-backed activation remain optional.</td>
+    <td align="center"><strong>🕹️ Browser Agent QA</strong><br>Visible CUA actions, DOM readback, and persistence corroboration make agents prove the same workspace humans see.</td>
   </tr>
   <tr>
     <td align="center"><strong>🚀 Deployable Workspace App</strong><br>Each workspace exports as a Next.js app with Vercel-ready project config, environment handoff, and deploy checks.</td>
@@ -182,7 +179,7 @@ Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `
 | Data bindings can drift into fake, stale, or untested widget inputs. | API Registry and Data Source objects enforce test-before-bind data quality before widgets consume external data. |
 | Secrets leak into config, browsers, local notes, or agent prompts. | Workspaces store `authRef` references only; provider secrets resolve server-side or through hosted authority. |
 | Humans and agents operate through different paths, creating inconsistency. | The UI, PATCH API, CLI, resolvers, and JSON commands expose the same contracts to humans and agents. |
-| Local experimentation is powerful but difficult to govern across a team. | Local control stays first while hosted identity, bridge connections, agent binding, and authority can be added only when needed. |
+| Local experimentation is powerful but difficult to govern across a team. | Local control stays first while hosted authority can be added only when needed. |
 | Workflows stay trapped in one machine or one prompt thread. | Workflows become reusable governed infrastructure objects that can be inspected, shared, evolved, and executed over time. |
 | It is unclear what agents may safely automate. | Policies, confirmations, capability gates, and append-only trace make automation explicit and auditable. |
 | Browser checks are treated as screenshots or manual QA afterthoughts. | The Growthub Browser protocol makes visible CUA actions, DOM readback, and persistence corroboration the agent QA loop. |
@@ -190,55 +187,24 @@ Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `
 
 ---
 
-## Growthub account connection
+## Optional hosted authority
 
-You do **not** need to connect a Growthub account to get value from the open-source substrate.
+Hosted account authority is an optional C-tier extension. It is useful after a workspace has proven local value, but the core AWaC path does not depend on it.
 
-You connect your account when you want:
-
-- hosted workflow access
-- machine bridge flows
-- integration bridge flows
-- higher-trust or premium activation surfaces
-
-That separation is intentional.
-
-### Upgrade CTA (optional, explicit)
-
-You can stay local-first indefinitely. When you are ready to activate deeper hosted lanes:
-
-[![Activate on Growthub](https://img.shields.io/badge/Activate-Growthub-111827?style=for-the-badge)](https://www.growthub.ai/)
-[![First Month](https://img.shields.io/badge/First%20Month-%241-22c55e?style=for-the-badge)](https://www.growthub.ai/)
-
-This keeps the mental model intact:
-
-1. get immediate free local value
-2. prove fit on your workflow
-3. activate hosted depth when needed
+Use hosted authority when you need account-backed integrations, higher-trust execution, or managed team workflows. Keep the front-line operating model local workspace first: Builder, Data Model, API Registry, helper proposals, workflows, source records, browser QA, and Workspace Lens.
 
 ---
 
 ## Docs
 
-### Workspace 1.0 (the product object)
+### Core workspace docs
 
-- [**Setup**](./docs/SETUP.md) — one canonical install path
-- [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md) — 30-second mental model
-- [**Workspace Starter Activation Path**](./docs/WORKSPACE_STARTER_ACTIVATION_PATH.md) — full end-to-end journey
-- [**Source Import → Workspace Builder**](./docs/SOURCE_IMPORT_TO_WORKSPACE_BUILDER.md) — source-type matrix
-- [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) — the canonical `growthub.config.json` shape
-- [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — what's inside a Workspace + authority boundary
-- [**Workspace Builder Runtime V1**](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md) — the no-code builder runtime
-- [**Workspace Folders Navigation V1**](./docs/WORKSPACE_FOLDERS_NAVIGATION_V1.md) — CRM-style folders for dashboards and Data Model object views, including real dashboard canvas routing and top-layer action modals
-- [**Workspace Workflows Folder Item V1**](./docs/WORKSPACE_WORKFLOWS_FOLDER_ITEM_V1.md) — governed workflow folder items, orchestration canvas, draft/publish safety, delta tags, and supported no-code nodes
-- [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
-- [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md) — governed multi-turn AI chat inside every exported workspace: rail trigger, real-data widget snapshotting, ToolCallCard receipts, refresh-safe thread persistence, hidden local-intelligence sandbox primitive
-- [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md) — official mental model, operating guide, agent rules, and applied use cases for governed AWaC workspaces
-- [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md) — enterprise, existing-workspace, and new-user value map for governed API creation, source records, workflows, helper proposals, and Workspace Lens
-- [**Governed Creation Release Snapshot V1**](./docs/GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md) — canonical release snapshot for the API Registry cockpit, helper resolver lane, Data Source refresh, workflow persistence upgrade, onboarding, and Workspace Lens QA
-- [**Governed Creation Sprint Retrospective V1**](./docs/GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md) — future-agent context synthesizing AWaC, Workspace Topology, Causation ITT, customer-facing feature coverage, and release QA proof
-- [**Causation ITT and Pure Eligibility Drivers**](./docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md) — official theory doc for Workspace Lens, contribution activity, helper handoff, and config-derived no-code eligibility
-- [**Agent Skills + Tools Unification Map**](./docs/AGENT_SKILLS_TOOLS_UNIFICATION.md) — aligns CLI commands, skills, helpers, markdown contracts, and the L1-L5 AWaC layer model
+- [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md)
+- [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md)
+- [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md)
+- [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
+- [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md)
+- [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md)
 
 ### Workspace Templates
 
@@ -252,29 +218,11 @@ Official workspace templates and shipped dashboard templates:
 - [Creative Review](./docs/workspace-templates/creative-review.md) — creative artifact embed and approval notes
 - [Agency Delivery](./docs/workspace-templates/agency-delivery.md) — agency workstream, KPI, delivery notes
 
-### Start here
+### More references
 
-- [CLI Workflows Discovery V1](./docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
-- [Growthub Authentication Bridge](./docs/GROWTHUB_AUTH_BRIDGE.md)
-- [Governed Workspace Agents](./docs/GOVERNED_WORKSPACE_AGENTS.md) — attach hosted Growthub agents to fork-sync governed workspaces through the CLI
 - [Worker Kits Overview](./docs/WORKER_KITS.md)
 - [**Governed Workspace Primitives (user-facing)**](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — how the six architectural primitives (SKILL.md, AGENTS.md pointer, session memory, self-evaluation, sub-skills, helpers) coordinate agents inside every exported workspace
-- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — six concrete starting points: import a repo, import a skill, workspace starter, worker kit, connect account, unlock hosted workflows
-
-### Architecture and protocol
-
-- [Skills + MCP Discovery (v1 reference)](./docs/SKILLS_MCP_DISCOVERY.md)
-- [Kernel Packet Registry](./docs/kernel-packets/README.md)
-- [Fork Sync Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_FORK_SYNC_AGENT.md)
-- [Source Import Agent Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_SOURCE_IMPORT_AGENT.md)
-- [Custom Workspace Starter Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_CUSTOM_WORKSPACE_STARTER.md)
-- [Hosted SaaS Kit Kernel Packet](./docs/kernel-packets/KERNEL_PACKET_HOSTED_SAAS_KIT.md)
-
-### Local intelligence and harnesses
-
-- [Local Native-Intelligence Architecture](./docs/NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE.md)
-- [Qwen Code CLI Integration](./docs/QWEN_CODE_CLI_INTEGRATION.md)
-- [Agent Harness Auth Primitive](./docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
+- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — source choices for starting from a repo, skill, workspace starter, or worker kit
 
 ### Contributor references
 
@@ -283,4 +231,4 @@ Official workspace templates and shipped dashboard templates:
 
 ---
 
-**One-line summary:** Growthub Local turns repos, skills, starters, and kits into governed agent environments you can customize, keep current, and optionally activate with hosted authority over time.
+**One-line summary:** Growthub Local turns repos, skills, starters, and kits into governed workspaces you can customize, operate with agents, deploy, and keep current.

@@ -1,18 +1,18 @@
 # growthub-local — Agent Workflow
 
-This file defines agent behavior in this repository. Keep it aligned with `README.md` and the current CLI source.
+This file defines agent behavior in this repository. Keep it aligned with `README.md` and the current workspace source.
 
 ## Canonical Product Reality
 
 Growthub Local is the reference implementation of **Agent Workspace as Code (AWaC)**.
 
-AWaC means the **workspace is the owned artifact**: a forkable app, `growthub.config.json`, `.growthub-fork/` lifecycle state, Data Model objects, local builder, agent-readable contracts, helper scripts, runtime/deploy checks, and optional hosted authority moving together.
+AWaC means the **workspace is the owned artifact**: a forkable app, `growthub.config.json`, `.growthub-fork/` lifecycle state, Data Model objects, local builder, agent-readable contracts, helper scripts, runtime/deploy checks, and optional hosted authority only when needed.
 
 The official topology reference is [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md). If agent guidance conflicts with that topology, update the guidance instead of inventing a side path.
 
 ## Canonical Product Mental Model
 
-Growthub Local turns a **repo, skill, starter, or kit** into a governed local environment that can be customized, kept current, and optionally connected to hosted authority.
+Growthub Local turns a **repo, skill, starter, or kit** into a governed local workspace that can be customized, kept current, and operated by humans and agents.
 
 Use this sequence as the canonical user path:
 
@@ -21,7 +21,8 @@ Use this sequence as the canonical user path:
 3. Register fork
 4. Customize safely
 5. Sync safely
-6. Optionally connect hosted authority
+
+Hosted account authority is C-tier. Do not center it unless the task explicitly concerns account-backed integrations, hosted execution, or hosted agent binding.
 
 If any repo doc conflicts with that sequence, update or remove the conflicting doc.
 
@@ -30,10 +31,12 @@ If any repo doc conflicts with that sequence, update or remove the conflicting d
 When behavior conflicts, use this order:
 
 1. `README.md`
-2. `cli/src/index.ts`
-3. `cli/src/commands/`
-4. `scripts/runtime-control.sh`
-5. focused docs in `docs/`
+2. `AGENTS.md`
+3. `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`
+4. focused workspace docs in `docs/`
+5. `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/**`
+6. `scripts/runtime-control.sh`
+7. `cli/src/**` only when the task is actually CLI behavior
 
 Do not preserve older prose "for history" in active docs.
 
@@ -90,36 +93,16 @@ Readback layer: tab.playwright.evaluate or DOM snapshot.
 
 Do not use a separate Chrome session, OS cursor, or raw endpoint checks as a substitute when the in-app browser is available. Do not print secrets, cookies, bearer values, provider payload credentials, or `.env` values while proving browser state.
 
-## Discovery Grounding
+## Secondary CLI And Skill Surfaces
 
-Primary user discovery entrypoints are:
+The root contract is workspace-first. CLI discovery hubs, hosted-auth commands, harness adapters, marketing skills, Qwen/T3 integrations, and other non-workspace agent lanes are secondary references. Use them only when the user names that lane or the task touches that source.
 
-- `growthub`
-- `growthub discover`
+Pointers:
 
-For local preview/debug parity, use:
-
-```bash
-bash scripts/demo-cli.sh cli discover
-```
-
-The preview must mirror the real CLI surface; do not document divergent menu trees.
-
-## Claude Skills
-
-Invokable Claude Code skills for this repo live under `.claude/skills/`. Each `SKILL.md` carries YAML frontmatter (`name`, `description`) and a markdown body, and resolves the CLI through a three-step environment-agnostic ladder (installed binary → `cli/dist/index.js` → `scripts/demo-cli.sh cli`), so they work identically on a maintainer's laptop, CI, or a fresh sandbox with only the source tree.
-
-Catalog:
-
-- `growthub-discover` — enter the discovery hub (`runDiscoveryHub` in `cli/src/index.ts`) and route to any lane
-- `growthub-auth` — hosted auth flow (`login` / `whoami` / `logout` + token scripting); pre-flight for every auth-gated skill
-- `growthub-pipeline-execute` — headless `growthub pipeline {assemble,validate,execute}` typed by CMS SDK v1
-- `growthub-video-generation` — one-true `video-generation` node with correct `refs[].dataUrl` bindings
-- `growthub-cms-sdk-v1` — public `@growthub/api-contract` package usage (types, events, manifests, schemas, skills)
-- `growthub-kit-fork-authority` — `growthub kit fork` + ed25519-signed authority attestations
-- `growthub-t3code-harness` — T3 Code CLI health / prompt / session / profile
-- `growthub-marketing-operator` — dispatch marketing intent to the correct skill + framework + template in `growthub-marketing-skills-v1`
-- `growthub-worker-kits` — umbrella skill for operating any worker kit: uniform `${<KIT>_HOME}` workspace resolution, QUICKSTART pattern, cross-kit CLI entries
+- `.claude/skills/README.md` — skill catalog and authoring rules.
+- `docs/SKILLS_MCP_DISCOVERY.md` — skill/MCP primitive reference.
+- `cli/README.md` — CLI-specific usage.
+- `scripts/demo-cli.sh cli discover` — local CLI preview when the task is explicitly CLI discovery.
 
 ## Governed-workspace primitives (v1.2)
 
@@ -195,27 +178,14 @@ Every worker kit with a local fork or tool clone uses the uniform env-var conven
 
 Authoring rules and conventions are documented in `.claude/skills/README.md`. Add new skills there rather than widening any existing one.
 
-## Type-Checking & Tests
+## Checks
 
-The `cli` package requires devDependencies installed before type checks or tests will pass. Run `pnpm install` from the repo root first.
+Use checks that match the change:
 
-```bash
-# Source-only type check (excludes __tests__)
-pnpm --filter @growthub/cli exec tsc --noEmit
-
-# Test type check (includes __tests__, resolves vitest globals)
-pnpm --filter @growthub/cli exec tsc --noEmit -p tsconfig.test.json
-
-# Run all CLI tests
-pnpm --filter @growthub/cli exec vitest run
-```
-
-Two tsconfig files govern the CLI:
-
-- `cli/tsconfig.json` — production source compilation; excludes `src/__tests__`
-- `cli/tsconfig.test.json` — test type-checking only; adds `vitest/globals`, re-includes `__tests__`
-
-Cloud agents blocked on `Cannot find name 'process'` or `Cannot find module 'vitest'` need `pnpm install` run first; after that the devDependencies resolve and both tsconfigs pass cleanly.
+- Docs-only: `git diff --check`, plus exact readback of changed sections.
+- Version/package docs: `node scripts/check-version-sync.mjs` and `node scripts/check-cli-package.mjs`.
+- Workspace app changes: run the exported `apps/workspace` surface and verify browser plus `/api/workspace`.
+- CLI source changes: install dependencies, then run the focused CLI type/test commands from `cli/README.md` or `docs/AGENT_DIST_REBUILD_GUIDE.md`.
 
 ## Contribution Guardrails
 

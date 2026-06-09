@@ -46,6 +46,8 @@ The current product reality combines two recent release layers:
 
 Together they define the operating pattern for the platform: every useful external capability should enter as governed workspace state, become visible in the browser, leave receipts, and stay agent-readable.
 
+Hosted account authority is C-tier in this model. It can add account-backed integrations, managed execution, or hosted agent binding later, but it is not the operating center of the workspace. The first-class loop remains local workspace state, browser evidence, helper proposals, source records, workflows, and Workspace Lens.
+
 ## Growthub Browser Agent Protocol
 
 The Growthub Browser protocol is the agnostic agent-facing package for operating this reality. It is not tied to one private workspace, one provider, or one browser vendor. It is the rule that agents must prove workspace behavior on the same surface humans use, then corroborate that proof through the workspace artifact.
