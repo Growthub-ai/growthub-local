@@ -41,8 +41,97 @@ import {
   buildApplyReceipt,
   upsertHelperThreadRow,
 } from "@/lib/workspace-helper-apply";
+import { RESOLVER_PROPOSAL_TYPE, buildResolverProposal, validateResolverProposal } from "@/lib/workspace-resolver-proposal";
+import { writeResolverProposalFile } from "@/lib/server-resolver-write";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
+
+function findRegistryRow(config, integrationId) {
+  const id = String(integrationId || "").trim();
+  if (!id) return null;
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  for (const object of objects) {
+    if (object?.objectType !== "api-registry") continue;
+    const row = (Array.isArray(object.rows) ? object.rows : []).find((candidate) =>
+      String(candidate?.integrationId || "").trim() === id
+    );
+    if (row) return row;
+  }
+  return null;
+}
+
+function findDataSourceForRegistry(config, integrationId) {
+  const id = String(integrationId || "").trim();
+  if (!id) return null;
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  for (const object of objects) {
+    if (object?.objectType !== "data-source") continue;
+    const row = (Array.isArray(object.rows) ? object.rows : []).find((candidate) =>
+      String(candidate?.registryId || "").trim() === id
+    );
+    if (row) return { object, row };
+  }
+  return null;
+}
+
+function inferRootPathFromLastResponse(lastResponse) {
+  if (!lastResponse) return "";
+  let parsed = lastResponse;
+  if (typeof lastResponse === "string") {
+    try { parsed = JSON.parse(lastResponse); } catch { return ""; }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
+  for (const key of ["records", "items", "data", "results", "capabilities"]) {
+    if (Array.isArray(parsed[key])) return key;
+  }
+  return "";
+}
+
+function normalizeResolverProposal(proposal, config) {
+  if (proposal?.type !== RESOLVER_PROPOSAL_TYPE || String(proposal?.code || "").trim()) return proposal;
+  const integrationId = proposal?.payload?.integrationId;
+  const registryRow = findRegistryRow(config, integrationId);
+  if (!registryRow) return proposal;
+  const generated = buildResolverProposal({
+    integrationId: registryRow.integrationId,
+    baseUrl: registryRow.baseUrl,
+    endpoint: registryRow.endpoint,
+    method: registryRow.method,
+    authRef: registryRow.authRef,
+    rootPath: proposal?.payload?.rootPath || inferRootPathFromLastResponse(registryRow.lastResponse),
+    entityType: proposal?.payload?.entityType || registryRow.entityTypes || "records",
+  });
+  return {
+    ...generated,
+    rationale: proposal.rationale || generated.rationale,
+    confidence: proposal.confidence || generated.confidence,
+  };
+}
+
+function normalizeDataModelObjectProposal(proposal, config, fallbackIntegrationId = "") {
+  if (proposal?.type !== "dataModel.object.update" || proposal?.payload?.id) return proposal;
+  const integrationId = proposal?.payload?.registryId || proposal?.payload?.integrationId || fallbackIntegrationId;
+  const target = findDataSourceForRegistry(config, integrationId);
+  if (!target?.object) return proposal;
+  return {
+    ...proposal,
+    payload: {
+      ...proposal.payload,
+      id: target.object.id,
+      sourceId: target.object.sourceId || target.row?.sourceId || target.object.binding?.sourceId || "",
+      binding: {
+        ...(target.object.binding || {}),
+        sourceStorage: target.object.binding?.sourceStorage || target.row?.sourceStorage || "workspace-source-records",
+        sourceId: target.object.binding?.sourceId || target.row?.sourceId || target.object.sourceId || "",
+        registryId: target.object.binding?.registryId || integrationId,
+      },
+    },
+  };
+}
+
+function normalizeApplyProposal(proposal, config, context = {}) {
+  return normalizeDataModelObjectProposal(normalizeResolverProposal(proposal, config), config, context.integrationId);
+}
 
 async function POST(request) {
   let body;
@@ -78,7 +167,41 @@ async function POST(request) {
   const skipped = [];
   let workingConfig = currentConfig;
 
-  for (const proposal of body.proposals) {
+  // Resolver-file lane (AWaC: server file, NOT a config PATCH field). Handled
+  // separately so it never touches writeWorkspaceConfig and never widens the
+  // PATCH allowlist. Gated by filesystem/read-only; emits a receipt either way.
+  const fallbackIntegrationId = body.proposals
+    .map((proposal) => proposal?.payload?.integrationId || proposal?.payload?.registryId)
+    .find((value) => String(value || "").trim());
+  const normalizedProposals = body.proposals.map((proposal) =>
+    normalizeApplyProposal(proposal, currentConfig, { integrationId: fallbackIntegrationId })
+  );
+  const resolverProposals = normalizedProposals.filter((p) => p?.type === RESOLVER_PROPOSAL_TYPE);
+  const configProposals = normalizedProposals.filter((p) => p?.type !== RESOLVER_PROPOSAL_TYPE);
+
+  for (const proposal of resolverProposals) {
+    const validation = validateResolverProposal(proposal);
+    if (!validation.ok) {
+      skipped.push({ proposal, reason: validation.error || "invalid resolver proposal" });
+      continue;
+    }
+    try {
+      const result = await writeResolverProposalFile(proposal);
+      applied.push({
+        ...buildApplyReceipt(proposal, appliedAt, reviewedBy, sessionId),
+        resolverPath: result.path,
+        resolverFilename: result.filename,
+      });
+    } catch (err) {
+      if (err?.code === "WORKSPACE_PERSISTENCE_READ_ONLY") {
+        skipped.push({ proposal, reason: `read-only runtime — ${err.guidance || "resolver not written"}` });
+      } else {
+        skipped.push({ proposal, reason: err?.message || "resolver write failed" });
+      }
+    }
+  }
+
+  for (const proposal of configProposals) {
     if (
       !proposal ||
       typeof proposal.type !== "string" ||
@@ -113,7 +236,9 @@ async function POST(request) {
   // Patch — collect every affected field from accepted proposals AND
   // append the thread row update (so the user-visible Helper Threads object
   // refreshes in the same atomic write as the proposed mutations).
-  const mutatingApplied = applied.filter((r) => r.type !== "explain.object");
+  // resolver.create writes a server file (affectedField "server-file"), so it
+  // must NOT contribute a field to the config PATCH — exclude it here.
+  const mutatingApplied = applied.filter((r) => r.type !== "explain.object" && r.affectedField !== "server-file");
 
   // Upsert the thread row so audit history reflects this apply turn even
   // when nothing mutated (all skipped / explain-only) and even when the
@@ -129,7 +254,7 @@ async function POST(request) {
     try {
       const existingRows = (workingConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads")?.rows || [];
       const existingRow = existingRows.find((r) => r?.id === threadId) || {};
-      const firstProposal = body.proposals?.[0];
+      const firstProposal = normalizedProposals?.[0];
       const seedTitle = existingRow.title
         || (firstProposal?.rationale ? String(firstProposal.rationale).slice(0, 72) : "Helper thread");
 
@@ -192,7 +317,7 @@ async function POST(request) {
         intent: safeIntent,
         prompt: existingRow.prompt || "",
         summary: existingRow.summary || "",
-        proposals: existingRow.proposals || body.proposals || [],
+        proposals: existingRow.proposals || normalizedProposals || [],
         warnings: existingRow.warnings || [],
         receipts: existingRow.receipts || null,
         model: existingRow.model || "external-apply",
@@ -207,7 +332,7 @@ async function POST(request) {
           affectedField: a.affectedField,
           rationale: a.rationale,
           confidence: a.confidence,
-          payload: body.proposals?.[idx]?.payload ?? null,
+          payload: normalizedProposals?.[idx]?.payload ?? null,
         })),
         lastSkipped: skipped.map((s) => ({
           type: s.proposal?.type,

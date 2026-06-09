@@ -937,6 +937,13 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
       ? workspaceConfig.dataModel
       : {};
   const id = uniqueObjectId(workspaceConfig, label);
+  const relations = preset.relations
+    ? preset.relations.map((relation) => {
+        const next = { ...relation };
+        if (next.statusAllowlist == null) delete next.statusAllowlist;
+        return next;
+      })
+    : [];
   const object = {
     id,
     label,
@@ -946,7 +953,7 @@ function createTypedBusinessObject(workspaceConfig, { name, objectType = "custom
     columns,
     rows: [],
     binding: { mode: "manual", source: "Data Model" },
-    relations: preset.relations ? preset.relations.map((r) => ({ ...r })) : [],
+    relations,
     fieldSettings: normalizeFieldSettings({}, columns)
   };
   return {

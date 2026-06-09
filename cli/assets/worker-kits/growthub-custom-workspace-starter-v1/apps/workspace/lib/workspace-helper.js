@@ -37,6 +37,9 @@ const WORKSPACE_HELPER_PROPOSAL_TYPES = [
   "dataModel.row.add",
   "repair.binding",
   "explain.object",
+  // Server-file lane (AWaC: NOT a config PATCH field). Routed in helper/apply to
+  // the confined, gated resolver write — never through writeWorkspaceConfig.
+  "resolver.create",
 ];
 
 const PROPOSAL_TYPE_TO_PATCH_FIELD = {
@@ -50,6 +53,9 @@ const PROPOSAL_TYPE_TO_PATCH_FIELD = {
   "dataModel.row.add": "dataModel",
   "repair.binding": "dataModel",
   "explain.object": "dataModel",
+  // Sentinel — resolver.create writes a server file, not a config field. It is
+  // explicitly excluded from the PATCH allowlist and handled by its own lane.
+  "resolver.create": "server-file",
 };
 
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
@@ -62,7 +68,7 @@ const INTENT_DESCRIPTIONS = {
   create_widget:
     "Suggest which widgetTypes belong on the workspace based on the object schema and target KPIs. Propose widgetType entries and canvas widget placements.",
   register_api:
-    "Draft API Registry rows (dataModel object of objectType api-registry) including integration labels, credential prompts, base URL, endpoint, auth header, and method.",
+    "Draft API Registry rows (dataModel object of objectType api-registry) including integration labels, credential prompts, base URL, endpoint, auth header, and method. When the user wants the response shaped into governed rows (a Data Source) or describes a nested/paginated response, also recommend a resolver in the `summary` and propose the matching data-source object (objectType data-source) that references the registry row by registryId — guiding them into the resolver / Data Source lane. Credentials are runtime env keys (REF / REF_API_KEY / REF_TOKEN in .env.local), never stored in config.",
   create_object:
     "Translate the user's domain language into a new dataModel object: objectType, label, columns, starter rows, and field settings that make sense for their business.",
   edit_view:

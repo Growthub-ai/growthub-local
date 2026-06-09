@@ -80,9 +80,16 @@ import { SourceTestPanel } from "./SourceTestPanel.jsx";
 import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
 import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
+import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
+import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
+import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
+import { profileApiResponse, recommendResolver } from "@/lib/api-response-profile";
+import { classifyCreationError } from "@/lib/creation-error-recovery";
 import {
   buildSandboxRowFromApiRegistry,
   findSandboxRowsForRegistry,
+  buildDataSourceRowFromApiRegistry,
+  findDataSourceRowsForRegistry,
   getOrchestrationGraphUiState,
   redactSecretsFromText
 } from "@/lib/orchestration-graph";
@@ -517,8 +524,11 @@ function StaticSelect({ value, options, disabled, onChange, placeholder = "Selec
   );
 }
 
-function DrawerSection({ title, children, defaultOpen = false }) {
+function DrawerSection({ title, children, defaultOpen = false, forceOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
   return (
     <section className={`dm-drawer-section${open ? " open" : ""}`}>
       <button type="button" className="dm-drawer-section-toggle" onClick={() => setOpen((current) => !current)}>
@@ -652,13 +662,30 @@ function SandboxRecordFields({
   onOpenGraphSidecar,
   onOpenTraceSidecar
 }) {
+  const router = useRouter();
   const [sandboxAdapters, setSandboxAdapters] = useState([]);
+  const [serverlessSignals, setServerlessSignals] = useState({ configuredEnvRefs: [], persistenceAdapters: [] });
   useEffect(() => {
     fetch("/api/workspace/sandbox-adapters", { cache: "no-store" })
       .then((res) => res.json())
       .then((payload) => setSandboxAdapters(Array.isArray(payload.adapters) ? payload.adapters : []))
       .catch(() => setSandboxAdapters([]));
   }, []);
+  // Real runtime truth for the serverless/persistence cockpit (env-status).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/workspace/env-status", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((payload) => {
+        if (cancelled) return;
+        setServerlessSignals({
+          configuredEnvRefs: Array.isArray(payload.configuredEnvRefs) ? payload.configuredEnvRefs : [],
+          persistenceAdapters: Array.isArray(payload.persistenceAdapters) ? payload.persistenceAdapters : [],
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [rowIndex, table.objectId]);
 
   const locality = String(draft.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
   const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
@@ -697,8 +724,30 @@ function SandboxRecordFields({
 
   const netOn = ["true", "1", "on", "yes"].includes(String(draft.networkAllow || "").trim().toLowerCase());
 
+  // Same cockpit interface + mental model as the API Registry lane, driven by
+  // the serverless/scheduling/persistence derivation. Steps are status-only
+  // here (inlineEditing) — the editable fields below are the editor.
+  const serverlessState = deriveSandboxServerlessState({
+    sandboxRow: draft,
+    workspaceConfig,
+    configuredEnvRefs: serverlessSignals.configuredEnvRefs,
+    persistenceAdapters: serverlessSignals.persistenceAdapters,
+    inlineEditing: true,
+  });
+  function handleServerlessAction(action) {
+    if (!action) return;
+    if (action.id === "toggle-locality") setRunLocality(serverlessState.isServerless ? "local" : "serverless");
+    else if (action.id === "open-settings") router.push(action.href || "/settings");
+  }
+
   return (
     <div className="dm-sandbox-config">
+      <ApiRegistryCreationCockpit
+        state={serverlessState}
+        onAction={handleServerlessAction}
+        disabled={!table.mutable || saving}
+        eyebrow={serverlessState.isServerless ? "Serverless workflow" : "Workflow runtime"}
+      />
       <DrawerSection title="Identity & Mode">
         <label className="dm-record-field">
           <span>Name</span>
@@ -1141,9 +1190,20 @@ function DataModelRecordDrawer({
   const [createdSandboxMeta, setCreatedSandboxMeta] = useState(null);
   const [createdSandboxTesting, setCreatedSandboxTesting] = useState(false);
   const [createdSandboxTestMessage, setCreatedSandboxTestMessage] = useState("");
+  const [creatingDataSource, setCreatingDataSource] = useState(false);
+  const [createdDataSourceMeta, setCreatedDataSourceMeta] = useState(null);
+  const [dataSourceMessage, setDataSourceMessage] = useState("");
+  const [cockpitBusy, setCockpitBusy] = useState("");
+  const [cockpitCollapsed, setCockpitCollapsed] = useState(false);
+  // Real runtime truth for the creation cockpit: which auth refs resolve in the
+  // server runtime, and the live source-records sidecar. Fetched (never guessed)
+  // so auth/refresh readiness reflect actual state, and refreshed after actions.
+  const [creationSignals, setCreationSignals] = useState({ configuredEnvRefs: [], sourceRecords: {} });
+  const [creationReceipts, setCreationReceipts] = useState([]);
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
+  const drawerScrollRef = useRef(null);
   const drawerKeyRef = useRef("");
   const router = useRouter();
 
@@ -1165,6 +1225,14 @@ function DataModelRecordDrawer({
       setSandboxToolDraft({});
       setCreatedSandboxMeta(null);
       setCreatedSandboxTestMessage("");
+      setCreatingDataSource(false);
+      setCreatedDataSourceMeta(null);
+      setDataSourceMessage("");
+      setCreationReceipts([]);
+      setCockpitCollapsed(false);
+      requestAnimationFrame(() => {
+        if (drawerScrollRef.current) drawerScrollRef.current.scrollTop = 0;
+      });
     }
     if (initialSidecar?.mode === "trace") {
       setSidecarMode("trace");
@@ -1176,6 +1244,34 @@ function DataModelRecordDrawer({
       setTraceRunId("");
     }
   }, [row, rowIndex, initialSidecar, table.id, table.objectId, table.source, table.columns, table.fieldSettings?.hidden]);
+
+  // Load real cockpit truth (configured auth refs + source-records sidecar) when
+  // an API Registry row is open. The creation cockpit derives auth/refresh
+  // readiness from these — never guessed, never faked.
+  useEffect(() => {
+    if (table.objectType !== "api-registry" || rowIndex === null || rowIndex === undefined) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [statusRes, wsRes] = await Promise.all([
+          fetch("/api/workspace/env-status", { cache: "no-store" }),
+          fetch("/api/workspace", { cache: "no-store" }),
+        ]);
+        const status = statusRes.ok ? await statusRes.json() : {};
+        const ws = wsRes.ok ? await wsRes.json() : {};
+        if (cancelled) return;
+        setCreationSignals({
+          configuredEnvRefs: Array.isArray(status.configuredEnvRefs) ? status.configuredEnvRefs : [],
+          sourceRecords: ws.workspaceSourceRecords && typeof ws.workspaceSourceRecords === "object"
+            ? ws.workspaceSourceRecords
+            : {},
+        });
+      } catch {
+        /* leave signals as-is — cockpit degrades to pending, never fakes */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [table.objectType, table.objectId, rowIndex]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
@@ -1258,6 +1354,14 @@ function DataModelRecordDrawer({
       });
       setDraft((current) => ({ ...current, status, lastTested: new Date().toISOString(), lastResponse: responseText }));
       setTestMessage(payload.ok ? "Connected" : payload.error || "Connection failed");
+      if (isApiRegistry) {
+        if (payload.ok) {
+          pushReceipt({ kind: "api-test", ok: true, detail: `Tested — HTTP ${payload.status ?? 200}${payload.usedServerSecret ? " · used server secret" : ""}.` });
+        } else {
+          const recovery = classifyCreationError({ phase: "test", httpStatus: payload.status, detail: redactSecretsFromText(payload.error || `HTTP ${payload.status ?? ""} failed`) });
+          pushReceipt({ kind: "api-test", ok: false, detail: `${recovery.safeDetail}. ${recovery.requiredAction}` });
+        }
+      }
     } catch (err) {
       const responseText = JSON.stringify({ error: err.message || "Connection failed" }, null, 2);
       onSave((config) => {
@@ -1340,6 +1444,221 @@ function DataModelRecordDrawer({
       setSandboxToolCreating(false);
     }
   }
+
+  function createDataSourceFromRegistry() {
+    const integrationId = String(draft?.integrationId || "").trim();
+    if (!integrationId) {
+      setDataSourceMessage("This API Registry row needs an integrationId before a Data Source can reference it.");
+      return;
+    }
+    if (findDataSourceRowsForRegistry(workspaceConfig, integrationId).length > 0) {
+      setDataSourceMessage("A Data Source already references this API. Open it instead of creating a duplicate.");
+      return;
+    }
+    setCreatingDataSource(true);
+    setDataSourceMessage("");
+    try {
+      let createdMeta = null;
+      onSave((config) => {
+        let next = config;
+        if (findDataSourceRowsForRegistry(next, integrationId).length > 0) return next;
+        // Dedicated data-source object per API (one object = one live integration,
+        // matching the refresh-sources contract which binds integrationId per object).
+        const dsName = `${String(draft?.Name || integrationId).trim()} Source`;
+        const beforeIds = new Set((next.dataModel?.objects || []).map((o) => o.id));
+        next = createTypedBusinessObject(next, { name: dsName, objectType: "data-source" });
+        const newObj = (next.dataModel?.objects || []).find((o) => o.objectType === "data-source" && !beforeIds.has(o.id));
+        if (!newObj) return next;
+        const sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectId === newObj.id);
+        const profile = profileApiResponse(draft?.lastResponse);
+        const newRow = buildDataSourceRowFromApiRegistry(next, draft, {
+          entityType: profile?.parsed ? profile.suggestedEntityType : undefined,
+        });
+        if (sourceTable) next = appendRowsToTable(next, sourceTable, [newRow]);
+        // Make the object live-backed so refresh-sources hydrates the sidecar
+        // (keyed by object id). Without this binding, refresh skips it as
+        // "not-live-backed" and the journey would never close.
+        next = {
+          ...next,
+          dataModel: {
+            ...next.dataModel,
+            objects: (next.dataModel.objects || []).map((o) =>
+              o.id === newObj.id
+                ? {
+                    ...o,
+                    sourceId: newRow.sourceId,
+                    binding: {
+                      mode: "integration",
+                      lane: "data-source",
+                      sourceStorage: "workspace-source-records",
+                      integrationId,
+                      sourceId: newRow.sourceId,
+                      source: newRow.Name,
+                    },
+                  }
+                : o
+            ),
+          },
+        };
+        createdMeta = { objectId: newObj.id, name: newRow.Name, sourceId: newRow.sourceId };
+        return next;
+      });
+      if (createdMeta) {
+        setCreatedDataSourceMeta(createdMeta);
+        setDataSourceMessage("Data Source created and live-backed. Use Refresh to pull records into the workspace — nothing auto-fetches.");
+        pushReceipt({ kind: "data-source-created", ok: true, detail: `Created "${createdMeta.name}" (sourceId ${createdMeta.sourceId}), live-backed via registryId ${integrationId}.` });
+        reloadCreationSignals();
+      } else {
+        setDataSourceMessage("A Data Source already references this API.");
+      }
+    } finally {
+      setCreatingDataSource(false);
+    }
+  }
+
+  function openDataSourceRow(objectIdOverride) {
+    const objectId = String(objectIdOverride || createdDataSourceMeta?.objectId || "").trim();
+    if (!objectId) return;
+    onClose();
+    router.push(`/data-model?object=${encodeURIComponent(objectId)}`);
+  }
+
+  // Append a creation receipt (test / create / refresh outcomes). Secret-safe —
+  // detail strings are caller-redacted; receipts hold no values.
+  function pushReceipt(entry) {
+    setCreationReceipts((cur) => [{ at: new Date().toISOString(), ...entry }, ...cur].slice(0, 12));
+  }
+
+  // Pull real cockpit truth: configured auth refs (server-resolved, slugs only)
+  // + the live source-records sidecar. Safe to call repeatedly; never throws.
+  async function reloadCreationSignals() {
+    try {
+      const [statusRes, wsRes] = await Promise.all([
+        fetch("/api/workspace/env-status", { cache: "no-store" }),
+        fetch("/api/workspace", { cache: "no-store" }),
+      ]);
+      const status = statusRes.ok ? await statusRes.json() : {};
+      const ws = wsRes.ok ? await wsRes.json() : {};
+      setCreationSignals({
+        configuredEnvRefs: Array.isArray(status.configuredEnvRefs) ? status.configuredEnvRefs : [],
+        sourceRecords: ws.workspaceSourceRecords && typeof ws.workspaceSourceRecords === "object"
+          ? ws.workspaceSourceRecords
+          : {},
+      });
+    } catch {
+      /* signals stay at their last value — the cockpit degrades to pending, never fakes */
+    }
+  }
+
+  // Refresh the linked Data Source through the sidecar dispatcher
+  // (refresh-sources, plural) keyed by the data-source OBJECT id, so the records
+  // land in the source-records sidecar the cockpit reads — then reload signals
+  // so the refresh step flips to complete from real state.
+  async function refreshLinkedSource({ objectId }) {
+    const sourceObjectId = String(objectId || "").trim();
+    if (!sourceObjectId) {
+      setDataSourceMessage("No linked Data Source object to refresh yet.");
+      return;
+    }
+    setDataSourceMessage("");
+    try {
+      const res = await fetch("/api/workspace/refresh-sources", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceIds: [sourceObjectId] }),
+      });
+      const payload = await res.json();
+      const result = Array.isArray(payload.refreshed) ? payload.refreshed.find((r) => r.sourceId === sourceObjectId) : null;
+      if (res.ok && result) {
+        const msg = `Refreshed — ${result.recordCount ?? 0} record(s) pulled into the sidecar.`;
+        setDataSourceMessage("");
+        pushReceipt({ kind: "source-refresh", ok: true, detail: msg });
+      } else if (res.ok && Array.isArray(payload.skipped) && payload.skipped.includes(sourceObjectId)) {
+        const detail = (payload.skippedDetail || []).find((d) => d.sourceId === sourceObjectId);
+        const recovery = classifyCreationError({ phase: "refresh", reason: detail?.reason });
+        setDataSourceMessage(`Refresh skipped: ${recovery.safeDetail}. ${recovery.requiredAction}`);
+        pushReceipt({ kind: "source-refresh", ok: false, detail: `Skipped (${recovery.errorKind}). ${recovery.requiredAction}` });
+      } else {
+        const recovery = classifyCreationError({ phase: "refresh", httpStatus: res.status, detail: redactSecretsFromText(payload.error || "Refresh failed") });
+        setDataSourceMessage(`${recovery.safeDetail} — ${recovery.requiredAction}`);
+        pushReceipt({ kind: "source-refresh", ok: false, detail: `${recovery.safeDetail}. ${recovery.requiredAction}` });
+      }
+      await reloadCreationSignals();
+    } catch (err) {
+      setDataSourceMessage(redactSecretsFromText(err.message || "Refresh failed"));
+    }
+  }
+
+  // The creation cockpit emits a single action descriptor per step; map it to
+  // the drawer's existing governed handlers. No new mutation paths.
+  async function handleCockpitAction(action) {
+    if (!action || !action.id) return;
+    const tag = `${action.stepId}:${action.id}`;
+    setCockpitBusy(tag);
+    try {
+      switch (action.id) {
+        case "edit":
+          setEditMode(true);
+          setCockpitCollapsed(true);
+          break;
+        case "open-settings":
+          onClose();
+          router.push(action.href || "/settings");
+          break;
+        case "open-resolver":
+          // Hand off to the governed helper widget — the resolver proposal lane.
+          // Carries the integrationId so the helper can scope a resolver proposal.
+          onClose();
+          router.push(`/data-model?helper=open&resolverFor=${encodeURIComponent(String(draft?.integrationId || "").trim())}`);
+          break;
+        case "test":
+          await testApiRecord();
+          await reloadCreationSignals();
+          break;
+        case "create-data-source":
+          createDataSourceFromRegistry();
+          break;
+        case "open-data-source":
+          openDataSourceRow(action.objectId);
+          break;
+        case "create-sandbox-tool":
+          setSandboxToolFlow("draft");
+          break;
+        case "refresh-source":
+          await refreshLinkedSource({ objectId: action.objectId });
+          break;
+        default:
+          break;
+      }
+    } finally {
+      setCockpitBusy("");
+    }
+  }
+
+  const creationState = isApiRegistry
+    ? deriveApiRegistryCreationState({
+        workspaceConfig,
+        registryRow: draft,
+        sourceRecords: creationSignals.sourceRecords,
+        runtime: { configuredEnvRefs: creationSignals.configuredEnvRefs },
+      })
+    : null;
+  // Shape analysis from the tested response — drives the resolver recommendation
+  // and the field candidates the operator sees before creating a Data Source.
+  const creationProfile = isApiRegistry && creationState?.tested
+    ? profileApiResponse(draft?.lastResponse)
+    : null;
+  const creationResolverRec = creationProfile ? recommendResolver(creationProfile) : null;
+  // Preview the exact Data Source that "Create Data Source" will produce, before
+  // any mutation — shown once tested and while no source is linked yet.
+  const creationDataSourcePreview = isApiRegistry && creationState?.tested && !creationState.sourceExists
+    ? {
+        row: buildDataSourceRowFromApiRegistry(workspaceConfig, draft, {
+          entityType: creationProfile?.suggestedEntityType,
+        }),
+        fields: creationProfile?.fields || [],
+      }
+    : null;
 
   async function runSandboxToolByName({ objectId, name }) {
     const rowName = String(name || "").trim();
@@ -1557,6 +1876,7 @@ function DataModelRecordDrawer({
             onTest={testApiRecord}
           />
         )}
+        <div className="dm-record-scroll" ref={drawerScrollRef}>
         {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
           <section className="dm-api-action-card dm-api-action-card-success" aria-label="Sandbox tool created">
             <div className="dm-api-action-card-body">
@@ -1584,6 +1904,24 @@ function DataModelRecordDrawer({
               </button>
             </div>
           </section>
+        )}
+        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "confirm" && creationState && (
+          <>
+            <ApiRegistryCreationCockpit
+              state={creationState}
+              onAction={handleCockpitAction}
+              busyAction={cockpitBusy}
+              disabled={saving || creatingDataSource || testing}
+              profile={creationProfile}
+              resolverRec={creationResolverRec}
+              receipts={creationReceipts}
+              dataSourcePreview={creationDataSourcePreview}
+              defaultCollapsed={cockpitCollapsed}
+              hideWhenComplete
+              onCollapsedChange={setCockpitCollapsed}
+            />
+            {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
+          </>
         )}
         {isApiRegistry && sandboxToolFlow === "draft" && (
           <SandboxToolDraftPanel
@@ -1667,7 +2005,11 @@ function DataModelRecordDrawer({
               rowIndex={rowIndex}
             />
           ) : groupRecordColumns(table.columns || []).map((section) => (
-            <DrawerSection key={section.title} title={section.title}>
+            <DrawerSection
+              key={section.title}
+              title={section.title}
+              forceOpen={isApiRegistry && editMode}
+            >
               {section.columns.map((column) => (
                 <RecordFieldEditor
                   key={column}
@@ -1685,7 +2027,7 @@ function DataModelRecordDrawer({
             </DrawerSection>
           ))}
           {!isSandbox && editMode && (
-            <DrawerSection title="Fields" defaultOpen>
+            <DrawerSection title="Fields">
               <div className="dm-drawer-field-editor">
                 {pendingColumns.map((column, index) => (
                   <div key={`${column}-${index}`} className="dm-drawer-field-row">
@@ -1713,6 +2055,7 @@ function DataModelRecordDrawer({
               </div>
             </DrawerSection>
           )}
+        </div>
         </div>
         {!isSandbox && editMode && (
           <footer className="dm-record-drawer-foot">
@@ -1763,7 +2106,9 @@ function DataModelTableSurface({
   onSave,
   onOpenThread,
   focusSandboxRowName,
+  focusRecordValue,
   onFocusSandboxRowConsumed,
+  onFocusRecordConsumed,
   onFocusSandboxRow,
   selectedRecordIndex,
   onSelectedRecordIndexChange,
@@ -1860,6 +2205,24 @@ function DataModelTableSurface({
     selectOriginalIndex(originalIndex);
     onFocusSandboxRowConsumed?.();
   }, [focusSandboxRowName, table.id, table.objectType, table.rows, rowEntries, pageSize, onFocusSandboxRowConsumed]);
+
+  useEffect(() => {
+    if (!focusRecordValue) return;
+    const wanted = String(focusRecordValue).trim();
+    if (!wanted) return;
+    const originalIndex = (table.rows || []).findIndex((r) => (
+      String(r?.integrationId || "").trim() === wanted
+      || String(r?.Name || r?.name || r?.slug || r?.id || "").trim() === wanted
+    ));
+    if (originalIndex < 0) return;
+    const visibleIndex = rowEntries.findIndex((entry) => entry.originalIndex === originalIndex);
+    if (visibleIndex < 0) return;
+    const pageForRow = Math.floor(visibleIndex / pageSize);
+    setPageIndex(pageForRow);
+    setSelectedRow(visibleIndex);
+    selectOriginalIndex(originalIndex);
+    onFocusRecordConsumed?.();
+  }, [focusRecordValue, table.id, table.rows, rowEntries, pageSize, onFocusRecordConsumed]);
 
   useEffect(() => {
     setPageIndex((current) => Math.min(current, pageCount - 1));
@@ -2648,9 +3011,11 @@ export default function DataModelShell() {
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
+  const [focusRecordValue, setFocusRecordValue] = useState(null);
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
+  const consumedHelperRouteRef = useRef("");
 
   // Cross-page rail entrypoints. Settings / integrations pages render
   // <WorkspaceRail> without an in-process helper handler — clicking the
@@ -2663,7 +3028,11 @@ export default function DataModelShell() {
     if (!workspaceConfig) return;
     const helperParam = searchParams?.get("helper");
     const threadParam = searchParams?.get("thread");
-    if (!helperParam && !threadParam) return;
+    const resolverForParam = searchParams?.get("resolverFor");
+    if (!helperParam && !threadParam && !resolverForParam) return;
+    const routeKey = `${helperParam || ""}:${threadParam || ""}:${resolverForParam || ""}`;
+    if (routeKey === consumedHelperRouteRef.current) return;
+    consumedHelperRouteRef.current = routeKey;
     if (threadParam) {
       const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
       const row = (ht?.rows || []).find((r) => r?.id === threadParam);
@@ -2671,6 +3040,12 @@ export default function DataModelShell() {
         setHelperInitialThread(row);
         setHelperOpen(true);
       }
+    } else if (resolverForParam) {
+      setHelperIntent("register_api");
+      setHelperInitialThread(null);
+      setHelperInitialPrompt(`Create the response resolver for API Registry integration "${resolverForParam}". Use the tested lastResponse from that registry row, extract the records from the response into governed Data Source rows, and keep the resolver scoped to this integrationId.`);
+      setHelperOpen(true);
+      return;
     } else if (helperParam === "open") {
       setHelperInitialThread(null);
       setHelperOpen(true);
@@ -2678,6 +3053,7 @@ export default function DataModelShell() {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("helper");
     next.delete("thread");
+    next.delete("resolverFor");
     const query = next.toString();
     router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
   }, [workspaceConfig, searchParams, router]);
@@ -2778,7 +3154,20 @@ export default function DataModelShell() {
   useEffect(() => {
     const rowParam = searchParams?.get("row");
     if (!rowParam || !tables.length) return;
-    focusSandboxEnvironmentRow({ rowName: rowParam, deferOpen: true });
+    const objectParam = searchParams?.get("object");
+    const target = objectParam
+      ? tables.find((table) => (
+          table.objectId === objectParam
+          || table.id === objectParam
+          || table.source === objectParam
+          || table.label === objectParam
+        ))
+      : null;
+    if (target?.objectType === "sandbox-environment" || (!target && rowParam)) {
+      focusSandboxEnvironmentRow({ rowName: rowParam, deferOpen: true });
+      return;
+    }
+    requestAnimationFrame(() => setFocusRecordValue(rowParam));
   }, [focusSandboxEnvironmentRow, searchParams, tables]);
 
   // Flush any accumulated patch keys to the server. Called by the debounce
@@ -3205,7 +3594,9 @@ export default function DataModelShell() {
                 onSave={save}
                 onOpenThread={openHelperThreadFromRow}
                 focusSandboxRowName={focusSandboxRowName}
+                focusRecordValue={focusRecordValue}
                 onFocusSandboxRowConsumed={() => setFocusSandboxRowName(null)}
+                onFocusRecordConsumed={() => setFocusRecordValue(null)}
                 onFocusSandboxRow={focusSandboxEnvironmentRow}
                 selectedRecordIndex={selectedTableKey ? selectedRecordByTable[selectedTableKey] ?? null : null}
                 onSelectedRecordIndexChange={(index) => {

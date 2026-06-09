@@ -405,9 +405,15 @@ function deriveBlankWorkspaceActivationState({ workspaceConfig, workspaceSourceR
   }, 0);
   const widgetAdded = widgetCount > 0;
 
-  const workflowMatch = findWorkflowRow(workspaceConfig, () => true);
+  const workflowMatch = findWorkflowRow(workspaceConfig, (_row, object) => safeString(object?.id).trim() !== "workspace-helper-sandbox");
   const workflowCreated = Boolean(workflowMatch?.row);
   const workflowRun = deriveLatestRunStatus(workflowMatch?.row);
+  const workflowObjectId = safeString(workflowMatch?.object?.id).trim();
+  const workflowRowName = safeString(workflowMatch?.row?.Name || workflowMatch?.row?.name || workflowMatch?.row?.slug || workflowMatch?.row?.id).trim();
+  const workflowField = workflowMatch?.row?.orchestrationConfig !== undefined ? "orchestrationConfig" : "orchestrationGraph";
+  const workflowHref = workflowObjectId && workflowRowName
+    ? `/workflows?object=${encodeURIComponent(workflowObjectId)}&row=${encodeURIComponent(workflowRowName)}&field=${encodeURIComponent(workflowField)}`
+    : "";
 
   const steps = [
     {
@@ -449,8 +455,9 @@ function deriveBlankWorkspaceActivationState({ workspaceConfig, workspaceSourceR
         ? "Sandbox workflow scaffolded."
         : "Open Workflows to assemble your first automation.",
       status: workflowCreated ? "complete" : "pending",
-      href: "/workflows",
-      cta: workflowCreated ? "Open Workflows" : "New workflow",
+      href: workflowCreated ? workflowHref : "",
+      action: workflowCreated ? "" : "create-workflow",
+      cta: workflowCreated ? "Open workflow" : "New workflow",
     },
     {
       id: "run-workflow",
@@ -461,7 +468,7 @@ function deriveBlankWorkspaceActivationState({ workspaceConfig, workspaceSourceR
           ? "Last run failed — open the trace and fix the failing node."
           : "Click Test inside the workflow to do a first run.",
       status: workflowRun.ok ? "complete" : (workflowCreated ? "pending" : "blocked"),
-      href: "/workflows",
+      href: workflowCreated ? workflowHref : "",
       hint: workflowRun.ok || workflowCreated ? "" : "Create a workflow first.",
       cta: workflowRun.ok ? "View runs" : "Open workflow",
     },
