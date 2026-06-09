@@ -132,6 +132,41 @@ async function pruneSidecarKeys(sourceIds) {
   }
 }
 
+/**
+ * ApiActivationRail — derived next-action banner for the creation journey.
+ * Reads GET /api/workspace/activation (server truth: env catalog + registered
+ * resolvers) and surfaces the api-setup lens's exact next action with a link to
+ * the failing surface. No dead ends; no hand-authored status. `refreshKey`
+ * forces a re-fetch after the operator applies a change.
+ */
+function ApiActivationRail({ refreshKey, onRegisterApi }) {
+  const [lens, setLens] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/workspace/activation", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((s) => { if (alive) setLens(s?.lenses?.["api-setup"] || null); })
+      .catch(() => { if (alive) setLens(null); });
+    return () => { alive = false; };
+  }, [refreshKey]);
+
+  if (!lens) return null;
+  const next = (lens.steps || []).find((s) => s.id === lens.nextStepId) || null;
+  const ready = lens.complete;
+  return (
+    <div className={"workspace-template-context-banner" + (ready ? "" : " is-warn")} role="note">
+      <span>
+        <strong>{lens.headline}</strong> {lens.subheadline}
+      </span>
+      {ready ? null : next ? (
+        next.id === "api-registered"
+          ? <button type="button" className="workspace-template-context-link" onClick={onRegisterApi}>{next.cta}</button>
+          : <Link href={next.href} className="workspace-template-context-link"><span>{next.cta}</span></Link>
+      ) : null}
+    </div>
+  );
+}
+
 // ─── Object type definitions for the type-picker step ────────────────────────
 
 const OBJECT_TYPE_DEFS = [
@@ -2777,6 +2812,7 @@ export default function DataModelShell() {
   const [selectedSource, setSelectedSource] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [registerApiOpen, setRegisterApiOpen] = useState(false);
+  const [activationRefresh, setActivationRefresh] = useState(0);
   const [helperOpen, setHelperOpen] = useState(false);
   const [helperIntent, setHelperIntent] = useState("create_object");
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
@@ -3316,6 +3352,8 @@ export default function DataModelShell() {
           </div>
         </header>
 
+        <ApiActivationRail refreshKey={activationRefresh} onRegisterApi={() => setRegisterApiOpen(true)} />
+
         <AddObjectSidebar
           open={addOpen}
           saving={saving}
@@ -3328,9 +3366,11 @@ export default function DataModelShell() {
           open={registerApiOpen}
           onClose={() => setRegisterApiOpen(false)}
           onApplied={(nextConfig) => {
-            // Reflect the new API Registry row immediately, then resync from disk.
+            // Reflect the new API Registry row immediately, then resync from disk
+            // and re-derive the activation rail's next action.
             if (nextConfig) setWorkspaceConfig(nextConfig);
             load();
+            setActivationRefresh((n) => n + 1);
           }}
         />
 
