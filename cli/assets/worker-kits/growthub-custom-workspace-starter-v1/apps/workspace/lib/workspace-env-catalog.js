@@ -24,20 +24,7 @@
  * logs, or hashes a secret value. The browser sees names and `configured`.
  */
 
-/**
- * Canonical env-key candidate expansion. Mirrors the inline helper in the
- * execution routes so the catalog's `configured` flag matches what the runner
- * will actually resolve at run time.
- */
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  if (!token) return [];
-  return Array.from(new Set([token, `${token}_API_KEY`, `${token}_TOKEN`]));
-}
+import { envKeyCandidates } from "./workspace-env-resolver.js";
 
 /**
  * Env keys we never surface as bindable secrets: framework, runtime, OS, and

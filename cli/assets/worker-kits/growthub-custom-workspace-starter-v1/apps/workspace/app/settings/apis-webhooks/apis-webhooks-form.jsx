@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, Link as LinkIcon, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const PAGE_SIZE = 10;
 
@@ -105,7 +105,21 @@ function ApisWebhooksForm({ persistence, refs }) {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [copiedKey, setCopiedKey] = useState("");
+  const [envCatalog, setEnvCatalog] = useState(null);
   const [page, setPage] = useState(0);
+
+  async function refreshEnvCatalog() {
+    try {
+      const res = await fetch("/api/workspace/env-key-catalog", { cache: "no-store" });
+      setEnvCatalog(await res.json());
+    } catch {
+      setEnvCatalog(null);
+    }
+  }
+
+  useEffect(() => {
+    refreshEnvCatalog();
+  }, []);
   const canSave = persistence?.canSave !== false;
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const activePage = Math.min(page, pageCount - 1);
@@ -155,6 +169,7 @@ function ApisWebhooksForm({ persistence, refs }) {
       setItems(payload.refs.length ? payload.refs.map(normalizeRef) : [blankRef("api"), blankRef("webhook")]);
       const wrote = Array.isArray(payload.envWrite?.written) ? payload.envWrite.written : [];
       setMessage(wrote.length ? `Saved. Wrote ${wrote.length} key(s) to .env.local.` : "Saved.");
+      await refreshEnvCatalog();
     } catch (error) {
       setMessage(error.message || "Failed to save.");
     } finally {
@@ -202,6 +217,11 @@ function ApisWebhooksForm({ persistence, refs }) {
         <button type="button" disabled={activePage >= pageCount - 1} onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>Next</button>
       </div> : null}
     </section>
+
+    {envCatalog?.summary ? <p className="workspace-settings-message">
+      Env catalog: {envCatalog.summary.configured}/{envCatalog.summary.total} configured
+      {envCatalog.summary.missing > 0 ? ` · ${envCatalog.summary.missing} missing` : ""}
+    </p> : null}
 
     {message ? <p className="workspace-settings-message">{message}</p> : null}
   </form>;

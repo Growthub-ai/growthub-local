@@ -377,6 +377,34 @@ async function main() {
         "cleanup should skip non-existent key");
     }
 
+    // --- readiness summary (governed creation loop) ---
+    res = await fetch(`${base}/api/workspace/readiness`, { cache: "no-store" });
+    assert(res.ok, `readiness failed ${res.status}`);
+    const readiness = await res.json();
+    assert(readiness.kind === "growthub-workspace-readiness-v1", "readiness kind");
+    assert(typeof readiness.scenario === "string", "readiness scenario");
+    assert(readiness.nextAction?.href, "readiness next action");
+
+    // --- creation proposal build (propose-only) ---
+    res = await fetch(`${base}/api/workspace/creation-proposals/build`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draft: {
+          name: "Probe API",
+          integrationId: "probe-build",
+          baseUrl: "https://example.com",
+          endpoint: "/v1",
+          authMode: "none",
+          outputMode: "raw-response",
+        },
+      }),
+    });
+    const buildBody = await res.json();
+    assert(res.ok, `creation-proposals/build failed ${res.status}`);
+    assert(buildBody.bundle?.kind === "growthub-creation-proposal-bundle-v1", "bundle kind");
+    assert(JSON.stringify(buildBody).includes("secret") === false, "build must not leak secrets");
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {

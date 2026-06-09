@@ -350,6 +350,7 @@ export default function WorkflowSurface() {
   const [orchestrationGraph, setOrchestrationGraph] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
+  const [readiness, setReadiness] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -368,6 +369,13 @@ export default function WorkflowSurface() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch("/api/workspace/readiness", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setReadiness)
+      .catch(() => setReadiness(null));
+  }, [workspaceConfig, runMessage, saveMessage]);
 
   const resolved = useMemo(
     () => (workspaceConfig ? findSandboxRowByWorkflowRef(workspaceConfig, objectId, rowId) : { object: null, row: null, rowIndex: -1 }),
@@ -826,6 +834,19 @@ export default function WorkflowSurface() {
         onOpenThread={(row) => router.push(`/data-model?thread=${encodeURIComponent(row.id)}`)}
       />
       <section className="workspace-surface dm-workflow-surface">
+        {readiness && (
+          <div className="dm-workflow-readiness-bar" aria-label="Workflow readiness">
+            <span className={`workspace-readiness-badge ${readiness.activation?.complete ? "good" : "warn"}`}>
+              {readiness.activation?.complete ? "activation ready" : "activation pending"}
+            </span>
+            <span>env {readiness.env?.summary?.configured ?? 0}/{readiness.env?.summary?.total ?? 0}</span>
+            <span>API {readiness.apiRegistry?.testedCount ?? 0}/{readiness.apiRegistry?.rowCount ?? 0} tested</span>
+            <span>scheduler {readiness.scheduler?.configured ?? 0}/{readiness.scheduler?.serverlessRows ?? 0}</span>
+            {readiness.nextAction?.href && (
+              <Link href={readiness.nextAction.href} className="workspace-readiness-action">{readiness.nextAction.label}</Link>
+            )}
+          </div>
+        )}
         <header className="workspace-toolbar dm-workflow-toolbar">
           <div className="dm-workflow-titlebar">
             <span className="dm-workflow-title-muted">Workflows</span>

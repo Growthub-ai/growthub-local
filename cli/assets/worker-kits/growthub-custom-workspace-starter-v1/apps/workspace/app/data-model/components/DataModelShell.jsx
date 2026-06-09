@@ -102,6 +102,7 @@ import {
   normalizeCodexSiteRecord,
 } from "@/lib/codex-sites-workspace-adapter";
 import { computeDeleteImpact } from "@/lib/workspace-delete-impact";
+import { RegisterApiWizard } from "./RegisterApiWizard.jsx";
 
 /**
  * Governed sidecar cleanup after a delete (roadmap Phase 1.4). MUST be called
@@ -2779,6 +2780,8 @@ export default function DataModelShell() {
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [registerApiOpen, setRegisterApiOpen] = useState(false);
+  const [persistence, setPersistence] = useState(null);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
@@ -2828,6 +2831,7 @@ export default function DataModelShell() {
         ? payload.workspaceSourceRecords
         : {});
       setAuthority(payload.adapters?.integrations?.authority || null);
+      setPersistence(payload.workspaceConfigPersistence || null);
     } catch (err) {
       setError(err.message || "Failed to load workspace");
     } finally {
@@ -2880,6 +2884,21 @@ export default function DataModelShell() {
   const selectedTableKey = selectedTable
     ? String(selectedTable.objectId || selectedTable.id || selectedTable.source || "")
     : "";
+
+  useEffect(() => {
+    if (!workspaceConfig) return;
+    const lane = searchParams?.get("lane");
+    if (!lane) return;
+    if (lane === "register-api") setRegisterApiOpen(true);
+    if (lane === "create-source") {
+      const ds = tables.find((t) => t.objectType === "data-source");
+      if (ds?.source) setSelectedSource(ds.source);
+    }
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("lane");
+    const query = next.toString();
+    router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
+  }, [workspaceConfig, searchParams, router, tables]);
 
   const focusSandboxEnvironmentRow = useCallback(({ rowName, deferOpen = false } = {}) => {
     const wanted = String(rowName || "").trim();
@@ -3221,6 +3240,10 @@ export default function DataModelShell() {
       run: () => openHelperWith("register_api", "Register an API integration: integration label, base URL, endpoint, auth header, and method.")
     },
     {
+      id: "creation.register_api", group: "Creation", label: "Register API wizard",
+      run: () => setRegisterApiOpen(true)
+    },
+    {
       id: "helper.repair", group: "Ask helper", label: "Ask helper — repair workspace",
       run: () => openHelperWith("repair", "Inspect this workspace for missing references, broken bindings, or incomplete object configuration. Propose the smallest fix for each issue.")
     },
@@ -3423,6 +3446,9 @@ export default function DataModelShell() {
             <strong>No objects yet</strong>
             <p>Create your first Data Source, API Registry, People list, or custom object to get started.</p>
             <div className="dm-page-empty-actions">
+              <button type="button" className="dm-btn-primary" onClick={() => setRegisterApiOpen(true)}>
+                <Code2 size={14} />Register API
+              </button>
               <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
                 <Plus size={14} />New object
               </button>
@@ -3440,6 +3466,18 @@ export default function DataModelShell() {
           </div>
         )}
       </section>
+
+      <RegisterApiWizard
+        open={registerApiOpen}
+        onClose={() => setRegisterApiOpen(false)}
+        persistence={persistence}
+        readOnly={persistence?.canSave === false}
+        onApplied={(payload) => {
+          if (payload?.workspaceConfig) setWorkspaceConfig(payload.workspaceConfig);
+          else load();
+          setMessage("Creation bundle applied. Test and verify activation readiness.");
+        }}
+      />
     </main>
   );
 }

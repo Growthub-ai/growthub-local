@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { readServerSecret } from "@/lib/workspace-env-resolver";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -18,25 +19,6 @@ function buildUrl(record) {
   return `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
 }
 
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : "",
-  ].filter(Boolean)));
-}
-
-function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return process.env[key];
-  }
-  return "";
-}
 
 function findRegistryRecord(workspaceConfig, registryId) {
   const id = String(registryId || "").trim();
@@ -86,7 +68,8 @@ async function POST(request) {
 
   const method = normalizeMethod(record.method);
   const authRef = record.authRef || record.integrationId || dataSourceRecord?.registryId;
-  const secret = readServerSecret(authRef);
+  const secretEntry = readServerSecret(authRef);
+  const secret = secretEntry?.value || "";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 

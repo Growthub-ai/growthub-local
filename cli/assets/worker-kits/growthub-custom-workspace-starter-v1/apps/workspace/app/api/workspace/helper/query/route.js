@@ -61,6 +61,7 @@ import {
   upsertHelperThreadRow,
   nextThreadId,
 } from "@/lib/workspace-helper-apply";
+import { buildHelperCreationResponse } from "@/lib/workspace-creation-proposals";
 
 const VALID_INTENTS = [
   "build_dashboard",
@@ -344,16 +345,38 @@ async function POST(request) {
   ];
   const nextMessages = [...priorMessages, ...newTurn].slice(-40);
 
+  let responseProposals = validProposals;
+  let responseSummary = parsed.summary;
+  let responseWarnings = warnings;
+  let creationBundle = null;
+
+  if (resolvedIntent === "register_api" && userPrompt.trim()) {
+    const governed = buildHelperCreationResponse({
+      name: userPrompt.slice(0, 80),
+      businessPurpose: userPrompt,
+      description: userPrompt,
+      integrationId: userPrompt.match(/\b([a-z][a-z0-9-]{2,})\b/i)?.[1] || "api",
+      outputMode: /source|records|leads/i.test(userPrompt) ? "data-source" : "normalized-rows",
+    });
+    creationBundle = governed.creationBundle;
+    if (governed.proposals.length > 0) {
+      responseProposals = governed.proposals;
+      responseSummary = governed.summary || responseSummary;
+      responseWarnings = [...responseWarnings, ...governed.warnings];
+    }
+  }
+
   const response = {
     ok: true,
     threadId,
     intent: resolvedIntent,
     intentInference,
-    summary: parsed.summary,
-    proposals: validProposals,
-    warnings,
+    summary: responseSummary,
+    proposals: responseProposals,
+    warnings: responseWarnings,
     receipts,
     messages: nextMessages,
+    ...(creationBundle ? { creationBundle, testPlan: creationBundle.testPlan, activationPlan: creationBundle.activationPlan } : {}),
   };
 
   const persistence = describePersistenceMode();
