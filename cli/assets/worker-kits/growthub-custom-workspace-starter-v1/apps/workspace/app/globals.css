@@ -9020,3 +9020,31 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-template-context-banner { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 12px; margin: 0 0 12px; }
 .workspace-template-context-banner.is-warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 .workspace-template-context-banner .workspace-template-context-link { color: inherit; text-decoration: underline; font-weight: 600; margin-left: auto; }
+
+/* Governed creation — Register API wizard, readiness, workflow cockpit */
+.dm-register-api-wizard { max-width: 720px; width: min(96vw, 720px); }
+.dm-wizard-steps { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 12px; font-size: 10px; text-transform: uppercase; color: #6b7280; }
+.dm-wizard-steps span { padding: 4px 8px; border-radius: 4px; border: 1px solid #e5e7eb; display: inline-flex; align-items: center; gap: 4px; }
+.dm-wizard-steps span.is-active { border-color: #111827; color: #111827; font-weight: 700; }
+.dm-wizard-steps span.is-done { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.dm-wizard-panel { display: grid; gap: 10px; padding: 0 16px 16px; }
+.dm-wizard-panel label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: #374151; }
+.dm-wizard-panel input, .dm-wizard-panel select, .dm-wizard-panel textarea { border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+.dm-wizard-foot { display: flex; justify-content: space-between; padding: 12px 16px 16px; border-top: 1px solid #edf0f3; }
+.dm-wizard-error { color: #b91c1c; font-size: 12px; padding: 0 16px 8px; margin: 0; }
+.dm-wizard-readonly { margin: 0 16px 12px; padding: 8px 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 12px; color: #92400e; }
+.dm-env-status.is-ready { color: #166534; font-size: 12px; }
+.dm-env-status.is-missing { color: #b45309; font-size: 12px; }
+.dm-wizard-artifacts, .dm-wizard-warnings { margin: 0; padding-left: 18px; font-size: 12px; }
+.dm-wizard-test-result { margin: 8px 16px 0; padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 11px; overflow: auto; max-height: 200px; }
+.dm-resolver-studio-code { margin: 8px 0; padding: 10px; background: #111827; color: #e5e7eb; border-radius: 6px; font-size: 11px; overflow: auto; max-height: 280px; }
+.dm-api-registry-studio-link { padding: 0 16px 8px; }
+.workspace-readiness-panel { margin: 0 0 16px; padding: 14px 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
+.workspace-readiness-panel.is-compact { padding: 10px 12px; }
+.workspace-readiness-checks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.workspace-readiness-checks li { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; }
+.workspace-readiness-checks li.is-blocked { color: #b45309; }
+.workspace-readiness-checks li.is-ready { color: #166534; }
+.workflow-cockpit-readiness { padding: 10px 16px; border-bottom: 1px solid #edf0f3; font-size: 12px; }
+.workflow-cockpit-readiness ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 6px 0 0; padding: 0; }
+.workflow-cockpit-readiness-summary { display: flex; align-items: center; gap: 12px; }

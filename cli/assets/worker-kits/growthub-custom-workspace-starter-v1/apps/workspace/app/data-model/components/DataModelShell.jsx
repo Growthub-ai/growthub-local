@@ -77,6 +77,10 @@ import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
+import { ApiRegistryActionCard } from "./ApiRegistryActionCard.jsx";
+import { RegisterApiWizard } from "./RegisterApiWizard.jsx";
+import { ResolverProposalStudio } from "./ResolverProposalStudio.jsx";
+import { DataSourceCreationPanel } from "./DataSourceCreationPanel.jsx";
 import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
 import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
@@ -1210,6 +1214,7 @@ function DataModelRecordDrawer({
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
+  const [resolverStudioOpen, setResolverStudioOpen] = useState(false);
   const drawerKeyRef = useRef("");
   const router = useRouter();
 
@@ -1614,7 +1619,7 @@ function DataModelRecordDrawer({
             </button>
           </div>
         </header>
-        {table.objectType === "data-source" && sandboxToolFlow !== "draft" && (
+        {(table.objectType === "data-source" || isApiRegistry) && sandboxToolFlow !== "draft" && (
           <SourceTestPanel
             status={draft.status}
             testing={testing}
@@ -1623,6 +1628,31 @@ function DataModelRecordDrawer({
             onTest={testApiRecord}
           />
         )}
+        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "created" && (
+          <ApiRegistryActionCard
+            registryRow={draft}
+            workspaceConfig={workspaceConfig}
+            disabled={saving}
+            testing={testing}
+            sandboxRunning={createdSandboxTesting}
+            onTestConnection={testApiRecord}
+            onCreateSandboxTool={() => setSandboxToolFlow("draft")}
+            onOpenSandboxTool={openSandboxToolRow}
+            onRunSandboxTool={runExistingSandboxTool}
+          />
+        )}
+        {isApiRegistry && (
+          <div className="dm-api-registry-studio-link">
+            <button type="button" className="dm-btn-outline dm-btn-primary-sm" onClick={() => setResolverStudioOpen(true)}>
+              Open resolver studio
+            </button>
+          </div>
+        )}
+        <ResolverProposalStudio
+          open={resolverStudioOpen}
+          onClose={() => setResolverStudioOpen(false)}
+          registryRow={draft}
+        />
         {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
           <section className="dm-api-action-card dm-api-action-card-success" aria-label="Sandbox tool created">
             <div className="dm-api-action-card-body">
@@ -2780,6 +2810,9 @@ export default function DataModelShell() {
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
+  const [registerApiOpen, setRegisterApiOpen] = useState(false);
+  const [dataSourceWizardOpen, setDataSourceWizardOpen] = useState(false);
+  const [persistence, setPersistence] = useState(null);
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
@@ -2795,7 +2828,11 @@ export default function DataModelShell() {
     if (!workspaceConfig) return;
     const helperParam = searchParams?.get("helper");
     const threadParam = searchParams?.get("thread");
-    if (!helperParam && !threadParam) return;
+    const wizardParam = searchParams?.get("wizard");
+    const studioParam = searchParams?.get("studio");
+    if (wizardParam === "register-api") setRegisterApiOpen(true);
+    if (wizardParam === "data-source") setDataSourceWizardOpen(true);
+    if (!helperParam && !threadParam && !wizardParam && !studioParam) return;
     if (threadParam) {
       const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
       const row = (ht?.rows || []).find((r) => r?.id === threadParam);
@@ -2810,6 +2847,8 @@ export default function DataModelShell() {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("helper");
     next.delete("thread");
+    next.delete("wizard");
+    next.delete("studio");
     const query = next.toString();
     router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
   }, [workspaceConfig, searchParams, router]);
@@ -2828,6 +2867,7 @@ export default function DataModelShell() {
         ? payload.workspaceSourceRecords
         : {});
       setAuthority(payload.adapters?.integrations?.authority || null);
+      setPersistence(payload.persistence || null);
     } catch (err) {
       setError(err.message || "Failed to load workspace");
     } finally {
@@ -3304,6 +3344,9 @@ export default function DataModelShell() {
                 onDuplicateObject={duplicateObject}
               />
             )}
+            <button type="button" className="dm-btn-outline" onClick={() => setRegisterApiOpen(true)}>
+              <Code2 size={14} />Register API
+            </button>
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
               <Plus size={14} />New object
             </button>
@@ -3316,6 +3359,32 @@ export default function DataModelShell() {
           onClose={() => setAddOpen(false)}
           onCreate={createObject}
           allTables={tables}
+        />
+
+        <RegisterApiWizard
+          open={registerApiOpen}
+          onClose={() => setRegisterApiOpen(false)}
+          workspaceConfig={workspaceConfig}
+          persistence={persistence}
+          onApplied={(config) => {
+            setWorkspaceConfig(config);
+            setRegisterApiOpen(false);
+            const apiTable = listWorkspaceDataModelTables(config).find((t) => t.objectType === "api-registry");
+            if (apiTable?.source) setSelectedSource(apiTable.source);
+          }}
+        />
+
+        <DataSourceCreationPanel
+          open={dataSourceWizardOpen}
+          onClose={() => setDataSourceWizardOpen(false)}
+          workspaceConfig={workspaceConfig}
+          apiRows={(tables.find((t) => t.objectType === "api-registry")?.rows) || []}
+          onApplied={(config) => {
+            setWorkspaceConfig(config);
+            setDataSourceWizardOpen(false);
+            const dsTable = listWorkspaceDataModelTables(config).find((t) => t.objectType === "data-source");
+            if (dsTable?.source) setSelectedSource(dsTable.source);
+          }}
         />
 
         <HelperSidecar
@@ -3423,7 +3492,10 @@ export default function DataModelShell() {
             <strong>No objects yet</strong>
             <p>Create your first Data Source, API Registry, People list, or custom object to get started.</p>
             <div className="dm-page-empty-actions">
-              <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
+              <button type="button" className="dm-btn-primary" onClick={() => setRegisterApiOpen(true)}>
+                <Code2 size={14} />Register API
+              </button>
+              <button type="button" className="dm-btn-outline" onClick={() => setAddOpen(true)}>
                 <Plus size={14} />New object
               </button>
               <button

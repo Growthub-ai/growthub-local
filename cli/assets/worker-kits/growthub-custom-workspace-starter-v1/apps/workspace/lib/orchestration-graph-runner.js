@@ -16,6 +16,7 @@ import {
 } from "./orchestration-graph.js";
 import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
+import { readServerSecretEntry } from "@/lib/workspace-env-resolver";
 
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
@@ -31,26 +32,6 @@ function buildUrl(record, inputPayload) {
   if (/^https?:\/\//i.test(endpoint)) return endpoint;
   if (!baseUrl) throw new Error("baseUrl is required when endpoint is relative");
   return `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
-}
-
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : ""
-  ].filter(Boolean)));
-}
-
-function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return { key, value: process.env[key] };
-  }
-  return null;
 }
 
 function buildAuthHeaders(record, secretValue) {
@@ -183,7 +164,7 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
 
   const method = normalizeMethod(merged.method);
   const authRef = merged.authRef || registryId;
-  const secretEntry = readServerSecret(authRef);
+  const secretEntry = readServerSecretEntry(authRef);
   const secret = secretEntry?.value || "";
   const outboundTimeout = Math.min(Math.max(timeoutMs, 1000), 120000);
   const startedAt = Date.now();

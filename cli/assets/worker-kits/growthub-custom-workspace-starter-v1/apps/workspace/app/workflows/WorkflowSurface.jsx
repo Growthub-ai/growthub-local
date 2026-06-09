@@ -50,6 +50,7 @@ import { OrchestrationRunTracePanel } from "../data-model/components/Orchestrati
 import { WorkflowDeltaHistoryPanel } from "../data-model/components/WorkflowDeltaHistoryPanel.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
+import { WorkflowCockpitReadinessBar } from "./WorkflowCockpitReadinessBar.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
 import { deriveProvenance, hasConnectionId } from "@/lib/workspace-activation";
@@ -826,6 +827,7 @@ export default function WorkflowSurface() {
         onOpenThread={(row) => router.push(`/data-model?thread=${encodeURIComponent(row.id)}`)}
       />
       <section className="workspace-surface dm-workflow-surface">
+        <WorkflowCockpitReadinessBar sandboxRow={sandboxRow} />
         <header className="workspace-toolbar dm-workflow-toolbar">
           <div className="dm-workflow-titlebar">
             <span className="dm-workflow-title-muted">Workflows</span>

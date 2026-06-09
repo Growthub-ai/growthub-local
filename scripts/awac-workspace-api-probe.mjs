@@ -377,6 +377,32 @@ async function main() {
         "cleanup should skip non-existent key");
     }
 
+    // --- creation-proposal: build + validate governed bundle (0.13.9 creation loop) ---
+    res = await fetch(`${base}/api/workspace/creation-proposal`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "build",
+        draft: { name: "Probe API", baseUrl: "https://httpbin.org", endpoint: "/get", authRef: "probe_secret_key", outputMode: "raw-response", generateResolver: false },
+      }),
+    });
+    const proposalBuild = await res.json();
+    assert(res.ok && proposalBuild.bundle?.kind === "growthub-creation-proposal-bundle-v1", "creation-proposal build failed");
+
+    res = await fetch(`${base}/api/workspace/creation-proposal`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "validate", bundle: proposalBuild.bundle }),
+    });
+    const proposalValidate = await res.json();
+    assert(res.ok && proposalValidate.ok === true, "creation-proposal validate failed");
+
+    // --- activation-summary: readiness + lens, no secrets ---
+    res = await fetch(`${base}/api/workspace/activation-summary`, { cache: "no-store" });
+    const activationSummary = await res.json();
+    assert(res.ok && activationSummary.kind === "growthub-activation-summary-v1", "activation-summary failed");
+    assert(JSON.stringify(activationSummary).includes("s3cr3t-probe") === false, "activation-summary must not leak secrets");
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {

@@ -98,6 +98,7 @@ import {
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
+import { WorkspaceReadinessPanel } from "./components/WorkspaceReadinessPanel.jsx";
 
 // Workspace Metadata Graph V1 — typed dependency contracts.
 // Used by sidecar dependency summaries; the existing chart hydration path
@@ -6013,6 +6014,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         </header>
 
         {workspaceView === "dashboards" ? <>
+          <WorkspaceReadinessPanel />
           {showActivationPanel ? <WorkspaceActivationPanel
             workspaceConfig={config}
             workspaceSourceRecords={workspaceSourceRecords}
