@@ -53,6 +53,8 @@ import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
 import { deriveProvenance, hasConnectionId } from "@/lib/workspace-activation";
+import { summarizeOrchestrationDeltas } from "@/lib/workspace-orchestration-deltas";
+import { parseSandboxEnvRefs } from "@/lib/workspace-data-model";
 
 // Workspace Metadata Graph V1 — read-only dependency metadata for workflow
 // sidecars. The runtime path (sandbox-run, publish, draft/live) is
@@ -320,6 +322,82 @@ function WorkflowAddStepPanel({ target, onSelect }) {
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * WorkflowCockpitReadiness — the cockpit readiness bar (Phase 2D/6). Derives,
+ * from REAL state, why a workflow can or cannot run: draft/live + version,
+ * last test, last publish (from orchestrationDeltas), env refs resolved/missing
+ * (env-key-catalog), and serverless scheduler readiness. No fake booleans;
+ * states the exact blocker. Reuses dm-run-console__* + chip-dot idioms.
+ */
+function WorkflowCockpitReadiness({ sandboxRow, workspaceConfig, registryRow, graphError, graphUnset }) {
+  const [envCatalog, setEnvCatalog] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/workspace/env-key-catalog", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((p) => { if (alive) setEnvCatalog(Array.isArray(p?.entries) ? p : null); })
+      .catch(() => { if (alive) setEnvCatalog(null); });
+    return () => { alive = false; };
+  }, [sandboxRow?.Name]);
+
+  const lifecycle = String(sandboxRow?.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
+  const version = String(sandboxRow?.version || "1");
+  const testPassed = sandboxRow?.orchestrationDraftTestPassed === true || String(sandboxRow?.orchestrationDraftTestPassed || "") === "true";
+  const lastTested = String(sandboxRow?.orchestrationDraftLastTested || "").trim();
+  const deltas = summarizeOrchestrationDeltas(sandboxRow?.orchestrationDeltas);
+  const lastPublish = deltas[0] || null;
+
+  const envSlugs = parseSandboxEnvRefs(sandboxRow?.envRefs);
+  const envState = envSlugs.map((slug) => {
+    const entry = (envCatalog?.entries || []).find((e) => e.slug === slug || e.slug.toUpperCase() === slug.toUpperCase());
+    return { slug, configured: entry ? entry.configured === true : false };
+  });
+  const missingEnv = envState.filter((e) => !e.configured).map((e) => e.slug);
+
+  const serverless = String(sandboxRow?.runLocality || "local").trim().toLowerCase() === "serverless";
+  const schedulerId = String(sandboxRow?.schedulerRegistryId || "").trim();
+  const schedulerReady = !serverless || Boolean(schedulerId);
+
+  const dot = (ok) => ({ width: 7, height: 7, borderRadius: 999, background: ok ? "var(--dm-ok, #22c55e)" : "var(--dm-warn, #f59e0b)", display: "inline-block" });
+
+  let blocker = "";
+  if (graphUnset) blocker = "No graph yet — add a node to start.";
+  else if (graphError) blocker = `Graph invalid: ${graphError}`;
+  else if (missingEnv.length) blocker = `Missing env: ${missingEnv.join(", ")} — set in Settings → APIs & Webhooks.`;
+  else if (serverless && !schedulerReady) blocker = "Serverless run needs a scheduler — set schedulerRegistryId.";
+
+  return (
+    <div className="dm-run-console__section" style={{ margin: "0 0 10px", padding: "8px 12px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", fontSize: 12 }}>
+        <span><strong>{sandboxRow?.Name || "Workflow"}</strong></span>
+        <span className="dm-run-console__lifecycle-dur">{lifecycle === "live" ? "● Live" : "○ Draft"} · v{version}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <span style={dot(testPassed)} /> {testPassed ? `Tested${lastTested ? "" : ""}` : "Not tested"}
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <span style={dot(Boolean(lastPublish))} /> {lastPublish ? `Published v${lastPublish.version}` : "Never published"}
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <span style={dot(missingEnv.length === 0)} /> Env {envSlugs.length ? `${envState.length - missingEnv.length}/${envState.length}` : "none"}
+        </span>
+        {serverless && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span style={dot(schedulerReady)} /> Scheduler {schedulerReady ? (registryRow?.status ? `(${registryRow.status})` : "set") : "missing"}
+          </span>
+        )}
+        <span className="dm-run-console__lifecycle-dur">{serverless ? "Runs: Serverless" : "Runs: This machine"}</span>
+      </div>
+      {blocker ? (
+        <p style={{ margin: "6px 0 0", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={dot(false)} /> {blocker}
+        </p>
+      ) : (
+        <p className="dm-run-console__lifecycle-dur" style={{ margin: "6px 0 0" }}>Ready to test/run.</p>
+      )}
     </div>
   );
 }
@@ -929,6 +1007,16 @@ export default function WorkflowSurface() {
               <span>{templateBanner.ready ? "Manage connection" : "Open Nango panel"}</span>
             </Link>
           </div>
+        ) : null}
+
+        {sandboxRow && sidecarMode === "graph" ? (
+          <WorkflowCockpitReadiness
+            sandboxRow={sandboxRow}
+            workspaceConfig={workspaceConfig}
+            registryRow={registryRow}
+            graphError={graphError}
+            graphUnset={graphUnset}
+          />
         ) : null}
 
         {loading ? (
