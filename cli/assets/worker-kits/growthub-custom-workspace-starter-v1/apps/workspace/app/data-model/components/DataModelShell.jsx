@@ -83,6 +83,7 @@ import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
 import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
 import { profileApiResponse, recommendResolver } from "@/lib/api-response-profile";
+import { classifyCreationError } from "@/lib/creation-error-recovery";
 import {
   buildSandboxRowFromApiRegistry,
   findSandboxRowsForRegistry,
@@ -1305,13 +1306,12 @@ function DataModelRecordDrawer({
       setDraft((current) => ({ ...current, status, lastTested: new Date().toISOString(), lastResponse: responseText }));
       setTestMessage(payload.ok ? "Connected" : payload.error || "Connection failed");
       if (isApiRegistry) {
-        pushReceipt({
-          kind: "api-test",
-          ok: Boolean(payload.ok),
-          detail: payload.ok
-            ? `Tested — HTTP ${payload.status ?? 200}${payload.usedServerSecret ? " · used server secret" : ""}.`
-            : redactSecretsFromText(payload.error || `HTTP ${payload.status ?? ""} failed`),
-        });
+        if (payload.ok) {
+          pushReceipt({ kind: "api-test", ok: true, detail: `Tested — HTTP ${payload.status ?? 200}${payload.usedServerSecret ? " · used server secret" : ""}.` });
+        } else {
+          const recovery = classifyCreationError({ phase: "test", httpStatus: payload.status, detail: redactSecretsFromText(payload.error || `HTTP ${payload.status ?? ""} failed`) });
+          pushReceipt({ kind: "api-test", ok: false, detail: `${recovery.safeDetail}. ${recovery.requiredAction}` });
+        }
       }
     } catch (err) {
       const responseText = JSON.stringify({ error: err.message || "Connection failed" }, null, 2);
@@ -1525,13 +1525,13 @@ function DataModelRecordDrawer({
         pushReceipt({ kind: "source-refresh", ok: true, detail: msg });
       } else if (res.ok && Array.isArray(payload.skipped) && payload.skipped.includes(sourceObjectId)) {
         const detail = (payload.skippedDetail || []).find((d) => d.sourceId === sourceObjectId);
-        const reason = detail?.reason || "no resolver registered for this source";
-        setDataSourceMessage(`Refresh skipped: ${reason}.`);
-        pushReceipt({ kind: "source-refresh", ok: false, detail: `Skipped: ${reason}. ${reason === "missing-resolver" ? "Add a resolver so this source can hydrate." : ""}`.trim() });
+        const recovery = classifyCreationError({ phase: "refresh", reason: detail?.reason });
+        setDataSourceMessage(`Refresh skipped: ${recovery.safeDetail}. ${recovery.requiredAction}`);
+        pushReceipt({ kind: "source-refresh", ok: false, detail: `Skipped (${recovery.errorKind}). ${recovery.requiredAction}` });
       } else {
-        const err = redactSecretsFromText(payload.error || "Refresh failed");
-        setDataSourceMessage(err);
-        pushReceipt({ kind: "source-refresh", ok: false, detail: err });
+        const recovery = classifyCreationError({ phase: "refresh", httpStatus: res.status, detail: redactSecretsFromText(payload.error || "Refresh failed") });
+        setDataSourceMessage(`${recovery.safeDetail} — ${recovery.requiredAction}`);
+        pushReceipt({ kind: "source-refresh", ok: false, detail: `${recovery.safeDetail}. ${recovery.requiredAction}` });
       }
       await reloadCreationSignals();
     } catch (err) {
