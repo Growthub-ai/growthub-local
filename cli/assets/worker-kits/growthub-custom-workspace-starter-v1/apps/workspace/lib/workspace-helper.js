@@ -62,7 +62,7 @@ const INTENT_DESCRIPTIONS = {
   create_widget:
     "Suggest which widgetTypes belong on the workspace based on the object schema and target KPIs. Propose widgetType entries and canvas widget placements.",
   register_api:
-    "Draft API Registry rows (dataModel object of objectType api-registry) including integration labels, credential prompts, base URL, endpoint, auth header, and method.",
+    "Draft API Registry rows (dataModel object of objectType api-registry) including integration labels, credential prompts, base URL, endpoint, auth header, and method. When the user wants the response shaped into governed rows (a Data Source) or describes a nested/paginated response, also recommend a resolver in the `summary` and propose the matching data-source object (objectType data-source) that references the registry row by registryId — guiding them into the resolver / Data Source lane. Credentials are runtime env keys (REF / REF_API_KEY / REF_TOKEN in .env.local), never stored in config.",
   create_object:
     "Translate the user's domain language into a new dataModel object: objectType, label, columns, starter rows, and field settings that make sense for their business.",
   edit_view:

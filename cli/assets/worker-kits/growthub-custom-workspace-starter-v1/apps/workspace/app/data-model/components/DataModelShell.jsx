@@ -1595,8 +1595,10 @@ function DataModelRecordDrawer({
           router.push(action.href || "/settings");
           break;
         case "open-resolver":
+          // Hand off to the governed helper widget — the resolver proposal lane.
+          // Carries the integrationId so the helper can scope a resolver proposal.
           onClose();
-          router.push("/data-model");
+          router.push(`/data-model?helper=open&resolverFor=${encodeURIComponent(String(draft?.integrationId || "").trim())}`);
           break;
         case "test":
           await testApiRecord();
