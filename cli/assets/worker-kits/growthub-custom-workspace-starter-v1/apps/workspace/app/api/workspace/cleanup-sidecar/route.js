@@ -16,8 +16,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { describePersistenceMode } from "@/lib/workspace-config";
 
 const SOURCE_RECORDS_FILENAME = "growthub.source-records.json";
@@ -55,35 +55,39 @@ async function POST(request) {
     );
   }
 
-  const recordsPath = resolveSourceRecordsPath();
-  const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
-  if (path.dirname(recordsPath) !== expectedDir) {
-    return NextResponse.json({ ok: false, error: "refused to write outside workspace cwd" }, { status: 500 });
-  }
-
-  let all = {};
   try {
-    all = JSON.parse(await fs.readFile(recordsPath, "utf8"));
-  } catch {
-    all = {};
-  }
-
-  const removed = [];
-  const skipped = [];
-  for (const id of sourceIds) {
-    if (Object.prototype.hasOwnProperty.call(all, id)) {
-      delete all[id];
-      removed.push(id);
-    } else {
-      skipped.push(id);
+    const recordsPath = resolveSourceRecordsPath();
+    const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
+    if (path.dirname(recordsPath) !== expectedDir) {
+      return NextResponse.json({ ok: false, error: "refused to write outside workspace cwd" }, { status: 500 });
     }
-  }
 
-  if (removed.length) {
-    await fs.writeFile(recordsPath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
-  }
+    let all = {};
+    try {
+      all = JSON.parse(await fs.readFile(recordsPath, "utf8"));
+    } catch {
+      all = {};
+    }
 
-  return NextResponse.json({ ok: true, removed, skipped, persistence });
+    const removed = [];
+    const skipped = [];
+    for (const id of sourceIds) {
+      if (Object.prototype.hasOwnProperty.call(all, id)) {
+        delete all[id];
+        removed.push(id);
+      } else {
+        skipped.push(id);
+      }
+    }
+
+    if (removed.length) {
+      await fs.writeFile(recordsPath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
+    }
+
+    return NextResponse.json({ ok: true, removed, skipped, persistence });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error?.message || "sidecar cleanup failed" }, { status: 500 });
+  }
 }
 
 export { POST };

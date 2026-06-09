@@ -369,9 +369,10 @@ async function main() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sourceIds: ["sandbox:does-not-exist:ghost"] }),
     });
-    const cleanupBody = await res.json();
+    const cleanupText = await res.text();
+    const cleanupBody = cleanupText ? JSON.parse(cleanupText) : {};
     // filesystem mode => ok with skipped; read-only => 409. Both are valid contracts.
-    assert(res.ok || res.status === 409, `cleanup-sidecar unexpected status ${res.status}`);
+    assert(res.ok || res.status === 409, `cleanup-sidecar unexpected status ${res.status}: ${cleanupText.slice(0, 300)}`);
     if (res.ok) {
       assert(Array.isArray(cleanupBody.skipped) && cleanupBody.skipped.includes("sandbox:does-not-exist:ghost"),
         "cleanup should skip non-existent key");
