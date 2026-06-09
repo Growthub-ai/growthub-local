@@ -16,6 +16,7 @@ import {
 } from "./orchestration-graph.js";
 import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
+import { resolveServerSecretEntry } from "./workspace-env-resolver.js";
 
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
@@ -33,25 +34,7 @@ function buildUrl(record, inputPayload) {
   return `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
 }
 
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : ""
-  ].filter(Boolean)));
-}
-
-function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return { key, value: process.env[key] };
-  }
-  return null;
-}
+const readServerSecret = (authRef) => resolveServerSecretEntry(authRef);
 
 function buildAuthHeaders(record, secretValue) {
   if (!secretValue) return {};

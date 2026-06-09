@@ -20,6 +20,7 @@
 
 import { NextResponse } from "next/server";
 import { ENVELOPE_KIND, validateSandboxRunEnvelope, buildSchedulerReceipt } from "@/lib/sandbox-scheduler";
+import { resolveEnvRefs } from "@/lib/workspace-env-resolver";
 
 function authorized(request) {
   const expected = String(process.env.GROWTHUB_SCHEDULER_SECRET || "").trim();
@@ -56,6 +57,11 @@ async function POST(request) {
   if (!ok) {
     return NextResponse.json({ ok: false, error: "invalid envelope", details: errors }, { status: 400 });
   }
+
+  // Re-resolve env refs against THIS runtime's process.env — never trust the
+  // sender's resolved/missing lists, since the scheduler runs in its own env.
+  const { missing } = resolveEnvRefs(envelope.sandbox.envRefSlugs);
+  envelope.sandbox.envRefsMissing = missing;
 
   const receipt = buildSchedulerReceipt(envelope, { now: Date.now() });
   return NextResponse.json(receipt, { status: receipt.ok ? 200 : 502 });
