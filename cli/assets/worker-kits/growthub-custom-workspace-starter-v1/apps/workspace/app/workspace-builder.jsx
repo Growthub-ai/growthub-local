@@ -98,6 +98,7 @@ import {
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
+import { WorkspaceCreationReadinessPanel } from "./components/WorkspaceCreationReadinessPanel.jsx";
 
 // Workspace Metadata Graph V1 — typed dependency contracts.
 // Used by sidecar dependency summaries; the existing chart hydration path
@@ -3962,6 +3963,7 @@ function WorkspaceSettingsPanel({ config, persistence, adapterConfig, integratio
           <div className="workspace-readiness-row"><span>Bridge base URL</span><code>{adapterConfig.growthubBridge?.baseUrl || "—"}</code></div>
           <div className="workspace-readiness-row"><span>Authority</span><strong>{integrationAdapter.authority}</strong></div>
         </article>
+        <WorkspaceCreationReadinessPanel onRegisterApi={() => { onClose(); window.location.href = "/data-model?lane=register-api"; }} />
         <article className="workspace-readiness-section">
           <h3>Counts</h3>
           <div className="workspace-readiness-row"><span>Dashboards</span><strong>{dashboards.length}</strong></div>

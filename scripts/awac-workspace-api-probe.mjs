@@ -363,6 +363,32 @@ async function main() {
     });
     assert(res.status === 400, `expected 400 for bad envelope, got ${res.status}`);
 
+    // --- creation readiness + propose (governed creation loop) ---
+    res = await fetch(`${base}/api/workspace/creation/readiness`, { cache: "no-store" });
+    assert(res.ok, `creation/readiness failed ${res.status}`);
+    const creationReady = await res.json();
+    assert(creationReady.kind === "growthub-creation-readiness-v1", "creation readiness kind");
+    assert(Array.isArray(creationReady.checks), "creation readiness checks");
+
+    res = await fetch(`${base}/api/workspace/creation/propose`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draft: {
+          name: "Probe API",
+          integrationId: "probe-api",
+          baseUrl: "https://example.com",
+          endpoint: "/v1/items",
+          authMode: "none",
+          outputMode: "raw-response",
+        },
+      }),
+    });
+    const creationProposal = await res.json();
+    assert(res.ok, `creation/propose failed ${res.status}`);
+    assert(creationProposal.kind === "growthub-creation-proposal-bundle-v1", "creation proposal bundle kind");
+    assert(JSON.stringify(creationProposal).includes("top-secret") === false, "creation proposals must be secret-safe");
+
     // --- cleanup-sidecar: prune is gated + reports removed/skipped (Phase 1.4) ---
     res = await fetch(`${base}/api/workspace/cleanup-sidecar`, {
       method: "POST",

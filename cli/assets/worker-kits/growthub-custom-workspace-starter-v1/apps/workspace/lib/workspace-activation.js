@@ -1221,8 +1221,106 @@ function deriveAppBuildLensState(input = {}) {
  * registry to derive from. See docs/ROADMAP_IMPACT_ITEMS_V1.md (it stays staged
  * until a runtime surface-metadata source exists).
  */
+/**
+ * Governed creation lens — derived from the creation readiness helper so the
+ * operator journey (register API → secret → test → source → workflow) surfaces
+ * in the same step panel as activation/persistence/deploy.
+ */
+function deriveCreationLensState(input = {}) {
+  const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
+  const sources = isPlainObject(input?.workspaceSourceRecords) ? input.workspaceSourceRecords : {};
+  const persistence = isPlainObject(input?.metadataGraph?.runtime?.persistence)
+    ? input.metadataGraph.runtime.persistence
+    : {};
+  const registryRows = listObjectRows(findDataModelObject(cfg, (o) => o.objectType === "api-registry"));
+  const sourceRows = listObjectRows(findDataModelObject(cfg, (o) => o.objectType === "data-source"));
+  const sandboxRows = collectSandboxRows(cfg);
+  const tested = registryRows.some((row) => /connected|ok|success/i.test(safeString(row?.testStatus || row?.status)));
+  const hasRecords = sourceRows.some((row) => hasSourceRecords(sources, safeString(row?.sourceId || row?.id)));
+
+  const steps = [
+    {
+      id: "register-api",
+      label: "Register an API",
+      description: registryRows.length ? `${registryRows.length} API row(s) in the registry.` : "Open the Register API wizard to draft the registry row and auth contract.",
+      status: registryRows.length ? "complete" : "pending",
+      href: "/data-model?lane=register-api",
+      cta: registryRows.length ? "Review API" : "Register API",
+    },
+    {
+      id: "save-secret",
+      label: "Save auth safely",
+      description: "Store secrets in Settings → APIs & Webhooks (.env.local + immediate runtime resolution).",
+      status: registryRows.some((row) => !safeString(row?.authRef).trim() || tested) ? "complete" : "pending",
+      href: "/settings/apis-webhooks",
+      cta: "Open Settings",
+    },
+    {
+      id: "test-api",
+      label: "Test the API",
+      description: tested ? "At least one API test succeeded." : "Run test-api-record before creating a Data Source.",
+      status: tested ? "complete" : (registryRows.length ? "pending" : "blocked"),
+      href: "/data-model",
+      hint: tested || registryRows.length ? "" : "Register an API first.",
+      cta: tested ? "Review API" : "Test API",
+    },
+    {
+      id: "create-source",
+      label: "Create a Data Source",
+      description: sourceRows.length ? `${sourceRows.length} source object(s) linked.` : "Turn API output into governed source records.",
+      status: sourceRows.length ? "complete" : (tested ? "pending" : "blocked"),
+      href: "/data-model?lane=create-source",
+      hint: sourceRows.length || tested ? "" : "Pass the API test first.",
+      cta: sourceRows.length ? "Open source" : "Connect source",
+    },
+    {
+      id: "refresh-source",
+      label: "Refresh source records",
+      description: hasRecords ? "Sidecar records are populated." : "Refresh the source to write workspace-source-records receipts.",
+      status: hasRecords ? "complete" : (sourceRows.length ? "pending" : "blocked"),
+      href: "/data-model",
+      cta: hasRecords ? "Review records" : "Refresh source",
+    },
+    {
+      id: "wire-workflow",
+      label: "Wire a workflow",
+      description: sandboxRows.length ? `${sandboxRows.length} sandbox workflow(s).` : "Open Workflow Cockpit to test draft and publish live.",
+      status: sandboxRows.length ? "complete" : "pending",
+      href: "/workflows",
+      cta: sandboxRows.length ? "Open workflows" : "New workflow",
+    },
+    {
+      id: "activation-ready",
+      label: "Activation ready",
+      description: tested && (sourceRows.length === 0 || hasRecords) ? "Creation loop checks passed." : "Complete the remaining creation checks.",
+      status: tested && (sourceRows.length === 0 || hasRecords) ? "complete" : "pending",
+      href: "/workspace-lens",
+      cta: "View activation",
+    },
+  ];
+  for (const step of steps) {
+    if (!step.hint) delete step.hint;
+  }
+  const { totalCount, completedCount, complete, nextStepId } = scoreLensSteps(steps);
+  const nextStep = steps.find((s) => s.id === nextStepId);
+  return {
+    kind: LENS_STATE_KIND,
+    lensId: "creation",
+    title: "Governed creation",
+    headline: complete ? "Creation loop is ready." : "Finish the governed creation journey.",
+    subheadline: complete ? "Publish, run, and monitor from Workflow Cockpit." : (nextStep ? `Next: ${nextStep.label.toLowerCase()}.` : "Register your first API."),
+    complete,
+    completedCount,
+    totalCount,
+    nextStepId,
+    steps,
+    persistenceMode: safeString(persistence.mode),
+  };
+}
+
 const WORKSPACE_LENS_REGISTRY = [
   { id: "activation", title: "Activation", primary: true, derive: deriveWorkspaceActivationState },
+  { id: "creation", title: "Governed creation", primary: false, derive: deriveCreationLensState },
   { id: "persistence", title: "Runtime persistence", primary: false, derive: derivePersistenceLensState },
   { id: "observability", title: "Orchestration health", primary: false, derive: deriveObservabilityLensState },
   { id: "deploy", title: "Deploy readiness", primary: false, derive: deriveDeployLensState },
@@ -1552,6 +1650,7 @@ export {
   deriveDeployLensState,
   deriveTaskLensState,
   deriveAppBuildLensState,
+  deriveCreationLensState,
   // Swarm-assignable condition packet (roadmap Item 8)
   deriveSwarmConditionPacket,
   // Workspace contribution graph (daily-ritual visualization)

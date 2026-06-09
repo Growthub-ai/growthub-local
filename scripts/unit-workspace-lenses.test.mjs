@@ -38,6 +38,7 @@ const ALLOWED_HREF = (href) =>
   || href.startsWith("/?")
   || href.startsWith("/data-model")
   || href.startsWith("/workflows")
+  || href.startsWith("/workspace-lens")
   || href.startsWith("/settings");
 
 function statusesById(state) {
@@ -67,7 +68,7 @@ test("registry — exactly one primary lens and it is activation, stable order",
   assert.equal(primaries.length, 1);
   assert.equal(primaries[0].id, "activation");
   const ids = activation.WORKSPACE_LENS_REGISTRY.map((e) => e.id);
-  assert.deepEqual(ids, ["activation", "persistence", "observability", "deploy", "tasks", "app-build"]);
+  assert.deepEqual(ids, ["activation", "creation", "persistence", "observability", "deploy", "tasks", "app-build"]);
   // Fleet/multi-app (Item 4) is intentionally NOT registered.
   assert.equal(ids.includes("fleet"), false);
 });
@@ -250,8 +251,8 @@ test("deriveWorkspaceState — falls back to a secondary lens when primary is co
   };
   const state = activation.deriveWorkspaceState({ workspaceConfig: cfg });
   assert.equal(state.primary.complete, true);
-  // Persistence is unresolved (no metadataGraph) → it provides the next action.
-  assert.equal(state.nextAction.lensId, "persistence");
+  // Creation is unresolved on a blank-style config → it provides the next action before persistence.
+  assert.equal(state.nextAction.lensId, "creation");
   assert.equal(state.complete, false);
 });
 

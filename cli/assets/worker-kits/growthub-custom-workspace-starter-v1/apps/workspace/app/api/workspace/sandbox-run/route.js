@@ -83,25 +83,11 @@ import {
   validateRunInputsEnvelope,
   summarizeRunInputs
 } from "@/lib/orchestration-run-inputs";
-
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : ""
-  ].filter(Boolean)));
-}
+import { readServerSecret as resolveServerSecret } from "@/lib/workspace-env-resolver";
 
 function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return { key, value: process.env[key] };
-  }
-  return null;
+  const resolved = resolveServerSecret(authRef);
+  return resolved.configured ? { key: resolved.key, value: resolved.value } : null;
 }
 
 function coerceBoolean(value) {

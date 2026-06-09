@@ -48,6 +48,7 @@ import { OrchestrationGraphEmptyCanvas } from "../data-model/components/Orchestr
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
 import { WorkflowDeltaHistoryPanel } from "../data-model/components/WorkflowDeltaHistoryPanel.jsx";
+import { WorkflowReadinessBar } from "./WorkflowReadinessBar.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
@@ -914,6 +915,8 @@ export default function WorkflowSurface() {
             </Link>
           </div>
         </header>
+
+        <WorkflowReadinessBar sandboxRow={sandboxRow} registryRow={resolveRegistryRowForSandbox(workspaceConfig, sandboxRow)} />
 
         {templateBanner ? (
           <div

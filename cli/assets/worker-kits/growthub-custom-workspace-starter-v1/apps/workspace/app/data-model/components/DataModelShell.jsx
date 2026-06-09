@@ -102,6 +102,7 @@ import {
   normalizeCodexSiteRecord,
 } from "@/lib/codex-sites-workspace-adapter";
 import { computeDeleteImpact } from "@/lib/workspace-delete-impact";
+import { RegisterApiWizard } from "./RegisterApiWizard.jsx";
 
 /**
  * Governed sidecar cleanup after a delete (roadmap Phase 1.4). MUST be called
@@ -2767,6 +2768,7 @@ const LOCAL_CACHE_KEY = "growthub.workspace.dataModel.localDraft.v1";
 export default function DataModelShell() {
   const [workspaceConfig, setWorkspaceConfig] = useState(null);
   const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState({});
+  const [persistence, setPersistence] = useState(null);
   const [authority, setAuthority] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2779,6 +2781,7 @@ export default function DataModelShell() {
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [registerApiOpen, setRegisterApiOpen] = useState(false);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
@@ -2828,6 +2831,7 @@ export default function DataModelShell() {
         ? payload.workspaceSourceRecords
         : {});
       setAuthority(payload.adapters?.integrations?.authority || null);
+      setPersistence(payload.workspaceConfigPersistence || null);
     } catch (err) {
       setError(err.message || "Failed to load workspace");
     } finally {
@@ -2917,6 +2921,12 @@ export default function DataModelShell() {
     if (!rowParam || !tables.length) return;
     focusSandboxEnvironmentRow({ rowName: rowParam, deferOpen: true });
   }, [focusSandboxEnvironmentRow, searchParams, tables]);
+
+  useEffect(() => {
+    const lane = searchParams?.get("lane");
+    if (lane === "register-api") setRegisterApiOpen(true);
+    if (lane === "create-source") setAddOpen(true);
+  }, [searchParams]);
 
   // Flush any accumulated patch keys to the server. Called by the debounce
   // timer and on visibilitychange/beforeunload so no local edit is lost.
@@ -3217,6 +3227,10 @@ export default function DataModelShell() {
       run: () => openHelperWith("create_object", "Create a custom object for tracking client engagements: name, owner, status, value, next step.")
     },
     {
+      id: "creation.register_api", group: "Creation", label: "Register API wizard",
+      run: () => setRegisterApiOpen(true),
+    },
+    {
       id: "helper.register_api", group: "Ask helper", label: "Ask helper — register an API",
       run: () => openHelperWith("register_api", "Register an API integration: integration label, base URL, endpoint, auth header, and method.")
     },
@@ -3290,6 +3304,9 @@ export default function DataModelShell() {
             <div><p>Workspace</p><h1>Data Model</h1></div>
           )}
           <div className="workspace-toolbar-actions">
+            <button type="button" className="dm-btn-primary-sm" onClick={() => setRegisterApiOpen(true)}>
+              Register API
+            </button>
             <SaveToast saving={saving} message={message} />
             {selectedTable && (
               <ObjectViewPicker
@@ -3423,6 +3440,9 @@ export default function DataModelShell() {
             <strong>No objects yet</strong>
             <p>Create your first Data Source, API Registry, People list, or custom object to get started.</p>
             <div className="dm-page-empty-actions">
+              <button type="button" className="dm-btn-primary" onClick={() => setRegisterApiOpen(true)}>
+                <Code2 size={14} />Register API
+              </button>
               <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
                 <Plus size={14} />New object
               </button>
@@ -3440,6 +3460,13 @@ export default function DataModelShell() {
           </div>
         )}
       </section>
+
+      <RegisterApiWizard
+        open={registerApiOpen}
+        onClose={() => setRegisterApiOpen(false)}
+        persistence={persistence}
+        onApplied={() => load()}
+      />
     </main>
   );
 }

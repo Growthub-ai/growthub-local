@@ -61,6 +61,7 @@ import {
   upsertHelperThreadRow,
   nextThreadId,
 } from "@/lib/workspace-helper-apply";
+import { buildCreationProposalBundle } from "@/lib/workspace-creation-proposals";
 
 const VALID_INTENTS = [
   "build_dashboard",
@@ -344,6 +345,16 @@ async function POST(request) {
   ];
   const nextMessages = [...priorMessages, ...newTurn].slice(-40);
 
+  let creationBundle = null;
+  if (resolvedIntent === "register_api") {
+    creationBundle = buildCreationProposalBundle({
+      name: userPrompt.slice(0, 80),
+      businessPurpose: userPrompt,
+      outputMode: "data-source",
+    }, liveConfigForThread || snapshot, process.env);
+    if (creationBundle?.risks?.length) warnings.push(...creationBundle.risks);
+  }
+
   const response = {
     ok: true,
     threadId,
@@ -354,6 +365,7 @@ async function POST(request) {
     warnings,
     receipts,
     messages: nextMessages,
+    creationBundle,
   };
 
   const persistence = describePersistenceMode();

@@ -9020,3 +9020,29 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-template-context-banner { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 12px; margin: 0 0 12px; }
 .workspace-template-context-banner.is-warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 .workspace-template-context-banner .workspace-template-context-link { color: inherit; text-decoration: underline; font-weight: 600; margin-left: auto; }
+
+/* Governed creation — Register API wizard + resolver studio + readiness chips */
+.dm-modal-backdrop { position: fixed; inset: 0; z-index: 1500; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(17, 24, 39, 0.45); }
+.dm-modal.dm-register-api-wizard { width: min(920px, 100%); max-height: calc(100vh - 48px); overflow: auto; background: #fff; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.dm-modal-header, .dm-modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dm-wizard-steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.dm-wizard-step { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e5e7eb; border-radius: 999px; padding: 4px 10px; font-size: 11px; background: #fafafa; color: #6b7280; cursor: pointer; text-transform: capitalize; }
+.dm-wizard-step.is-active { border-color: #111827; color: #111827; background: #fff; font-weight: 600; }
+.dm-wizard-step.is-done { color: #065f46; border-color: #a7f3d0; }
+.dm-wizard-panel { display: grid; gap: 10px; }
+.dm-wizard-panel label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: #374151; }
+.dm-wizard-panel input, .dm-wizard-panel select, .dm-wizard-panel textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 8px 10px; font-size: 13px; }
+.dm-segmented { display: flex; flex-wrap: wrap; gap: 6px; }
+.dm-segmented button { border: 1px solid #e5e7eb; border-radius: 999px; padding: 6px 10px; font-size: 12px; background: #fafafa; cursor: pointer; }
+.dm-segmented button.is-active { border-color: #111827; background: #111827; color: #fff; }
+.dm-resolver-studio { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; display: grid; gap: 8px; background: #fafafa; }
+.dm-resolver-studio header { display: flex; align-items: flex-start; gap: 10px; }
+.dm-resolver-studio__code { max-height: 240px; overflow: auto; font-size: 11px; }
+.dm-workflow-readiness { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.dm-workflow-readiness__chip { border: 1px solid #e5e7eb; border-radius: 999px; padding: 4px 10px; font-size: 11px; background: #fafafa; color: #6b7280; }
+.dm-workflow-readiness__chip.is-ok { border-color: #a7f3d0; color: #065f46; background: #ecfdf5; }
+.dm-workflow-readiness__chip.is-pending { border-color: #fde68a; color: #92400e; background: #fffbeb; }
+.dm-env-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.dm-env-chip { border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 8px; font-size: 11px; background: #fafafa; }
+.dm-env-chip.is-configured { border-color: #a7f3d0; color: #065f46; }
+.dm-env-chip.is-missing { border-color: #fecaca; color: #b91c1c; }
