@@ -88,20 +88,33 @@ const WORKFLOW_METADATA_SELECTORS = Object.freeze({
 });
 
 function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
+  return resolveRegistryRefForSandbox(workspaceConfig, sandboxRow)?.row || null;
+}
+
+function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationConfig || sandboxRow?.orchestrationGraph);
   const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
   const registryId = String(
     apiNode?.config?.registryId || apiNode?.config?.integrationId || sandboxRow?.schedulerRegistryId || ""
   ).trim();
-  if (!registryId || !workspaceConfig) return null;
+  if (!workspaceConfig) return null;
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  let firstRegistryRow = null;
+  let firstRegistryObject = null;
   for (const objectItem of objects) {
     if (objectItem?.objectType !== "api-registry") continue;
     const rows = Array.isArray(objectItem.rows) ? objectItem.rows : [];
-    const match = rows.find((r) => String(r?.integrationId || "").trim() === registryId);
-    if (match) return match;
+    const firstRow = rows.find((r) => String(r?.integrationId || "").trim());
+    if (!firstRegistryRow && firstRow) {
+      firstRegistryRow = firstRow;
+      firstRegistryObject = objectItem;
+    }
+    if (registryId) {
+      const match = rows.find((r) => String(r?.integrationId || "").trim() === registryId);
+      if (match) return { object: objectItem, row: match };
+    }
   }
-  return null;
+  return firstRegistryRow ? { object: firstRegistryObject, row: firstRegistryRow } : null;
 }
 
 function patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, fields) {
@@ -881,10 +894,27 @@ export default function WorkflowSurface() {
   async function handleUpgradeAction(action) {
     if (!action) return;
     if (action.id === "toggle-locality") {
-      await patchSandboxAndPersist({ runLocality: isServerlessWorkflow ? "local" : "serverless" });
+      if (isServerlessWorkflow) {
+        await patchSandboxAndPersist({ runLocality: "local" });
+        return;
+      }
+      const registryRow = resolveRegistryRowForSandbox(workspaceConfig, sandboxRow);
+      const adapterId = String(sandboxRow?.adapter || "").trim();
+      await patchSandboxAndPersist({
+        runLocality: "serverless",
+        schedulerRegistryId: String(registryRow?.integrationId || "").trim(),
+        adapter: ["local-agent-host", "local-intelligence"].includes(adapterId) ? "local-process" : adapterId,
+      });
     } else if (action.id === "open-settings") {
       router.push(action.href || "/settings");
-    } else if (action.id === "link-scheduler" || action.id === "edit-adapter") {
+    } else if (action.id === "link-scheduler") {
+      const registryRef = resolveRegistryRefForSandbox(workspaceConfig, sandboxRow);
+      if (registryRef?.object?.id && registryRef?.row?.integrationId) {
+        router.push(`/data-model?object=${encodeURIComponent(registryRef.object.id)}&row=${encodeURIComponent(registryRef.row.integrationId)}`);
+      } else {
+        router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}`);
+      }
+    } else if (action.id === "edit-adapter") {
       // Full scheduler/adapter config lives on the sandbox object's drawer.
       router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}`);
     }
@@ -946,6 +976,18 @@ export default function WorkflowSurface() {
             >
               <ChevronUp size={14} />
             </button>
+            {sandboxRow && (
+              <button
+                type="button"
+                className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
+                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
+                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
+                aria-pressed={upgradeOpen}
+                onClick={() => setUpgradeOpen((open) => !open)}
+              >
+                <ArrowUpCircle size={14} />
+              </button>
+            )}
             {showDiscardDraft && (
               <button
                 type="button"
@@ -970,18 +1012,6 @@ export default function WorkflowSurface() {
                 title={publishReady ? "Publish tested draft" : "Save and pass Test before publishing"}
               >
                 <Power size={13} /> {publishing ? "Publishing" : "Publish"}
-              </button>
-            )}
-            {sandboxRow && (
-              <button
-                type="button"
-                className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
-                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
-                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
-                aria-pressed={upgradeOpen}
-                onClick={() => setUpgradeOpen((open) => !open)}
-              >
-                <ArrowUpCircle size={14} />
               </button>
             )}
             <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow} onClick={openTraceMode}>
@@ -1048,7 +1078,7 @@ export default function WorkflowSurface() {
           <div className="dm-workflow-upgrade-panel">
             <div className="dm-workflow-upgrade-panel-head">
               <span className="dm-api-action-card-eyebrow">Persistence &amp; scheduling</span>
-              <button type="button" className="dm-workflow-icon-btn" aria-label="Close upgrade panel" onClick={() => setUpgradeOpen(false)}>
+              <button type="button" className="dm-workflow-icon-btn" aria-label="Close upgrade panel" onClick={() => { setUpgradeOpen(false); dismissUpgradeOnboarding(); }}>
                 <X size={14} />
               </button>
             </div>

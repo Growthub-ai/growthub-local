@@ -92,7 +92,7 @@ function deriveSandboxServerlessState(input = {}) {
   steps.push({
     id: "locality",
     label: "Choose run locality",
-    status: "complete",
+    status: isServerless ? "complete" : "active",
     description: isServerless
       ? "Serverless — runs are delegated to a scheduler and persist across redeploy."
       : "Local — runs execute in-process on this machine.",
@@ -127,7 +127,7 @@ function deriveSandboxServerlessState(input = {}) {
       id: "scheduler-auth",
       label: "Scheduler auth resolves",
       status: !schedulerAuthRef
-        ? (schedulerHealthy ? "complete" : "blocked")
+        ? "complete"
         : schedulerAuthConfigured
           ? "complete"
           : (schedulerLinked ? "pending" : "blocked"),

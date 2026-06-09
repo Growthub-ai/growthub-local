@@ -524,8 +524,11 @@ function StaticSelect({ value, options, disabled, onChange, placeholder = "Selec
   );
 }
 
-function DrawerSection({ title, children, defaultOpen = false }) {
+function DrawerSection({ title, children, defaultOpen = false, forceOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
   return (
     <section className={`dm-drawer-section${open ? " open" : ""}`}>
       <button type="button" className="dm-drawer-section-toggle" onClick={() => setOpen((current) => !current)}>
@@ -1191,6 +1194,7 @@ function DataModelRecordDrawer({
   const [createdDataSourceMeta, setCreatedDataSourceMeta] = useState(null);
   const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [cockpitBusy, setCockpitBusy] = useState("");
+  const [cockpitCollapsed, setCockpitCollapsed] = useState(false);
   // Real runtime truth for the creation cockpit: which auth refs resolve in the
   // server runtime, and the live source-records sidecar. Fetched (never guessed)
   // so auth/refresh readiness reflect actual state, and refreshed after actions.
@@ -1199,6 +1203,7 @@ function DataModelRecordDrawer({
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
+  const drawerScrollRef = useRef(null);
   const drawerKeyRef = useRef("");
   const router = useRouter();
 
@@ -1224,6 +1229,10 @@ function DataModelRecordDrawer({
       setCreatedDataSourceMeta(null);
       setDataSourceMessage("");
       setCreationReceipts([]);
+      setCockpitCollapsed(false);
+      requestAnimationFrame(() => {
+        if (drawerScrollRef.current) drawerScrollRef.current.scrollTop = 0;
+      });
     }
     if (initialSidecar?.mode === "trace") {
       setSidecarMode("trace");
@@ -1589,6 +1598,7 @@ function DataModelRecordDrawer({
       switch (action.id) {
         case "edit":
           setEditMode(true);
+          setCockpitCollapsed(true);
           break;
         case "open-settings":
           onClose();
@@ -1865,6 +1875,7 @@ function DataModelRecordDrawer({
             onTest={testApiRecord}
           />
         )}
+        <div className="dm-record-scroll" ref={drawerScrollRef}>
         {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
           <section className="dm-api-action-card dm-api-action-card-success" aria-label="Sandbox tool created">
             <div className="dm-api-action-card-body">
@@ -1904,6 +1915,9 @@ function DataModelRecordDrawer({
               resolverRec={creationResolverRec}
               receipts={creationReceipts}
               dataSourcePreview={creationDataSourcePreview}
+              defaultCollapsed={cockpitCollapsed}
+              hideWhenComplete
+              onCollapsedChange={setCockpitCollapsed}
             />
             {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
           </>
@@ -1990,7 +2004,11 @@ function DataModelRecordDrawer({
               rowIndex={rowIndex}
             />
           ) : groupRecordColumns(table.columns || []).map((section) => (
-            <DrawerSection key={section.title} title={section.title}>
+            <DrawerSection
+              key={section.title}
+              title={section.title}
+              forceOpen={isApiRegistry && editMode}
+            >
               {section.columns.map((column) => (
                 <RecordFieldEditor
                   key={column}
@@ -2008,7 +2026,7 @@ function DataModelRecordDrawer({
             </DrawerSection>
           ))}
           {!isSandbox && editMode && (
-            <DrawerSection title="Fields" defaultOpen>
+            <DrawerSection title="Fields">
               <div className="dm-drawer-field-editor">
                 {pendingColumns.map((column, index) => (
                   <div key={`${column}-${index}`} className="dm-drawer-field-row">
@@ -2036,6 +2054,7 @@ function DataModelRecordDrawer({
               </div>
             </DrawerSection>
           )}
+        </div>
         </div>
         {!isSandbox && editMode && (
           <footer className="dm-record-drawer-foot">
@@ -2086,7 +2105,9 @@ function DataModelTableSurface({
   onSave,
   onOpenThread,
   focusSandboxRowName,
+  focusRecordValue,
   onFocusSandboxRowConsumed,
+  onFocusRecordConsumed,
   onFocusSandboxRow,
   selectedRecordIndex,
   onSelectedRecordIndexChange,
@@ -2183,6 +2204,24 @@ function DataModelTableSurface({
     selectOriginalIndex(originalIndex);
     onFocusSandboxRowConsumed?.();
   }, [focusSandboxRowName, table.id, table.objectType, table.rows, rowEntries, pageSize, onFocusSandboxRowConsumed]);
+
+  useEffect(() => {
+    if (!focusRecordValue) return;
+    const wanted = String(focusRecordValue).trim();
+    if (!wanted) return;
+    const originalIndex = (table.rows || []).findIndex((r) => (
+      String(r?.integrationId || "").trim() === wanted
+      || String(r?.Name || r?.name || r?.slug || r?.id || "").trim() === wanted
+    ));
+    if (originalIndex < 0) return;
+    const visibleIndex = rowEntries.findIndex((entry) => entry.originalIndex === originalIndex);
+    if (visibleIndex < 0) return;
+    const pageForRow = Math.floor(visibleIndex / pageSize);
+    setPageIndex(pageForRow);
+    setSelectedRow(visibleIndex);
+    selectOriginalIndex(originalIndex);
+    onFocusRecordConsumed?.();
+  }, [focusRecordValue, table.id, table.rows, rowEntries, pageSize, onFocusRecordConsumed]);
 
   useEffect(() => {
     setPageIndex((current) => Math.min(current, pageCount - 1));
@@ -2971,6 +3010,7 @@ export default function DataModelShell() {
   const [helperInitialThread, setHelperInitialThread] = useState(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [focusSandboxRowName, setFocusSandboxRowName] = useState(null);
+  const [focusRecordValue, setFocusRecordValue] = useState(null);
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
@@ -3101,7 +3141,20 @@ export default function DataModelShell() {
   useEffect(() => {
     const rowParam = searchParams?.get("row");
     if (!rowParam || !tables.length) return;
-    focusSandboxEnvironmentRow({ rowName: rowParam, deferOpen: true });
+    const objectParam = searchParams?.get("object");
+    const target = objectParam
+      ? tables.find((table) => (
+          table.objectId === objectParam
+          || table.id === objectParam
+          || table.source === objectParam
+          || table.label === objectParam
+        ))
+      : null;
+    if (target?.objectType === "sandbox-environment" || (!target && rowParam)) {
+      focusSandboxEnvironmentRow({ rowName: rowParam, deferOpen: true });
+      return;
+    }
+    requestAnimationFrame(() => setFocusRecordValue(rowParam));
   }, [focusSandboxEnvironmentRow, searchParams, tables]);
 
   // Flush any accumulated patch keys to the server. Called by the debounce
@@ -3528,7 +3581,9 @@ export default function DataModelShell() {
                 onSave={save}
                 onOpenThread={openHelperThreadFromRow}
                 focusSandboxRowName={focusSandboxRowName}
+                focusRecordValue={focusRecordValue}
                 onFocusSandboxRowConsumed={() => setFocusSandboxRowName(null)}
+                onFocusRecordConsumed={() => setFocusRecordValue(null)}
                 onFocusSandboxRow={focusSandboxEnvironmentRow}
                 selectedRecordIndex={selectedTableKey ? selectedRecordByTable[selectedTableKey] ?? null : null}
                 onSelectedRecordIndexChange={(index) => {

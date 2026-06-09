@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 const HELPER_SANDBOX_OBJECT_ID = "workspace-helper-sandbox";
@@ -185,7 +186,9 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
     }
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal((
     <div className="workspace-helper-setup-modal-backdrop" role="presentation">
       <div className="workspace-helper-setup-modal" role="dialog" aria-modal="true" aria-label="Set up workspace helper">
         <button type="button" className="workspace-helper-setup-modal-close" onClick={onClose} aria-label="Close setup">
@@ -342,7 +345,7 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 export {

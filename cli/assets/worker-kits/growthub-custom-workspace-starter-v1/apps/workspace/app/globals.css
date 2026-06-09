@@ -5030,7 +5030,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-db-status.warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
 .dm-db-status.warn span { background: #f59e0b; }
 .dm-record-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(15,23,42,.12); }
-.dm-record-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; display: flex; flex-direction: column; width: min(440px, 100vw); background: #fff; border-left: 1px solid #dfe3e8; box-shadow: -10px 0 34px rgba(15,23,42,.16); }
+.dm-record-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; display: flex; flex-direction: column; min-height: 0; width: min(440px, 100vw); background: #fff; border-left: 1px solid #dfe3e8; box-shadow: -10px 0 34px rgba(15,23,42,.16); overflow: hidden; }
 .dm-record-drawer-wide { width: min(780px, 100vw); }
 .dm-api-action-card {
   display: grid;
@@ -5074,8 +5074,11 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 /* Governed creation cockpit — vertical journey inside the api-registry drawer.
    Overrides the action-card 3-col grid and reuses the workspace's own status
    chip (.dm-db-status) + dm-btn-* buttons. No new colors, no new primitive. */
-.dm-cockpit { display: block; grid-template-columns: none; }
-.dm-cockpit-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dm-cockpit { display: block; grid-template-columns: none; transition: box-shadow .14s, background .14s; }
+.dm-cockpit.is-collapsed { padding-bottom: 12px; }
+.dm-cockpit-head { width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border: 0; background: transparent; padding: 0; text-align: left; cursor: pointer; }
+.dm-cockpit-head:hover .dm-api-action-card-body h3 { color: #000; }
+.dm-cockpit-head:focus-visible { outline: 2px solid #bfdbfe; outline-offset: 4px; border-radius: 6px; }
 .dm-cockpit-count { flex-shrink: 0; font-size: 11px; font-weight: 700; color: #94a3b8; font-variant-numeric: tabular-nums; padding-top: 2px; }
 .dm-cockpit-steps { list-style: none; margin: 10px 0 0; padding: 0; }
 .dm-cockpit-step { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid #edf0f3; }
@@ -5104,15 +5107,18 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 /* Serverless upgrade — toolbar button, one-time nudge, and cockpit panel. */
 .dm-workflow-upgrade-btn { position: relative; }
 .dm-workflow-upgrade-btn.is-serverless { color: #166534; }
-.dm-workflow-upgrade-btn.is-pulse { color: #b45309; }
+.dm-workflow-upgrade-btn.is-pulse { color: #111827; }
 .dm-workflow-upgrade-btn[data-tooltip]:hover::after {
   content: attr(data-tooltip); position: absolute; top: 100%; right: 0; margin-top: 6px;
   white-space: nowrap; background: #111827; color: #fff; font-size: 11px; font-weight: 500;
   padding: 5px 8px; border-radius: 6px; z-index: 40; box-shadow: 0 4px 12px rgba(15,23,42,.18);
 }
-.dm-workflow-upgrade-nudge { align-items: center; }
+.dm-workflow-upgrade-nudge { align-items: center; justify-content: space-between; gap: 16px; padding: 10px 16px; }
+.dm-workflow-upgrade-nudge > div:first-child { min-width: 0; padding-right: 10px; }
+.dm-workflow-upgrade-nudge strong,
+.dm-workflow-upgrade-nudge span { line-height: 1.35; }
 .dm-workflow-upgrade-nudge-actions { display: inline-flex; align-items: center; gap: 8px; }
-.dm-workflow-upgrade-panel { margin: 0 0 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
+.dm-workflow-upgrade-panel { width: auto; margin: 12px 8px 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
 .dm-workflow-upgrade-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px 0; }
 .dm-workflow-upgrade-panel-head .dm-api-action-card-eyebrow { margin: 0; }
 .dm-workflow-upgrade-panel .dm-api-action-card { margin: 8px; box-shadow: none; }
@@ -5270,6 +5276,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding-left: 16px;
   min-width: max-content;
   flex: 1 0 auto;
   color: #8b8b91;
@@ -5323,6 +5330,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding-right: 16px;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 58vw;
@@ -6072,6 +6080,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-drawer-hidden-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .dm-record-drawer-head p { margin: 0 0 3px; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .dm-record-drawer-head h2 { margin: 0; color: #111827; font-size: 16px; font-weight: 650; }
+.dm-record-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 0 28px; }
 .dm-record-testbar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid #edf0f3; background: #fbfdff; }
 .dm-record-testbar > span:last-child { min-width: 0; color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-record-testbar[data-panel="sandbox-agent-auth"] {
@@ -6161,7 +6170,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.dm-record-fields { display: grid; gap: 8px; padding: 14px 16px 28px; overflow-y: auto; }
+.dm-record-fields { display: grid; align-content: start; gap: 8px; min-height: 0; padding: 14px 16px 0; }
 .dm-record-field { display: grid; gap: 5px; }
 .dm-record-field span { color: #475569; font-size: 11px; font-weight: 650; }
 .dm-record-field input,
@@ -6184,7 +6193,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-radio-row input[type="radio"], .dm-check-row input[type="checkbox"] { width: 14px; height: 14px; margin: 1px 0 0; padding: 0; box-shadow: none; accent-color: #111827; }
 .dm-radio-row span, .dm-check-row span { color: #1f2937; font-size: 12px; font-weight: 500; }
 .dm-check-row { cursor: pointer; }
-.dm-select { position: relative; width: 100%; min-width: 180px; font-size: 11px; }
+.dm-select { position: relative; width: 100%; min-width: 0; font-size: 11px; }
 .dm-select-trigger { width: 100%; min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #111827; box-shadow: 0 1px 2px rgba(15,23,42,.05); font: inherit; font-size: 11px; padding: 6px 10px; text-align: left; cursor: pointer; transition: border-color .12s, box-shadow .12s, background .12s; }
 .dm-select-trigger:hover:not(:disabled) { border-color: #94a3b8; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
 .dm-select.open .dm-select-trigger { border-color: #64748b; box-shadow: 0 0 0 3px rgba(100,116,139,.12), 0 2px 8px rgba(15,23,42,.08); }
@@ -6209,8 +6218,12 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-select-pager button { height: 26px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 12px; padding: 0 8px; cursor: pointer; }
 .dm-select-pager button:disabled { opacity: .45; cursor: not-allowed; }
 .dm-select-pager span { color: #64748b; font-size: 12px; font-weight: 650; }
-.dm-db-grid td:has(.dm-select) { overflow: visible; padding-top: 5px; padding-bottom: 5px; }
-.dm-db-grid td .dm-select { min-width: 230px; }
+.dm-reference-picker { display: grid; gap: 6px; width: min(240px, 100%); min-width: 0; }
+.dm-reference-picker-warning { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin: 0; padding: 5px 7px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.25; }
+.dm-reference-picker-warning svg { flex: 0 0 auto; }
+.dm-reference-picker-warning span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-db-grid td:has(.dm-select) { overflow: visible; padding-top: 5px; padding-bottom: 5px; vertical-align: top; }
+.dm-db-grid td .dm-select { min-width: 0; }
 .dm-json-field { position: relative; }
 .dm-json-field > span { padding-right: 34px; }
 .dm-json-expand { position: absolute; top: 0; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #64748b; box-shadow: 0 1px 2px rgba(15,23,42,.05); opacity: 0; cursor: pointer; transition: opacity .12s, border-color .12s, color .12s, box-shadow .12s; }
@@ -9007,7 +9020,7 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-lens-helper-callout-btn { flex-shrink: 0; font-size: 12px; font-weight: 600; color: #111827; background: #ffffff; border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 12px; cursor: pointer; }
 .workspace-lens-helper-callout-btn:hover:not(:disabled) { background: #f3f4f6; }
 .workspace-lens-helper-callout-btn:disabled { opacity: 0.6; cursor: default; }
-.workspace-helper-setup-modal-backdrop { position: fixed; inset: 0; z-index: 1400; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(17, 24, 39, 0.42); backdrop-filter: blur(3px); }
+.workspace-helper-setup-modal-backdrop { position: fixed; inset: 0; z-index: 5100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(17, 24, 39, 0.42); backdrop-filter: blur(3px); }
 .workspace-helper-setup-modal { position: relative; width: min(620px, 100%); max-height: min(720px, calc(100vh - 48px)); overflow: auto; background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 24px 70px rgba(17, 24, 39, 0.28); padding: 18px; }
 .workspace-helper-setup-modal-close { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #6b7280; cursor: pointer; }
 .workspace-helper-setup-modal-close:hover { background: #f9fafb; color: #111827; }

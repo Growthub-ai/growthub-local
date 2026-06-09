@@ -202,9 +202,9 @@ export function ReferencePicker({
     <div className="dm-reference-picker">
       {error && <p className="dm-field-error" style={{ fontSize: 11 }}>{error}</p>}
       {showRepair && (
-        <p className="dm-validation-banner" style={{ fontSize: 11, marginBottom: 6 }}>
+        <p className="dm-reference-picker-warning">
           <AlertTriangle size={12} aria-hidden />
-          <span>Selected reference is missing or filtered out. Pick a new row or adjust API Registry status.</span>
+          <span>Missing reference. Pick a row or test the API Registry.</span>
         </p>
       )}
       <SearchableSelect

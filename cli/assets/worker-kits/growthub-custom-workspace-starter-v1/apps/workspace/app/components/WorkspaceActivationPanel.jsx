@@ -51,6 +51,7 @@ export function WorkspaceActivationPanel({
   workspaceSourceRecords,
   metadataGraph,
   onOpenHelper,
+  onStepAction,
   compact = false,
   showLenses = false,
 }) {
@@ -136,7 +137,22 @@ export function WorkspaceActivationPanel({
                     <span>{step.hint}</span>
                   </p>
                 ) : null}
-                {step.href ? (
+                {step.action && onStepAction ? (
+                  <a
+                    href={`#${step.action}`}
+                    className={
+                      "workspace-activation-step-cta"
+                      + (isNext ? " is-primary" : "")
+                    }
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onStepAction(step);
+                    }}
+                  >
+                    <span>{step.cta || (step.status === "complete" ? "Review" : "Open")}</span>
+                    <ArrowRight size={12} aria-hidden="true" />
+                  </a>
+                ) : step.href ? (
                   <Link
                     href={step.href}
                     className={

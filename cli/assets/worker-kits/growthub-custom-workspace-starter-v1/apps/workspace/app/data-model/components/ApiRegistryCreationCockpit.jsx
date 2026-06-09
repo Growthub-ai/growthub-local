@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 /**
  * ApiRegistryCreationCockpit — the governed creation interface for one API,
  * rendered inside the existing api-registry record drawer (DataModelShell).
@@ -49,23 +51,48 @@ export function ApiRegistryCreationCockpit({
   receipts = [],
   dataSourcePreview = null,
   eyebrow = "Governed creation",
+  defaultCollapsed = false,
+  hideWhenComplete = false,
+  onCollapsedChange,
 }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  useEffect(() => {
+    setCollapsed(defaultCollapsed || Boolean(hideWhenComplete && state?.complete));
+  }, [defaultCollapsed, hideWhenComplete, state?.complete, state?.integrationId]);
   if (!state || !Array.isArray(state.steps)) return null;
+  if (hideWhenComplete && state.complete) return null;
   const candidates = profile?.candidates || {};
   const candidateEntries = Object.entries(candidates).filter(([, v]) => v);
   const previewRow = dataSourcePreview?.row || null;
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    onCollapsedChange?.(next);
+  };
+  const runAction = (action) => {
+    if (action?.id === "edit") {
+      setCollapsed(true);
+      onCollapsedChange?.(true);
+    }
+    onAction?.(action);
+  };
 
   return (
-    <section className="dm-api-action-card dm-cockpit" aria-label="API creation journey">
-      <div className="dm-cockpit-head">
+    <section className={`dm-api-action-card dm-cockpit${collapsed ? " is-collapsed" : ""}`} aria-label="API creation journey">
+      <button
+        type="button"
+        className="dm-cockpit-head"
+        aria-expanded={!collapsed}
+        onClick={toggleCollapsed}
+      >
         <div className="dm-api-action-card-body">
           <p className="dm-api-action-card-eyebrow">{eyebrow} · {state.score}% activated</p>
           <h3>{state.headline}</h3>
         </div>
         <span className="dm-cockpit-count">{state.completedCount}/{state.totalCount}</span>
-      </div>
+      </button>
 
-      <ol className="dm-cockpit-steps">
+      {!collapsed && <ol className="dm-cockpit-steps">
         {state.steps.map((step) => {
           const meta = STEP_STATUS[step.status] || STEP_STATUS.pending;
           const isNext = step.id === state.nextStepId;
@@ -87,7 +114,7 @@ export function ApiRegistryCreationCockpit({
                   type="button"
                   className={isNext ? "dm-btn-primary-sm" : "dm-btn-outline"}
                   disabled={disabled || Boolean(busyAction)}
-                  onClick={() => onAction?.(action)}
+                  onClick={() => runAction(action)}
                 >
                   {isBusy ? "Working…" : action.label}
                 </button>
@@ -95,9 +122,9 @@ export function ApiRegistryCreationCockpit({
             </li>
           );
         })}
-      </ol>
+      </ol>}
 
-      {profile && profile.parsed ? (
+      {!collapsed && profile && profile.parsed ? (
         <div className="dm-cockpit-shape">
           <div className="dm-cockpit-shape-head">
             <p className="dm-api-action-card-eyebrow">Response shape</p>
@@ -126,7 +153,7 @@ export function ApiRegistryCreationCockpit({
         </div>
       ) : null}
 
-      {previewRow ? (
+      {!collapsed && previewRow ? (
         <div className="dm-cockpit-shape">
           <p className="dm-api-action-card-eyebrow">Data Source preview</p>
           <p className="dm-cockpit-step-desc">
@@ -153,7 +180,7 @@ export function ApiRegistryCreationCockpit({
         </div>
       ) : null}
 
-      {Array.isArray(receipts) && receipts.length ? (
+      {!collapsed && Array.isArray(receipts) && receipts.length ? (
         <div className="dm-cockpit-receipts">
           <p className="dm-api-action-card-eyebrow">Receipts</p>
           <ul>
