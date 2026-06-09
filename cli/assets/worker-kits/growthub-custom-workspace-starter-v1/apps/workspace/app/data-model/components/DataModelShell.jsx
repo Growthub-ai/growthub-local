@@ -32,6 +32,7 @@ import {
   MoreHorizontal,
   MoreVertical,
   Play,
+  Plug,
   Plus,
   Pencil,
   Search,
@@ -102,6 +103,7 @@ import {
   normalizeCodexSiteRecord,
 } from "@/lib/codex-sites-workspace-adapter";
 import { computeDeleteImpact } from "@/lib/workspace-delete-impact";
+import { RegisterApiWizard } from "./RegisterApiWizard.jsx";
 
 /**
  * Governed sidecar cleanup after a delete (roadmap Phase 1.4). MUST be called
@@ -2774,6 +2776,7 @@ export default function DataModelShell() {
   const [message, setMessage] = useState("");
   const [selectedSource, setSelectedSource] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [registerApiOpen, setRegisterApiOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
   const [helperIntent, setHelperIntent] = useState("create_object");
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
@@ -3304,6 +3307,9 @@ export default function DataModelShell() {
                 onDuplicateObject={duplicateObject}
               />
             )}
+            <button type="button" className="dm-btn-outline" onClick={() => setRegisterApiOpen(true)}>
+              <Plug size={14} />Register API
+            </button>
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
               <Plus size={14} />New object
             </button>
@@ -3316,6 +3322,16 @@ export default function DataModelShell() {
           onClose={() => setAddOpen(false)}
           onCreate={createObject}
           allTables={tables}
+        />
+
+        <RegisterApiWizard
+          open={registerApiOpen}
+          onClose={() => setRegisterApiOpen(false)}
+          onApplied={(nextConfig) => {
+            // Reflect the new API Registry row immediately, then resync from disk.
+            if (nextConfig) setWorkspaceConfig(nextConfig);
+            load();
+          }}
         />
 
         <HelperSidecar
