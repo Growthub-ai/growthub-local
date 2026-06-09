@@ -48,6 +48,7 @@ export function ApiRegistryCreationCockpit({
   resolverRec = null,
   receipts = [],
   dataSourcePreview = null,
+  eyebrow = "Governed creation",
 }) {
   if (!state || !Array.isArray(state.steps)) return null;
   const candidates = profile?.candidates || {};
@@ -58,7 +59,7 @@ export function ApiRegistryCreationCockpit({
     <section className="dm-api-action-card dm-cockpit" aria-label="API creation journey">
       <div className="dm-cockpit-head">
         <div className="dm-api-action-card-body">
-          <p className="dm-api-action-card-eyebrow">Governed creation · {state.score}% activated</p>
+          <p className="dm-api-action-card-eyebrow">{eyebrow} · {state.score}% activated</p>
           <h3>{state.headline}</h3>
         </div>
         <span className="dm-cockpit-count">{state.completedCount}/{state.totalCount}</span>

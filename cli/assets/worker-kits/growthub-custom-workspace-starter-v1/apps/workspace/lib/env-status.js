@@ -11,6 +11,10 @@
  * Pure + env-injectable so it is deterministically testable.
  */
 
+import { describePostgresAdapter } from "./adapters/persistence/postgres.js";
+import { describeQstashKvAdapter } from "./adapters/persistence/qstash-kv.js";
+import { describeProviderManagedAdapter } from "./adapters/persistence/provider-managed.js";
+
 function clean(value) {
   return String(value == null ? "" : value).trim();
 }
@@ -63,4 +67,34 @@ function computeConfiguredEnvRefs(workspaceConfig, env = process.env) {
   return collectReferencedRefs(workspaceConfig).filter(resolves);
 }
 
-export { envKeyCandidates, collectReferencedRefs, computeConfiguredEnvRefs };
+/**
+ * Persistence/serverless adapter env-readiness — single-sourced from the real
+ * thin-adapter descriptors (postgres / qstash-kv / provider-managed). These are
+ * the durable-runtime layers a serverless workflow needs; the cockpit surfaces
+ * exactly which are env-ready so "make this workflow persistent + scheduled"
+ * has an honest, actionable signal. Slugs/booleans only — never a value.
+ */
+function listPersistenceAdapterReadiness(env = process.env) {
+  const source = env && typeof env === "object" ? env : {};
+  const descriptors = [describePostgresAdapter(), describeQstashKvAdapter(), describeProviderManagedAdapter()];
+  return descriptors.map((d) => {
+    const requiredEnv = Array.isArray(d.requiredEnv) ? d.requiredEnv : [];
+    const missingEnv = requiredEnv.filter((k) => !source[k]);
+    return {
+      id: d.id,
+      label: d.label,
+      mode: d.mode,
+      requiredEnv,
+      // provider-managed needs no env (the deploy provider owns persistence).
+      configured: requiredEnv.length === 0 ? true : missingEnv.length === 0,
+      missingEnv,
+    };
+  });
+}
+
+export {
+  envKeyCandidates,
+  collectReferencedRefs,
+  computeConfiguredEnvRefs,
+  listPersistenceAdapterReadiness,
+};

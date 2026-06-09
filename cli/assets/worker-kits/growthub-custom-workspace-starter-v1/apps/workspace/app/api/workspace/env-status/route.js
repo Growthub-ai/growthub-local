@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
-import { computeConfiguredEnvRefs } from "@/lib/env-status";
+import { computeConfiguredEnvRefs, listPersistenceAdapterReadiness } from "@/lib/env-status";
 
 async function GET() {
   let workspaceConfig = {};
@@ -20,9 +20,11 @@ async function GET() {
     workspaceConfig = {};
   }
   const configuredEnvRefs = computeConfiguredEnvRefs(workspaceConfig, process.env);
+  const persistenceAdapters = listPersistenceAdapterReadiness(process.env);
   return NextResponse.json({
     kind: "growthub-env-status-v1",
     configuredEnvRefs,
+    persistenceAdapters,
   });
 }
 

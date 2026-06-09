@@ -82,6 +82,7 @@ import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
 import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
+import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { profileApiResponse, recommendResolver } from "@/lib/api-response-profile";
 import { classifyCreationError } from "@/lib/creation-error-recovery";
 import {
@@ -658,13 +659,30 @@ function SandboxRecordFields({
   onOpenGraphSidecar,
   onOpenTraceSidecar
 }) {
+  const router = useRouter();
   const [sandboxAdapters, setSandboxAdapters] = useState([]);
+  const [serverlessSignals, setServerlessSignals] = useState({ configuredEnvRefs: [], persistenceAdapters: [] });
   useEffect(() => {
     fetch("/api/workspace/sandbox-adapters", { cache: "no-store" })
       .then((res) => res.json())
       .then((payload) => setSandboxAdapters(Array.isArray(payload.adapters) ? payload.adapters : []))
       .catch(() => setSandboxAdapters([]));
   }, []);
+  // Real runtime truth for the serverless/persistence cockpit (env-status).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/workspace/env-status", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((payload) => {
+        if (cancelled) return;
+        setServerlessSignals({
+          configuredEnvRefs: Array.isArray(payload.configuredEnvRefs) ? payload.configuredEnvRefs : [],
+          persistenceAdapters: Array.isArray(payload.persistenceAdapters) ? payload.persistenceAdapters : [],
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [rowIndex, table.objectId]);
 
   const locality = String(draft.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
   const savedEnvRefs = useMemo(() => listSavedEnvRefs(workspaceConfig || {}), [workspaceConfig]);
@@ -703,8 +721,30 @@ function SandboxRecordFields({
 
   const netOn = ["true", "1", "on", "yes"].includes(String(draft.networkAllow || "").trim().toLowerCase());
 
+  // Same cockpit interface + mental model as the API Registry lane, driven by
+  // the serverless/scheduling/persistence derivation. Steps are status-only
+  // here (inlineEditing) — the editable fields below are the editor.
+  const serverlessState = deriveSandboxServerlessState({
+    sandboxRow: draft,
+    workspaceConfig,
+    configuredEnvRefs: serverlessSignals.configuredEnvRefs,
+    persistenceAdapters: serverlessSignals.persistenceAdapters,
+    inlineEditing: true,
+  });
+  function handleServerlessAction(action) {
+    if (!action) return;
+    if (action.id === "toggle-locality") setRunLocality(serverlessState.isServerless ? "local" : "serverless");
+    else if (action.id === "open-settings") router.push(action.href || "/settings");
+  }
+
   return (
     <div className="dm-sandbox-config">
+      <ApiRegistryCreationCockpit
+        state={serverlessState}
+        onAction={handleServerlessAction}
+        disabled={!table.mutable || saving}
+        eyebrow={serverlessState.isServerless ? "Serverless workflow" : "Workflow runtime"}
+      />
       <DrawerSection title="Identity & Mode">
         <label className="dm-record-field">
           <span>Name</span>
