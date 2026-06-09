@@ -29,26 +29,26 @@ const SECRET = "sk-never-7777";
 
 const cfg = {
   dataModel: { objects: [
-    { objectType: "api-registry", rows: [{ integrationId: "leadshark", authRef: "LEADSHARK" }, { integrationId: "open", authRef: "" }] },
-    { objectType: "data-source", rows: [{ registryId: "leadshark", authRef: "STRIPE" }] },
-    { objectType: "sandbox-environment", rows: [{ Name: "wf", envRefs: "LEADSHARK, NANGO_SECRET_KEY" }] },
+    { objectType: "api-registry", rows: [{ integrationId: "acme", authRef: "ACME" }, { integrationId: "open", authRef: "" }] },
+    { objectType: "data-source", rows: [{ registryId: "acme", authRef: "STRIPE" }] },
+    { objectType: "sandbox-environment", rows: [{ Name: "wf", envRefs: "ACME, NANGO_SECRET_KEY" }] },
   ] },
 };
 
 test("envKeyCandidates — canonical family", () => {
-  assert.deepEqual(envKeyCandidates("leadshark"), ["LEADSHARK", "LEADSHARK_API_KEY", "LEADSHARK_TOKEN"]);
+  assert.deepEqual(envKeyCandidates("acme"), ["ACME", "ACME_API_KEY", "ACME_TOKEN"]);
   assert.deepEqual(envKeyCandidates(""), []);
 });
 
 test("collectReferencedRefs — auth + env refs, deduped", () => {
   const refs = collectReferencedRefs(cfg).sort();
-  assert.deepEqual(refs, ["LEADSHARK", "NANGO_SECRET_KEY", "STRIPE"]);
+  assert.deepEqual(refs, ["ACME", "NANGO_SECRET_KEY", "STRIPE"]);
 });
 
 test("computeConfiguredEnvRefs — only refs that resolve in env, slugs only", () => {
-  const env = { LEADSHARK_API_KEY: SECRET, NANGO_SECRET_KEY: "x" };
+  const env = { ACME_API_KEY: SECRET, NANGO_SECRET_KEY: "x" };
   const configured = computeConfiguredEnvRefs(cfg, env).sort();
-  assert.deepEqual(configured, ["LEADSHARK", "NANGO_SECRET_KEY"]);
+  assert.deepEqual(configured, ["ACME", "NANGO_SECRET_KEY"]);
   assert.ok(!JSON.stringify(configured).includes(SECRET));
 });
 

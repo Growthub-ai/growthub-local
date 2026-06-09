@@ -54,7 +54,7 @@ test("registered + no auth needed → test is active, nextAction is test", () =>
 
 test("auth needed but no runtime signal → auth pending, test blocked (never fake)", () => {
   const state = deriveApiRegistryCreationState({
-    registryRow: { integrationId: "leadshark", baseUrl: "https://x", authRef: "LEADSHARK" },
+    registryRow: { integrationId: "acme", baseUrl: "https://x", authRef: "ACME" },
   });
   const s = byId(state);
   assert.equal(s.auth, "pending");
@@ -66,8 +66,8 @@ test("auth needed but no runtime signal → auth pending, test blocked (never fa
 
 test("explicit configuredEnvRefs signal resolves auth", () => {
   const state = deriveApiRegistryCreationState({
-    registryRow: { integrationId: "leadshark", baseUrl: "https://x", authRef: "LEADSHARK" },
-    runtime: { configuredEnvRefs: ["LEADSHARK"] },
+    registryRow: { integrationId: "acme", baseUrl: "https://x", authRef: "ACME" },
+    runtime: { configuredEnvRefs: ["ACME"] },
   });
   const s = byId(state);
   assert.equal(s.auth, "complete");
@@ -77,10 +77,10 @@ test("explicit configuredEnvRefs signal resolves auth", () => {
 test("tested via lastResponse ok → data-source becomes active", () => {
   const state = deriveApiRegistryCreationState({
     registryRow: {
-      integrationId: "leadshark", baseUrl: "https://x", authRef: "LEADSHARK",
+      integrationId: "acme", baseUrl: "https://x", authRef: "ACME",
       status: "connected", lastResponse: JSON.stringify({ ok: true }),
     },
-    runtime: { configuredEnvRefs: ["LEADSHARK"] },
+    runtime: { configuredEnvRefs: ["ACME"] },
   });
   const s = byId(state);
   assert.equal(s.test, "complete");
@@ -90,12 +90,12 @@ test("tested via lastResponse ok → data-source becomes active", () => {
 
 test("linked data-source + records → spine complete; sandbox optional", () => {
   const cfg = { dataModel: { objects: [
-    { id: "api-registry", objectType: "api-registry", rows: [{ integrationId: "leadshark", status: "ok" }] },
-    { id: "leadshark-source", objectType: "data-source", rows: [{ registryId: "leadshark", sourceId: "leads-src" }] },
+    { id: "api-registry", objectType: "api-registry", rows: [{ integrationId: "acme", status: "ok" }] },
+    { id: "acme-source", objectType: "data-source", rows: [{ registryId: "acme", sourceId: "leads-src" }] },
   ] } };
   const state = deriveApiRegistryCreationState({
     workspaceConfig: cfg,
-    registryRow: { integrationId: "leadshark", baseUrl: "https://x", status: "ok" },
+    registryRow: { integrationId: "acme", baseUrl: "https://x", status: "ok" },
     sourceRecords: { "leads-src": { recordCount: 5 } },
   });
   const s = byId(state);
@@ -106,16 +106,16 @@ test("linked data-source + records → spine complete; sandbox optional", () => 
   // open-data-source action carries the linked object id
   const dsStep = state.steps.find((x) => x.id === "data-source");
   assert.equal(dsStep.action.id, "open-data-source");
-  assert.equal(dsStep.action.objectId, "leadshark-source");
+  assert.equal(dsStep.action.objectId, "acme-source");
 });
 
 test("sandbox tool detected by api-registry-call node", () => {
   const cfg = { dataModel: { objects: [
-    { objectType: "sandbox-environment", rows: [{ Name: "wf", orchestrationConfig: JSON.stringify({ nodes: [{ type: "api-registry-call", config: { registryId: "leadshark" } }] }) }] },
+    { objectType: "sandbox-environment", rows: [{ Name: "wf", orchestrationConfig: JSON.stringify({ nodes: [{ type: "api-registry-call", config: { registryId: "acme" } }] }) }] },
   ] } };
   const state = deriveApiRegistryCreationState({
     workspaceConfig: cfg,
-    registryRow: { integrationId: "leadshark", baseUrl: "https://x", status: "ok" },
+    registryRow: { integrationId: "acme", baseUrl: "https://x", status: "ok" },
   });
   assert.equal(byId(state)["sandbox-tool"], "complete");
 });

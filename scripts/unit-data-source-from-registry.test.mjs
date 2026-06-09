@@ -32,9 +32,9 @@ const { buildDataSourceRowFromApiRegistry, findDataSourceRowsForRegistry } = mod
 const SECRET = "sk-do-not-leak-9999";
 
 const registryRow = {
-  integrationId: "leadshark",
-  authRef: "LEADSHARK",
-  baseUrl: "https://api.leadshark.io",
+  integrationId: "acme",
+  authRef: "ACME",
+  baseUrl: "https://api.acme.io",
   endpoint: "/v1/leads",
   method: "get",
   entityTypes: "leads,contacts",
@@ -46,22 +46,22 @@ const registryRow = {
 test("buildDataSourceRowFromApiRegistry — shape + registry reference", () => {
   const row = buildDataSourceRowFromApiRegistry({}, registryRow);
   assert.equal(row.objectType, "data-source");
-  assert.equal(row.registryId, "leadshark");
+  assert.equal(row.registryId, "acme");
   assert.equal(row.endpoint, "/v1/leads");
   assert.equal(row.method, "GET");
-  assert.equal(row.authRef, "LEADSHARK");
+  assert.equal(row.authRef, "ACME");
   assert.equal(row.entityType, "leads"); // first of "leads,contacts"
   assert.equal(row.sourceStorage, "workspace-source-records");
   assert.equal(row.status, "draft");
   assert.ok(row.Name.endsWith(" Source"));
-  assert.ok(row.sourceId.includes("leadshark"));
+  assert.ok(row.sourceId.includes("acme"));
 });
 
 test("buildDataSourceRowFromApiRegistry — never carries a secret value", () => {
-  const row = buildDataSourceRowFromApiRegistry({}, { ...registryRow, authRef: "LEADSHARK" });
+  const row = buildDataSourceRowFromApiRegistry({}, { ...registryRow, authRef: "ACME" });
   assert.ok(!JSON.stringify(row).includes(SECRET));
   // authRef is a slug, not a value
-  assert.equal(row.authRef, "LEADSHARK");
+  assert.equal(row.authRef, "ACME");
 });
 
 test("buildDataSourceRowFromApiRegistry — options override entity/source/storage", () => {
@@ -80,12 +80,12 @@ test("buildDataSourceRowFromApiRegistry — options override entity/source/stora
 test("findDataSourceRowsForRegistry — matches by registryId", () => {
   const cfg = { dataModel: { objects: [
     { objectType: "data-source", rows: [
-      { Name: "A", registryId: "leadshark" },
+      { Name: "A", registryId: "acme" },
       { Name: "B", registryId: "other" },
     ] },
-    { objectType: "api-registry", rows: [{ integrationId: "leadshark" }] },
+    { objectType: "api-registry", rows: [{ integrationId: "acme" }] },
   ] } };
-  const matches = findDataSourceRowsForRegistry(cfg, "leadshark");
+  const matches = findDataSourceRowsForRegistry(cfg, "acme");
   assert.equal(matches.length, 1);
   assert.equal(matches[0].Name, "A");
   assert.deepEqual(findDataSourceRowsForRegistry(cfg, "nope"), []);

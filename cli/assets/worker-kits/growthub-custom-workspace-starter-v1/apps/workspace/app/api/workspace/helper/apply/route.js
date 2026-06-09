@@ -41,6 +41,8 @@ import {
   buildApplyReceipt,
   upsertHelperThreadRow,
 } from "@/lib/workspace-helper-apply";
+import { RESOLVER_PROPOSAL_TYPE, validateResolverProposal } from "@/lib/workspace-resolver-proposal";
+import { writeResolverProposalFile } from "@/lib/server-resolver-write";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
 
@@ -78,7 +80,35 @@ async function POST(request) {
   const skipped = [];
   let workingConfig = currentConfig;
 
-  for (const proposal of body.proposals) {
+  // Resolver-file lane (AWaC: server file, NOT a config PATCH field). Handled
+  // separately so it never touches writeWorkspaceConfig and never widens the
+  // PATCH allowlist. Gated by filesystem/read-only; emits a receipt either way.
+  const resolverProposals = body.proposals.filter((p) => p?.type === RESOLVER_PROPOSAL_TYPE);
+  const configProposals = body.proposals.filter((p) => p?.type !== RESOLVER_PROPOSAL_TYPE);
+
+  for (const proposal of resolverProposals) {
+    const validation = validateResolverProposal(proposal);
+    if (!validation.ok) {
+      skipped.push({ proposal, reason: validation.error || "invalid resolver proposal" });
+      continue;
+    }
+    try {
+      const result = await writeResolverProposalFile(proposal);
+      applied.push({
+        ...buildApplyReceipt(proposal, appliedAt, reviewedBy, sessionId),
+        resolverPath: result.path,
+        resolverFilename: result.filename,
+      });
+    } catch (err) {
+      if (err?.code === "WORKSPACE_PERSISTENCE_READ_ONLY") {
+        skipped.push({ proposal, reason: `read-only runtime — ${err.guidance || "resolver not written"}` });
+      } else {
+        skipped.push({ proposal, reason: err?.message || "resolver write failed" });
+      }
+    }
+  }
+
+  for (const proposal of configProposals) {
     if (
       !proposal ||
       typeof proposal.type !== "string" ||
@@ -113,7 +143,9 @@ async function POST(request) {
   // Patch — collect every affected field from accepted proposals AND
   // append the thread row update (so the user-visible Helper Threads object
   // refreshes in the same atomic write as the proposed mutations).
-  const mutatingApplied = applied.filter((r) => r.type !== "explain.object");
+  // resolver.create writes a server file (affectedField "server-file"), so it
+  // must NOT contribute a field to the config PATCH — exclude it here.
+  const mutatingApplied = applied.filter((r) => r.type !== "explain.object" && r.affectedField !== "server-file");
 
   // Upsert the thread row so audit history reflects this apply turn even
   // when nothing mutated (all skipped / explain-only) and even when the
