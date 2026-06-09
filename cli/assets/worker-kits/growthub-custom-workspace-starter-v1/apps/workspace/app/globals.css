@@ -5070,6 +5070,26 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-api-action-card-body h3 { margin: 0; font-size: 14px; font-weight: 650; color: #111827; }
 .dm-api-action-card-body p { margin: 0; font-size: 12px; line-height: 1.45; color: #4b5563; }
 .dm-api-action-card-cta { flex-shrink: 0; align-self: center; }
+
+/* Governed creation cockpit — vertical journey inside the api-registry drawer.
+   Overrides the action-card 3-col grid and reuses the workspace's own status
+   chip (.dm-db-status) + dm-btn-* buttons. No new colors, no new primitive. */
+.dm-cockpit { display: block; grid-template-columns: none; }
+.dm-cockpit-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dm-cockpit-count { flex-shrink: 0; font-size: 11px; font-weight: 700; color: #94a3b8; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.dm-cockpit-steps { list-style: none; margin: 10px 0 0; padding: 0; }
+.dm-cockpit-step { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid #edf0f3; }
+.dm-cockpit-step:first-child { border-top: 0; }
+.dm-cockpit-step-chip { flex-shrink: 0; align-self: start; margin-top: 1px; min-width: 64px; justify-content: center; }
+.dm-cockpit-step-body { min-width: 0; display: grid; gap: 2px; }
+.dm-cockpit-step-label { margin: 0; font-size: 13px; font-weight: 600; color: #111827; }
+.dm-cockpit-step-desc { margin: 0; font-size: 12px; line-height: 1.45; color: #64748b; }
+.dm-cockpit-step-hint { margin: 0; font-size: 11px; line-height: 1.4; color: #94a3b8; }
+.dm-cockpit-step button { flex-shrink: 0; align-self: center; }
+.dm-cockpit-step-muted .dm-cockpit-step-label,
+.dm-cockpit-step-muted .dm-cockpit-step-desc { color: #94a3b8; }
+.dm-cockpit-step-next { background: #f8fafc; margin: 0 -14px; padding-left: 14px; padding-right: 14px; border-radius: 6px; }
+
 .dm-api-review-banner {
   display: grid;
   grid-template-columns: auto 1fr auto;

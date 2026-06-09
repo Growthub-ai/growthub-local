@@ -80,6 +80,8 @@ import { SourceTestPanel } from "./SourceTestPanel.jsx";
 import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
 import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
+import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
+import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
 import {
   buildSandboxRowFromApiRegistry,
   findSandboxRowsForRegistry,
@@ -1146,6 +1148,7 @@ function DataModelRecordDrawer({
   const [creatingDataSource, setCreatingDataSource] = useState(false);
   const [createdDataSourceMeta, setCreatedDataSourceMeta] = useState(null);
   const [dataSourceMessage, setDataSourceMessage] = useState("");
+  const [cockpitBusy, setCockpitBusy] = useState("");
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
@@ -1386,11 +1389,82 @@ function DataModelRecordDrawer({
     }
   }
 
-  function openDataSourceRow() {
-    if (!createdDataSourceMeta?.objectId) return;
+  function openDataSourceRow(objectIdOverride) {
+    const objectId = String(objectIdOverride || createdDataSourceMeta?.objectId || "").trim();
+    if (!objectId) return;
     onClose();
-    router.push(`/data-model?object=${encodeURIComponent(createdDataSourceMeta.objectId)}`);
+    router.push(`/data-model?object=${encodeURIComponent(objectId)}`);
   }
+
+  async function refreshLinkedSource({ integrationId, objectId }) {
+    const id = String(integrationId || draft?.integrationId || "").trim();
+    if (!id) {
+      setDataSourceMessage("Missing integrationId — cannot refresh the linked source.");
+      return;
+    }
+    setDataSourceMessage("");
+    try {
+      const res = await fetch("/api/workspace/refresh-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ integrationId: id, objectId: objectId || null }),
+      });
+      const payload = await res.json();
+      setDataSourceMessage(
+        payload.ok
+          ? `Refreshed — ${payload.recordCount ?? payload.rows?.length ?? 0} record(s) pulled.`
+          : redactSecretsFromText(payload.error || payload.reason || "Refresh failed")
+      );
+    } catch (err) {
+      setDataSourceMessage(redactSecretsFromText(err.message || "Refresh failed"));
+    }
+  }
+
+  // The creation cockpit emits a single action descriptor per step; map it to
+  // the drawer's existing governed handlers. No new mutation paths.
+  async function handleCockpitAction(action) {
+    if (!action || !action.id) return;
+    const tag = `${action.stepId}:${action.id}`;
+    setCockpitBusy(tag);
+    try {
+      switch (action.id) {
+        case "edit":
+          setEditMode(true);
+          break;
+        case "open-settings":
+          onClose();
+          router.push(action.href || "/settings");
+          break;
+        case "open-resolver":
+          onClose();
+          router.push("/data-model");
+          break;
+        case "test":
+          await testApiRecord();
+          break;
+        case "create-data-source":
+          createDataSourceFromRegistry();
+          break;
+        case "open-data-source":
+          openDataSourceRow(action.objectId);
+          break;
+        case "create-sandbox-tool":
+          setSandboxToolFlow("draft");
+          break;
+        case "refresh-source":
+          await refreshLinkedSource({ integrationId: draft?.integrationId, objectId: action.objectId });
+          break;
+        default:
+          break;
+      }
+    } finally {
+      setCockpitBusy("");
+    }
+  }
+
+  const creationState = isApiRegistry
+    ? deriveApiRegistryCreationState({ workspaceConfig, registryRow: draft, sourceRecords: {}, runtime: {} })
+    : null;
 
   async function runSandboxToolByName({ objectId, name }) {
     const rowName = String(name || "").trim();
@@ -1636,50 +1710,16 @@ function DataModelRecordDrawer({
             </div>
           </section>
         )}
-        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "confirm" && (
-          createdDataSourceMeta ? (
-            <section className="dm-api-action-card dm-api-action-card-success" aria-label="Data Source created">
-              <div className="dm-api-action-card-body">
-                <p className="dm-api-action-card-eyebrow">Data Source created</p>
-                <h3>{createdDataSourceMeta.name}</h3>
-                <p>Governed Data Source row saved, referencing this API by registryId. Open it to map fields and refresh — secrets stay server-side.</p>
-                {dataSourceMessage && <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p>}
-              </div>
-              <div className="dm-api-action-card-actions">
-                <button
-                  type="button"
-                  className="dm-btn-primary-sm dm-api-action-card-cta"
-                  disabled={saving}
-                  onClick={openDataSourceRow}
-                >
-                  Open Data Source
-                </button>
-              </div>
-            </section>
-          ) : (
-            <section className="dm-api-action-card" aria-label="Create Data Source">
-              <div className="dm-api-action-card-body">
-                <p className="dm-api-action-card-eyebrow">Turn this API into data</p>
-                <h3>Create Data Source</h3>
-                <p>
-                  {["connected", "ok", "success", "live"].includes(String(draft?.status || "").trim().toLowerCase())
-                    ? "Create a governed Data Source that resolves this API's records into the workspace."
-                    : "Test this API first, then create a governed Data Source from its tested response."}
-                </p>
-                {dataSourceMessage && <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p>}
-              </div>
-              <div className="dm-api-action-card-actions">
-                <button
-                  type="button"
-                  className="dm-btn-primary-sm dm-api-action-card-cta"
-                  disabled={creatingDataSource || saving}
-                  onClick={createDataSourceFromRegistry}
-                >
-                  {creatingDataSource ? "Creating…" : "Create Data Source"}
-                </button>
-              </div>
-            </section>
-          )
+        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "confirm" && creationState && (
+          <>
+            <ApiRegistryCreationCockpit
+              state={creationState}
+              onAction={handleCockpitAction}
+              busyAction={cockpitBusy}
+              disabled={saving || creatingDataSource || testing}
+            />
+            {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
+          </>
         )}
         {isApiRegistry && sandboxToolFlow === "draft" && (
           <SandboxToolDraftPanel
