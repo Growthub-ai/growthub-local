@@ -65,6 +65,31 @@ Keep these two runtime lanes separate:
 - repo development and PR validation use `scripts/runtime-control.sh`
 - exported AWaC workspace smoke tests use the exported `apps/workspace` app
 
+## Growthub Browser QA
+
+For AWaC browser work, the browser-rendered workspace is a source of truth. Use the highest-authority browser surface available in the agent host before claiming UI, helper, workflow, dashboard, login, source refresh, Data Model, API Registry, or production-smoke behavior.
+
+Agent proof order:
+
+1. Attach to the existing in-app browser tab when available.
+2. Use the host's first-class browser backend; in Codex this is the in-app browser (`iab`) through `browser-client.mjs`.
+3. Use visible CUA actions (`move`, `click`, `type`, `keypress`, `scroll`) for user-visible proof when available.
+4. Use read-only DOM or bounded snapshots for browser readback.
+5. Corroborate state changes through `/api/workspace`, source records, configured persistence, deployment status, or the documented source of truth.
+
+Required evidence language:
+
+```text
+Using Codex IAB via browser-client.mjs.
+Backend: iab.
+Current URL: <url>.
+Visible surface: <route or heading>.
+Live action layer: tab.cua.<method>.
+Readback layer: tab.playwright.evaluate or DOM snapshot.
+```
+
+Do not use a separate Chrome session, OS cursor, or raw endpoint checks as a substitute when the in-app browser is available. Do not print secrets, cookies, bearer values, provider payload credentials, or `.env` values while proving browser state.
+
 ## Discovery Grounding
 
 Primary user discovery entrypoints are:

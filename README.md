@@ -71,6 +71,20 @@ AWaC is the DevOps layer for AI workspaces. Instead of rebuilding agent setups b
 
 ---
 
+## Current shipped reality
+
+Growthub Local's current line is one coherent AWaC surface, not separate release stories:
+
+- **0.13.9** added Codex Sites as a governed workspace primitive: real site rows live in the Data Model, Builder renders them as Site items, and browser smoke tests prove the hosted URL without storing account-specific site data in source control.
+- **0.14.0** added the governed creation cockpit: tested API Registry rows become profiled responses, optional helper-created resolvers, governed Data Sources, source-record refreshes, workflow persistence readiness, and Workspace Lens evidence.
+- **Growthub Browser agent protocol** packages the universal operating rule for agents: use the real in-app browser surface first, act through visible CUA when available, read back the DOM, and corroborate state through `/api/workspace`, source records, deployment status, or the configured store before claiming behavior.
+
+This is the first-tier operating model for agents and humans: the browser is the no-code surface, helper proposals are reviewable, source records are evidence, workflows are governed rows, and Workspace Lens is the readiness surface.
+
+Read the unified map: [Workspace New Reality Value Map V1](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md).
+
+---
+
 ## Why this exists
 
 AI work creates the same pressure that made DevOps necessary for apps:
@@ -171,6 +185,7 @@ Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `
 | Local experimentation is powerful but difficult to govern across a team. | Local control stays first while hosted identity, bridge connections, agent binding, and authority can be added only when needed. |
 | Workflows stay trapped in one machine or one prompt thread. | Workflows become reusable governed infrastructure objects that can be inspected, shared, evolved, and executed over time. |
 | It is unclear what agents may safely automate. | Policies, confirmations, capability gates, and append-only trace make automation explicit and auditable. |
+| Browser checks are treated as screenshots or manual QA afterthoughts. | The Growthub Browser protocol makes visible CUA actions, DOM readback, and persistence corroboration the agent QA loop. |
 | Open-source freedom often means more maintenance burden and operational drift. | Growthub Local keeps open-source portability while adding self-healing lifecycle management and optional authority-backed trust. |
 
 ---
@@ -219,6 +234,7 @@ This keeps the mental model intact:
 - [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
 - [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md) — governed multi-turn AI chat inside every exported workspace: rail trigger, real-data widget snapshotting, ToolCallCard receipts, refresh-safe thread persistence, hidden local-intelligence sandbox primitive
 - [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md) — official mental model, operating guide, agent rules, and applied use cases for governed AWaC workspaces
+- [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md) — enterprise, existing-workspace, and new-user value map for governed API creation, source records, workflows, helper proposals, and Workspace Lens
 - [**Governed Creation Release Snapshot V1**](./docs/GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md) — canonical release snapshot for the API Registry cockpit, helper resolver lane, Data Source refresh, workflow persistence upgrade, onboarding, and Workspace Lens QA
 - [**Governed Creation Sprint Retrospective V1**](./docs/GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md) — future-agent context synthesizing AWaC, Workspace Topology, Causation ITT, customer-facing feature coverage, and release QA proof
 - [**Causation ITT and Pure Eligibility Drivers**](./docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md) — official theory doc for Workspace Lens, contribution activity, helper handoff, and config-derived no-code eligibility
