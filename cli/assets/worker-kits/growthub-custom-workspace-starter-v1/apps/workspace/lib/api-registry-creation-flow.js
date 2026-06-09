@@ -32,6 +32,15 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
+/** Exact env keys an authRef resolves through — shown to the operator so the
+ *  "how do I configure this" loop is concrete (these are runtime/.env.local
+ *  keys, the same model the NANGO_SECRET_KEY activation step uses). */
+function envCandidates(ref) {
+  const token = clean(ref).replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase();
+  if (!token) return [];
+  return Array.from(new Set([token, `${token}_API_KEY`, `${token}_TOKEN`]));
+}
+
 function parseMaybeJson(value) {
   if (isPlainObject(value)) return value;
   const text = clean(value);
@@ -177,11 +186,13 @@ function deriveApiRegistryCreationState(input = {}) {
       ? "This API needs no secret."
       : authConfigured
         ? `Secret for ${authRef} resolves in this runtime.`
-        : `Save the secret for ${authRef} in Settings → APIs & Webhooks (writes .env.local).`,
-    hint: authNeeded && !authConfigured && !haveEnvSignal
-      ? "Save the secret, then reopen — the cockpit confirms it resolves. The value never reaches the browser."
+        : `Set one of ${envCandidates(authRef).join(" / ")} in .env.local (or your hosted runtime), then reopen. The workspace stores only the reference — the value never reaches the browser.`,
+    hint: authNeeded && !authConfigured
+      ? (haveEnvSignal
+        ? "Add the key to your runtime env; the cockpit re-checks resolution on reopen."
+        : "Runtime env signal unavailable — once the key is set and resolvable, this turns green.")
       : undefined,
-    action: authNeeded && !authConfigured ? { id: "open-settings", label: "Open Settings", href: "/settings" } : null,
+    action: authNeeded && !authConfigured ? { id: "open-settings", label: "Manage in Settings", href: "/settings/apis-webhooks" } : null,
   });
 
   step({

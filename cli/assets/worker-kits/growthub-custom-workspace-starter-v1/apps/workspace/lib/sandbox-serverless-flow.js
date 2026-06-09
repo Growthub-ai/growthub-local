@@ -25,6 +25,14 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
+/** Exact env keys a ref resolves through (runtime/.env.local), surfaced so the
+ *  config loop is concrete — same model as the NANGO_SECRET_KEY activation step. */
+function envCandidates(ref) {
+  const token = clean(ref).replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase();
+  if (!token) return [];
+  return Array.from(new Set([token, `${token}_API_KEY`, `${token}_TOKEN`]));
+}
+
 const SCHEDULER_OK_STATUSES = new Set(["connected", "approved", "ok", "success", "live", "tested"]);
 const STATE_KIND = "growthub-sandbox-serverless-state-v1";
 
@@ -127,8 +135,8 @@ function deriveSandboxServerlessState(input = {}) {
         ? "The scheduler needs no secret."
         : schedulerAuthConfigured
           ? `Scheduler secret ${schedulerAuthRef} resolves in this runtime.`
-          : `Save the scheduler secret ${schedulerAuthRef} in Settings → APIs & Webhooks.`,
-      action: schedulerAuthRef && !schedulerAuthConfigured ? { id: "open-settings", label: "Open Settings", href: "/settings" } : null,
+          : `Set one of ${envCandidates(schedulerAuthRef).join(" / ")} in .env.local (or your hosted runtime), then reopen.`,
+      action: schedulerAuthRef && !schedulerAuthConfigured ? { id: "open-settings", label: "Manage in Settings", href: "/settings/apis-webhooks" } : null,
     });
 
     steps.push({
@@ -137,13 +145,15 @@ function deriveSandboxServerlessState(input = {}) {
       status: durableReady ? "complete" : "active",
       description: durableReady
         ? `Durable store ready (${(envBackedAdapter || durableAdapters[0]).label}).`
-        : "Configure a durable store so serverless runs survive redeploy.",
+        : "Set a durable store's env keys in .env.local (or your hosted runtime) so serverless runs survive redeploy.",
+      // Fully surface every thin adapter + its exact env keys + readiness, so no
+      // adapter is assumed server-side without being shown to the operator.
       hint: durableReady
         ? undefined
         : adapters.length
-          ? `Configure one adapter — e.g. ${adapters.filter((a) => !a.configured && (a.missingEnv || []).length).map((a) => `${a.label} (${a.missingEnv.join(", ")})`).join("; ") || "set the adapter env keys"}.`
-          : "No persistence adapter signal yet.",
-      action: durableReady ? null : { id: "open-settings", label: "Configure persistence", href: "/settings" },
+          ? adapters.map((a) => `${a.label}: ${(a.requiredEnv || []).length ? a.requiredEnv.join(", ") : "no env"}${a.configured ? " ✓" : ""}`).join(" · ")
+          : "No persistence adapter signal yet — open env-status.",
+      action: durableReady ? null : { id: "open-settings", label: "Manage in Settings", href: "/settings" },
     });
   }
 
