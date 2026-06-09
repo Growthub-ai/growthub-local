@@ -1421,7 +1421,10 @@ function DataModelRecordDrawer({
         const newObj = (next.dataModel?.objects || []).find((o) => o.objectType === "data-source" && !beforeIds.has(o.id));
         if (!newObj) return next;
         const sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectId === newObj.id);
-        const newRow = buildDataSourceRowFromApiRegistry(next, draft, {});
+        const profile = profileApiResponse(draft?.lastResponse);
+        const newRow = buildDataSourceRowFromApiRegistry(next, draft, {
+          entityType: profile?.parsed ? profile.suggestedEntityType : undefined,
+        });
         if (sourceTable) next = appendRowsToTable(next, sourceTable, [newRow]);
         // Make the object live-backed so refresh-sources hydrates the sidecar
         // (keyed by object id). Without this binding, refresh skips it as
@@ -1593,6 +1596,16 @@ function DataModelRecordDrawer({
     ? profileApiResponse(draft?.lastResponse)
     : null;
   const creationResolverRec = creationProfile ? recommendResolver(creationProfile) : null;
+  // Preview the exact Data Source that "Create Data Source" will produce, before
+  // any mutation — shown once tested and while no source is linked yet.
+  const creationDataSourcePreview = isApiRegistry && creationState?.tested && !creationState.sourceExists
+    ? {
+        row: buildDataSourceRowFromApiRegistry(workspaceConfig, draft, {
+          entityType: creationProfile?.suggestedEntityType,
+        }),
+        fields: creationProfile?.fields || [],
+      }
+    : null;
 
   async function runSandboxToolByName({ objectId, name }) {
     const rowName = String(name || "").trim();
@@ -1848,6 +1861,7 @@ function DataModelRecordDrawer({
               profile={creationProfile}
               resolverRec={creationResolverRec}
               receipts={creationReceipts}
+              dataSourcePreview={creationDataSourcePreview}
             />
             {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
           </>

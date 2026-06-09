@@ -47,10 +47,12 @@ export function ApiRegistryCreationCockpit({
   profile = null,
   resolverRec = null,
   receipts = [],
+  dataSourcePreview = null,
 }) {
   if (!state || !Array.isArray(state.steps)) return null;
   const candidates = profile?.candidates || {};
   const candidateEntries = Object.entries(candidates).filter(([, v]) => v);
+  const previewRow = dataSourcePreview?.row || null;
 
   return (
     <section className="dm-api-action-card dm-cockpit" aria-label="API creation journey">
@@ -119,6 +121,33 @@ export function ApiRegistryCreationCockpit({
           ) : null}
           {profile.hasPagination ? (
             <p className="dm-cockpit-step-hint">Pagination keys present — a resolver is needed to fetch every page.</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {previewRow ? (
+        <div className="dm-cockpit-shape">
+          <p className="dm-api-action-card-eyebrow">Data Source preview</p>
+          <p className="dm-cockpit-step-desc">
+            Create will add a live-backed Data Source object that references this API by <code>registryId</code> and writes records to the source-records sidecar. Nothing fetches until you Refresh.
+          </p>
+          <div className="dm-cockpit-fields">
+            <span className="dm-cockpit-field"><b>name</b>{previewRow.Name}</span>
+            <span className="dm-cockpit-field"><b>sourceId</b>{previewRow.sourceId}</span>
+            <span className="dm-cockpit-field"><b>storage</b>{previewRow.sourceStorage}</span>
+            <span className="dm-cockpit-field"><b>entity</b>{previewRow.entityType}</span>
+            <span className="dm-cockpit-field"><b>registryId</b>{previewRow.registryId}</span>
+            {previewRow.authRef ? <span className="dm-cockpit-field"><b>authRef</b>{previewRow.authRef}</span> : null}
+          </div>
+          {Array.isArray(dataSourcePreview.fields) && dataSourcePreview.fields.length ? (
+            <>
+              <p className="dm-cockpit-step-hint">Detected fields it will carry:</p>
+              <div className="dm-cockpit-fields">
+                {dataSourcePreview.fields.slice(0, 10).map((f) => (
+                  <span key={f.name} className="dm-cockpit-field"><b>{f.role || f.type}</b>{f.name}</span>
+                ))}
+              </div>
+            </>
           ) : null}
         </div>
       ) : null}
