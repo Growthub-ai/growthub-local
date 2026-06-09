@@ -78,6 +78,12 @@ async function writeWorkspaceEnvLocalSecrets(entries) {
     existing = "";
   }
   await fs.writeFile(envPath, mergeEnvLocalContent(existing, updates), "utf8");
+  // Make the CURRENT runtime see the secret immediately. The runners and env
+  // catalog resolve from process.env, not by re-reading .env.local, so without
+  // this a saved key would report missing until the process restarts.
+  for (const [name, value] of Object.entries(updates)) {
+    process.env[name] = value;
+  }
   return { written, skipped };
 }
 
@@ -402,12 +408,16 @@ async function writeWorkspaceApiWebhookSettings(patch) {
     error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
     throw error;
   }
-  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
 
+  // Write the secret to .env.local (and process.env) BEFORE stamping the
+  // config. If the env write fails, the throw propagates and the config is
+  // never written claiming hasSecret: true with no runtime secret behind it.
   let envWrite = { written: [], skipped: [] };
   if (secretWrites.length) {
     envWrite = await writeWorkspaceEnvLocalSecrets(secretWrites);
   }
+
+  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
 
   return {
     refs: next.integrations.filter((item) => item?.sourceType === "custom-api-webhooks"),

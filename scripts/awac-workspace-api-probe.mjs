@@ -320,6 +320,26 @@ async function main() {
     assert(catalog.entries.every((e) => !("value" in e) && !("secret" in e)),
       "catalog must never expose a value/secret field");
 
+    // --- .env.local write visibility: save a secret, see it WITHOUT restart (Phase 1.3) ---
+    res = await fetch(`${base}/api/settings/apis-webhooks`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        refs: [{ id: "probe-secret", kind: "api", endpointRef: "probe_secret_key", status: "configured", hasSecret: true, secretValue: "s3cr3t-probe" }],
+      }),
+    });
+    const secretSave = await res.json();
+    assert(res.ok, `apis-webhooks save failed ${res.status} ${JSON.stringify(secretSave)}`);
+    assert(Array.isArray(secretSave.envWrite?.written) && secretSave.envWrite.written.includes("PROBE_SECRET_KEY"),
+      `expected PROBE_SECRET_KEY in envWrite.written, got ${JSON.stringify(secretSave.envWrite)}`);
+    // The config must keep hasSecret only — never the raw value.
+    assert(JSON.stringify(secretSave.refs || []).includes("s3cr3t-probe") === false, "config must not contain the secret value");
+    // Immediately visible to the catalog as configured, no restart.
+    res = await fetch(`${base}/api/workspace/env-key-catalog`, { cache: "no-store" });
+    const catalog2 = await res.json();
+    const probeEntry = (catalog2.entries || []).find((e) => e.slug === "probe_secret_key" || e.slug === "PROBE_SECRET_KEY");
+    assert(probeEntry && probeEntry.configured === true, "saved secret must be configured in catalog without restart");
+
     // --- sandbox-scheduler: GET descriptor + POST envelope round-trip (Phase 3.1) ---
     res = await fetch(`${base}/api/workspace/sandbox-scheduler`, { cache: "no-store" });
     assert(res.ok, `sandbox-scheduler GET failed ${res.status}`);

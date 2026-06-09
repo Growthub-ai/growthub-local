@@ -104,21 +104,29 @@ import {
 import { computeDeleteImpact } from "@/lib/workspace-delete-impact";
 
 /**
- * Fire-and-forget governed sidecar cleanup after a delete (roadmap Phase 1.4).
- * The config PATCH is authoritative; this prunes orphaned run-history buckets.
- * Read-only runtimes 409 — swallowed, since the row removal already succeeded.
+ * Governed sidecar cleanup after a delete (roadmap Phase 1.4). MUST be called
+ * only after the config delete has durably landed — callers await the
+ * immediate PATCH first so a failed/rolled-back delete never strands the
+ * config while the run-history is already gone. Returns a name-only receipt so
+ * the caller can surface a non-blocking status instead of swallowing failures.
  */
 async function pruneSidecarKeys(sourceIds) {
   const ids = Array.isArray(sourceIds) ? sourceIds.filter(Boolean) : [];
-  if (!ids.length) return;
+  if (!ids.length) return { ok: true, removed: [], skipped: [] };
   try {
-    await fetch("/api/workspace/cleanup-sidecar", {
+    const res = await fetch("/api/workspace/cleanup-sidecar", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sourceIds: ids }),
     });
-  } catch {
-    /* sidecar prune is best-effort; the config delete already landed */
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // 409 read-only is an expected, non-fatal outcome.
+      return { ok: false, removed: [], skipped: ids, reason: payload.reason || payload.error || `HTTP ${res.status}` };
+    }
+    return { ok: true, removed: payload.removed || [], skipped: payload.skipped || [] };
+  } catch (err) {
+    return { ok: false, removed: [], skipped: ids, reason: err?.message || "sidecar cleanup request failed" };
   }
 }
 
@@ -1817,8 +1825,12 @@ function DataModelTableSurface({
   table,
   tables,
   workspaceConfig,
+  sourceRecords,
   saving,
   onSave,
+  onSaveImmediate,
+  onSidecarPruned,
+  onMessage,
   onOpenThread,
   focusSandboxRowName,
   onFocusSandboxRowConsumed,
@@ -2093,32 +2105,49 @@ function DataModelTableSurface({
   // sidecar keys we will prune after the config PATCH lands.
   const deleteSelectionImpact = useMemo(() => {
     if (!confirmDeleteSelection || !selectedRows.size) return null;
-    const sourceRecords = workspaceConfig?.workspaceSourceRecords || {};
+    const live = sourceRecords && typeof sourceRecords === "object" ? sourceRecords : {};
     const sidecarKeys = new Set();
     const references = [];
     for (const entry of rowEntries) {
       if (!selectedRows.has(entry.originalIndex)) continue;
       const impact = computeDeleteImpact(
         workspaceConfig,
-        sourceRecords,
+        live,
         { kind: "row", objectId: table.objectId, objectType: table.objectType, row: entry.row }
       );
       impact.sidecarKeys.forEach((key) => sidecarKeys.add(key));
       references.push(...impact.references);
     }
     return { sidecarKeys: Array.from(sidecarKeys), references };
-  }, [confirmDeleteSelection, selectedRows, rowEntries, workspaceConfig, table.objectId, table.objectType]);
+  }, [confirmDeleteSelection, selectedRows, rowEntries, workspaceConfig, sourceRecords, table.objectId, table.objectType]);
 
-  function deleteSelectedRows() {
+  async function deleteSelectedRows() {
     if (!selectedRows.size) return;
     const rowIndexes = Array.from(selectedRows).sort((a, b) => b - a);
     const sidecarKeys = deleteSelectionImpact?.sidecarKeys || [];
-    onSave((config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config));
-    pruneSidecarKeys(sidecarKeys);
     setSelectedRow(null);
     selectOriginalIndex(null);
     setConfirmDeleteSelection(false);
     clearRowSelection();
+    const mutate = (config) => rowIndexes.reduce((nextConfig, rowIndex) => deleteTableRow(nextConfig, table, rowIndex), config);
+    // Causal ordering (Phase 1.4): the sidecar prune must only run after the
+    // config delete has durably landed. Fall back to the debounced save if the
+    // immediate-save prop is unavailable (no sidecar prune then).
+    if (typeof onSaveImmediate === "function") {
+      const result = await onSaveImmediate(mutate);
+      if (!result.ok) {
+        onMessage?.("Delete failed — config not saved, sidecar untouched.");
+        return;
+      }
+      if (sidecarKeys.length) {
+        const receipt = await pruneSidecarKeys(sidecarKeys);
+        onSidecarPruned?.(receipt.removed);
+        if (!receipt.ok) onMessage?.(`Deleted. Sidecar not pruned (${receipt.reason}).`);
+        else if (receipt.removed.length) onMessage?.(`Deleted. Pruned ${receipt.removed.length} run-history bucket(s).`);
+      }
+      return;
+    }
+    onSave(mutate);
   }
 
   const selectedEntry = selectedOriginalIndex === null
@@ -2737,6 +2766,7 @@ const LOCAL_CACHE_KEY = "growthub.workspace.dataModel.localDraft.v1";
 
 export default function DataModelShell() {
   const [workspaceConfig, setWorkspaceConfig] = useState(null);
+  const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState({});
   const [authority, setAuthority] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2792,6 +2822,11 @@ export default function DataModelShell() {
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error || "Failed to load workspace");
       setWorkspaceConfig(payload.workspaceConfig);
+      // Keep the live sidecar map alongside the config so governed delete can
+      // narrow its impact preview to keys that actually exist (Phase 1.4).
+      setWorkspaceSourceRecords(payload.workspaceSourceRecords && typeof payload.workspaceSourceRecords === "object"
+        ? payload.workspaceSourceRecords
+        : {});
       setAuthority(payload.adapters?.integrations?.authority || null);
     } catch (err) {
       setError(err.message || "Failed to load workspace");
@@ -2892,7 +2927,7 @@ export default function DataModelShell() {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length === 0) return true;
     setSaving(true);
     setMessage("");
     try {
@@ -2906,12 +2941,39 @@ export default function DataModelShell() {
       setWorkspaceConfig(payload.workspaceConfig);
       setMessage("Saved");
       try { window.localStorage.removeItem(LOCAL_CACHE_KEY); } catch {}
+      return true;
     } catch (err) {
       setMessage(`Error: ${err.message || "Save failed"}`);
+      return false;
     } finally {
       setSaving(false);
     }
   }, []);
+
+  // Durable save for operations that must be causally ordered (governed
+  // delete + sidecar cleanup, Phase 1.4): queue the patch and flush it
+  // immediately, resolving to whether the server PATCH actually landed. Sidecar
+  // prune must only run after this resolves { ok: true }.
+  const saveImmediate = useCallback((mutate) => {
+    return new Promise((resolve) => {
+      setWorkspaceConfig((current) => {
+        if (!current) { resolve({ ok: false }); return current; }
+        const next = mutate(current);
+        for (const key of ["dashboards", "widgetTypes", "canvas", "dataModel"]) {
+          if (next[key] !== current[key]) pendingPatchRef.current[key] = next[key];
+        }
+        try {
+          window.localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), patch: pendingPatchRef.current }));
+        } catch {}
+        if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+        Promise.resolve().then(async () => {
+          const ok = await flushPendingPatch();
+          resolve({ ok });
+        });
+        return next;
+      });
+    });
+  }, [flushPendingPatch]);
 
   // Mutate-in-memory immediately so the UI feels instant, persist a draft to
   // localStorage every change, and only PATCH the server after SAVE_DEBOUNCE_MS
@@ -3072,14 +3134,14 @@ export default function DataModelShell() {
     if (nextSource) setSelectedSource(nextSource);
   }, [save]);
 
-  const deleteObject = useCallback((table) => {
+  const deleteObject = useCallback(async (table) => {
     const targetId = String(table?.objectId || "").trim();
     if (!targetId) return;
     // Governed delete impact (roadmap Phase 1.4): surface the blast radius in
-    // the confirm prompt and capture sidecar keys to prune after the PATCH.
+    // the confirm prompt and capture sidecar keys to prune AFTER the PATCH.
     const impact = computeDeleteImpact(
       workspaceConfig,
-      workspaceConfig?.workspaceSourceRecords || {},
+      workspaceSourceRecords,
       { kind: "object", objectId: targetId }
     );
     const impactLines = [];
@@ -3091,7 +3153,8 @@ export default function DataModelShell() {
     const confirmed = window.confirm(prompt);
     if (!confirmed) return;
     let fallbackSource = "";
-    save((config) => {
+    // Durable, ordered delete: await the config PATCH before touching sidecar.
+    const result = await saveImmediate((config) => {
       const dataModel = config.dataModel && typeof config.dataModel === "object" && !Array.isArray(config.dataModel)
         ? config.dataModel
         : {};
@@ -3099,17 +3162,24 @@ export default function DataModelShell() {
       const nextObjects = objects.filter((object) => String(object?.id || "") !== targetId);
       const fallback = nextObjects[0];
       fallbackSource = String(fallback?.source || fallback?.label || fallback?.name || "");
-      return {
-        ...config,
-        dataModel: {
-          ...dataModel,
-          objects: nextObjects
-        }
-      };
+      return { ...config, dataModel: { ...dataModel, objects: nextObjects } };
     });
-    pruneSidecarKeys(impact.sidecarKeys);
+    if (!result.ok) {
+      setMessage("Delete failed — config not saved, sidecar untouched.");
+      return;
+    }
+    if (impact.sidecarKeys.length) {
+      const receipt = await pruneSidecarKeys(impact.sidecarKeys);
+      setWorkspaceSourceRecords((prev) => {
+        const next = { ...prev };
+        for (const key of receipt.removed) delete next[key];
+        return next;
+      });
+      if (!receipt.ok) setMessage(`Deleted. Sidecar not pruned (${receipt.reason}).`);
+      else if (receipt.removed.length) setMessage(`Deleted. Pruned ${receipt.removed.length} run-history bucket(s).`);
+    }
     if (selectedSource === table.source) setSelectedSource(fallbackSource);
-  }, [save, selectedSource, workspaceConfig]);
+  }, [saveImmediate, selectedSource, workspaceConfig, workspaceSourceRecords]);
 
   // Reopen a helper thread row from the Helper Threads Data Model object.
   // The row already holds the full prior turn (intent, prompt, proposals,
@@ -3315,10 +3385,21 @@ export default function DataModelShell() {
               <DataModelTableSurface
                 key={selectedTableKey}
                 workspaceConfig={workspaceConfig}
+                sourceRecords={workspaceSourceRecords}
                 table={selectedTable}
                 tables={tables}
                 saving={saving}
                 onSave={save}
+                onSaveImmediate={saveImmediate}
+                onSidecarPruned={(removed) => {
+                  if (!removed?.length) return;
+                  setWorkspaceSourceRecords((prev) => {
+                    const next = { ...prev };
+                    for (const key of removed) delete next[key];
+                    return next;
+                  });
+                }}
+                onMessage={setMessage}
                 onOpenThread={openHelperThreadFromRow}
                 focusSandboxRowName={focusSandboxRowName}
                 onFocusSandboxRowConsumed={() => setFocusSandboxRowName(null)}
