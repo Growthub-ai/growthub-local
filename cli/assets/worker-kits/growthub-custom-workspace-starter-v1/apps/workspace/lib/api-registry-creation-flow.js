@@ -140,7 +140,12 @@ function deriveApiRegistryCreationState(input = {}) {
   const sourceExists = sourceLinks.length > 0;
   const linkedSourceId = sourceExists ? clean(sourceLinks[0].row?.sourceId) : "";
   const linkedSourceObjectId = sourceExists ? clean(sourceLinks[0].objectId) : "";
-  const hasRecords = sourceLinks.some((link) => sidecarHasRecords(sourceRecords, clean(link.row?.sourceId)));
+  // refresh-sources keys the sidecar by the data-source OBJECT id; older rows
+  // may have keyed by the row's sourceId. Check both so the step is honest.
+  const hasRecords = sourceLinks.some(
+    (link) => sidecarHasRecords(sourceRecords, clean(link.objectId))
+      || sidecarHasRecords(sourceRecords, clean(link.row?.sourceId)),
+  );
 
   // resolverTemplateId other than the passthrough "custom-http" means a real
   // shaping resolver is wired; "custom-http" / empty means raw passthrough.

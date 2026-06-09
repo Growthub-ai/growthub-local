@@ -1149,6 +1149,10 @@ function DataModelRecordDrawer({
   const [createdDataSourceMeta, setCreatedDataSourceMeta] = useState(null);
   const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [cockpitBusy, setCockpitBusy] = useState("");
+  // Real runtime truth for the creation cockpit: which auth refs resolve in the
+  // server runtime, and the live source-records sidecar. Fetched (never guessed)
+  // so auth/refresh readiness reflect actual state, and refreshed after actions.
+  const [creationSignals, setCreationSignals] = useState({ configuredEnvRefs: [], sourceRecords: {} });
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
@@ -1187,6 +1191,34 @@ function DataModelRecordDrawer({
       setTraceRunId("");
     }
   }, [row, rowIndex, initialSidecar, table.id, table.objectId, table.source, table.columns, table.fieldSettings?.hidden]);
+
+  // Load real cockpit truth (configured auth refs + source-records sidecar) when
+  // an API Registry row is open. The creation cockpit derives auth/refresh
+  // readiness from these — never guessed, never faked.
+  useEffect(() => {
+    if (table.objectType !== "api-registry" || rowIndex === null || rowIndex === undefined) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [statusRes, wsRes] = await Promise.all([
+          fetch("/api/workspace/env-status", { cache: "no-store" }),
+          fetch("/api/workspace", { cache: "no-store" }),
+        ]);
+        const status = statusRes.ok ? await statusRes.json() : {};
+        const ws = wsRes.ok ? await wsRes.json() : {};
+        if (cancelled) return;
+        setCreationSignals({
+          configuredEnvRefs: Array.isArray(status.configuredEnvRefs) ? status.configuredEnvRefs : [],
+          sourceRecords: ws.workspaceSourceRecords && typeof ws.workspaceSourceRecords === "object"
+            ? ws.workspaceSourceRecords
+            : {},
+        });
+      } catch {
+        /* leave signals as-is — cockpit degrades to pending, never fakes */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [table.objectType, table.objectId, rowIndex]);
 
   if (rowIndex === null || rowIndex === undefined || !row) return null;
 
@@ -1369,20 +1401,47 @@ function DataModelRecordDrawer({
       onSave((config) => {
         let next = config;
         if (findDataSourceRowsForRegistry(next, integrationId).length > 0) return next;
-        let sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "data-source");
-        if (!sourceTable) {
-          next = createTypedBusinessObject(next, { name: "Data Sources", objectType: "data-source" });
-          sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "data-source");
-        }
-        if (!sourceTable) return next;
+        // Dedicated data-source object per API (one object = one live integration,
+        // matching the refresh-sources contract which binds integrationId per object).
+        const dsName = `${String(draft?.Name || integrationId).trim()} Source`;
+        const beforeIds = new Set((next.dataModel?.objects || []).map((o) => o.id));
+        next = createTypedBusinessObject(next, { name: dsName, objectType: "data-source" });
+        const newObj = (next.dataModel?.objects || []).find((o) => o.objectType === "data-source" && !beforeIds.has(o.id));
+        if (!newObj) return next;
+        const sourceTable = listWorkspaceDataModelTables(next).find((t) => t.objectId === newObj.id);
         const newRow = buildDataSourceRowFromApiRegistry(next, draft, {});
-        next = appendRowsToTable(next, sourceTable, [newRow]);
-        createdMeta = { objectId: sourceTable.objectId, name: newRow.Name, sourceId: newRow.sourceId };
+        if (sourceTable) next = appendRowsToTable(next, sourceTable, [newRow]);
+        // Make the object live-backed so refresh-sources hydrates the sidecar
+        // (keyed by object id). Without this binding, refresh skips it as
+        // "not-live-backed" and the journey would never close.
+        next = {
+          ...next,
+          dataModel: {
+            ...next.dataModel,
+            objects: (next.dataModel.objects || []).map((o) =>
+              o.id === newObj.id
+                ? {
+                    ...o,
+                    binding: {
+                      mode: "integration",
+                      lane: "data-source",
+                      sourceStorage: "workspace-source-records",
+                      integrationId,
+                      sourceId: newRow.sourceId,
+                      source: newRow.Name,
+                    },
+                  }
+                : o
+            ),
+          },
+        };
+        createdMeta = { objectId: newObj.id, name: newRow.Name, sourceId: newRow.sourceId };
         return next;
       });
       if (createdMeta) {
         setCreatedDataSourceMeta(createdMeta);
-        setDataSourceMessage("Data Source created. Open it to map fields and run a refresh — nothing auto-fetches.");
+        setDataSourceMessage("Data Source created and live-backed. Use Refresh to pull records into the workspace — nothing auto-fetches.");
+        reloadCreationSignals();
       }
     } finally {
       setCreatingDataSource(false);
@@ -1396,25 +1455,55 @@ function DataModelRecordDrawer({
     router.push(`/data-model?object=${encodeURIComponent(objectId)}`);
   }
 
-  async function refreshLinkedSource({ integrationId, objectId }) {
-    const id = String(integrationId || draft?.integrationId || "").trim();
-    if (!id) {
-      setDataSourceMessage("Missing integrationId — cannot refresh the linked source.");
+  // Pull real cockpit truth: configured auth refs (server-resolved, slugs only)
+  // + the live source-records sidecar. Safe to call repeatedly; never throws.
+  async function reloadCreationSignals() {
+    try {
+      const [statusRes, wsRes] = await Promise.all([
+        fetch("/api/workspace/env-status", { cache: "no-store" }),
+        fetch("/api/workspace", { cache: "no-store" }),
+      ]);
+      const status = statusRes.ok ? await statusRes.json() : {};
+      const ws = wsRes.ok ? await wsRes.json() : {};
+      setCreationSignals({
+        configuredEnvRefs: Array.isArray(status.configuredEnvRefs) ? status.configuredEnvRefs : [],
+        sourceRecords: ws.workspaceSourceRecords && typeof ws.workspaceSourceRecords === "object"
+          ? ws.workspaceSourceRecords
+          : {},
+      });
+    } catch {
+      /* signals stay at their last value — the cockpit degrades to pending, never fakes */
+    }
+  }
+
+  // Refresh the linked Data Source through the sidecar dispatcher
+  // (refresh-sources, plural) keyed by the data-source OBJECT id, so the records
+  // land in the source-records sidecar the cockpit reads — then reload signals
+  // so the refresh step flips to complete from real state.
+  async function refreshLinkedSource({ objectId }) {
+    const sourceObjectId = String(objectId || "").trim();
+    if (!sourceObjectId) {
+      setDataSourceMessage("No linked Data Source object to refresh yet.");
       return;
     }
     setDataSourceMessage("");
     try {
-      const res = await fetch("/api/workspace/refresh-source", {
+      const res = await fetch("/api/workspace/refresh-sources", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ integrationId: id, objectId: objectId || null }),
+        body: JSON.stringify({ sourceIds: [sourceObjectId] }),
       });
       const payload = await res.json();
-      setDataSourceMessage(
-        payload.ok
-          ? `Refreshed — ${payload.recordCount ?? payload.rows?.length ?? 0} record(s) pulled.`
-          : redactSecretsFromText(payload.error || payload.reason || "Refresh failed")
-      );
+      const result = Array.isArray(payload.refreshed) ? payload.refreshed.find((r) => r.sourceId === sourceObjectId) : null;
+      if (res.ok && result) {
+        setDataSourceMessage(`Refreshed — ${result.recordCount ?? 0} record(s) pulled into the sidecar.`);
+      } else if (res.ok && Array.isArray(payload.skipped) && payload.skipped.includes(sourceObjectId)) {
+        const detail = (payload.skippedDetail || []).find((d) => d.sourceId === sourceObjectId);
+        setDataSourceMessage(`Refresh skipped: ${detail?.reason || "no resolver registered for this source"}.`);
+      } else {
+        setDataSourceMessage(redactSecretsFromText(payload.error || "Refresh failed"));
+      }
+      await reloadCreationSignals();
     } catch (err) {
       setDataSourceMessage(redactSecretsFromText(err.message || "Refresh failed"));
     }
@@ -1441,6 +1530,7 @@ function DataModelRecordDrawer({
           break;
         case "test":
           await testApiRecord();
+          await reloadCreationSignals();
           break;
         case "create-data-source":
           createDataSourceFromRegistry();
@@ -1452,7 +1542,7 @@ function DataModelRecordDrawer({
           setSandboxToolFlow("draft");
           break;
         case "refresh-source":
-          await refreshLinkedSource({ integrationId: draft?.integrationId, objectId: action.objectId });
+          await refreshLinkedSource({ objectId: action.objectId });
           break;
         default:
           break;
@@ -1463,7 +1553,12 @@ function DataModelRecordDrawer({
   }
 
   const creationState = isApiRegistry
-    ? deriveApiRegistryCreationState({ workspaceConfig, registryRow: draft, sourceRecords: {}, runtime: {} })
+    ? deriveApiRegistryCreationState({
+        workspaceConfig,
+        registryRow: draft,
+        sourceRecords: creationSignals.sourceRecords,
+        runtime: { configuredEnvRefs: creationSignals.configuredEnvRefs },
+      })
     : null;
 
   async function runSandboxToolByName({ objectId, name }) {
