@@ -1486,6 +1486,7 @@ function DataModelRecordDrawer({
               o.id === newObj.id
                 ? {
                     ...o,
+                    sourceId: newRow.sourceId,
                     binding: {
                       mode: "integration",
                       lane: "data-source",
@@ -1570,7 +1571,7 @@ function DataModelRecordDrawer({
       const result = Array.isArray(payload.refreshed) ? payload.refreshed.find((r) => r.sourceId === sourceObjectId) : null;
       if (res.ok && result) {
         const msg = `Refreshed — ${result.recordCount ?? 0} record(s) pulled into the sidecar.`;
-        setDataSourceMessage(msg);
+        setDataSourceMessage("");
         pushReceipt({ kind: "source-refresh", ok: true, detail: msg });
       } else if (res.ok && Array.isArray(payload.skipped) && payload.skipped.includes(sourceObjectId)) {
         const detail = (payload.skippedDetail || []).find((d) => d.sourceId === sourceObjectId);
@@ -3014,6 +3015,7 @@ export default function DataModelShell() {
   const [selectedRecordByTable, setSelectedRecordByTable] = useState({});
   const pendingPatchRef = useRef({});
   const saveTimerRef = useRef(null);
+  const consumedHelperRouteRef = useRef("");
 
   // Cross-page rail entrypoints. Settings / integrations pages render
   // <WorkspaceRail> without an in-process helper handler — clicking the
@@ -3026,7 +3028,11 @@ export default function DataModelShell() {
     if (!workspaceConfig) return;
     const helperParam = searchParams?.get("helper");
     const threadParam = searchParams?.get("thread");
-    if (!helperParam && !threadParam) return;
+    const resolverForParam = searchParams?.get("resolverFor");
+    if (!helperParam && !threadParam && !resolverForParam) return;
+    const routeKey = `${helperParam || ""}:${threadParam || ""}:${resolverForParam || ""}`;
+    if (routeKey === consumedHelperRouteRef.current) return;
+    consumedHelperRouteRef.current = routeKey;
     if (threadParam) {
       const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
       const row = (ht?.rows || []).find((r) => r?.id === threadParam);
@@ -3034,6 +3040,12 @@ export default function DataModelShell() {
         setHelperInitialThread(row);
         setHelperOpen(true);
       }
+    } else if (resolverForParam) {
+      setHelperIntent("register_api");
+      setHelperInitialThread(null);
+      setHelperInitialPrompt(`Create the response resolver for API Registry integration "${resolverForParam}". Use the tested lastResponse from that registry row, extract the records from the response into governed Data Source rows, and keep the resolver scoped to this integrationId.`);
+      setHelperOpen(true);
+      return;
     } else if (helperParam === "open") {
       setHelperInitialThread(null);
       setHelperOpen(true);
@@ -3041,6 +3053,7 @@ export default function DataModelShell() {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("helper");
     next.delete("thread");
+    next.delete("resolverFor");
     const query = next.toString();
     router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
   }, [workspaceConfig, searchParams, router]);

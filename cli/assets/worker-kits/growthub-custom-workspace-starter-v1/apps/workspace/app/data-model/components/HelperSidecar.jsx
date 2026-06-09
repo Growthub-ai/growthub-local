@@ -69,6 +69,7 @@ function ToolCallCard({ proposal, content, onOpenArtifact }) {
     rationale: proposal?.rationale,
     confidence: proposal?.confidence,
   };
+  const showJson = meta.payload != null || meta.affectedField || meta.rationale;
   return (
     <div className="dm-helper-toolcall" data-toolcall-type={proposal?.type}>
       <button
@@ -89,9 +90,11 @@ function ToolCallCard({ proposal, content, onOpenArtifact }) {
       {open && (
         <div className="dm-helper-toolcall-body">
           {content && <div className="dm-helper-toolcall-content">{content}</div>}
-          <pre className="dm-helper-toolcall-json">
-            {JSON.stringify(meta, null, 2)}
-          </pre>
+          {showJson && (
+            <pre className="dm-helper-toolcall-json">
+              {JSON.stringify(meta, null, 2)}
+            </pre>
+          )}
         </div>
       )}
       {canNavigate && (
@@ -103,6 +106,55 @@ function ToolCallCard({ proposal, content, onOpenArtifact }) {
           Open
           <ArrowUpRight size={12} aria-hidden="true" />
         </button>
+      )}
+    </div>
+  );
+}
+
+function formatRunDuration(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return "";
+  const totalSeconds = Math.max(0, Math.round(value / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function ProposalReviewCard({ proposal, checked, disabled, onCheckedChange, onKeyDown }) {
+  const [open, setOpen] = useState(false);
+  const summary = summarizePayload(proposal);
+  return (
+    <div className="dm-helper-toolcall" data-proposal-item="" tabIndex={0} onKeyDown={onKeyDown}>
+      <div className="dm-helper-toolcall-row dm-helper-proposal-card-row">
+        <input
+          type="checkbox"
+          checked={!!checked}
+          onChange={(e) => onCheckedChange(e.target.checked)}
+          disabled={disabled}
+          data-proposal-accept=""
+          aria-label={`Select ${proposal.type}`}
+        />
+        <button
+          type="button"
+          className="dm-helper-proposal-card-toggle"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <span className="dm-helper-toolcall-title">{proposal.type}</span>
+          <span className="dm-helper-proposal-field">→ {proposal.affectedField}</span>
+          <ChevronDown
+            size={14}
+            className={`dm-helper-toolcall-chevron${open ? " is-open" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+      {open && (
+        <div className="dm-helper-toolcall-body">
+          {summary && <p className="dm-helper-proposal-payload" data-proposal-payload="">{summary}</p>}
+          {proposal.rationale && <p className="dm-helper-proposal-rationale">{proposal.rationale}</p>}
+        </div>
       )}
     </div>
   );
@@ -747,6 +799,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const acceptedCount = Object.values(accepted).filter(Boolean).length;
   const skippedCount = applyResult?.skipped?.length || 0;
   const hasProposals = result && (result.proposals || []).length > 0;
+  const visibleWarnings = (result?.warnings || []).filter((warning) => {
+    const text = String(warning || "");
+    return !/transcript does not include the actual registry row id or lastResponse payload/i.test(text)
+      && !/No credentials or env values should be stored/i.test(text);
+  });
 
   // Thread is "active" the moment the user has sent at least one message,
   // OR we have rehydrated a prior thread row. Pills only show on the
@@ -916,18 +973,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               {/* Proposals */}
               {result && (
                 <div className="dm-helper-result">
-                <div className="dm-helper-summary">
-                  <span>{result.summary}</span>
-                </div>
-
-                {(result.warnings || []).length > 0 && (
-                  <div className="dm-helper-warnings">
-                    {result.warnings.map((w, i) => (
-                      <div key={i} className="dm-helper-warning">
-                        <AlertCircle size={12} />
-                        <span>{w}</span>
-                      </div>
-                    ))}
+                {!threadActive && result.summary && (
+                  <div className="dm-helper-summary">
+                    <span>{result.summary}</span>
                   </div>
                 )}
 
@@ -943,42 +991,17 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                       aria-label="Proposals"
                     >
                       {result.proposals.map((proposal, i) => {
-                        const summary = summarizePayload(proposal);
-                        const conf = typeof proposal.confidence === "number" ? Math.round(proposal.confidence * 100) : null;
                         return (
-                          <label
+                          <ProposalReviewCard
                             key={i}
-                            className={`dm-helper-proposal${accepted[i] ? " accepted" : ""}`}
-                            data-proposal-item=""
-                            tabIndex={0}
+                            proposal={proposal}
+                            checked={accepted[i]}
+                            disabled={applying}
+                            onCheckedChange={(checked) =>
+                              setAccepted((prev) => ({ ...prev, [i]: checked }))
+                            }
                             onKeyDown={(e) => handleProposalKeyDown(e, i)}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!accepted[i]}
-                              onChange={(e) =>
-                                setAccepted((prev) => ({ ...prev, [i]: e.target.checked }))
-                              }
-                              disabled={applying}
-                              data-proposal-accept=""
-                              tabIndex={-1}
-                            />
-                            <div className="dm-helper-proposal-body">
-                              <div className="dm-helper-proposal-row">
-                                <span className="dm-helper-proposal-type">{proposal.type}</span>
-                                <span className="dm-helper-proposal-field">→ {proposal.affectedField}</span>
-                                {conf !== null && (
-                                  <span className="dm-helper-proposal-confidence" data-proposal-confidence={conf}>
-                                    {conf}%
-                                  </span>
-                                )}
-                              </div>
-                              {summary && (
-                                <p className="dm-helper-proposal-payload" data-proposal-payload="">{summary}</p>
-                              )}
-                              <p className="dm-helper-proposal-rationale">{proposal.rationale}</p>
-                            </div>
-                          </label>
+                          />
                         );
                       })}
                     </div>
@@ -1055,13 +1078,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 )}
 
                 {result.receipts && (
-                  <p className="dm-field-hint" style={{ marginTop: 8 }} data-helper-receipt="">
-                    Run: {result.receipts.model} · confidence{" "}
-                    {typeof result.receipts.confidence === "number"
-                      ? `${Math.round(result.receipts.confidence * 100)}%`
-                      : "n/a"}{" "}
-                    · {result.receipts.latencyMs}ms
-                  </p>
+                  <div className="dm-helper-run-meta" data-helper-receipt="">
+                    <span>{result.receipts.model || "run"}</span>
+                    <span>{formatRunDuration(result.receipts.latencyMs)}</span>
+                  </div>
                 )}
               </div>
               )}

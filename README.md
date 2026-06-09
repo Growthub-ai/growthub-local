@@ -122,7 +122,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.13.9` and the guided installer `@growthub/create-growthub-local@0.13.9`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
+Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `@growthub/create-growthub-local@0.14.0`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0` (adds hosted agent bridge manifest types additively alongside the bridge resource primitives and v1.2 Skills surface — see [Skills + MCP Discovery](./docs/SKILLS_MCP_DISCOVERY.md)).
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
@@ -218,6 +218,7 @@ This keeps the mental model intact:
 - [**Workspace Workflows Folder Item V1**](./docs/WORKSPACE_WORKFLOWS_FOLDER_ITEM_V1.md) — governed workflow folder items, orchestration canvas, draft/publish safety, delta tags, and supported no-code nodes
 - [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
 - [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md) — governed multi-turn AI chat inside every exported workspace: rail trigger, real-data widget snapshotting, ToolCallCard receipts, refresh-safe thread persistence, hidden local-intelligence sandbox primitive
+- [**Governed Creation Release Snapshot V1**](./docs/GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md) — canonical release snapshot for the API Registry cockpit, helper resolver lane, Data Source refresh, workflow persistence upgrade, onboarding, and Workspace Lens QA
 - [**Causation ITT and Pure Eligibility Drivers**](./docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md) — official theory doc for Workspace Lens, contribution activity, helper handoff, and config-derived no-code eligibility
 - [**Agent Skills + Tools Unification Map**](./docs/AGENT_SKILLS_TOOLS_UNIFICATION.md) — aligns CLI commands, skills, helpers, markdown contracts, and the L1-L5 AWaC layer model
 

@@ -405,7 +405,7 @@ function deriveBlankWorkspaceActivationState({ workspaceConfig, workspaceSourceR
   }, 0);
   const widgetAdded = widgetCount > 0;
 
-  const workflowMatch = findWorkflowRow(workspaceConfig, (_row, object) => !HIDDEN_OBJECT_IDS.has(safeString(object?.id).trim()));
+  const workflowMatch = findWorkflowRow(workspaceConfig, (_row, object) => safeString(object?.id).trim() !== "workspace-helper-sandbox");
   const workflowCreated = Boolean(workflowMatch?.row);
   const workflowRun = deriveLatestRunStatus(workflowMatch?.row);
   const workflowObjectId = safeString(workflowMatch?.object?.id).trim();

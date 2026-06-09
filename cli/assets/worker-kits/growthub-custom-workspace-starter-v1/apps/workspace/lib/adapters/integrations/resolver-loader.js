@@ -28,11 +28,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const staticLoaded = new Set();
-let staticLoadDone = false;
+const nativeImport = new Function("specifier", "return import(specifier)");
 
 async function loadStaticResolversOnce() {
-  if (staticLoadDone) return;
-  staticLoadDone = true;
   const resolversDir = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "lib/adapters/integrations/resolvers");
   try {
     const entries = await fs.readdir(resolversDir);
@@ -42,7 +40,7 @@ async function loadStaticResolversOnce() {
         if (staticLoaded.has(file)) return;
         try {
           const absolutePath = path.join(resolversDir, file);
-          await import(/*turbopackIgnore: true*/ pathToFileURL(absolutePath).href);
+          await nativeImport(pathToFileURL(absolutePath).href);
           staticLoaded.add(file);
         } catch {
           // Malformed resolver — skip silently; operator needs to fix the file
