@@ -171,11 +171,38 @@ function buildApiRegistrationPlan(input = {}, { existingConfig = {}, env = {} } 
   const authConfigured = row.authRef ? isResolved(row.authRef, env) : false;
   const testUrl = buildTestUrl(row);
 
+  // Optional paired Data Source row — projects this API's records into the
+  // workspace via the source-records sidecar (sourceStorage), reusing the
+  // existing refresh-sources flow. References the api-registry row by registryId.
+  const wantsDataSource = input?.createDataSource === true || clean(input?.outputMode).toLowerCase() === "data-source";
+  const dataSource = wantsDataSource
+    ? {
+        create: true,
+        row: {
+          Name: clean(input.name) || row.integrationId,
+          registryId: row.integrationId,
+          endpoint: row.endpoint,
+          authRef: row.authRef,
+          baseUrl: row.baseUrl,
+          status: "untested",
+          lastTested: "",
+          lastResponse: "",
+          entityType: row.entityTypes || `${row.integrationId}.records`,
+          sourceId: row.integrationId,
+          sourceStorage: "workspace-source-records",
+          resolverTemplateId: row.resolverTemplateId,
+        },
+        linkage: { registryField: "registryId", value: row.integrationId },
+        refreshHint: "After the API test passes, Refresh sources to populate growthub.source-records.json.",
+      }
+    : { create: false };
+
   return {
     kind: "growthub-api-registration-plan-v1",
     integrationId: row.integrationId,
     errors,
     valid: errors.length === 0,
+    dataSource,
     config: {
       mode: apiObject ? "row.add" : "object.create",
       objectId: apiObject ? clean(apiObject.id) : null,

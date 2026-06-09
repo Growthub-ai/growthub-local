@@ -66,25 +66,32 @@ async function writeResolverFile(filename, source) {
   return `${RESOLVERS_DIR_REL}/${filename}`;
 }
 
-/** Append the api-registry row to the existing object, or create the object. */
-function applyRowToConfig(config, plan) {
-  const row = plan.config.row;
+/** Append a row to the first object of a type, creating the typed object if absent. */
+function appendRowToTypedObject(config, objectType, presetName, row) {
   const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
-  if (plan.config.mode === "row.add" && plan.config.objectId) {
-    const nextObjects = objects.map((object) =>
-      object?.id === plan.config.objectId
-        ? { ...object, rows: [...(Array.isArray(object.rows) ? object.rows : []), row] }
-        : object
+  const existing = objects.find((o) => o?.objectType === objectType);
+  if (existing) {
+    const nextObjects = objects.map((o) =>
+      o === existing ? { ...o, rows: [...(Array.isArray(o.rows) ? o.rows : []), row] } : o
     );
     return { ...config, dataModel: { ...config.dataModel, objects: nextObjects } };
   }
-  const seeded = createTypedBusinessObject(config, { name: "API Registry", objectType: "api-registry" });
-  const seededObjects = seeded.dataModel.objects.map((object) =>
-    object?.objectType === "api-registry" && (!Array.isArray(object.rows) || object.rows.length === 0)
-      ? { ...object, rows: [row] }
-      : object
+  const seeded = createTypedBusinessObject(config, { name: presetName, objectType });
+  const seededObjects = seeded.dataModel.objects.map((o) =>
+    o?.objectType === objectType && (!Array.isArray(o.rows) || o.rows.length === 0)
+      ? { ...o, rows: [row] }
+      : o
   );
   return { ...seeded, dataModel: { ...seeded.dataModel, objects: seededObjects } };
+}
+
+/** Append the api-registry row (+ optional paired data-source row). */
+function applyRowToConfig(config, plan) {
+  let next = appendRowToTypedObject(config, "api-registry", "API Registry", plan.config.row);
+  if (plan.dataSource?.create) {
+    next = appendRowToTypedObject(next, "data-source", "Data Sources", plan.dataSource.row);
+  }
+  return next;
 }
 
 async function POST(request) {
@@ -168,6 +175,9 @@ async function POST(request) {
     mode: "apply",
     integrationId: plan.integrationId,
     config: { applied: true, mode: plan.config.mode, objectId: plan.config.objectId },
+    dataSource: plan.dataSource?.create
+      ? { created: true, name: plan.dataSource.row.Name, registryId: plan.dataSource.row.registryId, sourceId: plan.dataSource.row.sourceId, refreshHint: plan.dataSource.refreshHint }
+      : { created: false },
     resolver: resolverReceipt,
     env: { ...plan.env, configured: plan.env.required ? isEnvRefResolved(plan.config.row.authRef) : false },
     testPlan: plan.testPlan,

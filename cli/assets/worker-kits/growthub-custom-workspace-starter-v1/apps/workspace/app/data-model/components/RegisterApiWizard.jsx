@@ -43,7 +43,7 @@ export function RegisterApiWizard({ open, onClose, onApplied }) {
     name: "", integrationId: "", description: "",
     baseUrl: "", endpoint: "", method: "GET", sample: "",
     authMode: "none", authRef: "",
-    outputMode: "raw", entityType: "", recordsPath: "",
+    outputMode: "raw", entityType: "", recordsPath: "", createDataSource: false,
   });
   const [envCatalog, setEnvCatalog] = useState(null);
   const [plan, setPlan] = useState(null);
@@ -82,6 +82,7 @@ export function RegisterApiWizard({ open, onClose, onApplied }) {
     baseUrl: form.baseUrl, endpoint: form.endpoint, method: form.method,
     authRef: form.authMode === "none" ? "" : form.authRef,
     needsResolver: form.outputMode === "normalized",
+    createDataSource: form.createDataSource === true,
     entityType: form.entityType, recordsPath: form.recordsPath,
     connectorKind: form.outputMode === "normalized" ? "custom" : "http",
     resolverTemplateId: form.outputMode === "normalized" ? "custom-http-resolver" : "custom-http",
@@ -274,6 +275,10 @@ export function RegisterApiWizard({ open, onClose, onApplied }) {
                 {form.outputMode === "raw" && willNeedResolver && (
                   <p className="live-source-step-hint">This shape suggests custom normalization — consider “Normalized rows”.</p>
                 )}
+                <label className="live-source-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <input type="checkbox" checked={form.createDataSource} onChange={(e) => set({ createDataSource: e.target.checked })} style={{ width: "auto" }} />
+                  <span>Also create a Data Source (projects records via the source-records sidecar; Refresh to populate)</span>
+                </label>
                 <div className="live-source-nav">
                   <button type="button" className="live-source-back" onClick={() => setStep(3)}>← Back</button>
                   <button type="button" className="live-source-next" disabled={!canStep4 || proposing} onClick={goReview}>
@@ -333,6 +338,10 @@ function ReviewBody({ plan, proposing, authConfigured, applying, onApply, onBack
         <p className="live-source-step-hint">No resolver file needed — the raw HTTP response is stored/displayed directly.</p>
       )}
 
+      {plan.dataSource?.create && (
+        <p className="live-source-step-hint">Also creates a Data Source “{plan.dataSource.row.Name}” (registryId → {plan.dataSource.row.registryId}, stored in the source-records sidecar). {plan.dataSource.refreshHint}</p>
+      )}
+
       <p className="live-source-step-hint">Rollback: {plan.rollback.config}{plan.rollback.resolver ? `; ${plan.rollback.resolver}` : ""}.</p>
 
       <div className="live-source-nav">
@@ -355,6 +364,7 @@ function AppliedBody({ receipt, testState, testing, onTest, onClose }) {
         <span>
           {receipt.config.mode === "object.create" ? "Created a new API Registry object. " : "Appended to the API Registry. "}
           {receipt.resolver?.required ? (receipt.resolver.written ? `Resolver written to ${receipt.resolver.path}.` : "Resolver required but not written.") : "No resolver needed."}
+          {receipt.dataSource?.created ? ` Data Source "${receipt.dataSource.name}" created — Refresh sources to populate.` : ""}
         </span>
       </div>
 
