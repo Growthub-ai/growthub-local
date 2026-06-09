@@ -3343,6 +3343,19 @@ export default function DataModelShell() {
                 onDuplicateObject={duplicateObject}
               />
             )}
+            {selectedTable?.objectType === "sandbox-environment" && selectedTable?.rows?.[0]?.id && (
+              <Link
+                href={`/workflows?object=${encodeURIComponent(selectedTable.objectId || selectedTable.id)}&row=${encodeURIComponent(selectedTable.rows[0].id)}`}
+                className="dm-btn-outline"
+              >
+                <Terminal size={14} />Open cockpit
+              </Link>
+            )}
+            {selectedTable?.objectType === "data-source" && (
+              <button type="button" className="dm-btn-outline" onClick={() => setRegisterApiOpen(true)} title="Register or extend the API this source reads from">
+                <Plug size={14} />Connect to API
+              </button>
+            )}
             <button type="button" className="dm-btn-outline" onClick={() => setRegisterApiOpen(true)}>
               <Plug size={14} />Register API
             </button>

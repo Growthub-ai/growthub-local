@@ -92,6 +92,7 @@ const FILTERS = [
   { id: "deploy", label: "Deploy" },
   { id: "tasks", label: "Tasks" },
   { id: "app-build", label: "App build" },
+  { id: "api-setup", label: "API setup" },
 ];
 
 export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, metadataGraph }) {
@@ -166,7 +167,25 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
     () => deriveWorkspaceState({ workspaceConfig, workspaceSourceRecords, metadataGraph }),
     [workspaceConfig, workspaceSourceRecords, metadataGraph],
   );
-  const lenses = useMemo(() => Object.values(composed.lenses || {}), [composed]);
+
+  // The api-setup lens depends on SERVER-ONLY truth (env catalog + registered
+  // resolvers) the client cannot see, so pull the accurate version from
+  // GET /api/workspace/activation and merge it over the client-derived one.
+  const [apiSetupLens, setApiSetupLens] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/workspace/activation", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((s) => { if (alive) setApiSetupLens(s?.lenses?.["api-setup"] || null); })
+      .catch(() => { if (alive) setApiSetupLens(null); });
+    return () => { alive = false; };
+  }, [workspaceConfig]);
+
+  const lenses = useMemo(() => {
+    const base = composed.lenses || {};
+    const merged = apiSetupLens ? { ...base, "api-setup": apiSetupLens } : base;
+    return Object.values(merged);
+  }, [composed, apiSetupLens]);
 
   const counts = useMemo(() => {
     let ready = 0; let blocked = 0; let assignable = 0;
@@ -186,7 +205,7 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
       if (filter === "blocked" && kind !== "blocked") return false;
       if (filter === "ready" && kind !== "ready") return false;
       if (filter === "assignable" && (lens.complete || !lens.nextStepId)) return false;
-      if (["persistence", "observability", "deploy", "tasks", "app-build"].includes(filter) && lens.lensId !== filter) return false;
+      if (["persistence", "observability", "deploy", "tasks", "app-build", "api-setup"].includes(filter) && lens.lensId !== filter) return false;
       if (!FILTERS.some((f) => f.id === filter) && lens.lensId !== filter) return false;
       if (q) {
         const hay = `${lens.title} ${lens.headline} ${(lens.steps || []).map((s) => s.label).join(" ")}`.toLowerCase();
