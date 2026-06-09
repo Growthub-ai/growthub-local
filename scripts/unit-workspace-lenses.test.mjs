@@ -67,7 +67,7 @@ test("registry — exactly one primary lens and it is activation, stable order",
   assert.equal(primaries.length, 1);
   assert.equal(primaries[0].id, "activation");
   const ids = activation.WORKSPACE_LENS_REGISTRY.map((e) => e.id);
-  assert.deepEqual(ids, ["activation", "persistence", "observability", "deploy", "tasks", "app-build"]);
+  assert.deepEqual(ids, ["activation", "persistence", "observability", "deploy", "tasks", "app-build", "api-setup"]);
   // Fleet/multi-app (Item 4) is intentionally NOT registered.
   assert.equal(ids.includes("fleet"), false);
 });

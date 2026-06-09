@@ -1221,6 +1221,185 @@ function deriveAppBuildLensState(input = {}) {
  * registry to derive from. See docs/ROADMAP_IMPACT_ITEMS_V1.md (it stays staged
  * until a runtime surface-metadata source exists).
  */
+/** Collect rows of a given objectType across the data model. */
+function collectRowsByType(workspaceConfig, objectType) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const out = [];
+  for (const object of objects) {
+    if (!isPlainObject(object) || object.objectType !== objectType) continue;
+    for (const row of listObjectRows(object)) if (isPlainObject(row)) out.push({ row, object });
+  }
+  return out;
+}
+
+const API_SUCCESS_STATUSES = new Set(["connected", "approved", "ok", "success"]);
+const API_CONFIG_ONLY_TEMPLATES = new Set(["custom-http", "webhook", "nango"]);
+
+function apiRowRequiresResolver(row) {
+  if (safeString(row.connectorKind).toLowerCase() === "custom") return true;
+  const t = safeString(row.resolverTemplateId).toLowerCase();
+  return Boolean(t && !API_CONFIG_ONLY_TEMPLATES.has(t));
+}
+
+function envSlugConfigured(envCatalog, slug) {
+  const key = safeString(slug).trim();
+  if (!key) return null;
+  const entries = Array.isArray(envCatalog?.entries) ? envCatalog.entries : null;
+  if (!entries) return null; // unknown — caller treats as pending, never fake-complete
+  const hit = entries.find((e) => safeString(e?.slug) === key || safeString(e?.slug).toUpperCase() === key.toUpperCase());
+  return hit ? hit.configured === true : false;
+}
+
+/**
+ * API setup lens (roadmap Phase 2E) — the derived truth layer for the
+ * register-API → test → source → workflow journey. Every check is derived from
+ * real workspace state: api-registry rows, the env catalog (server-resolved),
+ * the registered resolver ids, data-source links, and sandbox references.
+ * No hand-authored readiness booleans.
+ *
+ * Extra inputs (threaded by deriveWorkspaceState): envCatalog, resolvers.
+ */
+function deriveApiSetupLensState(input = {}) {
+  const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
+  const envCatalog = isPlainObject(input?.envCatalog) ? input.envCatalog : null;
+  const resolverIds = Array.isArray(input?.resolvers) ? input.resolvers.map((r) => safeString(r)) : null;
+
+  const apiEntries = collectRowsByType(cfg, "api-registry");
+  const dataSources = collectRowsByType(cfg, "data-source");
+  const sandboxRows = collectSandboxRows(cfg);
+
+  // Focus on the most complete api-registry row (else the first), so hrefs and
+  // "exact missing item" point at one coherent integration.
+  const scored = apiEntries.map(({ row, object }) => {
+    let score = 0;
+    if (safeString(row.integrationId)) score += 1;
+    if (safeString(row.baseUrl) || safeString(row.endpoint)) score += 1;
+    if (API_SUCCESS_STATUSES.has(safeString(row.status))) score += 2;
+    return { row, object, score };
+  }).sort((a, b) => b.score - a.score);
+  const focus = scored[0] || null;
+  const row = focus?.row || {};
+  const integrationId = safeString(row.integrationId);
+  const apiObjectId = safeString(focus?.object?.id);
+  const dmHref = apiObjectId ? `/data-model?object=${encodeURIComponent(apiObjectId)}` : "/data-model";
+
+  const steps = [];
+
+  // 1) API registered
+  const registered = Boolean(integrationId && (safeString(row.baseUrl) || safeString(row.endpoint)) && safeString(row.method));
+  steps.push({
+    id: "api-registered",
+    label: "Register an API",
+    description: "An API Registry row defines the integration's endpoint, method, and auth reference.",
+    status: registered ? "complete" : "pending",
+    href: "/data-model",
+    hint: registered ? `${integrationId} is registered.` : "Use “Register API” in the Data Model toolbar.",
+    cta: registered ? "Review API Registry" : "Register API",
+  });
+
+  // 2) authRef resolves (only when the row declares auth)
+  const authRef = safeString(row.authRef);
+  if (!authRef) {
+    steps.push({ id: "auth-resolves", label: "Auth key resolves", description: "This API needs no auth, or no authRef is set.", status: "optional", href: "/settings/apis-webhooks", cta: "Open API keys" });
+  } else {
+    const configured = envSlugConfigured(envCatalog, authRef);
+    steps.push({
+      id: "auth-resolves",
+      label: "Auth key resolves",
+      description: `Source of truth: API Registry row ${integrationId}.authRef = "${authRef}". The value lives in .env.local (server-only).`,
+      status: configured === true ? "complete" : "blocked",
+      href: "/settings/apis-webhooks",
+      hint: configured === true
+        ? `"${authRef}" resolves to a server-side value.`
+        : `"${authRef}" does not resolve. Expected one of: ${authRef.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}, ${authRef.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY, ${authRef.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_TOKEN.`,
+      cta: "Open Settings → APIs & Webhooks",
+    });
+  }
+
+  // 3) Resolver present (only when required)
+  if (apiRowRequiresResolver(row)) {
+    const present = resolverIds ? resolverIds.includes(integrationId) : false;
+    steps.push({
+      id: "resolver-present",
+      label: "Resolver file present",
+      description: `Source of truth: registered resolvers. Expected lib/adapters/integrations/resolvers/${integrationId}.js`,
+      status: present ? "complete" : (resolverIds ? "blocked" : "pending"),
+      href: "/data-model",
+      hint: present ? `Resolver "${integrationId}" is registered.` : "Generate it from the Register API wizard (Normalized rows), or upload via register-resolver.",
+      cta: "Open resolver proposal",
+    });
+  }
+
+  // 4) API test passed
+  const tested = API_SUCCESS_STATUSES.has(safeString(row.status));
+  steps.push({
+    id: "api-tested",
+    label: "Test the API",
+    description: "Source of truth: API Registry row status / lastResponse (test receipt).",
+    status: registered ? (tested ? "complete" : "pending") : "blocked",
+    href: dmHref,
+    hint: tested ? "Connection test passed." : "Open the API Registry row and run Test connection.",
+    cta: "Test connection",
+  });
+
+  // 5) Data Source linked (meaningful once tested)
+  const linked = integrationId && dataSources.some(({ row: ds }) => safeString(ds.registryId) === integrationId);
+  steps.push({
+    id: "data-source-linked",
+    label: "Create a Data Source",
+    description: "A Data Source row references this API Registry row to project records into the workspace.",
+    status: linked ? "complete" : (tested ? "pending" : "optional"),
+    href: "/data-model",
+    hint: linked ? "A Data Source references this API." : "After the test passes, connect a Data Source to use the records.",
+    cta: "Create Data Source",
+  });
+
+  // 6) Serverless scheduler (only when a serverless sandbox references this API)
+  const serverlessForThis = sandboxRows.filter(
+    (s) => safeString(s.runLocality).toLowerCase() === "serverless"
+  );
+  if (serverlessForThis.length) {
+    const schedulerOk = serverlessForThis.every((s) => safeString(s.schedulerRegistryId));
+    steps.push({
+      id: "scheduler-configured",
+      label: "Configure serverless scheduler",
+      description: "Source of truth: sandbox row schedulerRegistryId (FK to an API Registry scheduler row).",
+      status: schedulerOk ? "complete" : "blocked",
+      href: "/workflows",
+      hint: schedulerOk ? "Serverless workflows have a scheduler." : "A serverless workflow has no schedulerRegistryId — pick a scheduler API Registry row.",
+      cta: "Open workflow cockpit",
+    });
+  }
+
+  const { totalCount, completedCount, complete, nextStepId } = scoreLensSteps(steps);
+  let headline;
+  let subheadline;
+  if (!apiEntries.length) {
+    headline = "No API registered yet.";
+    subheadline = "Next: Register an API from the Data Model toolbar.";
+  } else if (complete) {
+    headline = `${integrationId || "API"} is fully wired.`;
+    subheadline = "Registered, auth resolves, tested, and connected.";
+  } else {
+    const next = steps.find((s) => s.id === nextStepId);
+    headline = `${integrationId || "API"} setup is incomplete.`;
+    subheadline = next ? `Next: ${next.label} — ${next.cta}.` : "Continue API setup.";
+  }
+
+  return {
+    kind: LENS_STATE_KIND,
+    lensId: "api-setup",
+    title: "API setup",
+    headline,
+    subheadline,
+    complete,
+    completedCount,
+    totalCount,
+    nextStepId,
+    steps,
+  };
+}
+
 const WORKSPACE_LENS_REGISTRY = [
   { id: "activation", title: "Activation", primary: true, derive: deriveWorkspaceActivationState },
   { id: "persistence", title: "Runtime persistence", primary: false, derive: derivePersistenceLensState },
@@ -1228,6 +1407,7 @@ const WORKSPACE_LENS_REGISTRY = [
   { id: "deploy", title: "Deploy readiness", primary: false, derive: deriveDeployLensState },
   { id: "tasks", title: "Task management", primary: false, derive: deriveTaskLensState },
   { id: "app-build", title: "Application buildout", primary: false, derive: deriveAppBuildLensState },
+  { id: "api-setup", title: "API setup", primary: false, derive: deriveApiSetupLensState },
 ];
 
 function getLensEntry(lensId) {
@@ -1244,6 +1424,10 @@ function deriveWorkspaceState(input = {}) {
     workspaceConfig: isPlainObject(input.workspaceConfig) ? input.workspaceConfig : {},
     workspaceSourceRecords: isPlainObject(input.workspaceSourceRecords) ? input.workspaceSourceRecords : {},
     metadataGraph: isPlainObject(input.metadataGraph) ? input.metadataGraph : null,
+    // Server-only truth threaded to lenses that need it (api-setup): the env
+    // catalog (slug + configured booleans) and the registered resolver ids.
+    envCatalog: isPlainObject(input.envCatalog) ? input.envCatalog : null,
+    resolvers: Array.isArray(input.resolvers) ? input.resolvers : null,
   };
 
   const primaryEntry = WORKSPACE_LENS_REGISTRY.find((entry) => entry.primary);
@@ -1552,6 +1736,7 @@ export {
   deriveDeployLensState,
   deriveTaskLensState,
   deriveAppBuildLensState,
+  deriveApiSetupLensState,
   // Swarm-assignable condition packet (roadmap Item 8)
   deriveSwarmConditionPacket,
   // Workspace contribution graph (daily-ritual visualization)
