@@ -218,6 +218,7 @@ This keeps the mental model intact:
 - [**Workspace Workflows Folder Item V1**](./docs/WORKSPACE_WORKFLOWS_FOLDER_ITEM_V1.md) — governed workflow folder items, orchestration canvas, draft/publish safety, delta tags, and supported no-code nodes
 - [**Workspace Deploy Flow**](./docs/WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
 - [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md) — governed multi-turn AI chat inside every exported workspace: rail trigger, real-data widget snapshotting, ToolCallCard receipts, refresh-safe thread persistence, hidden local-intelligence sandbox primitive
+- [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md) — official mental model, operating guide, agent rules, and applied use cases for governed AWaC workspaces
 - [**Governed Creation Release Snapshot V1**](./docs/GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md) — canonical release snapshot for the API Registry cockpit, helper resolver lane, Data Source refresh, workflow persistence upgrade, onboarding, and Workspace Lens QA
 - [**Governed Creation Sprint Retrospective V1**](./docs/GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md) — future-agent context synthesizing AWaC, Workspace Topology, Causation ITT, customer-facing feature coverage, and release QA proof
 - [**Causation ITT and Pure Eligibility Drivers**](./docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md) — official theory doc for Workspace Lens, contribution activity, helper handoff, and config-derived no-code eligibility
