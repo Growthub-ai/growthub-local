@@ -98,6 +98,7 @@ import {
 import { HelperSidecar } from "./data-model/components/HelperSidecar.jsx";
 import { WorkspaceRail } from "./workspace-rail.jsx";
 import { WorkspaceActivationPanel } from "./components/WorkspaceActivationPanel.jsx";
+import { WorkspaceCreationReadinessPanel } from "./components/WorkspaceCreationReadinessPanel.jsx";
 
 // Workspace Metadata Graph V1 — typed dependency contracts.
 // Used by sidecar dependency summaries; the existing chart hydration path
@@ -6013,7 +6014,13 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         </header>
 
         {workspaceView === "dashboards" ? <>
-          {showActivationPanel ? <WorkspaceActivationPanel
+          {showActivationPanel ? <>
+          <WorkspaceCreationReadinessPanel
+            workspaceConfig={config}
+            workspaceSourceRecords={workspaceSourceRecords}
+            persistence={persistence}
+          />
+          <WorkspaceActivationPanel
             workspaceConfig={config}
             workspaceSourceRecords={workspaceSourceRecords}
             metadataGraph={lensMetadataGraph}
@@ -6032,7 +6039,8 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
               setHelperInitialThread(null);
               setHelperOpen(true);
             }}
-          /> : null}
+          />
+          </> : null}
         <section className="workspace-table" id="dashboards" aria-label="Builder">
           <div className="workspace-table-heading">
             <strong>Builder</strong>

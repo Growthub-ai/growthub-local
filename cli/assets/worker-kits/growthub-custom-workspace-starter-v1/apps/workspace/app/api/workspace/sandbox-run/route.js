@@ -83,26 +83,7 @@ import {
   validateRunInputsEnvelope,
   summarizeRunInputs
 } from "@/lib/orchestration-run-inputs";
-
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : ""
-  ].filter(Boolean)));
-}
-
-function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return { key, value: process.env[key] };
-  }
-  return null;
-}
+import { readServerSecretEntry } from "@/lib/workspace-env-resolver";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
@@ -224,7 +205,7 @@ async function runServerlessScheduler({
   }
 
   const authRef = registryRecord.authRef || registryRecord.integrationId;
-  const secretEntry = readServerSecret(authRef);
+  const secretEntry = readServerSecretEntry(authRef);
   const secret = secretEntry?.value || "";
 
   const outboundTimeout = Math.min(Math.max(timeoutMs, 1000), 120000);
@@ -543,7 +524,7 @@ async function POST(request) {
   const envRefsResolved = [];
   const envRefsMissing = [];
   for (const slug of envRefSlugs) {
-    const resolved = readServerSecret(slug);
+    const resolved = readServerSecretEntry(slug);
     if (resolved) {
       env[resolved.key] = resolved.value;
       envRefsResolved.push(slug);

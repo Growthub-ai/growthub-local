@@ -48,6 +48,7 @@ import { OrchestrationGraphEmptyCanvas } from "../data-model/components/Orchestr
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
 import { WorkflowDeltaHistoryPanel } from "../data-model/components/WorkflowDeltaHistoryPanel.jsx";
+import { WorkflowCockpitReadinessBar } from "./WorkflowCockpitReadinessBar.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
@@ -333,6 +334,7 @@ export default function WorkflowSurface() {
   const runId = String(searchParams.get("run") || "").trim();
 
   const [workspaceConfig, setWorkspaceConfig] = useState(null);
+  const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState({});
   const [authority, setAuthority] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -359,6 +361,9 @@ export default function WorkflowSurface() {
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error || "Failed to load workspace");
       setWorkspaceConfig(payload.workspaceConfig);
+      setWorkspaceSourceRecords(payload.workspaceSourceRecords && typeof payload.workspaceSourceRecords === "object"
+        ? payload.workspaceSourceRecords
+        : {});
       setAuthority(payload.adapters?.integrations?.authority || null);
     } catch (err) {
       setError(err.message || "Failed to load workspace");
@@ -827,6 +832,11 @@ export default function WorkflowSurface() {
       />
       <section className="workspace-surface dm-workflow-surface">
         <header className="workspace-toolbar dm-workflow-toolbar">
+          <WorkflowCockpitReadinessBar
+            workspaceConfig={workspaceConfig}
+            workspaceSourceRecords={workspaceSourceRecords}
+            sandboxRow={sandboxRow}
+          />
           <div className="dm-workflow-titlebar">
             <span className="dm-workflow-title-muted">Workflows</span>
             <span className="dm-workflow-title-separator">/</span>

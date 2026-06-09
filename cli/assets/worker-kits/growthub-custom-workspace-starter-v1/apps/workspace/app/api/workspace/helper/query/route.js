@@ -61,6 +61,7 @@ import {
   upsertHelperThreadRow,
   nextThreadId,
 } from "@/lib/workspace-helper-apply";
+import { buildCreationProposalBundle } from "@/lib/workspace-creation-proposals";
 
 const VALID_INTENTS = [
   "build_dashboard",
@@ -344,6 +345,32 @@ async function POST(request) {
   ];
   const nextMessages = [...priorMessages, ...newTurn].slice(-40);
 
+  let creationBundle = null;
+  if (resolvedIntent === "register_api") {
+    const rowProposal = validProposals.find((p) => {
+      const row = p?.payload?.row || (Array.isArray(p?.payload?.rows) ? p.payload.rows[0] : null);
+      return row && (row.baseUrl || row.integrationId || row.endpoint);
+    });
+    const row = rowProposal?.payload?.row || rowProposal?.payload?.rows?.[0] || {};
+    creationBundle = buildCreationProposalBundle({
+      name: row.Name || row.name || "API Integration",
+      integrationId: row.integrationId,
+      businessPurpose: userPrompt,
+      description: parsed.summary,
+      baseUrl: row.baseUrl,
+      endpoint: row.endpoint,
+      method: row.method,
+      authRef: row.authRef,
+      authMode: row.authRef ? "api-key-header" : "none",
+      outputMode: "data-source",
+      includeResolver: true,
+      includeWorkflow: /\bworkflow|sandbox|automation\b/i.test(userPrompt),
+    }, { env: process.env });
+    if (creationBundle?.validation?.warnings?.length) {
+      warnings.push(...creationBundle.validation.warnings);
+    }
+  }
+
   const response = {
     ok: true,
     threadId,
@@ -351,6 +378,7 @@ async function POST(request) {
     intentInference,
     summary: parsed.summary,
     proposals: validProposals,
+    creationBundle,
     warnings,
     receipts,
     messages: nextMessages,

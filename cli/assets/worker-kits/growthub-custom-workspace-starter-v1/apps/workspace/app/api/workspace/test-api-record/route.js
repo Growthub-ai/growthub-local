@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { readServerSecret } from "@/lib/workspace-env-resolver";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -16,26 +17,6 @@ function buildUrl(record) {
   if (/^https?:\/\//i.test(endpoint)) return endpoint;
   if (!baseUrl) throw new Error("baseUrl is required when endpoint is relative");
   return `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
-}
-
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : "",
-  ].filter(Boolean)));
-}
-
-function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return process.env[key];
-  }
-  return "";
 }
 
 function findRegistryRecord(workspaceConfig, registryId) {

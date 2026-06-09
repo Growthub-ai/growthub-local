@@ -377,6 +377,32 @@ async function main() {
         "cleanup should skip non-existent key");
     }
 
+    // --- creation-readiness + creation-proposals (0.13.9 governed creation) ---
+    res = await fetch(`${base}/api/workspace/creation-readiness`, { cache: "no-store" });
+    assert(res.ok, `creation-readiness GET failed ${res.status}`);
+    const readiness = await res.json();
+    assert(readiness.kind === "growthub-workspace-creation-readiness-v1", "creation readiness kind");
+    assert(JSON.stringify(readiness).includes("s3cr3t-probe") === false, "readiness must not leak secrets");
+
+    res = await fetch(`${base}/api/workspace/creation-proposals`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draft: {
+          name: "Probe API",
+          integrationId: "probe-api",
+          baseUrl: "https://httpbin.org",
+          endpoint: "/get",
+          method: "GET",
+          authMode: "none",
+          outputMode: "raw-response",
+        },
+      }),
+    });
+    const proposalBody = await res.json();
+    assert(res.ok, `creation-proposals POST failed ${res.status}`);
+    assert(proposalBody.bundle?.proposals?.length > 0, "expected proposal bundle");
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {

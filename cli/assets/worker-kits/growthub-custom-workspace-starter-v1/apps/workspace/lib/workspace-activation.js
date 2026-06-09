@@ -409,16 +409,22 @@ function deriveBlankWorkspaceActivationState({ workspaceConfig, workspaceSourceR
   const workflowCreated = Boolean(workflowMatch?.row);
   const workflowRun = deriveLatestRunStatus(workflowMatch?.row);
 
+  const apiRegistryObject = findDataModelObject(workspaceConfig, (o) => o.objectType === "api-registry");
+  const apiRegistryRows = listObjectRows(apiRegistryObject);
+  const hasApiRegistry = apiRegistryRows.length > 0;
+
   const steps = [
     {
       id: "create-object",
-      label: "Create your first object",
+      label: hasApiRegistry ? "Create your first object" : "Register your first API",
       description: objectCreated
         ? `${userObjects.length} object${userObjects.length === 1 ? "" : "s"} in your Data Model.`
-        : "Start by adding a custom object or connecting a data source in Management.",
+        : hasApiRegistry
+          ? "Start by adding a custom object or connecting a data source in Management."
+          : "Open the Register API wizard to connect an integration safely.",
       status: objectCreated ? "complete" : "pending",
-      href: "/data-model",
-      cta: objectCreated ? "Open Data Model" : "Create object",
+      href: hasApiRegistry ? "/data-model" : "/data-model?wizard=register-api",
+      cta: objectCreated ? "Open Data Model" : (hasApiRegistry ? "Create object" : "Register API"),
     },
     {
       id: "create-dashboard",

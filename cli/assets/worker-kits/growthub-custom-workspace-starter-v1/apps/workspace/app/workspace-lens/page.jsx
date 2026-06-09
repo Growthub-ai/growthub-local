@@ -5,6 +5,7 @@ import { describePersistenceMode, readWorkspaceConfig, readWorkspaceSourceRecord
 import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
 import { WorkspaceRail } from "../workspace-rail.jsx";
 import { WorkspaceLensPanel } from "../components/WorkspaceLensPanel.jsx";
+import { ActivationLensPanel } from "../components/ActivationLensPanel.jsx";
 
 /**
  * /workspace-lens — the dedicated Workspace Lens surface.
@@ -46,11 +47,18 @@ async function WorkspaceLens() {
       <section className="workspace-surface workspace-lens-surface">
         <div className="workspace-lens-shell">
           {activationComplete ? (
+            <>
+            <ActivationLensPanel
+              workspaceConfig={workspaceConfig}
+              workspaceSourceRecords={workspaceSourceRecords}
+              persistence={persistence}
+            />
             <WorkspaceLensPanel
               workspaceConfig={workspaceConfig}
               workspaceSourceRecords={workspaceSourceRecords}
               metadataGraph={metadataGraph}
             />
+            </>
           ) : (
             <div className="workspace-lens-locked">
               <h1 className="workspace-lens-title">Workspace Lens is locked</h1>
