@@ -5101,6 +5101,22 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-cockpit-receipt-chip { align-self: start; }
 .dm-cockpit-receipt-text { font-size: 12px; color: #64748b; line-height: 1.4; }
 
+/* Serverless upgrade — toolbar button, one-time nudge, and cockpit panel. */
+.dm-workflow-upgrade-btn { position: relative; }
+.dm-workflow-upgrade-btn.is-serverless { color: #166534; }
+.dm-workflow-upgrade-btn.is-pulse { color: #b45309; }
+.dm-workflow-upgrade-btn[data-tooltip]:hover::after {
+  content: attr(data-tooltip); position: absolute; top: 100%; right: 0; margin-top: 6px;
+  white-space: nowrap; background: #111827; color: #fff; font-size: 11px; font-weight: 500;
+  padding: 5px 8px; border-radius: 6px; z-index: 40; box-shadow: 0 4px 12px rgba(15,23,42,.18);
+}
+.dm-workflow-upgrade-nudge { align-items: center; }
+.dm-workflow-upgrade-nudge-actions { display: inline-flex; align-items: center; gap: 8px; }
+.dm-workflow-upgrade-panel { margin: 0 0 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
+.dm-workflow-upgrade-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px 0; }
+.dm-workflow-upgrade-panel-head .dm-api-action-card-eyebrow { margin: 0; }
+.dm-workflow-upgrade-panel .dm-api-action-card { margin: 8px; box-shadow: none; }
+
 .dm-api-review-banner {
   display: grid;
   grid-template-columns: auto 1fr auto;

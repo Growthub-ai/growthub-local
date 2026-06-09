@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowUpCircle,
   Bot,
   ChevronDown,
   ChevronUp,
@@ -51,7 +52,31 @@ import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
-import { deriveProvenance, hasConnectionId } from "@/lib/workspace-activation";
+import { deriveProvenance, hasConnectionId, readUiCacheFlag } from "@/lib/workspace-activation";
+import { ApiRegistryCreationCockpit } from "../data-model/components/ApiRegistryCreationCockpit.jsx";
+import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
+import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
+
+// Set a flag on the governed workspace-ui-cache "activation" row (pure helper,
+// same transform the rail/lens one-time dismisses use).
+function withUiCacheFlag(workspaceConfig, flag, value) {
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  const existing = objects.find((o) => o?.id === "workspace-ui-cache");
+  const baseRow = (existing?.rows || []).find((r) => r?.id === "activation") || { id: "activation" };
+  const nextRow = { ...baseRow, [flag]: value };
+  const nextCache = existing
+    ? { ...existing, rows: [nextRow, ...(existing.rows || []).filter((r) => r?.id !== "activation")] }
+    : {
+        id: "workspace-ui-cache", label: "Workspace UI Cache", source: "Workspace UI Cache",
+        objectType: "custom", columns: ["id", flag], rows: [nextRow],
+        binding: { mode: "manual", source: "Workspace UI Cache" },
+      };
+  const nextObjects = existing
+    ? objects.map((o) => (o?.id === "workspace-ui-cache" ? nextCache : o))
+    : [...objects, nextCache];
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
 
 // Workspace Metadata Graph V1 — read-only dependency metadata for workflow
 // sidecars. The runtime path (sandbox-run, publish, draft/live) is
@@ -349,6 +374,23 @@ export default function WorkflowSurface() {
   const [orchestrationGraph, setOrchestrationGraph] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [serverlessSignals, setServerlessSignals] = useState({ configuredEnvRefs: [], persistenceAdapters: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/workspace/env-status", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((payload) => {
+        if (cancelled) return;
+        setServerlessSignals({
+          configuredEnvRefs: Array.isArray(payload.configuredEnvRefs) ? payload.configuredEnvRefs : [],
+          persistenceAdapters: Array.isArray(payload.persistenceAdapters) ? payload.persistenceAdapters : [],
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [objectId, rowId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -807,6 +849,56 @@ export default function WorkflowSurface() {
   const showSaveDraft = dirty && !graphUnset;
   const workflowModeLabel = isDraftMode ? "draft" : lifecycle || "live";
 
+  // Serverless upgrade — same derivation + cockpit as the sandbox/API lanes.
+  const upgradeState = deriveServerlessUpgradeState(workspaceConfig || {}, {
+    dismissed: readUiCacheFlag(workspaceConfig || {}, SERVERLESS_UPGRADE_DISMISS_FLAG),
+  });
+  const serverlessState = sandboxRow
+    ? deriveSandboxServerlessState({
+        sandboxRow,
+        workspaceConfig: workspaceConfig || {},
+        configuredEnvRefs: serverlessSignals.configuredEnvRefs,
+        persistenceAdapters: serverlessSignals.persistenceAdapters,
+      })
+    : null;
+  const isServerlessWorkflow = Boolean(serverlessState?.isServerless);
+
+  async function patchSandboxAndPersist(fields) {
+    if (resolved.rowIndex < 0 || !objectId || !workspaceConfig) return;
+    try {
+      const next = patchSandboxRowInConfig(workspaceConfig, objectId, resolved.rowIndex, fields);
+      await persistWorkspace(next);
+      setSaveMessage(fields.runLocality === "serverless"
+        ? "Upgraded to serverless. Link a scheduler and configure persistence to close the loop."
+        : fields.runLocality === "local"
+          ? "Reverted to local execution."
+          : "Saved.");
+    } catch (err) {
+      setSaveMessage(err.message || "Failed to save");
+    }
+  }
+
+  async function handleUpgradeAction(action) {
+    if (!action) return;
+    if (action.id === "toggle-locality") {
+      await patchSandboxAndPersist({ runLocality: isServerlessWorkflow ? "local" : "serverless" });
+    } else if (action.id === "open-settings") {
+      router.push(action.href || "/settings");
+    } else if (action.id === "link-scheduler" || action.id === "edit-adapter") {
+      // Full scheduler/adapter config lives on the sandbox object's drawer.
+      router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}`);
+    }
+  }
+
+  async function dismissUpgradeOnboarding() {
+    if (!workspaceConfig) return;
+    try {
+      await persistWorkspace(withUiCacheFlag(workspaceConfig, SERVERLESS_UPGRADE_DISMISS_FLAG, true));
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   return (
     <main className="workspace-builder dm-workflow-page">
       <WorkspaceRail
@@ -880,6 +972,18 @@ export default function WorkflowSurface() {
                 <Power size={13} /> {publishing ? "Publishing" : "Publish"}
               </button>
             )}
+            {sandboxRow && (
+              <button
+                type="button"
+                className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
+                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
+                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
+                aria-pressed={upgradeOpen}
+                onClick={() => setUpgradeOpen((open) => !open)}
+              >
+                <ArrowUpCircle size={14} />
+              </button>
+            )}
             <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow} onClick={openTraceMode}>
               <History size={13} /> See Runs
             </button>
@@ -917,6 +1021,43 @@ export default function WorkflowSurface() {
             <Link href={templateBanner.backHref} className="workspace-template-context-link">
               <span>{templateBanner.ready ? "Manage connection" : "Open Nango panel"}</span>
             </Link>
+          </div>
+        ) : null}
+
+        {/* One-time serverless upgrade onboarding — shows only when the operator
+            has workflows but none are serverless, and hasn't dismissed it. */}
+        {sandboxRow && !upgradeOpen && upgradeState.showOnboarding ? (
+          <div className="workspace-template-context-banner dm-workflow-upgrade-nudge" role="note">
+            <div>
+              <strong>{upgradeState.headline}</strong>
+              <span style={{ display: "block", marginTop: 2 }}>{upgradeState.subheadline}</span>
+            </div>
+            <div className="dm-workflow-upgrade-nudge-actions">
+              <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
+                <ArrowUpCircle size={13} /> Upgrade this workflow
+              </button>
+              <button type="button" className="dm-btn-ghost" onClick={dismissUpgradeOnboarding}>Not now</button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Serverless cockpit — same derivation + cockpit interface as the API
+            Registry and sandbox lanes. Toggles patch the sandbox row; deep config
+            (scheduler/adapter) routes to the object's Data Model drawer. */}
+        {sandboxRow && upgradeOpen && serverlessState ? (
+          <div className="dm-workflow-upgrade-panel">
+            <div className="dm-workflow-upgrade-panel-head">
+              <span className="dm-api-action-card-eyebrow">Persistence &amp; scheduling</span>
+              <button type="button" className="dm-workflow-icon-btn" aria-label="Close upgrade panel" onClick={() => setUpgradeOpen(false)}>
+                <X size={14} />
+              </button>
+            </div>
+            <ApiRegistryCreationCockpit
+              state={serverlessState}
+              onAction={handleUpgradeAction}
+              disabled={saving || publishing || running}
+              eyebrow={isServerlessWorkflow ? "Serverless workflow" : "Upgrade to serverless"}
+            />
           </div>
         ) : null}
 
