@@ -377,6 +377,57 @@ async function main() {
         "cleanup should skip non-existent key");
     }
 
+    // --- register-api: propose builds a paired plan, secret-safe (Phase 2A/2B) ---
+    const regInput = { name: "Probe API", integrationId: "probe-api", baseUrl: "https://example.invalid", endpoint: "/v1/items", method: "GET", authRef: "probe_api", needsResolver: true, entityType: "probe.items", createDataSource: true };
+    res = await fetch(`${base}/api/workspace/register-api`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "propose", input: regInput }),
+    });
+    const proposeBody = await res.json();
+    assert(res.ok && proposeBody.ok, `register-api propose failed ${res.status} ${JSON.stringify(proposeBody)}`);
+    assert(proposeBody.plan?.valid === true, "register-api plan should be valid");
+    assert(proposeBody.plan.resolver.required === true, "resolver should be required for normalized output");
+    assert(proposeBody.plan.resolver.source.includes("registerSourceResolver"), "resolver source must be loader-valid");
+    assert(proposeBody.plan.dataSource.create === true, "paired data source should be planned");
+    assert(JSON.stringify(proposeBody).includes("registerSourceResolver"), "plan present");
+
+    // --- register-api: apply writes resolver file FIRST then config row (Phase 2A) ---
+    res = await fetch(`${base}/api/workspace/register-api`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "apply", input: regInput }),
+    });
+    const applyBody = await res.json();
+    assert(res.ok && applyBody.ok, `register-api apply failed ${res.status} ${JSON.stringify(applyBody)}`);
+    assert(applyBody.resolver?.written === true, "resolver file should be written");
+    assert(applyBody.config?.applied === true, "api-registry row should be persisted");
+    assert(applyBody.dataSource?.created === true, "paired data source should be created");
+
+    // The resolver file must exist on disk in the approved dir, inside cwd.
+    const resolverDiskPath = path.join(appDir, "lib", "adapters", "integrations", "resolvers", "probe-api.js");
+    assert(fs.existsSync(resolverDiskPath), `resolver file not written to ${resolverDiskPath}`);
+    const resolverDisk = fs.readFileSync(resolverDiskPath, "utf8");
+    assert(resolverDisk.includes("registerSourceResolver"), "written resolver must call registerSourceResolver");
+
+    // The persisted config row must carry the slug only — never a secret value.
+    res = await fetch(`${base}/api/workspace`, { cache: "no-store" });
+    const afterApply = await res.json();
+    const apiRows = (afterApply.workspaceConfig?.dataModel?.objects || [])
+      .filter((o) => o.objectType === "api-registry").flatMap((o) => o.rows || []);
+    const probeRow = apiRows.find((r) => r.integrationId === "probe-api");
+    assert(probeRow, "persisted api-registry row not found");
+    assert(probeRow.authRef === "probe-api" || probeRow.authRef === "probe_api", `authRef slug expected, got ${probeRow.authRef}`);
+    assert(!("secret" in probeRow) && !("secretValue" in probeRow) && !("apiKey" in probeRow), "config row must not contain a secret");
+
+    // --- activation: api-setup lens is derived + composed, secret-safe (Phase 2E) ---
+    res = await fetch(`${base}/api/workspace/activation`, { cache: "no-store" });
+    const activation = await res.json();
+    assert(res.ok, `activation failed ${res.status}`);
+    const apiLens = activation.lenses?.["api-setup"];
+    assert(apiLens && apiLens.lensId === "api-setup", "api-setup lens should be composed");
+    const regStep = (apiLens.steps || []).find((s) => s.id === "api-registered");
+    assert(regStep && regStep.status === "complete", "api-registered step should be complete after apply");
+    assert(JSON.stringify(activation).includes("sk_") === false, "activation must not leak a secret");
+
     console.log("[probe] all API probes passed");
     console.log(JSON.stringify({ forkRoot, port, referenceOptionSample: refPayload.options?.[0] || null }, null, 2));
   } finally {
