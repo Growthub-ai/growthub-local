@@ -4,15 +4,14 @@
  * Roadmap Phase 1.4 / 2.6. Prunes orphaned `growthub.source-records.json`
  * buckets after a governed Data Model delete. The browser computes the impact
  * with `computeDeleteImpact()` (pure), confirms with the operator, applies the
- * config PATCH, then POSTs the orphaned `sourceIds` here for the optional
- * sidecar cleanup leg — the same persistence gate as register-resolver /
- * settings writes.
+ * config delete (durably) and only THEN POSTs the orphaned `sourceIds` here.
  *
  * Request:  { sourceIds: string[] }
  * Response: { ok, removed: string[], skipped: string[], persistence }
  *
- * Read-only / non-filesystem runtimes return 409 with guidance instead of a
- * dead end, matching writeWorkspaceApiWebhookSettings.
+ * Read-only / non-filesystem runtimes return 409 with guidance. The handler is
+ * an inline `export async function POST` and returns a NextResponse in every
+ * branch (verified against the exported Next app).
  */
 
 import { NextResponse } from "next/server";
@@ -20,13 +19,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { describePersistenceMode } from "@/lib/workspace-config";
 
-const SOURCE_RECORDS_FILENAME = "growthub.source-records.json";
-
-function resolveSourceRecordsPath() {
-  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), SOURCE_RECORDS_FILENAME);
-}
-
-async function POST(request) {
+export async function POST(request) {
   let body;
   try {
     body = await request.json();
@@ -56,9 +49,10 @@ async function POST(request) {
   }
 
   try {
-    const recordsPath = resolveSourceRecordsPath();
-    const expectedDir = path.resolve(/*turbopackIgnore: true*/ process.cwd());
-    if (path.dirname(recordsPath) !== expectedDir) {
+    const cwd = process.cwd();
+    const recordsPath = path.resolve(cwd, "growthub.source-records.json");
+    // Refuse to touch anything outside the workspace cwd.
+    if (path.dirname(recordsPath) !== path.resolve(cwd)) {
       return NextResponse.json({ ok: false, error: "refused to write outside workspace cwd" }, { status: 500 });
     }
 
@@ -89,5 +83,3 @@ async function POST(request) {
     return NextResponse.json({ ok: false, error: error?.message || "sidecar cleanup failed" }, { status: 500 });
   }
 }
-
-export { POST };
