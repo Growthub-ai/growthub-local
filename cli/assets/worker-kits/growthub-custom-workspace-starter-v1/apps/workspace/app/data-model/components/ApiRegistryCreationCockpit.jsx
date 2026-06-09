@@ -4,19 +4,18 @@
  * ApiRegistryCreationCockpit — the governed creation interface for one API,
  * rendered inside the existing api-registry record drawer (DataModelShell).
  *
- * It renders the ordered journey produced by `deriveApiRegistryCreationState`
- * (lib/api-registry-creation-flow.js) and turns each step's `action` descriptor
- * into a real button that calls back into the drawer's existing governed
- * handlers via `onAction(action)`. Status, the highlighted "next" step, and
- * which buttons are live all come from the derivation — interface and truth
- * stay in lockstep.
+ * Renders the ordered journey from `deriveApiRegistryCreationState`
+ * (lib/api-registry-creation-flow.js) plus, once the API is tested, the response
+ * Shape analysis (`profileApiResponse` / `recommendResolver`) and a receipts log
+ * of real actions. Every actionable step's button calls back into the drawer's
+ * existing governed handlers via `onAction(action)` — status, the highlighted
+ * "next" step, the activation score, and which buttons are live all come from
+ * derivation/real responses, never guessed.
  *
- * Visual language is the workspace's own: the `.dm-db-status` chip (the same
- * dot+label the drawer already shows for a row's status) and the `dm-btn-*`
+ * Visual language is the workspace's own: the `.dm-db-status` chip and `dm-btn-*`
  * buttons. No invented colors, no new primitive.
  */
 
-// Map a derived step status onto the existing .dm-db-status modifier + label.
 const STEP_STATUS = {
   complete: { mod: "ok", label: "Done" },
   active: { mod: "warn", label: "Next" },
@@ -25,14 +24,39 @@ const STEP_STATUS = {
   optional: { mod: "", label: "Optional" },
 };
 
-export function ApiRegistryCreationCockpit({ state, onAction, busyAction = "", disabled = false }) {
+const RESOLVER_LEVEL = {
+  optional: { mod: "", label: "Resolver optional" },
+  recommended: { mod: "warn", label: "Resolver recommended" },
+  required: { mod: "bad", label: "Resolver required" },
+};
+
+function StatusChip({ mod, children, className = "" }) {
+  return (
+    <span className={`dm-db-status${mod ? ` ${mod}` : ""}${className ? ` ${className}` : ""}`}>
+      <span />
+      {children}
+    </span>
+  );
+}
+
+export function ApiRegistryCreationCockpit({
+  state,
+  onAction,
+  busyAction = "",
+  disabled = false,
+  profile = null,
+  resolverRec = null,
+  receipts = [],
+}) {
   if (!state || !Array.isArray(state.steps)) return null;
+  const candidates = profile?.candidates || {};
+  const candidateEntries = Object.entries(candidates).filter(([, v]) => v);
 
   return (
     <section className="dm-api-action-card dm-cockpit" aria-label="API creation journey">
       <div className="dm-cockpit-head">
         <div className="dm-api-action-card-body">
-          <p className="dm-api-action-card-eyebrow">Governed creation</p>
+          <p className="dm-api-action-card-eyebrow">Governed creation · {state.score}% activated</p>
           <h3>{state.headline}</h3>
         </div>
         <span className="dm-cockpit-count">{state.completedCount}/{state.totalCount}</span>
@@ -49,10 +73,7 @@ export function ApiRegistryCreationCockpit({ state, onAction, busyAction = "", d
               key={step.id}
               className={`dm-cockpit-step${isNext ? " dm-cockpit-step-next" : ""}${step.status === "blocked" ? " dm-cockpit-step-muted" : ""}`}
             >
-              <span className={`dm-db-status${meta.mod ? ` ${meta.mod}` : ""} dm-cockpit-step-chip`}>
-                <span />
-                {meta.label}
-              </span>
+              <StatusChip mod={meta.mod} className="dm-cockpit-step-chip">{meta.label}</StatusChip>
               <div className="dm-cockpit-step-body">
                 <p className="dm-cockpit-step-label">{step.label}</p>
                 <p className="dm-cockpit-step-desc">{step.description}</p>
@@ -72,6 +93,49 @@ export function ApiRegistryCreationCockpit({ state, onAction, busyAction = "", d
           );
         })}
       </ol>
+
+      {profile && profile.parsed ? (
+        <div className="dm-cockpit-shape">
+          <div className="dm-cockpit-shape-head">
+            <p className="dm-api-action-card-eyebrow">Response shape</p>
+            {resolverRec ? (
+              <StatusChip mod={(RESOLVER_LEVEL[resolverRec.level] || RESOLVER_LEVEL.optional).mod}>
+                {(RESOLVER_LEVEL[resolverRec.level] || RESOLVER_LEVEL.optional).label}
+              </StatusChip>
+            ) : null}
+          </div>
+          <p className="dm-cockpit-step-desc">
+            {profile.usable
+              ? `${profile.recordCount} record${profile.recordCount === 1 ? "" : "s"}${profile.arrayPath ? ` at "${profile.arrayPath}"` : " (top-level)"} · entity "${profile.suggestedEntityType}".`
+              : "No record array detected in the response."}
+          </p>
+          {resolverRec ? <p className="dm-cockpit-step-hint">{resolverRec.reason}</p> : null}
+          {candidateEntries.length ? (
+            <div className="dm-cockpit-fields">
+              {candidateEntries.map(([role, name]) => (
+                <span key={role} className="dm-cockpit-field"><b>{role}</b>{name}</span>
+              ))}
+            </div>
+          ) : null}
+          {profile.hasPagination ? (
+            <p className="dm-cockpit-step-hint">Pagination keys present — a resolver is needed to fetch every page.</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {Array.isArray(receipts) && receipts.length ? (
+        <div className="dm-cockpit-receipts">
+          <p className="dm-api-action-card-eyebrow">Receipts</p>
+          <ul>
+            {receipts.slice(0, 6).map((r, i) => (
+              <li key={`${r.at}-${i}`} className="dm-cockpit-receipt">
+                <StatusChip mod={r.ok ? "ok" : "bad"} className="dm-cockpit-receipt-chip">{r.kind}</StatusChip>
+                <span className="dm-cockpit-receipt-text">{r.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }

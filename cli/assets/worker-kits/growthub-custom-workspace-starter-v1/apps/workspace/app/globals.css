@@ -5089,6 +5089,17 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-cockpit-step-muted .dm-cockpit-step-label,
 .dm-cockpit-step-muted .dm-cockpit-step-desc { color: #94a3b8; }
 .dm-cockpit-step-next { background: #f8fafc; margin: 0 -14px; padding-left: 14px; padding-right: 14px; border-radius: 6px; }
+.dm-cockpit-shape { margin-top: 12px; padding-top: 12px; border-top: 1px solid #edf0f3; display: grid; gap: 6px; }
+.dm-cockpit-shape-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dm-cockpit-shape-head .dm-api-action-card-eyebrow { margin: 0; }
+.dm-cockpit-fields { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.dm-cockpit-field { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #475569; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px 8px; }
+.dm-cockpit-field b { font-weight: 700; color: #94a3b8; text-transform: uppercase; font-size: 10px; letter-spacing: .03em; }
+.dm-cockpit-receipts { margin-top: 12px; padding-top: 12px; border-top: 1px solid #edf0f3; }
+.dm-cockpit-receipts ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.dm-cockpit-receipt { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; }
+.dm-cockpit-receipt-chip { align-self: start; }
+.dm-cockpit-receipt-text { font-size: 12px; color: #64748b; line-height: 1.4; }
 
 .dm-api-review-banner {
   display: grid;

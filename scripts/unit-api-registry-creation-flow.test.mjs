@@ -120,6 +120,22 @@ test("sandbox tool detected by api-registry-call node", () => {
   assert.equal(byId(state)["sandbox-tool"], "complete");
 });
 
+test("activation score — milestone-based on real evidence", () => {
+  assert.equal(deriveApiRegistryCreationState({ registryRow: {} }).score, 0);
+  assert.equal(deriveApiRegistryCreationState({ registryRow: { integrationId: "x", baseUrl: "https://y" } }).score, 35); // registered + no auth needed
+  const tested = deriveApiRegistryCreationState({ registryRow: { integrationId: "x", baseUrl: "https://y", status: "ok" } });
+  assert.equal(tested.score, 50);
+  const full = deriveApiRegistryCreationState({
+    workspaceConfig: { dataModel: { objects: [
+      { id: "api-registry", objectType: "api-registry", rows: [{ integrationId: "x", status: "ok" }] },
+      { id: "x-source", objectType: "data-source", rows: [{ registryId: "x", sourceId: "sid" }] },
+    ] } },
+    registryRow: { integrationId: "x", baseUrl: "https://y", status: "ok" },
+    sourceRecords: { "x-source": { recordCount: 2 } },
+  });
+  assert.ok(full.score >= 80);
+});
+
 test("never throws on partial / undefined input", () => {
   assert.doesNotThrow(() => deriveApiRegistryCreationState());
   assert.doesNotThrow(() => deriveApiRegistryCreationState({ registryRow: null, workspaceConfig: null }));

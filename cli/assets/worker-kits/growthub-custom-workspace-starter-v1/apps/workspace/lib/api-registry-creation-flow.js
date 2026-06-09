@@ -257,6 +257,18 @@ function deriveApiRegistryCreationState(input = {}) {
     || steps.find((s) => s.status === "blocked")
     || null;
 
+  // Activation score — milestone-based, tied to real evidence (not a raw
+  // step-count progress bar). Each threshold corresponds to a concrete,
+  // derived state transition the operator can verify.
+  let score = 0;
+  if (registered) score = 20;
+  if (registered && authConfigured) score = Math.max(score, 35);
+  if (tested) score = Math.max(score, 50);
+  if (sourceExists) score = Math.max(score, 65);
+  if (hasRecords) score = Math.max(score, 80);
+  if (sandboxExists) score = Math.max(score, 90);
+  if (complete) score = 100;
+
   return {
     kind: STEP_KIND,
     version: 1,
@@ -271,6 +283,7 @@ function deriveApiRegistryCreationState(input = {}) {
     completedCount,
     totalCount,
     complete,
+    score,
     nextStepId: nextStep ? nextStep.id : null,
     nextAction: nextStep && nextStep.action ? { stepId: nextStep.id, ...nextStep.action } : null,
     headline: !registered

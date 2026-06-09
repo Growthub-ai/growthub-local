@@ -82,6 +82,7 @@ import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
 import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
+import { profileApiResponse, recommendResolver } from "@/lib/api-response-profile";
 import {
   buildSandboxRowFromApiRegistry,
   findSandboxRowsForRegistry,
@@ -1153,6 +1154,7 @@ function DataModelRecordDrawer({
   // server runtime, and the live source-records sidecar. Fetched (never guessed)
   // so auth/refresh readiness reflect actual state, and refreshed after actions.
   const [creationSignals, setCreationSignals] = useState({ configuredEnvRefs: [], sourceRecords: {} });
+  const [creationReceipts, setCreationReceipts] = useState([]);
   const [sidecarMode, setSidecarMode] = useState(null);
   const [traceField, setTraceField] = useState(null);
   const [traceRunId, setTraceRunId] = useState("");
@@ -1180,6 +1182,7 @@ function DataModelRecordDrawer({
       setCreatingDataSource(false);
       setCreatedDataSourceMeta(null);
       setDataSourceMessage("");
+      setCreationReceipts([]);
     }
     if (initialSidecar?.mode === "trace") {
       setSidecarMode("trace");
@@ -1301,6 +1304,15 @@ function DataModelRecordDrawer({
       });
       setDraft((current) => ({ ...current, status, lastTested: new Date().toISOString(), lastResponse: responseText }));
       setTestMessage(payload.ok ? "Connected" : payload.error || "Connection failed");
+      if (isApiRegistry) {
+        pushReceipt({
+          kind: "api-test",
+          ok: Boolean(payload.ok),
+          detail: payload.ok
+            ? `Tested — HTTP ${payload.status ?? 200}${payload.usedServerSecret ? " · used server secret" : ""}.`
+            : redactSecretsFromText(payload.error || `HTTP ${payload.status ?? ""} failed`),
+        });
+      }
     } catch (err) {
       const responseText = JSON.stringify({ error: err.message || "Connection failed" }, null, 2);
       onSave((config) => {
@@ -1441,7 +1453,10 @@ function DataModelRecordDrawer({
       if (createdMeta) {
         setCreatedDataSourceMeta(createdMeta);
         setDataSourceMessage("Data Source created and live-backed. Use Refresh to pull records into the workspace — nothing auto-fetches.");
+        pushReceipt({ kind: "data-source-created", ok: true, detail: `Created "${createdMeta.name}" (sourceId ${createdMeta.sourceId}), live-backed via registryId ${integrationId}.` });
         reloadCreationSignals();
+      } else {
+        setDataSourceMessage("A Data Source already references this API.");
       }
     } finally {
       setCreatingDataSource(false);
@@ -1453,6 +1468,12 @@ function DataModelRecordDrawer({
     if (!objectId) return;
     onClose();
     router.push(`/data-model?object=${encodeURIComponent(objectId)}`);
+  }
+
+  // Append a creation receipt (test / create / refresh outcomes). Secret-safe —
+  // detail strings are caller-redacted; receipts hold no values.
+  function pushReceipt(entry) {
+    setCreationReceipts((cur) => [{ at: new Date().toISOString(), ...entry }, ...cur].slice(0, 12));
   }
 
   // Pull real cockpit truth: configured auth refs (server-resolved, slugs only)
@@ -1496,12 +1517,18 @@ function DataModelRecordDrawer({
       const payload = await res.json();
       const result = Array.isArray(payload.refreshed) ? payload.refreshed.find((r) => r.sourceId === sourceObjectId) : null;
       if (res.ok && result) {
-        setDataSourceMessage(`Refreshed — ${result.recordCount ?? 0} record(s) pulled into the sidecar.`);
+        const msg = `Refreshed — ${result.recordCount ?? 0} record(s) pulled into the sidecar.`;
+        setDataSourceMessage(msg);
+        pushReceipt({ kind: "source-refresh", ok: true, detail: msg });
       } else if (res.ok && Array.isArray(payload.skipped) && payload.skipped.includes(sourceObjectId)) {
         const detail = (payload.skippedDetail || []).find((d) => d.sourceId === sourceObjectId);
-        setDataSourceMessage(`Refresh skipped: ${detail?.reason || "no resolver registered for this source"}.`);
+        const reason = detail?.reason || "no resolver registered for this source";
+        setDataSourceMessage(`Refresh skipped: ${reason}.`);
+        pushReceipt({ kind: "source-refresh", ok: false, detail: `Skipped: ${reason}. ${reason === "missing-resolver" ? "Add a resolver so this source can hydrate." : ""}`.trim() });
       } else {
-        setDataSourceMessage(redactSecretsFromText(payload.error || "Refresh failed"));
+        const err = redactSecretsFromText(payload.error || "Refresh failed");
+        setDataSourceMessage(err);
+        pushReceipt({ kind: "source-refresh", ok: false, detail: err });
       }
       await reloadCreationSignals();
     } catch (err) {
@@ -1560,6 +1587,12 @@ function DataModelRecordDrawer({
         runtime: { configuredEnvRefs: creationSignals.configuredEnvRefs },
       })
     : null;
+  // Shape analysis from the tested response — drives the resolver recommendation
+  // and the field candidates the operator sees before creating a Data Source.
+  const creationProfile = isApiRegistry && creationState?.tested
+    ? profileApiResponse(draft?.lastResponse)
+    : null;
+  const creationResolverRec = creationProfile ? recommendResolver(creationProfile) : null;
 
   async function runSandboxToolByName({ objectId, name }) {
     const rowName = String(name || "").trim();
@@ -1812,6 +1845,9 @@ function DataModelRecordDrawer({
               onAction={handleCockpitAction}
               busyAction={cockpitBusy}
               disabled={saving || creatingDataSource || testing}
+              profile={creationProfile}
+              resolverRec={creationResolverRec}
+              receipts={creationReceipts}
             />
             {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
           </>
