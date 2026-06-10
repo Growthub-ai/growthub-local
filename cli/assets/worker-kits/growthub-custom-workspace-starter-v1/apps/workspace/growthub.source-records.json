@@ -1,1 +1,239 @@
-{}
+{
+  "swarm:saved-workflows": {
+    "records": [
+      {
+        "name": "swarm-ui-smoke-test",
+        "label": "swarm-ui-smoke-test",
+        "description": "Low-token 8-agent swarm to exercise workflow UI/UX",
+        "plan": {
+          "maxConcurrency": 8,
+          "phases": [
+            {
+              "label": "Ping",
+              "agents": [
+                {
+                  "label": "ping-0",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-1",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-2",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-3",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-4",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                }
+              ]
+            },
+            {
+              "label": "Echo",
+              "agents": [
+                {
+                  "label": "echo-alpha",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-beta",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-gamma",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                }
+              ]
+            }
+          ]
+        },
+        "savedAt": "2026-06-10T13:19:50.439Z"
+      },
+      {
+        "name": "swarm-20-smoke-test",
+        "label": "swarm-20-smoke-test",
+        "description": "Low-token 20-agent swarm to exercise workflow UI/UX at scale",
+        "plan": {
+          "maxConcurrency": 10,
+          "phases": [
+            {
+              "label": "Ping",
+              "agents": [
+                {
+                  "label": "ping-0",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-1",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-2",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-3",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-4",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-5",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-6",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-7",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-8",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "ping-9",
+                  "prompt": "Reply with exactly: pong. Nothing else.",
+                  "maxTokens": 32,
+                  "timeoutMs": 20000
+                }
+              ]
+            },
+            {
+              "label": "Echo",
+              "agents": [
+                {
+                  "label": "echo-alpha",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-beta",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-gamma",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-delta",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-epsilon",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-zeta",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-eta",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                },
+                {
+                  "label": "echo-theta",
+                  "prompt": "Echo the prior phase output back in one short line.",
+                  "maxTokens": 64,
+                  "timeoutMs": 20000
+                }
+              ]
+            },
+            {
+              "label": "Verify",
+              "agents": [
+                {
+                  "label": "verify-counts",
+                  "prompt": "Confirm prior phase output is non-empty. Reply ok or missing.",
+                  "maxTokens": 32
+                },
+                {
+                  "label": "verify-shape",
+                  "prompt": "Confirm prior phase output contains the word pong. Reply ok or missing.",
+                  "maxTokens": 32
+                }
+              ]
+            }
+          ]
+        },
+        "savedAt": "2026-06-10T13:19:50.440Z"
+      }
+    ],
+    "integrationId": "swarm:saved-workflows",
+    "fetchedAt": "2026-06-10T13:19:50.440Z",
+    "recordCount": 2
+  },
+  "swarm:approval-memory": {
+    "records": [
+      {
+        "workflowName": "swarm-ui-smoke-test",
+        "approvedBy": "smoke-seed",
+        "approvedAt": "2026-06-10T13:19:50.440Z"
+      },
+      {
+        "workflowName": "swarm-20-smoke-test",
+        "approvedBy": "smoke-seed",
+        "approvedAt": "2026-06-10T13:19:50.440Z"
+      }
+    ],
+    "integrationId": "swarm:approval-memory",
+    "fetchedAt": "2026-06-10T13:19:50.440Z",
+    "recordCount": 2
+  }
+}

@@ -307,6 +307,21 @@ function resolveOrchestratorAdapter({ orchestratorNode, executionContext }) {
   });
 }
 
+/**
+ * Optional live-event hook: when `executionContext.onSwarmEvent` is a
+ * function it receives `{ phase, node, status, tokensEstimate, toolUses,
+ * durationMs }` transitions so the swarm-run cockpit can stream progress.
+ * Purely additive — absent hook means identical behavior to before.
+ */
+function notifySwarmEvent(executionContext, payload) {
+  if (typeof executionContext?.onSwarmEvent !== "function") return;
+  try {
+    executionContext.onSwarmEvent(payload);
+  } catch {
+    // Listener failures never affect the run.
+  }
+}
+
 async function runOrchestratorPhase({ orchestratorNode, subagents, inputPayload, executionContext }) {
   const resolved = resolveOrchestratorAdapter({ orchestratorNode, executionContext });
   if (!resolved.adapterId || resolved.error) {
@@ -324,6 +339,7 @@ async function runOrchestratorPhase({ orchestratorNode, subagents, inputPayload,
   const command = buildOrchestratorCommand({ orchestratorNode, subagents, inputPayload });
   const env = { ...(executionContext.env || {}), GROWTHUB_SWARM_PHASE: "orchestrator" };
   const startedAt = Date.now();
+  notifySwarmEvent(executionContext, { phase: "plan", node: "orchestrator", status: "running" });
   const result = await runThroughAdapter({
     adapterId: resolved.adapterId,
     agentHost: resolved.agentHost,
@@ -340,8 +356,16 @@ async function runOrchestratorPhase({ orchestratorNode, subagents, inputPayload,
   });
   const stdout = redactSecretsFromText(result?.stdout || "");
   const errorText = redactSecretsFromText(result?.error || "");
+  const orchestratorStatus = result?.ok === true && !errorText ? "completed" : "failed";
+  notifySwarmEvent(executionContext, {
+    phase: "plan",
+    node: "orchestrator",
+    status: orchestratorStatus,
+    output: stdout,
+    durationMs: Number(result?.durationMs) || (Date.now() - startedAt)
+  });
   return {
-    status: result?.ok === true && !errorText ? "completed" : "failed",
+    status: orchestratorStatus,
     error: errorText,
     durationMs: Number(result?.durationMs) || (Date.now() - startedAt),
     adapter: resolved.adapterId,
@@ -396,6 +420,7 @@ async function dispatchSubagentTask({
   env.GROWTHUB_SWARM_PHASE = "subagent";
 
   const startedAt = Date.now();
+  notifySwarmEvent(executionContext, { phase: "dispatch", node: role, status: "running" });
   const result = await runThroughAdapter({
     adapterId: resolved.adapterId,
     agentHost: resolved.agentHost,
@@ -412,6 +437,13 @@ async function dispatchSubagentTask({
   });
   const errorText = redactSecretsFromText(result?.error || "");
   const ok = result?.ok === true && !errorText;
+  notifySwarmEvent(executionContext, {
+    phase: "dispatch",
+    node: role,
+    status: ok ? "completed" : "failed",
+    output: redactSecretsFromText(result?.stdout || ""),
+    durationMs: Number(result?.durationMs) || (Date.now() - startedAt)
+  });
   return {
     taskId,
     nodeId: taskId,
@@ -467,6 +499,7 @@ async function runSynthesisPhase({ synthesisNode, swarmConfig, tasks, inputPaylo
   const command = buildSynthesisCommand({ synthesisNode, swarmConfig, tasks, inputPayload });
   const env = { ...(executionContext.env || {}), GROWTHUB_SWARM_PHASE: "synthesis" };
   const startedAt = Date.now();
+  notifySwarmEvent(executionContext, { phase: "synthesize", node: "synthesizer", status: "running" });
   const result = await runThroughAdapter({
     adapterId: resolved.adapterId,
     agentHost: resolved.agentHost,
@@ -485,8 +518,16 @@ async function runSynthesisPhase({ synthesisNode, swarmConfig, tasks, inputPaylo
   const errorText = redactSecretsFromText(result?.error || "");
   const match = stdout.match(OUTCOME_SCORE_RE);
   const parsedOutcomeScore = match ? clamp01(match[1]) : null;
+  const synthesisStatus = result?.ok === true && !errorText ? "completed" : "failed";
+  notifySwarmEvent(executionContext, {
+    phase: "synthesize",
+    node: "synthesizer",
+    status: synthesisStatus,
+    output: stdout,
+    durationMs: Number(result?.durationMs) || (Date.now() - startedAt)
+  });
   return {
-    status: result?.ok === true && !errorText ? "completed" : "failed",
+    status: synthesisStatus,
     ranSynthesis: true,
     output: stdout,
     stderr: redactSecretsFromText(result?.stderr || ""),
@@ -913,6 +954,7 @@ async function runAgentSwarmGraphIfPresent({
 
 export {
   runAgentSwarmGraphIfPresent,
+  runThroughAdapter,
   computeRewardTelemetry,
   buildOrchestratorCommand,
   buildSubtaskCommand,

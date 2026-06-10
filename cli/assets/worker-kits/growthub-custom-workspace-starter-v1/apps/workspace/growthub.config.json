@@ -70,5 +70,31 @@
     "createdBy": "cli",
     "mirrors": "growthub-custom-workspace-starter-v1",
     "note": "Shipped with growthub-custom-workspace-starter-v1; safe to edit inside a governed fork and validate through the starter export smoke path."
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "swarm-smoke-sandbox",
+        "label": "Swarm Smoke Sandbox",
+        "objectType": "sandbox-environment",
+        "columns": [
+          "Name",
+          "adapter",
+          "agentHost",
+          "lifecycleStatus",
+          "version"
+        ],
+        "rows": [
+          {
+            "Name": "swarm-graph-smoke-test",
+            "adapter": "local-intelligence",
+            "agentHost": "",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "orchestrationGraph": "{\"provider\":\"agent-swarm-v1\",\"swarm\":{\"maxConcurrency\":4,\"outcomeCriteria\":\"Every subagent replied with a one-line result.\",\"rewardWeights\":{\"parallel\":0.25,\"finish\":0.35,\"outcome\":0.4}},\"nodes\":[{\"id\":\"orchestrator\",\"type\":\"thinAdapter\",\"label\":\"Orchestrator\",\"config\":{\"prompt\":\"Assign each subagent its one-line smoke reply. Keep the plan to three lines.\"}},{\"id\":\"subagent-1\",\"type\":\"ai-agent\",\"label\":\"Ping\",\"config\":{\"role\":\"Ping\",\"taskPrompt\":\"Reply with exactly: pong.\",\"required\":true,\"tools\":[]}},{\"id\":\"subagent-2\",\"type\":\"ai-agent\",\"label\":\"Echo\",\"config\":{\"role\":\"Echo\",\"taskPrompt\":\"Reply with exactly: echo.\",\"required\":true,\"tools\":[]}},{\"id\":\"synthesis\",\"type\":\"tool-result\",\"label\":\"Synthesize\",\"config\":{\"outcomePrompt\":\"Combine the replies into one line.\"}}],\"edges\":[{\"from\":\"orchestrator\",\"to\":\"subagent-1\",\"passes\":\"subtask-assignment\"},{\"from\":\"orchestrator\",\"to\":\"subagent-2\",\"passes\":\"subtask-assignment\"},{\"from\":\"subagent-1\",\"to\":\"synthesis\",\"passes\":\"subtask-result\"},{\"from\":\"subagent-2\",\"to\":\"synthesis\",\"passes\":\"subtask-result\"}]}"
+          }
+        ]
+      }
+    ]
   }
 }
