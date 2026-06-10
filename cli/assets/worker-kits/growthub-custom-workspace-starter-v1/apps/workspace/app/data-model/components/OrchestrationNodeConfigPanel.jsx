@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Check } from "lucide-react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -27,6 +28,23 @@ const EMPTY_AGENT_AUTH_PATCH = {
   agentAuthLastMessage: "",
   agentAuthLastLoginUrl: ""
 };
+
+function WorkflowCheckbox({ checked, disabled, onChange, children, title }) {
+  return (
+    <label className="dm-orchestration-config__field dm-orchestration-config__field-inline dm-workflow-check" title={title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.checked)}
+      />
+      <span className="dm-workflow-check__box" aria-hidden="true">
+        {checked ? <Check size={13} strokeWidth={2.4} /> : null}
+      </span>
+      <span>{children}</span>
+    </label>
+  );
+}
 
 function getAgentHostOptions() {
   return Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => ({
@@ -696,24 +714,20 @@ export function OrchestrationNodeConfigPanel({
               Latest registry test: {registryRow.status}
             </span>
           )}
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-            <input
-              type="checkbox"
-              checked={config.writeLastResponse !== false}
-              disabled={disabled}
-              onChange={(e) => patchConfig({ writeLastResponse: e.target.checked })}
-            />
-            <span>Write lastResponse on success</span>
-          </label>
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-            <input
-              type="checkbox"
-              checked={config.writeSourceRecord !== false}
-              disabled={disabled}
-              onChange={(e) => patchConfig({ writeSourceRecord: e.target.checked })}
-            />
-            <span>Write source record history</span>
-          </label>
+          <WorkflowCheckbox
+            checked={config.writeLastResponse !== false}
+            disabled={disabled}
+            onChange={(checked) => patchConfig({ writeLastResponse: checked })}
+          >
+            Write lastResponse on success
+          </WorkflowCheckbox>
+          <WorkflowCheckbox
+            checked={config.writeSourceRecord !== false}
+            disabled={disabled}
+            onChange={(checked) => patchConfig({ writeSourceRecord: checked })}
+          >
+            Write source record history
+          </WorkflowCheckbox>
           <label className="dm-orchestration-config__field">
             <span>Success HTTP codes</span>
             <input
@@ -882,15 +896,13 @@ export function OrchestrationNodeConfigPanel({
               )}
             </div>
           )}
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-            <input
-              type="checkbox"
-              checked={config.confirmationRequired === true}
-              disabled={disabled || config.destructive === true}
-              onChange={(e) => patchConfig({ confirmationRequired: e.target.checked })}
-            />
-            <span>Require confirmation before destructive or version-changing execution</span>
-          </label>
+          <WorkflowCheckbox
+            checked={config.confirmationRequired === true}
+            disabled={disabled || config.destructive === true}
+            onChange={(checked) => patchConfig({ confirmationRequired: checked })}
+          >
+            Require confirmation before destructive or version-changing execution
+          </WorkflowCheckbox>
           <p className="dm-orchestration-config__hint">
             Data actions bind only to this workspace data model. Execution resolves the latest object schema at run time.
           </p>
@@ -960,27 +972,21 @@ export function OrchestrationNodeConfigPanel({
               ))}
             </select>
           </label>
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-            <input
-              type="checkbox"
-              checked={config.required !== false}
-              disabled={disabled}
-              onChange={(e) => patchConfig({ required: e.target.checked })}
-            />
-            <span>Required</span>
-          </label>
-          <label
-            className="dm-orchestration-config__field dm-orchestration-config__field-inline"
-            title="Network is granted only when both this and the row's networkAllow are on."
+          <WorkflowCheckbox
+            checked={config.required !== false}
+            disabled={disabled}
+            onChange={(checked) => patchConfig({ required: checked })}
           >
-            <input
-              type="checkbox"
-              checked={config.networkAccess === true}
-              disabled={disabled}
-              onChange={(e) => patchConfig({ networkAccess: e.target.checked })}
-            />
-            <span>Network</span>
-          </label>
+            Required
+          </WorkflowCheckbox>
+          <WorkflowCheckbox
+            checked={config.networkAccess === true}
+            disabled={disabled}
+            title="Network is granted only when both this and the row's networkAllow are on."
+            onChange={(checked) => patchConfig({ networkAccess: checked })}
+          >
+            Network
+          </WorkflowCheckbox>
         </div>
       )}
 
@@ -1013,33 +1019,15 @@ export function OrchestrationNodeConfigPanel({
           </label>
           <div className="dm-orchestration-config__section">
             <span>Permissions</span>
-            <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-              <input
-                type="checkbox"
-                checked={config.canReadWorkspace !== false}
-                disabled={disabled}
-                onChange={(e) => patchConfig({ canReadWorkspace: e.target.checked })}
-              />
-              <span>Read workspace data</span>
-            </label>
-            <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-              <input
-                type="checkbox"
-                checked={config.canWriteDraft === true}
-                disabled={disabled}
-                onChange={(e) => patchConfig({ canWriteDraft: e.target.checked })}
-              />
-              <span>Write draft changes only</span>
-            </label>
-            <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-              <input
-                type="checkbox"
-                checked={config.networkAccess === true}
-                disabled={disabled}
-                onChange={(e) => patchConfig({ networkAccess: e.target.checked })}
-              />
-              <span>Allow network access</span>
-            </label>
+            <WorkflowCheckbox checked={config.canReadWorkspace !== false} disabled={disabled} onChange={(checked) => patchConfig({ canReadWorkspace: checked })}>
+              Read workspace data
+            </WorkflowCheckbox>
+            <WorkflowCheckbox checked={config.canWriteDraft === true} disabled={disabled} onChange={(checked) => patchConfig({ canWriteDraft: checked })}>
+              Write draft changes only
+            </WorkflowCheckbox>
+            <WorkflowCheckbox checked={config.networkAccess === true} disabled={disabled} onChange={(checked) => patchConfig({ networkAccess: checked })}>
+              Allow network access
+            </WorkflowCheckbox>
           </div>
           <KeyValueRows
             label="Output fields"
@@ -1176,10 +1164,9 @@ export function OrchestrationNodeConfigPanel({
                 <span>Message</span>
                 <textarea rows={6} value={config.message || ""} disabled={disabled} onChange={(e) => patchConfig({ message: e.target.value })} />
               </label>
-              <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-                <input type="checkbox" checked={config.requireApproval !== false} disabled={disabled} onChange={(e) => patchConfig({ requireApproval: e.target.checked })} />
-                <span>Require approval before sending</span>
-              </label>
+              <WorkflowCheckbox checked={config.requireApproval !== false} disabled={disabled} onChange={(checked) => patchConfig({ requireApproval: checked })}>
+                Require approval before sending
+              </WorkflowCheckbox>
             </>
           )}
           {config.action === "code-function" && (
@@ -1216,10 +1203,9 @@ export function OrchestrationNodeConfigPanel({
             valuePlaceholder="Field type or help text"
             onChange={(fields) => patchConfig({ fields })}
           />
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-            <input type="checkbox" checked={config.required !== false} disabled={disabled} onChange={(e) => patchConfig({ required: e.target.checked })} />
-            <span>Require response before continuing</span>
-          </label>
+          <WorkflowCheckbox checked={config.required !== false} disabled={disabled} onChange={(checked) => patchConfig({ required: checked })}>
+            Require response before continuing
+          </WorkflowCheckbox>
         </div>
       )}
 
@@ -1233,10 +1219,9 @@ export function OrchestrationNodeConfigPanel({
             <span>Sample response</span>
             <textarea rows={5} value={config.sampleResponse || ""} disabled={disabled} onChange={(e) => patchConfig({ sampleResponse: e.target.value })} />
           </label>
-          <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-            <input type="checkbox" checked={config.blockPublishOnFailure !== false} disabled={disabled} onChange={(e) => patchConfig({ blockPublishOnFailure: e.target.checked })} />
-            <span>Block Publish unless this step passes</span>
-          </label>
+          <WorkflowCheckbox checked={config.blockPublishOnFailure !== false} disabled={disabled} onChange={(checked) => patchConfig({ blockPublishOnFailure: checked })}>
+            Block Publish unless this step passes
+          </WorkflowCheckbox>
         </div>
       )}
 

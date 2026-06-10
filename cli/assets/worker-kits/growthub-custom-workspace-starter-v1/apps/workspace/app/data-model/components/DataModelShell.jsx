@@ -42,6 +42,7 @@ import {
   Trash2,
   Type,
   Unlock,
+  Upload,
   Users,
   X,
   Zap,
@@ -1843,7 +1844,9 @@ function DataModelRecordDrawer({
         <header className="dm-record-drawer-head">
           <div>
             <p>Record</p>
-            <h2>{draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}</h2>
+            <h2 title={draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}>
+              {draft.Name || draft.integrationId || draft.id || `Row ${rowIndex + 1}`}
+            </h2>
           </div>
           <div className="dm-record-drawer-actions">
             {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && (
@@ -1854,7 +1857,7 @@ function DataModelRecordDrawer({
                 onClick={runSandbox}
               >
                 <Play size={13} aria-hidden />
-                {sandboxRunning ? "Running…" : "Run sandbox"}
+                {sandboxRunning ? "Running…" : "Execute"}
               </button>
             )}
             {!isSandbox && sandboxToolFlow !== "draft" && (
@@ -2457,9 +2460,9 @@ function DataModelTableSurface({
               const a = document.createElement("a");
               a.href = url; a.download = `${table.source.replace(/\s+/g, "-").toLowerCase()}.csv`;
               a.click(); URL.revokeObjectURL(url);
-            }}>Export CSV</button>
+            }}><Download size={13} />Export CSV</button>
           )}
-          {table.mutable && <button type="button" className="dm-btn-ghost" onClick={() => setCsvOpen((open) => !open)}>Import CSV</button>}
+          {table.mutable && <button type="button" className="dm-btn-ghost" onClick={() => setCsvOpen((open) => !open)}><Upload size={13} />Import CSV</button>}
           {table.mutable && (
             <button type="button" className="dm-btn-primary-sm" disabled={saving} onClick={() => onSave((config) => addTableRow(config, table))}>
               <Plus size={13} />Add record

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Trash2 } from "lucide-react";
 import { HOST_AUTH_CATALOG } from "@/lib/sandbox-agent-host-catalog";
 
 function getHostOptions() {
@@ -11,31 +11,63 @@ function getHostOptions() {
   }));
 }
 
-function patchOrchestrator(graph, patch) {
+function nodeSandboxRecordRef(objectId, rowName, nodeId) {
+  return {
+    objectId: String(objectId || "").trim(),
+    rowName: String(rowName || "").trim(),
+    nodeId: String(nodeId || "").trim()
+  };
+}
+
+function withRecordRef(patch, objectId, rowName, nodeId) {
+  return {
+    ...patch,
+    sandboxRecordRef: nodeSandboxRecordRef(objectId, rowName, nodeId)
+  };
+}
+
+function WorkflowCheckbox({ checked, disabled, onChange, children, title }) {
+  return (
+    <label className="dm-orchestration-config__field dm-orchestration-config__field-inline dm-workflow-check" title={title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.checked)}
+      />
+      <span className="dm-workflow-check__box" aria-hidden="true">
+        {checked ? <Check size={13} strokeWidth={2.4} /> : null}
+      </span>
+      <span>{children}</span>
+    </label>
+  );
+}
+
+function patchOrchestrator(graph, patch, objectId, rowName) {
   const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
   return {
     ...graph,
     nodes: nodes.map((node) =>
       node?.type === "thinAdapter"
-        ? { ...node, config: { ...(node.config || {}), ...patch } }
+        ? { ...node, config: { ...(node.config || {}), ...withRecordRef(patch, objectId, rowName, node.id) } }
         : node
     )
   };
 }
 
-function patchSynthesis(graph, patch) {
+function patchSynthesis(graph, patch, objectId, rowName) {
   const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
   return {
     ...graph,
     nodes: nodes.map((node) =>
       node?.type === "tool-result"
-        ? { ...node, config: { ...(node.config || {}), ...patch } }
+        ? { ...node, config: { ...(node.config || {}), ...withRecordRef(patch, objectId, rowName, node.id) } }
         : node
     )
   };
 }
 
-function patchSubagent(graph, nodeId, patch) {
+function patchSubagent(graph, nodeId, patch, objectId, rowName) {
   const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
   return {
     ...graph,
@@ -44,7 +76,7 @@ function patchSubagent(graph, nodeId, patch) {
         ? {
             ...node,
             label: patch.role != null ? String(patch.role) : node.label,
-            config: { ...(node.config || {}), ...patch }
+            config: { ...(node.config || {}), ...withRecordRef(patch, objectId, rowName, node.id) }
           }
         : node
     )
@@ -107,7 +139,7 @@ function patchSwarmConfig(graph, patch) {
   return { ...graph, swarm: { ...base, ...patch } };
 }
 
-export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
+export function AgentSwarmPanel({ graph, objectId, rowName, onGraphChange, disabled }) {
   const hostOptions = useMemo(getHostOptions, []);
   if (!graph || typeof graph !== "object") return null;
 
@@ -133,7 +165,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
               rows={3}
               value={orchestrator?.config?.prompt || ""}
               disabled={disabled || !orchestrator}
-              onChange={(e) => patchGraph((g) => patchOrchestrator(g, { prompt: e.target.value }))}
+              onChange={(e) => patchGraph((g) => patchOrchestrator(g, { prompt: e.target.value }, objectId, rowName))}
             />
           </label>
         </div>
@@ -163,7 +195,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                     placeholder="Role"
                     value={cfg.role || node.label || ""}
                     disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { role: e.target.value }))}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { role: e.target.value }, objectId, rowName))}
                   />
                   <button
                     type="button"
@@ -181,7 +213,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                     placeholder="One-sentence charter"
                     value={cfg.description || ""}
                     disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { description: e.target.value }))}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { description: e.target.value }, objectId, rowName))}
                   />
                 </label>
                 <label className="dm-orchestration-config__field">
@@ -190,7 +222,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                     rows={2}
                     value={cfg.taskPrompt || ""}
                     disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { taskPrompt: e.target.value }))}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { taskPrompt: e.target.value }, objectId, rowName))}
                   />
                 </label>
                 <label className="dm-orchestration-config__field">
@@ -201,7 +233,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                     disabled={disabled}
                     onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, {
                       tools: e.target.value.split(",").map((t) => t.trim()).filter(Boolean)
-                    }))}
+                    }, objectId, rowName))}
                   />
                 </label>
                 <label className="dm-orchestration-config__field">
@@ -212,7 +244,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                     placeholder="0 = inherit"
                     value={cfg.maxTokens || 0}
                     disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { maxTokens: Math.max(0, Number(e.target.value) || 0) }))}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { maxTokens: Math.max(0, Number(e.target.value) || 0) }, objectId, rowName))}
                   />
                 </label>
                 <label className="dm-orchestration-config__field">
@@ -220,7 +252,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                   <select
                     value={cfg.agentHost || ""}
                     disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { agentHost: e.target.value }))}
+                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { agentHost: e.target.value }, objectId, rowName))}
                   >
                     <option value="">Inherit</option>
                     {hostOptions.map((opt) => (
@@ -228,27 +260,21 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                     ))}
                   </select>
                 </label>
-                <label className="dm-orchestration-config__field dm-orchestration-config__field-inline">
-                  <input
-                    type="checkbox"
-                    checked={cfg.required !== false}
-                    disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { required: e.target.checked }))}
-                  />
-                  <span>Required</span>
-                </label>
-                <label
-                  className="dm-orchestration-config__field dm-orchestration-config__field-inline"
-                  title="Network is granted only when both this and the row's networkAllow are on."
+                <WorkflowCheckbox
+                  checked={cfg.required !== false}
+                  disabled={disabled}
+                  onChange={(checked) => patchGraph((g) => patchSubagent(g, node.id, { required: checked }, objectId, rowName))}
                 >
-                  <input
-                    type="checkbox"
-                    checked={cfg.networkAccess === true}
-                    disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { networkAccess: e.target.checked }))}
-                  />
-                  <span>Network</span>
-                </label>
+                  Required
+                </WorkflowCheckbox>
+                <WorkflowCheckbox
+                  checked={cfg.networkAccess === true}
+                  disabled={disabled}
+                  title="Network is granted only when both this and the row's networkAllow are on."
+                  onChange={(checked) => patchGraph((g) => patchSubagent(g, node.id, { networkAccess: checked }, objectId, rowName))}
+                >
+                  Network
+                </WorkflowCheckbox>
               </div>
             );
           })}
@@ -315,7 +341,7 @@ export function AgentSwarmPanel({ graph, onGraphChange, disabled }) {
                 rows={2}
                 value={synthesis?.config?.outcomePrompt || ""}
                 disabled={disabled}
-                onChange={(e) => patchGraph((g) => patchSynthesis(g, { outcomePrompt: e.target.value }))}
+                onChange={(e) => patchGraph((g) => patchSynthesis(g, { outcomePrompt: e.target.value }, objectId, rowName))}
               />
             </label>
           </div>

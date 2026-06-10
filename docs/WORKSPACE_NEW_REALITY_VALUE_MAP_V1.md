@@ -2,13 +2,14 @@
 
 Official value map for the governed creation release.
 
-This document explains what the v0.14.0 governed creation release unlocks for enterprise users, existing workspaces, and new users. It maps the new product reality to practical use cases and operating outcomes for Agentic Workspace as Code (AWaC).
+This document explains what the v0.14 governed creation line unlocks for enterprise users, existing workspaces, and new users. It maps the new product reality to practical use cases and operating outcomes for Agentic Workspace as Code (AWaC).
 
 Read with:
 
 - [`docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md`](./AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md)
 - [`docs/GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md`](./GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md)
 - [`docs/GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md`](./GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md)
+- [`docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md`](./GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 - [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [`docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md`](./CAUSATION_ITT_ELIGIBILITY_DRIVERS.md)
 
@@ -43,6 +44,7 @@ The current product reality combines two recent release layers:
 
 - `0.13.9` established Codex Sites as a governed workspace primitive. Real hosted site bindings are represented as Data Model rows, Builder Site items, and Workspace Settings state without storing private account data in the starter template.
 - `0.14.0` added the governed creation cockpit. API Registry rows now have an evidence-backed path through server-side test, response profiling, resolver recommendation, Data Source creation, source-record refresh, workflow persistence readiness, and Workspace Lens readback.
+- `0.14.1` adds the governed agent swarm cockpit. Helper-created swarm workflow rows now inherit the active helper execution target, open thread-bounded Background Tasks cockpits, execute through the same `sandbox-run` route, persist truthful subagent telemetry, and link canvas node delta tags back to the owning sandbox record.
 
 Together they define the operating pattern for the platform: every useful external capability should enter as governed workspace state, become visible in the browser, leave receipts, and stay agent-readable.
 
@@ -392,6 +394,7 @@ Production is reachable, gated correctly, and rendering the expected workspace s
 | Resolver work | Manual or rebuild-prone | Helper-proposed, runtime-loadable resolver lane |
 | Helper | Chat/planning surface | Reviewable proposal and apply surface |
 | Workflows | Local draft execution | Draft/test/publish plus persistence upgrade path |
+| Agent swarms | Chat-only orchestration idea | Governed sandbox workflow row with cockpit, canvas trace, and source-record history |
 | Onboarding | Setup checklist | Checklist grounded in real workflow and workspace evidence |
 | Workspace Lens | Readiness surface | Holistic cockpit for state, evidence, and handoff |
 | Browser agent QA | Manual screenshot or static-code claim | CUA action, DOM readback, and persistence corroboration |

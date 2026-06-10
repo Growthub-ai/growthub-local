@@ -10,6 +10,8 @@ AWaC means the **workspace is the owned artifact**: a forkable app, `growthub.co
 
 The official topology reference is [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md). If agent guidance conflicts with that topology, update the guidance instead of inventing a side path.
 
+The current governed creation value map is [`docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md`](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md). The `0.14.1` governed agent swarm cockpit feature map is [`docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md`](./docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md).
+
 ## Canonical Product Mental Model
 
 Growthub Local turns a **repo, skill, starter, or kit** into a governed local workspace that can be customized, kept current, and operated by humans and agents.
@@ -145,6 +147,8 @@ Sandbox Environment rows:
 
 The local agent host adapter is the handoff point for Codex and other local CLIs. Keep its command syntax and stdin prompt/instructions handoff aligned with `apps/workspace/lib/adapters/sandboxes/default-local-agent-host.js`.
 
+Governed agent swarm workflows are sandbox-environment rows with `agent-swarm-v1` orchestration graphs. They are proposed by the helper, applied through the existing `dataModel` lane, opened through Background Tasks with a thread-bounded focus, executed through the same `sandbox-run` route, and traced in the workflow canvas through node `sandboxRecordRef` values. Do not create a separate swarm object model or fallback redirect path.
+
 ## Workspace Helper
 
 The workspace helper is a governed, workspace-grammar-aware planning engine that drafts proposals for dashboards, widgets, API registry rows, and custom business objects. It operates in propose-only mode — mutations require an explicit apply step.
@@ -162,7 +166,7 @@ growthub workspace helper apply --proposal-file proposals.json [--yes]
 growthub workspace helper receipts [--limit 25]
 ```
 
-Intents: `build_dashboard` | `create_widget` | `register_api` | `create_object` | `edit_view` | `repair` | `explain`
+Intents: `build_dashboard` | `create_widget` | `register_api` | `create_object` | `edit_view` | `repair` | `explain` | `swarm`
 
 **Helper API surface (requires running workspace dev server):**
 

@@ -1,8 +1,12 @@
 # Governed Swarm Release Snapshot V1
 
-Release snapshot for the **Governed Swarm Cockpit Extension** — post-0.14
-helper sidecar integration. Companion contract:
-[`docs/SWARM_RUN_CONTRACT_V1.md`](./SWARM_RUN_CONTRACT_V1.md).
+Release snapshot for the **Governed Agent Swarm Cockpit** — the `0.14.1`
+governed creation extension.
+
+Companion docs:
+
+- [`docs/SWARM_RUN_CONTRACT_V1.md`](./SWARM_RUN_CONTRACT_V1.md)
+- [`docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md`](./GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 
 ## Source-of-truth summary
 
@@ -10,8 +14,8 @@ The helper proposes. `helper/apply` mutates after review. `sandbox-run`
 executes. Source records persist run history. `orchestration-run-console`
 projects records for UI. `orchestration-agent-swarm` is the existing swarm
 runtime. This extension exposes that existing spine inside the helper
-sidecar — it adds **no new runtime, no new persistence layer, no new PATCH
-field, and no new DUI/UX primitives**.
+sidecar, Background Tasks, and workflow canvas — it adds **no new runtime,
+no new persistence layer, no new PATCH field, and no new swarm object model**.
 
 ## Files changed by phase
 
@@ -96,6 +100,25 @@ field, and no new DUI/UX primitives**.
 - Event union: +7 additive `swarm_*` types; consumers ignore unknown types.
 - Run records: additive `objectId`, `name`, per-task telemetry fields,
   `swarmRun` projection on normalized records.
+- Workflow canvas nodes: additive `config.sandboxRecordRef` values so
+  node delta tags resolve to the owning sandbox object row and node id.
+
+## 0.14.1 final closeout additions
+
+- Helper apply inherits the active helper execution target into newly applied
+  swarm workflow rows, including local-agent-host and local-intelligence
+  paths.
+- First-run eligibility blocks Play when the helper/widget execution target or
+  swarm row execution target is not runnable.
+- Background Tasks tool-output Open is thread-bounded: when a helper result
+  targets `{ objectId, name }`, the cockpit renders only that exact swarm row.
+- The Background Tasks header redirect opens the exact workflow canvas record;
+  there is no fallback row.
+- `sandbox-run` supports additive NDJSON deltas for live cockpit hydration.
+- `local-agent-host` telemetry parses supported real CLI output footers; missing
+  telemetry stays `null`, never `0` or estimated.
+- Workflow canvas pan, wheel zoom, fit view, tall graph padding, one-line drawer
+  titles, and record-level Execute affordance were finalized as UI polish.
 
 ## Proposal → apply → run → receipt proof (API smoke, dev runtime)
 
@@ -134,18 +157,13 @@ field, and no new DUI/UX primitives**.
 
 ## Known limitations
 
-- `sandbox-run` is synchronous: live per-agent progress during a run is
-  not streamed; the cockpit shows an elapsed ticker while the request is
-  in flight and renders full phase/agent state from the persisted record.
-  The optional NDJSON stream route (additive `swarm_*` events) is future
-  work, deliberately sequenced after static cockpit correctness.
 - Stop cancels the active client request only — no durable server-side
   cancel primitive exists yet.
 - `swarm.run.resume` re-launches the whole workflow; partial resume of
   failed subagents requires a future contract version.
 - Token/tool telemetry is only as rich as the adapter reports
-  (`local-intelligence` reports completion usage; `local-agent-host` CLIs
-  report none → `—`).
+  (`local-intelligence` reports completion usage; supported `local-agent-host`
+  CLI footers are parsed; otherwise values render `—`).
 
 ## DUI/UX conformance hardening (post-review pass)
 

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpCircle,
   Bot,
-  ChevronDown,
-  ChevronUp,
   Code,
   Filter,
   FormInput,
@@ -135,6 +135,29 @@ function patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, fields) {
   };
 }
 
+function nodeSandboxRecordRef(objectId, rowName, nodeId) {
+  return {
+    objectId: String(objectId || "").trim(),
+    rowName: String(rowName || "").trim(),
+    nodeId: String(nodeId || "").trim()
+  };
+}
+
+function withGraphSandboxRecordRefs(graph, objectId, rowName) {
+  const parsed = parseOrchestrationGraph(graph) || graph;
+  if (!parsed || typeof parsed !== "object") return parsed;
+  return {
+    ...parsed,
+    nodes: (Array.isArray(parsed.nodes) ? parsed.nodes : []).map((node) => ({
+      ...node,
+      config: {
+        ...(node?.config || {}),
+        sandboxRecordRef: nodeSandboxRecordRef(objectId, rowName, node?.id)
+      }
+    }))
+  };
+}
+
 const WORKFLOW_ACTION_GROUPS = [
   {
     label: "Data",
@@ -243,6 +266,7 @@ function getNodeDeltaRecords(previousGraph, nextGraph) {
         nodeId,
         nodeType: String(node?.type || ""),
         label: String(node?.label || node?.sandbox || nodeId),
+        sandboxRecordRef: config.sandboxRecordRef || null,
         changeReason,
         deltaTags,
         requiresRetest: config.requiresRetest !== false,
@@ -497,8 +521,16 @@ export default function WorkflowSurface() {
 
   const selectedNode = useMemo(() => {
     if (!orchestrationGraph?.nodes || !selectedNodeId) return null;
-    return orchestrationGraph.nodes.find((n) => String(n.id) === selectedNodeId) || null;
-  }, [orchestrationGraph, selectedNodeId]);
+    const node = orchestrationGraph.nodes.find((n) => String(n.id) === selectedNodeId) || null;
+    if (!node) return null;
+    return {
+      ...node,
+      config: {
+        ...(node.config || {}),
+        sandboxRecordRef: nodeSandboxRecordRef(objectId, rowId, node.id)
+      }
+    };
+  }, [orchestrationGraph, selectedNodeId, objectId, rowId]);
 
   useEffect(() => {
     if (graphUnset || graphBlankShell) {
@@ -521,7 +553,7 @@ export default function WorkflowSurface() {
   }
 
   function serializeCurrentGraph() {
-    return graphUnset ? "" : serializeOrchestrationGraph(orchestrationGraph);
+    return graphUnset ? "" : serializeOrchestrationGraph(withGraphSandboxRecordRefs(orchestrationGraph, objectId, rowId));
   }
 
   async function saveDraft(extraFields = {}) {
@@ -588,7 +620,8 @@ export default function WorkflowSurface() {
       const nextVersion = Number.isFinite(currentVersion) ? String(currentVersion + 1) : "1";
       const previousDeltas = Array.isArray(sandboxRow?.orchestrationDeltas) ? sandboxRow.orchestrationDeltas : [];
       const previousPublishedGraph = parseOrchestrationGraph(sandboxRow?.[effectiveFieldName]);
-      const nodeDeltas = getNodeDeltaRecords(previousPublishedGraph, orchestrationGraph);
+      const graphWithRefs = withGraphSandboxRecordRefs(orchestrationGraph, objectId, rowId);
+      const nodeDeltas = getNodeDeltaRecords(previousPublishedGraph, graphWithRefs);
       const deltaTags = normalizeDeltaTags(nodeDeltas.flatMap((delta) => delta.deltaTags));
       const changeReason = nodeDeltas.map((delta) => delta.changeReason).filter(Boolean).join("\n");
       const next = patchSandboxRowInConfig(workspaceConfig, objectId, resolved.rowIndex, {
@@ -798,8 +831,12 @@ export default function WorkflowSurface() {
   function handleNodeConfigChange(configPatch) {
     if (!selectedNodeId) return;
     const { __nodePatch, ...configOnly } = configPatch || {};
+    const recordRef = nodeSandboxRecordRef(objectId, rowId, selectedNodeId);
     setOrchestrationGraph((g) => {
-      const updated = updateGraphNode(g, selectedNodeId, configOnly);
+      const updated = updateGraphNode(g, selectedNodeId, {
+        ...configOnly,
+        sandboxRecordRef: recordRef
+      });
       if (!__nodePatch || typeof __nodePatch !== "object") return updated;
       const parsed = parseOrchestrationGraph(updated) || updated;
       return {
@@ -960,7 +997,7 @@ export default function WorkflowSurface() {
                 setAddTarget(null);
               }}
             >
-              <ChevronDown size={14} />
+              <ArrowDown size={13} />
             </button>
             <button
               type="button"
@@ -974,7 +1011,7 @@ export default function WorkflowSurface() {
                 setAddTarget(null);
               }}
             >
-              <ChevronUp size={14} />
+              <ArrowUp size={13} />
             </button>
             {sandboxRow && (
               <button
@@ -1194,6 +1231,8 @@ export default function WorkflowSurface() {
                   </div>
                   <AgentSwarmPanel
                     graph={orchestrationGraph}
+                    objectId={objectId}
+                    rowName={rowId}
                     disabled={false}
                     onGraphChange={(updater) => {
                       setOrchestrationGraph((g) => (typeof updater === "function" ? updater(g) : updater));

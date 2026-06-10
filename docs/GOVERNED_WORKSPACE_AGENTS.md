@@ -4,6 +4,8 @@ Governed Workspace Agents attach hosted Growthub Agent Builder agents to a fork-
 
 The hosted agent is not just a remote command. It is a typed orchestration manifest: instructions, model configuration, workflow bindings, knowledge sources, variables, triggers, diagnostics, and resolved slugs. The local CLI lets a governed workspace claim that manifest as part of its operating surface while execution stays in Growthub.
 
+For local governed agent swarms created inside the exported workspace app, use the `0.14.1` [Governed Agent Swarm Cockpit Value Map V1](./GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md). Those swarms are sandbox-environment workflow rows executed through `POST /api/workspace/sandbox-run`; they are not hosted agent bindings.
+
 ## What This Gives You
 
 - A workspace-level agent catalog sourced from the user's authenticated Growthub account.
