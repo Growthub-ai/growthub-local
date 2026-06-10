@@ -19,6 +19,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/goal",
     label: "Goal",
+    description: "Set a verifiable goal for this helper session",
     scope: "chat",
     mutates: false,
     promptTemplate: "Set a verifiable goal for this helper session:"
@@ -26,6 +27,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/loop",
     label: "Loop",
+    description: "Propose a governed recurring loop — reviewed before anything runs",
     scope: "workspace",
     mutates: true,
     promptTemplate: "Propose a governed loop:"
@@ -33,6 +35,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/workflows",
     label: "Workflows",
+    description: "Open the background tasks list — read-only, no writes",
     scope: "workspace",
     mutates: false,
     view: "swarm-list"
@@ -40,6 +43,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/swarm",
     label: "Swarm",
+    description: "Propose a governed agent swarm — you review and apply before any run",
     scope: "swarm",
     mutates: true,
     intent: "swarm",
@@ -48,6 +52,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/register-api",
     label: "Register API",
+    description: "Draft an API Registry entry as a reviewable proposal",
     scope: "workspace",
     mutates: true,
     intent: "register_api"
@@ -55,11 +60,55 @@ export const HELPER_COMMANDS = [
   {
     name: "/create-object",
     label: "Create object",
+    description: "Translate a plain-language description into a new business object",
     scope: "workspace",
     mutates: true,
     intent: "create_object"
   }
 ];
+
+// The full behavioral surface a command may declare. Anything outside this
+// list (execute hooks, patch fields, fetch targets…) is a governance
+// violation — commands are a keyboard front-end to the existing pill
+// intent system, never an action runner.
+export const HELPER_COMMAND_ALLOWED_KEYS = [
+  "name",
+  "label",
+  "description",
+  "scope",
+  "mutates",
+  "promptTemplate",
+  "view",
+  "intent"
+];
+
+/**
+ * Pure governance validator for one command entry. Used by the unit suite
+ * against the live registry AND against forged entries (proving the
+ * invariant bites). Returns { ok, error }.
+ */
+export function isGovernedHelperCommand(cmd) {
+  if (!cmd || typeof cmd !== "object") return { ok: false, error: "command must be an object" };
+  if (typeof cmd.name !== "string" || !cmd.name.startsWith("/")) {
+    return { ok: false, error: "command name must start with /" };
+  }
+  if (typeof cmd.label !== "string" || !cmd.label) return { ok: false, error: `${cmd.name}: label required` };
+  if (typeof cmd.mutates !== "boolean") return { ok: false, error: `${cmd.name}: mutates must be declared` };
+  for (const key of Object.keys(cmd)) {
+    if (!HELPER_COMMAND_ALLOWED_KEYS.includes(key)) {
+      return { ok: false, error: `${cmd.name}: behavior key "${key}" is outside the governed surface` };
+    }
+  }
+  if (cmd.mutates) {
+    if (!cmd.intent && !cmd.promptTemplate) {
+      return { ok: false, error: `${cmd.name}: mutating commands must seed a governed proposal request` };
+    }
+    if (cmd.view) {
+      return { ok: false, error: `${cmd.name}: mutating commands must not switch views directly` };
+    }
+  }
+  return { ok: true, error: null };
+}
 
 /**
  * Fuzzy-filter the registry against what the user typed after "/".

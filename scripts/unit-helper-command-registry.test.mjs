@@ -25,7 +25,13 @@ const commandsPath = path.join(
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/data-model/components/helper-commands.js"
 );
 
-const { HELPER_COMMANDS, matchHelperCommands, parseSlashInput } = await import(pathToFileURL(commandsPath).href);
+const {
+  HELPER_COMMANDS,
+  HELPER_COMMAND_ALLOWED_KEYS,
+  isGovernedHelperCommand,
+  matchHelperCommands,
+  parseSlashInput,
+} = await import(pathToFileURL(commandsPath).href);
 
 test("registry separates read-only and mutating commands", () => {
   for (const cmd of HELPER_COMMANDS) {
@@ -63,24 +69,54 @@ test("/workflows is read-only and opens the cockpit list view", () => {
 test("no command carries a direct mutation/execution hook", () => {
   for (const cmd of HELPER_COMMANDS) {
     // The only allowed behaviors are view switches and prompt/intent seeding.
-    const keys = Object.keys(cmd).sort();
-    for (const key of keys) {
-      assert.ok(
-        ["name", "label", "scope", "mutates", "promptTemplate", "view", "intent"].includes(key),
-        `${cmd.name} has unexpected behavior key "${key}"`
-      );
+    const verdict = isGovernedHelperCommand(cmd);
+    assert.equal(verdict.ok, true, verdict.error);
+    for (const key of Object.keys(cmd)) {
+      assert.ok(HELPER_COMMAND_ALLOWED_KEYS.includes(key), `${cmd.name} has unexpected behavior key "${key}"`);
     }
     // Mutating commands must route through the proposal chain.
     if (cmd.mutates) {
       assert.ok(cmd.intent || cmd.promptTemplate, `${cmd.name} must seed a governed proposal request`);
       assert.equal(cmd.view, undefined, `${cmd.name} must not switch views directly`);
     }
+    // Discoverability: every command documents itself for the slash menu.
+    assert.ok(typeof cmd.description === "string" && cmd.description.length > 0, `${cmd.name} needs a description`);
   }
+});
+
+test("the no-direct-mutation-hook invariant bites on forged commands", () => {
+  // A command smuggling an execute/patch/fetch hook must fail validation —
+  // this is the adversarial proof the governance test is not vacuous.
+  assert.equal(
+    isGovernedHelperCommand({ name: "/evil", label: "Evil", mutates: true, intent: "swarm", execute: () => {} }).ok,
+    false
+  );
+  assert.equal(
+    isGovernedHelperCommand({ name: "/evil", label: "Evil", mutates: true, intent: "swarm", patch: { dataModel: {} } }).ok,
+    false
+  );
+  // Mutating command with a direct view switch is rejected.
+  assert.equal(
+    isGovernedHelperCommand({ name: "/evil", label: "Evil", mutates: true, intent: "swarm", view: "swarm-list" }).ok,
+    false
+  );
+  // Mutating command with no proposal seed is rejected.
+  assert.equal(
+    isGovernedHelperCommand({ name: "/evil", label: "Evil", mutates: true }).ok,
+    false
+  );
+  // A well-formed read-only command passes.
+  assert.equal(
+    isGovernedHelperCommand({ name: "/fine", label: "Fine", description: "d", scope: "chat", mutates: false, view: "swarm-list" }).ok,
+    true
+  );
 });
 
 test("fuzzy matching finds commands by name, label, and subsequence", () => {
   assert.equal(matchHelperCommands("").length, HELPER_COMMANDS.length);
   assert.ok(matchHelperCommands("sw").some((c) => c.name === "/swarm"));
+  assert.ok(matchHelperCommands("swa").some((c) => c.name === "/swarm"));
+  assert.ok(matchHelperCommands("swm").some((c) => c.name === "/swarm"));
   assert.ok(matchHelperCommands("wf").some((c) => c.name === "/workflows"));
   assert.ok(matchHelperCommands("register").some((c) => c.name === "/register-api"));
   assert.ok(matchHelperCommands("Create object").some((c) => c.name === "/create-object"));

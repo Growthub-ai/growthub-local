@@ -9134,6 +9134,7 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-helper-composer-input { position: relative; }
 .dm-helper-slash-menu { bottom: calc(100% + 6px); top: auto; left: 0; right: 0; }
 .dm-helper-slash-menu .dm-helper-pill-menu-item { justify-content: space-between; gap: 10px; }
+.dm-helper-slash-menu .dm-field-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-helper-slash-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 
 /* Cockpit body — scrolling list inside the existing sidecar body. */

@@ -1339,9 +1339,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                         aria-selected={i === slashIndex}
                         data-helper-slash-item={cmd.name}
                         onClick={() => selectSlashCommand(cmd)}
+                        onMouseEnter={() => setSlashIndex(i)}
                       >
                         <span className="dm-helper-slash-name">{cmd.name}</span>
-                        <span className="dm-field-hint">{cmd.label}</span>
+                        <span className="dm-field-hint">{cmd.description || cmd.label}</span>
                       </button>
                     ))}
                   </div>
@@ -1352,7 +1353,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   className="dm-helper-composer-textarea"
                   rows={threadActive ? 2 : 3}
                   placeholder={threadActive
-                    ? 'Continue the conversation…'
+                    ? 'Continue, or type / for commands…'
                     : 'Type / for commands, or ask anything…'}
                   value={prompt}
                   onChange={(e) => {
