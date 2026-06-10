@@ -311,6 +311,38 @@ export {
   WORKSPACE_HELPER_CONTRACT_VERSION,
 } from "./helper.js";
 
+// Swarm Run (governed agent-swarm runs — proposal/receipt envelope with
+// sandbox-object parity, run/phase/agent graph nodes, NDJSON event
+// vocabulary. Executes through the existing workspace sandbox-run surface;
+// see docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md.)
+export type {
+  GovernedProposalBase,
+  SwarmNodeKind,
+  SwarmNodeStatus,
+  SwarmRunStatus,
+  SwarmPlanAgent,
+  SwarmPlanPhase,
+  SwarmPlan,
+  SwarmRunProposal,
+  SwarmReceiptType,
+  SwarmRunReceipt,
+  SwarmAgentNode,
+  SwarmPhaseNode,
+  SwarmRunNode,
+  SwarmRunListResponse,
+  SwarmRunProposeResponse,
+  SwarmRunEventType,
+  SwarmRunEvent,
+} from "./swarm-run.js";
+export {
+  SWARM_NODE_KINDS,
+  SWARM_NODE_STATUSES,
+  SWARM_MAX_CONCURRENT_AGENTS,
+  SWARM_MAX_AGENTS_PER_RUN,
+  isSwarmRunEvent,
+  SWARM_RUN_CONTRACT_VERSION,
+} from "./swarm-run.js";
+
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1 as const;

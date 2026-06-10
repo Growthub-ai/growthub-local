@@ -1,0 +1,112 @@
+{
+  "name": "Swarm Smoke QA Workspace",
+  "description": "Seeded QA workspace for the Agent Swarm Cockpit. Activation checklist reads complete; run the seeded swarm workflow from Background tasks. Temp/exported workspaces only (GOVERNED_WORKSPACE_TOPOLOGY_V1 smoke-test rule).",
+  "dataModel": {
+    "objects": [
+      {
+        "id": "smoke-metrics",
+        "label": "Smoke Metrics",
+        "objectType": "custom",
+        "columns": [
+          "Name",
+          "runs",
+          "agents",
+          "tokens"
+        ],
+        "rows": [
+          {
+            "Name": "swarm-graph-smoke-test",
+            "runs": 1,
+            "agents": 2,
+            "tokens": 4100
+          }
+        ]
+      },
+      {
+        "id": "swarm-smoke-sandbox",
+        "label": "Swarm Smoke Sandbox",
+        "objectType": "sandbox-environment",
+        "columns": [
+          "Name",
+          "adapter",
+          "agentHost",
+          "lifecycleStatus",
+          "version"
+        ],
+        "rows": [
+          {
+            "Name": "swarm-graph-smoke-test",
+            "adapter": "local-intelligence",
+            "agentHost": "",
+            "lifecycleStatus": "live",
+            "version": "1",
+            "status": "tested",
+            "lastTested": "2026-06-10T14:04:11.852439+00:00",
+            "lastRunId": "seeded-smoke-fixture",
+            "lastResponse": "{\n  \"runId\": \"seeded-smoke-fixture\",\n  \"ranAt\": \"2026-06-10T14:04:11.852439+00:00\",\n  \"exitCode\": 0,\n  \"durationMs\": 0,\n  \"adapter\": \"seed-fixture\",\n  \"status\": \"connected\",\n  \"stdout\": \"seeded smoke fixture - replace by running the workflow from the cockpit\",\n  \"adapterMeta\": {\n    \"adapter\": \"seed-fixture\",\n    \"seeded\": true\n  }\n}",
+            "orchestrationGraph": "{\"provider\": \"agent-swarm-v1\", \"swarm\": {\"maxConcurrency\": 4, \"outcomeCriteria\": \"Every subagent replied with a one-line result.\", \"rewardWeights\": {\"parallel\": 0.25, \"finish\": 0.35, \"outcome\": 0.4}}, \"nodes\": [{\"id\": \"orchestrator\", \"type\": \"thinAdapter\", \"label\": \"Orchestrator\", \"config\": {\"prompt\": \"Assign each subagent its one-line smoke reply. Keep the plan to three lines.\"}}, {\"id\": \"subagent-1\", \"type\": \"ai-agent\", \"label\": \"Ping\", \"config\": {\"role\": \"Ping\", \"taskPrompt\": \"Reply with exactly: pong.\", \"required\": true, \"tools\": []}}, {\"id\": \"subagent-2\", \"type\": \"ai-agent\", \"label\": \"Echo\", \"config\": {\"role\": \"Echo\", \"taskPrompt\": \"Reply with exactly: echo.\", \"required\": true, \"tools\": []}}, {\"id\": \"synthesis\", \"type\": \"tool-result\", \"label\": \"Synthesize\", \"config\": {\"outcomePrompt\": \"Combine the replies into one line.\"}}], \"edges\": [{\"from\": \"orchestrator\", \"to\": \"subagent-1\", \"passes\": \"subtask-assignment\"}, {\"from\": \"orchestrator\", \"to\": \"subagent-2\", \"passes\": \"subtask-assignment\"}, {\"from\": \"subagent-1\", \"to\": \"synthesis\", \"passes\": \"subtask-result\"}, {\"from\": \"subagent-2\", \"to\": \"synthesis\", \"passes\": \"subtask-result\"}]}"
+          }
+        ]
+      }
+    ]
+  },
+  "dashboards": [
+    {
+      "id": "swarm-smoke-dashboard",
+      "name": "Swarm Smoke QA",
+      "createdBy": "seed",
+      "updatedAt": "2026-06-10T14:04:11.852439+00:00",
+      "status": "live",
+      "tabs": [
+        {
+          "id": "smoke-tab-1",
+          "name": "Overview",
+          "widgets": [
+            {
+              "id": "smoke-widget-tokens",
+              "kind": "chart",
+              "title": "Tokens by smoke run",
+              "config": {
+                "chartType": "bar",
+                "values": [
+                  4.1
+                ],
+                "labels": [
+                  "graph-2"
+                ]
+              }
+            },
+            {
+              "id": "smoke-widget-notes",
+              "kind": "rich-text",
+              "title": "QA checklist",
+              "config": {
+                "text": "Open Background tasks (bottom right) -> Workflows -> Run swarm-graph-smoke-test. Verify phases, dot strips, agent table, drill-in."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "canvas": {
+    "id": "workspace-canvas",
+    "name": "Tab 1",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "tabs": [],
+    "widgets": []
+  },
+  "provenance": {
+    "mirrors": "growthub-custom-workspace-starter-v1",
+    "template": "swarm-smoke",
+    "templateKind": "workspace-template",
+    "privacy": "sanitized-no-secrets-no-provider-data",
+    "note": "Swarm Cockpit QA seed. Temp workspaces only via growthub starter init --seed-config swarm-smoke."
+  }
+}
