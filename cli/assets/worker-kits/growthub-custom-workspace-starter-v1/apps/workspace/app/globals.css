@@ -8746,6 +8746,10 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-run-console__tree-dot[data-variant="fail"] { background: #dc2626; }
 .dm-run-console__tree-dot[data-variant="active"] { background: #2563eb; }
 .dm-run-console__tree-dot[data-variant="canceled"] { background: #9ca3af; }
+/* Pending (hollow) — the ONE sanctioned swarm-cockpit grammar addition:
+   "declared but not started" reads as an outline in the SAME grey token the
+   canceled/base dot already uses. No new color values. */
+.dm-run-console__tree-dot[data-variant="pending"] { background: transparent; border: 1px solid #9ca3af; }
 .dm-run-console__tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-run-console__tree-meta { color: #6b7280; font-size: 10px; font-variant-numeric: tabular-nums; }
 .dm-run-console__tree-bar { display: block; width: 56px; height: 4px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }

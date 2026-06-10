@@ -27,7 +27,14 @@ const kitRoot = path.join(
 );
 
 const consoleModule = await import(pathToFileURL(path.join(kitRoot, "orchestration-run-console.js")).href);
-const { normalizeRunConsoleRecord, deriveSwarmRunProjection } = consoleModule;
+const graphModule = await import(pathToFileURL(path.join(kitRoot, "orchestration-graph.js")).href);
+const {
+  normalizeRunConsoleRecord,
+  deriveSwarmRunProjection,
+  deriveSwarmGraphProjection,
+  formatCompactRunDuration,
+} = consoleModule;
+const { buildDefaultAgentSwarmGraph } = graphModule;
 
 function swarmRecord(overrides = {}) {
   return {
@@ -193,6 +200,85 @@ test("degenerate swarm records do not crash", () => {
   assert.equal(p4.phases.find((ph) => ph.id === "dispatch").status, "failed");
 });
 
+test("declared-phase skeleton projects upfront from the governed graph (P1)", () => {
+  // Author-named phases group subagents; everything renders pending with
+  // blank-able telemetry before any run exists.
+  const graph = buildDefaultAgentSwarmGraph({
+    subagents: [
+      { id: "ping-0", role: "ping-0", taskPrompt: "pong", phase: "ping" },
+      { id: "ping-1", role: "ping-1", taskPrompt: "pong", phase: "ping" },
+      { id: "echo-alpha", role: "echo-alpha", taskPrompt: "echo", phase: "echo" },
+      { id: "verify-1", role: "verify-1", taskPrompt: "verify", phase: "verify" },
+    ],
+  });
+  const skeleton = deriveSwarmGraphProjection(graph, { title: "swarm-20-smoke-test" });
+  assert.ok(skeleton, "graph projects a skeleton");
+  assert.equal(skeleton.title, "swarm-20-smoke-test");
+  assert.equal(skeleton.status, "pending");
+  assert.deepEqual(skeleton.phases.map((p) => p.id), ["plan", "ping", "echo", "verify", "synthesize"]);
+  assert.deepEqual(skeleton.phases.map((p) => p.label), ["Plan", "Ping", "Echo", "Verify", "Synthesize"]);
+  for (const phase of skeleton.phases) {
+    assert.equal(phase.status, "pending");
+    for (const agent of phase.agents) {
+      assert.equal(agent.status, "pending");
+      assert.equal(agent.pending, true, "pending agents render blank cells");
+      assert.equal(agent.tokens, null);
+      assert.equal(agent.tools, null);
+    }
+  }
+  assert.equal(skeleton.totalTokens, null);
+  assert.equal(skeleton.totalTools, null);
+  assert.equal(skeleton.agentCount, 6); // orchestrator + 4 subagents + synthesis
+
+  // Graphs without author phases fall back to Plan/Dispatch/Synthesize.
+  const plain = deriveSwarmGraphProjection(buildDefaultAgentSwarmGraph(), { title: "x" });
+  assert.deepEqual(plain.phases.map((p) => p.id), ["plan", "dispatch", "synthesize"]);
+
+  // Non-swarm graphs project nothing.
+  assert.equal(deriveSwarmGraphProjection({ version: 1, provider: "growthub-native", nodes: [], edges: [] }), null);
+});
+
+test("skeleton and record projections converge on the same phase structure", () => {
+  // The same workflow projected from the graph (pre-run) and from a record
+  // (post-run) must agree on phase ids/labels and dispatch agent identity —
+  // this is what makes the pending skeleton flow into the live/record view
+  // without re-keying.
+  const graph = buildDefaultAgentSwarmGraph({
+    subagents: [
+      { id: "ping-0", role: "ping-0", taskPrompt: "pong", phase: "ping" },
+      { id: "echo-alpha", role: "echo-alpha", taskPrompt: "echo", phase: "echo" },
+    ],
+  });
+  const skeleton = deriveSwarmGraphProjection(graph, { title: "t" });
+  const record = swarmRecord();
+  record.swarm.tasks = [
+    { taskId: "ping-0", role: "ping-0", status: "completed", durationMs: 4000, tokens: 100, tools: 1, stdout: "pong", phaseId: "ping" },
+    { taskId: "echo-alpha", role: "echo-alpha", status: "completed", durationMs: 4200, tokens: null, tools: null, stdout: "echo", phaseId: "echo" },
+  ];
+  const projected = deriveSwarmRunProjection(record);
+  assert.deepEqual(projected.phases.map((p) => p.id), skeleton.phases.map((p) => p.id));
+  assert.deepEqual(projected.phases.map((p) => p.label), skeleton.phases.map((p) => p.label));
+  const skeletonDispatchIds = skeleton.phases.filter((p) => !["plan", "synthesize"].includes(p.id)).flatMap((p) => p.agents.map((a) => a.id));
+  const recordDispatchIds = projected.phases.filter((p) => !["plan", "synthesize"].includes(p.id)).flatMap((p) => p.agents.map((a) => a.id));
+  assert.deepEqual(recordDispatchIds, skeletonDispatchIds);
+  // Record agents are terminal: pending=false, so unreported telemetry
+  // renders "—" while skeleton agents render blank.
+  for (const phase of projected.phases) {
+    for (const agent of phase.agents) assert.equal(agent.pending, false);
+  }
+});
+
+test("formatCompactRunDuration matches the zero-padded reference format (P5)", () => {
+  assert.equal(formatCompactRunDuration(4000), "04s");
+  assert.equal(formatCompactRunDuration(4400), "04s");
+  assert.equal(formatCompactRunDuration(15000), "15s");
+  assert.equal(formatCompactRunDuration(400), "00s");
+  assert.equal(formatCompactRunDuration(64000), "1m 04s");
+  assert.equal(formatCompactRunDuration(125000), "2m 05s");
+  assert.equal(formatCompactRunDuration(null), "—");
+  assert.equal(formatCompactRunDuration("garbage"), "—");
+});
+
 test("cockpit DUI/UX conformance — layout-only CSS, inherited icon grammar only", async () => {
   const fs = await import("node:fs/promises");
   const appRoot = path.join(kitRoot, "..", "app");
@@ -208,6 +294,16 @@ test("cockpit DUI/UX conformance — layout-only CSS, inherited icon grammar onl
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(block), "no hard-coded colors in swarm CSS");
   assert.ok(!/rgba?\(|hsla?\(/.test(block), "no color functions in swarm CSS");
   assert.ok(!/@keyframes|gradient|animation|box-shadow/.test(block), "no motion/decoration in swarm CSS");
+
+  // The ONE sanctioned grammar addition: a hollow "pending" variant on the
+  // EXISTING run-console dot primitive, reusing the same grey token the
+  // canceled/base dot already declares. Exactly this, nothing more.
+  const pendingRule = css.match(/\.dm-run-console__tree-dot\[data-variant="pending"\]\s*\{([^}]*)\}/);
+  assert.ok(pendingRule, "sanctioned pending dot variant present");
+  assert.match(pendingRule[1], /background:\s*transparent/);
+  assert.match(pendingRule[1], /border:\s*1px solid #9ca3af/);
+  const dotVariants = [...css.matchAll(/\.dm-run-console__tree-dot\[data-variant="([a-z]+)"\]/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(dotVariants)].sort(), ["active", "canceled", "fail", "ok", "pending"], "no dot variants beyond the sanctioned set");
 
   // The cockpit may only use icons already present in the helper sidecar
   // (ArrowUpRight/ChevronDown/ChevronRight) and run-console (Play/Square)

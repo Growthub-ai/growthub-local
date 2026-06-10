@@ -2,18 +2,27 @@
 
 /**
  * SwarmRunCockpit — governed swarm run surface inside the Workspace Helper
- * sidecar (SWARM_RUN_CONTRACT_V1, Phase 4).
+ * sidecar (SWARM_RUN_CONTRACT_V1, Phases 4 + 7, parity P1–P5).
  *
  * Renders Running / Finished swarm runs as "Background tasks" using ONLY the
  * existing helper / tool-call / run-console grammar:
  *
  *   data lane:  sandbox-environment rows (findSwarmRunRows)
+ *               → declared-phase skeleton from the row's graph
+ *                 (deriveSwarmGraphProjection — renders BEFORE any run)
  *               → row.lastResponse + GET /api/workspace/sandbox-run history
- *               → deriveSwarmRunProjection (orchestration-run-console)
- *               → this component
+ *                 (deriveSwarmRunProjection — the source of truth)
  *
- *   execution:  POST /api/workspace/sandbox-run ONLY. The cockpit never
- *               mutates workspace config and never spawns its own runtime.
+ *   execution:  POST /api/workspace/sandbox-run ONLY (the existing route —
+ *               nothing new). While the request is in flight the card shows
+ *               the declared skeleton with pending dots and a truthful
+ *               elapsed ticker; history polling converges on the persisted
+ *               record. The cockpit never mutates workspace config and
+ *               never spawns its own runtime.
+ *
+ * Truthful telemetry: pending/running cells render BLANK; "—" is reserved
+ * for terminal agents whose adapter never reported a count. No estimates,
+ * no null-to-zero coercion.
  *
  * Stop cancels the active client request only (no durable cancel primitive
  * exists). Clear hides finished cards from the local visible list only —
@@ -26,8 +35,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // run-console surfaces (OrchestrationRunTracePanel, SandboxRunPanel).
 import { ArrowUpRight, ChevronDown, ChevronRight, Play, Square } from "lucide-react";
 import {
+  deriveSwarmGraphProjection,
   deriveSwarmRunProjection,
-  formatRunDuration,
+  formatCompactRunDuration,
 } from "@/lib/orchestration-run-console";
 import { findSwarmRunRows } from "@/lib/workspace-swarm-proposal";
 
@@ -37,8 +47,11 @@ function runKeyOf(objectId, name) {
   return `${objectId}::${name}`;
 }
 
-// "—" is the truthful placeholder for telemetry the adapter never reported.
-function formatCount(value) {
+// Truthful display: pending/running agents show BLANK cells (the run has
+// not reported yet); terminal agents with null telemetry show "—" (ran,
+// never reported). Reported numbers are k-formatted (16.3k).
+function formatCount(value, pending) {
+  if (pending) return "";
   if (value == null || !Number.isFinite(Number(value))) return "—";
   const n = Number(value);
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -47,7 +60,7 @@ function formatCount(value) {
 
 function formatTokensLabel(value) {
   if (value == null || !Number.isFinite(Number(value))) return "— Tokens";
-  return `${formatCount(value)} Tokens`;
+  return `${formatCount(value, false)} Tokens`;
 }
 
 function parseRowRecord(row) {
@@ -61,7 +74,10 @@ function parseRowRecord(row) {
   }
 }
 
+// Dot tri-state (+failure): hollow = pending, blue = active, filled green =
+// done, red = failed, solid grey = canceled/unknown.
 function dotVariantFor(status) {
+  if (status === "pending") return "pending";
   if (status === "completed") return "ok";
   if (status === "failed") return "fail";
   if (status === "running" || status === "executing" || status === "info") return "active";
@@ -100,10 +116,10 @@ export function SwarmAgentRow({ agent, selected, onSelect }) {
         <span className="dm-run-console__tree-dot" data-variant={dotVariantFor(agent.status)} />
         {agent.label}
       </span>
-      <span className="dm-swarm-agent-cell dm-run-console__hint">{formatCount(agent.tokens)}</span>
-      <span className="dm-swarm-agent-cell dm-run-console__hint">{formatCount(agent.tools)}</span>
+      <span className="dm-swarm-agent-cell dm-run-console__hint">{formatCount(agent.tokens, agent.pending)}</span>
+      <span className="dm-swarm-agent-cell dm-run-console__hint">{formatCount(agent.tools, agent.pending)}</span>
       <span className="dm-swarm-agent-cell dm-run-console__hint">
-        {agent.durationMs ? formatRunDuration(agent.durationMs) : "—"}
+        {agent.pending ? "" : agent.durationMs ? formatCompactRunDuration(agent.durationMs) : "—"}
       </span>
     </button>
   );
@@ -186,17 +202,29 @@ export function SwarmRunCard({
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const phases = projection?.phases || [];
   const description = String(entry.row?.description || entry.row?.instructions || "").trim();
+  const neverRun = !running && projection?.status === "pending";
+  const finished = !running && projection && projection.status !== "pending";
   const statusLabel = running
-    ? formatRunDuration(elapsedMs)
-    : projection
-      ? projection.status === "completed" ? "Completed" : projection.status
-      : "Not run yet";
+    ? formatCompactRunDuration(elapsedMs)
+    : neverRun
+      ? "Not run yet"
+      : projection
+        ? projection.status === "completed" ? "Completed" : projection.status
+        : "Not run yet";
 
   return (
     <div className="dm-helper-toolcall dm-swarm-card" data-swarm-run={entry.row.Name} data-swarm-running={running ? "true" : "false"}>
       <div className="dm-swarm-card-head">
-        <span className="dm-run-console__tree-dot" data-variant={running ? "active" : projection ? dotVariantFor(projection.status) : "canceled"} />
+        <span
+          className="dm-run-console__tree-dot"
+          data-variant={running ? "active" : neverRun ? "pending" : projection ? dotVariantFor(projection.status) : "pending"}
+        />
         <span className="dm-helper-toolcall-title dm-swarm-card-title">{entry.row.Name}</span>
+        {finished && (
+          <span className="dm-run-console__hint" data-swarm-total-duration="">
+            {formatCompactRunDuration(projection.elapsedMs)}
+          </span>
+        )}
         {running ? (
           <button
             type="button"
@@ -224,10 +252,10 @@ export function SwarmRunCard({
         <span className="dm-run-console__hint dm-swarm-card-kind">Workflow</span>
         <span className="dm-run-console__hint">{statusLabel}</span>
       </div>
-      {(projection || running) && (
+      {projection && (
         <div className="dm-swarm-card-meta">
-          <span className="dm-run-console__hint">{projection ? `${projection.agentCount} Agents` : "…"}</span>
-          <span className="dm-run-console__hint">{projection ? formatTokensLabel(projection.totalTokens) : "— Tokens"}</span>
+          <span className="dm-run-console__hint">{`${projection.agentCount} Agents`}</span>
+          <span className="dm-run-console__hint">{formatTokensLabel(projection.totalTokens)}</span>
         </div>
       )}
       {description && (
@@ -248,11 +276,6 @@ export function SwarmRunCard({
             />
           ))}
         </div>
-      )}
-      {!projection && !running && (
-        <p className="dm-run-console__hint">
-          Apply created this governed workflow row. Launch it to record the first run.
-        </p>
       )}
     </div>
   );
@@ -383,8 +406,8 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflows.length]);
 
-  // Elapsed ticker + light polling while a run is in flight — same model as
-  // OrchestrationRunTracePanel's live polling for active runs.
+  // Elapsed ticker + light history polling while a run is in flight — the
+  // poll stays as the convergence/fallback path even when streaming.
   useEffect(() => {
     if (runningKeys.size === 0) return undefined;
     const tick = setInterval(() => {
@@ -407,12 +430,22 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
     const map = new Map();
     for (const entry of workflows) {
       const key = runKeyOf(entry.objectId, entry.row.Name);
+      const skeleton = deriveSwarmGraphProjection(entry.graph, { title: entry.row.Name });
+      if (runningKeys.has(key)) {
+        // Mid-run: declared skeleton with pending (hollow) dots and a
+        // truthful elapsed ticker — no per-agent state is invented; the
+        // history poll converges on the persisted record when it lands.
+        if (skeleton) map.set(key, { ...skeleton, status: "running", elapsedMs: elapsedByKey.get(key) || 0 });
+        continue;
+      }
       const record = historyByKey.get(key) || parseRowRecord(entry.row);
       const projection = record ? deriveSwarmRunProjection(record) : null;
+      // Never-run rows show the full declared phase skeleton upfront (P1).
       if (projection) map.set(key, projection);
+      else if (skeleton) map.set(key, skeleton);
     }
     return map;
-  }, [workflows, historyByKey]);
+  }, [workflows, historyByKey, runningKeys, elapsedByKey]);
 
   const launch = useCallback(async (entry) => {
     const key = runKeyOf(entry.objectId, entry.row.Name);
@@ -447,6 +480,7 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
         next.delete(key);
         return next;
       });
+      // The persisted record is the source of truth — converge on it.
       await refreshHistory([entry]);
       if (typeof onConfigRefresh === "function") onConfigRefresh();
     }

@@ -401,6 +401,10 @@ async function dispatchSubagentTask({
   const required = subagentConfig.required !== false;
   const taskId = subagentNode?.id || `task-${taskIndex + 1}`;
   const role = String(subagentConfig.role || subagentNode?.label || "subagent");
+  // Author-named phase (config.phase / config.phaseId) travels onto the task
+  // so the record projection groups under the same phases the declared
+  // skeleton shows. Absent → "dispatch", exactly as before.
+  const phaseId = String(subagentConfig.phase || subagentConfig.phaseId || "").trim().toLowerCase() || "dispatch";
 
   const resolved = chooseAdapterIdForSubagent({
     subagentConfig,
@@ -425,7 +429,7 @@ async function dispatchSubagentTask({
       tools: null,
       startedAt: gateAt,
       endedAt: gateAt,
-      phaseId: "dispatch",
+      phaseId,
       adapterMeta: { swarmSubagent: true, reason: "adapter-gate" }
     };
   }
@@ -474,7 +478,7 @@ async function dispatchSubagentTask({
     tools: telemetry.tools,
     startedAt: new Date(startedAt).toISOString(),
     endedAt: new Date().toISOString(),
-    phaseId: "dispatch",
+    phaseId,
     adapterMeta: { ...(result?.adapterMeta || {}), swarmSubagent: true }
   };
 }

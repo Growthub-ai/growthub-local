@@ -158,6 +158,9 @@ function normalizeSwarmAgent(agent, index, fallbackAgentHost) {
     role,
     description: clean(agent.description),
     taskPrompt: clean(agent.taskPrompt),
+    // Optional author-named cockpit phase (e.g. "ping"). Slugged; empty
+    // falls back to the single Dispatch phase.
+    phase: slugifyName(clean(agent.phase || agent.phaseId)) || "",
     tools: Array.isArray(agent.tools) ? agent.tools.map((t) => clean(t)).filter(Boolean) : [],
     required: agent.required !== false,
     agentHost: sanitizeAgentHost(agent.agentHost) || sanitizeAgentHost(fallbackAgentHost),
