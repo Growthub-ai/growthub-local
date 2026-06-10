@@ -230,6 +230,37 @@ function toTruthfulCount(value) {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+function toAdapterReportedCount(entry, field) {
+  const meta = entry?.adapterMeta && typeof entry.adapterMeta === "object" ? entry.adapterMeta : null;
+  if (meta?.telemetrySource === "unreported" && meta?.[field] == null) return null;
+  if (entry?.[field] === 0 && meta && meta[field] == null) return null;
+  if (entry?.[field] === 0 && !meta && safeString(entry?.adapter).trim() === "local-agent-host") return null;
+  return toTruthfulCount(entry?.[field]);
+}
+
+function parsePersistedAgentHostTelemetry(entry) {
+  const stderr = safeString(entry?.stderr);
+  const total = stderr.match(/\b(?:total\s+tokens|tokens\s+used)\s*(?:[:=]|\r?\n)\s*([0-9][0-9,]*)/i);
+  const input = stderr.match(/\b(?:input|prompt)\s+tokens\s*[:=]\s*([0-9][0-9,]*)/i);
+  const output = stderr.match(/\b(?:output|completion)\s+tokens\s*[:=]\s*([0-9][0-9,]*)/i);
+  const tools = stderr.match(/\b(?:tool\s+calls?|tools\s+used)\s*[:=]\s*([0-9][0-9,]*)/i);
+  const toInt = (value) => {
+    if (value == null || value === "") return null;
+    const n = Number(String(value).replace(/,/g, ""));
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+  };
+  const inputTokens = toInt(input?.[1]);
+  const outputTokens = toInt(output?.[1]);
+  const summed = inputTokens != null || outputTokens != null
+    ? (inputTokens || 0) + (outputTokens || 0)
+    : null;
+  const tokens = toInt(total?.[1]) ?? summed;
+  return {
+    tokens,
+    tools: toInt(tools?.[1]) ?? (tokens != null ? 0 : null)
+  };
+}
+
 function titleizePhaseId(id) {
   const text = safeString(id).trim() || "dispatch";
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -252,8 +283,9 @@ function deriveSwarmRunProjection(record) {
   // means a missing count is "ran but never reported" → the UI shows "—".
   // (Pending agents — from the graph skeleton or a live stream — show blank.)
   const toAgent = (entry, fallbackId, fallbackLabel, transcriptParts, logNodeId) => {
-    const tokens = toTruthfulCount(entry?.tokens);
-    const tools = toTruthfulCount(entry?.tools);
+    const persistedTelemetry = parsePersistedAgentHostTelemetry(entry);
+    const tokens = persistedTelemetry.tokens ?? toAdapterReportedCount(entry, "tokens");
+    const tools = persistedTelemetry.tools ?? toAdapterReportedCount(entry, "tools");
     return {
       id: safeString(entry?.taskId || entry?.nodeId || fallbackId).trim() || fallbackId,
       label: safeString(entry?.role || entry?.label || fallbackLabel).trim() || fallbackLabel,
@@ -423,6 +455,137 @@ function deriveSwarmGraphProjection(graphLike, { title = "", runId = "" } = {}) 
     totalTokens: null,
     totalTools: null,
     phases
+  };
+}
+
+function cloneSwarmProjection(projection) {
+  if (!projection || typeof projection !== "object") return null;
+  return {
+    ...projection,
+    phases: Array.isArray(projection.phases)
+      ? projection.phases.map((phase) => ({
+          ...phase,
+          agents: Array.isArray(phase.agents)
+            ? phase.agents.map((agent) => ({ ...agent }))
+            : []
+        }))
+      : []
+  };
+}
+
+function findOrCreateLivePhase(projection, phaseId, label) {
+  const id = safeString(phaseId).trim() || "dispatch";
+  let phase = projection.phases.find((entry) => entry.id === id);
+  if (!phase) {
+    phase = { id, label: safeString(label).trim() || titleizePhaseId(id), status: "pending", agents: [] };
+    projection.phases.push(phase);
+  }
+  return phase;
+}
+
+function upsertLiveAgent(phase, incoming) {
+  if (!phase) return;
+  const fallbackId = safeString(incoming?.taskId || incoming?.nodeId || incoming?.id).trim() || "agent";
+  const id = fallbackId;
+  const label = safeString(incoming?.role || incoming?.label).trim() || "Agent";
+  const index = phase.agents.findIndex((agent) => agent.id === id || agent.logNodeId === id);
+  const prior = index >= 0 ? phase.agents[index] : {};
+  const status = safeString(incoming?.status || prior.status || "running").trim() || "running";
+  const next = {
+    id,
+    label: label || prior.label || "Agent",
+    status,
+    pending: status === "pending" || status === "running" || status === "executing",
+    tokens: toTruthfulCount(incoming?.tokens ?? prior.tokens),
+    tools: toTruthfulCount(incoming?.tools ?? prior.tools),
+    durationMs: clampNumber(incoming?.durationMs) ?? prior.durationMs ?? 0,
+    transcript: prior.transcript || "",
+    logNodeId: safeString(incoming?.nodeId || prior.logNodeId || id).trim() || id
+  };
+  if (index >= 0) phase.agents[index] = next;
+  else phase.agents.push(next);
+}
+
+function derivePhaseStatusFromAgents(phase) {
+  const agents = Array.isArray(phase?.agents) ? phase.agents : [];
+  if (agents.some((agent) => agent.status === "running" || agent.status === "executing")) return "running";
+  if (agents.some((agent) => agent.status === "failed")) return "failed";
+  if (agents.length > 0 && agents.every((agent) => agent.status === "completed")) return "completed";
+  return phase?.status || "pending";
+}
+
+/**
+ * Live swarm delta projection.
+ *
+ * This consumes the optional NDJSON events from POST /api/workspace/sandbox-run
+ * and returns the exact same shape as persisted-record projection. The final
+ * source of truth remains deriveSwarmRunProjection(record); this only hydrates
+ * the cosmetic Background Tasks card while the POST is still open.
+ */
+function deriveSwarmDeltaProjection(graphLike, events, { title = "", runId = "", elapsedMs = 0 } = {}) {
+  const base = cloneSwarmProjection(deriveSwarmGraphProjection(graphLike, { title, runId }));
+  if (!base) return null;
+  const list = Array.isArray(events) ? events.filter((event) => event && typeof event === "object") : [];
+  let status = "running";
+  let latestRunId = safeString(runId).trim() || base.runId;
+
+  for (const event of list) {
+    if (event.runId) latestRunId = safeString(event.runId).trim() || latestRunId;
+    const type = safeString(event.type).trim();
+    if (type === "swarm.run.started") {
+      status = "running";
+      continue;
+    }
+    if (type === "swarm.run.completed" || type === "swarm.run.failed") {
+      status = safeString(event.status || (type.endsWith("completed") ? "completed" : "failed")).trim() || status;
+      continue;
+    }
+    if (type === "swarm.phase.started") {
+      const phase = findOrCreateLivePhase(base, event.phaseId, event.label);
+      phase.status = "running";
+      continue;
+    }
+    if (type === "swarm.phase.completed" || type === "swarm.phase.failed") {
+      const phase = findOrCreateLivePhase(base, event.phaseId, event.label);
+      phase.status = safeString(event.status || (type.endsWith("completed") ? "completed" : "failed")).trim() || phase.status;
+      if (event.agent && typeof event.agent === "object") upsertLiveAgent(phase, event.agent);
+      continue;
+    }
+    if (type === "swarm.task.started") {
+      const phase = findOrCreateLivePhase(base, event.phaseId, titleizePhaseId(event.phaseId));
+      phase.status = "running";
+      upsertLiveAgent(phase, {
+        taskId: event.taskId,
+        nodeId: event.nodeId,
+        role: event.role,
+        status: "running",
+        phaseId: event.phaseId
+      });
+      continue;
+    }
+    if (type === "swarm.task.completed" || type === "swarm.task.failed") {
+      const task = event.task && typeof event.task === "object" ? event.task : event;
+      const phase = findOrCreateLivePhase(base, task.phaseId || event.phaseId, titleizePhaseId(task.phaseId || event.phaseId));
+      upsertLiveAgent(phase, task);
+      phase.status = derivePhaseStatusFromAgents(phase);
+    }
+  }
+
+  for (const phase of base.phases) {
+    if (phase.status === "running") continue;
+    phase.status = derivePhaseStatusFromAgents(phase);
+  }
+
+  const allAgents = base.phases.flatMap((phase) => phase.agents);
+  return {
+    ...base,
+    runId: latestRunId,
+    status,
+    elapsedMs: clampNumber(elapsedMs) ?? base.elapsedMs ?? 0,
+    agentCount: allAgents.length,
+    totalTokens: sumReportedOrNull(allAgents.map((agent) => agent.tokens)),
+    totalTools: sumReportedOrNull(allAgents.map((agent) => agent.tools)),
+    phases: base.phases
   };
 }
 
@@ -648,6 +811,7 @@ export {
   deriveRunSummary,
   deriveSwarmRunProjection,
   deriveSwarmGraphProjection,
+  deriveSwarmDeltaProjection,
   formatCompactRunDuration,
   deriveRunLifecycle,
   buildRunLogTree,

@@ -14,7 +14,7 @@ const HELPER_AGENT_CHOICES = [
   { id: "gemini_local", label: "Gemini CLI (local)", body: "Uses Gemini CLI." },
   { id: "opencode_local", label: "OpenCode (local)", body: "Uses OpenCode on this machine." },
   { id: "pi_local", label: "Pi (local)", body: "Uses Pi on this machine." },
-  { id: "qwen_code_local", label: "Qwen Code (local)", body: "Uses Qwen Code on this machine." },
+  { id: "qwen_local", label: "Qwen Code (local)", body: "Uses Qwen Code on this machine." },
 ];
 
 const HELPER_EXECUTION_ADAPTERS = [

@@ -3544,6 +3544,17 @@ export default function DataModelShell() {
               router.push(`/?dashboard=${encodeURIComponent(target.dashboardId)}`);
             }
           }}
+          onOpenSwarmWorkflow={(target) => {
+            const objectId = String(target?.objectId || "").trim();
+            const rowName = String(target?.name || "").trim();
+            if (!objectId || !rowName) return;
+            const params = new URLSearchParams({
+              object: objectId,
+              row: rowName,
+              field: "orchestrationGraph"
+            });
+            router.push(`/workflows?${params.toString()}`);
+          }}
           onApplied={(updatedConfig) => {
             // Anchor the user on the most recently created/updated Data Model
             // object so a helper-driven object.create lands on the surface

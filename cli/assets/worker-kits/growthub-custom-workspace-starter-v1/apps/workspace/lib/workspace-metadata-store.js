@@ -545,8 +545,8 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
       const graphEdges = Array.isArray(graph?.edges) ? graph.edges : [];
       const workflowMetadataId = stableId("workflow", objectId, rowName);
       const sandboxMetadataId = stableId("sandbox", objectId, rowName);
-      const agentHost = safeString(row.agentHost).trim();
-      const adapter = safeString(row.adapter).trim();
+        const rowAgentHost = safeString(row.agentHost).trim();
+        const rowAdapter = safeString(row.adapter).trim();
       const inputSchema = graphNodes.length ? discoverRunInputSchema(graph) : { requiresInput: false, fields: [] };
       const inputFields = Array.isArray(inputSchema?.fields) ? inputSchema.fields : [];
 
@@ -560,8 +560,8 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
         lifecycleStatus: safeString(row.lifecycleStatus).trim() || "draft",
         version: safeString(row.version).trim() || "1",
         sandboxMetadataId,
-        agentHost,
-        adapter,
+        agentHost: rowAgentHost,
+        adapter: rowAdapter,
         runLocality: safeString(row.runLocality).trim(),
         nodeCount: graphNodes.length,
         edgeCount: graphEdges.length,
@@ -578,6 +578,8 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
         const sourceType = safeString(config.sourceType).trim();
         const sourceId = safeString(config.sourceId).trim();
         const integrationId = safeString(config.integrationId).trim();
+        const nodeAgentHost = safeString(config.agentHost || rowAgentHost).trim();
+        const nodeAdapter = safeString(config.adapter || rowAdapter).trim();
         const filterClauses = collectFilterClauses({ op: config.filterMode, clauses: config.filters });
         const writesObjectId = safeString(config.writeObjectId || config.targetObjectId).trim();
         const readsObjectId = sourceId || safeString(config.objectId).trim();
@@ -603,8 +605,8 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
           inputFieldCount: inputs.length,
           inputFieldIds: inputs.map((field) => field.id),
           sandboxMetadataId,
-          agentHost,
-          adapter,
+          agentHost: nodeAgentHost,
+          adapter: nodeAdapter,
           permissions: nodeType === "api-registry-call" ? ["integration:read"] : []
         });
       }

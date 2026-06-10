@@ -49,6 +49,7 @@ import {
   SWARM_WORKFLOWS_OBJECT_ID,
   validateSwarmRunProposal,
   buildSandboxRowFromSwarmProposal,
+  deriveHelperWidgetCausationState,
   upsertSwarmRunRow,
   findSwarmRunRows,
   summarizeSwarmRunProposal,
@@ -178,6 +179,17 @@ function normalizeSwarmRunProposal(proposal, workspaceConfig) {
       config: workspaceConfig,
       artifact: { surface: "swarm-run", objectId: matches[0].objectId, name: matches[0].row.Name },
       summary: summarizeSwarmRunProposal(proposal),
+    };
+  }
+
+  const helperState = deriveHelperWidgetCausationState(workspaceConfig);
+  if (!helperState.ready) {
+    return {
+      ok: false,
+      config: workspaceConfig,
+      artifact: null,
+      summary: "",
+      error: helperState.guidance,
     };
   }
 

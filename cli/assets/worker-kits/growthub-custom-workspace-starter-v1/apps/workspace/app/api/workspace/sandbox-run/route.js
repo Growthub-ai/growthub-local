@@ -445,14 +445,7 @@ async function GET(request) {
   });
 }
 
-async function POST(request) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
-  }
-
+async function executeSandboxRun(body, { emit } = {}) {
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const useDraft = body?.useDraft === true;
@@ -586,7 +579,8 @@ async function POST(request) {
         instructions,
         command,
         timeoutMs,
-        sandboxName: rowForRun.Name || name
+        sandboxName: rowForRun.Name || name,
+        onEvent: emit
       }
     });
     if (graphResult !== null) {
@@ -759,6 +753,65 @@ async function POST(request) {
     persistError,
     sourceId,
     response
+  });
+}
+
+async function POST(request) {
+  const accept = request.headers.get("accept") || "";
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
+  }
+
+  const wantsStream = body?.stream === true || accept.includes("application/x-ndjson");
+  if (!wantsStream) {
+    return executeSandboxRun(body);
+  }
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      const emit = (event) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+      emit({
+        kind: "growthub-sandbox-run-delta-v1",
+        type: "sandbox-run.accepted",
+        emittedAt: new Date().toISOString(),
+        objectId: typeof body?.objectId === "string" ? body.objectId.trim() : "",
+        name: typeof body?.name === "string" ? body.name.trim() : ""
+      });
+      executeSandboxRun(body, { emit })
+        .then(async (response) => {
+          const finalPayload = await response.json().catch(() => ({ ok: false, error: "stream final payload unreadable" }));
+          emit({
+            kind: "growthub-sandbox-run-delta-v1",
+            type: "sandbox-run.final",
+            emittedAt: new Date().toISOString(),
+            status: response.status,
+            payload: finalPayload
+          });
+        })
+        .catch((error) => {
+          emit({
+            kind: "growthub-sandbox-run-delta-v1",
+            type: "sandbox-run.final",
+            emittedAt: new Date().toISOString(),
+            status: 500,
+            payload: { ok: false, error: error?.message || "sandbox run failed" }
+          });
+        })
+        .finally(() => controller.close());
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-store"
+    }
   });
 }
 

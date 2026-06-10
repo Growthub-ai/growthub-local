@@ -35,11 +35,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // run-console surfaces (OrchestrationRunTracePanel, SandboxRunPanel).
 import { ArrowUpRight, ChevronDown, ChevronRight, Play, Square } from "lucide-react";
 import {
+  deriveSwarmDeltaProjection,
   deriveSwarmGraphProjection,
   deriveSwarmRunProjection,
   formatCompactRunDuration,
 } from "@/lib/orchestration-run-console";
-import { findSwarmRunRows } from "@/lib/workspace-swarm-proposal";
+import {
+  deriveHelperWidgetCausationState,
+  deriveSwarmWorkflowExecutionEligibility,
+  findSwarmRunRows,
+} from "@/lib/workspace-swarm-proposal";
 
 const RUN_POLL_MS = 3500;
 
@@ -193,6 +198,8 @@ export function SwarmRunCard({
   projection,
   running,
   elapsedMs,
+  eligibility,
+  helperWidgetState,
   onStop,
   onLaunch,
   launchDisabled,
@@ -204,6 +211,10 @@ export function SwarmRunCard({
   const description = String(entry.row?.description || entry.row?.instructions || "").trim();
   const neverRun = !running && projection?.status === "pending";
   const finished = !running && projection && projection.status !== "pending";
+  const ready = eligibility?.ready !== false && helperWidgetState?.ready !== false;
+  const blockedGuidance = helperWidgetState?.ready === false
+    ? helperWidgetState.guidance
+    : eligibility?.guidance;
   const statusLabel = running
     ? formatCompactRunDuration(elapsedMs)
     : neverRun
@@ -240,9 +251,9 @@ export function SwarmRunCard({
             type="button"
             className="dm-btn-ghost dm-swarm-card-action"
             onClick={onLaunch}
-            disabled={launchDisabled}
+            disabled={launchDisabled || !ready}
             aria-label="Run swarm"
-            title="Run through sandbox-run"
+            title={ready ? "Run through sandbox-run" : blockedGuidance || "Execution target is not ready"}
           >
             <Play size={12} aria-hidden="true" />
           </button>
@@ -256,6 +267,21 @@ export function SwarmRunCard({
         <div className="dm-swarm-card-meta">
           <span className="dm-run-console__hint">{`${projection.agentCount} Agents`}</span>
           <span className="dm-run-console__hint">{formatTokensLabel(projection.totalTokens)}</span>
+          {eligibility && (
+            <span className="dm-run-console__hint">
+              {eligibility.ready ? `${eligibility.adapter}${eligibility.agentHost ? ` · ${eligibility.agentHost}` : ""}` : "Execution target needed"}
+            </span>
+          )}
+        </div>
+      )}
+      {!ready && (
+        <div className="dm-helper-error" role="status">
+          <span>{blockedGuidance || "Execution target is not ready."}</span>
+        </div>
+      )}
+      {ready && neverRun && (
+        <div className="dm-helper-stream dm-swarm-card-desc">
+          {eligibility.guidance}
         </div>
       )}
       {description && (
@@ -291,6 +317,7 @@ export function SwarmRunList({
   onLaunch,
   onClearFinished,
   onExpandTranscript,
+  helperWidgetState,
 }) {
   const running = workflows.filter((entry) => runningKeys.has(runKeyOf(entry.objectId, entry.row.Name)));
   const finished = workflows.filter((entry) => {
@@ -312,6 +339,8 @@ export function SwarmRunList({
                 projection={projections.get(key) || null}
                 running
                 elapsedMs={elapsedByKey.get(key) || 0}
+                eligibility={deriveSwarmWorkflowExecutionEligibility(entry)}
+                helperWidgetState={helperWidgetState}
                 onStop={() => onStop(entry)}
                 onExpandTranscript={onExpandTranscript}
               />
@@ -343,6 +372,8 @@ export function SwarmRunList({
             projection={projections.get(key) || null}
             running={false}
             elapsedMs={0}
+            eligibility={deriveSwarmWorkflowExecutionEligibility(entry)}
+            helperWidgetState={helperWidgetState}
             onLaunch={() => onLaunch(entry)}
             launchDisabled={runningKeys.size > 0}
             onExpandTranscript={onExpandTranscript}
@@ -354,6 +385,11 @@ export function SwarmRunList({
 }
 
 export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExpandTranscript }) {
+  const helperWidgetState = useMemo(
+    () => deriveHelperWidgetCausationState(workspaceConfig),
+    [workspaceConfig]
+  );
+
   // Governed workflow rows — the ONLY data source besides run history.
   const workflows = useMemo(() => {
     const all = findSwarmRunRows(workspaceConfig);
@@ -361,9 +397,8 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
     const focused = all.filter(
       (entry) => entry.objectId === focus.objectId && String(entry.row?.Name || "") === String(focus.name || "")
     );
-    // Focused entry first, everything else below — same list, same grammar.
-    const rest = all.filter((entry) => !focused.includes(entry));
-    return [...focused, ...rest];
+    // Tool-output Open is thread-bounded: render only the targeted swarm workflow row.
+    return focused;
   }, [workspaceConfig, focus]);
 
   // In-flight launches — client state only. Stop aborts the request.
@@ -371,6 +406,7 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
   const [elapsedByKey, setElapsedByKey] = useState(() => new Map());
   const [hiddenFinished, setHiddenFinished] = useState(() => new Set());
   const [launchError, setLaunchError] = useState("");
+  const [liveEventsByKey, setLiveEventsByKey] = useState(() => new Map());
   // Latest run record per workflow, sourced from source-record history so a
   // page refresh keeps runs visible. Falls back to row.lastResponse.
   const [historyByKey, setHistoryByKey] = useState(() => new Map());
@@ -432,10 +468,16 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
       const key = runKeyOf(entry.objectId, entry.row.Name);
       const skeleton = deriveSwarmGraphProjection(entry.graph, { title: entry.row.Name });
       if (runningKeys.has(key)) {
-        // Mid-run: declared skeleton with pending (hollow) dots and a
-        // truthful elapsed ticker — no per-agent state is invented; the
-        // history poll converges on the persisted record when it lands.
-        if (skeleton) map.set(key, { ...skeleton, status: "running", elapsedMs: elapsedByKey.get(key) || 0 });
+        const elapsedMs = elapsedByKey.get(key) || 0;
+        const liveProjection = deriveSwarmDeltaProjection(entry.graph, liveEventsByKey.get(key) || [], {
+          title: entry.row.Name,
+          elapsedMs
+        });
+        // Mid-run: live deltas hydrate the same projection shape as persisted
+        // history. If the browser misses a chunk, the skeleton and polling
+        // fallback still keep the card truthful until the final record lands.
+        if (liveProjection) map.set(key, liveProjection);
+        else if (skeleton) map.set(key, { ...skeleton, status: "running", elapsedMs });
         continue;
       }
       const record = historyByKey.get(key) || parseRowRecord(entry.row);
@@ -445,7 +487,58 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
       else if (skeleton) map.set(key, skeleton);
     }
     return map;
-  }, [workflows, historyByKey, runningKeys, elapsedByKey]);
+  }, [workflows, historyByKey, runningKeys, elapsedByKey, liveEventsByKey]);
+
+  const appendLiveEvent = useCallback((key, event) => {
+    if (!event || typeof event !== "object") return;
+    if (event.kind !== "growthub-sandbox-run-delta-v1") return;
+    setLiveEventsByKey((prev) => {
+      const next = new Map(prev);
+      const prior = next.get(key) || [];
+      next.set(key, [...prior, event].slice(-200));
+      return next;
+    });
+  }, []);
+
+  const readRunStream = useCallback(async ({ response, key }) => {
+    if (!response.body || typeof response.body.getReader !== "function") {
+      return response.json().catch(() => null);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalPayload = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const event = JSON.parse(trimmed);
+          appendLiveEvent(key, event);
+          if (event.type === "sandbox-run.final") finalPayload = event.payload || null;
+        } catch {
+          // Ignore malformed cosmetic chunks; the final persisted record is
+          // still fetched below.
+        }
+      }
+    }
+    const tail = buffer.trim();
+    if (tail) {
+      try {
+        const event = JSON.parse(tail);
+        appendLiveEvent(key, event);
+        if (event.type === "sandbox-run.final") finalPayload = event.payload || null;
+      } catch {
+        // Non-fatal.
+      }
+    }
+    return finalPayload;
+  }, [appendLiveEvent]);
 
   const launch = useCallback(async (entry) => {
     const key = runKeyOf(entry.objectId, entry.row.Name);
@@ -455,6 +548,11 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
     controllersRef.current.set(key, controller);
     startedRef.current.set(key, Date.now());
     setRunningKeys((prev) => new Set(prev).add(key));
+    setLiveEventsByKey((prev) => {
+      const next = new Map(prev);
+      next.set(key, []);
+      return next;
+    });
     setHiddenFinished((prev) => {
       if (!prev.has(key)) return prev;
       const next = new Set(prev);
@@ -464,11 +562,11 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
     try {
       const res = await fetch("/api/workspace/sandbox-run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId: entry.objectId, name: entry.row.Name }),
+        headers: { "content-type": "application/json", accept: "application/x-ndjson" },
+        body: JSON.stringify({ objectId: entry.objectId, name: entry.row.Name, stream: true }),
         signal: controller.signal,
       });
-      const data = await res.json().catch(() => null);
+      const data = await readRunStream({ response: res, key });
       if (data && data.ok === false && data.error) setLaunchError(String(data.error));
     } catch (err) {
       if (err?.name !== "AbortError") setLaunchError(err?.message || "run failed");
@@ -484,7 +582,7 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
       await refreshHistory([entry]);
       if (typeof onConfigRefresh === "function") onConfigRefresh();
     }
-  }, [runningKeys, refreshHistory, onConfigRefresh]);
+  }, [runningKeys, refreshHistory, onConfigRefresh, readRunStream]);
 
   const stop = useCallback((entry) => {
     const key = runKeyOf(entry.objectId, entry.row.Name);
@@ -520,6 +618,7 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
         onLaunch={launch}
         onClearFinished={clearFinished}
         onExpandTranscript={onExpandTranscript}
+        helperWidgetState={helperWidgetState}
       />
     </div>
   );

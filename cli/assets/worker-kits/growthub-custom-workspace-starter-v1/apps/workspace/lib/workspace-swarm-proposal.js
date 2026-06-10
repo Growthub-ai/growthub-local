@@ -51,10 +51,25 @@ const SWARM_AFFECTED_FIELD = "dataModel";
 // validateWorkspaceConfig, re-seeded if the user deletes it.
 const SWARM_WORKFLOWS_OBJECT_ID = "swarm-workflows";
 const SWARM_WORKFLOWS_LABEL = "Swarm Workflows";
+const WORKSPACE_HELPER_SANDBOX_OBJECT_ID = "workspace-helper-sandbox";
+const WORKSPACE_HELPER_ROW_NAME = "workspace-helper";
 
 const SWARM_ALLOWED_ADAPTERS = new Set(["local-agent-host", "local-intelligence"]);
 const SWARM_MAX_AGENTS = 24;
 const SWARM_DEFAULT_TIMEOUT_MS = 120000;
+const SWARM_EXECUTION_TARGET_FIELDS = [
+  "runLocality",
+  "schedulerRegistryId",
+  "runtime",
+  "adapter",
+  "agentHost",
+  "localModel",
+  "localEndpoint",
+  "intelligenceAdapterMode",
+  "timeoutMs",
+  "networkAllow",
+  "allowList",
+];
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -72,6 +87,142 @@ function clampPositiveInt(value, fallback = 0) {
 function sanitizeAgentHost(value) {
   const host = clean(value);
   return KNOWN_SANDBOX_AGENT_HOSTS.includes(host) ? host : "";
+}
+
+function findWorkspaceHelperSandboxRow(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const object = objects.find((item) => item?.id === WORKSPACE_HELPER_SANDBOX_OBJECT_ID);
+  const rows = Array.isArray(object?.rows) ? object.rows : [];
+  return rows.find((row) => clean(row?.Name) === WORKSPACE_HELPER_ROW_NAME) || rows[0] || null;
+}
+
+function deriveHelperWidgetCausationState(workspaceConfig) {
+  const row = findWorkspaceHelperSandboxRow(workspaceConfig);
+  const lifecycleStatus = clean(row?.lifecycleStatus).toLowerCase() || "draft";
+  const runLocality = normalizeRunLocality(row?.runLocality);
+  const adapter = sanitizeSwarmAdapter(row?.adapter, "");
+  const agentHost = sanitizeAgentHost(row?.agentHost);
+  const missing = [];
+  if (!row) missing.push("workspace helper sandbox");
+  if (row && lifecycleStatus !== "live") missing.push("live helper status");
+  if (row && runLocality !== "local") missing.push("local helper runtime");
+  if (row && !adapter) missing.push("prompt-capable helper adapter");
+  if (adapter === "local-agent-host" && !agentHost) missing.push("helper agent host");
+  const ready = missing.length === 0;
+  return {
+    ready,
+    status: ready ? "ready" : "blocked",
+    row,
+    adapter,
+    agentHost,
+    runLocality,
+    lifecycleStatus,
+    missing,
+    guidance: ready
+      ? `Helper is live on ${adapter}${agentHost ? ` using ${agentHost}` : ""}.`
+      : `Set up the live workspace helper first: ${missing.join(", ")}.`,
+  };
+}
+
+function sanitizeSwarmAdapter(value, fallback = "local-intelligence") {
+  const adapter = clean(value);
+  return SWARM_ALLOWED_ADAPTERS.has(adapter) ? adapter : fallback;
+}
+
+function normalizeRunLocality(value) {
+  return clean(value).toLowerCase() === "serverless" ? "serverless" : "local";
+}
+
+function resolveSwarmExecutionTarget(workspaceConfig, payload = {}) {
+  const helperState = deriveHelperWidgetCausationState(workspaceConfig);
+  const helperRow = helperState.ready ? helperState.row : null;
+  const helperAdapter = sanitizeSwarmAdapter(helperRow?.adapter, "");
+  const payloadAdapter = sanitizeSwarmAdapter(payload?.adapter, "");
+  const adapter = helperAdapter || payloadAdapter || "local-intelligence";
+  const runLocality = normalizeRunLocality(helperRow?.runLocality || payload?.runLocality);
+  const target = {
+    runLocality: "local",
+    schedulerRegistryId: "",
+    runtime: clean(helperRow?.runtime || payload?.runtime || "node") || "node",
+    adapter,
+    agentHost: "",
+    localModel: clean(helperRow?.localModel || payload?.localModel),
+    localEndpoint: clean(helperRow?.localEndpoint || payload?.localEndpoint),
+    intelligenceAdapterMode: clean(helperRow?.intelligenceAdapterMode || payload?.intelligenceAdapterMode),
+    timeoutMs: String(clampPositiveInt(payload?.timeoutMs || helperRow?.timeoutMs, SWARM_DEFAULT_TIMEOUT_MS)),
+    networkAllow: clean(payload?.networkAllow || helperRow?.networkAllow),
+    allowList: clean(payload?.allowList || helperRow?.allowList),
+    inheritedFromObjectId: helperRow ? WORKSPACE_HELPER_SANDBOX_OBJECT_ID : "",
+    inheritedFromName: helperRow ? clean(helperRow.Name || WORKSPACE_HELPER_ROW_NAME) : "",
+  };
+  if (adapter === "local-agent-host") {
+    target.agentHost = sanitizeAgentHost(helperRow?.agentHost) || sanitizeAgentHost(payload?.agentHost);
+  }
+  // Swarm workflows execute through prompt-capable local adapters. Serverless
+  // helper setup is not a runnable first-run target for agent-swarm-v1 because
+  // the proposal payload does not carry a scheduler registry contract.
+  if (runLocality === "serverless") {
+    target.runLocality = "local";
+    target.schedulerRegistryId = "";
+  }
+  return target;
+}
+
+function applyExecutionTargetToSwarmGraph(graph, executionTarget) {
+  const agentHost = sanitizeAgentHost(executionTarget?.agentHost);
+  const adapter = sanitizeSwarmAdapter(executionTarget?.adapter, "");
+  if ((!agentHost && !adapter) || !graph || typeof graph !== "object" || !Array.isArray(graph.nodes)) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (node?.type !== "ai-agent" && node?.type !== "tool-result") return node;
+      const config = node.config && typeof node.config === "object" ? node.config : {};
+      return {
+        ...node,
+        config: {
+          ...config,
+          adapter: sanitizeSwarmAdapter(config.adapter, "") || adapter,
+          agentHost: sanitizeAgentHost(config.agentHost) || agentHost,
+        },
+      };
+    }),
+  };
+}
+
+function deriveSwarmWorkflowExecutionEligibility(entryOrRow) {
+  const row = entryOrRow?.row && typeof entryOrRow.row === "object" ? entryOrRow.row : entryOrRow;
+  const adapter = sanitizeSwarmAdapter(row?.adapter, "");
+  const runLocality = normalizeRunLocality(row?.runLocality);
+  const agentHost = sanitizeAgentHost(row?.agentHost);
+  const graph = parseOrchestrationGraph(row?.orchestrationConfig || row?.orchestrationGraph);
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  const runnableNodes = nodes.filter((node) => node?.type === "ai-agent" || node?.type === "tool-result");
+  const missing = [];
+  if (!graph || !isAgentSwarmGraph(graph)) missing.push("agent-swarm-v1 graph");
+  if (runLocality !== "local") missing.push("local run target");
+  if (!adapter) missing.push("prompt-capable adapter");
+  if (adapter === "local-agent-host" && !agentHost) missing.push("agent host");
+  for (const node of runnableNodes) {
+    const config = node.config && typeof node.config === "object" ? node.config : {};
+    const nodeAdapter = sanitizeSwarmAdapter(config.adapter, "") || adapter;
+    const nodeHost = sanitizeAgentHost(config.agentHost) || agentHost;
+    if (!nodeAdapter) missing.push(`${clean(node.label || node.id) || "subagent"} adapter`);
+    if (nodeAdapter === "local-agent-host" && !nodeHost) missing.push(`${clean(node.label || node.id) || "subagent"} agent host`);
+  }
+  const uniqueMissing = Array.from(new Set(missing));
+  const ready = uniqueMissing.length === 0;
+  return {
+    ready,
+    status: ready ? "ready" : "blocked",
+    adapter,
+    agentHost,
+    runLocality,
+    runnableNodeCount: runnableNodes.length,
+    missing: uniqueMissing,
+    guidance: ready
+      ? `Ready to run through ${adapter}${agentHost ? ` using ${agentHost}` : ""}.`
+      : `Set ${uniqueMissing.join(", ")} before running this swarm workflow.`,
+  };
 }
 
 /**
@@ -210,8 +361,10 @@ function buildSwarmRunProposal(input = {}) {
 function buildSandboxRowFromSwarmProposal(workspaceConfig, proposal) {
   const payload = proposal?.payload || {};
   const name = clean(payload.name) || "Agent Swarm";
+  const executionTarget = resolveSwarmExecutionTarget(workspaceConfig, payload);
+  const adapter = executionTarget.adapter;
   const agents = (Array.isArray(payload.agents) ? payload.agents : [])
-    .map((agent, index) => normalizeSwarmAgent(agent || {}, index, payload.agentHost));
+    .map((agent, index) => normalizeSwarmAgent(agent || {}, index, executionTarget.agentHost));
 
   let graph = null;
   if (payload.orchestrationGraph) {
@@ -222,21 +375,19 @@ function buildSandboxRowFromSwarmProposal(workspaceConfig, proposal) {
   }
   if (!graph) {
     graph = buildDefaultAgentSwarmGraph({
-      agentHost: sanitizeAgentHost(payload.agentHost),
+      agentHost: executionTarget.agentHost,
       subagents: agents,
       orchestratorPrompt: clean(payload.objective),
       outcomeCriteria: clean(payload.outcomeCriteria),
       maxConcurrency: clampPositiveInt(payload.maxConcurrency, Math.max(1, agents.length)),
     });
   }
+  graph = applyExecutionTargetToSwarmGraph(graph, executionTarget);
 
-  const adapter = SWARM_ALLOWED_ADAPTERS.has(clean(payload.adapter))
-    ? clean(payload.adapter)
-    : "local-intelligence";
   // Swarm phases dispatch through prompt-capable LOCAL adapters only —
   // serverless locality would also require a schedulerRegistryId the swarm
   // intent payload never carries. Pin local.
-  const runLocality = "local";
+  const runLocality = executionTarget.runLocality;
 
   return {
     Name: name,
@@ -245,16 +396,19 @@ function buildSandboxRowFromSwarmProposal(workspaceConfig, proposal) {
     lifecycleStatus: "draft",
     version: "1",
     runLocality,
-    schedulerRegistryId: "",
-    runtime: "node",
+    schedulerRegistryId: executionTarget.schedulerRegistryId,
+    runtime: executionTarget.runtime,
     adapter,
-    agentHost: sanitizeAgentHost(payload.agentHost),
+    agentHost: executionTarget.agentHost,
+    localModel: executionTarget.localModel,
+    localEndpoint: executionTarget.localEndpoint,
+    intelligenceAdapterMode: executionTarget.intelligenceAdapterMode,
     envRefs: "",
-    networkAllow: "",
-    allowList: "",
+    networkAllow: executionTarget.networkAllow,
+    allowList: executionTarget.allowList,
     instructions: clean(payload.objective),
     command: "",
-    timeoutMs: String(clampPositiveInt(payload.timeoutMs, SWARM_DEFAULT_TIMEOUT_MS)),
+    timeoutMs: executionTarget.timeoutMs,
     status: "untested",
     lastTested: "",
     lastRunId: "",
@@ -286,7 +440,14 @@ function ensureSwarmWorkflowsObject(config) {
     source: SWARM_WORKFLOWS_LABEL,
     objectType: "sandbox-environment",
     icon: "Workflow",
-    columns: ["Name", "lifecycleStatus", "runLocality", "runtime", "adapter", "status", "lastTested", "description"],
+    columns: [
+      "Name",
+      "lifecycleStatus",
+      ...SWARM_EXECUTION_TARGET_FIELDS,
+      "status",
+      "lastTested",
+      "description",
+    ],
     rows: [],
     binding: { mode: "manual", source: SWARM_WORKFLOWS_LABEL },
   };
@@ -377,9 +538,12 @@ export {
   SWARM_AFFECTED_FIELD,
   SWARM_WORKFLOWS_OBJECT_ID,
   SWARM_WORKFLOWS_LABEL,
+  SWARM_EXECUTION_TARGET_FIELDS,
+  deriveHelperWidgetCausationState,
   validateSwarmRunProposal,
   buildSwarmRunProposal,
   buildSandboxRowFromSwarmProposal,
+  deriveSwarmWorkflowExecutionEligibility,
   ensureSwarmWorkflowsObject,
   upsertSwarmRunRow,
   findSwarmRunRows,

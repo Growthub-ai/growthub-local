@@ -50,7 +50,11 @@ import {
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
-import { summarizeSwarmRunProposal, SWARM_WORKFLOWS_OBJECT_ID } from "@/lib/workspace-swarm-proposal";
+import {
+  deriveHelperWidgetCausationState,
+  summarizeSwarmRunProposal,
+  SWARM_WORKFLOWS_OBJECT_ID,
+} from "@/lib/workspace-swarm-proposal";
 
 // Generic "Tool Call Output" title matches the reference grammar — the
 // user already sees the prompt + assistant response in the chat above,
@@ -342,7 +346,7 @@ function summarizePayload(proposal) {
   }
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied, onOpenArtifact }) {
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
   const [prompt, setPrompt] = useState(initialPrompt || "");
@@ -593,6 +597,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   async function runQuery() {
     if (!prompt.trim() || streaming) return;
+    if (!helperWidgetState.ready) {
+      setQueryError(helperWidgetState.guidance);
+      setActiveTab("chat");
+      return;
+    }
     setResult(null);
     setQueryError("");
     setStreamBuffer("");
@@ -724,6 +733,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   const sandboxRow = resolveSandboxEnvRow(workspaceConfig);
   const helperAgentConfigured = isHelperConfigured(workspaceConfig);
+  const helperWidgetState = useMemo(
+    () => deriveHelperWidgetCausationState(workspaceConfig),
+    [workspaceConfig]
+  );
   const liveModel = sandboxRow?.localModel || "";
   const liveEndpoint = sandboxRow?.localEndpoint || "";
   const liveAdapter = sandboxRow?.intelligenceAdapterMode || "ollama";
@@ -880,6 +893,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // proposal request (intent + template) that still travels query → review
   // → apply. No command calls sandbox-run or PATCH directly.
   const selectSlashCommand = (cmd) => {
+    if (!helperWidgetState.ready) {
+      setQueryError(helperWidgetState.guidance);
+      setActiveTab("chat");
+      return;
+    }
     setSlashDismissed(false);
     setSlashIndex(0);
     if (cmd.view) {
@@ -957,6 +975,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   };
 
   const inSwarmView = activeView === "swarm-list" || activeView === "swarm-detail" || activeView === "tool-output";
+  const canOpenSwarmWorkflow = Boolean(
+    inSwarmView
+    && activeTab === "assistant"
+    && swarmFocus?.objectId
+    && swarmFocus?.name
+    && typeof onOpenSwarmWorkflow === "function"
+  );
 
   if (!open) return null;
 
@@ -1012,12 +1037,22 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             <button
               type="button"
               className="dm-sidecar-icon-btn"
-              onClick={() => setActiveTab((current) => (current === "setup" ? "assistant" : "setup"))}
-              aria-label={activeTab === "setup" ? "Back" : "Setup"}
-              title={activeTab === "setup" ? "Back" : "Setup"}
+              onClick={() => {
+                if (canOpenSwarmWorkflow) {
+                  onOpenSwarmWorkflow(swarmFocus);
+                  onClose?.();
+                  return;
+                }
+                setActiveTab((current) => (current === "setup" ? "assistant" : "setup"));
+              }}
+              disabled={inSwarmView && activeTab === "assistant" && !canOpenSwarmWorkflow}
+              aria-label={inSwarmView && activeTab === "assistant" ? "Open workflow canvas" : activeTab === "setup" ? "Back" : "Setup"}
+              title={inSwarmView && activeTab === "assistant" ? "Open workflow canvas" : activeTab === "setup" ? "Back" : "Setup"}
               data-tab={activeTab === "setup" ? "assistant" : "setup"}
             >
-              {activeTab === "setup" ? <ArrowLeft size={14} /> : <Settings size={14} />}
+              {inSwarmView && activeTab === "assistant"
+                ? <ArrowUpRight size={14} />
+                : activeTab === "setup" ? <ArrowLeft size={14} /> : <Settings size={14} />}
             </button>
             <button
               type="button"
@@ -1328,6 +1363,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               ) : null}
 
               <div className="dm-helper-composer-input">
+                {!helperWidgetState.ready && (
+                  <div className="dm-helper-error" role="status">
+                    <span>{helperWidgetState.guidance}</span>
+                  </div>
+                )}
                 {slashActive && (
                   <div className="dm-helper-pill-menu dm-helper-slash-menu" role="listbox" data-helper-slash-menu="">
                     {slash.matches.map((cmd, i) => (
@@ -1338,6 +1378,8 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                         role="option"
                         aria-selected={i === slashIndex}
                         data-helper-slash-item={cmd.name}
+                        disabled={!helperWidgetState.ready}
+                        title={!helperWidgetState.ready ? helperWidgetState.guidance : cmd.description || cmd.label}
                         onClick={() => selectSlashCommand(cmd)}
                         onMouseEnter={() => setSlashIndex(i)}
                       >
@@ -1392,7 +1434,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                       type="button"
                       className="dm-helper-composer-send"
                       onClick={runQuery}
-                      disabled={streaming || !prompt.trim()}
+                      disabled={streaming || !prompt.trim() || !helperWidgetState.ready}
                       data-helper-submit=""
                       aria-label={streaming ? "Sending" : "Send (⌘+Enter)"}
                       title={streaming ? "Sending…" : `Send · ${intentLabel(activeIntent)} (⌘+Enter)`}

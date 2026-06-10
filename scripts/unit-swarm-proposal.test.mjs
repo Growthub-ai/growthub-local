@@ -41,16 +41,18 @@ const {
   SWARM_WORKFLOW_SAVE_PROPOSAL_TYPE,
   SWARM_RUN_RESUME_PROPOSAL_TYPE,
   SWARM_WORKFLOWS_OBJECT_ID,
+  deriveHelperWidgetCausationState,
   validateSwarmRunProposal,
   buildSwarmRunProposal,
   buildSandboxRowFromSwarmProposal,
+  deriveSwarmWorkflowExecutionEligibility,
   upsertSwarmRunRow,
   findSwarmRunRows,
   summarizeSwarmRunProposal,
 } = swarmModule;
 const { parseOrchestrationGraph, isAgentSwarmGraph, validateAgentSwarmGraph, extractSwarmNodes } = graphModule;
 const { WORKSPACE_HELPER_PROPOSAL_TYPES, PROPOSAL_TYPE_TO_PATCH_FIELD, PATCH_ALLOWLIST, validateProposals } = helperModule;
-const { validateWorkspaceConfig } = schemaModule;
+const { KNOWN_SANDBOX_AGENT_HOSTS, validateWorkspaceConfig } = schemaModule;
 
 function intentInput(overrides = {}) {
   return {
@@ -65,6 +67,33 @@ function intentInput(overrides = {}) {
     outcomeCriteria: "Every required agent replies.",
     adapter: "local-intelligence",
     ...overrides,
+  };
+}
+
+function helperWorkspace(overrides = {}) {
+  return {
+    dataModel: {
+      objects: [
+        {
+          id: "workspace-helper-sandbox",
+          label: "Workspace Helper Sandbox",
+          objectType: "sandbox-environment",
+          columns: ["Name", "lifecycleStatus", "runLocality", "runtime", "adapter", "agentHost", "timeoutMs"],
+          rows: [
+            {
+              Name: "workspace-helper",
+              lifecycleStatus: "live",
+              runLocality: "local",
+              runtime: "node",
+              adapter: "local-agent-host",
+              agentHost: "codex_local",
+              timeoutMs: "45000",
+              ...overrides,
+            },
+          ],
+        },
+      ],
+    },
   };
 }
 
@@ -169,6 +198,94 @@ test("unknown agentHost values are dropped, maxConcurrency normalizes", () => {
   assert.ok(proposal.payload.maxConcurrency >= 1);
   const known = buildSwarmRunProposal(intentInput({ agentHost: "claude_local" }));
   assert.equal(known.payload.agentHost, "claude_local");
+});
+
+test("helper widget causation state gates command and swarm execution", () => {
+  const ready = deriveHelperWidgetCausationState(helperWorkspace());
+  assert.equal(ready.ready, true, ready.guidance);
+  assert.equal(ready.adapter, "local-agent-host");
+  assert.equal(ready.agentHost, "codex_local");
+  assert.match(ready.guidance, /Helper is live/i);
+
+  const missing = deriveHelperWidgetCausationState(helperWorkspace({ agentHost: "" }));
+  assert.equal(missing.ready, false);
+  assert.ok(missing.missing.includes("helper agent host"));
+  assert.match(missing.guidance, /Set up the live workspace helper/i);
+});
+
+test("apply inherits the helper sandbox execution target for agent swarm workflow rows", () => {
+  const workspaceConfig = helperWorkspace();
+  const proposal = buildSwarmRunProposal(intentInput({ adapter: "local-agent-host", agentHost: "" }));
+  const row = buildSandboxRowFromSwarmProposal(workspaceConfig, proposal);
+  assert.equal(row.adapter, "local-agent-host");
+  assert.equal(row.agentHost, "codex_local");
+  assert.equal(row.runLocality, "local");
+  assert.equal(row.runtime, "node");
+  assert.equal(row.timeoutMs, "45000");
+  const graph = parseOrchestrationGraph(row.orchestrationConfig);
+  const subagents = extractSwarmNodes(graph).subagents;
+  assert.equal(subagents.length, 2);
+  assert.deepEqual(
+    subagents.map((node) => node.config.agentHost),
+    ["codex_local", "codex_local"],
+    "the node interface sees the same execution target before Play"
+  );
+  assert.deepEqual(
+    subagents.map((node) => node.config.adapter),
+    ["local-agent-host", "local-agent-host"],
+    "subagents inherit the same prompt-capable execution adapter"
+  );
+  const eligibility = deriveSwarmWorkflowExecutionEligibility(row);
+  assert.equal(eligibility.ready, true, eligibility.guidance);
+  assert.equal(eligibility.agentHost, "codex_local");
+  assert.equal(eligibility.adapter, "local-agent-host");
+
+  const config = upsertSwarmRunRow(workspaceConfig, row);
+  const object = config.dataModel.objects.find((o) => o.id === SWARM_WORKFLOWS_OBJECT_ID);
+  assert.ok(object.columns.includes("agentHost"), "swarm-workflows exposes the execution target column");
+  validateWorkspaceConfig({ dataModel: config.dataModel });
+});
+
+test("agent-host execution target inheritance is catalog-agnostic", () => {
+  for (const host of KNOWN_SANDBOX_AGENT_HOSTS) {
+    const workspaceConfig = helperWorkspace({ agentHost: host });
+    const proposal = buildSwarmRunProposal(intentInput({ adapter: "local-agent-host", agentHost: "" }));
+    const row = buildSandboxRowFromSwarmProposal(workspaceConfig, proposal);
+    const graph = parseOrchestrationGraph(row.orchestrationConfig);
+    const subagents = extractSwarmNodes(graph).subagents;
+    assert.equal(row.adapter, "local-agent-host", host);
+    assert.equal(row.agentHost, host, host);
+    assert.deepEqual(subagents.map((node) => node.config.agentHost), [host, host], host);
+    assert.equal(deriveSwarmWorkflowExecutionEligibility(row).ready, true, host);
+  }
+});
+
+test("local-intelligence helper target stays runnable without an agent host", () => {
+  const workspaceConfig = helperWorkspace({
+    adapter: "local-intelligence",
+    agentHost: "",
+    localModel: "smoke-model",
+    localEndpoint: "http://127.0.0.1:11434/v1/chat/completions",
+    intelligenceAdapterMode: "ollama",
+  });
+  const proposal = buildSwarmRunProposal(intentInput({ adapter: "local-agent-host", agentHost: "" }));
+  const row = buildSandboxRowFromSwarmProposal(workspaceConfig, proposal);
+  const graph = parseOrchestrationGraph(row.orchestrationConfig);
+  const subagents = extractSwarmNodes(graph).subagents;
+  assert.equal(row.adapter, "local-intelligence");
+  assert.equal(row.agentHost, "");
+  assert.deepEqual(subagents.map((node) => node.config.adapter), ["local-intelligence", "local-intelligence"]);
+  assert.deepEqual(subagents.map((node) => node.config.agentHost), ["", ""]);
+  assert.equal(deriveSwarmWorkflowExecutionEligibility(row).ready, true);
+});
+
+test("execution eligibility blocks first Play when a swarm row has no runnable target", () => {
+  const proposal = buildSwarmRunProposal(intentInput({ adapter: "local-agent-host", agentHost: "" }));
+  const row = buildSandboxRowFromSwarmProposal({ dataModel: { objects: [] } }, proposal);
+  const eligibility = deriveSwarmWorkflowExecutionEligibility(row);
+  assert.equal(eligibility.ready, false);
+  assert.ok(eligibility.missing.includes("agent host"));
+  assert.match(eligibility.guidance, /agent host/i);
 });
 
 test("upsert seeds the swarm-workflows object, de-dupes by Name, preserves run stamps", () => {

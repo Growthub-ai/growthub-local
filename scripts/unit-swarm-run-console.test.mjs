@@ -32,6 +32,7 @@ const {
   normalizeRunConsoleRecord,
   deriveSwarmRunProjection,
   deriveSwarmGraphProjection,
+  deriveSwarmDeltaProjection,
   formatCompactRunDuration,
 } = consoleModule;
 const { buildDefaultAgentSwarmGraph } = graphModule;
@@ -164,6 +165,80 @@ test("missing tokens/tools remain null and totals are truthful", () => {
   assert.equal(silentProjection.totalTools, null);
 });
 
+test("unreported local-agent-host telemetry never renders as zero", () => {
+  const record = swarmRecord();
+  record.swarm.orchestrator.adapter = "local-agent-host";
+  record.swarm.orchestrator.tokens = 0;
+  record.swarm.orchestrator.tools = 0;
+  record.swarm.tasks[0].adapter = "local-agent-host";
+  record.swarm.tasks[0].tokens = 0;
+  record.swarm.tasks[0].tools = 0;
+  record.swarm.tasks[0].adapterMeta = {
+    adapter: "local-agent-host",
+    telemetrySource: "unreported",
+    tokens: null,
+    tools: null,
+  };
+  record.swarm.tasks[1].tokens = null;
+  record.swarm.tasks[1].tools = null;
+  record.swarm.synthesis.adapter = "local-agent-host";
+  record.swarm.synthesis.tokens = 0;
+  record.swarm.synthesis.tools = 0;
+  const projection = deriveSwarmRunProjection(record);
+  const agents = projection.phases.flatMap((phase) => phase.agents);
+  assert.equal(agents.find((agent) => agent.id === "orchestrator").tokens, null);
+  assert.equal(agents.find((agent) => agent.id === "subagent-ping").tokens, null);
+  assert.equal(agents.find((agent) => agent.id === "synthesis").tools, null);
+  assert.equal(projection.totalTokens, null);
+  assert.equal(projection.totalTools, null);
+});
+
+test("persisted codex stderr footer drives local-agent-host telemetry display", () => {
+  const record = swarmRecord();
+  record.swarm.orchestrator.tokens = null;
+  record.swarm.orchestrator.tools = null;
+  record.swarm.tasks[0].adapter = "local-agent-host";
+  record.swarm.tasks[0].tokens = 0;
+  record.swarm.tasks[0].tools = 0;
+  record.swarm.tasks[0].adapterMeta = {
+    adapter: "local-agent-host",
+    telemetrySource: "unreported",
+    tokens: null,
+    tools: null,
+  };
+  record.swarm.tasks[0].stderr = "codex\ntelemetry smoke ok\ntokens used\n18,737\n";
+  record.swarm.tasks[1].tokens = null;
+  record.swarm.tasks[1].tools = null;
+  record.swarm.synthesis.tokens = null;
+  record.swarm.synthesis.tools = null;
+  const projection = deriveSwarmRunProjection(record);
+  const task = projection.phases.find((phase) => phase.id === "dispatch").agents[0];
+  assert.equal(task.tokens, 18737);
+  assert.equal(task.tools, 0);
+  assert.equal(projection.totalTokens, 18737);
+  assert.equal(projection.totalTools, 0);
+});
+
+test("reported zero telemetry remains a real zero", () => {
+  const record = swarmRecord();
+  record.swarm.orchestrator.tokens = 0;
+  record.swarm.orchestrator.tools = 0;
+  record.swarm.orchestrator.adapterMeta = {
+    adapter: "local-intelligence",
+    telemetrySource: "agent-host-reported",
+    tokens: 0,
+    tools: 0,
+  };
+  record.swarm.tasks = [];
+  record.swarm.synthesis = null;
+  const projection = deriveSwarmRunProjection(record);
+  const orchestrator = projection.phases.find((phase) => phase.id === "plan").agents[0];
+  assert.equal(orchestrator.tokens, 0);
+  assert.equal(orchestrator.tools, 0);
+  assert.equal(projection.totalTokens, 0);
+  assert.equal(projection.totalTools, 0);
+});
+
 test("transcripts are secret-redacted", () => {
   const projection = deriveSwarmRunProjection(swarmRecord());
   const echo = projection.phases.find((p) => p.id === "dispatch").agents[1];
@@ -266,6 +341,77 @@ test("skeleton and record projections converge on the same phase structure", () 
   for (const phase of projected.phases) {
     for (const agent of phase.agents) assert.equal(agent.pending, false);
   }
+});
+
+test("live swarm deltas hydrate the skeleton without estimating telemetry", () => {
+  const graph = buildDefaultAgentSwarmGraph({
+    subagents: [
+      { id: "ping-0", role: "ping-0", taskPrompt: "pong", phase: "dispatch" },
+      { id: "echo-alpha", role: "echo-alpha", taskPrompt: "echo", phase: "dispatch" },
+    ],
+  });
+  const projection = deriveSwarmDeltaProjection(graph, [
+    { kind: "growthub-sandbox-run-delta-v1", type: "swarm.run.started", runId: "run_live_1" },
+    { kind: "growthub-sandbox-run-delta-v1", type: "swarm.phase.started", phaseId: "plan", label: "Plan" },
+    {
+      kind: "growthub-sandbox-run-delta-v1",
+      type: "swarm.phase.completed",
+      phaseId: "plan",
+      label: "Plan",
+      status: "completed",
+      agent: {
+        taskId: "orchestrator",
+        nodeId: "orchestrator",
+        role: "Orchestrator",
+        status: "completed",
+        durationMs: 1200,
+        tokens: 40,
+        tools: 0,
+      },
+    },
+    {
+      kind: "growthub-sandbox-run-delta-v1",
+      type: "swarm.task.started",
+      phaseId: "dispatch",
+      taskId: "ping-0",
+      nodeId: "ping-0",
+      role: "ping-0",
+    },
+    {
+      kind: "growthub-sandbox-run-delta-v1",
+      type: "swarm.task.completed",
+      phaseId: "dispatch",
+      task: {
+        taskId: "ping-0",
+        nodeId: "ping-0",
+        role: "ping-0",
+        phaseId: "dispatch",
+        status: "completed",
+        durationMs: 4000,
+        tokens: 100,
+        tools: 1,
+      },
+    },
+  ], { title: "live-smoke", elapsedMs: 5200 });
+
+  assert.equal(projection.runId, "run_live_1");
+  assert.equal(projection.status, "running");
+  assert.equal(projection.elapsedMs, 5200);
+  assert.equal(projection.totalTokens, 140);
+  assert.equal(projection.totalTools, 1);
+  const plan = projection.phases.find((phase) => phase.id === "plan");
+  assert.equal(plan.status, "completed");
+  assert.equal(plan.agents[0].pending, false);
+  assert.equal(plan.agents[0].tokens, 40);
+  const dispatch = projection.phases.find((phase) => phase.id === "dispatch");
+  const ping = dispatch.agents.find((agent) => agent.id === "ping-0");
+  const echo = dispatch.agents.find((agent) => agent.id === "echo-alpha");
+  assert.equal(ping.status, "completed");
+  assert.equal(ping.pending, false);
+  assert.equal(ping.tools, 1);
+  assert.equal(echo.status, "pending", "agents without a delta remain pending");
+  assert.equal(echo.pending, true);
+  assert.equal(echo.tokens, null, "missing live telemetry stays null, not 0");
 });
 
 test("formatCompactRunDuration matches the zero-padded reference format (P5)", () => {
