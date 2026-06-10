@@ -147,6 +147,23 @@ field, and no new DUI/UX primitives**.
   (`local-intelligence` reports completion usage; `local-agent-host` CLIs
   report none → `—`).
 
+## DUI/UX conformance hardening (post-review pass)
+
+The swarm CSS block in `globals.css` is **layout-only** (display, grid,
+spacing, overflow, typography size/weight). Every color, border, background,
+and shadow comes from existing primitives composed in the JSX:
+`dm-helper-toolcall(-row/-title/-chevron/-body/-json)`, `dm-helper-stream`,
+`dm-helper-error`, `dm-run-console__hint`, `dm-run-console__tree-dot`,
+`dm-btn-ghost`, `dm-sidecar-header`, `dm-helper-pill-menu`. The cockpit's
+icon set is strictly inherited grammar — ArrowUpRight/ChevronDown/
+ChevronRight from `HelperSidecar`, Play/Square from the existing run-console
+surfaces (`OrchestrationRunTracePanel`, `SandboxRunPanel`). Both invariants
+are enforced by a unit test
+(`unit-swarm-run-console.test.mjs → "cockpit DUI/UX conformance"`): no hex
+colors / color functions / keyframes / gradients / shadows in the swarm CSS
+block, no lucide imports outside the inherited set, no browser storage in
+the cockpit.
+
 ## No-new-authority confirmation
 
 No new runtime (execution stays in `sandbox-run` + the existing swarm

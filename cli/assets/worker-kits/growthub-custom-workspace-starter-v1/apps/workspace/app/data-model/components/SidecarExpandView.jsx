@@ -19,7 +19,7 @@ import { ArrowLeft } from "lucide-react";
 export function SidecarExpandView({ title, onBack, children }) {
   return (
     <div className="dm-swarm-expand" data-sidecar-expand="">
-      <div className="dm-swarm-expand-head">
+      <div className="dm-sidecar-header dm-swarm-expand-head">
         <button
           type="button"
           className="dm-sidecar-icon-btn"

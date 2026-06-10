@@ -193,6 +193,40 @@ test("degenerate swarm records do not crash", () => {
   assert.equal(p4.phases.find((ph) => ph.id === "dispatch").status, "failed");
 });
 
+test("cockpit DUI/UX conformance — layout-only CSS, inherited icon grammar only", async () => {
+  const fs = await import("node:fs/promises");
+  const appRoot = path.join(kitRoot, "..", "app");
+
+  // The swarm CSS block must be structural only: no new colors, gradients,
+  // animations, or shadows — all chrome comes from existing dm-helper /
+  // dm-run-console primitives composed in the JSX.
+  const css = await fs.readFile(path.join(appRoot, "globals.css"), "utf8");
+  const marker = "Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1)";
+  const start = css.indexOf(marker);
+  assert.ok(start > -1, "swarm CSS block present");
+  const block = css.slice(start);
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(block), "no hard-coded colors in swarm CSS");
+  assert.ok(!/rgba?\(|hsla?\(/.test(block), "no color functions in swarm CSS");
+  assert.ok(!/@keyframes|gradient|animation|box-shadow/.test(block), "no motion/decoration in swarm CSS");
+
+  // The cockpit may only use icons already present in the helper sidecar
+  // (ArrowUpRight/ChevronDown/ChevronRight) and run-console (Play/Square)
+  // grammar — no new icon language.
+  const cockpit = await fs.readFile(
+    path.join(appRoot, "data-model/components/SwarmRunCockpit.jsx"),
+    "utf8"
+  );
+  const importMatch = cockpit.match(/import\s*\{([^}]+)\}\s*from\s*"lucide-react"/);
+  assert.ok(importMatch, "lucide import found");
+  const inherited = new Set(["ArrowUpRight", "ChevronDown", "ChevronRight", "Play", "Square"]);
+  for (const icon of importMatch[1].split(",").map((s) => s.trim()).filter(Boolean)) {
+    assert.ok(inherited.has(icon), `icon ${icon} is outside the inherited grammar`);
+  }
+
+  // Authoritative swarm state never lands in browser storage.
+  assert.ok(!/localStorage|sessionStorage/.test(cockpit), "no browser storage in cockpit");
+});
+
 test("projection module stays pure — no React, no fetch, no config writes", async () => {
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(path.join(kitRoot, "orchestration-run-console.js"), "utf8");

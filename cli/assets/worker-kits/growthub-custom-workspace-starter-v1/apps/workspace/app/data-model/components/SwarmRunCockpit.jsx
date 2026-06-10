@@ -21,6 +21,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// Icon set is strictly inherited grammar: ArrowUpRight/ChevronDown/
+// ChevronRight from HelperSidecar, Play/Square from the existing
+// run-console surfaces (OrchestrationRunTracePanel, SandboxRunPanel).
 import { ArrowUpRight, ChevronDown, ChevronRight, Play, Square } from "lucide-react";
 import {
   deriveSwarmRunProjection,
@@ -70,14 +73,14 @@ export function SwarmAgentTranscript({ agent, onCollapse }) {
   return (
     <div className="dm-swarm-transcript" data-swarm-transcript="">
       <div className="dm-swarm-transcript-head">
-        <span className="dm-field-label">{agent.label}</span>
+        <span className="dm-helper-toolcall-title">{agent.label}</span>
         {onCollapse && (
           <button type="button" className="dm-btn-ghost" onClick={onCollapse}>
             Hide transcript
           </button>
         )}
       </div>
-      <pre className="dm-helper-toolcall-json dm-swarm-transcript-body">
+      <pre className="dm-helper-toolcall-json">
         {agent.transcript || "(no output)"}
       </pre>
     </div>
@@ -97,9 +100,9 @@ export function SwarmAgentRow({ agent, selected, onSelect }) {
         <span className="dm-run-console__tree-dot" data-variant={dotVariantFor(agent.status)} />
         {agent.label}
       </span>
-      <span className="dm-swarm-agent-cell">{formatCount(agent.tokens)}</span>
-      <span className="dm-swarm-agent-cell">{formatCount(agent.tools)}</span>
-      <span className="dm-swarm-agent-cell">
+      <span className="dm-swarm-agent-cell dm-run-console__hint">{formatCount(agent.tokens)}</span>
+      <span className="dm-swarm-agent-cell dm-run-console__hint">{formatCount(agent.tools)}</span>
+      <span className="dm-swarm-agent-cell dm-run-console__hint">
         {agent.durationMs ? formatRunDuration(agent.durationMs) : "—"}
       </span>
     </button>
@@ -110,17 +113,17 @@ export function SwarmPhaseGroup({ phase, expanded, onToggle, selectedAgentId, on
   const agents = Array.isArray(phase.agents) ? phase.agents : [];
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) || null;
   return (
-    <div className="dm-swarm-phase" data-swarm-phase={phase.id}>
+    <div className="dm-helper-toolcall dm-swarm-phase" data-swarm-phase={phase.id}>
       <button
         type="button"
-        className="dm-swarm-phase-head"
+        className="dm-helper-toolcall-row dm-swarm-phase-head"
         onClick={onToggle}
         aria-expanded={expanded}
       >
-        <span className="dm-swarm-phase-label">{phase.label}</span>
+        <span className="dm-helper-toolcall-title">{phase.label}</span>
         {expanded
-          ? <ChevronDown size={14} aria-hidden="true" />
-          : <ChevronRight size={14} aria-hidden="true" />}
+          ? <ChevronDown size={14} className="dm-helper-toolcall-chevron" aria-hidden="true" />
+          : <ChevronRight size={14} className="dm-helper-toolcall-chevron" aria-hidden="true" />}
       </button>
       <div className="dm-swarm-dotstrip" aria-label={`${phase.label} agent states`}>
         {agents.map((agent) => (
@@ -133,12 +136,12 @@ export function SwarmPhaseGroup({ phase, expanded, onToggle, selectedAgentId, on
         ))}
       </div>
       {expanded && agents.length > 0 && (
-        <div className="dm-swarm-agent-table">
+        <div className="dm-helper-toolcall-body dm-swarm-agent-table">
           <div className="dm-swarm-agent-row dm-swarm-agent-header" aria-hidden="true">
-            <span className="dm-swarm-agent-name">Agent</span>
-            <span className="dm-swarm-agent-cell">Tokens</span>
-            <span className="dm-swarm-agent-cell">Tools</span>
-            <span className="dm-swarm-agent-cell">Time</span>
+            <span className="dm-swarm-agent-name dm-run-console__hint">Agent</span>
+            <span className="dm-swarm-agent-cell dm-run-console__hint">Tokens</span>
+            <span className="dm-swarm-agent-cell dm-run-console__hint">Tools</span>
+            <span className="dm-swarm-agent-cell dm-run-console__hint">Time</span>
           </div>
           {agents.map((agent) => (
             <SwarmAgentRow
@@ -193,7 +196,7 @@ export function SwarmRunCard({
     <div className="dm-helper-toolcall dm-swarm-card" data-swarm-run={entry.row.Name} data-swarm-running={running ? "true" : "false"}>
       <div className="dm-swarm-card-head">
         <span className="dm-run-console__tree-dot" data-variant={running ? "active" : projection ? dotVariantFor(projection.status) : "canceled"} />
-        <span className="dm-swarm-card-title">{entry.row.Name}</span>
+        <span className="dm-helper-toolcall-title dm-swarm-card-title">{entry.row.Name}</span>
         {running ? (
           <button
             type="button"
@@ -218,21 +221,21 @@ export function SwarmRunCard({
         ) : null}
       </div>
       <div className="dm-swarm-card-meta">
-        <span className="dm-swarm-card-kind">Workflow</span>
-        <span>{statusLabel}</span>
+        <span className="dm-run-console__hint dm-swarm-card-kind">Workflow</span>
+        <span className="dm-run-console__hint">{statusLabel}</span>
       </div>
       {(projection || running) && (
         <div className="dm-swarm-card-meta">
-          <span>{projection ? `${projection.agentCount} Agents` : "…"}</span>
-          <span>{projection ? formatTokensLabel(projection.totalTokens) : "— Tokens"}</span>
+          <span className="dm-run-console__hint">{projection ? `${projection.agentCount} Agents` : "…"}</span>
+          <span className="dm-run-console__hint">{projection ? formatTokensLabel(projection.totalTokens) : "— Tokens"}</span>
         </div>
       )}
       {description && (
-        <div className="dm-swarm-card-desc">{description}</div>
+        <div className="dm-helper-stream dm-swarm-card-desc">{description}</div>
       )}
       {phases.length > 0 && (
         <div className="dm-swarm-phases">
-          <span className="dm-field-label">Phases</span>
+          <span className="dm-helper-toolcall-title">Phases</span>
           {phases.map((phase) => (
             <SwarmPhaseGroup
               key={phase.id}
@@ -276,7 +279,7 @@ export function SwarmRunList({
     <div className="dm-swarm-cockpit-list">
       {running.length > 0 && (
         <>
-          <span className="dm-field-hint dm-swarm-section-label">Running</span>
+          <span className="dm-run-console__hint">Running</span>
           {running.map((entry) => {
             const key = runKeyOf(entry.objectId, entry.row.Name);
             return (
@@ -295,7 +298,7 @@ export function SwarmRunList({
       )}
 
       <div className="dm-swarm-section-row">
-        <span className="dm-field-hint dm-swarm-section-label">Finished</span>
+        <span className="dm-run-console__hint">Finished</span>
         {finished.length > 0 && (
           <button type="button" className="dm-btn-ghost" onClick={onClearFinished} title="Hide finished cards from this list — run history stays in source records">
             Clear
@@ -469,7 +472,9 @@ export function SwarmRunCockpit({ workspaceConfig, focus, onConfigRefresh, onExp
   return (
     <div className="dm-swarm-cockpit" data-swarm-cockpit="">
       {launchError && (
-        <p className="dm-run-console__hint dm-swarm-launch-error" role="alert">{launchError}</p>
+        <div className="dm-helper-error" role="alert">
+          <span>{launchError}</span>
+        </div>
       )}
       <SwarmRunList
         workflows={workflows}

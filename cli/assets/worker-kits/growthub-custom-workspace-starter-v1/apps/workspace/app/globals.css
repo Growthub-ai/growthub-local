@@ -9116,10 +9116,14 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-template-context-banner .workspace-template-context-link { color: inherit; text-decoration: underline; font-weight: 600; margin-left: auto; }
 
 /* ---------------------------------------------------------------------------
-   Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1) — structural layout only.
-   Reuses the existing dm-helper / dm-run-console grammar: tree dots, ghost
-   buttons, field labels, tool-call cards, mono transcript pre. No new
-   colors, icons, motion, or card language. */
+   Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1) — structural layout ONLY.
+   No new colors, borders, backgrounds, icons, or motion: every visual
+   treatment comes from existing primitives composed in the JSX —
+   dm-helper-toolcall(-row/-title/-chevron/-body/-json), dm-helper-stream,
+   dm-helper-error, dm-run-console__hint, dm-run-console__tree-dot,
+   dm-btn-ghost, dm-sidecar-header, dm-helper-pill-menu. The dm-swarm-*
+   classes below carry layout, spacing, grid, overflow, and typography
+   weight/size exclusively. */
 
 /* Slash command menu — same dm-helper-pill-menu primitive, anchored above
    the composer textarea instead of below a pill. */
@@ -9132,44 +9136,39 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-body { display: flex; flex-direction: column; min-height: 0; }
 .dm-swarm-cockpit { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .dm-swarm-cockpit-list { display: flex; flex-direction: column; gap: 8px; }
-.dm-swarm-section-label { font-size: 12px; color: #6b7280; }
 .dm-swarm-section-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-.dm-swarm-launch-error { color: #dc2626; }
 
-/* Run card — composes the existing dm-helper-toolcall container. */
-.dm-swarm-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: #f9fafb; }
+/* Run card — surface chrome comes from dm-helper-toolcall in the JSX. */
+.dm-swarm-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .dm-swarm-card-head { display: flex; align-items: center; gap: 8px; }
-.dm-swarm-card-title { flex: 1; font-size: 13px; font-weight: 600; color: #111827; }
+.dm-swarm-card-title { flex: 1; }
 .dm-swarm-card-action { height: 24px; padding: 0 7px; }
-.dm-swarm-card-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #6b7280; }
-.dm-swarm-card-kind { color: #374151; font-weight: 600; }
-.dm-swarm-card-desc { font-size: 12px; color: #374151; background: #f3f4f6; border-radius: 6px; padding: 7px 9px; }
+.dm-swarm-card-meta { display: flex; align-items: center; gap: 10px; }
+.dm-swarm-card-meta .dm-run-console__hint { font-size: 12px; }
+.dm-swarm-card-kind { font-weight: 600; }
+.dm-swarm-card-desc { font-size: 12px; padding: 7px 9px; }
 
-/* Phase groups — collapse/expand row + dot strip (one dot per agent). */
+/* Phase groups — dm-helper-toolcall card + dm-helper-toolcall-row head. */
 .dm-swarm-phases { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
-.dm-swarm-phase { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-radius: 6px; background: #fff; border: 1px solid #e5e7eb; }
-.dm-swarm-phase-head { display: flex; align-items: center; justify-content: space-between; background: transparent; border: 0; padding: 0; font: inherit; font-size: 12px; color: #374151; cursor: pointer; }
-.dm-swarm-phase-label { font-weight: 600; }
-.dm-swarm-dotstrip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.dm-swarm-phase { display: flex; flex-direction: column; }
+.dm-swarm-phase-head { grid-template-columns: 1fr auto; min-height: 30px; padding: 6px 10px; }
+.dm-swarm-dotstrip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 10px 8px; }
 
-/* Agent table — Agent | Tokens | Tools | Time. */
-.dm-swarm-agent-table { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
-.dm-swarm-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 44px 48px; align-items: center; gap: 6px; padding: 3px 4px; font-size: 12px; color: #374151; background: transparent; border: 0; border-radius: 4px; cursor: pointer; text-align: left; font-family: inherit; }
-.dm-swarm-agent-row:hover { background: #f5f5f5; }
-.dm-swarm-agent-row.is-selected { background: #f3f4f6; }
-.dm-swarm-agent-header { color: #9ca3af; cursor: default; }
-.dm-swarm-agent-header:hover { background: transparent; }
+/* Agent table — Agent | Tokens | Tools | Time, inside dm-helper-toolcall-body. */
+.dm-swarm-agent-table { display: flex; flex-direction: column; gap: 1px; }
+.dm-swarm-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 44px 48px; align-items: center; gap: 6px; padding: 3px 4px; font: inherit; font-size: 12px; background: transparent; border: 0; cursor: pointer; text-align: left; }
+.dm-swarm-agent-header { cursor: default; }
 .dm-swarm-agent-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-swarm-agent-cell { text-align: right; color: #6b7280; font-variant-numeric: tabular-nums; }
+.dm-swarm-agent-cell { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* Transcript drill-in — existing tool-call JSON pre as the output frame. */
-.dm-swarm-transcript { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; border-top: 1px solid #e5e7eb; padding-top: 6px; }
+/* Transcript drill-in — existing tool-call JSON pre is the output frame. */
+.dm-swarm-transcript { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .dm-swarm-transcript-head { display: flex; align-items: center; justify-content: space-between; }
-.dm-swarm-transcript-body { background: #f9fafb; border-radius: 6px; padding: 8px; }
 .dm-swarm-transcript-expand { align-self: flex-end; margin-top: 4px; }
 
-/* Expand view — full-width takeover within the same sidecar shell. */
+/* Expand view — full-width takeover within the same sidecar shell; the
+   head reuses dm-sidecar-header chrome. */
 .dm-swarm-expand { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.dm-swarm-expand-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; }
+.dm-swarm-expand-head { justify-content: flex-start; gap: 8px; }
 .dm-swarm-expand-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
 .dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }
