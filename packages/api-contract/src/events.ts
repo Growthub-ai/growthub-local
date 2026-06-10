@@ -27,7 +27,17 @@ export type ExecutionEventType =
   | "credit_warning"
   | "progress"
   | "complete"
-  | "error";
+  | "error"
+  // Swarm lifecycle (SWARM_RUN_CONTRACT_V1) — additive only. Emitted by the
+  // agent-swarm-v1 runtime projection for governed swarm runs. Consumers
+  // that predate these types MUST ignore them without erroring.
+  | "swarm_run_start"
+  | "swarm_phase_start"
+  | "swarm_agent_start"
+  | "swarm_agent_complete"
+  | "swarm_agent_error"
+  | "swarm_phase_complete"
+  | "swarm_run_complete";
 
 // ---------------------------------------------------------------------------
 // Per-event shapes
@@ -96,6 +106,83 @@ export interface ErrorEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Swarm lifecycle events (SWARM_RUN_CONTRACT_V1 — additive)
+// ---------------------------------------------------------------------------
+
+export interface SwarmRunStartEvent {
+  type: "swarm_run_start";
+  /** Sandbox run id for the governed swarm run. */
+  runId: string;
+  /** Human title of the swarm workflow row. */
+  title?: string;
+  /** Number of agents planned across all phases. */
+  agentCount?: number;
+  at: string;
+}
+
+export interface SwarmPhaseStartEvent {
+  type: "swarm_phase_start";
+  runId: string;
+  /** Stable phase id (e.g. "plan", "dispatch", "synthesize"). */
+  phaseId: string;
+  /** Human-facing phase label. */
+  label?: string;
+  at: string;
+}
+
+export interface SwarmAgentStartEvent {
+  type: "swarm_agent_start";
+  runId: string;
+  phaseId: string;
+  /** Stable agent/task id within the phase. */
+  agentId: string;
+  /** Agent role label. */
+  role?: string;
+  at: string;
+}
+
+export interface SwarmAgentCompleteEvent {
+  type: "swarm_agent_complete";
+  runId: string;
+  phaseId: string;
+  agentId: string;
+  /** Truthful token count when the adapter reports one; null otherwise. */
+  tokens?: number | null;
+  /** Truthful tool-call count when the adapter reports one; null otherwise. */
+  tools?: number | null;
+  durationMs?: number;
+  at: string;
+}
+
+export interface SwarmAgentErrorEvent {
+  type: "swarm_agent_error";
+  runId: string;
+  phaseId: string;
+  agentId: string;
+  /** Human-readable error message. */
+  error: string;
+  at: string;
+}
+
+export interface SwarmPhaseCompleteEvent {
+  type: "swarm_phase_complete";
+  runId: string;
+  phaseId: string;
+  /** Terminal phase status. */
+  status?: "completed" | "failed" | "skipped";
+  at: string;
+}
+
+export interface SwarmRunCompleteEvent {
+  type: "swarm_run_complete";
+  runId: string;
+  /** Terminal run status. */
+  status?: "completed" | "failed" | "canceled";
+  durationMs?: number;
+  at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Canonical union
 // ---------------------------------------------------------------------------
 
@@ -106,7 +193,14 @@ export type ExecutionEvent =
   | CreditWarningEvent
   | ProgressEvent
   | CompleteEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | SwarmRunStartEvent
+  | SwarmPhaseStartEvent
+  | SwarmAgentStartEvent
+  | SwarmAgentCompleteEvent
+  | SwarmAgentErrorEvent
+  | SwarmPhaseCompleteEvent
+  | SwarmRunCompleteEvent;
 
 // ---------------------------------------------------------------------------
 // Narrow helpers
@@ -132,6 +226,13 @@ export function isExecutionEvent(value: unknown): value is ExecutionEvent {
     case "progress":
     case "complete":
     case "error":
+    case "swarm_run_start":
+    case "swarm_phase_start":
+    case "swarm_agent_start":
+    case "swarm_agent_complete":
+    case "swarm_agent_error":
+    case "swarm_phase_complete":
+    case "swarm_run_complete":
       return true;
     default:
       return false;

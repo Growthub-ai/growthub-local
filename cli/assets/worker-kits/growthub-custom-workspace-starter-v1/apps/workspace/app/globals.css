@@ -5435,7 +5435,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   min-height: 520px;
   align-items: center;
   justify-content: center;
-  padding: 64px 24px;
+  padding: 96px 24px;
   border: 0;
   border-radius: 0;
   background-color: #fff;
@@ -5443,6 +5443,12 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   background-size: 20px 20px;
   box-shadow: none;
   overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.dm-workflow-orchestration .dm-orchestration-canvas:active {
+  cursor: grabbing;
 }
 .dm-workflow-orchestration .dm-orchestration-canvas__badge {
   top: 16px;
@@ -5498,8 +5504,11 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  transform-origin: center top;
+  padding: 96px 0;
+  transform-origin: center center;
   transition: transform .12s ease;
+  will-change: transform;
+  cursor: default;
 }
 .dm-workflow-orchestration .dm-orchestration-canvas__step {
   width: 173px;
@@ -5736,6 +5745,58 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   font-size: 12px;
   padding: 7px 9px;
   box-sizing: border-box;
+}
+.dm-workflow-orchestration .dm-orchestration-config__field input[type="number"]::-webkit-outer-spin-button,
+.dm-workflow-orchestration .dm-orchestration-config__field input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.dm-workflow-orchestration .dm-orchestration-config__field input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.dm-workflow-orchestration .dm-workflow-check {
+  width: fit-content;
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  cursor: pointer;
+}
+.dm-workflow-orchestration .dm-workflow-check input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.dm-workflow-orchestration .dm-workflow-check__box {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #111827;
+  box-sizing: border-box;
+}
+.dm-workflow-orchestration .dm-workflow-check:hover .dm-workflow-check__box {
+  border-color: #9ca3af;
+  background: #fff;
+}
+.dm-workflow-orchestration .dm-workflow-check input[type="checkbox"]:checked + .dm-workflow-check__box {
+  border-color: #111827;
+  background: #fff;
+}
+.dm-workflow-orchestration .dm-workflow-check input[type="checkbox"]:focus-visible + .dm-workflow-check__box {
+  outline: 2px solid #d1d5db;
+  outline-offset: 2px;
+}
+.dm-workflow-orchestration .dm-workflow-check input[type="checkbox"]:disabled + .dm-workflow-check__box {
+  opacity: .55;
 }
 .dm-workflow-orchestration .dm-orchestration-config__field input:focus,
 .dm-workflow-orchestration .dm-orchestration-config__field textarea:focus,
@@ -6068,6 +6129,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-orch-modal-summary span { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6b7280; margin-bottom: 4px; }
 .dm-orch-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #edf0f3; }
 .dm-record-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid #edf0f3; }
+.dm-record-drawer-head > div:first-child { min-width: 0; flex: 1 1 auto; }
 .dm-record-drawer-actions { display: inline-flex; align-items: center; gap: 8px; }
 .dm-record-head-run { min-height: 30px; padding: 0 11px; }
 .dm-record-drawer-actions { display: inline-flex; align-items: center; gap: 8px; }
@@ -6079,7 +6141,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-drawer-hidden-fields > span { color: #64748b; font-size: 12px; font-weight: 600; }
 .dm-drawer-hidden-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .dm-record-drawer-head p { margin: 0 0 3px; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-.dm-record-drawer-head h2 { margin: 0; color: #111827; font-size: 16px; font-weight: 650; }
+.dm-record-drawer-head h2 { margin: 0; color: #111827; font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-record-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 0 28px; }
 .dm-record-testbar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid #edf0f3; background: #fbfdff; }
 .dm-record-testbar > span:last-child { min-width: 0; color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6188,6 +6250,7 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-drawer-section.open .dm-drawer-section-toggle svg { transform: rotate(90deg); }
 .dm-drawer-section-body { display: grid; gap: 10px; padding: 11px; }
 .dm-sandbox-config { display: grid; gap: 8px; }
+.dm-sandbox-config > .dm-cockpit { width: 100%; margin: 12px 0 8px; box-sizing: border-box; }
 .dm-radio-row { display: grid; gap: 8px; }
 .dm-radio-row label, .dm-check-row { display: grid; grid-template-columns: 16px minmax(0,1fr); align-items: start; column-gap: 8px; color: #1f2937; font-size: 12px; line-height: 1.35; }
 .dm-radio-row input[type="radio"], .dm-check-row input[type="checkbox"] { width: 14px; height: 14px; margin: 1px 0 0; padding: 0; box-shadow: none; accent-color: #111827; }
@@ -8746,6 +8809,10 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-run-console__tree-dot[data-variant="fail"] { background: #dc2626; }
 .dm-run-console__tree-dot[data-variant="active"] { background: #2563eb; }
 .dm-run-console__tree-dot[data-variant="canceled"] { background: #9ca3af; }
+/* Pending (hollow) — the ONE sanctioned swarm-cockpit grammar addition:
+   "declared but not started" reads as an outline in the SAME grey token the
+   canceled/base dot already uses. No new color values. */
+.dm-run-console__tree-dot[data-variant="pending"] { background: transparent; border: 1px solid #9ca3af; }
 .dm-run-console__tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-run-console__tree-meta { color: #6b7280; font-size: 10px; font-variant-numeric: tabular-nums; }
 .dm-run-console__tree-bar { display: block; width: 56px; height: 4px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
@@ -9114,3 +9181,62 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-template-context-banner { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 12px; margin: 0 0 12px; }
 .workspace-template-context-banner.is-warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 .workspace-template-context-banner .workspace-template-context-link { color: inherit; text-decoration: underline; font-weight: 600; margin-left: auto; }
+
+/* ---------------------------------------------------------------------------
+   Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1) — structural layout ONLY.
+   No new colors, borders, backgrounds, icons, or motion: every visual
+   treatment comes from existing primitives composed in the JSX —
+   dm-helper-toolcall(-row/-title/-chevron/-body/-json), dm-helper-stream,
+   dm-helper-error, dm-run-console__hint, dm-run-console__tree-dot,
+   dm-btn-ghost, dm-sidecar-header, dm-helper-pill-menu. The dm-swarm-*
+   classes below carry layout, spacing, grid, overflow, and typography
+   weight/size exclusively. */
+
+/* Slash command menu — same dm-helper-pill-menu primitive, anchored above
+   the composer textarea instead of below a pill. */
+.dm-helper-composer-input { position: relative; }
+.dm-helper-slash-menu { bottom: calc(100% + 6px); top: auto; left: 0; right: 0; }
+.dm-helper-slash-menu .dm-helper-pill-menu-item { justify-content: space-between; gap: 10px; }
+.dm-helper-slash-menu .dm-field-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-helper-slash-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+/* Cockpit body — scrolling list inside the existing sidecar body. */
+.dm-swarm-body { display: flex; flex-direction: column; min-height: 0; }
+.dm-swarm-cockpit { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.dm-swarm-cockpit-list { display: flex; flex-direction: column; gap: 8px; }
+.dm-swarm-section-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+
+/* Run card — surface chrome comes from dm-helper-toolcall in the JSX. */
+.dm-swarm-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.dm-swarm-card-head { display: flex; align-items: center; gap: 8px; }
+.dm-swarm-card-title { flex: 1; }
+.dm-swarm-card-action { height: 24px; padding: 0 7px; }
+.dm-swarm-card-meta { display: flex; align-items: center; gap: 10px; }
+.dm-swarm-card-meta .dm-run-console__hint { font-size: 12px; }
+.dm-swarm-card-kind { font-weight: 600; }
+.dm-swarm-card-desc { font-size: 12px; padding: 7px 9px; }
+
+/* Phase groups — dm-helper-toolcall card + dm-helper-toolcall-row head. */
+.dm-swarm-phases { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.dm-swarm-phase { display: flex; flex-direction: column; }
+.dm-swarm-phase-head { grid-template-columns: 1fr auto; min-height: 30px; padding: 6px 10px; }
+.dm-swarm-dotstrip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 10px 8px; }
+
+/* Agent table — Agent | Tokens | Tools | Time, inside dm-helper-toolcall-body. */
+.dm-swarm-agent-table { display: flex; flex-direction: column; gap: 1px; }
+.dm-swarm-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 44px 48px; align-items: center; gap: 6px; padding: 3px 4px; font: inherit; font-size: 12px; background: transparent; border: 0; cursor: pointer; text-align: left; }
+.dm-swarm-agent-header { cursor: default; }
+.dm-swarm-agent-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-swarm-agent-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Transcript drill-in — existing tool-call JSON pre is the output frame. */
+.dm-swarm-transcript { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.dm-swarm-transcript-head { display: flex; align-items: center; justify-content: space-between; }
+.dm-swarm-transcript-expand { align-self: flex-end; margin-top: 4px; }
+
+/* Expand view — full-width takeover within the same sidecar shell; the
+   head reuses dm-sidecar-header chrome. */
+.dm-swarm-expand { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.dm-swarm-expand-head { justify-content: flex-start; gap: 8px; }
+.dm-swarm-expand-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
+.dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }

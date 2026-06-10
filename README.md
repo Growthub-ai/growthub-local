@@ -73,6 +73,7 @@ Growthub Local's current line is one coherent AWaC surface, not separate release
 
 - **0.13.9** added Codex Sites as a governed workspace primitive: real site rows live in the Data Model, Builder renders them as Site items, and browser smoke tests prove the hosted URL without storing account-specific site data in source control.
 - **0.14.0** added the governed creation cockpit: tested API Registry rows become profiled responses, optional helper-created resolvers, governed Data Sources, source-record refreshes, workflow persistence readiness, and Workspace Lens evidence.
+- **0.14.1** adds the governed agent swarm cockpit: helper-created swarm workflow rows inherit the active execution target, open thread-bounded Background Tasks, run through `sandbox-run`, render truthful subagent telemetry, and map canvas node delta tags back to the owning sandbox record.
 - **Growthub Browser agent protocol** packages the universal operating rule for agents: use the real in-app browser surface first, act through visible CUA when available, read back the DOM, and corroborate state through `/api/workspace`, source records, deployment status, or the configured store before claiming behavior.
 - **Hosted authority is C-tier**: useful after local workspace value is proven, but not required for the core AWaC loop and not front-page operating authority.
 
@@ -133,7 +134,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.0` and the guided installer `@growthub/create-growthub-local@0.14.0`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0`.
+Growthub Local currently ships `@growthub/cli@0.14.1` and the guided installer `@growthub/create-growthub-local@0.14.1`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
@@ -201,6 +202,7 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 
 - [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md)
 - [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md)
+- [**Governed Agent Swarm Cockpit Value Map V1**](./docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 - [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md)
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md)

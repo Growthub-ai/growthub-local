@@ -190,6 +190,10 @@ async function run(request) {
         endpoint,
         model,
         locality: "local",
+        // Truthful telemetry only — taken from the completion's usage block
+        // when the endpoint reports one, never estimated. Null means unknown.
+        tokens: Number.isFinite(outer?.usage?.total_tokens) ? outer.usage.total_tokens : null,
+        tools: Array.isArray(parsed.toolIntents) ? parsed.toolIntents.length : null,
       },
     };
   } catch (err) {

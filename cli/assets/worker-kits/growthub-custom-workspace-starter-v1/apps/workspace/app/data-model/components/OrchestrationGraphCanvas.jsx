@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Bot,
@@ -52,6 +52,15 @@ const CONNECTOR_OPTIONS = [
   { id: "map", label: "Map fields" },
   { id: "preview", label: "Preview output" }
 ];
+
+const MIN_ZOOM = 0.45;
+const MAX_ZOOM = 1.4;
+const NODE_BLOCK_HEIGHT = 98;
+const FIT_VIEW_PADDING = 128;
+
+function clampZoom(value) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(value.toFixed(2))));
+}
 
 function nodeSubtitle(node) {
   const config = node?.config || {};
@@ -111,7 +120,60 @@ export function OrchestrationGraphCanvas({
   const [internalSelected, setInternalSelected] = useState(null);
   const [connectorPopover, setConnectorPopover] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const canvasRef = useRef(null);
+  const dragRef = useRef(null);
   const activeId = selectedNodeId ?? internalSelected;
+
+  function edgeBetween(fromId, toId) {
+    return edges.find((e) => String(e.from) === fromId && String(e.to) === toId);
+  }
+
+  const zoomBy = useCallback((delta) => {
+    setZoom((value) => clampZoom(value + delta));
+  }, []);
+
+  const fitView = useCallback(() => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const availableHeight = Math.max(240, (rect?.height || 720) - FIT_VIEW_PADDING);
+    const graphHeight = Math.max(NODE_BLOCK_HEIGHT, nodes.length * NODE_BLOCK_HEIGHT);
+    const nextZoom = clampZoom(Math.min(1, availableHeight / graphHeight));
+    setZoom(nextZoom);
+    setPan({ x: 0, y: 0 });
+  }, [nodes.length]);
+
+  const handleWheel = useCallback((event) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -0.08 : 0.08;
+    zoomBy(direction);
+  }, [zoomBy]);
+
+  const handlePointerDown = useCallback((event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest("button, .dm-orchestration-node, .dm-orchestration-connector__popover")) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: pan.x,
+      originY: pan.y
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [pan.x, pan.y]);
+
+  const handlePointerMove = useCallback((event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    setPan({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY
+    });
+  }, []);
+
+  const endDrag = useCallback((event) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+  }, []);
 
   if (!nodes.length) {
     return (
@@ -121,12 +183,18 @@ export function OrchestrationGraphCanvas({
     );
   }
 
-  function edgeBetween(fromId, toId) {
-    return edges.find((e) => String(e.from) === fromId && String(e.to) === toId);
-  }
-
   return (
-    <div className="dm-orchestration-canvas" aria-label="Orchestration graph field editor">
+    <div
+      ref={canvasRef}
+      className="dm-orchestration-canvas"
+      aria-label="Orchestration graph field editor"
+      onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onPointerLeave={endDrag}
+    >
       <span className={`dm-orchestration-canvas__badge is-${String(statusLabel || "draft").toLowerCase()}`}>{statusLabel}</span>
       <div className="dm-orchestration-floating-tools" aria-label="Canvas tools">
         <button type="button" title="Add node" aria-label="Add node" onClick={() => onConnectorAction?.({ action: "add-step", from: String(nodes[nodes.length - 1]?.id || ""), to: "" })}>
@@ -135,17 +203,20 @@ export function OrchestrationGraphCanvas({
         <button type="button" title="Tidy workflow" aria-label="Tidy workflow">
           <Settings size={14} />
         </button>
-        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(1.4, Number((value + 0.1).toFixed(2))))}>
+        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomBy(0.1)}>
           <ZoomIn size={14} />
         </button>
-        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(0.7, Number((value - 0.1).toFixed(2))))}>
+        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(-0.1)}>
           <ZoomOut size={14} />
         </button>
-        <button type="button" title="Reset zoom" aria-label="Reset zoom" onClick={() => setZoom(1)}>
+        <button type="button" title="Fit view" aria-label="Fit view" onClick={fitView}>
           <Maximize2 size={14} />
         </button>
       </div>
-      <div className="dm-orchestration-canvas__viewport" style={{ transform: `scale(${zoom})` }}>
+      <div
+        className="dm-orchestration-canvas__viewport"
+        style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}
+      >
         {nodes.map((node, index) => {
           const id = String(node.id || "");
           const isSelected = activeId === id;

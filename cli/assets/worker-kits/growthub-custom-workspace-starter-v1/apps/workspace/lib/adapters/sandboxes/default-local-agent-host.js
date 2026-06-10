@@ -34,6 +34,7 @@ import path from "node:path";
 import { registerSandboxAdapter } from "./sandbox-adapter-registry.js";
 
 const MAX_OUTPUT_BYTES = 1024 * 256;
+const TELEMETRY_MARKER = "GROWTHUB_AGENT_TELEMETRY:";
 
 /**
  * Canonical Paperclip host catalog — slugs mirror `AGENT_ADAPTER_TYPES`.
@@ -116,6 +117,134 @@ function clampStream(buffer) {
   if (buffer.length <= MAX_OUTPUT_BYTES) return buffer.toString("utf8");
   const head = buffer.slice(0, MAX_OUTPUT_BYTES);
   return `${head.toString("utf8")}\n…\n[output truncated at ${MAX_OUTPUT_BYTES} bytes]`;
+}
+
+function safeNonNegativeInt(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.floor(n);
+}
+
+function pickFirstNumber(...values) {
+  for (const value of values) {
+    const n = safeNonNegativeInt(value);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+function sumNumbers(...values) {
+  let total = 0;
+  let seen = false;
+  for (const value of values) {
+    const n = safeNonNegativeInt(value);
+    if (n == null) continue;
+    total += n;
+    seen = true;
+  }
+  return seen ? total : null;
+}
+
+function extractUsageFromObject(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { tokens: null, tools: null };
+  const usage = (obj.usage && typeof obj.usage === "object" && !Array.isArray(obj.usage))
+    ? obj.usage
+    : (obj.token_usage && typeof obj.token_usage === "object" && !Array.isArray(obj.token_usage))
+      ? obj.token_usage
+      : (obj.metadata?.usage && typeof obj.metadata.usage === "object" && !Array.isArray(obj.metadata.usage))
+        ? obj.metadata.usage
+        : (obj.result?.usage && typeof obj.result.usage === "object" && !Array.isArray(obj.result.usage))
+          ? obj.result.usage
+          : null;
+  const tokens = usage
+    ? pickFirstNumber(
+        usage.total_tokens,
+        usage.totalTokens,
+        usage.tokens,
+        sumNumbers(usage.input_tokens, usage.output_tokens),
+        sumNumbers(usage.prompt_tokens, usage.completion_tokens),
+        sumNumbers(usage.inputTokens, usage.outputTokens),
+      )
+    : pickFirstNumber(obj.total_tokens, obj.totalTokens, obj.tokens);
+  const toolArrays = [
+    obj.tool_calls,
+    obj.toolCalls,
+    obj.toolInvocations,
+    obj.message?.tool_calls,
+    obj.choices?.[0]?.message?.tool_calls,
+    obj.result?.tool_calls,
+    obj.result?.toolCalls,
+  ].filter(Array.isArray);
+  const tools = pickFirstNumber(
+    obj.tools,
+    obj.tool_count,
+    obj.toolCount,
+    ...toolArrays.map((items) => items.length),
+  );
+  return { tokens, tools };
+}
+
+function mergeTelemetry(base, next) {
+  return {
+    tokens: base.tokens ?? next.tokens ?? null,
+    tools: base.tools ?? next.tools ?? null,
+  };
+}
+
+function parseJsonMaybe(text) {
+  const value = String(text || "").trim();
+  if (!value || !/^[\[{]/.test(value)) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function extractMarkedTelemetry(text) {
+  let out = { tokens: null, tools: null };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const idx = line.indexOf(TELEMETRY_MARKER);
+    if (idx === -1) continue;
+    const json = line.slice(idx + TELEMETRY_MARKER.length).trim();
+    const parsed = parseJsonMaybe(json);
+    out = mergeTelemetry(out, extractUsageFromObject(parsed));
+  }
+  return out;
+}
+
+function extractJsonLineTelemetry(text) {
+  let out = { tokens: null, tools: null };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const parsed = parseJsonMaybe(line);
+    if (!parsed) continue;
+    out = mergeTelemetry(out, extractUsageFromObject(parsed));
+  }
+  return out;
+}
+
+function extractStderrTextTelemetry(stderrText) {
+  const text = String(stderrText || "");
+  const total = text.match(/\b(?:total\s+tokens|tokens\s+used)\s*(?:[:=]|\r?\n)\s*([0-9][0-9,]*)/i);
+  const input = text.match(/\b(?:input|prompt)\s+tokens\s*[:=]\s*([0-9][0-9,]*)/i);
+  const output = text.match(/\b(?:output|completion)\s+tokens\s*[:=]\s*([0-9][0-9,]*)/i);
+  const tools = text.match(/\b(?:tool\s+calls?|tools\s+used)\s*[:=]\s*([0-9][0-9,]*)/i);
+  const tokens = pickFirstNumber(total?.[1]?.replace(/,/g, ""), sumNumbers(input?.[1]?.replace(/,/g, ""), output?.[1]?.replace(/,/g, "")));
+  return {
+    tokens,
+    tools: pickFirstNumber(tools?.[1]?.replace(/,/g, ""), tokens != null ? 0 : null),
+  };
+}
+
+function extractAgentHostTelemetry({ stdout, stderr }) {
+  let out = { tokens: null, tools: null };
+  const stdoutJson = parseJsonMaybe(stdout);
+  if (stdoutJson && !Array.isArray(stdoutJson)) out = mergeTelemetry(out, extractUsageFromObject(stdoutJson));
+  out = mergeTelemetry(out, extractMarkedTelemetry(stderr));
+  out = mergeTelemetry(out, extractJsonLineTelemetry(stderr));
+  out = mergeTelemetry(out, extractStderrTextTelemetry(stderr));
+  return out;
 }
 
 async function run(request) {
@@ -238,12 +367,15 @@ async function run(request) {
       clearTimeout(timer);
       const durationMs = Date.now() - startedAt;
       const ok = !timedOut && exitCode === 0;
+      const stdoutText = clampStream(stdout);
+      const stderrText = clampStream(stderr);
+      const telemetry = extractAgentHostTelemetry({ stdout: stdoutText, stderr: stderrText });
       resolve({
         ok,
         exitCode: typeof exitCode === "number" ? exitCode : null,
         durationMs,
-        stdout: clampStream(stdout),
-        stderr: clampStream(stderr),
+        stdout: stdoutText,
+        stderr: stderrText,
         error: timedOut
           ? `timed out after ${timeoutMs}ms`
           : (ok ? undefined : `exit ${exitCode ?? signal ?? "unknown"}`),
@@ -254,7 +386,10 @@ async function run(request) {
           argv,
           inputMode: host.inputMode,
           timedOut,
-          signal: signal || null
+          signal: signal || null,
+          tokens: telemetry.tokens,
+          tools: telemetry.tools,
+          telemetrySource: telemetry.tokens != null || telemetry.tools != null ? "agent-host-reported" : "unreported"
         }
       });
     });
@@ -281,4 +416,4 @@ registerSandboxAdapter({
   run
 });
 
-export { HOST_CATALOG, SUPPORTED_HOSTS };
+export { HOST_CATALOG, SUPPORTED_HOSTS, extractAgentHostTelemetry };

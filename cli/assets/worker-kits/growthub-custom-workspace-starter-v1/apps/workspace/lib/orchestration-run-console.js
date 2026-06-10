@@ -16,7 +16,12 @@
  *   - lib/orchestration-run-trace.js           (lower-level record parser)
  */
 
-import { redactSecretsFromText } from "./orchestration-graph.js";
+import {
+  extractSwarmNodes,
+  isAgentSwarmGraph,
+  parseOrchestrationGraph,
+  redactSecretsFromText
+} from "./orchestration-graph.js";
 import { redactRunInputsEnvelope, summarizeRunInputs } from "./orchestration-run-inputs.js";
 
 const RUN_LOG_BUNDLE_KIND = "growthub-sandbox-run-log-v1";
@@ -202,6 +207,388 @@ function buildExportsForRecord(record, stdoutText, stderrText, outputText) {
   return { available, external: [] };
 }
 
+/**
+ * Swarm cockpit projection (SWARM_RUN_CONTRACT_V1).
+ *
+ * Pure transformation of a sandbox run record carrying a `swarm` block
+ * (written by the agent-swarm-v1 runtime through sandbox-run) into the
+ * phase/agent tree the helper sidecar cockpit renders. Returns `null` for
+ * non-swarm records so existing runs are untouched.
+ *
+ * Telemetry is truthful: tokens/tools are null when the adapter did not
+ * report them — the UI renders "—", never an estimate. Totals are null when
+ * no agent reported a number.
+ *
+ * Same module rules as the rest of this file: no React, no fetch, no config
+ * writes, no localStorage, no CSS.
+ */
+// Truthful counts only: null/undefined (adapter reported nothing) stays
+// null — clampNumber would coerce null to 0, which would be a fake metric.
+function toTruthfulCount(value) {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function toAdapterReportedCount(entry, field) {
+  const meta = entry?.adapterMeta && typeof entry.adapterMeta === "object" ? entry.adapterMeta : null;
+  if (meta?.telemetrySource === "unreported" && meta?.[field] == null) return null;
+  if (entry?.[field] === 0 && meta && meta[field] == null) return null;
+  if (entry?.[field] === 0 && !meta && safeString(entry?.adapter).trim() === "local-agent-host") return null;
+  return toTruthfulCount(entry?.[field]);
+}
+
+function parsePersistedAgentHostTelemetry(entry) {
+  const stderr = safeString(entry?.stderr);
+  const total = stderr.match(/\b(?:total\s+tokens|tokens\s+used)\s*(?:[:=]|\r?\n)\s*([0-9][0-9,]*)/i);
+  const input = stderr.match(/\b(?:input|prompt)\s+tokens\s*[:=]\s*([0-9][0-9,]*)/i);
+  const output = stderr.match(/\b(?:output|completion)\s+tokens\s*[:=]\s*([0-9][0-9,]*)/i);
+  const tools = stderr.match(/\b(?:tool\s+calls?|tools\s+used)\s*[:=]\s*([0-9][0-9,]*)/i);
+  const toInt = (value) => {
+    if (value == null || value === "") return null;
+    const n = Number(String(value).replace(/,/g, ""));
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+  };
+  const inputTokens = toInt(input?.[1]);
+  const outputTokens = toInt(output?.[1]);
+  const summed = inputTokens != null || outputTokens != null
+    ? (inputTokens || 0) + (outputTokens || 0)
+    : null;
+  const tokens = toInt(total?.[1]) ?? summed;
+  return {
+    tokens,
+    tools: toInt(tools?.[1]) ?? (tokens != null ? 0 : null)
+  };
+}
+
+function titleizePhaseId(id) {
+  const text = safeString(id).trim() || "dispatch";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function sumReportedOrNull(values) {
+  const reported = values.filter((n) => n != null);
+  return reported.length > 0 ? reported.reduce((sum, n) => sum + n, 0) : null;
+}
+
+function deriveSwarmRunProjection(record) {
+  if (!record || typeof record !== "object") return null;
+  const swarm = record.swarm;
+  if (!swarm || typeof swarm !== "object") return null;
+
+  const summary = deriveRunSummary(record);
+  const tasks = Array.isArray(swarm.tasks) ? swarm.tasks.filter((t) => t && typeof t === "object") : [];
+
+  // Agents projected from a persisted record are terminal: `pending: false`
+  // means a missing count is "ran but never reported" → the UI shows "—".
+  // (Pending agents — from the graph skeleton or a live stream — show blank.)
+  const toAgent = (entry, fallbackId, fallbackLabel, transcriptParts, logNodeId) => {
+    const persistedTelemetry = parsePersistedAgentHostTelemetry(entry);
+    const tokens = persistedTelemetry.tokens ?? toAdapterReportedCount(entry, "tokens");
+    const tools = persistedTelemetry.tools ?? toAdapterReportedCount(entry, "tools");
+    return {
+      id: safeString(entry?.taskId || entry?.nodeId || fallbackId).trim() || fallbackId,
+      label: safeString(entry?.role || entry?.label || fallbackLabel).trim() || fallbackLabel,
+      status: safeString(entry?.status || "unknown").trim() || "unknown",
+      pending: false,
+      tokens,
+      tools,
+      durationMs: clampNumber(entry?.durationMs) ?? 0,
+      transcript: redactSecretsFromText(
+        transcriptParts.map((part) => safeString(part).trim()).filter(Boolean).join("\n\n")
+      ),
+      logNodeId
+    };
+  };
+
+  const phases = [];
+  const orchestrator = swarm.orchestrator && typeof swarm.orchestrator === "object" ? swarm.orchestrator : null;
+  if (orchestrator) {
+    phases.push({
+      id: "plan",
+      label: "Plan",
+      status: safeString(orchestrator.status || "unknown").trim() || "unknown",
+      agents: [
+        toAgent(
+          orchestrator,
+          "orchestrator",
+          "Orchestrator",
+          [orchestrator.error, orchestrator.plan],
+          "phase-orchestrator"
+        )
+      ]
+    });
+  }
+
+  // Group dispatch tasks by their declared phase id (author-named phases),
+  // falling back to the single "Dispatch" group for legacy records whose
+  // tasks carry no phaseId — those project identically to before.
+  const dispatchGroups = new Map();
+  tasks.forEach((task, index) => {
+    const phaseId = safeString(task.phaseId).trim() || "dispatch";
+    if (!dispatchGroups.has(phaseId)) dispatchGroups.set(phaseId, []);
+    dispatchGroups.get(phaseId).push(
+      toAgent(
+        task,
+        `task-${index + 1}`,
+        `Agent ${index + 1}`,
+        [task.error, task.stdout, task.stderr],
+        safeString(task.taskId || task.nodeId || `task-${index + 1}`).trim()
+      )
+    );
+  });
+  if (dispatchGroups.size === 0) dispatchGroups.set("dispatch", []);
+  for (const [phaseId, agents] of dispatchGroups) {
+    const status = agents.length === 0
+      ? "failed"
+      : agents.every((a) => a.status === "completed")
+        ? "completed"
+        : agents.some((a) => a.status === "failed")
+          ? "failed"
+          : "info";
+    phases.push({ id: phaseId, label: titleizePhaseId(phaseId), status, agents });
+  }
+
+  const synthesis = swarm.synthesis && typeof swarm.synthesis === "object" ? swarm.synthesis : null;
+  if (synthesis) {
+    phases.push({
+      id: "synthesize",
+      label: "Synthesize",
+      status: safeString(synthesis.status || "unknown").trim() || "unknown",
+      agents: [
+        toAgent(
+          synthesis,
+          "synthesis",
+          synthesis.label || "Synthesizer",
+          [synthesis.error, synthesis.answer],
+          "phase-synthesis"
+        )
+      ]
+    });
+  }
+
+  const allAgents = phases.flatMap((phase) => phase.agents);
+
+  return {
+    runId: safeString(record.runId).trim(),
+    title: safeString(record.name || record.sandboxName).trim() || "agent-swarm",
+    status: summary.status,
+    elapsedMs: clampNumber(record.durationMs) ?? 0,
+    agentCount: allAgents.length,
+    totalTokens: sumReportedOrNull(allAgents.map((a) => a.tokens)),
+    totalTools: sumReportedOrNull(allAgents.map((a) => a.tools)),
+    phases
+  };
+}
+
+/**
+ * Declared-phase skeleton (SWARM_RUN_CONTRACT_V1, parity P1).
+ *
+ * Projects the SAME projection shape as deriveSwarmRunProjection from the
+ * governed row's agent-swarm-v1 graph alone — before any run exists. Every
+ * phase and agent renders upfront with `status: "pending"`, `pending: true`
+ * (UI shows hollow dots and BLANK cells, reserving "—" for terminal
+ * never-reported). Author-named phases come from each subagent node's
+ * `config.phase` / `config.phaseId`; graphs that declare none fall back to
+ * the Plan / Dispatch / Synthesize derivation, converging exactly with the
+ * record projection for the same workflow.
+ *
+ * Pure: no React, no fetch, no config writes, no localStorage, no CSS.
+ */
+function deriveSwarmGraphProjection(graphLike, { title = "", runId = "" } = {}) {
+  const graph = parseOrchestrationGraph(graphLike);
+  if (!graph || !isAgentSwarmGraph(graph)) return null;
+  const extracted = extractSwarmNodes(graph);
+  if (!extracted) return null;
+  const { orchestrator, subagents, synthesis } = extracted;
+
+  const pendingAgent = (id, label) => ({
+    id: safeString(id).trim() || "agent",
+    label: safeString(label).trim() || "Agent",
+    status: "pending",
+    pending: true,
+    tokens: null,
+    tools: null,
+    durationMs: 0,
+    transcript: "",
+    logNodeId: ""
+  });
+
+  const phases = [];
+  if (orchestrator) {
+    phases.push({
+      id: "plan",
+      label: "Plan",
+      status: "pending",
+      agents: [pendingAgent(orchestrator.id || "orchestrator", orchestrator.config?.role || "Orchestrator")]
+    });
+  }
+
+  const dispatchGroups = new Map();
+  subagents.forEach((node, index) => {
+    const phaseId = safeString(node?.config?.phase || node?.config?.phaseId).trim().toLowerCase() || "dispatch";
+    if (!dispatchGroups.has(phaseId)) dispatchGroups.set(phaseId, []);
+    dispatchGroups.get(phaseId).push(
+      pendingAgent(node?.id || `task-${index + 1}`, node?.config?.role || node?.label || `Agent ${index + 1}`)
+    );
+  });
+  if (dispatchGroups.size === 0) dispatchGroups.set("dispatch", []);
+  for (const [phaseId, agents] of dispatchGroups) {
+    phases.push({ id: phaseId, label: titleizePhaseId(phaseId), status: "pending", agents });
+  }
+
+  if (synthesis) {
+    phases.push({
+      id: "synthesize",
+      label: "Synthesize",
+      status: "pending",
+      agents: [pendingAgent(synthesis.id || "synthesis", synthesis.label || "Synthesizer")]
+    });
+  }
+
+  return {
+    runId: safeString(runId).trim(),
+    title: safeString(title).trim() || "agent-swarm",
+    status: "pending",
+    elapsedMs: 0,
+    agentCount: phases.reduce((sum, phase) => sum + phase.agents.length, 0),
+    totalTokens: null,
+    totalTools: null,
+    phases
+  };
+}
+
+function cloneSwarmProjection(projection) {
+  if (!projection || typeof projection !== "object") return null;
+  return {
+    ...projection,
+    phases: Array.isArray(projection.phases)
+      ? projection.phases.map((phase) => ({
+          ...phase,
+          agents: Array.isArray(phase.agents)
+            ? phase.agents.map((agent) => ({ ...agent }))
+            : []
+        }))
+      : []
+  };
+}
+
+function findOrCreateLivePhase(projection, phaseId, label) {
+  const id = safeString(phaseId).trim() || "dispatch";
+  let phase = projection.phases.find((entry) => entry.id === id);
+  if (!phase) {
+    phase = { id, label: safeString(label).trim() || titleizePhaseId(id), status: "pending", agents: [] };
+    projection.phases.push(phase);
+  }
+  return phase;
+}
+
+function upsertLiveAgent(phase, incoming) {
+  if (!phase) return;
+  const fallbackId = safeString(incoming?.taskId || incoming?.nodeId || incoming?.id).trim() || "agent";
+  const id = fallbackId;
+  const label = safeString(incoming?.role || incoming?.label).trim() || "Agent";
+  const index = phase.agents.findIndex((agent) => agent.id === id || agent.logNodeId === id);
+  const prior = index >= 0 ? phase.agents[index] : {};
+  const status = safeString(incoming?.status || prior.status || "running").trim() || "running";
+  const next = {
+    id,
+    label: label || prior.label || "Agent",
+    status,
+    pending: status === "pending" || status === "running" || status === "executing",
+    tokens: toTruthfulCount(incoming?.tokens ?? prior.tokens),
+    tools: toTruthfulCount(incoming?.tools ?? prior.tools),
+    durationMs: clampNumber(incoming?.durationMs) ?? prior.durationMs ?? 0,
+    transcript: prior.transcript || "",
+    logNodeId: safeString(incoming?.nodeId || prior.logNodeId || id).trim() || id
+  };
+  if (index >= 0) phase.agents[index] = next;
+  else phase.agents.push(next);
+}
+
+function derivePhaseStatusFromAgents(phase) {
+  const agents = Array.isArray(phase?.agents) ? phase.agents : [];
+  if (agents.some((agent) => agent.status === "running" || agent.status === "executing")) return "running";
+  if (agents.some((agent) => agent.status === "failed")) return "failed";
+  if (agents.length > 0 && agents.every((agent) => agent.status === "completed")) return "completed";
+  return phase?.status || "pending";
+}
+
+/**
+ * Live swarm delta projection.
+ *
+ * This consumes the optional NDJSON events from POST /api/workspace/sandbox-run
+ * and returns the exact same shape as persisted-record projection. The final
+ * source of truth remains deriveSwarmRunProjection(record); this only hydrates
+ * the cosmetic Background Tasks card while the POST is still open.
+ */
+function deriveSwarmDeltaProjection(graphLike, events, { title = "", runId = "", elapsedMs = 0 } = {}) {
+  const base = cloneSwarmProjection(deriveSwarmGraphProjection(graphLike, { title, runId }));
+  if (!base) return null;
+  const list = Array.isArray(events) ? events.filter((event) => event && typeof event === "object") : [];
+  let status = "running";
+  let latestRunId = safeString(runId).trim() || base.runId;
+
+  for (const event of list) {
+    if (event.runId) latestRunId = safeString(event.runId).trim() || latestRunId;
+    const type = safeString(event.type).trim();
+    if (type === "swarm.run.started") {
+      status = "running";
+      continue;
+    }
+    if (type === "swarm.run.completed" || type === "swarm.run.failed") {
+      status = safeString(event.status || (type.endsWith("completed") ? "completed" : "failed")).trim() || status;
+      continue;
+    }
+    if (type === "swarm.phase.started") {
+      const phase = findOrCreateLivePhase(base, event.phaseId, event.label);
+      phase.status = "running";
+      continue;
+    }
+    if (type === "swarm.phase.completed" || type === "swarm.phase.failed") {
+      const phase = findOrCreateLivePhase(base, event.phaseId, event.label);
+      phase.status = safeString(event.status || (type.endsWith("completed") ? "completed" : "failed")).trim() || phase.status;
+      if (event.agent && typeof event.agent === "object") upsertLiveAgent(phase, event.agent);
+      continue;
+    }
+    if (type === "swarm.task.started") {
+      const phase = findOrCreateLivePhase(base, event.phaseId, titleizePhaseId(event.phaseId));
+      phase.status = "running";
+      upsertLiveAgent(phase, {
+        taskId: event.taskId,
+        nodeId: event.nodeId,
+        role: event.role,
+        status: "running",
+        phaseId: event.phaseId
+      });
+      continue;
+    }
+    if (type === "swarm.task.completed" || type === "swarm.task.failed") {
+      const task = event.task && typeof event.task === "object" ? event.task : event;
+      const phase = findOrCreateLivePhase(base, task.phaseId || event.phaseId, titleizePhaseId(task.phaseId || event.phaseId));
+      upsertLiveAgent(phase, task);
+      phase.status = derivePhaseStatusFromAgents(phase);
+    }
+  }
+
+  for (const phase of base.phases) {
+    if (phase.status === "running") continue;
+    phase.status = derivePhaseStatusFromAgents(phase);
+  }
+
+  const allAgents = base.phases.flatMap((phase) => phase.agents);
+  return {
+    ...base,
+    runId: latestRunId,
+    status,
+    elapsedMs: clampNumber(elapsedMs) ?? base.elapsedMs ?? 0,
+    agentCount: allAgents.length,
+    totalTokens: sumReportedOrNull(allAgents.map((agent) => agent.tokens)),
+    totalTools: sumReportedOrNull(allAgents.map((agent) => agent.tools)),
+    phases: base.phases
+  };
+}
+
 function normalizeRunConsoleRecord(record) {
   if (!record || typeof record !== "object") return null;
   const summary = deriveRunSummary(record);
@@ -303,6 +690,7 @@ function normalizeRunConsoleRecord(record) {
     },
     lineage,
     swarm: record.swarm && typeof record.swarm === "object" ? record.swarm : null,
+    swarmRun: deriveSwarmRunProjection(record),
     logTree: buildRunLogTree(record)
   };
 }
@@ -387,6 +775,24 @@ function formatRunDuration(ms) {
   return `${minutes}m ${seconds}s`;
 }
 
+/**
+ * Compact zero-padded duration for the swarm cockpit tables and cards —
+ * Claude Code Background-tasks format: "04s", "15s", "1m 04s". A separate
+ * formatter (not a change to formatRunDuration) so existing non-swarm
+ * run-console surfaces keep their ms-precision rendering untouched.
+ */
+function formatCompactRunDuration(ms) {
+  if (ms == null) return "—";
+  const n = clampNumber(ms);
+  if (n == null) return "—";
+  const totalSeconds = Math.max(0, Math.round(n / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const padded = String(seconds).padStart(2, "0");
+  if (minutes <= 0) return `${padded}s`;
+  return `${minutes}m ${padded}s`;
+}
+
 function downloadRunBundle({ record, runId, sourceId } = {}) {
   const normalized = normalizeRunConsoleRecord(record || {});
   return {
@@ -403,6 +809,10 @@ export {
   DEFAULT_EXPORT_TARGETS,
   normalizeRunConsoleRecord,
   deriveRunSummary,
+  deriveSwarmRunProjection,
+  deriveSwarmGraphProjection,
+  deriveSwarmDeltaProjection,
+  formatCompactRunDuration,
   deriveRunLifecycle,
   buildRunLogTree,
   buildRunTimeline,

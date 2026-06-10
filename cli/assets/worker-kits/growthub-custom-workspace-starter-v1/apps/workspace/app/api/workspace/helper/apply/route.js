@@ -43,6 +43,17 @@ import {
 } from "@/lib/workspace-helper-apply";
 import { RESOLVER_PROPOSAL_TYPE, buildResolverProposal, validateResolverProposal } from "@/lib/workspace-resolver-proposal";
 import { writeResolverProposalFile } from "@/lib/server-resolver-write";
+import {
+  SWARM_PROPOSAL_TYPES,
+  SWARM_RUN_RESUME_PROPOSAL_TYPE,
+  SWARM_WORKFLOWS_OBJECT_ID,
+  validateSwarmRunProposal,
+  buildSandboxRowFromSwarmProposal,
+  deriveHelperWidgetCausationState,
+  upsertSwarmRunRow,
+  findSwarmRunRows,
+  summarizeSwarmRunProposal,
+} from "@/lib/workspace-swarm-proposal";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
 
@@ -133,6 +144,65 @@ function normalizeApplyProposal(proposal, config, context = {}) {
   return normalizeDataModelObjectProposal(normalizeResolverProposal(proposal, config), config, context.integrationId);
 }
 
+/**
+ * Swarm lane (SWARM_RUN_CONTRACT_V1) — normalize a validated swarm proposal
+ * into the next workspace config plus an artifact target the sidecar cockpit
+ * can open. The model's intent payload is reduced through
+ * buildDefaultAgentSwarmGraph inside buildSandboxRowFromSwarmProposal — final
+ * graph JSON from the model is never trusted verbatim. Nothing executes here;
+ * runs stay behind POST /api/workspace/sandbox-run.
+ *
+ * Returns { ok, config, artifact, summary, error? }.
+ */
+function normalizeSwarmRunProposal(proposal, workspaceConfig) {
+  const validation = validateSwarmRunProposal(proposal);
+  if (!validation.ok) {
+    return { ok: false, config: workspaceConfig, artifact: null, summary: "", error: validation.error };
+  }
+
+  if (proposal.type === SWARM_RUN_RESUME_PROPOSAL_TYPE) {
+    const name = String(proposal.payload?.name || "").trim();
+    const matches = findSwarmRunRows(workspaceConfig, { name });
+    if (matches.length === 0) {
+      return {
+        ok: false,
+        config: workspaceConfig,
+        artifact: null,
+        summary: "",
+        error: `no governed swarm workflow named "${name}" to resume`,
+      };
+    }
+    // Resume is a governed pointer, not an execution: the receipt records the
+    // intent and the cockpit re-launches through sandbox-run.
+    return {
+      ok: true,
+      config: workspaceConfig,
+      artifact: { surface: "swarm-run", objectId: matches[0].objectId, name: matches[0].row.Name },
+      summary: summarizeSwarmRunProposal(proposal),
+    };
+  }
+
+  const helperState = deriveHelperWidgetCausationState(workspaceConfig);
+  if (!helperState.ready) {
+    return {
+      ok: false,
+      config: workspaceConfig,
+      artifact: null,
+      summary: "",
+      error: helperState.guidance,
+    };
+  }
+
+  const row = buildSandboxRowFromSwarmProposal(workspaceConfig, proposal);
+  const nextConfig = upsertSwarmRunRow(workspaceConfig, row);
+  return {
+    ok: true,
+    config: nextConfig,
+    artifact: { surface: "swarm-run", objectId: SWARM_WORKFLOWS_OBJECT_ID, name: row.Name },
+    summary: summarizeSwarmRunProposal(proposal),
+  };
+}
+
 async function POST(request) {
   let body;
   try {
@@ -177,7 +247,10 @@ async function POST(request) {
     normalizeApplyProposal(proposal, currentConfig, { integrationId: fallbackIntegrationId })
   );
   const resolverProposals = normalizedProposals.filter((p) => p?.type === RESOLVER_PROPOSAL_TYPE);
-  const configProposals = normalizedProposals.filter((p) => p?.type !== RESOLVER_PROPOSAL_TYPE);
+  const swarmProposals = normalizedProposals.filter((p) => SWARM_PROPOSAL_TYPES.includes(p?.type));
+  const configProposals = normalizedProposals.filter(
+    (p) => p?.type !== RESOLVER_PROPOSAL_TYPE && !SWARM_PROPOSAL_TYPES.includes(p?.type)
+  );
 
   for (const proposal of resolverProposals) {
     const validation = validateResolverProposal(proposal);
@@ -199,6 +272,23 @@ async function POST(request) {
         skipped.push({ proposal, reason: err?.message || "resolver write failed" });
       }
     }
+  }
+
+  // Swarm lane — governed sandbox-environment rows in the EXISTING dataModel
+  // patch field. Apply creates/updates the row; execution stays behind
+  // POST /api/workspace/sandbox-run, launched explicitly from the cockpit.
+  for (const proposal of swarmProposals) {
+    const result = normalizeSwarmRunProposal(proposal, workingConfig);
+    if (!result.ok) {
+      skipped.push({ proposal, reason: result.error || "invalid swarm proposal" });
+      continue;
+    }
+    workingConfig = result.config;
+    applied.push({
+      ...buildApplyReceipt({ ...proposal, affectedField: "dataModel" }, appliedAt, reviewedBy, sessionId),
+      artifact: result.artifact,
+      summary: result.summary,
+    });
   }
 
   for (const proposal of configProposals) {
@@ -238,7 +328,11 @@ async function POST(request) {
   // refreshes in the same atomic write as the proposed mutations).
   // resolver.create writes a server file (affectedField "server-file"), so it
   // must NOT contribute a field to the config PATCH — exclude it here.
-  const mutatingApplied = applied.filter((r) => r.type !== "explain.object" && r.affectedField !== "server-file");
+  // swarm.run.resume is a governed pointer (no config mutation) — exclude it
+  // alongside explain.object so it never forces a config write on its own.
+  const mutatingApplied = applied.filter(
+    (r) => r.type !== "explain.object" && r.type !== SWARM_RUN_RESUME_PROPOSAL_TYPE && r.affectedField !== "server-file"
+  );
 
   // Upsert the thread row so audit history reflects this apply turn even
   // when nothing mutated (all skipped / explain-only) and even when the
@@ -308,6 +402,9 @@ async function POST(request) {
         "dataModel.row.add": "create_object",
         "repair.binding": "repair",
         "explain.object": "explain",
+        "swarm.run.propose": "swarm",
+        "swarm.workflow.save": "swarm",
+        "swarm.run.resume": "swarm",
       };
       const proposalIntent = firstProposal?.type ? TYPE_TO_INTENT_HINT[firstProposal.type] : null;
       const safeIntent = existingRow.intent || proposalIntent || "explain";

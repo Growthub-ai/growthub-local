@@ -844,6 +844,12 @@ function buildDefaultAgentSwarmGraph(options = {}) {
         role: String(agent.role || agent.id || "Subagent"),
         description: String(agent.description || "").trim(),
         taskPrompt: String(agent.taskPrompt || "").trim(),
+        // Optional author-named phase — groups this subagent in the cockpit
+        // (e.g. "ping" / "echo" / "verify"). Absent → the single Dispatch
+        // phase, exactly as before.
+        ...(String(agent.phase || agent.phaseId || "").trim()
+          ? { phase: String(agent.phase || agent.phaseId).trim().toLowerCase() }
+          : {}),
         tools: Array.isArray(agent.tools) ? agent.tools.map((t) => String(t || "").trim()).filter(Boolean) : [],
         agentHost: String(agent.agentHost || agentHost || "").trim(),
         adapter: String(agent.adapter || "").trim(),

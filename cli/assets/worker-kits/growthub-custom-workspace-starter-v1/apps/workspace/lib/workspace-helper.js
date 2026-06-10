@@ -40,6 +40,12 @@ const WORKSPACE_HELPER_PROPOSAL_TYPES = [
   // Server-file lane (AWaC: NOT a config PATCH field). Routed in helper/apply to
   // the confined, gated resolver write — never through writeWorkspaceConfig.
   "resolver.create",
+  // Swarm lane — governed sandbox-environment rows in the EXISTING dataModel
+  // patch field. Apply normalizes the intent payload into an agent-swarm-v1
+  // graph via buildDefaultAgentSwarmGraph; execution stays behind sandbox-run.
+  "swarm.run.propose",
+  "swarm.workflow.save",
+  "swarm.run.resume",
 ];
 
 const PROPOSAL_TYPE_TO_PATCH_FIELD = {
@@ -56,6 +62,10 @@ const PROPOSAL_TYPE_TO_PATCH_FIELD = {
   // Sentinel — resolver.create writes a server file, not a config field. It is
   // explicitly excluded from the PATCH allowlist and handled by its own lane.
   "resolver.create": "server-file",
+  // Swarm rows are dataModel rows. No new PATCH field is introduced.
+  "swarm.run.propose": "dataModel",
+  "swarm.workflow.save": "dataModel",
+  "swarm.run.resume": "dataModel",
 };
 
 const KNOWN_WIDGET_KINDS = ["chart", "view", "iframe", "rich-text"];
@@ -77,6 +87,8 @@ const INTENT_DESCRIPTIONS = {
     "Inspect the workspace snapshot for broken references, missing bindings, empty objects, or incomplete views. Propose the minimum changes needed to repair each issue.",
   explain:
     "Return a clear explanation of what one or more workspace objects, widgets, or configurations do. Use the explain.object proposal type — payload is { explanation: string }.",
+  swarm:
+    "Propose a governed agent swarm via swarm.run.propose. You are propose-only: do not execute, do not store credentials. Describe the swarm objective, agent roles, task prompts, tools, maxConcurrency, and outcomeCriteria as an intent payload — the server normalizes it into the governed agent-swarm-v1 graph and execution happens only through sandbox-run after the user applies the proposal.",
 };
 
 /**
@@ -91,6 +103,10 @@ const INTENT_DESCRIPTIONS = {
  * `create_object` when the prompt mentions both "object" and "API".
  */
 const INTENT_HEURISTIC_PATTERNS = [
+  { intent: "swarm", patterns: [
+    /\b(swarm|sub-?agents?|multi-?agent|agent\s+team|orchestrat(e|or|ion))\b/i,
+    /\b(run|launch|spawn|dispatch)\b.*\b(agents?|workers?)\b.*\b(parallel|swarm|workflow)\b/i,
+  ]},
   { intent: "register_api", patterns: [
     /\b(api|endpoint|webhook|integration|connector|oauth|bearer\s+token|auth\s+header)\b/i,
     /\b(register|connect|wire|hook\s*up)\b.*\b(api|endpoint|webhook|service|integration)\b/i,
@@ -201,6 +217,13 @@ function buildStableSystemPrompt(intent) {
     "- Use filters, grouping, aggregation, style, and values projection as nested widget config only.",
     "- Reset invalid axis, filter, group, and sort settings when source changes.",
     "- Mark recomputed values as unsaved unless PATCH succeeds.",
+    "",
+    "## When proposing agent swarms (swarm.run.propose)",
+    "- You may propose swarm.run.propose. You are propose-only. Do not execute. Do not store credentials.",
+    "- Describe the swarm objective, agent roles, tasks, tools, maxConcurrency, and outcomeCriteria.",
+    "- The server will normalize this into the governed agent-swarm graph; execution happens only through sandbox-run after apply.",
+    "- payload shape: { name, description?, objective, agents: [{ id?, role, description?, taskPrompt, tools?, required?, maxTokens?, timeoutMs? }], maxConcurrency?, outcomeCriteria?, runLocality?, agentHost?, adapter? }",
+    "- adapter, when set, must be local-agent-host or local-intelligence.",
     "",
     "## Valid proposal types and their target patch field",
     WORKSPACE_HELPER_PROPOSAL_TYPES.map(
